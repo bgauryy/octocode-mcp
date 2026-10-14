@@ -74,6 +74,8 @@ describe('/octocode permission and editor shortcut', () => {
     expect(shown).toMatch(/^Permission mode: workspace/);
     expect(shown).toContain('file.outside: ask');
     expect(shown).toContain('shell: allow');
+    expect(shown).toContain('shell.destructive: ask');
+    expect(shown).toContain('browser.control: ask');
     expect(shown).toContain('hook.ask: ask');
     expect(shown).toContain('provenance: ask');
     expect(shown).toContain('Session grants: none');
@@ -92,10 +94,19 @@ describe('/octocode permission and editor shortcut', () => {
     await run('workspace');
     await run('log');
     const log = ctx.ui.notes.at(-1)!.message;
-    expect(log).toMatch(/manual shell allowed \(user\) ls/);
+    expect(log).toMatch(/manual main shell allowed \(user\) ls/);
     expect(log).toMatch(/mode manual → workspace/);
     await run('bogus');
     expect(ctx.ui.notes.at(-1)).toMatchObject({ type: 'warning', message: expect.stringContaining('Usage: /octocode permission') });
+  });
+
+  it('says how many earlier decisions a long audit log leaves out', async () => {
+    const { run, ctx, permission } = setup({ env: {} });
+    for (let i = 0; i < 53; i++) permission.setMode(i % 2 === 0 ? 'manual' : 'full', ctx);
+    await run('log');
+    const lines = ctx.ui.notes.at(-1)!.message.split('\n');
+    expect(lines[0]).toBe('(3 earlier decision(s) not shown; the session file keeps them all)');
+    expect(lines).toHaveLength(51);
   });
 
   it('keeps headless status and mode-change feedback visible without writing to stdout', async () => {

@@ -333,13 +333,14 @@ pub(super) fn provider_failure(
         matches!(code.as_str(), "timeout" | "providerError")
             || http_status.is_some_and(|status| status == 408 || status == 429 || status >= 500)
     });
-    if hints.is_empty() {
+    // An invalid input's message names the rejected field or the registry's
+    // own reason; a static hint would only restate it.
+    if hints.is_empty() && code != "invalidInput" {
         hints.push(
             match code.as_str() {
                 "authentication" => "Verify registry credentials and access, then retry.",
                 "rateLimited" => "Wait for the provider rate-limit reset before retrying.",
                 "timeout" => "Retry once; if it persists, verify registry availability.",
-                "invalidInput" => "Correct the package coordinate or query fields.",
                 "capabilityUnavailable" => {
                     "Use the exact package lookup supported by this ecosystem."
                 }
@@ -611,13 +612,9 @@ mod provider_failure_tests {
         );
         assert!(without.data.get("httpStatus").is_none(), "absence is valid");
         assert!(without.data.get("retryable").is_none(), "{}", without.data);
-        assert!(
-            without.data["hints"][0]
-                .as_str()
-                .is_some_and(|hint| hint.contains("Correct the package coordinate")),
-            "{}",
-            without.data
-        );
+        // The message states the rejected field or the registry's reason; a
+        // static hint would only restate it.
+        assert!(without.data.get("hints").is_none(), "{}", without.data);
 
         for (code, status, retryable, hint_fragment) in [
             ("authentication", Some(401), false, "credentials"),

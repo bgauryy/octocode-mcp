@@ -181,7 +181,15 @@ pub fn execute_files(
     let policy = paths.identity();
     let page = q.page().max(1) as usize;
     let (walk, stored) = super::walked(page, q.snapshot(), &policy, || {
-        walk_files(q, &validated.canonical, paths, security, cancel, requested)
+        walk_files(
+            q,
+            &validated.canonical,
+            paths,
+            security,
+            cancel,
+            requested,
+            None,
+        )
     })?;
     let budget = super::page_budget(response_window, &identity);
     // The row layout cuts pages too, so it is part of the snapshot.
@@ -220,17 +228,16 @@ pub fn execute_files(
         paths,
         cancel,
     )?;
-    // `defaultExcludes:false` walks `.gitignore`d entries too (see
-    // `walk_files`), so it counts as lifting the ignore files.
     let shown = Walk {
-        ignored: q.include_ignored == Some(true) || !q.default_excludes.defaults(),
+        ignored: q.include_ignored == Some(true),
         hidden: true,
         default_excludes: q.default_excludes.defaults(),
     };
+    let bound = super::ProbeBound::new(super::PROBE_BUDGET);
     super::note_empty(
         &mut out,
         q,
-        &validated.canonical,
+        (&validated.canonical, paths),
         &walk.uncovered,
         shown,
         |relaxed| {
@@ -244,10 +251,13 @@ pub fn execute_files(
                 paths,
                 security,
                 cancel,
-                requested,
+                super::PROBE_HITS,
+                Some(&bound),
             )?;
+            let cut = found.was_capped || bound.cut();
             Ok(super::found_entries(
                 found.rows.into_iter().map(|row| row.source),
+                cut,
             ))
         },
     )?;
@@ -262,7 +272,9 @@ fn early_exit(q: &StructureSearchQueryFiles) -> bool {
 }
 
 /// Walk once: rows sorted and cut to `requested`, path-ordered rows grouped
-/// like `tree`, directories with their own group not also listed bare.
+/// like `tree`, directories with their own group not also listed bare. A
+/// probe walk (`bound`) stops at its first `requested` entries, whatever the
+/// sort, and admits nothing past its deadline.
 fn walk_files(
     q: &StructureSearchQueryFiles,
     root: &std::path::Path,
@@ -270,49 +282,54 @@ fn walk_files(
     security: &ContentSecurity,
     cancel: &dyn CancellationCheck,
     requested: usize,
+    bound: Option<&super::ProbeBound>,
 ) -> Result<FilesWalk, ToolError> {
     let time = &q.time;
     let access = q.access();
     let access = access.as_deref();
-    // Leave out what the tree and localSearch leave out: `.gitignore`d
-    // entries, pruned during the walk. `defaultExcludes:false` walks them too.
-    let gitignore = (q.default_excludes.defaults() && q.include_ignored != Some(true))
-        .then(|| crate::policy::gitignore::GitignoreFilter::new(root));
+    // Leave out what the tree and localSearch leave out: ignored entries,
+    // pruned during the walk (and counted by it) unless `includeIgnored`.
     let probe = super::FilterProbe::new(
         root,
         &q.include().unwrap_or_default(),
         &q.extensions,
         q.name_regex.as_deref(),
     );
-    let ignored = std::sync::atomic::AtomicUsize::new(0);
     let withheld = std::sync::Mutex::new(crate::policy::discovery::Withheld::default());
     let detail = q.detail();
     let sort = q.sort();
-    let walk_limit = if early_exit(q) {
+    let walk_limit = if early_exit(q) || bound.is_some() {
         requested as u32
     } else {
         super::max_walk()
     };
     let discovery = paths.discovery_walk();
-    let native = octocode_engine::portable::query_file_system_typed(
+    let native = octocode_engine::portable::query_file_system(
         FileSystemQueryOptions {
             path: root.to_string_lossy().into_owned(),
             include_root: Some(true),
             recursive: Some(true),
             max_depth: q.max_depth(),
             min_depth: q.min_depth(),
-            show_hidden: Some(true),
+            ignore: octocode_engine::search::walk::IgnorePolicy::new(q.include_ignored, Some(true)),
             names: q.include(),
             extensions: q.extensions(),
-            path_pattern: None,
             regex: q.name_regex.clone(),
             entry_type: q.entry_type(),
             empty: q.empty,
             modified_within: time.as_ref().and_then(|t| t.modified_within.clone()),
             modified_before: time.as_ref().and_then(|t| t.modified_before.clone()),
             accessed_within: time.as_ref().and_then(|t| t.accessed_within.clone()),
-            size_greater: q.size.as_ref().and_then(|s| s.greater.clone()),
-            size_less: q.size.as_ref().and_then(|s| s.less.clone()),
+            size_greater: q
+                .size
+                .as_ref()
+                .and_then(|s| s.greater.as_ref())
+                .map(ToString::to_string),
+            size_less: q
+                .size
+                .as_ref()
+                .and_then(|s| s.less.as_ref())
+                .map(ToString::to_string),
             permissions: q.permissions(),
             executable: Some(access == Some("executable")),
             readable: Some(access == Some("readable")),
@@ -323,22 +340,22 @@ fn walk_files(
             limit: Some(walk_limit),
         },
         &|path, file_type| {
-            if gitignore.as_ref().is_some_and(|filter| {
-                filter.is_ignored_as(path, file_type.map(|kind| kind.is_dir()))
-            }) {
-                ignored.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                return Ok(false);
+            // The root itself stays admitted: a probe out of time lists
+            // nothing under it, never fails.
+            if path != root && bound.is_some_and(|bound| !bound.admits(path, file_type)) {
+                return false;
             }
-            let allowed = super::allow_discovery(path, file_type, &discovery, cancel)?;
+            let allowed = discovery.permits_entry(path, file_type);
             // Only an entry these filters could list makes absence unproven.
-            if !allowed && probe.could_list(path) {
+            if !allowed && probe.could_list(path) && super::reports_withheld(path) {
                 withheld
                     .lock()
                     .unwrap_or_else(|error| error.into_inner())
                     .record(path, path.is_dir());
             }
-            Ok(allowed)
+            allowed
         },
+        &|| cancel.check().is_err(),
     )
     .map_err(|error| super::walk_error(error, q.path.as_str(), cancel))?;
     cancel.check().map_err(ToolError::cancelled)?;
@@ -374,11 +391,12 @@ fn walk_files(
             )
         });
     }
+    // Bytes are regular files' (a symlink's own length is no content).
     let (files, dirs, bytes) = rows.iter().fold((0, 0, 0), |(f, d, b), row| {
         if row.kind == "directory" {
             (f, d + 1, b)
         } else {
-            (f + 1, d, b + row.size)
+            (f + 1, d, b + if row.is_file { row.size } else { 0 })
         }
     });
     drop_grouped_dirs(&mut rows);
@@ -392,7 +410,7 @@ fn walk_files(
         dirs,
         bytes,
         uncovered: super::Uncovered {
-            ignored: ignored.into_inner(),
+            ignored: native.ignored as usize,
             withheld: withheld
                 .into_inner()
                 .unwrap_or_else(|error| error.into_inner()),
@@ -815,6 +833,111 @@ pub(super) fn walk_warnings(s: u32, d: u32) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A probe walk past its deadline admits nothing and says it was cut.
+    #[test]
+    fn a_probe_walk_past_its_deadline_admits_nothing() {
+        let root = tempfile::tempdir().expect("root");
+        std::fs::create_dir_all(root.path().join("build")).expect("build");
+        std::fs::write(root.path().join("build/a.ts"), "x\n").expect("ts");
+        let paths = crate::tools::test_support::workspace_policy(root.path());
+        let q: StructureSearchQueryFiles = serde_json::from_value(json!({
+            "operation": "files", "path": root.path(), "extensions": ["ts"], "defaultExcludes": false
+        }))
+        .expect("files query");
+        let bound = super::super::ProbeBound::new(std::time::Duration::ZERO);
+        let walk = walk_files(
+            &q,
+            root.path(),
+            &paths,
+            &ContentSecurity::new(),
+            &crate::tools::cancel::NeverCancel,
+            super::super::PROBE_HITS,
+            Some(&bound),
+        )
+        .expect("walk");
+        assert!(walk.rows.is_empty());
+        assert!(bound.cut());
+        // Unbounded, the same walk lists the file.
+        let walk = walk_files(
+            &q,
+            root.path(),
+            &paths,
+            &ContentSecurity::new(),
+            &crate::tools::cancel::NeverCancel,
+            super::super::PROBE_HITS,
+            None,
+        )
+        .expect("walk");
+        assert_eq!(walk.rows.len(), 1);
+    }
+
+    /// An empty listing whose probe ran out of time before it found
+    /// anything proved nothing about what its walk skipped: it still leads
+    /// to the listing over the skipped paths and says absence there is
+    /// unproven.
+    #[test]
+    fn an_empty_listing_whose_probe_timed_out_still_leads_to_skipped_paths() {
+        let root = tempfile::tempdir().expect("root");
+        std::fs::create_dir_all(root.path().join("build")).expect("build");
+        std::fs::write(root.path().join("build/a.ts"), "x\n").expect("ts");
+        let paths = crate::tools::test_support::workspace_policy(root.path());
+        let q: StructureSearchQueryFiles = serde_json::from_value(json!({
+            "operation": "files", "path": root.path(), "extensions": ["ts"]
+        }))
+        .expect("files query");
+        let seen = super::super::Uncovered {
+            pruned: vec!["build".to_owned()],
+            ..Default::default()
+        };
+        let walk = Walk {
+            ignored: false,
+            hidden: true,
+            default_excludes: true,
+        };
+        let bound = super::super::ProbeBound::new(std::time::Duration::ZERO);
+        let mut out = json!({"status": "empty"});
+        super::super::note_empty(
+            &mut out,
+            &q,
+            (root.path(), &paths),
+            &seen,
+            walk,
+            |relaxed| {
+                let mut relaxed_query = q.clone();
+                relaxed_query.include_ignored = Some(relaxed.ignored);
+                relaxed_query.default_excludes = Some(DefaultExcludes(relaxed.default_excludes));
+                let found = walk_files(
+                    &relaxed_query,
+                    root.path(),
+                    &paths,
+                    &ContentSecurity::new(),
+                    &crate::tools::cancel::NeverCancel,
+                    super::super::PROBE_HITS,
+                    Some(&bound),
+                )?;
+                Ok(super::super::found_entries(
+                    found.rows.into_iter().map(|row| row.source),
+                    found.was_capped || bound.cut(),
+                ))
+            },
+        )
+        .expect("note");
+        assert!(bound.cut(), "the zero budget cut the probe");
+        assert_eq!(
+            out["hints"],
+            json!([
+                "Skipped paths (build/) were not checked in time; absence there is unproven: the lead lists them."
+            ]),
+            "{out}"
+        );
+        let retry = &out["next"]["includeSkipped"]["query"]["queries"][0];
+        assert_eq!(retry["defaultExcludes"], false, "{out}");
+        assert_eq!(retry["page"], 1, "{out}");
+        assert!(retry.get("includeIgnored").is_none(), "{out}");
+        assert!(retry.get("snapshot").is_none(), "{out}");
+    }
+
     #[test]
     fn line_count_can_be_cancelled_between_bounded_reads() {
         use std::sync::atomic::{AtomicUsize, Ordering};
@@ -828,8 +951,8 @@ mod tests {
                 }
             }
         }
-        let root =
-            std::env::temp_dir().join(format!("octocode-structure-lines-{}", std::process::id()));
+        let root_dir = crate::tools::test_support::Fixture::new();
+        let root = root_dir.0.clone();
         std::fs::create_dir_all(&root).expect("fixture");
         let file = root.join("large.rs");
         std::fs::write(&file, "line\n".repeat(20_000)).expect("large source");

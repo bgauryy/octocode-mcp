@@ -8,7 +8,7 @@ beforeEach(() => {
   saved = { ...process.env };
   process.env['OCTOCODE_HOME'] = tmp();
   // Hermetic: a run inside a Pi subagent inherits its identity, which changes the tools and the prompt.
-  for (const key of ['OCTOCODE_SUBAGENT', 'OCTOCODE_BROWSER_VISIBLE', 'OCTOCODE_AGENT_COLLABORATE', 'OCTOCODE_SUBAGENT_COLLABORATE', 'OCTOCODE_DIRECT_TOOLS']) delete process.env[key];
+  for (const key of ['OCTOCODE_SUBAGENT', 'OCTOCODE_BROWSER_VISIBLE', 'OCTOCODE_AGENT_COLLABORATE']) delete process.env[key];
 });
 afterEach(() => {
   process.env = saved;
@@ -49,7 +49,9 @@ async function promptSize(options: { subagent: boolean; exclude?: string[] }): P
  * Ceilings are about 5% above the size measured when they were set. When the prompt shrinks, lower them to match;
  * never raise one without a reason a reviewer can weigh against paying these characters on every request.
  */
-const MAIN_CEILING = 17_800;
+// 17_900: +100 for the no-polling rule in the agent and bash descriptions. Without it an agent
+// sleep-polled a background subagent for about 25 minutes (ISSUES.md P1).
+const MAIN_CEILING = 17_900;
 const READ_ONLY_SUBAGENT_CEILING = 11_150;
 
 describe('prompt size', () => {

@@ -1,31 +1,41 @@
-# Providers and ScrapingAnt
+Load when the route or `--provider` is unclear, or before a broad crawl or hosted call.
 
-Load when choosing `--provider`, checking routes, adding a vendor, or making an approved hosted call. Why: choose a supported route without unintended spend.
+## Scope
 
-## Contract
+- Ask only for a missing choice that changes the work. Vague request: SKILL.md defaults, no auth; return the session path and next search targets.
+- Map a site: `fetch.mjs --url <u> --crawl --max-pages 20`.
+- Cheapest route that proves the claim, one per need.
 
-`fetch({ url, pageId, config, apiKey })` → `FetchResponse` (`scripts/schemas/provider.schema.json`). Corpus and analyzers must not branch on vendor names.
+## Route
 
-| Provider | Modes | Key | Best for |
-|---|---|---|---|
-| `direct` | html | no | Static / cheapest proof |
-| `cdp` | html | no | Local JS render (sibling chrome-devtools) |
-| `scrapingant` | html, markdown, extended, extract | `SCRAPING_ANT` | Hosted anti-bot / markdown / extract: **explicit only** |
+| Need | Route | Key |
+|---|---|---|
+| Public static page | `direct`, `--mode html` | no |
+| Thin 200 or JS shell | `octocode-chrome-devtools` capture, bridged into the corpus | no |
+| Local JS render, no clicks | `cdp`, `--mode html` | no |
+| Auth, clicks, network, screenshots | `octocode-chrome-devtools` ([browser-scraping](browser-scraping.md)) | no |
+| Hosted anti-bot, `markdown`, `extended`, `extract` | `scrapingant`, explicit choice | `SCRAPING_ANT` |
 
-## ScrapingAnt (only after the user approves hosted spend)
+- Default `direct`; installing chrome-devtools or setting `SCRAPING_ANT` never auto-selects a provider. Only a non-html `--mode` implies `scrapingant` (fails early without the key).
 
-A hosted call is an explicit, paid choice.
-- The optional hosted provider needs `SCRAPING_ANT` in its process environment. It may be stored in `<HOME>/.octocode/.env`; never print the value.
-- `--mode html`: `/v2/general` · `markdown`: `/v2/markdown` · `extended`: `/v2/extended` · `extract`: `/v2/extract`. Usage: `provider-usage.mjs` → `/v2/usage` (sanitized).
+## ScrapingAnt
+
+- No `scrapingant` call until the user approves hosted spend.
+- `provider-usage.mjs --check` reports only `"key":"set"` (exit 1 `missingKey` when unset), offline; without `--check` it reads `/v2/usage` (sanitized plan and credits). Modes map to `/v2/general` (html), `/v2/markdown`, `/v2/extended`, `/v2/extract`.
 
 ```bash
-node skills/octocode-scraping/scripts/provider-check.mjs --provider scrapingant
-node skills/octocode-scraping/scripts/fetch.mjs --url https://example.com --provider scrapingant --mode html
-node skills/octocode-scraping/scripts/fetch.mjs --url https://example.com --provider scrapingant --mode markdown
-node skills/octocode-scraping/scripts/fetch.mjs --url https://example.com --provider scrapingant --mode extract --extract-properties "title, content"
-node skills/octocode-scraping/scripts/provider-usage.mjs
+export SCRAPING_ANT="$(npx -y octocode config get SCRAPING_ANT)"
+node <skill-folder>/scripts/provider-usage.mjs --check
+node <skill-folder>/scripts/fetch.mjs --url https://example.com --provider scrapingant --mode html
+node <skill-folder>/scripts/fetch.mjs --url https://example.com --provider scrapingant --mode extract --extract-properties "title, content"
+node <skill-folder>/scripts/provider-usage.mjs
 ```
 
-Common options: `--session`, `--out`, `--no-raw`, `--max-raw-bytes`, `--max-text-bytes`, `--extract-links`, `--crawl --max-pages`, `--sitemap`, `--same-domain`, `--delay-ms`, `--browser --wait-for`, `--proxy-type`, `--proxy-country`, `--block-resource`. Full CLI: `fetch.mjs --help`.
+- Fresh shell per command: prefix instead of exporting, `SCRAPING_ANT="$(npx -y octocode config get SCRAPING_ANT)" node ...`
+- Options: `fetch.mjs --help`; hosted: `--browser --wait-for`, `--proxy-type`, `--proxy-country`, `--block-resource`.
+- Hosted `403`/`423`: stop ([recovery](recovery.md)).
 
-Next: for the route tree load `references/route-selection.md`; on a hosted `403`/`423` load `references/failure-recovery.md`.
+## Key setup (humans)
+
+- Key: [ScrapingAnt dashboard](https://app.scrapingant.com/); API: [docs.scrapingant.com](https://docs.scrapingant.com/).
+- Set `SCRAPING_ANT` in the shell, a trusted project `.octocode/.env`, or `<HOME>/.octocode/.env`; scripts read it only via the pattern above. Keep it out of logs and chat.

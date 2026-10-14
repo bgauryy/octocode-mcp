@@ -92,11 +92,7 @@ pub fn finalize(
     sources: &Sources<'_>,
     scope: &Scope<'_>,
 ) -> Result<(), ContractValidationError> {
-    let rows_key = if tool.output().resource_major() {
-        "queries"
-    } else {
-        "results"
-    };
+    let rows_key = tool.output().rows_key();
     let mut memo = Memo::new();
     let mut issues = Vec::new();
     let Some(rows) = structured.get_mut(rows_key).and_then(Value::as_array_mut) else {
@@ -330,7 +326,7 @@ fn inherit(call: &mut Value, ctx: &Visit<'_, '_>) {
         (None, _) => return,
         (Some(extras), true) => extras.clone(),
         (Some(extras), false) if wants_hints(Some(extras)) => Value::Array(vec![Value::from(
-            super::extras::name(crate::contracts::tool_types::ExtraKind::Hints),
+            crate::contracts::tool_types::ExtraKind::Hints.to_string(),
         )]),
         (Some(_), false) => return,
     };
@@ -351,7 +347,13 @@ fn inherit(call: &mut Value, ctx: &Visit<'_, '_>) {
 /// so no continuation carries it; only a tool whose input reads the brief as
 /// its question (the clasify handoff) keeps it.
 fn drop_brief(call: &mut Value) {
-    if call.get("tool").and_then(Value::as_str) == Some(ToolId::Clasify.as_str()) {
+    // A resource-major tool's matrices take the brief as their question.
+    if call
+        .get("tool")
+        .and_then(Value::as_str)
+        .and_then(ToolId::from_name)
+        .is_some_and(|tool| tool.output().resource_major())
+    {
         return;
     }
     let Some(rows) = call
@@ -369,10 +371,11 @@ fn drop_brief(call: &mut Value) {
 
 /// Whether an `extras` list opts into lead hints.
 fn wants_hints(extras: Option<&Value>) -> bool {
-    let hints = super::extras::name(crate::contracts::tool_types::ExtraKind::Hints);
-    extras
-        .and_then(Value::as_array)
-        .is_some_and(|kinds| kinds.iter().any(|kind| kind.as_str() == Some(hints)))
+    extras.and_then(Value::as_array).is_some_and(|kinds| {
+        kinds
+            .iter()
+            .any(|kind| super::extras::names(kind, crate::contracts::tool_types::ExtraKind::Hints))
+    })
 }
 
 /// The non-empty `extras` list `query` sent.
@@ -494,6 +497,12 @@ fn compact_matrix_reads(input: &mut Value, memo: &mut Memo) -> Vec<ValidationIss
 /// compact call executes exactly like the full one. Only a field the
 /// contract can restore (a default) or that validation drops is tried; any
 /// other present field stays. An invalid query is an error and unchanged.
+///
+/// Fields restore independently in the common case, so one validation of
+/// the query without every candidate names them all: a candidate whose
+/// restored value equals its full one drops. One more validation proves
+/// the set; only a query whose fields interact falls back to trying each
+/// candidate in turn.
 fn compact_query(
     tool: &str,
     query: &mut Value,
@@ -509,20 +518,41 @@ fn compact_query(
     }
     let full = validate_query(tool, query.clone())?;
     let restorable = ToolId::from_name(tool).and_then(crate::contracts::restorable_fields);
+    let candidates: Vec<&String> = object
+        .keys()
+        .filter(|field| {
+            full.get(field.as_str()).is_none()
+                || restorable.is_none_or(|fields| fields.contains(field.as_str()))
+        })
+        .collect();
     let mut compact = object.clone();
-    for field in object.keys() {
-        let candidate = full.get(field).is_none()
-            || restorable.is_none_or(|fields| fields.contains(field.as_str()));
-        if !candidate {
-            continue;
+    if !candidates.is_empty() {
+        for field in &candidates {
+            compact.remove(field.as_str());
         }
-        let Some(removed) = compact.remove(field) else {
-            continue;
-        };
-        let restored = validate_query(tool, Value::Object(compact.clone()))
+        let restored = validate_query(tool, Value::Object(compact.clone())).ok();
+        for field in &candidates {
+            let same = restored
+                .as_ref()
+                .is_some_and(|restored| restored.get(field.as_str()) == full.get(field.as_str()));
+            if !same {
+                compact.insert((*field).clone(), object[field.as_str()].clone());
+            }
+        }
+        let proven = validate_query(tool, Value::Object(compact.clone()))
             .is_ok_and(|validated| validated == full);
-        if !restored {
-            compact.insert(field.clone(), removed);
+        if !proven {
+            compact = object.clone();
+            for field in &candidates {
+                let Some(removed) = compact.remove(field.as_str()) else {
+                    continue;
+                };
+                let restored = validate_query(tool, Value::Object(compact.clone()))
+                    .is_ok_and(|validated| validated == full);
+                if !restored {
+                    compact.insert((*field).clone(), removed);
+                }
+            }
         }
     }
     // Keep the caller's field order for the fields that remain.

@@ -21,7 +21,7 @@ pub(super) fn paginate_text(
     let text = value.chars().skip(start).take(end - start).collect();
     (
         text,
-        json!({"unit":"chars","offset":start,"length":end-start,"total":total,"hasMore":end<total,"nextOffset":(end<total).then_some(end)}),
+        crate::response::pages::SpanFacts::window("chars", start, end - start, total).to_value(),
     )
 }
 

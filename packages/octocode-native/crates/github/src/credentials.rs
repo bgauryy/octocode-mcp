@@ -27,6 +27,10 @@ impl ResolvedCredential {
     pub fn expose_secret(&self) -> &str {
         self.secret.expose_secret()
     }
+    /// The secret, still wrapped, for deriving a [`crate::Partition`].
+    pub fn secret(&self) -> &SecretString {
+        &self.secret
+    }
 }
 
 impl std::fmt::Debug for ResolvedCredential {

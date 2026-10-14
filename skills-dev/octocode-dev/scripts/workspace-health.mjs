@@ -4,6 +4,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { stagedNativeArtifacts, staleArtifacts } from './artifact-freshness.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -276,6 +277,17 @@ function checkRequiredScripts(workspaces) {
   checkDeclaredInternalImports(workspaces);
 }
 
+/** Staged native artifacts built for another version or contract. */
+function staleNativeFailures() {
+  const artifacts = stagedNativeArtifacts(path.join(ROOT, 'packages/octocode-native/npm'));
+  if (artifacts.length === 0) return [];
+  const { contractFingerprint } = readJson(path.join(ROOT, 'packages/octocode-config/contract/provenance.json'));
+  const { version } = readJson(path.join(ROOT, 'packages/octocode-native/package.json'));
+  return staleArtifacts(artifacts, contractFingerprint, version).map(
+    file => `${path.relative(ROOT, file)} is stale for ${version} / contract ${contractFingerprint.slice(0, 12)}; rebuild with build:publish before publishing`
+  );
+}
+
 function checkBuildOutputs(workspaces) {
   const failures = [];
 
@@ -289,6 +301,7 @@ function checkBuildOutputs(workspaces) {
       }
     }
   }
+  failures.push(...staleNativeFailures());
 
   if (failures.length > 0) {
     console.error('Build output verification failed:');

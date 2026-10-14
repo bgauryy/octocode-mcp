@@ -1,6 +1,6 @@
 # Message and lifecycle details
 
-Load when you need TTLs, topics, retry behavior, or worked examples. Why: keep protocol detail outside the operating guide.
+Load for TTLs, topics, retry behavior, or worked examples. Message rules live in [the operating guide](../../OPERATING.md#send-and-handle-messages).
 
 ## Identity and ownership
 
@@ -35,35 +35,31 @@ Direct messages default to `wake:"action",replyRequired:true`.
 For information only, use `replyRequired:false`. `wake:"passive"` waits for a natural turn.
 Action schedules handling within the recipient's authorized task; it grants no new objective or permissions.
 
-`Receive → retrieve full body → perform requested work → complete with reply → sender acknowledges answer`.
+`Receive → retrieve full body → perform requested work → complete with outcome and reply → sender acknowledges answer`.
 
 ```sh
-agent send_message '{"to":"api-reviewer","body":"Review src/api.ts; report compatibility risks.","reasoning":"Resolve API review before handoff","key":"api-review-1","conversationId":"api-review"}'
+agent send_message '{"to":"api-reviewer","body":"Situation: src/api.ts changed the response type. Background: clients pin v2. Assessment: compatibility unverified. Request: review and list risks.","reasoning":"Resolve API review before handoff; done when risks are listed","key":"api-review-1","conversationId":"api-review"}'
 agent inbox
 agent fetch '{"incoming":true,"type":"message","limit":20}'
 # Use data.messageId from fetch, after checking the requested work:
-agent complete '{"message":MESSAGE_ID_FROM_DATA,"reply":"Reviewed src/api.ts. Result and supporting checks: ..."}'
+agent complete '{"message":MESSAGE_ID_FROM_DATA,"outcome":"done","reply":"Reviewed src/api.ts; no breaking change. Evidence: ..."}'
 # Acknowledge handled FYIs and answers without creating another reply:
 agent complete '{"messages":[FYI_ID,ANSWER_ID]}'
 ```
 
 A fetched `{recordId:16,data:{messageId:1,...}}` completes with `message:1`, never `message:16`.
-An inbox item uses its message ID directly as `item.id`.
-Progress uses a new send key, the same `conversationId`, and `replyRequired:false`.
-Progress does not complete the original request or set `replyTo`.
-Only `complete` creates the final correlated reply.
-Leave unfinished work pending. An offered delivery is not handled work.
-Handled FYIs use `{message}` or `{messages:[...]}` without `reply` or `reasoning`.
-Do not send automatic replies to FYIs.
+Progress, including a readback, uses a new send key, the same `conversationId`, and `replyRequired:false`; it neither completes the request nor sets `replyTo`.
+Handled FYIs use `{message}` or `{messages:[...]}`; never reply to an FYI automatically.
+`outcome` (done, partial, failed, refused, canceled) needs `message` and `reply`; the reply stays the exact answer and the stored `reasoning` starts with `Outcome: <value>`. Unfinished work or work that needs input stays pending.
 
 ## Intent, limits, and retries
 
-`reasoning` is a short operational purpose, up to 512 UTF-8 bytes. It is not private reasoning.
+`reasoning` is intent (purpose and done-when), up to 512 UTF-8 bytes; it is not private reasoning.
 Message bodies allow 16,384 UTF-16 units. Put larger evidence in an immutable document.
 Message `ttlMs` ranges from 1 second to 1 day.
 A retry `key` identifies unchanged input. Preserve payload, routing, and branch when retrying.
 Use a new key for changed content. `conversationId` connects progress and final replies.
-If Pi reports a failed/timed-out send or record, retain its exposed retry key and inspect history.
+If Pi reports a failed/timed-out send or record, retain its exposed retry key and inspect history; retry unchanged input with that key only when needed.
 A committed write can produce a later error. A new tool-call ID creates a different automatic key.
 
 ## Topics and shared evidence
@@ -73,12 +69,10 @@ Send `{topic:"api",body,reasoning}` to current subscribers.
 Use `notify_all` for current active peers, excluding the sender.
 Topic and broadcast defaults are passive with no required reply.
 Recipients are fixed at send time. Later joiners receive no old fanout.
-Prefer a direct recipient when one owner must act.
 `share_document` accepts up to 1 MiB UTF-8. Use `-` for large stdin JSON.
 Names are immutable. Choose a new name for a revision; retain the name and verify read pages.
 If migrated documents share a name, pass `read_document.workspace` to select the original worktree.
 Use the returned continuation unchanged so later pages retain that origin.
-A document or memory alone notifies nobody. Send a handoff to the next owner.
 Usage scopes are alternatives: do not sum overlapping request, turn, or cumulative counts.
 Absent usage counts are unknown, not zero.
 

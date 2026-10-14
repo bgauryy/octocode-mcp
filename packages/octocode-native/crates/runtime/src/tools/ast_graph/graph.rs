@@ -6,9 +6,7 @@ use crate::tools::id::ToolId;
 use crate::tools::result::Continuation;
 use crate::tools::result::ToolError;
 use crate::{
-    policy::{gitignore::GitignoreFilter, path::PathPolicy},
-    security::ContentSecurity,
-    tools::cancel::CancellationCheck,
+    policy::path::PathPolicy, security::ContentSecurity, tools::cancel::CancellationCheck,
 };
 use octocode_engine::text::JS_TS_EXTENSIONS;
 use octocode_engine::types::GraphFactsScanOptions;
@@ -21,9 +19,6 @@ use std::{
 /// graph ingest). The default keeps astTopology's behavior.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct BuildExtras {
-    /// Skip paths ignored by `.gitignore` files (scan root, nested, and
-    /// ancestors up to the repository root) and `.git/info/exclude`.
-    pub respect_gitignore: bool,
     /// Additional directory names excluded from the scan.
     pub extra_excludes: Vec<String>,
     /// The configured `OCTOCODE_CARGO` for `cargo metadata`; `None` runs
@@ -53,18 +48,10 @@ pub(crate) fn build_graph_with(
     let key = memo_key(q, paths, extras, &validated.canonical);
     if !drift && let Some(graph) = super::memo::get(&key) {
         let mut built = (*graph).clone();
-        built.display_path = paths.redact(&requested_root);
+        built.display_path = paths.redact(&validated.canonical);
         return Ok(built);
     }
-    let built = build_fresh(
-        q,
-        paths,
-        security,
-        cancel,
-        extras,
-        &requested_root,
-        validated,
-    )?;
+    let built = build_fresh(q, paths, security, cancel, extras, validated)?;
     if !drift {
         super::memo::put(key, std::sync::Arc::new(built.clone()));
     }
@@ -90,20 +77,12 @@ pub(crate) fn build_graph_shared_with(
     let validated = paths
         .validate(&requested_root)
         .map_err(|error| ToolError::policy(error, "pathValidationFailed"))?;
-    let display_path = paths.redact(&requested_root);
+    let display_path = paths.redact(&validated.canonical);
     let key = memo_key(q, paths, extras, &validated.canonical);
     if let Some(graph) = super::memo::get(&key) {
         return Ok((graph, display_path));
     }
-    let graph = std::sync::Arc::new(build_fresh(
-        q,
-        paths,
-        security,
-        cancel,
-        extras,
-        &requested_root,
-        validated,
-    )?);
+    let graph = std::sync::Arc::new(build_fresh(q, paths, security, cancel, extras, validated)?);
     super::memo::put(key, graph.clone());
     Ok((graph, display_path))
 }
@@ -137,7 +116,6 @@ fn build_fresh(
     security: &ContentSecurity,
     cancel: &dyn CancellationCheck,
     extras: &BuildExtras,
-    requested_root: &Path,
     validated: crate::policy::path::ValidatedPath,
 ) -> Result<BuiltGraph, ToolError> {
     #[cfg(test)]
@@ -148,21 +126,21 @@ fn build_fresh(
     // A discovered path is not linkable until its facts were actually parsed.
     // Otherwise an unread or oversized target becomes a false resolved edge.
     let known: BTreeSet<String> = scan
-        .entries
+        .kept
         .iter()
-        .map(|entry| normalize(&entry.relative_path))
+        .map(|(_, entry)| normalize(&entry.relative_path))
         .collect();
     // Only drift diffs the evidence graph; every other analysis runs on
     // `BuiltGraph`, so the (costly) evidence graph is built for drift only.
     let mut graph_builder = (q.analysis() == super::GraphAnalysis::Drift).then(|| {
         octocode_engine::graph::CodeGraphBuilder::new(
             validated.canonical.to_string_lossy(),
-            scan.schema_version,
+            octocode_engine::signatures::GRAPH_FACTS_SCHEMA_VERSION,
         )
     });
     let mut built = BuiltGraph {
+        display_path: paths.redact(&validated.canonical),
         root: validated.canonical,
-        display_path: paths.redact(requested_root),
         files_skipped: scan.files_skipped,
         truncated: scan.truncated,
         ..Default::default()
@@ -194,19 +172,6 @@ fn build_fresh(
             message: sanitize(security, &format!("{}: {}", skipped.code, skipped.message)),
         });
     }
-    if scan.schema_version != 1 {
-        built.files_skipped = known.len() as u32;
-        built.diagnostics.push(Diagnostic {
-            file: ".".into(),
-            line: None,
-            code: "facts-schema-unsupported".into(),
-            message: format!(
-                "unsupported graph scan schema version: {}",
-                scan.schema_version
-            ),
-        });
-        return Ok(built);
-    }
     let inputs = LinkInputs {
         known: &known,
         security,
@@ -215,7 +180,7 @@ fn build_fresh(
         ctx: &resolve_context,
         packages: &packages,
     };
-    for entry in scan.entries {
+    for (_, entry) in scan.kept {
         cancel.check().map_err(cancelled)?;
         link_entry(&mut built, &inputs, entry, graph_builder.as_mut())?;
     }
@@ -234,28 +199,23 @@ fn scan_facts(
     cancel: &dyn CancellationCheck,
     extras: &BuildExtras,
     root: &Path,
-) -> Result<octocode_engine::graph::GraphFactsTypedScanResult, ToolError> {
+) -> Result<
+    octocode_engine::graph::GraphFactsMappedScan<octocode_engine::graph::GraphFactsTypedEntry>,
+    ToolError,
+> {
     let mut exclude =
         crate::policy::prune::PruneMode::SyntaxVisible.directories(q.default_excludes());
     exclude.extend(extras.extra_excludes.iter().cloned());
     let globs = q.exclude().map(<[String]>::to_vec);
-    let gitignore = extras.respect_gitignore.then(|| GitignoreFilter::new(root));
     if q.max_files().is_none() {
-        admit_scope(
-            q,
-            root,
-            &exclude,
-            globs.clone(),
-            paths,
-            gitignore.as_ref(),
-            cancel,
-        )?;
+        admit_scope(q, root, &exclude, globs.clone(), paths, cancel)?;
     }
     let max_files = q
         .max_files()
         .unwrap_or(20_000)
         .clamp(1, super::topology_max("maxFiles"));
-    octocode_engine::portable::scan_typed_graph_facts_filtered(
+    let discovery = paths.discovery_walk();
+    octocode_engine::graph::scan_graph_facts(
         GraphFactsScanOptions {
             path: root.to_string_lossy().into_owned(),
             exclude_dir: Some(exclude),
@@ -267,34 +227,14 @@ fn scan_facts(
                 .language_globs()
                 .as_ref()
                 .map(crate::tools::ast_rule::language_globs),
-            show_hidden: None,
+            ignore: octocode_engine::search::walk::IgnorePolicy::default(),
         },
-        &|path| {
-            cancel
-                .check()
-                .map_err(|message| format!("[cancelled] {message}"))?;
-            if gitignore
-                .as_ref()
-                .is_some_and(|filter| filter.is_ignored(path))
-            {
-                return Ok(false);
-            }
-            Ok(paths.permits_discovery(path))
-        },
+        &|path, file_type| discovery.permits_entry(path, file_type),
+        &|_| true,
+        &|view| Some(view.to_entry()),
+        &|| cancel.check().is_err(),
     )
-    .map_err(|e| {
-        let message = e.to_string();
-        let code = if message.starts_with("[ast.language.unsupported]") {
-            "languageUnsupported"
-        } else if message.starts_with("[ast.language.invalidGlob]") {
-            "invalidGlob"
-        } else if message.starts_with("[cancelled]") {
-            "cancelled"
-        } else {
-            "scanFailed"
-        };
-        ToolError::new(code, message)
-    })
+    .map_err(|error| ToolError::graph_scan(&error, cancel))
 }
 
 /// Whether Cargo linking was requested but has no manifest, and the
@@ -1011,7 +951,7 @@ impl FileLink<'_, '_> {
 /// (`max_files` ≤ 50k), but per-file import counts are attacker-sized; without
 /// an edge cap a pathological tree can exhaust memory in the edge maps and the
 /// evidence graph. Hitting the cap degrades to a truncated (diagnosed) graph.
-const MAX_GRAPH_EDGES: u32 = 2_000_000;
+pub(super) const MAX_GRAPH_EDGES: u32 = 2_000_000;
 
 #[cfg(test)]
 thread_local! {
@@ -1548,14 +1488,14 @@ fn admit_scope(
     exclude: &[String],
     globs: Option<Vec<String>>,
     paths: &PathPolicy,
-    gitignore: Option<&GitignoreFilter>,
     cancel: &dyn CancellationCheck,
 ) -> Result<(), ToolError> {
-    let found = octocode_engine::portable::query_file_system_filtered(
+    let discovery = paths.discovery_walk();
+    let found = octocode_engine::portable::query_file_system(
         octocode_engine::types::FileSystemQueryOptions {
             path: root.to_string_lossy().into_owned(),
             recursive: Some(true),
-            show_hidden: Some(false),
+            ignore: octocode_engine::search::walk::IgnorePolicy::default(),
             entry_type: Some("f".to_owned()),
             extensions: Some(octocode_engine::signatures::graph_facts::graph_fact_extensions()),
             exclude_dir: Some(exclude.to_vec()),
@@ -1567,21 +1507,56 @@ fn admit_scope(
             limit: Some(SCOPE_COUNT_FILES),
             ..Default::default()
         },
-        &|path| {
-            cancel.check()?;
-            if gitignore.is_some_and(|filter| filter.is_ignored(path)) {
-                return Ok(false);
-            }
-            Ok(paths.permits_discovery(path))
-        },
+        &|path, file_type| discovery.permits_entry(path, file_type),
+        &|| cancel.check().is_err(),
     )
-    .map_err(|e| ToolError::new("scanFailed", e.to_string()))?;
+    .map_err(|error| match error.kind() {
+        octocode_engine::error::ErrorKind::Cancelled => ToolError::cancelled(error.reason),
+        octocode_engine::error::ErrorKind::InvalidGlob => {
+            ToolError::new("invalidGlob", error.reason)
+        }
+        _ => ToolError::new("scanFailed", error.reason),
+    })?;
     if found.entries.len() as u32 <= SCOPE_ADMISSION_FILES {
         return Ok(());
     }
+    let entries: Vec<String> = found
+        .entries
+        .iter()
+        .map(|entry| normalize(&entry.relative_path))
+        .collect();
+    Err(scope_too_broad(q, root, paths, &entries, found.was_capped))
+}
+
+/// Whether the sorted depth-first discovery walk that ended at `last`
+/// finished every file under `dir`: it walked past `dir` and stopped
+/// outside it.
+fn walked_past(dir: &str, last: &str) -> bool {
+    let dir = dir.split('/').collect::<Vec<_>>();
+    let last = last.split('/').collect::<Vec<_>>();
+    !last.starts_with(&dir) && last > dir
+}
+
+/// The `scopeTooBroad` refusal for the discovered `entries` (root-relative,
+/// in walk order; `capped` when the count stopped before the walk ended).
+/// Only directories the walk finished are offered as roots, with their
+/// exact counts. A root holding more files than the `maxFiles` maximum can
+/// only be re-rooted, so `expandScan` is offered only when one scan at a
+/// raised `maxFiles` holds every file.
+pub(super) fn scope_too_broad(
+    q: &AstTopologyQuery,
+    root: &Path,
+    paths: &PathPolicy,
+    entries: &[String],
+    capped: bool,
+) -> ToolError {
+    let maximum = super::topology_max("maxFiles");
+    let count = u32::try_from(entries.len()).unwrap_or(u32::MAX);
+    let over_maximum = capped || count > maximum;
+    let last = entries.last().map(String::as_str).filter(|_| capped);
+    let walked = |dir: &str| last.is_none_or(|last| walked_past(dir, last));
     let mut by_dir: BTreeMap<String, u32> = BTreeMap::new();
-    for entry in &found.entries {
-        let relative = normalize(&entry.relative_path);
+    for relative in entries {
         let mut parts = relative.split('/');
         let (Some(first), Some(second)) = (parts.next(), parts.next()) else {
             continue;
@@ -1595,16 +1570,12 @@ fn admit_scope(
         };
         *by_dir.entry(key).or_default() += 1;
     }
-    let mut ranked: Vec<(String, u32)> = by_dir.into_iter().collect();
+    let mut ranked: Vec<(String, u32)> =
+        by_dir.into_iter().filter(|(dir, _)| walked(dir)).collect();
     ranked.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
     // A query anchored on files (source, target, entrypoints) can only
     // narrow to a directory that holds all of them: the widest admissible one.
-    let relative_entries: Vec<String> = found
-        .entries
-        .iter()
-        .map(|entry| normalize(&entry.relative_path))
-        .collect();
-    let anchored = anchored_root(q, root, &relative_entries);
+    let anchored = anchored_root(q, root, entries).filter(|(dir, _)| walked(dir));
     let narrower: Vec<&(String, u32)> = match &anchored {
         Some(pair) => vec![pair],
         None if q.source().is_some() || q.target().is_some() => Vec::new(),
@@ -1614,23 +1585,29 @@ fn admit_scope(
             .take(5)
             .collect(),
     };
-    let root_display = root.to_string_lossy().into_owned();
+    let root_path = paths
+        .workspace_relative(root)
+        .unwrap_or_else(|| root.to_string_lossy().into_owned());
     let listed = narrower
         .iter()
         .map(|(dir, count)| format!("{dir} ({count})"))
         .collect::<Vec<_>>()
         .join(", ");
-    let mut error = ToolError::new(
-        "scopeTooBroad",
+    let listed = if listed.is_empty() {
+        "none below the bound"
+    } else {
+        listed.as_str()
+    };
+    let message = if over_maximum {
         format!(
-            "More than {SCOPE_ADMISSION_FILES} parseable files under this root; a full parse can exhaust the call deadline before analysis. Raising maxFiles scans them all and keeps the answer complete. Re-rooting at a narrower directory changes the answer: it covers only the files under that root. Admissible roots by file count: {}.",
-            if listed.is_empty() {
-                "none below the bound"
-            } else {
-                listed.as_str()
-            }
-        ),
-    );
+            "More than {maximum} parseable files under this root, above the maxFiles maximum, so no scan of this root completes: re-root at a narrower directory (the answer then covers only the files under it). Admissible roots by file count: {listed}."
+        )
+    } else {
+        format!(
+            "More than {SCOPE_ADMISSION_FILES} parseable files under this root; a full parse can exhaust the call deadline before analysis. Raising maxFiles scans them all and keeps the answer complete. Re-rooting at a narrower directory changes the answer: it covers only the files under that root. Admissible roots by file count: {listed}."
+        )
+    };
+    let mut error = ToolError::new("scopeTooBroad", message);
     let continuation = |path: String, max_files: Option<u32>| {
         let mut query = serde_json::to_value(q).unwrap_or_default();
         if let Some(object) = query.as_object_mut() {
@@ -1644,17 +1621,24 @@ fn admit_scope(
     };
     // The complete route leads; re-rooting changes the answer and follows.
     let mut next = serde_json::Map::new();
-    next.insert(
-        "expandScan".into(),
-        Continuation::new(
-            ToolId::AstTopology,
-            continuation(root_display.clone(), Some(20_000)),
-        )
-        .confidence("low")
-        .build(),
-    );
+    if !over_maximum {
+        next.insert(
+            "expandScan".into(),
+            Continuation::new(
+                ToolId::AstTopology,
+                continuation(root_path.clone(), Some(count.max(20_000).min(maximum))),
+            )
+            .confidence("low")
+            .build(),
+        );
+    }
     if let Some((dir, _)) = narrower.first() {
-        let mut query = continuation(format!("{root_display}/{dir}"), None);
+        let path = if root_path == "." {
+            dir.clone()
+        } else {
+            format!("{root_path}/{dir}")
+        };
+        let mut query = continuation(path, None);
         if anchored.is_some() {
             // Re-root the anchors that were relative to the old root.
             let prefix = format!("{dir}/");
@@ -1682,8 +1666,10 @@ fn admit_scope(
                 .build(),
         );
     }
-    error.next = Some(Box::new(serde_json::Value::Object(next)));
-    Err(error)
+    if !next.is_empty() {
+        error.next = Some(Box::new(serde_json::Value::Object(next)));
+    }
+    error
 }
 
 /// The widest directory under `root` that holds every file the query names
@@ -1759,46 +1745,6 @@ pub(crate) fn normalize(p: &str) -> String {
 #[cfg(test)]
 mod tests {
     use crate::tools::ast_graph::test_support::{known, write_file};
-
-    /// Real-repo sanity probe: `OCTOCODE_GRAPH_SANITY_ROOTS=a:b cargo test ...
-    /// graph_sanity_tallies -- --ignored --nocapture` prints import tallies.
-    #[test]
-    #[ignore = "manual real-repo probe"]
-    fn graph_sanity_tallies() {
-        let Ok(roots) = std::env::var("OCTOCODE_GRAPH_SANITY_ROOTS") else {
-            return;
-        };
-        for root in roots.split(':') {
-            let paths = crate::tools::test_support::workspace_policy(std::path::Path::new(root));
-            let security = crate::security::ContentSecurity::new();
-            let query: super::AstTopologyQuery = serde_json::from_value(serde_json::json!({
-                "mainGoal": "test", "reasoning": "sanity", "operation": "cycles", "path": root, "maxFiles": 20000
-            }))
-            .unwrap();
-            let started = std::time::Instant::now();
-            let built = super::build_graph_with(
-                &query,
-                &paths,
-                &security,
-                &crate::tools::cancel::NeverCancel,
-                &Default::default(),
-            )
-            .unwrap();
-            let unresolved = built
-                .diagnostics
-                .iter()
-                .filter(|d| d.code == "unresolved-internal")
-                .take(8)
-                .map(|d| format!("{}:{:?} {}", d.file, d.line, d.message))
-                .collect::<Vec<_>>();
-            println!(
-                "SANITY {root} files={} imports[resolved,external,unresolvedInternal,unsupported,nonCode]={:?} ms={}\n  sample unresolved: {unresolved:#?}",
-                built.facts.len(),
-                built.imports,
-                started.elapsed().as_millis()
-            );
-        }
-    }
 
     fn cargo_fixture() -> tempfile::TempDir {
         let root = tempfile::tempdir().unwrap();
@@ -2275,8 +2221,11 @@ mod tests {
         assert_eq!(target("stdio.h"), None);
     }
 
+    /// astTopology walks under the one ignore policy (it has no
+    /// `includeIgnored`): `.gitignore`, nested negations and
+    /// `.git/info/exclude` leave files out of every scan.
     #[test]
-    fn gitignore_is_respected_only_when_requested() {
+    fn ignore_rules_always_apply() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().canonicalize().unwrap();
         std::fs::create_dir_all(root.join(".git/info")).unwrap();
@@ -2293,25 +2242,15 @@ mod tests {
         ] {
             write_file(&root, file, "export const x = 1;\n");
         }
-        let all = fixture_graph(&root, &super::BuildExtras::default());
-        assert_eq!(all.facts.len(), 6, "{:?}", all.facts.keys());
         let filtered = fixture_graph(
             &root,
             &super::BuildExtras {
-                respect_gitignore: true,
                 extra_excludes: vec!["pkg".into()],
                 cargo: None,
             },
         );
         assert_eq!(filtered.facts.keys().collect::<Vec<_>>(), ["src/main.ts"],);
-        let nested = fixture_graph(
-            &root,
-            &super::BuildExtras {
-                respect_gitignore: true,
-                extra_excludes: Vec::new(),
-                cargo: None,
-            },
-        );
+        let nested = fixture_graph(&root, &super::BuildExtras::default());
         assert_eq!(
             nested.facts.keys().collect::<Vec<_>>(),
             ["pkg/keep.gen.ts", "src/main.ts"],

@@ -359,7 +359,7 @@ fn git_permit(
     repository_url: &str,
     token: Option<&str>,
 ) -> Result<tokio::sync::OwnedSemaphorePermit, CloneError> {
-    use crate::providers::github::{GitHubBudget, LimiterKey, ProviderErrorKind};
+    use octocode_github::{GitHubBudget, LimiterKey, ProviderErrorKind};
     let Ok(url) = url::Url::parse(repository_url) else {
         return Err(CloneError::new(
             "invalidInput",

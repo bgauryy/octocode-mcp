@@ -84,7 +84,7 @@ async function invokeEngine(
   if (input.args) args.push(...input.args);
   const directory = join(
     process.cwd(),
-    '.octocode/tmp/chrome-devtools/adapter',
+    '.octocode/octocode-chrome-devtools/tmp/adapter',
     randomUUID()
   );
   mkdirSync(directory, { recursive: true, mode: 0o700 });

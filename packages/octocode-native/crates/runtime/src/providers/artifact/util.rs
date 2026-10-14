@@ -228,32 +228,21 @@ pub(crate) fn date_prefix(value: Option<&Value>) -> Option<String> {
     (date.as_bytes()[4] == b'-' && date.as_bytes()[7] == b'-').then(|| date.to_owned())
 }
 
-/// `(owner, repo)` of a link into a GitHub repository, in any common
-/// registry form (`https://github.com/o/r`, `git+https://github.com/o/r.git`,
-/// `git@github.com:o/r`, `github.com/o/r/tree/…`, a file or tree page).
+/// `(owner, repo)` of a link into a GitHub repository, in any form
+/// [`canonical_repository`] reads (`https://github.com/o/r`,
+/// `git+https://github.com/o/r.git`, `git@github.com:o/r`, `github:o/r`,
+/// `github.com/o/r/tree/…`, a file or tree page).
 /// `None` for another host and for an account-level page such as
 /// `github.com/sponsors/<user>`.
 pub(crate) fn github_slug(link: &str) -> Option<(String, String)> {
-    let link = link.trim();
-    let rest = match link.strip_prefix("git@github.com:") {
-        Some(rest) => rest,
-        None => {
-            let after_scheme = link.split_once("://").map_or(link, |(_, rest)| rest);
-            let (authority, path) = after_scheme.split_once('/')?;
-            let host = authority
-                .rsplit_once('@')
-                .map_or(authority, |(_, host)| host);
-            let host = host.split_once(':').map_or(host, |(host, _)| host);
-            if !host.eq_ignore_ascii_case("github.com")
-                && !host.eq_ignore_ascii_case("www.github.com")
-            {
-                return None;
-            }
-            path
-        }
-    };
-    let path = rest.split(['#', '?']).next()?;
-    let mut segments = path.split('/').filter(|part| !part.is_empty());
+    let url = Url::parse(&canonical_repository(link)?).ok()?;
+    if !url
+        .host_str()
+        .is_some_and(|host| matches!(host, "github.com" | "www.github.com"))
+    {
+        return None;
+    }
+    let mut segments = url.path_segments()?.filter(|part| !part.is_empty());
     let owner = segments.next()?;
     let repo = segments.next()?.trim_end_matches(".git");
     (!repo.is_empty() && !matches!(owner, "sponsors" | "orgs" | "users" | "apps"))

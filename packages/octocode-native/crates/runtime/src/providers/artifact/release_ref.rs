@@ -326,7 +326,7 @@ mod tests {
         fn get<'a>(
             &'a self,
             _request: super::super::http::ArtifactHttpRequest,
-            _budget: &'a crate::providers::RequestBudget,
+            _budget: &'a octocode_github::RequestBudget,
         ) -> super::super::http::ArtifactHttpFuture<'a> {
             self.downloads
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);

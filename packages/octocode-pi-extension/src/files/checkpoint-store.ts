@@ -18,6 +18,9 @@ export interface CheckpointEntry {
   bytes: number;
 }
 
+/** A SHA-256 digest as the store writes it: also the blob's file name, so nothing else may name one. */
+const isDigest = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
+
 const key = (entry: CheckpointEntry) => `${entry.turn}\0${entry.path}`;
 export const serialize = (entries: CheckpointEntry[]) => entries.map((entry) => `${JSON.stringify(entry)}\n`).join('');
 export const journalOf = (dir: string) => path.join(dir, 'journal.jsonl');
@@ -64,7 +67,10 @@ export function readJournal(dir: string): { entries: CheckpointEntry[]; dirty: b
 export async function inheritCheckpoints(from: string, to: string, branch: Iterable<string>): Promise<number> {
   if (fs.existsSync(journalOf(to))) return 0;
   const ids = new Set(branch);
-  const entries = readJournal(from).entries.filter((entry) => entry.anchor !== undefined && ids.has(entry.anchor));
+  // A journal is plain text a session folder may hold from elsewhere: an entry whose digests are not 64 hex characters
+  // (a blob name like `../../x`) is dropped, so it never names a path outside `blobs/`.
+  const wellFormed = (entry: CheckpointEntry) => (entry.before === null || isDigest(entry.before)) && (entry.after == null || isDigest(entry.after));
+  const entries = readJournal(from).entries.filter((entry) => entry.anchor !== undefined && ids.has(entry.anchor) && wellFormed(entry));
   if (entries.length === 0) return 0;
   privateDir(to);
   privateDir(path.join(to, 'blobs'));

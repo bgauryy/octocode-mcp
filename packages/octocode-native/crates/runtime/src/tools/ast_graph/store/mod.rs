@@ -22,10 +22,11 @@ mod workspace;
 
 use super::graph::{BuildExtras, build_graph_with};
 use super::types::AstTopologyQuery;
-use crate::private_file::write_atomic;
+use crate::runtime::ExitClass;
 use crate::{
     policy::path::PathPolicy, security::ContentSecurity, tools::cancel::CancellationCheck,
 };
+use octocode_io::atomic::write_atomic;
 use serde_json::{Value, json};
 use std::{
     collections::BTreeMap,
@@ -67,21 +68,31 @@ const INGEST_EXCLUDES: &[&str] = &[
     "obj",
 ];
 
-/// A command result: the JSON printed to stdout and the process exit code.
+/// A command result: the JSON printed to stdout and how the command ended.
 #[derive(Debug)]
 pub struct GraphOutput {
     pub value: Value,
-    pub exit: u8,
+    pub class: ExitClass,
 }
 
 impl GraphOutput {
     pub(crate) fn ok(value: Value) -> Self {
-        Self { value, exit: 0 }
+        Self {
+            value,
+            class: ExitClass::Success,
+        }
     }
-    pub(crate) fn error(exit: u8, code: &str, message: impl Into<String>) -> Self {
+    pub(crate) fn empty(value: Value) -> Self {
+        Self {
+            value,
+            class: ExitClass::Empty,
+        }
+    }
+    /// A failure with a declared `errorCodes` entry; its class decides the exit.
+    pub fn error(code: &str, message: impl Into<String>) -> Self {
         Self {
             value: json!({"error": message.into(), "errorCode": code}),
-            exit,
+            class: ExitClass::of_code(code),
         }
     }
 }
@@ -236,11 +247,11 @@ pub fn ingest(
     let started = Instant::now();
     let home = match graph_home(options.workspace.as_deref(), paths) {
         Ok(home) => home,
-        Err(message) => return GraphOutput::error(5, "graph.workspace", message),
+        Err(message) => return GraphOutput::error("workspaceRootInvalid", message),
     };
     let home = match paths.validate_output(&home) {
         Ok(valid) => valid.canonical,
-        Err(error) => return GraphOutput::error(2, "graph.outputDenied", error.message),
+        Err(error) => return GraphOutput::error("pathPolicyDenied", error.message),
     };
     let workspace = home
         .parent()
@@ -280,8 +291,7 @@ pub fn ingest(
     let (bytes, digest) = format::encode(&projection.tables);
     if bytes.len() > MAX_GRAPH_BYTES {
         return GraphOutput::error(
-            5,
-            "graph.limit",
+            "scopeTooBroad",
             format!(
                 "encoded graph exceeds the {MAX_GRAPH_BYTES}-byte snapshot limit; ingest a narrower scope"
             ),
@@ -312,7 +322,10 @@ pub fn ingest(
     let dir = match publish(&home, &id, &stamp, &bytes, &manifest) {
         Ok(dir) => dir,
         Err(error) => {
-            return GraphOutput::error(5, "graph.write", format!("cannot publish graph: {error}"));
+            return GraphOutput::error(
+                "fileAccessFailed",
+                format!("cannot publish graph: {error}"),
+            );
         }
     };
     let pruned = prune(&home, &slug, options.keep.unwrap_or(DEFAULT_KEEP));
@@ -362,7 +375,7 @@ fn build_for_ingest(
     }
     let query: AstTopologyQuery = match serde_json::from_value(request) {
         Ok(query) => query,
-        Err(error) => return Err(GraphOutput::error(2, "graph.input", error.to_string())),
+        Err(error) => return Err(GraphOutput::error("invalidInput", error.to_string())),
     };
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         build_graph_with(
@@ -371,23 +384,18 @@ fn build_for_ingest(
             security,
             cancel,
             &BuildExtras {
-                respect_gitignore: true,
                 extra_excludes: INGEST_EXCLUDES.iter().map(|x| (*x).to_owned()).collect(),
                 cargo: cargo.map(str::to_owned),
             },
         )
     })) {
         Ok(Ok(built)) => Ok(built),
-        Ok(Err(error)) => {
-            let exit = if error.code.contains("path") { 3 } else { 5 };
-            Err(GraphOutput {
-                value: json!({"error": error.message, "errorCode": error.code, "hints": error.hints}),
-                exit,
-            })
-        }
+        Ok(Err(error)) => Err(GraphOutput {
+            class: ExitClass::of_code(&error.code),
+            value: json!({"error": error.message, "errorCode": error.code, "hints": error.hints}),
+        }),
         Err(_) => Err(GraphOutput::error(
-            5,
-            "graph.internal",
+            "executionFailed",
             "graph build panicked",
         )),
     }
@@ -485,8 +493,12 @@ fn reuse_current(
         .map(|node| tables.str(node.key))
         .collect::<std::collections::BTreeSet<_>>();
     let extensions = octocode_engine::signatures::graph_facts::graph_fact_extensions();
-    let mut excluded = crate::tools::syntax_prune(INGEST_EXCLUDES);
-    excluded.extend(options.exclude_dir.iter().cloned());
+    let excluded = crate::tools::syntax_prune(
+        INGEST_EXCLUDES
+            .iter()
+            .map(|name| (*name).to_owned())
+            .chain(options.exclude_dir.iter().cloned()),
+    );
     let walker = crate::tools::pruned_walk(root, excluded).build();
     let mut current = std::collections::BTreeSet::new();
     for entry in walker.flatten() {

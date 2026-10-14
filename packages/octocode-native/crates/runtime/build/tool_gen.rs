@@ -301,7 +301,7 @@ fn render_query_limits(tools: &[Value]) -> Result<String, Box<dyn Error>> {
 }
 
 /// `ToolId` identity and policy, generated from the contract's `tools[]`
-/// (`name`, `family`, `cliOnly`, `beta` are authored once in core
+/// (`name`, `family`, `cliOnly`, `beta`, `disabled` are authored once in core
 /// `TOOL_POLICIES`). Nothing in native re-spells a tool list.
 pub(super) fn render_tool_ids(contract: &Value) -> Result<String, Box<dyn Error>> {
     let tools = contract
@@ -309,10 +309,11 @@ pub(super) fn render_tool_ids(contract: &Value) -> Result<String, Box<dyn Error>
         .and_then(Value::as_array)
         .ok_or_else(|| invalid("tool contract has no tools[]"))?;
     let mut variants = Vec::new();
-    let (mut names, mut families, mut short, mut cli_only, mut beta) = (
+    let (mut names, mut families, mut short, mut cli_only, mut beta, mut disabled) = (
         String::new(),
         String::new(),
         String::new(),
+        Vec::new(),
         Vec::new(),
         Vec::new(),
     );
@@ -359,6 +360,10 @@ pub(super) fn render_tool_ids(contract: &Value) -> Result<String, Box<dyn Error>
         }
         if bool_value(tool.get("beta"), false, &format!("{path}.beta"))? {
             beta.push(format!("ToolId::{variant}"));
+        }
+        // Absent until a contract declares it: no tool is disabled.
+        if bool_value(tool.get("disabled"), false, &format!("{path}.disabled"))? {
+            disabled.push(format!("ToolId::{variant}"));
         }
         // `extraPaths`: opt-in output paths by `extras` kind.
         let mut kinds = Vec::new();
@@ -489,6 +494,10 @@ pub(super) fn render_tool_ids(contract: &Value) -> Result<String, Box<dyn Error>
          \x20   /// Tools hidden and refused unless the shared beta gate is enabled (contract `beta`).\n\
          \x20   #[must_use]\n\
          \x20   pub const fn is_beta(self) -> bool {{\n        {beta}\n    }}\n\n\
+         \x20   /// Tools parked in this build: unavailable on every surface, whatever\n\
+         \x20   /// the configuration (contract `disabled`).\n\
+         \x20   #[must_use]\n\
+         \x20   pub const fn is_disabled(self) -> bool {{\n        {disabled}\n    }}\n\n\
          \x20   /// Output fields core classes `extra`, by `extras` kind (contract\n\
          \x20   /// `extraPaths`, envelope-rooted: `results[].data.x`); dropped unless\n\
          \x20   /// the row's `extras` names the kind.\n\
@@ -513,6 +522,7 @@ pub(super) fn render_tool_ids(contract: &Value) -> Result<String, Box<dyn Error>
             .join(", "),
         cli_only = set(&cli_only),
         beta = set(&beta),
+        disabled = set(&disabled),
         github_arms = github
             .iter()
             .map(|v| format!("            ToolId::{v} => Some(GitHubTool::{v}),\n"))

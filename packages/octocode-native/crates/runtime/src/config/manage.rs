@@ -20,20 +20,17 @@ fn field_value(field: &ConfigFieldSpec, value: &Value) -> Result<(), String> {
     Ok(())
 }
 pub fn validate_env_value(key: &str, value: &str) -> Result<(), String> {
-    let Some(field) = CONFIG_FIELDS
-        .iter()
-        .find(|f| f.env.iter().any(|b| b.name == key))
-    else {
+    let Some((field, binding)) = CONFIG_FIELDS.iter().find_map(|field| {
+        field
+            .env
+            .filter(|binding| binding.name == key)
+            .map(|binding| (field, binding))
+    }) else {
         return Ok(());
     };
     if value.trim().is_empty() {
         return Ok(());
     }
-    let binding = field
-        .env
-        .iter()
-        .find(|b| b.name == key)
-        .ok_or("Unknown environment binding.")?;
     let normalized = match binding.normalize {
         Some(ConfigNormalize::Trim) => value.trim().to_owned(),
         Some(ConfigNormalize::Lower) => value.trim().to_ascii_lowercase(),
@@ -228,7 +225,7 @@ pub fn inspect_management(config: &ConfigOutput, workspace: &Path) -> Value {
         if let Some(file) = file {
             for field in CONFIG_FIELDS.iter().filter(|f| f.file && f.credential) {
                 if let Some(value) = get_path(file, field.path) {
-                    keys.push(json!({"key":field.env.first().map(|b|b.name).unwrap_or(field.path),"setting":field.path,"set":value.as_str().is_some_and(|v|!v.trim().is_empty()),"scope":if index==0{"home"}else{"workspace"},"source":paths[index+2].1,"secret":true}));
+                    keys.push(json!({"key":field.env_name().unwrap_or(field.path),"setting":field.path,"set":value.as_str().is_some_and(|v|!v.trim().is_empty()),"scope":if index==0{"home"}else{"workspace"},"source":paths[index+2].1,"secret":true}));
                 }
             }
         }
@@ -243,7 +240,7 @@ pub fn inspect_management(config: &ConfigOutput, workspace: &Path) -> Value {
                 warnings.push(json!({"file":name,"key":field.path,"message":"Invalid saved setting; its value is omitted."}));
             }
         }
-        let selected = field.env.iter().find(|binding| {
+        let selected = field.env.filter(|binding| {
             config.env_value(binding.name).is_some_and(|value| {
                 parse_candidate(field,&Value::String(value.to_owned()),true,binding.normalize).is_some()
                     || binding.invalid == super::ConfigInvalidEnv::Default

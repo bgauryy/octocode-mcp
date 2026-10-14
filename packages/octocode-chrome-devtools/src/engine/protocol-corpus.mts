@@ -13,14 +13,14 @@ const getArg = (flag, def = '') => {
 };
 if (argv.includes('--help') || argv.includes('-h')) {
   console.log(
-    'Usage: protocol-corpus.mjs [--scraping-skill-dir <dir>] [--out .octocode/octocode-chrome-devtools/cdp-protocol] [--domains Network,Storage,DOMStorage,Page,Runtime,Input]'
+    'Usage: protocol-corpus.mjs [--scraping-skill-dir <dir>] [--out .octocode/octocode-chrome-devtools/tmp/cdp-protocol] [--domains Network,Storage,DOMStorage,Page,Runtime,Input]'
   );
   process.exit(0);
 }
 validateFlags(argv, ['--scraping-skill-dir', '--out', '--domains']);
 const workspaceOutputBase = resolve(process.cwd(), '.octocode');
 const out = resolve(
-  getArg('--out', '.octocode/octocode-chrome-devtools/cdp-protocol')
+  getArg('--out', '.octocode/octocode-chrome-devtools/tmp/cdp-protocol')
 );
 const outRelative = relative(workspaceOutputBase, out);
 if (outRelative.startsWith('..') || isAbsolute(outRelative)) {
@@ -57,7 +57,6 @@ function fetchSession(url, session) {
       session,
       '--out',
       out,
-      '--extract-links',
     ],
     { encoding: 'utf8', timeout: 60000, maxBuffer: 10 * 1024 * 1024 }
   );

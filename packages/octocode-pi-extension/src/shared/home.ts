@@ -75,7 +75,7 @@ export function resolveToolPath(cwd: string, raw: string): string {
  * when that does not exist, the first existing macOS variant: a narrow no-break space before AM/PM (screenshot names),
  * NFD (decomposed) form, a curly apostrophe (U+2019), or NFD with a curly apostrophe.
  */
-export function resolveReadToolPath(cwd: string, raw: string): string {
+function resolveReadToolPath(cwd: string, raw: string): string {
   const resolved = resolveToolPath(cwd, raw);
   if (fs.existsSync(resolved)) return resolved;
   const nfd = resolved.normalize('NFD');
@@ -190,6 +190,8 @@ export const HOME_NAMES = {
   worktrees: 'pi-worktrees',
   /** Durable agent state: `octocode.db` and `sessions/<id>/{output,bash,checkpoints}`. */
   agentState: 'agent/pi',
+  /** The octocode-agents-communication package's folder: `communication.sqlite` holds its sessions, messages and path leases. */
+  peerCommunication: 'agents-communication',
 } as const;
 
 type GlobalPaths = { readonly [K in keyof typeof HOME_NAMES]: string } & { readonly home: string };
@@ -207,8 +209,20 @@ export function agentDbPath(env: NodeJS.ProcessEnv = process.env): string {
   return override ? path.resolve(override) : path.join(globalPaths(env).agentState, 'octocode.db');
 }
 
-/** A session id as a folder name. */
-export const sessionDirName = (id: string): string => id.replace(/[^\w.-]/g, '_');
+/** The agents-communication package's database (its default; the package takes no environment override). Nothing is created. */
+export function peerDbPath(env: NodeJS.ProcessEnv = process.env): string {
+  return path.join(globalPaths(env).peerCommunication, 'communication.sqlite');
+}
+
+/**
+ * A session id as a folder name. An empty id or one made only of dots (`.`, `..`) would name the sessions folder or
+ * its parent, so it is refused; every other id keeps the name it always had, so no saved data is orphaned.
+ */
+export function sessionDirName(id: string): string {
+  const name = id.replace(/[^\w.-]/g, '_');
+  if (/^\.*$/.test(name)) throw new Error(`Invalid session id ${JSON.stringify(id)}: it cannot name a session folder.`);
+  return name;
+}
 
 /** `<agentState>/sessions`: one folder per session. Nothing is created. */
 export const sessionsRoot = (env: NodeJS.ProcessEnv = process.env): string => path.join(globalPaths(env).agentState, 'sessions');
@@ -297,7 +311,7 @@ export function configFileLines(files: string[], userFiles: string[], home = os.
 }
 
 /** Which repository a directory belongs to; the one answer every feature (team, backlog, memory, sessions, workspace files) uses. */
-export interface RepoKey {
+interface RepoKey {
   /** realpath of the git common dir (worktrees share their main repo's key), else `root`. */
   key: string;
   /** realpath of the git toplevel; without git, of the nearest directory holding `.git`, else of cwd. */
@@ -357,24 +371,35 @@ export function dirsToRepoRoot(cwd: string): string[] {
 }
 
 /**
+ * Whether a repository rooted at `root` is no workspace: the home folder or a folder above it (a dotfiles repository
+ * makes `~` the git top level), or `/`. Everything under such a root would count as inside the workspace.
+ */
+function spansHome(root: string): boolean {
+  return path.parse(root).root === root || isWithin(canonicalPath(os.homedir()), root);
+}
+
+/**
  * Which repository `cwd` belongs to, symlinks resolved, so one checkout reached through two paths is one repository.
- * Cached per cwd; never throws.
+ * A root that is the home folder, above it or `/` counts as no repository: `cwd` itself is then the root, as with no
+ * `.git` at all, so a write elsewhere under home (`~/.zshrc`, `~/.ssh`) is outside the workspace. Cached per cwd; never
+ * throws.
  */
 export function repoKey(cwd: string): RepoKey {
   const cached = repoCache.get(cwd);
   if (cached) return cached;
-  let result: RepoKey;
+  let found: { key: string; root: string };
   try {
     const out = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir', '--show-toplevel'], { cwd, encoding: 'utf8', timeout: 2000, stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true });
     const [common, top] = out.split(/\r?\n/).map((line) => line.trim());
     if (!common || !top) throw new Error('not a work tree');
-    const root = canonicalPath(top);
-    result = { key: canonicalPath(common), root, name: path.basename(root) };
+    found = { key: canonicalPath(common), root: canonicalPath(top) };
   } catch {
     // No git (or not a work tree git can read): the nearest `.git` marker still names the repository.
     const root = canonicalPath(dirsToRepoRoot(cwd).at(-1) ?? cwd);
-    result = { key: root, root, name: path.basename(root) };
+    found = { key: root, root };
   }
+  const { key, root } = spansHome(found.root) ? { key: canonicalPath(cwd), root: canonicalPath(cwd) } : found;
+  const result: RepoKey = { key, root, name: path.basename(root) };
   repoCache.set(cwd, result);
   return result;
 }

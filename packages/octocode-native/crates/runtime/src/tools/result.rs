@@ -140,6 +140,36 @@ impl ToolError {
         }
     }
 
+    /// A failed graph-facts scan: the engine's typed refusals keep their
+    /// declared codes, and a walk stopped by `cancel` is a cancellation.
+    pub(crate) fn graph_scan(
+        error: &octocode_engine::graph::GraphScanError,
+        cancel: &dyn crate::tools::cancel::CancellationCheck,
+    ) -> Self {
+        use octocode_engine::graph::GraphScanError;
+        let code = match error {
+            GraphScanError::UnsupportedLanguage(_) => "languageUnsupported",
+            GraphScanError::InvalidGlob(_) => "invalidGlob",
+            GraphScanError::Failed(_) if cancel.check().is_err() => "cancelled",
+            GraphScanError::Failed(_) => "scanFailed",
+        };
+        Self::new(code, error.to_string())
+    }
+
+    /// A continuation whose snapshot no longer describes the source:
+    /// `restart` (usually [`restart_query`]) is `next.restart`. The runtime
+    /// writes the one shared `error` text and clears `isPartial`
+    /// (`response::pages::restart_stale`); a tool never words it.
+    pub(crate) fn stale_snapshot(restart: Value) -> Self {
+        Self {
+            next: Some(Box::new(serde_json::json!({ "restart": restart }))),
+            ..Self::new(
+                "staleSnapshot",
+                crate::response::pages::STALE_SNAPSHOT_ERROR,
+            )
+        }
+    }
+
     /// The call was cancelled or ran past its deadline.
     pub fn cancelled(message: impl Into<String>) -> Self {
         Self::new("cancelled", message)
@@ -163,16 +193,27 @@ impl ToolError {
     ) -> Self {
         let missing = error.code == crate::policy::PolicyErrorCode::NotFound;
         let mut out = Self::policy(error, access_code);
-        if missing && let Some(parent) = paths.nearest_existing_dir(requested) {
-            let lead = Continuation::new(
-                ToolId::StructureSearch,
-                serde_json::json!({"operation": "tree", "path": parent}),
-            )
-            .build();
-            out.next = Some(Box::new(serde_json::json!({ "viewTree": lead })));
+        if missing && let Some(next) = missing_path_lead(paths, requested) {
+            out.next = Some(Box::new(next));
         }
         out
     }
+}
+
+/// `{ "viewTree": <lead> }` to the tree of `requested`'s nearest existing
+/// parent, where a mistyped name's siblings show; the one recovery form every
+/// local tool gives a missing path.
+pub(crate) fn missing_path_lead(
+    paths: &crate::policy::path::PathPolicy,
+    requested: &str,
+) -> Option<serde_json::Value> {
+    let parent = paths.nearest_existing_dir(requested)?;
+    let lead = Continuation::new(
+        ToolId::StructureSearch,
+        serde_json::json!({"operation": "tree", "path": parent}),
+    )
+    .build();
+    Some(serde_json::json!({ "viewTree": lead }))
 }
 
 impl std::fmt::Display for ToolError {
@@ -227,15 +268,42 @@ impl From<Value> for ToolData {
     }
 }
 
-/// The row of a continuation whose snapshot no longer describes the source:
-/// `restart` (the same query from its first page, without its snapshot) is
-/// `next.restart`. The runtime keeps that restart and writes the one shared
-/// `error` text and clears `isPartial` (`response::pages::restart_stale`).
+/// Every query field that names where a walk stands: its pages, offsets and
+/// snapshots, and the saved `ranking` plan they were ordered by. A restart
+/// drops them all; the contract guard keeps the list complete.
+pub(crate) const CURSOR_FIELDS: [&str; 10] = [
+    "page",
+    "matchPage",
+    "importerPage",
+    "diagnosticPage",
+    "offset",
+    "scanOffset",
+    "materializeOffset",
+    "snapshot",
+    "diagnosticSnapshot",
+    "ranking",
+];
+
+/// The one restart of a row query `row` of `tool`: the same query from its
+/// first page, without any [`CURSOR_FIELDS`], as a replay (`exact`).
+pub(crate) fn restart_query(tool: ToolId, row: &Value) -> Value {
+    let mut restart = row.clone();
+    if let Some(fields) = restart.as_object_mut() {
+        for field in CURSOR_FIELDS {
+            fields.remove(field);
+        }
+    }
+    Continuation::new(tool, restart).confidence("exact").build()
+}
+
+/// [`ToolError::stale_snapshot`] as a result row, for a tool that returns
+/// rows rather than errors.
 pub(crate) fn stale_snapshot(restart: Value) -> Value {
+    let error = ToolError::stale_snapshot(restart);
     serde_json::json!({
         "status": "error",
-        "errorCode": "staleSnapshot",
-        "next": {"restart": restart},
+        "errorCode": error.code,
+        "next": error.next.map_or(Value::Null, |next| *next),
     })
 }
 
@@ -270,5 +338,97 @@ pub(crate) fn remove_null_fields(value: &mut Value) {
     if let Value::Object(map) = value {
         map.retain(|_, value| !value.is_null());
         map.values_mut().for_each(remove_null_fields);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CURSOR_FIELDS, ToolError, restart_query, stale_snapshot};
+    use crate::tools::id::ToolId;
+    use serde_json::{Value, json};
+
+    /// Every query field of every tool that names where a walk stands (a
+    /// page, an offset, a snapshot, a saved ranking) is in the one list a
+    /// restart drops, and every listed field is some tool's query field.
+    #[test]
+    fn the_cursor_list_is_every_contract_cursor_field() {
+        let mut fields = std::collections::BTreeSet::new();
+        for tool in ToolId::ALL {
+            let contract = crate::contracts::tool_contract(tool).expect("tool contract");
+            let schema = &contract["querySchema"];
+            let defs = &schema["$defs"];
+            let branches = ["oneOf", "anyOf"]
+                .iter()
+                .find_map(|key| schema.get(*key).and_then(Value::as_array))
+                .map_or_else(|| vec![schema], |branches| branches.iter().collect());
+            for branch in branches {
+                let branch = crate::contracts::resolve_ref(branch, defs);
+                for field in branch["properties"]
+                    .as_object()
+                    .into_iter()
+                    .flatten()
+                    .map(|(f, _)| f)
+                {
+                    fields.insert(field.clone());
+                }
+            }
+        }
+        let cursor = |field: &str| {
+            matches!(field, "page" | "offset" | "snapshot" | "ranking")
+                || ["Page", "Offset", "Snapshot"]
+                    .iter()
+                    .any(|suffix| field.ends_with(suffix))
+        };
+        let found: Vec<&String> = fields.iter().filter(|field| cursor(field)).collect();
+        let listed: Vec<&str> = CURSOR_FIELDS.to_vec();
+        for field in &found {
+            assert!(
+                listed.contains(&field.as_str()),
+                "{field} is a cursor field"
+            );
+        }
+        for field in &listed {
+            assert!(fields.contains(*field), "{field} is no query field");
+        }
+    }
+
+    /// A restart is page 1 of the same query: every cursor and the saved
+    /// ranking dropped, a replay (`exact`), executable as built.
+    #[test]
+    fn a_restart_drops_every_cursor_and_the_saved_ranking() {
+        let row = json!({"path":"src","matchString":"f","page":3,"matchPage":2,
+            "snapshot":"s1","ranking":"plan","pageSize":5});
+        let restart = restart_query(ToolId::LocalSearch, &row);
+        assert_eq!(restart["tool"], "localSearch");
+        assert_eq!(restart["confidence"], "exact");
+        assert_eq!(
+            restart["query"]["queries"][0],
+            json!({"path":"src","matchString":"f","pageSize":5})
+        );
+        let topology = restart_query(
+            ToolId::AstTopology,
+            &json!({"operation":"cycles","path":"src","page":2,"diagnosticPage":3,
+                "diagnosticSnapshot":"d"}),
+        );
+        assert_eq!(
+            topology["query"]["queries"][0],
+            json!({"operation":"cycles","path":"src"})
+        );
+    }
+
+    /// The stale row a tool returns, as a row or as a whole-call error,
+    /// carries the code and the restart; the runtime owns its text.
+    #[test]
+    fn a_stale_snapshot_carries_its_restart() {
+        let restart = restart_query(
+            ToolId::LocalFetch,
+            &json!({"path":"a","offset":90,"snapshot":"s"}),
+        );
+        let row = stale_snapshot(restart.clone());
+        assert_eq!(row["errorCode"], "staleSnapshot");
+        assert_eq!(row["next"]["restart"], restart);
+        let error = ToolError::stale_snapshot(restart.clone());
+        assert_eq!(error.code, "staleSnapshot");
+        assert_eq!(error.next.as_deref(), Some(&json!({"restart": restart})));
     }
 }

@@ -96,17 +96,19 @@ export const SKILL_ENV_PARAMS: Record<string, EnvParam[]> = {
     {
       key: 'TAVILY_API_KEY',
       description:
-        'Optional Tavily integration; connected web tools can use their own authentication',
+        'Optional; scripts/search.mjs queries Tavily when set. Host web tools work without it',
       required: 'optional',
     },
     {
       key: 'EXA_API_KEY',
-      description: 'Optional Exa integration',
+      description:
+        'Optional; scripts/search.mjs queries Exa (web, news, papers) when set',
       required: 'optional',
     },
     {
       key: 'SERPER_API_KEY',
-      description: 'Optional Serper integration',
+      description:
+        'Optional; scripts/search.mjs queries Serper (Google web, news, Scholar) when set',
       required: 'optional',
     },
   ],

@@ -1,6 +1,7 @@
-import { reserveTokensFor } from '../src/compaction/register.js';
+import { reserveTokensFor } from '../src/shared/tokens.js';
 import { describe, expect, it, vi } from 'vitest';
-import { THRASH_STREAK, THRASH_TURNS, ThrashBreaker, needsDownshiftCompaction } from '../src/compaction/pacing.js';
+import { CHARS_PER_TOKEN } from '../src/shared/tokens.js';
+import { THRASH_STREAK, THRASH_TURNS, ThrashBreaker, contextTokens, needsDownshiftCompaction, toolDefinitionChars } from '../src/compaction/pacing.js';
 import { registerCompaction } from '../src/compaction/register.js';
 
 describe('thrash breaker', () => {
@@ -56,17 +57,44 @@ describe('downshift compaction', () => {
     expect(needsDownshiftCompaction(undefined, small, 190_000, 16_384)).toBe(false);
     expect(needsDownshiftCompaction(big, small, null, 16_384)).toBe(false);
   });
+
+  it('estimates the context when Pi has no count (after a compaction, until the next reply)', () => {
+    const projection = { entries: [{ messages: [{ role: 'user', content: 'x'.repeat(400_000), timestamp: 0 }] }] };
+    const ctx = (tokens: number | null) => ({ getContextUsage: () => ({ tokens, contextWindow: 1_000_000, percent: null }), getSystemPrompt: () => 'y'.repeat(4_000), sessionManager: { buildSessionProjection: () => projection } });
+    expect(contextTokens(ctx(42) as never)).toBe(42);
+    expect(contextTokens(ctx(null) as never)).toBe(Math.ceil(4_000 / CHARS_PER_TOKEN) + 100_000);
+    expect(contextTokens(ctx(null) as never, 3_000)).toBe(Math.ceil(7_000 / CHARS_PER_TOKEN) + 100_000);
+    expect(contextTokens(ctx(42) as never, 3_000)).toBe(42);
+    expect(needsDownshiftCompaction({ contextWindow: 1_000_000 }, { contextWindow: 100_000 }, contextTokens(ctx(null) as never), 16_384)).toBe(true);
+  });
+});
+
+describe('tool definitions in the estimate', () => {
+  const tool = (name: string) => ({ name, description: `does ${name}`, parameters: { type: 'object', properties: { q: { type: 'string' } } }, promptGuidelines: ['be careful'], exposure: 'direct', sourceInfo: {} });
+  it('serializes only the active tools', () => {
+    const pi = { getActiveTools: () => ['a'], getAllTools: () => [tool('a'), tool('b')] };
+    const { name, description, parameters, promptGuidelines } = tool('a');
+    expect(toolDefinitionChars(pi as never)).toBe(JSON.stringify({ name, description, parameters, promptGuidelines }).length);
+    expect(toolDefinitionChars({ getActiveTools: () => [], getAllTools: () => [tool('a')] } as never)).toBe(0);
+  });
+  it('counts as zero when Pi cannot list them', () => {
+    expect(toolDefinitionChars({ getActiveTools: () => { throw new Error('gone'); }, getAllTools: () => [] } as never)).toBe(0);
+  });
+  it('shares one characters-per-token constant with the restore budget', () => {
+    expect(CHARS_PER_TOKEN).toBe(3);
+  });
 });
 
 describe('pacing wired into the session', () => {
-  function session(tokens: number) {
+  function session(tokens: number | null, tools: unknown[] = []) {
     const handlers = new Map<string, (event: unknown, ctx: unknown) => Promise<unknown>>();
-    const pi = { on: (name: string, handler: never) => void handlers.set(name, handler), getSettings: () => ({ compaction: { reserveTokens: 10_000 } }), getThinkingLevel: () => 'off', getActiveTools: () => [], sendMessage: vi.fn() };
+    const pi = { on: (name: string, handler: never) => void handlers.set(name, handler), getSettings: () => ({ compaction: { reserveTokens: 10_000 } }), getThinkingLevel: () => 'off', getActiveTools: () => tools.map((t) => (t as { name: string }).name), getAllTools: () => tools, sendMessage: vi.fn() };
     registerCompaction(pi as never, { restore: vi.fn(), forget: vi.fn(), record: vi.fn() } as never);
     const ctx = {
       cwd: '/w', hasUI: true, ui: { notify: vi.fn() }, abort: vi.fn(), compact: vi.fn(), model: undefined,
       getContextUsage: () => ({ tokens, contextWindow: 1, percent: 1 }),
-      sessionManager: { getSessionId: () => 's', buildSessionProjection: () => ({ entries: [] }), getSessionFile: () => undefined },
+      getSystemPrompt: () => '',
+      sessionManager: { getSessionId: () => 's', getBranch: () => [], buildSessionProjection: () => ({ entries: [] }), getSessionFile: () => undefined },
     };
     const fire = (name: string, event: unknown = {}) => handlers.get(name)!(event, ctx);
     return { ctx, fire };
@@ -94,6 +122,17 @@ describe('pacing wired into the session', () => {
     expect(ctx.compact).toHaveBeenCalledTimes(1);
     await fire('model_select', { model: { id: 'big', contextWindow: 1_000_000 }, previousModel: { id: 'small', contextWindow: 128_000 }, source: 'set' });
     expect(ctx.compact).toHaveBeenCalledTimes(1);
+  });
+
+  it('compacts when the active tools push an uncounted context past the new window', async () => {
+    const bulky = { name: 'bulky', description: 'x'.repeat(300_000), parameters: {}, promptGuidelines: [] };
+    const select = { model: { id: 'small', contextWindow: 100_000 }, previousModel: { id: 'big', contextWindow: 1_000_000 }, source: 'set' };
+    const without = session(null);
+    await without.fire('model_select', select);
+    expect(without.ctx.compact).not.toHaveBeenCalled();
+    const withTools = session(null, [bulky]);
+    await withTools.fire('model_select', select);
+    expect(withTools.ctx.compact).toHaveBeenCalledTimes(1);
   });
 });
 

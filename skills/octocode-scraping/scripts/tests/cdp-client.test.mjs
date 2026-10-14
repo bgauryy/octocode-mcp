@@ -15,22 +15,25 @@ function fixture(failedChecks) {
   mkdirSync(lib, { recursive: true });
   mkdirSync(bin, { recursive: true });
   mkdirSync(join(root, 'node_modules'));
-  for (const file of ['client.mjs', 'providers.mjs']) copyFileSync(join(scripts, 'lib', file), join(lib, file));
+  for (const file of ['client.mjs', 'providers.mjs', 'net-guard.mjs']) copyFileSync(join(scripts, 'lib', file), join(lib, file));
   // Only the Chrome package's public executable is a fixture. The client generates and
   // executes its real runner through real child processes; the fake executable plays the
   // package's `/raw open|script|cleanup` contract, including the --stealth gate.
-  mkdirSync(join(root, '.octocode/tmp/chrome-devtools/helpers'), { recursive: true });
-  writeFileSync(join(root, '.octocode/tmp/chrome-devtools/helpers/dom-actionability.mjs'), 'export async function waitForPageReady() { return true; }\n');
+  mkdirSync(join(root, '.octocode/octocode-chrome-devtools/tmp/helpers'), { recursive: true });
+  writeFileSync(join(root, '.octocode/octocode-chrome-devtools/tmp/helpers/dom-actionability.mjs'), 'export async function waitForPageReady() { return true; }\n');
   const tracePath = join(root, 'trace.json');
   const commandsPath = join(root, 'commands.json');
   writeFileSync(join(bin, 'octocode-chrome-devtools.mjs'), `
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 const [, , mode, command, ...args] = process.argv;
 const log = ${JSON.stringify(commandsPath)};
 writeFileSync(log, JSON.stringify([...(existsSync(log) ? JSON.parse(readFileSync(log, 'utf8')) : []), [mode, command, ...args]]));
 if (command === 'open') { console.log(JSON.stringify({ status: 'BROWSER_READY', reused: false })); process.exit(0); }
 if (command === 'cleanup') { console.log(JSON.stringify({ status: 'CLEANED_UP' })); process.exit(0); }
+// The real sandbox points TMPDIR at .octocode/octocode-chrome-devtools/tmp/tmp, the only place the runner may write.
+process.env.TMPDIR = ${JSON.stringify(join(root, '.octocode/octocode-chrome-devtools/tmp/tmp'))};
+mkdirSync(process.env.TMPDIR, { recursive: true });
 const { run } = await import(pathToFileURL(args[0]));
 const listeners = new Map();
 const calls = [];
@@ -39,6 +42,9 @@ const cdp = {
   async send(method, params) {
     calls.push(method);
     if (method === 'Page.navigate') {
+      // A page subresource aimed at cloud metadata must be failed, the public document continued.
+      await listeners.get('Fetch.requestPaused')?.({ requestId: 'r1', request: { url: 'http://169.254.169.254/latest/meta-data/' } });
+      await listeners.get('Fetch.requestPaused')?.({ requestId: 'r2', request: { url: 'data:text/plain,ok' } });
       listeners.get('Network.responseReceived')?.({ type: 'Document', frameId: 'main', response: { status: 200 } });
     }
     if (method === 'Page.getFrameTree') return { frameTree: { frame: { id: 'main' } } };
@@ -68,14 +74,15 @@ test('explicit CDP provider executes the generated runner through navigation and
     assert.equal(result.status, 200);
     assert.equal(result.body, '<html>verified CDP fixture</html>');
     assert.deepEqual(JSON.parse(readFileSync(f.tracePath, 'utf8')), [
-      'Page.enable', 'Network.enable', 'Page.getFrameTree', 'Page.navigate', 'Runtime.evaluate',
+      'Fetch.enable', 'Page.enable', 'Network.enable', 'Page.getFrameTree', 'Page.navigate', 'Fetch.failRequest', 'Fetch.continueRequest', 'Runtime.evaluate',
     ]);
+    assert.deepEqual(result.refusedRequests, ['http://169.254.169.254/latest/meta-data/']);
     await provider.cleanup({});
     const commands = JSON.parse(readFileSync(f.commandsPath, 'utf8'));
     assert.deepEqual(commands.map(([mode, command]) => [mode, command]), [['/raw', 'open'], ['/raw', 'script'], ['/raw', 'cleanup']]);
     assert(!commands[1].includes('--stealth'));
-    assert.equal(existsSync(join(f.root, '.octocode/tmp/cdp-provider/success-runner.mjs')), false);
-    assert.equal(existsSync(join(f.root, '.octocode/tmp/cdp-provider/success-body.html')), false);
+    assert.equal(existsSync(join(f.root, '.octocode/octocode-scraping/tmp/cdp-provider/success-runner.mjs')), false);
+    assert.equal(existsSync(join(f.root, '.octocode/octocode-scraping/tmp/cdp-provider/success-body.html')), false);
   } finally { rmSync(f.root, { recursive: true, force: true }); }
 });
 
@@ -91,7 +98,7 @@ test('explicit stealth failure prevents navigation and never returns a successfu
       'stealth.apply', 'stealth.verify',
     ]);
     assert(JSON.parse(readFileSync(f.commandsPath, 'utf8'))[1].includes('--stealth'));
-    assert.equal(existsSync(join(f.root, '.octocode/tmp/cdp-provider/blocked-runner.mjs')), false);
-    assert.equal(existsSync(join(f.root, '.octocode/tmp/cdp-provider/blocked-body.html')), false);
+    assert.equal(existsSync(join(f.root, '.octocode/octocode-scraping/tmp/cdp-provider/blocked-runner.mjs')), false);
+    assert.equal(existsSync(join(f.root, '.octocode/octocode-scraping/tmp/cdp-provider/blocked-body.html')), false);
   } finally { rmSync(f.root, { recursive: true, force: true }); }
 });

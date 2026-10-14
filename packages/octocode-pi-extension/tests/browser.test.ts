@@ -153,6 +153,28 @@ describe('browser tool over a shared Chrome', () => {
     expect(cdp.requests).toContain('GET /json/close/tab-1');
   }, 20_000);
 
+  it('says how much console output it no longer holds: lines pushed out, a cut line, and lines of an earlier tab', async () => {
+    const cdp = await stub();
+    vi.stubEnv('OCTOCODE_CHROME_PORT', String(cdp.port));
+    const { text, browser } = register();
+    await text({ action: 'snapshot' });
+    const page = cdp.pages.get('tab-1')!;
+    for (let i = 1; i <= 205; i++) page.emit('Runtime.consoleAPICalled', { type: 'log', args: [{ value: `line ${i}` }] });
+    page.emit('Runtime.consoleAPICalled', { type: 'log', args: [{ value: 'x'.repeat(2_500) }] });
+    await vi.waitFor(async () => expect(await text({ action: 'console' })).toContain('x'.repeat(100)));
+    const shown = await text({ action: 'console' });
+    // 206 lines in a buffer of 200: the 6 oldest are gone, the first kept is line 7; the long line says what was cut.
+    expect(shown.split('\n')[0]).toBe('[6 earlier console lines dropped: only the last 200 are kept]');
+    expect(shown).toContain('[log] line 7\n');
+    expect(shown).not.toContain('[log] line 6\n');
+    expect(shown).toMatch(/x… \[\d+ more characters cut\]$/);
+    // A tab change discards the earlier tab's lines and counts them (see the tab-policy test); the result names the count.
+    const session = await browser.session();
+    session.console = [];
+    session.consoleLost = { dropped: 0, cleared: 206 };
+    expect(await text({ action: 'console' })).toBe('[206 lines from earlier tabs discarded when the tab changed]\n(no console messages)');
+  }, 20_000);
+
   it('reports navigation errors and does not wait for a load event on a same-document navigation', async () => {
     const cdp = await stub();
     vi.stubEnv('OCTOCODE_CHROME_PORT', String(cdp.port));
@@ -197,6 +219,24 @@ describe('browser tool over a shared Chrome', () => {
     await expect(run({ action: 'snapshot' })).rejects.toThrow(/Could not read the page/);
     await handlers.get('session_shutdown')!();
     expect(cdp.requests).toContain('GET /json/close/tab-1');
+  }, 20_000);
+
+  it('renders an evaluate result JSON cannot carry (NaN, Infinity, BigInt, a function) instead of printing undefined', async () => {
+    const results: Record<string, unknown> = {
+      nan: { type: 'number', unserializableValue: 'NaN', description: 'NaN' },
+      inf: { type: 'number', unserializableValue: '-Infinity', description: '-Infinity' },
+      big: { type: 'bigint', unserializableValue: '10n', description: '10n' },
+      fn: { type: 'function', className: 'Function', description: '() => 1', objectId: 'o' },
+      nothing: { type: 'undefined' },
+    };
+    const cdp = await stub({ handle: (method, params, page) => (method === 'Runtime.evaluate' && String(params['expression']) in results ? { result: results[String(params['expression'])] } : pageHandler(method, params, page)) });
+    vi.stubEnv('OCTOCODE_CHROME_PORT', String(cdp.port));
+    const { text } = register();
+    expect(await text({ action: 'evaluate', expression: 'nan' })).toBe('NaN');
+    expect(await text({ action: 'evaluate', expression: 'inf' })).toBe('-Infinity');
+    expect(await text({ action: 'evaluate', expression: 'big' })).toBe('10n');
+    expect(await text({ action: 'evaluate', expression: 'fn' })).toBe('() => 1');
+    expect(await text({ action: 'evaluate', expression: 'nothing' })).toBe('undefined');
   }, 20_000);
 
   it('strips terminal controls from page output and saves a large evaluate result to a file', async () => {
@@ -300,11 +340,12 @@ describe('browser launching its own Chrome', () => {
     const { browser } = register();
     session.page.close();
 
+    // No knob shows the temporary-profile Chrome: only visible mode's persistent profile opens a window.
     vi.stubEnv('OCTOCODE_CHROME_PORT', String(await closedPort()));
     vi.stubEnv('OCTOCODE_BROWSER_HEADLESS', '0');
     const own = await browser.session();
-    expect(own.headless).toBe(false);
-    expect(launch.mock.calls[1]![0].chromeFlags).not.toContain('--headless=new');
+    expect(own.headless).toBe(true);
+    expect(launch.mock.calls[1]![0].chromeFlags).toContain('--headless=new');
     await browser.close();
     expect(kill).toHaveBeenCalledTimes(1);
   }, 20_000);
@@ -556,14 +597,11 @@ describe('browser input, forms, waits and tabs', () => {
     await expect(run({ action: 'fill' })).rejects.toThrow(/fill needs fields/);
   }, 20_000);
 
-  it('navigates until text appears, notes a page that keeps changing, and pins the locale', async () => {
-    vi.stubEnv('OCTOCODE_BROWSER_LOCALE', 'en-US');
-    vi.stubEnv('OCTOCODE_BROWSER_TIMEZONE', 'America/New_York');
+  it('navigates until text appears, notes a page that keeps changing, and leaves the system locale alone', async () => {
     let saved = false;
     const { cdp, text } = await open({ late: () => saved, restless: true });
-    expect(cdp.commands.find((command) => command.method === 'Emulation.setLocaleOverride')?.params).toEqual({ locale: 'en-US' });
-    expect(cdp.commands.find((command) => command.method === 'Emulation.setUserAgentOverride')?.params).toEqual({ userAgent: 'Mozilla/5.0 HeadlessChrome/130', acceptLanguage: 'en-US,en;q=0.9' });
-    expect(cdp.commands.find((command) => command.method === 'Emulation.setTimezoneOverride')?.params).toEqual({ timezoneId: 'America/New_York' });
+    // Chrome follows the machine's language and time zone: nothing pins them.
+    expect(cdp.commands.some((command) => command.method.startsWith('Emulation.set'))).toBe(false);
 
     expect(await text({ action: 'navigate', url: 'https://example.com/form' })).toMatch(/Note: the page was still changing 6s after loading/);
     setTimeout(() => (saved = true), 100);

@@ -106,26 +106,6 @@ fn bracket_depth(code: &str) -> i32 {
         .sum()
 }
 
-/// Production text of one source file: its inline `#[cfg(test)] mod x {`
-/// cut off. A one-line `#[cfg(test)] mod x;` item declares a test file and
-/// ends nothing: cutting there hid every literal after it from the sweep.
-fn production(text: &str) -> &str {
-    let mut offset = 0;
-    let lines: Vec<&str> = text.split_inclusive('\n').collect();
-    for (index, line) in lines.iter().enumerate() {
-        if line.trim() == "#[cfg(test)]"
-            && lines.get(index + 1).is_some_and(|next| {
-                let next = next.trim();
-                (next.starts_with("mod ") || next.contains(" mod ")) && next.ends_with('{')
-            })
-        {
-            return &text[..offset];
-        }
-        offset += line.len();
-    }
-    text
-}
-
 fn rust_sources(dir: &Path, out: &mut Vec<PathBuf>) {
     for entry in std::fs::read_dir(dir).expect("source dir").flatten() {
         let path = entry.path();
@@ -151,7 +131,8 @@ fn guidance_literals(text: &str) -> Vec<(usize, String)> {
     let mut statement: Option<i32> = None;
     let mut hint_fn: Option<i32> = None;
     let mut depth = 0;
-    for (index, line) in production(text).lines().enumerate() {
+    let text = crate::tools::test_support::production_text(text);
+    for (index, line) in text.lines().enumerate() {
         let (code, literals) = split_line(line);
         let lower = code.to_ascii_lowercase();
         let names_hint = lower.contains("hint");
@@ -319,7 +300,7 @@ fn no_shared_hint_names_a_cli_only_tool() {
 
 /// Every string literal of one production file, with its line number.
 fn literals(text: &str) -> Vec<(usize, String)> {
-    production(text)
+    crate::tools::test_support::production_text(text)
         .lines()
         .enumerate()
         .flat_map(|(index, line)| {

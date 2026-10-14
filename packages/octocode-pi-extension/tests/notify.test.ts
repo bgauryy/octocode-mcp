@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { notificationSequence, notifyCondition, notifyMethod, registerNotify, type Notice } from '../src/ui/notify.js';
+import { titledDialog } from '../src/shared/locks.js';
 import { fakeCtx, fakePi } from './fake-pi.js';
 
-function setup(env: NodeJS.ProcessEnv, mode = 'tui') {
+function setup(env: NodeJS.ProcessEnv, mode = 'tui', hasUI = true) {
   const fake = fakePi();
   (fake.pi as unknown as { getSessionName: () => string | undefined }).getSessionName = () => undefined;
   const writes: string[] = [];
@@ -13,6 +14,7 @@ function setup(env: NodeJS.ProcessEnv, mode = 'tui') {
   const ctx = fakeCtx({
     cwd: '/work/repo',
     mode,
+    hasUI,
     ui: {
       onTerminalInput: (handler: (data: string) => unknown) => {
         input = handler;
@@ -104,12 +106,18 @@ describe('registerNotify', () => {
     await s.fake.fire('agent_end', answer('', 'error', 'rate limited'), s.ctx);
     await s.fake.fire('agent_settled', {}, s.ctx);
     expect(s.writes.at(-1)).toBe('\x07');
-    await s.fake.fire('ui_prompt_start', { kind: 'confirm', title: 'Save?' }, s.ctx);
+    // A dialog the user opened between runs (a `/permission` picker) signals nothing.
+    vi.advanceTimersByTime(3_000);
+    await s.fake.fire('ui_prompt_start', { kind: 'select', title: 'Permission mode' }, s.ctx);
     expect(s.writes).toHaveLength(2);
+    expect(s.notices).toEqual([]);
+    await s.fake.fire('agent_start', {}, s.ctx);
+    await s.fake.fire('ui_prompt_start', { kind: 'confirm', title: 'Save?' }, s.ctx);
+    expect(s.writes).toHaveLength(3);
     expect(s.notices).toEqual([{ type: 'permission_prompt', title: 'Octocode: waiting for you', message: 'Save?' }]);
     vi.advanceTimersByTime(3_000);
     await s.fake.fire('ui_prompt_start', { kind: 'select' }, s.ctx);
-    expect(s.writes).toHaveLength(3);
+    expect(s.writes).toHaveLength(4);
     expect(s.notices.at(-1)).toEqual({ type: 'elicitation_dialog', title: 'Octocode: waiting for you', message: 'A question needs your answer' });
     s.type('x');
     expect(s.ctx.ui.title).toBe('octocode · repo');
@@ -143,13 +151,38 @@ describe('registerNotify', () => {
     expect(s.writes.at(-1)).toBe('\x07');
   });
 
-  it('stays out of print, JSON and RPC modes', async () => {
-    const s = setup({ OCTOCODE_NOTIFY: 'always' }, 'json');
+  it('stays out of print and JSON modes; in RPC fires the hooks but writes nothing to the terminal', async () => {
+    const s = setup({ OCTOCODE_NOTIFY: 'always' }, 'json', false);
     await s.fake.fire('session_start', {}, s.ctx);
     await run(s);
     await s.fake.fire('ui_prompt_start', { kind: 'confirm', title: 'x' }, s.ctx);
     await s.fake.fire('session_shutdown', {}, s.ctx);
     expect(s.writes).toEqual([]);
     expect(s.notices).toEqual([]);
+
+    vi.useFakeTimers({ now: 1_000_000 });
+    const rpc = setup({ OCTOCODE_NOTIFY: 'always' }, 'rpc');
+    await rpc.fake.fire('session_start', {}, rpc.ctx);
+    await rpc.fake.fire('agent_start', {}, rpc.ctx);
+    await rpc.fake.fire('ui_prompt_start', { kind: 'confirm', title: 'Run it?' }, rpc.ctx);
+    await rpc.fake.fire('agent_end', answer('Done'), rpc.ctx);
+    await rpc.fake.fire('agent_settled', {}, rpc.ctx);
+    vi.advanceTimersByTime(60_000);
+    expect(rpc.notices.map((notice) => notice.type)).toEqual(['permission_prompt', 'idle_prompt']);
+    expect(rpc.writes).toEqual([]);
+    expect(rpc.ctx.ui.title).toBeUndefined();
+  });
+
+  it('names a custom dialog by the title its opener gave it', async () => {
+    const s = setup({ OCTOCODE_NOTIFY: 'off' });
+    await s.fake.fire('session_start', {}, s.ctx);
+    await s.fake.fire('agent_start', {}, s.ctx);
+    let close!: () => void;
+    const open = titledDialog('Which database?', () => new Promise<void>((resolve) => (close = resolve)));
+    await s.fake.fire('ui_prompt_start', { kind: 'custom' }, s.ctx);
+    close();
+    await open;
+    await s.fake.fire('ui_prompt_start', { kind: 'custom' }, s.ctx);
+    expect(s.notices.map((notice) => notice.message)).toEqual(['Which database?', 'A question needs your answer']);
   });
 });

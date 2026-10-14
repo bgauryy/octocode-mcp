@@ -2,11 +2,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { visibleWidth } from '@earendil-works/pi-tui';
-import { widgetLines } from '../src/team/panel.js';
+import { AgentsView, widgetLines } from '../src/team/panel.js';
+import { Team } from '../src/team/session.js';
 import type { Member } from '../src/team/model.js';
 import { TeamStore } from '../src/team/store.js';
 import { describeMembers } from '../src/team/routing.js';
-import { theme } from './fake-pi.js';
+import { fakeCtx, fakePi, theme } from './fake-pi.js';
 import { tmp } from './helpers.js';
 
 const NOW = 1_000_000;
@@ -128,5 +129,24 @@ describe('panel traffic', () => {
     const cut = lines.filter((line) => line.includes('…'));
     expect(cut.length).toBeGreaterThan(0);
     expect(lines.join('\n')).not.toContain('...');
+  });
+});
+
+describe('background subagents in the footer', () => {
+  it('counts them while the panel shows no rows (the team database is off or unused), and clears at zero', () => {
+    const f = fakePi();
+    const team = new Team(f.pi, { OCTOCODE_AGENT_DB: path.join(tmp(), 'none', 'team.sqlite') });
+    const ctx = fakeCtx({ cwd: tmp() });
+    team.start(ctx);
+    const view = new AgentsView(team);
+    view.start(ctx);
+    view.setBackground(2);
+    expect(ctx.ui.statuses.get('octocode-subagents')).toContain('2 background agents');
+    view.setBackground(0);
+    expect(ctx.ui.statuses.get('octocode-subagents')).toBeUndefined();
+    view.setBackground(1);
+    view.stop(ctx);
+    expect(ctx.ui.statuses.get('octocode-subagents')).toBeUndefined();
+    team.stop();
   });
 });

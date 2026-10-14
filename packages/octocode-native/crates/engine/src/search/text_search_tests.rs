@@ -1,9 +1,7 @@
 use super::*;
+use crate::test_support::TmpDir;
+use crate::text::source::open_regular;
 use std::fs;
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicU32, Ordering};
-
-static COUNTER: AtomicU32 = AtomicU32::new(0);
 
 struct AllowAll;
 impl TextSearchPathFilter for AllowAll {
@@ -14,33 +12,6 @@ impl TextSearchPathFilter for AllowAll {
 
 pub(crate) fn search(opts: TextSearchOptions) -> Result<TextSearchResult> {
     search_cancellable(opts, Arc::new(AllowAll), &|| false)
-}
-
-/// Unique temp dir per test (no Date/rand needed): pid + atomic counter.
-struct TmpDir(PathBuf);
-impl TmpDir {
-    fn new() -> Self {
-        let id = COUNTER.fetch_add(1, Ordering::SeqCst);
-        let dir =
-            std::env::temp_dir().join(format!("octo-text-search-test-{}-{id}", std::process::id()));
-        fs::create_dir_all(&dir).expect("create temp dir");
-        Self(dir)
-    }
-    fn write(&self, rel: &str, content: &str) {
-        let p = self.0.join(rel);
-        if let Some(parent) = p.parent() {
-            fs::create_dir_all(parent).expect("create parent");
-        }
-        fs::write(p, content).expect("write file");
-    }
-    fn path(&self) -> String {
-        self.0.to_string_lossy().into_owned()
-    }
-}
-impl Drop for TmpDir {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
 }
 
 fn opts(path: String, pattern: &str) -> TextSearchOptions {
@@ -364,15 +335,17 @@ fn perl_regex_catastrophic_backtracking_terminates() {
     let handle = std::thread::spawn(move || {
         let mut o = opts(path, "(a+)+$");
         o.perl_regex = Some(true);
-        // Result intentionally ignored: PCRE2 may return Ok (no match) or an
-        // Err (JIT stack / match limit hit) — the assertion is termination.
-        let _ = search(o);
-        let _ = tx.send(());
+        let _ = tx.send(search(o));
     });
-    assert!(
-        rx.recv_timeout(Duration::from_secs(30)).is_ok(),
-        "catastrophic PCRE2 pattern must terminate, not hang"
-    );
+    let outcome = rx
+        .recv_timeout(Duration::from_secs(30))
+        .expect("catastrophic PCRE2 pattern must terminate, not hang");
+    // PCRE2 either completes (the line ends in `!`, so nothing matches) or
+    // stops at its JIT stack / match limit with an error naming the regex.
+    match outcome {
+        Ok(result) => assert!(result.files.is_empty(), "{:?}", result.files),
+        Err(error) => assert!(!error.to_string().is_empty(), "{error:?}"),
+    }
     handle.join().expect("worker thread panicked");
 }
 
@@ -703,7 +676,7 @@ fn respects_gitignore_by_default_and_no_ignore_overrides() {
     assert!(r.files[0].path.ends_with("kept.txt"));
 
     let mut o = opts(t.path(), "target");
-    o.no_ignore = Some(true);
+    o.ignore.include_ignored = true;
     let r2 = search(o).expect("ok");
     assert_eq!(r2.files.len(), 2, "--no-ignore searches the ignored file");
 }
@@ -870,7 +843,8 @@ fn long_line_snippet_keeps_the_match_visible() {
     assert!(m.value.contains("foo"), "{}", &m.value[..60]);
     assert!(m.value.starts_with('…'));
     assert!(m.value.chars().count() <= 500);
-    assert!(m.original_chars.is_some());
+    // The whole line, before the snippet window cut it.
+    assert_eq!(m.original_chars, Some(5_008));
 }
 
 #[test]
@@ -1054,13 +1028,28 @@ fn binary_prefix_counts_matches_across_earlier_lines() {
 fn open_regular_refuses_a_symlink_swapped_in_after_the_walk() {
     let t = TmpDir::new();
     t.write("real.txt", "needle\n");
-    assert!(open_regular(&t.0.join("real.txt")).is_ok());
+    let (mut file, meta) = open_regular(&t.0.join("real.txt")).expect("a regular file opens");
+    assert!(meta.is_file());
+    assert_eq!(meta.len(), 7);
+    let mut text = String::new();
+    std::io::Read::read_to_string(&mut file, &mut text).expect("read");
+    assert_eq!(text, "needle\n");
     #[cfg(unix)]
     {
+        let not_regular = |path: &Path| {
+            let error = open_regular(path).expect_err("refused");
+            assert!(
+                error.to_string().contains("not a regular file when opened"),
+                "{}: {error}",
+                path.display()
+            );
+        };
         std::os::unix::fs::symlink(t.0.join("real.txt"), t.0.join("link.txt")).expect("symlink");
-        assert!(open_regular(&t.0.join("link.txt")).is_err());
+        // O_NOFOLLOW: the link itself is never opened.
+        let link = open_regular(&t.0.join("link.txt")).expect_err("symlink refused");
+        assert_eq!(link.raw_os_error(), Some(libc::ELOOP), "{link}");
         fs::create_dir(t.0.join("dir")).expect("dir");
-        assert!(open_regular(&t.0.join("dir")).is_err());
+        not_regular(&t.0.join("dir"));
         let fifo = t.0.join("pipe");
         let made = std::process::Command::new("mkfifo")
             .arg(&fifo)
@@ -1068,7 +1057,7 @@ fn open_regular_refuses_a_symlink_swapped_in_after_the_walk() {
             .is_ok_and(|status| status.success());
         if made {
             // Non-blocking open: a FIFO with no writer must not hang.
-            assert!(open_regular(&fifo).is_err());
+            not_regular(&fifo);
         }
     }
 }
@@ -1424,8 +1413,9 @@ fn kept_files_carry_the_digest_of_the_bytes_searched() {
             let path = Path::new(&file.path);
             let source = file.source.expect("digest of a kept file");
             assert_eq!(source.digest, file_digest(path), "{view} {}", file.path);
-            assert_eq!(source.size, fs::metadata(path).expect("meta").len());
-            assert!(source.modified.is_some());
+            let meta = fs::metadata(path).expect("meta");
+            assert_eq!(source.size, meta.len());
+            assert_eq!(source.modified, Some(meta.modified().expect("mtime")));
         }
     }
     let unhashed = search(opts(t.path(), "needle")).expect("search");

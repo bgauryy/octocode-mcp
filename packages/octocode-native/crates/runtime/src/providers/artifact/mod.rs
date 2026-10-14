@@ -18,8 +18,8 @@ pub use types::{
 };
 pub(crate) use util::{github_repo_dir, github_repository, github_slug};
 
-use crate::providers::RequestBudget;
 use http::RegistryClient;
+use octocode_github::RequestBudget;
 use url::Url;
 
 pub struct ArtifactProviderContext<'a> {

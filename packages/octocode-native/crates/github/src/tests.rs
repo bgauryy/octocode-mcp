@@ -1,17 +1,17 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use std::{
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicUsize, Ordering},
-    },
+    sync::{Arc, Mutex},
     time::Duration,
 };
 use wiremock::{
-    Mock, MockServer, Request, Respond, ResponseTemplate,
+    Mock, MockServer, ResponseTemplate,
     matchers::{header, method, path, query_param},
 };
 
 use super::*;
+
+mod mock_http;
+use mock_http::{Arrivals, Delayed, Sequence, mount_json};
 
 fn api_github_com() -> GitHubEndpoint {
     GitHubEndpoint::new(url::Url::parse("https://api.github.com/").expect("URL")).expect("endpoint")
@@ -29,42 +29,30 @@ fn with_token(token: &str, timeout: Duration, max_body_bytes: usize) -> RequestC
 }
 #[derive(Default)]
 struct MemoryCache(Mutex<Option<CachedContent>>);
-#[derive(Clone)]
-struct FailOnce(Arc<AtomicUsize>);
-impl Respond for FailOnce {
-    fn respond(&self, _: &Request) -> ResponseTemplate {
-        if self.0.fetch_add(1, Ordering::SeqCst) == 0 {
-            ResponseTemplate::new(500)
-        } else {
-            ResponseTemplate::new(200).set_body_bytes(b"ok")
-        }
+
+/// A 403 secondary rate limit, with `retry-after` when given.
+fn secondary_limit(retry_after: Option<&str>) -> ResponseTemplate {
+    let response = ResponseTemplate::new(403)
+        .insert_header("x-ratelimit-remaining", "21")
+        .set_body_json(serde_json::json!({
+            "message": "You have exceeded a secondary rate limit. Please wait a few minutes before you try again."
+        }));
+    match retry_after {
+        Some(retry_after) => response.insert_header("retry-after", retry_after),
+        None => response,
     }
 }
-#[derive(Clone)]
-struct SecondaryThenOk(Arc<AtomicUsize>, Option<&'static str>);
-impl Respond for SecondaryThenOk {
-    fn respond(&self, _: &Request) -> ResponseTemplate {
-        if self.0.fetch_add(1, Ordering::SeqCst) == 0 {
-            let mut response = ResponseTemplate::new(403)
-                .insert_header("x-ratelimit-remaining", "21")
-                .set_body_json(serde_json::json!({
-                    "message": "You have exceeded a secondary rate limit. Please wait a few minutes before you try again."
-                }));
-            if let Some(retry_after) = self.1 {
-                response = response.insert_header("retry-after", retry_after);
-            }
-            response
-        } else {
-            ResponseTemplate::new(200).set_body_json(serde_json::json!({"ok":true}))
-        }
-    }
+
+fn ok_json() -> ResponseTemplate {
+    ResponseTemplate::new(200).set_body_json(serde_json::json!({"ok": true}))
 }
+
 impl ConditionalCache for MemoryCache {
     // Single-slot body cache: ref memo entries (`github-ref:`) are not stored
     // so each test controls ref resolution through its mocks.
     fn get<'a>(
         &'a self,
-        _: &'a CachePartition,
+        _: &'a Partition,
         key: &'a str,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<CachedContent>> + Send + 'a>>
     {
@@ -77,9 +65,10 @@ impl ConditionalCache for MemoryCache {
     }
     fn put<'a>(
         &'a self,
-        _: &'a CachePartition,
+        _: &'a Partition,
         key: String,
         value: CachedContent,
+        _: Retention,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + 'a>> {
         Box::pin(async move {
             if !key.starts_with("github-ref:") {
@@ -95,7 +84,7 @@ struct PartitionedCache(Mutex<std::collections::HashMap<(String, String), Cached
 impl ConditionalCache for PartitionedCache {
     fn get<'a>(
         &'a self,
-        partition: &'a CachePartition,
+        partition: &'a Partition,
         key: &'a str,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<CachedContent>> + Send + 'a>>
     {
@@ -115,9 +104,10 @@ impl ConditionalCache for PartitionedCache {
     }
     fn put<'a>(
         &'a self,
-        partition: &'a CachePartition,
+        partition: &'a Partition,
         key: String,
         value: CachedContent,
+        _: Retention,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + 'a>> {
         Box::pin(async move {
             self.0
@@ -149,20 +139,6 @@ fn main_file(path: &str, force_refresh: bool) -> ContentRequest {
         force_refresh,
         session_id: None,
     }
-}
-
-/// Answer `GET route` on `server` with `status` and a JSON `body`.
-async fn mount_json(
-    server: &MockServer,
-    route: impl Into<String>,
-    status: u16,
-    body: impl serde::Serialize,
-) {
-    Mock::given(method("GET"))
-        .and(path(route))
-        .respond_with(ResponseTemplate::new(status).set_body_json(body))
-        .mount(server)
-        .await;
 }
 
 /// `GET x` through `transport`, with a 2 s deadline and a `max_bytes` body cap.
@@ -379,9 +355,10 @@ async fn returns_same_origin_next_page_and_rejects_redirects() {
 #[tokio::test]
 async fn retries_secondary_rate_limit_without_remaining_zero() {
     let server = MockServer::builder().start().await;
-    let hits = Arc::new(AtomicUsize::new(0));
+    let limited = Sequence::new(vec![secondary_limit(Some("1")), ok_json()]);
+    let hits = limited.arrivals.clone();
     Mock::given(method("GET"))
-        .respond_with(SecondaryThenOk(hits.clone(), Some("1")))
+        .respond_with(limited)
         .expect(2)
         .mount(&server)
         .await;
@@ -405,7 +382,7 @@ async fn retries_secondary_rate_limit_without_remaining_zero() {
         .await
         .expect("retried");
     assert_eq!(page.status, 200);
-    assert_eq!(hits.load(Ordering::SeqCst), 2);
+    assert_eq!(hits.count(), 2);
 }
 
 #[tokio::test]
@@ -443,15 +420,6 @@ async fn projects_rate_limit_metadata_without_retrying_long_delays() {
     );
 }
 
-/// Signals each arrival, then answers 200 after a delay longer than the test.
-struct SignalThenDelay(Arc<tokio::sync::Notify>);
-impl Respond for SignalThenDelay {
-    fn respond(&self, _: &Request) -> ResponseTemplate {
-        self.0.notify_one();
-        ResponseTemplate::new(200).set_delay(Duration::from_secs(2))
-    }
-}
-
 #[tokio::test]
 async fn cancellation_interrupts_an_inflight_response() {
     let server = MockServer::builder().start().await;
@@ -459,7 +427,10 @@ async fn cancellation_interrupts_an_inflight_response() {
     // the delayed response is in flight rather than after a guessed sleep.
     let arrived = Arc::new(tokio::sync::Notify::new());
     Mock::given(method("GET"))
-        .respond_with(SignalThenDelay(arrived.clone()))
+        .respond_with(Delayed {
+            arrived: Some(arrived.clone()),
+            ..Delayed::new(Duration::from_secs(2), ResponseTemplate::new(200))
+        })
         .mount(&server)
         .await;
     let endpoint = mock_endpoint(&server);
@@ -742,9 +713,13 @@ async fn content_directory_symlink_and_submodule_get_clear_errors() {
 #[tokio::test]
 async fn retries_transient_server_failure_once() {
     let server = MockServer::builder().start().await;
-    let attempts = Arc::new(AtomicUsize::new(0));
+    let flaky = Sequence::new(vec![
+        ResponseTemplate::new(500),
+        ResponseTemplate::new(200).set_body_bytes(b"ok"),
+    ]);
+    let attempts = flaky.arrivals.clone();
     Mock::given(method("GET"))
-        .respond_with(FailOnce(attempts.clone()))
+        .respond_with(flaky)
         .mount(&server)
         .await;
     let endpoint = mock_endpoint(&server);
@@ -766,7 +741,7 @@ async fn retries_transient_server_failure_once() {
         .await
         .expect("retry");
     assert_eq!(page.body, b"ok".as_slice());
-    assert_eq!(attempts.load(Ordering::SeqCst), 2);
+    assert_eq!(attempts.count(), 2);
 }
 
 #[test]
@@ -815,29 +790,21 @@ fn epoch_secs() -> u64 {
         .as_secs()
 }
 
-#[derive(Clone)]
-struct PrimaryThenOk(Arc<AtomicUsize>, u64);
-impl Respond for PrimaryThenOk {
-    fn respond(&self, _: &Request) -> ResponseTemplate {
-        if self.0.fetch_add(1, Ordering::SeqCst) == 0 {
-            ResponseTemplate::new(403)
-                .insert_header("x-ratelimit-remaining", "0")
-                .insert_header("x-ratelimit-reset", self.1.to_string().as_str())
-                .insert_header("x-ratelimit-resource", "core")
-                .set_body_json(serde_json::json!({"message": "API rate limit exceeded"}))
-        } else {
-            ResponseTemplate::new(200).set_body_json(serde_json::json!({"ok": true}))
-        }
-    }
+/// A 403 primary (core) rate limit that resets at epoch second `reset`.
+fn primary_limit(reset: u64) -> ResponseTemplate {
+    ResponseTemplate::new(403)
+        .insert_header("x-ratelimit-remaining", "0")
+        .insert_header("x-ratelimit-reset", reset.to_string().as_str())
+        .insert_header("x-ratelimit-resource", "core")
+        .set_body_json(serde_json::json!({"message": "API rate limit exceeded"}))
 }
 
 #[tokio::test]
 async fn primary_limit_waits_for_a_short_reset_then_retries() {
     let server = MockServer::builder().start().await;
-    let hits = Arc::new(AtomicUsize::new(0));
     let reset = epoch_secs() + 1;
     Mock::given(method("GET"))
-        .respond_with(PrimaryThenOk(hits.clone(), reset))
+        .respond_with(Sequence::new(vec![primary_limit(reset), ok_json()]))
         .expect(2)
         .mount(&server)
         .await;
@@ -860,10 +827,9 @@ async fn primary_limit_waits_for_a_short_reset_then_retries() {
 #[tokio::test]
 async fn rate_limit_waits_do_not_spend_the_request_timeout() {
     let server = MockServer::builder().start().await;
-    let hits = Arc::new(AtomicUsize::new(0));
     let reset = epoch_secs() + 3;
     Mock::given(method("GET"))
-        .respond_with(PrimaryThenOk(hits.clone(), reset))
+        .respond_with(Sequence::new(vec![primary_limit(reset), ok_json()]))
         .mount(&server)
         .await;
     let (transport, endpoint) = executor_transport(&server, GitHubBudget::relaxed(), short_retry());
@@ -882,7 +848,7 @@ async fn rate_limit_waits_do_not_spend_the_request_timeout() {
     let reset = epoch_secs() + 3;
     let other = MockServer::builder().start().await;
     Mock::given(method("GET"))
-        .respond_with(PrimaryThenOk(Arc::new(AtomicUsize::new(0)), reset))
+        .respond_with(Sequence::new(vec![primary_limit(reset), ok_json()]))
         .mount(&other)
         .await;
     let (transport, endpoint) = executor_transport(&other, GitHubBudget::relaxed(), short_retry());
@@ -944,9 +910,10 @@ async fn primary_limit_fails_fast_and_blocks_later_sends_until_reset() {
 #[tokio::test]
 async fn secondary_limit_without_retry_after_waits_sixty_seconds_or_fails_fast() {
     let server = MockServer::builder().start().await;
-    let hits = Arc::new(AtomicUsize::new(0));
+    let limited = Sequence::new(vec![secondary_limit(None), ok_json()]);
+    let hits = limited.arrivals.clone();
     Mock::given(method("GET"))
-        .respond_with(SecondaryThenOk(hits.clone(), None))
+        .respond_with(limited)
         .expect(1)
         .mount(&server)
         .await;
@@ -975,7 +942,7 @@ async fn secondary_limit_without_retry_after_waits_sixty_seconds_or_fails_fast()
         .await
         .expect_err("cooldown");
     assert_eq!(blocked.kind, ProviderErrorKind::RateLimited);
-    assert_eq!(hits.load(Ordering::SeqCst), 1);
+    assert_eq!(hits.count(), 1);
 }
 
 #[tokio::test]
@@ -1039,29 +1006,19 @@ async fn graphql_top_level_rate_limited_type_is_a_primary_limit() {
     assert!(transport.graphql_available(&with_token("other", Duration::from_secs(5), 1024)));
 }
 
-#[derive(Clone)]
-struct GraphqlWentWrongOnce(Arc<AtomicUsize>);
-impl Respond for GraphqlWentWrongOnce {
-    fn respond(&self, _: &Request) -> ResponseTemplate {
-        if self.0.fetch_add(1, Ordering::SeqCst) == 0 {
-            ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "data": null,
-                "errors": [{"message": "Something went wrong while executing your query. This may be the result of a timeout."}]
-            }))
-        } else {
-            ResponseTemplate::new(200)
-                .set_body_json(serde_json::json!({"data": {"viewer": {"login": "me"}}}))
-        }
-    }
-}
-
 #[tokio::test]
 async fn graphql_something_went_wrong_is_retried_like_a_500() {
     let server = MockServer::builder().start().await;
-    let hits = Arc::new(AtomicUsize::new(0));
     Mock::given(method("POST"))
         .and(path("/api/graphql"))
-        .respond_with(GraphqlWentWrongOnce(hits.clone()))
+        .respond_with(Sequence::new(vec![
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": null,
+                "errors": [{"message": "Something went wrong while executing your query. This may be the result of a timeout."}]
+            })),
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({"data": {"viewer": {"login": "me"}}})),
+        ]))
         .expect(2)
         .mount(&server)
         .await;
@@ -1078,25 +1035,17 @@ async fn graphql_something_went_wrong_is_retried_like_a_500() {
     assert_eq!(page.data.expect("data")["viewer"]["login"], "me");
 }
 
-#[derive(Clone)]
-struct ServerErrorRetryAfterOnce(Arc<AtomicUsize>);
-impl Respond for ServerErrorRetryAfterOnce {
-    fn respond(&self, _: &Request) -> ResponseTemplate {
-        if self.0.fetch_add(1, Ordering::SeqCst) == 0 {
-            ResponseTemplate::new(503).insert_header("retry-after", "1")
-        } else {
-            ResponseTemplate::new(200).set_body_bytes(b"ok")
-        }
-    }
-}
-
 #[tokio::test]
 async fn permits_are_released_while_backing_off() {
     let server = MockServer::builder().start().await;
-    let hits = Arc::new(AtomicUsize::new(0));
+    let flaky = Sequence::new(vec![
+        ResponseTemplate::new(503).insert_header("retry-after", "1"),
+        ResponseTemplate::new(200).set_body_bytes(b"ok"),
+    ]);
+    let hits = flaky.arrivals.clone();
     Mock::given(method("GET"))
         .and(path("/api/v3/flaky"))
-        .respond_with(ServerErrorRetryAfterOnce(hits.clone()))
+        .respond_with(flaky)
         .mount(&server)
         .await;
     Mock::given(method("GET"))
@@ -1123,7 +1072,7 @@ async fn permits_are_released_while_backing_off() {
                 .await
         })
     };
-    while hits.load(Ordering::SeqCst) == 0 {
+    while hits.count() == 0 {
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
     tokio::time::sleep(Duration::from_millis(50)).await;
@@ -1142,28 +1091,19 @@ async fn permits_are_released_while_backing_off() {
     );
     let slow = slow.await.expect("join").expect("slow retried");
     assert_eq!(slow.body, b"ok".as_slice());
-    assert_eq!(hits.load(Ordering::SeqCst), 2);
-}
-
-#[derive(Clone)]
-struct Arrivals(Arc<Mutex<Vec<std::time::Instant>>>);
-impl Respond for Arrivals {
-    fn respond(&self, _: &Request) -> ResponseTemplate {
-        self.0
-            .lock()
-            .expect("arrivals")
-            .push(std::time::Instant::now());
-        ResponseTemplate::new(200).set_body_json(serde_json::json!({"items": []}))
-    }
+    assert_eq!(hits.count(), 2);
 }
 
 #[tokio::test]
 async fn search_requests_are_spaced_per_key() {
     let server = MockServer::builder().start().await;
-    let arrivals = Arc::new(Mutex::new(Vec::new()));
+    let search = Sequence::new(vec![
+        ResponseTemplate::new(200).set_body_json(serde_json::json!({"items": []})),
+    ]);
+    let arrivals = search.arrivals.clone();
     Mock::given(method("GET"))
         .and(path("/api/v3/search/issues"))
-        .respond_with(Arrivals(arrivals.clone()))
+        .respond_with(search)
         .mount(&server)
         .await;
     let budget = Arc::new(GitHubBudget::with_config(ExecutorConfig {
@@ -1185,7 +1125,7 @@ async fn search_requests_are_spaced_per_key() {
         }
     });
     futures_util::future::join_all(calls).await;
-    let arrivals = arrivals.lock().expect("arrivals").clone();
+    let arrivals = arrivals.times();
     assert_eq!(arrivals.len(), 3);
     for pair in arrivals.windows(2) {
         assert!(
@@ -1243,7 +1183,7 @@ struct KeyedCache(Mutex<std::collections::HashMap<String, CachedContent>>);
 impl ConditionalCache for KeyedCache {
     fn get<'a>(
         &'a self,
-        _: &'a CachePartition,
+        _: &'a Partition,
         key: &'a str,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<CachedContent>> + Send + 'a>>
     {
@@ -1251,9 +1191,10 @@ impl ConditionalCache for KeyedCache {
     }
     fn put<'a>(
         &'a self,
-        _: &'a CachePartition,
+        _: &'a Partition,
         key: String,
         value: CachedContent,
+        _: Retention,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + 'a>> {
         Box::pin(async move {
             self.0.lock().expect("cache lock").insert(key, value);
@@ -1916,26 +1857,17 @@ async fn a_queued_request_is_not_sent_after_a_cooldown_lands_while_it_waits() {
     );
 }
 
-#[derive(Clone)]
-struct Hits(Arc<AtomicUsize>);
-impl Hits {
-    fn new() -> Self {
-        Self(Arc::new(AtomicUsize::new(0)))
-    }
-    fn count(&self) -> usize {
-        self.0.load(Ordering::SeqCst)
-    }
-}
-
-async fn mount_bad_gateway(server: &MockServer, hits: &Hits) {
-    let hits = hits.clone();
+/// Answers every GET with 502; the returned log counts the requests.
+async fn mount_bad_gateway(server: &MockServer) -> Arrivals {
+    let bad_gateway = Sequence::new(vec![
+        ResponseTemplate::new(502).set_body_json(serde_json::json!({"message": "Server Error"})),
+    ]);
+    let hits = bad_gateway.arrivals.clone();
     Mock::given(method("GET"))
-        .respond_with(move |_: &Request| {
-            hits.0.fetch_add(1, Ordering::SeqCst);
-            ResponseTemplate::new(502).set_body_json(serde_json::json!({"message": "Server Error"}))
-        })
+        .respond_with(bad_gateway)
         .mount(server)
         .await;
+    hits
 }
 
 fn breaker_budget(circuit_failures: u32) -> Arc<GitHubBudget> {
@@ -1951,8 +1883,7 @@ fn breaker_budget(circuit_failures: u32) -> Arc<GitHubBudget> {
 #[tokio::test]
 async fn an_open_circuit_reports_a_server_outage_not_a_rate_limit() {
     let server = MockServer::builder().start().await;
-    let hits = Hits::new();
-    mount_bad_gateway(&server, &hits).await;
+    let hits = mount_bad_gateway(&server).await;
     let (transport, endpoint) = executor_transport(&server, breaker_budget(2), short_retry());
     for _ in 0..2 {
         let error = get_status(&transport, &endpoint, &["repos", "a", "b"])
@@ -1982,8 +1913,7 @@ async fn an_open_circuit_reports_a_server_outage_not_a_rate_limit() {
 #[tokio::test]
 async fn the_circuit_counts_one_failure_per_logical_request() {
     let server = MockServer::builder().start().await;
-    let hits = Hits::new();
-    mount_bad_gateway(&server, &hits).await;
+    let hits = mount_bad_gateway(&server).await;
     // 3 attempts per request: per-attempt counting opens at the first
     // request's third attempt; per-request counting needs 3 requests.
     let (transport, endpoint) = executor_transport(&server, breaker_budget(3), short_retry());
@@ -2000,18 +1930,15 @@ async fn the_circuit_counts_one_failure_per_logical_request() {
 #[tokio::test]
 async fn a_success_resets_the_circuit_count() {
     let server = MockServer::builder().start().await;
-    let hits = Hits::new();
-    let flip = hits.clone();
+    // 502 for requests 1 and 3 (single attempts), 200 for the rest.
+    let ok = || ResponseTemplate::new(200).set_body_bytes(b"ok");
     Mock::given(method("GET"))
-        .respond_with(move |_: &Request| {
-            // 502 for requests 1 and 3 (single attempts), 200 for the rest.
-            let n = flip.0.fetch_add(1, Ordering::SeqCst);
-            if n == 0 || n == 2 {
-                ResponseTemplate::new(502)
-            } else {
-                ResponseTemplate::new(200).set_body_bytes(b"ok")
-            }
-        })
+        .respond_with(Sequence::new(vec![
+            ResponseTemplate::new(502),
+            ok(),
+            ResponseTemplate::new(502),
+            ok(),
+        ]))
         .mount(&server)
         .await;
     let single = RetryPolicy {
@@ -2054,6 +1981,42 @@ async fn an_open_circuit_after_connection_failures_reports_transport() {
     assert_eq!(second.kind, ProviderErrorKind::Transport, "{second:?}");
     assert!(second.retryable);
     assert!(second.message.contains("unavailable"), "{}", second.message);
+}
+
+/// Dropped connections are retried by the transport's own budgeted policy and
+/// by nothing underneath it: exactly `max_attempts` connections, no more.
+#[tokio::test]
+async fn a_dropped_connection_takes_exactly_the_policy_attempts() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+    let port = listener.local_addr().expect("addr").port();
+    let accepts = Arc::new(AtomicUsize::new(0));
+    let seen = Arc::clone(&accepts);
+    std::thread::spawn(move || {
+        for stream in listener.incoming().flatten() {
+            seen.fetch_add(1, Ordering::SeqCst);
+            drop(stream);
+        }
+    });
+    let endpoint = GitHubEndpoint::new(
+        url::Url::parse(&format!("http://127.0.0.1:{port}/api/v3")).expect("URL"),
+    )
+    .expect("endpoint");
+    let transport = GitHubTransport::with_budget(
+        endpoint.clone(),
+        RetryPolicy {
+            max_attempts: 3,
+            ..short_retry()
+        },
+        breaker_budget(10),
+    )
+    .expect("transport");
+    let error = get_status(&transport, &endpoint, &["repos", "a", "b"])
+        .await
+        .expect_err("every attempt is dropped");
+    assert_eq!(error.kind, ProviderErrorKind::Transport);
+    assert_eq!(accepts.load(Ordering::SeqCst), 3);
 }
 
 /// Repeated secondary limits still report a rate limit.
@@ -2107,13 +2070,12 @@ async fn secondary_limit_reset_is_the_cooldown_end() {
 #[tokio::test]
 async fn a_long_server_retry_after_is_surfaced() {
     let server = MockServer::builder().start().await;
-    let hits = Hits::new();
-    let counter = hits.clone();
+    let unavailable = Sequence::new(vec![
+        ResponseTemplate::new(503).insert_header("retry-after", "30"),
+    ]);
+    let hits = unavailable.arrivals.clone();
     Mock::given(method("GET"))
-        .respond_with(move |_: &Request| {
-            counter.0.fetch_add(1, Ordering::SeqCst);
-            ResponseTemplate::new(503).insert_header("retry-after", "30")
-        })
+        .respond_with(unavailable)
         .mount(&server)
         .await;
     let (transport, endpoint) = executor_transport(&server, GitHubBudget::relaxed(), short_retry());
@@ -2201,7 +2163,16 @@ async fn a_headerless_rate_limit_body_is_a_primary_limit() {
         .expect_err("limited");
     assert_eq!(error.kind, ProviderErrorKind::RateLimited);
     assert!(error.retryable);
-    assert!(error.rate_limit.is_some());
+    // No headers: a primary core limit with GitHub's one-minute fallback wait.
+    let rate = error.rate_limit.expect("rate limit");
+    assert_eq!(rate.remaining, Some(0));
+    assert_eq!(rate.resource.as_deref(), Some("core"));
+    assert_eq!(rate.retry_after_seconds, Some(60));
+    let reset = rate.reset_epoch_seconds.expect("reset");
+    assert!(
+        (epoch_secs() + 55..=epoch_secs() + 61).contains(&reset),
+        "reset {reset} is not about a minute out"
+    );
 }
 
 /// The legacy abuse-detection 403 is a secondary limit.
@@ -2257,7 +2228,7 @@ async fn an_http_date_retry_after_is_honored() {
 fn httpdate_after(seconds: u64) -> String {
     let at = epoch_secs() + seconds;
     let days = (at / 86_400) as i64;
-    let (year, month, day) = civil_from_days_for_test(days);
+    let (year, month, day) = civil_from_days(days);
     let rem = at % 86_400;
     let weekday = ["Thu", "Fri", "Sat", "Sun", "Mon", "Tue", "Wed"][(days % 7) as usize];
     let month_name = [
@@ -2271,25 +2242,20 @@ fn httpdate_after(seconds: u64) -> String {
     )
 }
 
-fn civil_from_days_for_test(days: i64) -> (i64, i64, i64) {
-    let z = days + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = doy - (153 * mp + 2) / 5 + 1;
-    let month = mp + if mp < 10 { 3 } else { -9 };
-    (yoe + era * 400 + i64::from(month <= 2), month, day)
-}
-
 #[tokio::test]
 async fn concurrent_repository_metadata_reads_share_one_request() {
     let server = MockServer::builder().start().await;
-    let hits = Arc::new(AtomicUsize::new(0));
+    let repository = Delayed::new(
+        Duration::from_millis(150),
+        ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "full_name": "o/r", "name": "r", "html_url": "https://github.com/o/r",
+            "default_branch": "main"
+        })),
+    );
+    let hits = repository.arrivals.clone();
     Mock::given(method("GET"))
         .and(path("/api/v3/repos/o/r"))
-        .respond_with(CountedRepository(hits.clone()))
+        .respond_with(repository)
         .mount(&server)
         .await;
     let endpoint = mock_endpoint(&server);
@@ -2303,34 +2269,20 @@ async fn concurrent_repository_metadata_reads_share_one_request() {
     assert_eq!(a.expect("metadata").default_branch, "main");
     assert_eq!(b.expect("canonical"), None);
     assert_eq!(c.expect("repository").full_name, "o/r");
-    assert_eq!(hits.load(Ordering::SeqCst), 1, "one GET /repos/o/r");
+    assert_eq!(hits.count(), 1, "one GET /repos/o/r");
     // A later read in the same batch window is served from the memo.
     transport
         .repository_metadata("o", "r", &context)
         .await
         .expect("memo");
-    assert_eq!(hits.load(Ordering::SeqCst), 1, "memoized");
+    assert_eq!(hits.count(), 1, "memoized");
     // Another credential never reads this one's answer.
     let other = with_token("other", Duration::from_secs(5), 1 << 20);
     transport
         .repository_metadata("o", "r", &other)
         .await
         .expect("other credential");
-    assert_eq!(hits.load(Ordering::SeqCst), 2, "memo is per credential");
-}
-
-#[derive(Clone)]
-struct CountedRepository(Arc<AtomicUsize>);
-impl Respond for CountedRepository {
-    fn respond(&self, _: &Request) -> ResponseTemplate {
-        self.0.fetch_add(1, Ordering::SeqCst);
-        ResponseTemplate::new(200)
-            .set_delay(Duration::from_millis(150))
-            .set_body_json(serde_json::json!({
-                "full_name": "o/r", "name": "r", "html_url": "https://github.com/o/r",
-                "default_branch": "main"
-            }))
-    }
+    assert_eq!(hits.count(), 2, "memo is per credential");
 }
 
 #[tokio::test]
@@ -2517,7 +2469,12 @@ async fn a_code_search_batch_that_cannot_fit_is_refused_before_any_send() {
     let rate = refusal.rate_limit.expect("rate limit");
     assert_eq!(rate.remaining, None);
     assert_eq!(rate.resource.as_deref(), Some("code_search"));
-    assert!(rate.retry_after_seconds.is_some());
+    // The wait is what is left of the one-minute code-search window.
+    assert!(
+        matches!(rate.retry_after_seconds, Some(1..=60)),
+        "{:?}",
+        rate.retry_after_seconds
+    );
     assert_eq!(
         transport.code_search_room(&context),
         1,

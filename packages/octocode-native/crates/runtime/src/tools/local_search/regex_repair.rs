@@ -89,6 +89,53 @@ fn line_break_pattern(query: &LocalSearchQuery) -> ToolError {
     }
 }
 
+/// A `language` that names no ripgrep file type. Given as a file extension
+/// (`rs`), the error names the type whose files carry it and the repair runs
+/// the same search with that type; otherwise the engine's own error stands.
+pub(super) fn check_language(query: &LocalSearchQuery) -> Result<(), ToolError> {
+    let Some(language) = query
+        .language
+        .as_deref()
+        .filter(|language| !language.is_empty())
+    else {
+        return Ok(());
+    };
+    let mut types = ignore::types::TypesBuilder::new();
+    types.add_defaults();
+    let definitions = types.definitions();
+    if definitions
+        .iter()
+        .any(|definition| definition.name() == language)
+    {
+        return Ok(());
+    }
+    let extension = language.trim_start_matches("*.").trim_start_matches('.');
+    let glob = format!("*.{extension}");
+    let Some(name) = definitions
+        .iter()
+        .find(|definition| {
+            definition
+                .globs()
+                .iter()
+                .any(|candidate| candidate.eq_ignore_ascii_case(&glob))
+        })
+        .map(|definition| definition.name().to_owned())
+    else {
+        return Ok(());
+    };
+    let mut repaired = caller_fields(query);
+    repaired["language"] = json!(name);
+    Err(ToolError {
+        next: Some(Box::new(json!({
+            "repair": Continuation::new(ToolId::LocalSearch, repaired).build()
+        }))),
+        ..ToolError::new(
+            "invalidInput",
+            format!("unrecognized file type: {language}; {glob} files are type \"{name}\"."),
+        )
+    })
+}
+
 /// `invalidPattern` with a literal-search repair continuation.
 pub(super) fn invalid_regex(query: &LocalSearchQuery, message: String) -> ToolError {
     let mut repaired = caller_fields(query);

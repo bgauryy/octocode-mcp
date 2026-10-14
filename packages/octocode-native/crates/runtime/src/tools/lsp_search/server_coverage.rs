@@ -91,6 +91,11 @@ fn annotate_rust(row: &mut Value, query: &LspSearchQuery, scope: &Scope) {
         flag_partial(row, query, CFG_REASON, Some(&warning), scope);
         return;
     }
+    // The rerun repeats the whole walk under every feature: offered once,
+    // on the walk's first page.
+    if query.page().unwrap_or(1) > 1 || query.importer_page() > 1 {
+        return;
+    }
     let mut rerun = query.to_row();
     if let Some(fields) = rerun.as_object_mut() {
         fields
@@ -146,7 +151,7 @@ fn gated_files_mentioning_limit(
     gate: fn(&str) -> bool,
     limit: usize,
 ) -> GateScan {
-    let walker = crate::tools::pruned_walk(root, crate::tools::syntax_prune(&[])).build();
+    let walker = crate::tools::pruned_walk(root, crate::tools::syntax_prune([])).build();
     let mut scan = GateScan::default();
     let mut visited = 0;
     let started = std::time::Instant::now();
@@ -294,6 +299,22 @@ mod tests {
         let rerun = &row["next"]["expandFeatures"]["query"]["queries"][0];
         assert_eq!(rerun["rustContext"]["features"], "all", "{row}");
         assert_eq!(rerun["symbolName"], "spawn_blocking", "{row}");
+        // A later page of the same walk keeps the reason; the rerun lead
+        // was offered once, on the first page.
+        for later in [
+            json!({"page": 2, "snapshot": "lsp-v3:abc"}),
+            json!({"importerPage": 2, "snapshot": "lsp-v3:abc"}),
+        ] {
+            let mut later_query = row_query.clone();
+            later_query
+                .as_object_mut()
+                .expect("query")
+                .extend(later.as_object().expect("fields").clone());
+            let mut page = json!({"kind":"references","matches":[{"path":"lib.rs"}]});
+            annotate(&mut page, &query(later_query), Some("rust"), &scope);
+            assert_eq!(page["partialReasons"], json!([CFG_REASON]), "{page}");
+            assert!(page.pointer("/next/expandFeatures").is_none(), "{page}");
+        }
         // An all-features run is not flagged again.
         let mut all = json!({"kind":"references","matches":[]});
         let mut all_query = row_query;

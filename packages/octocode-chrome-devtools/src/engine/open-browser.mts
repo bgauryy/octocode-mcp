@@ -68,8 +68,13 @@ if (!/^\d+$/.test(PORT) || Number(PORT) < 1 || Number(PORT) > 65535)
 propagateOctocodeEnv({ cwd: process.cwd(), trusted: true });
 
 // Every isolated profile and session file lives at
-// <workspace>/.octocode/tmp/chrome-devtools/browser-state/, keyed by port.
-const STATE_SUBPATH = ['.octocode', 'tmp', 'chrome-devtools', 'browser-state'];
+// <workspace>/.octocode/octocode-chrome-devtools/tmp/browser-state/, keyed by port.
+const STATE_SUBPATH = [
+  '.octocode',
+  'octocode-chrome-devtools',
+  'tmp',
+  'browser-state',
+];
 const sessionFileIn = stateDir => join(stateDir, `cdp-session-${PORT}.json`);
 const profileDirIn = stateDir => join(stateDir, `cdp-chrome-profile-${PORT}`);
 
@@ -228,7 +233,7 @@ function escapeRegExp(text) {
 }
 
 // The isolated profile this package created for PORT, read from a Chrome
-// command line: <workspace>/.octocode/tmp/chrome-devtools/browser-state/cdp-chrome-profile-<PORT>.
+// command line: <workspace>/.octocode/octocode-chrome-devtools/tmp/browser-state/cdp-chrome-profile-<PORT>.
 function packageProfileFromCommand(command) {
   const sep = '[\\\\/]';
   const suffix = [...STATE_SUBPATH, `cdp-chrome-profile-${PORT}`]

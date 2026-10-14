@@ -41,6 +41,78 @@ fn enabled(machine: &Value, name: &str) -> bool {
     machine_entry(machine, name).is_some_and(|tool| tool["availability"]["enabled"] == true)
 }
 
+/// Keep the core-emitted resource schema, narrowing only its delegate enum to
+/// tools this CLI instance can actually run. The empty case has a separate
+/// core projection because a zero-member JSON Schema enum is not a resource.
+fn narrow_resource_tools(schema: &mut Value, allowed: &[&str], declared: &[&str]) {
+    match schema {
+        Value::Object(object) => {
+            if let Some(tool) = object
+                .get_mut("properties")
+                .and_then(Value::as_object_mut)
+                .and_then(|properties| properties.get_mut("tool"))
+                && let Some(values) = tool.get_mut("enum").and_then(Value::as_array_mut)
+                && values
+                    .iter()
+                    .all(|value| value.as_str().is_some_and(|name| declared.contains(&name)))
+            {
+                values.retain(|value| value.as_str().is_some_and(|name| allowed.contains(&name)));
+            }
+            for child in object.values_mut() {
+                narrow_resource_tools(child, allowed, declared);
+            }
+        }
+        Value::Array(values) => {
+            for child in values {
+                narrow_resource_tools(child, allowed, declared);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn example_uses_available_tools(example: &Value, allowed: &[&str]) -> bool {
+    if let Some(resources) = example.get("resources").and_then(Value::as_array)
+        && resources.iter().any(|resource| {
+            resource["tool"]
+                .as_str()
+                .is_some_and(|name| !allowed.contains(&name))
+        })
+    {
+        return false;
+    }
+    example["queries"].as_array().is_none_or(|queries| {
+        queries
+            .iter()
+            .all(|query| example_uses_available_tools(query, allowed))
+    })
+}
+
+fn remove_unavailable_examples(view: &mut Value, allowed: &[&str]) {
+    match view {
+        Value::Object(object) => {
+            if object
+                .get("example")
+                .is_some_and(|example| !example_uses_available_tools(example, allowed))
+            {
+                object.remove("example");
+            }
+            if let Some(examples) = object.get_mut("examples").and_then(Value::as_array_mut) {
+                examples.retain(|example| example_uses_available_tools(example, allowed));
+            }
+            for child in object.values_mut() {
+                remove_unavailable_examples(child, allowed);
+            }
+        }
+        Value::Array(values) => {
+            for child in values {
+                remove_unavailable_examples(child, allowed);
+            }
+        }
+        _ => {}
+    }
+}
+
 /// Select a core-generated presentation using the runtime's resolved switch.
 pub(super) fn configured_tool<'a>(tool: &'a Value, machine: &Value) -> &'a Value {
     if machine["presentation"]["ranking"] == true {
@@ -116,6 +188,25 @@ pub(super) fn tool_view(
         }
         Some(selection) => selected(tool, selection)?.clone(),
     };
+    if name == "clasify" && select.is_none() {
+        let declared = presentation["clasifyContextTools"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>();
+        let available = declared
+            .iter()
+            .copied()
+            .filter(|tool| enabled(machine, tool))
+            .collect::<Vec<_>>();
+        if available.is_empty() {
+            value = configured["valueOnly"]["views"][view].clone();
+        } else if let Some(schema) = value.get_mut("querySchema") {
+            narrow_resource_tools(schema, &available, &declared);
+        }
+        remove_unavailable_examples(&mut value, &available);
+    }
     value["availability"] = machine_entry(machine, name)
         .map(|entry| entry["availability"].clone())
         .unwrap_or_else(|| json!({ "enabled": false }));
@@ -251,7 +342,9 @@ fn grammar_instruction(capabilities: &Value) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{catalog, grammar_instruction, tool_view};
+    use super::{
+        catalog, grammar_instruction, narrow_resource_tools, remove_unavailable_examples, tool_view,
+    };
     use serde_json::{Value, json};
 
     /// A machine catalog with every presentation tool enabled except `off`.
@@ -320,6 +413,53 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn clasify_resource_projection_follows_enabled_delegate_tools() {
+        let mut schema = json!({
+            "properties": { "resources": { "items": { "anyOf": [
+                { "properties": { "value": { "type": "string" } } },
+                { "properties": { "tool": { "enum": ["localFetch", "ghGetFileContent"] } } }
+            ] } } }
+        });
+        narrow_resource_tools(
+            &mut schema,
+            &["localFetch"],
+            &["localFetch", "ghGetFileContent"],
+        );
+        assert_eq!(
+            schema["properties"]["resources"]["items"]["anyOf"][1]["properties"]["tool"]["enum"],
+            json!(["localFetch"])
+        );
+        assert_eq!(
+            schema["properties"]["resources"]["items"]["anyOf"][0]["properties"]["value"]["type"],
+            "string"
+        );
+    }
+
+    #[test]
+    fn clasify_variant_examples_never_suggest_disabled_delegates() {
+        let mut view = json!({
+            "variants": [
+                { "name": "delegated", "example": { "resources": [{ "tool": "localFetch" }] } },
+                { "name": "held", "example": { "resources": [{ "value": "known" }] } }
+            ],
+            "querySchema": { "$defs": { "Matrix": { "examples": [
+                { "resources": [{ "tool": "localFetch" }] },
+                { "resources": [{ "value": "known" }] }
+            ] } } }
+        });
+        remove_unavailable_examples(&mut view, &[]);
+        assert!(view["variants"][0].get("example").is_none());
+        assert_eq!(
+            view["variants"][1]["example"]["resources"][0]["value"],
+            "known"
+        );
+        assert_eq!(
+            view["querySchema"]["$defs"]["Matrix"]["examples"],
+            json!([{ "resources": [{ "value": "known" }] }])
+        );
     }
 
     #[test]

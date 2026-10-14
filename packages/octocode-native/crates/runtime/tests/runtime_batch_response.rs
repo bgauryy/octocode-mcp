@@ -1,6 +1,6 @@
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use crate::support;
+use crate::support::{self, Run as _};
 
 use serde_json::json;
 use support::Workspace;
@@ -26,7 +26,7 @@ async fn invalid_rows_become_error_rows_while_valid_rows_execute() {
         search(&root, json!({"resultView":"files"}))
     ]});
     let outcome = runtime
-        .execute("isolate".into(), "localSearch".into(), input)
+        .run("isolate".into(), "localSearch".into(), input)
         .await
         .expect("a partially invalid batch still executes");
     let rows = outcome.structured_content["results"].as_array().unwrap();
@@ -63,13 +63,13 @@ async fn an_all_invalid_or_envelope_invalid_batch_still_fails_as_a_whole() {
         search(&root, json!({"alsoBogus":2}))
     ]});
     let error = runtime
-        .execute("all-invalid".into(), "localSearch".into(), all_invalid)
+        .run("all-invalid".into(), "localSearch".into(), all_invalid)
         .await
         .expect_err("no valid row to run");
     assert_eq!(error.code, "invalidInput");
     let too_many = json!({"queries": (0..6).map(|_| search(&root, json!({}))).collect::<Vec<_>>()});
     let error = runtime
-        .execute("too-many".into(), "localSearch".into(), too_many)
+        .run("too-many".into(), "localSearch".into(), too_many)
         .await
         .expect_err("envelope limits are not row-scoped");
     assert_eq!(error.code, "invalidInput");
@@ -104,7 +104,7 @@ async fn oversized_cli_output_pages_by_whole_rows_with_an_executable_continuatio
         .into_owned();
     let runtime = workspace.runtime(&[("OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH", "4000".into())]);
     let first = runtime
-        .execute(
+        .run(
             "auto-page".into(),
             "localSearch".into(),
             json!({"queries":[search(&root, json!({"pageSize":20,"matchContentLength":2000}))]}),
@@ -133,7 +133,7 @@ async fn oversized_cli_output_pages_by_whole_rows_with_an_executable_continuatio
     let mut pages = 1;
     while let Some(query) = next.take() {
         let page = runtime
-            .execute(format!("auto-page-{pages}"), "localSearch".into(), query)
+            .run(format!("auto-page-{pages}"), "localSearch".into(), query)
             .await
             .expect("continuation executes unchanged");
         assert_whole_row_page(&page.structured_content);
@@ -161,7 +161,7 @@ async fn small_output_is_not_paginated_and_mcp_auto_pages_by_whole_rows() {
     let root = file.parent().unwrap().to_string_lossy().into_owned();
     let runtime = workspace.runtime(&[("OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH", "2000".into())]);
     let small = runtime
-        .execute(
+        .run(
             "small".into(),
             "localSearch".into(),
             json!({"queries":[search(&root, json!({}))]}),
@@ -181,7 +181,7 @@ async fn small_output_is_not_paginated_and_mcp_auto_pages_by_whole_rows() {
         workspace.write(&format!("src/big{index}.txt"), "needle ".repeat(400) + "\n");
     }
     let mcp = runtime
-        .execute_mcp(
+        .run_mcp(
             "mcp-auto".into(),
             "localSearch".into(),
             json!({"queries":[search(&root, json!({"pageSize":20,"matchContentLength":2000}))]}),

@@ -3,9 +3,9 @@
 //! changed files as path+stat, patch lines numbered on their own side).
 #![allow(clippy::expect_used)]
 use super::{HistoryItemRequest, execute};
-use crate::providers::github::RetryPolicy;
 use crate::security::scan::ContentScan;
 use crate::tools::gh_shared::test_support::{fixture_context, mock_provider, mount_json};
+use octocode_github::RetryPolicy;
 use serde_json::{Value, json};
 use std::path::Path;
 use std::time::Duration;
@@ -162,9 +162,14 @@ async fn commit_match_string_that_removes_every_file_says_so() {
     let files = out["files"].as_array().expect("files");
     assert_eq!(files.len(), 1, "{out}");
     assert_eq!(files[0]["path"], "src/b.rs", "{out}");
-    // Only a filter that removes every file is an empty answer.
+    // Only a filter that removes every file is an empty answer; one that
+    // removes some counts them.
     assert!(out.get("status").is_none(), "{out}");
-    assert!(out.get("warnings").is_none(), "{out}");
+    assert_eq!(
+        out["warnings"],
+        json!(["matchString dropped 1 of 2 changed files: no patch line holds it."]),
+        "{out}"
+    );
     assert!(out["next"].get("withoutMatchString").is_none(), "{out}");
 }
 
@@ -247,4 +252,279 @@ async fn issue_row_carries_number_state_author_and_discussion_size() {
     assert_eq!(issue["author"], "bob", "{out}");
     assert_eq!(issue["commentsCount"], 3, "{out}");
     assert_eq!(issue["body"], "It crashes.", "{out}");
+}
+
+async fn mount_pr(server: &MockServer, files: Value) {
+    mount_json(
+        server,
+        "/api/v3/repos/o/r/pulls/1",
+        200,
+        json!({"number":1,"title":"Fix","state":"open","user":{"login":"ada"},
+            "head":{"sha":HEAD,"ref":"fix"},"base":{"sha":BASE,"ref":"main"},
+            "changed_files":files.as_array().map_or(0, Vec::len),
+            "additions":1,"deletions":1,"created_at":"2024-01-01T00:00:00Z"}),
+    )
+    .await;
+    mount_json(server, "/api/v3/repos/o/r/pulls/1/files", 200, files).await;
+}
+
+/// `matchString` matches patch lines only: a file whose path alone holds
+/// it is not kept (its whole patch would answer nothing), and the files the
+/// filter dropped are counted on the call.
+#[tokio::test]
+async fn pr_match_string_keeps_patch_hits_only_and_counts_dropped_files() {
+    let server = MockServer::builder().start().await;
+    mount_pr(
+        &server,
+        json!([
+            {"filename":"src/a.rs","status":"modified","additions":1,"deletions":1,"sha":"1",
+                "patch":"@@ -1,2 +1,2 @@\n keep\n-old\n+new Needle"},
+            {"filename":"src/needle.rs","status":"modified","additions":1,"deletions":1,"sha":"2",
+                "patch":"@@ -1 +1 @@\n-x\n+y"},
+            {"filename":"src/b.rs","status":"modified","additions":1,"deletions":1,"sha":"3",
+                "patch":"@@ -1 +1 @@\n-p\n+q"}
+        ]),
+    )
+    .await;
+    let out = read(
+        &server,
+        json!({"operation":"pullRequest","owner":"o","repo":"r","number":1,
+            "sections":["patches"],"matchString":"needle"}),
+    )
+    .await;
+    let paths = out["pullRequests"][0]["files"]
+        .as_array()
+        .expect("files")
+        .iter()
+        .map(|file| file["path"].clone())
+        .collect::<Vec<_>>();
+    assert_eq!(paths, [json!("src/a.rs")], "{out}");
+    let warnings = out["warnings"].to_string();
+    assert!(
+        warnings.contains("matchString dropped 2 of 3 changed files"),
+        "{out}"
+    );
+}
+
+/// A patchless file a `matchString` could not search is read at the side
+/// that holds it: a removed file at the base, never at the head (a 404).
+/// Its path holding the literal does not make it searched.
+#[tokio::test]
+async fn pr_unpatched_removed_file_is_searched_at_the_base() {
+    let server = MockServer::builder().start().await;
+    mount_pr(
+        &server,
+        json!([
+            {"filename":"src/needle_gone.rs","status":"removed","additions":0,"deletions":900,
+                "sha":"1"},
+            {"filename":"src/a.rs","status":"modified","additions":1,"deletions":1,"sha":"2",
+                "patch":"@@ -1,2 +1,2 @@\n keep\n-old\n+new needle"}
+        ]),
+    )
+    .await;
+    let out = read(
+        &server,
+        json!({"operation":"pullRequest","owner":"o","repo":"r","number":1,
+            "sections":["patches"],"matchString":"needle"}),
+    )
+    .await;
+    assert_eq!(
+        out["pullRequests"][0]["unsearchedFiles"],
+        json!(["!tooLarge src/needle_gone.rs"]),
+        "{out}"
+    );
+    let search = &out["next"]["searchUnpatchedFile"]["query"]["queries"][0];
+    assert_eq!(search["path"], "src/needle_gone.rs", "{out}");
+    assert_eq!(search["ref"], BASE, "{out}");
+}
+
+/// A commit's `matchString` keeps the files whose patch holds it (not a
+/// path-only hit) and counts the files it dropped.
+#[tokio::test]
+async fn commit_match_string_drops_path_only_hits_and_counts_them() {
+    let server = MockServer::builder().start().await;
+    let mut raw = commit_raw(HEAD, "Fix parser");
+    raw["files"] = json!([changed_file("src/a.rs"), {
+        "filename":"src/new_thing.rs","status":"modified","additions":1,"deletions":1,
+        "patch":"@@ -1 +1 @@\n-x\n+y"}]);
+    mount_json(
+        &server,
+        format!("/api/v3/repos/o/r/commits/{HEAD}"),
+        200,
+        raw,
+    )
+    .await;
+    let out = read(
+        &server,
+        json!({"operation":"commit","owner":"o","repo":"r","ref":HEAD,"matchString":"NEW"}),
+    )
+    .await;
+    let files = out["files"].as_array().expect("files");
+    assert_eq!(files.len(), 1, "{out}");
+    assert_eq!(files[0]["path"], "src/a.rs", "{out}");
+    assert!(
+        out["warnings"]
+            .to_string()
+            .contains("matchString dropped 1 of 2 changed files"),
+        "{out}"
+    );
+}
+
+/// A changed file GitHub sent without a patch (too large to diff) was never
+/// searched by `matchString`: it is listed as unsearched, never counted as
+/// a file no patch line holds the literal in, and the row is partial with
+/// the read that searches its source at the side that holds it.
+#[tokio::test]
+async fn commit_match_string_lists_patchless_files_as_unsearched() {
+    let server = MockServer::builder().start().await;
+    let mut raw = commit_raw(HEAD, "Fix parser");
+    raw["parents"] = json!([{"sha":BASE}]);
+    raw["files"] = json!([changed_file("src/a.rs"), {
+        "filename":"src/b.rs","status":"modified","additions":1,"deletions":1,
+        "patch":"@@ -1 +1 @@\n-x\n+y"}, {
+        "filename":"src/big.rs","status":"modified","additions":900,"deletions":3,"sha":"9"}]);
+    mount_json(
+        &server,
+        format!("/api/v3/repos/o/r/commits/{HEAD}"),
+        200,
+        raw,
+    )
+    .await;
+    let out = read(
+        &server,
+        json!({"operation":"commit","owner":"o","repo":"r","ref":HEAD,"matchString":"new"}),
+    )
+    .await;
+    let paths = out["files"]
+        .as_array()
+        .expect("files")
+        .iter()
+        .map(|file| file["path"].clone())
+        .collect::<Vec<_>>();
+    assert_eq!(paths, [json!("src/a.rs")], "{out}");
+    assert_eq!(
+        out["warnings"],
+        json!(["matchString dropped 1 of 3 changed files: no patch line holds it."]),
+        "{out}"
+    );
+    assert_eq!(
+        out["unsearchedFiles"],
+        json!(["!tooLarge src/big.rs"]),
+        "{out}"
+    );
+    assert_eq!(out["isPartial"], true, "{out}");
+    assert_eq!(out["partialReasons"], json!(["patchUnavailable"]), "{out}");
+    let search = &out["next"]["searchUnpatchedFile"]["query"]["queries"][0];
+    assert_eq!(search["path"], "src/big.rs", "{out}");
+    assert_eq!(search["ref"], HEAD, "{out}");
+    assert_eq!(search["matchString"], "new", "{out}");
+
+    // A literal no searched patch holds, beside an unsearched file, is no
+    // empty answer: the unsearched file may hold it.
+    let out = read(
+        &server,
+        json!({"operation":"commit","owner":"o","repo":"r","ref":HEAD,"matchString":"zzqx"}),
+    )
+    .await;
+    assert_eq!(out["files"], json!([]), "{out}");
+    assert!(out.get("status").is_none(), "{out}");
+    assert_eq!(
+        out["warnings"],
+        json!(["matchString dropped 2 of 3 changed files: no patch line holds it."]),
+        "{out}"
+    );
+    assert_eq!(
+        out["unsearchedFiles"],
+        json!(["!tooLarge src/big.rs"]),
+        "{out}"
+    );
+    assert_eq!(out["partialReasons"], json!(["patchUnavailable"]), "{out}");
+}
+
+/// A comparison's `matchString` lists patchless files as unsearched too; a
+/// removed one is searched at the merge base, where its text is.
+#[tokio::test]
+async fn compare_match_string_lists_patchless_files_as_unsearched() {
+    let server = MockServer::builder().start().await;
+    mount_json(
+        &server,
+        format!("/api/v3/repos/o/r/compare/{BASE}...{HEAD}"),
+        200,
+        json!({"ahead_by":1,"behind_by":0,"total_commits":1,
+            "base_commit":{"sha":BASE},"merge_base_commit":{"sha":MERGE_BASE},
+            "commits":[commit_raw(HEAD, "Add feature")],
+            "files":[changed_file("src/a.rs"), changed_file("src/c.rs"), {
+                "filename":"src/gone.rs","status":"removed","additions":0,"deletions":700,
+                "sha":"9"}]}),
+    )
+    .await;
+    let out = read(
+        &server,
+        json!({"operation":"compare","owner":"o","repo":"r","base":BASE,"head":HEAD,
+            "matchString":"new"}),
+    )
+    .await;
+    assert!(out.get("warnings").is_none(), "{out}");
+    assert_eq!(
+        out["unsearchedFiles"],
+        json!(["!tooLarge src/gone.rs"]),
+        "{out}"
+    );
+    assert_eq!(out["isPartial"], true, "{out}");
+    assert_eq!(out["partialReasons"], json!(["patchUnavailable"]), "{out}");
+    let search = &out["next"]["searchUnpatchedFile"]["query"]["queries"][0];
+    assert_eq!(search["path"], "src/gone.rs", "{out}");
+    assert_eq!(search["ref"], MERGE_BASE, "{out}");
+}
+
+/// A comment page whose minified view dropped text offers the raw re-read
+/// of the same comment kinds: running it lists the comments again.
+#[tokio::test]
+async fn pr_raw_body_read_keeps_the_comment_sections() {
+    let server = MockServer::builder().start().await;
+    mount_pr(&server, json!([])).await;
+    let comment = |id: u64| {
+        json!({"id":id,"user":{"login":"rev"},"body":"See <!-- hidden note --> this",
+            "created_at":"2024-01-01T00:00:00Z"})
+    };
+    mount_json(
+        &server,
+        "/api/v3/repos/o/r/issues/1/comments",
+        200,
+        json!([comment(1)]),
+    )
+    .await;
+    let mut inline = comment(2);
+    inline["path"] = json!("src/a.rs");
+    inline["line"] = json!(3);
+    inline["side"] = json!("RIGHT");
+    inline["commit_id"] = json!(HEAD);
+    mount_json(
+        &server,
+        "/api/v3/repos/o/r/pulls/1/comments",
+        200,
+        json!([inline]),
+    )
+    .await;
+    let out = read(
+        &server,
+        json!({"operation":"pullRequest","owner":"o","repo":"r","number":1,
+            "sections":["comments","reviewComments"]}),
+    )
+    .await;
+    let raw = &out["next"]["readRawBody"]["query"]["queries"][0];
+    assert_eq!(raw["minify"], "none", "{out}");
+    assert_eq!(
+        raw["sections"],
+        json!(["comments", "reviewComments"]),
+        "{out}"
+    );
+    let again = read(&server, raw.clone()).await;
+    assert_eq!(
+        again["pullRequests"][0]["comments"]
+            .as_array()
+            .map_or(0, Vec::len),
+        2,
+        "{again}"
+    );
 }

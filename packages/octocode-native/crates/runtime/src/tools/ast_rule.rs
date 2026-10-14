@@ -4,6 +4,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use octocode_engine::signatures::languages;
+
 /// `languageGlobs` (language → globs) as the engine scan's flat glob list.
 pub(crate) fn language_globs(
     map: &BTreeMap<String, Vec<String>>,
@@ -26,28 +28,40 @@ pub(crate) const INVALID_PATTERN: &str = "invalidPattern";
 /// Recovery for [`INVALID_PATTERN`], in both tools.
 pub(crate) const INVALID_PATTERN_HINT: &str = "Make the pattern one complete, parseable node, or inspect its shape with astSearch operation:\"syntaxTree\".";
 
-/// Why a pattern that parsed can still match nothing, in both tools.
-/// [`empty_match_hint`] composes it after a scanned-files count; the whole
-/// hint stays within [`crate::response::rows::MAX_GUIDANCE_CHARS`] (120).
+/// Why a pattern that parsed can still match nothing: astSearch's fallback
+/// hint for a pattern row without its own.
 pub(crate) const PATTERN_SHAPE_HINT: &str =
     "Patterns match whole nodes; astSearch operation:\"syntaxTree\" shows the shape.";
-/// Where to look when a rule matches nothing, in both tools; composed like
-/// [`PATTERN_SHAPE_HINT`].
-pub(crate) const RULE_SHAPE_HINT: &str =
-    "Rules match by kind and relation; astSearch operation:\"syntaxTree\" shows kinds.";
 
-/// What an empty structural answer covered (the files read, in which
-/// grammar) and why a pattern or rule that compiled can still match nothing,
-/// in both tools.
-pub(crate) fn empty_match_hint(scanned: u32, language: Option<&str>, pattern: bool) -> String {
+/// What an empty structural answer covered, in both tools: the files read,
+/// in which grammar. Why a compiled query can match nothing is static and
+/// belongs to the tool description; the `viewTree` lead shows the shape.
+pub(crate) fn empty_match_hint(scanned: u32, language: Option<&str>) -> String {
     let language = language.map_or_else(String::new, |language| format!("{language} "));
     let plural = if scanned == 1 { "" } else { "s" };
-    let shape = if pattern {
-        PATTERN_SHAPE_HINT
-    } else {
-        RULE_SHAPE_HINT
+    format!("0 matches in {scanned} {language}file{plural}.")
+}
+
+/// Recovery of an engine structural diagnostic. The engine names no tool or
+/// contract field, so a diagnostic whose repair is another tool or a field
+/// is worded here, by its code; any other keeps the engine's own.
+pub(crate) fn diagnostic_recovery(code: &str, engine: Option<&str>) -> Option<String> {
+    let text = match code {
+        "structural.language.unsupported" => {
+            "Set language to the grammar the file is written in, or search its text with localSearch."
+        }
+        "structural.file.tooLarge" => {
+            "Search its text with localSearch, or read line ranges with localFetch."
+        }
+        "structural.content.tooLarge" => {
+            "Target a smaller file; for this one, read bounded ranges with localFetch or search text with localSearch."
+        }
+        "syntaxTree.budget.deadline" | "syntaxTree.budget.nodeLimit" => {
+            "Follow nextOffset through the numbered nodes. Nodes past this stop are not listed; query them with a match pattern or read their lines with localFetch."
+        }
+        _ => return engine.map(str::to_owned),
     };
-    format!("0 matches in {scanned} {language}file{plural}. {shape}")
+    Some(text.to_owned())
 }
 
 /// A rule that does not compile, as both tools report it.
@@ -78,6 +92,7 @@ pub(crate) fn compile_check(
         let result = octocode_engine::portable::structural_search_detailed(
             "",
             &format!("pattern.{extension}"),
+            None,
             pattern,
             rule,
         )
@@ -85,11 +100,12 @@ pub(crate) fn compile_check(
             code: INVALID_PATTERN,
             message: untagged(&error.to_string()).to_owned(),
         })?;
-        match result
-            .diagnostics
-            .iter()
-            .find(|diagnostic| diagnostic.code == "structural.query.compileFailed")
-        {
+        match result.diagnostics.iter().find(|diagnostic| {
+            matches!(
+                diagnostic.code.as_str(),
+                "structural.query.compileFailed" | octocode_engine::structural::RULE_INVALID
+            )
+        }) {
             Some(diagnostic) => {
                 first_error.get_or_insert_with(|| RuleError {
                     code: INVALID_PATTERN,
@@ -154,49 +170,35 @@ pub(crate) fn choose_grammar(
 /// The grammar and extensions a file's own extension selects.
 pub(crate) fn file_grammar(path: &std::path::Path) -> Option<(String, BTreeSet<String>)> {
     let extension = octocode_engine::text::extension_of(&path.to_string_lossy(), true, "");
-    octocode_engine::portable::grammar_capabilities()
-        .into_iter()
-        .filter(|capability| capability.structural_search)
-        .find(|capability| capability.extensions.contains(&extension))
-        .map(|capability| {
-            let extensions = language_extensions(&capability.language)
-                .unwrap_or_else(|| BTreeSet::from([extension]));
-            (grammar_selector(&capability), extensions)
-        })
+    let entry = languages::find_entry(&extension)?;
+    let label = languages::label(entry);
+    let extensions = language_extensions(&label).unwrap_or_else(|| BTreeSet::from([extension]));
+    Some((label, extensions))
 }
 
 /// Grammars whose extensions occur under `root`, from a bounded walk that
-/// honors the same discovery policy, ignore files and excluded directories
+/// honors the same discovery policy, ignore rules and excluded directories
 /// as the match scan. Each maps to its full extension set, most files
 /// first (ties by name), so a list of candidates leads with the grammar the
-/// scope is mostly written in.
+/// scope is mostly written in. `stop` cancels the walk
+/// (`ErrorKind::Cancelled`); an invalid glob is `ErrorKind::InvalidGlob`.
 pub(crate) fn present_grammars(
     root: &std::path::Path,
     prune: &[String],
-    hidden: bool,
-    no_ignore: bool,
+    walk: crate::tools::empty_walk::Walk,
     max_files: usize,
     globs: crate::tools::empty_walk::Globs<'_>,
-    permits: &dyn Fn(&std::path::Path) -> Result<bool, String>,
-) -> Result<Vec<(String, BTreeSet<String>)>, String> {
-    let capabilities = octocode_engine::portable::grammar_capabilities()
-        .into_iter()
-        .filter(|capability| capability.structural_search)
-        .collect::<Vec<_>>();
+    permits: &dyn Fn(&std::path::Path) -> bool,
+    stop: &octocode_engine::search::walk::Stop<'_>,
+) -> Result<Vec<(String, BTreeSet<String>)>, octocode_engine::error::Error> {
     let mut seen: BTreeMap<String, usize> = BTreeMap::new();
     let mut files = 0_usize;
-    let walker = crate::tools::empty_walk::Walk {
-        ignored: no_ignore,
-        hidden,
-        default_excludes: !prune.is_empty(),
-    }
-    .walker(root, prune, globs)?;
-    for entry in walker {
-        let Ok(entry) = entry else { continue };
-        if !entry.file_type().is_some_and(|kind| kind.is_file()) {
-            continue;
+    for entry in walk.walker(root, prune, globs)? {
+        if stop() {
+            return Err(octocode_engine::error::Error::cancelled());
         }
-        if !permits(entry.path())? {
+        let Ok(entry) = entry else { continue };
+        if !entry.file_type().is_some_and(|kind| kind.is_file()) || !permits(entry.path()) {
             continue;
         }
         files += 1;
@@ -211,13 +213,11 @@ pub(crate) fn present_grammars(
     }
     let mut grammars: BTreeMap<String, (BTreeSet<String>, usize)> = BTreeMap::new();
     for (extension, count) in seen {
-        if let Some(capability) = capabilities
-            .iter()
-            .find(|capability| capability.extensions.contains(&extension))
-            && let Some(extensions) = language_extensions(&capability.language)
+        if let Some(entry) = languages::find_entry(&extension)
+            && let Some(extensions) = language_extensions(entry.name)
         {
             grammars
-                .entry(grammar_selector(capability))
+                .entry(languages::label(entry))
                 .or_insert_with(|| (extensions, 0))
                 .1 += count;
         }
@@ -230,15 +230,6 @@ pub(crate) fn present_grammars(
         .collect())
 }
 
-/// The language a caller would write for a grammar: its language id
-/// (`rust`, `typescript`), else its lowercased name.
-pub(crate) fn grammar_selector(capability: &octocode_engine::types::GrammarCapability) -> String {
-    capability
-        .language_id
-        .clone()
-        .unwrap_or_else(|| capability.language.to_ascii_lowercase())
-}
-
 /// The one message for a `language` no structural grammar answers to
 /// (astSearch and astRewrite, error code `languageUnsupported`).
 pub(crate) fn unsupported_language_message(language: &str) -> String {
@@ -247,39 +238,23 @@ pub(crate) fn unsupported_language_message(language: &str) -> String {
     )
 }
 
-pub(crate) fn language_extensions(language: &str) -> Option<BTreeSet<String>> {
+/// The extension that parses a source as `language`: the one a `.ext`
+/// selector names, else the grammar's first registered extension.
+pub(crate) fn primary_extension(language: &str) -> Option<String> {
     let selector = language.trim().to_ascii_lowercase();
-    let capabilities = octocode_engine::portable::grammar_capabilities();
     if let Some(extension) = selector.strip_prefix('.') {
-        return capabilities
-            .iter()
-            .any(|capability| capability.extensions.iter().any(|item| *item == extension))
-            .then(|| BTreeSet::from([extension.to_owned()]));
+        return language_extensions(&selector).map(|_| extension.to_owned());
     }
-    let mut extensions: BTreeSet<String> = capabilities
-        .into_iter()
-        .filter(|capability| {
-            capability.language.eq_ignore_ascii_case(&selector)
-                || capability
-                    .language_id
-                    .as_deref()
-                    .is_some_and(|id| id.eq_ignore_ascii_case(&selector))
-                || capability
-                    .selector_aliases
-                    .iter()
-                    .any(|alias| alias.eq_ignore_ascii_case(&selector))
-                || capability
-                    .extensions
-                    .iter()
-                    .any(|extension| extension.eq_ignore_ascii_case(&selector))
-        })
-        .flat_map(|capability| capability.extensions)
-        .map(|extension| extension.to_ascii_lowercase())
-        .collect();
-    if !extensions.is_empty() && (selector == "cpp" || selector == "c++") {
-        extensions.insert("h".to_owned());
-    }
-    (!extensions.is_empty()).then_some(extensions)
+    languages::select(&selector)
+        .next()
+        .and_then(|entry| entry.extensions.first())
+        .map(|extension| (*extension).to_owned())
+}
+
+/// The extensions a `language` selector's family parses (see
+/// [`languages::family_extensions`]).
+pub(crate) fn language_extensions(language: &str) -> Option<BTreeSet<String>> {
+    languages::family_extensions(language)
 }
 
 pub(crate) fn has_extension_in(path: &std::path::Path, extensions: &BTreeSet<String>) -> bool {
@@ -292,17 +267,13 @@ pub(crate) fn has_extension_in(path: &std::path::Path, extensions: &BTreeSet<Str
 
 #[cfg(test)]
 mod tests {
-    /// The composed hint fits the guidance limit at its widest: a five-digit
-    /// count and the longest grammar name.
+    /// The hint is the per-call fact alone, within the guidance limit at its
+    /// widest: a five-digit count and the longest grammar name.
     #[test]
-    fn the_widest_empty_match_hint_fits_the_guidance_limit() {
-        for pattern in [true, false] {
-            let hint = super::empty_match_hint(99_999, Some("objective-cpp"), pattern);
-            assert!(
-                hint.chars().count() <= crate::response::rows::MAX_GUIDANCE_CHARS,
-                "{} chars: {hint}",
-                hint.chars().count()
-            );
-        }
+    fn the_empty_match_hint_states_only_what_was_scanned() {
+        let hint = super::empty_match_hint(99_999, Some("objective-cpp"));
+        assert_eq!(hint, "0 matches in 99999 objective-cpp files.");
+        assert!(hint.chars().count() <= crate::response::rows::MAX_GUIDANCE_CHARS);
+        assert_eq!(super::empty_match_hint(1, None), "0 matches in 1 file.");
     }
 }

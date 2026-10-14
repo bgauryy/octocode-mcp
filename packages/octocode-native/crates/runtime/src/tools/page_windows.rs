@@ -54,6 +54,30 @@ impl Paging {
     }
 }
 
+/// Item range of count page `page` (1-based) over `total` items of `size`
+/// each. A page past the end is the empty range at `total`; page 0 reads as
+/// the first page and size 0 as one item, so no caller can underflow.
+pub(crate) fn count_window(page: usize, size: usize, total: usize) -> Range<usize> {
+    let size = size.max(1);
+    let start = page
+        .max(1)
+        .saturating_sub(1)
+        .saturating_mul(size)
+        .min(total);
+    start..start.saturating_add(size).min(total)
+}
+
+/// The window of 1-based `page` among cut `windows`; page 0 reads as the
+/// first page, and a page past the last window is `None`.
+pub(crate) fn nth_page(windows: &[Range<usize>], page: usize) -> Option<&Range<usize>> {
+    windows.get(page.max(1) - 1)
+}
+
+/// Pages of `size` items over `total` items; an empty set is one page.
+pub(crate) fn count_pages(total: usize, size: usize) -> usize {
+    total.div_ceil(size.max(1)).max(1)
+}
+
 /// Characters one page of a row may spend on its items: the response window
 /// less the row around them, which re-states the query in each continuation.
 pub(crate) fn page_budget(response_window: Option<usize>, query: &serde_json::Value) -> usize {
@@ -118,6 +142,74 @@ mod tests {
         assert_eq!(Paging::of(Some(3), 16_000), Paging::Count(3));
         assert_eq!(Paging::of(None, 16_000), Paging::Chars(16_000));
         assert_eq!(Paging::of(Some(0), 16_000), Paging::Count(1));
+    }
+
+    #[test]
+    fn a_count_page_is_the_closed_form_window_and_past_the_end_is_empty() {
+        assert_eq!(count_window(1, 3, 7), 0..3);
+        assert_eq!(count_window(3, 3, 7), 6..7);
+        assert_eq!(count_window(4, 3, 7), 7..7);
+        assert_eq!(
+            count_window(0, 3, 7),
+            0..3,
+            "page 0 reads as the first page"
+        );
+        assert_eq!(count_window(1, 0, 7), 0..1, "size 0 reads as one item");
+        assert_eq!(count_window(2, 3, 0), 0..0);
+    }
+
+    #[test]
+    fn count_arithmetic_survives_extreme_pages_and_sizes() {
+        // Pages and sizes come from request input: none may overflow or panic.
+        assert_eq!(
+            count_window(usize::MAX, usize::MAX, usize::MAX),
+            usize::MAX..usize::MAX
+        );
+        assert_eq!(count_window(usize::MAX, 1, 10), 10..10);
+        assert_eq!(count_window(2, usize::MAX, 10), 10..10);
+        assert_eq!(count_pages(usize::MAX, 1), usize::MAX);
+        assert_eq!(count_pages(0, 0), 1);
+        let one_window = [Range { start: 0, end: 1 }];
+        assert!(nth_page(&one_window, usize::MAX).is_none());
+    }
+
+    #[test]
+    fn windows_survive_items_larger_than_any_budget() {
+        let sizes = [usize::MAX, 1, usize::MAX];
+        for paging in [
+            Paging::Chars(1),
+            Paging::Chars(usize::MAX),
+            Paging::Count(1),
+        ] {
+            let windows = paging.windows(&sizes);
+            let covered: usize = windows.iter().map(|w| w.len()).sum();
+            assert_eq!(covered, sizes.len(), "{paging:?}");
+            assert!(windows.iter().all(|w| !w.is_empty()), "{paging:?}");
+        }
+    }
+
+    #[test]
+    fn nth_page_is_one_based_and_page_zero_is_the_first() {
+        let windows = [0..2, 2..5];
+        assert_eq!(nth_page(&windows, 0), Some(&(0..2)));
+        assert_eq!(nth_page(&windows, 2), Some(&(2..5)));
+        assert_eq!(nth_page(&windows, 3), None);
+        assert_eq!(nth_page(&[], 1), None);
+    }
+
+    #[test]
+    fn count_pages_agrees_with_the_windows_it_names() {
+        for total in [0_usize, 1, 2, 7, 64] {
+            for size in [1_usize, 3, 64] {
+                let windows =
+                    Paging::Count(size).windows(&(0..total).map(|_| 1).collect::<Vec<_>>());
+                assert_eq!(
+                    count_pages(total, size),
+                    windows.len().max(1),
+                    "{total}/{size}"
+                );
+            }
+        }
     }
 
     #[test]

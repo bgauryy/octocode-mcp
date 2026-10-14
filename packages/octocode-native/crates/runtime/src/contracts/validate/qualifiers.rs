@@ -46,7 +46,11 @@ pub(super) fn validate(
             continue;
         };
         for term in qualifier_terms(text) {
-            let term = term.strip_prefix('-').unwrap_or(&term);
+            // A negated term (`-is:merged`) filters by exclusion; it never
+            // restates a typed field.
+            if term.starts_with('-') {
+                continue;
+            }
             let Some((key, value)) = term.split_once(':').filter(|(key, _)| !key.is_empty()) else {
                 continue;
             };
@@ -119,9 +123,12 @@ mod tests {
             ["qualifiers: created: repeats the created field; set it once."]
         );
         assert_eq!(
-            check(json!({"draft": true, "qualifiers": "-is:draft"})),
+            check(json!({"draft": true, "qualifiers": "is:draft"})),
             ["qualifiers: is: repeats the draft field; set it once."]
         );
+        // A negated term filters by exclusion and sets no field (core parity:
+        // `state:"closed"` beside `-is:merged` is closed-unmerged).
+        assert!(check(json!({"state": "closed", "qualifiers": "-is:merged"})).is_empty());
     }
 
     #[test]

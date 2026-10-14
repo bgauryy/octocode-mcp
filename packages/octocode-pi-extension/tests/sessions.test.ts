@@ -4,11 +4,11 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SessionManager, type SessionInfo } from '@earendil-works/pi-coding-agent';
 import { closeSharedAgentDb, sharedAgentDb } from '../src/agentdb/db.js';
-import { repoKey, sessionDir, setCurrentSession } from '../src/shared/home.js';
+import { repoKey, sessionDir, sessionsRoot, setCurrentSession } from '../src/shared/home.js';
 import { Subcommands } from '../src/shared/commands.js';
-import { shortDuration } from '../src/sessions/brief.js';
+import { resumeBrief, shortDuration } from '../src/sessions/brief.js';
 import { registerSessions, RESUME_MESSAGE_TYPE, RUNNING_WORK_TYPE } from '../src/sessions/register.js';
-import { describeWork, unreportedWork, workList } from '../src/sessions/work.js';
+import { countedList, describeWork, unreportedWork, workList } from '../src/sessions/work.js';
 import { processStartTime } from '../src/shared/process.js';
 import { SessionIndex } from '../src/sessions/store.js';
 import * as sessionStore from '../src/sessions/store.js';
@@ -87,7 +87,14 @@ describe('session extras', () => {
   it('records only what Pi does not know: live pid, cost, tokens and files changed, keyed by session id', async () => {
     const usage = (total: number, tokens: number) => ({ input: tokens, output: 0, totalTokens: tokens, cost: { total } });
     // A subagent's usage rides its `agent` tool result: it counts, as in the footer.
-    const { fire, ctx, start, id } = setup({ entries: [{ type: 'message', id: 'a0', message: { role: 'assistant', usage: usage(0.25, 15) } }, { type: 'message', id: 't0', message: { role: 'toolResult', usage: usage(1, 100) } }] });
+    // A background subagent's report carries its run's usage in `details.usage`: it counts too.
+    const { fire, ctx, start, id } = setup({
+      entries: [
+        { type: 'message', id: 'a0', message: { role: 'assistant', usage: usage(0.25, 15) } },
+        { type: 'message', id: 't0', message: { role: 'toolResult', usage: usage(1, 100) } },
+        { type: 'custom_message', id: 'r0', customType: 'octocode-agent-result', details: { id: 'bg', usage: usage(4, 400) } },
+      ],
+    });
     await start();
     expect(row(id)).toEqual({ id, branch: null, head: null, cost: 0, tokens: 0, files_changed: 0, pid: process.pid, pid_started: processStartTime(process.pid) ?? null, unpriced: 0 });
     // Totals are read once at start, then each reply adds its usage: agent_end does not rescan the session.
@@ -95,7 +102,9 @@ describe('session extras', () => {
     await fire('message_end', { type: 'message_end', message: { role: 'user', usage: usage(9, 9) } }, ctx);
     await fire('message_end', { type: 'message_end', message: { role: 'toolResult', usage: usage(2, 200) } }, ctx);
     await fire('agent_end', { type: 'agent_end', messages: [] }, ctx);
-    expect(row(id)).toMatchObject({ tokens: 340, cost: 3.75, files_changed: 3, unpriced: 0 });
+    await fire('message_end', { type: 'message_end', message: { role: 'custom', customType: 'octocode-agent-result', details: { id: 'bg2', usage: usage(1, 60) } } }, ctx);
+    await fire('agent_end', { type: 'agent_end', messages: [] }, ctx);
+    expect(row(id)).toMatchObject({ tokens: 800, cost: 8.75, files_changed: 3, unpriced: 0 });
     // A subagent result that ran partly on a model without pricing marks the session.
     await fire('message_end', { type: 'message_end', message: { role: 'toolResult', usage: usage(0.1, 10), details: { unpriced: true } } }, ctx);
     await fire('agent_end', { type: 'agent_end', messages: [] }, ctx);
@@ -233,9 +242,14 @@ describe('running work after compaction', () => {
     expect(message.content.length).toBeLessThanOrEqual(500);
   });
 
-  it('caps the list of work', () => {
-    expect(workList(['a'.repeat(10), 'b'.repeat(10), 'c'.repeat(10)], 25)).toBe(`${'a'.repeat(10)}; ${'b'.repeat(10)}; …`);
+  it('caps the list of work with a count of what did not fit', () => {
+    expect(workList(['a'.repeat(10), 'b'.repeat(10), 'c'.repeat(10)], 32)).toBe(`${'a'.repeat(10)}; ${'b'.repeat(10)}; +1 more`);
+    expect(workList(['a'.repeat(10), 'b'.repeat(10), 'c'.repeat(10)], 25)).toBe(`${'a'.repeat(10)}; +2 more`);
+    expect(workList(['a'.repeat(10), 'b'.repeat(10)], 22)).toBe(`${'a'.repeat(10)}; ${'b'.repeat(10)}`);
     expect(workList(['x'.repeat(30)], 10)).toHaveLength(10);
+    expect(workList(['x'.repeat(30), 'y'], 20)).toMatch(/^x+…; \+1 more$/);
+    expect(countedList(['a', 'b', 'c'], 2)).toBe('a; b; +1 more');
+    expect(countedList(['a'], 2)).toBe('a');
   });
 });
 
@@ -271,6 +285,30 @@ describe('resume brief', () => {
     const renderer = host.renderers.get(RESUME_MESSAGE_TYPE);
     expect(rendered(renderer({ content: text }, { expanded: false }, theme))).toMatch(/^\s*↻ Resumed after 3h away.* … \+1 line \(ctrl\+o to expand\)$/);
     expect(rendered(renderer({ content: text }, { expanded: true }, theme))).toMatch(/B1 Wire the resume brief/);
+  });
+
+  it('names five ongoing items and counts the rest, never cutting the brief', async () => {
+    const host = setup({ id: 'sess-n', entries: lastActive(3 * HOUR) });
+    await host.start();
+    const agent = sharedAgentDb();
+    const key = repoKey(cwd).key;
+    const add = agent.db.prepare("INSERT INTO backlog (repo_key, seq, title, state, assignee, created_by, created_at, updated_at) VALUES (?, ?, ?, 'ongoing', 'sess-n', 'user', 0, ?)");
+    for (let seq = 1; seq <= 8; seq++) add.run(key, seq, `Item ${seq} ${'w'.repeat(90)}`, seq);
+    const text = resumeBrief(agent, { previous: { branch: null, head: null }, lastActive: Date.now() - 3 * HOUR, sessionId: 'sess-n', repoKey: key, git: { dirty: 0 } })!;
+    expect(text).toMatch(/B8 Item 8 w+; B7 .*; B4 Item 4 w+; \+3 more\./);
+    expect(text).not.toMatch(/…/);
+  });
+
+  it('names the goal and the first paths of each ongoing item, counting the paths it leaves out', async () => {
+    const host = setup({ id: 'sess-g', entries: lastActive(3 * HOUR) });
+    await host.start();
+    const agent = sharedAgentDb();
+    const key = repoKey(cwd).key;
+    const add = agent.db.prepare("INSERT INTO backlog (repo_key, seq, title, goal, paths, state, assignee, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'ongoing', 'sess-g', 'user', 0, ?)");
+    add.run(key, 1, 'Plain', '', '', 1);
+    add.run(key, 2, 'Rich', 'Search finds a path.\nTests pass.', 'src/a.ts\nsrc/b.ts\nsrc/c.ts\nsrc/d.ts\nsrc/e.ts', 2);
+    const text = resumeBrief(agent, { previous: { branch: null, head: null }, lastActive: Date.now() - 3 * HOUR, sessionId: 'sess-g', repoKey: key, git: { dirty: 0 } })!;
+    expect(text).toContain('B2 Rich — goal: Search finds a path. Tests pass. — paths: src/a.ts, src/b.ts, src/c.ts, +2 more; B1 Plain.');
   });
 
   it('also briefs a startup that continues a session with messages (one from before Octocode too), and never a fresh one', async () => {
@@ -445,6 +483,25 @@ describe('/octocode sessions', () => {
     await pick(1, 'Forget Octocode data');
     expect(row('other')).toBeUndefined();
     expect(fs.existsSync(sessionDir('other'))).toBe(false);
+  });
+
+  it.each(['..', '.', ''])('refuses to forget a session whose id (%j) would name the sessions folder or its parent', async (bad) => {
+    const { current } = await withSessions();
+    const ctx = current.ctx;
+    piSessions.push(info(bad, { firstMessage: 'Odd id', modified: new Date(Date.now() - HOUR) }));
+    const root = sessionsRoot();
+    const parent = path.dirname(root);
+    const [inside, outside] = [path.join(root, 'keep', 'x.txt'), path.join(parent, 'marker.txt')] as [string, string];
+    fs.mkdirSync(path.dirname(inside), { recursive: true });
+    fs.writeFileSync(inside, 'x');
+    fs.writeFileSync(outside, 'x');
+    const lines: string[][] = [];
+    Object.assign(ctx.ui, { select: async (_title: string, options: string[]) => (lines.push(options), lines.length === 1 ? options.find((line) => line.includes('Odd id')) : 'Forget Octocode data') });
+    ctx.ui.confirms.push(true);
+    await current.commands.get('sessions')!.handler('', ctx);
+    expect(ctx.ui.notes.at(-1)!.message).toMatch(/Refusing to forget "Odd id"/);
+    expect(fs.readFileSync(inside, 'utf8')).toBe('x');
+    expect(fs.readFileSync(outside, 'utf8')).toBe('x');
   });
 
   it('asks before resuming a session another process has open', async () => {

@@ -1,7 +1,7 @@
 //! Failure wording shared by both history tools: the message and the hint
 //! for a provider error.
-use crate::providers::github::{ProviderError, ProviderErrorKind, ProviderErrorReason};
 use crate::tools::gh_shared::{provider_hint, provider_message, validation_message};
+use octocode_github::{ProviderError, ProviderErrorKind, ProviderErrorReason};
 
 /// The message and the optional hint for a history failure. `search`
 /// distinguishes ghSearchHistory from the direct-fetch ghGetHistoryItem: a
@@ -35,5 +35,9 @@ pub(crate) fn history_failure(
         }
         _ => provider_message(error),
     };
-    (message, provider_hint(error))
+    // A search's missing login: GitHub's words name it, and the
+    // `withoutUsers` lead is the repair; a hint would only restate them.
+    let hint = provider_hint(error)
+        .filter(|_| !(search && error.reason == Some(ProviderErrorReason::UserNotFound)));
+    (message, hint)
 }

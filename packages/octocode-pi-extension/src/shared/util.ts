@@ -80,17 +80,17 @@ export function clipText(text: string, max: number): string {
 }
 
 /**
- * Waits for `work` to settle, `ms` to pass, or `signal` to abort, whichever comes first; never rejects. The timer and
+ * Waits for `work` to settle, `ms` to pass (no limit when undefined), or `signal` to abort, whichever comes first; never rejects. The timer and
  * the abort listener are removed afterwards, so repeated waits on a long-lived signal leave nothing behind.
  */
-export async function settleWithin(work: Promise<unknown>, ms: number, signal?: AbortSignal): Promise<void> {
+export async function settleWithin(work: Promise<unknown>, ms: number | undefined, signal?: AbortSignal): Promise<void> {
   if (signal?.aborted) return;
   let timer: NodeJS.Timeout | undefined;
   let onAbort: (() => void) | undefined;
   try {
     await Promise.race([
       work.catch(() => undefined),
-      new Promise<void>((resolve) => void (timer = setTimeout(resolve, ms))),
+      ...(ms === undefined ? [] : [new Promise<void>((resolve) => void (timer = setTimeout(resolve, ms)))]),
       ...(signal ? [new Promise<void>((resolve) => signal.addEventListener('abort', (onAbort = () => resolve()), { once: true }))] : []),
     ]);
   } finally {
@@ -112,10 +112,13 @@ export async function withTimeout<T>(work: Promise<T>, ms: number, label: string
 }
 
 /**
- * The placeholders Octocode leaves where it cut text the model later sees: `capChars` cuts, and the cuts of a kept
- * user message or a tool result in a compaction summary. A model that copies one into a file writes a hole, not content.
+ * The placeholders Octocode leaves where it cut text the model later sees: `capChars` cuts, the gap and trim note of a
+ * result spilled to a file (`capOutput`, `capOutputToFile`), the range note of a file read back after compaction, and
+ * the cuts of a kept user message or a tool result in a compaction summary. A model that copies one into a file writes
+ * a hole, not content.
  */
-const ELISION_MARKER = /\[… \d+ (?:more characters cut|characters of this message are left out here|characters in the middle left out for the summary)[^\]\n]*\]/g;
+const ELISION_MARKER =
+  /\[… (?:\d+ (?:more characters cut|characters of this message are left out here|characters in the middle left out for the summary|lines? omitted …)|[\d.]+[KM]?B omitted …|shown lines \d+–\d+ of \d+)[^\]\n]*\]|\[Output trimmed: [^\]\n]*\]/g;
 
 export function elisionMarkers(text: string): string[] {
   return text.match(ELISION_MARKER) ?? [];
@@ -214,8 +217,36 @@ export interface UsageTotals {
 
 export const emptyTotals = (): UsageTotals => ({ input: 0, cacheRead: 0, output: 0, cost: 0, unpriced: false });
 
-/** Messages whose usage is spend: model replies, and tool results that report a subagent's (its `agent` result). */
-export const carriesUsage = (role: string | undefined): boolean => role === 'assistant' || role === 'toolResult';
+/** A message that carries spend, shaped as a reply: `usage`, and `details.unpriced` when a subagent run judged its replies. */
+export interface Spend {
+  role: string;
+  usage: Record<string, unknown>;
+  details?: unknown;
+  provider?: unknown;
+  model?: unknown;
+}
+
+/**
+ * The spend a message carries, or undefined: a model reply's `usage`, a tool result's (a foreground subagent's `agent`
+ * result), or a custom message's `details.usage` (a background subagent's report: the run's total, with
+ * `details.unpriced`). Every display and the session index count exactly these.
+ */
+export function spendOf(message: unknown): Spend | undefined {
+  if (!isRecord(message) || typeof message['role'] !== 'string') return undefined;
+  const role = message['role'];
+  if ((role === 'assistant' || role === 'toolResult') && isRecord(message['usage'])) return message as unknown as Spend;
+  const details = message['details'];
+  if (role === 'custom' && isRecord(details) && isRecord(details['usage'])) return { role, usage: details['usage'], details: { unpriced: details['unpriced'] === true } };
+  return undefined;
+}
+
+/** The message a session entry adds to the context (a `message` entry's, or a `custom_message` entry as a custom message), else undefined. */
+export function entryMessage(entry: unknown): unknown {
+  if (!isRecord(entry)) return undefined;
+  if (entry['type'] === 'message') return entry['message'];
+  if (entry['type'] === 'custom_message') return { role: 'custom', customType: entry['customType'], details: entry['details'] };
+  return undefined;
+}
 
 /** Adds one reply's usage (anything that is not a number counts as zero); `unpriced` from `unpricedModel`. */
 export function addReply(totals: UsageTotals, usage: unknown, unpriced: boolean): void {

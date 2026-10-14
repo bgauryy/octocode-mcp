@@ -1,4 +1,4 @@
-use crate::cache::{CacheClass, CacheConfig, CacheKey, Store, StorePartition};
+use crate::cache::{CacheClass, CacheConfig, CacheKey, Store};
 pub use crate::contracts::tool_types::AstSearchQuerySymbols;
 use crate::policy::prune::DefaultsFlag;
 use crate::tools::empty_walk::{FileProbe, Globs, Verdict, Walk, diagnose, lift};
@@ -194,7 +194,14 @@ pub fn execute_symbols(
     let mut page = render_page(q, &set, response_window);
     note_skipped(q, &p.canonical, paths, cancel, &mut page);
     let bytes = serde_json::to_vec(&set).map_or(usize::MAX, |encoded| encoded.len());
-    SYMBOL_PAGES.put(memo_key, set, bytes, CacheClass::Volatile);
+    SYMBOL_PAGES.put(
+        memo_key,
+        set,
+        bytes,
+        CacheClass::Volatile {
+            ttl: std::time::Duration::from_secs(600),
+        },
+    );
     Ok(page)
 }
 
@@ -223,7 +230,9 @@ fn note_skipped(
             files as usize
         });
     let exclude = q.exclude().unwrap_or_default();
-    let permits = |path: &std::path::Path| super::allow_discovery(path, paths, cancel);
+    let discovery = paths.discovery_walk();
+    let permits = |path: &std::path::Path| discovery.permits(path);
+    let stop = || cancel.check().is_err();
     // `languageGlobs` map more files to an outlined grammar, by their path
     // relative to the scanned root, as the scan itself does.
     let mapped = q.language_globs().and_then(|globs| {
@@ -255,11 +264,15 @@ fn note_skipped(
     // rooted there does not read for files below the root.
     let probe_at = |at: &std::path::Path, exclude: &[String], walk: Walk| {
         let rules = (!walk.ignored && at.is_dir())
-            .then(|| crate::policy::gitignore::GitignoreFilter::new(at));
+            .then(|| octocode_engine::search::walk::IgnoreRules::new(at));
         let permitted = |path: &std::path::Path| {
-            Ok(permits(path)? && rules.as_ref().is_none_or(|rules| !rules.is_ignored(path)))
+            permits(path)
+                && rules
+                    .as_ref()
+                    .is_none_or(|rules| !rules.is_ignored(path, path.is_dir()))
         };
         FileProbe::new(at, PruneMode::SyntaxVisible, budget, &permitted, &keep)
+            .stopping(&stop)
             .within(Globs {
                 include: &[],
                 exclude,
@@ -273,6 +286,7 @@ fn note_skipped(
         default_excludes: q.default_excludes.defaults(),
     };
     let scanned = FileProbe::new(root, PruneMode::SyntaxVisible, budget, &permits, &keep)
+        .stopping(&stop)
         .within(Globs {
             include: &[],
             exclude: &exclude,
@@ -446,25 +460,40 @@ fn outline_file(
         .decode_source_bytes(&b, super::MAX_PARSE_SOURCE_BYTES)
         .map_err(super::policy_error)?;
     let source_path = canonical.to_string_lossy();
-    let cpp_header = super::cpp_header_override(canonical, q.language().as_deref());
-    let raw = crate::tools::declarations_cache::extract(&source, &source_path, cpp_header, || {
-        if cpp_header {
-            octocode_engine::portable::extract_graph_facts_with_extension(
-                &source,
-                &source_path,
-                "cpp",
-            )
-        } else {
-            octocode_engine::portable::extract_declarations(&source, &source_path)
+    let parser = super::parser_override(canonical, q.language().as_deref());
+    let unsupported = || json!({"status":"error","errorCode":"symbolsUnsupported","path":canonical.to_string_lossy(),"error":"No native declaration extractor supports this source. Inspect its syntax tree or exact content."});
+    let raw = match parser.as_deref() {
+        // An extension that selects no grammar outlines nothing: an empty
+        // outline would read as a file without declarations.
+        None if crate::tools::ast_rule::file_grammar(canonical).is_none() => {
+            return Ok(Err(unsupported()));
         }
-    });
+        // The cache keys the parser extension used, so every override reuses
+        // its own parse.
+        parser => {
+            crate::tools::declarations_cache::extract_as(&source, &source_path, parser, || {
+                match parser {
+                    Some(extension) => {
+                        octocode_engine::portable::extract_graph_facts_with_extension(
+                            &source,
+                            &source_path,
+                            extension,
+                        )
+                    }
+                    None => octocode_engine::portable::extract_declarations(&source, &source_path),
+                }
+            })
+        }
+    };
     let path = super::display_name(canonical);
     let Some(raw) = raw else {
-        return Ok(Err(
-            json!({"status":"error","errorCode":"symbolsUnsupported","path":canonical.to_string_lossy(),"error":"No native declaration extractor supports this source. Inspect its syntax tree or exact content."}),
-        ));
+        return Ok(Err(unsupported()));
     };
     let (mut skipped, mut diagnostics, mut files) = (0, vec![], vec![]);
+    if let Some(note) = super::cpp_header_note(canonical, q.language().as_deref(), &source) {
+        diagnostics
+            .push(json!({"code":super::CPP_HEADER_NOTE,"severity":"warning","message":note}));
+    }
     match serde_json::from_str::<Value>(&raw) {
         Ok(mut facts) => {
             let declarations = match facts["declarations"].take() {
@@ -537,24 +566,12 @@ fn directory_scan_options(
         language_globs: q
             .language_globs()
             .map(crate::tools::ast_rule::language_globs),
-        show_hidden: q.include_hidden,
-    }
-}
-
-/// The `.gitignore` rules a directory outline honors: the same ones `match`
-/// and the text tools walk by, off only with `includeIgnored`.
-struct IgnoreRules(Option<crate::policy::gitignore::GitignoreFilter>);
-
-impl IgnoreRules {
-    fn of(q: &AstSearchQuerySymbols, canonical: &std::path::Path) -> Self {
-        Self(
-            (!q.include_ignored.unwrap_or(false))
-                .then(|| crate::policy::gitignore::GitignoreFilter::new(canonical)),
-        )
-    }
-
-    fn is_ignored(&self, path: &std::path::Path) -> bool {
-        self.0.as_ref().is_some_and(|rules| rules.is_ignored(path))
+        // The ignore rules `match` and the text tools walk by, off only with
+        // `includeIgnored`.
+        ignore: octocode_engine::search::walk::IgnorePolicy::new(
+            q.include_ignored,
+            q.include_hidden,
+        ),
     }
 }
 
@@ -581,63 +598,54 @@ pub(super) fn outline_directory(
         spelled
     };
     let rooted = |relative: &str| super::rooted_display(canonical, std::path::Path::new(relative));
-    let gitignore = IgnoreRules::of(q, canonical);
-    let scan = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        octocode_engine::graph::scan_graph_facts_mapped(
-            directory_scan_options(q, canonical),
-            &|path| {
-                if gitignore.is_ignored(path) {
-                    return Ok(false);
-                }
-                let allowed = super::allow_discovery(path, paths, cancel)?;
-                // Only a directory or an outlinable file leaves absence unproven.
-                // The outline walk hides dot entries unless `includeHidden`:
-                // one out of view is not disclosed.
-                let is_dir = path.is_dir();
-                if !allowed
-                    && (q.include_hidden == Some(true) || !super::is_dot_entry(path))
-                    && (is_dir
-                        || outlined.iter().any(|extension| {
-                            octocode_engine::text::extension_of(&path.to_string_lossy(), true, "")
-                                == *extension
-                        }))
-                {
-                    withheld
-                        .lock()
-                        .unwrap_or_else(|error| error.into_inner())
-                        .record(path, is_dir);
-                }
-                Ok(allowed)
-            },
-            &keep,
-            &|view| {
-                let declarations = match serde_json::to_value(&view.facts.declarations) {
-                    Ok(Value::Array(rows)) => rows,
-                    _ => vec![],
-                };
-                let (rows, notes) = reduce_file(
-                    q,
-                    filter.as_ref(),
-                    declarations,
-                    view.facts
-                        .edges
-                        .iter()
-                        .map(|edge| (edge.from.as_str(), edge.relation.as_str(), edge.to.as_str())),
-                    &view.facts.diagnostics,
-                    &view.facts.error_lines,
-                    || {
-                        std::fs::read(canonical.join(view.relative_path))
-                            .ok()
-                            .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
-                    },
-                );
-                (!rows.is_empty() || !notes.is_empty())
-                    .then(|| (rooted(view.relative_path), rows, notes))
-            },
-        )
-    }))
-    .unwrap_or_else(|_| Err("graph-facts scan failed on pathological input".to_owned()))
-    .map_err(super::scan_error)?;
+    let discovery = paths.discovery_walk();
+    let scan = octocode_engine::graph::scan_graph_facts(
+        directory_scan_options(q, canonical),
+        &|path, file_type| {
+            let allowed = discovery.permits_entry(path, file_type);
+            // Only a directory or an outlinable file leaves absence unproven.
+            // The outline walk hides dot entries unless `includeHidden`:
+            // one out of view is not disclosed.
+            let is_dir = path.is_dir();
+            if !allowed
+                && (q.include_hidden == Some(true) || !super::is_dot_entry(path))
+                && (is_dir
+                    || outlined.iter().any(|extension| {
+                        octocode_engine::text::extension_of(&path.to_string_lossy(), true, "")
+                            == *extension
+                    }))
+            {
+                withheld
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .record(path, is_dir);
+            }
+            allowed
+        },
+        &keep,
+        &|view| {
+            let declarations = match serde_json::to_value(&view.facts.declarations) {
+                Ok(Value::Array(rows)) => rows,
+                _ => vec![],
+            };
+            let (rows, notes) = reduce_file(
+                q,
+                filter.as_ref(),
+                declarations,
+                view.facts
+                    .edges
+                    .iter()
+                    .map(|edge| (edge.from.as_str(), edge.relation.as_str(), edge.to.as_str())),
+                &view.facts.diagnostics,
+                &view.facts.error_lines,
+                || Some(view.content.to_owned()),
+            );
+            (!rows.is_empty() || !notes.is_empty())
+                .then(|| (rooted(view.relative_path), rows, notes))
+        },
+        &|| cancel.check().is_err(),
+    )
+    .map_err(|error| ToolError::graph_scan(&error, cancel))?;
     let diagnostics = scan
         .skipped
         .iter()
@@ -668,7 +676,6 @@ static SYMBOL_PAGES: std::sync::LazyLock<Store<SymbolSet>> = std::sync::LazyLock
         CacheConfig {
             max_entries: 8,
             max_bytes: 64 * 1024 * 1024,
-            ttl: std::time::Duration::from_secs(600),
             ..CacheConfig::default()
         },
         None,
@@ -678,7 +685,12 @@ static SYMBOL_PAGES: std::sync::LazyLock<Store<SymbolSet>> = std::sync::LazyLock
 /// `key` in the partition of selections stored while their files were
 /// `settled`.
 fn with_settled(mut key: CacheKey, settled: bool) -> CacheKey {
-    key.partition.credential_fingerprint = if settled { "settled" } else { "" }.into();
+    key.namespace = if settled {
+        "ast-symbol-pages/settled"
+    } else {
+        "ast-symbol-pages"
+    }
+    .into();
     key
 }
 
@@ -706,11 +718,8 @@ fn directory_memo_key(
     let (fingerprint, settled) = directory_fingerprint(q, canonical, paths, cancel)?;
     let key = CacheKey {
         namespace: "ast-symbol-pages".into(),
+        scope: fingerprint,
         resource: crate::digest::json_sha256(&shape),
-        partition: StorePartition {
-            endpoint: fingerprint,
-            credential_fingerprint: String::new(),
-        },
     };
     Ok((with_settled(key, settled), settled))
 }
@@ -731,12 +740,12 @@ fn directory_fingerprint(
         .map_or(0.0, |elapsed| elapsed.as_millis() as f64);
     let settle_ms = octocode_engine::graph::SourceStamp::SETTLE.as_millis() as f64;
     let options = directory_scan_options(q, canonical);
-    let gitignore = IgnoreRules::of(q, canonical);
-    let walk = octocode_engine::portable::query_file_system_filtered(
+    let discovery = paths.discovery_walk();
+    let walk = octocode_engine::portable::query_file_system(
         octocode_engine::types::FileSystemQueryOptions {
             path: options.path,
             recursive: Some(true),
-            show_hidden: options.show_hidden,
+            ignore: options.ignore,
             entry_type: Some("f".to_owned()),
             extensions: Some(octocode_engine::signatures::graph_facts::graph_fact_extensions()),
             exclude_dir: options.exclude_dir,
@@ -745,12 +754,8 @@ fn directory_fingerprint(
             limit: options.max_files,
             ..Default::default()
         },
-        &|path| {
-            if gitignore.is_ignored(path) {
-                return Ok(false);
-            }
-            super::allow_discovery(path, paths, cancel)
-        },
+        &|path, file_type| discovery.permits_entry(path, file_type),
+        &|| cancel.check().is_err(),
     )
     .map_err(super::native_error)?;
     let mut stats = walk
@@ -1135,8 +1140,7 @@ pub(super) fn render_page(
     let spans = top_level_spans(declarations);
     let sizes = row_sizes(declarations, &spans, *directory);
     let windows = paging.windows(&sizes);
-    let range = windows
-        .get(page - 1)
+    let range = crate::tools::page_windows::nth_page(&windows, page)
         .filter(|window| !window.is_empty())
         .map_or(declarations.len()..declarations.len(), |window| {
             spans[window.start].start..spans[window.end - 1].end
@@ -1288,7 +1292,8 @@ pub(super) fn render_page(
                 format!("named {} ", names.join(", "))
             })
             .unwrap_or_default();
-        out["hints"] = json!([format!("0 declarations {named}in {files_scanned} files.")]);
+        let files = if *files_scanned == 1 { "file" } else { "files" };
+        out["hints"] = json!([format!("0 declarations {named}in {files_scanned} {files}.")]);
     }
     out
 }

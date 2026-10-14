@@ -6,12 +6,12 @@ use super::text::{body_matches, delivered_earlier, needle, window_body};
 use super::util::{array, str_at, string};
 use super::window::{WindowState, paginate_window};
 use super::{HistoryItemRequest, ItemOperation, fetch};
-use crate::providers::github::{GitHubTransport, ProviderError, RequestContext};
 use crate::tools::gh_shared::commit::utc_date;
 use crate::tools::gh_shared::ensure_next;
 use crate::tools::id::ToolId;
 use crate::tools::result::remove_nulls;
 use futures_util::{StreamExt as _, TryStreamExt as _};
+use octocode_github::{GitHubTransport, ProviderError, RequestContext};
 use serde_json::{Map, Value, json};
 
 /// Fields of a mapped comment that anchor it in the diff and its thread.

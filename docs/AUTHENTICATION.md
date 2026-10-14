@@ -95,7 +95,7 @@ npx octocode auth login --hostname github.mycompany.com
 
 ## Classification key (`clasify`)
 
-The classification API credential lets optional read-tool goals and beta `clasify` send sanitized evidence to the configured provider. A key alone does not expose either route: goals also need ranking enabled, while public `clasify` also needs beta. The [availability table](OCTOCODE_CLASIFY.md#availability) owns the full gate combinations.
+The classification API credential lets optional read-tool `classifiers` and beta `clasify` send sanitized evidence to the configured provider. A key alone does not expose either route: `classifiers` also need ranking enabled, while public `clasify` also needs beta. The [availability table](OCTOCODE_CLASIFY.md#availability) owns the full gate combinations.
 
 | Variable | Purpose |
 |---|---|
@@ -104,7 +104,7 @@ The classification API credential lets optional read-tool goals and beta `clasif
 | `OCTOCODE_CLASSIFICATION_TYPE` | Vendor; only `jev` |
 
 - Source order: process env → workspace `.env` → home `.env` → `.octocoderc` (`classification.api`). The key never appears in resolved configuration output.
-- **No key:** goals are omitted, MCP does not register `clasify`, and no tool returns a `hints.clasify` lead. CLI help and `npx octocode schema` list only enabled tools; `npx octocode schema clasify` reports unavailable. An allowlist cannot bypass the missing credential.
+- **No key:** `classifiers` are omitted and MCP does not register `clasify`. CLI help and `npx octocode schema` list only enabled tools; `npx octocode schema clasify` reports unavailable. An allowlist cannot bypass the missing credential.
 - **Kill switch:** a present-but-blank `OCTOCODE_CLASSIFICATION_API=` in the process environment disables both routes, even when a `.env` file has a key.
 - Get a key from the [provider docs](https://docs.typesafe.ai/introduction). What is sent: [SECURITY.md](SECURITY.md#classification-egress). Availability and request usage: [OCTOCODE_CLASIFY.md](OCTOCODE_CLASIFY.md#availability).
 

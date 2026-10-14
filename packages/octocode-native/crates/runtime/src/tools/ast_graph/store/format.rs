@@ -959,7 +959,7 @@ fn read_file_tables(
         }
         tables.diagnostics.push(diag);
     }
-    for pair in sections.get(b"FDIG", "FDIG")?.var_vec()?.chunks_exact(2) {
+    for pair in sections.get(b"FDIG", "FDIG")?.var_vec()?.as_chunks::<2>().0 {
         if !node_ok(pair[0]) || !string_ok(pair[1]) {
             return Err("graph digest references are out of range".into());
         }
@@ -967,7 +967,7 @@ fn read_file_tables(
     }
     // Optional sections: absent in a snapshot means empty.
     if sections.0.contains_key(b"FCMP") {
-        for quad in sections.get(b"FCMP", "FCMP")?.var_vec()?.chunks_exact(4) {
+        for quad in sections.get(b"FCMP", "FCMP")?.var_vec()?.as_chunks::<4>().0 {
             if !node_ok(quad[0]) || !quad[1..].iter().all(|id| string_ok(*id)) {
                 return Err("graph component references are out of range".into());
             }
@@ -993,7 +993,7 @@ fn read_file_tables(
         }
     }
     if sections.0.contains_key(b"ENTR") {
-        for pair in sections.get(b"ENTR", "ENTR")?.var_vec()?.chunks_exact(2) {
+        for pair in sections.get(b"ENTR", "ENTR")?.var_vec()?.as_chunks::<2>().0 {
             if !node_ok(pair[0]) || !string_ok(pair[1]) {
                 return Err("graph entry references are out of range".into());
             }

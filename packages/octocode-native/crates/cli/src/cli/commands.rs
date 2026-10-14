@@ -15,9 +15,6 @@ pub(super) struct ToolArgs {
     /// Read the JSON query from a file, or from stdin with `-`.
     #[arg(long, value_name = "FILE|-", conflicts_with = "query")]
     pub input: Option<std::path::PathBuf>,
-    /// Print JSON even on a terminal (pipes always get JSON).
-    #[arg(long)]
-    pub json: bool,
 }
 
 /// Largest JSON query read from `--input` (a file or stdin).
@@ -70,8 +67,11 @@ fn contract_tools() -> impl Iterator<Item = (&'static str, String)> {
     ToolId::ALL.into_iter().map(|tool| {
         let about = tool.short_description();
         let about = if tool.is_beta() {
+            let beta = octocode_native::config::field::LOCAL_BETA;
             format!(
-                "Beta, disabled by default (set OCTOCODE_BETA=true or local.beta:true). {about}"
+                "Beta, disabled by default (set {}=true or {}:true). {about}",
+                beta.env_name().unwrap_or(beta.path),
+                beta.path
             )
         } else {
             about.to_owned()
@@ -137,11 +137,7 @@ impl Subcommand for ToolCommand {
 #[derive(Subcommand)]
 pub(super) enum AuthCommand {
     /// Show whether GitHub accepts the active token, and its source (never the token).
-    Status {
-        /// Emit JSON output.
-        #[arg(long)]
-        json: bool,
-    },
+    Status,
     /// Authenticate with GitHub using device flow, or refresh a stored token.
     Login {
         /// GitHub API hostname (override for GitHub Enterprise device login).
@@ -153,16 +149,9 @@ pub(super) enum AuthCommand {
         /// Refresh the stored token using its refresh token instead of a new device flow.
         #[arg(long)]
         refresh: bool,
-        /// Emit JSON output.
-        #[arg(long)]
-        json: bool,
     },
     /// Remove stored GitHub credentials from Octocode home and the OS store.
-    Logout {
-        /// Emit JSON output.
-        #[arg(long)]
-        json: bool,
-    },
+    Logout,
 }
 
 #[derive(Subcommand)]
@@ -192,9 +181,6 @@ pub(super) enum Command {
         /// Private JSON management transport used by the local config view.
         #[arg(long, hide = true)]
         manage: bool,
-        /// Print JSON.
-        #[arg(long)]
-        json: bool,
     },
     /// GitHub authentication: `status`, `login`, or `logout`.
     #[command(disable_help_subcommand = true)]
@@ -215,43 +201,9 @@ pub(super) enum Command {
         args: Vec<String>,
     },
     /// Add the Octocode MCP server to an agent client's configuration.
-    Install {
-        /// Client id from `--list`, e.g. `claude-code`, `cursor`, `claude-desktop`.
-        #[arg(long, value_name = "ID")]
-        ide: Option<String>,
-        /// Overwrite an existing MCP server entry.
-        #[arg(long)]
-        force: bool,
-        /// Preview the config that would be written without making any changes.
-        #[arg(long)]
-        dry_run: bool,
-        /// Verify that the MCP config already contains a valid Octocode entry.
-        #[arg(long)]
-        check: bool,
-        /// List supported client ids.
-        #[arg(long)]
-        list: bool,
-        /// Print JSON.
-        #[arg(long)]
-        json: bool,
-        /// Override whether local (filesystem) tools are enabled in the MCP server.
-        #[arg(long)]
-        enable_local: Option<bool>,
-        /// Pass through additional environment variables to the MCP server process.
-        #[arg(long)]
-        pass_env: bool,
-        /// Installation runner (default npx).
-        #[arg(long, value_parser = ["npx", "bunx", "pnpm"])]
-        method: Option<String>,
-        /// Restore a client config from the `.bak` file an earlier install left beside it.
-        #[arg(long, value_name = "FILE")]
-        rollback: Option<String>,
-    },
+    Install(super::mcp_install::InstallArgs),
 
     // ── Hidden commands (not part of the agent surface) ──────────────────────
-    /// Machine tool catalog for the npm launcher's `schema`: availability, fields, fingerprint.
-    #[command(hide = true)]
-    Catalog,
     /// Serve warm lspSearch calls for one workspace over a private socket.
     #[command(hide = true)]
     Serve {
@@ -282,9 +234,6 @@ pub(super) enum Command {
         /// Skip the auto-install prompt policy for this run.
         #[arg(long)]
         force: bool,
-        /// Print JSON.
-        #[arg(long)]
-        json: bool,
     },
 }
 
@@ -319,18 +268,11 @@ pub(super) enum ConfigCommand {
         idle_timeout: u64,
     },
     /// Print the Octocode home directory (holds the global .env, .octocoderc, skills, and caches).
-    Home {
-        /// Print JSON.
-        #[arg(long)]
-        json: bool,
-    },
+    Home,
     /// Print a key's resolved value (environment, then workspace .env, then global .env); exit 1 when unset.
     Get {
         /// Environment key, e.g. `OCTOCODE_CLASSIFICATION_API`.
         key: String,
-        /// Print JSON: key, value, and source (`environment`, `project`, or `global`).
-        #[arg(long)]
-        json: bool,
     },
     /// Set a key in the global .env: `set KEY VALUE`, or `set KEY --stdin` to keep secrets out of shell history.
     Set {
@@ -341,24 +283,15 @@ pub(super) enum ConfigCommand {
         /// Read the value from stdin.
         #[arg(long, conflicts_with = "value")]
         stdin: bool,
-        /// Print JSON.
-        #[arg(long)]
-        json: bool,
     },
     /// Remove every assignment of a key from the global .env.
     Unset {
         /// Environment key to remove, e.g. `OCTOCODE_BETA`.
         key: String,
-        /// Print JSON.
-        #[arg(long)]
-        json: bool,
     },
     /// Exit 0 when a key is set (from the environment or a .env file), 1 when unset; never prints the value.
     Check {
         /// Environment key, e.g. `GITHUB_TOKEN`.
         key: String,
-        /// Print JSON.
-        #[arg(long)]
-        json: bool,
     },
 }

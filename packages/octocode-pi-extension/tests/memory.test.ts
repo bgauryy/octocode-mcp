@@ -133,11 +133,11 @@ describe('MemoryStore', () => {
     expect(add(store, { title: 'Vitest runs the tests', body: 'yarn test' }).id).toBeGreaterThan(first.id);
   });
 
-  it('updates by id, moves scope, pins, and sanitizes and caps text', () => {
+  it('updates by id, moves scope, pins, and sanitizes text without cutting it', () => {
     const store = new MemoryStore(freshDb(), 'repo-a');
     const memory = add(store, { title: 'Title \u001b[31mred\u001b[0m', body: 'x'.repeat(2000), kind: 'gotcha' }, 1000);
     expect(memory.title).toBe('Title red');
-    expect(memory.body).toHaveLength(1500);
+    expect(memory.body).toHaveLength(2000);
     const updated = store.set({ id: memory.id, scope: 'global', pinned: true, keywords: 'k1 k2', author: 'user' }, 2000).memory;
     expect(updated).toMatchObject({ scope: 'global', repoKey: null, pinned: true, keywords: 'k1 k2', kind: 'gotcha', title: 'Title red', updatedAt: 2000, createdAt: 1000 });
     expect(store.set({ id: memory.id, scope: 'project', author: 'user' }).memory.repoKey).toBe('repo-a');
@@ -207,7 +207,7 @@ describe('memory injection selection', () => {
     const injection = selectInjection(store, { query: 'how does rewind of a checkpoint work', scope: 'all', seen: new Set(), topK: 5 })!;
     expect(injection.ids).toEqual([pinned.id, strong.id]);
     expect(injection.content.split('\n')[0]).toBe(MEMORY_HEADER);
-    expect(injection.content).toContain(`M${strong.id} (project, fact) Checkpoint rewind flow — Rewind restores`);
+    expect(injection.content).toContain(`M${strong.id} (project, fact) (agent-written) Checkpoint rewind flow — "Rewind restores`);
   });
 
   it('injects a hit only with two matched words or a title/keyword match, ignoring short words', () => {
@@ -245,8 +245,8 @@ describe('memory injection selection', () => {
   it('reads injected ids and the last injection from the branch, reset by a compaction', () => {
     const message = (ids: unknown[], content = 'x') => ({ type: 'custom_message', customType: MEMORY_MESSAGE_TYPE, content, details: { ids } });
     const entries = [message([1, 2], 'first'), { type: 'custom_message', customType: 'other', details: { ids: [9] } }, message([3, 'bad'], 'second')];
-    expect([...injectedIds(entries)]).toEqual([1, 2, 3]);
-    expect([...injectedIds([...entries, { type: 'compaction' }, message([4])])]).toEqual([4]);
+    expect([...injectedIds(entries).keys()]).toEqual([1, 2, 3]);
+    expect([...injectedIds([...entries, { type: 'compaction' }, message([4])]).keys()]).toEqual([4]);
     expect(lastInjection(entries)).toBe('second');
     expect(lastInjection([null, 5])).toBeUndefined();
   });
@@ -261,6 +261,17 @@ describe('memory tool', () => {
   };
   const run = (tool: any, params: Record<string, unknown>, ctx = ctxFor().ctx) => tool.execute('call', params, undefined, undefined, ctx);
   const text = (result: any) => result.content[0].text as string;
+
+  it('says when a search has more matches than limit, and does not when every match is shown', async () => {
+    const { tool } = setup();
+    for (const title of ['Alpha rule', 'Bravo habit', 'Charlie trick']) await run(tool, { op: 'set', title, body: 'gadget details' });
+    const capped = text(await run(tool, { op: 'search', query: 'gadget', limit: 2 }));
+    expect(capped.split('\n').filter((line) => line.startsWith('M'))).toHaveLength(2);
+    expect(capped).toMatch(/\n… more memories match; raise limit/);
+    const all = text(await run(tool, { op: 'search', query: 'gadget', limit: 3 }));
+    expect(all.split('\n').filter((line) => line.startsWith('M'))).toHaveLength(3);
+    expect(all).not.toContain('more memories match');
+  });
 
   it('sets, searches, lists, gets and deletes', async () => {
     const { tool } = setup();
@@ -284,38 +295,36 @@ describe('memory tool', () => {
     await expect(run(tool, { op: 'set', title: 'second MEMORY', scope: 'global' }, ctxFor({ selects: ['Allow once'] }).ctx)).rejects.toThrow(/Similar memory M2/);
   });
 
-  it('asks before saving a global or pinned memory, and never in an untrusted project', async () => {
+  it('saves a global or pinned memory at once in a trusted project, and never in an untrusted one', async () => {
     const { tool } = setup();
-    // The user sees the body that will be injected, and a save the store would refuse is never offered.
+    // No dialog: a save the store would refuse (a secret, no title) fails the same way.
     const asked: string[] = [];
     const seen = ctxFor().ctx;
     Object.assign(seen.ui, { select: async (title: string) => (asked.push(title), 'Deny') });
-    await expect(run(tool, { op: 'set', title: 'Shown', body: 'Line one\nLine two', pinned: true }, seen)).rejects.toThrow(/denied/);
-    expect(asked[0]).toContain('Save pinned memory?\n  Shown\n  Line one\n  Line two\n  It will be shown to every session here.');
+    expect(text(await run(tool, { op: 'set', title: 'Shown', body: 'Line one\nLine two', pinned: true }, seen))).toMatch(/^Saved M1 \(project/);
     await expect(run(tool, { op: 'set', title: 'Key', body: `sk-${'a'.repeat(40)}`, pinned: true }, seen)).rejects.toThrow(/secret/);
     await expect(run(tool, { op: 'set', body: 'no title', pinned: true }, seen)).rejects.toThrow(/needs a title/);
-    expect(asked).toHaveLength(1);
-    await expect(run(tool, { op: 'set', title: 'Global one', scope: 'global' }, ctxFor({ selects: ['Deny'] }).ctx)).rejects.toThrow(/denied/);
-    expect(text(await run(tool, { op: 'set', title: 'Global one', scope: 'global' }, ctxFor({ selects: ['Allow once'] }).ctx))).toMatch(/^Saved M1 \(global/);
-    expect(text(await run(tool, { op: 'set', title: 'Project one' }))).toMatch(/^Saved M2 \(project/);
+    expect(asked).toEqual([]);
+    expect(text(await run(tool, { op: 'set', title: 'Global one', scope: 'global' }, ctxFor({ hasUI: false }).ctx))).toMatch(/^Saved M2 \(global/);
+    expect(text(await run(tool, { op: 'set', title: 'Project one' }))).toMatch(/^Saved M3 \(project/);
     fs.mkdirSync(path.join(cwd, '.claude'), { recursive: true });
     fs.writeFileSync(path.join(cwd, '.claude', 'settings.json'), '{"hooks":{}}');
     const untrusted = () => ctxFor({ trusted: false, confirms: [true] }).ctx;
     await expect(run(tool, { op: 'set', title: 'Sneaky', scope: 'global' }, untrusted())).rejects.toThrow(/untrusted project/);
     await expect(run(tool, { op: 'set', title: 'Sneaky', pinned: true }, untrusted())).rejects.toThrow(/untrusted project/);
-    await expect(run(tool, { op: 'set', id: 'M1', body: 'changed' }, untrusted())).rejects.toThrow(/untrusted project/);
-    await expect(run(tool, { op: 'delete', id: 'M1' }, untrusted())).rejects.toThrow(/untrusted project/);
-    expect(text(await run(tool, { op: 'set', title: 'Plain project note' }, untrusted()))).toMatch(/^Saved M3 \(project[\s\S]*hides project memories from reads until the user \/trusts it/);
+    await expect(run(tool, { op: 'set', id: 'M2', body: 'changed' }, untrusted())).rejects.toThrow(/untrusted project/);
+    await expect(run(tool, { op: 'delete', id: 'M2' }, untrusted())).rejects.toThrow(/untrusted project/);
+    expect(text(await run(tool, { op: 'set', title: 'Plain project note' }, untrusted()))).toMatch(/^Saved M4 \(project[\s\S]*hides project memories from reads until the user \/trusts it/);
     // Hidden project memories: changing them by id, or colliding with one, reveals nothing about them.
-    for (const params of [{ op: 'set', id: 'M2', body: 'x' }, { op: 'delete', id: 'M2' }]) await expect(run(tool, params, untrusted())).rejects.toThrow(/^No memory M2 here/);
-    await expect(run(tool, { op: 'set', title: 'Project one' }, untrusted())).rejects.toThrow(/^A similar project memory \(M2\) exists, hidden[^"]*$/);
+    for (const params of [{ op: 'set', id: 'M3', body: 'x' }, { op: 'delete', id: 'M3' }]) await expect(run(tool, params, untrusted())).rejects.toThrow(/^No memory M3 here/);
+    await expect(run(tool, { op: 'set', title: 'Project one' }, untrusted())).rejects.toThrow(/^A similar project memory \(M3\) exists, hidden[^"]*$/);
     // Reads match auto-injection: only global memories, with a note why.
     const listed = text(await run(tool, { op: 'list' }, untrusted()));
-    expect(listed).toContain('M1');
-    expect(listed).not.toContain('M2');
+    expect(listed).toContain('M2');
+    expect(listed).not.toContain('M3');
     expect(listed).toMatch(/untrusted project: project memories are hidden/);
-    expect(text(await run(tool, { op: 'search', query: 'project one' }, untrusted()))).not.toContain('M2');
-    await expect(run(tool, { op: 'get', id: 'M2' }, untrusted())).rejects.toThrow(/No memory M2/);
+    expect(text(await run(tool, { op: 'search', query: 'project one' }, untrusted()))).not.toContain('M3');
+    await expect(run(tool, { op: 'get', id: 'M3' }, untrusted())).rejects.toThrow(/No memory M3/);
   });
 
   it('is read-only in a subagent', async () => {

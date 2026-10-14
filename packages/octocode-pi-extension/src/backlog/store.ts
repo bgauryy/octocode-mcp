@@ -1,6 +1,7 @@
 import type { AgentDb } from '../agentdb/db.js';
 import { sessionRunningPid } from '../agentdb/liveness.js';
 import { sanitizeTerminalText, secretProblem, storedText } from '../shared/sanitize.js';
+import { cutText } from '../shared/util.js';
 import { toItem, type Row } from './row.js';
 
 /**
@@ -12,22 +13,17 @@ import { toItem, type Row } from './row.js';
  *   ongoing   claimed by one session or subagent (the assignee)
  *   done      finished, with a note saying what changed and how it was verified
  *
- * An item has a title, a goal (what done means) and a body (why, evidence, plan). The store keeps when it was created,
+ * An item has a title, a goal (what done means), where it applies (`paths`), why it matters, the evidence for it and a
+ * plan, and a body for whatever else. The store keeps when it was created,
  * last claimed (`started_at`), updated and done. An item may name the item it came from (`from`: a split, follow-up or finding), so the origin lists what came of it.
- * Every update writes a `change` note with what it changed (a replaced body is kept in full), next to the agent's own
+ * Every update writes a `change` note with what it changed (a replaced text is kept in full), next to the agent's own
  * notes, which say why.
  */
 
 export const STATES = ['backlog', 'todo', 'ongoing', 'done'] as const;
 export type State = (typeof STATES)[number];
 export const PRIORITIES = ['p0', 'p1', 'p2', 'p3'] as const;
-export type Priority = (typeof PRIORITIES)[number];
-
-export const TITLE_MAX = 200;
-export const GOAL_MAX = 500;
-export const BODY_MAX = 4000;
-export const NOTE_MAX = 1000;
-export const TAGS_MAX = 8;
+type Priority = (typeof PRIORITIES)[number];
 
 export interface Item {
   /** Database row id (notes hang from it). */
@@ -39,6 +35,14 @@ export interface Item {
   /** What done means: the observable result or check that closes the item. */
   goal: string;
   body: string;
+  /** Repo-relative files, directories or components the work touches. */
+  paths: string[];
+  /** Why it matters: the problem and who it affects. */
+  why: string;
+  /** Observations that justify it: `path:line — what it shows`, a command and its result, or a link. */
+  evidence: string[];
+  /** The intended approach and steps. */
+  plan: string;
   state: State;
   priority: number;
   tags: string[];
@@ -78,9 +82,13 @@ export class BacklogError extends Error {}
 const SELECT = 'SELECT b.*, f.seq AS from_seq FROM backlog b LEFT JOIN backlog f ON f.id = b.from_item';
 
 const tagText = (tags: readonly string[]) => (tags.length ? tags.map((tag) => `#${tag}`).join(' ') : 'none');
+const listText = (entries: readonly string[]) => (entries.length ? entries.join(', ') : 'none');
 const refText = (seq: number | undefined) => (seq === undefined ? 'none' : `B${seq}`);
 
-/** The change note for one update: every field that changed, old → new; a replaced body is kept in full. */
+/** A text field's change: the old text is kept in full, so a replacement loses nothing. */
+const replaced = (name: string, before: string) => (before ? `${name} replaced; it was:\n${before}` : `${name} added`);
+
+/** The change note for one update: every field that changed, old → new; a replaced text is kept in full. */
 function changeText(before: Item, after: Item): string {
   const parts: string[] = [];
   if (after.state !== before.state) parts.push(`state ${before.state} → ${after.state}`);
@@ -90,7 +98,11 @@ function changeText(before: Item, after: Item): string {
   if (after.from !== before.from) parts.push(`from ${refText(before.from)} → ${refText(after.from)}`);
   if (after.title !== before.title) parts.push(`title was "${before.title}"`);
   if (after.goal !== before.goal) parts.push(before.goal ? `goal was "${before.goal}"` : 'goal added');
-  if (after.body !== before.body) parts.push(before.body ? `body replaced; it was:\n${before.body}` : 'body added');
+  if (after.paths.join('\n') !== before.paths.join('\n')) parts.push(`paths ${listText(before.paths)} → ${listText(after.paths)}`);
+  if (after.why !== before.why) parts.push(replaced('why', before.why));
+  if (after.evidence.join('\n') !== before.evidence.join('\n')) parts.push(replaced('evidence', before.evidence.join('\n')));
+  if (after.plan !== before.plan) parts.push(replaced('plan', before.plan));
+  if (after.body !== before.body) parts.push(replaced('body', before.body));
   return parts.join(' · ');
 }
 
@@ -102,8 +114,13 @@ export function parseRef(ref: string): number | undefined {
 
 /** Tags as stored: lower-case words of letters, digits, `.`, `_`, `-`, without a leading `#`, deduplicated. */
 function cleanTags(tags: readonly string[]): string[] {
-  const words = tags.map((tag) => tag.trim().replace(/^#+/, '').toLowerCase().replace(/[^\p{L}\p{N}._-]+/gu, '-').replace(/^-+|-+$/g, '').slice(0, 32)).filter(Boolean);
-  return [...new Set(words)].slice(0, TAGS_MAX);
+  const words = tags.map((tag) => cutText(tag.trim().replace(/^#+/, '').toLowerCase().replace(/[^\p{L}\p{N}._-]+/gu, '-').replace(/^-+|-+$/g, ''), 32, { chars: true })).filter(Boolean);
+  return [...new Set(words)];
+}
+
+/** A list as stored: one entry per line, each entry one trimmed line, empty entries and repeats dropped. */
+function cleanList(entries: readonly string[]): string[] {
+  return [...new Set(entries.map((entry) => storedText(entry).replace(/\s+/g, ' ')).filter(Boolean))];
 }
 
 /**
@@ -124,6 +141,10 @@ interface AddInput {
   title: string;
   goal?: string;
   body?: string;
+  paths?: readonly string[];
+  why?: string;
+  evidence?: readonly string[];
+  plan?: string;
   state?: State;
   priority?: number;
   tags?: readonly string[];
@@ -137,6 +158,10 @@ interface UpdateInput {
   title?: string;
   goal?: string;
   body?: string;
+  paths?: readonly string[];
+  why?: string;
+  evidence?: readonly string[];
+  plan?: string;
   state?: State;
   priority?: number;
   tags?: readonly string[];
@@ -159,6 +184,8 @@ interface ListQuery {
 }
 
 const ORDER = `CASE b.state WHEN 'ongoing' THEN 0 WHEN 'todo' THEN 1 WHEN 'backlog' THEN 2 ELSE 3 END, b.priority, b.updated_at DESC, b.seq DESC`;
+
+const SEARCHED = ['title', 'goal', 'body', 'paths', 'why', 'evidence', 'plan'] as const;
 
 const likeEscape = (text: string) => text.replace(/[\\%_]/g, (char) => `\\${char}`);
 
@@ -207,10 +234,10 @@ export class BacklogStore {
     const args: Array<string | number> = [this.repo, ...states];
     const text = query.query?.trim();
     if (text) {
-      // Title, goal and body match any substring; a tag matches only whole (`ui` is not found in `build`), with or without `#`.
-      where.push(`(b.title LIKE ? ESCAPE '\\' OR b.goal LIKE ? ESCAPE '\\' OR b.body LIKE ? ESCAPE '\\' OR (' ' || b.tags || ' ') LIKE ? ESCAPE '\\')`);
+      // Every text field matches any substring (so `backlog/store` finds a path); a tag matches only whole (`ui` is not found in `build`), with or without `#`.
+      where.push(`(${SEARCHED.map((column) => `b.${column} LIKE ? ESCAPE '\\'`).join(' OR ')} OR (' ' || b.tags || ' ') LIKE ? ESCAPE '\\')`);
       const like = `%${likeEscape(text)}%`;
-      args.push(like, like, like, `% ${likeEscape(text.replace(/^#+/, ''))} %`);
+      args.push(...SEARCHED.map(() => like), `% ${likeEscape(text.replace(/^#+/, ''))} %`);
     }
     if (query.from !== undefined) {
       where.push('b.from_item = ?');
@@ -240,9 +267,9 @@ export class BacklogStore {
   }
 
   add(input: AddInput): Item {
-    const title = storedText(input.title, TITLE_MAX);
+    const title = storedText(input.title);
     if (!title) throw new BacklogError('An item needs a title.');
-    refuseSecrets({ title: input.title, goal: input.goal, body: input.body, tags: input.tags });
+    refuseSecrets({ title: input.title, goal: input.goal, body: input.body, paths: input.paths, why: input.why, evidence: input.evidence, plan: input.plan, tags: input.tags });
     const agentDb = this.agentDb();
     return agentDb.transaction(() => {
       // Numbers are never reused, even after the newest item is deleted: the high-water mark lives in `meta`.
@@ -256,15 +283,19 @@ export class BacklogStore {
       const state = input.state ?? 'backlog';
       agentDb.db
         .prepare(
-          `INSERT INTO backlog (repo_key, seq, title, goal, body, state, priority, tags, assignee, created_by, source_session, created_at, updated_at, started_at, done_at, from_item)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO backlog (repo_key, seq, title, goal, body, paths, why, evidence, plan, state, priority, tags, assignee, created_by, source_session, created_at, updated_at, started_at, done_at, from_item)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           this.repo,
           seq,
           title,
-          storedText(input.goal, GOAL_MAX),
-          storedText(input.body, BODY_MAX),
+          storedText(input.goal),
+          storedText(input.body),
+          cleanList(input.paths ?? []).join('\n'),
+          storedText(input.why),
+          cleanList(input.evidence ?? []).join('\n'),
+          storedText(input.plan),
           state,
           clampPriority(input.priority),
           cleanTags(input.tags ?? []).join(' '),
@@ -288,7 +319,7 @@ export class BacklogStore {
    * others may only add a note (the user may force an edit). A subagent may only touch items its parent holds.
    */
   update(ref: string, input: UpdateInput, actor: Actor): Item {
-    refuseSecrets({ title: input.title, goal: input.goal, body: input.body, note: input.note, tags: input.tags });
+    refuseSecrets({ title: input.title, goal: input.goal, body: input.body, paths: input.paths, why: input.why, evidence: input.evidence, plan: input.plan, note: input.note, tags: input.tags });
     const agentDb = this.agentDb();
     return agentDb.transaction(() => {
       const item = this.get(ref);
@@ -298,7 +329,7 @@ export class BacklogStore {
         throw new BacklogError(`${item.ref} is not claimed by your parent: a subagent updates only the items its parent has claimed.`);
       }
       const holder = !actor.owners && item.state === 'ongoing' && item.assignee && item.assignee !== actor.id ? this.liveHolder(item.assignee) : undefined;
-      const changes = (['title', 'goal', 'body', 'state', 'priority', 'tags', 'from'] as const).some((field) => input[field] !== undefined);
+      const changes = (['title', 'goal', 'body', 'paths', 'why', 'evidence', 'plan', 'state', 'priority', 'tags', 'from'] as const).some((field) => input[field] !== undefined);
       if (holder && (input.state === 'ongoing' || (changes && !input.force))) {
         throw new BacklogError(`${item.ref} is ongoing for ${holder}, which is still running: add a note, leave it, or ask the user.`);
       }
@@ -307,9 +338,9 @@ export class BacklogStore {
       if (input.state === 'ongoing' && item.assignee !== actor.id) {
         if (!actor.owners) assignee = actor.id;
       } else if (input.state === 'backlog' || input.state === 'todo') assignee = undefined;
-      const note = input.note === undefined ? '' : storedText(input.note, NOTE_MAX);
+      const note = input.note === undefined ? '' : storedText(input.note);
       const at = this.now();
-      const title = input.title === undefined ? item.title : storedText(input.title, TITLE_MAX);
+      const title = input.title === undefined ? item.title : storedText(input.title);
       if (!title) throw new BacklogError('An item needs a title.');
       const doneAt = state === 'done' ? (item.state === 'done' ? (item.doneAt ?? at) : at) : null;
       // A claim (or a takeover) starts the clock; releasing the item clears it; done keeps it, so the cycle time stays.
@@ -317,11 +348,15 @@ export class BacklogStore {
       const startedAt = claimed ? at : state === 'backlog' || state === 'todo' ? null : (item.startedAt ?? null);
       const fromItem = input.from === undefined ? (item.from === undefined ? null : this.get(item.from)!.rowId) : input.from === null ? null : this.origin(input.from, item);
       agentDb.db
-        .prepare('UPDATE backlog SET title = ?, goal = ?, body = ?, state = ?, priority = ?, tags = ?, assignee = ?, updated_at = ?, started_at = ?, done_at = ?, from_item = ?, version = version + 1 WHERE id = ?')
+        .prepare('UPDATE backlog SET title = ?, goal = ?, body = ?, paths = ?, why = ?, evidence = ?, plan = ?, state = ?, priority = ?, tags = ?, assignee = ?, updated_at = ?, started_at = ?, done_at = ?, from_item = ?, version = version + 1 WHERE id = ?')
         .run(
           title,
-          input.goal === undefined ? item.goal : storedText(input.goal, GOAL_MAX),
-          input.body === undefined ? item.body : storedText(input.body, BODY_MAX),
+          input.goal === undefined ? item.goal : storedText(input.goal),
+          input.body === undefined ? item.body : storedText(input.body),
+          (input.paths === undefined ? item.paths : cleanList(input.paths)).join('\n'),
+          input.why === undefined ? item.why : storedText(input.why),
+          (input.evidence === undefined ? item.evidence : cleanList(input.evidence)).join('\n'),
+          input.plan === undefined ? item.plan : storedText(input.plan),
           state,
           input.priority === undefined ? item.priority : clampPriority(input.priority),
           input.tags === undefined ? item.tags.join(' ') : cleanTags(input.tags).join(' '),

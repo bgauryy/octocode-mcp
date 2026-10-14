@@ -73,7 +73,7 @@ export interface ApiEvent {
 }
 
 /** Event types delivered by default. `message.delta` (streamed text) is opt-in through `types`. */
-export const DEFAULT_EVENT_TYPES = ['agent.start', 'agent.end', 'message', 'tool.start', 'tool.end', 'external.message', 'compaction'] as const;
+export const DEFAULT_EVENT_TYPES = ['agent.start', 'agent.end', 'agent.settled', 'message', 'tool.start', 'tool.end', 'external.message', 'compaction'] as const;
 
 export function stringParam(params: Record<string, unknown>, key: string, options: { max?: number; optional?: boolean } = {}): string | undefined {
   const value = params[key];

@@ -11,7 +11,7 @@ import { canonicalPath, readPaths, resolveToolPath } from '../src/shared/home.js
 import { Checkpoints } from '../src/files/checkpoint.js';
 import { sha256 } from '../src/shared/atomic.js';
 import { fakeCtx, fakePermission } from './fake-pi.js';
-import { shellSafetyGate, catastrophicCommand } from '../src/permission/shell.js';
+import { catastrophicCommand } from '../src/permission/shell.js';
 import { tmp } from './helpers.js';
 import { theme } from './fake-pi.js';
 
@@ -76,9 +76,9 @@ describe('file tool', () => {
     ];
     const seen = seenFiles(messages, '/w');
     expect([...seen.keys()].sort()).toEqual(['/w/a.ts', '/w/c.ts', '/w/d.ts']);
-    expect(seen.get('/w/c.ts')).toEqual({ file: '/w/c.ts', id: 'r-3b', at: 150 });
-    const ctx = { cwd: '/w', sessionManager: { buildSessionProjection: () => ({ entries: messages.map((m) => ({ sourceEntry: { id: m.id }, messages: [m.message] })) }) } };
-    expect(contextReads(ctx as never)).toEqual([{ file: '/w/a.ts', at: 100 }, { file: '/w/c.ts', at: 150 }, { file: '/w/d.ts', at: 200 }]);
+    expect(seen.get('/w/c.ts')).toEqual({ file: '/w/c.ts', id: 'r-3b', at: 150, workedAt: 150, line: 5, partial: true });
+    const ctx = { cwd: '/w', sessionManager: { getBranch: () => [], buildSessionProjection: () => ({ entries: messages.map((m) => ({ sourceEntry: { id: m.id }, messages: [m.message] })) }) } };
+    expect(contextReads(ctx as never)).toEqual([{ file: '/w/a.ts', at: 100 }, { file: '/w/c.ts', at: 150, partial: true }, { file: '/w/d.ts', at: 200 }]);
   });
 
   it('makes a forgotten (rewound) file need a fresh read, and leaves deleted files alone', () => {
@@ -208,6 +208,20 @@ describe('file tool', () => {
     expect(fs.readFileSync(path.join(cwd, 'b.txt'), 'utf8')).toBe('keep');
   });
 
+  it('takes any number of queries in a batch and refuses an empty one with a clear message', async () => {
+    const cwd = tmp();
+    let tool: { parameters: { properties: { queries: Record<string, unknown> } }; execute: (...args: unknown[]) => Promise<unknown> } | undefined;
+    registerFileTool({ registerTool: (t: typeof tool) => (tool = t), on: () => undefined } as never, new FileGuard(), fakePermission());
+    // The schema does not cap or floor the list (a validation refusal echoes every argument): the tool itself decides.
+    expect(tool!.parameters.properties.queries).not.toHaveProperty('maxItems');
+    expect(tool!.parameters.properties.queries).not.toHaveProperty('minItems');
+    const queries = Array.from({ length: 12 }, (_, index) => ({ reasoning: 'r', type: 'write', path: `f${index}.txt`, content: String(index) }));
+    const result = await tool!.execute('c', { queries }, undefined, undefined, fakeCtx({ cwd, hasUI: false }));
+    expect((result as { details: { outcomes: Array<{ ok: boolean }> } }).details.outcomes).toHaveLength(12);
+    expect(fs.readFileSync(path.join(cwd, 'f11.txt'), 'utf8')).toBe('11');
+    await expect(tool!.execute('c', { queries: [] }, undefined, undefined, fakeCtx({ cwd, hasUI: false }))).rejects.toThrow('No queries');
+  });
+
   it('records the digest of what the file tool wrote, so the next change needs no re-read but a later rewrite is still caught', async () => {
     const cwd = tmp();
     const file = path.join(cwd, 'a.txt');
@@ -226,6 +240,61 @@ describe('file tool', () => {
     fs.utimesSync(file, atime, mtime);
     await expect(tool!.execute('c', { queries: [{ reasoning: 'r', type: 'edit', path: 'a.txt', edits: [{ oldText: 'TWO', newText: 'x' }] }] }, undefined, undefined, ctx)).rejects.toThrow(/changed on disk/);
     expect(fs.readFileSync(file, 'utf8')).toBe('TWO');
+  });
+
+  it('refuses write and delete after a partial read but allows edit, and keeps the rule across a reload', async () => {
+    const cwd = tmp();
+    const file = path.join(cwd, 'a.txt');
+    const lines = Array.from({ length: 30 }, (_, index) => `line ${index + 1}`).join('\n');
+    fs.writeFileSync(file, lines);
+    const guard = new FileGuard();
+    const handlers = new Map<string, (...args: unknown[]) => Promise<void>>();
+    let tool: { execute: (...args: unknown[]) => Promise<unknown> } | undefined;
+    registerFileTool({ registerTool: (t: typeof tool) => (tool = t), on: (name: string, handler: never) => handlers.set(name, handler) } as never, guard, fakePermission());
+    const shown = 'line 11\nline 12\nline 13\nline 14\nline 15';
+    await handlers.get('tool_result')!({ toolName: 'read', input: { path: 'a.txt', offset: 11, limit: 5 }, content: [{ type: 'text', text: shown }], isError: false }, { cwd });
+    const refusal = /read the whole file \(no offset\/limit\) before (write|delete)/;
+    expect(guard.check(file, 'write', 'a.txt')).toMatch(refusal);
+    expect(guard.check(file, 'delete', 'a.txt')).toMatch(refusal);
+    expect(guard.check(file, 'edit', 'a.txt')).toBeUndefined();
+    const ctx = { cwd, hasUI: false };
+    await expect(tool!.execute('c', { queries: [{ reasoning: 'r', type: 'write', path: 'a.txt', content: 'x' }] }, undefined, undefined, ctx)).rejects.toThrow(refusal);
+    expect(fs.readFileSync(file, 'utf8')).toBe(lines);
+
+    // A reload rebuilds the guard from the messages the context shows: the partial flag comes back with them.
+    const call = { id: 'a-1', message: { role: 'assistant', content: [{ type: 'toolCall', id: 'c1', name: 'read', arguments: { path: 'a.txt', limit: 5 } }] } };
+    const result = { id: 'r-1', message: { role: 'toolResult', toolCallId: 'c1', toolName: 'read', content: [{ type: 'text', text: shown }], isError: false, timestamp: Date.now() + 1000 } };
+    const session = { cwd, sessionManager: { getBranch: () => [], buildSessionProjection: () => ({ entries: [call, result].map((m) => ({ sourceEntry: { id: m.id }, messages: [m.message] })) }) } };
+    const reloaded = new FileGuard();
+    reloaded.restore(contextReads(session as never));
+    expect(reloaded.check(file, 'write', 'a.txt')).toMatch(refusal);
+    expect(reloaded.check(file, 'edit', 'a.txt')).toBeUndefined();
+
+    // A whole read lifts it, and so does the tool's own write (recorded as a full read).
+    await handlers.get('tool_result')!({ toolName: 'read', input: { path: 'a.txt' }, content: [{ type: 'text', text: lines }], isError: false }, { cwd });
+    expect(guard.check(file, 'write', 'a.txt')).toBeUndefined();
+    await handlers.get('tool_result')!({ toolName: 'read', input: { path: 'a.txt', offset: 2 }, content: [{ type: 'text', text: shown }], isError: false }, { cwd });
+    await tool!.execute('c', { queries: [{ reasoning: 'r', type: 'edit', path: 'a.txt', edits: [{ oldText: 'line 12', newText: 'LINE 12' }] }] }, undefined, undefined, ctx);
+    expect(fs.readFileSync(file, 'utf8')).toContain('LINE 12');
+    expect(guard.check(file, 'write', 'a.txt')).toBeUndefined();
+  });
+
+  it('counts a truncated read as partial, and a restored partial file keeps its flag', () => {
+    const dir = tmp();
+    const file = path.join(dir, 'a.txt');
+    fs.writeFileSync(file, 'one');
+    const text = [{ type: 'text', text: 'one' }];
+    const read = (details?: unknown) => ({ role: 'toolResult', toolCallId: 'c', toolName: 'read', content: text, isError: false, timestamp: 100, ...(details ? { details } : {}) });
+    const call = { id: 'a', message: { role: 'assistant', content: [{ type: 'toolCall', id: 'c', name: 'read', arguments: { path: file } }] } };
+    expect(seenFiles([call, { id: 'r', message: read({ truncation: { truncated: true } }) }], dir).get(file)?.partial).toBe(true);
+    expect(seenFiles([call, { id: 'r', message: read() }], dir).get(file)?.partial).toBeUndefined();
+    // After a compaction the read-back message names the files it cut.
+    const restored = { id: 'x', message: { role: 'custom', customType: 'octocode-restored-files', timestamp: 100, details: { files: [file], partial: [file] } } };
+    expect(seenFiles([restored], dir).get(file)?.partial).toBe(true);
+    const guard = new FileGuard();
+    guard.restore([{ file, at: Date.now() + 1000, partial: true }]);
+    expect(guard.check(file, 'delete', 'a.txt')).toMatch(/read the whole file/);
+    expect(guard.check(file, 'edit', 'a.txt')).toBeUndefined();
   });
 
   it('learns reads from Pi read only', () => {
@@ -396,13 +465,6 @@ describe('bash safety', () => {
     for (const command of ['rm -rf dist', 'rm -rf ./build/', 'rm -rf /tmp/octocode-test', 'rm ~/notes.txt', 'echo "rm -rf /"', 'git commit -m "reboot the tests"', 'dd if=a of=/dev/null', 'yarn build']) {
       expect(catastrophicCommand(command), command).toBeUndefined();
     }
-  });
-
-  it('blocks catastrophic bash calls without touching the environment', async () => {
-    const call = (command: string) => shellSafetyGate({ toolName: 'bash', input: { command } } as never);
-    expect(await call('rm -rf ~')).toMatchObject({ block: true, reason: expect.stringMatching(/Refused: recursive removal of ~/) });
-    expect(await call('ls -la')).toBeUndefined();
-    expect(await shellSafetyGate({ toolName: 'file', input: { command: 'rm -rf /' } } as never)).toBeUndefined();
   });
 
   it('ignores quoted text and heredoc bodies, checks dd per command and sees past sudo options', () => {

@@ -11,8 +11,8 @@ Load when a hot path is slow or allocation-heavy, RSS or peak memory is high, a 
 
 ## Cut allocations (biggest lever)
 - Pre-size: `Vec::with_capacity(n)`, `String::with_capacity(n)`.
-- Reuse buffers across a loop (`buf.clear()`), not one allocation per iteration.
-- Small N: `smallvec::SmallVec` / `arrayvec::ArrayVec` stay on the stack.
+- Reuse buffers across a loop (`buf.clear()`), not one allocation per iteration. Fill an existing `String` or `Vec` with `clone_from` so its capacity survives.
+- Known maximum length: `arrayvec::ArrayVec` (no heap). Mostly short, with a few long: `smallvec::SmallVec` skips the heap for the short case and checks inline-versus-heap on every operation. A large inline `N` is slower to move than `Vec`. Benchmark it ([heap allocations](https://nnethercote.github.io/perf-book/heap-allocations.html)).
 - `mem::take`/`mem::replace` move out without cloning; `write!` into a pre-sized `String` beats repeated `format!`/`+`.
 
 ## Let the compiler work
@@ -41,13 +41,13 @@ Load when a hot path is slow or allocation-heavy, RSS or peak memory is high, a 
 - Long-lived collections: `shrink_to_fit()` or `into_boxed_slice()` after building; `Vec` doubling can leave ~50% slack.
 
 ## Ownership shape
-- Many short-lived allocations with one lifetime (AST, per-request scratch): arena (`bumpalo`, `typed-arena`) — one free, no fragmentation (oxc's allocator).
-- Share, don't copy: `Arc<T>` read-mostly across threads, `Arc::make_mut` copy-on-write, `bytes::Bytes` zero-copy slicing, `Cow` at API edges.
+- Many short-lived allocations with one lifetime (AST, per-request scratch): an arena (`bumpalo`, `typed-arena`). One reset, no per-object free, `!Sync`. It is not a `#[global_allocator]`.
+- Share, don't copy: `Arc<T>` read-mostly across threads, `Arc::make_mut` copy-on-write, `bytes::Bytes` for a shared byte buffer (a shallow clone, not a `String`), `Cow` at API edges. Do not `Arc` a value that is never shared.
 - Zero-copy parse: `#[serde(borrow)] &'a str` fields; `serde_json::from_slice` over a buffer you own.
 
 ## Bound what grows
 - Stream: `BufReader` + line/record iteration; cap `read_to_end` with `.take(limit)`. Large read-only files: `memmap2` (unsafe contract: the file must not be truncated underneath).
-- Every cache has a cap and eviction (`lru`, `moka`). Channels are bounded (`tokio::sync::mpsc::channel(n)`, `crossbeam::bounded`).
+- Every cache has a cap and eviction (`lru`, `moka`). Channels are bounded (`tokio::sync::mpsc::channel(n)`, `crossbeam::bounded`). An unbounded channel can exhaust memory and abort the process.
 - Leaks are safe but real: `Rc` cycles, `mem::forget`, `Box::leak` (only for true `'static` config, never per request).
 - Allocation failure aborts by default. Untrusted sizes: cap first, then `Vec::try_reserve(n)?`.
 
@@ -61,4 +61,4 @@ Load when a hot path is slow or allocation-heavy, RSS or peak memory is high, a 
 - Hand out with `Box::into_raw`; take back with `Box::from_raw` exactly once (export a `my_free` fn). Strings: `CString::into_raw`/`from_raw`.
 
 ## Global allocator (last lever)
-Multithreaded, alloc-heavy binaries often gain speed and less fragmentation from `mimalloc` or `tikv-jemallocator` (`#[global_allocator]`). Benchmark peak RSS *and* throughput. A library never sets the global allocator.
+The system allocator stays until a profile shows `malloc` hot. Then benchmark `tikv-jemallocator` (the maintained jemalloc binding; the older `jemallocator` crate is finished) or `mimalloc` on peak RSS and throughput. There is no universal winner: ripgrep enables jemalloc only for 64-bit musl. `#[global_allocator]` does not replace `malloc` inside libc. A library never sets the global allocator.

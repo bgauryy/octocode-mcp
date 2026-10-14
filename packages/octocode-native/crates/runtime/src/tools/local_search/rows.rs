@@ -35,7 +35,12 @@ pub(super) fn project_match(
             match_lines: None,
             count: matched.count,
             clipped: true,
-            original_chars: Some(matched.value.chars().count()),
+            // A value the engine already clipped keeps its full length.
+            original_chars: Some(
+                matched
+                    .original_chars
+                    .map_or_else(|| matched.value.chars().count(), |chars| chars as usize),
+            ),
             returned_chars: Some(chars),
             enclosing: None,
             enclosing_line: None,

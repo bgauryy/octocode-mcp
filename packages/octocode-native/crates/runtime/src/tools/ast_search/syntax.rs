@@ -72,13 +72,12 @@ pub fn execute_syntax(
         ));
     }
     cancel.check().map_err(ToolError::cancelled)?;
-    let extension =
-        super::cpp_header_override(&p.canonical, q.language().as_deref()).then_some("cpp");
+    let extension = super::parser_override(&p.canonical, q.language().as_deref());
     let inspect = |offset: u32, limit: u32| {
         octocode_engine::portable::inspect_syntax_tree_with_extension(
             &sanitized.content,
             &p.canonical.to_string_lossy(),
-            extension,
+            extension.as_deref(),
             Some(SyntaxTreeInspectOptions {
                 named_only: Some(q.named_only),
                 node_offset: Some(offset),
@@ -138,7 +137,7 @@ pub fn execute_syntax(
         .map(|n| format!("{}-{}", n.start_byte, n.end_byte))
         .collect::<Vec<_>>();
     let nodes = r.nodes.iter().map(node_page_row).collect::<Vec<_>>();
-    let diagnostics=r.diagnostics.into_iter().map(|d|json!({"code":d.code,"severity":d.severity,"stage":d.stage,"message":d.message,"path":p.canonical.to_string_lossy(),"recovery":d.recovery})).collect::<Vec<_>>();
+    let diagnostics=r.diagnostics.into_iter().map(|d|json!({"code":d.code,"severity":d.severity,"stage":d.stage,"message":d.message,"path":p.canonical.to_string_lossy(),"recovery":crate::tools::ast_rule::diagnostic_recovery(&d.code,d.recovery.as_deref())})).collect::<Vec<_>>();
     let display_path = p.canonical.to_string_lossy();
     // A failed inspection is an error row that states its error once: the
     // declared code and message of the engine's first diagnostic. It has no

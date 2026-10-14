@@ -5,6 +5,7 @@ import { sha256 } from './atomic.js';
 import { PRIVATE_FILE_MODE, sessionOutputDir } from './home.js';
 import { shortPath } from './format.js';
 import { capOutput, cutText } from './util.js';
+import { imageLimits, type ImageLimits } from './vision.js';
 
 /** Bytes and lines kept back from the budget for the omission and pointer notes. */
 const NOTE_BYTES = 512;
@@ -68,7 +69,8 @@ export function capOutputToFile(text: string, options: { label: string; maxBytes
   const lines = Math.max(maxLines - NOTE_LINES, 2);
   const head = headPreview(text, Math.floor(bytes * 0.7), Math.max(Math.floor(lines * 0.7), 1));
   const tail = tailPreview(text, Math.floor(bytes * 0.3), Math.max(Math.floor(lines * 0.3), 1));
-  const shownLines = head.lines + tail.lines;
+  // A single long line gives the head and the tail of the same line: it never shows more lines than the text has.
+  const shownLines = Math.min(head.lines + tail.lines, whole.totalLines);
   const shownBytes = Buffer.byteLength(head.text) + Buffer.byteLength(tail.text);
   const omitted = Math.max(whole.totalLines - shownLines, 0);
   const gap = omitted > 0 ? `[… ${omitted} line${omitted === 1 ? '' : 's'} omitted …]` : `[… ${formatSize(Math.max(whole.totalBytes - shownBytes, 0))} omitted …]`;
@@ -98,6 +100,11 @@ function tailPreview(text: string, maxBytes: number, maxLines: number): { text: 
  */
 export const IMAGE_MAX_CHARS = 600_000;
 
+/** The most base64 characters of one image for a model with `limits`: `IMAGE_MAX_CHARS`, or its smaller `maxBytes`. */
+export function imageBudget(limits: ImageLimits = imageLimits()): number {
+  return Math.min(IMAGE_MAX_CHARS, limits.maxBytes ?? IMAGE_MAX_CHARS);
+}
+
 const IMAGE_EXTENSIONS: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif' };
 
 /**
@@ -114,13 +121,25 @@ export function saveImageFile(base64: string, mimeType: string, label: string): 
   }
 }
 
-/** Keeps a fitted image visible and saves its original; falls back to a file pointer if Pi cannot resize it. */
-export async function boundImagePart<T extends { type: 'image'; data: string; mimeType: string }>(part: T, label: string): Promise<Array<T | { type: 'text'; text: string }>> {
-  if (part.data.length <= IMAGE_MAX_CHARS) return [part];
-  const file = saveImageFile(part.data, part.mimeType, label);
+/**
+ * Keeps a fitted image visible and saves its original; falls back to a file pointer if Pi cannot resize it. An image
+ * within the budget (`IMAGE_MAX_CHARS`, or the model's smaller `maxBytes`) passes through as is: Pi fits every tool
+ * result image to the model's profile again, and decoding each small image here would cost more than it saves. A larger
+ * one is resized to `limits` (default: `imageLimits()` for an unknown model) and gets a note with the original's
+ * dimensions, so coordinates map back. `savedAs` is the path of an original the caller already saved.
+ */
+export async function boundImagePart<T extends { type: 'image'; data: string; mimeType: string }>(
+  part: T,
+  label: string,
+  options: { limits?: ImageLimits; savedAs?: string } = {},
+): Promise<Array<T | { type: 'text'; text: string }>> {
+  const { maxBytes: _modelBytes, ...resize } = options.limits ?? imageLimits();
+  const budget = imageBudget(options.limits);
+  if (part.data.length <= budget) return [part];
+  const file = options.savedAs ?? saveImageFile(part.data, part.mimeType, label);
   try {
-    const resized = await resizeImage(Buffer.from(part.data, 'base64'), part.mimeType, { maxBytes: IMAGE_MAX_CHARS });
-    if (resized && resized.data.length <= IMAGE_MAX_CHARS) {
+    const resized = await resizeImage(Buffer.from(part.data, 'base64'), part.mimeType, { ...resize, maxBytes: budget });
+    if (resized && resized.data.length <= budget) {
       const dimensions = formatDimensionNote(resized);
       return [
         { ...part, data: resized.data, mimeType: resized.mimeType },

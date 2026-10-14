@@ -69,7 +69,7 @@ export function fakePi() {
   return { pi: pi as unknown as ExtensionAPI, tools, commands, handlers, renderers, shortcuts, sent, entries, emit, fire };
 }
 
-export interface FakeUi {
+interface FakeUi {
   notes: Array<{ message: string; type?: string }>;
   statuses: Map<string, string | undefined>;
   widgets: Map<string, unknown>;
@@ -84,7 +84,7 @@ export interface FakeUi {
 }
 
 /** A ctx whose ui records notifications, statuses and widgets and answers dialogs from queued replies. */
-export function fakeCtx(options: { cwd: string; hasUI?: boolean; mode?: string; idle?: boolean; ui?: Partial<FakeUi> }): ExtensionCommandContext & { ui: FakeUi & ExtensionContext['ui'] } {
+export function fakeCtx(options: { cwd: string; hasUI?: boolean; mode?: string; idle?: boolean; ui?: Partial<FakeUi>; model?: unknown }): ExtensionCommandContext & { ui: FakeUi & ExtensionContext['ui'] } {
   const state: FakeUi = { notes: [], statuses: new Map(), widgets: new Map(), selects: [], inputs: [], confirms: [], ...options.ui };
   const ui = {
     ...state,
@@ -118,7 +118,7 @@ export function fakeCtx(options: { cwd: string; hasUI?: boolean; mode?: string; 
     hasPendingMessages: () => false,
     signal: undefined,
     sessionManager: { getSessionId: () => 'session-test', getEntries: () => [], getBranch: () => [], getSessionFile: () => undefined, buildSessionProjection: () => ({ entries: [], messages: [] }) },
-    model: undefined,
+    model: options.model,
     getContextUsage: () => undefined,
   } as never;
 }
@@ -140,9 +140,9 @@ export function fakeOctocode(owner: OctocodeOwner = { by: 'extension' }) {
 }
 
 /** A started permission state in `mode` (default workspace: in-repo work runs, anything else asks). */
-export function fakePermission(mode: PermissionMode = 'workspace', options: { pi?: ExtensionAPI; isSubagent?: boolean } = {}): Permission {
-  const permission = new Permission({ pi: options.pi ?? fakePi().pi, env: { OCTOCODE_PERMISSION: mode }, isSubagent: options.isSubagent ?? false });
+export function fakePermission(mode: PermissionMode = 'workspace', options: { pi?: ExtensionAPI; isSubagent?: boolean; stderr?: (text: string) => void; snapshotMs?: number } = {}): Permission {
+  const permission = new Permission({ pi: options.pi ?? fakePi().pi, env: { OCTOCODE_PERMISSION: mode }, isSubagent: options.isSubagent ?? false, stderr: options.stderr ?? (() => undefined), ...(options.snapshotMs ? { snapshotMs: options.snapshotMs } : {}) });
   // The OS temp folder: tests/setup-env.ts saved a trust decision for it.
-  permission.start({ cwd: fs.realpathSync(os.tmpdir()), isProjectTrusted: () => true, hasUI: false } as never);
+  permission.start({ cwd: fs.realpathSync(os.tmpdir()), isProjectTrusted: () => true, hasUI: false, sessionManager: { getEntries: () => [], getSessionFile: () => undefined } } as never);
   return permission;
 }

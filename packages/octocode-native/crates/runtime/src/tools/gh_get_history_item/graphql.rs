@@ -8,7 +8,7 @@
 use super::pull_request::{ContentWants, content_wants};
 use super::util::str_at;
 use super::{HistoryItemRequest, ItemOperation};
-use crate::providers::github::{GitHubTransport, ProviderError, RequestContext};
+use octocode_github::{GitHubTransport, ProviderError, RequestContext};
 use serde_json::{Value, json};
 
 /// The first-page PR served by GraphQL: REST-shaped metadata, the raw
@@ -117,7 +117,7 @@ pub(super) fn pull_request_document(wants: &ContentWants) -> (String, Vec<(&'sta
 }
 
 /// Why a GraphQL answer carried no data: the first error's class and text.
-fn graphql_failure(errors: &[crate::providers::github::GraphQlError]) -> String {
+fn graphql_failure(errors: &[octocode_github::GraphQlError]) -> String {
     errors.first().map_or_else(
         || "GraphQL returned no pull request".to_owned(),
         |error| {

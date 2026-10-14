@@ -104,14 +104,16 @@ pub(crate) fn drift(
     if page_limit || cuts.terminal(q) {
         base_map.insert("terminalLimit".into(), json!(true));
     }
+    // Skipped files mark the graph (`files-skipped`); only a cut graph can
+    // hide rows from a fully paged answer.
     let results_state = if page_limit {
         "truncated"
     } else if has_more {
         "pageable"
-    } else if reasons.is_empty() {
-        "complete"
-    } else {
+    } else if cuts.graph_cut() {
         "truncated"
+    } else {
+        "complete"
     };
     let graph_state = cuts.graph_state().unwrap_or("complete");
     let mut completeness = Map::new();
@@ -139,40 +141,44 @@ pub(crate) fn drift(
     Ok(Value::Object(base_map))
 }
 
-/// One row per drift change: relations, static/dynamic transitions,
-/// cycles and files.
+/// One row per drift change, file-level first: files, cycles, static/dynamic
+/// transitions, then symbol-level relations.
 pub(super) fn drift_rows(diff: &octocode_engine::graph::GraphDiff) -> Vec<Value> {
     let mut items: Vec<Value> = Vec::new();
-    for rel in &diff.relations.added {
-        items.push(json!({"category":"relation","change":"added","from":rel.from.0,"to":rel.to.0,"edgeKind":format!("{:?}",rel.kind),"confidence":"syntactic"}));
+    for (change, files) in [
+        ("added", &diff.files.added),
+        ("removed", &diff.files.removed),
+        ("changed", &diff.files.changed),
+    ] {
+        for file in files {
+            items.push(json!({"category":"file","change":change,"file":file}));
+        }
     }
-    for rel in &diff.relations.removed {
-        items.push(json!({"category":"relation","change":"removed","from":rel.from.0,"to":rel.to.0,"edgeKind":format!("{:?}",rel.kind),"confidence":"syntactic"}));
+    for (change, cycles) in [
+        ("added", &diff.cycles.added),
+        ("resolved", &diff.cycles.resolved),
+    ] {
+        for cycle in cycles {
+            items.push(
+                json!({"category":"cycle","change":change,"files":cycle,"confidence":"syntactic"}),
+            );
+        }
     }
-    for rel in &diff.relations.static_to_dynamic {
-        items.push(json!({"category":"transition","change":"staticToDynamic","from":rel.from.0,"to":rel.to.0,"confidence":"syntactic"}));
+    for (change, transitions) in [
+        ("staticToDynamic", &diff.relations.static_to_dynamic),
+        ("dynamicToStatic", &diff.relations.dynamic_to_static),
+    ] {
+        for rel in transitions {
+            items.push(json!({"category":"transition","change":change,"from":rel.from.0,"to":rel.to.0,"confidence":"syntactic"}));
+        }
     }
-    for rel in &diff.relations.dynamic_to_static {
-        items.push(json!({"category":"transition","change":"dynamicToStatic","from":rel.from.0,"to":rel.to.0,"confidence":"syntactic"}));
-    }
-    for cycle in &diff.cycles.added {
-        items.push(
-            json!({"category":"cycle","change":"added","files":cycle,"confidence":"syntactic"}),
-        );
-    }
-    for cycle in &diff.cycles.resolved {
-        items.push(
-            json!({"category":"cycle","change":"resolved","files":cycle,"confidence":"syntactic"}),
-        );
-    }
-    for file in &diff.files.added {
-        items.push(json!({"category":"file","change":"added","file":file}));
-    }
-    for file in &diff.files.removed {
-        items.push(json!({"category":"file","change":"removed","file":file}));
-    }
-    for file in &diff.files.changed {
-        items.push(json!({"category":"file","change":"changed","file":file}));
+    for (change, relations) in [
+        ("added", &diff.relations.added),
+        ("removed", &diff.relations.removed),
+    ] {
+        for rel in relations {
+            items.push(json!({"category":"relation","change":change,"from":rel.from.0,"to":rel.to.0,"edgeKind":rel.kind.label(),"confidence":"syntactic"}));
+        }
     }
     items
 }

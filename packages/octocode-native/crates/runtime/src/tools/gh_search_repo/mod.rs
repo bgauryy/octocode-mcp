@@ -3,10 +3,6 @@
 mod provider_tests;
 mod query;
 
-use crate::providers::github::{
-    ConditionalCache, GitHubProvider, ProviderError, RepositorySearchPage, RepositorySearchRequest,
-    RequestContext,
-};
 use crate::tools::gh_shared::{
     GhFailure, SEARCH_RESULT_CAP, SearchReach, add_next, apply_partial, broaden_lead,
     drop_each_keyword, field_names, pick_rows, reject_window, search_failure, with_search_repair,
@@ -16,6 +12,10 @@ use crate::tools::id::ToolId;
 use crate::tools::num::usize_of;
 use crate::tools::paging::push_warnings;
 use crate::tools::result::{Continuation, ToolData, query_row, remove_null_fields};
+use octocode_github::{
+    ConditionalCache, GitHubProvider, ProviderError, RepositorySearchPage, RepositorySearchRequest,
+    RequestContext,
+};
 use serde_json::{Value, json};
 
 pub use crate::contracts::tool_types::{GhSearchRepoQuery, GhSearchRepoQuerySort};
@@ -33,8 +33,7 @@ pub async fn run<C: ConditionalCache>(
     result.map_err(|error| {
         // An owner listing's bare 404 is the login itself.
         let missing_owner = owner_only(query).filter(|_| {
-            error.kind == crate::providers::github::ProviderErrorKind::NotFound
-                && error.reason.is_none()
+            error.kind == octocode_github::ProviderErrorKind::NotFound && error.reason.is_none()
         });
         let failure = with_search_repair(
             search_failure(error, None),
@@ -220,10 +219,21 @@ async fn exact_repository<C: ConditionalCache>(
     context: &RequestContext,
 ) -> Result<ToolData, ProviderError> {
     let item = provider.transport.repository(owner, repo, context).await?;
+    // GitHub answers a renamed repository's old name with the new one.
+    let renamed = item
+        .full_name
+        .split_once('/')
+        .filter(|(to_owner, to_repo)| {
+            !to_owner.eq_ignore_ascii_case(owner) || !to_repo.eq_ignore_ascii_case(repo)
+        })
+        .map(|(to_owner, to_repo)| (to_owner.to_owned(), to_repo.to_owned()));
     let row = repository_row(item, &[]);
     let fields = field_names(&query.fields);
     let mut value = json!({ "repositories": [row] });
     pick_rows(&mut value, "repositories", REPO_ID, &fields);
+    if let Some(to) = renamed {
+        value["warnings"] = json!([crate::tools::gh_shared::renamed_warning(owner, repo, &to)]);
+    }
     Ok(ToolData::from(value))
 }
 
@@ -374,9 +384,7 @@ async fn owner_listing<C: ConditionalCache>(
 
 /// Where the top repository leads: its default-branch root listing. Repo
 /// discovery words are not code keywords, so no code-search lead follows.
-fn top_leads(
-    top: Option<&crate::providers::github::RepositorySearchItem>,
-) -> Vec<(&'static str, Value)> {
+fn top_leads(top: Option<&octocode_github::RepositorySearchItem>) -> Vec<(&'static str, Value)> {
     let Some((owner, repo)) = top.and_then(|item| item.full_name.split_once('/')) else {
         return Vec::new();
     };
@@ -486,10 +494,7 @@ fn wanted_topics(query: &GhSearchRepoQuery) -> Vec<String> {
 /// language, license, last push, creation, `archived`/`fork` when set), the whole
 /// description, and every topic (query matches first). Forks and the
 /// metadata-update date are verbose (core field class).
-fn repository_row(
-    item: crate::providers::github::RepositorySearchItem,
-    wanted: &[String],
-) -> Value {
+fn repository_row(item: octocode_github::RepositorySearchItem, wanted: &[String]) -> Value {
     let mut topics = item.topics;
     // A topic equal to the repository's own name repeats `repo`; one equal
     // to its language repeats `language`.
@@ -558,6 +563,12 @@ impl crate::tools::output::ToolOutput for Output {
             "Use fewer or broader keywords, or set owner and repo to open one."
         }
     }
+    /// A missing owner names the login and has no repair; an exact
+    /// repository that did not resolve carries its own `findRepository`
+    /// lead. Neither is helped by the search fallback.
+    fn error_hint(&self, code: &str) -> Option<&'static str> {
+        (code == "notFound").then_some(crate::tools::output::NO_HINT)
+    }
     fn evidence_kind(&self, _query: &serde_json::Value, _data: &serde_json::Value) -> &'static str {
         "provider"
     }
@@ -602,6 +613,24 @@ fn clasify_repositories(
 
 #[cfg(test)]
 mod tests {
+    /// A missing owner is not told to broaden its keywords: the error names
+    /// the login, and no search change repairs it.
+    #[test]
+    fn a_missing_owner_gets_no_search_fallback_hint() {
+        use crate::tools::id::ToolId;
+        let query = serde_json::json!({"owner": "no-such-owner"});
+        let mut row = serde_json::json!({"status": "error", "data": {
+            "errorCode": "notFound",
+            "error": "Owner \"no-such-owner\" not found: no GitHub user or organization has this login"
+        }});
+        crate::response::rows::ensure_recovery(&mut row, ToolId::GhSearchRepo, &query);
+        assert!(row["data"].get("hints").is_none(), "{row}");
+        // An empty search still gets its fallback.
+        let mut empty = serde_json::json!({"status": "empty", "data": {}});
+        crate::response::rows::ensure_recovery(&mut empty, ToolId::GhSearchRepo, &query);
+        assert!(empty["data"]["hints"][0].is_string(), "{empty}");
+    }
+
     use super::*;
 
     #[test]
@@ -629,7 +658,7 @@ mod tests {
     /// every other topic stays.
     #[test]
     fn topic_naming_the_repository_itself_is_dropped() {
-        let item: crate::providers::github::RepositorySearchItem = serde_json::from_value(json!({
+        let item: octocode_github::RepositorySearchItem = serde_json::from_value(json!({
             "full_name":"harlanc/xiu","name":"xiu","html_url":"h","default_branch":"main",
             "topics":["rtmp","XIU","rust"]
         }))
@@ -641,7 +670,7 @@ mod tests {
     /// A topic that only repeats the row's `language` is dropped too.
     #[test]
     fn topic_naming_the_language_is_dropped() {
-        let item: crate::providers::github::RepositorySearchItem = serde_json::from_value(json!({
+        let item: octocode_github::RepositorySearchItem = serde_json::from_value(json!({
             "full_name":"psf/requests","name":"requests","html_url":"h","default_branch":"main",
             "language":"Python","topics":["python","http"]
         }))

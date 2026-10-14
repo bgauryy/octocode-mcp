@@ -13,39 +13,65 @@ describe('browser reach', () => {
   };
 
   it('opens http(s) only, and private or local hosts only once the user allows them', async () => {
-    vi.stubEnv('OCTOCODE_WEB_ALLOW_PRIVATE', '');
     const allowed = fakePermission('workspace');
-    await expect(checkBrowserUrl('file:///etc/passwd', ui(true), allowed)).rejects.toThrow(/http\(s\) URLs only/);
-    await expect(checkBrowserUrl('javascript:alert(1)', ui(true), allowed)).rejects.toThrow(/http\(s\) URLs only/);
-    await expect(checkBrowserUrl('not a url', ui(true), allowed)).rejects.toThrow(/Not a URL/);
-    await expect(checkBrowserUrl('https://93.184.216.34/', { hasUI: false, ui: {} as never }, allowed)).resolves.toBeUndefined();
-    await expect(checkBrowserUrl('http://169.254.169.254/latest/meta-data', { hasUI: false, ui: {} as never }, allowed)).rejects.toThrow(/Blocked private or local address/);
+    await expect(checkBrowserUrl('file:///etc/passwd', ui(true), allowed, 'call')).rejects.toThrow(/http\(s\) URLs only/);
+    await expect(checkBrowserUrl('javascript:alert(1)', ui(true), allowed, 'call')).rejects.toThrow(/http\(s\) URLs only/);
+    await expect(checkBrowserUrl('not a url', ui(true), allowed, 'call')).rejects.toThrow(/Not a URL/);
+    await expect(checkBrowserUrl('https://93.184.216.34/', { hasUI: false, ui: {} as never }, allowed, 'call')).resolves.toBeUndefined();
+    await expect(checkBrowserUrl('http://169.254.169.254/latest/meta-data', { hasUI: false, ui: {} as never }, allowed, 'call')).rejects.toThrow(/Blocked private or local address/);
     const declined = ui(false);
-    await expect(checkBrowserUrl('http://127.0.0.1:3000/', declined, allowed)).rejects.toThrow(/Blocked private or local address: 127\.0\.0\.1:3000\. The user denied opening a private or local address.*Do not retry it[\s\S]*OCTOCODE_WEB_ALLOW_PRIVATE=1/);
+    await expect(checkBrowserUrl('http://127.0.0.1:3000/', declined, allowed, 'call')).rejects.toThrow(/Blocked private or local address: 127\.0\.0\.1:3000\. The user denied opening a private or local address.*Do not retry it/);
     // The session grant is per host: the second load of that host opens no dialog.
     const confirmed = ui('Allow 127.0.0.1:3000 for this session');
-    await checkBrowserUrl('http://127.0.0.1:3000/', confirmed, allowed);
-    await checkBrowserUrl('http://127.0.0.1:3000/next', confirmed, allowed);
+    await checkBrowserUrl('http://127.0.0.1:3000/', confirmed, allowed, 'call');
+    await checkBrowserUrl('http://127.0.0.1:3000/next', confirmed, allowed, 'call');
     expect(confirmed.select).toHaveBeenCalledTimes(1);
     expect(allowed.grants()).toEqual(['net.private: 127.0.0.1:3000']);
     // full opens private hosts without asking; manual asks like workspace.
-    await expect(checkBrowserUrl('http://10.0.0.2/', { hasUI: false, ui: {} as never }, fakePermission('full'))).resolves.toBeUndefined();
-    await expect(checkBrowserUrl('http://10.0.0.2/', { hasUI: false, ui: {} as never }, fakePermission('manual'))).rejects.toThrow(/no one can be asked here/);
+    await expect(checkBrowserUrl('http://10.0.0.2/', { hasUI: false, ui: {} as never }, fakePermission('full'), 'call')).resolves.toBeUndefined();
+    await expect(checkBrowserUrl('http://10.0.0.2/', { hasUI: false, ui: {} as never }, fakePermission('manual'), 'call')).rejects.toThrow(/no one can be asked here/);
     // A name that does not resolve here may resolve to a private address in Chrome: it needs confirmation too.
-    await expect(checkBrowserUrl('https://octocode.invalid/', { hasUI: false, ui: {} as never }, allowed)).rejects.toThrow(/Blocked unresolved host: octocode\.invalid/);
+    await expect(checkBrowserUrl('https://octocode.invalid/', { hasUI: false, ui: {} as never }, allowed, 'call')).rejects.toThrow(/Blocked unresolved host: octocode\.invalid/);
     const unresolved = ui(true);
-    await checkBrowserUrl('https://octocode.invalid/', unresolved, allowed);
+    await checkBrowserUrl('https://octocode.invalid/', unresolved, allowed, 'call');
     expect(unresolved.select.mock.calls[0]?.[0]).toMatch(/^Open a private address\?\n {2}The browser wants to open octocode\.invalid, a name that does not resolve here and may reach a local or private address\./);
-    vi.stubEnv('OCTOCODE_WEB_ALLOW_PRIVATE', '1');
-    await expect(checkBrowserUrl('http://10.0.0.1/', { hasUI: false, ui: {} as never }, fakePermission('manual'))).resolves.toBeUndefined();
   });
 
-  it('uploads files outside the workspace only with the user\'s yes', async () => {
+  it('asks once, with both reasons, when the agent opens a private page in manual mode', async () => {
+    const manual = ui(true);
+    await checkBrowserUrl('http://127.0.0.1:3000/', manual, fakePermission('manual'), 'call-1');
+    expect(manual.select).toHaveBeenCalledTimes(1);
+    const shown = manual.select.mock.calls[0]![0];
+    expect(shown.split('\n').filter((line) => line.includes('▸ why it asks:'))).toEqual([
+      '  ▸ why it asks: the address is private or local, so it can reach internal services (manual mode asks)',
+      '  ▸ why it asks: it acts in a real browser',
+    ]);
+    // workspace allows the browser action itself: the private address is the only reason.
+    const workspace = ui(true);
+    await checkBrowserUrl('http://127.0.0.1:3000/', workspace, fakePermission('workspace'), 'call-2');
+    expect(workspace.select.mock.calls[0]![0].split('\n').filter((line) => line.includes('▸ why it asks:'))).toHaveLength(1);
+    // A public page opens unasked in workspace.
+    const open = ui(true);
+    await checkBrowserUrl('https://93.184.216.34/', open, fakePermission('workspace'), 'call-3');
+    expect(open.select).not.toHaveBeenCalled();
+  });
+
+  it('asks for every upload, and one prompt names an upload from outside the workspace too', async () => {
     const permission = fakePermission('workspace');
-    await expect(checkUploadPaths(['a.txt', '/work/sub/b.txt'], ui(false), permission)).resolves.toEqual(['/work/a.txt', '/work/sub/b.txt']);
+    const inside = ui(true);
+    await expect(checkUploadPaths(['a.txt', '/work/sub/b.txt'], inside, permission)).resolves.toEqual(['/work/a.txt', '/work/sub/b.txt']);
+    expect(inside.select.mock.calls[0]![0]).toMatch(/^Upload files to the page\?/);
+    expect(inside.select.mock.calls[0]![1]).toEqual(['Allow once', 'Deny', 'Deny and tell the agent why…']);
+    await expect(checkUploadPaths(['a.txt'], ui(false), permission)).rejects.toThrow(/^Refused to upload files: The user denied/);
+    const outside = ui(true);
+    await expect(checkUploadPaths(['../secret', '/etc/passwd'], outside, permission)).resolves.toHaveLength(2);
+    expect(outside.select).toHaveBeenCalledTimes(1);
+    const shown = outside.select.mock.calls[0]![0];
+    expect(shown).toMatch(/^Upload files from outside the workspace\?/);
+    expect(shown.split('\n').filter((line) => line.includes('▸ why it asks:'))).toHaveLength(2);
     await expect(checkUploadPaths(['../secret', '/etc/passwd'], ui(false), permission)).rejects.toThrow(`Refused to upload files outside the workspace: /secret, ${fs.realpathSync('/etc/passwd')}. The user denied`);
     await expect(checkUploadPaths(['/etc/passwd'], { cwd: '/work', hasUI: false, ui: {} as never }, permission)).rejects.toThrow(/outside the workspace.*no one can be asked here/);
-    await expect(checkUploadPaths(['~/.ssh/id_rsa'.replace('~', os.homedir())], ui(true), permission)).resolves.toHaveLength(1);
+    // full uploads without asking, and the audit says so.
     await expect(checkUploadPaths(['/etc/passwd'], { cwd: '/work', hasUI: false, ui: {} as never }, fakePermission('full'))).resolves.toHaveLength(1);
   });
 
@@ -53,7 +79,6 @@ describe('browser reach', () => {
     { action: 'navigate', url: 'http://127.0.0.1:3000/' },
     { action: 'upload', ref: 1, files: ['/private/tmp/outside-upload'] },
   ])('cancels an active $action approval with the tool request before page operations', async (params) => {
-    vi.stubEnv('OCTOCODE_WEB_ALLOW_PRIVATE', '');
     const permission = fakePermission('workspace');
     const browser = new BrowserTool(permission);
     const page = { send: vi.fn() };
@@ -84,7 +109,7 @@ describe('browser reach', () => {
     }
     expect(page.send).not.toHaveBeenCalled();
     expect(permission.grants()).toEqual([]);
-    await expect(checkBrowserUrl('http://127.0.0.1:3000/', ui(true), permission)).resolves.toBeUndefined();
+    await expect(checkBrowserUrl('http://127.0.0.1:3000/', ui(true), permission, 'call')).resolves.toBeUndefined();
   });
 
   it('follows symlinks before deciding a file is inside the workspace, and uploads the real file', async () => {
@@ -103,7 +128,7 @@ describe('browser reach', () => {
       expect(await checkUploadPaths(['link'], { ...ui(true), cwd: workspace }, permission)).toEqual([path.join(root, 'secret')]);
       // A workspace reached through a symlink still holds its own files.
       fs.symlinkSync(workspace, path.join(root, 'alias'));
-      expect(await checkUploadPaths(['a.txt', 'new.txt'], { ...ui(false), cwd: path.join(root, 'alias') }, permission)).toEqual([path.join(workspace, 'a.txt'), path.join(workspace, 'new.txt')]);
+      expect(await checkUploadPaths(['a.txt', 'new.txt'], { ...ui(true), cwd: path.join(root, 'alias') }, permission)).toEqual([path.join(workspace, 'a.txt'), path.join(workspace, 'new.txt')]);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

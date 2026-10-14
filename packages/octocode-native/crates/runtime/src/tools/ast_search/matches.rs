@@ -206,7 +206,7 @@ fn retry_omitted_parts(
         .chain(&variants)
         .map(|variant| json!({"pattern": variant}))
         .collect::<Vec<_>>();
-    fields.insert("rule".into(), json!({"any": any}));
+    fields.insert("rule".into(), json!({"any": any.clone()}));
     let Ok(rule) = serde_json::from_value::<AstSearchQueryMatchRule>(row) else {
         return out;
     };
@@ -227,7 +227,12 @@ fn retry_omitted_parts(
         "code":"structural.pattern.relaxed",
         "severity":"warning",
         "stage":"match",
-        "message":format!("{written} matches as written; the rest match `{}`.", variants.join("` or `")),
+        "message":format!(
+            "{written} {} as written; {} match the relaxed rule.",
+            if written == 1 { "match" } else { "matches" },
+            retried["matchCount"].as_u64().unwrap_or(0)
+        ),
+        "rule":{"any": any},
     });
     match retried["diagnostics"].as_array_mut() {
         Some(diagnostics) => diagnostics.insert(0, note),
@@ -423,6 +428,8 @@ struct Grouped {
     groups: Vec<Group>,
     /// The first file that parsed (its row path).
     first_parsed: Option<String>,
+    /// The first file the scan read, parsed or skipped by the prefilter.
+    first_scanned: Option<String>,
     diagnostics: Vec<Value>,
     total_matches: u64,
     parsed_files: u32,
@@ -431,7 +438,16 @@ struct Grouped {
     compile_error: Option<ToolError>,
     compile_failed_files: u32,
     unevaluated_files: u32,
+    /// Files skipped unread: no grammar, unreadable, over the parse limit.
+    skipped_files: u32,
 }
+
+/// Diagnostic codes of a file the scan skipped unread.
+const SKIP_CODES: [&str; 3] = [
+    "structural.language.unsupported",
+    "structural.file.unreadable",
+    "structural.file.tooLarge",
+];
 
 fn execute_match_inner(
     q: MatchQuery<'_>,
@@ -605,25 +621,35 @@ fn scan_file(
         .decode_source_bytes(&bytes, super::MAX_PARSE_SOURCE_BYTES)
         .map_err(super::policy_error)?;
     let source_path = canonical.to_string_lossy();
-    let r = if super::cpp_header_override(canonical, scope.language.as_deref()) {
-        octocode_engine::portable::structural_search_detailed_with_extension(
-            &source,
-            &source_path,
-            "cpp",
-            q.pattern().as_deref(),
-            q.rule().as_deref(),
-        )
-    } else {
-        octocode_engine::portable::structural_search_detailed(
-            &source,
-            &source_path,
-            q.pattern().as_deref(),
-            q.rule().as_deref(),
-        )
-    }
+    let mut r = octocode_engine::portable::structural_search_detailed(
+        &source,
+        &source_path,
+        super::parser_override(canonical, scope.language.as_deref()).as_deref(),
+        q.pattern().as_deref(),
+        q.rule().as_deref(),
+    )
     .map_err(|error| tree_repair(super::native_error(error), q, scope))?;
-    if let Some(error) = diagnostic_error(&r.diagnostics) {
-        return Err(tree_repair(error, q, scope));
+    if let Some(diagnostic) = error_diagnostic(&r.diagnostics) {
+        let error = diagnostic_error(diagnostic);
+        // A rule that does not parse as a rule names its bad key; no syntax
+        // tree shows a rule's keys.
+        return Err(
+            if diagnostic.code == octocode_engine::structural::RULE_INVALID {
+                error
+            } else {
+                tree_repair(error, q, scope)
+            },
+        );
+    }
+    if let Some(note) = super::cpp_header_note(canonical, q.language().as_deref(), &source) {
+        r.diagnostics.push(StructuralDiagnostic {
+            code: super::CPP_HEADER_NOTE.to_owned(),
+            severity: "warning".to_owned(),
+            stage: "parse".to_owned(),
+            message: note,
+            path: Some(source_path.into_owned()),
+            recovery: None,
+        });
     }
     Ok(Scan {
         files: vec![(
@@ -671,7 +697,8 @@ fn scan_directory(
 ) -> Result<Scan, ToolError> {
     let extensions = scope.extensions.as_ref();
     let withheld = std::sync::Mutex::new(crate::policy::discovery::Withheld::default());
-    let r = octocode_engine::portable::structural_search_files_detailed_filtered_with_extension(
+    let discovery = paths.discovery_walk();
+    let r = octocode_engine::structural::search_files(
         StructuralSearchFilesOptions {
             path: scope.canonical.to_string_lossy().into_owned(),
             pattern: q.pattern(),
@@ -684,15 +711,17 @@ fn scan_directory(
             exclude_dir: Some(
                 PruneMode::SyntaxVisible.directories_before_policy(q.default_excludes()),
             ),
-            hidden: q.include_hidden(),
-            no_ignore: q.include_ignored(),
+            ignore: octocode_engine::search::walk::IgnorePolicy::new(
+                q.include_ignored(),
+                q.include_hidden(),
+            ),
             max_depth: q.max_depth(),
             max_files: q.max_files(),
             skip_files: Some(q.scan_offset()),
             max_file_bytes: u32::try_from(super::MAX_PARSE_SOURCE_BYTES).ok(),
         },
         &|path| {
-            let allowed = super::allow_discovery(path, paths, cancel)?;
+            let allowed = discovery.permits(path);
             // Only a directory or a file of the scanned grammar could have
             // matched, so only those leave absence unproven.
             // A dot entry out of view (no `hidden`) is neither walked nor
@@ -710,11 +739,11 @@ fn scan_directory(
             }
             // Explicit include globs are intersected with language: files
             // outside the selected grammar are never candidates.
-            Ok(allowed
+            allowed
                 && (q.include().is_none()
                     || extensions.is_none_or(|extensions| {
                         !path.is_file() || has_extension_in(path, extensions)
-                    })))
+                    }))
         },
         &|path| {
             if super::cpp_header_override(path, scope.language.as_deref()) {
@@ -723,10 +752,11 @@ fn scan_directory(
                 octocode_engine::text::extension_of(&path.to_string_lossy(), true, "")
             }
         },
+        &|| cancel.check().is_err(),
     )
     .map_err(super::native_error)?;
-    if let Some(error) = diagnostic_error(&r.diagnostics) {
-        return Err(error);
+    if let Some(diagnostic) = error_diagnostic(&r.diagnostics) {
+        return Err(diagnostic_error(diagnostic));
     }
     let sources = r
         .files
@@ -855,13 +885,20 @@ fn group_files(q: MatchQuery<'_>, files: &[ScannedFile], budget: usize) -> Group
                 grouped.parsed_files += 1;
                 grouped.scanned_files += 1;
                 grouped.first_parsed.get_or_insert_with(|| path.clone());
+                grouped.first_scanned.get_or_insert_with(|| path.clone());
             }
-            "skippedByPreFilter" => grouped.scanned_files += 1,
+            "skippedByPreFilter" => {
+                grouped.scanned_files += 1;
+                grouped.first_scanned.get_or_insert_with(|| path.clone());
+            }
             _ => {
-                if let Some(diagnostic) = diagnostics
-                    .iter()
-                    .find(|diagnostic| diagnostic.code == "structural.query.compileFailed")
-                {
+                if let Some(diagnostic) = diagnostics.iter().find(|diagnostic| {
+                    matches!(
+                        diagnostic.code.as_str(),
+                        "structural.query.compileFailed"
+                            | octocode_engine::structural::RULE_INVALID
+                    )
+                }) {
                     grouped.compile_failed_files += 1;
                     grouped.compile_error.get_or_insert_with(|| {
                         ToolError::new(
@@ -869,6 +906,12 @@ fn group_files(q: MatchQuery<'_>, files: &[ScannedFile], budget: usize) -> Group
                             crate::tools::ast_rule::untagged(&diagnostic.message),
                         )
                     });
+                } else if diagnostics
+                    .iter()
+                    .any(|diagnostic| SKIP_CODES.contains(&diagnostic.code.as_str()))
+                {
+                    // The scan counts it as a skip (`filesSkipped`).
+                    grouped.skipped_files += 1;
                 } else {
                     grouped.unevaluated_files += 1;
                 }
@@ -935,7 +978,9 @@ fn match_group(q: MatchQuery<'_>, path: String, rows: Vec<MatchRow>, budget: usi
     let match_page = q.match_page().max(1) as usize;
     let out_of_range = match_page > windows.len();
     let more_matches = match_page < windows.len();
-    let window = windows.get(match_page - 1).cloned().unwrap_or(total..total);
+    let window = crate::tools::page_windows::nth_page(&windows, match_page)
+        .cloned()
+        .unwrap_or(total..total);
     // The file's place on a file page is its first match page, whichever
     // match page is asked for, so the file pages never move.
     let first_chars = windows.first().map_or(0, |first| {
@@ -1035,7 +1080,17 @@ fn render_match_page(
 ) -> Value {
     let (skips, truncated) = (scan.skips, scan.truncated);
     let mut diagnostics = grouped.diagnostics;
-    diagnostics.extend(scan_diagnostics(q, scope, scan));
+    // The scan repeats the diagnostics of the files it cut short; each file
+    // keeps one.
+    for diagnostic in scan_diagnostics(q, scope, scan) {
+        if !diagnostics.iter().any(|known| {
+            known["code"] == diagnostic["code"]
+                && known["path"] == diagnostic["path"]
+                && known["message"] == diagnostic["message"]
+        }) {
+            diagnostics.push(diagnostic);
+        }
+    }
     let parsed = grouped.parsed_files;
     let scanned = grouped.scanned_files;
     let groups = grouped.groups;
@@ -1047,8 +1102,7 @@ fn render_match_page(
     let page = q.page().max(1) as usize;
     let group_sizes = groups.iter().map(|group| group.chars).collect::<Vec<_>>();
     let windows = paging.windows(&group_sizes);
-    let page_groups = windows
-        .get(page - 1)
+    let page_groups = crate::tools::page_windows::nth_page(&windows, page)
         .map_or(&groups[groups.len()..], |window| &groups[window.clone()]);
     let more = page < windows.len();
     let mut out =
@@ -1119,7 +1173,6 @@ fn render_match_page(
         let mut hints = vec![crate::tools::ast_rule::empty_match_hint(
             scanned,
             language.as_deref(),
-            q.pattern().is_some(),
         )];
         if let Some(skipped) = empty_scope.skipped {
             let subject = language.as_deref().map_or_else(
@@ -1134,7 +1187,7 @@ fn render_match_page(
         }
         out["hints"] = json!(hints);
     }
-    let skipped = skips.0 + skips.1 + skips.2 > 0;
+    let skipped = skips.0 + skips.1 + skips.2 > 0 || grouped.skipped_files > 0;
     let incomplete =
         truncated || skipped || grouped.compile_failed_files > 0 || grouped.unevaluated_files > 0;
     let partial_reasons = [
@@ -1149,6 +1202,12 @@ fn render_match_page(
         (skipped, "filesSkipped"),
         (grouped.compile_failed_files > 0, "compileFailed"),
         (grouped.unevaluated_files > 0, "filesUnevaluated"),
+        // A file's later match pages (`next.nextMatchPage`): the row's own
+        // file pagination does not state them.
+        (
+            page_groups.iter().any(|group| group.more_matches),
+            "matchPages",
+        ),
     ]
     .into_iter()
     .filter_map(|(cut, reason)| cut.then_some(reason))
@@ -1193,11 +1252,13 @@ fn render_match_page(
     if !has_page && let Some(fields) = out.as_object_mut() {
         fields.shift_remove("complete");
     }
-    // An empty match leads to the syntax tree of a parsed file, where the
-    // pattern's node shape can be compared with the source.
+    // An empty match leads to the syntax tree of a parsed file (else of a
+    // file the anchor prefilter read), where the pattern's node shape can be
+    // compared with the source.
     if empty
         && let Some(file) = grouped
             .first_parsed
+            .or(grouped.first_scanned)
             .and_then(|path| row_file(scope, &json!({"path": path})))
     {
         out["next"]["viewTree"] = tree_lead(q, scope, &file);
@@ -1291,16 +1352,48 @@ fn attach_match_continuations(
         out["next"]["expandCaptures"] = with(expand);
     }
     if !expand_captures || cut_chars.is_some_and(|chars| chars > max_content_length) {
-        let reads = page_groups
-            .iter()
-            .flat_map(|group| read_clipped_values(scope, group))
-            .enumerate();
-        for (index, read) in reads {
-            let name = match index {
-                0 => "expandValues".to_owned(),
-                n => format!("expandValues{}", n + 1),
+        // One lead whose rows read each file's clipped lines, within
+        // localFetch's batch limit; a warning names every range left out.
+        let limit = crate::tools::result::rows_per_call(ToolId::LocalFetch);
+        let (mut rows, mut left) = (Vec::new(), Vec::new());
+        for group in page_groups {
+            let Some(reads) = read_clipped_values(scope, group) else {
+                continue;
             };
-            out["next"][name] = read;
+            let shown = group.row["path"].as_str().unwrap_or_default();
+            for row in reads.rows {
+                if rows.len() < limit {
+                    rows.push(row);
+                } else {
+                    left.push(format!("{shown} {}", ranges_text(&row["ranges"])));
+                }
+            }
+            if !reads.long.is_empty() {
+                let long = reads
+                    .long
+                    .iter()
+                    .map(|(start, end)| format!("{start}-{end}"))
+                    .collect::<Vec<_>>();
+                left.push(format!("{shown} {}", long.join(", ")));
+            }
+        }
+        if !left.is_empty() {
+            let warning = format!(
+                "Clipped values past this page's read batch (read them with localFetch): {}.",
+                left.join("; ")
+            );
+            match out["warnings"].as_array_mut() {
+                Some(warnings) => warnings.push(json!(warning)),
+                None => out["warnings"] = json!([warning]),
+            }
+        }
+        if !rows.is_empty() {
+            out["next"]["expandValues"] = crate::tools::result::Continuation::input(
+                ToolId::LocalFetch,
+                json!({ "queries": rows }),
+            )
+            .confidence("high")
+            .build();
         }
     }
     if let Some(read) = page_groups
@@ -1332,28 +1425,48 @@ fn row_file(scope: &Scope, row: &Value) -> Option<std::path::PathBuf> {
     })
 }
 
-/// Reads of one file's clipped rows, whole: their merged line spans, at most
-/// [`RANGES_MAX_ITEMS`](crate::tools::id::query_limits::local_fetch::RANGES_MAX_ITEMS) per read.
-fn read_clipped_values(scope: &Scope, group: &Group) -> Vec<Value> {
-    let Some(file) = row_file(scope, &group.row).filter(|_| !group.clipped.is_empty()) else {
-        return vec![];
-    };
-    let spans = crate::tools::line_spans::merge_spans(group.clipped.iter().copied());
-    spans
+/// One file's clipped rows: localFetch rows reading their merged line
+/// spans, at most
+/// [`RANGES_MAX_ITEMS`](crate::tools::id::query_limits::local_fetch::RANGES_MAX_ITEMS)
+/// per row, and the spans longer than [`READ_MAX_SPAN`] lines (a whole
+/// file's match) left out: whole, they would put the file on the page.
+struct ClippedReads {
+    rows: Vec<Value>,
+    long: Vec<(u64, u64)>,
+}
+
+fn read_clipped_values(scope: &Scope, group: &Group) -> Option<ClippedReads> {
+    let file = row_file(scope, &group.row).filter(|_| !group.clipped.is_empty())?;
+    let (short, long): (Vec<_>, Vec<_>) = group
+        .clipped
+        .iter()
+        .copied()
+        .partition(|(start, end)| end.saturating_sub(*start) < READ_MAX_SPAN);
+    let rows = crate::tools::line_spans::merge_spans(short)
         .chunks(crate::tools::id::query_limits::local_fetch::RANGES_MAX_ITEMS)
         .map(|chunk| {
             let ranges = chunk
                 .iter()
                 .map(|(start, end)| format!("{start}-{end}"))
                 .collect::<Vec<_>>();
-            crate::tools::result::Continuation::new(
-                ToolId::LocalFetch,
-                json!({"path": file.to_string_lossy(), "ranges": ranges}),
-            )
-            .confidence("high")
-            .build()
+            json!({"path": file.to_string_lossy(), "ranges": ranges})
         })
-        .collect()
+        .collect();
+    Some(ClippedReads {
+        rows,
+        long: crate::tools::line_spans::merge_spans(long),
+    })
+}
+
+/// A read row's `ranges` as `a-b, c-d`.
+fn ranges_text(ranges: &Value) -> String {
+    ranges
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// The natural next step after a match: read the top file's hit lines in
@@ -1647,7 +1760,9 @@ fn skipped_walk(
         q.include().unwrap_or_default(),
         q.exclude().unwrap_or_default(),
     );
-    let permits = |path: &std::path::Path| super::allow_discovery(path, paths, cancel);
+    let discovery = paths.discovery_walk();
+    let permits = |path: &std::path::Path| discovery.permits(path);
+    let stop = || cancel.check().is_err();
     let keep = |path: &std::path::Path| {
         extensions.contains(&octocode_engine::text::extension_of(
             &path.to_string_lossy(),
@@ -1666,6 +1781,7 @@ fn skipped_walk(
         include: &include,
         exclude: &exclude,
     })
+    .stopping(&stop)
     .beyond(walk);
     let verdict = diagnose(
         &scope.canonical,
@@ -1710,11 +1826,15 @@ fn directory_choice(
         q.include().unwrap_or_default(),
         q.exclude().unwrap_or_default(),
     );
+    let discovery = paths.discovery_walk();
     let present = present_grammars(
         root,
         &prune,
-        q.include_hidden().unwrap_or(false),
-        q.include_ignored().unwrap_or(false),
+        Walk {
+            ignored: q.include_ignored().unwrap_or(false),
+            hidden: q.include_hidden().unwrap_or(false),
+            default_excludes: !prune.is_empty(),
+        },
         q.max_files()
             .map_or(octocode_engine::scan_budget::SCAN_WALK_FILES, |files| {
                 files as usize
@@ -1723,9 +1843,10 @@ fn directory_choice(
             include: &include,
             exclude: &exclude,
         },
-        &|path| super::allow_discovery(path, paths, cancel),
+        &|path| discovery.permits(path),
+        &|| cancel.check().is_err(),
     )
-    .map_err(super::scan_error)?;
+    .map_err(super::native_error)?;
     let (pattern, rule) = (q.pattern(), q.rule());
     Ok(choose_grammar(present.into_iter(), |_, extensions| {
         compile_check(extensions, pattern.as_deref(), rule.as_deref())
@@ -1806,20 +1927,23 @@ fn infer_directory_language(
 }
 
 fn diag(d: &StructuralDiagnostic) -> Value {
-    json!({"code":d.code,"severity":d.severity,"stage":d.stage,"message":d.message,"path":d.path,"recovery":d.recovery})
+    json!({"code":d.code,"severity":d.severity,"stage":d.stage,"message":d.message,"path":d.path,"recovery":crate::tools::ast_rule::diagnostic_recovery(&d.code,d.recovery.as_deref())})
 }
 
-fn diagnostic_error(diagnostics: &[StructuralDiagnostic]) -> Option<ToolError> {
+fn error_diagnostic(diagnostics: &[StructuralDiagnostic]) -> Option<&StructuralDiagnostic> {
     diagnostics
         .iter()
         .find(|diagnostic| diagnostic.severity == "error")
-        .map(|diagnostic| {
-            let code = match diagnostic.code.as_str() {
-                "structural.query.compileFailed" | "structural.query.invalid" => "invalidPattern",
-                other => other,
-            };
-            ToolError::new(code, crate::tools::ast_rule::untagged(&diagnostic.message))
-        })
+}
+
+fn diagnostic_error(diagnostic: &StructuralDiagnostic) -> ToolError {
+    let code = match diagnostic.code.as_str() {
+        "structural.query.compileFailed"
+        | "structural.query.invalid"
+        | octocode_engine::structural::RULE_INVALID => "invalidPattern",
+        other => other,
+    };
+    ToolError::new(code, crate::tools::ast_rule::untagged(&diagnostic.message))
 }
 
 #[cfg(test)]

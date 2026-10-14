@@ -68,27 +68,28 @@ pub(crate) fn display_name(path: &std::path::Path) -> String {
 /// defaults (dependency/build output, caches, VCS metadata, credential
 /// stores; [`crate::policy::prune::PruneMode`]) plus the tool's `extra`
 /// names.
-pub(crate) fn syntax_prune(extra: &[&str]) -> std::collections::BTreeSet<String> {
-    crate::policy::prune::PruneMode::SyntaxVisible
-        .defaults()
-        .map(str::to_owned)
-        .chain(extra.iter().map(|name| (*name).to_owned()))
-        .collect()
+pub(crate) fn syntax_prune(
+    extra: impl IntoIterator<Item = String>,
+) -> octocode_engine::search::walk::Prune {
+    octocode_engine::search::walk::Prune::new(
+        crate::policy::prune::PruneMode::SyntaxVisible
+            .defaults()
+            .map(str::to_owned)
+            .chain(extra),
+    )
 }
 
-/// The one `ignore` walk the tools build: it never descends into a directory
-/// named in `prune` (the root itself is always walked). The builder keeps the
-/// `ignore` defaults (hidden entries skipped, ignore files honored); a caller
-/// that differs sets those flags on it before `build`/`build_parallel`.
+/// The engine walk a tool's own file walk builds: the default ignore policy
+/// (ignore rules honored, dot entries skipped), never descending into a
+/// `prune`d directory (the root itself is always walked).
 pub(crate) fn pruned_walk(
     root: &std::path::Path,
-    prune: std::collections::BTreeSet<String>,
+    prune: octocode_engine::search::walk::Prune,
 ) -> ignore::WalkBuilder {
-    let mut builder = ignore::WalkBuilder::new(root);
-    builder.filter_entry(move |entry| {
-        entry.depth() == 0
-            || !entry.file_type().is_some_and(|kind| kind.is_dir())
-            || !prune.contains(entry.file_name().to_string_lossy().as_ref())
-    });
-    builder
+    octocode_engine::search::walk::pruned_walk_builder(
+        root,
+        octocode_engine::search::walk::IgnorePolicy::default(),
+        None,
+        prune,
+    )
 }

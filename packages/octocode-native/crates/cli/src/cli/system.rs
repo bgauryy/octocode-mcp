@@ -4,8 +4,29 @@
 //! the environment-management side of the CLI, distinct from tool dispatch in
 //! the parent module.
 use super::write_json;
-use octocode_native::runtime::ToolRuntime;
+use octocode_native::runtime::{ExitClass, FailureKind, ToolRuntime};
 use serde_json::json;
+
+/// A failed auth command: the one `{error, errorCode}` envelope (JSON) or
+/// the message and its next step (text), exiting by the code's class.
+fn auth_failure(code: &str, message: &str, next_step: Option<&str>, json_out: bool) -> u8 {
+    super::emit_error(code, message, json_out);
+    if let Some(next_step) = next_step.filter(|_| !json_out) {
+        eprintln!("{next_step}");
+    }
+    super::exit_code(ExitClass::of_code(code))
+}
+
+/// The declared code of a provider failure (`ProviderErrorKind` serializes
+/// to its `errorCodes` name).
+fn provider_code(error: &octocode_native::providers::github::ProviderError) -> String {
+    serde_json::to_value(error.kind)
+        .ok()
+        .and_then(|value| value.as_str().map(str::to_owned))
+        .unwrap_or_else(|| "providerError".into())
+}
+
+const LOGIN_NEXT_STEP: &str = "Run `octocode auth login`, or set GITHUB_TOKEN / GH_TOKEN.";
 
 /// Use the same credential hostname for status, login, and logout.
 fn configured_github_host(runtime: &ToolRuntime) -> String {
@@ -69,8 +90,10 @@ pub async fn auth_status(runtime: &ToolRuntime, json_out: bool) -> u8 {
             .then(|| selection.as_ref().and_then(|s| s.username.clone()))
             .flatten()
     });
+    // Not authenticated is the documented auth exit (4), whatever the mode.
+    let unauthenticated = super::exit_code(ExitClass::Failed(FailureKind::Authentication));
     if json_out {
-        return write_json(
+        let written = write_json(
             &json!({
                 "authenticated": authenticated,
                 "verification": verification,
@@ -80,6 +103,11 @@ pub async fn auth_status(runtime: &ToolRuntime, json_out: bool) -> u8 {
             }),
             true,
         );
+        return match written {
+            0 if authenticated => 0,
+            0 => unauthenticated,
+            failed => failed,
+        };
     }
     match verification {
         "verified" | "unverified" => {
@@ -99,12 +127,12 @@ pub async fn auth_status(runtime: &ToolRuntime, json_out: bool) -> u8 {
             eprintln!(
                 "Run `octocode auth login`, or fix or unset the token; an invalid env token overrides stored login."
             );
-            1
+            unauthenticated
         }
         _ => {
             eprintln!("unauthenticated");
-            eprintln!("Run `octocode auth login` or set GITHUB_TOKEN / GH_TOKEN.");
-            1
+            eprintln!("{LOGIN_NEXT_STEP}");
+            unauthenticated
         }
     }
 }
@@ -123,18 +151,15 @@ pub async fn login(
         .filter(|value| !value.is_empty())
         .map(str::to_owned)
         .unwrap_or_else(|| configured_github_host(runtime));
+    let client_id_env = octocode_native::config::environment::OCTOCODE_GITHUB_CLIENT_ID;
     let client_id = octocode_native::providers::github::login::client_id_for_host(
         &host,
-        runtime.config().env_value("OCTOCODE_GITHUB_CLIENT_ID"),
+        runtime.config().env_value(client_id_env),
     );
     if client_id.is_empty() {
         let message =
-            "OCTOCODE_GITHUB_CLIENT_ID is required for GitHub Enterprise device login and refresh.";
-        if json_out {
-            return write_json(&json!({ "success": false, "error": message }), true).max(1);
-        }
-        eprintln!("{message}");
-        return 1;
+            format!("{client_id_env} is required for GitHub Enterprise device login and refresh.");
+        return auth_failure("missingConfiguration", &message, None, json_out);
     }
 
     let credential_store =
@@ -167,13 +192,8 @@ pub async fn login(
         let error = result
             .error
             .as_deref()
-            .unwrap_or("credential.refreshFailed");
-        if json_out {
-            return write_json(&json!({ "success": false, "error": error }), true).max(1);
-        }
-        eprintln!("{error}");
-        eprintln!("Run `octocode auth login`, or set GITHUB_TOKEN / GH_TOKEN.");
-        return 1;
+            .unwrap_or("The stored credential could not be refreshed.");
+        return auth_failure("authentication", error, Some(LOGIN_NEXT_STEP), json_out);
     }
 
     // Already-authenticated short-circuit: a stored OAuth credential for this
@@ -227,11 +247,7 @@ pub async fn login(
     use std::io::IsTerminal;
     if !std::io::stdin().is_terminal() {
         let message = "login requires an interactive terminal, or set GITHUB_TOKEN / GH_TOKEN.";
-        if json_out {
-            return write_json(&json!({ "success": false, "error": message }), true).max(1);
-        }
-        eprintln!("{message}");
-        return 1;
+        return auth_failure("invalidInput", message, None, json_out);
     }
 
     // Preserve the old login until the replacement has been authenticated and saved.
@@ -262,15 +278,12 @@ pub async fn login(
             );
             0
         }
-        Err(error) => {
-            if json_out {
-                return write_json(&json!({ "success": false, "error": error.message }), true)
-                    .max(1);
-            }
-            eprintln!("{}", error.message);
-            eprintln!("Run `octocode auth login`, or set GITHUB_TOKEN / GH_TOKEN.");
-            1
-        }
+        Err(error) => auth_failure(
+            &provider_code(&error),
+            &error.message,
+            Some(LOGIN_NEXT_STEP),
+            json_out,
+        ),
     }
 }
 
@@ -300,10 +313,7 @@ fn logout_with(
             );
             0
         }
-        Err(error) => {
-            super::emit_error(&error.message, json_out);
-            1
-        }
+        Err(error) => auth_failure(&provider_code(&error), &error.message, None, json_out),
     }
 }
 
@@ -382,7 +392,8 @@ mod auth_tests {
                     "fixture delete failed",
                 ))
             };
-            assert_eq!(logout_with(&runtime, &failure, false), 1);
+            // A store that cannot delete is the declared execution failure.
+            assert_eq!(logout_with(&runtime, &failure, false), 5);
         }
     }
 }

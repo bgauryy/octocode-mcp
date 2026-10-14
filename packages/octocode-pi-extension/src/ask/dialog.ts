@@ -1,6 +1,7 @@
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { Editor, type EditorTheme, Key, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui';
 import { sanitizeTerminalText } from '../shared/sanitize.js';
+import { titledDialog } from '../shared/locks.js';
 
 interface AskOption {
   label: string;
@@ -42,7 +43,11 @@ type DialogTheme = Parameters<Parameters<ExtensionContext['ui']['custom']>[0]>[1
  */
 export function showAskDialog(ctx: ExtensionContext, questions: AskQuestion[], signal?: AbortSignal): Promise<AskResult> {
   if (signal?.aborted) return Promise.resolve({ answers: [], cancelled: true, reason: 'aborted' });
-  return ctx.ui.custom<AskResult>((tui, theme, _keybindings, done) => new AskDialog(questions, theme, new Editor(tui, editorTheme(theme)), () => tui.requestRender(), done, signal));
+  // The working line and the dialog notification name the question (the count first, so clipping keeps it).
+  const title = `${questions.length > 1 ? `${questions.length} questions: ` : ''}${questions[0]?.question ?? ''}`;
+  return titledDialog(title, () =>
+    ctx.ui.custom<AskResult>((tui, theme, _keybindings, done) => new AskDialog(questions, theme, new Editor(tui, editorTheme(theme)), () => tui.requestRender(), done, signal)),
+  );
 }
 
 function editorTheme(theme: DialogTheme): EditorTheme {

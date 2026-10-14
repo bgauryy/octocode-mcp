@@ -12,16 +12,22 @@ targets = [
 ]
 
 # ── Advisories (security CVEs) ────────────────────────────────────────────────────────────────
-# Schema v2: `vulnerability`/`unsound`/`notice` were removed (and now error);
-# vulnerability and unsound advisories always fail. `unmaintained` has no
-# "warn" level anymore — `workspace` fails only for direct dependencies, the
-# closest match to the old warn-on-transitive intent.
+# Single advisory policy for the repo (`cargo deny` is the only audit gate;
+# `cargo audit` is not run). Schema v2: vulnerability and unsound advisories
+# always fail. Unmaintained advisories fail for every crate, transitive ones
+# included; each accepted exception is listed below with its reason.
 [advisories]
 version = 2
 db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
-unmaintained = "workspace"
+unmaintained = "all"
 yanked = "deny"
+ignore = [
+    # unsafe-libyaml reaches the tree only through serde_yaml 0.9, which
+    # ast-grep-config (the structural-search engine) pins. Remove this entry
+    # when ast-grep moves off serde_yaml.
+    { id = "RUSTSEC-2024-0449", reason = "transitive via ast-grep-config -> serde_yaml 0.9; no fixed upstream release yet" },
+]
 
 # ── Licenses ──────────────────────────────────────────────────────────────────────────────
 [licenses]
@@ -30,13 +36,11 @@ allow = [
     "MIT",
     "Apache-2.0",
     "Apache-2.0 WITH LLVM-exception",
-    "BSD-2-Clause",
     "BSD-3-Clause",
     "ISC",
     "Unicode-3.0",
     "Zlib",
     "CC0-1.0",
-    "OpenSSL",
 ]
 # Schema v2: `unlicensed`/`copyleft`/`allow-osi-fsf-free`/`default` were removed
 # (and now error); anything not in `allow` is denied.
@@ -47,9 +51,15 @@ confidence-threshold = 0.8
 multiple-versions = "warn"   # warn on duplicated semver-incompatible crates
 wildcards = "deny"          # no wildcard versions in Cargo.toml
 allow-wildcard-paths = true # versionless path deps between our publish=false crates
+# Each entry is a duplicate that upstream crates force; a new duplicate, or one
+# whose version moves, shows up as a warning until it is listed here.
 skip = [
-    # Known intentional duplicates — update this list after each dep upgrade
-    # { name = "example", version = "=0.1.0" },
+    # Upstream: ast-grep and oxc pin syn 2; newer proc-macro crates use syn 3.
+    { name = "syn", version = "2.0.119" },
+    # Upstream: num-bigint 0.4 (oxc) and 0.5 (newer numeric crates) coexist.
+    { name = "num-bigint", version = "0.4.8" },
+    # Upstream: core-foundation 0.9 (keyring/security stacks) and 0.10 (reqwest).
+    { name = "core-foundation", version = "0.9.4" },
 ]
 
 # ── Sources (crate registry allow-list) ──────────────────────────────────────────────────

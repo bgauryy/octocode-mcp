@@ -10,15 +10,17 @@ pub use diff::{GraphDiff, diff_graphs};
 pub use model::{
     CodeGraphBuilder, CodeGraphSnapshot, EdgeKind, GraphFactCall, GraphFactCommonJs,
     GraphFactDeclaration, GraphFactEdge, GraphFactExport, GraphFactImport, GraphFactRustModule,
-    GraphFactsDocument, GraphFactsTypedEntry, GraphFactsTypedScanResult, GraphPosition, GraphRange,
-    IMPORT_USE_MODULE, NodeKind, SourceStamp,
+    GraphFactsDocument, GraphFactsTypedEntry, GraphPosition, GraphRange, IMPORT_USE_MODULE,
+    NodeKind, SourceStamp,
 };
 
-use std::{fs, io::Read, path::Path, sync::Arc};
+use std::{fs, path::Path, sync::Arc};
 
-use globset::Glob;
+use ignore::gitignore::Gitignore;
 use rayon::prelude::*;
 
+use crate::error::ErrorKind;
+use crate::search::walk::Stop;
 use crate::types::{FileSystemQueryOptions, GraphFactsScanDiagnostic, GraphFactsScanOptions};
 
 const DEFAULT_MAX_FILE_BYTES: u32 = 1_000_000;
@@ -33,13 +35,28 @@ enum GraphFactsScanOutcome<T> {
 /// what it keeps before the next file is read.
 pub struct GraphFactsView<'a> {
     pub relative_path: &'a str,
+    /// The source the facts were parsed from (the one read of the file).
+    pub content: &'a str,
     pub content_digest: &'a str,
     pub source_stamp: Option<SourceStamp>,
     pub facts: &'a GraphFactsDocument,
     pub reference_counts: &'a [crate::types::GraphReferenceCount],
 }
 
-/// The result of [`scan_graph_facts_mapped`]: only what the map kept.
+impl GraphFactsView<'_> {
+    /// The whole parsed file, owned.
+    pub fn to_entry(&self) -> GraphFactsTypedEntry {
+        GraphFactsTypedEntry {
+            relative_path: self.relative_path.to_owned(),
+            content_digest: self.content_digest.to_owned(),
+            source_stamp: self.source_stamp,
+            facts: self.facts.clone(),
+            reference_counts: self.reference_counts.to_vec(),
+        }
+    }
+}
+
+/// The result of [`scan_graph_facts`]: only what the map kept.
 #[derive(Debug)]
 pub struct GraphFactsMappedScan<T> {
     /// `(relative path, kept value)` per file the map kept, sorted by path.
@@ -53,33 +70,73 @@ pub struct GraphFactsMappedScan<T> {
     pub pruned_dirs: Vec<String>,
 }
 
-fn parser_overrides(
-    rules: Option<&[crate::types::GraphLanguageGlob]>,
-) -> Result<Vec<(String, globset::GlobMatcher)>, String> {
-    if rules.unwrap_or_default().len() > 400 {
-        return Err("[ast.language.invalidGlob] languageGlobs exceeds 400 patterns".into());
+/// Why a graph scan failed. The two `languageGlobs` refusals are typed so the
+/// runtime maps them to their `errorCode` without reading message text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GraphScanError {
+    /// A `languageGlobs` pattern is malformed or over its limits.
+    InvalidGlob(String),
+    /// A `languageGlobs` key selects no single registered grammar.
+    UnsupportedLanguage(String),
+    /// Walking or reading the tree failed, including a caller's path check.
+    Failed(String),
+}
+
+impl std::fmt::Display for GraphScanError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidGlob(message) => write!(f, "[ast.language.invalidGlob] {message}"),
+            Self::UnsupportedLanguage(message) => write!(f, "[ast.language.unsupported] {message}"),
+            Self::Failed(message) => f.write_str(message),
+        }
     }
-    rules.unwrap_or_default().iter().map(|rule| {
-        if rule.glob.len() > 256 || rule.glob.is_empty() {
-            return Err("[ast.language.invalidGlob] glob must contain 1-256 characters".into());
-        }
-        let selector = rule.language.to_ascii_lowercase();
-        let entries: Vec<_> = crate::signatures::languages::all_entries().iter().filter(|entry| {
-            entry.name.eq_ignore_ascii_case(&selector)
-                || entry.language_id.is_some_and(|id| id.eq_ignore_ascii_case(&selector))
-                || entry.extensions.iter().any(|ext| ext.eq_ignore_ascii_case(&selector))
-        }).collect();
-        if entries.len() != 1 {
-            return Err(format!("[ast.language.unsupported] languageGlobs key {:?} must select one registered grammar", rule.language));
-        }
-        let extension = entries[0].extensions.first().ok_or_else(||
-            format!("[ast.language.unsupported] {:?} has no source extension", rule.language)
-        )?;
-        let matcher = Glob::new(&rule.glob).map_err(|error|
-            format!("[ast.language.invalidGlob] {:?}: {error}", rule.glob)
-        )?.compile_matcher();
-        Ok(((*extension).to_owned(), matcher))
-    }).collect()
+}
+
+impl std::error::Error for GraphScanError {}
+
+impl From<String> for GraphScanError {
+    fn from(message: String) -> Self {
+        Self::Failed(message)
+    }
+}
+
+/// One `languageGlobs` rule: the parser extension it selects, and its glob
+/// (see [`crate::search::glob`]).
+type ParserOverride = (String, Gitignore);
+
+fn parser_overrides(
+    root: &Path,
+    rules: Option<&[crate::types::GraphLanguageGlob]>,
+) -> Result<Vec<ParserOverride>, GraphScanError> {
+    if rules.unwrap_or_default().len() > 400 {
+        return Err(GraphScanError::InvalidGlob(
+            "languageGlobs exceeds 400 patterns".into(),
+        ));
+    }
+    rules
+        .unwrap_or_default()
+        .iter()
+        .map(|rule| {
+            if rule.glob.len() > 256 || rule.glob.is_empty() {
+                return Err(GraphScanError::InvalidGlob(
+                    "glob must contain 1-256 characters".into(),
+                ));
+            }
+            let extension = crate::signatures::languages::select_one(&rule.language)
+                .and_then(|entry| entry.extensions.first())
+                .ok_or_else(|| {
+                    GraphScanError::UnsupportedLanguage(format!(
+                        "languageGlobs key {:?} must select one registered grammar",
+                        rule.language
+                    ))
+                })?;
+            let matcher =
+                crate::search::glob::set(root, [rule.glob.as_str()].into_iter(), "languageGlobs")
+                    .map_err(|error| GraphScanError::InvalidGlob(error.reason))?
+                    .unwrap_or_else(Gitignore::empty);
+            Ok(((*extension).to_owned(), matcher))
+        })
+        .collect()
 }
 
 fn skipped<T>(relative_path: String, code: &str, message: &str) -> GraphFactsScanOutcome<T> {
@@ -225,94 +282,94 @@ static FACTS_MEMO: std::sync::LazyLock<moka::sync::Cache<String, Arc<ParsedFacts
 /// Estimated heap bytes the parsed-facts cache may hold.
 const FACTS_MEMO_BYTES: u64 = 128 * 1024 * 1024;
 
-pub(crate) fn scan_graph_facts_typed_filtered(
-    options: GraphFactsScanOptions,
-    allow_path: &(dyn Fn(&Path) -> Result<bool, String> + Sync),
-) -> Result<GraphFactsTypedScanResult, String> {
-    scan_graph_facts_typed_selected(options, allow_path, &|_| true)
-}
-
-/// [`scan_graph_facts_mapped`] that keeps every parsed file whole.
-pub fn scan_graph_facts_typed_selected(
-    options: GraphFactsScanOptions,
-    allow_path: &(dyn Fn(&Path) -> Result<bool, String> + Sync),
-    keep: &(dyn Fn(&str) -> bool + Sync),
-) -> Result<GraphFactsTypedScanResult, String> {
-    let scan = scan_graph_facts_mapped(options, allow_path, keep, &|view| {
-        Some(GraphFactsTypedEntry {
-            relative_path: view.relative_path.to_owned(),
-            content_digest: view.content_digest.to_owned(),
-            source_stamp: view.source_stamp,
-            facts: view.facts.clone(),
-            reference_counts: view.reference_counts.to_vec(),
-        })
-    })?;
-    Ok(GraphFactsTypedScanResult {
-        schema_version: crate::signatures::GRAPH_FACTS_SCHEMA_VERSION,
-        entries: scan.kept.into_iter().map(|(_, entry)| entry).collect(),
-        skipped: scan.skipped,
-        files_skipped: scan.files_skipped,
-        truncated: scan.truncated,
-        scan_resume: scan.scan_resume,
-        pruned_dirs: scan.pruned_dirs,
-    })
-}
-
 /// Scans the graph facts of a tree, handing each parsed file to `map` as soon
 /// as it is parsed and keeping only what `map` returns, so the scan holds
 /// what the caller needs rather than every file's facts at once. A file whose
 /// source `keep` rejects (a byte prefilter, e.g. a name the caller looks for)
-/// is read once and neither parsed nor mapped.
+/// is read once and neither parsed nor mapped. `admit` is the caller's path
+/// policy for every walked entry; `stop` cancels the scan.
 ///
 /// An unset `max_files` caps nothing but the time (see
 /// [`crate::scan_budget`]): files are read in chunks and the scan stops at the
 /// first chunk boundary past the budget, reporting `scan_resume`.
-pub fn scan_graph_facts_mapped<T: Send>(
+pub fn scan_graph_facts<T: Send>(
     options: GraphFactsScanOptions,
-    allow_path: &(dyn Fn(&Path) -> Result<bool, String> + Sync),
+    admit: &(dyn Fn(&Path, Option<fs::FileType>) -> bool + Sync),
     keep: &(dyn Fn(&str) -> bool + Sync),
     map: &(dyn Fn(&GraphFactsView<'_>) -> Option<T> + Sync),
-) -> Result<GraphFactsMappedScan<T>, String> {
-    scan_graph_facts_with_budget(
-        options,
-        allow_path,
-        keep,
-        map,
-        Some(crate::scan_budget::SCAN_TIME_BUDGET),
-    )
+    stop: &Stop<'_>,
+) -> Result<GraphFactsMappedScan<T>, GraphScanError> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        scan_with_budget(
+            options,
+            admit,
+            keep,
+            map,
+            stop,
+            Some(crate::scan_budget::SCAN_TIME_BUDGET),
+        )
+    }))
+    .unwrap_or_else(|_| {
+        Err(GraphScanError::Failed(
+            "graph-facts scan failed on pathological input".to_owned(),
+        ))
+    })
 }
 
-/// [`scan_graph_facts_mapped`] with its time budget (`None` reads every
-/// candidate).
-pub(crate) fn scan_graph_facts_with_budget<T: Send>(
+/// [`scan_graph_facts`] with its time budget (`None` reads every candidate).
+fn scan_with_budget<T: Send>(
     options: GraphFactsScanOptions,
-    allow_path: &(dyn Fn(&Path) -> Result<bool, String> + Sync),
+    admit: &(dyn Fn(&Path, Option<fs::FileType>) -> bool + Sync),
     keep: &(dyn Fn(&str) -> bool + Sync),
     map: &(dyn Fn(&GraphFactsView<'_>) -> Option<T> + Sync),
+    stop: &Stop<'_>,
     budget: Option<std::time::Duration>,
-) -> Result<GraphFactsMappedScan<T>, String> {
-    let overrides = parser_overrides(options.language_globs.as_deref())?;
+) -> Result<GraphFactsMappedScan<T>, GraphScanError> {
+    let root = std::path::PathBuf::from(&options.path);
+    let overrides = parser_overrides(&root, options.language_globs.as_deref())?;
     let timed = options.max_files.is_none();
     let max_files = options
         .max_files
         .unwrap_or(crate::scan_budget::SCAN_WALK_FILES as u32);
-    let max_file_bytes = options.max_file_bytes.unwrap_or(DEFAULT_MAX_FILE_BYTES) as i64;
-    let query = crate::search::fs_query::query_file_system_filtered_inner(
+    let max_file_bytes = options.max_file_bytes.unwrap_or(DEFAULT_MAX_FILE_BYTES);
+    let extensions = crate::signatures::graph_facts::graph_fact_extensions();
+    // A file only `languageGlobs` map to a grammar has an extension no grammar
+    // claims, so with overrides the walk admits it by glob as well.
+    let admitted = crate::search::fs_query::normalize_extensions(extensions.clone());
+    let walk_filter = |path: &Path, file_type: Option<fs::FileType>| -> bool {
+        if !admit(path, file_type) {
+            return false;
+        }
+        let is_file = file_type.map_or_else(|| path.is_file(), |kind| kind.is_file());
+        if overrides.is_empty() || !is_file {
+            return true;
+        }
+        let name = path.file_name().map(|name| name.to_string_lossy());
+        name.is_some_and(|name| crate::search::fs_query::has_extension(&name, &admitted))
+            || overrides
+                .iter()
+                .any(|(_, matcher)| crate::search::glob::matches(matcher, path, false))
+    };
+    let query = crate::search::fs_query::query_file_system(
         FileSystemQueryOptions {
             path: options.path,
             recursive: Some(true),
-            show_hidden: Some(options.show_hidden.unwrap_or(false)),
+            ignore: options.ignore,
             entry_type: Some("f".to_owned()),
-            extensions: Some(crate::signatures::graph_facts::graph_fact_extensions()),
+            extensions: overrides.is_empty().then_some(extensions),
             exclude_dir: options.exclude_dir,
             exclude: options.exclude,
             stop_at_limit: Some(true),
             limit: Some(max_files),
             ..Default::default()
         },
-        allow_path,
+        &walk_filter,
+        stop,
     )
-    .map_err(|error| error.reason)?;
+    .map_err(|error| match error.kind() {
+        ErrorKind::InvalidGlob => GraphScanError::InvalidGlob(error.reason),
+        _ => GraphScanError::Failed(error.reason),
+    })?;
 
     let truncated = query.was_capped;
     let mut entries = query.entries;
@@ -323,115 +380,97 @@ pub(crate) fn scan_graph_facts_with_budget<T: Send>(
         .map_or(0, |n| n as usize)
         .min(entries.len());
     entries.drain(..skip);
-    let evaluate =
-        |entry: &crate::types::FileSystemEntry| -> Result<Option<GraphFactsScanOutcome<T>>, String> {
-            let path = Path::new(&entry.path);
-            if !allow_path(path)? {
-                return Ok(None);
-            }
-            let relative_path = entry.relative_path.replace('\\', "/");
-            let outcome =
-                |code: &str, message: &str| Ok(Some(skipped(relative_path.clone(), code, message)));
-            if entry.size.unwrap_or_default() > max_file_bytes {
-                return outcome(
-                    "graph.scan.fileTooLarge",
-                    "file exceeds the graph scan byte limit",
-                );
-            }
-            let Ok(mut file) = fs::File::open(path) else {
-                return outcome("graph.scan.readFailed", "file could not be opened");
-            };
-            // Metadata is advisory: a file can grow between discovery and open.
-            // The read itself has a strict bound, including one overflow byte.
-            let mut content = String::new();
-            if (&mut file)
-                .take(max_file_bytes as u64 + 1)
-                .read_to_string(&mut content)
-                .is_err()
-            {
-                return outcome(
-                    "graph.scan.readFailed",
-                    "file could not be read as UTF-8 text",
-                );
-            }
-            if content.len() > max_file_bytes as usize {
-                return outcome(
-                    "graph.scan.fileTooLarge",
-                    "file exceeds the graph scan byte limit",
-                );
-            }
-            if !keep(&content) {
-                return Ok(None);
-            }
-            if !allow_path(path)? {
-                return Ok(None);
-            }
-            let selected = overrides
-                .iter()
-                .filter(|(_, matcher)| matcher.is_match(&relative_path))
-                .map(|(extension, _)| extension.as_str())
-                .collect::<std::collections::BTreeSet<_>>();
-            if selected.len() > 1 {
-                return outcome(
-                    "graph.scan.ambiguousParser",
-                    "languageGlobs matched this path with more than one parser",
-                );
-            }
-            let content_digest = crate::digest::sha256(content.as_bytes());
-            // Taken from the open handle after the read, so it describes the
-            // bytes just hashed; a file written meanwhile is not settled.
-            let source_stamp = file
-                .metadata()
-                .ok()
-                .filter(|meta| meta.len() == content.len() as u64)
-                .and_then(|meta| SourceStamp::settled(&meta, std::time::SystemTime::now()));
-            let parser = selected.iter().next().copied();
-            let memo_key = format!(
-                "{content_digest}\u{0}{relative_path}\u{0}{}",
-                parser.unwrap_or("")
-            );
-            let parsed = if let Some(hit) = FACTS_MEMO.get(&memo_key) {
-                hit
-            } else {
-                let extraction = if let Some(extension) = parser {
-                    crate::signatures::graph_facts::extract_graph_facts_with_metadata_with_extension(
-                        &content,
-                        &relative_path,
-                        extension,
-                    )
-                } else {
-                    crate::signatures::extract_graph_facts_with_metadata_inner(
-                        &content,
-                        &relative_path,
-                    )
-                };
-                let Some(extraction) = extraction else {
-                    return outcome(
-                        "graph.scan.extractFailed",
-                        "native graph-fact extraction returned no result",
-                    );
-                };
-                let weight = facts_heap_bytes(&extraction.facts, &extraction.reference_counts);
-                let parsed = Arc::new(ParsedFacts {
-                    facts: extraction.facts,
-                    reference_counts: extraction.reference_counts,
-                    weight: u32::try_from(weight).unwrap_or(u32::MAX),
-                });
-                FACTS_MEMO.insert(memo_key, Arc::clone(&parsed));
-                parsed
-            };
-            if !allow_path(path)? {
-                return Ok(None);
-            }
-            let kept = map(&GraphFactsView {
-                relative_path: &relative_path,
-                content_digest: &content_digest,
-                source_stamp,
-                facts: &parsed.facts,
-                reference_counts: &parsed.reference_counts,
-            });
-            Ok(Some(GraphFactsScanOutcome::Entry(relative_path, kept)))
+    let evaluate = |entry: &crate::types::FileSystemEntry| -> Result<Option<GraphFactsScanOutcome<T>>, GraphScanError> {
+        if stop() {
+            return Err(GraphScanError::Failed("cancelled".to_owned()));
+        }
+        let path = Path::new(&entry.path);
+        let relative_path = entry.relative_path.replace('\\', "/");
+        let outcome =
+            |code: &str, message: &str| Ok(Some(skipped(relative_path.clone(), code, message)));
+        let too_large = || {
+            outcome(
+                "graph.scan.fileTooLarge",
+                "file exceeds the graph scan byte limit",
+            )
         };
+        // The walk's size is advisory: the read is bounded on its own.
+        if entry.size.unwrap_or_default() > i64::from(max_file_bytes) {
+            return too_large();
+        }
+        let source = match crate::text::read_source(path, u64::from(max_file_bytes)) {
+            Ok(source) => source,
+            Err(crate::text::ReadError::TooLarge(_)) => return too_large(),
+            Err(_) => return outcome("graph.scan.readFailed", "file could not be opened"),
+        };
+        let metadata = source.metadata;
+        let Ok(content) = String::from_utf8(source.bytes) else {
+            return outcome(
+                "graph.scan.readFailed",
+                "file could not be read as UTF-8 text",
+            );
+        };
+        if !keep(&content) {
+            return Ok(None);
+        }
+        let selected = overrides
+            .iter()
+            .filter(|(_, matcher)| crate::search::glob::matches(matcher, path, false))
+            .map(|(extension, _)| extension.as_str())
+            .collect::<std::collections::BTreeSet<_>>();
+        if selected.len() > 1 {
+            return outcome(
+                "graph.scan.ambiguousParser",
+                "languageGlobs matched this path with more than one parser",
+            );
+        }
+        let content_digest = crate::digest::sha256(content.as_bytes());
+        // A file written while it was read is not settled.
+        let source_stamp = Some(&metadata)
+            .filter(|meta| meta.len() == content.len() as u64)
+            .and_then(|meta| SourceStamp::settled(meta, std::time::SystemTime::now()));
+        let parser = selected.iter().next().copied();
+        let memo_key = format!(
+            "{content_digest}\u{0}{relative_path}\u{0}{}",
+            parser.unwrap_or("")
+        );
+        let parsed = if let Some(hit) = FACTS_MEMO.get(&memo_key) {
+            hit
+        } else {
+            let extraction = if let Some(extension) = parser {
+                crate::signatures::graph_facts::extract_graph_facts_with_metadata_with_extension(
+                    &content,
+                    &relative_path,
+                    extension,
+                )
+            } else {
+                crate::signatures::extract_graph_facts_with_metadata_inner(&content, &relative_path)
+            };
+            let Some(extraction) = extraction else {
+                return outcome(
+                    "graph.scan.extractFailed",
+                    "native graph-fact extraction returned no result",
+                );
+            };
+            let weight = facts_heap_bytes(&extraction.facts, &extraction.reference_counts);
+            let parsed = Arc::new(ParsedFacts {
+                facts: extraction.facts,
+                reference_counts: extraction.reference_counts,
+                weight: u32::try_from(weight).unwrap_or(u32::MAX),
+            });
+            FACTS_MEMO.insert(memo_key, Arc::clone(&parsed));
+            parsed
+        };
+        let kept = map(&GraphFactsView {
+            relative_path: &relative_path,
+            content: &content,
+            content_digest: &content_digest,
+            source_stamp,
+            facts: &parsed.facts,
+            reference_counts: &parsed.reference_counts,
+        });
+        Ok(Some(GraphFactsScanOutcome::Entry(relative_path, kept)))
+    };
     let started = std::time::Instant::now();
     let mut kept: Vec<(String, T)> = Vec::new();
     let mut skipped = Vec::new();
@@ -446,7 +485,7 @@ pub(crate) fn scan_graph_facts_with_budget<T: Send>(
         for outcome in chunk
             .par_iter()
             .map(&evaluate)
-            .collect::<Result<Vec<_>, String>>()?
+            .collect::<Result<Vec<_>, GraphScanError>>()?
             .into_iter()
             .flatten()
         {
@@ -485,8 +524,17 @@ mod tests {
 
     use std::path::Path;
 
+    /// A scan keeping every parsed file whole.
+    #[derive(Debug)]
+    struct Scanned {
+        entries: Vec<GraphFactsTypedEntry>,
+        skipped: Vec<GraphFactsScanDiagnostic>,
+        files_skipped: u32,
+        truncated: bool,
+    }
+
     /// Every file the scan read or skipped, sorted.
-    fn scanned_paths(result: &GraphFactsTypedScanResult) -> Vec<String> {
+    fn scanned_paths(result: &Scanned) -> Vec<String> {
         let mut paths: Vec<String> = result
             .entries
             .iter()
@@ -497,10 +545,27 @@ mod tests {
         paths
     }
 
-    fn scan_graph_facts(
+    fn scan_admitted(
         options: GraphFactsScanOptions,
-    ) -> Result<GraphFactsTypedScanResult, String> {
-        scan_graph_facts_typed_filtered(options, &|_| Ok(true))
+        admit: &(dyn Fn(&Path, Option<fs::FileType>) -> bool + Sync),
+    ) -> Result<Scanned, GraphScanError> {
+        let scan = super::scan_graph_facts(
+            options,
+            admit,
+            &|_| true,
+            &|view| Some(view.to_entry()),
+            &|| false,
+        )?;
+        Ok(Scanned {
+            entries: scan.kept.into_iter().map(|(_, entry)| entry).collect(),
+            skipped: scan.skipped,
+            files_skipped: scan.files_skipped,
+            truncated: scan.truncated,
+        })
+    }
+
+    fn scan_graph_facts(options: GraphFactsScanOptions) -> Result<Scanned, GraphScanError> {
+        scan_admitted(options, &|_, _| true)
     }
 
     fn create_supported_files(root: &Path, count: usize) {
@@ -561,16 +626,17 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
         create_supported_files(&root, 1_300);
         let scan = |skip: u32, budget: Option<std::time::Duration>| {
-            scan_graph_facts_with_budget(
+            scan_with_budget(
                 GraphFactsScanOptions {
                     path: path_string(&root),
                     max_files: None,
                     skip_files: Some(skip),
                     ..Default::default()
                 },
-                &|_| Ok(true),
+                &|_, _| true,
                 &|_| true,
                 &|view| Some(view.relative_path.to_owned()),
+                &|| false,
                 budget,
             )
             .expect("scan graph facts")
@@ -608,12 +674,12 @@ mod tests {
             std::env::temp_dir().join(format!("octocode-graph-mapped-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         create_supported_files(&root, 40);
-        let scan = scan_graph_facts_mapped(
+        let scan = super::scan_graph_facts(
             GraphFactsScanOptions {
                 path: path_string(&root),
                 ..Default::default()
             },
-            &|_| Ok(true),
+            &|_, _| true,
             &|_| true,
             &|view| {
                 view.facts
@@ -622,6 +688,7 @@ mod tests {
                     .find(|declaration| declaration.name == "value7")
                     .map(|declaration| declaration.name.clone())
             },
+            &|| false,
         )
         .expect("mapped scan");
         assert_eq!(scan.parsed, 40, "every file is parsed and counted");
@@ -673,7 +740,6 @@ mod tests {
         assert_eq!(result.entries.len(), 1);
         assert_eq!(scanned_paths(&result), ["src/entry.ts", "src/large.ts"]);
         assert_eq!(result.files_skipped, 1);
-        assert_eq!(result.schema_version, 1);
         assert_eq!(result.skipped.len(), 1);
         assert_eq!(result.skipped[0].relative_path, "src/large.ts");
         assert_eq!(result.skipped[0].code, "graph.scan.fileTooLarge");
@@ -724,6 +790,23 @@ mod tests {
     }
 
     #[test]
+    fn malformed_exclude_glob_fails_before_scanning_files() {
+        let error = scan_graph_facts(GraphFactsScanOptions {
+            path: "/nonexistent".into(),
+            exclude: Some(vec!["**/dist/**".into(), "[bad".into()]),
+            ..Default::default()
+        })
+        .expect_err("malformed exclude glob");
+        assert!(matches!(error, GraphScanError::InvalidGlob(_)), "{error:?}");
+        assert!(
+            error
+                .to_string()
+                .starts_with("[ast.language.invalidGlob] invalid exclude glob '[bad': "),
+            "{error}"
+        );
+    }
+
+    #[test]
     fn malformed_parser_glob_fails_before_scanning_files() {
         let error = scan_graph_facts(GraphFactsScanOptions {
             path: "/nonexistent".into(),
@@ -734,7 +817,26 @@ mod tests {
             ..Default::default()
         })
         .expect_err("malformed glob");
-        assert!(error.starts_with("[ast.language.invalidGlob]"), "{error}");
+        assert!(matches!(error, GraphScanError::InvalidGlob(_)), "{error:?}");
+        assert!(
+            error
+                .to_string()
+                .starts_with("[ast.language.invalidGlob] invalid languageGlobs glob '[': "),
+            "{error}"
+        );
+        let unsupported = scan_graph_facts(GraphFactsScanOptions {
+            path: "/nonexistent".into(),
+            language_globs: Some(vec![crate::types::GraphLanguageGlob {
+                language: "no-such-grammar".into(),
+                glob: "*.x".into(),
+            }]),
+            ..Default::default()
+        })
+        .expect_err("unknown grammar");
+        assert!(
+            matches!(unsupported, GraphScanError::UnsupportedLanguage(_)),
+            "{unsupported:?}"
+        );
     }
 
     #[test]
@@ -828,13 +930,10 @@ mod tests {
         )
         .expect("write fixture");
 
-        let result = scan_graph_facts_typed_filtered(
-            GraphFactsScanOptions {
-                path: path_string(&root),
-                ..Default::default()
-            },
-            &|_| Ok(true),
-        )
+        let result = scan_graph_facts(GraphFactsScanOptions {
+            path: path_string(&root),
+            ..Default::default()
+        })
         .expect("typed scan");
         let entry = result.entries.first().expect("entry");
         assert_eq!(entry.facts.file, "lib.rs");
@@ -981,14 +1080,14 @@ mod tests {
         fs::create_dir_all(root.join("private")).expect("fixture");
         fs::write(root.join("private/hidden.rs"), "pub fn hidden() {}").expect("hidden");
         fs::write(root.join("visible.rs"), "pub fn visible() {}").expect("visible");
-        let result = scan_graph_facts_typed_filtered(
+        let result = scan_admitted(
             GraphFactsScanOptions {
                 path: path_string(&root),
                 max_files: Some(1),
                 skip_files: None,
                 ..Default::default()
             },
-            &|path| Ok(!path.starts_with(root.join("private"))),
+            &|path, _| !path.starts_with(root.join("private")),
         )
         .expect("filtered scan");
         assert_eq!(scanned_paths(&result), ["visible.rs"]);
@@ -1006,22 +1105,26 @@ mod tests {
         fs::create_dir_all(&root).expect("fixture");
         let file = root.join("growing.rs");
         fs::write(&file, "pub fn initial() {}").expect("initial");
+        // Walked after `growing.rs` (name order): it grows once listed.
+        let later = root.join("z.rs");
+        fs::write(&later, "pub fn later() {}").expect("later");
         let visits = AtomicUsize::new(0);
-        let result = scan_graph_facts_typed_filtered(
+        let result = scan_admitted(
             GraphFactsScanOptions {
                 path: path_string(&root),
                 max_file_bytes: Some(32),
                 ..Default::default()
             },
-            &|path| {
-                if path == file && visits.fetch_add(1, Ordering::SeqCst) == 1 {
+            &|path, _| {
+                if path == later && visits.fetch_add(1, Ordering::SeqCst) == 0 {
                     fs::write(&file, "x".repeat(65_536)).expect("concurrent growth");
                 }
-                Ok(true)
+                true
             },
         )
         .expect("bounded scan");
-        assert!(result.entries.is_empty());
+        assert_eq!(scanned_paths(&result), ["growing.rs", "z.rs"]);
+        assert_eq!(result.skipped[0].relative_path, "growing.rs");
         assert_eq!(result.skipped[0].code, "graph.scan.fileTooLarge");
         fs::remove_dir_all(root).expect("cleanup");
     }

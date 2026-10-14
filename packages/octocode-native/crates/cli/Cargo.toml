@@ -19,6 +19,7 @@ name = "integration"
 path = "tests/main.rs"
 
 [dependencies]
+octocode-io = { path = "../io" }
 octocode-native = { path = "../runtime" }
 octocode-engine = { path = "../engine" }
 clap = { version = "4", features = ["derive"] }
@@ -37,6 +38,8 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros", "signal", "
 libc = { workspace = true }
 
 [dev-dependencies]
+# The shared test fixtures (runtime and github `tests/support`) serialize mock bodies.
+serde = { workspace = true }
 tempfile = { workspace = true }
 wiremock = { workspace = true }
 

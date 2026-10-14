@@ -62,7 +62,27 @@ export function buildModel(fixtureDir) {
     { name: 'tiny-greet', version: '2.1.0', versions: ['2.0.0', '2.1.0'], description: 'Greeting helpers for health dashboards', dependencies: {}, keywords: ['greet', 'health'] },
     { name: 'tiny-pulse', version: '0.4.0', versions: ['0.4.0'], description: 'Pulse monitor for health checks', dependencies: {}, keywords: ['health', 'pulse'] },
   ];
-  return { files, commits, head, repos, pulls, issues, packages };
+  return { files, commits, branchCommits: [], head, repos, pulls, issues, packages };
+}
+
+/**
+ * Add an open pull request `number` to octo/demo whose head is a branch commit
+ * off main adding `fileCount` small modules plus one `hugeLines`-line file: more
+ * changed files than one files page and a patch larger than one patch window.
+ * Its head commit (branch `feature-<number>`) resolves through commits,
+ * contents and trees.
+ */
+export function addBulkPullRequest(model, { number = 4, fileCount = 35, hugeLines = 3000 } = {}) {
+  const files = {};
+  for (let i = 0; i < fileCount; i++) files[`pkg/mod${String(i).padStart(2, '0')}.ts`] = `// healthMarker bulk-${i}\nexport const mod${i} = ${i};\n`;
+  files['pkg/huge.ts'] = Array.from({ length: hugeLines }, (_, i) => `export const huge${i} = ${i}; // healthMarker huge line ${i + 1}`).join('\n') + '\n';
+  const parent = model.head;
+  const message = `Add ${fileCount + 1} bulk modules`;
+  // `parent` reads through: the git mock rewrites main's commit ids after configureModel.
+  const head = { oid: sha(`branch ${number} ${message}`), message, date: DATE(4), get parent() { return parent.oid; }, added: Object.keys(files).sort(), tree: sha(`branch tree ${number}`), files, branch: `feature-${number}` };
+  model.branchCommits.push(head);
+  model.pulls.push({ number, title: 'Bulk greeter modules', body: 'Adds the bulk modules and the huge table.', state: 'open', merged: false, base: parent, head, date: DATE(4) });
+  return model;
 }
 
 function repoJson(base, repo) {
@@ -109,10 +129,13 @@ function commitJson(base, repo, commit, model) {
     sha: commit.oid, node_id: `C_${commit.oid.slice(0, 8)}`, url: `${base}/repos/${full}/commits/${commit.oid}`, html_url: `https://github.com/${full}/commit/${commit.oid}`,
     commit: { author, committer: author, message: commit.message, tree: { sha: commit.tree, url: `${base}/repos/${full}/git/trees/${commit.tree}` }, comment_count: 0 },
     author: USER, committer: USER, parents: commit.parent ? [{ sha: commit.parent, url: `${base}/repos/${full}/commits/${commit.parent}` }] : [],
-    stats: { total: commit.added.reduce((n, p) => n + lines(model.files[p]).length, 0), additions: commit.added.reduce((n, p) => n + lines(model.files[p]).length, 0), deletions: 0 },
-    files: commit.added.map(p => fileChange(base, full, commit.oid, p, model.files[p])),
+    stats: { total: commit.added.reduce((n, p) => n + lines(textOf(model, commit, p)).length, 0), additions: commit.added.reduce((n, p) => n + lines(textOf(model, commit, p)).length, 0), deletions: 0 },
+    files: commit.added.map(p => fileChange(base, full, commit.oid, p, textOf(model, commit, p))),
   };
 }
+
+/** A file's text as `commit` added it: the commit's own files (a branch commit) or the main tree. */
+const textOf = (model, commit, p) => commit.files?.[p] ?? model.files[p];
 
 function fileChange(base, full, ref, p, text) {
   const count = lines(text).filter((l, i, a) => i < a.length - 1 || l !== '').length;
@@ -133,7 +156,7 @@ function issueJson(base, repo, item, pull) {
 function pullJson(base, repo, pr, model) {
   const full = `${repo.owner}/${repo.name}`;
   const changed = pr.head.added;
-  const adds = changed.reduce((n, p) => n + fileChange(base, full, pr.head.oid, p, model.files[p]).additions, 0);
+  const adds = changed.reduce((n, p) => n + fileChange(base, full, pr.head.oid, p, textOf(model, pr.head, p)).additions, 0);
   const ref = (label, commit) => ({ label: `${repo.owner}:${label}`, ref: label, sha: commit.oid, user: USER, repo: repoJson(base, repo) });
   return {
     ...issueJson(base, repo, pr, true), url: `${base}/repos/${full}/pulls/${pr.number}`, html_url: `https://github.com/${full}/pull/${pr.number}`,
@@ -206,12 +229,20 @@ function makeGitRepo(model, tmpDir) {
  * credential check as `{ user, tokenMatches }` (never the secret itself).
  */
 export async function startMock({ fixtureDir, tmpDir, token, configureModel, classificationResponder } = {}) {
+  // `token`: the credential git smart HTTP accepts, or a list of them (one per caller).
+  const tokens = new Set([token].flat().filter(Boolean));
   const model = buildModel(fixtureDir);
   configureModel?.(model);
   const requests = [];
   const classificationRequests = [];
   const unhandled = [];
   const gitAuth = [];
+  // Unhandled requests, also by the credential that sent them (callers with one token each can attribute their own).
+  const unhandledFrom = [];
+  const miss = (req, what) => {
+    unhandled.push(what);
+    unhandledFrom.push({ request: what, token: /^(?:token|bearer)\s+(.+)$/i.exec(req.headers.authorization ?? '')?.[1] ?? null });
+  };
   const repoGit = tmpDir ? makeGitRepo(model, tmpDir) : { reason: 'no tmpDir' };
   let base = '';
   const server = http.createServer((req, res) => {
@@ -230,19 +261,21 @@ export async function startMock({ fixtureDir, tmpDir, token, configureModel, cla
       };
       try {
         const handled = await route(req.method, url, body, req.headers, send);
-        if (!handled) { unhandled.push(`${req.method} ${url.pathname}${url.search}`); send(404, { message: 'Not Found' }); }
+        if (!handled) { miss(req, `${req.method} ${url.pathname}${url.search}`); send(404, { message: 'Not Found' }); }
       } catch (error) {
-        unhandled.push(`${req.method} ${url.pathname}: ${error.message}`);
+        miss(req, `${req.method} ${url.pathname}: ${error.message}`);
         send(500, { message: error.message });
       }
     });
   });
 
   const findRepo = (owner, name) => model.repos.find(r => r.owner === owner && r.name === name);
-  const commitByRef = ref => (!ref || ref === 'HEAD' || ref === 'main') ? model.head : model.commits.find(c => c.oid === ref || c.oid.startsWith(ref));
+  const commitByRef = ref => (!ref || ref === 'HEAD' || ref === 'main') ? model.head : [...model.commits, ...model.branchCommits].find(c => c.oid === ref || c.oid.startsWith(ref) || c.branch === ref);
   // Files visible at a commit: those added by it and its ancestors (non-demo repos have one snapshot).
   const filesAt = (repo, commit) => {
     if (repo.files !== model.files) return repo.files;
+    // A branch commit (a pull request head off main) sees its parent's tree plus its own files.
+    if (commit.files) return { ...filesAt(repo, commitByRef(commit.parent)), ...commit.files };
     const visible = {};
     for (const c of model.commits) { for (const p of c.added) visible[p] = model.files[p]; if (c === commit) break; }
     return visible;
@@ -252,7 +285,7 @@ export async function startMock({ fixtureDir, tmpDir, token, configureModel, cla
     const auth = /^Basic (.+)$/.exec(req.headers.authorization ?? '');
     if (!auth) { res.writeHead(401, { 'www-authenticate': 'Basic realm="octocode-tool-health"' }); res.end(); return; }
     const [user, ...rest] = Buffer.from(auth[1], 'base64').toString('utf8').split(':');
-    const tokenMatches = rest.join(':') === token;
+    const tokenMatches = tokens.has(rest.join(':'));
     gitAuth.push({ user, tokenMatches });
     if (user !== 'x-access-token' || !tokenMatches) { res.writeHead(403); res.end(); return; }
     const child = spawn('git', ['http-backend'], { env: { ...process.env, GIT_PROJECT_ROOT: repoGit.root, GIT_HTTP_EXPORT_ALL: '1', PATH_INFO: url.pathname, QUERY_STRING: url.search.slice(1), REQUEST_METHOD: req.method, CONTENT_TYPE: req.headers['content-type'] ?? '', CONTENT_LENGTH: String(raw.length), HTTP_CONTENT_ENCODING: req.headers['content-encoding'] ?? '', GIT_PROTOCOL: req.headers['git-protocol'] ?? '', REMOTE_USER: user, REMOTE_ADDR: '127.0.0.1' } });
@@ -351,7 +384,8 @@ export async function startMock({ fixtureDir, tmpDir, token, configureModel, cla
       const isIssue = (qualifiers.is ?? []).includes('issue') || (qualifiers.type ?? []).includes('issue');
       const state = (qualifiers.is ?? []).find(v => v === 'open' || v === 'closed') ?? qualifiers.state?.[0];
       const pool = repo === model.repos[0] ? [...(isIssue ? [] : model.pulls.map(x => ({ x, pr: true }))), ...(isPr ? [] : model.issues.map(x => ({ x, pr: false })))] : [];
-      const hits = pool.filter(({ x }) => (!state || x.state === state) && terms.every(t => `${x.title} ${x.body}`.toLowerCase().includes(t))).sort((a, b) => b.x.number - a.x.number);
+      // As on GitHub, a commit SHA term finds the pull requests that contain it (here: the head commit).
+      const hits = pool.filter(({ x, pr }) => (!state || x.state === state) && terms.every(t => `${x.title} ${x.body} ${pr ? x.head.oid : ''}`.toLowerCase().includes(t))).sort((a, b) => b.x.number - a.x.number);
       const { slice, headers: h } = page(hits, url, base);
       send(200, { total_count: hits.length, incomplete_results: false, items: slice.map(({ x, pr }) => ({ ...issueJson(base, repo, x, pr), score: 1 })) }, h);
       return true;
@@ -381,7 +415,7 @@ export async function startMock({ fixtureDir, tmpDir, token, configureModel, cla
       const from = commitByRef(m[1]), to = commitByRef(m[2]);
       if (!from || !to) { send(404, { message: 'Not Found' }); return true; }
       const between = model.commits.slice(model.commits.indexOf(from) + 1, model.commits.indexOf(to) + 1);
-      send(200, { url: `${base}/repos/${full}/compare/${m[1]}...${m[2]}`, html_url: `https://github.com/${full}/compare/${m[1]}...${m[2]}`, status: 'ahead', ahead_by: between.length, behind_by: 0, total_commits: between.length, base_commit: commitJson(base, repo, from, model), merge_base_commit: commitJson(base, repo, from, model), commits: between.map(c => commitJson(base, repo, c, model)), files: between.flatMap(c => c.added.map(fp => fileChange(base, full, to.oid, fp, model.files[fp]))) });
+      send(200, { url: `${base}/repos/${full}/compare/${m[1]}...${m[2]}`, html_url: `https://github.com/${full}/compare/${m[1]}...${m[2]}`, status: 'ahead', ahead_by: between.length, behind_by: 0, total_commits: between.length, base_commit: commitJson(base, repo, from, model), merge_base_commit: commitJson(base, repo, from, model), commits: between.map(c => commitJson(base, repo, c, model)), files: between.flatMap(c => c.added.map(fp => fileChange(base, full, to.oid, fp, textOf(model, c, fp)))) });
       return true;
     }
     if ((m = /^contents(?:\/(.*))?$/.exec(rest))) {
@@ -403,13 +437,22 @@ export async function startMock({ fixtureDir, tmpDir, token, configureModel, cla
       return true;
     }
     if ((m = /^git\/trees\/(.+)$/.exec(rest))) {
-      const commit = model.commits.find(c => c.tree === m[1]) ?? commitByRef(m[1]);
+      const commit = [...model.commits, ...model.branchCommits].find(c => c.tree === m[1]) ?? commitByRef(m[1]);
       if (!commit) { send(404, { message: 'Not Found' }); return true; }
       const visible = filesAt(repo, commit);
       const dirs = new Set();
       for (const fp of Object.keys(visible)) { const parts = fp.split('/'); for (let i = 1; i < parts.length; i++) dirs.add(parts.slice(0, i).join('/')); }
       const tree = [...[...dirs].map(d => ({ path: d, mode: '040000', type: 'tree', sha: sha(`dir ${d}`), url: `${base}/repos/${full}/git/trees/${sha(`dir ${d}`)}` })), ...Object.entries(visible).map(([fp, text]) => ({ path: fp, mode: '100644', type: 'blob', sha: blobSha(text), size: Buffer.byteLength(text), url: `${base}/repos/${full}/git/blobs/${blobSha(text)}` }))].sort((a, b) => a.path.localeCompare(b.path));
       send(200, { sha: commit.tree, url: `${base}/repos/${full}/git/trees/${commit.tree}`, tree, truncated: false });
+      return true;
+    }
+    if (rest === 'branches' || rest === 'tags') {
+      // main, every pull request head branch, and one release tag on main's head.
+      const refs = rest === 'tags'
+        ? [{ name: 'v1.0.0', commit: model.head }]
+        : [{ name: 'main', commit: model.head }, ...(repo === model.repos[0] ? model.pulls.map(pr => ({ name: `feature-${pr.number}`, commit: pr.head })) : [])];
+      const { slice, headers: h } = page(refs, url, base);
+      send(200, slice.map(r => ({ name: r.name, commit: { sha: r.commit.oid, url: `${base}/repos/${full}/commits/${r.commit.oid}` }, ...(rest === 'branches' ? { protected: false } : { zipball_url: `${base}/repos/${full}/zipball/${r.name}`, tarball_url: `${base}/repos/${full}/tarball/${r.name}`, node_id: `T_${r.name}` }) })), h);
       return true;
     }
     if (rest === 'pulls') {
@@ -437,7 +480,7 @@ export async function startMock({ fixtureDir, tmpDir, token, configureModel, cla
       const sub = m[3];
       if (!sub) { send(200, m[1] === 'pulls' ? pullJson(base, repo, pr, model) : issueJson(base, repo, pr || issue, !!pr)); return true; }
       const list = items => { const { slice, headers: h } = page(items, url, base); send(200, slice, h); return true; };
-      if (sub === 'files' && pr) return list(pr.head.added.map(fp => fileChange(base, full, pr.head.oid, fp, model.files[fp])));
+      if (sub === 'files' && pr) return list(pr.head.added.map(fp => fileChange(base, full, pr.head.oid, fp, textOf(model, pr.head, fp))));
       if (sub === 'commits' && pr) return list([commitJson(base, repo, pr.head, model)]);
       if (sub === 'comments') return list((issue?.comments ?? []).map(c => ({ id: c.id, user: USER, body: c.body, created_at: c.date, updated_at: c.date, html_url: `https://github.com/${full}/issues/${number}#issuecomment-${c.id}`, author_association: 'OWNER' })));
       if (sub === 'reviews' || sub === 'events' || sub === 'timeline') return list([]);
@@ -448,7 +491,7 @@ export async function startMock({ fixtureDir, tmpDir, token, configureModel, cla
 
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
   base = `http://127.0.0.1:${server.address().port}`;
-  return { url: base, model, requests, classificationRequests, unhandled, gitAuth, git: !!repoGit.root, gitHead: repoGit.head, gitUnavailable: repoGit.reason, close: () => new Promise(resolve => { server.closeAllConnections?.(); server.close(() => resolve()); }) };
+  return { url: base, model, requests, classificationRequests, unhandled, unhandledFrom, gitAuth, git: !!repoGit.root, gitHead: repoGit.head, gitUnavailable: repoGit.reason, close: () => new Promise(resolve => { server.closeAllConnections?.(); server.close(() => resolve()); }) };
 }
 
 // `node mock-server.mjs <fixtureDir> [port]`: run standalone for debugging.

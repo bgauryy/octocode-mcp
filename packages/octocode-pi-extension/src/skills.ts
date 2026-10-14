@@ -33,7 +33,7 @@ function isDirectory(file: string): boolean {
 }
 
 /** Claude.ai's synced skills: they need claude.ai connectors Pi does not have, and their broad triggers win over local skills. */
-export const SYNCED_SKILLS_DIR = 'synced';
+const SYNCED_SKILLS_DIR = 'synced';
 
 /**
  * A Claude `skills` folder without its `synced/` subtree. Pi walks a skill directory recursively and has no exclude
@@ -41,7 +41,7 @@ export const SYNCED_SKILLS_DIR = 'synced';
  * This preserves root-only loose Markdown and inherited ignore rules. A folder without `synced/`, or one that is a skill
  * itself (has SKILL.md), is returned as is.
  */
-export function withoutSynced(dir: string): string[] {
+function withoutSynced(dir: string): string[] {
   if (!isDirectory(path.join(dir, SYNCED_SKILLS_DIR)) || fs.existsSync(path.join(dir, 'SKILL.md'))) return [dir];
   const synced = path.join(dir, SYNCED_SKILLS_DIR) + path.sep;
   return loadSkillsFromDir({ dir, source: 'path' }).skills.map((skill) => skill.filePath).filter((file) => !file.startsWith(synced));

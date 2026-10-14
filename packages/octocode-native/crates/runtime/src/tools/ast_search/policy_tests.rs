@@ -204,13 +204,16 @@ fn structural_zero_is_empty_with_actionable_pattern_guidance() {
         !missing["isPartial"].as_bool().unwrap_or(false),
         "{missing}"
     );
-    let guidance = missing["hints"][0].as_str().expect("no-match guidance");
-    assert!(
-        guidance.starts_with("0 matches in 1 typescript file."),
-        "{guidance}"
+    // The per-call fact only; the node shape is the viewTree lead.
+    assert_eq!(
+        missing["hints"],
+        json!(["0 matches in 1 typescript file."]),
+        "{missing}"
     );
-    assert!(guidance.contains("whole nodes"), "{guidance}");
-    assert!(!guidance.contains("next."), "{guidance}");
+    assert_eq!(
+        missing["next"]["viewTree"]["query"]["queries"][0]["operation"], "syntaxTree",
+        "{missing}"
+    );
 
     // Trailing punctuation the pattern omits is not required (ast-grep
     // smart strictness, as astRewrite matches).
@@ -835,21 +838,36 @@ fn match_content_length_bounds_each_match_value() {
     assert_eq!(value_len(None), 500);
 }
 
-/// The localFetch read rows of every `expandValues*` lead, in order.
+/// The localFetch read rows of the one `expandValues` lead, by path. The
+/// lead has one name (never `expandValues2`…) and batches its rows within
+/// localFetch's input limit.
 fn value_reads(out: &serde_json::Value) -> Vec<serde_json::Value> {
-    let mut reads = out["next"]
+    let names = out["next"]
         .as_object()
         .into_iter()
         .flatten()
         .filter(|(name, _)| name.starts_with("expandValues"))
-        .map(|(name, read)| {
-            assert_eq!(read["tool"], "localFetch", "{name}: {read}");
-            let row = read["query"]["queries"][0].clone();
-            crate::contracts::validate_query("localFetch", row.clone())
-                .expect("a valid localFetch row");
-            row
-        })
+        .map(|(name, _)| name.as_str())
         .collect::<Vec<_>>();
+    assert!(
+        names.len() <= 1 && names.iter().all(|name| *name == "expandValues"),
+        "{out}"
+    );
+    let read = &out["next"]["expandValues"];
+    if read.is_null() {
+        return vec![];
+    }
+    assert_eq!(read["tool"], "localFetch", "{read}");
+    let rows = read["query"]["queries"].as_array().expect("rows").clone();
+    assert!(
+        rows.len() <= crate::tools::result::rows_per_call(crate::tools::id::ToolId::LocalFetch),
+        "{read}"
+    );
+    for row in &rows {
+        crate::contracts::validate_query("localFetch", row.clone())
+            .expect("a valid localFetch row");
+    }
+    let mut reads = rows;
     reads.sort_by_key(|row| row["path"].as_str().map(str::to_owned));
     reads
 }
@@ -913,7 +931,7 @@ fn clipped_values_do_not_mark_the_row_partial() {
 }
 
 /// A match row with every file and match page shown and no scope gap is
-/// `complete`: its expansions (`expandCaptures`, `expandValues*`) and the
+/// `complete`: its expansions (`expandCaptures`, `expandValues`) and the
 /// hits read are drill-downs, so the response stage does not mark it
 /// partial. A file page left, or a scope gap, keeps it open.
 #[test]
@@ -946,7 +964,7 @@ fn match_rows_without_unread_pages_are_complete() {
 }
 
 /// Clipped rows across files and past the read-range limit each stay
-/// reachable: one `expandValues*` read per file and per range batch.
+/// reachable: one `expandValues` row per file and per range batch.
 #[test]
 fn clipped_values_read_per_file_in_range_batches() {
     let root = Fixture::new();
@@ -1611,28 +1629,61 @@ fn rust_item_pattern_without_visibility_also_matches_pub_items() {
     assert!(!relaxed(&out), "{out}");
 }
 
-/// A rule that does not compile on a file states the compiler's error and
-/// leads to the file's syntax tree; no static advice rides along (the rule
-/// shape is in the field description).
+/// A rule that does not parse as a rule (an unknown key, malformed YAML) is
+/// `invalidPattern` with no lead: the message names the key, and no syntax
+/// tree shows a rule's keys. A rule naming a kind this grammar lacks, or a
+/// pattern that does not compile, still leads to the file's syntax tree,
+/// where its node shapes are read.
 #[test]
-fn yaml_rule_compile_errors_lead_to_the_syntax_tree_not_a_pattern_hint() {
+fn rule_parse_errors_carry_no_tree_lead() {
     let root = Fixture::new();
     let source = root.0.join("lib.rs");
     std::fs::write(&source, "fn a() {}\n").expect("source");
+    for rule in ["rule:\n  kindx: function_item\n", "pattern: [\nnot: yaml"] {
+        for path in [&source, &root.0] {
+            let error = run(
+                &root.0,
+                json!({"operation":"match","mainGoal":"test","reasoning":"test","path":path,
+                    "language":"rust","rule":rule}),
+            )
+            .expect_err("invalid rule");
+            assert_eq!(error.code, "invalidPattern", "{rule}: {error:?}");
+            assert!(error.message.contains("invalid rule YAML"), "{error:?}");
+            assert!(!error.message.starts_with('['), "{error:?}");
+            assert!(error.hints.is_empty(), "{error:?}");
+            assert!(error.next.is_none(), "{rule}: {error:?}");
+        }
+    }
+    // Without language, a rule no grammar parses is the rule's error, never
+    // a choice between the directory's grammars.
+    std::fs::write(root.0.join("b.py"), "def b(): pass\n").expect("python");
     let error = run(
         &root.0,
-        json!({"operation":"match","mainGoal":"test","reasoning":"test","path":source,
-            "rule":"rule:\n  kindx: function_item\n"}),
+        json!({"operation":"match","mainGoal":"test","reasoning":"test","path":root.0,
+            "rule":"kindx: function_item"}),
     )
     .expect_err("invalid rule");
-    assert_eq!(error.code, "invalidPattern");
-    assert!(error.hints.is_empty(), "{error:?}");
-    let next = error.next.as_ref().expect("viewTree");
-    assert_eq!(
-        next["viewTree"]["query"]["queries"][0]["path"],
-        json!(source.canonicalize().expect("source").to_string_lossy()),
-        "{next}"
-    );
+    assert_eq!(error.code, "invalidPattern", "{error:?}");
+    assert!(error.message.contains("unknown field `kindx`"), "{error:?}");
+    assert!(error.next.is_none(), "{error:?}");
+    for query in [
+        json!({"rule":"kind: not_a_real_kind"}),
+        json!({"pattern":"fn ???"}),
+    ] {
+        let mut row =
+            json!({"operation":"match","mainGoal":"test","reasoning":"test","path":source});
+        row.as_object_mut()
+            .expect("object")
+            .extend(query.as_object().expect("object").clone());
+        let error = run(&root.0, row).expect_err("does not compile");
+        assert_eq!(error.code, "invalidPattern", "{error:?}");
+        let next = error.next.as_ref().expect("viewTree");
+        assert_eq!(
+            next["viewTree"]["query"]["queries"][0]["path"],
+            json!(source.canonicalize().expect("source").to_string_lossy()),
+            "{next}"
+        );
+    }
 }
 
 #[test]
@@ -1997,7 +2048,7 @@ fn a_single_named_declaration_leads_to_its_callers() {
     )
     .is_none()
     {
-        assert!(one.get("next").is_none(), "{one}");
+        assert!(one["next"].get("findCallers").is_none(), "{one}");
         return;
     }
     let lead = &one["next"]["findCallers"];
@@ -2048,7 +2099,14 @@ fn a_bare_include_word_matches_file_names_containing_it() {
     )
     .expect("match");
     assert_eq!(out["matchCount"], 1, "{out}");
-    assert!(out.to_string().contains("handler_test.rs"), "{out}");
+    assert!(
+        out["files"]
+            .as_array()
+            .is_some_and(|files| files.iter().any(|file| file["path"]
+                .as_str()
+                .is_some_and(|path| path.ends_with("handler_test.rs")))),
+        "{out}"
+    );
 }
 
 #[test]
@@ -2720,7 +2778,7 @@ fn a_later_match_page_drops_files_whose_matches_ended() {
     assert!(two.iter().all(|row| !one.contains(row)), "{first} {second}");
 }
 
-/// Repairable failures carry their one lead and no advice text: a pattern
+/// Repairable failures carry their one lead and no advice text: a rule
 /// that does not compile against a file leads to its syntax tree; a
 /// language no file under a directory has leads to the query in the grammar
 /// the directory does hold (a repair never removes a field the run needs).
@@ -2731,9 +2789,9 @@ fn repairable_failures_carry_one_lead() {
     std::fs::write(&file, "fn a() {}\n").expect("a");
     let error = run(
         &root.0,
-        json!({"operation":"match","path":file,"rule":"pattern: [\nnot: yaml"}),
+        json!({"operation":"match","path":file,"rule":"kind: not_a_real_kind"}),
     )
-    .expect_err("invalid rule");
+    .expect_err("unknown kind");
     assert_eq!(error.code, "invalidPattern", "{error:?}");
     assert!(error.hints.is_empty(), "{error:?}");
     let next = error.next.as_ref().expect("lead");
@@ -2821,7 +2879,15 @@ fn symbols_disclose_default_excluded_directories() {
     assert_eq!(query["symbolName"], "hiddenHelper", "{out}");
     assert!(query.get("snapshot").is_none(), "{out}");
     let all = run(&root.0, query.clone()).expect("lead runs");
-    assert!(all.to_string().contains("hiddenHelper"), "{all}");
+    assert!(
+        all["files"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .flat_map(|file| file["symbols"].as_array().into_iter().flatten())
+            .any(|symbol| symbol["symbolName"] == "hiddenHelper"),
+        "{all}"
+    );
 }
 
 /// An empty match that did parse files still names the ignored files of its
@@ -2852,4 +2918,196 @@ fn an_empty_match_beside_parsed_files_names_the_ignored_ones() {
     assert_eq!(retry["includeIgnored"], true, "{empty}");
     let found = run(&root.0, retry.clone()).expect("lead runs");
     assert_eq!(found["matchCount"], 1, "{found}");
+}
+
+/// A file the scan skips (over the parse limit, not UTF-8) is one skip:
+/// `filesSkipped` alone (never also `filesUnevaluated`), one diagnostic per
+/// file, and its recovery names tools that reach it.
+#[test]
+fn a_skipped_file_is_one_skip_with_one_diagnostic() {
+    let root = Fixture::new();
+    std::fs::write(root.0.join("a.ts"), "foo(1);\n").expect("source");
+    let large = "foo(2);\n".repeat(super::MAX_PARSE_SOURCE_BYTES / 8 + 1);
+    std::fs::write(root.0.join("big.ts"), large).expect("large");
+    std::fs::write(
+        root.0.join("bin.ts"),
+        [0xff_u8, b'f', b'o', b'o', b'(', 0xfe],
+    )
+    .expect("binary");
+    let out = run(
+        &root.0,
+        json!({"operation":"match","path":root.0,"language":"typescript","pattern":"foo($A)"}),
+    )
+    .expect("match");
+    assert_eq!(out["matchCount"], 1, "{out}");
+    assert_eq!(out["partialReasons"], json!(["filesSkipped"]), "{out}");
+    let diagnostics = out["diagnostics"].as_array().expect("diagnostics");
+    for name in ["big.ts", "bin.ts"] {
+        let about = diagnostics
+            .iter()
+            .filter(|d| d["path"].as_str().is_some_and(|path| path.ends_with(name)))
+            .collect::<Vec<_>>();
+        assert_eq!(about.len(), 1, "{name}: {out}");
+    }
+    let large = diagnostics
+        .iter()
+        .find(|d| d["code"] == "structural.file.tooLarge")
+        .expect("too large");
+    let recovery = large["recovery"].as_str().expect("recovery");
+    assert!(
+        recovery.contains("localSearch") && recovery.contains("localFetch"),
+        "{recovery}"
+    );
+    assert!(!recovery.contains("maxFileBytes"), "{recovery}");
+}
+
+/// A relaxed pattern carries the relaxed rule its continuations replay, and
+/// states the counts as written and relaxed.
+#[test]
+fn a_relaxed_pattern_carries_its_rule_and_both_counts() {
+    let root = Fixture::new();
+    let source = root.0.join("lib.rs");
+    std::fs::write(&source, "pub fn a() { x(); }\nfn b() { y(); }\n").expect("source");
+    let out = run(
+        &root.0,
+        json!({"operation":"match","path":source,"pattern":"fn $N() { $$$B }"}),
+    )
+    .expect("match");
+    assert_eq!(out["matchCount"], 2, "{out}");
+    let note = out["diagnostics"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|d| d["code"] == "structural.pattern.relaxed")
+        .expect("relaxed note");
+    let message = note["message"].as_str().expect("message");
+    // Per-call facts only: the counts, beside the relaxed `rule`. Why
+    // continuations replay it is the tool description's.
+    assert_eq!(
+        message, "1 match as written; 2 match the relaxed rule.",
+        "{message}"
+    );
+    let any = note["rule"]["any"].as_array().expect("relaxed rule");
+    assert_eq!(any[0], json!({"pattern":"fn $N() { $$$B }"}), "{out}");
+    assert!(
+        any.contains(&json!({"pattern":"pub fn $N() { $$$B }"})),
+        "{out}"
+    );
+}
+
+/// A clipped value that spans more lines than a hit read shows (a whole
+/// file's match) is not offered for a whole read: `expandValues` would put
+/// the file on the page. Shorter clipped values in the same file still are.
+#[test]
+fn a_clipped_whole_file_value_is_not_offered_for_reading() {
+    let root = Fixture::new();
+    let source = root.0.join("long.rs");
+    let body = (0..500)
+        .map(|i| format!("    call_{i}(argument_{i});"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    std::fs::write(
+        &source,
+        format!(
+            "fn m() {{\n{body}\n}}\nfn n() {{ call({}); }}\n",
+            "y".repeat(600)
+        ),
+    )
+    .expect("source");
+    let out = run(
+        &root.0,
+        json!({"operation":"match","path":source,"rule":"kind: function_item","captureText":true}),
+    )
+    .expect("match");
+    assert_eq!(out["matchCount"], 2, "{out}");
+    let reads = value_reads(&out);
+    assert_eq!(reads.len(), 1, "{out}");
+    assert_eq!(reads[0]["ranges"], json!(["503-503"]), "{out}");
+}
+
+/// An empty one-file outline counts "1 file", not "1 files".
+#[test]
+fn an_empty_single_file_outline_counts_one_file() {
+    let root = Fixture::new();
+    let source = root.0.join("a.ts");
+    std::fs::write(&source, "x();\n").expect("source");
+    let out = run(&root.0, json!({"operation":"symbols","path":source})).expect("symbols");
+    assert_eq!(out["status"], "empty", "{out}");
+    assert_eq!(out["hints"], json!(["0 declarations in 1 file."]), "{out}");
+}
+
+/// A file whose matches continue on a later match page names why the row is
+/// partial: `matchPages`, beside `next.nextMatchPage`.
+#[test]
+fn a_file_with_more_match_pages_names_its_partial_reason() {
+    let root = Fixture::new();
+    std::fs::write(root.0.join("a.rs"), "fn a() { hit(1); hit(2); hit(3); }\n").expect("a");
+    let out = run(
+        &root.0,
+        json!({"operation":"match","path":root.0,"language":"rust","pattern":"hit($A)","matchPageSize":2}),
+    )
+    .expect("match");
+    assert!(out["next"].get("nextMatchPage").is_some(), "{out}");
+    assert_eq!(out["partialReasons"], json!(["matchPages"]), "{out}");
+    let last = run(
+        &root.0,
+        out["next"]["nextMatchPage"]["query"]["queries"][0].clone(),
+    )
+    .expect("last match page");
+    assert!(last.get("partialReasons").is_none(), "{last}");
+}
+
+/// Clipped values in more files than one localFetch call reads are never
+/// dropped: `expandValues` batches the first files, and a per-call warning
+/// names each file and line range left out of it, with the clipped value too
+/// long for a hit read.
+#[test]
+fn clipped_values_past_one_read_batch_are_named() {
+    let root = Fixture::new();
+    let long = format!("call({});", "y".repeat(80));
+    let files = crate::tools::result::rows_per_call(crate::tools::id::ToolId::LocalFetch) + 2;
+    for index in 0..files {
+        std::fs::write(
+            root.0.join(format!("f{index}.rs")),
+            format!("fn f() {{\n{long}\n}}\n"),
+        )
+        .expect("source");
+    }
+    // One call spanning 500+ lines: too long for a hit read.
+    let args = (0..500)
+        .map(|i| format!("    argument_{i},"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    std::fs::write(
+        root.0.join("z.rs"),
+        format!("fn z() {{\ncall(\n{args}\n);\n}}\n"),
+    )
+    .expect("z");
+    let out = run(
+        &root.0,
+        json!({"operation":"match","path":root.0,"language":"rust","rule":"kind: call_expression",
+            "captureText":true,"matchContentLength":20}),
+    )
+    .expect("match");
+    let reads = value_reads(&out);
+    assert_eq!(
+        reads.len(),
+        crate::tools::result::rows_per_call(crate::tools::id::ToolId::LocalFetch),
+        "{out}"
+    );
+    let read = reads
+        .iter()
+        .filter_map(|row| row["path"].as_str())
+        .map(|path| path.rsplit('/').next().unwrap_or(path).to_owned())
+        .collect::<Vec<_>>();
+    let warnings = out["warnings"].as_array().expect("warnings");
+    assert_eq!(warnings.len(), 1, "{out}");
+    let warning = warnings[0].as_str().expect("text");
+    // Every file with a clipped value is read or named, never both.
+    for index in 0..files {
+        let name = format!("f{index}.rs");
+        let named = warning.contains(&format!("{name} 2-2"));
+        assert!(read.contains(&name) != named, "{name}: {out}");
+    }
+    assert!(warning.contains("z.rs 2-503"), "{out}");
 }

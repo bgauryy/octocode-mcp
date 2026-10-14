@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 /// Write this page's files under `location.localPath` (the listed
 /// directory) and return where a continuation resumes, if anywhere.
 #[allow(clippy::too_many_arguments)]
-pub(super) async fn materialize_page<C: crate::providers::github::ConditionalCache>(
+pub(super) async fn materialize_page<C: octocode_github::ConditionalCache>(
     provider: &GitHubProvider<C>,
     query: &GhStructureQuery,
     scope: &Scope,
@@ -287,7 +287,7 @@ pub(super) async fn checkout_root(
 /// walk. A file the manifest records at its listed size and that is still on
 /// disk at that size is reused, not fetched again. `location.localPath` is the
 /// listed directory.
-pub(super) async fn materialize_tree<C: crate::providers::github::ConditionalCache>(
+pub(super) async fn materialize_tree<C: octocode_github::ConditionalCache>(
     provider: &GitHubProvider<C>,
     snapshot: &Snapshot<'_>,
     entries: &[TreeEntry],
@@ -328,7 +328,7 @@ pub(super) async fn materialize_tree<C: crate::providers::github::ConditionalCac
             Acquired::Read(
                 provider
                     .get_file_content(
-                        &crate::providers::github::ContentRequest {
+                        &octocode_github::ContentRequest {
                             owner: snapshot.owner.to_owned(),
                             repo: snapshot.repo.to_owned(),
                             path: entry.path.clone(),
@@ -402,7 +402,7 @@ pub(super) enum Acquired {
     Oversized,
     /// Already on disk, as the manifest recorded it.
     Reused,
-    Read(Result<crate::providers::github::ContentResponse, ProviderError>),
+    Read(Result<octocode_github::ContentResponse, ProviderError>),
 }
 
 /// The ordered write side of a materialize page and its caps.

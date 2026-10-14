@@ -40,11 +40,20 @@ export function registerApi(pi: ExtensionAPI, commands: Subcommands, agents: Age
   return {
     api,
     start: async (ctx) => {
+      // A bad environment still binds the session (so `/octocode api on` works) and says why the API is off.
+      let options: ReturnType<typeof optionsFromEnv>;
+      let failure: unknown;
       try {
-        await api.start(ctx, optionsFromEnv());
+        options = optionsFromEnv();
       } catch (error) {
-        if (ctx.hasUI) ctx.ui.notify(errorMessage(error), 'warning');
+        failure = error;
       }
+      try {
+        await api.start(ctx, options);
+      } catch (error) {
+        failure = error;
+      }
+      if (failure !== undefined && ctx.hasUI) ctx.ui.notify(errorMessage(failure), 'warning');
     },
     stop: () => api.stop(),
   };

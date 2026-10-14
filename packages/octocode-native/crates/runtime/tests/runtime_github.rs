@@ -1,41 +1,17 @@
 // Integration test crate — assertions use unwrap/expect/panic freely.
 #![allow(clippy::expect_used, clippy::panic)]
 
-use crate::support;
+use crate::support::{self, Run as _};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use serde_json::json;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use support::mock_http::{Arrivals, Delayed};
 use support::{ALL_EXTRAS, Workspace, call, inventory_len, row_data, row_status};
 use wiremock::matchers::{method, path, path_regex, query_param};
 use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
-
-#[derive(Clone)]
-struct DelayedContentResponse {
-    arrivals: Arc<Mutex<Vec<Instant>>>,
-    path: &'static str,
-}
-
-impl Respond for DelayedContentResponse {
-    fn respond(&self, _: &Request) -> ResponseTemplate {
-        self.arrivals
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .push(Instant::now());
-        ResponseTemplate::new(200)
-            .set_delay(Duration::from_millis(200))
-            .set_body_json(json!({
-                "type": "file",
-                "encoding": "base64",
-                "content": STANDARD.encode("fn placeholder(){}"),
-                "size": 18,
-                "sha": "a".repeat(40),
-                "path": self.path
-            }))
-    }
-}
 
 #[tokio::test]
 async fn malformed_remote_regex_keeps_original_error_and_required_file_path() {
@@ -56,7 +32,12 @@ async fn malformed_remote_regex_keeps_original_error_and_required_file_path() {
         let data = row_data(&out);
         assert_ne!(data["errorCode"], "outputContractViolation", "{data}");
         assert_eq!(data["path"], "README.md", "{data}");
-        assert!(data.to_string().contains("Invalid regex pattern"), "{data}");
+        assert!(
+            data["error"]
+                .as_str()
+                .is_some_and(|error| error.contains("Invalid regex pattern")),
+            "{data}"
+        );
     }
     // A list with one unclosed call: the error names the item, and the one
     // lead is the same GitHub read with that item escaped; no static text.
@@ -372,14 +353,18 @@ async fn github_clone_is_cli_only() {
     let cli = workspace.runtime(&[]);
     assert!(cli.is_available("ghCloneRepo"));
     let mcp_call = cli
-        .execute_mcp(
+        .run_mcp(
             "mcp-clone".into(),
             "ghCloneRepo".into(),
             json!({"queries":[{"owner":"a","repo":"b","mainGoal": "test", "reasoning":"check MCP gate"}]}),
         )
         .await
-        .expect_err("MCP channel cannot clone through a CLI runtime");
-    assert_eq!(mcp_call.code, "toolUnavailable");
+        .expect("MCP answers a refused call as a tool error");
+    assert_eq!(mcp_call["isError"], true, "{mcp_call}");
+    assert_eq!(
+        mcp_call["structuredContent"]["errorCode"], "toolUnavailable",
+        "MCP channel cannot clone through a CLI runtime: {mcp_call}"
+    );
     cli.close().await;
 
     let mut input = workspace.config(&[]);
@@ -399,15 +384,25 @@ async fn github_clone_is_cli_only() {
 async fn three_github_bulk_queries_are_concurrent_and_preserve_order() {
     let server = MockServer::builder().start().await;
     let sha = "0123456789abcdef0123456789abcdef01234567";
-    let arrivals = Arc::new(Mutex::new(Vec::new()));
+    let arrivals = Arrivals::default();
 
     for name in ["alpha.rs", "beta.rs", "gamma.rs"] {
         Mock::given(method("GET"))
             .and(path(format!("/api/v3/repos/a/b/contents/{name}")))
             .and(query_param("ref", sha))
-            .respond_with(DelayedContentResponse {
+            .respond_with(Delayed {
                 arrivals: arrivals.clone(),
-                path: name,
+                ..Delayed::new(
+                    Duration::from_millis(200),
+                    ResponseTemplate::new(200).set_body_json(json!({
+                        "type": "file",
+                        "encoding": "base64",
+                        "content": STANDARD.encode("fn placeholder(){}"),
+                        "size": 18,
+                        "sha": "a".repeat(40),
+                        "path": name
+                    })),
+                )
             })
             .mount(&server)
             .await;
@@ -428,7 +423,7 @@ async fn three_github_bulk_queries_are_concurrent_and_preserve_order() {
         })
     });
     let outcome = runtime
-        .execute(
+        .run(
             "github-bulk".into(),
             "ghGetFileContent".into(),
             json!({"queries": queries}),
@@ -450,9 +445,7 @@ async fn three_github_bulk_queries_are_concurrent_and_preserve_order() {
         "{rows:?}"
     );
     {
-        let arrivals = arrivals
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let arrivals = arrivals.times();
         assert_eq!(arrivals.len(), 3);
         assert!(
             arrivals.last().unwrap().duration_since(arrivals[0]) < Duration::from_millis(150),
@@ -2403,7 +2396,7 @@ async fn issue_comment_body_hops_list_only_unfinished_bodies() {
         calls += 1;
         assert!(calls <= 60, "walk did not finish");
         let outcome = runtime
-            .execute(
+            .run(
                 format!("walk-{calls}"),
                 "ghGetHistoryItem".into(),
                 input.clone(),

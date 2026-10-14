@@ -8,9 +8,10 @@ import { storedText } from '../shared/sanitize.js';
 import { formatClock } from '../shared/format.js';
 import { resolveToolPath } from '../shared/home.js';
 import { clip, timingOf, plural, resultBlock, timedTool, toolHeader } from '../shared/render.js';
+import { EDIT_RETENTION_MINUTES } from './edits.js';
 import { describeChanges, describeConflicts, describeMembers, mutatedPaths } from './routing.js';
 import { checkGoal, GOAL_DESCRIPTION } from './identity.js';
-import { MESSAGE_MAX_CHARS, MESSAGE_TYPE, type Team } from './session.js';
+import { MESSAGE_TYPE, type Team } from './session.js';
 import type { MailDetails } from './model.js';
 
 const DEFAULT_CHANGES_WINDOW_MIN = 60;
@@ -27,7 +28,7 @@ type StopAgent = (id: string, by: string) => string | undefined;
 export function registerCollab(
   pi: ExtensionAPI,
   team: Team,
-  options: { stopAgent?: StopAgent; beforeLeave?: () => Promise<unknown> } = {},
+  options: { stopAgent?: StopAgent; beforeLeave?: (reason: string) => Promise<unknown> } = {},
 ): { reservationGate: (event: ToolCallEvent, ctx: ExtensionContext) => Promise<ToolCallEventResult | undefined> } {
   registerMessageRenderer(pi);
   registerCoordinateTool(pi, team, options.stopAgent);
@@ -47,7 +48,7 @@ export function registerCollab(
 }
 
 function registerMessageRenderer(pi: ExtensionAPI): void {
-  // Agent messages are shown in full, collapsed or not: they are short (capped at MESSAGE_MAX_CHARS) and the user reads them.
+  // Agent messages are shown in full, collapsed or not: they are short (a long one arrives as its start plus a file path) and the user reads them.
   pi.registerMessageRenderer(MESSAGE_TYPE, (message, { outputPad }, theme) => {
     const mail = (message.details as Partial<MailDetails> | undefined)?.messages;
     const box = new Box(outputPad ?? 1, 0);
@@ -66,9 +67,10 @@ function registerMessageRenderer(pi: ExtensionAPI): void {
 }
 
 function registerCoordinateTool(pi: ExtensionAPI, team: Team, stopAgent: StopAgent | undefined): void {
-  // `stop` exists only for an agent that can start subagents; a subagent would only ever be refused.
+  // `stop` exists only for an agent that can start subagents, which is also the one that joins and leaves by hand: a
+  // subagent joins when it starts and leaves when its run ends (`Team.start`, `onAgentSettled`), and would only be refused `stop`.
   const canStop = stopAgent !== undefined;
-  const actions = canStop ? (['list', 'join', 'leave', 'lock', 'unlock', 'stop', 'changes'] as const) : (['list', 'join', 'leave', 'lock', 'unlock', 'changes'] as const);
+  const actions = canStop ? (['list', 'join', 'leave', 'lock', 'unlock', 'stop', 'changes'] as const) : (['list', 'lock', 'unlock', 'changes'] as const);
   pi.registerTool(timedTool({
     name: 'coordinate',
     label: 'Coordinate',
@@ -79,22 +81,22 @@ function registerCoordinateTool(pi: ExtensionAPI, team: Team, stopAgent: StopAge
     parameters: Type.Object({
       action: StringEnum(actions, {
         description:
-          'list: live agents, their activity and held paths; join: register or update your goal (subagents join automatically); leave: unregister and release your reservations; ' +
+          'list: live agents, their activity and held paths; ' + (canStop ? 'join: register or update your goal; leave: unregister and release your reservations; ' : '') +
           'lock: reserve paths, all or none; unlock: release the given paths, or all without paths; ' +
           (canStop ? 'stop: end a background subagent you started (id), killing its process tree; its report says it was stopped; ' : '') +
           'changes: files agents changed recently, newest first, with who and when',
       }),
       ...(canStop ? { id: Type.Optional(Type.String({ description: 'stop: id of the background subagent to end' })) } : {}),
-      note: Type.Optional(Type.String({ description: `join: your goal. ${GOAL_DESCRIPTION}` })),
-      paths: Type.Optional(Type.Array(Type.String(), { maxItems: 32, description: 'lock/unlock: files, or "dir/" for a tree; unlock without paths releases all. changes: only files under these paths' })),
-      withinMinutes: Type.Optional(Type.Integer({ minimum: 1, maximum: 1440, description: 'changes: how far back to look (default 60)' })),
-      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100, description: 'changes: most files to list (default 20)' })),
+      ...(canStop ? { goal: Type.Optional(Type.String({ description: `join: your goal. ${GOAL_DESCRIPTION}` })) } : {}),
+      paths: Type.Optional(Type.Array(Type.String(), { description: 'lock/unlock: files, or "dir/" for a tree; unlock without paths releases all. changes: only files under these paths' })),
+      withinMinutes: Type.Optional(Type.Integer({ description: 'changes: how far back to look (default 60)' })),
+      limit: Type.Optional(Type.Integer({ description: 'changes: most files to list (default 20)' })),
       reason: Type.Optional(Type.String({ description: 'lock: what you will change there' })),
     }),
     async execute(_id, params, signal, _onUpdate, ctx) {
       signal?.throwIfAborted();
       const now = Date.now();
-      if (params.action === 'join') team.join(params.note ? checkGoal(params.note) : undefined);
+      if (params.action === 'join') team.join((params as { goal?: string }).goal ? checkGoal((params as { goal: string }).goal) : undefined);
       else if (params.action === 'leave') {
         team.leave();
         return textResult('Left the team.');
@@ -114,11 +116,13 @@ function registerCoordinateTool(pi: ExtensionAPI, team: Team, stopAgent: StopAge
         if (refused) throw new Error(refused);
         return textResult(`Stopping ${id}: its process tree is killed and its report arrives as a message.`);
       } else if (params.action === 'changes') {
-        const minutes = params.withinMinutes ?? DEFAULT_CHANGES_WINDOW_MIN;
+        const requested = Math.max(1, Math.floor(params.withinMinutes ?? DEFAULT_CHANGES_WINDOW_MIN));
+        // Changes older than the retention are gone: search what is kept and say so (describeChanges).
+        const minutes = Math.min(requested, EDIT_RETENTION_MINUTES);
         const log = team.editLog();
         const prefixes = log && params.paths?.map((entry) => path.relative(log.workspace, resolveToolPath(ctx.cwd, entry)).split(path.sep).join('/'));
         const changes = log?.changes({ withinMs: minutes * 60_000, ...(prefixes?.length ? { prefixes } : {}) }) ?? [];
-        const text = describeChanges(changes, { self: team.id, minutes, limit: params.limit ?? DEFAULT_CHANGES_LIMIT, paths: params.paths }, now);
+        const text = describeChanges(changes, { self: team.id, minutes, requested, limit: Math.max(1, Math.floor(params.limit ?? DEFAULT_CHANGES_LIMIT)), paths: params.paths }, now);
         return textResult(text, { summary: changes.length ? `${plural(changes.length, 'file')} changed in ${minutes}m` : `No changes in ${minutes}m` });
       }
       const { members, error } = team.snapshot();
@@ -130,7 +134,7 @@ function registerCoordinateTool(pi: ExtensionAPI, team: Team, stopAgent: StopAge
       const paths = Array.isArray(args.paths) ? args.paths.map(String) : [];
       const target = paths.length > 1 ? plural(paths.length, 'path') : (paths[0] ?? '');
       const id = (args as { id?: unknown }).id;
-      const summary = [String(args.action ?? ''), id === undefined ? '' : String(id), target, args.note ? `"${String(args.note)}"` : ''].filter(Boolean).join(' ');
+      const summary = [String(args.action ?? ''), id === undefined ? '' : String(id), target, args.goal ? `"${String(args.goal)}"` : ''].filter(Boolean).join(' ');
       return toolHeader(theme, context, 'Coordinate', summary);
     },
     renderResult(result, _options, theme, context) {
@@ -149,14 +153,14 @@ function registerSendMessageTool(pi: ExtensionAPI, team: Team): void {
     description:
       'Send steering, a question or evidence to a live agent in this repository, or to every agent in your session tree. Delivery is queued: a busy recipient reads it at its next step, and you are told if it left unread. ' +
       'To redirect a subagent you started now, set interrupt: its current step stops (a running tool is cancelled) and it continues with your message. ' +
-      'A finished subagent cannot receive messages; give it a new `agent` task. A message over the size limit is refused: send a summary and a file path.',
+      'A finished subagent that lingers (its report says so, and for how long) resumes with your message; one that does not takes no more messages, so give it a new `agent` task. A long message arrives as its start plus the path of a file with the full text.',
     promptSnippet: 'Message a subagent or teammate',
-    promptGuidelines: ['Message only when it changes the recipient\'s next step: a blocker, a decision or evidence. Make it self-contained, reply in the existing thread with replyTo, and skip acknowledgements and completion pings (final reports arrive automatically).'],
+    promptGuidelines: ['Message only when it changes the recipient\'s next step: a blocker, a decision or evidence. Make it self-contained, reply in the existing thread with replyTo (no `to` needed: it goes to that message\'s sender), set replyRequired only for a question you need answered, and skip acknowledgements and completion pings (final reports arrive automatically).'],
     parameters: Type.Object({
-      to: Type.String({ description: 'Agent id, role, "parent" or "all" (your session tree)' }),
-      message: Type.String({ maxLength: MESSAGE_MAX_CHARS, description: 'Self-contained text; for long results send a file path' }),
-      replyRequired: Type.Optional(Type.Boolean({ description: 'true: a question that wakes an idle recipient and asks for an answer; false: an FYI read at its next turn. Default true for direct messages, false for broadcasts and replies' })),
-      replyTo: Type.Optional(Type.Integer({ minimum: 1, description: 'Number of the message you answer (send to its sender); answering a question wakes the asker' })),
+      to: Type.Optional(Type.String({ description: 'Agent id, role, "parent" or "all" (your session tree). Omit it when replyTo is set: the message goes to the sender of that message' })),
+      message: Type.String({ description: 'Self-contained text; for long results send a file path' }),
+      replyRequired: Type.Optional(Type.Boolean({ description: 'true: a question that wakes an idle recipient and asks for an answer; false (the default): an FYI read at its next turn' })),
+      replyTo: Type.Optional(Type.Integer({ description: 'Number of the message you answer (send to its sender); answering a question wakes the asker' })),
       interrupt: Type.Optional(Type.Boolean({ description: 'true: stop the current step of one subagent you started (its running tool is cancelled) and continue it with this message, for a changed plan or wrong direction. Default false: read at its next step' })),
     }),
     async execute(_id, params, signal) {
@@ -176,7 +180,8 @@ function registerSendMessageTool(pi: ExtensionAPI, team: Team): void {
     },
     renderCall(args, theme, context) {
       const to = args.to === undefined ? '' : `→ ${String(args.to)}`;
-      return toolHeader(theme, context, 'Send', args.replyTo !== undefined ? `${to} · reply to #${String(args.replyTo)}` : to);
+      const reply = args.replyTo === undefined ? '' : `reply to #${String(args.replyTo)}`;
+      return toolHeader(theme, context, 'Send', [to, reply].filter(Boolean).join(' · '));
     },
     renderResult(result, _options, theme, context) {
       const details: Record<string, unknown> = isRecord(result.details) ? result.details : {};
@@ -191,11 +196,12 @@ function registerSendMessageTool(pi: ExtensionAPI, team: Team): void {
   }));
 }
 
-function registerTeamEvents(pi: ExtensionAPI, team: Team, beforeLeave?: () => Promise<unknown>): void {
+function registerTeamEvents(pi: ExtensionAPI, team: Team, beforeLeave?: (reason: string) => Promise<unknown>): void {
   pi.on('session_start', async (_event, ctx) => team.start(ctx));
-  pi.on('session_shutdown', async () => {
+  pi.on('session_shutdown', async (event) => {
     try {
-      await beforeLeave?.();
+      // The shutdown's reason (`reload`, `quit`…) names what stopped the subagents in their reports.
+      await beforeLeave?.(event.reason);
     } finally {
       team.stop();
     }

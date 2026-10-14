@@ -3,12 +3,20 @@
 //! Tests construct `ToolRuntime` from an explicit `ConfigInput` so they do not
 //! mutate process environment or race under `cargo test`.
 use octocode_native::config::{ConfigInput, FileInput, RuntimeSurface};
-use octocode_native::runtime::{RuntimeError, ToolOutcome, ToolRuntime};
+use octocode_native::runtime::{Channel, RuntimeError, ToolOutcome, ToolRuntime};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use wiremock::{MockServer, Request, Respond, ResponseTemplate};
+
+// The contract, lead and page-walk checks the unit tests use, and the github
+// crate's wiremock mounts and responders: one copy of each, by path.
+use octocode_native::contracts::{parsed_contract, validate, validate_output};
+#[path = "../../src/tools/test_support/checks.rs"]
+pub mod checks;
+#[path = "../../../github/src/tests/mock_http.rs"]
+pub mod mock_http;
 
 /// Per-fixture token suffix. The GitHub rate-limit budget is process-wide and
 /// keyed by API host + token digest; wiremock pools its servers, so a later
@@ -149,13 +157,59 @@ impl Workspace {
     }
 }
 
+/// One call admitted under `request_id`, as the CLI (`run`: structured JSON)
+/// or the N-API adapter (`run_mcp`: the MCP `CallToolResult`) makes it.
+pub trait Run {
+    fn run(
+        &self,
+        request_id: String,
+        tool: String,
+        input: Value,
+    ) -> impl Future<Output = Result<ToolOutcome, RuntimeError>> + Send;
+    fn run_mcp(
+        &self,
+        request_id: String,
+        tool: String,
+        input: Value,
+    ) -> impl Future<Output = Result<Value, RuntimeError>> + Send;
+}
+
+impl Run for ToolRuntime {
+    async fn run(
+        &self,
+        request_id: String,
+        tool: String,
+        input: Value,
+    ) -> Result<ToolOutcome, RuntimeError> {
+        let admission = self.admit(request_id)?;
+        self.execute(admission, tool, input, Channel::Structured)
+            .await
+    }
+
+    async fn run_mcp(
+        &self,
+        request_id: String,
+        tool: String,
+        input: Value,
+    ) -> Result<Value, RuntimeError> {
+        let result = match self.admit(request_id) {
+            Ok(admission) => {
+                self.execute(admission, tool.clone(), input, Channel::Mcp)
+                    .await
+            }
+            Err(error) => Err(error),
+        };
+        octocode_native::runtime::error::mcp_result(&tool, result)
+    }
+}
+
 pub async fn call(
     runtime: &ToolRuntime,
     tool: &str,
     query: Value,
 ) -> Result<ToolOutcome, RuntimeError> {
     runtime
-        .execute("test-1".into(), tool.into(), envelope(query))
+        .run("test-1".into(), tool.into(), envelope(query))
         .await
 }
 
@@ -212,6 +266,26 @@ pub fn envelope(mut input: Value) -> Value {
     Value::Object(envelope)
 }
 
+/// `input` as a whole call: a row becomes `{queries:[row]}`, an input that
+/// already has `queries` passes through. Nothing is added (no brief, no
+/// extras); [`envelope`] adds both.
+pub fn queries(input: Value) -> Value {
+    if input.get("queries").is_some() {
+        input
+    } else {
+        json!({ "queries": [input] })
+    }
+}
+
+/// [`queries`] with every row asking for exactly the output kinds `extras`.
+pub fn with_extras(input: Value, extras: &[&str]) -> Value {
+    let mut input = queries(input);
+    for row in input["queries"].as_array_mut().into_iter().flatten() {
+        row["extras"] = json!(extras);
+    }
+    input
+}
+
 pub fn row_data(outcome: &ToolOutcome) -> &Value {
     outcome
         .structured_content
@@ -257,66 +331,271 @@ pub fn provider_runtime(workspace: &Workspace, server: &MockServer) -> ToolRunti
     ])
 }
 
-/// Locate provider stub: each choice question puts `top` on the first
-/// passage ID it was offered; each existence question answers `exists`.
+/// How a [`Judge`] answers the classification questions of a request.
 #[derive(Clone)]
-pub struct LocateTopPassage {
-    pub top: f64,
-    pub exists: f64,
+pub enum Strategy {
+    /// Locate: each choice question puts `top` on the first passage ID
+    /// (`P###`, sorted) the request offers, the rest shared evenly; each
+    /// existence question answers `exists`.
+    TopPassage { top: f64, exists: f64 },
+    /// Each choice question picks its first offered label (`criteria`) at
+    /// 0.99; every other question answers 0.99.
+    FirstLabel,
+    /// Every question answers `yes` when the request state contains `needle`,
+    /// else `no`.
+    StateContains {
+        needle: &'static str,
+        yes: f64,
+        no: f64,
+    },
+    /// Question `i` (by sorted id) answers the `i`-th number after `SCORES `
+    /// in the request state, 0.5 when there is none.
+    Scores,
 }
 
-impl Respond for LocateTopPassage {
+/// A stand-in classification provider answering by its [`Strategy`].
+#[derive(Clone)]
+pub struct Judge {
+    pub strategy: Strategy,
+}
+
+impl Respond for Judge {
     fn respond(&self, request: &Request) -> ResponseTemplate {
-        fn passage_ids(value: &Value, ids: &mut Vec<String>) {
-            match value {
-                Value::Object(map) => {
-                    for (key, value) in map {
-                        if key.len() == 4 && key.starts_with('P') && !ids.contains(key) {
-                            ids.push(key.clone());
-                        }
-                        passage_ids(value, ids);
-                    }
-                }
-                Value::Array(items) => {
-                    items.iter().for_each(|item| passage_ids(item, ids));
-                }
-                _ => {}
-            }
-        }
-        let body: Value = serde_json::from_slice(&request.body).expect("ranking request body");
-        let mut ids = Vec::new();
-        passage_ids(&body, &mut ids);
-        ids.sort();
-        let rest = if ids.len() > 1 {
-            (1.0 - self.top) / (ids.len() - 1) as f64
-        } else {
-            0.0
-        };
-        let probabilities = ids
-            .iter()
-            .enumerate()
-            .map(|(index, id)| (id.clone(), json!(if index == 0 { self.top } else { rest })))
-            .collect::<serde_json::Map<_, _>>();
-        let answers = body["questions"]
-            .as_object()
-            .into_iter()
-            .flatten()
-            .map(|(id, question)| {
-                let answer = if question["type"] == "choice" {
-                    json!({"type":"choice","choice":ids.first(),"confidence":self.top,
-                        "probabilities":probabilities})
+        let body: Value = serde_json::from_slice(&request.body).expect("provider request body");
+        let questions = body["questions"].as_object().expect("grouped questions");
+        let answers = match &self.strategy {
+            Strategy::TopPassage { top, exists } => {
+                let ids = passage_ids(&body);
+                let rest = if ids.len() > 1 {
+                    (1.0 - top) / (ids.len() - 1) as f64
                 } else {
-                    json!({"type":"noul","noul":self.exists})
+                    0.0
                 };
-                (id.clone(), answer)
-            })
-            .collect::<serde_json::Map<_, _>>();
+                let probabilities = ids
+                    .iter()
+                    .enumerate()
+                    .map(|(index, id)| (id.clone(), json!(if index == 0 { *top } else { rest })))
+                    .collect::<serde_json::Map<_, _>>();
+                questions
+                    .iter()
+                    .map(|(id, question)| {
+                        let answer = if question["type"] == "choice" {
+                            json!({"type":"choice","choice":ids.first(),"confidence":top,
+                                "probabilities":probabilities})
+                        } else {
+                            json!({"type":"noul","noul":exists})
+                        };
+                        (id.clone(), answer)
+                    })
+                    .collect::<serde_json::Map<_, _>>()
+            }
+            Strategy::FirstLabel => questions
+                .iter()
+                .map(|(id, question)| {
+                    let answer = if question["type"] == "choice" {
+                        let labels = question["criteria"]
+                            .as_object()
+                            .expect("choice labels")
+                            .keys()
+                            .collect::<Vec<_>>();
+                        let rest = if labels.len() > 1 {
+                            0.01 / (labels.len() - 1) as f64
+                        } else {
+                            0.0
+                        };
+                        let probabilities = labels
+                            .iter()
+                            .enumerate()
+                            .map(|(index, label)| {
+                                (
+                                    (*label).clone(),
+                                    json!(if index == 0 { 0.99 } else { rest }),
+                                )
+                            })
+                            .collect::<serde_json::Map<_, _>>();
+                        json!({"type":"choice","choice":labels[0],"confidence":0.99,
+                            "probabilities":probabilities})
+                    } else {
+                        json!({"type":"noul","noul":0.99})
+                    };
+                    (id.clone(), answer)
+                })
+                .collect(),
+            Strategy::StateContains { needle, yes, no } => {
+                let noul = if body["state"].to_string().contains(needle) {
+                    *yes
+                } else {
+                    *no
+                };
+                questions
+                    .keys()
+                    .map(|id| (id.clone(), json!({"type":"noul","noul":noul})))
+                    .collect()
+            }
+            Strategy::Scores => {
+                let text = body["state"].to_string();
+                let scores = text
+                    .split("SCORES ")
+                    .nth(1)
+                    .map(|rest| {
+                        rest.split_whitespace()
+                            .take(2)
+                            .filter_map(|n| {
+                                n.trim_matches(|c: char| !c.is_ascii_digit() && c != '.')
+                                    .parse::<f64>()
+                                    .ok()
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                let mut keys = questions.keys().cloned().collect::<Vec<_>>();
+                keys.sort();
+                keys.into_iter()
+                    .enumerate()
+                    .map(|(index, key)| {
+                        let noul = scores.get(index).copied().unwrap_or(0.5);
+                        (key, json!({"type":"noul","noul":noul}))
+                    })
+                    .collect()
+            }
+        };
         ResponseTemplate::new(200).set_body_json(json!({
             "model":"resolved",
             "answers":answers,
             "usage":{"input_tokens":5,"output_tokens":2}
         }))
     }
+}
+
+/// The passage IDs (`P` + three characters, as object keys) a request offers,
+/// sorted.
+fn passage_ids(body: &Value) -> Vec<String> {
+    fn visit(value: &Value, ids: &mut Vec<String>) {
+        match value {
+            Value::Object(map) => {
+                for (key, value) in map {
+                    if key.len() == 4 && key.starts_with('P') && !ids.contains(key) {
+                        ids.push(key.clone());
+                    }
+                    visit(value, ids);
+                }
+            }
+            Value::Array(items) => items.iter().for_each(|item| visit(item, ids)),
+            _ => {}
+        }
+    }
+    let mut ids = Vec::new();
+    visit(body, &mut ids);
+    ids.sort();
+    ids
+}
+
+/// One executed row as an agent sees it: the whole outcome (`Row` derefs to
+/// it), and its first result row's `status` and `data`.
+pub struct Row {
+    pub outcome: ToolOutcome,
+}
+
+impl std::ops::Deref for Row {
+    type Target = ToolOutcome;
+
+    fn deref(&self) -> &ToolOutcome {
+        &self.outcome
+    }
+}
+
+impl Row {
+    pub fn data(&self) -> &Value {
+        row_data(&self.outcome)
+    }
+
+    pub fn status(&self) -> &str {
+        row_status(&self.outcome)
+    }
+}
+
+/// Run one `row` of `tool` through the full runtime (validation, response
+/// stages, path shaping) with exactly the output kinds `extras` (`&[]` is the
+/// default view; the row itself names none). The row is briefed when it is
+/// not. A runtime error fails the test, and so does an output that breaks the
+/// output contract or carries a retired name ([`assert_no_retired_names`]).
+pub async fn run(runtime: &ToolRuntime, tool: &str, mut row: Value, extras: &[&str]) -> Row {
+    assert!(
+        row.get("extras").is_none(),
+        "pass extras as run's argument, not on the row: {row}"
+    );
+    row["extras"] = json!(extras);
+    let outcome = call(runtime, tool, row.clone())
+        .await
+        .unwrap_or_else(|error| panic!("{tool} {row}: {error:?}"));
+    checks::assert_output_contract(tool, &outcome.structured_content);
+    assert_no_retired_names(tool, &outcome.structured_content);
+    Row { outcome }
+}
+
+/// No retired name of `tool` (shared deny-list scopes `field`: an output key,
+/// `lead`: a `next`/`hints` key, `code`: an `errorCode` value) appears in
+/// `output`.
+pub fn assert_no_retired_names(tool: &str, output: &Value) {
+    let names = retired_names(&["field", "lead", "code"], Some(tool))
+        .into_iter()
+        .map(|entry| {
+            (
+                entry["name"].as_str().expect("name").to_owned(),
+                entry["scope"].as_str().expect("scope").to_owned(),
+            )
+        })
+        .collect::<Vec<_>>();
+    let mut stack = vec![output];
+    while let Some(node) = stack.pop() {
+        match node {
+            Value::Object(map) => {
+                for (key, child) in map {
+                    if let Some((name, scope)) = names
+                        .iter()
+                        .find(|(name, scope)| scope != "code" && name == key)
+                    {
+                        panic!("{tool}: retired {scope} name `{name}` in output: {output}");
+                    }
+                    if key == "errorCode"
+                        && let Some(code) = child.as_str()
+                        && names
+                            .iter()
+                            .any(|(name, scope)| scope == "code" && name == code)
+                    {
+                        panic!("{tool}: retired errorCode `{code}` in output: {output}");
+                    }
+                    stack.push(child);
+                }
+            }
+            Value::Array(items) => stack.extend(items),
+            _ => {}
+        }
+    }
+}
+
+/// [`checks::Walker`] over the runtime: each call runs as the whole input,
+/// verbatim (no envelope, no brief added), and `rows` names the row ids of
+/// each output.
+pub async fn walk(
+    runtime: &ToolRuntime,
+    tool: &str,
+    start: Value,
+    rows: impl Fn(&Value) -> Vec<String>,
+) -> checks::Walk {
+    let mut walker = checks::Walker::new(tool, start);
+    while let Some(query) = walker.next_query() {
+        let outcome = runtime
+            .run("walk".into(), tool.into(), query.clone())
+            .await
+            .unwrap_or_else(|error| panic!("{tool} {query}: {error:?}"));
+        let output = outcome.structured_content;
+        walker.accept(checks::Page {
+            rows: rows(&output),
+            output,
+        });
+    }
+    walker.finish()
 }
 
 /// Entries of the shared retired-name deny-list

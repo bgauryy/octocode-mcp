@@ -38,8 +38,8 @@ const outPath = resolve(
     '--out',
     join(
       workspaceOutputBase,
+      'octocode-chrome-devtools',
       'tmp',
-      'chrome-devtools',
       'redacted-har',
       defaultName
     )

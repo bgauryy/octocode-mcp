@@ -50,8 +50,7 @@ impl PushDiagnosticsStore {
             let mut retained_bytes = 2usize; // JSON array brackets
             let mut retained_len = items.len();
             for (index, item) in items.iter().enumerate() {
-                let item_bytes = serde_json::to_vec(item)
-                    .map(|encoded| encoded.len())
+                let item_bytes = super::partial::encoded_len(item)
                     .unwrap_or(MAX_PUSH_DIAGNOSTIC_BYTES_PER_DOCUMENT + 1);
                 let next_bytes = retained_bytes
                     .saturating_add(usize::from(index > 0))
@@ -65,9 +64,11 @@ impl PushDiagnosticsStore {
             }
             items.truncate(retained_len);
         }
-        let Ok(mut state) = self.state.lock() else {
-            return;
-        };
+        // A poisoned lock keeps its last state: the cache is rebuilt by the next report.
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         state.order.retain(|existing| *existing != uri);
         if !state.records.contains_key(&uri)
             && state.records.len() >= MAX_PUSH_DIAGNOSTIC_DOCUMENTS
@@ -84,14 +85,21 @@ impl PushDiagnosticsStore {
     }
 
     pub(super) fn clear(&self, uri: &str) {
-        if let Ok(mut state) = self.state.lock() {
+        {
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             state.records.remove(uri);
             state.order.retain(|existing| existing != uri);
         }
     }
 
     pub(super) fn report(&self, uri: &str, min_version: Option<i64>) -> Option<Value> {
-        let state = self.state.lock().ok()?;
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let record = state.records.get(uri)?;
         if let Some(min_version) = min_version {
             // A record tagged with an older version belongs to a superseded

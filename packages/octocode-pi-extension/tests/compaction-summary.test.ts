@@ -58,6 +58,11 @@ describe('compaction summary', () => {
     expect(userText({ role: 'user', content: 'do it' })).toBe('do it');
     expect(userText({ role: 'user', content: [{ type: 'text', text: 'look' }, { type: 'image', data: 'x', mimeType: 'image/png' }] })).toBe('look\n[image attached]');
     expect(userText({ role: 'custom', content: 'injected' })).toBeUndefined();
+    // A skill Pi expanded into the message is a pointer to its file, not part of the user's words.
+    const skill = '<skill name="review" location="/home/u/.pi/skills/review/SKILL.md">\nReferences are relative to /home/u/.pi/skills/review.\n\n# Review\n' + 'step\n'.repeat(2_000) + '</skill>';
+    expect(userText({ role: 'user', content: `${skill}\n\ncheck src/a.ts` })).toBe('[skill review loaded from /home/u/.pi/skills/review/SKILL.md]\n\ncheck src/a.ts');
+    expect(userText({ role: 'user', content: [{ type: 'text', text: skill }] })).toBe('[skill review loaded from /home/u/.pi/skills/review/SKILL.md]');
+    expect(userText({ role: 'user', content: 'I typed <skill name="x"> by hand' })).toBe('I typed <skill name="x"> by hand');
     expect(userText({ role: 'assistant', content: [{ type: 'text', text: 'mine' }] })).toBeUndefined();
   });
 
@@ -96,6 +101,16 @@ describe('compaction summary', () => {
     expect(view[1]).toBe(messages[1]);
     expect(view[2]).toBe(messages[2]);
     expect((messages[0]!.content as Array<{ text?: string }>)[0]!.text).toBe(log);
+  });
+
+  it('never cuts an emoji in half where the summarizer view or a long user message is shortened', () => {
+    const lone = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
+    const emoji = '😀'.repeat(3_000);
+    // 1,000 and 2,000-ish are even and the gap note is ASCII, so any odd cut would split a pair.
+    const view = summarizerView([{ role: 'toolResult', toolCallId: 't', content: [{ type: 'text', text: `x${emoji}` }] }]) as Array<{ content: Array<{ text: string }> }>;
+    expect(view[0]!.content[0]!.text).not.toMatch(lone);
+    const section = userMessagesSection([], 0, [`x${emoji}`], { total: 60_000, perMessage: 1_001 });
+    expect(section).not.toMatch(lone);
   });
 });
 

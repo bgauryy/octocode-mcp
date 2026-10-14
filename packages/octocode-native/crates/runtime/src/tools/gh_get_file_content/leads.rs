@@ -5,7 +5,7 @@ use serde_json::{Value, json};
 
 use super::GhGetFileContentQuery;
 use crate::tools::id::ToolId;
-use crate::tools::local_fetch::{LocalFetchQuery, MinifyMode, RegexMatch};
+use crate::tools::local_fetch::{LocalFetchQuery, MinifyMode};
 use crate::tools::result::{Continuation, query_row};
 
 /// Lines from which a missed literal is located semantically (clasify)
@@ -74,30 +74,6 @@ pub(super) fn empty_match_lead(
     ))
 }
 
-/// The same read at the same commit, matched case-insensitively: the
-/// runnable recovery of a matchString that selected no line, offered only
-/// when that read selects lines (the shared row counts them).
-pub(super) fn ignore_case_lead(
-    query: &GhGetFileContentQuery,
-    local: &LocalFetchQuery,
-    acquired: &octocode_github::ContentResponse,
-    regex: &impl RegexMatch,
-) -> Option<Value> {
-    let text = String::from_utf8_lossy(&acquired.bytes);
-    if crate::tools::local_fetch::insensitive_match_count(local, &text, regex) == 0 {
-        return None;
-    }
-    let mut row = query.clone();
-    row.case_mode = Some(crate::contracts::tool_types::ReadCaseMode::Insensitive);
-    let mut row = query_row(&row, &[]);
-    row["ref"] = json!(acquired.resolved_ref);
-    Some(
-        Continuation::new(ToolId::GhGetFileContent, row)
-            .confidence("high")
-            .build(),
-    )
-}
-
 /// The runnable repair of a `ranges` read whose every range starts past the
 /// file end: the same read of the file's last window, as wide as the widest
 /// requested range, at the read commit. `None` when any range reaches into
@@ -133,6 +109,7 @@ pub(super) fn last_window_repair(
 pub(super) fn rewrite_continuations(
     result: &mut crate::tools::local_fetch::LocalFetchResult,
     source: &GhGetFileContentQuery,
+    view: MinifyMode,
     resolved_ref: &str,
 ) -> Option<Value> {
     let mut value = serde_json::to_value(result.next.take()?).ok()?;
@@ -154,9 +131,12 @@ pub(super) fn rewrite_continuations(
         query.insert("repo".into(), Value::String(source.repo.to_string()));
         query.insert("ref".into(), Value::String(resolved_ref.to_owned()));
         // A continuation reads a window, never the whole file, and keeps
-        // the caller's view; the default view is omitted.
+        // the caller's view; the default view is omitted. A selected row
+        // (`ranges`, `matchString`) is verbatim under the default view; a
+        // window paged on from a verbatim whole-file read stays verbatim.
         query.remove("fullContent");
-        match source.minify {
+        let selected = query.contains_key("ranges") || query.contains_key("matchString");
+        match if selected { source.minify } else { view } {
             mode if mode == default_minify() => {
                 query.remove("minify");
             }

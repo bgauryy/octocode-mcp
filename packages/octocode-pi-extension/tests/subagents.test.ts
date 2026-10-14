@@ -4,10 +4,11 @@ import { parseArgs } from '@earendil-works/pi-coding-agent';
 import { describe, expect, it } from 'vitest';
 import { addUsage, emptyUsage } from '../src/shared/util.js';
 import { assistantText, buildAgentArgs, subagentProcessEnv } from '../src/subagents/process.js';
+import { processStartTime } from '../src/shared/process.js';
 import { loadProfiles, parseProfile } from '../src/subagents/profiles.js';
 import { Subcommands } from '../src/shared/commands.js';
-import { collaborateByDefault, maxSubagents, subagentLimitError, teamTask } from '../src/subagents/claim.js';
-import { MAX_TASK_CHARS, registerAgentTool } from '../src/subagents/tool.js';
+import { maxSubagents, Slots, subagentLimitError, teamTask } from '../src/subagents/claim.js';
+import { registerAgentTool } from '../src/subagents/tool.js';
 import { octocodePrompt } from '../src/prompt.js';
 import { Permission } from '../src/permission/ask.js';
 import { askSpawn, profileReach } from '../src/subagents/profiles.js';
@@ -49,17 +50,75 @@ describe('subagent permissions', () => {
   });
 });
 
+describe('profile permissions', () => {
+  const text = (permissions: string) => `---\nname: web\ndescription: Browses\nexcludeTools: file,bash\npermissions: ${permissions}\n---\nBrowse.`;
+  const spawnCtx = (selects: string[]) => {
+    const ctx = fakeCtx({ cwd: tmp(), ui: { selects } });
+    const titles: string[] = [];
+    const select = ctx.ui.select;
+    ctx.ui.select = (async (title: string, choices: string[]) => (titles.push(title), select(title, choices))) as never;
+    return { ctx, titles };
+  };
+
+  it('reads only the declarable classes, reports the rest, and hashes the content', () => {
+    const profile = parseProfile('x', text('[browser.control, shell, net.private, shell.destructive]'));
+    expect(profile.permissions).toEqual(['browser.control', 'net.private']);
+    expect(profile.ignoredPermissions).toEqual(['shell', 'shell.destructive']);
+    expect(parseProfile('x', text('[browser.control]')).hash).not.toBe(parseProfile('x', text('[browser.control, net.private]')).hash);
+    expect(parseProfile('x', '---\nname: plain\n---\nBody.').permissions).toBeUndefined();
+  });
+
+  it('forces one spawn prompt listing each class in workspace, remembers the answer, and asks again after an edit', async () => {
+    const fake = fakePi();
+    const permission = new Permission({ pi: fake.pi, env: { OCTOCODE_PERMISSION: 'workspace' }, isSubagent: false });
+    const { ctx, titles } = spawnCtx(['Allow once', 'Allow once', 'Deny']);
+    permission.start(ctx);
+    const profile = parseProfile('x', text('[browser.control, net.private]'));
+    expect(await askSpawn(permission, ctx, profile, 'look')).toEqual(['browser.control', 'net.private']);
+    expect(titles).toHaveLength(1);
+    expect(titles[0]).toContain('permission it declares: browser.control');
+    expect(titles[0]).toContain('permission it declares: net.private');
+    expect(titles[0]).toContain('▸ why it asks: the profile declares browser.control');
+    // The same profile content is not asked about again; a changed one is.
+    expect(await askSpawn(permission, ctx, profile, 'look again')).toEqual(['browser.control', 'net.private']);
+    expect(titles).toHaveLength(1);
+    const edited = parseProfile('x', text('[browser.control, net.private]').replace('Browse.', 'Browse more.'));
+    expect(await askSpawn(permission, ctx, edited, 'look')).toEqual(['browser.control', 'net.private']);
+    expect(titles).toHaveLength(2);
+    permission.clearGrants();
+    await expect(askSpawn(permission, ctx, profile, 'look')).rejects.toThrow(/denied starting a subagent/);
+  });
+
+  it('runs a declaring profile in full without a prompt, and still records the reason', async () => {
+    const fake = fakePi();
+    const permission = new Permission({ pi: fake.pi, env: { OCTOCODE_PERMISSION: 'full' }, isSubagent: false, stderr: () => undefined });
+    const { ctx, titles } = spawnCtx([]);
+    permission.start(ctx);
+    expect(await askSpawn(permission, ctx, parseProfile('x', text('[browser.control]')), 'look')).toEqual(['browser.control']);
+    expect(titles).toEqual([]);
+    expect(fake.entries.map((entry) => entry.data)).toEqual([expect.objectContaining({ action: 'agent.spawn', reasons: ['profile.permissions'], via: 'mode' })]);
+  });
+
+  it('keeps evaluate for the web profiles by declaring browser.control', () => {
+    for (const name of ['webHeadless', 'webLive']) {
+      const profile = parseProfile(name, fs.readFileSync(path.join(__dirname, '..', 'subagents', `${name}.md`), 'utf8'));
+      expect(profile.permissions, name).toEqual(['browser.control']);
+      expect(profile.ignoredPermissions, name).toBeUndefined();
+    }
+  });
+});
+
 describe('subagents', () => {
-  it('collaborate mode: off by default, lists teammates in the task, flags the child and its prompt', () => {
-    expect(collaborateByDefault({})).toBe(false);
-    expect(collaborateByDefault({ OCTOCODE_SUBAGENT_COLLABORATE: 'on' })).toBe(true);
+  it('collaborate mode: lists teammates in the task, flags the child and its prompt', () => {
     expect(teamTask('Fix A', 'main-1', [['researcher-2', 'Trace B']])).toBe('Fix A\n\n## Teammates\nYou collaborate with the other subagents that main-1 started for the same goal. Running now:\n- `researcher-2`: Trace B');
     expect(teamTask('Fix A', 'main-1', [])).toMatch(/none yet; `coordinate list` shows teammates that start later/);
     expect(subagentProcessEnv(undefined, {}, { id: 'a-1', collaborate: true })['OCTOCODE_AGENT_COLLABORATE']).toBe('1');
     // The parent names its session for backlog ownership; an inherited value from a grandparent never leaks through.
     expect(subagentProcessEnv(undefined, { OCTOCODE_PARENT_SESSION: 'old' }, { id: 'a-1', parentSession: 's-1' })['OCTOCODE_PARENT_SESSION']).toBe('s-1');
     expect(subagentProcessEnv(undefined, { OCTOCODE_PARENT_SESSION: 'old' }, { id: 'a-1' })).not.toHaveProperty('OCTOCODE_PARENT_SESSION');
-    expect(subagentProcessEnv(undefined, { OCTOCODE_PARENT_PID: '1' }, { id: 'a-1' })['OCTOCODE_PARENT_PID']).toBe(String(process.pid));
+    // The parent's pid and its start time: a later process that reuses the pid is not taken for the parent.
+    const started = processStartTime(process.pid);
+    expect(subagentProcessEnv(undefined, { OCTOCODE_PARENT_PID: '1' }, { id: 'a-1' })['OCTOCODE_PARENT_PID']).toBe(started ? `${process.pid} ${started}` : String(process.pid));
     // The user's command hooks stay in the main session unless the profile opts in.
     expect(subagentProcessEnv(undefined, { OCTOCODE_HOOKS: '1', PATH: '/bin' })).not.toHaveProperty('OCTOCODE_HOOKS');
     expect(subagentProcessEnv(undefined, { OCTOCODE_HOOKS: '1', PATH: '/bin' })['PATH']).toBe('/bin');
@@ -77,12 +136,12 @@ describe('subagents', () => {
 
   it('parses profile frontmatter and builds child pi arguments', () => {
     const profile = parseProfile('fallback', '---\nname: researcher\ndescription: Reads code\ntools: read,grep\n---\nBe precise.');
-    expect(profile).toEqual({ name: 'researcher', description: 'Reads code', prompt: 'Be precise.', tools: 'read,grep' });
+    expect(profile).toEqual({ name: 'researcher', description: 'Reads code', prompt: 'Be precise.', tools: 'read,grep', hash: expect.stringMatching(/^[0-9a-f]{16}$/) });
     const dir = tmp();
-    const args = buildAgentArgs('Find X', profile, 'anthropic/claude', '/ext/index.js', dir);
+    const args = buildAgentArgs(profile, 'anthropic/claude', '/ext/index.js', dir);
     const promptFile = args[args.indexOf('--append-system-prompt') + 1]!;
     expect(args).toEqual([
-      '--mode', 'json', '--no-session', '--no-extensions', '-e', '/ext/index.js', '-e', 'builtin:mcp', '-e', 'builtin:tool-search', '--model', 'anthropic/claude', '--tools', 'read,grep', '--append-system-prompt', promptFile, '--', 'Find X',
+      '--mode', 'rpc', '--no-session', '--no-extensions', '-e', '/ext/index.js', '-e', 'builtin:mcp', '-e', 'builtin:tool-search', '--model', 'anthropic/claude', '--tools', 'read,grep', '--append-system-prompt', promptFile,
     ]);
     expect(path.dirname(promptFile)).toBe(dir);
     expect(fs.readFileSync(promptFile, 'utf8')).toBe('Be precise.');
@@ -92,30 +151,29 @@ describe('subagents', () => {
     const dir = tmp();
     const decoy = path.join(tmp(), 'secret.txt');
     fs.writeFileSync(decoy, 'not the prompt');
-    const args = buildAgentArgs('X', { name: 'p', description: '', prompt: decoy }, undefined, '/ext/index.js', dir);
+    const args = buildAgentArgs({ name: 'p', description: '', prompt: decoy }, undefined, '/ext/index.js', dir);
     const promptFile = args[args.indexOf('--append-system-prompt') + 1]!;
     expect(promptFile).not.toBe(decoy);
     expect(fs.readFileSync(promptFile, 'utf8')).toBe(decoy);
     if (process.platform !== 'win32') expect(fs.statSync(promptFile).mode & 0o777).toBe(0o600);
     // No prompt, no file.
-    expect(buildAgentArgs('X', { name: 'p', description: '', prompt: '' }, undefined, '/ext/index.js', dir)).not.toContain('--append-system-prompt');
+    expect(buildAgentArgs({ name: 'p', description: '', prompt: '' }, undefined, '/ext/index.js', dir)).not.toContain('--append-system-prompt');
   });
 
-  it('passes a task that looks like a flag or an @file to Pi as the message, unexpanded', () => {
+  it('keeps the task out of the arguments: RPC takes it as a prompt command, so no task text can become a flag or an @file', () => {
     const profile = parseProfile('p', '---\ntools: read\n---\n- Be careful.');
-    for (const task of ['- fix the bug', '--x', '--model evil/model', '-e /tmp/evil.js', '@src/a.ts', '@src/a.ts then review it', 'plain task']) {
-      const parsed = parseArgs(buildAgentArgs(task, profile, 'faux/model', '/ext/index.js', tmp()));
-      expect(parsed.messages.map((message) => message.trim())).toEqual([task]);
-      expect(parsed.fileArgs).toEqual([]);
-      expect(parsed.model).toBe('faux/model');
-      expect(parsed.extensions).toEqual(['/ext/index.js', 'builtin:mcp', 'builtin:tool-search']);
-      expect(parsed.appendSystemPrompt?.map((file) => fs.readFileSync(file, 'utf8'))).toEqual(['- Be careful.']);
-      expect(parsed.diagnostics).toEqual([]);
-    }
+    const parsed = parseArgs(buildAgentArgs(profile, 'faux/model', '/ext/index.js', tmp()));
+    expect(parsed.mode).toBe('rpc');
+    expect(parsed.messages).toEqual([]);
+    expect(parsed.fileArgs).toEqual([]);
+    expect(parsed.model).toBe('faux/model');
+    expect(parsed.extensions).toEqual(['/ext/index.js', 'builtin:mcp', 'builtin:tool-search']);
+    expect(parsed.appendSystemPrompt?.map((file) => fs.readFileSync(file, 'utf8'))).toEqual(['- Be careful.']);
+    expect(parsed.diagnostics).toEqual([]);
   });
 
   it('loads Pi\'s built-in MCP in children unless the profile turns MCP off', () => {
-    const args = buildAgentArgs('X', { name: 'plain', description: '', prompt: '', mcp: false }, undefined, '/ext/index.js');
+    const args = buildAgentArgs({ name: 'plain', description: '', prompt: '', mcp: false }, undefined, '/ext/index.js');
     expect(args).not.toContain('builtin:mcp');
     expect(args).not.toContain('builtin:tool-search');
   });
@@ -123,9 +181,9 @@ describe('subagents', () => {
   it('maps excludeTools frontmatter to --exclude-tools', () => {
     const profile = parseProfile('reviewer', '---\nexcludeTools: file\n---\nReview.');
     expect(profile.excludeTools).toBe('file');
-    const args = buildAgentArgs('Review X', profile, undefined, '/ext/index.js', tmp());
+    const args = buildAgentArgs(profile, undefined, '/ext/index.js', tmp());
     expect(args).toEqual([
-      '--mode', 'json', '--no-session', '--no-extensions', '-e', '/ext/index.js', '-e', 'builtin:mcp', '-e', 'builtin:tool-search', '--exclude-tools', 'file,edit,write', '--append-system-prompt', args[args.indexOf('--append-system-prompt') + 1], '--', 'Review X',
+      '--mode', 'rpc', '--no-session', '--no-extensions', '-e', '/ext/index.js', '-e', 'builtin:mcp', '-e', 'builtin:tool-search', '--exclude-tools', 'file,edit,write', '--append-system-prompt', args[args.indexOf('--append-system-prompt') + 1],
     ]);
   });
 
@@ -179,20 +237,41 @@ describe('subagents', () => {
     expect(profile?.prompt).not.toContain('cua');
     expect(subagentProcessEnv(profile, { PATH: '/usr/bin' })).toMatchObject({ OCTOCODE_SUBAGENT: '1', OCTOCODE_BROWSER_VISIBLE: '1', PATH: '/usr/bin' });
     expect(subagentProcessEnv(undefined, {})).not.toHaveProperty('OCTOCODE_BROWSER_VISIBLE');
-    expect(buildAgentArgs('Open https://example.com', profile, undefined, '/ext/index.js')).toContain('--exclude-tools');
+    expect(buildAgentArgs(profile, undefined, '/ext/index.js')).toContain('--exclude-tools');
   });
 
   it('caps running subagents at OCTOCODE_MAX_SUBAGENTS, default 3', () => {
     expect(maxSubagents({})).toBe(3);
     expect(maxSubagents({ OCTOCODE_MAX_SUBAGENTS: '5' })).toBe(5);
     for (const bad of ['0', '-1', '2.5', 'many', '']) expect(maxSubagents({ OCTOCODE_MAX_SUBAGENTS: bad }), bad).toBe(3);
-    expect(subagentLimitError(['a', 'b'], 3)).toBeUndefined();
     const refusal = subagentLimitError(['a', 'b', 'c'], 3);
     expect(refusal).toContain('3 subagents are already running (a, b, c)');
     expect(refusal).toContain('OCTOCODE_MAX_SUBAGENTS');
   });
 
-  it('caps the task, offers isolate, and registers /agents with kill and merge', async () => {
+  it('makes a call past the limit wait for a slot, first come first served, and lets it give up', async () => {
+    const slots = new Slots(() => 1);
+    await slots.take(undefined);
+    const waits: number[] = [];
+    const order: string[] = [];
+    const second = slots.take(undefined, (running) => waits.push(running)).then(() => order.push('second'));
+    const cancelled = new AbortController();
+    const third = slots.take(cancelled.signal).then(() => order.push('third'), (error: Error) => order.push(error.message));
+    const fourth = slots.take(undefined).then(() => order.push('fourth'));
+    expect(waits).toEqual([1]);
+    expect(slots.tryTake()).toBe(false);
+    cancelled.abort();
+    await third;
+    slots.give();
+    await second;
+    slots.give();
+    await fourth;
+    expect(order).toEqual(['Cancelled while waiting for a subagent slot.', 'second', 'fourth']);
+    slots.give();
+    expect(slots.tryTake()).toBe(true);
+  });
+
+  it('takes any task length, offers isolate, and registers /agents with kill and merge', async () => {
     const tools: Array<{ name: string; parameters: { properties: Record<string, { maxLength?: number; description?: string }> } }> = [];
     const commands = new Map<string, { handler: (args: string, ctx: unknown) => Promise<void> }>();
     const pi = { registerTool: (tool: never) => tools.push(tool), registerCommand: (name: string, command: never) => commands.set(name, command), registerMessageRenderer: () => undefined, on: () => undefined, sendMessage: () => undefined } as never;
@@ -202,10 +281,10 @@ describe('subagents', () => {
     subcommands.add('agents', control.command);
     subcommands.alias(pi, 'agents');
     const agent = tools.find((tool) => tool.name === 'agent')!;
-    expect(agent.parameters.properties['task']?.maxLength).toBe(MAX_TASK_CHARS);
+    expect(agent.parameters.properties['task']?.maxLength).toBeUndefined();
     expect(agent.parameters.properties).toHaveProperty('isolate');
     // The parameter owns the collaborate guidance; the prompt does not repeat it.
-    expect(agent.parameters.properties['collaborate']?.description).toMatch(/subagents on one goal teammates that coordinate directly/);
+    expect(agent.parameters.properties['collaborate']?.description).toMatch(/subagents that must coordinate directly/);
     expect(agent.parameters.properties['model']?.description).toMatch(/provider\/id, bare id or purpose \(small, medium\).*:thinking.*Refused when unavailable/);
     expect([...commands.keys()]).toEqual(['agents']);
     const notes: string[] = [];

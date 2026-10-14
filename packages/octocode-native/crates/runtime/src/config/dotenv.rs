@@ -1,13 +1,14 @@
 use super::types::{
-    CONFIG_FIELDS, ENV_TOKEN_VARS, EnvApplyReport, HOME_TRUSTED_ENV_KEYS, PROTECTED_KEYS,
-    WORKSPACE_NARROW_ONLY,
+    ENV_TOKEN_VARS, EnvApplyReport, HOME_TRUSTED_ENV_KEYS, PROTECTED_KEYS, WORKSPACE_NARROW_ONLY,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
-/// Present-but-blank in the process env disables clasify and every
-/// classification feature: no home `.env`, config-file, or vendor-key fallback
-/// may refill it.
-pub const CLASSIFICATION_KILL_SWITCH: &str = "OCTOCODE_CLASSIFICATION_API";
+/// The classification credential's variable: present-but-blank in the
+/// process env, it disables clasify and every classification feature, and no
+/// home `.env`, config-file, or vendor-key fallback may refill it.
+pub(super) fn is_classification_kill_switch(key: &str) -> bool {
+    super::field::CLASSIFICATION_API.env_name() == Some(key)
+}
 
 /// Home-trusted switches stay home-trusted (a checked-out repository must not
 /// widen where octocode writes), but a workspace may set the narrowing value
@@ -62,42 +63,30 @@ pub fn apply_env(
         keys: map.keys().cloned().collect(),
         ..Default::default()
     };
-    // Capture source decisions before mutating target: same-source aliases
-    // retain their declared priority; lower-source aliases cannot mask them.
-    let groups = std::iter::once(ENV_TOKEN_VARS.to_vec()).chain(
-        CONFIG_FIELDS
-            .iter()
-            .filter(|field| field.credential && field.env.len() > 1)
-            .map(|field| field.env.iter().map(|binding| binding.name).collect()),
-    );
-    let mut shadowed = BTreeSet::new();
-    for group in groups {
-        let process_selected = group.iter().any(|key| {
-            target
-                .get(*key)
-                .is_some_and(|value| !value.trim().is_empty())
-                || (*key == CLASSIFICATION_KILL_SWITCH && target.contains_key(*key))
-        });
-        let workspace_selected = group.iter().any(|key| {
-            report.sources.get(*key).map(String::as_str) == Some("project")
-                && map.get(*key).is_some_and(|value| !value.trim().is_empty())
-        });
-        for key in group {
-            if process_selected
-                || (workspace_selected
-                    && report.sources.get(key).map(String::as_str) != Some("project"))
-            {
-                shadowed.insert(key);
-            }
-        }
-    }
+    // Capture source decisions before mutating target: the GitHub token
+    // variables keep their declared priority within a source, and a lower
+    // source's token cannot mask a higher source's.
+    let from_project = |key: &str| report.sources.get(key).map(String::as_str) == Some("project");
+    let process_selected = ENV_TOKEN_VARS.iter().any(|key| {
+        target
+            .get(*key)
+            .is_some_and(|value| !value.trim().is_empty())
+    });
+    let workspace_selected = ENV_TOKEN_VARS.iter().any(|key| {
+        from_project(key) && map.get(*key).is_some_and(|value| !value.trim().is_empty())
+    });
+    let shadowed: BTreeSet<&str> = ENV_TOKEN_VARS
+        .iter()
+        .copied()
+        .filter(|key| process_selected || (workspace_selected && !from_project(key)))
+        .collect();
     for (key, value) in map {
         let workspace = report.sources.get(key).map(String::as_str) == Some("project");
         if !dotenv_may_set(key, value, workspace) {
             report.skipped_protected.push(key.clone());
         } else if target.get(key).is_some_and(|v| !v.trim().is_empty())
             || shadowed.contains(key.as_str())
-            || (key == CLASSIFICATION_KILL_SWITCH && target.contains_key(key))
+            || (is_classification_kill_switch(key) && target.contains_key(key))
         {
             report.skipped_existing.push(key.clone());
         } else {

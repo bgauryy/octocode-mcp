@@ -244,12 +244,6 @@ impl ScanCuts {
                 }
             ));
         }
-        if self.files_skipped {
-            warnings.push(
-                "skipped files are not in the graph (coverage.diagnostics names each file and why); no continuation reaches them, so this limit is terminal"
-                    .to_owned(),
-            );
-        }
         if self.edge_cap {
             warnings.push(format!(
                 "edge collection stopped at the {}-edge cap — graph results are partial; more files cannot lift it, so narrow path or add exclude",
@@ -427,30 +421,73 @@ pub(super) fn read_lead(
     base: &Map<String, Value>,
 ) -> Option<Value> {
     let top = base.get("nodes")?.as_array()?.first()?;
-    let (importer, line) = match q.analysis() {
-        GraphAnalysis::Dependents => (top["file"].as_str()?, top["importLine"].as_u64()?),
-        GraphAnalysis::Dependencies => (top["via"].as_str()?, top["importLine"].as_u64()?),
+    let (importer, imported, line) = match q.analysis() {
+        GraphAnalysis::Dependents => (
+            top["file"].as_str()?,
+            top["via"].as_str()?,
+            top["importLine"].as_u64()?,
+        ),
+        GraphAnalysis::Dependencies => (
+            top["via"].as_str()?,
+            top["file"].as_str()?,
+            top["importLine"].as_u64()?,
+        ),
         GraphAnalysis::Path => {
             let edge = top["edges"].as_array()?.first()?;
-            (edge["from"].as_str()?, edge["importLine"].as_u64()?)
+            (
+                edge["from"].as_str()?,
+                edge["to"].as_str()?,
+                edge["importLine"].as_u64()?,
+            )
         }
         GraphAnalysis::Cycles => {
             let edge = top["cycleEdges"].as_array()?.first()?;
             let from = edge["from"].as_str()?;
-            let line = first_import_line(b, from, edge["to"].as_str()?)?;
-            (from, u64::from(line))
+            let to = edge["to"].as_str()?;
+            (from, to, u64::from(first_import_line(b, from, to)?))
         }
         _ => return None,
     };
-    let path = b.root.join(importer).to_string_lossy().into_owned();
+    let path = b.root.join(importer);
+    let end = statement_end(b, &path, importer, imported, line).unwrap_or(line);
+    let path = path.to_string_lossy().into_owned();
     Some(
         Continuation::new(
             ToolId::LocalFetch,
-            json!({"path": path, "ranges": [format!("{line}-{line}")]}),
+            json!({"path": path, "ranges": [format!("{line}-{end}")]}),
         )
         .confidence("high")
         .build(),
     )
+}
+/// Last line of the import statement at `line` in `importer` that links
+/// `imported`: the first line from `line` on that holds its quoted
+/// specifier (a multi-line `import { … } from './x'` ends there). `None`
+/// when the specifier is unquoted or not found within the statement bound.
+fn statement_end(
+    b: &BuiltGraph,
+    path: &Path,
+    importer: &str,
+    imported: &str,
+    line: u64,
+) -> Option<u64> {
+    const STATEMENT_LINES: usize = 200;
+    let start = u32::try_from(line).ok()?;
+    let specifier = &b
+        .facts
+        .get(importer)?
+        .imports
+        .iter()
+        .find(|import| import.line == start && import.target.as_deref() == Some(imported))?
+        .specifier;
+    let text = std::fs::read_to_string(path).ok()?;
+    let quoted = ['\'', '"', '`'].map(|quote| format!("{quote}{specifier}{quote}"));
+    text.lines()
+        .skip(usize::try_from(line).ok()?.checked_sub(1)?)
+        .take(STATEMENT_LINES)
+        .position(|text| quoted.iter().any(|quoted| text.contains(quoted.as_str())))
+        .and_then(|offset| u64::try_from(offset).ok())
+        .map(|offset| line + offset)
 }
 pub(super) fn clean_query(q: &AstTopologyQuery) -> Value {
     let mut v = serde_json::to_value(q).unwrap_or_else(|_| json!({}));

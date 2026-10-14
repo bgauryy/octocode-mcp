@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { copiedElision } from '../src/files/tool.js';
-import { capChars, elisionMarkers } from '../src/shared/util.js';
+import { capChars, capOutput, elisionMarkers } from '../src/shared/util.js';
+import { capOutputToFile } from '../src/shared/spill.js';
 
 const marker = elisionMarkers(capChars('z'.repeat(100), 10, 'use a range'))[0]!;
 
@@ -23,5 +24,25 @@ describe('elision markers', () => {
     expect(copiedElision({ type: 'edit', edits: [{ oldText: `k ${marker}`, newText: `k2 ${marker}` }] }, `k ${marker}`)).toBeUndefined();
     expect(copiedElision({ type: 'delete' }, '')).toBeUndefined();
     expect(copiedElision({ type: 'write', content: 'plain' }, '')).toBeUndefined();
+  });
+
+  it('match the notes of a spilled result, a trimmed result and a file read back after compaction', () => {
+    const page = Array.from({ length: 3_000 }, (_, i) => `row ${i}`).join('\n');
+    const spilled = capOutputToFile(page, { label: 'web', maxBytes: 4_096 });
+    const markers = elisionMarkers(spilled);
+    expect(markers).toHaveLength(2);
+    expect(markers[0]).toMatch(/^\[… \d+ lines omitted …\]$/);
+    expect(markers[1]).toMatch(/^\[Output trimmed: showing \d+ of 3000 lines/);
+    expect(elisionMarkers('[… 2.0KB omitted …]')).toHaveLength(1);
+    expect(elisionMarkers(capOutput(page, 1_024))).toHaveLength(1);
+    expect(elisionMarkers('x\n[… shown lines 1500–1900 of 3000, from where you last read or changed it; read the file with an offset for the rest]')).toHaveLength(1);
+    expect(elisionMarkers('[Output trimmed] and [… 3 lines]')).toEqual([]);
+  });
+
+  it('refuses writing a spilled preview (a web page fetched over 50 KB) as if it were the content', () => {
+    const page = Array.from({ length: 3_000 }, (_, i) => `row ${i}`).join('\n');
+    const preview = capOutputToFile(page, { label: 'web', maxBytes: 4_096 });
+    expect(copiedElision({ type: 'write', content: preview }, '')).toMatch(/^\[… \d+ lines omitted …\]$/);
+    expect(copiedElision({ type: 'write', content: preview.replace(/\[… \d+ lines omitted …\]/, '') }, '')).toMatch(/^\[Output trimmed: /);
   });
 });

@@ -98,12 +98,10 @@
           "default": "https://api.github.com",
           "description": "GitHub REST API root. GitHub Enterprise commonly uses /api/v3.",
           "env": {
-            "GITHUB_API_URL": {
-              "priority": 0,
-              "dotenv": "home",
-              "normalize": "trim",
-              "invalid": "skip"
-            }
+            "name": "GITHUB_API_URL",
+            "dotenv": "home",
+            "normalize": "trim",
+            "invalid": "skip"
           }
         },
         "graphqlEnabled": {
@@ -111,9 +109,7 @@
           "default": true,
           "description": "Use GitHub GraphQL where supported; false forces REST-only access.",
           "env": {
-            "OCTOCODE_GITHUB_GRAPHQL": {
-              "priority": 0
-            }
+            "name": "OCTOCODE_GITHUB_GRAPHQL"
           }
         }
       }
@@ -128,9 +124,7 @@
           "default": true,
           "description": "Enable local filesystem tools on every runtime surface.",
           "env": {
-            "OCTOCODE_ENABLE_LOCAL": {
-              "priority": 0
-            }
+            "name": "OCTOCODE_ENABLE_LOCAL"
           }
         },
         "beta": {
@@ -138,10 +132,8 @@
           "default": false,
           "description": "Enable beta features and tools; off by default on every surface. `octocode schema` reports which tools the gate withholds.",
           "env": {
-            "OCTOCODE_BETA": {
-              "priority": 0,
-              "dotenv": "home"
-            }
+            "name": "OCTOCODE_BETA",
+            "dotenv": "home"
           }
         },
         "allowedPaths": {
@@ -150,10 +142,8 @@
           "itemFormat": "path",
           "description": "Extra absolute or home-relative roots added to the allowed roots (workspace root and OCTOCODE_HOME).",
           "env": {
-            "ALLOWED_PATHS": {
-              "priority": 0,
-              "dotenv": "home"
-            }
+            "name": "ALLOWED_PATHS",
+            "dotenv": "home"
           },
           "notes": "The environment value is a comma-separated list."
         },
@@ -163,11 +153,9 @@
           "displayDefault": "process.cwd()",
           "description": "Optional absolute or home-relative workspace root.",
           "env": {
-            "WORKSPACE_ROOT": {
-              "priority": 0,
-              "dotenv": "home",
-              "normalize": "trim"
-            }
+            "name": "WORKSPACE_ROOT",
+            "dotenv": "home",
+            "normalize": "trim"
           }
         }
       }
@@ -182,9 +170,7 @@
           "default": null,
           "description": "Strict tool allowlist replacing the default tool set.",
           "env": {
-            "TOOLS_TO_RUN": {
-              "priority": 0
-            }
+            "name": "TOOLS_TO_RUN"
           }
         },
         "disabled": {
@@ -192,9 +178,7 @@
           "default": null,
           "description": "Tools removed from the default tool set.",
           "env": {
-            "DISABLE_TOOLS": {
-              "priority": 0
-            }
+            "name": "DISABLE_TOOLS"
           }
         }
       }
@@ -209,9 +193,7 @@
           "default": null,
           "description": "Available tools left out of tools/list; one run({tool, query}) tool executes them and next/hints leads that name them.",
           "env": {
-            "OCTOCODE_DEFER_TOOLS": {
-              "priority": 0
-            }
+            "name": "OCTOCODE_DEFER_TOOLS"
           }
         }
       }
@@ -230,9 +212,7 @@
           "defaultOffset": 25000,
           "description": "Request timeout in milliseconds.",
           "env": {
-            "REQUEST_TIMEOUT": {
-              "priority": 0
-            }
+            "name": "REQUEST_TIMEOUT"
           }
         },
         "maxRetries": {
@@ -244,9 +224,7 @@
           "defaultOffset": 3,
           "description": "Maximum retries after a failed request.",
           "env": {
-            "MAX_RETRIES": {
-              "priority": 0
-            }
+            "name": "MAX_RETRIES"
           }
         },
         "maxRateLimitWait": {
@@ -257,9 +235,7 @@
           "description": "Longest GitHub rate-limit wait in milliseconds (primary or secondary limit, code-search window) before a call fails with retryAfter.",
           "notes": "Waiting does not count against network.timeout; the tool call's own deadline still bounds it. The default stays under the 60 s tool-call timeout some MCP hosts apply.",
           "env": {
-            "OCTOCODE_MAX_RATE_LIMIT_WAIT": {
-              "priority": 0
-            }
+            "name": "OCTOCODE_MAX_RATE_LIMIT_WAIT"
           }
         },
         "allowPrivateRegistry": {
@@ -267,10 +243,8 @@
           "default": false,
           "description": "Allow private, loopback, or link-local artifact registries.",
           "env": {
-            "OCTOCODE_ALLOW_PRIVATE_REGISTRY": {
-              "priority": 0,
-              "dotenv": "home"
-            }
+            "name": "OCTOCODE_ALLOW_PRIVATE_REGISTRY",
+            "dotenv": "home"
           },
           "notes": "Security-sensitive SSRF escape hatch; opt in only for trusted enterprise registries."
         }
@@ -286,11 +260,9 @@
           "default": null,
           "description": "Optional path to a custom lsp-servers.json.",
           "env": {
-            "OCTOCODE_LSP_CONFIG": {
-              "priority": 0,
-              "dotenv": "home",
-              "normalize": "trim"
-            }
+            "name": "OCTOCODE_LSP_CONFIG",
+            "dotenv": "home",
+            "normalize": "trim"
           }
         },
         "autoInstall": {
@@ -302,12 +274,10 @@
           ],
           "description": "Whether `octocode lsp-server install` may download a managed language server: prompt (ask), off, or auto.",
           "env": {
-            "OCTOCODE_LSP_AUTO_INSTALL": {
-              "priority": 0,
-              "dotenv": "home",
-              "normalize": "lower",
-              "invalid": "skip"
-            }
+            "name": "OCTOCODE_LSP_AUTO_INSTALL",
+            "dotenv": "home",
+            "normalize": "lower",
+            "invalid": "skip"
           }
         },
         "cacheDir": {
@@ -315,11 +285,9 @@
           "default": null,
           "description": "Directory for managed language-server installs; default <octocode home>/lsp.",
           "env": {
-            "OCTOCODE_LSP_CACHE_DIR": {
-              "priority": 0,
-              "dotenv": "home",
-              "normalize": "trim"
-            }
+            "name": "OCTOCODE_LSP_CACHE_DIR",
+            "dotenv": "home",
+            "normalize": "trim"
           }
         },
         "maxMemoryMb": {
@@ -327,11 +295,9 @@
           "default": null,
           "description": "Resident-memory cap per language server process tree, in MiB (a non-negative integer). Unset: 25% of host RAM, between 4096 and 8192. 0 disables the cap. A server over the cap is stopped and lspSearch reports serverCrashed (not retryable).",
           "env": {
-            "OCTOCODE_LSP_MAX_MEMORY_MB": {
-              "priority": 0,
-              "dotenv": "home",
-              "normalize": "trim"
-            }
+            "name": "OCTOCODE_LSP_MAX_MEMORY_MB",
+            "dotenv": "home",
+            "normalize": "trim"
           }
         },
         "trustProjectConfig": {
@@ -339,10 +305,8 @@
           "default": false,
           "description": "Trust a project .octocode/lsp-servers.json. Security-sensitive: a trusted project config can launch server binaries.",
           "env": {
-            "OCTOCODE_TRUST_PROJECT_LSP_CONFIG": {
-              "priority": 0,
-              "dotenv": "home"
-            }
+            "name": "OCTOCODE_TRUST_PROJECT_LSP_CONFIG",
+            "dotenv": "home"
           }
         },
         "prewarm": {
@@ -354,11 +318,9 @@
           ],
           "description": "Language-server prewarm: targeted starts the server an offered lspSearch call names; all also warms the file a read or search names; off disables it.",
           "env": {
-            "OCTOCODE_LSP_PREWARM": {
-              "priority": 0,
-              "normalize": "lower",
-              "invalid": "skip"
-            }
+            "name": "OCTOCODE_LSP_PREWARM",
+            "normalize": "lower",
+            "invalid": "skip"
           }
         }
       }
@@ -379,11 +341,9 @@
           ],
           "description": "Encoding of rendered text content (the MCP text channel): yaml or json. Structured content and CLI stdout are always JSON.",
           "env": {
-            "OCTOCODE_OUTPUT_FORMAT": {
-              "priority": 0,
-              "normalize": "lower",
-              "invalid": "default"
-            }
+            "name": "OCTOCODE_OUTPUT_FORMAT",
+            "normalize": "lower",
+            "invalid": "default"
           }
         },
         "redactEmails": {
@@ -391,9 +351,7 @@
           "default": false,
           "description": "Mask email addresses such as GitHub commit authors.",
           "env": {
-            "OCTOCODE_REDACT_EMAILS": {
-              "priority": 0
-            }
+            "name": "OCTOCODE_REDACT_EMAILS"
           }
         }
       }
@@ -413,9 +371,7 @@
           "defaultOffset": 49000,
           "description": "Automatic pagination character budget.",
           "env": {
-            "OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH": {
-              "priority": 0
-            }
+            "name": "OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH"
           }
         }
       }
@@ -437,13 +393,11 @@
           ],
           "description": "Whether caches and runtime state may persist on disk.",
           "env": {
-            "OCTOCODE_STORAGE_MODE": {
-              "priority": 0,
-              "dotenv": "home",
-              "normalize": "lower",
-              "invalid": "skip",
-              "workspaceNarrowsTo": "memory"
-            }
+            "name": "OCTOCODE_STORAGE_MODE",
+            "dotenv": "home",
+            "normalize": "lower",
+            "invalid": "skip",
+            "workspaceNarrowsTo": "memory"
           }
         },
         "stats": {
@@ -451,9 +405,7 @@
           "default": false,
           "description": "Write stats.json on flush; stats remain in memory either way.",
           "env": {
-            "OCTOCODE_ENABLE_STATS": {
-              "priority": 0
-            }
+            "name": "OCTOCODE_ENABLE_STATS"
           }
         }
       }
@@ -472,9 +424,7 @@
           "defaultOffset": 86340000,
           "description": "Milliseconds a ghCloneRepo checkout stays fresh before it is re-fetched.",
           "env": {
-            "OCTOCODE_CACHE_TTL_MS": {
-              "priority": 0
-            }
+            "name": "OCTOCODE_CACHE_TTL_MS"
           }
         },
         "maxSize": {
@@ -485,9 +435,7 @@
           "defaultOffset": 2146435072,
           "description": "Byte cap for the on-disk ghCloneRepo cache; least-recently-used checkouts are evicted above it.",
           "env": {
-            "OCTOCODE_MAX_CACHE_SIZE": {
-              "priority": 0
-            }
+            "name": "OCTOCODE_MAX_CACHE_SIZE"
           }
         },
         "maxClones": {
@@ -498,9 +446,7 @@
           "defaultOffset": 49,
           "description": "Maximum repositories the ghCloneRepo cache keeps.",
           "env": {
-            "OCTOCODE_MAX_CLONES": {
-              "priority": 0
-            }
+            "name": "OCTOCODE_MAX_CLONES"
           }
         }
       }
@@ -515,11 +461,9 @@
           "default": false,
           "description": "Enable goal-based ordering on supported reads. Requires the classification API credential, independently of the public clasify tool.",
           "env": {
-            "OCTOCODE_RANKING_ENABLED": {
-              "priority": 0,
-              "dotenv": "home",
-              "workspaceNarrowsTo": "false"
-            }
+            "name": "OCTOCODE_RANKING_ENABLED",
+            "dotenv": "home",
+            "workspaceNarrowsTo": "false"
           }
         },
         "maxCandidates": {
@@ -529,7 +473,7 @@
           "defaultOffset": 63,
           "description": "Maximum complete evidence units classified per ranking operation; other units keep their original order.",
           "env": {
-            "OCTOCODE_RANKING_MAX_CANDIDATES": { "priority": 0 }
+            "name": "OCTOCODE_RANKING_MAX_CANDIDATES"
           }
         },
         "maxChars": {
@@ -539,7 +483,7 @@
           "defaultOffset": 130048,
           "description": "Maximum evidence characters sent for one ranking operation.",
           "env": {
-            "OCTOCODE_RANKING_MAX_CHARS": { "priority": 0 }
+            "name": "OCTOCODE_RANKING_MAX_CHARS"
           }
         },
         "timeoutMs": {
@@ -549,7 +493,7 @@
           "defaultOffset": 9900,
           "description": "Total ranking deadline in milliseconds, bounded by the enclosing request deadline.",
           "env": {
-            "OCTOCODE_RANKING_TIMEOUT_MS": { "priority": 0 }
+            "name": "OCTOCODE_RANKING_TIMEOUT_MS"
           }
         }
       }
@@ -569,12 +513,10 @@
           ],
           "description": "Classification vendor. Per-vendor defaults (host, model, endpoint) are built in.",
           "env": {
-            "OCTOCODE_CLASSIFICATION_TYPE": {
-              "priority": 0,
-              "dotenv": "all",
-              "normalize": "trim",
-              "invalid": "skip"
-            }
+            "name": "OCTOCODE_CLASSIFICATION_TYPE",
+            "dotenv": "all",
+            "normalize": "trim",
+            "invalid": "skip"
           },
           "displayDefault": "jev"
         },
@@ -584,11 +526,9 @@
           "credential": true,
           "description": "Classification provider API key, required for goals ranking and the beta clasify tool.",
           "env": {
-            "OCTOCODE_CLASSIFICATION_API": {
-              "priority": 0,
-              "dotenv": "all",
-              "normalize": "trim"
-            }
+            "name": "OCTOCODE_CLASSIFICATION_API",
+            "dotenv": "all",
+            "normalize": "trim"
           },
           "displayDefault": "unset",
           "notes": "Credential values are omitted from resolved configuration and diagnostics."
@@ -599,11 +539,9 @@
           "credential": true,
           "description": "Optional override of the selected vendor's default API root.",
           "env": {
-            "OCTOCODE_CLASSIFICATION_API_HOST": {
-              "priority": 0,
-              "dotenv": "home",
-              "normalize": "trim"
-            }
+            "name": "OCTOCODE_CLASSIFICATION_API_HOST",
+            "dotenv": "home",
+            "normalize": "trim"
           },
           "displayDefault": "vendor default (jev: https://api.typesafe.ai)",
           "notes": "Requires HTTP or HTTPS at config validation; provider policy may require HTTPS except loopback."
@@ -617,9 +555,7 @@
           "defaultOffset": 9,
           "description": "Process-wide maximum in-flight classification provider requests per provider endpoint.",
           "env": {
-            "OCTOCODE_CLASSIFICATION_CONCURRENCY": {
-              "priority": 0
-            }
+            "name": "OCTOCODE_CLASSIFICATION_CONCURRENCY"
           }
         }
       }

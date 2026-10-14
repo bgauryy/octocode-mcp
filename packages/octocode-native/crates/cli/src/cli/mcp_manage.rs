@@ -233,16 +233,10 @@ pub(super) fn projection(client: &ClientSpec, server: Option<&Value>) -> Value {
     } else {
         command
     };
-    let runner = command
+    let method = command
         .and_then(Value::as_str)
-        .and_then(|value| Path::new(value).file_name())
-        .and_then(|value| value.to_str());
-    let method = match runner {
-        Some("npx" | "npx.cmd") => Some("npx"),
-        Some("bunx" | "bunx.exe") => Some("bunx"),
-        Some("pnpm" | "pnpm.cmd") => Some("pnpm"),
-        _ => None,
-    };
+        .and_then(Method::of_command)
+        .map(Method::name);
     json!({"method":method,"customCommand":method.is_none(),"enabled":if client.enable.is_some() { Some(!disabled(server)) } else { None },"envKeys":env_keys})
 }
 
@@ -336,14 +330,14 @@ fn update(target: &Target, request: &Value, remove: bool) -> Result<Value, Manag
         }
         let mut server = entry_at(target.client, &root, &target.keys)
             .cloned()
-            .unwrap_or_else(|| default_entry(target.client, "npx"));
+            .unwrap_or_else(|| default_entry(target.client, Method::Npx));
         if !server.is_object() {
             return Err("Octocode entry must be an object; remove the invalid entry first.".into());
         }
         if let Some(method) = patch.get("method") {
             let method = method
                 .as_str()
-                .filter(|method| matches!(*method, "npx" | "bunx" | "pnpm"))
+                .and_then(Method::from_name)
                 .ok_or("Unsupported installation method.")?;
             let generated = default_entry(target.client, method);
             for key in ["command", "cmd", "args", "type"] {
@@ -418,6 +412,51 @@ fn update(target: &Target, request: &Value, remove: bool) -> Result<Value, Manag
     Ok(result)
 }
 
+/// The package runner an installed server starts with.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, clap::ValueEnum)]
+pub(super) enum Method {
+    #[default]
+    Npx,
+    Bunx,
+    Pnpm,
+}
+
+impl Method {
+    const ALL: [Self; 3] = [Self::Npx, Self::Bunx, Self::Pnpm];
+
+    pub(super) const fn name(self) -> &'static str {
+        match self {
+            Self::Npx => "npx",
+            Self::Bunx => "bunx",
+            Self::Pnpm => "pnpm",
+        }
+    }
+
+    pub(super) fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|method| method.name() == name)
+    }
+
+    /// The runner a configured command starts: its file name, with the
+    /// Windows shim suffix (`npx.cmd`, `bunx.exe`, `pnpm.cmd`) accepted.
+    pub(super) fn of_command(command: &str) -> Option<Self> {
+        let runner = Path::new(command).file_name()?.to_str()?;
+        let runner = runner
+            .strip_suffix(".cmd")
+            .or_else(|| runner.strip_suffix(".exe"))
+            .unwrap_or(runner);
+        Self::from_name(runner)
+    }
+
+    /// The command and arguments that run the published server.
+    const fn command(self) -> (&'static str, &'static [&'static str]) {
+        match self {
+            Self::Npx => ("npx", &["-y", "octocode-mcp@latest"]),
+            Self::Bunx => ("bunx", &["octocode-mcp@latest"]),
+            Self::Pnpm => ("pnpm", &["dlx", "octocode-mcp@latest"]),
+        }
+    }
+}
+
 /// Format-independent description of the octocode MCP server entry.
 pub(super) struct ServerSpec {
     pub command: &'static str,
@@ -426,14 +465,9 @@ pub(super) struct ServerSpec {
 }
 
 impl ServerSpec {
-    /// The server run by `method` (`npx`, `bunx`, or `pnpm`; `npx` otherwise),
-    /// with no env.
-    pub(super) fn new(method: &str) -> Self {
-        let (command, args): (&str, &[&str]) = match method {
-            "bunx" => ("bunx", &["octocode-mcp@latest"]),
-            "pnpm" => ("pnpm", &["dlx", "octocode-mcp@latest"]),
-            _ => ("npx", &["-y", "octocode-mcp@latest"]),
-        };
+    /// The server `method` runs, with no env.
+    pub(super) fn new(method: Method) -> Self {
+        let (command, args) = method.command();
         Self {
             command,
             args,
@@ -469,7 +503,7 @@ pub(super) fn server_entry(shape: EntryShape, spec: &ServerSpec) -> Value {
     server
 }
 
-pub(super) fn default_entry(client: &ClientSpec, method: &str) -> Value {
+pub(super) fn default_entry(client: &ClientSpec, method: Method) -> Value {
     server_entry(client.shape, &ServerSpec::new(method))
 }
 
@@ -916,7 +950,7 @@ mod tests {
             render_toml(
                 text,
                 &["mcp_servers".into(), "octocode".into()],
-                Some(&default_entry(spec("codex"), "npx"))
+                Some(&default_entry(spec("codex"), Method::Npx))
             )
             .is_err()
         );
@@ -925,7 +959,7 @@ mod tests {
             render_yaml(
                 text,
                 &["extensions".into(), "octocode".into()],
-                Some(&default_entry(spec("goose"), "npx"))
+                Some(&default_entry(spec("goose"), Method::Npx))
             )
             .is_err()
         );
@@ -1004,8 +1038,13 @@ mod tests {
             "octocode".into(),
         ];
         let client = spec("claude-code");
-        let rendered = render_document(client, text, &keys, Some(&default_entry(client, "npx")))
-            .expect("render");
+        let rendered = render_document(
+            client,
+            text,
+            &keys,
+            Some(&default_entry(client, Method::Npx)),
+        )
+        .expect("render");
         let root = parse_document(ConfigFormat::Json, &rendered).expect("parse");
         assert_eq!(root["projects"]["/a"]["theme"], "dark");
         assert_eq!(
@@ -1117,7 +1156,7 @@ mod tests {
         let error = render_toml(
             toml,
             &["mcp_servers".into(), "octocode".into()],
-            Some(&default_entry(spec("codex"), "npx")),
+            Some(&default_entry(spec("codex"), Method::Npx)),
         )
         .expect_err("read only");
         assert!(error.contains("Inline comments"));
@@ -1125,7 +1164,7 @@ mod tests {
         let error = render_yaml(
             yaml,
             &["extensions".into(), "octocode".into()],
-            Some(&default_entry(spec("goose"), "npx")),
+            Some(&default_entry(spec("goose"), Method::Npx)),
         )
         .expect_err("read only");
         assert!(error.contains("Inline comments"));

@@ -398,7 +398,7 @@ try {
         readFileSync(
           join(
             WORK,
-            '.octocode/tmp/chrome-devtools/session-meta',
+            '.octocode/octocode-chrome-devtools/tmp/session-meta',
             `port-${CDP_PORT}`,
             'run-history.json'
           )
@@ -788,7 +788,7 @@ export async function run(cdp) {
       readFileSync(
         join(
           WORK,
-          '.octocode/tmp/chrome-devtools/session-meta',
+          '.octocode/octocode-chrome-devtools/tmp/session-meta',
           'port-' + CDP_PORT,
           'session-metadata.json'
         ),
@@ -810,7 +810,7 @@ export async function run(cdp) {
       readFileSync(
         join(
           WORK,
-          '.octocode/tmp/chrome-devtools/session-meta',
+          '.octocode/octocode-chrome-devtools/tmp/session-meta',
           'port-' + CDP_PORT,
           'session-metadata.json'
         ),

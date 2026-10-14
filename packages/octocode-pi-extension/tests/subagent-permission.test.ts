@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { NEEDS_APPROVAL, Permission } from '../src/permission/ask.js';
 import { runSubagent } from '../src/subagents/process.js';
 import { doneSummary } from '../src/subagents/render.js';
@@ -34,7 +34,7 @@ afterAll(() => {
 describe("a child's refused actions", () => {
   it('are reported to the parent one by one, apart from ordinary tool failures', async () => {
     const denials: boolean[] = [];
-    await runSubagent(['denied'], tmp(), undefined, { id: 'general-000001' }, undefined, ({ denied }) => {
+    await runSubagent('denied', [], tmp(), undefined, { id: 'general-000001' }, undefined, ({ denied }) => {
       if (denied) denials.push(true);
     });
     expect(denials).toHaveLength(2);
@@ -49,8 +49,25 @@ describe("a child's refused actions", () => {
     team.start(ctx);
     const result = await f.tools.get('agent').execute('call-1', { task: 'denied', goal: 'try denied things' }, undefined, undefined, ctx);
     expect(result.details.denied).toBe(2);
+    // The child's report starts with `blocked`: the row says so.
+    expect(result.details.outcome).toBe('blocked');
+    expect(doneSummary(result.details, 1_000)).toMatch(/^Blocked \(/);
     expect(doneSummary(result.details, 1_000)).toContain('2 denied');
     expect(doneSummary({ ...result.details, denied: undefined }, 1_000)).not.toContain('denied');
+    team.stop();
+  }, 20_000);
+
+  it("name the child's outcome in a background report's header and row", async () => {
+    const f = fakePi();
+    const team = new Team(f.pi);
+    registerAgentTool(f.pi, () => new Map(), team, fakePermission());
+    const ctx = fakeCtx({ cwd: tmp() });
+    Object.assign(ctx, { model: { provider: 'faux', id: 'model' }, modelRegistry: { getAvailable: () => [], find: () => undefined } });
+    team.start(ctx);
+    await f.tools.get('agent').execute('call-1', { task: 'denied', goal: 'try denied things', background: true }, undefined, undefined, ctx);
+    await vi.waitFor(() => expect(f.sent.length).toBeGreaterThan(0), { timeout: 10_000 });
+    expect(String(f.sent[0]!.message.content)).toMatch(/^Background subagent [a-z]+-[a-z]+ \(general: try denied things\) reported blocked \(/);
+    expect(f.sent[0]!.message.details).toMatchObject({ status: 'done', outcome: 'blocked', summary: expect.stringMatching(/^Blocked \(/) });
     team.stop();
   }, 20_000);
 });

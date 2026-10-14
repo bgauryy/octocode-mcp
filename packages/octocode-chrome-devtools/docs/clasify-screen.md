@@ -11,7 +11,7 @@ Load when a saved artifact is unread and a literal search or small read does not
   "mainGoal": "Find the page facts the next browser action depends on.",
   "reasoning": "Locate facts in an unread retained artifact before loading it.",
   "resources": [{"id": "artifact", "tool": "localFetch", "query": {
-    "path": "/abs/.octocode/tmp/chrome-devtools/<run>/page-snapshot.json", "fullContent": true
+    "path": "/abs/.octocode/octocode-chrome-devtools/tmp/<run>/page-snapshot.json", "fullContent": true
   }}],
   "questions": [
     {"id": "search", "type": "locate", "ask": "The accessibility ref for the site search control."}

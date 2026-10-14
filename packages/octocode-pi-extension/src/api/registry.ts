@@ -19,12 +19,8 @@ export interface InstanceRecord {
   session?: string;
 }
 
-export const API_DIR_ENV = 'OCTOCODE_API_DIR';
-
-export function apiDir(env: NodeJS.ProcessEnv = process.env): string {
-  const override = env[API_DIR_ENV]?.trim();
-  return override ? path.resolve(override) : globalPaths(env).api;
-}
+/** The instance records: `<Octocode home>/pi-api` (OCTOCODE_HOME moves it with everything else). */
+export const apiDir = (env: NodeJS.ProcessEnv = process.env): string => globalPaths(env).api;
 
 export const instancesDir = (dir: string): string => path.join(dir, 'instances');
 const recordFile = (dir: string, id: string): string => path.join(instancesDir(dir), `${id}.json`);
@@ -67,7 +63,7 @@ export function listInstances(dir: string): InstanceRecord[] {
       if (processAlive(record.pid)) found.push(record);
       else {
         fs.rmSync(file, { force: true });
-        if (record.socket) fs.rmSync(record.socket, { force: true });
+        if (record.socket) removeSocket(record.socket);
       }
     } catch {
       // A record being written or corrupt: skip it.
@@ -76,11 +72,24 @@ export function listInstances(dir: string): InstanceRecord[] {
   return found.sort((a, b) => a.startedAt - b.startedAt);
 }
 
+/** A fallback socket's private folder in the temp directory: `octocode-<uid>-XXXXXX`, made by `mkdtemp`. */
+const SOCKET_DIR = /^octocode-\d+-[A-Za-z0-9]{6}$/;
+
 /**
  * Unix socket paths are limited to ~104 bytes on macOS, so a deep OCTOCODE_HOME would fail to bind. The socket sits
- * next to the record when that fits and otherwise in the private temp directory.
+ * next to the record when that fits and otherwise in a folder `mkdtemp` makes in the temp directory (mode 0700, and
+ * its name is unguessable): a fixed name there could be taken by another local user before this process binds it.
  */
 export function socketPath(dir: string, id: string): string {
   const preferred = path.join(dir, `${id}.sock`);
-  return Buffer.byteLength(preferred) <= 100 ? preferred : path.join(fs.realpathSync(process.env['TMPDIR'] ?? '/tmp'), `octocode-${process.getuid?.() ?? 0}-${id}.sock`);
+  if (Buffer.byteLength(preferred) <= 100) return preferred;
+  const folder = fs.mkdtempSync(path.join(fs.realpathSync(process.env['TMPDIR'] ?? '/tmp'), `octocode-${process.getuid?.() ?? 0}-`));
+  return path.join(folder, `${id}.sock`);
+}
+
+/** Removes a socket file, and the private temp folder `socketPath` made for it. */
+export function removeSocket(file: string): void {
+  fs.rmSync(file, { force: true });
+  const folder = path.dirname(file);
+  if (SOCKET_DIR.test(path.basename(folder))) fs.rmSync(folder, { recursive: true, force: true });
 }

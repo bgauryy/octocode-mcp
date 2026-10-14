@@ -1,6 +1,6 @@
 //! Home credentials are primary; the platform store preserves existing native logins.
-use super::super::{ProviderError, ProviderErrorKind};
-use super::{CredentialSource, StoredCredentials, home_store::HomeStore, normalize_host, storage};
+use super::{StoredCredentials, home_store::HomeStore, normalize_host, storage};
+use octocode_github::{CredentialSource, ProviderError, ProviderErrorKind};
 use std::path::{Path, PathBuf};
 
 #[derive(Clone)]

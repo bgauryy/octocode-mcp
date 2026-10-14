@@ -1,4 +1,6 @@
 #[cfg(test)]
+mod file_language_tests;
+#[cfg(test)]
 mod lead_tests;
 mod matches;
 mod memo;
@@ -32,15 +34,15 @@ pub(super) fn policy_error(error: PolicyError) -> ToolError {
 /// The source astSearch parses, read bounded at [`MAX_PARSE_SOURCE_BYTES`];
 /// `None` when the file is larger.
 pub(super) fn read_parse_source(path: &std::path::Path) -> Result<Option<Vec<u8>>, ToolError> {
-    use crate::tools::source::{BoundedRead, read_bounded};
+    use crate::tools::source::{ReadError, read_bounded};
     match read_bounded(path, MAX_PARSE_SOURCE_BYTES) {
         Ok(bytes) => Ok(Some(bytes)),
-        Err(BoundedRead::TooLarge(_)) => Ok(None),
-        Err(BoundedRead::NotRegular) => Err(io_error(
+        Err(ReadError::TooLarge(_)) => Ok(None),
+        Err(ReadError::NotRegular) => Err(io_error(
             &display_name(path),
             std::io::Error::new(std::io::ErrorKind::InvalidInput, "not a regular file"),
         )),
-        Err(BoundedRead::Io(error)) => Err(io_error(&display_name(path), error)),
+        Err(ReadError::Io(error)) => Err(io_error(&display_name(path), error)),
     }
 }
 
@@ -116,17 +118,13 @@ pub(super) fn native_error(error: octocode_engine::error::Error) -> ToolError {
         }
         ErrorKind::PermissionDenied => "permissionDenied",
         ErrorKind::InvalidPattern => "invalidPattern",
+        ErrorKind::InvalidGlob => "invalidGlob",
         ErrorKind::InvalidInput => "invalidInput",
         ErrorKind::Timeout => "timeout",
+        ErrorKind::Cancelled => "cancelled",
         _ => "executionFailed",
     };
     ToolError::new(code, message)
-}
-
-/// A scan that failed with a bare message (a grammar walk, a caught panic):
-/// a tagged message names its code, anything else is an execution failure.
-pub(super) fn scan_error(message: String) -> ToolError {
-    tagged_error(&message).unwrap_or_else(|| ToolError::new("executionFailed", message))
 }
 
 /// The tool error of a `[tag] …` engine message, when it carries one.
@@ -148,9 +146,9 @@ fn tagged_error(message: &str) -> Option<ToolError> {
 /// public set is the contract's.
 pub(super) fn engine_error_code(tag: &str) -> &'static str {
     match tag {
-        "structural.query.compileFailed" | "structural.query.invalid" => {
-            crate::tools::ast_rule::INVALID_PATTERN
-        }
+        "structural.query.compileFailed"
+        | "structural.query.invalid"
+        | octocode_engine::structural::RULE_INVALID => crate::tools::ast_rule::INVALID_PATTERN,
         "structural.language.unsupported" | "syntaxTree.language.unsupported" => {
             "languageUnsupported"
         }
@@ -164,17 +162,6 @@ pub(super) fn engine_error_code(tag: &str) -> &'static str {
     }
 }
 
-pub(super) fn allow_discovery(
-    path: &std::path::Path,
-    paths: &crate::policy::path::PathPolicy,
-    cancel: &dyn crate::tools::cancel::CancellationCheck,
-) -> Result<bool, String> {
-    cancel
-        .check()
-        .map_err(|message| format!("[cancelled] {message}"))?;
-    Ok(paths.permits_discovery(path))
-}
-
 pub(super) use crate::tools::display_name;
 
 /// A `.h` suffix is shared by C and C++. Keep C as the default and allow an
@@ -184,6 +171,29 @@ pub(super) fn cpp_header_override(path: &std::path::Path, selector: Option<&str>
         && selector.is_some_and(|language| {
             language.eq_ignore_ascii_case("cpp") || language.eq_ignore_ascii_case("c++")
         })
+}
+
+/// The parser extension of a single file whose own extension does not pick
+/// the requested grammar: `cpp` for a `.h` under C++, and the grammar's own
+/// extension for a file whose extension selects no grammar (an extensionless
+/// script, a `.txt`). `None`: the file's extension decides.
+pub(super) fn parser_override(path: &std::path::Path, selector: Option<&str>) -> Option<String> {
+    if cpp_header_override(path, selector) {
+        return Some("cpp".to_owned());
+    }
+    let language = selector?;
+    if crate::tools::ast_rule::file_grammar(path).is_some() {
+        return None;
+    }
+    crate::tools::ast_rule::primary_extension(language)
+}
+
+/// A file's extension as a message names it: `.ts`, or `no extension`.
+pub(super) fn extension_label(path: &std::path::Path) -> String {
+    match octocode_engine::text::extension_of(&path.to_string_lossy(), true, "").as_str() {
+        "" => "no extension".to_owned(),
+        extension => format!(".{extension}"),
+    }
 }
 
 pub(super) fn validate_file_language(
@@ -203,20 +213,74 @@ pub(super) fn validate_file_language(
                 format!("language \"{language}\" is not a supported structural grammar."),
             )
         })?;
+        // Only an extension of another grammar contradicts `language`; one
+        // that selects no grammar is parsed as `language`.
         if !crate::tools::ast_rule::has_extension_in(path, &selected)
             && !cpp_header_override(path, selector)
+            && let Some((grammar, _)) = crate::tools::ast_rule::file_grammar(path)
         {
             return Err(ToolError::new(
                 "languageMismatch",
                 format!(
-                    "{} is not a {language} source file; omit language or choose the grammar matching its extension.",
-                    display_name(path)
+                    "{} has the {grammar} extension {}, not {language}; omit language or set it to {grammar}.",
+                    display_name(path),
+                    extension_label(path)
                 ),
             ));
         }
     }
     Ok(())
 }
+
+/// Diagnostic code of [`cpp_header_note`].
+pub(super) const CPP_HEADER_NOTE: &str = "structural.header.cpp";
+
+/// A `.h` parsed as C (no `language`) whose source is C++: the C parse has
+/// syntax errors the C++ one has not, or reads a C++ keyword (`class`,
+/// `namespace`, …) as a name, so its declarations are misread. The note
+/// suggests the C++ parser.
+pub(super) fn cpp_header_note(
+    path: &std::path::Path,
+    selector: Option<&str>,
+    source: &str,
+) -> Option<String> {
+    if selector.is_some()
+        || octocode_engine::text::extension_of(&path.to_string_lossy(), true, "") != "h"
+    {
+        return None;
+    }
+    let errors = |language| octocode_engine::structural::count_syntax_errors(source, language);
+    let (c, cpp) = (errors("c").ok()?, errors("cpp").ok()?);
+    let repair = "set language:\"cpp\" (languageGlobs for a directory).";
+    if c > cpp {
+        return Some(format!(
+            "{} parses as C with {c} syntax error(s) and as C++ with {cpp}; {repair}",
+            display_name(path)
+        ));
+    }
+    if cpp > 0 {
+        return None;
+    }
+    let keyword = octocode_engine::portable::structural_search_detailed(
+        source,
+        &path.to_string_lossy(),
+        Some("c"),
+        None,
+        Some(CPP_KEYWORD_NAMES),
+    )
+    .ok()?
+    .matches
+    .into_iter()
+    .next()?
+    .text;
+    Some(format!(
+        "{} spells C++ `{keyword}`, which the C parser reads as a name; {repair}",
+        display_name(path)
+    ))
+}
+
+/// C++ keywords the C grammar parses as type or variable names.
+const CPP_KEYWORD_NAMES: &str = r#"{"any":[{"kind":"type_identifier"},{"kind":"identifier"}],"regex":"^(class|namespace|template|typename|virtual|public|private|protected|operator|using)$"}"#;
 
 /// Row path for a descendant of a directory scope: `{root_name}/{relative}`.
 /// The runtime attaches `base = parent(scope)`, so `base + path` resolves to
@@ -435,10 +499,11 @@ mod tests {
             native_error(Error::new("[structural.query.compileFailed] bad pattern")).code,
             "invalidPattern"
         );
-        assert_eq!(
-            scan_error("[structural.query.compileFailed] bad pattern".to_owned()).code,
-            "invalidPattern"
-        );
+        // A rule that does not parse keeps its own engine tag and the same
+        // public code.
+        let rule = native_error(Error::new("[structural.rule.invalid] unknown field"));
+        assert_eq!(rule.code, "invalidPattern");
+        assert_eq!(rule.message, "unknown field");
         // The kind decides, never the words of the message.
         assert_eq!(
             native_error(Error::with_kind(ErrorKind::InvalidPattern, "bad")).code,
@@ -449,9 +514,13 @@ mod tests {
             "permissionDenied"
         );
         assert_eq!(
+            native_error(Error::with_kind(ErrorKind::InvalidGlob, "bad")).code,
+            "invalidGlob"
+        );
+        assert_eq!(native_error(Error::cancelled()).code, "cancelled");
+        assert_eq!(
             native_error(Error::new("invalid regex: unclosed group")).code,
             "executionFailed"
         );
-        assert_eq!(scan_error("boom".to_owned()).code, "executionFailed");
     }
 }

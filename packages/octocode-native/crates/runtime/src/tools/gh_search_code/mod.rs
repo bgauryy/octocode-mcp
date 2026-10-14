@@ -8,10 +8,6 @@ mod provider_tests;
 mod query;
 mod ranking;
 
-use crate::providers::github::{
-    CodeSearchRequest, ConditionalCache, GitHubProvider, ProviderError, ProviderErrorKind,
-    RequestContext,
-};
 use crate::security::scan::ContentScan;
 use crate::tools::gh_shared::{
     GhFailure, SearchReach, add_next, apply_partial, field_names, pick_rows, push_warning_front,
@@ -20,6 +16,10 @@ use crate::tools::gh_shared::{
 use crate::tools::id::ToolId;
 use crate::tools::num::usize_of;
 use crate::tools::result::{Continuation, ToolData, query_row};
+use octocode_github::{
+    CodeSearchRequest, ConditionalCache, GitHubProvider, ProviderError, ProviderErrorKind,
+    RequestContext,
+};
 use serde_json::json;
 
 pub use crate::contracts::tool_types::{GhSearchCodeQuery, GhSearchCodeQueryMatchIn};
@@ -46,25 +46,54 @@ pub async fn run<C: ConditionalCache>(
     request: Result<&RequestContext, ProviderError>,
     security: &impl ContentScan,
 ) -> Result<ToolData, GhFailure> {
+    let context = request.as_ref().ok().copied();
     let result = match request {
         Ok(context) => execute(provider, query, context, security).await,
         Err(error) => Err(error),
     };
-    result.map_err(|error| {
+    let error = match result {
+        Ok(data) => return Ok(data),
+        Err(error) => error,
+    };
+    // A page past the 1,000-result window repairs to the search's last real
+    // page when the first page names it (one search, usually cached).
+    let last_page = match context {
+        Some(context)
+            if error.reason == Some(octocode_github::ProviderErrorReason::SearchWindowExceeded) =>
+        {
+            search_page(provider, query, 1, page_size(query), context)
+                .await
+                .ok()
+                .map(|page| page.pages.max(1))
+        }
+        _ => None,
+    };
+    Err({
         let repo = query.repo.as_deref().map(|repo| repo.as_str());
-        let failure = with_search_repair(
+        let mut failure = with_search_repair(
             search_failure(error, None),
             ToolId::GhSearchCode,
             query,
             page_size(query),
             repo,
         );
+        if let Some(last) = last_page
+            && let Some(row) = failure
+                .next
+                .as_mut()
+                .and_then(|next| next.pointer_mut("/repair/query/queries/0"))
+            && row["page"]
+                .as_u64()
+                .is_some_and(|page| page as usize > last)
+        {
+            row["page"] = json!(last);
+        }
         match repo {
             Some(repo) => with_ref_recovery(failure, &query.owner, repo),
             // An owner-wide search that found no such login: the message
             // names the login, and its one hint is the spelling.
             None if failure.error.reason
-                == Some(crate::providers::github::ProviderErrorReason::UserNotFound) =>
+                == Some(octocode_github::ProviderErrorReason::UserNotFound) =>
             {
                 GhFailure {
                     message: format!(
@@ -221,7 +250,7 @@ pub(crate) async fn execute<C: ConditionalCache>(
 /// `ceil(pageSize / k)`), so a merged page holds about `pageSize` files and
 /// page N of every search is page N of the merge: lossless.
 struct SearchPage {
-    items: Vec<crate::providers::github::CodeSearchItem>,
+    items: Vec<octocode_github::CodeSearchItem>,
     /// Reachable results (each search caps at 1,000).
     total: usize,
     pages: usize,
@@ -396,11 +425,11 @@ impl crate::tools::output::ToolOutput for Output {
         use crate::tools::output::has_value;
         if query["matchIn"] == "path" {
             "Try a shorter name fragment, or ghStructure include to find paths by name."
-        } else if ["extensions", "filename", "path", "language"]
+        } else if ["extensions", "filename", "path"]
             .iter()
             .any(|key| has_value(query, key))
         {
-            "Drop extensions/filename/path/language or use fewer keywords; only the default branch is indexed."
+            "Drop extensions/filename/path or use fewer keywords; only the default branch is indexed."
         } else if query["keywords"].as_array().is_some_and(|k| k.len() > 1) {
             "An empty index result is unproven absence: use fewer keywords, or ghGetFileContent a likely file to verify."
         } else {

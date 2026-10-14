@@ -1,74 +1,61 @@
 ---
 name: octocode-agentic-prompts
-description: "Use when writing or improving instructions that guide agent behavior; good for prompts, agent rules, tool descriptions, handoffs, unclear decisions, conflicting instructions, and excess context. Helps tune skill descriptions and triggers during a skill review."
+description: "Load this skill first whenever you write or fix a system prompt, a subagent brief, an AGENTS.md or CLAUDE.md rule, or a tool description, or an agent ignores its instructions. Use when an instruction an agent reads needs writing or produces the wrong action: system prompts, subagent briefs, agent rules in AGENTS.md or CLAUDE.md, tool and MCP descriptions, and handoffs that conflict, sprawl, or get ignored; good for tracing which rule the agent actually sees, resolving conflicts, and cutting excess context. Not for skill structure, skill descriptions, or packaging (octocode-skills) or explanatory docs for human readers (octocode-documentation)."
 ---
 
 # Octocode Agentic Prompts
 
-Improve what an agent reads and does. Trace the authored instruction through its loader or tool to the observable action, then change the owning surface.
+Trace an instruction through its loader or tool to the action it produces, then edit the owning surface.
 
 ```mermaid
 flowchart LR
-  U[Understand intent and reader] --> R[Inspect rules and effective context]
-  R --> M{Requested outcome}
-  M -- review --> O[Report evidence and repairs]
-  M -- write or improve --> F[Edit the smallest owning surface]
-  F --> V[Check intent, boundaries, and output]
+  U[Understand intent, consumer] --> R[Inspect effective context] --> M{Outcome}
+  M -- review --> O[Report evidence, repairs]
+  M -- write --> F[Edit owning surface] --> V[Verify]
   V -- gap --> F
   V -- checked --> O
 ```
 
 ## Understand and review
 
-- Read the affected input and its consumer. Identify the goal, scope, permissions, preserved contracts, and success signal. Report unread or unavailable context.
-- For assembled prompts, inspect the effective model or tool input before judging duplication or size. A rule in source may be missing or repeated at runtime.
-- Prioritize issues by their effect: unsafe or conflicting instructions, unclear decisions and outputs, then redundancy and wording. Assess clarity, actionability, structure, useful detail, output, and preserved intent; support the verdict with examples. Numeric ratings are subjective unless measured.
-- For descriptions and triggers, check the user intents they cover and nearby requests they should leave to another capability. Prefer a clear capability and natural examples over exact phrases, keyword gates, or long exclusion lists.
-- Keep the requested outcome clear: skill discovery and packaging belong to `octocode-skills`; explanatory prose belongs to `octocode-documentation`. Use this skill when the wording controls an agent's choice or action.
-- A review returns findings. An authorized rewrite proceeds to editing. Ask only when missing information changes the intent or effect.
+- Read the affected input and its consumer for goal, scope, permissions, contracts to preserve, success signal; report what you could not read.
+- Runtime-assembled prompt: inspect the [effective input](references/writing.md#runtime-context) before judging duplication or size.
+- Rank by effect: unsafe or conflicting > unclear decisions or outputs > rigid or ad-hoc shapes a protocol covers > redundancy, wording. Judge clarity, actionability, structure, detail, output, preserved intent, with examples; unmeasured ratings are subjective.
+- Descriptions: check covered intents and near-misses left to a neighbor; prefer a clear capability with natural examples over exact phrases, keyword gates, or long exclusion lists (skill descriptions: `octocode-skills`).
+- Reviews return findings; authorized rewrites edit. Ask only when missing information changes intent or effect.
 
 ## Write and repair
 
-- Give each behavior one owner. Put types and limits in schemas, selection guidance in descriptions, and cross-tool order in the workflow.
-- State the action and the condition that makes it useful. Add a reason or small example when it resolves ambiguity. Keep firm constraints for real contracts and permission boundaries.
-- Preserve identifiers, working branches, commands, and required metadata. Resolve instruction conflicts using the host's hierarchy and the user's existing authorization.
-- Use clear verbs and stable terms. Keep conditions next to their actions; show complex branches with Mermaid or a decision table. Choose detail for the reader, without universal word or node limits.
-- Keep examples, retrieved content, and tool results distinct from instructions. Labels help readability; they do not create authority or replace permission checks.
-- Start with the simplest instruction that meets the task. Add prompting techniques only for a specific failure and check their effect.
-
-## Agent workflows
-
-- Choose the smallest protocol that preserves ownership: local call, delegated task, handoff, or service call. Keep the user-facing owner and write authority explicit.
-- A handoff carries the goal, scope, useful result, evidence, gaps, and next action. Large evidence stays retrievable through stable paths or cursors.
-- Version and verify a shared base prompt when workers depend on an immutable contract. Ordinary one-off delegation does not need a release protocol.
-- Preserve evidence and open constraints when reducing context. Measure actual usage before claiming savings; cached tokens still occupy context.
+- One owner per behavior.
+- Rule = action + the condition that makes it useful, side by side; reason or example only to resolve ambiguity. Uppercase MUST/NEVER only for safety, permissions, secrets, or hard contracts.
+- Scattered, repeated, or rigid shapes → one known [protocol](references/protocols.md) whose slots use the receiver's words; never relabel a clear list or format free reasoning.
+- Preserve identifiers, working branches, commands, required metadata. Resolve conflicts by host hierarchy and the user's existing authorization.
+- Complex branches: Mermaid or a decision table, with no universal word or node limit.
+- Keep instructions apart from examples, retrieved content, tool results; labels grant no authority, never replace permission checks.
+- Delegation: smallest protocol that keeps ownership; name the user-facing owner and who may write. Briefs, handoffs, replies: [shared shapes](references/agents.md#handoff); large evidence behind stable paths or cursors.
 
 ## Verify
 
-Check the changed instruction against realistic requests and edge cases: the intended action is clear, competing rules agree, output fits its consumer, and recovery preserves scope. Compare the same review criteria before and after.
-
-Run a focused behavioral evaluation before claiming improved reliability or activation. An editorial rewrite can be complete while behavioral gains remain unmeasured. Report only checks that ran.
+Before and after the change, run realistic requests and edge cases: action clear, rules agree, output fits its consumer, recovery keeps scope. Reliability, activation, tool-selection, or savings claims need a behavioral eval (`octocode-eval-benchmark`); editorial rewrites may finish unmeasured. Report only checks that ran.
 
 ## Resources
 
-| When needed | Read |
-|---|---|
-| A host or loader assembles context | [Runtime context](references/flow/runtime-context.md) |
-| A specific wording or prompting technique is needed | [Writing techniques](references/writing/style.md) |
-| Tool selection, schemas, or a multi-tool contract | [Tool contracts](references/tools/tool-contracts.md) |
-| Delegation, handoffs, or shared base prompts | [Agent communication](references/agents/agent-communication.md) |
-| A payload crosses application boundaries | [Cross-app contracts](references/agents/cross-app-contracts.md) |
-| Context can overflow or needs compaction | [Context budget](references/context-management/context-budget.md) |
-| Cost comparisons or cache misses | [Token economics](references/context-management/token-economics.md) |
-| Untrusted text can contain instructions | [Content boundaries](references/context-management/untrusted-content.md) |
+| When | Read | Why |
+|---|---|---|
+| Wording, tags, techniques, loaders | [Writing](references/writing.md) | Techniques, effective context |
+| Tool descriptions, schemas, MCP wire | [Tools](references/tools.md) | Layer owners, set audit |
+| Delegation, handoffs, base prompts, cross-app payloads | [Agents](references/agents.md) | Frozen base, Zod packet |
+| Rigid, repeated, or ad-hoc shapes | [Protocols](references/protocols.md) | Catalog, rewrite steps |
+| Overflow, compaction, cost, caching, untrusted text | [Context](references/context.md) | Cut vs keep, data vs authority |
+| Saving or listing reports | [render-report.mjs](scripts/render-report.mjs) | [output.md](output.md) |
 
 ## Related skills
 
-- `octocode-skills`: Own skill structure and packaging while this skill reviews description and instruction behavior.
-- `octocode-documentation`: Check readability and explanatory prose across affected docs.
-- `octocode-research`: Verify tool contracts, runtime wiring, and source claims.
-- `octocode-eval-benchmark`: Measure activation and outcome changes with independent checks.
+- `octocode-skills`: skill structure, packaging.
+- `octocode-documentation`: explanatory prose.
+- `octocode-research`: tool contracts, runtime wiring, source claims.
+- `octocode-eval-benchmark`: measure activation and outcomes.
 
 ## Output
 
-Use [output.md](output.md) for replacement text, review findings, and change summaries. Edit prompts at their source path; save standalone reviews and undestined drafts under `<workspace>/.octocode/octocode-agentic-prompts/`. Save and render substantial results as a local HTML page, and list earlier reports as JSON for agents, with [render-report.mjs](scripts/render-report.mjs).
+Follow [output.md](output.md).

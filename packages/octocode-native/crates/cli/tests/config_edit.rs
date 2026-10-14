@@ -203,30 +203,48 @@ fn config_refuses_symlinks_and_concurrent_edits() {
     assert!(!path.exists());
 }
 
+/// A failed login answers with the one `{error, errorCode}` envelope and
+/// exits by the code's class: an enterprise host without a client id is
+/// missing configuration (5); a login without a terminal is the caller's
+/// request (2).
 #[test]
-fn json_auth_failures_exit_nonzero() {
+fn json_auth_failures_use_the_error_envelope_and_class() {
     let workspace = Workspace::new();
-    for args in [
-        vec![
-            "auth",
-            "login",
-            "--hostname",
-            "audit.example.invalid",
-            "--json",
-        ],
-        vec!["auth", "login", "--force", "--json"],
+    for (args, code, exit) in [
+        (
+            vec![
+                "auth",
+                "login",
+                "--hostname",
+                "audit.example.invalid",
+                "--json",
+            ],
+            "missingConfiguration",
+            5,
+        ),
+        (
+            vec![
+                "auth",
+                "login",
+                "--hostname",
+                "github.com",
+                "--force",
+                "--json",
+            ],
+            "invalidInput",
+            2,
+        ),
     ] {
         let output = workspace
             .cli()
-            .args(args)
+            .args(&args)
             .stdin(std::process::Stdio::null())
             .output()
             .unwrap();
-        assert_eq!(output.status.code(), Some(1));
-        assert_eq!(
-            serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap()["success"],
-            false
-        );
+        assert_eq!(output.status.code(), Some(exit), "{args:?}");
+        let envelope = serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap();
+        assert_eq!(envelope["errorCode"], code, "{envelope}");
+        assert!(envelope["error"].is_string(), "{envelope}");
     }
 }
 
@@ -236,10 +254,8 @@ fn manage(
 ) -> (Option<i32>, serde_json::Value) {
     use std::io::Write;
     use std::process::Stdio;
-    let catalog = workspace.cli().arg("catalog").output().expect("catalog");
-    request["expectedFingerprint"] = serde_json::from_slice::<serde_json::Value>(&catalog.stdout)
-        .expect("catalog")["fingerprint"]
-        .clone();
+    request["expectedFingerprint"] =
+        workspace.runtime(&[]).catalog().expect("catalog")["fingerprint"].clone();
     let mut child = workspace
         .cli()
         .args(["config", "--manage"])

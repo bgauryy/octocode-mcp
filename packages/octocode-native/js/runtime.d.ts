@@ -53,12 +53,11 @@ export declare class NativeRuntime {
   readonly abiVersion: number;
   readonly closed: boolean;
   catalog(): NativeCatalog;
-  execute(
-    requestId: string,
-    tool: string,
-    input: unknown,
-    options?: NativeRequestOptions | null
-  ): Promise<unknown>;
+  /**
+   * One MCP call: resolves with the `CallToolResult`, a rejected call
+   * included (a typed tool error). Rejects only for a cancelled request or a
+   * closing runtime.
+   */
   executeMcp(
     requestId: string,
     tool: string,

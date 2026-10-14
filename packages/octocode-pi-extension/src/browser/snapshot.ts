@@ -1,6 +1,7 @@
 import { dialogNotice } from './actions.js';
 import type { BrowserSession } from './cdp.js';
 import { shortPath } from '../shared/format.js';
+import { sanitizeTerminalText } from '../shared/sanitize.js';
 import { saveFullOutput } from '../shared/spill.js';
 import { capChars } from '../shared/util.js';
 
@@ -21,7 +22,9 @@ const SNAPSHOT_SCRIPT = `(() => {
   // Clickable divs and spans (framework click handlers leave no attribute): the outermost element with a pointer cursor
   // that holds no other control.
   const pointer = (el) => { const view = el.ownerDocument.defaultView; return view.getComputedStyle(el).cursor === 'pointer' && !(el.parentElement && view.getComputedStyle(el.parentElement).cursor === 'pointer') && !el.querySelector(selector); };
-  const clean = (value, max) => String(value || '').trim().replace(/\\s+/g, ' ').slice(0, max);
+  // Cuts to max UTF-16 units without leaving half of a surrogate pair at the end.
+  const cut = (text, max) => text.length > max && text.charCodeAt(max - 1) >= 0xd800 && text.charCodeAt(max - 1) <= 0xdbff ? text.slice(0, max - 1) : text.slice(0, max);
+  const clean = (value, max) => cut(String(value || '').trim().replace(/\\s+/g, ' '), max);
   const visible = (el) => { const r = el.getBoundingClientRect(); if (r.width <= 0 || r.height <= 0) return false; const s = el.ownerDocument.defaultView.getComputedStyle(el); return s.visibility !== 'hidden' && s.display !== 'none'; };
   const labelOf = (el) => {
     const doc = el.ownerDocument;
@@ -81,7 +84,7 @@ const SNAPSHOT_SCRIPT = `(() => {
   if (document.body) walk(document.body, '');
   if (closedFrames) extra.push('[' + closedFrames + ' cross-origin frame(s) not shown: navigate to the frame URL to use them]');
   const pageText = ((document.body ? document.body.innerText : '') + (extra.length ? '\\n\\n' + extra.join('\\n\\n') : '')).replace(/\\n{3,}/g, '\\n\\n');
-  const text = pageText.slice(0, ${PAGE_TEXT_MAX_CHARS});
+  const text = cut(pageText, ${PAGE_TEXT_MAX_CHARS});
   const textTotal = pageText.length;
   // Which locale the page rendered for: sites localize prices by IP and browser language, so say what was shown.
   const counts = {};
@@ -108,8 +111,9 @@ export async function snapshot(session: BrowserSession, signal?: AbortSignal, op
   const full = formatSnapshot(data);
   // A cut snapshot is saved whole, so the rest of the elements and text are a file read away.
   if (!full.includes('more characters cut') && !full.includes('more elements;')) return full;
-  const file = saveFullOutput(formatSnapshot(data, Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER), 'browser-snapshot');
-  return file ? `${full}\n[Full snapshot (every element and all text): ${shortPath(file)}; read it by line range or search it.]` : full;
+  // Page text is untrusted and the model reads the file with `read`: sanitized like the snapshot itself.
+  const file = saveFullOutput(sanitizeTerminalText(formatSnapshot(data, Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER)), 'browser-snapshot');
+  return `${full}\n${file ? `[Full snapshot (every element and all text): ${shortPath(file)}; read it by line range or search it.]` : '[The full snapshot could not be saved; the elements and text cut above are not reachable from this result.]'}`;
 }
 
 /** Most new page text an action result shows; the rest is one snapshot away. */

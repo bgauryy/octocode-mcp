@@ -24,7 +24,7 @@ pub(crate) fn analyze(
 ) -> AstGraphResult {
     let read = |path: &std::path::Path| super::aliases::read_config_text(paths, security, path);
     cancel.check().map_err(ToolError::cancelled)?;
-    let cuts = ScanCuts::of(b);
+    let mut cuts = ScanCuts::of(b);
     let mut warnings = cuts.warnings(q);
     let mut base = Map::new();
     base.insert("operation".into(), json!("topology"));
@@ -46,12 +46,17 @@ pub(crate) fn analyze(
     };
     warnings.extend(extra_warnings);
     drop_repeated_summary_lists(&mut summary, q);
-    let gaps = CoverageGaps::of(b);
+    // Only the gaps that can change this answer mark it; the scan's tallies
+    // stay in `coverage`.
+    let reach = super::scope::Reach::of(b, q, &items);
+    let relevant = reach.diagnostics(b);
+    cuts.files_skipped = cuts.files_skipped && reach.reaches_skipped(b, &relevant);
+    let gaps = CoverageGaps::of(&relevant);
     // Import-resolution health drives whether an edge-derived answer can be
     // trusted, so an incomplete import graph never presents as a confident
     // zero (e.g. `cycleCount:0` when no `crate::` import could be resolved).
     // It only ever escalates to low.
-    if (gaps.unresolved || gaps.unsupported) && import_gaps_reach_answer(b, q, &items) {
+    if gaps.unresolved || gaps.unsupported {
         low = true;
         if let Some(obj) = summary.as_object_mut() {
             let resolved = b.imports[0];
@@ -135,35 +140,6 @@ pub(crate) fn analyze(
     Ok(Value::Object(base))
 }
 
-/// Whether an unresolved or unsupported import can change this answer.
-/// `dependencies` reads only the imports of its source and of each file it
-/// expanded (`distance < depth`), so a gap elsewhere cannot hide one of its
-/// rows. Every other answer can lose an edge, importer or path anywhere in the
-/// scan, so any gap reaches it.
-fn import_gaps_reach_answer(b: &BuiltGraph, q: &AstTopologyQuery, items: &[Value]) -> bool {
-    if q.analysis() != GraphAnalysis::Dependencies {
-        return true;
-    }
-    let depth = u64::from(q.depth().unwrap_or(1));
-    let mut read = q
-        .source()
-        .map(|raw| node_key(raw, &b.root, &b.nodes))
-        .into_iter()
-        .collect::<BTreeSet<_>>();
-    read.extend(
-        items
-            .iter()
-            .filter(|item| item["distance"].as_u64().is_some_and(|d| d < depth))
-            .filter_map(|item| item["file"].as_str().map(str::to_owned)),
-    );
-    b.diagnostics.iter().any(|d| {
-        matches!(
-            d.code.as_str(),
-            "unresolved-internal" | "unsupported-linking"
-        ) && read.contains(&d.file)
-    })
-}
-
 /// The resolved root and dynamic-only lists are page-invariant: emit them
 /// with the first result page only; later pages keep the counts. Explicit
 /// entrypoints that all resolved are an echo of the request: the count
@@ -190,7 +166,8 @@ pub(super) fn drop_repeated_summary_lists(summary: &mut Value, q: &AstTopologyQu
     }
 }
 
-/// Coverage gaps of the linked graph. They are not truncation: every page
+/// Coverage gaps of the linked graph that reach the answer. They are not
+/// truncation: every page
 /// is still reachable, so they surface only as `coverage.parts.graph` plus
 /// `confidence`; each gap's count is in `coverage`.
 pub(super) struct CoverageGaps {
@@ -200,8 +177,8 @@ pub(super) struct CoverageGaps {
 }
 
 impl CoverageGaps {
-    fn of(b: &BuiltGraph) -> Self {
-        let has = |code: &str| b.diagnostics.iter().any(|d| d.code == code);
+    fn of(diagnostics: &[&Diagnostic]) -> Self {
+        let has = |code: &str| diagnostics.iter().any(|d| d.code == code);
         Self {
             parse: has("parse-recovery"),
             unresolved: has("unresolved-internal"),
@@ -384,7 +361,7 @@ pub(super) fn traversal(
     })?;
     let file = node_key(raw, &b.root, &b.nodes);
     if !b.nodes.contains_key(&file) {
-        return Err(missing_file_error(q, &file, &b.nodes));
+        return Err(missing_file_error(q, "source", &file, &b.nodes));
     }
     let graph = if q.analysis() == GraphAnalysis::Dependencies {
         b.nodes.clone()
@@ -486,13 +463,13 @@ fn unlinked_importer_warning(b: &BuiltGraph, target: &str) -> Option<String> {
     })
 }
 
-fn is_js_ts(file: &str) -> bool {
+pub(super) fn is_js_ts(file: &str) -> bool {
     octocode_engine::text::JS_TS_EXTENSIONS
         .contains(&octocode_engine::text::extension_of(file, true, "").as_str())
 }
 
 /// `path` without its JS/TS extension.
-fn module_stem(path: &str) -> &str {
+pub(super) fn module_stem(path: &str) -> &str {
     let extension = octocode_engine::text::extension_of(path, false, "");
     if octocode_engine::text::JS_TS_EXTENSIONS.contains(&extension.to_lowercase().as_str()) {
         path.strip_suffix(extension.as_str())
@@ -602,23 +579,13 @@ pub(super) fn path_analysis(
     b: &BuiltGraph,
     q: &AstTopologyQuery,
 ) -> Result<(Vec<Value>, Value, Vec<String>, bool), ToolError> {
-    let file = node_key(
-        q.source()
-            .ok_or_else(|| ToolError::new("invalidGraphQuery", "path requires file and target"))?,
-        &b.root,
-        &b.nodes,
-    );
-    let target = node_key(
-        q.target()
-            .ok_or_else(|| ToolError::new("invalidGraphQuery", "path requires file and target"))?,
-        &b.root,
-        &b.nodes,
-    );
-    if !b.nodes.contains_key(&file) || !b.nodes.contains_key(&target) {
-        return Err(ToolError::new(
-            "invalidGraphQuery",
-            "file and target must both be in the scanned graph",
-        ));
+    let required = || ToolError::new("invalidGraphQuery", "path requires source and target");
+    let file = node_key(q.source().ok_or_else(required)?, &b.root, &b.nodes);
+    let target = node_key(q.target().ok_or_else(required)?, &b.root, &b.nodes);
+    for (field, key) in [("source", &file), ("target", &target)] {
+        if !b.nodes.contains_key(key) {
+            return Err(missing_file_error(q, field, key, &b.nodes));
+        }
     }
     let mut found = shortest_path(&b.nodes, &file, &target);
     if let Some(edges) = found["edges"].as_array_mut() {
@@ -725,11 +692,16 @@ pub(super) fn cycles(b: &BuiltGraph) -> (Vec<Value>, Value, Vec<String>, bool) {
     (items, summary, vec![], false)
 }
 
-/// `file` resolves relative to the scanned `path`; name that rule and, when a
-/// scanned file shares the requested suffix, the spelling that would match.
-pub(super) fn missing_file_message(file: &str, nodes: &BTreeMap<String, Node>) -> String {
+/// `file` (the query's `field`: `source` or `target`) resolves relative to
+/// the scanned `path`; name that rule and, when a scanned file shares the
+/// requested suffix, the spelling that would match.
+pub(super) fn missing_file_message(
+    field: &str,
+    file: &str,
+    nodes: &BTreeMap<String, Node>,
+) -> String {
     let mut message = format!(
-        "source is not in the scanned graph: {file}. `source` is relative to `path` \
+        "{field} is not in the scanned graph: {file}. `{field}` is relative to `path` \
          (or absolute under it), and must be a scanned source file"
     );
     if let Some(candidate) = suffix_candidate(file, nodes) {
@@ -752,13 +724,17 @@ pub(super) fn suffix_candidate<'a>(
 /// the suffix candidate when one exists (another query: a lead, not a page).
 pub(super) fn missing_file_error(
     q: &AstTopologyQuery,
+    field: &str,
     file: &str,
     nodes: &BTreeMap<String, Node>,
 ) -> ToolError {
-    let mut error = ToolError::new("invalidGraphQuery", missing_file_message(file, nodes));
+    let mut error = ToolError::new(
+        "invalidGraphQuery",
+        missing_file_message(field, file, nodes),
+    );
     if let Some(candidate) = suffix_candidate(file, nodes) {
         let mut query = clean_query(q);
-        query["source"] = json!(candidate);
+        query[field] = json!(candidate);
         error.next = Some(Box::new(json!({
             "retrySuffixMatch": Continuation::new(ToolId::AstTopology, query)
                 .confidence("medium")
@@ -999,7 +975,7 @@ mod tests {
             "source":"lib/src/index.ts"
         }))
         .expect("graph query");
-        let error = missing_file_error(&query, "lib/src/index.ts", &nodes);
+        let error = missing_file_error(&query, "source", "lib/src/index.ts", &nodes);
         let next = error.next.expect("repair continuation");
         assert_eq!(next["retrySuffixMatch"]["tool"], "astTopology", "{next}");
         assert_eq!(
@@ -1015,11 +991,11 @@ mod tests {
     #[test]
     fn missing_file_names_the_path_relative_rule_and_a_suffix_match() {
         let graph = BTreeMap::from([("src/index.ts".into(), node(&[]))]);
-        let message = missing_file_message("index.ts", &graph);
+        let message = missing_file_message("source", "index.ts", &graph);
         assert!(message.contains("relative to `path`"), "{message}");
         assert!(message.contains("did you mean `src/index.ts`"), "{message}");
-        let message = missing_file_message("pkg/src/index.ts", &graph);
+        let message = missing_file_message("source", "pkg/src/index.ts", &graph);
         assert!(message.contains("did you mean `src/index.ts`"), "{message}");
-        assert!(!missing_file_message("other.ts", &graph).contains("did you mean"));
+        assert!(!missing_file_message("source", "other.ts", &graph).contains("did you mean"));
     }
 }

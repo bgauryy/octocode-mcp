@@ -25,11 +25,17 @@ use serde_json::{Map, Value};
 /// generic to identify as the same secret.
 const MIN_PROPAGATED_SECRET_CHARS: usize = 8;
 
-/// Placeholders the detector and the private-key guards emit.
-#[allow(clippy::expect_used)]
+/// Placeholders the detector and the private-key guards emit
+/// (`[REDACTED-GITHUBTOKENS]`).
+#[expect(clippy::expect_used, reason = "static pattern, valid by construction")]
 static PLACEHOLDER: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\[(?:CONTENT-)?REDACTED-[A-Z0-9_-]+\]").expect("placeholder regex")
 });
+
+/// The one redaction-placeholder pattern.
+pub(crate) fn redaction_placeholder() -> &'static Regex {
+    &PLACEHOLDER
+}
 
 /// `sanitize` gets each string leaf and the file path of its enclosing result, if any.
 pub fn sanitize_json<E>(

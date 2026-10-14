@@ -1,40 +1,33 @@
-# Redemption Flow
+# Redemption flow
 
-Load after the autopsy when fixes are wanted; it keeps critique separate from mutation.
+Load when fixes are wanted or offered after the autopsy.
 
 ## Checkpoint
 
-For a critique-only request, describe useful repair options without applying them. An optional menu can help the user choose:
+- Critique-only request: offer options; apply nothing.
 
 ```text
 Redemption options
-| # | Finding | Repair | Priority |
+| # | Finding | Repair | Severity |
 |---|---|---|---|
-| 1 | {finding} | {smallest safe fix} | NOW/HIGH/MED |
+| 1 | {finding} | {smallest safe fix} | {severity} |
 
-Choose: one number, several numbers, a category, all, more critique, or stop.
+Rows in fix order; #1 = do now.
+
+Choose: numbers, a category, all, more critique, or stop.
 ```
 
-If the original request already authorized fixes, map them to the findings and proceed within that scope. Otherwise wait for a selection.
+- Fixes already authorized: map them to findings, proceed in scope; else await a selection.
 
 ## Execute selected repairs
 
-- Re-read the exact evidence and current file state.
-- Apply the smallest fix that addresses the mechanism.
-- Preserve unrelated behavior; avoid drive-by cleanup.
-- Run targeted checks, then any required package/repository checks; report failures.
-- For credential-shaped literals, remove the value, and advise rotation if real; claim exposure only with supporting evidence.
+- Re-read the evidence and current file state.
+- Smallest fix for the mechanism; no drive-by cleanup.
+- Targeted checks, then required package or repository checks; report failures.
+- Credential-like literal: remove the value, advise rotation if real; claim exposure only with evidence.
 
 ## Report
 
-Example summary; omit counts or fields that add no value:
+BLUF: Outcome (done, partial, failed), repairs completed, files modified, checks (command and result), remaining high-value findings, next checkpoint (one action).
 
-```text
-Repairs completed: {count}
-Files modified: {count}
-Checks: {command/result}
-Remaining high-value findings: {count}
-Next checkpoint: {one action}
-```
-
-Next: the roast ends here — report the checks and the remaining findings; when you ask for another pass, restart at `references/roast-playbook.md` § 1 Target.
+For another pass, restart the [lobby flow](../SKILL.md#flow) at Target.

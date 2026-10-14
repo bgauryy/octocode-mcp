@@ -202,7 +202,7 @@ describe('deferred tools', () => {
     await deferred.close();
   });
 
-  it('hands the query to native, the only validator, and rejects an unknown tool', async () => {
+  it('hands the tool and query to native, the only validator', async () => {
     const deferred = await connect(presentation);
     await deferred.client.callTool({
       name: DEFERRED_TOOL_DISPATCHER,
@@ -212,20 +212,12 @@ describe('deferred tools', () => {
       tool: 'ghSearchRepo',
       input: { keywords: 'x', bogus: 1 },
     });
-    executions.length = 0;
-    const unknown = await deferred.client.callTool({
+    // An unknown or unavailable tool is native's typed tool error too.
+    await deferred.client.callTool({
       name: DEFERRED_TOOL_DISPATCHER,
       arguments: { tool: 'astRewrite', query: {} },
     });
-    expect(unknown.isError).toBe(true);
-    expect(JSON.stringify(unknown.content)).toMatch(
-      /astRewrite is not available/
-    );
-    expect(unknown.structuredContent).toEqual({
-      error: expect.stringMatching(/astRewrite is not available/),
-      errorCode: 'invalidInput',
-    });
-    expect(executions).toEqual([]);
+    expect(executions.at(-1)).toEqual({ tool: 'astRewrite', input: {} });
     await deferred.close();
   });
 

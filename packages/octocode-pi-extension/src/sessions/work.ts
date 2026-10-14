@@ -11,7 +11,7 @@ import { oneLine } from './store.js';
  * `background` and `details.id`, report `RESULT_TYPE` with the same id). A start without its report is work
  * still running in this process, or, read when a session starts, work that ended with an earlier process unreported.
  */
-export interface BackgroundWork {
+interface BackgroundWork {
   kind: 'bash' | 'agent';
   id: string;
   /** The bash command or the subagent task, on one line. */
@@ -73,13 +73,23 @@ export function describeWork(work: BackgroundWork, checkLog = true): string {
   return `${work.id} (\`${work.label}\`${log})`;
 }
 
-/** `items` joined with `; ` and capped at `max` characters, ending with `…` when some did not fit. */
+/**
+ * `items` joined with `; ` within `max` characters, ending with `+N more` when some did not fit (the count, never a bare
+ * cut). A first item longer than the budget alone is clipped.
+ */
 export function workList(items: readonly string[], max: number): string {
   let text = '';
-  for (const item of items) {
+  for (const [index, item] of items.entries()) {
     const next = text ? `${text}; ${item}` : item;
-    if (next.length > max) return text ? `${text}; …` : clipText(item, max);
+    const rest = items.length - index - 1;
+    const more = rest > 0 ? `; +${rest} more` : '';
+    if (next.length + more.length > max) return text ? `${text}; +${rest + 1} more` : `${clipText(item, max - more.length)}${more}`;
     text = next;
   }
   return text;
+}
+
+/** The first `max` of `items` joined with `; `, then `; +N more` for the rest. */
+export function countedList(items: readonly string[], max: number): string {
+  return `${items.slice(0, max).join('; ')}${items.length > max ? `; +${items.length - max} more` : ''}`;
 }

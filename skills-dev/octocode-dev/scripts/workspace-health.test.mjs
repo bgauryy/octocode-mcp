@@ -11,7 +11,9 @@ test('repo verify executes an additional workspace gate and propagates its failu
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const scripts = path.join(root, 'skills-dev/octocode-dev/scripts');
   fs.mkdirSync(scripts, { recursive: true });
-  fs.copyFileSync(fileURLToPath(new URL('./workspace-health.mjs', import.meta.url)), path.join(scripts, 'workspace-health.mjs'));
+  for (const name of ['workspace-health.mjs', 'artifact-freshness.mjs']) {
+    fs.copyFileSync(fileURLToPath(new URL(`./${name}`, import.meta.url)), path.join(scripts, name));
+  }
   for (const name of ['dedupe-deps.mjs', 'docs-verify.mjs', 'workspace-health.test.mjs']) fs.writeFileSync(path.join(scripts, name), '');
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ workspaces: ['skills/*'] }));
   for (const [name, extra] of [['plain', {}], ['recovery', { verify: 'release-smoke' }]]) {

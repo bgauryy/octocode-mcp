@@ -1,8 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::{
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
 use super::{GitHubTransport, ProviderError, ProviderErrorKind, RequestContext, RequestSpec};
 
@@ -260,6 +257,7 @@ impl GitHubTransport {
                         bytes: bytes.into(),
                         resolved_ref: String::new(),
                     },
+                    super::Retention::Revalidate,
                 )
                 .await;
         }
@@ -288,7 +286,7 @@ impl GitHubTransport {
         namespace: &str,
         spec: &RequestSpec,
         context: &RequestContext,
-    ) -> Result<(super::CachePartition, String), ProviderError> {
+    ) -> Result<(super::Partition, String), ProviderError> {
         use sha2::{Digest, Sha256};
         let partition = self.cache_partition(context, None)?;
         let mut digest = Sha256::new();
@@ -306,6 +304,10 @@ impl GitHubTransport {
     /// List an owner's repositories. `sort` is a list-API sort key
     /// (`created`, `updated`, `pushed`, `full_name`); when set, results are
     /// ordered descending (newest first) like the search API's date sorts.
+    /// The token's own login lists every repository it owns, private ones
+    /// included (`/user/repos`); another user's listing is public. The
+    /// owner's kind is learned once per credential, so later pages spend one
+    /// request each.
     pub async fn list_owner_repositories(
         &self,
         owner: &str,
@@ -314,13 +316,19 @@ impl GitHubTransport {
         per_page: usize,
         context: &RequestContext,
     ) -> Result<(Vec<RepositorySearchItem>, bool), ProviderError> {
-        let fetch = |kind: &str, name: &str| -> Result<RequestSpec, ProviderError> {
-            let mut url = self.endpoint().rest(&["users", name, "repos"])?;
-            if kind == "orgs" {
-                url = self.endpoint().rest(&["orgs", name, "repos"])?;
-            }
+        let fetch = |source: OwnerSource| -> Result<RequestSpec, ProviderError> {
+            let mut url = match source {
+                OwnerSource::Organization => self.endpoint().rest(&["orgs", owner, "repos"])?,
+                OwnerSource::User => self.endpoint().rest(&["users", owner, "repos"])?,
+                OwnerSource::Viewer => self.endpoint().rest(&["user", "repos"])?,
+            };
             {
                 let mut pairs = url.query_pairs_mut();
+                if source == OwnerSource::Viewer {
+                    pairs
+                        .append_pair("affiliation", "owner")
+                        .append_pair("visibility", "all");
+                }
                 pairs
                     .append_pair("page", &page.to_string())
                     .append_pair("per_page", &per_page.to_string())
@@ -329,12 +337,39 @@ impl GitHubTransport {
             }
             Ok(RequestSpec::get(url))
         };
-        let response = match self.execute(fetch("orgs", owner)?, context).await {
-            Ok(v) => v,
-            Err(e) if e.status == Some(404) => {
-                self.execute(fetch("users", owner)?, context).await?
-            }
-            Err(e) => return Err(e),
+        let key = (
+            self.cache_partition(context, None)?,
+            owner.to_ascii_lowercase(),
+        );
+        let known = self.owners.get(&key);
+        let response = match known {
+            Some(source) => self.execute(fetch(source)?, context).await?,
+            None => match self
+                .execute(fetch(OwnerSource::Organization)?, context)
+                .await
+            {
+                Ok(response) => {
+                    self.owners.set(key, OwnerSource::Organization);
+                    response
+                }
+                Err(e) if e.status == Some(404) => {
+                    let (source, known) = match self.viewer_login(context).await {
+                        Viewer::Login(login) if login.eq_ignore_ascii_case(owner) => {
+                            (OwnerSource::Viewer, true)
+                        }
+                        Viewer::Login(_) | Viewer::NoUser => (OwnerSource::User, true),
+                        // This page lists public repositories; the next one
+                        // asks again rather than remembering a guess.
+                        Viewer::Unknown => (OwnerSource::User, false),
+                    };
+                    let response = self.execute(fetch(source)?, context).await?;
+                    if known {
+                        self.owners.set(key, source);
+                    }
+                    response
+                }
+                Err(e) => return Err(e),
+            },
         };
         let has_more = response.next.is_some();
         Ok((
@@ -378,6 +413,40 @@ impl GitHubTransport {
         self.repository_as(owner, repo, context).await
     }
 
+    /// The token's user, read once per credential. Without a token, or for a
+    /// token GitHub says has no user (an app token: 401/403/404), there is
+    /// none; a transient failure is `Unknown` and is not remembered.
+    async fn viewer_login(&self, context: &RequestContext) -> Viewer {
+        #[derive(Deserialize)]
+        struct User {
+            login: String,
+        }
+        if context.resolved_credential().is_none() {
+            return Viewer::NoUser;
+        }
+        let Ok(partition) = self.cache_partition(context, None) else {
+            return Viewer::Unknown;
+        };
+        if let Some(known) = self.owners.viewers.get(&partition) {
+            return (*known.value).clone().map_or(Viewer::NoUser, Viewer::Login);
+        }
+        let Ok(url) = self.endpoint().rest(&["user"]) else {
+            return Viewer::Unknown;
+        };
+        let login = match self.execute(RequestSpec::get(url), context).await {
+            Ok(page) => match decode::<User>(page.body.as_ref(), "invalid GitHub user response") {
+                Ok(user) => Some(user.login),
+                Err(_) => return Viewer::Unknown,
+            },
+            Err(error) if matches!(error.status, Some(401 | 403 | 404)) => None,
+            Err(_) => return Viewer::Unknown,
+        };
+        self.owners
+            .viewers
+            .insert(partition, login.clone(), 1, None);
+        login.map_or(Viewer::NoUser, Viewer::Login)
+    }
+
     /// One repository's search-row facts from `repos/{owner}/{repo}`: an
     /// exact lookup that spends no search request.
     pub async fn repository(
@@ -409,8 +478,8 @@ impl GitHubTransport {
                 repo.to_ascii_lowercase()
             ),
         );
-        let slot = self.repositories.slot(key);
-        let mut held = context.budget.wait(slot.lock()).await?;
+        let ticket = self.repositories.join(key);
+        let mut held = context.budget.wait(ticket.turn()).await?;
         if let Some((at, body)) = held.as_ref()
             && at.elapsed() < REPOSITORY_MEMO_TTL
         {
@@ -435,34 +504,69 @@ impl GitHubTransport {
     }
 }
 
+/// What a credential's `/user` read established.
+enum Viewer {
+    Login(String),
+    /// No token, or a token with no user.
+    NoUser,
+    /// The read failed transiently; nothing is known.
+    Unknown,
+}
+
+/// Where an owner's repositories are listed from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum OwnerSource {
+    Organization,
+    /// Another user: GitHub lists only their public repositories.
+    User,
+    /// The token's own user: private repositories are listed too.
+    Viewer,
+}
+
+/// Owners and credentials remembered before the least recently used go.
+const OWNER_MEMO_ENTRIES: usize = 256;
+const OWNER_MEMO: octocode_io::memo::MemoLimits = octocode_io::memo::MemoLimits {
+    max_entries: OWNER_MEMO_ENTRIES,
+    max_weight: OWNER_MEMO_ENTRIES,
+    keep_newest: false,
+};
+
+/// Each `(credential, owner)`'s listing source, learned on its first page,
+/// and each credential's own login.
+pub(crate) struct OwnerSources {
+    sources: octocode_io::memo::Memo<(super::Partition, String), OwnerSource>,
+    viewers: octocode_io::memo::Memo<super::Partition, Option<String>>,
+}
+
+impl Default for OwnerSources {
+    fn default() -> Self {
+        Self {
+            sources: octocode_io::memo::Memo::new(OWNER_MEMO),
+            viewers: octocode_io::memo::Memo::new(OWNER_MEMO),
+        }
+    }
+}
+
+impl OwnerSources {
+    fn get(&self, key: &(super::Partition, String)) -> Option<OwnerSource> {
+        self.sources.get(key).map(|hit| *hit.value)
+    }
+
+    fn set(&self, key: (super::Partition, String), source: OwnerSource) {
+        self.sources.insert(key, source, 1, None);
+    }
+}
+
 /// How long a read repository stays shared: long enough for one batch.
 const REPOSITORY_MEMO_TTL: Duration = Duration::from_secs(30);
 
-/// One repository's slot: when its body was read, and the body.
-type RepositorySlot = Arc<tokio::sync::Mutex<Option<(Instant, bytes::Bytes)>>>;
+/// The latest body of each `(credential, owner/repo)` read: a retained
+/// flight, whose slot is both the single flight and the memo.
+pub(crate) type RepositoryMemo =
+    super::KeyedFlight<(super::Partition, String), Option<(Instant, bytes::Bytes)>>;
 
-/// The latest body of each `(credential, owner/repo)` read, one slot per
-/// repository: the slot's lock is the single flight.
-#[derive(Default)]
-pub(crate) struct RepositoryMemo {
-    slots: std::sync::Mutex<
-        std::collections::HashMap<(super::CachePartition, String), RepositorySlot>,
-    >,
-}
-
-impl RepositoryMemo {
-    fn slot(&self, key: (super::CachePartition, String)) -> RepositorySlot {
-        let mut slots = self
-            .slots
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        // Drop idle entries so a long session does not grow the map unbounded.
-        if slots.len() > 256 {
-            slots.retain(|_, slot| Arc::strong_count(slot) > 1);
-        }
-        slots.entry(key).or_default().clone()
-    }
-}
+/// Repository keys kept before idle ones are dropped.
+pub(crate) const REPOSITORY_MEMO_KEYS: usize = 256;
 /// A 422 "cannot be searched" names what GitHub could not search: "users and
 /// repositories" is the `repo:`/`user:` scope (the repository was not found,
 /// not a bad query); "users" alone is a person qualifier (`author:`,

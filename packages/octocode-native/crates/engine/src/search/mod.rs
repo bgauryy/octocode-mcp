@@ -1,5 +1,5 @@
-pub(crate) mod classify;
 pub(crate) mod fs_query;
+pub mod glob;
 pub(crate) mod pcre2_ranges;
 pub(crate) mod relevance;
 pub(crate) mod rust_ranges;

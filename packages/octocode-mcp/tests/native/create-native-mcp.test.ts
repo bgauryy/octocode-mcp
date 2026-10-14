@@ -2,7 +2,6 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/server';
-import { INTERACTIVE_EXECUTION_TIMEOUT_SECS } from '@octocodeai/config';
 import { buildMcpInstructions } from '@octocodeai/config/mcp';
 import {
   getNativeContractFingerprint,
@@ -77,6 +76,8 @@ class FakeRuntime implements NativeRuntime {
   hang = false;
   /** When set, `executeMcp` rejects with it. */
   failure: unknown;
+  /** When set, `executeMcp` resolves with it. */
+  result: unknown;
   providerAvailable = true;
 
   cancel(requestId: string): boolean {
@@ -91,6 +92,7 @@ class FakeRuntime implements NativeRuntime {
   ): Promise<unknown> {
     this.executions.push({ requestId, tool, input });
     if (this.failure !== undefined) throw this.failure;
+    if (this.result !== undefined) return this.result;
     if (this.hang) {
       await new Promise<void>(resolve => {
         const poll = setInterval(() => {
@@ -155,7 +157,7 @@ afterEach(() => {
 });
 
 describe('createNativeMcp registration + execution', () => {
-  it('gives MCP executions headroom beyond the worst cold LSP budget', async () => {
+  it('leaves the per-request execution budget to native', async () => {
     const instance = await createNativeMcp({
       env: {},
       binding: bindingFor(() => ({
@@ -164,11 +166,7 @@ describe('createNativeMcp registration + execution', () => {
       })),
     });
 
-    expect(FakeRuntime.last?.options).toMatchObject({
-      surface: 'mcp',
-      timeoutSecs: INTERACTIVE_EXECUTION_TIMEOUT_SECS,
-      env: {},
-    });
+    expect(FakeRuntime.last?.options).toEqual({ surface: 'mcp', env: {} });
 
     await instance.close();
   });
@@ -409,8 +407,8 @@ describe('createNativeMcp registration + execution', () => {
         tools: [
           tool('localFetch', true),
           tool('ghSearchCode', false),
-          // CLI-only: never loaded, even when a runtime reports it available.
-          tool('astTopology', true),
+          // CLI-only: native resolves it unavailable on the MCP surface.
+          tool('astTopology', false),
         ],
       })),
     });
@@ -423,7 +421,7 @@ describe('createNativeMcp registration + execution', () => {
       client.connect(clientTransport),
     ]);
 
-    // Unavailable and CLI-only tools are not loaded.
+    // Only what native reports available is loaded.
     const list = await client.listTools();
     expect(list.tools.map(t => t.name)).toEqual(['localFetch']);
     expect(list.tools.every(t => !Object.hasOwn(t, 'outputSchema'))).toBe(true);
@@ -516,17 +514,7 @@ describe('createNativeMcp registration + execution', () => {
   });
 
   describe('native execution errors', () => {
-    /** The addon's rejection: a scrubbed, typed `octocode.nativeError`. */
-    const nativeError = (
-      code: string,
-      message: string,
-      payload: unknown = null
-    ) =>
-      new Error(
-        JSON.stringify({ kind: 'octocode.nativeError', code, message, payload })
-      );
-
-    async function callFailing(failure: unknown) {
+    async function call(failure: unknown, result?: unknown) {
       const stderr = vi
         .spyOn(process.stderr, 'write')
         .mockImplementation(() => true);
@@ -545,6 +533,7 @@ describe('createNativeMcp registration + execution', () => {
         client.connect(clientTransport),
       ]);
       FakeRuntime.last!.failure = failure;
+      FakeRuntime.last!.result = result;
       try {
         return await client.callTool({
           name: 'localFetch',
@@ -559,62 +548,48 @@ describe('createNativeMcp registration + execution', () => {
       }
     }
 
-    it.each([
-      ['timeout', 'Request timed out after 300 s.'],
-      ['busy', 'The runtime is at its concurrency limit.'],
-      [
-        'toolUnavailable',
-        'Tool clasify is not available in this native runtime: needs classification.api (OCTOCODE_CLASSIFICATION_API)',
-      ],
-    ])(
-      'returns a typed %s tool error with the native message, not "see the server logs"',
-      async (code, message) => {
-        const result = await callFailing(nativeError(code, message));
-        expect(result.isError).toBe(true);
-        expect(result.structuredContent).toEqual({
-          error: message,
-          errorCode: code,
-        });
-        expect(result.content).toEqual([
-          { type: 'text', text: `${message} (errorCode: ${code})` },
-        ]);
-      }
-    );
-
-    it('carries the payload repair details like the CLI envelope', async () => {
-      const result = await callFailing(
-        nativeError('timeout', 'Timeout', {
-          error: 'Timeout',
-          details: ['Retry with a narrower path.'],
-        })
-      );
-      expect(result.isError).toBe(true);
-      expect(result.structuredContent).toEqual({
-        error: 'Timeout',
-        details: ['Retry with a narrower path.'],
-        errorCode: 'timeout',
-      });
-      expect(result.content).toEqual([
-        {
-          type: 'text',
-          text: 'Timeout; Retry with a narrower path. (errorCode: timeout)',
+    // Native projects every rejected call (timeout, busy, unavailable tool,
+    // invalid input) into the tool error the CLI prints; the adapter passes
+    // it through untouched.
+    it('passes the native tool error through unchanged', async () => {
+      const nativeResult = {
+        content: [
+          {
+            type: 'text',
+            text: 'Tool call timed out.; Retry, or narrow the call. (errorCode: timeout)',
+          },
+        ],
+        structuredContent: {
+          error: 'Tool call timed out.',
+          details: ['Retry, or narrow the call.'],
+          errorCode: 'timeout',
         },
-      ]);
+        isError: true,
+      };
+      const result = await call(undefined, nativeResult);
+      expect(result).toEqual(nativeResult);
     });
 
+    // Native rejects only a cancelled request or a closing runtime; any
+    // rejection that reaches the client stays generic.
     it.each([
+      [
+        'a closing runtime',
+        new Error(
+          JSON.stringify({
+            kind: 'octocode.nativeError',
+            code: 'closed',
+            message: 'The runtime is shutting down.',
+            payload: null,
+          })
+        ),
+      ],
       ['a non-native error', new Error('ENOENT /Users/me/.ssh/id_rsa')],
       ['a non-error value', 'boom'],
-      ['unparseable JSON', new Error('{"kind":')],
-      ['a foreign JSON kind', new Error('{"kind":"other","code":"x"}')],
-      [
-        'a native error without a code',
-        new Error('{"kind":"octocode.nativeError","message":"m"}'),
-      ],
     ])(
       'keeps %s generic and out of the client text',
       async (_name, failure) => {
-        const result = await callFailing(failure);
+        const result = await call(failure);
         expect(result.isError).toBe(true);
         expect(result.structuredContent).toBeUndefined();
         expect(result.content).toEqual([
@@ -627,16 +602,17 @@ describe('createNativeMcp registration + execution', () => {
     );
   });
 
-  it('never registers CLI-only tools even when native reports them available', async () => {
+  it('registers only the tools native reports available on MCP', async () => {
     const cliOnly = Object.keys(TOOL_POLICIES).filter(isCliOnlyTool);
     expect(cliOnly.length).toBeGreaterThan(0);
+    // Native resolves CLI-only tools as unavailable on the MCP surface.
     const instance = await createNativeMcp({
       env: {},
       binding: bindingFor(() => ({
         fingerprint: getNativeContractFingerprint(),
         tools: [
           tool('localFetch', true),
-          ...cliOnly.map(name => tool(name, true)),
+          ...cliOnly.map(name => tool(name, false)),
         ],
       })),
     });

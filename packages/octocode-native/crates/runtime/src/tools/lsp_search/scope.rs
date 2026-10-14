@@ -27,7 +27,7 @@ use octocode_engine::types::TextSearchOptions;
 use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 
 /// Language ids that share one lexical family (one server answers them).
@@ -75,10 +75,13 @@ const TEXT_SCAN_BUDGET: Duration = Duration::from_secs(3);
 /// fingerprint covers every family file under the root, so an unchanged
 /// fingerprint proves the scan would find the same files; a scan without a
 /// fingerprint (walk past its bounds) is never stored.
-static TEXT_SCANS: LazyLock<Mutex<HashMap<String, Arc<BTreeSet<String>>>>> =
-    LazyLock::new(Mutex::default);
-/// Stored text scans per process; past it the store starts over.
-const TEXT_SCANS_MAX: usize = 256;
+/// The 256 most recently used are kept.
+static TEXT_SCANS: octocode_io::memo::Memo<String, BTreeSet<String>> =
+    octocode_io::memo::Memo::new(octocode_io::memo::MemoLimits {
+        max_entries: 256,
+        max_weight: 256,
+        keep_newest: false,
+    });
 
 /// The files a word-bounded name appears in, for one symbol.
 struct TextScan {
@@ -154,18 +157,21 @@ impl Scope {
         policy: &PathPolicy,
         cancel: &dyn CancellationCheck,
     ) -> Result<Option<Arc<BTreeSet<String>>>, LspFailure> {
-        if let Some(scan) = self.text.lock().ok().as_ref().and_then(|scan| {
-            scan.as_ref()
-                .filter(|scan| scan.symbol == symbol)
-                .map(|scan| scan.files.clone())
-        }) {
+        if let Some(scan) = self
+            .text
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+            .filter(|scan| scan.symbol == symbol)
+            .map(|scan| scan.files.clone())
+        {
             return Ok(scan);
         }
         let stored = self
             .fingerprint
             .lock()
-            .ok()
-            .and_then(|fingerprint| fingerprint.clone())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
             .map(|fingerprint| {
                 crate::digest::sha256(
                     format!(
@@ -176,12 +182,10 @@ impl Scope {
                     .as_bytes(),
                 )
             });
-        let hit = stored.as_ref().and_then(|key| {
-            TEXT_SCANS
-                .lock()
-                .ok()
-                .and_then(|scans| scans.get(key).cloned())
-        });
+        let hit = stored
+            .as_ref()
+            .and_then(|key| TEXT_SCANS.get(key))
+            .map(|hit| hit.value);
         let files = match hit {
             Some(files) => Some(files),
             None => {
@@ -195,13 +199,8 @@ impl Scope {
                 )
                 .await?
                 .map(Arc::new);
-                if let (Some(key), Some(files)) = (stored, &files)
-                    && let Ok(mut scans) = TEXT_SCANS.lock()
-                {
-                    if scans.len() >= TEXT_SCANS_MAX {
-                        scans.clear();
-                    }
-                    scans.insert(key, Arc::clone(files));
+                if let (Some(key), Some(files)) = (stored, &files) {
+                    TEXT_SCANS.insert(key, Arc::clone(files), 1, None);
                 }
                 files
             }
@@ -262,13 +261,19 @@ impl Scope {
     /// Files the text scan of `symbol` found that the server's answer does
     /// not cover; `None` when either side is unknown.
     pub(super) fn text_only_files(&self, symbol: &str) -> Option<Vec<String>> {
-        let text = self.text.lock().ok()?;
+        let text = self
+            .text
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let files = text
             .as_ref()
             .filter(|scan| scan.symbol == symbol)?
             .files
             .clone()?;
-        let answered = self.answered.lock().ok()?;
+        let answered = self
+            .answered
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if answered.is_empty() {
             return None;
         }
@@ -452,7 +457,10 @@ async fn scan_text(
         pattern: word_pattern(symbol),
         files_only: Some(true),
         include: (!include.is_empty()).then(|| include.to_vec()),
-        no_ignore: lifted.then_some(true),
+        ignore: octocode_engine::search::walk::IgnorePolicy {
+            include_ignored: lifted,
+            include_hidden: false,
+        },
         exclude_dir: lifted.then(|| crate::policy::prune::PruneMode::SearchSafe.directories(true)),
         ..TextSearchOptions::default()
     };
@@ -543,7 +551,7 @@ fn fingerprint(
         ))
     };
     // A parallel walk: the digest is order-free (lines are sorted).
-    crate::tools::pruned_walk(root, crate::tools::syntax_prune(&[]))
+    crate::tools::pruned_walk(root, crate::tools::syntax_prune([]))
         .build_parallel()
         .run(|| {
             Box::new(|entry| {
@@ -554,7 +562,7 @@ fn fingerprint(
                     abandoned.store(true, Ordering::Relaxed);
                     return ignore::WalkState::Quit;
                 }
-                let Some(line) = entry.ok().and_then(&line) else {
+                let Some(line) = entry.ok().and_then(line) else {
                     return ignore::WalkState::Continue;
                 };
                 let Ok(mut entries) = entries.lock() else {

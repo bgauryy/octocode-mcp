@@ -12,9 +12,9 @@
 //! rather than reset, so a transient failure can drop one update but never
 //! wipe accumulated counters.
 
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, OpenOptions};
 use std::path::Path;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use serde_json::{Map, Value, json};
 
@@ -67,31 +67,14 @@ fn bump(entry: &mut Map<String, Value>, key: &str, by: u64) {
     entry.insert(key.to_owned(), Value::from(current.saturating_add(by)));
 }
 
-struct StatsLock(File);
-
-impl Drop for StatsLock {
-    fn drop(&mut self) {
-        let _ = self.0.unlock();
-    }
-}
-
-fn acquire_lock(home: &Path) -> Option<StatsLock> {
+fn acquire_lock(home: &Path) -> Option<octocode_io::lock::LockedFile> {
     let file = OpenOptions::new()
         .create(true)
         .truncate(false)
         .write(true)
         .open(home.join("stats.json.lock"))
         .ok()?;
-    let started = Instant::now();
-    loop {
-        match file.try_lock() {
-            Ok(()) => return Some(StatsLock(file)),
-            Err(fs::TryLockError::WouldBlock) if started.elapsed() < LOCK_WAIT => {
-                std::thread::sleep(LOCK_POLL);
-            }
-            Err(_) => return None,
-        }
-    }
+    octocode_io::lock::lock_within(file, LOCK_WAIT, LOCK_POLL).ok()
 }
 
 /// Record one tool call's aggregated classification usage.
@@ -133,19 +116,13 @@ pub fn record_classification(home: &Path, enabled: bool, usage: ClassificationUs
     let Some(section) = section.as_object_mut() else {
         return;
     };
-    // Old files did not distinguish absent usage from reported zero. Retain
-    // their token totals and classify unaccounted historical calls as unknown.
-    let prior = |key: &str| section.get(key).and_then(Value::as_u64).unwrap_or(0);
-    let legacy_unknown = prior("calls")
-        .saturating_sub(prior("known_usage_calls").saturating_add(prior("unknown_usage_calls")));
-    bump(section, "unknown_usage_calls", legacy_unknown);
     bump(section, "calls", usage.calls);
     bump(section, "known_usage_calls", usage.known_usage_calls);
     bump(section, "unknown_usage_calls", usage.unknown_usage_calls);
     bump(section, "input_tokens", usage.input_tokens);
     bump(section, "output_tokens", usage.output_tokens);
     if let Ok(serialized) = serde_json::to_string_pretty(&root) {
-        let _ = crate::private_file::write_atomic(&path, serialized.as_bytes(), false);
+        let _ = octocode_io::atomic::write_atomic(&path, serialized.as_bytes(), false);
     }
 }
 
@@ -208,27 +185,24 @@ mod tests {
     }
 
     #[test]
-    fn historical_calls_without_completeness_metadata_remain_unknown() {
+    fn a_file_from_an_older_build_is_not_reinterpreted() {
+        // An older build wrote `calls` without usage counters; the new call adds
+        // only its own usage, and no historical calls are inferred as unknown.
         let dir = tempfile::tempdir().unwrap();
         fs::write(
             dir.path().join("stats.json"),
-            r#"{"version":1,"stats":{"clasify":{"calls":3,"input_tokens":7,"output_tokens":1}}}"#,
+            r#"{"version":1,"stats":{"clasify":{"calls":5,"input_tokens":50,"output_tokens":5}}}"#,
         )
         .unwrap();
-        record_classification(dir.path(), true, usage(1, 9, 2));
-        let stats = read(dir.path());
-        assert_eq!(stats["stats"]["clasify"]["calls"], 4);
-        assert_eq!(stats["stats"]["clasify"]["known_usage_calls"], 1);
-        assert_eq!(stats["stats"]["clasify"]["unknown_usage_calls"], 3);
-        assert_eq!(stats["stats"]["clasify"]["input_tokens"], 16);
-        record_classification(dir.path(), true, usage(1, 1, 1));
-        let stats = read(dir.path());
-        assert_eq!(stats["stats"]["clasify"]["known_usage_calls"], 2);
-        assert_eq!(stats["stats"]["clasify"]["unknown_usage_calls"], 3);
+        record_classification(dir.path(), true, usage(1, 9, 1));
+        assert_eq!(
+            read(dir.path())["stats"]["clasify"],
+            json!({"calls": 6, "known_usage_calls": 1, "unknown_usage_calls": 0, "input_tokens": 59, "output_tokens": 6})
+        );
     }
 
     #[test]
-    fn preserves_existing_stats_and_tolerates_legacy_shapes() {
+    fn tolerates_unexpected_stats_shapes() {
         let dir = tempfile::tempdir().unwrap();
         fs::write(
             dir.path().join("stats.json"),

@@ -490,8 +490,8 @@ pub(super) fn restart_stale(tool: ToolId, query: &Value, data: &mut Value) {
     ensure_restart(tool, query, object);
 }
 
-/// `next.restart` when the tool built none: page 1 of the same query,
-/// without its snapshot and page cursors.
+/// `next.restart` when the tool built none: the one restart of the same
+/// query ([`crate::tools::result::restart_query`]).
 fn ensure_restart(tool: ToolId, query: &Value, object: &mut Map<String, Value>) {
     if object
         .get("next")
@@ -500,21 +500,10 @@ fn ensure_restart(tool: ToolId, query: &Value, object: &mut Map<String, Value>) 
     {
         return;
     }
-    let Some(row) = query.as_object() else {
+    if !query.is_object() {
         return;
-    };
-    let is_cursor = |key: &str| {
-        matches!(key, "snapshot" | "page" | "offset")
-            || ["Snapshot", "Page", "Offset"]
-                .iter()
-                .any(|suffix| key.ends_with(suffix))
-    };
-    let row: Map<String, Value> = row
-        .iter()
-        .filter(|(key, _)| !is_cursor(key))
-        .map(|(key, value)| (key.clone(), value.clone()))
-        .collect();
-    let restart = crate::tools::result::Continuation::new(tool, Value::Object(row)).build();
+    }
+    let restart = crate::tools::result::restart_query(tool, query);
     match object.entry("next").or_insert_with(|| json!({})) {
         Value::Object(next) => {
             next.insert("restart".into(), restart);
@@ -585,7 +574,7 @@ impl PageFacts {
             page,
             page_size: Some(size),
             total_items: Some(total_items),
-            total_pages: Some(total_items.div_ceil(size).max(1)),
+            total_pages: Some(crate::tools::page_windows::count_pages(total_items, size)),
             has_more: page.saturating_mul(size) < total_items,
             out_of_range: false,
         }
@@ -622,11 +611,15 @@ impl PageFacts {
         }
     }
 
-    /// The same page with a known total of the paged unit.
+    /// The same page with a known total of the paged unit. A page without a
+    /// page count derives one from its page size; a size-cut page keeps the
+    /// count its pager stated.
     pub(crate) fn with_total(mut self, total_items: usize) -> Self {
         self.total_items = Some(total_items);
-        if let Some(size) = self.page_size {
-            self.total_pages = Some(total_items.div_ceil(size.max(1)).max(1));
+        if self.total_pages.is_none()
+            && let Some(size) = self.page_size
+        {
+            self.total_pages = Some(crate::tools::page_windows::count_pages(total_items, size));
         }
         self
     }
@@ -676,6 +669,61 @@ impl PageFacts {
     }
 }
 
+/// One content window's facts, beside [`PageFacts`] for count pages: every
+/// window block (a read's `pagination`, a body's `contentPagination` entry,
+/// a patch's `patchPagination`) is built from these, so the keys and their
+/// order are one shape: `unit` (`lines`, `bytes` or `chars`), `offset`,
+/// `length`, `total`, `hasMore`, and `nextOffset` while more is left.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct SpanFacts {
+    unit: &'static str,
+    offset: usize,
+    length: usize,
+    total: usize,
+}
+
+impl SpanFacts {
+    /// Every key a window block may carry, in block order.
+    pub(crate) const KEYS: [&'static str; 6] =
+        ["unit", "offset", "length", "total", "hasMore", "nextOffset"];
+
+    /// The window of up to `length` `unit`s from `offset` over a view of
+    /// `total`, clamped to the view (past the end it is empty at the end).
+    pub(crate) fn window(unit: &'static str, offset: usize, length: usize, total: usize) -> Self {
+        let offset = offset.min(total);
+        Self {
+            unit,
+            offset,
+            length: length.min(total - offset),
+            total,
+        }
+    }
+
+    /// Whether units are left after the window.
+    pub(crate) fn has_more(self) -> bool {
+        self.offset + self.length < self.total
+    }
+
+    /// Where the next window starts, while units are left.
+    pub(crate) fn next_offset(self) -> Option<usize> {
+        self.has_more().then_some(self.offset + self.length)
+    }
+
+    /// The window block.
+    pub(crate) fn to_value(self) -> Value {
+        let mut block = Map::new();
+        block.insert("unit".into(), json!(self.unit));
+        block.insert("offset".into(), json!(self.offset));
+        block.insert("length".into(), json!(self.length));
+        block.insert("total".into(), json!(self.total));
+        block.insert("hasMore".into(), json!(self.has_more()));
+        if let Some(next) = self.next_offset() {
+            block.insert("nextOffset".into(), json!(next));
+        }
+        Value::Object(block)
+    }
+}
+
 /// One count-cut page of an in-memory list. A page past the end is empty,
 /// terminal and flagged `outOfRange`, never clamped to the last page, which
 /// would repeat rows the caller already has.
@@ -696,12 +744,10 @@ pub(crate) fn page_window(
     page_size: usize,
 ) -> (std::ops::Range<usize>, PageFacts) {
     let page = page.max(1);
-    let size = page_size.max(1);
-    let facts = PageFacts::counted(page, size, len);
+    let facts = PageFacts::counted(page, page_size, len);
     let past_end = facts.total_pages.is_some_and(|pages| page > pages);
-    let start = (page - 1).saturating_mul(size).min(len);
-    let end = start.saturating_add(size).min(len);
-    (start..end, facts.out_of_range(past_end))
+    let window = crate::tools::page_windows::count_window(page, page_size, len);
+    (window, facts.out_of_range(past_end))
 }
 
 /// Cursor keys a tool's pagination block carries to the response stage,
@@ -775,8 +821,21 @@ fn has_call(value: &Value, name_matches: &impl Fn(&str) -> bool) -> bool {
     }
 }
 
+/// Codes of a row's coverage: for a `partial` row, a terminal limit or a
+/// continuation missing for its rest; for any row, a continuation missing
+/// for a clipped value none reaches.
+pub(super) fn coverage_codes(data: &Value, partial: bool) -> Vec<String> {
+    if partial {
+        pagination_codes(data)
+    } else if clipped_value_unreached(data) {
+        vec!["continuationMissing".into()]
+    } else {
+        Vec::new()
+    }
+}
+
 /// Codes of a partial row: a terminal limit, or a continuation missing.
-pub(super) fn pagination_codes(data: &Value) -> Vec<String> {
+fn pagination_codes(data: &Value) -> Vec<String> {
     if tree_some(data, &|m| {
         m.get("terminalLimit") == Some(&Value::Bool(true))
     }) {
@@ -796,17 +855,17 @@ pub(super) fn pagination_codes(data: &Value) -> Vec<String> {
     }
 }
 
-/// Whether a value clipped inside a file row (`truncated:true` under a row
-/// with a `path`) has no continuation reaching it: neither a read or
-/// expansion of that file nor one that widens values (`matchContentLength`).
-/// Page continuations (`next*`, `continue*`) list more rows and never widen a
-/// shown one.
+/// Whether a value clipped inside a file row (the contract's `clipped:true`
+/// under a row with a `path`) has no continuation reaching it: neither a
+/// read or expansion of that file nor one that widens values
+/// (`matchContentLength`). Page continuations (`next*`, `continue*`) list
+/// more rows and never widen a shown one.
 fn clipped_value_unreached(data: &Value) -> bool {
     fn clipped_paths<'a>(value: &'a Value, path: Option<&'a str>, out: &mut Vec<&'a str>) {
         match value {
             Value::Object(map) => {
                 let path = map.get("path").and_then(Value::as_str).or(path);
-                if map.get("truncated") == Some(&Value::Bool(true))
+                if map.get("clipped") == Some(&Value::Bool(true))
                     && let Some(path) = path
                 {
                     out.push(path);
@@ -872,29 +931,17 @@ fn tree_some(value: &Value, predicate: &impl Fn(&Map<String, Value>) -> bool) ->
     }
 }
 
+/// Whether `record` says a count it states is capped: the contract's one
+/// cap flag of a pagination block (`totalItemsCapped`).
 fn bounded(record: &Map<String, Value>) -> bool {
-    [
-        "truncated",
-        "capReached",
-        "capped",
-        "capturesTruncated",
-        "totalItemsCapped",
-        "incompleteTree",
-        "possiblyTruncated",
-        "truncatedByDepth",
-        "truncatedByBudget",
-    ]
-    .iter()
-    .any(|key| record.get(*key) == Some(&Value::Bool(true)))
-        || record
-            .get("partialTreeFailures")
-            .and_then(Value::as_array)
-            .is_some_and(|v| !v.is_empty())
+    record.get("totalItemsCapped") == Some(&Value::Bool(true))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{PageFacts, Remaining, note_remaining, redisclose, take_remaining_notes};
+    use super::{
+        PageFacts, Remaining, SpanFacts, note_remaining, redisclose, take_remaining_notes,
+    };
     use crate::tools::id::ToolId;
     use serde_json::{Value, json};
 
@@ -1302,6 +1349,58 @@ mod tests {
         assert!(!crate::response::pages::STALE_SNAPSHOT_ERROR.contains("next."));
     }
 
+    /// A restart the tool did not build is the one restart owner's: page 1
+    /// of the same query without any cursor or saved ranking, a replay.
+    #[test]
+    fn a_runtime_restart_drops_cursors_and_the_saved_ranking() {
+        let query = json!({"path":"a.rs","offset":90,"snapshot":"s","ranking":"plan"});
+        let mut data = json!({"errorCode":"staleSnapshot","isPartial":true});
+        super::restart_stale(ToolId::LocalFetch, &query, &mut data);
+        assert_eq!(
+            data["next"]["restart"],
+            crate::tools::result::restart_query(ToolId::LocalFetch, &query),
+            "{data}"
+        );
+        assert_eq!(
+            data["next"]["restart"]["query"]["queries"][0],
+            json!({"path":"a.rs"})
+        );
+        assert_eq!(data["next"]["restart"]["confidence"], "exact");
+    }
+
+    /// A content window states where it stands in its unit: the shown
+    /// span, the total when known, and the next offset while more is left.
+    #[test]
+    fn span_facts_state_one_window_shape() {
+        assert_eq!(
+            SpanFacts::window("chars", 0, 12_000, 14_366)
+                .to_value()
+                .to_string(),
+            r#"{"unit":"chars","offset":0,"length":12000,"total":14366,"hasMore":true,"nextOffset":12000}"#
+        );
+        let last = SpanFacts::window("chars", 12_000, 2_366, 14_366);
+        assert!(!last.has_more());
+        assert_eq!(last.next_offset(), None);
+        assert_eq!(
+            last.to_value().to_string(),
+            r#"{"unit":"chars","offset":12000,"length":2366,"total":14366,"hasMore":false}"#
+        );
+        // A window is clamped to its view: past the end it is empty at the end.
+        assert_eq!(
+            SpanFacts::window("bytes", 900, 50, 100).to_value(),
+            json!({"unit":"bytes","offset":100,"length":0,"total":100,"hasMore":false})
+        );
+        assert_eq!(SpanFacts::window("bytes", 90, 50, 100).next_offset(), None);
+        let block = SpanFacts::window("lines", 0, 1, 2).to_value();
+        let keys: Vec<&str> = block
+            .as_object()
+            .expect("block")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(keys, SpanFacts::KEYS, "every key, in block order");
+    }
+
     #[test]
     fn page_facts_count_only_the_paged_unit() {
         // One key order on every page; the total is the paged unit's.
@@ -1331,6 +1430,15 @@ mod tests {
         assert_eq!(
             PageFacts::sized(1, 4, 90, true).to_value().to_string(),
             r#"{"currentPage":1,"totalPages":4,"totalItems":90,"hasMore":true}"#
+        );
+        // A size-cut page keeps its byte-derived page count when its total is
+        // restated; only a page without one derives it from the count.
+        assert_eq!(
+            PageFacts::sized(1, 4, 90, true)
+                .with_page_size(10)
+                .with_total(90)
+                .to_value()["totalPages"],
+            json!(4)
         );
     }
 
@@ -1380,6 +1488,7 @@ mod tests {
             .keys()
             .map(|key| (key.clone(), "PageFacts".to_owned()))
             .collect::<Vec<_>>();
+        emitted.extend(SpanFacts::KEYS.map(|key| (key.to_owned(), "SpanFacts".to_owned())));
         let direct = regex::Regex::new(r#"\["pagination"\]\["(\w+)"\]\s*=[^=]"#).expect("regex");
         let binding = regex::Regex::new(r#"let Some\((\w+)\) = [^;{]*get_mut\("pagination"\)"#)
             .expect("regex");
@@ -1401,21 +1510,20 @@ mod tests {
                 if !name.ends_with(".rs") || name == "tests.rs" || name.ends_with("_tests.rs") {
                     continue;
                 }
-                let text = std::fs::read_to_string(&path).expect("source");
-                let text = text.split("#[cfg(test)]").next().unwrap_or_default();
+                let text = crate::tools::test_support::production_source(&path);
                 let at = path.display().to_string();
                 emitted.extend(
                     direct
-                        .captures_iter(text)
+                        .captures_iter(&text)
                         .map(|capture| (capture[1].to_owned(), at.clone())),
                 );
-                for bound in binding.captures_iter(text) {
+                for bound in binding.captures_iter(&text) {
                     let write =
                         regex::Regex::new(&format!(r#"\b{}\["(\w+)"\]\s*=[^=]"#, &bound[1]))
                             .expect("regex");
                     emitted.extend(
                         write
-                            .captures_iter(text)
+                            .captures_iter(&text)
                             .map(|capture| (capture[1].to_owned(), at.clone())),
                     );
                 }

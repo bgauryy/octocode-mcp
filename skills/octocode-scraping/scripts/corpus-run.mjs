@@ -5,7 +5,7 @@
  *
  * Usage:
  *   corpus-run.mjs --session-dir <scrapeSession> --regex 'offerId|productId' [--roots raw,text,extracts,cdp]
- *   corpus-run.mjs --artifact-dir <.octocode/tmp/chrome-devtools/...> --regex 'items'
+ *   corpus-run.mjs --artifact-dir <.octocode/octocode-chrome-devtools/tmp/...> --regex 'items'
  *   corpus-run.mjs --session-dir <dir> --concat-parts --write-full-clean --regex 'headline'
  *   corpus-run.mjs --session-dir <dir> --script ./my-check.mjs [--script-arg k=v]
  *
@@ -29,13 +29,16 @@ import {
   safeScriptPath,
   readJsonFile,
 } from './lib/bridge.mjs';
+import { fail } from './lib/fail.mjs';
 
 function usage(code = 2) {
   console.error(`Usage:
-  corpus-run.mjs --session-dir <scrapeSession> --regex <pattern> [--flags <gimsu>] [--roots raw,text,extracts,cdp,snippets] [--limit 50] [--concat-parts] [--write-full-clean]
+  corpus-run.mjs --session-dir <scrapeSession> --regex <pattern> [--flags <gimsu>] [--roots text,extracts,cdp,snippets,reports,indexes,graph,sources] [--limit 50] [--concat-parts] [--write-full-clean]
   corpus-run.mjs --artifact-dir <chrome-devtools-run> --regex <pattern> [...]
   corpus-run.mjs --session-dir <dir> --script <file.mjs> [--script-arg key=value]
 
+Default roots follow the documented search order; add raw to audit extraction. The sources root covers the top-level files
+(sources.jsonl, AGENT_INDEX.json, manifest.json, page-map.json, MAP.md).
 Stdout is compact JSON (paths + match samples), never full file dumps.`);
   process.exit(code);
 }
@@ -47,9 +50,10 @@ const sessionDirArg = takeArg(args, '--session-dir');
 const artifactDirArg = takeArg(args, '--artifact-dir');
 const regexStr = takeArg(args, '--regex');
 const flags = takeArg(args, '--flags', 'gi');
-const rootsCsv = takeArg(args, '--roots', 'raw,text,extracts,cdp,snippets');
+const DEFAULT_ROOTS = 'text,extracts,cdp,snippets,reports,indexes,graph,sources';
+const rootsCsv = takeArg(args, '--roots', DEFAULT_ROOTS);
 const limit = Number(takeArg(args, '--limit', '50'));
-if (!Number.isSafeInteger(limit) || limit < 1 || limit > 300) { console.error('Invalid limit'); process.exit(2); }
+if (!Number.isSafeInteger(limit) || limit < 1 || limit > 300) fail('invalidArguments', '--limit must be an integer from 1 to 300', 2);
 const concatParts = hasFlag(args, '--concat-parts');
 const writeFullClean = hasFlag(args, '--write-full-clean');
 const scriptArg = takeArg(args, '--script');
@@ -63,12 +67,10 @@ const artifactDir = artifactDirArg ? resolve(artifactDirArg) : null;
 const roots = rootsCsv.split(',').map((s) => s.trim()).filter(Boolean);
 
 if (sessionDir && !existsSync(sessionDir)) {
-  console.log(JSON.stringify({ ok: false, error: `session-dir not found: ${sessionDir}` }));
-  process.exit(1);
+  fail('sessionNotFound', `session-dir not found: ${sessionDir}`, 1);
 }
 if (artifactDir && !existsSync(artifactDir)) {
-  console.log(JSON.stringify({ ok: false, error: `artifact-dir not found: ${artifactDir}` }));
-  process.exit(1);
+  fail('notFound', `artifact-dir not found: ${artifactDir}`, 1);
 }
 
 const fullCleanWritten = [];
@@ -96,10 +98,9 @@ async function collectFiles() {
     const listed = await listFilesRecursive(sessionDir, {
       include: (rel) => {
         if (!defaultCorpusInclude(rel) && !rel.startsWith('cdp/')) return false;
-        if (rel === 'sources.jsonl' || rel === 'AGENT_INDEX.json') return roots.includes('extracts') || roots.includes('raw') || true;
-        const top = rel.split('/')[0];
-        if (['raw', 'text', 'extracts', 'cdp', 'snippets', 'indexes', 'graph'].includes(top)) return allow.has(top);
-        return allow.has(top);
+        // Top-level session files belong to the `sources` root; every other file to its folder.
+        if (!rel.includes('/')) return allow.has('sources');
+        return allow.has(rel.split('/')[0]);
       },
     });
     for (const f of listed) {
@@ -132,8 +133,7 @@ async function runRegex() {
   try {
     re = new RegExp(regexStr, flags.includes('g') ? flags : `${flags}g`);
   } catch (error) {
-    console.log(JSON.stringify({ ok: false, error: `invalid regex: ${error.message}` }));
-    process.exit(1);
+    fail('invalidArguments', `invalid regex: ${error.message}`, 2);
   }
   const matches = [];
   const scanned = [];
@@ -212,8 +212,7 @@ if (scriptArg) {
   const absScript = safeScriptPath(scriptArg, process.cwd());
   const mod = await import(pathToFileURL(absScript).href);
   if (typeof mod.run !== 'function') {
-    console.log(JSON.stringify({ ok: false, error: 'script must export async function run(ctx)' }));
-    process.exit(1);
+    fail('invalidScript', 'script must export async function run(ctx)', 2);
   }
   scriptResult = await mod.run(ctxBase);
   const value = JSON.stringify(scriptResult ?? null);
@@ -229,7 +228,9 @@ if (scriptArg) {
 let regexResult = { matches: [], scanned: [] };
 if (regexStr) regexResult = await runRegex();
 
-const pagingArgs = args.filter((_,i)=>!['--script','--script-arg','--write-full-clean','--concat-parts'].includes(args[i])&&!['--script','--script-arg'].includes(args[i-1]));
+// Continuations must run unchanged from any cwd, so directory values are absolute.
+const pagingArgs = args.filter((_,i)=>!['--script','--script-arg','--write-full-clean','--concat-parts'].includes(args[i])&&!['--script','--script-arg'].includes(args[i-1]))
+  .map((value,i,list)=>(['--session-dir','--artifact-dir'].includes(list[i-1]) ? resolve(value) : value));
 const skippedFiles = regexResult.scanned.filter(row => row.skipped || row.error).map(row=>({...row,next:{continue:{command:process.execPath,args:[fileURLToPath(new URL('./source-query.mjs',import.meta.url)),'--file',files.find(file=>file.rel===row.rel).abs]}}}));
 const paging = await paginate({lists:{matches:regexResult.matches,scanned:regexResult.scanned,skippedFiles},files:files.map(file=>file.abs),dir:sessionDir||artifactDir,args:pagingArgs,script:fileURLToPath(import.meta.url),defaultLimit:limit});
 const ok = scriptResult?.ok !== false;

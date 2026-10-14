@@ -114,7 +114,7 @@ impl PathPolicy {
 
     /// Discovery prunes denied subtrees. Let the walker account for ordinary
     /// filesystem errors itself so permission/not-found diagnostics stay intact.
-    pub fn permits_discovery(&self, input: impl AsRef<Path>) -> bool {
+    fn permits_discovery(&self, input: impl AsRef<Path>) -> bool {
         match self.validate(input) {
             Ok(_) => true,
             Err(error) => !matches!(

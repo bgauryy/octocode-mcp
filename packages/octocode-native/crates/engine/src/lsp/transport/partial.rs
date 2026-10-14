@@ -9,6 +9,23 @@ use std::sync::Mutex as StdMutex;
 /// Cap on the retained partial-result bytes for one token.
 const MAX_PARTIAL_RESULT_BYTES: usize = 16 * 1024 * 1024;
 
+/// Byte length of `value`'s JSON encoding, counted without retaining it.
+pub(super) fn encoded_len(value: &impl serde::Serialize) -> Option<usize> {
+    struct Counter(usize);
+    impl std::io::Write for Counter {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0 += buf.len();
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let mut counter = Counter(0);
+    serde_json::to_writer(&mut counter, value).ok()?;
+    Some(counter.0)
+}
+
 #[derive(Default)]
 struct PartialResultBuffer {
     values: Vec<Value>,
@@ -25,7 +42,11 @@ impl PartialResultStore {
     /// Starts collecting for `token`. The returned guard discards the buffer on
     /// drop, so a cancelled request never leaks up to 16 MiB of chunks.
     pub(super) fn begin(&self, token: String) -> PartialTokenGuard<'_> {
-        if let Ok(mut buffers) = self.buffers.lock() {
+        {
+            let mut buffers = self
+                .buffers
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             buffers.insert(token.clone(), PartialResultBuffer::default());
         }
         PartialTokenGuard { store: self, token }
@@ -34,13 +55,14 @@ impl PartialResultStore {
     /// Records one chunk. Chunks for unknown (never begun or already finished)
     /// tokens are ignored; this is also how progress tokens are told apart.
     pub(super) fn record(&self, token: &str, value: Value) {
-        let Ok(mut buffers) = self.buffers.lock() else {
-            return;
-        };
+        let mut buffers = self
+            .buffers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let Some(buffer) = buffers.get_mut(token) else {
             return;
         };
-        let bytes = serde_json::to_vec(&value).map_or(MAX_PARTIAL_RESULT_BYTES + 1, |v| v.len());
+        let bytes = encoded_len(&value).unwrap_or(MAX_PARTIAL_RESULT_BYTES + 1);
         if buffer.bytes.saturating_add(bytes) > MAX_PARTIAL_RESULT_BYTES {
             buffer.overflowed = true;
             return;
@@ -53,14 +75,15 @@ impl PartialResultStore {
     pub(super) fn is_tracking(&self, token: &str) -> bool {
         self.buffers
             .lock()
-            .is_ok_and(|buffers| buffers.contains_key(token))
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .contains_key(token)
     }
 
     fn take(&self, token: &str) -> Option<PartialResultBuffer> {
         self.buffers
             .lock()
-            .ok()
-            .and_then(|mut buffers| buffers.remove(token))
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(token)
     }
 
     #[cfg(test)]
@@ -175,5 +198,20 @@ mod tests {
         let guard = store.begin("big".to_owned());
         store.record("big", json!("x".repeat(MAX_PARTIAL_RESULT_BYTES)));
         assert!(guard.finish(Value::Null).is_err());
+    }
+}
+
+#[cfg(test)]
+mod encoded_len_tests {
+    use super::encoded_len;
+    use serde_json::json;
+
+    #[test]
+    fn encoded_len_matches_the_serialized_byte_count() {
+        let value = json!({"message": "héllo \"quoted\"", "items": [1, 2.5, null, {"k": "v"}]});
+        assert_eq!(
+            encoded_len(&value),
+            Some(serde_json::to_vec(&value).unwrap().len())
+        );
     }
 }

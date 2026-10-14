@@ -3,7 +3,7 @@
 //! Large pull-request review: changed-file inventory, patch availability,
 //! provider file-list cap, continuation payload size, and scan latency.
 
-use crate::support;
+use crate::support::{self, Run as _};
 
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
@@ -127,21 +127,14 @@ async fn run_status(server: &MockServer, query: Value) -> (String, Value) {
     query["owner"] = json!("a");
     query["repo"] = json!("b");
     query["number"] = json!(9);
-    let outcome = match call(&runtime, "ghGetHistoryItem", query).await {
-        Ok(outcome) => outcome,
-        Err(error) => {
-            let seen = server
-                .received_requests()
-                .await
-                .unwrap_or_default()
-                .iter()
-                .map(|r| r.url.to_string())
-                .collect::<Vec<_>>();
-            panic!("PR read failed: {error:?}; requests: {seen:?}");
-        }
+    // A query without `extras` reads the full view.
+    let extras = match query.as_object_mut().and_then(|row| row.remove("extras")) {
+        Some(kinds) => serde_json::from_value::<Vec<String>>(kinds).expect("extras"),
+        None => support::ALL_EXTRAS.map(str::to_owned).to_vec(),
     };
-    let status = row_status(&outcome).to_owned();
-    let data = row_data(&outcome).clone();
+    let extras = extras.iter().map(String::as_str).collect::<Vec<_>>();
+    let row = support::run(&runtime, "ghGetHistoryItem", query, &extras).await;
+    let (status, data) = (row.status().to_owned(), row.data().clone());
     runtime.close().await;
     (status, data)
 }
@@ -884,7 +877,7 @@ async fn patch_rows_in_one_call_share_one_budget() {
                "sections": ["patches"], "include": [file]})
     };
     let outcome = runtime
-        .execute(
+        .run(
             "test-1".into(),
             "ghGetHistoryItem".into(),
             json!({"queries": [row("pyproject.toml"), row("src/_runtime.py")]}),
@@ -968,7 +961,7 @@ async fn explicit_response_page_sizes_patch_walk_windows() {
                 calls += 1;
                 assert!(calls <= 60, "walk did not finish");
                 let outcome = runtime
-                    .execute(format!("walk-{calls}"), "ghGetHistoryItem".into(), envelope)
+                    .run(format!("walk-{calls}"), "ghGetHistoryItem".into(), envelope)
                     .await
                     .expect("patch window");
                 let content = &outcome.structured_content;
@@ -1498,7 +1491,7 @@ async fn default_large_pr_patch_walk_reaches_every_patch_once() {
         calls += 1;
         assert!(calls <= 80, "walk did not finish");
         let outcome = runtime
-            .execute(
+            .run(
                 format!("walk-{calls}"),
                 "ghGetHistoryItem".into(),
                 envelope.clone(),
@@ -1660,7 +1653,7 @@ async fn history_b_large_pr_lead_walk_is_lossless_at_the_first_page_size() {
         calls += 1;
         assert!(calls <= 60, "walk did not finish");
         let outcome = runtime
-            .execute(
+            .run(
                 format!("walk-{calls}"),
                 "ghGetHistoryItem".into(),
                 envelope.clone(),
@@ -1771,7 +1764,7 @@ async fn overflowing_patch_hop_pages_by_rows_and_loses_nothing() {
         calls += 1;
         assert!(calls <= 40, "walk did not finish");
         let outcome = runtime
-            .execute(
+            .run(
                 format!("walk-{calls}"),
                 "ghGetHistoryItem".into(),
                 envelope.clone(),

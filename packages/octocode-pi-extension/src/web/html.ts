@@ -1,8 +1,7 @@
-import { capChars } from '../shared/util.js';
 import { closeTags, elementEnds, firstTagWith, forwardSearch, replaceThrough, rewrite, tagScanner, type ElementEnd } from './scan.js';
 
-/** Page metadata (JSON-LD, price and date meta tags) shown ahead of the text, capped. */
-const METADATA_MAX_CHARS = 1_500;
+/** Page metadata (JSON-LD, price and date meta tags) up to this size leads the page text; longer metadata follows it, whole. */
+const METADATA_LEAD_CHARS = 1_500;
 /** What to do when the static HTML is not the page: the main session has no `browser`, so the advice names both routes. */
 export const RENDER_ADVICE = 'render it with the browser tool, or with a webHeadless subagent when browser is not active';
 /** Less visible text than this in the static HTML means the page is built by JavaScript. */
@@ -184,7 +183,7 @@ export function stripHidden(html: string): string {
  * Often the cleanest source for a product's price or an article's date, even when the visible text is filled in by
  * JavaScript. Empty when the page has none.
  */
-export function pageMetadata(html: string, max = METADATA_MAX_CHARS): string {
+export function pageMetadata(html: string): string {
   const lines = new Set<string>();
   const tagEnd = forwardSearch(html, />/g);
   let after = 0;
@@ -199,19 +198,19 @@ export function pageMetadata(html: string, max = METADATA_MAX_CHARS): string {
     const value = content?.[1] ?? content?.[2];
     if (!key || !value?.trim()) continue;
     if (/^(og:(description|locale|price:amount|price:currency|updated_time)|product:(price:amount|price:currency|availability)|article:(published_time|modified_time)|price|pricecurrency|availability)$/i.test(key)) {
-      lines.add(`${key}: ${decodeEntities(value).replace(/\s+/g, ' ').trim().slice(0, 300)}`);
+      lines.add(`${key}: ${decodeEntities(value).replace(/\s+/g, ' ').trim()}`);
     }
   }
   for (const block of elementsWith(html, 'script', /type=["']?application\/ld\+json/gi)) {
     try {
       const data = JSON.parse(block.trim()) as unknown;
-      lines.add(`JSON-LD: ${JSON.stringify(data, (key, value: unknown) => (key === '@context' ? undefined : value)).slice(0, 800)}`);
+      lines.add(`JSON-LD: ${JSON.stringify(data, (key, value: unknown) => (key === '@context' ? undefined : value))}`);
     } catch {
       // A malformed block is skipped: the page text still stands.
     }
   }
   if (lines.size === 0) return '';
-  return capChars(`## Page metadata (from the HTML; untrusted)\n${[...lines].join('\n')}`, max, 'the rest is in the page source');
+  return `## Page metadata (from the HTML; untrusted)\n${[...lines].join('\n')}`;
 }
 
 /**
@@ -337,5 +336,7 @@ export function describeHtml(html: string, url: string): string {
   const note = staticHtmlNote(html, text);
   const metadata = pageMetadata(html);
   const head = `${title ? `# ${decodeEntities(title)}\n` : ''}Source: ${url} · static HTML${lang ? ` · lang ${lang}` : ''}`;
-  return [head, note, metadata, text].filter(Boolean).join('\n\n');
+  // Short metadata (a price, a date) leads; a long JSON-LD dump would push the text out of the preview, so it follows.
+  if (metadata.length <= METADATA_LEAD_CHARS) return [head, note, metadata, text].filter(Boolean).join('\n\n');
+  return [head, note, `(Page metadata, ${metadata.length} characters, follows the page text.)`, text, metadata].filter(Boolean).join('\n\n');
 }

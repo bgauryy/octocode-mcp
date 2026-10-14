@@ -1,7 +1,7 @@
 //! Continuations: the read of a likely row, the next page, and the
 //! recovery from an empty search.
-use super::GhSearchHistoryQuery;
 use super::rows::{is_completed, is_merged, item_number, item_repo, read_target};
+use super::{GhSearchHistoryQuery, HistoryOperation, HistorySearch};
 use crate::tools::gh_shared::{broaden_lead, drop_each_keyword, without};
 use crate::tools::id::ToolId;
 use crate::tools::result::{Continuation, query_row};
@@ -137,11 +137,16 @@ fn same_query(q: &GhSearchHistoryQuery) -> Value {
 }
 
 /// The search again without its person qualifiers: the way on when GitHub
-/// cannot find a login they name (`None` when the query names none).
+/// cannot find a login they name (`None` when the query names none, or
+/// when nothing would scope the search without them: no owner, repository,
+/// keyword or other qualifier).
 pub(super) fn without_users(q: &GhSearchHistoryQuery) -> Option<Value> {
     let qualifiers = q.qualifiers()?;
     let kept = super::filters::without_person_terms(qualifiers);
     if kept == qualifiers.split_whitespace().collect::<Vec<_>>().join(" ") {
+        return None;
+    }
+    if kept.is_empty() && q.owner().is_none() && q.repo().is_none() && q.keywords().is_empty() {
         return None;
     }
     let mut row = same_query(q);
@@ -189,4 +194,46 @@ pub(super) fn broaden_search(q: &GhSearchHistoryQuery) -> Option<Value> {
         variants.push(without(&base, &["since", "until"]));
     }
     broaden_lead(ToolId::GhSearchHistory, variants, BROADEN_VARIANTS)
+}
+
+/// A capped search's narrowing (`narrowScope`), one call: rows ordered
+/// newest first continue past GitHub's 1,000-result window before this
+/// page's last row (`until` set to its date, the window's own field; a row
+/// at that instant may show again); any other order is re-sorted newest
+/// first, whose pages end in that same continuation. `None` when the query
+/// cannot take it (a `created:` qualifier owns the window) or no row is
+/// dated.
+pub(super) fn narrow_capped(q: &HistorySearch, items: &[Value]) -> Option<Value> {
+    let commit = q.operation() == HistoryOperation::Commit;
+    let newest_first = commit
+        || (q.sort().as_deref() == Some("created") && q.order().as_deref() == Some("desc"))
+        || super::query::lists_issues_newest_first(q);
+    let mut row = same_query(q);
+    if newest_first {
+        if !commit && q.filters().created.is_some() {
+            return None;
+        }
+        let date = items.iter().rev().find_map(|item| {
+            let date = if commit {
+                item.pointer("/commit/committer/date")
+                    .or_else(|| item.pointer("/commit/author/date"))
+            } else {
+                item.get("created_at")
+            };
+            date.and_then(Value::as_str)
+        })?;
+        row["until"] = json!(crate::tools::gh_shared::commit::utc_date(Some(date)));
+    } else {
+        row["sort"] = json!("created:desc");
+    }
+    crate::contracts::validate(
+        ToolId::GhSearchHistory.as_str(),
+        json!({ "queries": [row] }),
+    )
+    .ok()?;
+    Some(
+        Continuation::new(ToolId::GhSearchHistory, row)
+            .confidence(if newest_first { "exact" } else { "medium" })
+            .build(),
+    )
 }

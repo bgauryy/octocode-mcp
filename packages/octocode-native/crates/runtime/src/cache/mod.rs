@@ -1,61 +1,58 @@
-//! One cache store for the runtime: a byte-bounded LRU memory tier plus an
-//! optional byte-bounded disk tier. The writer picks a [`CacheClass`] per
-//! entry, so pinned facts never expire while movable ones age out or
-//! revalidate.
+//! One cache store for the runtime: the shared in-process
+//! [`octocode_io::memo::Memo`] as its memory tier plus an optional
+//! byte-bounded disk tier. The writer picks a [`CacheClass`] per entry, so
+//! pinned facts never expire while movable ones age out or revalidate.
 pub mod evictions;
 
+use octocode_io::memo::{Memo, MemoLimits};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, HashMap};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-/// Create `path` (and missing parents) owner-only (0700) on Unix, and tighten
-/// an existing directory, for caches that hold private repository content.
-#[cfg(unix)]
-pub(crate) fn create_private_dir_all(path: &Path) -> std::io::Result<()> {
-    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
-    std::fs::DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(path)?;
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))
-}
-
-#[cfg(not(unix))]
-pub(crate) fn create_private_dir_all(path: &Path) -> std::io::Result<()> {
-    std::fs::create_dir_all(path)
-}
-
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct StorePartition {
-    pub endpoint: String,
-    pub credential_fingerprint: String,
-}
-
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+/// An entry's identity. `scope` is opaque to the store: a provider passes
+/// its credential [`octocode_github::Partition::identity`], a local memo
+/// whatever separates its entries (a path, a parser, a files digest).
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CacheKey {
     pub namespace: String,
+    pub scope: String,
     pub resource: String,
-    pub partition: StorePartition,
 }
 
-/// How an entry ages; the writer chooses it at `put`.
+/// How an entry ages; the writer chooses it, with its window, at `put`.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum CacheClass {
     /// Keyed by a content digest or a commit SHA: never expires and is always
     /// fresh. Only the byte budget evicts it.
     Immutable,
-    /// Fresh for [`CacheConfig::fresh`], then returned stale so the caller
-    /// revalidates it (ETag; a 304 costs no rate limit). Only the byte budget
-    /// evicts it.
-    Revalidate,
-    /// Expires after [`CacheConfig::ttl`].
-    Volatile,
+    /// Fresh for `fresh`, then returned stale so the caller revalidates it
+    /// (ETag; a 304 costs no rate limit). Only the byte budget evicts it.
+    Revalidate { fresh: Duration },
+    /// Expires `ttl` after it is stored.
+    Volatile { ttl: Duration },
+}
+
+impl CacheClass {
+    fn ttl(self) -> Option<Duration> {
+        match self {
+            Self::Volatile { ttl } => Some(ttl),
+            Self::Immutable | Self::Revalidate { .. } => None,
+        }
+    }
+
+    /// Freshness of an entry `age` old, or `None` once it expired.
+    fn freshness(self, age: Duration) -> Option<bool> {
+        match self {
+            Self::Immutable => Some(true),
+            Self::Revalidate { fresh } => Some(age < fresh),
+            Self::Volatile { ttl } => (age < ttl).then_some(true),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -65,10 +62,6 @@ pub struct CacheConfig {
     pub max_bytes: usize,
     /// Disk budget, pruned oldest-first by modification time.
     pub disk_bytes: u64,
-    /// How long a [`CacheClass::Revalidate`] entry is served without a check.
-    pub fresh: Duration,
-    /// Lifetime of a [`CacheClass::Volatile`] entry.
-    pub ttl: Duration,
 }
 
 impl Default for CacheConfig {
@@ -77,8 +70,6 @@ impl Default for CacheConfig {
             max_entries: 4_096,
             max_bytes: 64 * 1024 * 1024,
             disk_bytes: 512 * 1024 * 1024,
-            fresh: Duration::from_secs(60),
-            ttl: Duration::from_secs(60),
         }
     }
 }
@@ -91,127 +82,91 @@ pub struct Cached<V> {
     pub fresh: bool,
 }
 
-struct Entry<V> {
-    value: Arc<V>,
-    bytes: usize,
-    class: CacheClass,
-    stored_at: Instant,
-    /// This entry's slot in [`Memory::order`].
-    tick: u64,
-}
-
-struct Memory<V> {
-    entries: HashMap<CacheKey, Entry<V>>,
-    /// Keys by last use: the first tick is the least recently used. A touch
-    /// moves one key, O(log n), instead of rescanning the whole order.
-    order: BTreeMap<u64, CacheKey>,
-    next_tick: u64,
-    bytes: usize,
-}
-
-impl<V> Memory<V> {
-    fn remove(&mut self, key: &CacheKey) {
-        if let Some(entry) = self.entries.remove(key) {
-            self.bytes = self.bytes.saturating_sub(entry.bytes);
-            self.order.remove(&entry.tick);
+/// The serialized length of `value`, counted without building the text: the
+/// weight of a JSON entry.
+pub(crate) fn json_len(value: &impl Serialize) -> usize {
+    struct Count(usize);
+    impl std::io::Write for Count {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0 += bytes.len();
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
         }
     }
-
-    fn tick(&mut self) -> u64 {
-        let tick = self.next_tick;
-        self.next_tick += 1;
-        tick
-    }
+    let mut count = Count(0);
+    let _ = serde_json::to_writer(&mut count, value);
+    count.0
 }
 
-/// Freshness of an entry `age` old, or `None` once it expired.
-fn freshness(config: &CacheConfig, class: CacheClass, age: Duration) -> Option<bool> {
-    match class {
-        CacheClass::Immutable => Some(true),
-        CacheClass::Revalidate => Some(age < config.fresh),
-        CacheClass::Volatile => (age < config.ttl).then_some(true),
-    }
-}
-
+/// [`Memo`] (memory) plus [`Disk`] (optional, across processes).
 pub struct Store<V> {
     config: CacheConfig,
-    memory: Mutex<Memory<V>>,
+    memory: Memo<CacheKey, V, CacheClass>,
     disk: Option<Disk>,
 }
 
-impl<V: Clone + Serialize + DeserializeOwned> Store<V> {
+impl<V: Serialize + DeserializeOwned> Store<V> {
     /// `disk: None` keeps the store in this process only.
     pub fn new(config: CacheConfig, disk: Option<PathBuf>) -> Self {
         Self {
             disk: disk.map(Disk::new),
-            memory: Mutex::new(Memory {
-                entries: HashMap::new(),
-                order: BTreeMap::new(),
-                next_tick: 0,
-                bytes: 0,
+            memory: Memo::new(MemoLimits {
+                max_entries: config.max_entries,
+                max_weight: config.max_bytes,
+                keep_newest: false,
             }),
             config,
         }
     }
 
     pub fn get(&self, key: &CacheKey) -> Option<Cached<V>> {
-        let now = Instant::now();
-        {
-            let mut memory = self.memory.lock().unwrap_or_else(|p| p.into_inner());
-            let tick = memory.next_tick;
-            let memory = &mut *memory;
-            if let Some(entry) = memory.entries.get_mut(key) {
-                let age = now.saturating_duration_since(entry.stored_at);
-                match freshness(&self.config, entry.class, age) {
-                    Some(fresh) => {
-                        let value = Arc::clone(&entry.value);
-                        if let Some(touched) = memory.order.remove(&entry.tick) {
-                            memory.order.insert(tick, touched);
-                            entry.tick = tick;
-                            memory.next_tick += 1;
-                        }
-                        return Some(Cached { value, fresh });
-                    }
-                    None => memory.remove(key),
-                }
+        if let Some(hit) = self.memory.get(key) {
+            // The memo already dropped an expired `Volatile` entry.
+            if let Some(fresh) = hit.meta.freshness(hit.age) {
+                return Some(Cached {
+                    value: hit.value,
+                    fresh,
+                });
             }
+            self.memory.remove(key);
         }
         let (value, class, age, bytes) = self.disk.as_ref()?.read::<V>(key, &self.config)?;
-        let fresh = freshness(&self.config, class, age)?;
+        let fresh = class.freshness(age)?;
         // Promote, backdated so the memory copy ages like the disk copy.
+        let now = Instant::now();
         let stored_at = now.checked_sub(age).unwrap_or(now);
-        let value = self.insert_memory(key.clone(), value, bytes, class, stored_at);
+        let value =
+            self.memory
+                .insert_full(key.clone(), value, class, bytes, class.ttl(), stored_at);
         Some(Cached { value, fresh })
     }
 
     /// Store `value` (about `bytes` large) in memory and, when configured, on
     /// disk. An entry larger than the memory budget is not stored at all.
-    pub fn put(&self, key: CacheKey, value: V, bytes: usize, class: CacheClass) {
+    /// The stored value is returned, shared with the entry.
+    pub fn put(&self, key: CacheKey, value: V, bytes: usize, class: CacheClass) -> Arc<V> {
         if self.config.max_entries == 0 || bytes > self.config.max_bytes {
-            return;
+            return Arc::new(value);
         }
         if let Some(disk) = &self.disk {
             disk.write(&key, &value, class, &self.config);
         }
-        self.insert_memory(key, value, bytes, class, Instant::now());
+        self.memory
+            .insert_full(key, value, class, bytes, class.ttl(), Instant::now())
     }
 
     /// Drop `key` from both tiers.
     pub fn remove(&self, key: &CacheKey) {
-        self.memory
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .remove(key);
+        self.memory.remove(key);
         if let Some(disk) = &self.disk {
             let _ = fs::remove_file(disk.file(key));
         }
     }
 
     pub fn clear_memory(&self) {
-        let mut memory = self.memory.lock().unwrap_or_else(|p| p.into_inner());
-        memory.entries.clear();
-        memory.order.clear();
-        memory.bytes = 0;
+        self.memory.clear();
     }
 
     pub fn clear(&self) {
@@ -219,45 +174,6 @@ impl<V: Clone + Serialize + DeserializeOwned> Store<V> {
         if let Some(disk) = &self.disk {
             disk.clear();
         }
-    }
-
-    fn insert_memory(
-        &self,
-        key: CacheKey,
-        value: V,
-        bytes: usize,
-        class: CacheClass,
-        stored_at: Instant,
-    ) -> Arc<V> {
-        let value = Arc::new(value);
-        if self.config.max_entries == 0 || bytes > self.config.max_bytes {
-            return value;
-        }
-        let mut memory = self.memory.lock().unwrap_or_else(|p| p.into_inner());
-        memory.remove(&key);
-        let tick = memory.tick();
-        memory.entries.insert(
-            key.clone(),
-            Entry {
-                value: Arc::clone(&value),
-                bytes,
-                class,
-                stored_at,
-                tick,
-            },
-        );
-        memory.order.insert(tick, key);
-        memory.bytes = memory.bytes.saturating_add(bytes);
-        while memory.entries.len() > self.config.max_entries || memory.bytes > self.config.max_bytes
-        {
-            let Some((_, oldest)) = memory.order.pop_first() else {
-                break;
-            };
-            if let Some(entry) = memory.entries.remove(&oldest) {
-                memory.bytes = memory.bytes.saturating_sub(entry.bytes);
-            }
-        }
-        value
     }
 }
 
@@ -284,6 +200,25 @@ struct DiskEntry<V> {
     value: V,
 }
 
+/// Age past which a `.tmp` file in the store is a crash leftover; a live
+/// write holds its temp file for milliseconds.
+const ORPHAN_TEMP_AGE: Duration = Duration::from_secs(10 * 60);
+
+/// Whether a failed read means the entry itself is unusable (a symlink, a
+/// non-regular file, or past the entry bound), not that reading it failed for
+/// an environmental reason such as permissions or open-file limits.
+fn entry_is_invalid(error: &std::io::Error) -> bool {
+    if error.kind() == std::io::ErrorKind::InvalidInput {
+        return true;
+    }
+    // `O_NOFOLLOW` reports a symlink swapped in after the type check as ELOOP.
+    #[cfg(unix)]
+    if error.raw_os_error() == Some(libc::ELOOP) {
+        return true;
+    }
+    false
+}
+
 fn now_unix() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -299,7 +234,7 @@ struct Disk {
 
 impl Disk {
     fn new(dir: PathBuf) -> Self {
-        let _ = create_private_dir_all(&dir);
+        let _ = octocode_io::atomic::create_private_dir_all(&dir);
         Self {
             dir,
             writes: AtomicUsize::new(0),
@@ -309,13 +244,10 @@ impl Disk {
     fn file(&self, key: &CacheKey) -> PathBuf {
         let mut digest = Sha256::new();
         // Domain separation: files of an older layout are never read.
-        digest.update(b"octocode-cache-store-v1");
-        for value in [
-            &key.namespace,
-            &key.partition.endpoint,
-            &key.partition.credential_fingerprint,
-            &key.resource,
-        ] {
+        // v2: bodies are base64 only (the number-array form was retired).
+        // v3: one opaque scope replaced the endpoint/credential pair.
+        digest.update(b"octocode-cache-store-v3");
+        for value in [&key.namespace, &key.scope, &key.resource] {
             digest.update((value.len() as u64).to_le_bytes());
             digest.update(value.as_bytes());
         }
@@ -338,7 +270,7 @@ impl Disk {
         let (file, bytes) = match read {
             Ok(read) => read,
             Err(error) => {
-                if error.kind() != std::io::ErrorKind::NotFound {
+                if entry_is_invalid(&error) {
                     let _ = fs::remove_file(&path);
                 }
                 return None;
@@ -349,7 +281,7 @@ impl Disk {
             return None;
         };
         let age = Duration::from_secs(now_unix().saturating_sub(entry.stored_at_unix));
-        if freshness(config, entry.class, age).is_none() {
+        if entry.class.freshness(age).is_none() {
             let _ = fs::remove_file(&path);
             return None;
         }
@@ -385,7 +317,7 @@ impl Disk {
         }
         // Owner-only replacement: values may be private source, and an
         // in-place rewrite would keep a pre-existing file's loose mode.
-        let _ = crate::private_file::write_atomic(&path, &bytes, false);
+        let _ = octocode_io::atomic::write_atomic(&path, &bytes, false);
         if self
             .writes
             .fetch_add(1, Ordering::Relaxed)
@@ -418,15 +350,28 @@ impl Disk {
         let Ok(read_dir) = fs::read_dir(&self.dir) else {
             return;
         };
+        let now = SystemTime::now();
         let mut files: Vec<(SystemTime, u64, PathBuf)> = read_dir
             .flatten()
             .filter_map(|entry| {
                 let path = entry.path();
-                if path.extension().is_none_or(|ext| ext != "json") {
-                    return None;
-                }
                 let meta = entry.metadata().ok()?;
-                Some((meta.modified().ok()?, meta.len(), path))
+                let modified = meta.modified().ok()?;
+                match path.extension().and_then(|ext| ext.to_str()) {
+                    Some("json") => Some((modified, meta.len(), path)),
+                    // A temp file older than any write could take is a crash
+                    // leftover from between the temp write and the rename.
+                    Some("tmp") => {
+                        if now
+                            .duration_since(modified)
+                            .is_ok_and(|age| age > ORPHAN_TEMP_AGE)
+                        {
+                            let _ = fs::remove_file(&path);
+                        }
+                        None
+                    }
+                    _ => None,
+                }
             })
             .collect();
         let mut total: u64 = files.iter().map(|(_, len, _)| len).sum();
@@ -446,7 +391,7 @@ impl Disk {
 
     fn clear(&self) {
         let _ = fs::remove_dir_all(&self.dir);
-        let _ = create_private_dir_all(&self.dir);
+        let _ = octocode_io::atomic::create_private_dir_all(&self.dir);
     }
 }
 

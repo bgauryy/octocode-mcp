@@ -1264,7 +1264,7 @@ mod tests {
             &ids,
             vec![PageOutcome::Failed {
                 error: provider_error("classificationContextFailed"),
-                receipt: json!({"coverage":"partial","limitations":["Context retrieval failed; classification was not run."]}),
+                receipt: json!({"coverage":"partial","limitations":["Continuation metadata exceeded the receipt limit and was dropped."]}),
             }],
             false,
         );
@@ -1275,7 +1275,7 @@ mod tests {
         );
         assert_eq!(
             failed["pages"][0]["limitations"],
-            json!(["Context retrieval failed; classification was not run."])
+            json!(["Continuation metadata exceeded the receipt limit and was dropped."])
         );
         let pending = resource(
             &json!("r"),

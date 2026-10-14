@@ -1,16 +1,12 @@
 use super::leads::{declaration_read, hits_read, line_read, read_top_match, scoped_fragment_read};
 use super::{GhSearchCodeQuery, GhSearchCodeQueryMatchIn};
-use crate::providers::github::{
-    GitHubTransport, ProviderErrorKind, ProviderErrorReason, RequestContext,
-};
+use crate::security::scan::ContentScan;
 use crate::tools::gh_shared::ensure_next;
 use crate::tools::id::ToolId;
 use crate::tools::paging::push_warnings;
 use crate::tools::result::Continuation;
-use crate::{
-    providers::github::{CodeSearchItem, ProviderError},
-    security::scan::ContentScan,
-};
+use octocode_github::{CodeSearchItem, ProviderError};
+use octocode_github::{GitHubTransport, ProviderErrorKind, ProviderErrorReason, RequestContext};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 
@@ -84,8 +80,12 @@ pub(super) async fn empty_scope(
             let hint = "No indexed matches is unproven absence; verify the repo structure and search a bounded local copy before concluding.";
             diagnostics.add("ghScopedZeroUnproven", hint, false);
             let Some(scope) = query.path.as_deref().map(|path| path.as_str()) else {
-                add_clone_lead(value, query, owner.as_str(), repo.as_str());
-                add_root_lead(value, query, owner.as_str(), repo.as_str());
+                // A path search of code leads to the same search of file
+                // contents (`findCode`): that targeted lead keeps the slots.
+                if !path_mode_given_code(query) {
+                    add_clone_lead(value, query, owner.as_str(), repo.as_str());
+                    add_root_lead(value, query, owner.as_str(), repo.as_str());
+                }
                 return Ok(());
             };
             // `path` is a directory prefix: list the directory, or for a
@@ -226,8 +226,8 @@ pub(super) fn requested_ref(query: &GhSearchCodeQuery) -> Option<&str> {
 /// The commit a page's hit lines are read at, resolved while the index
 /// search runs (`None`: the page lists no lines — owner-wide, path-only,
 /// or a `fields` pick without `lines`).
-pub(super) async fn line_commit<C: crate::providers::github::ConditionalCache>(
-    provider: &crate::providers::github::GitHubProvider<C>,
+pub(super) async fn line_commit<C: octocode_github::ConditionalCache>(
+    provider: &octocode_github::GitHubProvider<C>,
     query: &GhSearchCodeQuery,
     context: &RequestContext,
 ) -> Option<Result<String, ProviderError>> {
@@ -242,8 +242,8 @@ pub(super) async fn line_commit<C: crate::providers::github::ConditionalCache>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(super) async fn resolve_lines<C: crate::providers::github::ConditionalCache>(
-    provider: &crate::providers::github::GitHubProvider<C>,
+pub(super) async fn resolve_lines<C: octocode_github::ConditionalCache>(
+    provider: &octocode_github::GitHubProvider<C>,
     query: &GhSearchCodeQuery,
     items: &[Value],
     found: &[CodeSearchItem],
@@ -298,8 +298,8 @@ pub(super) async fn resolve_lines<C: crate::providers::github::ConditionalCache>
 /// Line hits of an owner-wide `match:"file"` page: each row is read at the
 /// commit its hit was indexed at, one concurrent batch per repository and
 /// commit. A row without an indexed commit keeps its fragments.
-async fn owner_wide_lines<C: crate::providers::github::ConditionalCache>(
-    provider: &crate::providers::github::GitHubProvider<C>,
+async fn owner_wide_lines<C: octocode_github::ConditionalCache>(
+    provider: &octocode_github::GitHubProvider<C>,
     query: &GhSearchCodeQuery,
     items: &[Value],
     found: &[CodeSearchItem],
@@ -391,8 +391,8 @@ async fn owner_wide_lines<C: crate::providers::github::ConditionalCache>(
 /// and unresolved rows show default-branch text. Warn with the index commit
 /// and lead first to the ref's own listing. `resolved_sha` is the ref's
 /// commit when the hit lines were read at it.
-pub(super) async fn disclose_index_ref<C: crate::providers::github::ConditionalCache>(
-    provider: &crate::providers::github::GitHubProvider<C>,
+pub(super) async fn disclose_index_ref<C: octocode_github::ConditionalCache>(
+    provider: &octocode_github::GitHubProvider<C>,
     value: &mut Value,
     query: &GhSearchCodeQuery,
     resolved_sha: Option<String>,
@@ -468,8 +468,8 @@ fn moved_names(value: &Value) -> Vec<String> {
 
 /// The commit `reference` (`None`: the default-branch head) names, or
 /// `None` when it does not resolve; only cancellation fails.
-async fn commit_or_none<C: crate::providers::github::ConditionalCache>(
-    provider: &crate::providers::github::GitHubProvider<C>,
+async fn commit_or_none<C: octocode_github::ConditionalCache>(
+    provider: &octocode_github::GitHubProvider<C>,
     owner: &str,
     repo: &str,
     reference: Option<&str>,
@@ -504,7 +504,12 @@ pub(super) struct PageReads {
 /// them out (then the page is paths, with no line reads).
 fn reads_lines(query: &GhSearchCodeQuery) -> bool {
     query.match_in == GhSearchCodeQueryMatchIn::File
-        && (query.fields.is_empty() || query.fields.iter().any(|field| field.as_str() == "lines"))
+        && (query.fields.is_empty() || picks(query, "lines") || picks(query, "matchCount"))
+}
+
+/// A `fields` pick names `field`.
+fn picks(query: &GhSearchCodeQuery, field: &str) -> bool {
+    query.fields.iter().any(|picked| picked.as_str() == field)
 }
 
 pub(super) fn shape_files(
@@ -552,7 +557,9 @@ pub(super) fn shape_files(
                         row.shift_remove("matches");
                     }
                     row.insert("lines".into(), json!(lines));
-                    if *total > lines.len() {
+                    // A file states its count when it has unlisted hits, or
+                    // when a `fields` pick asks for it.
+                    if *total > lines.len() || picks(query, "matchCount") {
                         row.insert("matchCount".into(), json!(total));
                     }
                     if (*total > lines.len() || *clipped)

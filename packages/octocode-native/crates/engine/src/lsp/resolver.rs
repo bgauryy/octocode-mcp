@@ -459,9 +459,11 @@ fn scan_near_line(
 ) -> Result<JsResolvedSymbol> {
     let target = line_hint as i32 - 1;
     if target < 0 || target as usize >= lines.len() {
+        // The empty text after a final line break is no line of the file.
+        let trailing = lines.len() > 1 && lines.last().is_some_and(|line| line.is_empty());
         return Err(Error::new(format!(
             "Line {line_hint} is out of range (file has {} lines)",
-            lines.len()
+            lines.len() - usize::from(trailing)
         )));
     }
 
@@ -610,7 +612,7 @@ fn is_ident(ch: Option<char>) -> bool {
     // marks and ECMAScript join controls. ASCII-only boundaries can bind a
     // requested name to a different Unicode identifier.
     // Constant pattern: compile failure is a build-time bug, so fail loud.
-    #[allow(clippy::expect_used)]
+    #[expect(clippy::expect_used, reason = "static pattern, valid by construction")]
     static IDENT_CONTINUE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
         regex::Regex::new(r"^[\p{ID_Continue}\u{200C}\u{200D}]$")
             .expect("valid Unicode identifier boundary")
@@ -695,6 +697,19 @@ mod tests {
         assert_eq!(index.content_len(), 2);
         assert_eq!(LineIndex::new("").lines(""), [""]);
         assert_eq!(LineIndex::new("").content_len(), 1);
+    }
+
+    #[test]
+    fn an_out_of_range_line_counts_the_lines_the_file_has() {
+        // 29 lines, each ending in a break: the empty text after the last
+        // break is no line.
+        let source = "let a = 1;\n".repeat(29);
+        let error = super::resolve_position_from_content(source, fuzzy("a", Some(40)))
+            .expect_err("line 40 is past the end");
+        assert!(error.to_string().contains("(file has 29 lines)"), "{error}");
+        let error = super::resolve_position_from_content("let a = 1;".into(), fuzzy("a", Some(3)))
+            .expect_err("line 3 is past the end");
+        assert!(error.to_string().contains("(file has 1 lines)"), "{error}");
     }
 
     #[test]

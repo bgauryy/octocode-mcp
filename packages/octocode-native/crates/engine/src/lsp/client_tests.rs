@@ -1,10 +1,12 @@
 use super::*;
+use crate::test_support::TmpDir;
 use std::path::PathBuf;
 
 #[test]
 fn node_shebang_launch_uses_node_instead_of_native_host() {
     tokio::runtime::Runtime::new().unwrap().block_on(async {
-        let script = temp_file("octocode-engine-node-shebang");
+        let tmp = TmpDir::new();
+        let script = tmp.0.join("octocode-engine-node-shebang");
         std::fs::write(
             &script,
             "#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify(process.argv.slice(2)))\n",
@@ -36,7 +38,8 @@ fn node_shebang_launch_uses_node_instead_of_native_host() {
 #[test]
 fn location_links_select_the_symbol_and_preserve_definition_context() {
     tokio::runtime::Runtime::new().unwrap().block_on(async {
-        let file_path = temp_file("octocode-engine-location-link");
+        let tmp = TmpDir::new();
+        let file_path = tmp.0.join("octocode-engine-location-link");
         std::fs::write(&file_path, "// context\nfunction target() {\n  return 1;\n}\n").unwrap();
         let uri = path_to_uri(&file_path.to_string_lossy()).unwrap();
         let selection = json!({"start":{"line":1,"character":9},"end":{"line":1,"character":15}});
@@ -241,7 +244,8 @@ fn stderr_ring_truncates_very_long_lines() {
 fn snippet_content_cache_reuses_file_content_for_later_ranges() {
     let runtime = tokio::runtime::Runtime::new().expect("tokio runtime");
     runtime.block_on(async {
-        let file_path = temp_file("octocode-engine-snippet-cache");
+        let tmp = TmpDir::new();
+        let file_path = tmp.0.join("octocode-engine-snippet-cache");
         std::fs::write(&file_path, "alpha\nbeta\ngamma\n").expect("write fixture");
         let file_path = file_path.to_string_lossy().into_owned();
         let mut cache = SnippetContentCache::new(SnippetReadPolicy::default());
@@ -301,7 +305,8 @@ fn extract_position_encoding_reads_server_choice() {
 
 #[test]
 fn parse_position_requires_numeric_line_and_character() {
-    assert!(parse_position(&json!({"line": 3, "character": 7})).is_ok());
+    let position = parse_position(&json!({"line": 3, "character": 7})).expect("position");
+    assert_eq!((position.line, position.character), (3, 7));
     assert!(parse_position(&json!({"line": 3})).is_err());
     assert!(parse_position(&json!({"character": 7})).is_err());
     assert!(parse_position(&json!({"line": "x", "character": 1})).is_err());
@@ -456,14 +461,6 @@ fn open_documents_rollback_restores_prior_version_state() {
     assert_eq!(docs.version("file:///b"), Some(1));
 }
 
-fn temp_file(name: &str) -> PathBuf {
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_nanos())
-        .unwrap_or(0);
-    std::env::temp_dir().join(format!("{name}-{}-{nanos}", std::process::id()))
-}
-
 /// Minimal stdio LSP server (node) that, like tsserver, emits NO progress on
 /// `initialized` but starts a project-load `$/progress` wave ~100 ms AFTER the
 /// first `didOpen`. `references` answers empty until that load finishes.
@@ -517,7 +514,8 @@ process.stdin.on('data', (d) => {
 fn first_open_waits_for_the_project_load_the_open_triggers() {
     use std::os::unix::fs::PermissionsExt;
     tokio::runtime::Runtime::new().unwrap().block_on(async {
-        let root = temp_file("octocode-engine-deferred-load");
+        let tmp = TmpDir::new();
+        let root = tmp.0.join("octocode-engine-deferred-load");
         std::fs::create_dir_all(&root).unwrap();
         let script = root.join("fake-lsp.js");
         std::fs::write(&script, DEFERRED_PROJECT_LOAD_SERVER).unwrap();
@@ -796,7 +794,8 @@ fn make_fifo(path: &std::path::Path) {
 #[test]
 fn snippet_reads_reject_fifos_and_devices_without_blocking() {
     tokio::runtime::Runtime::new().unwrap().block_on(async {
-        let fifo = temp_file("octocode-engine-snippet-fifo");
+        let tmp = TmpDir::new();
+        let fifo = tmp.0.join("octocode-engine-snippet-fifo");
         make_fifo(&fifo);
         for path in [fifo.to_string_lossy().into_owned(), "/dev/zero".to_owned()] {
             let mut cache = SnippetContentCache::new(SnippetReadPolicy::default());
@@ -819,7 +818,8 @@ fn snippet_reads_reject_fifos_and_devices_without_blocking() {
 
 #[test]
 fn snippet_reads_reject_oversized_files_before_reading() {
-    let path = temp_file("octocode-engine-snippet-oversized");
+    let tmp = TmpDir::new();
+    let path = tmp.0.join("octocode-engine-snippet-oversized");
     let file = std::fs::File::create(&path).unwrap();
     // Sparse: the size check must refuse it from metadata alone.
     file.set_len(MAX_SNIPPET_SOURCE_BYTES + 1).unwrap();
@@ -840,9 +840,11 @@ fn unauthorized_snippet_paths_are_never_touched() {
     tokio::runtime::Runtime::new().unwrap().block_on(async {
         // A FIFO would block any open or read: reaching it proves the policy
         // was consulted first.
-        let fifo = temp_file("octocode-engine-snippet-unauthorized");
+        let tmp = TmpDir::new();
+        let fifo = tmp.0.join("octocode-engine-snippet-unauthorized");
         make_fifo(&fifo);
-        let allowed = temp_file("octocode-engine-snippet-authorized");
+        let tmp = TmpDir::new();
+        let allowed = tmp.0.join("octocode-engine-snippet-authorized");
         std::fs::write(&allowed, "allowed line\n").unwrap();
         let consulted = Arc::new(AtomicUsize::new(0));
         let policy = {
@@ -887,7 +889,8 @@ fn unauthorized_snippet_paths_are_never_touched() {
 #[test]
 fn shared_reads_authorize_and_read_each_file_once_across_responses() {
     tokio::runtime::Runtime::new().unwrap().block_on(async {
-        let file = temp_file("octocode-engine-snippet-shared");
+        let tmp = TmpDir::new();
+        let file = tmp.0.join("octocode-engine-snippet-shared");
         std::fs::write(&file, "alpha\nbeta\n").unwrap();
         let uri = path_to_uri(&file.to_string_lossy()).unwrap();
         let consulted = Arc::new(AtomicUsize::new(0));
@@ -927,7 +930,8 @@ fn shared_reads_authorize_and_read_each_file_once_across_responses() {
 #[test]
 fn snippet_policy_reads_the_path_the_authorizer_returns() {
     tokio::runtime::Runtime::new().unwrap().block_on(async {
-        let real = temp_file("octocode-engine-snippet-canonical");
+        let tmp = TmpDir::new();
+        let real = tmp.0.join("octocode-engine-snippet-canonical");
         std::fs::write(&real, "canonical content\n").unwrap();
         let target = real.clone();
         let policy = SnippetReadPolicy::with_authorizer(move |_| Some(target.clone()));
@@ -1156,9 +1160,10 @@ fn configurable_server(
     tag: &str,
     env: &[(&str, String)],
     max_memory_mb: Option<u32>,
-) -> (PathBuf, JsLanguageServerConfig) {
+) -> (TmpDir, PathBuf, JsLanguageServerConfig) {
     use std::os::unix::fs::PermissionsExt;
-    let root = temp_file(tag);
+    let tmp = TmpDir::new();
+    let root = tmp.0.join(tag);
     std::fs::create_dir_all(&root).unwrap();
     let root = root.canonicalize().unwrap();
     let script = root.join("fake-lsp.js");
@@ -1177,7 +1182,7 @@ fn configurable_server(
         ),
         max_memory_mb,
     };
-    (root, config)
+    (tmp, root, config)
 }
 
 #[cfg(unix)]
@@ -1202,8 +1207,9 @@ fn stop_overlapping_a_slow_start_waits_then_tears_it_down() {
     if !node_available() {
         return;
     }
-    let pid_file = temp_file("octocode-engine-start-stop-pid");
-    let (root, config) = configurable_server(
+    let tmp = TmpDir::new();
+    let pid_file = tmp.0.join("octocode-engine-start-stop-pid");
+    let (_tmp, root, config) = configurable_server(
         "octocode-engine-start-stop",
         &[
             ("FAKE_INIT_DELAY_MS", "600".into()),
@@ -1266,7 +1272,7 @@ fn server_over_its_memory_cap_is_killed_with_a_clear_error() {
     if !node_available() {
         return;
     }
-    let (root, config) = configurable_server(
+    let (_tmp, root, config) = configurable_server(
         "octocode-engine-memory-cap",
         &[("FAKE_ALLOC_MB", "400".into())],
         Some(128),
@@ -1410,7 +1416,8 @@ process.stdin.on('data', (d) => {
 fn first_page_reuses_responses_when_generation_matches() {
     use std::os::unix::fs::PermissionsExt;
     tokio::runtime::Runtime::new().unwrap().block_on(async {
-        let root = temp_file("octocode-engine-response-reuse");
+        let tmp = TmpDir::new();
+        let root = tmp.0.join("octocode-engine-response-reuse");
         std::fs::create_dir_all(&root).unwrap();
         let script = root.join("fake-lsp.js");
         std::fs::write(&script, COUNTING_SERVER).unwrap();
@@ -1482,7 +1489,8 @@ fn first_page_reuses_responses_when_generation_matches() {
 fn settled_requests_wait_only_when_they_reach_the_server() {
     use std::os::unix::fs::PermissionsExt;
     tokio::runtime::Runtime::new().unwrap().block_on(async {
-        let root = temp_file("octocode-engine-settled-reuse");
+        let tmp = TmpDir::new();
+        let root = tmp.0.join("octocode-engine-settled-reuse");
         std::fs::create_dir_all(&root).unwrap();
         let script = root.join("fake-lsp.js");
         std::fs::write(&script, COUNTING_SERVER).unwrap();
@@ -1562,8 +1570,9 @@ fn readiness_timeout_client_waits_again_on_the_next_acquire() {
     if !node_available() {
         return;
     }
-    let pid_file = temp_file("octocode-engine-readiness-timeout-pid");
-    let (root, mut config) = configurable_server(
+    let tmp = TmpDir::new();
+    let pid_file = tmp.0.join("octocode-engine-readiness-timeout-pid");
+    let (_tmp, root, mut config) = configurable_server(
         "octocode-engine-readiness-timeout",
         &[
             // Longer than the 2 s shellscript readiness budget, shorter
@@ -1645,7 +1654,7 @@ fn first_open_after_a_confirmed_project_load_skips_the_settle() {
     if !node_available() {
         return;
     }
-    let (root, config) = configurable_server(
+    let (_tmp, root, config) = configurable_server(
         "octocode-engine-open-after-index",
         &[("FAKE_INDEX_MS", "50".into())],
         None,

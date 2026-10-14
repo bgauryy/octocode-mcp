@@ -1,25 +1,16 @@
 //! Provider-backed ghSearchRepo tests: typed filters, archived disclosure,
 //! and row facts.
 use super::{GhSearchRepoQuery, execute};
-use crate::providers::github::RetryPolicy;
-use crate::tools::gh_shared::test_support::{mock_provider, mount_json};
+use crate::tools::gh_shared::test_support::{default_context, mount_json, one_shot_provider};
 use crate::tools::result::ToolData;
 use serde_json::{Value, json};
-use std::time::Duration;
 use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 async fn run(server: &MockServer, query: Value) -> ToolData {
-    let provider = mock_provider(
-        server,
-        RetryPolicy {
-            max_attempts: 1,
-            ..Default::default()
-        },
-    );
+    let provider = one_shot_provider(server);
     let query: GhSearchRepoQuery = serde_json::from_value(query).expect("query");
-    let context =
-        crate::tools::gh_shared::test_support::fixture_context(Duration::from_secs(5), 1 << 20);
+    let context = default_context();
     execute(&provider, &query, &context).await.expect("search")
 }
 
@@ -197,6 +188,167 @@ async fn owner_listing_counts_skipped_archived_repositories() {
         "{}",
         out.data
     );
+}
+
+/// The token's own login lists every repository it owns, private ones
+/// included; another user's listing is public. A user owner is recognized
+/// once per transport, not with a failed organization lookup on every page.
+#[tokio::test]
+async fn an_owner_listing_of_the_token_user_includes_private_repositories() {
+    let server = MockServer::builder().start().await;
+    for owner in ["me", "other"] {
+        Mock::given(method("GET"))
+            .and(path(format!("/api/v3/orgs/{owner}/repos")))
+            .respond_with(ResponseTemplate::new(404).set_body_json(json!({"message":"Not Found"})))
+            .expect(1)
+            .mount(&server)
+            .await;
+    }
+    Mock::given(method("GET"))
+        .and(path("/api/v3/user"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"login":"Me"})))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let link = format!(
+        "<{}/api/v3/user/repos?page=2&per_page=1>; rel=\"next\"",
+        server.uri()
+    );
+    Mock::given(method("GET"))
+        .and(path("/api/v3/user/repos"))
+        .and(query_param("visibility", "all"))
+        .and(query_param("affiliation", "owner"))
+        .and(query_param("page", "1"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("link", link.as_str())
+                .set_body_json(json!([repo_item("old", true)])),
+        )
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/user/repos"))
+        .and(query_param("page", "2"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([repo_item("secret", false)])))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/users/other/repos"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([repo_item("public", false)])))
+        .mount(&server)
+        .await;
+    let provider = one_shot_provider(&server);
+    let context = default_context();
+    let listing = |owner: &str| {
+        serde_json::from_value::<GhSearchRepoQuery>(json!({"owner": owner, "pageSize": 1}))
+            .expect("query")
+    };
+    let mine = execute(&provider, &listing("me"), &context)
+        .await
+        .expect("own");
+    assert_eq!(
+        mine.data["repositories"][0]["repo"], "secret",
+        "{}",
+        mine.data
+    );
+    let again = execute(&provider, &listing("me"), &context)
+        .await
+        .expect("own again");
+    assert_eq!(
+        again.data["repositories"][0]["repo"], "secret",
+        "{}",
+        again.data
+    );
+    let theirs = execute(&provider, &listing("other"), &context)
+        .await
+        .expect("other");
+    assert_eq!(
+        theirs.data["repositories"][0]["repo"], "public",
+        "{}",
+        theirs.data
+    );
+}
+
+/// A `/user` read that fails transiently is not remembered: the next
+/// listing asks again and, once GitHub answers, lists private repositories.
+#[tokio::test]
+async fn a_failed_viewer_lookup_is_not_remembered() {
+    let server = MockServer::builder().start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/orgs/me/repos"))
+        .respond_with(ResponseTemplate::new(404).set_body_json(json!({"message":"Not Found"})))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/user"))
+        .respond_with(ResponseTemplate::new(502))
+        .up_to_n_times(1)
+        .with_priority(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/user"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"login":"me"})))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/users/me/repos"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([repo_item("public", false)])))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/user/repos"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([repo_item("secret", false)])))
+        .mount(&server)
+        .await;
+    let provider = one_shot_provider(&server);
+    let context = default_context();
+    let query: GhSearchRepoQuery =
+        serde_json::from_value(json!({"owner": "me", "pageSize": 1})).expect("query");
+    let first = execute(&provider, &query, &context).await.expect("first");
+    assert_eq!(
+        first.data["repositories"][0]["repo"], "public",
+        "{}",
+        first.data
+    );
+    let second = execute(&provider, &query, &context).await.expect("second");
+    assert_eq!(
+        second.data["repositories"][0]["repo"], "secret",
+        "{}",
+        second.data
+    );
+}
+
+/// An exact lookup of a renamed repository says so: the row names the new
+/// repository, and nothing else would tell the caller its name was stale.
+#[tokio::test]
+async fn an_exact_lookup_of_a_renamed_repository_warns() {
+    let server = MockServer::builder().start().await;
+    mount_json(
+        &server,
+        "/api/v3/repos/o/old",
+        200,
+        json!({"full_name":"o/new","name":"new","html_url":"h","default_branch":"main","archived":false}),
+    )
+    .await;
+    let out = run(&server, json!({"owner":"o","repo":"old"})).await;
+    assert_eq!(out.data["repositories"][0]["repo"], "new", "{}", out.data);
+    assert_eq!(
+        out.data["warnings"],
+        json!(["Repository o/old was renamed to o/new; leads use the canonical name."]),
+        "{}",
+        out.data
+    );
+    let same = MockServer::builder().start().await;
+    mount_json(
+        &same,
+        "/api/v3/repos/o/new",
+        200,
+        json!({"full_name":"O/New","name":"New","html_url":"h","default_branch":"main","archived":false}),
+    )
+    .await;
+    let out = run(&same, json!({"owner":"o","repo":"new"})).await;
+    assert!(out.data.get("warnings").is_none(), "{}", out.data);
 }
 
 /// Rows carry the facts that decide a repository choice: the last push by
@@ -443,15 +595,8 @@ async fn search_failures_lead_to_their_repair() {
         json!({"message":"Not Found"}),
     )
     .await;
-    let provider = mock_provider(
-        &server,
-        RetryPolicy {
-            max_attempts: 1,
-            ..Default::default()
-        },
-    );
-    let context =
-        crate::tools::gh_shared::test_support::fixture_context(Duration::from_secs(5), 1 << 20);
+    let provider = one_shot_provider(&server);
+    let context = default_context();
     let fail = |query: Value| {
         let query: GhSearchRepoQuery = serde_json::from_value(query).expect("query");
         let provider = &provider;

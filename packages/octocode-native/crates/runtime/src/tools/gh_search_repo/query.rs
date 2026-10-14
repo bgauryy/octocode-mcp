@@ -1,7 +1,7 @@
 //! ghSearchRepo query syntax.
 use super::GhSearchRepoQuery;
-use crate::providers::github::quote_search_keyword;
 use crate::tools::gh_shared::query::{push, push_qualifiers, range_value};
+use octocode_github::quote_search_keyword;
 
 pub(super) fn repositories(query: &GhSearchRepoQuery) -> String {
     let GhSearchRepoQuery {
@@ -57,19 +57,30 @@ pub(super) fn repositories(query: &GhSearchRepoQuery) -> String {
     for kind in match_in {
         push(&mut parts, "in", Some(&kind.to_string()));
     }
-    // `archived:true` includes archived repositories (no qualifier); the
-    // default excludes them unless `qualifiers` states an archive filter
-    // (`is:archived` lists only archived ones).
-    let archive_qualifier = query.qualifiers.as_deref().is_some_and(|qualifiers| {
+    // Repository search ignores `is:archived`/`is:not-archived`; they become
+    // the `archived:` filter it honours, which replaces the default
+    // exclusion. `includeArchived` sends no archive filter at all.
+    let mut archive = None;
+    let qualifiers = query.qualifiers.as_deref().map(|qualifiers| {
         qualifiers
             .split_whitespace()
-            .any(|term| matches!(term, "is:archived" | "is:not-archived"))
+            .filter(|term| {
+                let filter = match *term {
+                    "is:archived" => "archived:true",
+                    "is:not-archived" => "archived:false",
+                    _ => return true,
+                };
+                archive = Some(filter);
+                false
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
     });
-    if *include_archived != Some(true) && !archive_qualifier {
-        parts.push("archived:false".into());
+    if *include_archived != Some(true) || archive.is_some() {
+        parts.push(archive.unwrap_or("archived:false").into());
     }
-    if let Some(qualifiers) = query.qualifiers.as_deref() {
-        push_qualifiers(&mut parts, qualifiers);
+    if let Some(qualifiers) = qualifiers {
+        push_qualifiers(&mut parts, &qualifiers);
     }
     parts.join(" ").trim().into()
 }
@@ -88,19 +99,23 @@ mod tests {
         assert!(!q.contains("is:not-archived"), "{q}");
     }
 
-    /// `archived:true` includes archived repositories: neither archive
-    /// qualifier is sent. `is:archived` in `qualifiers` replaces the default.
+    /// `includeArchived` sends no archive qualifier. Repository search
+    /// ignores `is:archived`/`is:not-archived`, so those become the
+    /// `archived:` filter it honours, replacing the default.
     #[test]
     fn archived_true_includes_and_is_archived_replaces_the_default() {
         let included = repositories(&parse(
             serde_json::json!({"mainGoal": "test", "reasoning":"test","keywords":["x"],"includeArchived":true}),
         ));
         assert!(!included.contains("archived:"), "{included}");
-        let only = repositories(&parse(
-            serde_json::json!({"mainGoal": "test", "reasoning":"test","keywords":["x"],"qualifiers":"is:archived"}),
-        ));
-        assert!(only.contains("is:archived"), "{only}");
-        assert!(!only.contains("archived:false"), "{only}");
+        let q = |qualifiers: &str| {
+            repositories(&parse(serde_json::json!({
+                "mainGoal": "test", "reasoning":"test","keywords":["x"],"qualifiers": qualifiers
+            })))
+        };
+        assert_eq!(q("is:archived"), "x archived:true");
+        assert_eq!(q("is:not-archived"), "x archived:false");
+        assert_eq!(q("is:public"), "x archived:false is:public");
     }
 
     #[test]

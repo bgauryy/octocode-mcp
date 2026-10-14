@@ -5,14 +5,19 @@ use serde_json::Value;
 
 pub(crate) struct Output;
 impl ToolOutput for Output {
-    fn fallback_hint(&self, _query: &Value) -> &'static str {
-        "Verify path/range, or remove matchString."
+    fn fallback_hint(&self, query: &Value) -> &'static str {
+        if query.get("matchString").is_some() {
+            "Verify path/range, or remove matchString."
+        } else {
+            "Verify path/range."
+        }
     }
     fn error_hint(&self, code: &str) -> Option<&'static str> {
         match code {
             "fileAccessFailed" => Some(crate::tools::output::LIST_FILES_HINT),
             // The message names the item; `repair` is the corrected read.
-            "invalidPattern" => Some(crate::tools::output::NO_HINT),
+            // A malformed page cursor: the message names the bad offset.
+            "invalidPattern" | "invalidPagination" => Some(crate::tools::output::NO_HINT),
             _ => None,
         }
     }
@@ -27,5 +32,25 @@ impl ToolOutput for Output {
     }
     fn text_shape(&self) -> TextShape {
         TextShape::FileText
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// Tips follow the read: only a match read is told about matchString,
+    /// and a malformed page cursor's message is its whole answer.
+    #[test]
+    fn tips_follow_the_read() {
+        let plain = Output.fallback_hint(&json!({"path":"a.rs","ranges":["1-3"]}));
+        assert!(!plain.contains("matchString"), "{plain}");
+        let matched = Output.fallback_hint(&json!({"path":"a.rs","matchString":"x"}));
+        assert!(matched.contains("matchString"), "{matched}");
+        assert_eq!(
+            Output.error_hint("invalidPagination"),
+            Some(crate::tools::output::NO_HINT)
+        );
     }
 }

@@ -80,7 +80,13 @@ impl Layout {
                         .iter()
                         .map(|m| costs.row(m) + costs.enclosing(file))
                         .sum::<usize>()
-            });
+            })
+            && parsed
+                .files
+                .iter()
+                .map(|file| expansion_rows(&file.matches, &costs))
+                .sum::<usize>()
+                <= max_expansion_rows();
         let matches_per = query
             .match_page_size()
             .unwrap_or(if show_all {
@@ -179,6 +185,7 @@ impl Layout {
             StreamCosts {
                 file: &|file| costs.file(file),
                 row: &|file, row| costs.row(row) + costs.enclosing(file),
+                expansion_rows: &|rows| expansion_rows(rows, costs),
             },
         );
         let total_pages = u32::try_from(pages.len()).unwrap_or(u32::MAX).max(1);
@@ -208,16 +215,16 @@ impl Layout {
             .unwrap_or_else(|| default_page_size(query.result_view))
             .max(1);
         let page = query.page().max(1);
-        let start = (page - 1).saturating_mul(page_size) as usize;
-        let end = start.saturating_add(page_size as usize).min(file_count);
+        let window =
+            crate::tools::page_windows::count_window(page as usize, page_size as usize, file_count);
         let skip = (query.match_page().max(1) - 1).saturating_mul(matches_per) as usize;
-        let shown = (start.min(end)..end)
+        let shown = window
             .map(|index| (index, skip..skip.saturating_add(matches_per as usize)))
             .collect::<PageRows>();
         let total_files = u32::try_from(file_count).unwrap_or(u32::MAX);
         (
             shown,
-            total_files.div_ceil(page_size).max(1),
+            crate::tools::page_windows::count_pages(file_count, page_size as usize) as u32,
             Some(page_size),
             total_files,
         )
@@ -234,6 +241,8 @@ pub(super) struct PageCosts {
     pub(super) match_only_limit: Option<usize>,
     pub(super) match_only: bool,
     pub(super) expand_context: u32,
+    /// Multiline values are read once per file (see [`expansion_rows`]).
+    pub(super) multiline: bool,
     pub(super) read_chars: usize,
     /// Rows are shown, so each hit row of an outlined language carries its
     /// `enclosing` name: the page reserves it before the cut.
@@ -258,6 +267,7 @@ impl PageCosts {
             match_only_limit: match_only.then_some(effective_match_content_length(query) as usize),
             match_only,
             expand_context: if match_only { 0 } else { context_lines },
+            multiline: query.multiline != LocalSearchQueryMultiline::Off,
             names: !list_view(query.result_view),
             read_chars: expansion_read_chars(
                 query,
@@ -415,6 +425,16 @@ pub(super) struct StreamCosts<'a> {
         &octocode_engine::types::TextSearchFile,
         &octocode_engine::types::TextSearchMatch,
     ) -> usize,
+    /// The `expandValues` rows one file's rows on a page need.
+    pub(super) expansion_rows:
+        &'a dyn Fn(&mut dyn Iterator<Item = &octocode_engine::types::TextSearchMatch>) -> usize,
+}
+
+/// Rows one `expandValues` call runs: a page never needs more to read every
+/// clipped value it shows.
+pub(super) fn max_expansion_rows() -> usize {
+    crate::tools::result::rows_per_call(ToolId::LocalFetch)
+        .min(crate::tools::result::rows_per_call(ToolId::LocalSearch))
 }
 
 /// Rows one page shows: (file index, rank-order row range), in page order.
@@ -440,7 +460,10 @@ pub(super) fn streamed_layout(q: &LocalSearchQuery) -> bool {
 /// (at least one row), counting a file's `pagination` whenever its later
 /// rows may fall on a later page; the first holds only first-pass rows, so
 /// a large result opens with a lean overview, and no page holds more than
-/// [`ENCLOSING_MAX_FILES`] files, so every hit row it shows is named. `whole` puts the entire result on one page. A file's
+/// [`ENCLOSING_MAX_FILES`] files, so every hit row it shows is named. No
+/// page shows clipped values that need more reads than one `expandValues`
+/// call runs ([`max_expansion_rows`]), so each page's values are one call
+/// away. `whole` puts the entire result on one page. A file's
 /// rows on one page are always one contiguous rank range, and its later
 /// rows follow on later pages.
 pub(super) fn stream_pages(
@@ -475,6 +498,9 @@ pub(super) fn stream_pages(
     // Files whose `pagination` this page already counts.
     let mut paged = std::collections::HashSet::<usize>::new();
     let mut used = 0usize;
+    let max_reads = max_expansion_rows();
+    // `expandValues` rows the page's clipped values need.
+    let mut reads = 0usize;
     for (index, rows, overview) in first.chain(rest) {
         let file = &files[index];
         // A row-less file still takes its place as one entry.
@@ -496,18 +522,34 @@ pub(super) fn stream_pages(
             };
             let has_file = slot.contains_key(&index);
             let over_budget = used + cost(has_file, paged.contains(&index)) > budget;
+            // The reads this row adds to its file's on the page: only a
+            // clipped row adds one.
+            let added_reads = |page: &PageRows, slot: &std::collections::HashMap<usize, usize>| {
+                let Some(row) = row else {
+                    return 0;
+                };
+                let shown = slot
+                    .get(&index)
+                    .map_or(row..row, |&position| page[position].1.clone());
+                let with = shown.start.min(row)..shown.end.max(row + 1);
+                (costs.expansion_rows)(&mut file.matches[with].iter())
+                    .saturating_sub((costs.expansion_rows)(&mut file.matches[shown].iter()))
+            };
+            let over_reads = reads + added_reads(&page, &slot) > max_reads;
             // Every page names the enclosing declaration of each hit row in
             // at most `ENCLOSING_MAX_FILES` files, so no page holds more.
             let page_full = (pages.is_empty() && !overview)
                 || (!has_file && page.len() >= first_page_files.min(ENCLOSING_MAX_FILES));
-            if !page.is_empty() && (over_budget || page_full) {
+            if !page.is_empty() && (over_budget || page_full || over_reads) {
                 pages.push(std::mem::take(&mut page));
                 slot.clear();
                 paged.clear();
                 used = 0;
+                reads = 0;
             }
             let has_file = slot.contains_key(&index);
             used += cost(has_file, paged.contains(&index));
+            reads += added_reads(&page, &slot);
             if more_after {
                 paged.insert(index);
             }
@@ -534,17 +576,17 @@ pub(super) fn stream_pages(
 const MAX_MATCH_CONTENT_LENGTH: usize =
     crate::tools::id::query_limits::local_search::MATCH_CONTENT_LENGTH_MAXIMUM;
 
-/// Serialized chars of one `expandValuesNN` read without its path (and its
+/// Serialized chars of one `expandValues` read without its path (and its
 /// ranges, which each row pays for).
 pub(super) fn expansion_read_chars(query: &LocalSearchQuery, multiline: bool) -> usize {
     let read = if multiline {
-        json!({"expandValues99": {
+        json!({"expandValues": {
             "tool": ToolId::LocalSearch.as_str(),
             "query": {"queries": [normalized_query(query, true)]},
             "confidence": "exact",
         }})
     } else {
-        json!({"expandValues99": {
+        json!({"expandValues": {
             "tool": ToolId::LocalFetch.as_str(),
             "query": {"queries": [{"path": "", "ranges": []}]},
             "confidence": "exact",
@@ -607,6 +649,9 @@ pub(super) fn expand_values(
         ];
     }
     let mut reads = Vec::new();
+    // Multiline files: a file-scoped search widened to its longest value
+    // when that view exists, else a read from its first clipped line.
+    let mut multiline_reads = Vec::new();
     for file in files {
         let clipped = file
             .matches
@@ -628,37 +673,34 @@ pub(super) fn expand_values(
                 .max()
                 .unwrap_or(0)
                 .min(MAX_MATCH_CONTENT_LENGTH);
-            if longest <= effective_match_content_length(query) as usize {
-                // Already at the widest view: read from the first clipped
-                // line; localFetch pages the rest of the file.
-                let first = clipped
-                    .iter()
-                    .map(|matched| matched.line)
-                    .min()
-                    .unwrap_or(1);
-                reads.push(
-                    Continuation::new(
-                        ToolId::LocalFetch,
-                        json!({"path": path, "ranges": [format!("{}-{}", first.saturating_sub(context).max(1), READ_TO_END_LINE)]}),
-                    )
-                    .confidence("exact")
-                    .build(),
-                );
-                continue;
-            }
-            let mut search = normalized_query(query, true);
-            if let Some(fields) = search.as_object_mut() {
-                for key in ["page", "matchPage", "snapshot", "pageSize"] {
-                    fields.remove(key);
+            // Read from the first clipped line; localFetch pages the rest of
+            // the file.
+            let first = clipped
+                .iter()
+                .map(|matched| matched.line)
+                .min()
+                .unwrap_or(1);
+            let fetch = Continuation::new(
+                ToolId::LocalFetch,
+                json!({"path": path, "ranges": [format!("{}-{}", first.saturating_sub(context).max(1), READ_TO_END_LINE)]}),
+            )
+            .confidence("exact")
+            .build();
+            // Already at the widest view, only the read reaches the value.
+            let search = (longest > effective_match_content_length(query) as usize).then(|| {
+                let mut search = normalized_query(query, true);
+                if let Some(fields) = search.as_object_mut() {
+                    for key in ["page", "matchPage", "snapshot", "pageSize"] {
+                        fields.remove(key);
+                    }
+                    fields.insert("path".into(), json!(path));
+                    fields.insert("matchContentLength".into(), json!(longest));
                 }
-                fields.insert("path".into(), json!(path));
-                fields.insert("matchContentLength".into(), json!(longest));
-            }
-            reads.push(
                 Continuation::new(ToolId::LocalSearch, search)
                     .confidence("exact")
-                    .build(),
-            );
+                    .build()
+            });
+            multiline_reads.push((search, fetch));
             continue;
         }
         // A value clipped out of a line longer than a read page is read by
@@ -683,7 +725,49 @@ pub(super) fn expand_values(
             );
         }
     }
+    // One lead runs one tool: the widened searches only while every file
+    // has one; otherwise every file is read from its first clipped line,
+    // which reaches any value whole.
+    let search_all = multiline_reads.iter().all(|(search, _)| search.is_some());
+    reads.extend(
+        multiline_reads
+            .into_iter()
+            .map(|(search, fetch)| search.filter(|_| search_all).unwrap_or(fetch)),
+    );
     reads
+}
+
+/// The `expandValues` rows a page's rows of `file` need when their values
+/// are read per file (see [`expand_values`]): one per long-line hit and one
+/// per [`RANGES_MAX_ITEMS`] merged hit windows; a multiline file needs one.
+pub(super) fn expansion_rows<'a>(
+    rows: impl IntoIterator<Item = &'a octocode_engine::types::TextSearchMatch>,
+    costs: &PageCosts,
+) -> usize {
+    let clipped = rows
+        .into_iter()
+        .filter(|matched| costs.clipped(matched))
+        .collect::<Vec<_>>();
+    if clipped.is_empty() {
+        return 0;
+    }
+    if costs.multiline {
+        return 1;
+    }
+    let long = |matched: &&octocode_engine::types::TextSearchMatch| {
+        matched
+            .original_chars
+            .map_or_else(|| matched.value.chars().count(), |chars| chars as usize)
+            > crate::tools::local_fetch::LINE_PAGE_BYTES
+    };
+    let (long, plain): (Vec<_>, Vec<_>) = clipped.into_iter().partition(long);
+    long.len()
+        + hit_windows(
+            plain.iter().map(|matched| matched.line),
+            costs.expand_context,
+        )
+        .len()
+        .div_ceil(RANGES_MAX_ITEMS)
 }
 
 /// Line runs `moreLines` names before it summarizes the rest as a count.

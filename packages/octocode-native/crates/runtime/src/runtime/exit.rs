@@ -55,13 +55,22 @@ impl ToolOutcome {
     }
 }
 
+impl ExitClass {
+    /// How a call that failed with `code` ended: the contract's class of the
+    /// code (`errorCodes`), whichever interface or command reports it.
+    #[must_use]
+    pub fn of_code(code: &str) -> Self {
+        match error_class(code) {
+            ErrorClass::InvalidInput => Self::InvalidInput,
+            _ => Self::Failed(failure_kind(code)),
+        }
+    }
+}
+
 impl RuntimeError {
     #[must_use]
     pub fn exit_class(&self) -> ExitClass {
-        match error_class(&self.code) {
-            ErrorClass::InvalidInput => ExitClass::InvalidInput,
-            _ => ExitClass::Failed(failure_kind(&self.code)),
-        }
+        ExitClass::of_code(&self.code)
     }
 }
 

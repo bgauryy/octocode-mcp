@@ -484,7 +484,7 @@ pub struct ContentSecurity;
 fn email_pattern() -> &'static regex::Regex {
     static PATTERN: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     PATTERN.get_or_init(|| {
-        #[allow(clippy::expect_used)]
+        #[expect(clippy::expect_used, reason = "static pattern, valid by construction")]
         regex::Regex::new(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+")
             .expect("static email pattern compiles")
     })
@@ -574,7 +574,7 @@ impl ContentSecurity {
                 format!("Content exceeds maximum length ({max_bytes} bytes)"),
             ));
         }
-        if bytes.contains(&0) {
+        if octocode_engine::text::sniff(bytes) == octocode_engine::text::BinaryVerdict::Binary {
             return Err(PolicyError::new(
                 PolicyErrorCode::BinaryContent,
                 "Binary content is not allowed for text output",

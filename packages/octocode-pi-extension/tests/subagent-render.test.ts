@@ -17,6 +17,13 @@ describe('subagent renderers', () => {
     expect(doneSummary(details({ cost: 0.12, unpriced: true }), undefined)).toBe('Done (general-0001 · 2 tool calls · ↑1.5k ↓500 · ≈$0.12 + n/a)');
   });
 
+  it('labels a run by the outcome its report names, Done when it names none', () => {
+    expect(doneSummary(details({ outcome: 'done' }), 38_000)).toBe('Done (general-0001 · 2 tool calls · ↑1.5k ↓500 · 38s)');
+    expect(doneSummary(details({ outcome: 'partial' }), 38_000)).toBe('Partial (general-0001 · 2 tool calls · ↑1.5k ↓500 · 38s)');
+    expect(doneSummary(details({ outcome: 'blocked' }), undefined)).toMatch(/^Blocked \(/);
+    expect(rendered(renderAgentResult({ content: [{ type: 'text', text: 'blocked: need a decision' }], details: details({ outcome: 'blocked' }) }, { isPartial: false, expanded: false }, theme, ctx()))).toContain('⎿  Blocked (general-0001');
+  });
+
   it('draws the call with the profile and tags, never the prompt', () => {
     const call = rendered(renderAgentCall({ task: 'look\nsecond', profile: 'researcher', background: true }, theme, ctx()));
     expect(call).toContain('Agent(researcher)');
@@ -53,6 +60,14 @@ describe('subagent renderers', () => {
     const live = (expanded: boolean) => rendered(renderAgentResult({ content: [], details: details({ status: 'running' }) }, { isPartial: true, expanded }, theme, ctx({ args, expanded, isPartial: true, executionStarted: true })));
     expect(live(false)).toContain('general-0001 · 2 tool calls');
     expect(live(true)).toMatch(/Prompt[\s\S]*Progress[\s\S]*→ read a\.ts/);
+    const thinking = rendered(renderAgentResult({ content: [], details: details({ status: 'running', thinking: 'Check the lock' }) }, { isPartial: true, expanded: false }, theme, ctx({ args, isPartial: true, executionStarted: true })));
+    expect(thinking).toContain('✻ Check the lock…');
+    // A stop in progress says so until the run has closed.
+    const stopping = rendered(renderAgentResult({ content: [], details: details({ status: 'running', stopping: true }) }, { isPartial: true, expanded: false }, theme, ctx({ args, isPartial: true, executionStarted: true })));
+    expect(stopping).toContain('stopping… (general-0001 · 2 tool calls');
+    // A child with a dialog open for the user's answer says so.
+    const waiting = rendered(renderAgentResult({ content: [], details: details({ status: 'running', waiting: true }) }, { isPartial: true, expanded: false }, theme, ctx({ args, isPartial: true, executionStarted: true })));
+    expect(waiting).toContain('waiting for your approval (general-0001 · 2 tool calls');
   });
 
   it('shows a background report with its name, role and goal, and its full prompt when expanded', () => {

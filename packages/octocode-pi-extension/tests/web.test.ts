@@ -3,7 +3,8 @@ import zlib from 'node:zlib';
 import type { AddressInfo, LookupFunction } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { classifyHost, isBlockedIp, publicFetch, type HostLookup } from '../src/web/guard.js';
-import { clearFetchCache, decodeBody, fetchUrl, isBinaryType } from '../src/web/fetch.js';
+import { clearFetchCache, decodeBody, fetchUrl, isBinaryType, readCapped } from '../src/web/fetch.js';
+import { asText } from './helpers.js';
 import { collapseLinkRuns, describeHtml, htmlToText, mainContent } from '../src/web/html.js';
 import { parseDuckDuckGo } from '../src/web/search.js';
 
@@ -80,7 +81,7 @@ describe('web private-address guard', () => {
     expect(await kind('https://gone.test/', async () => Promise.reject(new Error('ENOTFOUND')))).toBe('unresolved');
     expect(await kind('https://empty.test/', async () => [])).toBe('unresolved');
     await expect(publicFetch('file:///etc/passwd', {})).rejects.toThrow('http(s) URLs only');
-    await expect(publicFetch('https://gone.test/', {}, { env: {}, lookup: async () => Promise.reject(new Error('getaddrinfo ENOTFOUND gone.test')) })).rejects.toThrow('ENOTFOUND');
+    await expect(publicFetch('https://gone.test/', {}, { lookup: async () => Promise.reject(new Error('getaddrinfo ENOTFOUND gone.test')) })).rejects.toThrow('ENOTFOUND');
   });
 
   it('connects to the checked addresses, not to a second DNS answer (rebinding)', async () => {
@@ -88,7 +89,7 @@ describe('web private-address guard', () => {
     const pinned = connectLocally();
     const lookups: string[] = [];
     const lookup: HostLookup = async (hostname) => (lookups.push(hostname), [{ address: '93.184.216.34' }, { address: '2606:4700::1111' }]);
-    const response = await publicFetch(`http://rebind.test:${port}/`, {}, { env: {}, lookup });
+    const response = await publicFetch(`http://rebind.test:${port}/`, {}, { lookup });
     expect(await response.text()).toBe('page');
     expect(response.url).toBe(`http://rebind.test:${port}/`);
     // The check resolved the name once; the connection may use only what it approved.
@@ -96,9 +97,38 @@ describe('web private-address guard', () => {
     expect(pinned).toEqual([['93.184.216.34', '2606:4700::1111']]);
   });
 
+  it('sends a POST body with its length, and fails on a redirect instead of following it', async () => {
+    const seen: Array<{ method?: string; type?: string; length?: string; body: string }> = [];
+    const port = await serve((request, response) => {
+      let body = '';
+      request.on('data', (chunk: Buffer) => (body += chunk));
+      request.on('end', () => {
+        seen.push({ method: request.method, type: request.headers['content-type'], length: request.headers['content-length'], body });
+        if (request.url === '/hop') return void response.writeHead(307, { location: '/echo' }).end();
+        response.writeHead(200, { 'content-type': 'text/plain' }).end(`got ${body}`);
+      });
+    });
+    const first = { firstHopPrivate: true };
+    const payload = JSON.stringify({ q: 'caf\u00e9' });
+    const answer = await publicFetch(`http://127.0.0.1:${port}/echo`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: payload, redirect: 'error' }, first);
+    expect(await answer.text()).toBe(`got ${payload}`);
+    expect(seen).toEqual([{ method: 'POST', type: 'application/json', length: String(Buffer.byteLength(payload)), body: payload }]);
+    seen.length = 0;
+    await expect(publicFetch(`http://127.0.0.1:${port}/hop`, { method: 'POST', body: payload, redirect: 'error' }, first)).rejects.toThrow('answered with a redirect (HTTP 307); it is not followed');
+    expect(seen.map((request) => request.method)).toEqual(['POST']);
+    // A GET with redirect 'error' fails the same way; a body without it is refused before any connection.
+    await expect(publicFetch(`http://127.0.0.1:${port}/hop`, { redirect: 'error' }, first)).rejects.toThrow('not followed');
+    await expect(publicFetch(`http://127.0.0.1:${port}/echo`, { method: 'POST', body: payload }, first)).rejects.toThrow("redirect: 'error'");
+    expect(seen).toHaveLength(2);
+  });
+
+  it('still blocks a private address for a POST', async () => {
+    await expect(publicFetch('http://127.0.0.1:9/', { method: 'POST', body: '{}', redirect: 'error' })).rejects.toThrow('Blocked private or non-public address');
+  });
+
   it('keeps redirects to http(s), even with private addresses allowed', async () => {
     const port = await serve((_request, response) => void response.writeHead(302, { location: 'file:///etc/passwd' }).end());
-    await expect(publicFetch(`http://127.0.0.1:${port}/`, {}, { env: { OCTOCODE_WEB_ALLOW_PRIVATE: '1' } })).rejects.toThrow('web fetches http(s) URLs only, not file:');
+    await expect(publicFetch(`http://127.0.0.1:${port}/`, {}, { firstHopPrivate: true })).rejects.toThrow('web fetches http(s) URLs only, not file:');
   });
 
   it('decodes compressed bodies and the declared charset, and cuts at a whole character', async () => {
@@ -109,15 +139,15 @@ describe('web private-address guard', () => {
       if (request.url === '/meta') return void response.writeHead(200, { 'content-type': 'text/html' }).end(Buffer.from('<html><head><meta charset="windows-1252"><title>Na\xefve</title></head><body><p>\x93quoted\x94</p></body></html>', 'latin1'));
       response.writeHead(200, { 'content-type': 'text/plain; charset=x-unknown' }).end('caf\u00e9');
     });
-    const env = { OCTOCODE_WEB_ALLOW_PRIVATE: '1' };
+    const allowed = { private: true };
     const base = `http://127.0.0.1:${port}`;
-    expect(await fetchUrl(`${base}/gzip`, undefined, env)).toBe('packed text');
-    expect(await fetchUrl(`${base}/br`, undefined, env)).toBe('brotli text');
-    expect(await fetchUrl(`${base}/latin1`, undefined, env)).toBe('caf\u00e9');
-    const meta = await fetchUrl(`${base}/meta`, undefined, env);
+    expect(await fetchUrl(`${base}/gzip`, undefined, allowed)).toBe('packed text');
+    expect(await fetchUrl(`${base}/br`, undefined, allowed)).toBe('brotli text');
+    expect(await fetchUrl(`${base}/latin1`, undefined, allowed)).toBe('caf\u00e9');
+    const meta = await fetchUrl(`${base}/meta`, undefined, allowed);
     expect(meta).toMatch(/^# Na\u00efve\n/);
     expect(meta).toContain('\u201cquoted\u201d');
-    expect(await fetchUrl(`${base}/unknown`, undefined, env)).toBe('caf\u00e9');
+    expect(await fetchUrl(`${base}/unknown`, undefined, allowed)).toBe('caf\u00e9');
     const bytes = Buffer.from('ab\u00e9');
     expect(decodeBody(bytes.subarray(0, 3), 'text/plain', true)).toBe('ab');
     expect(decodeBody(Buffer.from([0xff, 0xfe, 0x68, 0x00, 0x69, 0x00]), 'text/plain; charset=utf-8')).toBe('hi');
@@ -129,11 +159,11 @@ describe('web private-address guard', () => {
       hits += 1;
       setTimeout(() => response.writeHead(200, { 'content-type': 'text/plain' }).end(`visit ${hits}`), 100);
     });
-    const env = { OCTOCODE_WEB_ALLOW_PRIVATE: '1' };
+    const allowed = { private: true };
     const url = `http://127.0.0.1:${port}/same`;
     const leaving = new AbortController();
-    const first = fetchUrl(url, leaving.signal, env);
-    const second = fetchUrl(url, undefined, env);
+    const first = fetchUrl(url, leaving.signal, allowed);
+    const second = fetchUrl(url, undefined, allowed);
     leaving.abort(new Error('caller left'));
     await expect(first).rejects.toThrow('caller left');
     // One caller leaving does not abort the fetch the other still waits for.
@@ -146,15 +176,24 @@ describe('web private-address guard', () => {
       if (request.url === '/hop') return void response.writeHead(302, { location: `http://127.0.0.1:${port}/secret` }).end();
       response.writeHead(200, { 'content-type': 'text/plain' }).end('secret');
     });
-    await expect(fetchUrl(`http://127.0.0.1:${port}/secret`, undefined, {})).rejects.toThrow('OCTOCODE_WEB_ALLOW_PRIVATE=1');
+    await expect(fetchUrl(`http://127.0.0.1:${port}/secret`, undefined, {})).rejects.toThrow('Blocked private or non-public address');
     const pinned = connectLocally();
-    await expect(publicFetch(`http://public.test:${port}/hop`, {}, { env: {}, lookup: publicLookup })).rejects.toThrow(`Blocked private or non-public address: 127.0.0.1:${port}`);
+    await expect(publicFetch(`http://public.test:${port}/hop`, {}, { lookup: publicLookup })).rejects.toThrow(`Blocked private or non-public address: 127.0.0.1:${port}`);
     expect(pinned).toEqual([['93.184.216.34']]);
     vi.restoreAllMocks();
-    // The opt-out restores plain fetching, redirects included.
-    expect(await fetchUrl(`http://127.0.0.1:${port}/secret`, undefined, { OCTOCODE_WEB_ALLOW_PRIVATE: '1' })).toBe('secret');
-    const followed = await publicFetch(`http://localhost:${port}/hop`, {}, { env: { OCTOCODE_WEB_ALLOW_PRIVATE: '1' } });
-    expect(await followed.text()).toBe('secret');
+    // An approved private address is fetched for the first hop only: a redirect from it to a private address is still refused.
+    expect(await fetchUrl(`http://127.0.0.1:${port}/secret`, undefined, { private: true })).toBe('secret');
+    await expect(publicFetch(`http://localhost:${port}/hop`, {}, { firstHopPrivate: true })).rejects.toThrow(`Blocked private or non-public address: 127.0.0.1:${port}`);
+  });
+
+  it('caps a body at 5 MiB (readCapped) and reports that it cut it', async () => {
+    const MB = 1024 * 1024;
+    const small = await readCapped(new Response('hello'), 'text/plain');
+    expect(small).toEqual({ text: 'hello', truncated: false });
+    const big = await readCapped(new Response('a'.repeat(6 * MB)), 'text/plain');
+    expect(big.truncated).toBe(true);
+    expect(big.text).toHaveLength(5 * MB);
+    expect(await readCapped(new Response(null), '')).toEqual({ text: '', truncated: false });
   });
 
   it('says when a body over 5 MB was cut, and shows cut JSON raw', async () => {
@@ -166,15 +205,15 @@ describe('web private-address guard', () => {
       if (request.url === '/exact.txt') return void response.writeHead(200, { 'content-type': 'text/plain' }).end('b'.repeat(5 * MB));
       response.writeHead(200, { 'content-type': 'application/json' }).end('{"a":1}');
     });
-    const env = { OCTOCODE_WEB_ALLOW_PRIVATE: '1' };
-    const text = await fetchUrl(`http://127.0.0.1:${port}/big.txt`, undefined, env);
+    const allowed = { private: true };
+    const text = asText(await fetchUrl(`http://127.0.0.1:${port}/big.txt`, undefined, allowed));
     expect(text).toMatch(/^\[Truncated: the response is over 5 MB; only the first 5 MB was read\. Download it with bash/);
     expect(text.length - text.indexOf('\n\n') - 2).toBe(5 * MB);
-    const json = await fetchUrl(`http://127.0.0.1:${port}/big.json`, undefined, env);
+    const json = await fetchUrl(`http://127.0.0.1:${port}/big.json`, undefined, allowed);
     expect(json).toMatch(/^\[Truncated: .* and is shown raw, not pretty-printed\./);
     expect(json).toContain('\n\n{"items":"xxx');
-    expect(await fetchUrl(`http://127.0.0.1:${port}/exact.txt`, undefined, env)).toBe('b'.repeat(5 * MB));
-    expect(await fetchUrl(`http://127.0.0.1:${port}/small.json`, undefined, env)).toBe('{\n  "a": 1\n}');
+    expect(await fetchUrl(`http://127.0.0.1:${port}/exact.txt`, undefined, allowed)).toBe('b'.repeat(5 * MB));
+    expect(await fetchUrl(`http://127.0.0.1:${port}/small.json`, undefined, allowed)).toBe('{\n  "a": 1\n}');
   });
 });
 
@@ -241,7 +280,16 @@ describe('web page helpers', () => {
     const html = '<meta property="og:title" content="T"><meta property="product:price:amount" content="29"><meta property="og:locale" content=\'he_IL\'><meta name="description"><script type="application/ld+json">{"@context":"x","price":29}</script><script type="application/ld+json">{broken</script>';
     expect(pageMetadata(html)).toBe('## Page metadata (from the HTML; untrusted)\nproduct:price:amount: 29\nog:locale: he_IL\nJSON-LD: {"price":29}');
     expect(pageMetadata('<p>none</p>')).toBe('');
-    expect(pageMetadata(`<meta itemprop="price" content="${'9'.repeat(400)}">`, 60)).toMatch(/more characters cut; the rest is in the page source/);
+    // Nothing is cut: long metadata follows the page text whole, with a pointer where it would have led.
+    const { describeHtml } = await import('../src/web/html.js');
+    const long = `{"offers":"${'9'.repeat(3_000)}"}`;
+    const page = describeHtml(`<title>P</title><meta itemprop="price" content="${'7'.repeat(400)}"><script type="application/ld+json">${long}</script><p>Body text</p>`, 'https://x.test/');
+    const pointer = page.indexOf('(Page metadata, ');
+    expect(pointer).toBeGreaterThan(0);
+    expect(page.indexOf('Body text')).toBeGreaterThan(pointer);
+    expect(page.indexOf('## Page metadata')).toBeGreaterThan(page.indexOf('Body text'));
+    expect(page).toContain(`price: ${'7'.repeat(400)}`);
+    expect(page).toContain(`JSON-LD: ${long}`);
   });
 
   it('notes a JavaScript shell or app, and stays quiet for a plain page', async () => {

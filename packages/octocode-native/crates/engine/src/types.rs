@@ -28,13 +28,6 @@ pub struct TextSearchMatch {
     pub value: String,
     /// Frequency for this value when `count_unique` is enabled.
     pub count: Option<u32>,
-    /// AST node-kind label (declaration|import|export|callsite|identifier|
-    /// comment|string|configKey|heading) when `classify_matches` is enabled.
-    /// `None` when classification was off, the language is unsupported, or the
-    /// file failed to parse.
-    pub kind: Option<String>,
-    /// Deterministic relevance hint (0.0..1.0) derived from `kind`.
-    pub score_hint: Option<f64>,
     /// Lexical hit rank of the matched line (see `relevance::line_rank`):
     /// 3 declared name, 2 deciding statement (assignment, branch, return,
     /// raise), 1 other code, 0 comment or string. Set for line matches;
@@ -170,10 +163,8 @@ pub struct TextSearchOptions {
     pub exclude: Option<Vec<String>>,
     /// Exclude directories (`-g !<dir>/`).
     pub exclude_dir: Option<Vec<String>>,
-    /// Do not honor .gitignore/.ignore/etc. (`--no-ignore`).
-    pub no_ignore: Option<bool>,
-    /// Search hidden files and directories (`--hidden`).
-    pub hidden: Option<bool>,
+    /// Which ignore rules and dot entries the walk leaves out.
+    pub ignore: crate::search::walk::IgnorePolicy,
     /// Maximum directory descent below the search root. `0` searches files
     /// directly in the root, `1` includes one nested directory level, and so on.
     pub max_depth: Option<u32>,
@@ -185,10 +176,6 @@ pub struct TextSearchOptions {
     pub sort_reverse: Option<bool>,
     /// Max Unicode chars per assembled snippet (default 500).
     pub max_snippet_chars: Option<u32>,
-    /// When true, label each match with its AST node kind (tree-sitter) for
-    /// language-aware ranking. Optional and capped by the caller; degrades to
-    /// unlabeled matches on unsupported/unparseable files.
-    pub classify_matches: Option<bool>,
 
     // ── only-matching ──────────────────────────────────────────────
     /// Emit one match per *submatch* with `value` set to the matched span
@@ -236,15 +223,15 @@ pub struct FileSystemQueryOptions {
     pub max_depth: Option<u32>,
     /// Minimum depth where direct children are depth 1.
     pub min_depth: Option<u32>,
-    /// Include dotfiles and dot-directories (default true).
-    pub show_hidden: Option<bool>,
-    /// Match basename globs, OR-combined.
+    /// Which ignore rules and dot entries the walk leaves out.
+    pub ignore: crate::search::walk::IgnorePolicy,
+    /// List entries one of these globs matches (`search::glob`: a glob
+    /// without `/` matches a name at any depth, one with `/` the path below
+    /// the root).
     pub names: Option<Vec<String>>,
     /// Match file extensions, OR-combined. Values may include a leading dot.
     /// Directories are preserved so recursive structure views can keep context.
     pub extensions: Option<Vec<String>>,
-    /// Match full path glob.
-    pub path_pattern: Option<String>,
     /// Rust regex against basename.
     pub regex: Option<String>,
     /// POSIX find-style entry type: f=file, d=directory, l=symlink.
@@ -271,9 +258,8 @@ pub struct FileSystemQueryOptions {
     /// policy (`policy::prune`) supplies the names for every tool walk.
     /// Pruned directories are reported in `pruned_dirs`.
     pub exclude_dir: Option<Vec<String>>,
-    /// The caller's path globs to skip: without `/` a glob matches entry
-    /// names at any depth, with `/` the path below the root. A matching
-    /// directory is skipped with everything under it.
+    /// The caller's globs to skip (`search::glob`). A matching directory is
+    /// skipped with everything under it.
     pub exclude: Option<Vec<String>>,
     /// Stop walking after `limit` returned entries. Default true for interactive
     /// tools; set false when exact total_discovered is more important than
@@ -311,6 +297,9 @@ pub struct FileSystemQueryResult {
     pub was_capped: bool,
     pub skipped: u32,
     pub permission_denied: u32,
+    /// Entries the ignore rules left out (the topmost of each ignored
+    /// subtree); a dot entry out of view is not counted.
+    pub ignored: u32,
     pub warnings: Vec<String>,
     /// Root-relative paths of the directories `exclude_dir` pruned, in walk
     /// order: what a listing or an empty result did not cover.
@@ -331,8 +320,8 @@ pub struct GraphFactsScanOptions {
     pub skip_files: Option<u32>,
     pub max_file_bytes: Option<u32>,
     pub language_globs: Option<Vec<GraphLanguageGlob>>,
-    /// Walk dot entries too (`includeHidden`); off by default.
-    pub show_hidden: Option<bool>,
+    /// Which ignore rules and dot entries the walk leaves out.
+    pub ignore: crate::search::walk::IgnorePolicy,
 }
 
 #[derive(Debug, Clone)]

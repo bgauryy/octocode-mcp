@@ -1,6 +1,7 @@
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { sanitizeTerminalText, storedText } from '../shared/sanitize.js';
 import type { Member } from './model.js';
+import { processStartTime } from '../shared/process.js';
 import { AGENT_GOAL_ENV, AGENT_ROLE_ENV, PARENT_ID_ENV } from './store.js';
 
 /** Who an agent is on the team: its name (the id), its goal, and the row it joins with. */
@@ -40,22 +41,18 @@ export function agentName(taken: Iterable<string> = [], random: () => number = M
   return `${base}-${suffix}`;
 }
 
-/** An agent's goal: what it works on, in a few words the user and its peers can read at a glance. */
-export const GOAL_MAX_WORDS = 5;
-export const GOAL_MAX_CHARS = 40;
-export const GOAL_EXAMPLE = 'audit auth token refresh';
-export const GOAL_DESCRIPTION = `What this agent works on, at most ${GOAL_MAX_WORDS} words (about ${GOAL_MAX_CHARS} characters), shown to the user and to teammates; a crisp verb phrase such as "${GOAL_EXAMPLE}"`;
-
 /**
- * The goal as it is stored and shown: terminal escapes removed and whitespace collapsed. A goal that is missing or too
- * long is refused with what to write instead, never cut short.
+ * An agent's goal: what it works on, read at a glance in the panel, `coordinate list` and message headers. It is a label,
+ * not content: any length is accepted, and the panel shows its first `GOAL_SHOWN_CHARS` characters.
  */
+export const GOAL_SHOWN_CHARS = 48;
+const GOAL_EXAMPLE = 'audit auth token refresh';
+export const GOAL_DESCRIPTION = `What this agent works on, shown to the user and to teammates (about ${GOAL_SHOWN_CHARS} characters fit); a crisp verb phrase such as "${GOAL_EXAMPLE}"`;
+
+/** The goal as it is stored and shown: terminal escapes removed and whitespace collapsed. Only a missing goal is refused. */
 export function checkGoal(input: unknown): string {
   const goal = typeof input === 'string' ? sanitizeTerminalText(input).split(/\s+/).filter(Boolean).join(' ') : '';
-  if (goal === '') throw new Error(`A goal is required: write at most ${GOAL_MAX_WORDS} words on what this agent works on, for example "${GOAL_EXAMPLE}".`);
-  const words = goal.split(' ').length;
-  if (words > GOAL_MAX_WORDS) throw new Error(`The goal "${goal}" has ${words} words; write at most ${GOAL_MAX_WORDS} words, for example "${GOAL_EXAMPLE}".`);
-  if (goal.length > GOAL_MAX_CHARS) throw new Error(`The goal "${goal}" is ${goal.length} characters; write at most ${GOAL_MAX_CHARS}, for example "${GOAL_EXAMPLE}".`);
+  if (goal === '') throw new Error(`A goal is required: a few words on what this agent works on, for example "${GOAL_EXAMPLE}".`);
   return goal;
 }
 
@@ -69,11 +66,13 @@ export const LINE_MAX = 200;
 export function newMember(env: NodeJS.ProcessEnv, ctx: ExtensionContext, id: string, goal: string | undefined, now: number): Member {
   const parentId = env[PARENT_ID_ENV];
   const stored = storedText(goal ?? env[AGENT_GOAL_ENV], LINE_MAX);
+  const started = processStartTime(process.pid);
   return {
     id,
     role: env[AGENT_ROLE_ENV] ?? 'main',
     ...(parentId ? { parentId } : {}),
     pid: process.pid,
+    ...(started ? { started } : {}),
     status: ctx.isIdle() ? 'idle' : 'working',
     ...(stored ? { goal: stored } : {}),
     ...(ctx.model ? { model: storedText(ctx.model.id, LINE_MAX) } : {}),

@@ -138,12 +138,11 @@ pub(super) fn file_read_template(source: &Value, receipt: &Value) -> Option<Valu
         .get("query")
         .filter(|query| query.is_object())?
         .clone();
-    if tool == ToolId::LocalFetch
-        && let Some(fields) = query.as_object_mut()
-    {
+    if let Some(fields) = query.as_object_mut() {
         // A verification read names original source lines, not ranked view
         // offsets. Reusing the ranking cursor after narrowing to ranges is
-        // stale, while keeping goals would score the source a second time.
+        // stale for either file tool, while keeping goals would score the
+        // source a second time.
         fields.remove("goals");
         fields.remove("ranking");
     }
@@ -353,6 +352,27 @@ mod tests {
         assert!(read["query"].get("ranking").is_none());
         assert_eq!(read["query"]["snapshot"], "v1");
         assert_eq!(read["query"]["path"], "a.txt");
+    }
+
+    #[test]
+    fn github_verification_window_preserves_ref_and_range_without_rescoring() {
+        let source = json!({"tool":"ghGetFileContent","query":{
+            "owner":"example","repo":"project","path":"src/lib.rs",
+            "goals":["find the answer"],"ranking":"ranked-order",
+            "matchString":"needle","offset":4,"length":8
+        }});
+        let receipt = json!({"source":{"ref":"pinned-commit"}});
+        let template = file_read_template(&source, &receipt)
+            .expect("a GitHub file has an exact read template");
+        let read = crate::tools::clasify::output::window_read(&template, 40, 47)
+            .expect("the file template supports a source-line window");
+        assert_eq!(
+            read["query"],
+            json!({
+                "owner":"example","repo":"project","path":"src/lib.rs",
+                "ref":"pinned-commit","ranges":["40-47"]
+            })
+        );
     }
 
     #[test]

@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
+import type { BeforeAgentStartEvent, ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { sharedAgentDb } from '../agentdb/db.js';
 import type { Permission } from '../permission/ask.js';
 import { repoKey } from '../shared/home.js';
@@ -6,7 +6,7 @@ import type { Subcommands } from '../shared/commands.js';
 import { envFlag, MEMORY_AUTO_ENV } from '../shared/env.js';
 import { projectTrustNow } from '../shared/trust.js';
 import { registerMemoryCommand } from './command.js';
-import { injectedIds, MEMORY_MESSAGE_TYPE, selectInjection } from './inject.js';
+import { injectedIds, MEMORY_MESSAGE_TYPE, selectInjection, unchangedIds } from './inject.js';
 import { MemoryStore } from './store.js';
 import { registerMemoryTool } from './tool.js';
 
@@ -17,6 +17,16 @@ const SUBAGENT_TOP_K = 3;
 /** The memory store of `cwd`'s repository in the shared agent DB (the DB reopens when its path changes). */
 export function memoryStore(cwd: string, env: NodeJS.ProcessEnv = process.env): MemoryStore {
   return new MemoryStore(sharedAgentDb(env), repoKey(cwd).key);
+}
+
+/** Text that started the run. A user prompt is `prompt`; an idle custom message carries its own content. */
+function agentStartQuery(event: BeforeAgentStartEvent): string {
+  if (event.messageType === 'custom') {
+    const { content } = event.message;
+    if (typeof content === 'string') return content;
+    return content.flatMap((part) => (part.type === 'text' ? [part.text] : [])).join('\n');
+  }
+  return event.prompt;
 }
 
 /**
@@ -36,16 +46,16 @@ export function registerMemory(pi: ExtensionAPI, options: { commands: Subcommand
       const store = storeFor(ctx);
       if (!store.autoSetting()) return undefined;
       const injection = selectInjection(store, {
-        query: event.prompt,
+        query: agentStartQuery(event),
         scope: projectTrustNow(ctx) === true ? 'all' : 'global',
-        seen: injectedIds(ctx.sessionManager.getBranch()),
+        seen: unchangedIds(store, injectedIds(ctx.sessionManager.getBranch())),
         topK: options.isSubagent ? SUBAGENT_TOP_K : TOP_K,
         // A subagent's parent already holds the pinned memories and briefs it through the task.
         pinned: !options.isSubagent,
       });
       if (!injection) return undefined;
       store.markUsed(injection.ids);
-      return { message: { customType: MEMORY_MESSAGE_TYPE, content: injection.content, display: false, details: { ids: injection.ids } } };
+      return { message: { customType: MEMORY_MESSAGE_TYPE, content: injection.content, display: false, details: { ids: injection.ids, updated: injection.updated } } };
     } catch {
       // A missing or foreign agent DB never blocks a prompt; the tool and command report the error.
       return undefined;

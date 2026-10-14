@@ -1,14 +1,17 @@
 import type { Api, Context, Model, SimpleStreamOptions } from '@earendil-works/pi-ai';
 import { compact, type ExtensionAPI, type ExtensionContext, type SessionBeforeCompactEvent, type SessionBeforeCompactResult, type SessionEntry } from '@earendil-works/pi-coding-agent';
 import { tildePath } from '../shared/home.js';
-import { errorMessage, isRecord } from '../shared/util.js';
+import { CHARS_PER_TOKEN } from '../shared/tokens.js';
+import { cutText, errorMessage, isRecord } from '../shared/util.js';
+import { sharedSummary } from './shared-summary.js';
 
 /**
  * The compaction summary. Pi's own summary (goal, constraints, progress, decisions, next steps, critical context, file
  * lists) loses what a resumed agent most needs verbatim: the user's own words, the errors already solved, and where
- * the work stopped. Pi gives a hook no way to add to its prompt, so Octocode calls Pi's exported `compact()` (same
- * cut point, split-turn handling, iterative update of the previous summary and file lists) with this add-on joined to
- * the user's `/compact` instructions. Code, not the model, then appends the user's messages word for word (newest
+ * the work stopped. Pi gives a hook no way to add to its prompt, so Octocode writes the summary itself: on the
+ * session's own model as a request the prompt cache already holds (`shared-summary.ts`), else (a downshift, blocked
+ * images, any failure) through Pi's exported `compact()` (same cut point, split-turn handling, iterative update of the
+ * previous summary and file lists), with this add-on joined to the user's `/compact` instructions in both. Code, not the model, then appends the user's messages word for word (newest
  * first within a budget, carried across compactions), and the transcript that still holds every detail. Any failure
  * returns nothing, and Pi writes its default summary.
  */
@@ -19,13 +22,13 @@ export const USER_MESSAGES_CHARS = 60_000;
 export const USER_MESSAGE_CHARS = 6_000;
 
 /**
- * Characters a compaction add-on may take of the window it lands in: `share` of what is left after Pi's reserve
- * (four characters a token), never above `max`. Zero when the window is unknown-small, so a small model is not
- * refilled to its threshold by what compaction itself adds.
+ * Characters a compaction add-on may take of the window it lands in: `share` of what is left after Pi's reserve, never
+ * above `max`. Zero when the window is unknown-small, so a small model is not refilled to its threshold by what
+ * compaction itself adds.
  */
 export function windowBudget(contextWindow: number | undefined, reserveTokens: number, share: number, max: number): number {
   if (!contextWindow) return max;
-  return Math.max(0, Math.min(max, Math.floor((contextWindow - reserveTokens) * 4 * share)));
+  return Math.max(0, Math.min(max, Math.floor((contextWindow - reserveTokens) * CHARS_PER_TOKEN * share)));
 }
 
 /** Of the room after the reserve, the kept user messages take at most this share. */
@@ -65,7 +68,7 @@ export function transcriptNote(sessionFile: string | undefined, backlog: boolean
 }
 
 /** A summary split into the model's part and what code appended: the kept user messages (oldest first) and how many older ones were left out. */
-export interface SplitSummary {
+interface SplitSummary {
   body: string;
   messages: string[];
   omitted: number;
@@ -89,29 +92,38 @@ const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&
  * User text made inert inside the section: its own `<user-message>` tags and a line starting like the section heading
  * get a backslash, so a pasted summary or a quote of this feature cannot split or fake the section.
  */
-export function inertUserText(text: string): string {
+function inertUserText(text: string): string {
   return text.replace(/<(\/?)user-message>/g, '<\\$1user-message>').replace(/^## User Messages/gm, '\\## User Messages');
 }
 
-/** A user message's text as the model saw it: its text parts, and a marker for each attached image. */
+/**
+ * A skill Pi expanded into the user message (`/skill:name args` becomes `<skill name="…" location="…">body</skill>`
+ * then the args): the body is a file the next model can read again, not the user's words.
+ */
+const SKILL_BLOCK = /<skill name="([^"\n]*)" location="([^"\n]*)">\n[\s\S]*?\n<\/skill>/g;
+
+/**
+ * A user message's text as the model saw it: its text parts, a marker for each attached image, and each expanded
+ * skill as a pointer to its file (`[skill name loaded from path]`), so a skill body does not take the user's budget.
+ */
 export function userText(message: unknown): string | undefined {
   if (!isRecord(message) || message['role'] !== 'user') return undefined;
   const content = message['content'];
-  if (typeof content === 'string') return content;
-  if (!Array.isArray(content)) return undefined;
-  const parts = content.flatMap((part) => {
+  const parts = typeof content === 'string' ? [content] : Array.isArray(content) ? content.flatMap((part) => {
     if (!isRecord(part)) return [];
     if (part['type'] === 'text' && typeof part['text'] === 'string') return [part['text']];
     return part['type'] === 'image' ? ['[image attached]'] : [];
-  });
-  return parts.length > 0 ? parts.join('\n') : undefined;
+  }) : [];
+  return parts.length > 0 ? parts.join('\n').replace(SKILL_BLOCK, (_, name: string, location: string) => `[skill ${name} loaded from ${location}]`) : undefined;
 }
 
 /** One message cut in the middle to `max` characters, with a note that the transcript has it whole. */
 function cutMessage(text: string, max: number): string {
   if (text.length <= max) return text;
   const half = Math.floor(max / 2);
-  return `${text.slice(0, half)}\n[… ${text.length - 2 * half} characters of this message are left out here; the transcript has it whole]\n${text.slice(-half)}`;
+  const head = cutText(text, half, { chars: true });
+  const tail = cutText(text, half, { chars: true, tail: true });
+  return `${head}\n[… ${text.length - head.length - tail.length} characters of this message are left out here; the transcript has it whole]\n${tail}`;
 }
 
 /**
@@ -164,7 +176,9 @@ export function summarizerView<T>(messages: readonly T[]): T[] {
     if (text.length <= SUMMARIZER_RESULT_CHARS) return message;
     const gap = (left: number) => `\n[… ${left} characters in the middle left out for the summary; the transcript has them]\n`;
     const room = SUMMARIZER_RESULT_CHARS - SUMMARIZER_HEAD_CHARS - gap(text.length).length;
-    const kept = `${text.slice(0, SUMMARIZER_HEAD_CHARS)}${gap(text.length - SUMMARIZER_HEAD_CHARS - room)}${text.slice(text.length - room)}`;
+    const head = cutText(text, SUMMARIZER_HEAD_CHARS, { chars: true });
+    const tail = cutText(text, room, { chars: true, tail: true });
+    const kept = `${head}${gap(text.length - head.length - tail.length)}${tail}`;
     const others = content.filter((part) => !(isRecord(part) && part['type'] === 'text'));
     return { ...message, content: [{ type: 'text', text: kept }, ...others] } as T;
   });
@@ -172,7 +186,7 @@ export function summarizerView<T>(messages: readonly T[]): T[] {
 
 /** Octocode's compaction result, or undefined to let Pi write its default summary. */
 export async function writeSummary(
-  pi: Pick<ExtensionAPI, 'getThinkingLevel' | 'getActiveTools'>,
+  pi: Pick<ExtensionAPI, 'getThinkingLevel' | 'getActiveTools' | 'getSettings'>,
   event: SessionBeforeCompactEvent,
   ctx: Pick<ExtensionContext, 'model' | 'modelRegistry' | 'sessionManager' | 'hasUI' | 'ui'>,
   summaryModel?: Model<Api>,
@@ -192,7 +206,10 @@ export async function writeSummary(
       turnPrefixMessages: summarizerView(event.preparation.turnPrefixMessages),
       ...(previous === undefined ? {} : { previousSummary: previous.body }),
     };
-    const result = await compact(preparation, model, undefined, undefined, instructions, event.signal, pi.getThinkingLevel(), stream);
+    // On the session's own model the summary is asked for inside the session's request, which the prompt cache already
+    // holds; on another (a downshift) or when that fails, as a standalone request that pays for the whole input.
+    const result = (summaryModel === undefined ? await sharedSummary(pi, event, ctx, model, instructions) : undefined)
+      ?? (await compact(preparation, model, undefined, undefined, instructions, event.signal, pi.getThinkingLevel(), stream));
     const added = [...event.preparation.messagesToSummarize, ...event.preparation.turnPrefixMessages].flatMap((message) => userText(message) ?? []);
     // Sized for the window the summary lands in (this session's model; after a downshift, the smaller one).
     const total = windowBudget(ctx.model?.contextWindow, event.preparation.settings.reserveTokens, USER_MESSAGES_SHARE, USER_MESSAGES_CHARS);

@@ -94,9 +94,6 @@ export function withDialog<R>(run: () => Promise<R>, signal?: AbortSignal): Prom
 
 let open = 0;
 
-/** Whether one of Octocode's dialogs is showing now. */
-export const dialogOpen = (): boolean => open > 0;
-
 /** How many interactions wait for another one's dialog to close. */
 export const dialogsWaiting = (): number => dialogs.waiting;
 
@@ -142,4 +139,22 @@ export function takeTiming(toolCallId: string, startedAt = Date.now()): { checkM
   checks.delete(toolCallId);
   const queuedMs = Math.max(0, startedAt - entry.endedAt);
   return { ...(entry.checkMs >= WAIT_RECORD_MS ? { checkMs: entry.checkMs } : {}), ...(queuedMs >= WAIT_RECORD_MS ? { queuedMs } : {}) };
+}
+
+/** Pi's `ui_prompt_start` carries no title for a `ui.custom` dialog: its opener names it here (see `titledDialog`). */
+let customTitle: string | undefined;
+
+/** Opens a `ui.custom` dialog under `title`, so the working line and notifications can say what it asks. */
+export async function titledDialog<T>(title: string, open: () => Promise<T>): Promise<T> {
+  customTitle = title;
+  try {
+    return await open();
+  } finally {
+    if (customTitle === title) customTitle = undefined;
+  }
+}
+
+/** A `ui_prompt_start` event's title, or the title its custom dialog was opened under. */
+export function promptTitle(event: { kind?: string; title?: string }): string | undefined {
+  return event.title ?? (event.kind === 'custom' ? customTitle : undefined);
 }

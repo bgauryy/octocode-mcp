@@ -495,6 +495,19 @@ mod contract_owner_tests {
     }
 
     #[test]
+    fn embedded_contract_is_compact_json() {
+        // Every artifact embeds the contract, so the build re-serializes it
+        // compactly (the source is pretty-printed at 3.4x the size).
+        let text = contract_json();
+        assert!(!text.contains('\n'), "embedded contract is pretty-printed");
+        assert!(
+            text.len() < 2_500_000,
+            "embedded contract is {} bytes",
+            text.len()
+        );
+    }
+
+    #[test]
     fn generated_contract_is_enforcement_only() {
         // Presentation and MCP instructions are core-delivered by the JS
         // layers; the embed carries machine-enforced surfaces exclusively.
@@ -525,7 +538,11 @@ mod contract_owner_tests {
         // octocode-config records the digest of the contract it generated; a
         // hand edit to the embedded bytes breaks the match. No native-side pin
         // needs updating on regeneration.
+        // The embed is compact, so the digest is taken over the generated source
+        // bytes; the embedded text must be the same JSON document.
         use sha2::{Digest, Sha256};
+        const SOURCE: &str =
+            include_str!("../../../../../octocode-config/contract/tool-contract.json");
         let provenance: serde_json::Value =
             serde_json::from_str(contract_provenance_json()).expect("provenance JSON");
         assert_eq!(provenance["sourcePackage"], "@octocodeai/octocode-core");
@@ -535,8 +552,15 @@ mod contract_owner_tests {
         );
         assert_eq!(
             provenance["contractSha256"],
-            hex::encode(Sha256::digest(contract_json().as_bytes())),
-            "embedded contract differs from what octocode-config generated"
+            hex::encode(Sha256::digest(SOURCE.as_bytes())),
+            "generated source differs from what octocode-config recorded"
+        );
+        let source: serde_json::Value = serde_json::from_str(SOURCE).expect("source JSON");
+        let embedded: serde_json::Value =
+            serde_json::from_str(contract_json()).expect("embedded JSON");
+        assert_eq!(
+            embedded, source,
+            "embedded contract differs from its source"
         );
     }
 

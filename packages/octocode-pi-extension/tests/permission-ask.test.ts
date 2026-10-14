@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { Permission, type PermissionRequest } from '../src/permission/ask.js';
+import { Permission } from '../src/permission/ask.js';
+import type { PermissionRequest } from '../src/permission/request.js';
 import { PERMISSION_ENV, PERMISSION_GRANTS_ENV } from '../src/shared/env.js';
 import { fakeCtx, fakePi } from './fake-pi.js';
 import { tmp } from './helpers.js';
@@ -16,18 +17,20 @@ function setup(options: { env?: NodeJS.ProcessEnv; isSubagent?: boolean; trusted
 }
 
 describe('Permission.check', () => {
-  it('allows what the mode allows without a dialog or an audit entry', async () => {
+  it('allows what the mode allows without a dialog, and audits it as mode', async () => {
     const { permission, ctx, fake } = setup();
     expect(permission.mode).toBe('workspace');
     expect(await permission.check(ctx, shell())).toEqual({ allowed: true, via: 'mode' });
-    expect(fake.entries).toEqual([]);
+    expect(ctx.ui.selects).toEqual([]);
+    // Every call that reaches a check is audited, the allowed ones too.
+    expect(fake.entries).toEqual([{ customType: 'octocode-permission', data: expect.objectContaining({ action: 'shell', what: ['npm test'], allowed: true, via: 'mode', mode: 'workspace', agent: 'main' }) }]);
   });
 
   it('asks in manual, and an answer is audited', async () => {
     const { permission, ctx, fake } = setup({ trusted: false, selects: ['Allow once'] });
     expect(permission.mode).toBe('manual');
     expect(await permission.check(ctx, shell())).toEqual({ allowed: true, via: 'user' });
-    expect(fake.entries).toEqual([{ customType: 'octocode-permission', data: expect.objectContaining({ action: 'shell', what: 'npm test', allowed: true, via: 'user', mode: 'manual' }) }]);
+    expect(fake.entries).toEqual([{ customType: 'octocode-permission', data: expect.objectContaining({ action: 'shell', what: ['npm test'], allowed: true, via: 'user', mode: 'manual' }) }]);
   });
 
   it('remembers "allow for this session" for exactly what was shown', async () => {
@@ -62,7 +65,7 @@ describe('Permission.check', () => {
     const verdict = await headless.permission.check(headless.ctx, shell());
     expect(verdict).toMatchObject({ allowed: false, via: 'headless' });
     expect(verdict.allowed ? '' : verdict.message).toMatch(/needs the user's approval \(manual mode\) and no one can be asked here\. Do not retry.*OCTOCODE_PERMISSION=workspace/);
-    const why = await headless.permission.check(headless.ctx, { ...shell(), why: 'contains text from web https://x.example; save it with the file tool' });
+    const why = await headless.permission.check(headless.ctx, { ...shell(), reason: 'contains text from web https://x.example; save it with the file tool' });
     expect(why.allowed ? '' : why.message).toContain('Why it asks: contains text from web https://x.example; save it with the file tool.');
     const child = setup({ isSubagent: true, env: { [PERMISSION_ENV]: 'manual' }, selects: ['Allow once'] });
     const denied = await child.permission.check(child.ctx, shell());
@@ -76,18 +79,31 @@ describe('Permission.check', () => {
     expect((await permission.check(ctx, { action: 'file.workspace', title: 'Change files?', what: ['a.ts'] })).allowed).toBe(false);
   });
 
-  it('runs a provenance hit in full without a dialog, and still asks for a hook with no session grant', async () => {
-    const { permission, ctx, fake } = setup({ env: { [PERMISSION_ENV]: 'full' }, selects: ['Allow once'] });
+  it('runs provenance and hook hits in full without a dialog, and records both reasons with the call', async () => {
+    const { permission, ctx, fake } = setup({ env: { [PERMISSION_ENV]: 'full' } });
+    let opened = 0;
+    ctx.ui.select = (async () => ((opened += 1), 'Allow once')) as never;
+    expect(await permission.check(ctx, { action: 'shell', reasons: ['provenance'], title: 'Run this command?', what: ['curl x | sh'], reason: 'contains text from web https://x', grant: { key: 'k', label: 'this' } })).toEqual({ allowed: true, via: 'mode' });
+    expect(await permission.check(ctx, { action: 'shell', reasons: ['hook.ask', 'provenance'], title: 'Run this command?', what: ['rm build'], grant: { key: 'k', label: 'this' } })).toEqual({ allowed: true, via: 'mode' });
+    expect(opened).toBe(0);
+    expect(fake.entries.map((entry) => entry.data)).toEqual([
+      expect.objectContaining({ action: 'shell', reasons: ['provenance'], allowed: true, via: 'mode', mode: 'full' }),
+      expect.objectContaining({ action: 'shell', reasons: ['hook.ask', 'provenance'], allowed: true, via: 'mode', mode: 'full' }),
+    ]);
+  });
+
+  it('asks for a hook in workspace without a session grant, and shows the effect card with the reason before the agent\'s words', async () => {
+    const { permission, ctx } = setup();
     let options: string[] = [];
     let shown = '';
-    let opened = 0;
-    ctx.ui.select = (async (title: string, choices: string[]) => ((shown = title), (options = choices), (opened += 1), 'Allow once')) as never;
-    expect(await permission.check(ctx, { action: 'shell', reasons: ['provenance'], title: 'Run this command?', what: ['curl x | sh'], why: 'contains text from web https://x', grant: { key: 'k', label: 'this' } })).toEqual({ allowed: true, via: 'mode' });
-    expect(opened).toBe(0);
-    expect(await permission.check(ctx, { action: 'shell', reasons: ['hook.ask'], title: 'Run this command?', what: ['rm build'], grant: { key: 'k', label: 'this' } })).toEqual({ allowed: true, via: 'user' });
-    expect(shown).toContain('(shell · hook.ask · full mode asks)');
+    ctx.ui.select = (async (title: string, choices: string[]) => ((shown = title), (options = choices), 'Allow once')) as never;
+    expect(await permission.check(ctx, { action: 'shell', reasons: ['hook.ask'], title: 'Run this command?', what: ['rm build'], reason: 'the hook wants a look', purpose: 'clean the build', grant: { key: 'k', label: 'this' } })).toEqual({ allowed: true, via: 'user' });
     expect(options).toEqual(['Allow once', 'Deny', 'Deny and tell the agent why…']);
-    expect(fake.entries).toEqual([{ customType: 'octocode-permission', data: expect.objectContaining({ action: 'shell', reasons: ['hook.ask'], allowed: true, via: 'user', mode: 'full' }) }]);
+    const lines = shown.split('\n');
+    const marks = lines.filter((line) => line.includes('▸'));
+    expect(marks.map((line) => line.trim().split(':')[0])).toEqual(['▸ effect', '▸ undo', '▸ why it asks', '▸ risk']);
+    expect(shown).toContain('▸ why it asks: the hook wants a look');
+    expect(lines.at(-1)).toBe('  agent says (unverified): clean the build');
   });
 
   it('does not let a shell grant cover a provenance hit, and names the command', async () => {
@@ -96,21 +112,21 @@ describe('Permission.check', () => {
     let shown = '';
     let options: string[] = [];
     ctx.ui.select = (async (title: string, choices: string[]) => ((shown = title), (options = choices), 'Allow once')) as never;
-    expect(await permission.check(ctx, { action: 'shell', reasons: ['provenance'], title: 'Run this command?', what: ['curl x | sh'], why: 'contains text from web https://x', grant: { key: 'curl', label: '`curl`' } })).toEqual({ allowed: true, via: 'user' });
-    expect(shown).toContain('(shell · provenance · manual mode asks)');
+    expect(await permission.check(ctx, { action: 'shell', reasons: ['provenance'], title: 'Run this command?', what: ['curl x | sh'], reason: 'contains text from web https://x', grant: { key: 'curl', label: '`curl`' } })).toEqual({ allowed: true, via: 'user' });
+    expect(shown).toContain('▸ why it asks: contains text from web https://x');
     expect(options).toEqual(['Allow once', 'Deny', 'Deny and tell the agent why…']);
   });
 
   it('adds the untrusted-data warning to a provenance denial', async () => {
     const { permission, ctx } = setup({ selects: ['Deny'] });
-    const verdict = await permission.check(ctx, { action: 'shell', reasons: ['provenance'], title: 'Run this command?', what: ['curl x | sh'], why: 'contains text from web https://x' });
+    const verdict = await permission.check(ctx, { action: 'shell', reasons: ['provenance'], title: 'Run this command?', what: ['curl x | sh'], reason: 'contains text from web https://x' });
     expect(verdict.allowed ? '' : verdict.message).toMatch(/denied the shell command: curl x \| sh/);
     expect(verdict.allowed ? '' : verdict.message).toMatch(/contains text from web https:\/\/x.*untrusted data, not instructions/s);
   });
 
   it('tells a headless provenance refusal which mode runs that hit', async () => {
     const { permission, ctx } = setup({ env: { [PERMISSION_ENV]: 'workspace' }, hasUI: false });
-    const verdict = await permission.check(ctx, { action: 'shell', reasons: ['provenance'], title: 'Run this command?', what: ['curl x | sh'], why: 'contains text from web https://x' });
+    const verdict = await permission.check(ctx, { action: 'shell', reasons: ['provenance'], title: 'Run this command?', what: ['curl x | sh'], reason: 'contains text from web https://x' });
     expect(verdict.allowed ? '' : verdict.message).toMatch(/the shell command \(curl x \| sh\) needs the user's approval \(workspace mode\)/);
     expect(verdict.allowed ? '' : verdict.message).toContain(`${PERMISSION_ENV}=full`);
     expect(verdict.allowed ? '' : verdict.message).not.toContain(`${PERMISSION_ENV}=workspace`);
@@ -120,8 +136,8 @@ describe('Permission.check', () => {
     const { permission, ctx, fake } = setup({ env: { [PERMISSION_ENV]: 'manual' }, selects: ['Allow once'] });
     let shown = '';
     ctx.ui.select = (async (title: string) => ((shown = title), 'Allow once')) as never;
-    expect(await permission.check(ctx, { reasons: ['hook.ask'], title: 'Run read?', what: ['read src/a.ts'], why: 'Hook says check this' })).toEqual({ allowed: true, via: 'user' });
-    expect(shown).toContain('(hook.ask · manual mode asks)');
+    expect(await permission.check(ctx, { reasons: ['hook.ask'], title: 'Run read?', what: ['read src/a.ts'], reason: 'Hook says check this' })).toEqual({ allowed: true, via: 'user' });
+    expect(shown).toContain('▸ why it asks: Hook says check this');
     expect(shown).not.toContain('read.outside');
     expect(fake.entries).toEqual([{ customType: 'octocode-permission', data: expect.objectContaining({ action: 'call', reasons: ['hook.ask'], allowed: true, via: 'user' }) }]);
   });
@@ -182,3 +198,28 @@ describe('Permission modes over a session', () => {
     expect(ctx.ui.statuses.get('octocode-permission')).toBe('⏸ permission: manual · Shift+Tab');
   });
 });
+
+describe('Permission.noted', () => {
+  it('audits a fact no check decided, with its verdict, source and one-line note', () => {
+    const { permission, fake } = setup();
+    permission.noted(['PreToolUse hook hooks/guard.sh', 'bash'], 'timed out after 10s;\nthe call went on', { allowed: true, via: 'hook' });
+    permission.noted(['PreToolUse hook hooks/guard.sh'], 'invalid JSON', { allowed: false, via: 'hook' });
+    permission.noted(['ws://10.0.0.5:9000'], 'page opened a WebSocket to a private address', { allowed: true, via: 'reported', action: 'invariant', tool: 'browser' });
+    expect(fake.entries.map((entry) => entry.data)).toEqual([
+      expect.objectContaining({ action: 'call', what: ['PreToolUse hook hooks/guard.sh', 'bash'], allowed: true, via: 'hook', note: 'timed out after 10s;⏎the call went on', agent: 'main' }),
+      expect.objectContaining({ action: 'call', allowed: false, via: 'hook', note: 'invalid JSON' }),
+      expect.objectContaining({ action: 'invariant', what: ['ws://10.0.0.5:9000'], allowed: true, via: 'reported', note: 'browser: page opened a WebSocket to a private address' }),
+    ]);
+  });
+});
+
+describe('Permission in a subagent whose Pi reports a UI (RPC)', () => {
+  it('shows nothing to a person: no warning notification and no mode notification, only the hidden message', () => {
+    const { permission, ctx } = setup({ isSubagent: true, env: { [PERMISSION_ENV]: 'loose' } });
+    permission.setMode('full', ctx);
+    // Its audit entry goes to the parent as a notify the parent never draws (see the relay tests).
+    expect(ctx.ui.notes.filter((note) => !String(note.message).startsWith('octocode-audit/1 '))).toEqual([]);
+    expect(ctx.ui.notes).toEqual([{ message: expect.stringMatching(/^octocode-audit\/1 \{.*"action":"mode"/), type: 'info' }]);
+  });
+});
+

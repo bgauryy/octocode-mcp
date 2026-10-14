@@ -123,15 +123,18 @@ mod drift_tests {
         );
         assert_eq!(narrow["source"], "f0.ts", "{next}");
         let out = run(narrow.clone(), root.path()).expect("narrowScope runs");
-        assert!(out.to_string().contains("f1.ts"), "{out}");
+        assert!(
+            out["nodes"]
+                .as_array()
+                .is_some_and(|nodes| nodes.iter().any(|node| node["file"] == "f1.ts")),
+            "{out}"
+        );
     }
 
     #[test]
     fn topology_passes_path_scoped_header_parser_to_the_shared_scan() {
-        let root = std::env::temp_dir().join(format!(
-            "octocode-topology-header-glob-{}",
-            std::process::id()
-        ));
+        let root_dir = crate::tools::test_support::Fixture::new();
+        let root = root_dir.0.clone();
         std::fs::create_dir_all(root.join("include")).expect("fixture directory");
         std::fs::write(
             root.join("include/widget.h"),
@@ -1904,30 +1907,25 @@ mod expand_scan_tests {
     }
 
     /// `coverage.state` and `isPartial` are one fact: a payload is never
-    /// `isPartial` beside a `complete` coverage, and a terminal limit says in
-    /// `warnings` what was cut and that no continuation reaches it.
+    /// `isPartial` beside a `complete` coverage. The skipped-file limit is
+    /// the `filesSkipped` reason plus `terminalLimit`; the tool description
+    /// explains it once, so no row repeats it as a warning.
     #[test]
-    fn a_skipped_file_is_partial_in_coverage_and_its_terminal_limit_is_explained() {
-        // The skipped file is not imported, so no coverage gap hides it.
+    fn a_skipped_file_is_partial_in_coverage_and_flagged_terminal() {
         let temp = fixture(&[("entry.ts", "export const entry = 1;\n")]);
         let root = temp.path();
         let big = format!("export const big = 1\n{}", "// pad\n".repeat(160_000));
         std::fs::write(root.join("big.ts"), big).unwrap();
 
-        let out = topology(
-            root,
-            json!({"operation":"dependencies","source":"entry.ts"}),
-        );
+        // Cycles answer for the whole root, so any skipped file cuts them.
+        let out = topology(root, json!({"operation":"cycles"}));
 
         assert_eq!(out["isPartial"], true, "{out}");
         assert_eq!(out["terminalLimit"], true, "{out}");
         assert_eq!(out["coverage"]["state"], "partial", "{out}");
         assert_eq!(out["coverage"]["parts"]["graph"], "files-skipped", "{out}");
-        let warnings = out["warnings"].to_string();
-        assert!(
-            warnings.contains("terminal") && warnings.contains("coverage.diagnostics"),
-            "{out}"
-        );
+        assert_eq!(out["partialReasons"], json!(["filesSkipped"]), "{out}");
+        assert!(out.get("warnings").is_none(), "{out}");
     }
 
     #[test]
@@ -1940,7 +1938,8 @@ mod expand_scan_tests {
         assert_eq!(out["isPartial"], true, "{out}");
         assert_eq!(out["coverage"]["state"], "partial", "{out}");
         assert_eq!(out["coverage"]["parts"]["graph"], "files-skipped", "{out}");
-        assert!(out["warnings"].to_string().contains("terminal"), "{out}");
+        assert_eq!(out["terminalLimit"], true, "{out}");
+        assert_eq!(out["partialReasons"], json!(["filesSkipped"]), "{out}");
     }
 
     #[test]
@@ -2400,12 +2399,15 @@ mod resolution_scope_tests {
             json!({"operation":"dependencies","source":"examples/user-cli.ts"}),
         );
         assert_eq!(affected["confidence"], "low", "{affected}");
-        // A reverse or whole-graph answer can lose any importer: scan-wide.
+        // `./generated` from examples/ cannot name src/util.ts: no importer
+        // of it is lost. A whole-graph answer keeps the gap.
         let dependents = topology(
             temp.path(),
             json!({"operation":"dependents","source":"src/util.ts"}),
         );
-        assert_eq!(dependents["confidence"], "low", "{dependents}");
+        assert!(dependents.get("confidence").is_none(), "{dependents}");
+        let cycles = topology(temp.path(), json!({"operation":"cycles"}));
+        assert_eq!(cycles["confidence"], "low", "{cycles}");
     }
 
     #[test]
@@ -2437,5 +2439,459 @@ mod resolution_scope_tests {
             Some(2),
             "{out}"
         );
+    }
+}
+
+mod review_fix_tests {
+    use super::super::test_support::*;
+    use serde_json::{Value, json};
+
+    fn unreachable_files(out: &Value) -> Vec<String> {
+        out["nodes"]
+            .as_array()
+            .expect("rows")
+            .iter()
+            .filter(|row| row["reachable"] == false)
+            .filter_map(|row| row["file"].as_str().map(str::to_owned))
+            .collect()
+    }
+
+    /// `types`/`typings`/`module` name published entry files as much as
+    /// `main` does: a declaration entry is never unreachable.
+    #[test]
+    fn package_types_typings_and_module_entries_are_roots() {
+        let temp = fixture(&[
+            (
+                "package.json",
+                r#"{"name":"x","types":"index.d.ts","typings":"legacy.d.ts","module":"esm.js"}"#,
+            ),
+            ("index.d.ts", "export declare const a: number;\n"),
+            ("legacy.d.ts", "export declare const b: number;\n"),
+            ("esm.js", "export const c = 1;\n"),
+            ("dead.js", "export const d = 1;\n"),
+        ]);
+        let out = topology(temp.path(), json!({"operation":"reachability"}));
+        assert_eq!(unreachable_files(&out), vec!["dead.js"], "{out}");
+        assert_eq!(out["graphSummary"]["reachableCount"], 3, "{out}");
+    }
+
+    /// A multi-package root without its own manifest still resolves each
+    /// scanned package's entrypoints, package-relative.
+    #[test]
+    fn every_scanned_package_manifest_contributes_entrypoints() {
+        let temp = fixture(&[
+            ("package.json", r#"{"name":"root","private":true}"#),
+            (
+                "packages/a/package.json",
+                r#"{"name":"a","main":"./index.js"}"#,
+            ),
+            ("packages/a/index.js", "import './lib.js';\n"),
+            ("packages/a/lib.js", "export const lib = 1;\n"),
+            (
+                "packages/b/package.json",
+                r#"{"name":"b","bin":{"b":"cli.js"}}"#,
+            ),
+            ("packages/b/cli.js", "console.log(1);\n"),
+            ("packages/b/dead.js", "export const d = 1;\n"),
+        ]);
+        let out = topology(temp.path(), json!({"operation":"reachability"}));
+        assert_eq!(unreachable_files(&out), vec!["packages/b/dead.js"], "{out}");
+        assert_eq!(out["graphSummary"]["reachableCount"], 3, "{out}");
+    }
+
+    fn drift_between(root: &std::path::Path, head: &str, baseline: &str) -> Value {
+        run(
+            json!({
+                "mainGoal": "test", "reasoning":"test","operation":"drift",
+                "path": head, "baseline": baseline
+            }),
+            root,
+        )
+        .expect("drift result")
+    }
+
+    /// File-level rows lead (file → cycle → transition → relation), edge
+    /// kinds read as plain names, and a relative baseline displays
+    /// workspace-relative like `path`.
+    #[test]
+    fn drift_rows_lead_with_files_and_name_edge_kinds_plainly() {
+        let temp = fixture(&[
+            (
+                "snap/base/a.ts",
+                "import { b } from './b';\nexport const a = () => b();\n",
+            ),
+            (
+                "snap/base/b.ts",
+                "import { a } from './a';\nexport const b = () => a();\n",
+            ),
+            (
+                "head/a.ts",
+                "import { b } from './b';\nexport const a = () => b();\n",
+            ),
+            ("head/b.ts", "export const b = () => 1;\n"),
+            ("head/c.ts", "export const c = 1;\n"),
+        ]);
+        let root = temp.path();
+        let head = root.join("head");
+        let out = drift_between(root, &head.to_string_lossy(), "snap/base");
+        assert_eq!(out["baseline"], "snap/base", "{out}");
+        let rows = out["nodes"].as_array().expect("nodes");
+        let rank = |category: &str| match category {
+            "file" => 0,
+            "cycle" => 1,
+            "transition" => 2,
+            _ => 3,
+        };
+        let order = rows
+            .iter()
+            .map(|row| rank(row["category"].as_str().expect("category")))
+            .collect::<Vec<_>>();
+        let mut sorted = order.clone();
+        sorted.sort_unstable();
+        assert_eq!(order, sorted, "{out}");
+        assert_eq!(rows[0]["category"], "file", "{out}");
+        assert!(order.contains(&1) && order.contains(&3), "{out}");
+        for row in rows.iter().filter(|row| row["category"] == "relation") {
+            let kind = row["edgeKind"].as_str().expect("edgeKind");
+            assert!(
+                !kind.contains(['(', '"']) && !kind.is_empty(),
+                "plain kind: {kind}"
+            );
+        }
+        assert!(rows.iter().any(|row| row["edgeKind"] == "imports"), "{out}");
+    }
+
+    /// A drift with no change lists nothing to truncate: a skipped file
+    /// marks the graph, not the (empty) rows.
+    #[test]
+    fn unchanged_drift_with_a_skipped_file_does_not_truncate_rows() {
+        let temp = fixture(&[
+            ("base/a.ts", "export const a = 1;\n"),
+            ("head/a.ts", "export const a = 1;\n"),
+        ]);
+        let root = temp.path();
+        std::fs::write(root.join("base/bad.ts"), [0xff]).unwrap();
+        std::fs::write(root.join("head/bad.ts"), [0xff]).unwrap();
+        let out = drift_between(
+            root,
+            &root.join("head").to_string_lossy(),
+            &root.join("base").to_string_lossy(),
+        );
+        assert!(out["nodes"].as_array().is_some_and(Vec::is_empty), "{out}");
+        assert!(out.pointer("/coverage/parts/nodes").is_none(), "{out}");
+        assert_eq!(out["coverage"]["parts"]["graph"], "files-skipped", "{out}");
+        assert_eq!(out["partialReasons"], json!(["filesSkipped"]), "{out}");
+        assert_eq!(out["terminalLimit"], true, "{out}");
+        // The skipped-file limit is a flag, not a repeated sentence.
+        let warnings = out["warnings"].as_array().cloned().unwrap_or_default();
+        assert!(
+            !warnings
+                .iter()
+                .any(|w| w.as_str().is_some_and(|w| w.contains("skipped files"))),
+            "{out}"
+        );
+    }
+
+    fn refusal(
+        root: &std::path::Path,
+        query: Value,
+        entries: &[String],
+        capped: bool,
+    ) -> crate::tools::result::ToolError {
+        let (paths, _) = crate::tools::test_support::simple_policy(root);
+        let mut query = query;
+        query["mainGoal"] = "test".into();
+        query["reasoning"] = "test".into();
+        query["path"] = root.to_string_lossy().into();
+        let q: super::super::AstTopologyQuery = serde_json::from_value(query).expect("query");
+        super::super::graph::scope_too_broad(&q, root, &paths, entries, capped)
+    }
+
+    fn files(dir: &str, count: usize) -> impl Iterator<Item = String> + '_ {
+        (0..count).map(move |i| format!("{dir}/f{i:05}.ts"))
+    }
+
+    /// Past the `maxFiles` maximum no raised bound completes the scan:
+    /// re-rooting is the only lead, named workspace-relative.
+    #[test]
+    fn a_root_over_the_max_files_maximum_offers_only_re_rooting() {
+        let temp = tempfile::tempdir().expect("root");
+        let entries = files("packages/a", 3_000)
+            .chain(files("packages/b", 50_000))
+            .collect::<Vec<_>>();
+        let error = refusal(temp.path(), json!({"operation":"cycles"}), &entries, false);
+        assert_eq!(error.code, "scopeTooBroad");
+        assert!(error.message.contains("re-root"), "{}", error.message);
+        assert!(
+            error.message.contains("packages/a (3000)") && !error.message.contains("packages/b"),
+            "{}",
+            error.message
+        );
+        let next = error.next.expect("continuations");
+        assert!(next.get("expandScan").is_none(), "{next}");
+        assert_eq!(
+            next["narrowScope"]["query"]["queries"][0]["path"], "packages/a",
+            "{next}"
+        );
+    }
+
+    /// Under the maximum the complete route covers every discovered file
+    /// and names the root as `.`.
+    #[test]
+    fn expand_scan_raises_max_files_to_cover_every_discovered_file() {
+        let temp = tempfile::tempdir().expect("root");
+        let entries = files("packages/a", 3_000)
+            .chain(files("packages/b", 27_000))
+            .collect::<Vec<_>>();
+        let error = refusal(temp.path(), json!({"operation":"cycles"}), &entries, false);
+        let next = error.next.expect("continuations");
+        let expand = &next["expandScan"]["query"]["queries"][0];
+        assert_eq!(expand["maxFiles"], 30_000, "{next}");
+        assert_eq!(expand["path"], ".", "{next}");
+    }
+
+    /// A count cut short lists only directories the walk finished: never
+    /// the one it stopped in, nor an anchor directory it never reached.
+    #[test]
+    fn a_capped_count_never_offers_unwalked_directories() {
+        let temp = tempfile::tempdir().expect("root");
+        let entries = files("packages/a", 3_000)
+            .chain(files("packages/b", 2_500))
+            .collect::<Vec<_>>();
+        let error = refusal(temp.path(), json!({"operation":"cycles"}), &entries, true);
+        assert!(
+            error.message.contains("packages/a (3000)") && !error.message.contains("packages/b"),
+            "{}",
+            error.message
+        );
+        assert!(error.next.expect("next").get("expandScan").is_none());
+        let anchored = refusal(
+            temp.path(),
+            json!({"operation":"dependents","source":"packages/c/x.ts"}),
+            &entries,
+            true,
+        );
+        assert!(
+            anchored.message.contains("none below the bound") && !anchored.message.contains("(0)"),
+            "{}",
+            anchored.message
+        );
+        assert!(anchored.next.is_none(), "{:?}", anchored.next);
+    }
+
+    /// A malformed `exclude` glob is refused like a malformed
+    /// `languageGlobs` entry, never silently matched as nothing.
+    #[test]
+    fn a_malformed_exclude_glob_is_an_invalid_glob_error() {
+        let temp = fixture(&[("a.ts", "export const a = 1;\n")]);
+        let root = temp.path();
+        let error = run(
+            json!({"mainGoal":"test","reasoning":"test","operation":"cycles",
+                "path":root,"exclude":["[bad"]}),
+            root,
+        )
+        .expect_err("invalid glob");
+        assert_eq!(error.code, "invalidGlob", "{}", error.message);
+        assert!(error.message.contains("[bad"), "{}", error.message);
+    }
+
+    /// The read lead covers the whole import statement, not its first line.
+    #[test]
+    fn the_read_lead_spans_a_multi_line_import() {
+        let temp = fixture(&[
+            (
+                "a.ts",
+                "// a\nimport {\n  b,\n  c,\n} from './b';\nexport const a = b + c;\n",
+            ),
+            ("b.ts", "export const b = 1;\nexport const c = 2;\n"),
+        ]);
+        let out = topology(
+            temp.path(),
+            json!({"operation":"dependents","source":"b.ts"}),
+        );
+        let row = &out["next"]["read"]["query"]["queries"][0];
+        assert_eq!(row["ranges"], json!(["2-5"]), "{out}");
+    }
+
+    /// A `path` query names the endpoint missing from the graph, by its
+    /// field name (`source`/`target`).
+    #[test]
+    fn a_path_query_names_the_missing_endpoint() {
+        let temp = fixture(&[("a.ts", "export const a = 1;\n")]);
+        let root = temp.path();
+        let error = run(
+            json!({"mainGoal":"test","reasoning":"test","operation":"path",
+                "path":root,"source":"a.ts","target":"nope.ts"}),
+            root,
+        )
+        .expect_err("missing target");
+        assert_eq!(error.code, "invalidGraphQuery");
+        assert!(
+            error
+                .message
+                .starts_with("target is not in the scanned graph: nope.ts"),
+            "{}",
+            error.message
+        );
+        assert!(
+            !error.message.contains("file and target"),
+            "{}",
+            error.message
+        );
+    }
+}
+
+/// Coverage that can change an answer, not every gap of the scan: a
+/// traversal or path reads part of the graph, so a skipped file or an
+/// unlinked import it cannot reach leaves it complete. Cycles and dead code
+/// answer for the whole root and keep every gap.
+mod answer_scope_tests {
+    use super::super::test_support::*;
+    use serde_json::{Value, json};
+
+    fn big(extension: &str) -> (String, String) {
+        let line = if extension == "rs" {
+            "pub const BIG: u32 = 1;\n"
+        } else {
+            "export const big = 1;\n"
+        };
+        (
+            format!("big.{extension}"),
+            format!("{line}{}", "// pad\n".repeat(160_000)),
+        )
+    }
+
+    fn complete(out: &Value) {
+        assert!(out.get("isPartial").is_none(), "{out}");
+        assert!(out.get("partialReasons").is_none(), "{out}");
+        assert!(out.get("terminalLimit").is_none(), "{out}");
+        assert!(out.get("confidence").is_none(), "{out}");
+        assert_eq!(out["coverage"]["state"], "complete", "{out}");
+        assert!(out["coverage"].get("parts").is_none(), "{out}");
+    }
+
+    fn skipped(out: &Value) {
+        assert_eq!(out["isPartial"], true, "{out}");
+        assert_eq!(out["partialReasons"], json!(["filesSkipped"]), "{out}");
+        assert_eq!(out["terminalLimit"], true, "{out}");
+        assert_eq!(out["coverage"]["parts"]["graph"], "files-skipped", "{out}");
+    }
+
+    const ENTRY: [(&str, &str); 2] = [
+        (
+            "entry.ts",
+            "import { u } from './util';\nexport const e = u;\n",
+        ),
+        ("util.ts", "export const u = 1;\n"),
+    ];
+
+    #[test]
+    fn a_skipped_file_no_traversal_reaches_leaves_it_complete() {
+        let temp = fixture(&ENTRY);
+        let root = temp.path();
+        let (name, text) = big("rs");
+        write_file(root, &name, &text);
+        for query in [
+            json!({"operation":"dependencies","source":"entry.ts"}),
+            json!({"operation":"dependents","source":"util.ts"}),
+            json!({"operation":"path","source":"entry.ts","target":"util.ts"}),
+            json!({"operation":"reachability","entrypoints":["entry.ts"]}),
+        ] {
+            complete(&topology(root, query));
+        }
+        // The scan still counts it, and whole-root answers keep the cut.
+        let cycles = topology(root, json!({"operation":"cycles"}));
+        skipped(&cycles);
+        assert_eq!(cycles["coverage"]["diagnosticCounts"]["scan-skip"], 1);
+    }
+
+    /// A skipped file of the target's language may import it: dependents
+    /// stay partial, while dependencies of a file that does not import it are
+    /// complete.
+    #[test]
+    fn a_skipped_file_that_may_import_the_target_keeps_dependents_partial() {
+        let temp = fixture(&ENTRY);
+        let root = temp.path();
+        let (name, text) = big("ts");
+        write_file(root, &name, &text);
+        skipped(&topology(
+            root,
+            json!({"operation":"dependents","source":"util.ts"}),
+        ));
+        complete(&topology(
+            root,
+            json!({"operation":"dependencies","source":"entry.ts"}),
+        ));
+    }
+
+    #[test]
+    fn unlinked_imports_no_answer_reaches_leave_it_complete() {
+        let temp = fixture(&[
+            (
+                "src/index.ts",
+                "import { u } from './util';\nexport const i = u;\n",
+            ),
+            ("src/util.ts", "export const u = 1;\n"),
+            // Leaves the scan root: it can name no scanned file.
+            (
+                "tests/a.test.ts",
+                "import { g } from '../../test-utils/guard.js';\nexport const t = g;\n",
+            ),
+            // Names a missing sibling, never src/util.ts.
+            (
+                "examples/cli.ts",
+                "import { x } from './generated';\nexport const c = x;\n",
+            ),
+        ]);
+        let root = temp.path();
+        for query in [
+            json!({"operation":"dependencies","source":"src/index.ts","graphDepth":3}),
+            json!({"operation":"dependents","source":"src/util.ts","graphDepth":3}),
+            json!({"operation":"path","source":"src/index.ts","target":"src/util.ts"}),
+            // Test files are no roots here, so tests/ and examples/ are
+            // unreached: an edge out of them reaches nothing new.
+            json!({"operation":"reachability","entrypoints":["src/index.ts"],"includeTests":false}),
+        ] {
+            let out = topology(root, query);
+            complete(&out);
+            // The scan's own tallies are unchanged.
+            assert_eq!(out["coverage"]["imports"]["unresolvedInternal"], 2, "{out}");
+        }
+        let cycles = topology(root, json!({"operation":"cycles"}));
+        assert_eq!(cycles["confidence"], "low", "{cycles}");
+        assert_eq!(
+            cycles["coverage"]["parts"]["graph"], "coverage-incomplete",
+            "{cycles}"
+        );
+    }
+
+    /// An unlinked import whose specifier spells the target, or one inside
+    /// the files a path walks, still lowers the answer.
+    #[test]
+    fn unlinked_imports_the_answer_reaches_lower_it() {
+        let temp = fixture(&[
+            (
+                "src/index.ts",
+                "import { u } from './util';\nimport { m } from './missing';\nexport const i = [u, m];\n",
+            ),
+            ("src/util.ts", "export const u = 1;\n"),
+            (
+                "src/other.ts",
+                "import { u } from './util.mjs';\nexport const o = u;\n",
+            ),
+        ]);
+        let root = temp.path();
+        for query in [
+            json!({"operation":"dependents","source":"src/util.ts"}),
+            json!({"operation":"path","source":"src/index.ts","target":"src/util.ts"}),
+            json!({"operation":"dependencies","source":"src/index.ts"}),
+        ] {
+            let out = topology(root, query);
+            assert_eq!(out["confidence"], "low", "{out}");
+            assert_eq!(
+                out["coverage"]["parts"]["graph"], "coverage-incomplete",
+                "{out}"
+            );
+        }
     }
 }

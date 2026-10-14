@@ -1,4 +1,4 @@
-use super::http::RegistryClient;
+use super::http::{JSON, RegistryClient};
 use super::util::{
     commit_sha, endpoint, object_for, parse_url, required, rows, safe_url, string, total,
 };
@@ -49,7 +49,7 @@ pub(crate) async fn nuget(
         ],
     )?;
     let response = client
-        .json(ArtifactType::Nuget, url, false, None)
+        .json(ArtifactType::Nuget, url, false, None, None, JSON)
         .await?
         .ok_or_else(|| super::util::invalid(ArtifactType::Nuget))?;
     let data = object_for(&response, ArtifactType::Nuget)?;
@@ -123,7 +123,7 @@ async fn page_items(
     }
     let advertised = official_url(page.get("@id"))?;
     let owned_page = client
-        .json(ArtifactType::Nuget, advertised, false, None)
+        .json(ArtifactType::Nuget, advertised, false, None, None, JSON)
         .await?
         .ok_or_else(|| super::util::invalid(ArtifactType::Nuget))?;
     rows(
@@ -146,7 +146,10 @@ async fn exact(
         base.as_str().trim_end_matches('/'),
         super::util::encode_component(&package_name.to_ascii_lowercase())
     ))?;
-    let Some(response) = client.json(ArtifactType::Nuget, url, true, None).await? else {
+    let Some(response) = client
+        .json(ArtifactType::Nuget, url, true, None, None, JSON)
+        .await?
+    else {
         return Ok(ArtifactProviderPage::empty(Some(0)));
     };
     let pages = rows(
@@ -309,6 +312,8 @@ async fn service_endpoint(kind: &str, client: &RegistryClient<'_>) -> Result<Url
             parse_url("https://api.nuget.org/v3/index.json")?,
             false,
             None,
+            None,
+            JSON,
         )
         .await?
         .ok_or_else(|| super::util::invalid(ArtifactType::Nuget))?;
@@ -492,10 +497,10 @@ fn limit_reason() -> String {
 mod tests {
     use super::super::types::{artifact_query, test_budget};
     use super::*;
-    use crate::providers::RequestBudget;
     use crate::providers::artifact::http::{
         ArtifactHttp, ArtifactHttpFuture, ArtifactHttpRequest, ArtifactHttpResponse,
     };
+    use octocode_github::RequestBudget;
     use serde_json::json;
 
     /// Serves fixtures by URL-path fragment. Routing (rather than call order)

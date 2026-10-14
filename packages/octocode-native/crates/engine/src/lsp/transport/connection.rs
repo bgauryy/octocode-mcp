@@ -113,7 +113,7 @@ impl Shared {
     fn take_pending(&self, id: u64) -> Option<PendingSender> {
         self.pending
             .lock()
-            .ok()?
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .as_mut()
             .and_then(|map| map.remove(&id))
     }
@@ -127,17 +127,21 @@ impl Shared {
     /// [`Self::fail`] with the typed cause every drained or later request
     /// reports.
     fn fail_with(&self, error: Error) {
-        if let Ok(mut slot) = self.failure_reason.lock()
-            && slot.is_none()
         {
-            *slot = Some(error.clone());
+            let mut slot = self
+                .failure_reason
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if slot.is_none() {
+                *slot = Some(error.clone());
+            }
         }
         self.failed.store(true, Ordering::Release);
         let drained = self
             .pending
             .lock()
-            .ok()
-            .and_then(|mut pending| pending.take());
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
         for sender in drained.into_iter().flat_map(HashMap::into_values) {
             let _ = sender.send(Err(error.clone()));
         }
@@ -195,8 +199,8 @@ impl Shared {
         match self
             .failure_reason
             .lock()
-            .ok()
-            .and_then(|slot| slot.clone())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
         {
             Some(error) => error,
             None => closed_error(),

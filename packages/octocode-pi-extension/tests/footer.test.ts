@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { visibleWidth } from '@earendil-works/pi-tui';
-import { contextBar, footerLines, type FooterState } from '../src/ui/footer.js';
+import { contextBar, footerLines, SUBAGENTS_STATUS, type FooterState } from '../src/ui/footer.js';
+import { QUEUED_STATUS } from '../src/ui/delivery.js';
+import { statusColor } from '../src/shared/render.js';
+import { chipText } from '../src/permission/mode.js';
 
 const theme = { fg: (_color: string, text: string) => text, bold: (text: string) => text } as never;
 /** Records which colour token painted which text. */
@@ -10,7 +13,7 @@ const recording = { fg: (color: string, text: string) => (painted.push([color, t
 const state: FooterState = {
   model: 'claude-opus-5-5',
   thinking: 'high',
-  context: { percent: 42, window: 200_000 },
+  context: { percent: 42, limit: 200_000 },
   usage: { input: 12_400, cacheRead: 0, output: 3_100, cost: 0.84, unpriced: false },
   cwd: '/Users/me/code/app',
   home: '/Users/me',
@@ -38,7 +41,7 @@ describe('footer', () => {
     expect(contextBar(65).color).toBe('warning');
     expect(contextBar(91).color).toBe('error');
     painted.length = 0;
-    footerLines({ ...state, context: { percent: 91, window: 200_000 } }, 'main', statuses, recording, 160);
+    footerLines({ ...state, context: { percent: 91, limit: 200_000 } }, 'main', statuses, recording, 160);
     expect(painted.some(([color, text]) => color === 'error' && text.includes('91%'))).toBe(true);
   });
 
@@ -79,7 +82,7 @@ describe('footer', () => {
   });
 
   it('says so when context is unknown (right after compaction) and hides empty parts', () => {
-    const [top, bottom] = footerLines({ ...state, thinking: undefined, context: { percent: null, window: 200_000 }, usage: { input: 0, cacheRead: 0, output: 0, cost: 0, unpriced: false }, sessionName: undefined }, null, new Map(), theme, 120);
+    const [top, bottom] = footerLines({ ...state, thinking: undefined, context: { percent: null, limit: 200_000 }, usage: { input: 0, cacheRead: 0, output: 0, cost: 0, unpriced: false }, sessionName: undefined }, null, new Map(), theme, 120);
     expect(top).toBe('claude-opus-5-5 · ctx ? of 200k');
     expect(bottom).toBe('~/code/app');
   });
@@ -88,7 +91,7 @@ describe('footer', () => {
     const [top, bottom] = footerLines(state, 'feature/a-very-long-branch-name-for-testing', new Map([...statuses, ['other-ext', 'lint ok · 12 warnings in 4 files']]), theme, 75);
     expect(visibleWidth(top!)).toBeLessThanOrEqual(75);
     expect(visibleWidth(bottom!)).toBeLessThanOrEqual(75);
-    expect(bottom).toContain('feature/a-very-long-bra…');
+    expect(bottom).toContain('feature/a-very-long-bran…');
     for (const kept of ['claude-opus-5-5', '42%', 'manual', 'agents 1/2', '1 bash job']) expect(top).toContain(kept);
     expect(top).not.toContain('tok/s');
     expect(bottom).not.toContain('lint ok');
@@ -102,12 +105,41 @@ describe('footer', () => {
   });
 });
 
+describe('footer line 1 work statuses', () => {
+  it('keeps queued messages and background subagents on line 1 when other parts drop', () => {
+    const work = new Map([...statuses, [QUEUED_STATUS, '✉ 2 queued'], [SUBAGENTS_STATUS, '2 subagents']]);
+    const [wide, bottom] = footerLines(state, 'main', work, theme, 200);
+    expect(wide).toContain('2 subagents');
+    expect(wide).toContain('✉ 2 queued');
+    expect(bottom).not.toContain('queued');
+    const [narrow] = footerLines(state, 'main', work, theme, 90);
+    expect(narrow).toContain('✉ 2 queued');
+    expect(narrow).not.toContain('tok/s');
+  });
+
+  it('repaints statusColor statuses with the theme of the frame', () => {
+    const before = { fg: (color: string, text: string) => `[before ${color}]${text}` };
+    const queued = statusColor({ mode: 'tui', ui: { theme: before } } as never, 'accent', '✉ 1 queued');
+    const after = { fg: (color: string, text: string) => (color === 'accent' ? `[after]${text}` : text), bold: (text: string) => text } as never;
+    const [top] = footerLines(state, null, new Map([[QUEUED_STATUS, queued]]), after, 200);
+    expect(top).toContain('[after]✉ 1 queued');
+    expect(top).not.toContain('[before');
+  });
+
+  it('gives a long branch a third of the row', () => {
+    const branch = `feature/${'x'.repeat(80)}`;
+    expect(footerLines(state, branch, new Map(), theme, 240)[1]).toContain(`${branch.slice(0, 79)}…`);
+  });
+});
+
 describe('footer wiring', () => {
   it('replaces Pi\'s footer, sums the session usage and samples context on events', async () => {
     const { fakeCtx, fakePi } = await import('./fake-pi.js');
     const { registerFooter } = await import('../src/ui/footer.js');
     const fake = fakePi();
     (fake.pi as unknown as { getThinkingLevel: () => string }).getThinkingLevel = () => 'medium';
+    // No compaction reserve: the gauge reads against the whole window.
+    (fake.pi as unknown as { getSettings: () => unknown }).getSettings = () => ({ compaction: { reserveTokens: 0 } });
     registerFooter(fake.pi);
     const ctx = fakeCtx({ cwd: '/work/app' }) as unknown as Record<string, any>;
     let percent = 10;
@@ -149,6 +181,8 @@ describe('footer wiring', () => {
     const { registerFooter } = await import('../src/ui/footer.js');
     const fake = fakePi();
     (fake.pi as unknown as { getThinkingLevel: () => string }).getThinkingLevel = () => 'medium';
+    // No compaction reserve: the gauge reads against the whole window.
+    (fake.pi as unknown as { getSettings: () => unknown }).getSettings = () => ({ compaction: { reserveTokens: 0 } });
     registerFooter(fake.pi);
     const ctx = fakeCtx({ cwd: '/work/app' }) as unknown as Record<string, any>;
     let percent = 10;
@@ -186,6 +220,35 @@ describe('footer wiring', () => {
     expect(component.render(120)).not.toBe(first);
   });
 
+  it('reads the gauge against the auto-compaction point and counts background subagent reports in the cost', async () => {
+    const { fakeCtx, fakePi } = await import('./fake-pi.js');
+    const { registerFooter } = await import('../src/ui/footer.js');
+    const fake = fakePi();
+    (fake.pi as unknown as { getThinkingLevel: () => string }).getThinkingLevel = () => 'off';
+    // A 1M window that compacts at 200k: the per-model reserve wins over the global one.
+    (fake.pi as unknown as { getSettings: () => unknown }).getSettings = () => ({ compaction: { reserveTokens: 40_000, modelOverrides: { 'gw/big': { reserveTokens: 800_000 } } } });
+    registerFooter(fake.pi);
+    const ctx = fakeCtx({ cwd: '/work/app' }) as unknown as Record<string, any>;
+    ctx['model'] = { provider: 'gw', id: 'big', reasoning: false, contextWindow: 1_000_000 };
+    ctx['getContextUsage'] = () => ({ tokens: 150_000, contextWindow: 1_000_000, percent: 15 });
+    // A background report saved in the session (a custom_message entry) counts, as one that arrives later does.
+    const report = (cost: number) => ({ usage: { input: 1_000, cacheRead: 9_000, cacheWrite: 0, output: 100, cost: { total: cost } }, unpriced: false });
+    ctx['sessionManager'].getEntries = () => [{ type: 'custom_message', customType: 'octocode-agent-result', details: report(1.5) }];
+    await fake.emit('session_start', {}, ctx);
+    const data = { getGitBranch: () => null, getExtensionStatuses: () => new Map(), onBranchChange: () => () => undefined };
+    const component = ctx['ui'].footer({ requestRender: () => undefined }, theme, data);
+    let [top, bottom] = component.render(120) as string[];
+    expect(top).toContain('75% of 200k');
+    expect(top).toContain('≈$1.50');
+    expect(bottom).toContain('↑10k (90% cached)');
+    await fake.emit('message_end', { message: { role: 'custom', customType: 'octocode-agent-result', details: report(0.5) } }, ctx);
+    // A custom message without usage (a team message) adds nothing.
+    await fake.emit('message_end', { message: { role: 'custom', customType: 'octocode-agent-message', details: { id: 'x' } } }, ctx);
+    [top, bottom] = component.render(120) as string[];
+    expect(top).toContain('≈$2.00');
+    expect(bottom).toContain('↑20k');
+  });
+
   it('marks usage from a model without pricing instead of counting it as free, and says so once', async () => {
     const { fakeCtx, fakePi } = await import('./fake-pi.js');
     const { registerFooter } = await import('../src/ui/footer.js');
@@ -211,5 +274,37 @@ describe('footer wiring', () => {
     await fake.emit('session_start', {}, ctx);
     await fake.emit('message_end', { message: free }, ctx);
     expect(ctx['ui'].notes).toHaveLength(2);
+  });
+
+  it('says once when the model leaves out the reasoning its built-in twin declares', async () => {
+    const { fakeCtx, fakePi } = await import('./fake-pi.js');
+    const { registerFooter, reasoningTwin } = await import('../src/ui/footer.js');
+    const builtIn = { provider: 'anthropic', id: 'claude-opus-5-5', reasoning: true, compat: { forceAdaptiveThinking: true } };
+    const copy = { provider: 'proxy', id: 'claude-opus-5-5', reasoning: undefined, compat: {} };
+    expect(reasoningTwin(copy as never, [copy, builtIn] as never)).toBe(builtIn);
+    expect(reasoningTwin(builtIn as never, [copy, builtIn] as never)).toBeUndefined();
+    expect(reasoningTwin({ ...copy, id: 'llama' } as never, [copy, builtIn] as never)).toBeUndefined();
+    const fake = fakePi();
+    (fake.pi as unknown as { getThinkingLevel: () => string }).getThinkingLevel = () => 'off';
+    registerFooter(fake.pi);
+    const ctx = fakeCtx({ cwd: '/work/app' }) as unknown as Record<string, any>;
+    ctx['modelRegistry'] = { getAll: () => [copy, builtIn], find: () => undefined };
+    ctx['model'] = { ...copy, contextWindow: 200_000 };
+    ctx['getContextUsage'] = () => undefined;
+    await fake.emit('session_start', {}, ctx);
+    await fake.emit('model_select', {}, ctx);
+    expect(ctx['ui'].notes).toEqual([{ message: 'proxy/claude-opus-5-5 does not declare reasoning in models.json, so Pi never asks it to think. anthropic/claude-opus-5-5 declares it: add "reasoning": true and "compat": { "forceAdaptiveThinking": true } to its entry.', type: 'warning' }]);
+  });
+
+  it('counts what full ran in the chip, and keeps the count in the short form', () => {
+    expect(chipText('full')).toBe('⏵⏵ permission: full · Shift+Tab');
+    expect(chipText('full', { actions: 0, warnings: 0 })).toBe('⏵⏵ permission: full · Shift+Tab');
+    expect(chipText('full', { actions: 1, warnings: 0 })).toBe('⏵⏵ permission: full · 1 action · Shift+Tab');
+    expect(chipText('full', { actions: 12, warnings: 2 })).toBe('⏵⏵ permission: full · 12 actions · 2 ⚠ · Shift+Tab');
+    expect(chipText('workspace', { actions: 12, warnings: 2 })).toBe('permission: workspace · Shift+Tab');
+    const counted = new Map([['octocode-permission', chipText('full', { actions: 12, warnings: 2 })]]);
+    const [narrow] = footerLines({ ...state, context: undefined }, 'main', counted, theme, 44);
+    expect(narrow).toContain('⏵⏵ full · 12 actions · 2 ⚠');
+    expect(narrow).not.toContain('permission:');
   });
 });

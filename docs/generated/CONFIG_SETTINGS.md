@@ -75,7 +75,7 @@ This reference is generated from [`packages/octocode-config/config-contract.json
 
 ## Settings
 
-Environment values take precedence over `.octocoderc`. Aliases are listed in priority order.
+Environment values take precedence over `.octocoderc`. Each setting has at most one environment variable.
 
 | `.octocoderc` path | Environment | Default | Type / constraint | Description |
 |---|---|---|---|---|
@@ -118,7 +118,7 @@ Environment values take precedence over `.octocoderc`. Aliases are listed in pri
 
 ## GitHub token priority
 
-Tokens first choose the highest-priority source: process environment → workspace `.octocode/.env` → global Octocode `.env`. CLI and MCP load both files. Missing or blank file values fall back; credential alias priority below breaks ties only within the winning source. A workspace alias overrides a global canonical key. Explicitly blank process `OCTOCODE_CLASSIFICATION_API` disables classification. See [configuration precedence](../CONFIGURATION.md#how-settings-override-each-other).
+Tokens first choose the highest-priority source: process environment → workspace `.octocode/.env` → global Octocode `.env`. CLI and MCP load both files. Missing or blank file values fall back; the token priority below breaks ties only within the winning source, so a workspace token overrides a global one of higher priority. Explicitly blank process `OCTOCODE_CLASSIFICATION_API` disables classification. See [configuration precedence](../CONFIGURATION.md#how-settings-override-each-other).
 
 | Environment variable | Priority | Description |
 |---|---:|---|

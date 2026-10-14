@@ -1,8 +1,10 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { closeSharedAgentDb, sharedAgentDb } from '../src/agentdb/db.js';
 import { sessionDir, sessionOutputDir, setCurrentSession } from '../src/shared/home.js';
+import { processStartTime } from '../src/shared/process.js';
 import { SessionIndex } from '../src/sessions/store.js';
 import { sweepSessions } from '../src/sessions/sweep.js';
 import { shotsDir } from '../src/subagents/screenshots.js';
@@ -55,11 +57,13 @@ describe('session sweep', () => {
     insert('gone-reused', process.pid, 'Thu Jan  1 00:00:00 1970');
     insert('no-folder', null);
     insert('current', DEAD_PID);
-    for (const name of ['gone-file', 'kept-file', 'gone-live', 'gone-reused', 'current']) age(folder(name), 8 * DAY);
+    for (const name of ['gone-file', 'kept-file', 'gone-live', 'gone-reused', 'current']) age(folder(name), 31 * DAY);
     age(folder('recent-gone-file'), DAY);
-    age(folder(`_pid-${DEAD_PID}`), 2 * DAY);
+    age(folder(`_pid-${DEAD_PID}`), 31 * DAY);
+    // A folder Pi does not list (a subagent's, a deleted session's) keeps its files as long as kept sessions keep output.
+    age(folder('subagent-recent'), 8 * DAY);
     age(folder(`_pid-${process.pid}`), 20 * DAY);
-    age(folder('unindexed-old'), 15 * DAY);
+    age(folder('unindexed-old'), 31 * DAY);
     age(folder('unindexed-new'), 3 * DAY);
     const oldLog = path.join(folder('kept-file'), 'output', 'old.txt');
     const newLog = path.join(folder('kept-file'), 'output', 'new.txt');
@@ -70,7 +74,7 @@ describe('session sweep', () => {
     const removed = await sweepSessions(index, 'current', { listed });
     expect(removed.sort()).toEqual(['_pid-9999999', 'gone-file', 'gone-reused', 'unindexed-old']);
     const left = fs.readdirSync(path.join(home, 'agent', 'pi', 'sessions')).sort();
-    expect(left).toEqual(['_pid-' + process.pid, 'current', 'gone-live', 'kept-file', 'recent-gone-file', 'unindexed-new'].sort());
+    expect(left).toEqual(['_pid-' + process.pid, 'current', 'gone-live', 'kept-file', 'recent-gone-file', 'subagent-recent', 'unindexed-new'].sort());
     expect(index.get('gone-file')).toBeUndefined();
     expect(index.get('no-folder')).toBeUndefined();
     expect(index.get('current')).toBeDefined();
@@ -85,7 +89,7 @@ describe('session sweep', () => {
 
   it('walks and removes without synchronous file calls, so a large sessions folder never blocks the UI', async () => {
     const index = new SessionIndex(sharedAgentDb());
-    age(folder('unindexed-old', ['output', 'bash', 'checkpoints/blobs']), 15 * DAY);
+    age(folder('unindexed-old', ['output', 'bash', 'checkpoints/blobs']), 31 * DAY);
     const log = path.join(folder('kept'), 'output', 'old.txt');
     fs.writeFileSync(log, 'x');
     fs.utimesSync(log, new Date(Date.now() - 31 * DAY), new Date(Date.now() - 31 * DAY));
@@ -99,9 +103,15 @@ describe('session sweep', () => {
     expect(fs.existsSync(log)).toBe(false);
   });
 
+  it('skips a malformed session id instead of abandoning the sweep', async () => {
+    const index = new SessionIndex(sharedAgentDb());
+    age(folder('unindexed-old'), 31 * DAY);
+    expect(await sweepSessions(index, 'current', { force: true, listed: async () => new Set(['..', '', 'kept']) })).toEqual(['unindexed-old']);
+  });
+
   it('removes nothing when Pi cannot list its sessions', async () => {
     const index = new SessionIndex(sharedAgentDb());
-    age(folder('unindexed-old'), 15 * DAY);
+    age(folder('unindexed-old'), 31 * DAY);
     expect(await sweepSessions(index, 'current', { force: true, listed: async () => Promise.reject(new Error('no')) })).toEqual([]);
     expect(fs.existsSync(path.join(home, 'agent', 'pi', 'sessions', 'unindexed-old'))).toBe(true);
     // The failed sweep does not count: the next session start tries again instead of waiting 6 hours.
@@ -122,13 +132,13 @@ describe('session sweep', () => {
       index.addSessionDir(custom);
       index.addSessionDir(custom);
       expect(index.sessionDirs()).toEqual([custom]);
-      age(folder(id), 8 * DAY);
-      age(folder('orphan'), 8 * DAY);
+      age(folder(id), 31 * DAY);
+      age(folder('orphan'), 31 * DAY);
       expect(await sweepSessions(index, 'current', { force: true })).toEqual(['orphan']);
       expect(fs.existsSync(path.join(home, 'agent', 'pi', 'sessions', id))).toBe(true);
 
       // A recorded dir that cannot be read is a failed listing: nothing is removed.
-      age(folder('orphan-2'), 8 * DAY);
+      age(folder('orphan-2'), 31 * DAY);
       index.addSessionDir(path.join(custom, 'missing'));
       expect(await sweepSessions(index, 'current', { force: true })).toEqual([]);
       expect(fs.existsSync(path.join(home, 'agent', 'pi', 'sessions', 'orphan-2'))).toBe(true);
@@ -141,7 +151,7 @@ describe('session sweep', () => {
   it('follows OCTOCODE_CLEANUP_DAYS: 0 turns the sweep off, N days sets how long output is kept', async () => {
     const index = new SessionIndex(sharedAgentDb());
     const listed = async () => new Set<string>();
-    age(folder('unindexed-old'), 15 * DAY);
+    age(folder('unindexed-old'), 31 * DAY);
     const log = path.join(folder('current'), 'output', 'log.txt');
     fs.writeFileSync(log, 'x');
     fs.utimesSync(log, new Date(Date.now() - 3 * DAY), new Date(Date.now() - 3 * DAY));
@@ -174,6 +184,23 @@ describe('session sweep', () => {
     expect(fs.existsSync(idle)).toBe(false);
     expect(fs.existsSync(path.dirname(idle))).toBe(true);
     for (const dir of [current, live, active]) expect(fs.existsSync(path.join(dir, 'blobs', 'abc'))).toBe(true);
+  });
+
+  it('keeps the owner record and logs of a job whose Pi still runs, however old, and ages out the rest', async () => {
+    const index = new SessionIndex(sharedAgentDb());
+    const bash = path.join(folder('kept', ['bash']), 'bash');
+    const job = (name: string, owner: Record<string, unknown>, host?: string) => {
+      const log = path.join(bash, `${name}.log`);
+      for (const file of [log, `${log}.1`]) fs.writeFileSync(file, 'x');
+      fs.writeFileSync(path.join(bash, `${name}.job.json`), JSON.stringify({ id: name, pid: DEAD_PID, command: 'server', log, owner, ...(host ? { host } : {}) }));
+    };
+    job('bash-1-1', { pid: process.pid, started: processStartTime(process.pid) }, os.hostname());
+    job('bash-2-1', { pid: DEAD_PID });
+    // Its owner runs on another host sharing this folder: it cannot be judged here, so it stays.
+    job('bash-3-1', { pid: DEAD_PID }, `not-${os.hostname()}`);
+    age(bash, 31 * DAY);
+    await sweepSessions(index, 'current', { listed: async () => new Set(['kept']), force: true });
+    expect(fs.readdirSync(bash).sort()).toEqual(['bash-1-1.job.json', 'bash-1-1.log', 'bash-1-1.log.1', 'bash-3-1.job.json', 'bash-3-1.log', 'bash-3-1.log.1']);
   });
 
   it('removes old subagent screenshots, following OCTOCODE_CLEANUP_DAYS', async () => {

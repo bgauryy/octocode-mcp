@@ -1,3 +1,4 @@
+import { rustBundle } from '../scripts/tool-contract/rust.ts';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -35,7 +36,7 @@ describe('generated tool types', () => {
     );
   });
 
-  it('declares a query, input, and output type for every catalog tool in both languages', () => {
+  it('declares query, input, and output types in TypeScript; Rust gets only what native parses', () => {
     const ts = read('src/contracts/toolTypes.generated.ts');
     const rust = read('contract/tool_types.rs');
     for (const tool of Object.values(TOOL_NAMES)) {
@@ -44,11 +45,32 @@ describe('generated tool types', () => {
         expect(ts, `${base}${suffix} (TS)`).toMatch(
           new RegExp(`^export (?:interface|type) ${base}${suffix}\\b`, 'm')
         );
+      }
+      // Native parses queries and inputs; outputs are checked against the
+      // JSON schema, so their Rust types would be dead code.
+      for (const suffix of ['Query', 'Input']) {
         expect(rust, `${base}${suffix} (Rust)`).toMatch(
           new RegExp(`^pub (?:struct|enum) ${base}${suffix}\\b`, 'm')
         );
       }
+      expect(rust, `${base}Output (Rust)`).not.toMatch(new RegExp(`^pub (?:struct|enum) ${base}Output\\b`, 'm'));
     }
+  });
+
+  it('drops only the per-tool output roots from the Rust bundle', () => {
+    const bundle = {
+      $defs: {
+        AQuery: { type: 'object', properties: { r: { $ref: '#/$defs/Shared' } } },
+        AInput: { type: 'object', properties: { queries: { items: { $ref: '#/$defs/AQuery' } } } },
+        AOutput: { type: 'object', properties: { o: { $ref: '#/$defs/OnlyOut' } } },
+        Shared: { type: 'object', properties: { deep: { $ref: '#/$defs/Deep' } } },
+        Deep: { type: 'string' },
+        OnlyOut: { type: 'string' },
+      },
+    };
+    // A core-named definition only an output uses (OnlyOut) stays: native
+    // builds output fields from shared types.
+    expect(Object.keys(rustBundle(bundle).$defs as object).sort()).toEqual(['AInput', 'AQuery', 'Deep', 'OnlyOut', 'Shared']);
   });
 
   it('names shared types only where core names them (titles and ids)', () => {

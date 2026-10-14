@@ -2,6 +2,7 @@ import { createReadStream, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { fail } from './fail.mjs';
 
 export async function paginate({ lists, files, dir, args, script, defaultLimit = 20 }) {
   try {
@@ -35,5 +36,5 @@ export async function paginate({ lists, files, dir, args, script, defaultLimit =
       }
     }
     return { ...output, pagination, snapshot, ...(Object.keys(next).length ? { next } : {}) };
-  } catch (error) { console.error(JSON.stringify({ ok: false, error: error.message })); process.exit(2); }
+  } catch (error) { fail(/changed/i.test(error.message) ? 'sourceChanged' : 'invalidArguments', error.message, 2); }
 }

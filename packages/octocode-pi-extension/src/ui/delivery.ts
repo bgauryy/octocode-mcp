@@ -52,11 +52,23 @@ export class Delivery {
   }
 
   deliver(message: Message, options?: Options): void {
+    // Pi queues once a run starts preparing, before `agent_start` (its `before_agent_start` handlers run in between).
+    const busy = this.running || this.preparing();
     this.send(message, options);
-    const queued = this.running && options?.triggerTurn !== false && options?.deliverAs !== 'nextTurn';
+    const queued = busy && options?.triggerTurn !== false && options?.deliverAs !== 'nextTurn';
     if (!queued || !isObject(message.details)) return;
     this.waiting.set(message.details, message);
     this.paint();
+  }
+
+  /** A run is starting but has not reached `agent_start`. */
+  private preparing(): boolean {
+    try {
+      return this.ctx !== undefined && !this.ctx.isIdle();
+    } catch {
+      // The session was replaced.
+      return false;
+    }
   }
 
   /** The run is over: Pi starts queued messages before it settles, so any still waiting were cleared. */

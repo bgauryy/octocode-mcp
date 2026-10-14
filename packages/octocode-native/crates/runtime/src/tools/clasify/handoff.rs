@@ -275,12 +275,7 @@ fn file_read_lead(
             "query": resource}],
         "questions": questions,
     });
-    if let Some(main_goal) = query.get("mainGoal").filter(|value| value.is_string()) {
-        matrix["mainGoal"] = main_goal.clone();
-    }
-    if let Some(reasoning) = query.get("reasoning").filter(|value| value.is_string()) {
-        matrix["reasoning"] = reasoning.clone();
-    }
+    add_brief(&mut matrix, query);
     Some((
         ToolId::Clasify.as_str(),
         crate::tools::result::Continuation::new(ToolId::Clasify, matrix)
@@ -381,21 +376,42 @@ fn request(tool: &str, query: &Value, data: &Map<String, Value>) -> Option<Value
         resource["candidateEvidence"] =
             json!(crate::tools::clasify::CandidateEvidence::FileChunks.to_string());
     }
-    // The handoff carries only the brief the caller sent.
+    // One question per candidate: a `sufficient` cell would double the
+    // paid cells, and a relevant candidate is read and verified anyway.
     let mut matrix = json!({
         "resources": [resource],
-        "questions": [
-            relevance,
-            {"id": "sufficient", "type": "sufficient", "ask": goal},
-        ],
+        "questions": [relevance],
     });
-    if brief.is_some() {
-        matrix["mainGoal"] = json!(goal);
-    }
-    if let Some(reasoning) = query.get("reasoning").filter(|value| value.is_string()) {
-        matrix["reasoning"] = reasoning.clone();
-    }
+    add_brief(&mut matrix, query);
     Some(matrix)
+}
+
+/// The brief the caller sent, on the matrix, less a field one of its
+/// questions already asks: the judge reads each text once. `mainGoal` is
+/// bounded to the clasify limit, as the question that may restate it.
+fn add_brief(matrix: &mut Value, query: &Value) {
+    let bounded =
+        |text: &str| -> String { text.trim().chars().take(MAIN_GOAL_MAX_LENGTH).collect() };
+    let asked = matrix["questions"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|question| question["ask"].as_str())
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    for field in ["mainGoal", "reasoning"] {
+        let Some(text) = query.get(field).and_then(Value::as_str) else {
+            continue;
+        };
+        if asked.contains(&bounded(text)) {
+            continue;
+        }
+        matrix[field] = if field == "mainGoal" {
+            json!(bounded(text))
+        } else {
+            json!(text)
+        };
+    }
 }
 
 #[cfg(test)]
@@ -478,7 +494,8 @@ mod tests {
         let offer = file_offer(&query, &unfinished_local_data()).expect("target");
         let matrix = &offer["query"]["queries"][0];
         assert!(matrix.get("mainGoal").is_none());
-        assert_eq!(matrix["reasoning"], query["reasoning"]);
+        // The question asks it; the matrix does not repeat it.
+        assert!(matrix.get("reasoning").is_none(), "{matrix}");
         assert_eq!(matrix["questions"][0]["ask"], query["reasoning"]);
         assert_eq!(
             target(&json!({"mainGoal":" ","reasoning":" cible explicite "})).as_deref(),
@@ -834,8 +851,36 @@ mod tests {
         }
         assert_eq!(matrix["resources"][0]["query"], rerun);
         assert_eq!(matrix["resources"][0]["candidateEvidence"], "fileChunks");
-        assert_eq!(matrix["mainGoal"], search["mainGoal"]);
         assert_eq!(matrix["reasoning"], search["reasoning"]);
+    }
+
+    /// The goal reaches the judge once: as the one question's `ask`, not
+    /// again as the matrix `mainGoal`; and the handoff asks one question per
+    /// candidate (no `sufficient` cell doubling the paid cells).
+    #[test]
+    fn handoffs_send_the_goal_once_and_one_question_per_candidate() {
+        let goal = "Locate the retry condition";
+        let mut out = local_rows(2);
+        run(
+            &mut out,
+            "localSearch",
+            &[json!({"matchString":"retry","mainGoal":goal})],
+        );
+        let matrix = &handoff(&out).expect("handoff")["query"]["queries"][0];
+        assert_eq!(
+            matrix["questions"],
+            json!([{"id":"relevant","type":"relevant","ask":goal}])
+        );
+        assert!(matrix.get("mainGoal").is_none(), "{matrix}");
+
+        let offer = file_offer(
+            &json!({"path":"src/queue.rs","mainGoal":goal}),
+            &unfinished_local_data(),
+        )
+        .expect("file lead");
+        let matrix = &offer["query"]["queries"][0];
+        assert_eq!(matrix["questions"][0]["ask"], goal);
+        assert!(matrix.get("mainGoal").is_none(), "{matrix}");
     }
 
     #[test]
@@ -969,7 +1014,8 @@ mod tests {
         attach(&mut out, "localSearch", &by_row);
         for (row, target) in [(0, "target zero"), (2, "target two")] {
             assert_eq!(
-                out["results"][row]["data"]["next"]["clasify"]["query"]["queries"][0]["mainGoal"],
+                out["results"][row]["data"]["next"]["clasify"]["query"]["queries"][0]["questions"]
+                    [0]["ask"],
                 target
             );
         }

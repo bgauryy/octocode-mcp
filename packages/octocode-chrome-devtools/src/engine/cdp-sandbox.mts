@@ -69,7 +69,7 @@ function octocodeOutputBase() {
 
 const OCTOCODE_OUTPUT_BASE = octocodeOutputBase();
 const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-const RUNS_DIR = join(OCTOCODE_OUTPUT_BASE, 'tmp', 'chrome-devtools');
+const RUNS_DIR = join(OCTOCODE_OUTPUT_BASE, 'octocode-chrome-devtools', 'tmp');
 mkdirSync(RUNS_DIR, { recursive: true, mode: 0o700 });
 const OUTPUT_DIR = (() => {
   for (let n = 1; ; n++) {
@@ -84,8 +84,8 @@ const OUTPUT_DIR = (() => {
 })();
 const SESSION_META_DIR = join(
   OCTOCODE_OUTPUT_BASE,
+  'octocode-chrome-devtools',
   'tmp',
-  'chrome-devtools',
   'session-meta',
   `port-${PORT}`
 );
@@ -100,9 +100,9 @@ const safePath = p => {
 };
 
 // The child reads the whole .octocode tree (staged helpers, earlier runs' artifacts) but writes only below
-// tmp/chrome-devtools: its run folder, its session metadata and a scratch TMPDIR. The .octocode root holds reports only.
+// octocode-chrome-devtools/tmp: its run folder, its session metadata and a scratch TMPDIR. The .octocode root holds reports only.
 const OCTOCODE_TREE_REAL = safePath(OCTOCODE_OUTPUT_BASE);
-/** Where scripts import the staged helpers from: `<cwd>/.octocode/tmp/chrome-devtools/helpers/<name>.mjs`. */
+/** Where scripts import the staged helpers from: `<cwd>/.octocode/octocode-chrome-devtools/tmp/helpers/<name>.mjs`. */
 const HELPERS_DIR = join(RUNS_DIR, 'helpers');
 /** The child's TMPDIR/TMP/TEMP, so a library that writes temp files stays inside the run tree. */
 const SCRATCH_DIR = join(RUNS_DIR, 'tmp');

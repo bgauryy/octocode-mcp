@@ -56,6 +56,20 @@ pub(crate) fn hide_bom_in_line(row: usize, line: &str, byte_column: usize) -> (&
 
 // ── LineIndex ─────────────────────────────────────────────────────────────────
 
+/// Byte offset of the first byte of every line of `text`, lines ending at
+/// `\n` (the tree-sitter and text-search rule): `[0, …]`, one entry per line,
+/// a text ending in `\n` closing with the empty line after it.
+pub fn line_starts(text: &str) -> Vec<usize> {
+    std::iter::once(0)
+        .chain(text.match_indices('\n').map(|(at, _)| at + 1))
+        .collect()
+}
+
+/// The 1-based line of byte `offset` under [`line_starts`].
+pub fn line_at(starts: &[usize], offset: usize) -> usize {
+    starts.partition_point(|start| *start <= offset).max(1)
+}
+
 /// Maps byte offsets to/from 0-based lines, byte columns, and UTF-16
 /// code-unit columns. Built once in a single pass; every lookup after that is
 /// O(log n) via binary search over the line-start table. The index holds no
@@ -229,6 +243,7 @@ impl LineIndex {
 
     /// UTF-16 code-unit offset of the first unit of each 0-based line.
     /// `table[i]` is the offset of the first unit on line `i` (0-based).
+    #[cfg(test)]
     pub(crate) fn line_starts_utf16(&self) -> &[u32] {
         &self.line_starts_utf16
     }
@@ -347,6 +362,19 @@ impl LineIndex {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn line_starts_split_at_newlines_and_line_at_finds_the_line() {
+        let text = "ab\ncd\n\nx";
+        let starts = line_starts(text);
+        assert_eq!(starts, [0, 3, 6, 7]);
+        assert_eq!(line_at(&starts, 0), 1);
+        assert_eq!(line_at(&starts, 2), 1);
+        assert_eq!(line_at(&starts, 3), 2);
+        assert_eq!(line_at(&starts, 6), 3);
+        assert_eq!(line_at(&starts, 9), 4);
+        assert_eq!(line_starts(""), [0]);
+    }
 
     /// Number of UTF-8 bytes up to (not including) the `char_index`-th
     /// UTF-16 code unit in `s`. Clamps to `s.len()` if `char_index` exceeds the string.

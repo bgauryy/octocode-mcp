@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { SessionManager } from '@earendil-works/pi-coding-agent';
 import { runningPid } from '../agentdb/liveness.js';
+import { liveJobFiles } from '../files/bash-jobs.js';
 import { CLEANUP_DAYS_ENV, envInt } from '../shared/env.js';
 import { PID_SESSION_PREFIX, sessionDirName, sessionsRoot, sweepStaleOutputs } from '../shared/home.js';
 import { processAlive } from '../shared/process.js';
@@ -12,11 +13,12 @@ const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 /** The sweep runs at most this often across all sessions (meta `last_sweep`). */
 const SWEEP_EVERY_MS = 6 * HOUR;
-/** A folder whose session Pi no longer lists (deleted, ephemeral, a subagent's) is removed this long after its last write. */
-const ORPHAN_MS = 7 * DAY;
-/** A pid folder (a session-less process) is removed this long after its process died. */
-const EPHEMERAL_MS = DAY;
-/** Spilled output, bash logs, idle checkpoints of a kept session and subagent screenshots are removed this many days after they were last written (`OCTOCODE_CLEANUP_DAYS`). */
+/**
+ * Spilled output, bash logs, idle checkpoints of a kept session, subagent screenshots, and the folders of sessions Pi
+ * no longer lists (deleted, a pid folder, a `--no-session` subagent's, whose spilled files its parent's report may
+ * still cite), are removed this many days after they were last written (`OCTOCODE_CLEANUP_DAYS`): one retention, so
+ * a path in a kept transcript stays readable as long as the session's own output does.
+ */
 const OUTPUT_DAYS = 30;
 
 /**
@@ -53,11 +55,20 @@ async function checkpointsIdle(dir: string, maxAgeMs: number, now: number): Prom
 
 const remove = (dir: string) => fs.promises.rm(dir, { recursive: true, force: true });
 
+/** A session id's folder name, or none for a malformed id (`sessionDirName` refuses it): one bad row skips, not the sweep. */
+function folderName(id: string): string[] {
+  try {
+    return [sessionDirName(id)];
+  } catch {
+    return [];
+  }
+}
+
 /**
- * Removes Octocode data of sessions that are gone, at most once per `SWEEP_EVERY_MS` (unless `force`): the folder and
- * extras of a session Pi no longer lists, a week after its last write, unless its process is still running; a pid
- * folder a day after its process died; and output and bash logs of the sessions kept, checkpoints of a kept session nothing wrote to,
- * and subagent screenshots older than `OCTOCODE_CLEANUP_DAYS` (default 30; `0` turns the sweep off). The current session and Pi's own session files are never touched. When Pi's
+ * Removes Octocode data older than `OCTOCODE_CLEANUP_DAYS` (default 30; `0` turns the sweep off), at most once per
+ * `SWEEP_EVERY_MS` (unless `force`): the folder and extras of a session Pi no longer lists (a pid folder included)
+ * unless its process is still running, and output and bash logs of the sessions kept (not a running job's record and log), checkpoints of a kept session
+ * nothing wrote to, and subagent screenshots. The current session and Pi's own session files are never touched. When Pi's
  * listing (its default dir and every recorded custom session dir) fails nothing is removed. Returns the folder names removed. Never rejects.
  */
 export async function sweepSessions(
@@ -83,9 +94,9 @@ export async function sweepSessions(
       index.setMeta('last_sweep', String(last));
       return removed;
     }
-    const listed = new Set([...ids].map(sessionDirName));
-    const extras = new Map(index.all().map((row) => [sessionDirName(row.id), row]));
-    const currentName = current ? sessionDirName(current) : undefined;
+    const listed = new Set([...ids].flatMap(folderName));
+    const extras = new Map(index.all().flatMap((row) => folderName(row.id).map((name) => [name, row] as const)));
+    const currentName = current ? folderName(current)[0] : undefined;
     const keep = new Set<string>(currentName ? [currentName] : []);
     const root = sessionsRoot(env);
     // Missing: no session folders yet.
@@ -98,8 +109,8 @@ export async function sweepSessions(
       const stale =
         pid !== undefined
           // A `_pid-<n>` folder names its process; no session row (or team row) exists for a session-less process.
-          ? pid !== process.pid && !processAlive(pid) && now - (await lastWrite(dir)) > EPHEMERAL_MS
-          : !listed.has(name) && runningPid(extra?.pid, extra?.pid_started) === undefined && now - (await lastWrite(dir)) > ORPHAN_MS;
+          ? pid !== process.pid && !processAlive(pid) && now - (await lastWrite(dir)) > outputMs
+          : !listed.has(name) && runningPid(extra?.pid, extra?.pid_started) === undefined && now - (await lastWrite(dir)) > outputMs;
       if (stale) {
         await remove(dir);
         if (extra) index.forget(extra.id);
@@ -112,7 +123,10 @@ export async function sweepSessions(
       if (!keep.has(name) && !listed.has(name) && !present.has(name) && runningPid(extra.pid, extra.pid_started) === undefined) index.forget(extra.id);
     }
     for (const name of keep) {
-      for (const kind of ['output', 'bash']) await sweepStaleOutputs(path.join(root, name, kind), outputMs, undefined, now);
+      await sweepStaleOutputs(path.join(root, name, 'output'), outputMs, undefined, now);
+      // A running job's owner record is written once at its start: its age says nothing, and its log is still open.
+      const bash = path.join(root, name, 'bash');
+      await sweepStaleOutputs(bash, outputMs, await liveJobFiles(bash), now);
       // A session's checkpoints go whole (a journal pointing at removed blobs only makes a rewind skip files), and only
       // when nothing wrote to them for the period: resuming a session protects it, since it is then the current one.
       const checkpoints = path.join(root, name, 'checkpoints');

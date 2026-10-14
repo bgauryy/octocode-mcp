@@ -397,19 +397,21 @@ pub(crate) fn binding(
             map.remove(field);
         }
     }
-    crate::digest::json_sha256(&crate::canonical_json::canonicalize(json!({
-        "version": VERSION,
-        "source": source,
-        "query": selected,
-        "settings": {
-            "enabled": limits.enabled,
-            "available": runtime.is_some_and(|runtime| runtime.available),
-            "maxCandidates": limits.max_candidates,
-            "maxChars": limits.max_chars,
-            "timeoutMs": limits.timeout.as_millis(),
-        },
-        "provider": runtime.map(|runtime| runtime.judge.identity()),
-    })))
+    crate::digest::json_sha256(&octocode_engine::digest::canonicalize_dropping_nulls(
+        json!({
+            "version": VERSION,
+            "source": source,
+            "query": selected,
+            "settings": {
+                "enabled": limits.enabled,
+                "available": runtime.is_some_and(|runtime| runtime.available),
+                "maxCandidates": limits.max_candidates,
+                "maxChars": limits.max_chars,
+                "timeoutMs": limits.timeout.as_millis(),
+            },
+            "provider": runtime.map(|runtime| runtime.judge.identity()),
+        }),
+    ))
 }
 
 /// Replay the exact plan from a continuation or judge bounded new candidates.

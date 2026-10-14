@@ -2,10 +2,10 @@
 import { paginate } from './lib/pagination.mjs';
 import { fileURLToPath } from 'node:url';
 import { resolve, join } from 'node:path';
-import { readJson as readJsonFile, takeArg } from './lib/bridge.mjs';
+import { readJson as readJsonFile, takeArg, requireSession } from './lib/bridge.mjs';
 
 function usage(code = 2) {
-  console.error('Usage: graph-navigate.mjs --session-dir <dir> [--from <nodeId>] [--kind <edgeKind>] [--workflow <type>] [--risk <risk>] [--limit <n>] [--view <list>] [--cursor-<list> <n>] [--no-dedupe]');
+  console.error('Usage: graph-navigate.mjs --session-dir <dir> [--from <nodeId>] [--kind <edgeKind>] [--workflow <type>] [--risk <risk>] [--limit <n>] [--view <list>] [--cursor-<list> <n>] [--dedupe]');
   process.exit(code);
 }
 const args = process.argv.slice(2);
@@ -14,6 +14,7 @@ if (args.includes('--help') || args.includes('-h')) usage(0);
 const sessionDir = take('--session-dir');
 if (!sessionDir) usage();
 const dir = resolve(sessionDir);
+requireSession(dir);
 const from = take('--from');
 const kind = take('--kind');
 const workflow = take('--workflow');

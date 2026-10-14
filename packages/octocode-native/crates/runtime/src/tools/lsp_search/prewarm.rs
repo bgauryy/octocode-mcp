@@ -15,7 +15,6 @@ use super::LspExecutionConfig;
 use crate::policy::path::PathPolicy;
 use octocode_engine::lsp::config::default_server_for_file;
 use octocode_engine::lsp::pool::{LspClientPool, canonical_lsp_key};
-use octocode_engine::lsp::read_regular_bounded;
 use octocode_engine::lsp::types::JsLanguageServerConfig;
 use octocode_engine::lsp::workspace::resolve_workspace_root_for_file;
 use serde_json::Value;
@@ -149,9 +148,10 @@ pub fn schedule(
         return false;
     };
     {
-        let Ok(mut state) = execution.prewarm_state.lock() else {
-            return false;
-        };
+        let mut state = execution
+            .prewarm_state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if !state.begin(&key) {
             return false;
         }
@@ -186,7 +186,9 @@ pub(super) async fn warm(
         // unreadable) warmed only the server.
         let path = PathBuf::from(&file);
         let bytes = tokio::task::spawn_blocking(move || {
-            read_regular_bounded(&path, MAX_PREWARM_OPEN_BYTES).ok()
+            octocode_engine::text::read_source(&path, MAX_PREWARM_OPEN_BYTES)
+                .ok()
+                .map(|source| source.bytes)
         })
         .await
         .ok()??;
@@ -235,7 +237,8 @@ mod tests {
 
     #[test]
     fn anchor_prefers_the_top_hit_then_a_file_query_path() {
-        let dir = std::env::temp_dir().join(format!("octocode-prewarm-{}", std::process::id()));
+        let dir_dir = crate::tools::test_support::Fixture::new();
+        let dir = dir_dir.0.clone();
         std::fs::create_dir_all(&dir).expect("dir");
         let hit = dir.join("hit.ts");
         let read = dir.join("read.ts");
@@ -259,8 +262,8 @@ mod tests {
 
     #[test]
     fn a_lead_naming_lsp_search_points_at_its_anchor_file() {
-        let dir =
-            std::env::temp_dir().join(format!("octocode-prewarm-lead-{}", std::process::id()));
+        let dir_dir = crate::tools::test_support::Fixture::new();
+        let dir = dir_dir.0.clone();
         std::fs::create_dir_all(&dir).expect("dir");
         let file = dir.join("a.ts");
         std::fs::write(&file, "export const a = 1;\n").expect("file");

@@ -11,6 +11,20 @@ const REPORT_MAX_LINES = 200;
 const SEPARATOR = '\n\n---\n\n';
 const preview = (text: string) => capOutput(text, REPORT_MAX_BYTES, REPORT_MAX_LINES);
 
+/** The outcome a subagent leads its final report with; the prompt tells it so, and the parent reads it back. */
+export const REPORT_STATUSES = ['done', 'partial', 'blocked', 'failed'] as const;
+export type ReportStatus = (typeof REPORT_STATUSES)[number];
+
+/**
+ * The outcome word a report starts with, or undefined when it does not start with one (an unknown outcome, never a
+ * failure). Case and light markup around the word (`**Blocked**:`, `done.`) do not matter.
+ */
+export function reportStatus(text: string | undefined): ReportStatus | undefined {
+  const first = (text ?? '').trimStart().split(/\s/, 1)[0] ?? '';
+  const word = first.replace(/^[^\p{L}]+|[^\p{L}]+$/gu, '').toLowerCase();
+  return REPORT_STATUSES.find((status) => status === word);
+}
+
 interface ReportHead {
   head: string;
   bytes: number;
@@ -118,16 +132,23 @@ export class ReportTracker {
     this.fresh = false;
   }
 
-  result(): { text: string; error?: string; answered: boolean } {
-    if (this.sections === 0) return {
-      text: `${this.lastText}${this.partialFile ? `\nFull partial report: ${shortPath(this.partialFile)} (read only the parts you need).` : ''}`,
-      answered: false,
-      ...(this.failure ? { error: this.failure } : {}),
-    };
-    const text = this.failure ? `${this.text}${SEPARATOR}(A later follow-up turn failed: ${this.failure})` : this.text;
-    return {
-      text: `${text}${this.file ? `\nFull report: ${shortPath(this.file)} (read only the parts you need).` : ''}`,
-      answered: true,
-    };
+  /**
+   * The report as returned to the caller: `text` is `body` plus, when the whole text is saved in a file, the `pointer`
+   * line naming it. A caller that shortens `body` keeps the pointer.
+   */
+  result(): { text: string; body: string; pointer?: string; error?: string; answered: boolean } {
+    if (this.sections === 0) {
+      const pointer = this.partialFile ? `Full partial report: ${shortPath(this.partialFile)} (read only the parts you need).` : undefined;
+      return {
+        text: `${this.lastText}${pointer ? `\n${pointer}` : ''}`,
+        body: this.lastText,
+        ...(pointer ? { pointer } : {}),
+        answered: false,
+        ...(this.failure ? { error: this.failure } : {}),
+      };
+    }
+    const body = this.failure ? `${this.text}${SEPARATOR}(A later follow-up turn failed: ${this.failure})` : this.text;
+    const pointer = this.file ? `Full report: ${shortPath(this.file)} (read only the parts you need).` : undefined;
+    return { text: `${body}${pointer ? `\n${pointer}` : ''}`, body, ...(pointer ? { pointer } : {}), answered: true };
   }
 }

@@ -36,8 +36,31 @@ describe('the Pi entry', () => {
     const second: { value?: string } = {};
     await factory(second);
     expect(second.value).toBe('second build');
-    // One bundle per build: the previous one is removed.
-    expect(fs.readdirSync(path.join(dist, 'pi')).filter((name) => name.endsWith('.js'))).toHaveLength(1);
+  });
+
+  it('keeps the current and the previous bundle, swaps the pointer atomically and prunes the rest', async () => {
+    const { bundlePiEntry } = (await import('../scripts/bundle-pi.mjs')) as { bundlePiEntry: (dist: string) => Promise<string> };
+    const dist = tmp('octocode-dist-prune-');
+    fs.writeFileSync(path.join(dist, 'index.js'), 'export default function () {}\n');
+    const folder = path.join(dist, 'pi');
+    const bundles = () => fs.readdirSync(folder).filter((name) => name.endsWith('.js')).sort();
+    const build = async (version: number) => {
+      fs.writeFileSync(path.join(dist, 'index.js'), `export default function () { return ${version}; }\n`);
+      await bundlePiEntry(dist);
+      return fs.readFileSync(path.join(folder, 'current'), 'utf8');
+    };
+    const first = await build(1);
+    expect(bundles()).toEqual([first]);
+    const second = await build(2);
+    expect(bundles()).toEqual([first, second].sort());
+    const third = await build(3);
+    expect(bundles()).toEqual([second, third].sort());
+    expect(fs.existsSync(path.join(folder, first))).toBe(false);
+    // The same content again changes nothing: the previous bundle stays.
+    expect(await build(3)).toBe(third);
+    expect(bundles()).toEqual([second, third].sort());
+    expect(fs.existsSync(path.join(folder, 'current.tmp'))).toBe(false);
+    for (const name of bundles()) expect(fs.existsSync(path.join(folder, name))).toBe(true);
   });
 
   // Pi's own loader in a child process: load, rebuild, clear its cache as /reload does, load again.
@@ -78,8 +101,11 @@ describe('the Pi entry', () => {
   });
 
   it('is what Pi loads from this package', () => {
-    const manifest = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', 'package.json'), 'utf8')) as { pi: { extensions: string[] }; scripts: { build: string } };
+    const manifest = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', 'package.json'), 'utf8')) as { pi: { extensions: string[] }; scripts: { build: string; clean: string } };
     expect(manifest.pi.extensions).toEqual(['./dist/pi-entry.cjs']);
     expect(manifest.scripts.build).toContain('scripts/bundle-pi.mjs');
+    // A build keeps dist (the swap needs the previous bundle); only `clean` removes it.
+    expect(manifest.scripts.build).not.toContain('rm -rf');
+    expect(manifest.scripts.clean).toContain('rm -rf dist');
   });
 });

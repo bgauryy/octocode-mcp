@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { resultBlock, resultText, toolHeader } from '../src/shared/render.js';
-import { sanitizeTerminalText } from '../src/shared/sanitize.js';
+import { redactSecrets, secretProblem, sanitizeTerminalText, storedText, visibleControls } from '../src/shared/sanitize.js';
 import { rendered, theme } from './fake-pi.js';
 
 describe('sanitizeTerminalText', () => {
@@ -35,5 +35,63 @@ describe('sanitizeTerminalText', () => {
     expect(resultText({ content: [{ type: 'text', text: '\u001b]0;title\u0007ok\u001b[1m!' }] })).toBe('ok!');
     expect(rendered(resultBlock(theme, { expanded: true }, { summary: '\u001b]0;t\u0007done', body: '\u001b[31mred\u001b[0m\n\u202eevil' }))).toBe('  ⎿  done\n     red\n     evil');
     expect(rendered(toolHeader(theme, {}, 'Mcp', '\u001b[2Jx\u202ey'))).toBe('○ Mcp(xy)');
+  });
+});
+
+describe('visibleControls', () => {
+  const cases: Array<[string, string, string]> = [
+    ['plain text is unchanged', 'hello world café 日本 🚀', 'hello world café 日本 🚀'],
+    ['keeps newlines and tabs', 'a\n\tb', 'a\n\tb'],
+    ['shows a ZWJ between letters', 'a\u200db', 'a\\u{200d}b'],
+    ['keeps a ZWJ that joins emoji', '👩‍💻 👨‍👩‍👧', '👩‍💻 👨‍👩‍👧'],
+    ['shows a right-to-left override and its pop', 'file\u202egnp.exe\u202c', 'file\\u{202e}gnp.exe\\u{202c}'],
+    ['shows Unicode tag characters', 'ok\u{e0069}\u{e007f}!', 'ok\\u{e0069}\\u{e007f}!'],
+    ['shows BOM, zero-width space and word joiner', '\ufeffa\u200bb\u2060c', '\\u{feff}a\\u{200b}b\\u{2060}c'],
+    ['shows CRLF and a lone CR as \\r', 'a\r\nb\rc', 'a\\r\nb\\rc'],
+    ['shows ESC and the C1 introducers instead of dropping a sequence', '\u001b]0;pwned\u0007\u009b31m', '\\u{1b}]0;pwned\\u{7}\\u{9b}31m'],
+    ['shows NUL, DEL, and line and paragraph separators', 'a\u0000b\u007fc\u2028d\u2029', 'a\\u{0}b\\u{7f}c\\u{2028}d\\u{2029}'],
+  ];
+  it.each(cases)('%s', (_name, input, expected) => {
+    expect(visibleControls(input)).toBe(expected);
+  });
+
+  it('leaves no character raw that sanitizeTerminalText would remove, and no more than it', () => {
+    const text = 'x\u001b[31m\u202e\u200d\u{e0041}\r\ny 👩‍💻';
+    // What survives visibleControls once its escapes are read back as text equals the original, so nothing was lost.
+    const shown = visibleControls(text);
+    expect(sanitizeTerminalText(shown)).toBe(shown);
+    expect(shown.replace(/\\u\{([0-9a-f]+)\}/gu, (_m, hex: string) => String.fromCodePoint(parseInt(hex, 16))).replaceAll('\\r', '\r')).toBe(text);
+  });
+});
+
+describe('secret redaction', () => {
+  const token = `ghp_${'a'.repeat(36)}`;
+  it('replaces every credential span, repeatedly, and leaves clean text alone', () => {
+    const text = `a ${token} b ${token} c Bearer ${'x'.repeat(24)}`;
+    expect(redactSecrets(text)).toBe('a [redacted] b [redacted] c [redacted]');
+    expect(redactSecrets(text)).toBe('a [redacted] b [redacted] c [redacted]');
+    expect(redactSecrets('nothing to see')).toBe('nothing to see');
+    expect(secretProblem(token)).toContain('a GitHub token');
+    expect(secretProblem(token)).toContain('a GitHub token');
+    expect(secretProblem('plain')).toBeUndefined();
+  });
+
+  it('compiles no regular expression per call', () => {
+    const construct = vi.spyOn(globalThis, 'RegExp');
+    try {
+      redactSecrets(`x ${token}`);
+      redactSecrets('y');
+      expect(construct).not.toHaveBeenCalled();
+    } finally {
+      construct.mockRestore();
+    }
+  });
+});
+
+describe('storedText', () => {
+  it('cuts a one-line label by character, never through an emoji', () => {
+    expect(storedText('ab😀cd', 3)).toBe('ab😀');
+    expect(storedText('ab😀cd', 2)).toBe('ab');
+    expect(storedText('  ab\u001b[31m😀  ')).toBe('ab😀');
   });
 });

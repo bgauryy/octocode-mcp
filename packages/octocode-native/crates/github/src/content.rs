@@ -3,16 +3,17 @@ use bytes::Bytes;
 use reqwest::header::{ACCEPT, HeaderValue, IF_NONE_MATCH};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use std::{future::Future, pin::Pin};
+use std::{future::Future, pin::Pin, time::Duration};
 
-use super::{GitHubTransport, ProviderError, ProviderErrorKind, RequestContext, RequestSpec};
+use super::{
+    GitHubTransport, Partition, ProviderError, ProviderErrorKind, RequestContext, RequestSpec,
+};
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct CachedContent {
     pub etag: Option<String>,
-    /// Base64 on disk (a JSON number array is ~3.5× the body); legacy array
-    /// entries still decode. Shared, so a cache hit hands out the stored
-    /// body without copying it.
+    /// Base64 on disk (a JSON number array is ~3.5× the body). Shared, so a
+    /// cache hit hands out the stored body without copying it.
     #[serde(with = "base64_bytes")]
     pub bytes: Bytes,
     pub resolved_ref: String,
@@ -25,48 +26,46 @@ mod base64_bytes {
         serializer.serialize_str(&STANDARD.encode(bytes))
     }
 
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum Encoded {
-        Base64(String),
-        Legacy(Vec<u8>),
-    }
-
     pub(crate) fn deserialize<'de, D: Deserializer<'de>>(
         deserializer: D,
     ) -> Result<bytes::Bytes, D::Error> {
-        match Encoded::deserialize(deserializer)? {
-            Encoded::Base64(text) => STANDARD
-                .decode(text)
-                .map(Into::into)
-                .map_err(D::Error::custom),
-            Encoded::Legacy(bytes) => Ok(bytes.into()),
-        }
+        let text = String::deserialize(deserializer)?;
+        STANDARD
+            .decode(text)
+            .map(Into::into)
+            .map_err(D::Error::custom)
     }
 }
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct CachePartition(pub(crate) String);
-impl CachePartition {
-    /// Opaque credential-scoped identity for host cache storage.
-    pub fn identity(&self) -> &str {
-        &self.0
-    }
+/// How long a cached GitHub read stays good. The writer picks it at
+/// [`ConditionalCache::put`]; the host maps it onto its own windows.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Retention {
+    /// Keyed by a resolved commit SHA (or a fact below one): never stale.
+    Pinned,
+    /// Served as is while fresh, then revalidated with its ETag (a 304 costs
+    /// no rate limit); an entry without an ETag expires instead.
+    Revalidate,
+    /// Revalidated with its ETag on every read: mutable history.
+    AlwaysRevalidate,
+    /// Expires `ttl` after it is stored.
+    Expires(Duration),
 }
+
 /// Cache seam for GitHub reads. A hit without an ETag is fresh: serve it as
 /// is. A hit with an ETag must be revalidated with `If-None-Match` (a 304
-/// costs no rate limit). Keys are `<namespace>:<resource>`; a namespace keyed
-/// by a resolved commit SHA never goes stale.
+/// costs no rate limit). Keys are `<namespace>:<resource>`.
 pub trait ConditionalCache: Send + Sync {
     fn get<'a>(
         &'a self,
-        partition: &'a CachePartition,
+        partition: &'a Partition,
         key: &'a str,
     ) -> Pin<Box<dyn Future<Output = Option<CachedContent>> + Send + 'a>>;
     fn put<'a>(
         &'a self,
-        partition: &'a CachePartition,
+        partition: &'a Partition,
         key: String,
         value: CachedContent,
+        retention: Retention,
     ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
 }
 #[derive(Default)]
@@ -74,16 +73,17 @@ pub struct NoCache;
 impl ConditionalCache for NoCache {
     fn get<'a>(
         &'a self,
-        _: &'a CachePartition,
+        _: &'a Partition,
         _: &'a str,
     ) -> Pin<Box<dyn Future<Output = Option<CachedContent>> + Send + 'a>> {
         Box::pin(async { None })
     }
     fn put<'a>(
         &'a self,
-        _: &'a CachePartition,
+        _: &'a Partition,
         _: String,
         _: CachedContent,
+        _: Retention,
     ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
         Box::pin(async {})
     }
@@ -178,7 +178,9 @@ impl<C: ConditionalCache> GitHubProvider<C> {
                     bytes: bytes.clone(),
                     resolved_ref: resolved_ref.clone(),
                 };
-                self.cache.put(&partition, key, stored).await;
+                self.cache
+                    .put(&partition, key, stored, Retention::Pinned)
+                    .await;
                 return Ok(ContentResponse {
                     bytes,
                     resolved_ref,
@@ -233,7 +235,9 @@ impl<C: ConditionalCache> GitHubProvider<C> {
             bytes: bytes.clone(),
             resolved_ref: resolved_ref.clone(),
         };
-        self.cache.put(&partition, key, stored).await;
+        self.cache
+            .put(&partition, key, stored, Retention::Pinned)
+            .await;
         Ok(ContentResponse {
             bytes,
             resolved_ref,
@@ -308,6 +312,7 @@ impl<C: ConditionalCache> GitHubProvider<C> {
                         bytes: body,
                         resolved_ref: reference.to_owned(),
                     },
+                    Retention::Revalidate,
                 )
                 .await;
         }
@@ -334,7 +339,7 @@ impl<C: ConditionalCache> GitHubProvider<C> {
     /// `vnd.github.sha` media type returns just the SHA (40 B instead of the
     /// full commit with patches), and `HEAD` resolves the default branch
     /// without a separate `GET /repos/{o}/{r}`. Movable refs are memoized for
-    /// [`REF_MEMO_TTL_SECS`] in the credential partition so a batch of reads on
+    /// [`REF_MEMO_TTL`] in the credential partition so a batch of reads on
     /// one ref resolves it once; `force_refresh` bypasses the memo.
     pub async fn resolve_reference(
         &self,
@@ -354,8 +359,8 @@ impl<C: ConditionalCache> GitHubProvider<C> {
         let key = ref_memo_key(owner, repo, reference);
         // Single flight: a concurrent batch on one ref waits for the first
         // resolution and then reads it from the memo.
-        let flight = ref_flight(&partition, &key);
-        let _guard = flight.lock().await;
+        let ticket = ref_flights().join((partition.clone(), key.clone()));
+        let _turn = ticket.turn().await;
         if !force_refresh
             && let Some(sha) = self
                 .cache
@@ -376,8 +381,9 @@ impl<C: ConditionalCache> GitHubProvider<C> {
                 CachedContent {
                     etag: None,
                     bytes: Bytes::copy_from_slice(sha.as_bytes()),
-                    resolved_ref: format!("{REF_MEMO_PREFIX}{}", unix_now()),
+                    resolved_ref: String::new(),
                 },
+                Retention::Expires(REF_MEMO_TTL),
             )
             .await;
         Ok(sha)
@@ -506,8 +512,9 @@ impl GitHubTransport {
                     super::CachedContent {
                         etag: None,
                         bytes: sha.clone().into_bytes().into(),
-                        resolved_ref: sha.clone(),
+                        resolved_ref: String::new(),
                     },
+                    Retention::Pinned,
                 )
                 .await;
         }
@@ -591,36 +598,15 @@ struct CommitPayload {
 }
 /// Seconds a movable ref → SHA resolution is reused. Short enough that a push
 /// shows up on the next research step; long enough to cover one batch.
-const REF_MEMO_TTL_SECS: u64 = 60;
-/// Marker stored in `CachedContent.resolved_ref` for ref memo entries, followed
-/// by the unix time the SHA was resolved.
-const REF_MEMO_PREFIX: &str = "ref-memo@";
-fn unix_now() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |elapsed| elapsed.as_secs())
-}
+const REF_MEMO_TTL: Duration = Duration::from_secs(60);
 /// A full 40-hex-digit commit SHA (either case).
 pub fn is_full_sha(value: &str) -> bool {
     value.len() == 40 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
-type RefFlights = std::sync::Mutex<
-    std::collections::HashMap<(CachePartition, String), std::sync::Arc<tokio::sync::Mutex<()>>>,
->;
-fn ref_flight(partition: &CachePartition, key: &str) -> std::sync::Arc<tokio::sync::Mutex<()>> {
-    static FLIGHTS: std::sync::OnceLock<RefFlights> = std::sync::OnceLock::new();
-    let mut flights = FLIGHTS
-        .get_or_init(Default::default)
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    // Drop idle entries so a long session does not grow the map unbounded.
-    if flights.len() > 256 {
-        flights.retain(|_, flight| std::sync::Arc::strong_count(flight) > 1);
-    }
-    flights
-        .entry((partition.clone(), key.to_owned()))
-        .or_default()
-        .clone()
+/// The process's in-flight ref resolutions, one per `(credential, ref)`.
+fn ref_flights() -> &'static super::KeyedFlight<(Partition, String), ()> {
+    static FLIGHTS: super::KeyedFlight<(Partition, String), ()> = super::KeyedFlight::transient();
+    &FLIGHTS
 }
 fn ref_memo_key(owner: &str, repo: &str, reference: &str) -> String {
     let mut digest = Sha256::new();
@@ -635,15 +621,11 @@ fn ref_memo_key(owner: &str, repo: &str, reference: &str) -> String {
     }
     format!("github-ref:{}", hex::encode(digest.finalize()))
 }
+/// The SHA a ref memo entry holds; the cache expires it after
+/// [`REF_MEMO_TTL`].
 fn fresh_ref_memo(value: &CachedContent) -> Option<String> {
-    let stored_at: u64 = value
-        .resolved_ref
-        .strip_prefix(REF_MEMO_PREFIX)?
-        .parse()
-        .ok()?;
     let sha = std::str::from_utf8(&value.bytes).ok()?;
-    (unix_now().saturating_sub(stored_at) <= REF_MEMO_TTL_SECS && is_full_sha(sha))
-        .then(|| sha.to_ascii_lowercase())
+    is_full_sha(sha).then(|| sha.to_ascii_lowercase())
 }
 /// `vnd.github.sha` answers with the bare SHA; GHES versions (and test
 /// fixtures) that ignore the media type answer with the commit JSON.

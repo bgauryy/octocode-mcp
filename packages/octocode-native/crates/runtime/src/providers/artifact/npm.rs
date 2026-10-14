@@ -1,4 +1,4 @@
-use super::http::{DnsPin, NPM_INSTALL_JSON, RegistryClient};
+use super::http::{DnsPin, JSON, NPM_INSTALL_JSON, RegistryClient};
 use super::util::{
     canonical_repository, commit_sha, date_from_millis, encode_component, endpoint, object_for,
     required, safe_url, string, total,
@@ -226,12 +226,13 @@ async fn exact(
     )?;
     let authorization = registry.authorization_for(&request_url);
     let response = client
-        .json_with_dns_pin(
+        .json(
             ArtifactType::Npm,
             request_url,
             true,
             authorization,
             dns_pin.clone(),
+            JSON,
         )
         .await?;
     let Some(response) = response else {
@@ -324,7 +325,7 @@ async fn packument(
     let url = registry_url(&registry.base, encoded)?;
     let authorization = registry.authorization_for(&url);
     client
-        .json_as(
+        .json(
             ArtifactType::Npm,
             url,
             true,
@@ -426,7 +427,7 @@ async fn attested_commit(
     let integrity = dist.get("integrity")?.as_str()?;
     let authorization = registry.authorization_for(&url);
     let bundle = client
-        .json_with_dns_pin(ArtifactType::Npm, url, true, authorization, dns_pin)
+        .json(ArtifactType::Npm, url, true, authorization, dns_pin, JSON)
         .await
         .ok()??;
     provenance_commit(
@@ -599,7 +600,7 @@ async fn search_window(
     )?;
     let authorization = registry.authorization_for(&url);
     let mut response = client
-        .json_with_dns_pin(ArtifactType::Npm, url, false, authorization, dns_pin)
+        .json(ArtifactType::Npm, url, false, authorization, dns_pin, JSON)
         .await?
         .ok_or_else(|| ArtifactError::new("providerError", "npm registry search failed."))?;
     let data = object_for(&response, ArtifactType::Npm)?;
@@ -695,8 +696,8 @@ mod tests {
     use super::super::http::{
         ArtifactHttp, ArtifactHttpFuture, ArtifactHttpRequest, ArtifactHttpResponse, RegistryClient,
     };
-    use crate::providers::RequestBudget;
     use base64::Engine as _;
+    use octocode_github::RequestBudget;
     use serde_json::{Value, json};
 
     /// Answers by URL path and Accept type; anything else is a 404.

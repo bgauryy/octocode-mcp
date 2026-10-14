@@ -1,15 +1,16 @@
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { say, wordCompletions, type Subcommands } from '../shared/commands.js';
 import { PERMISSION_ENV } from '../shared/env.js';
-import { sanitizeTerminalText } from '../shared/sanitize.js';
-import { modeSummary, type AuditEntry, type Permission } from './ask.js';
+import { redactSecrets, sanitizeTerminalText } from '../shared/sanitize.js';
+import { modeSummary, type Permission } from './ask.js';
+import type { AuditEntry } from './audit.js';
 import { registerPermissionEditor } from './editor.js';
 import { ACTION_CLASSES, ASK_REASONS, decide, PERMISSION_CYCLE, PERMISSION_ID, PERMISSION_MODES, PERMISSION_SHORTCUT_LABEL, reasonAsks, type PermissionMode } from './mode.js';
 
 /** Audit entries `/octocode permission log` shows, newest last. */
 const LOG_ENTRIES = 50;
 const USAGE = `Usage: /octocode permission [${PERMISSION_MODES.join('|')}|grants [clear]|log]`;
-const NOT_A_SANDBOX = 'Modes and provenance asks decide what Octocode asks about; they are not a sandbox (the OS user\'s rights stay as they are).';
+const NOT_A_SANDBOX = 'Modes and reasons decide what Octocode asks about and records; they are not a sandbox (the OS user\'s rights stay as they are).';
 
 function status(permission: Permission, provenanceSize: number): string {
   const grants = permission.grants();
@@ -26,21 +27,27 @@ function status(permission: Permission, provenanceSize: number): string {
   ].join('\n');
 }
 
-function logLines(ctx: ExtensionContext): string {
-  const entries = ctx.sessionManager
+/** One audit entry as a log line: redacted again at display time, so an entry written by an older build cannot leak a secret. */
+function logLine(entry: AuditEntry): string {
+  const time = new Date(entry.at).toTimeString().slice(0, 8);
+  const what = entry.what.join(' | ');
+  const line =
+    entry.action === 'mode' || entry.action === 'rollup'
+      ? `${time} ${entry.action} ${what}${entry.suppressed ? ` ${JSON.stringify(entry.suppressed)}` : ''}`
+      : `${time} ${entry.mode} ${entry.agent} ${entry.action} ${entry.allowed ? 'allowed' : 'denied'} (${entry.via}) ${what}${entry.reasons?.length ? ` [${entry.reasons.join(' ')}]` : ''}${entry.purpose ? ` — says: ${entry.purpose}` : ''}${entry.snapshot ? ` — snapshot: ${entry.snapshot}` : ''}${entry.note ? ` — note: ${entry.note}` : ''}`;
+  return sanitizeTerminalText(redactSecrets(line));
+}
+
+function logLines(ctx: ExtensionContext, permission: Permission): string {
+  permission.flushAudit();
+  const all = ctx.sessionManager
     .getEntries()
-    .flatMap((entry) => (entry.type === 'custom' && entry.customType === PERMISSION_ID ? [entry.data as AuditEntry] : []))
-    .slice(-LOG_ENTRIES);
-  if (entries.length === 0) return 'No permission decisions in this session yet.';
-  const time = (at: number) => new Date(at).toTimeString().slice(0, 8);
-  return entries
-    .map((entry) =>
-      entry.action === 'mode'
-        ? `${time(entry.at)} mode ${entry.what}`
-        : `${time(entry.at)} ${entry.mode} ${entry.action} ${entry.allowed ? 'allowed' : 'denied'} (${entry.via}) ${entry.what}${entry.reasons?.length ? ` [${entry.reasons.join(' ')}]` : ''}${entry.note ? ` — note: ${entry.note}` : ''}`,
-    )
-    .map((line) => sanitizeTerminalText(line))
-    .join('\n');
+    .flatMap((entry) => (entry.type === 'custom' && entry.customType === PERMISSION_ID && Array.isArray((entry.data as AuditEntry | undefined)?.what) ? [entry.data as AuditEntry] : []));
+  if (all.length === 0) return 'No permission decisions in this session yet.';
+  const entries = all.slice(-LOG_ENTRIES);
+  // The session file keeps every decision; say how many earlier ones the log leaves out.
+  const earlier = all.length - entries.length;
+  return [...(earlier > 0 ? [`(${earlier} earlier decision(s) not shown; the session file keeps them all)`] : []), ...entries.map(logLine)].join('\n');
 }
 
 /**
@@ -73,7 +80,7 @@ export function registerPermissionCommand(pi: ExtensionAPI, commands: Subcommand
         const grants = permission.grants();
         return say(ctx, grants.length > 0 ? `Session grants:\n${grants.map((grant) => `  ${grant}`).join('\n')}` : 'Session grants: none');
       }
-      if (word === 'log' && words.length === 1) return say(ctx, logLines(ctx));
+      if (word === 'log' && words.length === 1) return say(ctx, logLines(ctx, permission));
       return say(ctx, USAGE, 'warning');
     },
   });

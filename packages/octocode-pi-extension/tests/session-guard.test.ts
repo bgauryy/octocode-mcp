@@ -65,18 +65,46 @@ describe('leaving a session with running work', () => {
 
 describe('user ! commands', () => {
   const bash = (command: string) => ({ type: 'user_bash', command, excludeFromContext: false, cwd: '/' });
+  type Refusal = { result: { output: string; cancelled: boolean } };
+  const audit = (fake: ReturnType<typeof fakePi>) => fake.entries.map((entry) => entry.data as { action: string; allowed: boolean; via: string; mode: string });
 
-  it('runs the bash safety gate: refused headless or on No, run on Yes', async () => {
-    const { fake, ctx } = setup();
+  async function started(mode: 'manual' | 'workspace' | 'full', options: { hasUI?: boolean } = {}) {
+    process.env['OCTOCODE_PERMISSION'] = mode;
+    process.env['OCTOCODE_MCP'] = '0';
+    const session = setup(options);
+    Object.assign(session.ctx, { mode: 'rpc' });
+    await session.fake.fire('session_start', { type: 'session_start', reason: 'startup' }, session.ctx);
+    return session;
+  }
+
+  it('is consent in full: every command runs, a destructive one included, and the audit says so', async () => {
+    const { fake, ctx } = await started('full');
     expect(await fake.fire('user_bash', bash('echo fine'), ctx)).toBeUndefined();
+    expect(await fake.fire('user_bash', bash('rm -rf /'), ctx)).toBeUndefined();
+    expect(ctx.ui.selects).toEqual([]);
+    expect(audit(fake)).toEqual([
+      expect.objectContaining({ action: 'shell', allowed: true, via: 'typed' }),
+      expect.objectContaining({ action: 'shell.destructive', allowed: true, via: 'mode', mode: 'full' }),
+    ]);
+    await fake.emit('session_shutdown', { type: 'session_shutdown' }, ctx);
+  });
 
-    const refused = (await fake.fire('user_bash', bash('rm -rf /'), ctx)) as { result: { output: string; cancelled: boolean } };
+  it.each(['manual', 'workspace'] as const)('keeps the confirm for a destructive command in %s: refused on Deny, run on Allow', async (mode) => {
+    const { fake, ctx } = await started(mode);
+    expect(await fake.fire('user_bash', bash('echo fine'), ctx)).toBeUndefined();
+    ctx.ui.selects.push('Deny');
+    const refused = (await fake.fire('user_bash', bash('rm -rf /'), ctx)) as Refusal;
     expect(refused.result.cancelled).toBe(true);
     expect(refused.result.output).toMatch(/^Refused: /);
-    ctx.ui.confirms.push(true);
+    ctx.ui.selects.push('Allow once');
     expect(await fake.fire('user_bash', bash('rm -rf /'), ctx)).toBeUndefined();
+    await fake.emit('session_shutdown', { type: 'session_shutdown' }, ctx);
+  });
 
-    const headless = setup({ hasUI: false });
-    expect(((await headless.fake.fire('user_bash', bash('rm -rf /'), headless.ctx)) as { result: { output: string } }).result.output).toMatch(/^Refused: /);
+  it('follows the matrix with no UI: a destructive command is refused unless the mode is full', async () => {
+    const workspace = await started('workspace', { hasUI: false });
+    expect(await workspace.fake.fire('user_bash', bash('echo fine'), workspace.ctx)).toBeUndefined();
+    expect(((await workspace.fake.fire('user_bash', bash('rm -rf /'), workspace.ctx)) as Refusal).result.output).toMatch(/^Refused: /);
+    await workspace.fake.emit('session_shutdown', { type: 'session_shutdown' }, workspace.ctx);
   });
 });

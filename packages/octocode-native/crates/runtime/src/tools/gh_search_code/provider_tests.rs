@@ -1,34 +1,14 @@
 //! Provider-backed ghSearchCode tests: line resolution latency.
 use super::{GhSearchCodeQuery, execute};
-use crate::providers::github::RetryPolicy;
 use crate::security::scan::Passthrough;
-use crate::tools::gh_shared::test_support::mock_provider;
+use crate::tools::gh_shared::test_support::{Delayed, default_context, one_shot_provider};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::json;
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use wiremock::matchers::{method, path};
-use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const SHA: &str = "0123456789abcdef0123456789abcdef01234567";
-
-/// Answers after `delay`, recording when each request arrived.
-#[derive(Clone)]
-struct Slow {
-    arrivals: Arc<Mutex<Vec<Instant>>>,
-    delay: Duration,
-    body: ResponseTemplate,
-}
-
-impl Respond for Slow {
-    fn respond(&self, _: &Request) -> ResponseTemplate {
-        self.arrivals
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .push(Instant::now());
-        self.body.clone().set_delay(self.delay)
-    }
-}
 
 /// The head commit hit lines are pinned to resolves while the index search
 /// runs: one round trip, not two in series, before the file reads.
@@ -36,22 +16,17 @@ impl Respond for Slow {
 async fn the_head_commit_resolves_while_the_search_runs() {
     let server = MockServer::builder().start().await;
     let delay = Duration::from_millis(300);
-    let search = Slow {
-        arrivals: Arc::default(),
+    let search = Delayed::new(
         delay,
-        body: ResponseTemplate::new(200).set_body_json(json!({
+        ResponseTemplate::new(200).set_body_json(json!({
             "total_count":1,"incomplete_results":false,"items":[
                 {"name":"app.rs","path":"app.rs","sha":"1","html_url":"https://x",
                  "repository":{"full_name":"a/b","html_url":"https://x","url":"https://x"},
                  "text_matches":[{"fragment":"fn wrap_app() {}","matches":[{"text":"wrap_app","indices":[3,11]}]}]}
             ]
         })),
-    };
-    let commit = Slow {
-        arrivals: Arc::default(),
-        delay,
-        body: ResponseTemplate::new(200).set_body_string(SHA),
-    };
+    );
+    let commit = Delayed::new(delay, ResponseTemplate::new(200).set_body_string(SHA));
     Mock::given(method("GET"))
         .and(path("/api/v3/search/code"))
         .respond_with(search.clone())
@@ -69,18 +44,11 @@ async fn the_head_commit_resolves_while_the_search_runs() {
         })))
         .mount(&server)
         .await;
-    let provider = mock_provider(
-        &server,
-        RetryPolicy {
-            max_attempts: 1,
-            ..Default::default()
-        },
-    );
+    let provider = one_shot_provider(&server);
     let query: GhSearchCodeQuery =
         serde_json::from_value(json!({"owner":"a","repo":"b","keywords":["wrap_app"]}))
             .expect("query");
-    let context =
-        crate::tools::gh_shared::test_support::fixture_context(Duration::from_secs(5), 1 << 20);
+    let context = default_context();
     let out = execute(&provider, &query, &context, &Passthrough)
         .await
         .expect("search");
@@ -89,14 +57,7 @@ async fn the_head_commit_resolves_while_the_search_runs() {
         out.data["files"][0]["lines"],
         json!(["1\tfn wrap_app() {}"])
     );
-    let first = |slow: &Slow| {
-        *slow
-            .arrivals
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .first()
-            .expect("requested")
-    };
+    let first = |slow: &Delayed| *slow.arrivals.times().first().expect("requested");
     let (searched, resolved) = (first(&search), first(&commit));
     let gap = if resolved > searched {
         resolved - searched
@@ -124,15 +85,8 @@ async fn searches_without_line_reads_resolve_no_commit() {
         })))
         .mount(&server)
         .await;
-    let provider = mock_provider(
-        &server,
-        RetryPolicy {
-            max_attempts: 1,
-            ..Default::default()
-        },
-    );
-    let context =
-        crate::tools::gh_shared::test_support::fixture_context(Duration::from_secs(5), 1 << 20);
+    let provider = one_shot_provider(&server);
+    let context = default_context();
     for row in [
         json!({"owner":"a","repo":"b","keywords":["app"],"matchIn":"path"}),
         json!({"owner":"a","repo":"b","keywords":["app"],"fields":["path"]}),
@@ -170,17 +124,10 @@ async fn mount_owner_wide_search(server: &MockServer) {
 }
 
 async fn run_owner_wide(server: &MockServer) -> crate::tools::result::ToolData {
-    let provider = mock_provider(
-        server,
-        RetryPolicy {
-            max_attempts: 1,
-            ..Default::default()
-        },
-    );
+    let provider = one_shot_provider(server);
     let query: GhSearchCodeQuery =
         serde_json::from_value(json!({"owner":"o","keywords":["HTTPAdapter"]})).expect("query");
-    let context =
-        crate::tools::gh_shared::test_support::fixture_context(Duration::from_secs(5), 1 << 20);
+    let context = default_context();
     execute(&provider, &query, &context, &Passthrough)
         .await
         .expect("search")
@@ -279,18 +226,11 @@ async fn a_repo_scoped_row_is_path_and_numbered_lines_at_one_commit() {
         })))
         .mount(&server)
         .await;
-    let provider = mock_provider(
-        &server,
-        RetryPolicy {
-            max_attempts: 1,
-            ..Default::default()
-        },
-    );
+    let provider = one_shot_provider(&server);
     let query: GhSearchCodeQuery =
         serde_json::from_value(json!({"owner":"a","repo":"b","keywords":["wrap_app"]}))
             .expect("query");
-    let context =
-        crate::tools::gh_shared::test_support::fixture_context(Duration::from_secs(5), 1 << 20);
+    let context = default_context();
     let out = execute(&provider, &query, &context, &Passthrough)
         .await
         .expect("search");
@@ -350,16 +290,9 @@ async fn run_empty(row: serde_json::Value) -> crate::tools::result::ToolData {
         )
         .mount(&server)
         .await;
-    let provider = mock_provider(
-        &server,
-        RetryPolicy {
-            max_attempts: 1,
-            ..Default::default()
-        },
-    );
+    let provider = one_shot_provider(&server);
     let query: GhSearchCodeQuery = serde_json::from_value(row).expect("query");
-    let context =
-        crate::tools::gh_shared::test_support::fixture_context(Duration::from_secs(5), 1 << 20);
+    let context = default_context();
     execute(&provider, &query, &context, &Passthrough)
         .await
         .expect("empty search")
@@ -495,19 +428,12 @@ async fn a_page_past_the_end_is_out_of_range_not_an_empty_search() {
         )
         .mount(&server)
         .await;
-    let provider = mock_provider(
-        &server,
-        RetryPolicy {
-            max_attempts: 1,
-            ..Default::default()
-        },
-    );
+    let provider = one_shot_provider(&server);
     let query: GhSearchCodeQuery = serde_json::from_value(json!({
         "owner":"a","repo":"b","keywords":["needle"],"pageSize":5,"page":99
     }))
     .expect("query");
-    let context =
-        crate::tools::gh_shared::test_support::fixture_context(Duration::from_secs(5), 1 << 20);
+    let context = default_context();
     let output = execute(&provider, &query, &context, &Passthrough)
         .await
         .expect("page past the end");
@@ -555,21 +481,14 @@ async fn a_complete_page_with_unlisted_hit_lines_names_why_it_is_partial() {
             .mount(&server)
             .await;
     }
-    let provider = mock_provider(
-        &server,
-        RetryPolicy {
-            max_attempts: 1,
-            ..Default::default()
-        },
-    );
+    let provider = one_shot_provider(&server);
     let search = |keywords: serde_json::Value| {
         serde_json::from_value::<GhSearchCodeQuery>(
             json!({"owner":"a","repo":"b","keywords":keywords}),
         )
         .expect("query")
     };
-    let context =
-        crate::tools::gh_shared::test_support::fixture_context(Duration::from_secs(5), 1 << 20);
+    let context = default_context();
     let out = execute(
         &provider,
         &search(json!(["wrap_app"])),
@@ -623,19 +542,12 @@ async fn a_page_counts_files_and_a_file_with_more_hits_says_how_many_and_leads_t
             .mount(&server)
             .await;
     }
-    let provider = mock_provider(
-        &server,
-        RetryPolicy {
-            max_attempts: 1,
-            ..Default::default()
-        },
-    );
+    let provider = one_shot_provider(&server);
     let query: GhSearchCodeQuery = serde_json::from_value(
         json!({"owner":"a","repo":"b","keywords":["wrap_app"],"pageSize":2}),
     )
     .expect("query");
-    let context =
-        crate::tools::gh_shared::test_support::fixture_context(Duration::from_secs(5), 1 << 20);
+    let context = default_context();
     let out = execute(&provider, &query, &context, &Passthrough)
         .await
         .expect("search");
@@ -660,4 +572,97 @@ async fn a_page_counts_files_and_a_file_with_more_hits_says_how_many_and_leads_t
     // returns exactly the hits the listing did not (lines 6-8).
     assert_eq!(reads[0]["ranges"], json!(["6-8"]), "{}", out.data);
     assert_eq!(reads[0]["matchString"], "wrap_app", "{}", out.data);
+}
+
+/// A path-mode search whose keywords read as code leads to the same search
+/// over file contents; that targeted lead is not pushed out of the two lead
+/// slots by the generic clone and root listing of an empty repo search.
+#[tokio::test]
+async fn a_path_mode_search_of_code_leads_to_the_content_search_alone() {
+    let out =
+        run_empty(json!({"owner":"a","repo":"b","keywords":["res.send("],"matchIn":"path"})).await;
+    let next = &out.data["next"];
+    assert_eq!(next["findCode"]["tool"], "ghSearchCode", "{}", out.data);
+    assert_eq!(
+        next["findCode"]["query"]["queries"][0]["matchIn"], "file",
+        "{}",
+        out.data
+    );
+    assert!(next.get("cloneRepo").is_none(), "{}", out.data);
+    assert!(next.get("viewTree").is_none(), "{}", out.data);
+}
+
+/// A search of `pages` total results at 20 a page: GitHub answers every
+/// page with the same `total_count`.
+async fn mount_counted_search(server: &MockServer, total: usize) {
+    let item = |name: &str| {
+        json!({"name":name,"path":format!("src/{name}"),"sha":"1","html_url":"https://x",
+            "repository":{"full_name":"a/b","html_url":"https://x","url":"https://x"}})
+    };
+    Mock::given(method("GET"))
+        .and(path("/api/v3/search/code"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "total_count":total,"incomplete_results":false,"items":[item("busy.rs"), item("calm.rs")]
+        })))
+        .mount(server)
+        .await;
+}
+
+/// A page past GitHub's 1,000-result window repairs to the search's last
+/// real page, not to the window's last page (an empty page past the end).
+#[tokio::test]
+async fn a_page_past_the_window_repairs_to_the_last_real_page() {
+    let server = MockServer::builder().start().await;
+    mount_counted_search(&server, 150).await;
+    let provider = one_shot_provider(&server);
+    let query: GhSearchCodeQuery = serde_json::from_value(json!({
+        "owner":"a","repo":"b","keywords":["needle"],"pageSize":20,"page":60,"fields":["path"]
+    }))
+    .expect("query");
+    let context = default_context();
+    let Err(failure) = super::run(&provider, &query, Ok(&context), &Passthrough).await else {
+        panic!("a page past the window is a failure");
+    };
+    let next = failure.next.expect("repair");
+    assert_eq!(next["repair"]["query"]["queries"][0]["page"], 8, "{next}");
+}
+
+/// `fields:["path","matchCount"]` states each file's hit count without
+/// listing its lines, and no warning says the count is missing.
+#[tokio::test]
+async fn a_match_count_pick_counts_every_file_without_lines() {
+    let server = MockServer::builder().start().await;
+    mount_counted_search(&server, 2).await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/repos/a/b/commits/HEAD"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(SHA))
+        .mount(&server)
+        .await;
+    for (name, body) in [
+        ("busy.rs", "wrap_app();\n".repeat(8)),
+        ("calm.rs", "fn wrap_app() {}\n".to_owned()),
+    ] {
+        Mock::given(method("GET"))
+            .and(path(format!("/api/v3/repos/a/b/contents/src%2F{name}")))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "type":"file","encoding":"base64","content":STANDARD.encode(body)
+            })))
+            .mount(&server)
+            .await;
+    }
+    let provider = one_shot_provider(&server);
+    let query: GhSearchCodeQuery = serde_json::from_value(json!({
+        "owner":"a","repo":"b","keywords":["wrap_app"],"fields":["path","matchCount"]
+    }))
+    .expect("query");
+    let context = default_context();
+    let out = execute(&provider, &query, &context, &Passthrough)
+        .await
+        .expect("search");
+    let files = &out.data["files"];
+    assert_eq!(files[0]["path"], "src/busy.rs", "{}", out.data);
+    assert_eq!(files[0]["matchCount"], 8, "{}", out.data);
+    assert_eq!(files[1]["matchCount"], 1, "{}", out.data);
+    assert!(files[0].get("lines").is_none(), "{}", out.data);
+    assert!(out.data.get("warnings").is_none(), "{}", out.data);
 }

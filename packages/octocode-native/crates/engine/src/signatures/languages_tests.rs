@@ -609,3 +609,36 @@ fn functions_in_type_bodies_are_methods_in_every_grammar() {
         "{go:?}"
     );
 }
+
+#[test]
+fn selection_names_one_grammar_and_families_span_aliases_and_cpp_headers() {
+    use super::{family_extensions, js_source_swaps, label, parser_for_path, select, select_one};
+    let names = |selector: &str| select(selector).map(|entry| entry.name).collect::<Vec<_>>();
+    assert_eq!(names("typescript"), ["TypeScript", "TSX"]);
+    assert_eq!(
+        select_one("typescript").map(|entry| entry.name),
+        Some("TypeScript")
+    );
+    assert_eq!(select_one("TSX").map(|entry| entry.name), Some("TSX"));
+    assert_eq!(select_one("h").map(|entry| entry.name), Some("C"));
+    assert!(select_one("no-such-grammar").is_none());
+    let family =
+        |selector: &str| family_extensions(selector).map(|set| set.into_iter().collect::<Vec<_>>());
+    assert_eq!(
+        family("typescript").as_deref(),
+        Some(&["cts", "mts", "ts", "tsx"].map(str::to_owned)[..])
+    );
+    assert_eq!(family(".tsx").as_deref(), Some(&["tsx".to_owned()][..]));
+    assert_eq!(family(".nope"), None);
+    #[cfg(feature = "tree-sitter-cpp")]
+    {
+        assert!(family("cpp").is_some_and(|set| set.contains(&"h".to_owned())));
+        assert_eq!(parser_for_path("c++", "a/widget.h"), "cpp");
+    }
+    assert_eq!(parser_for_path("typescript", "a/widget.tsx"), "tsx");
+    assert_eq!(parser_for_path("typescript", "a/README"), "typescript");
+    assert_eq!(parser_for_path("rust", "a/x.ts"), "rust");
+    assert_eq!(select_one("rust").map(label).as_deref(), Some("rust"));
+    assert_eq!(js_source_swaps("jsx"), ["tsx", "d.ts"]);
+    assert!(js_source_swaps("ts").is_empty());
+}

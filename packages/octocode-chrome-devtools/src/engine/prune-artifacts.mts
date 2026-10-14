@@ -42,7 +42,7 @@ const BASE_OVERRIDE = getArg('--base', null);
 const WORKSPACE_OUTPUT_BASE = resolve(process.cwd(), '.octocode');
 const BASE = BASE_OVERRIDE
   ? resolve(BASE_OVERRIDE)
-  : join(WORKSPACE_OUTPUT_BASE, 'tmp', 'chrome-devtools');
+  : join(WORKSPACE_OUTPUT_BASE, 'octocode-chrome-devtools', 'tmp');
 const baseRelative = relative(WORKSPACE_OUTPUT_BASE, BASE);
 if (baseRelative.startsWith('..') || isAbsolute(baseRelative)) {
   console.error(`[PRUNE] --base must stay under ${WORKSPACE_OUTPUT_BASE}`);

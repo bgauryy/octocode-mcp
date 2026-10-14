@@ -1,29 +1,56 @@
 # Output
 
-Deliver task content only. Never append probe output or generated process metadata.
-
-Use a concise Markdown comparison or brief. A saved brief always has the header, `## Directions`, `## Recommendation`, `## Dissent`, and `## Limits`; adapt the rest to the decision.
+Deliver task content only; no probe output or process metadata.
 
 ## Response
 
-State the issue and constraints, then compare the researched directions. A useful table is:
+BLUF: recommendation and confidence in one line; then the issue, constraints, and directions (table); end with the strongest objection and the next check.
 
 | Direction | Conclusion and why | Sources and relevant dates | Quality, objections, and uncertainty |
 |---|---|---|---|
 
-Keep each table cell to one or two short sentences so a person can scan the comparison; put longer reasoning, numbers, and caveats in a short `### <direction>` paragraph under the table. Explain why each direction was retained, revised, or rejected and how it affects the final recommendation. Cite deciding claims and mark inference as inference; give confidence as `high`, `medium`, or `low` with the reason, not an invented percentage. State an as-of date for changing evidence: a source's own date, or today's date from `date +%F` for something you checked, never a remembered date. Use one fenced block per artifact, such as a folder layout and a file example in separate fences. Before saving, reread the brief once as its harshest reader: every number has a source or says it is an estimate, no date is later than the as-of date, no recommendation step contradicts another step or a stated fact, and the benefits list claims nothing the directions did not show.
+Cells: one or two short sentences. Longer reasoning goes in a `### <direction>` paragraph below: why it was retained, revised, or rejected.
 
-State material research limits, including reduced independence if workers were unavailable, without a worker roster or tool inventory. Finish with the strongest objection, overall confidence, recommendation, and next useful check. Give concise evidence-based rationale.
+- Every factual sentence says no more than its verified quote; mark inference; cut the rest.
+- Dates and venues only from verified pages or arXiv ids. As-of date for changing evidence: the source's date or `date +%F`, never a remembered date.
+- Confidence `high`, `medium`, or `low` with its [rubric](references/critical-thinking.md#calibrated-confidence) reason and the check that would move it; never a percentage.
+- One fenced block per artifact.
+- State material limits (verified and dropped counts, reduced independence), no worker roster or tool inventory.
+- Each framed hypothesis: survived, refuted (by which source), or untested.
+- Before saving, check: every number sourced or marked estimate, no date past the as-of date, no contradictions, no benefit the directions did not show.
 
-## Saved result
+End every response, even a short chat answer, with a `Sources` list, one line per verified source: a Markdown link labeled with publisher or arXiv id and short title, targeting the exact verified URL (never a bare URL in prose), then what it supports, source type, and date. Mark secondary pages; give the dropped and unverified count in one line; list every cited source, and say how many more a saved brief holds. With no verified source, say so.
 
-Save one brief with material sources and dissent under the rule in Saved report, at `<workspace>/.octocode/octocode-brainstorming/<YYYY-MM-DD>-<slug>.md`. `<workspace>` is the root of the project being worked on (its repository root, else the current directory), never a folder inside an existing `.octocode/`. A path the user names takes precedence; a harness or subagent scratch folder such as `.octocode/tmp/` does not, so save the report here and only link it from scratch notes.
+## Low effort
+
+A few sentences or bullets: answer, verified evidence, strongest caveat, confidence with reason, what a deeper run would add. No table. Sources list. Several questions in one reply: effort, verified and dropped counts once for the reply; a caveat or next check only where one exists.
+
+## Checkpoints
+
+Each phase, overwrite `<run>/state.md` with every field current:
+
+```markdown
+# <question>
+effort: low | medium | high
+phase: 1 frame | 2 gather | 3 critique | 4 decide (last finished)
+next: <the next phase and what it will add>
+expected answer: <answer and confidence written before research>
+hypotheses: <H1 ... with status survived | refuted | untested | open>
+ledgers: <path — verified/dropped counts, per direction>
+interim answer: <one to three sentences from verified claims only>
+```
+
+Show `Interim (phase <n> of 4)`: interim answer with confidence, what is open, what the next phase adds, Sources. When stopped, end with "Say continue to run <next phase>."
+
+## Think together
+
+Respond with the framing before or instead of a full brief: the user's view in one line; sub-questions marked known, assumed, or researched; options labeled by origin (user or agent); hypothesis statuses; the answer with evidence; the 1–3 questions that would most change the decision; what changed from the expected answer; Sources.
 
 ## Saved report
 
-Save and render the result when it has a table, a diagram, or more than about 40 lines or five findings, or when the user asks; keep a short answer in chat. When the user or the project's instructions (for example `AGENTS.md`) ask to keep every result, save every result. The save path is under Saved result.
+Save and render a comparison of two or more directions, or any result the user or project instructions (such as `AGENTS.md`) ask to save; a short single-direction answer stays in chat. Path: `<workspace>/.octocode/octocode-brainstorming/<YYYY-MM-DD>-<slug>.md`, where `<workspace>` is the repository root, else the current directory, never inside an existing `.octocode/`. A user-named path wins; a harness or subagent scratch folder (`.octocode/tmp/`) does not, so save here and link from scratch notes.
 
-Start the file with this header, which people see as chips and agents read from the catalog. `status` (exactly one of the listed words) and `question` are required; add `confidence` when it applies and `next` only when something is pending (never `none`). Keep each value on one line:
+Start the file with this header, one value per line: `status` (one listed word) and `question` are required; add `confidence` when it applies and `next` only when something is pending (never `none`).
 
 ```yaml
 ---
@@ -34,15 +61,22 @@ next: <the one next action for whoever continues, in the imperative>
 ---
 ```
 
-Follow the header with the `#` title and a lead paragraph that states the answer, before any table or list; the catalog shows that paragraph to agents. Always include `## Directions` (the comparison table under Response), `## Recommendation`, `## Dissent` (the strongest objection), and `## Limits` (evidence limits and as-of dates). `references/brief-template.md` is the extended form.
+Follow the header with the `#` title and a lead paragraph that states the answer and why. Always include `## Directions` (the comparison table under Response, with incomplete or blocked directions), `## Recommendation` (the best-supported choice and why it beat the others), `## Dissent` (the strongest objection and what would make it win), `## Limits` (evidence limits and as-of dates), and `## Sources` (the list under Response, then a link to the run's ledgers).
 
-Name the file with today's date from `date +%F`, never a remembered or example date, and use the same source for any checked-on date inside the report; a single report is one `.md` file, not a folder. Render it and fix any `warning:` lines it prints (they check this contract), then reply with a short summary, the `.html` path for the person, and the `.md` path for agents and later sessions:
+Add these sections only when they have content, in this order around the required ones:
+
+- `## Context`, before Directions: issue, constraints, known facts, and evidence that could change the choice.
+- `## Hypotheses`, before Directions: a table with columns Hypothesis, Refuted if, Result (Survived, Refuted, or Untested), and Deciding sources.
+- `## Comparison`, after Directions: which directions survived, changed, or were rejected, and why; evidence vs inference; reconciled contradictions; material dissent.
+- `## Next action`, after Limits: the smallest useful test, step, narrower question, or reopening signal. For an RFC handoff, list the decision, constraints, alternatives, evidence, acceptance criteria, and open questions.
+
+Date the file name with `date +%F`; one report is one `.md` file. Render it, fix every `warning:` line, and reply with a short summary and the `.html` and `.md` paths:
 
 ```bash
 node <skill-folder>/scripts/render-report.mjs <saved.md>
 ```
 
-`<skill-folder>` is this skill's installed folder, the one that holds this file; report paths resolve from the current directory, normally `<workspace>`. It writes `<saved>.html` beside the Markdown and opens it. Pass `--no-open` in headless or CI runs. Markdown stays the source; re-render after edits.
+`<skill-folder>` holds this file. The page lands beside the Markdown, unopened; pass `--open` only when asked. Markdown is the source; re-render after edits.
 
 Before starting work that may repeat an earlier report, list the saved ones:
 
@@ -50,6 +84,10 @@ Before starting work that may repeat an earlier report, list the saved ones:
 node <skill-folder>/scripts/render-report.mjs <workspace>/.octocode --manifest
 ```
 
-It prints JSON with every report's path, skill, kind, title, date, header fields, a shared `statusTone` (`done`, `attention`, `failed`, `open`, or `inactive`) that reads the skill's status words the same way across skills, other one-line header keys (`meta`), lead, headings, links, code references, and rendered page (`html`, which may be a folder's `index.html`), newest first; pass `<workspace>/.octocode/octocode-brainstorming` to see only this skill's reports. Read a matching report's Markdown, not its HTML.
+Pass `<workspace>/.octocode/octocode-brainstorming` to list only this skill's reports; read a match's Markdown, not its HTML.
 
-Markdown that renders well: `##` sections; tables for comparisons, with a plain word such as `High`, `Confirmed`, or `P1` alone in a cell (it becomes a colored chip, colored by its column: high fit is good, high risk is not); `> [!WARNING]`-style alerts for risks; task lists for next steps; `mermaid` fences for flows and charts; code references as `` `path/to/file.ts:42` `` (linked to the person's editor when the file exists); and full source URLs (collected under Sources).
+Evidence and visuals: back every claim with its evidence (a `path:line` reference, a command and its result, or a source link), and show shaped data (shares, scores, trends, trade-offs, flows) as a chart or diagram, not prose.
+
+Charts that fit: `quadrantChart` of directions by evidence and impact; `radar-beta` of options by criteria; `pie` of verified vs dropped claims.
+
+Markdown that renders well: `##` sections; tables with a plain word such as `High`, `Confirmed`, or `P1` alone in a cell (shown as a colored chip); `> [!WARNING]` alerts for risks; task lists for next steps; `mermaid` flows (`flowchart`, `sequenceDiagram`, `timeline`, `gantt`) and charts (`pie`, `xychart-beta`, `quadrantChart`, `radar-beta`); code references as `` `path/to/file.ts:42` ``; source links with a short label.

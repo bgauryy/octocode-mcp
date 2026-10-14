@@ -59,15 +59,14 @@ fn incomplete_and_cap_are_losslessly_typed() {
 }
 
 mod provider_backed {
-    use crate::providers::github::{GitHubProvider, NoCache, RetryPolicy};
-    use crate::providers::github::{ProviderError, ProviderErrorKind};
     use crate::security::scan::Passthrough;
-    use crate::tools::gh_shared::test_support::{fixture_context, mock_provider, mount_json};
+    use crate::tools::gh_shared::test_support::{default_context, mount_json, one_shot_provider};
     use crate::tools::result::ToolData;
     use crate::tools::{gh_search_code, gh_search_repo, gh_structure};
     use base64::{Engine as _, engine::general_purpose::STANDARD};
+    use octocode_github::{GitHubProvider, NoCache};
+    use octocode_github::{ProviderError, ProviderErrorKind};
     use serde_json::{Value, json};
-    use std::time::Duration;
     use wiremock::{
         Mock, MockServer, ResponseTemplate,
         matchers::{method, path, query_param, query_param_contains},
@@ -75,13 +74,7 @@ mod provider_backed {
 
     /// One attempt per request: a mock answer is final.
     fn provider(server: &MockServer) -> GitHubProvider<NoCache> {
-        mock_provider(
-            server,
-            RetryPolicy {
-                max_attempts: 1,
-                ..Default::default()
-            },
-        )
+        one_shot_provider(server)
     }
 
     /// Fixtures name their tool with a test-only `operation` key:
@@ -91,13 +84,10 @@ mod provider_backed {
             .as_object_mut()
             .and_then(|object| object.remove("operation"))
             .expect("fixture operation");
-        let home = std::env::temp_dir().join(format!(
-            "gh-search-test-{}-{}",
-            std::process::id(),
-            server.address().port()
-        ));
+        let home_dir = crate::tools::test_support::Fixture::new();
+        let home = home_dir.0.clone();
         let provider = provider(server);
-        let context = fixture_context(Duration::from_secs(5), 1 << 20);
+        let context = default_context();
         match operation.as_str() {
             Some("code") => {
                 let query = serde_json::from_value(query).expect("code query");
@@ -283,7 +273,7 @@ mod provider_backed {
         assert_eq!(error.kind, ProviderErrorKind::NotFound);
         assert_eq!(
             error.reason,
-            Some(crate::providers::github::ProviderErrorReason::RepositoryNotFound)
+            Some(octocode_github::ProviderErrorReason::RepositoryNotFound)
         );
         let failure = super::search_failure(error, None);
         assert!(failure.message.contains("private"), "{}", failure.message);
@@ -1630,7 +1620,7 @@ mod provider_backed {
         assert_eq!(error.kind, ProviderErrorKind::NotFound);
         assert_eq!(
             error.reason,
-            Some(crate::providers::github::ProviderErrorReason::RefNotFound)
+            Some(octocode_github::ProviderErrorReason::RefNotFound)
         );
         assert!(error.message.contains("\"gone\""), "{}", error.message);
     }
@@ -1962,8 +1952,9 @@ mod provider_backed {
             transport: provider(&server).transport,
             cache: MemoryCache::default(),
         };
-        let context = fixture_context(Duration::from_secs(5), 1 << 20);
-        let home = std::env::temp_dir().join("gh-default-branch-memo");
+        let context = default_context();
+        let home_dir = crate::tools::test_support::Fixture::new();
+        let home = home_dir.0.clone();
         for _ in 0..2 {
             let query =
                 serde_json::from_value(json!({"owner":"a","repo":"b"})).expect("tree query");
@@ -1976,18 +1967,16 @@ mod provider_backed {
 
     #[derive(Default)]
     struct MemoryCache(
-        std::sync::Mutex<
-            std::collections::HashMap<String, crate::providers::github::CachedContent>,
-        >,
+        std::sync::Mutex<std::collections::HashMap<String, octocode_github::CachedContent>>,
     );
-    impl crate::providers::github::ConditionalCache for MemoryCache {
+    impl octocode_github::ConditionalCache for MemoryCache {
         fn get<'a>(
             &'a self,
-            _: &'a crate::providers::github::CachePartition,
+            _: &'a octocode_github::Partition,
             key: &'a str,
         ) -> std::pin::Pin<
             Box<
-                dyn std::future::Future<Output = Option<crate::providers::github::CachedContent>>
+                dyn std::future::Future<Output = Option<octocode_github::CachedContent>>
                     + Send
                     + 'a,
             >,
@@ -1997,9 +1986,10 @@ mod provider_backed {
         }
         fn put<'a>(
             &'a self,
-            _: &'a crate::providers::github::CachePartition,
+            _: &'a octocode_github::Partition,
             key: String,
-            value: crate::providers::github::CachedContent,
+            value: octocode_github::CachedContent,
+            _: octocode_github::Retention,
         ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + 'a>> {
             if let Ok(mut map) = self.0.lock() {
                 map.insert(key, value);

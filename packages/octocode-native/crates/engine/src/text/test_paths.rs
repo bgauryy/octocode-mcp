@@ -21,8 +21,9 @@ const TEST_DIRECTORIES: &[&str] = &[
 ];
 
 /// File-name fragments of JavaScript/TypeScript test files (`a.test.ts`,
-/// `a.spec.js`, `a.e2e.ts`), compared lowercase.
-const TEST_NAME_MARKERS: &[&str] = &[".test.", ".spec.", ".e2e."];
+/// `a.spec.js`, `a.e2e.ts`, tsd type tests `index.test-d.ts`), compared
+/// lowercase.
+const TEST_NAME_MARKERS: &[&str] = &[".test.", ".spec.", ".e2e.", ".test-d."];
 
 /// Stem suffixes of snake-case test files in any language: Go `x_test.go`,
 /// Rust `x_test.rs`, Python `x_test.py`, Ruby `x_spec.rb`, Elixir
@@ -32,8 +33,21 @@ const TEST_STEM_SUFFIXES: &[&str] = &["_test", "_tests", "_spec", "_unittest"];
 /// Stem prefixes of test files (pytest and minitest `test_x.py`, `test_x.rb`).
 const TEST_STEM_PREFIXES: &[&str] = &["test_"];
 
-/// Whole file names that hold tests (pytest `conftest.py`, Rust `tests.rs`).
-const TEST_FILE_NAMES: &[&str] = &["conftest.py", "tests.rs", "test.rs"];
+/// Whole file names that hold tests (pytest `conftest.py`, Rust `tests.rs`,
+/// a single-file JavaScript/TypeScript package's `test.js`).
+const TEST_FILE_NAMES: &[&str] = &[
+    "conftest.py",
+    "tests.rs",
+    "test.rs",
+    "test.js",
+    "test.mjs",
+    "test.cjs",
+    "test.jsx",
+    "test.ts",
+    "test.mts",
+    "test.cts",
+    "test.tsx",
+];
 
 /// Case-sensitive class-name suffixes per extension: JUnit `FooTest.java`,
 /// xUnit `FooTests.cs`, XCTest `FooTests.swift`, PHPUnit `FooTest.php`,
@@ -126,6 +140,11 @@ mod tests {
             "lib/parser_test.exs",
             "lib/widget_test.dart",
             "base/strings_unittest.cc",
+            "test.js",
+            "test.ts",
+            "test.mjs",
+            "index.test-d.ts",
+            "types/api.test-d.tsx",
         ] {
             assert!(is_test_path(path), "{path}");
         }
@@ -143,6 +162,8 @@ mod tests {
             "src/protest_spec_helper/README.md",
             "_test.go",
             "test_.py",
+            "src/testing.js",
+            "src/latest.ts",
         ] {
             assert!(!is_test_path(path), "{path}");
         }

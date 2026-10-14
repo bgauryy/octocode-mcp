@@ -1,5 +1,5 @@
-use super::super::{ProviderError, ProviderErrorKind};
 use super::normalize_host;
+use octocode_github::{ProviderError, ProviderErrorKind};
 use serde::{Deserialize, Serialize};
 
 pub fn delete_platform_credential(host: &str) -> Result<(), ProviderError> {

@@ -3,7 +3,6 @@
 //! executable continuations.
 
 use serde_json::{Map, Value, json};
-use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 
 use super::row_pages::paginate_rows;
@@ -56,7 +55,7 @@ impl ResponsePageOptions {
         }
         let oversized = match rendered_text {
             Some(text) => text.encode_utf16().count() > budget,
-            None => structured.to_string().encode_utf16().count() > budget,
+            None => crate::tools::stream_page::json_chars(structured) > budget,
         };
         if oversized {
             self.response_scope = Some("rows".into());
@@ -120,8 +119,9 @@ pub struct ResponsePagination {
     /// could not be divided further (one string or scalar, or a row skeleton).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub oversized: Option<bool>,
+    /// The next page's call, built by [`crate::tools::result::Continuation`].
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub next: Option<ResponseContinuation>,
+    pub next: Option<Value>,
 }
 
 impl ResponsePagination {
@@ -134,12 +134,6 @@ impl ResponsePagination {
             || self.changed == Some(true)
             || self.next.is_some()
     }
-}
-
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
-pub struct ResponseContinuation {
-    pub tool: String,
-    pub query: Value,
 }
 
 /// `tool`'s contract `responseLength` maximum: a continuation the pager
@@ -239,7 +233,7 @@ impl ResponsePager {
         if pagination.is_actionable() {
             envelope.insert("responsePagination".into(), pagination_value(&pagination)?);
         }
-        let text = Value::Object(envelope.clone()).to_string();
+        let text = serde_json::to_string(&envelope).map_err(|_| ResponseError::Unserializable)?;
         Ok(text_response(text, envelope, input.is_error))
     }
 
@@ -306,9 +300,8 @@ impl ResponsePager {
                 .get("results")
                 .and_then(Value::as_array)
                 .is_some_and(|rows| {
-                    rows.iter().any(|row| {
-                        serde_json::to_string(row).map_or(true, |row| row.len() > length)
-                    })
+                    rows.iter()
+                        .any(|row| crate::tools::stream_page::json_chars(row) > length)
                 });
             let mut paged = input.clone();
             paged.options.response_length = Some(length);
@@ -361,10 +354,7 @@ fn text_response(text: String, structured: Map<String, Value>, is_error: bool) -
 }
 
 /// The executable next-page call of `input` for `pagination`.
-fn continuation(
-    input: &ResponseInput,
-    pagination: &ResponsePagination,
-) -> Option<ResponseContinuation> {
+fn continuation(input: &ResponseInput, pagination: &ResponsePagination) -> Option<Value> {
     build_continuation(&input.tool, &input.query, &input.options, pagination)
 }
 
@@ -440,10 +430,7 @@ fn paginate_units(text: &str, options: &ResponsePageOptions, with_header: bool) 
     };
     let units = text.encode_utf16().collect::<Vec<_>>();
     let total = units.len();
-    let snapshot = format!(
-        "response-v1:{}",
-        hex::encode(Sha256::digest(text.as_bytes()))
-    );
+    let snapshot = format!("response-v1:{}", crate::digest::sha256(text.as_bytes()));
     let length = requested_length.max(1);
     let requested_offset = options.response_offset.unwrap_or(0);
     let offset = requested_offset.min(total);
@@ -542,7 +529,8 @@ fn build_continuation(
     query: &Value,
     request: &ResponsePageOptions,
     page: &ResponsePagination,
-) -> Option<ResponseContinuation> {
+) -> Option<Value> {
+    let tool = crate::tools::id::ToolId::from_name(tool)?;
     let next_offset = page.next_char_offset.filter(|_| page.has_more)?;
     let queries = query
         .get("queries")
@@ -563,10 +551,7 @@ fn build_continuation(
     if page.restart != Some(true) {
         continuation.insert("responseSnapshot".into(), json!(page.snapshot));
     }
-    Some(ResponseContinuation {
-        tool: tool.into(),
-        query: Value::Object(continuation),
-    })
+    Some(crate::tools::result::Continuation::input(tool, Value::Object(continuation)).build())
 }
 
 fn splits_pair(units: &[u16], offset: usize) -> bool {
@@ -1162,7 +1147,7 @@ mod tests {
                         ResponseInput {
                             remaining: Vec::new(),
                             tool: "ghGetFileContent".into(),
-                            query: json!({"queries":[{"path":"a"}]}),
+                            query: json!({"queries":[{"owner":"o","repo":"r","path":"a"}]}),
                             structured: envelope(warm),
                             rendered_text: None,
                             is_error: false,
@@ -1220,7 +1205,7 @@ mod tests {
                         ResponseInput {
                             remaining: Vec::new(),
                             tool: "ghGetFileContent".into(),
-                            query: json!({"queries":[{"path":"a"}]}),
+                            query: json!({"queries":[{"owner":"o","repo":"r","path":"a"}]}),
                             structured: envelope(call),
                             rendered_text: None,
                             is_error: false,

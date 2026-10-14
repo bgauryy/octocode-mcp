@@ -11,6 +11,7 @@ use super::{
     read_graph_file,
 };
 use crate::policy::path::PathPolicy;
+use crate::runtime::ExitClass;
 use serde_json::{Map, Value, json};
 use std::collections::{BTreeMap, VecDeque};
 use std::path::{Path, PathBuf};
@@ -99,8 +100,8 @@ enum Direction {
 
 type Failure = Box<GraphOutput>;
 
-fn fail(exit: u8, code: &str, message: impl Into<String>) -> Failure {
-    Box::new(GraphOutput::error(exit, code, message))
+fn fail(code: &str, message: impl Into<String>) -> Failure {
+    Box::new(GraphOutput::error(code, message))
 }
 
 fn locate(options: &QueryOptions, paths: &PathPolicy) -> Result<PathBuf, Failure> {
@@ -114,7 +115,7 @@ fn locate(options: &QueryOptions, paths: &PathPolicy) -> Result<PathBuf, Failure
         }
     }
     let home = graph_home(options.workspace.as_deref(), paths)
-        .map_err(|message| fail(5, "graph.workspace", message))?;
+        .map_err(|message| fail("workspaceRootInvalid", message))?;
     let ids = list_snapshots(&home);
     let chosen = match options.graph.as_deref() {
         Some(spec) => ids
@@ -145,7 +146,7 @@ fn locate(options: &QueryOptions, paths: &PathPolicy) -> Result<PathBuf, Failure
                 home.display()
             ),
         };
-        fail(3, "graph.notFound", message)
+        fail("notFound", message)
     })
 }
 
@@ -153,30 +154,23 @@ fn load(options: &QueryOptions, paths: &PathPolicy) -> Result<Graph, Failure> {
     let dir = locate(options, paths)?;
     let dir = paths
         .validate(&dir)
-        .map_err(|error| fail(2, "graph.pathDenied", error.message))?
+        .map_err(|error| fail("pathPolicyDenied", error.message))?
         .canonical;
     let manifest = std::fs::read(dir.join(MANIFEST_FILE))
         .ok()
         .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
         .ok_or_else(|| {
             fail(
-                5,
-                "graph.corrupt",
+                "decode",
                 format!("{} has no readable manifest", dir.display()),
             )
         })?;
-    let bytes = read_graph_file(&dir.join(GRAPH_FILE)).map_err(|error| {
-        fail(
-            5,
-            "graph.corrupt",
-            format!("cannot read {GRAPH_FILE}: {error}"),
-        )
-    })?;
-    let (t, digest) = decode(&bytes).map_err(|message| fail(5, "graph.corrupt", message))?;
+    let bytes = read_graph_file(&dir.join(GRAPH_FILE))
+        .map_err(|error| fail("decode", format!("cannot read {GRAPH_FILE}: {error}")))?;
+    let (t, digest) = decode(&bytes).map_err(|message| fail("decode", message))?;
     if manifest["graph"]["sha256"].as_str() != Some(digest.as_str()) {
         return Err(fail(
-            5,
-            "graph.corrupt",
+            "decode",
             "graph.bin does not match its manifest digest; re-run `octocode graph ingest`",
         ));
     }
@@ -320,8 +314,7 @@ impl Graph {
                     .map(|id| self.key(id).to_owned())
                     .collect::<Vec<_>>();
                 let mut out = GraphOutput::error(
-                    3,
-                    "graph.nodeNotFound",
+                    "notFound",
                     format!(
                         "no node matches {reference:?}; try `octocode graph query find <text>`"
                     ),
@@ -333,8 +326,7 @@ impl Graph {
             }
             many => {
                 let mut out = GraphOutput::error(
-                    2,
-                    "graph.ambiguous",
+                    "invalidInput",
                     format!(
                         "{} nodes match {reference:?}; pass one of the candidate ids (or --kind)",
                         many.len()
@@ -418,15 +410,13 @@ fn select_list(
     };
     let Some((section, field)) = list.split_once('.') else {
         return Err(GraphOutput::error(
-            2,
-            "graph.input",
+            "invalidInput",
             "--list needs summary.<field> or baseline.<field>",
         ));
     };
     if !matches!(section, "summary" | "baseline") {
         return Err(GraphOutput::error(
-            2,
-            "graph.input",
+            "invalidInput",
             "--list names a summary or baseline array",
         ));
     }
@@ -436,8 +426,7 @@ fn select_list(
         .and_then(|object| object.remove(field))
     else {
         return Err(GraphOutput::error(
-            2,
-            "graph.input",
+            "invalidInput",
             format!("unknown evidence list {list:?}"),
         ));
     };
@@ -504,7 +493,7 @@ fn run_page(
         out.insert("offset".into(), json!(offset));
     }
     out.insert("results".into(), Value::Array(rows));
-    let exit = if total == 0 { 1 } else { 0 };
+
     if offset + shown < total {
         out.insert("truncated".into(), json!(true));
         out.insert(
@@ -512,9 +501,10 @@ fn run_page(
             json!(next_command(options, &graph.id, offset + shown)),
         );
     }
-    GraphOutput {
-        value: Value::Object(out),
-        exit,
+    if total == 0 {
+        GraphOutput::empty(Value::Object(out))
+    } else {
+        GraphOutput::ok(Value::Object(out))
     }
 }
 
@@ -626,8 +616,7 @@ pub fn query(options: &QueryOptions, paths: &PathPolicy) -> GraphOutput {
 fn run(options: &QueryOptions, paths: &PathPolicy) -> Result<GraphOutput, GraphOutput> {
     if !OPS.contains(&options.op.as_str()) {
         return Err(GraphOutput::error(
-            2,
-            "graph.input",
+            "invalidInput",
             format!(
                 "unknown op {:?}; expected one of: {}",
                 options.op,
@@ -649,7 +638,7 @@ fn run(options: &QueryOptions, paths: &PathPolicy) -> Result<GraphOutput, GraphO
             let text = options
                 .target
                 .as_deref()
-                .ok_or_else(|| GraphOutput::error(2, "graph.input", "`find` needs search text"))?;
+                .ok_or_else(|| GraphOutput::error("invalidInput", "`find` needs search text"))?;
             Ok(run_page(
                 options,
                 g,
@@ -688,11 +677,11 @@ fn run(options: &QueryOptions, paths: &PathPolicy) -> Result<GraphOutput, GraphO
             let (extra, page) = stale(g);
             let mut out = run_page(options, g, extra, page);
             if out.value["fresh"] == true {
-                out.exit = 0;
+                out.class = ExitClass::Success;
             }
             Ok(out)
         }
-        _ => Err(GraphOutput::error(2, "graph.input", "unknown op")),
+        _ => Err(GraphOutput::error("invalidInput", "unknown op")),
     }
 }
 
@@ -707,7 +696,7 @@ struct Flags {
 
 impl Flags {
     fn parse(options: &QueryOptions) -> Result<Self, GraphOutput> {
-        let invalid = |message: String| GraphOutput::error(2, "graph.input", message);
+        let invalid = |message: String| GraphOutput::error("invalidInput", message);
         let kind = match options.kind.as_deref() {
             None => None,
             Some(value) => Some(NodeKind::parse(value).ok_or_else(|| {
@@ -782,8 +771,7 @@ impl Query<'_> {
     fn target(&self, required: &str) -> Result<u32, GraphOutput> {
         let reference = self.options.target.as_deref().ok_or_else(|| {
             GraphOutput::error(
-                2,
-                "graph.input",
+                "invalidInput",
                 format!("`{}` needs {required}", self.options.op),
             )
         })?;
@@ -848,7 +836,7 @@ impl Query<'_> {
         let g = self.g;
         let from = self.target("a source reference")?;
         let reference = self.options.to.as_deref().ok_or_else(|| {
-            GraphOutput::error(2, "graph.input", "`path` needs a target: path <from> <to>")
+            GraphOutput::error("invalidInput", "`path` needs a target: path <from> <to>")
         })?;
         let to = g
             .resolve(reference, self.flags.kind)
@@ -902,7 +890,7 @@ impl Query<'_> {
         let mut unmapped = Vec::new();
         if let Some(rev) = &options.since {
             let changed = git_changed(&root, rev)
-                .map_err(|message| GraphOutput::error(5, "graph.git", message))?;
+                .map_err(|message| GraphOutput::error("gitFailed", message))?;
             for path in changed {
                 if super::impact::is_global_config(&path) {
                     global.push((parent_of(&path).to_owned(), path));
@@ -915,13 +903,12 @@ impl Query<'_> {
         }
         if refs.is_empty() && global.is_empty() {
             let mut out = GraphOutput::error(
-                2,
-                "graph.input",
+                "invalidInput",
                 "`impact` needs a reference, --changed, or --since <rev>",
             );
             if !unmapped.is_empty() {
                 out.value["unmapped"] = json!(unmapped);
-                out.exit = 1;
+                out.class = ExitClass::Empty;
             }
             return Err(out);
         }
@@ -968,7 +955,7 @@ impl Query<'_> {
             .filter(|d| !d.is_empty())
             .map(str::to_owned)
             .collect::<Vec<_>>();
-        let invalid = |message: String| GraphOutput::error(2, "graph.input", message);
+        let invalid = |message: String| GraphOutput::error("invalidInput", message);
         let root = PathBuf::from(g.manifest["root"].as_str().unwrap_or_default());
         let scan_root = root.is_dir().then_some(root.as_path());
         let report = super::detect::run(&g.t, &detectors, scan_root).map_err(invalid)?;
@@ -1031,7 +1018,7 @@ impl Query<'_> {
             detectors,
             base_root.is_dir().then_some(base_root.as_path()),
         )
-        .map_err(|message| GraphOutput::error(2, "graph.input", message))?;
+        .map_err(|message| GraphOutput::error("invalidInput", message))?;
         let old = before
             .findings
             .iter()
@@ -1294,14 +1281,11 @@ fn path(g: &Graph, from: u32, to: u32, direction: Direction, filter: &EdgeFilter
     }
     let edges = json!(filter.kinds.iter().map(|k| k.as_str()).collect::<Vec<_>>());
     if !seen[to as usize] {
-        return GraphOutput {
-            value: json!({
-                "graph": g.summary(), "op": "path", "found": false, "edges": edges,
-                "from": g.key(from), "to": g.key(to),
-                "hint": "No directed path over these edges; try --direction both or --edge imports,calls",
-            }),
-            exit: 1,
-        };
+        return GraphOutput::empty(json!({
+            "graph": g.summary(), "op": "path", "found": false, "edges": edges,
+            "from": g.key(from), "to": g.key(to),
+            "hint": "No directed path over these edges; try --direction both or --edge imports,calls",
+        }));
     }
     let mut hops = Vec::new();
     let mut cursor = to;
@@ -1364,8 +1348,7 @@ fn cycles(g: &Graph, filter: &EdgeFilter, options: &QueryOptions) -> Result<Page
     if options.list.as_deref() == Some("cycleNodes") {
         let Some(target) = options.target.as_deref() else {
             return Err(GraphOutput::error(
-                2,
-                "graph.input",
+                "invalidInput",
                 "cycleNodes needs a cycle member",
             ));
         };
@@ -1374,8 +1357,7 @@ fn cycles(g: &Graph, filter: &EdgeFilter, options: &QueryOptions) -> Result<Page
             .find(|component| component.iter().any(|id| g.key(*id) == target))
         else {
             return Err(GraphOutput::error(
-                2,
-                "graph.input",
+                "invalidInput",
                 format!("no cycle contains {target:?}"),
             ));
         };

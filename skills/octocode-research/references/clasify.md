@@ -1,51 +1,48 @@
-# Goals and clasify
+Load when the lobby's "Classifiers or clasify?" section admits a semantic call, or a typed judgment is requested. Read the live schema for the chosen tool.
 
-Load when the SKILL.md `SEMANTIC?` gate admits a call, or for an explicit typed judgment. Read-tool `goals` returns reordered source; `clasify` returns locations or judgments first. Read the live schema for the selected tool.
-
-A request with `goals` reranks eligible evidence before pagination; remote discovery ranks one provider page at a time. The best score across goals wins; ties retain original order. Unscored candidates remain reachable, and continuations of the same candidate set reuse the ordering without another classification pass. **Scout** screens unread resources; **Judge** labels state already held in `value`.
+- Search/fetch `classifiers` order captured evidence before the tool returns; unscored candidates stay reachable; continuations keep the order.
+- `clasify` answers JEV `noul`, `choice`, or `score` questions over literal `state` or one unread `source`; no body comes back.
 
 ## Admission
 
-- Use semantic selection when an exact search or bounded read does not cheaply find the described behavior, and selecting earlier evidence could avoid later reads. File size, candidate count, or one miss alone is no reason.
-- Choose the needed output: read-tool `goals`, when exposed by the schema, returns source in relevance order; `clasify` returns locations or typed judgments first. Do not add `goals` inside a classification resource for the same relevance question or repeat an unchanged judgment. A later distinct question can justify another stage.
-- Prefer direct evidence when a known identifier, range, or captured snippet answers the question. Exhaustive audits still require coverage; identity and finding verdicts require their source checks. A useful held-state label is a separate deliverable and cannot save context already consumed.
-- Check the captured scope before asking about behavior. AST/LSP rows may omit surrounding guards or callees; expand bounded source or refine the query first. Missing evidence remains unresolved regardless of the label.
-- Compare the classification response plus required source reads and continuations with the cheapest adequate direct route. Reordering a fully consumed page saves no context. Keep main-model and provider usage separate, price each at its own rates, and distinguish provider request latency from workflow time. Unreported usage is unknown. A smaller first response is not proof of savings. Scores never establish absence.
+- File size, candidate count, a question word, or one miss is no reason to classify; a cheap exact search or bounded read wins.
+- Never repeat an unchanged judgment; a later distinct question can justify another stage. A held-state label saves no context already consumed.
+- Before asking: name the decision each outcome changes; repair scope, spelling, filters, synonyms; check the captured scope (AST/LSP rows may omit guards or callees: expand bounded source or refine). Missing evidence stays unresolved whatever the label.
+- Classify only when response plus required reads costs less than the cheapest direct route; reordering a fully consumed page saves nothing. Price main-model and provider usage separately; unreported usage is unknown.
 
-## Requests
+## Classifiers on search and fetch
 
-- Shape: `{queries:[{mainGoal?, reasoning?, resources, questions}, ...]}`; a flat matrix is rejected. Each resource is `{id?, tool, query}` for an unread read or `{id?, value}` for held state; nested queries inherit `mainGoal`/`reasoning` when set. Without them, each `ask` carries the whole intent.
-- State the decision each outcome changes; repair scope, spelling, filters, and synonyms first.
-- Unread file (`localFetch` path or `ghGetFileContent` owner/repo/path/ref): one atomic `ask` per question; every target for the same files goes in one matrix. Never paste bodies into `value`.
-- `prefilter:["term"]` sits on the read resource (not on a question) and judges windows around the hits. A term found everywhere → search it instead.
-- For an admitted unread list, send the request as one resource. Ask `relevant`, adding `sufficient` only when page completeness changes the next step. Read promising `hints.read`; stop only when source verifies every required condition. Low scores defer, never discard. Complete required scope before claiming absence. A local page without a read hint is read by its path and lines. Bare path lists stay one page; a `choice` can select among paths when needed.
-- `localSearch`/`ghSearchCode` hydrate candidate files within budget, otherwise judge windows near hits; `candidateEvidence:"search"` keeps snippets. AST/LSP resources instead judge returned rows grouped by file, not source behind their later read hints. A file score is not a verdict on every reference or match.
-- For a large raw file, `locate` can find bounded answer lines. `sufficient` only judges the captured page; its read may repeat that whole page. PR summaries do not expand into patches automatically: request the needed sections. Screening one patch you must read adds work; a low score cannot justify skipping required review evidence.
-- Each resource/page is judged independently. Separate patch, caller, and test resources do not form a joint review. For an explicitly useful cross-file second opinion, supply one held packet with the deciding context and pinned revisions. Confirm any finding or dismissal with exact source and executable checks; never automate it from a score. Dependent questions go in a later call only if a distinct uncertainty remains.
+- `localSearch`, `localFetch`, `ghSearchCode`, `ghGetFileContent`: `classifiers` holds 1–5 strings, one self-contained missing fact each, naming its subject and deciding conditions. Classifiers never see the conversation or each other.
+- Reads rank complete raw windows (`ghGetFileContent` needs `minify:"none"`); `fullContent`, byte windows, minified reads, files/count views and explicit sorts skip ranking (see the `ranking` receipt).
+- Inspect the returned source; stop when it supports every requested fact and condition. Otherwise read the specific missing context or copy the continuation. Carry only unresolved classifiers into the next exploratory call; no extra verification reread of returned source.
 
-## Handoffs
+## Build a clasify request
 
-Supplied targets can produce optional `hints.clasify`. Search goals and saved ranking plans suppress duplicate offers; a first unjudged local stream can reuse goals after a `streamingSource` skip. Unfinished local reads use snapshot-pinned unread windows. Apply Admission before using a hint, then run it unchanged and verify its source. `mainGoal` supplies a target but does not enable ranking. Size, counts, and English question words are not usefulness rules.
+- Shape: `{queries:[{questions, state} | {questions, source}, ...]}`, at most 5 rows; exactly one of `state` or `source`. `mainGoal`/`reasoning` are metadata and never reach the judge, so each question carries its whole intent.
+- `state`: data you already hold (text, object, array). An object holding a path or URL is data, never fetched.
+- `source`: `{tool:"localFetch", query:{path, ranges | fullContent:true}}`, `{tool:"ghGetFileContent", query:{owner, repo, path, ref?, ranges | fullContent:true}}`, or `{url:"https://…#section"}`. Never paste unread bodies into `state`.
+- One row per selection; questions over the same selection share one row and one provider request. Optional `model` pins the provider model.
+- Large request: save under `<workspace>/.octocode/octocode-research/tmp/`; run `npx octocode clasify --input <file>`.
 
 ## Questions
 
-`{id, type, ask}`, one atomic fact each. `locate` → ranked source windows (needs an unminified file read or search resource). `yesno` = P(yes), optional `labels:{true,false}`. `choice` = one label (`labels:{label: meaning}`; add `insufficient` when no label is safe). `score` = ordered level (`labels:[low … high]`). Screens: `relevant`, `supports` (claim in `ask`), `adds` (+`known`), `sufficient`. Confidence is concentration, not correctness; no discard threshold. Use the exact tool name `clasify`.
+`questions` is a map: key → `{type, instructions, criteria?}`, one observable predicate each; exact tool name `clasify`.
+
+- `noul`: P(yes); optional `criteria:{true, false}`.
+- `choice`: one label from `criteria:{label: meaning}`; add `insufficient` when no label is safe.
+- `score`: ordered level from `criteria:[low … high]`.
+- `instructions` and criteria may be text, objects, or arrays. No other types exist; do not ask for correctness, arithmetic, or several facts at once.
 
 ```json
-{"queries":[{"mainGoal":"Find where failed requests are retried.","reasoning":"Locate before reading.",
- "resources":[{"tool":"localFetch","query":{"path":"/abs/client.ts"}}],
- "questions":[{"id":"retry","type":"locate","ask":"The condition that permits retrying a failed request."},
-              {"id":"limit","type":"locate","ask":"The maximum retry count."}]}]}
+{"queries":[{"source":{"tool":"localFetch","query":{"path":"/abs/client.ts","ranges":["40-120"]}},
+ "questions":{"retry":{"type":"noul","instructions":"Does the selected code retry a failed request only for idempotent methods?"},
+              "limit":{"type":"choice","instructions":"What bounds the retry count in the selected code?",
+                       "criteria":{"constant":"A fixed constant.","config":"A configurable option.","insufficient":"The selection does not show it."}}}}]}
 ```
-Large requests: save under `<workspace>/.octocode/tmp/` and run `npx octocode clasify --input <file>`.
 
-## Results
+## Read results
 
-- Compact by default: each resource lists `path`, `totalLines`, and `pages[]` of `{line, endLine, answers}`; answers are bare (`exists`, P(yes), a label or level) unless a choice/score is uncertain, which keeps `probabilities`. No `coverage` = complete. `extras:["details"]` adds the per-page receipt and runner-up windows; `extras:["stats"]` adds provider `usage`. Read hints can be at query or page level; local reads may instead be implied by a page or `best` window's source location.
-- `best[id]` lists answering windows as `{line, endLine, exists, probability}` (`path`/`resourceId` when several resources): `exists` = this window answers, `probability` = which window. Rows rank by `exists`, then `probability`; never multiply them. Run its `hints.read` unchanged and read other rows by their source locations. Preserve returned refs/snapshots; PR-number reads can change, so verify deciding source at the recorded revision.
-- While a continuation remains and no window answers, `best` is absent and the ranking travels in `carry`: follow the `next.clasify` page unchanged instead of reading the closest passage.
-- On an open walk (`coverage: partial` with `next.clasify`), `best` ranks only the pages judged so far. If its read lacks the answer, follow `next.clasify` before you search elsewhere.
-- An identifier target adds a `hints.text` tip (and locally `hints.findText`): search it instead. An oversized capture fails with `classificationContextTooLarge` and keeps `hints.read`; narrow with `prefilter` or a range.
-- `partial`, `error`, and `insufficient` mean narrow or read, never "no". High `probability` + low `exists` is the closest passage, not an answer. Verdicts rank attention only: never infer identity, reachability, or mutation safety; verify the deciding source.
-
-Next: read the deciding windows, then return to the route that sent you.
+- A row returns `model`, `answers` keyed like `questions`, and provider `usage`; a source row adds `hints.read` (the exact selection, snapshot or commit) and a URL row adds `source:{url, snapshot, expiresAt}`. `replayed:true` means saved answers, not new spend.
+- `noul` near 0: this state does not establish the fact, not absence elsewhere. `choice`/`score`: read `confidence` and `probabilities`; confidence is concentration, not correctness. A score is a zero-based, possibly fractional level of your criteria (`legend`).
+- Row `error` (`classificationContextTooLarge`: narrow `ranges`): never "no".
+- Answers rank attention only; never infer identity, reachability, or mutation safety. Before a source claim, run `hints.read` unchanged or read the deciding lines, then return to the calling route.

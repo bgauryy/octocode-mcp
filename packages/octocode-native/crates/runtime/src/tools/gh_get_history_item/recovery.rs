@@ -1,7 +1,7 @@
 //! Recovery reads for a number read under the wrong operation.
-use crate::providers::github::{ProviderErrorKind, ProviderErrorReason};
 use crate::tools::id::ToolId;
 use crate::tools::result::Continuation;
+use octocode_github::{ProviderErrorKind, ProviderErrorReason};
 use serde_json::{Map, Value, json};
 
 /// The read that recovers a failed item read, as the row's `next`: a

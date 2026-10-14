@@ -890,37 +890,117 @@ fn collect_node_facts(
         && is_item_level(node)
         && let Some(rust) = rust.as_ref()
     {
-        let mut cursor = node.walk();
-        let body = node
-            .named_children(&mut cursor)
-            .find(|child| child.kind() == "token_tree")
-            .filter(|body| body.end_byte() > body.start_byte() + 2);
-        if body.is_none() {
-            // `make_imports!();` expands from its definition, which is not
-            // visible here: the generated items stay an explicit gap.
-            push_macro_gap(acc);
-        }
-        if let Some(body) = body {
-            let inner = tree_sitter::Range {
-                start_byte: body.start_byte() + 1,
-                end_byte: body.end_byte() - 1,
-                start_point: tree_sitter::Point {
-                    row: body.start_position().row,
-                    column: body.start_position().column + 1,
-                },
-                end_point: tree_sitter::Point {
-                    row: body.end_position().row,
-                    column: body.end_position().column.saturating_sub(1),
-                },
-            };
-            let container = active_decl
-                .zip(active_name)
-                .map(|(id, name)| (id.to_owned(), name.to_owned()));
-            acc.macro_bodies
-                .push((inner, rust.module_scope.to_vec(), container));
-        }
+        record_macro_body(node, acc, active_decl, active_name, rust);
     }
-    let decl = declaration(node, content).and_then(|(kind, name_token)| {
+    let decl = declaration_fact(node, content, line_index, acc, active_decl);
+
+    // Keep the new declaration id alive for the entire child traversal so we
+    // can pass it as &str without any per-child heap allocation.
+    let next_decl_identity: Option<(String, String)> =
+        decl.map(|declaration| push_declaration(node, content, line_index, acc, declaration));
+    // Inherit the parent scope when no new declaration was established.
+    let next_decl = next_decl_identity
+        .as_ref()
+        .map(|(id, _)| id.as_str())
+        .or(active_decl);
+    let next_name = next_decl_identity
+        .as_ref()
+        .map(|(_, name)| name.as_str())
+        .or(active_name);
+
+    if let Some(rust) = rust
+        && node.kind() == "use_declaration"
+    {
+        collect_rust_use(node, content, line_index, acc, rust, deadline);
+    } else if let Some(rust) = rust
+        && node.kind() == "mod_item"
+    {
+        collect_rust_module(node, content, line_index, acc, rust);
+    } else if matches!(acc.ext.as_str(), "py" | "pyi")
+        && matches!(node.kind(), "import_statement" | "import_from_statement")
+    {
+        collect_python_imports(node, content, line_index, acc);
+    } else if node.kind() == "preproc_include" {
+        collect_c_include(node, content, line_index, acc);
+    } else if acc.ext == "cs" && node.kind() == "using_directive" {
+        collect_csharp_using(node, content, line_index, acc);
+    } else if is_import_node(node.kind())
+        && !is_grouped_go_import(node)
+        && let Some(specifier) = import_specifier(node, content)
+    {
+        let line = line_index.range(node).start.line + 1;
+        acc.imports.push(GraphFactImport {
+            id: format!("import:{}:{}:{}", specifier, line, acc.imports.len()),
+            specifier,
+            line,
+            import_kind: "value".to_owned(),
+            local_name: None,
+            imported_name: None,
+            imported_range: None,
+            local_range: None,
+            resolution_hint: None,
+            module_scope: None,
+            used_in: None,
+        });
+    }
+
+    if !acc.declarations_only && is_call_node(node.kind()) {
+        collect_call(node, content, line_index, acc, next_decl, next_name);
+    }
+
+    next_decl_identity
+}
+
+/// Record a Rust item-level macro call's body to re-read as items, or an
+/// explicit gap when it has no body.
+fn record_macro_body(
+    node: Node<'_>,
+    acc: &mut GraphAccumulator,
+    active_decl: Option<&str>,
+    active_name: Option<&str>,
+    rust: &RustNodeContext<'_>,
+) {
+    let mut cursor = node.walk();
+    let body = node
+        .named_children(&mut cursor)
+        .find(|child| child.kind() == "token_tree")
+        .filter(|body| body.end_byte() > body.start_byte() + 2);
+    if body.is_none() {
+        // `make_imports!();` expands from its definition, which is not
+        // visible here: the generated items stay an explicit gap.
+        push_macro_gap(acc);
+    }
+    if let Some(body) = body {
+        let inner = tree_sitter::Range {
+            start_byte: body.start_byte() + 1,
+            end_byte: body.end_byte() - 1,
+            start_point: tree_sitter::Point {
+                row: body.start_position().row,
+                column: body.start_position().column + 1,
+            },
+            end_point: tree_sitter::Point {
+                row: body.end_position().row,
+                column: body.end_position().column.saturating_sub(1),
+            },
+        };
+        let container = active_decl
+            .zip(active_name)
+            .map(|(id, name)| (id.to_owned(), name.to_owned()));
+        acc.macro_bodies
+            .push((inner, rust.module_scope.to_vec(), container));
+    }
+}
+
+/// The declaration `node` introduces, if any; marks its name token as a
+/// non-reference.
+fn declaration_fact(
+    node: Node<'_>,
+    content: &str,
+    line_index: &NodePositions<'_>,
+    acc: &mut GraphAccumulator,
+    active_decl: Option<&str>,
+) -> Option<GraphFactDeclaration> {
+    declaration(node, content).and_then(|(kind, name_token)| {
         let kind = method_kind(kind, node, active_decl);
         node_text(name_token, content)
             .and_then(compact_identifier)
@@ -953,215 +1033,214 @@ fn collect_node_facts(
                     exported_as: Vec::new(),
                 }
             })
-    });
+    })
+}
 
-    // Keep the new declaration id alive for the entire child traversal so we
-    // can pass it as &str without any per-child heap allocation.
-    let next_decl_identity: Option<(String, String)> = if let Some(declaration) = decl {
-        let id = declaration.id.clone();
-        let name = declaration.name.clone();
-        let line = declaration.line;
-        let exported = declaration.exported;
-        if let Some(parent) = &declaration.parent {
-            acc.edges.push(GraphFactEdge {
-                id: format!("{parent}->{id}:contains"),
-                from: parent.clone(),
-                to: id.clone(),
-                relation: "contains".to_owned(),
-                source: "ast".to_owned(),
-                line,
-                resolution: "syntactic".to_owned(),
-            });
-        }
-        if exported {
-            acc.exports.push(GraphFactExport {
-                id: format!("export:{}:{}", name, line),
-                name: name.clone(),
-                line,
-                export_kind: "language-public".to_owned(),
-                local_name: Some(name.clone()),
-                source: None,
-            });
-        }
-        acc.declarations.push(declaration);
-        acc.declaration_spans
-            .push((node.start_byte(), node.end_byte()));
-        heritage::collect_heritage(node, content, line_index, acc, &id);
-        Some((id, name))
-    } else {
-        None
-    };
-    // Inherit the parent scope when no new declaration was established.
-    let next_decl = next_decl_identity
-        .as_ref()
-        .map(|(id, _)| id.as_str())
-        .or(active_decl);
-    let next_name = next_decl_identity
-        .as_ref()
-        .map(|(_, name)| name.as_str())
-        .or(active_name);
-
-    if let Some(rust) = rust
-        && node.kind() == "use_declaration"
-    {
-        if let Some(argument) = node.child_by_field_name("argument") {
-            let first = acc.imports.len();
-            collect_rust_imports(
-                argument,
-                rust.module_scope,
-                content,
-                line_index,
-                acc,
-                rust.context.unsupported,
-                deadline,
-            );
-            // A `pub use` re-exports: its binding is used by whoever imports
-            // this module, which no local reference shows.
-            let mut cursor = node.walk();
-            if !node
-                .named_children(&mut cursor)
-                .any(|child| child.kind() == "visibility_modifier")
-            {
-                acc.private_use_imports.extend(first..acc.imports.len());
-            }
-        }
-    } else if let Some(rust) = rust
-        && node.kind() == "mod_item"
-    {
-        if let Some(name) = declaration_name(node, content) {
-            let line = line_index.range(node).start.line + 1;
-            let path = rust.context.attributes.path.clone();
-            let mut unsupported = rust.context.attributes.unsupported;
-            unsupported |= rust.context.block_local;
-            unsupported |= node
-                .child_by_field_name("body")
-                .is_some_and(|body| rust_inner_unsupported(body, content));
-            let scope = rust.module_scope.to_vec();
-            let inline = node.child_by_field_name("body").is_some();
-            if unsupported {
-                acc.diagnostics
-                    .push(format!("{RUST_MODULE_ATTRIBUTES_NOTE} at line {line}"));
-            }
-            acc.modules.push(GraphFactRustModule {
-                name: name.clone(),
-                line,
-                scope: scope.clone(),
-                inline,
-                path,
-                unsupported,
-            });
-            if !inline {
-                acc.imports.push(GraphFactImport {
-                    id: format!("module:{}:{line}", name),
-                    specifier: format!("self::{name}"),
-                    line,
-                    import_kind: "module".to_owned(),
-                    local_name: Some(name.clone()),
-                    imported_name: Some(name),
-                    imported_range: None,
-                    local_range: None,
-                    resolution_hint: unsupported.then(|| "unsupported".to_owned()),
-                    module_scope: Some(scope),
-                    used_in: None,
-                });
-            }
-        }
-    } else if matches!(acc.ext.as_str(), "py" | "pyi")
-        && matches!(node.kind(), "import_statement" | "import_from_statement")
-    {
-        collect_python_imports(node, content, line_index, acc);
-    } else if node.kind() == "preproc_include" {
-        let path = node.child_by_field_name("path");
-        let hint = match path.map(|item| item.kind()) {
-            Some("string_literal") => "c-relative",
-            Some("system_lib_string") => "c-system",
-            _ => "unsupported",
-        };
-        if let Some(specifier) = path
-            .and_then(|item| node_text(item, content))
-            .and_then(clean_specifier)
-        {
-            push_language_import(
-                acc,
-                specifier,
-                line_index.range(node).start.line + 1,
-                "include",
-                None,
-                None,
-                hint,
-            );
-        }
-    } else if acc.ext == "cs" && node.kind() == "using_directive" {
-        collect_csharp_using(node, content, line_index, acc);
-    } else if is_import_node(node.kind())
-        && !is_grouped_go_import(node)
-        && let Some(specifier) = import_specifier(node, content)
-    {
-        let line = line_index.range(node).start.line + 1;
-        acc.imports.push(GraphFactImport {
-            id: format!("import:{}:{}:{}", specifier, line, acc.imports.len()),
-            specifier,
-            line,
-            import_kind: "value".to_owned(),
-            local_name: None,
-            imported_name: None,
-            imported_range: None,
-            local_range: None,
-            resolution_hint: None,
-            module_scope: None,
-            used_in: None,
-        });
-    }
-
-    if !acc.declarations_only
-        && is_call_node(node.kind())
-        && let Some((callee, callee_node)) = call_callee(node, content)
-    {
-        let target = callee
-            .rsplit(['.', ':'])
-            .find(|segment| !segment.is_empty());
-        if let Some(token) = target.and_then(|name| last_name_leaf(callee_node, content, name)) {
-            acc.non_reference_tokens.insert(token.start_byte());
-        }
-        let range = line_index.range(node);
-        let line = range.start.line + 1;
-        // Module-level code (a Python decorator or `main()` guard, a Go
-        // package `var` initializer, a Rust item-level macro) has no
-        // enclosing declaration: it is owned by the `module` placeholder
-        // with no caller id, the same shape the OXC lane emits.
-        let caller_name = match next_decl {
-            Some(caller) => next_name.unwrap_or(caller).to_owned(),
-            None => MODULE_CALLER.to_owned(),
-        };
-        let from = next_decl.map_or_else(|| format!("file:{}", acc.file_path), str::to_owned);
-        let id = format!("call:{}:{}:{}", caller_name, callee, acc.calls.len());
-        acc.calls.push(GraphFactCall {
-            id: id.clone(),
-            caller: caller_name,
-            caller_id: next_decl.map(str::to_owned),
-            callee: callee.to_owned(),
-            line,
-            range,
-            kind: "calls".to_owned(),
-            receiver_type: None,
-        });
+/// Push `declaration` with its `contains` edge, export and heritage facts;
+/// returns its `(id, name)`.
+fn push_declaration(
+    node: Node<'_>,
+    content: &str,
+    line_index: &NodePositions<'_>,
+    acc: &mut GraphAccumulator,
+    declaration: GraphFactDeclaration,
+) -> (String, String) {
+    let id = declaration.id.clone();
+    let name = declaration.name.clone();
+    let line = declaration.line;
+    let exported = declaration.exported;
+    if let Some(parent) = &declaration.parent {
         acc.edges.push(GraphFactEdge {
-            id: format!("{from}->{callee}:calls:{line}:{}", acc.edges.len()),
-            from,
-            to: format!(
-                "reference:{}@{}:{}",
-                acc.file_path,
-                node.start_byte(),
-                callee
-            ),
-            relation: "calls".to_owned(),
+            id: format!("{parent}->{id}:contains"),
+            from: parent.clone(),
+            to: id.clone(),
+            relation: "contains".to_owned(),
             source: "ast".to_owned(),
             line,
-            resolution: "unresolved".to_owned(),
+            resolution: "syntactic".to_owned(),
         });
     }
+    if exported {
+        acc.exports.push(GraphFactExport {
+            id: format!("export:{}:{}", name, line),
+            name: name.clone(),
+            line,
+            export_kind: "language-public".to_owned(),
+            local_name: Some(name.clone()),
+            source: None,
+        });
+    }
+    acc.declarations.push(declaration);
+    acc.declaration_spans
+        .push((node.start_byte(), node.end_byte()));
+    heritage::collect_heritage(node, content, line_index, acc, &id);
+    (id, name)
+}
 
-    next_decl_identity
+/// Rust `use` imports; a private `use` also marks them as private.
+fn collect_rust_use(
+    node: Node<'_>,
+    content: &str,
+    line_index: &NodePositions<'_>,
+    acc: &mut GraphAccumulator,
+    rust: RustNodeContext<'_>,
+    deadline: std::time::Instant,
+) {
+    if let Some(argument) = node.child_by_field_name("argument") {
+        let first = acc.imports.len();
+        collect_rust_imports(
+            argument,
+            rust.module_scope,
+            content,
+            line_index,
+            acc,
+            rust.context.unsupported,
+            deadline,
+        );
+        // A `pub use` re-exports: its binding is used by whoever imports
+        // this module, which no local reference shows.
+        let mut cursor = node.walk();
+        if !node
+            .named_children(&mut cursor)
+            .any(|child| child.kind() == "visibility_modifier")
+        {
+            acc.private_use_imports.extend(first..acc.imports.len());
+        }
+    }
+}
+
+/// A Rust `mod` item: its module fact and, for `mod name;`, a module import.
+fn collect_rust_module(
+    node: Node<'_>,
+    content: &str,
+    line_index: &NodePositions<'_>,
+    acc: &mut GraphAccumulator,
+    rust: RustNodeContext<'_>,
+) {
+    if let Some(name) = declaration_name(node, content) {
+        let line = line_index.range(node).start.line + 1;
+        let path = rust.context.attributes.path.clone();
+        let mut unsupported = rust.context.attributes.unsupported;
+        unsupported |= rust.context.block_local;
+        unsupported |= node
+            .child_by_field_name("body")
+            .is_some_and(|body| rust_inner_unsupported(body, content));
+        let scope = rust.module_scope.to_vec();
+        let inline = node.child_by_field_name("body").is_some();
+        if unsupported {
+            acc.diagnostics
+                .push(format!("{RUST_MODULE_ATTRIBUTES_NOTE} at line {line}"));
+        }
+        acc.modules.push(GraphFactRustModule {
+            name: name.clone(),
+            line,
+            scope: scope.clone(),
+            inline,
+            path,
+            unsupported,
+        });
+        if !inline {
+            acc.imports.push(GraphFactImport {
+                id: format!("module:{}:{line}", name),
+                specifier: format!("self::{name}"),
+                line,
+                import_kind: "module".to_owned(),
+                local_name: Some(name.clone()),
+                imported_name: Some(name),
+                imported_range: None,
+                local_range: None,
+                resolution_hint: unsupported.then(|| "unsupported".to_owned()),
+                module_scope: Some(scope),
+                used_in: None,
+            });
+        }
+    }
+}
+
+/// A C/C++ `#include`: `"x"` resolves relative, `<x>` as a system header.
+fn collect_c_include(
+    node: Node<'_>,
+    content: &str,
+    line_index: &NodePositions<'_>,
+    acc: &mut GraphAccumulator,
+) {
+    let path = node.child_by_field_name("path");
+    let hint = match path.map(|item| item.kind()) {
+        Some("string_literal") => "c-relative",
+        Some("system_lib_string") => "c-system",
+        _ => "unsupported",
+    };
+    if let Some(specifier) = path
+        .and_then(|item| node_text(item, content))
+        .and_then(clean_specifier)
+    {
+        push_language_import(
+            acc,
+            specifier,
+            line_index.range(node).start.line + 1,
+            "include",
+            None,
+            None,
+            hint,
+        );
+    }
+}
+
+/// A call node's `calls` fact and edge, owned by `caller_decl` or, outside
+/// any declaration, the module placeholder.
+fn collect_call(
+    node: Node<'_>,
+    content: &str,
+    line_index: &NodePositions<'_>,
+    acc: &mut GraphAccumulator,
+    caller_decl: Option<&str>,
+    caller_name: Option<&str>,
+) {
+    let Some((callee, callee_node)) = call_callee(node, content) else {
+        return;
+    };
+    let target = callee
+        .rsplit(['.', ':'])
+        .find(|segment| !segment.is_empty());
+    if let Some(token) = target.and_then(|name| last_name_leaf(callee_node, content, name)) {
+        acc.non_reference_tokens.insert(token.start_byte());
+    }
+    let range = line_index.range(node);
+    let line = range.start.line + 1;
+    // Module-level code (a Python decorator or `main()` guard, a Go
+    // package `var` initializer, a Rust item-level macro) has no
+    // enclosing declaration: it is owned by the `module` placeholder
+    // with no caller id, the same shape the OXC lane emits.
+    let caller = match caller_decl {
+        Some(caller) => caller_name.unwrap_or(caller).to_owned(),
+        None => MODULE_CALLER.to_owned(),
+    };
+    let from = caller_decl.map_or_else(|| format!("file:{}", acc.file_path), str::to_owned);
+    let id = format!("call:{}:{}:{}", caller, callee, acc.calls.len());
+    acc.calls.push(GraphFactCall {
+        id: id.clone(),
+        caller,
+        caller_id: caller_decl.map(str::to_owned),
+        callee: callee.to_owned(),
+        line,
+        range,
+        kind: "calls".to_owned(),
+        receiver_type: None,
+    });
+    acc.edges.push(GraphFactEdge {
+        id: format!("{from}->{callee}:calls:{line}:{}", acc.edges.len()),
+        from,
+        to: format!(
+            "reference:{}@{}:{}",
+            acc.file_path,
+            node.start_byte(),
+            callee
+        ),
+        relation: "calls".to_owned(),
+        source: "ast".to_owned(),
+        line,
+        resolution: "unresolved".to_owned(),
+    });
 }
 
 /// C# `using A.B;`, `using static A.B;`, `global using A.B;` and the alias

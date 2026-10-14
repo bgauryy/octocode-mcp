@@ -4,12 +4,15 @@ import type { ExtensionAPI, ExtensionContext, Theme } from '@earendil-works/pi-c
 import { truncateToWidth, visibleWidth } from '@earendil-works/pi-tui';
 import { PERMISSION_ID, shortChip } from '../permission/mode.js';
 import { formatCost, formatTokens, formatTokenUsage } from '../shared/format.js';
+import { livePaint } from '../shared/render.js';
 import { sanitizeTerminalText } from '../shared/sanitize.js';
-import { addReply, carriesUsage, emptyTotals, modelLookup, unpricedModel, type UsageTotals } from '../shared/util.js';
+import { addReply, emptyTotals, entryMessage, isRecord, modelLookup, spendOf, unpricedModel, type Spend, type UsageTotals } from '../shared/util.js';
+import { autoCompactAt } from '../shared/tokens.js';
+import { QUEUED_STATUS } from './delivery.js';
 
 /**
  * Octocode's two-line footer, in the order other coding agents converged on: line 1 is what the agent is and is doing
- * (model, permission mode, thinking, context, running agents and bash jobs; speed and cost on the right), line 2 is where
+ * (model, permission mode, thinking, context, running agents, bash jobs and queued messages; speed and cost on the right), line 2 is where
  * it works (cwd, branch, session name, tokens, other extensions' statuses such as Pi's MCP and Octocode's hooks). Pure in (state, statuses, width) and
  * never animated: Pi repaints the footer on every streamed token.
  */
@@ -18,9 +21,12 @@ export interface FooterState {
   model?: string | undefined;
   /** Thinking level, only for models that reason. */
   thinking?: string | undefined;
-  /** `percent` is null right after compaction, until the next response. */
-  context?: { percent: number | null; window: number } | undefined;
-  /** The session's replies and subagent results: ↑ counts the whole prompt; `cost` is Pi's estimate. */
+  /**
+   * `limit` is where Pi compacts automatically (the window less `compaction.reserveTokens`), else the window; `percent`
+   * is of `limit`, and null right after compaction, until the next response.
+   */
+  context?: { percent: number | null; limit: number } | undefined;
+  /** The session's replies and every subagent's spend (foreground results, background reports): ↑ counts the whole prompt; `cost` is Pi's estimate. */
   usage: UsageTotals;
   cwd: string;
   home?: string | undefined;
@@ -30,10 +36,11 @@ export interface FooterState {
 type Color = Parameters<Theme['fg']>[0];
 type Paint = Pick<Theme, 'fg' | 'bold'>;
 
+/** Background subagents running, set when the team panel (which counts them) is unavailable. */
+export const SUBAGENTS_STATUS = 'octocode-subagents';
 /** Status keys this footer places itself; any other extension's status is appended to line 2. */
-const OWN = { permission: PERMISSION_ID, team: 'octocode-team', bash: 'octocode-bash', speed: 'octocode-speed' } as const;
+const OWN = { permission: PERMISSION_ID, team: 'octocode-team', subagents: SUBAGENTS_STATUS, bash: 'octocode-bash', queued: QUEUED_STATUS, speed: 'octocode-speed' } as const;
 const BAR_CELLS = 8;
-const BRANCH_MAX = 24;
 
 /** An 8-cell gauge and its colour: green under half, yellow to 80%, red above. */
 export function contextBar(percent: number): { bar: string; color: Color } {
@@ -98,13 +105,14 @@ function fit(left: Part[], right: Part[], theme: Paint, width: number): string {
 }
 
 export function footerLines(state: FooterState, branch: string | null, statuses: ReadonlyMap<string, string>, theme: Paint, width: number): string[] {
-  const status = (key: string) => oneLine(statuses.get(key) ?? '');
+  // Repainted per frame, so statuses set before a theme switch take the new colours.
+  const status = (key: string) => oneLine(livePaint(statuses.get(key) ?? '', theme));
   const model = plainRow(state.model ?? 'no model');
   const shortModel = plainRow(truncateToWidth(model, Math.max(1, Math.floor(width / 3)), '…'));
   const context = state.context;
   let ctx: Part = { text: '', priority: 60, keep: true };
   if (context) {
-    const window = formatTokens(context.window);
+    const window = formatTokens(context.limit);
     if (context.percent === null) ctx = { ...ctx, text: `${theme.fg('muted', 'ctx')} ${theme.fg('dim', `? of ${window}`)}` };
     else {
       const { bar, color } = contextBar(context.percent);
@@ -121,7 +129,10 @@ export function footerLines(state: FooterState, branch: string | null, statuses:
       { text: state.thinking ? theme.fg('muted', plainRow(state.thinking)) : '', priority: 30 },
       ctx,
       { text: status(OWN.team), priority: 90, keep: true },
+      { text: status(OWN.subagents), priority: 90, keep: true },
       { text: status(OWN.bash), priority: 90, keep: true },
+      // Messages waiting for the run to end: the user should see theirs did not get lost.
+      { text: status(OWN.queued), priority: 85, keep: true },
     ],
     [
       { text: status(OWN.speed) ? theme.fg('dim', status(OWN.speed)) : '', priority: 10 },
@@ -132,7 +143,8 @@ export function footerLines(state: FooterState, branch: string | null, statuses:
   );
 
   const place = plainRow(tilde(state.cwd, state.home));
-  const shownBranch = branch ? plainRow(truncateToWidth(plainRow(branch), BRANCH_MAX, '…')) : branch;
+  // A third of the row, like the shortened model: long branch names fit wide terminals whole.
+  const shownBranch = branch ? plainRow(truncateToWidth(plainRow(branch), Math.max(1, Math.floor(width / 3)), '…')) : branch;
   const where = (dir: string) => `${theme.fg('text', dir)}${shownBranch ? ` ${theme.fg('muted', `⎇ ${shownBranch}`)}` : ''}`;
   const usage = formatTokenUsage(state.usage);
   const tokens = usage ? theme.fg('dim', usage) : '';
@@ -144,7 +156,7 @@ export function footerLines(state: FooterState, branch: string | null, statuses:
       { text: state.sessionName ? theme.fg('muted', plainRow(state.sessionName)) : '', priority: 50 },
       { text: tokens, priority: 60 },
       // As Pi's own footer does (sanitizeStatusText): a line break inside a footer row breaks pi-tui's row tracking.
-      ...others.map(([, text]) => ({ text: oneLine(text), priority: 20 })),
+      ...others.map(([, text]) => ({ text: oneLine(livePaint(text, theme)), priority: 20 })),
     ],
     [],
     theme,
@@ -153,31 +165,23 @@ export function footerLines(state: FooterState, branch: string | null, statuses:
   return [top, bottom];
 }
 
-type Reply = { role?: string; usage?: unknown };
-
-/** A session entry that adds to the totals: an assistant reply, or a tool result that carries usage (a subagent's). */
-function entryReply(entry: unknown): Reply | undefined {
-  const message = (entry as { type?: string; message?: Reply }).message;
-  if ((entry as { type?: string }).type !== 'message' || !message?.usage) return undefined;
-  return carriesUsage(message.role) ? message : undefined;
-}
-
 /**
  * Replaces Pi's footer with `footerLines`. The state is sampled on events (session start, each finished message,
  * model and thinking changes, compaction, tree moves), never inside render: context usage walks the whole session.
  * Pi repaints the footer on every streamed token, so a frame whose inputs are unchanged reuses the built lines. It also
- * warns once when a reply's model has no pricing.
+ * warns once when a reply's model has no pricing, and when the model declares no reasoning that a built-in twin declares.
  */
 export function registerFooter(pi: ExtensionAPI): void {
   registerUnpricedNotice(pi);
+  registerReasoningNotice(pi);
   const state: FooterState = { usage: emptyTotals(), cwd: process.cwd(), home: os.homedir() };
   /** Moves whenever `state` changes, so the render cache knows its lines are stale. */
   let version = 0;
   let repaint: (() => void) | undefined;
-  const add = (reply: Reply | undefined, ctx: ExtensionContext) => {
-    if (!reply) return;
+  const add = (spend: Spend | undefined, ctx: ExtensionContext) => {
+    if (!spend) return;
     version += 1;
-    addReply(state.usage, reply.usage, unpricedModel(reply, modelLookup(ctx)) !== undefined);
+    addReply(state.usage, spend.usage, unpricedModel(spend, modelLookup(ctx)) !== undefined);
   };
   const sample = (ctx: ExtensionContext) => {
     version += 1;
@@ -185,7 +189,8 @@ export function registerFooter(pi: ExtensionAPI): void {
     state.model = model?.id;
     state.thinking = model?.reasoning ? pi.getThinkingLevel() : undefined;
     const usage = ctx.getContextUsage();
-    state.context = usage ? { percent: usage.percent, window: usage.contextWindow } : model ? { percent: null, window: model.contextWindow } : undefined;
+    const limit = model ? autoCompactAt(pi.getSettings(), model) : usage?.contextWindow;
+    state.context = limit ? { percent: typeof usage?.tokens === 'number' ? (usage.tokens / limit) * 100 : null, limit } : undefined;
     state.cwd = ctx.cwd;
     state.sessionName = ctx.sessionManager.getSessionName?.();
     repaint?.();
@@ -198,7 +203,7 @@ export function registerFooter(pi: ExtensionAPI): void {
   pi.on('session_start', async (_event, ctx) => {
     if (!ctx.hasUI || ctx.mode !== 'tui') return;
     state.usage = emptyTotals();
-    for (const entry of ctx.sessionManager.getEntries()) add(entryReply(entry), ctx);
+    for (const entry of ctx.sessionManager.getEntries()) add(spendOf(entryMessage(entry)), ctx);
     sample(ctx);
     ctx.ui.setFooter((tui, theme, data) => {
       repaint = () => tui.requestRender();
@@ -224,11 +229,11 @@ export function registerFooter(pi: ExtensionAPI): void {
   });
   pi.on('message_end', async (event, ctx) => {
     if (!ctx.hasUI || ctx.mode !== 'tui') return;
-    const reply = entryReply({ type: 'message', message: event.message });
-    add(reply, ctx);
-    // Context usage walks the session: only a reply changes it. A tool result (a subagent's cost) only adds usage.
+    const spend = spendOf(event.message);
+    add(spend, ctx);
+    // Context usage walks the session: only a reply changes it. A subagent's result or report only adds usage.
     if (event.message.role === 'assistant') sample(ctx);
-    else if (reply) repaint?.();
+    else if (spend) repaint?.();
   });
   pi.on('session_tree', refresh);
   pi.on('model_select', refresh);
@@ -254,4 +259,38 @@ function registerUnpricedNotice(pi: ExtensionAPI): void {
     warned = true;
     ctx.ui.notify(`${sanitizeTerminalText(model)} has no pricing in models.json; its usage is not in the cost`, 'warning');
   });
+}
+
+type ModelInfo = Pick<NonNullable<ExtensionContext['model']>, 'provider' | 'id' | 'reasoning' | 'compat'>;
+
+/** A model of another provider with the same id that declares `reasoning` (a built-in one, for a `models.json` copy that left it out). */
+export function reasoningTwin(model: ModelInfo, all: readonly ModelInfo[]): ModelInfo | undefined {
+  if (model.reasoning) return undefined;
+  return all.find((other) => other.id === model.id && other.provider !== model.provider && other.reasoning === true);
+}
+
+/**
+ * Says once per model and session when the model declares no `reasoning` but a model with its id does: Pi then never
+ * asks it to think, so there are no thinking blocks, no thinking level, and no thought on the working line.
+ */
+function registerReasoningNotice(pi: ExtensionAPI): void {
+  const warned = new Set<string>();
+  const check = async (_event: unknown, ctx: ExtensionContext) => {
+    const model = ctx.model;
+    if (!ctx.hasUI || !model) return;
+    const key = `${model.provider}/${model.id}`;
+    if (warned.has(key)) return;
+    const twin = reasoningTwin(model, ctx.modelRegistry?.getAll?.() ?? []);
+    if (!twin) return;
+    warned.add(key);
+    const compat: unknown = twin.compat;
+    const adaptive = isRecord(compat) && compat['forceAdaptiveThinking'] === true;
+    const fields = `"reasoning": true${adaptive ? ' and "compat": { "forceAdaptiveThinking": true }' : ''}`;
+    ctx.ui.notify(sanitizeTerminalText(`${key} does not declare reasoning in models.json, so Pi never asks it to think. ${twin.provider}/${twin.id} declares it: add ${fields} to its entry.`), 'warning');
+  };
+  pi.on('session_start', async (event, ctx) => {
+    warned.clear();
+    await check(event, ctx);
+  });
+  pi.on('model_select', check);
 }

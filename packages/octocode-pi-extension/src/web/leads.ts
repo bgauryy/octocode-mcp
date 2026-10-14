@@ -1,7 +1,7 @@
 import { OCTOCODE_TOOL_PREFIX } from '../shared/octocode-tools.js';
 
 /** The Octocode research tools that can work on a saved page, when this session has them. */
-export type SavedPageTools = { clasify: boolean; localSearch: boolean; localFetch: boolean };
+type SavedPageTools = { clasify: boolean; localSearch: boolean; localFetch: boolean };
 
 /** Which of the tools that read a saved page are active; `clasify` is listed only when its classification provider is set up. */
 export function savedPageTools(active: readonly string[]): SavedPageTools {

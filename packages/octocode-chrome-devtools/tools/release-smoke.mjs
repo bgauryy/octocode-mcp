@@ -197,7 +197,10 @@ try {
       [{ text: 'Supporting source', href: 'https://example.com/evidence' }]
     );
   }
-  const cookieDir = join(work, '.octocode/tmp/chrome-devtools/cookie-smoke');
+  const cookieDir = join(
+    work,
+    '.octocode/octocode-chrome-devtools/tmp/cookie-smoke'
+  );
   mkdirSync(cookieDir, { recursive: true });
   const cookieSource = join(cookieDir, 'source.json'),
     cookieExport = join(cookieDir, 'export.json');

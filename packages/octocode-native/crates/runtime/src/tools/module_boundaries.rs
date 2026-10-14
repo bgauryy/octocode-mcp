@@ -113,31 +113,15 @@ fn rust_files(path: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// The production lines of a source file: no comments, nothing from an inline
-/// `#[cfg(test)] mod … {` on (tests close the file), and no `#[cfg(test)] mod …;`
-/// declaration. A `#[cfg(test)]` item before them still counts.
-fn production_source(source: &str) -> String {
-    let mut out = String::new();
-    let mut lines = source.lines().peekable();
-    while let Some(line) = lines.next() {
-        let trimmed = line.trim_start();
-        if trimmed.starts_with("#[cfg(test)]")
-            && let Some(next) = lines.peek().map(|next| next.trim())
-            && (next.starts_with("mod ") || next.starts_with("pub(crate) mod "))
-        {
-            if next.ends_with('{') {
-                break;
-            }
-            lines.next();
-            continue;
-        }
-        if trimmed.starts_with("//") {
-            continue;
-        }
-        out.push_str(line);
-        out.push('\n');
-    }
-    out
+/// The production code of a source file
+/// ([`crate::tools::test_support::production_text`]) without its comment
+/// lines, which may name modules they do not import.
+fn production_code(source: &str) -> String {
+    crate::tools::test_support::production_text(source)
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .flat_map(|line| [line, "\n"])
+        .collect()
 }
 
 /// Names `crate::tools::` is followed by: `crate::tools::x::…` and the
@@ -208,7 +192,7 @@ fn tool_edges(tools_dir: &Path) -> BTreeMap<(String, String), String> {
         for path in files {
             let source = std::fs::read_to_string(&path)
                 .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
-            for imported in imported_modules(&production_source(&source)) {
+            for imported in imported_modules(&production_code(&source)) {
                 if &imported != importer && tool_modules.contains(&imported) {
                     let shown = path
                         .strip_prefix(tools_dir)
@@ -260,7 +244,7 @@ fn the_scanner_reads_path_and_group_imports() {
                   // crate::tools::lsp_search::ignored\n\
                   #[cfg(test)]\nmod tests { use crate::tools::clasify::t; }\n";
     assert_eq!(
-        imported_modules(&production_source(source)),
+        imported_modules(&production_code(source)),
         ["id", "local_fetch", "result", "gh_shared"]
     );
 }

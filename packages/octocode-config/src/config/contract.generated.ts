@@ -258,7 +258,6 @@ export interface ResolvedConfigData {
 export type ConfigFieldKind = 'boolean' | 'number' | 'string' | 'url' | 'path' | 'stringArray' | 'enum' | 'schemaVersion';
 export interface ConfigEnvBinding {
   name: string;
-  priority: number;
   dotenv?: 'all' | 'home' | 'never';
   normalize?: 'trim' | 'lower';
   invalid?: 'skip' | 'default';
@@ -274,7 +273,8 @@ export interface ConfigFieldSpec {
   credential: boolean;
   description: string;
   notes?: string;
-  env: readonly ConfigEnvBinding[];
+  /** The one variable that sets this field, if any. */
+  env?: ConfigEnvBinding;
   defaultValue: unknown;
   minimum?: number;
   maximum?: number;
@@ -293,7 +293,6 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "resolved": true,
     "credential": false,
     "description": "Configuration schema version.",
-    "env": [],
     "defaultValue": 1
   },
   {
@@ -305,15 +304,12 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "resolved": true,
     "credential": false,
     "description": "GitHub REST API root. GitHub Enterprise commonly uses /api/v3.",
-    "env": [
-      {
-        "name": "GITHUB_API_URL",
-        "priority": 0,
-        "dotenv": "home",
-        "normalize": "trim",
-        "invalid": "skip"
-      }
-    ],
+    "env": {
+      "name": "GITHUB_API_URL",
+      "dotenv": "home",
+      "normalize": "trim",
+      "invalid": "skip"
+    },
     "defaultValue": "https://api.github.com"
   },
   {
@@ -325,12 +321,9 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "resolved": true,
     "credential": false,
     "description": "Use GitHub GraphQL where supported; false forces REST-only access.",
-    "env": [
-      {
-        "name": "OCTOCODE_GITHUB_GRAPHQL",
-        "priority": 0
-      }
-    ],
+    "env": {
+      "name": "OCTOCODE_GITHUB_GRAPHQL"
+    },
     "defaultValue": true
   },
   {
@@ -342,12 +335,9 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "resolved": true,
     "credential": false,
     "description": "Enable local filesystem tools on every runtime surface.",
-    "env": [
-      {
-        "name": "OCTOCODE_ENABLE_LOCAL",
-        "priority": 0
-      }
-    ],
+    "env": {
+      "name": "OCTOCODE_ENABLE_LOCAL"
+    },
     "defaultValue": true
   },
   {
@@ -359,13 +349,10 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "resolved": true,
     "credential": false,
     "description": "Enable beta features and tools; off by default on every surface. `octocode schema` reports which tools the gate withholds.",
-    "env": [
-      {
-        "name": "OCTOCODE_BETA",
-        "priority": 0,
-        "dotenv": "home"
-      }
-    ],
+    "env": {
+      "name": "OCTOCODE_BETA",
+      "dotenv": "home"
+    },
     "defaultValue": false
   },
   {
@@ -378,13 +365,10 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "credential": false,
     "description": "Extra absolute or home-relative roots added to the allowed roots (workspace root and OCTOCODE_HOME).",
     "notes": "The environment value is a comma-separated list.",
-    "env": [
-      {
-        "name": "ALLOWED_PATHS",
-        "priority": 0,
-        "dotenv": "home"
-      }
-    ],
+    "env": {
+      "name": "ALLOWED_PATHS",
+      "dotenv": "home"
+    },
     "defaultValue": [],
     "itemFormat": "path"
   },
@@ -397,14 +381,11 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "resolved": true,
     "credential": false,
     "description": "Optional absolute or home-relative workspace root.",
-    "env": [
-      {
-        "name": "WORKSPACE_ROOT",
-        "priority": 0,
-        "dotenv": "home",
-        "normalize": "trim"
-      }
-    ],
+    "env": {
+      "name": "WORKSPACE_ROOT",
+      "dotenv": "home",
+      "normalize": "trim"
+    },
     "defaultValue": null
   },
   {
@@ -416,12 +397,9 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "resolved": true,
     "credential": false,
     "description": "Strict tool allowlist replacing the default tool set.",
-    "env": [
-      {
-        "name": "TOOLS_TO_RUN",
-        "priority": 0
-      }
-    ],
+    "env": {
+      "name": "TOOLS_TO_RUN"
+    },
     "defaultValue": null
   },
   {
@@ -433,12 +411,9 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "resolved": true,
     "credential": false,
     "description": "Tools removed from the default tool set.",
-    "env": [
-      {
-        "name": "DISABLE_TOOLS",
-        "priority": 0
-      }
-    ],
+    "env": {
+      "name": "DISABLE_TOOLS"
+    },
     "defaultValue": null
   },
   {
@@ -450,12 +425,9 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "resolved": true,
     "credential": false,
     "description": "Available tools left out of tools/list; one run({tool, query}) tool executes them and next/hints leads that name them.",
-    "env": [
-      {
-        "name": "OCTOCODE_DEFER_TOOLS",
-        "priority": 0
-      }
-    ],
+    "env": {
+      "name": "OCTOCODE_DEFER_TOOLS"
+    },
     "defaultValue": null
   },
   {
@@ -467,12 +439,9 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "resolved": true,
     "credential": false,
     "description": "Request timeout in milliseconds.",
-    "env": [
-      {
-        "name": "REQUEST_TIMEOUT",
-        "priority": 0
-      }
-    ],
+    "env": {
+      "name": "REQUEST_TIMEOUT"
+    },
     "defaultValue": 30000,
     "minimum": 5000,
     "maximum": 300000
@@ -486,12 +455,9 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "resolved": true,
     "credential": false,
     "description": "Maximum retries after a failed request.",
-    "env": [
-      {
-        "name": "MAX_RETRIES",
-        "priority": 0
-      }
-    ],
+    "env": {
+      "name": "MAX_RETRIES"
+    },
     "defaultValue": 3,
     "minimum": 0,
     "maximum": 10
@@ -506,12 +472,9 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "credential": false,
     "description": "Longest GitHub rate-limit wait in milliseconds (primary or secondary limit, code-search window) before a call fails with retryAfter.",
     "notes": "Waiting does not count against network.timeout; the tool call's own deadline still bounds it. The default stays under the 60 s tool-call timeout some MCP hosts apply.",
-    "env": [
-      {
-        "name": "OCTOCODE_MAX_RATE_LIMIT_WAIT",
-        "priority": 0
-      }
-    ],
+    "env": {
+      "name": "OCTOCODE_MAX_RATE_LIMIT_WAIT"
+    },
     "defaultValue": 45000,
     "minimum": 0,
     "maximum": 300000
@@ -526,13 +489,10 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "credential": false,
     "description": "Allow private, loopback, or link-local artifact registries.",
     "notes": "Security-sensitive SSRF escape hatch; opt in only for trusted enterprise registries.",
-    "env": [
-      {
-        "name": "OCTOCODE_ALLOW_PRIVATE_REGISTRY",
-        "priority": 0,
-        "dotenv": "home"
-      }
-    ],
+    "env": {
+      "name": "OCTOCODE_ALLOW_PRIVATE_REGISTRY",
+      "dotenv": "home"
+    },
     "defaultValue": false
   },
   {
@@ -544,14 +504,11 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "resolved": true,
     "credential": false,
     "description": "Optional path to a custom lsp-servers.json.",
-    "env": [
-      {
-        "name": "OCTOCODE_LSP_CONFIG",
-        "priority": 0,
-        "dotenv": "home",
-        "normalize": "trim"
-      }
-    ],
+    "env": {
+      "name": "OCTOCODE_LSP_CONFIG",
+      "dotenv": "home",
+      "normalize": "trim"
+    },
     "defaultValue": null
   },
   {
@@ -563,15 +520,12 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "resolved": true,
     "credential": false,
     "description": "Whether `octocode lsp-server install` may download a managed language server: prompt (ask), off, or auto.",
-    "env": [
-      {
-        "name": "OCTOCODE_LSP_AUTO_INSTALL",
-        "priority": 0,
-        "dotenv": "home",
-        "normalize": "lower",
-        "invalid": "skip"
-      }
-    ],
+    "env": {
+      "name": "OCTOCODE_LSP_AUTO_INSTALL",
+      "dotenv": "home",
+      "normalize": "lower",
+      "invalid": "skip"
+    },
     "defaultValue": "prompt",
     "values": [
       "prompt",
@@ -588,14 +542,11 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "resolved": true,
     "credential": false,
     "description": "Directory for managed language-server installs; default <octocode home>/lsp.",
-    "env": [
-      {
-        "name": "OCTOCODE_LSP_CACHE_DIR",
-        "priority": 0,
-        "dotenv": "home",
-        "normalize": "trim"
-      }
-    ],
+    "env": {
+      "name": "OCTOCODE_LSP_CACHE_DIR",
+      "dotenv": "home",
+      "normalize": "trim"
+    },
     "defaultValue": null
   },
   {
@@ -607,14 +558,11 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "resolved": true,
     "credential": false,
     "description": "Resident-memory cap per language server process tree, in MiB (a non-negative integer). Unset: 25% of host RAM, between 4096 and 8192. 0 disables the cap. A server over the cap is stopped and lspSearch reports serverCrashed (not retryable).",
-    "env": [
-      {
-        "name": "OCTOCODE_LSP_MAX_MEMORY_MB",
-        "priority": 0,
-        "dotenv": "home",
-        "normalize": "trim"
-      }
-    ],
+    "env": {
+      "name": "OCTOCODE_LSP_MAX_MEMORY_MB",
+      "dotenv": "home",
+      "normalize": "trim"
+    },
     "defaultValue": null
   },
   {
@@ -626,13 +574,10 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "resolved": true,
     "credential": false,
     "description": "Trust a project .octocode/lsp-servers.json. Security-sensitive: a trusted project config can launch server binaries.",
-    "env": [
-      {
-        "name": "OCTOCODE_TRUST_PROJECT_LSP_CONFIG",
-        "priority": 0,
-        "dotenv": "home"
-      }
-    ],
+    "env": {
+      "name": "OCTOCODE_TRUST_PROJECT_LSP_CONFIG",
+      "dotenv": "home"
+    },
     "defaultValue": false
   },
   {
@@ -644,14 +589,11 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "resolved": true,
     "credential": false,
     "description": "Language-server prewarm: targeted starts the server an offered lspSearch call names; all also warms the file a read or search names; off disables it.",
-    "env": [
-      {
-        "name": "OCTOCODE_LSP_PREWARM",
-        "priority": 0,
-        "normalize": "lower",
-        "invalid": "skip"
-      }
-    ],
+    "env": {
+      "name": "OCTOCODE_LSP_PREWARM",
+      "normalize": "lower",
+      "invalid": "skip"
+    },
     "defaultValue": "targeted",
     "values": [
       "targeted",
@@ -668,14 +610,11 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "resolved": true,
     "credential": false,
     "description": "Encoding of rendered text content (the MCP text channel): yaml or json. Structured content and CLI stdout are always JSON.",
-    "env": [
-      {
-        "name": "OCTOCODE_OUTPUT_FORMAT",
-        "priority": 0,
-        "normalize": "lower",
-        "invalid": "default"
-      }
-    ],
+    "env": {
+      "name": "OCTOCODE_OUTPUT_FORMAT",
+      "normalize": "lower",
+      "invalid": "default"
+    },
     "defaultValue": "yaml",
     "values": [
       "yaml",
@@ -691,12 +630,9 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "resolved": true,
     "credential": false,
     "description": "Mask email addresses such as GitHub commit authors.",
-    "env": [
-      {
-        "name": "OCTOCODE_REDACT_EMAILS",
-        "priority": 0
-      }
-    ],
+    "env": {
+      "name": "OCTOCODE_REDACT_EMAILS"
+    },
     "defaultValue": false
   },
   {
@@ -708,12 +644,9 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "resolved": true,
     "credential": false,
     "description": "Automatic pagination character budget.",
-    "env": [
-      {
-        "name": "OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH",
-        "priority": 0
-      }
-    ],
+    "env": {
+      "name": "OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH"
+    },
     "defaultValue": 50000,
     "minimum": 1000,
     "maximum": 50000
@@ -727,16 +660,13 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "resolved": true,
     "credential": false,
     "description": "Whether caches and runtime state may persist on disk.",
-    "env": [
-      {
-        "name": "OCTOCODE_STORAGE_MODE",
-        "priority": 0,
-        "dotenv": "home",
-        "normalize": "lower",
-        "invalid": "skip",
-        "workspaceNarrowsTo": "memory"
-      }
-    ],
+    "env": {
+      "name": "OCTOCODE_STORAGE_MODE",
+      "dotenv": "home",
+      "normalize": "lower",
+      "invalid": "skip",
+      "workspaceNarrowsTo": "memory"
+    },
     "defaultValue": "persistent",
     "values": [
       "persistent",
@@ -753,12 +683,9 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "resolved": true,
     "credential": false,
     "description": "Write stats.json on flush; stats remain in memory either way.",
-    "env": [
-      {
-        "name": "OCTOCODE_ENABLE_STATS",
-        "priority": 0
-      }
-    ],
+    "env": {
+      "name": "OCTOCODE_ENABLE_STATS"
+    },
     "defaultValue": false
   },
   {
@@ -770,12 +697,9 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "resolved": true,
     "credential": false,
     "description": "Milliseconds a ghCloneRepo checkout stays fresh before it is re-fetched.",
-    "env": [
-      {
-        "name": "OCTOCODE_CACHE_TTL_MS",
-        "priority": 0
-      }
-    ],
+    "env": {
+      "name": "OCTOCODE_CACHE_TTL_MS"
+    },
     "defaultValue": 86400000,
     "minimum": 60000,
     "maximum": 2592000000
@@ -789,12 +713,9 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "resolved": true,
     "credential": false,
     "description": "Byte cap for the on-disk ghCloneRepo cache; least-recently-used checkouts are evicted above it.",
-    "env": [
-      {
-        "name": "OCTOCODE_MAX_CACHE_SIZE",
-        "priority": 0
-      }
-    ],
+    "env": {
+      "name": "OCTOCODE_MAX_CACHE_SIZE"
+    },
     "defaultValue": 2147483648,
     "minimum": 1048576,
     "maximum": 1099511627776
@@ -808,12 +729,9 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "resolved": true,
     "credential": false,
     "description": "Maximum repositories the ghCloneRepo cache keeps.",
-    "env": [
-      {
-        "name": "OCTOCODE_MAX_CLONES",
-        "priority": 0
-      }
-    ],
+    "env": {
+      "name": "OCTOCODE_MAX_CLONES"
+    },
     "defaultValue": 50,
     "minimum": 1,
     "maximum": 1000
@@ -827,14 +745,11 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "resolved": true,
     "credential": false,
     "description": "Enable goal-based ordering on supported reads. Requires the classification API credential, independently of the public clasify tool.",
-    "env": [
-      {
-        "name": "OCTOCODE_RANKING_ENABLED",
-        "priority": 0,
-        "dotenv": "home",
-        "workspaceNarrowsTo": "false"
-      }
-    ],
+    "env": {
+      "name": "OCTOCODE_RANKING_ENABLED",
+      "dotenv": "home",
+      "workspaceNarrowsTo": "false"
+    },
     "defaultValue": false
   },
   {
@@ -846,12 +761,9 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "resolved": true,
     "credential": false,
     "description": "Maximum complete evidence units classified per ranking operation; other units keep their original order.",
-    "env": [
-      {
-        "name": "OCTOCODE_RANKING_MAX_CANDIDATES",
-        "priority": 0
-      }
-    ],
+    "env": {
+      "name": "OCTOCODE_RANKING_MAX_CANDIDATES"
+    },
     "defaultValue": 64,
     "minimum": 1,
     "maximum": 256
@@ -865,12 +777,9 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "resolved": true,
     "credential": false,
     "description": "Maximum evidence characters sent for one ranking operation.",
-    "env": [
-      {
-        "name": "OCTOCODE_RANKING_MAX_CHARS",
-        "priority": 0
-      }
-    ],
+    "env": {
+      "name": "OCTOCODE_RANKING_MAX_CHARS"
+    },
     "defaultValue": 131072,
     "minimum": 1024,
     "maximum": 1048576
@@ -884,12 +793,9 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "resolved": true,
     "credential": false,
     "description": "Total ranking deadline in milliseconds, bounded by the enclosing request deadline.",
-    "env": [
-      {
-        "name": "OCTOCODE_RANKING_TIMEOUT_MS",
-        "priority": 0
-      }
-    ],
+    "env": {
+      "name": "OCTOCODE_RANKING_TIMEOUT_MS"
+    },
     "defaultValue": 10000,
     "minimum": 100,
     "maximum": 60000
@@ -903,15 +809,12 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "resolved": true,
     "credential": false,
     "description": "Classification vendor. Per-vendor defaults (host, model, endpoint) are built in.",
-    "env": [
-      {
-        "name": "OCTOCODE_CLASSIFICATION_TYPE",
-        "priority": 0,
-        "dotenv": "all",
-        "normalize": "trim",
-        "invalid": "skip"
-      }
-    ],
+    "env": {
+      "name": "OCTOCODE_CLASSIFICATION_TYPE",
+      "dotenv": "all",
+      "normalize": "trim",
+      "invalid": "skip"
+    },
     "defaultValue": "jev",
     "values": [
       "jev"
@@ -928,14 +831,11 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "credential": true,
     "description": "Classification provider API key, required for goals ranking and the beta clasify tool.",
     "notes": "Credential values are omitted from resolved configuration and diagnostics.",
-    "env": [
-      {
-        "name": "OCTOCODE_CLASSIFICATION_API",
-        "priority": 0,
-        "dotenv": "all",
-        "normalize": "trim"
-      }
-    ],
+    "env": {
+      "name": "OCTOCODE_CLASSIFICATION_API",
+      "dotenv": "all",
+      "normalize": "trim"
+    },
     "defaultValue": null
   },
   {
@@ -948,14 +848,11 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "credential": true,
     "description": "Optional override of the selected vendor's default API root.",
     "notes": "Requires HTTP or HTTPS at config validation; provider policy may require HTTPS except loopback.",
-    "env": [
-      {
-        "name": "OCTOCODE_CLASSIFICATION_API_HOST",
-        "priority": 0,
-        "dotenv": "home",
-        "normalize": "trim"
-      }
-    ],
+    "env": {
+      "name": "OCTOCODE_CLASSIFICATION_API_HOST",
+      "dotenv": "home",
+      "normalize": "trim"
+    },
     "defaultValue": null
   },
   {
@@ -967,12 +864,9 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "resolved": true,
     "credential": false,
     "description": "Process-wide maximum in-flight classification provider requests per provider endpoint.",
-    "env": [
-      {
-        "name": "OCTOCODE_CLASSIFICATION_CONCURRENCY",
-        "priority": 0
-      }
-    ],
+    "env": {
+      "name": "OCTOCODE_CLASSIFICATION_CONCURRENCY"
+    },
     "defaultValue": 10,
     "minimum": 1,
     "maximum": 64

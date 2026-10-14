@@ -85,6 +85,24 @@ pub trait ToolOutput: Sync {
         false
     }
 
+    /// The envelope key of this tool's rows: `queries` for resource-major
+    /// matrices, else `results`.
+    fn rows_key(&self) -> &'static str {
+        if self.resource_major() {
+            "queries"
+        } else {
+            "results"
+        }
+    }
+
+    /// Whether rows carry scan totals (`matchCount`, `matchedLineCount`,
+    /// `filesScanned`) that default rows trim to the ones the page needs and
+    /// `extras:["stats"]` keeps whole. A count that sizes an edit
+    /// (astRewrite's `matchCount`) is no scan total.
+    fn reports_scan_totals(&self) -> bool {
+        false
+    }
+
     /// How the text channel renders this tool's rows.
     fn text_shape(&self) -> TextShape {
         TextShape::Structured

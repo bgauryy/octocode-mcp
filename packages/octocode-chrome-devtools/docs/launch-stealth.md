@@ -13,7 +13,7 @@ node "$CDP" open --headless --port 9222 --enableFeatures WebMCP --url "<url>"   
 - Proxy config example: `dist/engine/octocode-chrome-devtools.vpn.example.json`. Other flags: `--windowSize WxH`, `--userAgent`, `--chromePath` (only for non-standard installs), `--proxyBypassList`, `--proxyPacUrl`, `--config <proxy.json>`.
 - Mobile: the window size sets only outer dimensions; also use CDP Emulation.
 - Real profile (`--profile <dir>`): opens the data dir of the browser that `--chromePath` (or auto-detect) selects: Chrome, Canary, Chrome for Testing, Chromium or Brave. It fails, with no isolated fallback, when that browser is running, when the profile dir does not exist (it never creates one), with `--headless`, and on Google Chrome 136+, which [ignores remote debugging on its default data dir](https://developer.chrome.com/blog/remote-debugging-port). For Google Chrome, sign in inside an isolated session or move cookies with `cookies --from-port` / `--from-storage-state` (`intents.md#auth`).
-- State lives under `<cwd>/.octocode/tmp/chrome-devtools/`: timestamped runs, `browser-state/` (profiles, session files), `session-meta/port-<N>/`.
+- State lives under `<cwd>/.octocode/octocode-chrome-devtools/tmp/`: timestamped runs, `browser-state/` (profiles, session files), `session-meta/port-<N>/`.
 
 ## Stealth
 
@@ -28,6 +28,6 @@ Twelve self-checks then run in an isolated world: `webdriver`, headless markers,
 | `--no-stealth` | Disables opt-in emulation; combining it with `--stealth` is an error |
 | Unsandboxed runner only | `CDP_STEALTH_ALLOW_FAIL=1` logs failures; `CDP_SKIP_STEALTH_VERIFY=1` skips verify |
 
-Not covered: popups opened with `window.open` or `target=_blank` start with the native UA (attach to them with `--stealth`), service workers, and engine-level probes (CreepJS still scores headless Chrome partly headless). Smoke tests: `stealth-check` (bot.sannysoft.com) and `affiliates-stealth-check`. `octocode-scraping --provider cdp` uses the same overrides unless `--no-cdp-stealth`.
+Not covered: popups opened with `window.open` or `target=_blank` start with the native UA (attach to them with `--stealth`), service workers, and engine-level probes (CreepJS still scores headless Chrome partly headless). Smoke tests: `stealth-check` (bot.sannysoft.com) and `affiliates-stealth-check`. `octocode-scraping --provider cdp` applies the same overrides only with `--cdp-stealth`.
 
 Next: launch problems → `recovery.md`; auth → `intents.md#auth`.

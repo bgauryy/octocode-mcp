@@ -2,16 +2,13 @@
 #[cfg(test)]
 mod flow_tests;
 
-use super::{
-    CredentialSource, CredentialStore, OAuthToken, ProviderError, ProviderErrorKind,
-    StoredCredentials,
-};
+use super::{CredentialStore, OAuthToken, StoredCredentials};
+use octocode_github::{CredentialSource, ProviderError, ProviderErrorKind};
 
 use reqwest::header::{ACCEPT, USER_AGENT};
 use serde::Deserialize;
 use std::{
     future::Future,
-    sync::OnceLock,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tokio_util::sync::CancellationToken;
@@ -118,27 +115,24 @@ pub struct RefreshResult {
 
 const LOGIN_HTTP_TIMEOUT: Duration = Duration::from_secs(15);
 
-/// One pooled client for OAuth web-origin calls (device code, polling,
-/// refresh); admission goes through the executor's `auth` group.
-fn login_client() -> Result<&'static reqwest::Client, ProviderError> {
-    static CLIENT: OnceLock<Option<reqwest::Client>> = OnceLock::new();
-    CLIENT
-        .get_or_init(|| {
-            // Never follow redirects: a 307/308 would replay the device-code,
-            // poll, or refresh-token body to wherever `Location` points.
-            reqwest::Client::builder()
-                .timeout(LOGIN_HTTP_TIMEOUT)
-                .redirect(reqwest::redirect::Policy::none())
-                .build()
-                .ok()
+/// The OAuth web-origin client (device code, polling, refresh) pooled per
+/// Tokio runtime; admission goes through the executor's `auth` group.
+fn login_client() -> Result<reqwest::Client, ProviderError> {
+    static CLIENTS: crate::providers::RuntimeClients<()> = crate::providers::RuntimeClients::new(4);
+    CLIENTS.get((), || {
+        // Never follow redirects: a 307/308 would replay the device-code,
+        // poll, or refresh-token body to wherever `Location` points.
+        octocode_io::http::client(&octocode_io::http::ClientPolicy {
+            timeout: Some(LOGIN_HTTP_TIMEOUT),
+            ..octocode_io::http::ClientPolicy::default()
         })
-        .as_ref()
-        .ok_or_else(|| {
+        .map_err(|_| {
             ProviderError::new(
                 ProviderErrorKind::Transport,
                 "failed to initialize login HTTP client",
             )
         })
+    })
 }
 
 /// POST an OAuth form to the web origin; a transport failure or redirect
@@ -204,7 +198,7 @@ async fn auth_call<T>(
                 "invalid GitHub login origin",
             )
         })?;
-    let budget = super::GitHubBudget::global();
+    let budget = octocode_github::GitHubBudget::global();
     let deadline = Instant::now() + LOGIN_HTTP_TIMEOUT * 2;
     let _admission = budget
         .admit_auth(&origin, Duration::from_secs(10), deadline, cancellation)
@@ -239,7 +233,7 @@ async fn login_device_flow_with_store(
             "GitHub OAuth client ID is required",
         ));
     }
-    let client = login_client()?;
+    let client = &login_client()?;
     let device: DeviceCode = auth_call(endpoints, cancellation, async {
         post_form(
             client,
@@ -346,11 +340,11 @@ pub enum TokenCheck {
 pub async fn verify_token(api_url: &str, token: &str, timeout: Duration) -> TokenCheck {
     let Some((endpoint, transport)) = url::Url::parse(api_url)
         .ok()
-        .and_then(|url| super::GitHubEndpoint::new(url).ok())
+        .and_then(|url| octocode_github::GitHubEndpoint::new(url).ok())
         .and_then(|endpoint| {
-            let transport = super::GitHubTransport::new(
+            let transport = octocode_github::GitHubTransport::new(
                 endpoint.clone(),
-                super::RetryPolicy {
+                octocode_github::RetryPolicy {
                     max_attempts: 2,
                     ..Default::default()
                 },
@@ -366,12 +360,12 @@ pub async fn verify_token(api_url: &str, token: &str, timeout: Duration) -> Toke
     };
     match transport
         .execute(
-            super::RequestSpec::get(url),
-            &super::RequestContext::new(
-                crate::providers::RequestBudget::with_timeout(timeout, 1024 * 1024),
-                Some(super::ResolvedCredential::new(
+            octocode_github::RequestSpec::get(url),
+            &octocode_github::RequestContext::new(
+                octocode_github::RequestBudget::with_timeout(timeout, 1024 * 1024),
+                Some(octocode_github::ResolvedCredential::new(
                     token.to_owned(),
-                    super::CredentialSource::Override,
+                    octocode_github::CredentialSource::Override,
                 )),
             ),
         )
@@ -451,17 +445,23 @@ fn expires_after(now: i64, seconds: u64) -> String {
     crate::civil_date::iso8601_secs(now.saturating_add_unsigned(seconds))
 }
 
+/// How long before its expiry an access token is refreshed.
+const REFRESH_SKEW: Duration = Duration::from_secs(5 * 60);
+
+/// When `credentials` must be refreshed: `REFRESH_SKEW` before the access
+/// token expires (`UNIX_EPOCH` when the expiry is unreadable), or `None`
+/// when the token does not expire.
+pub fn refresh_due(credentials: &StoredCredentials) -> Option<SystemTime> {
+    let expires_at = credentials.token.expires_at.as_deref()?;
+    Some(
+        parse_expiry(expires_at)
+            .and_then(|when| when.checked_sub(REFRESH_SKEW))
+            .unwrap_or(UNIX_EPOCH),
+    )
+}
+
 pub fn is_token_expired(credentials: &StoredCredentials) -> bool {
-    let Some(expires_at) = credentials.token.expires_at.as_deref() else {
-        return false;
-    };
-    match parse_expiry(expires_at) {
-        None => true,
-        Some(when) => when
-            .duration_since(SystemTime::now())
-            .map(|left| left < Duration::from_secs(5 * 60))
-            .unwrap_or(true),
-    }
+    refresh_due(credentials).is_some_and(|due| SystemTime::now() >= due)
 }
 
 pub fn is_refresh_token_expired(credentials: &StoredCredentials) -> bool {
@@ -627,7 +627,6 @@ async fn refresh_selected(
     credentials: &CredentialStore,
     source: CredentialSource,
 ) -> Result<Option<StoredCredentials>, ProviderError> {
-    use sha2::{Digest, Sha256};
     if client_id.trim().is_empty() {
         return Err(ProviderError::new(
             ProviderErrorKind::Authentication,
@@ -643,7 +642,7 @@ async fn refresh_selected(
     } else {
         credentials.home().join("tmp/locks").join(format!(
             "oauth-refresh-{}.lock",
-            hex::encode(Sha256::digest(endpoints.host.as_bytes()))
+            crate::digest::sha256(endpoints.host.as_bytes())
         ))
     };
     refresh_locked(
@@ -740,7 +739,7 @@ async fn exchange_refresh_token(
     client_id: &str,
     refresh_token: &str,
 ) -> Result<RefreshedToken, ProviderError> {
-    let client = login_client()?;
+    let client = &login_client()?;
     let token: TokenResponse = auth_call(endpoints, &CancellationToken::new(), async {
         post_form(
             client,
@@ -844,7 +843,7 @@ mod tests {
         token_poll_form, unix_now,
     };
     use crate::providers::github::OAuthToken;
-    use crate::providers::github::{ProviderError, ProviderErrorKind};
+    use octocode_github::{ProviderError, ProviderErrorKind};
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
     use tokio_util::sync::CancellationToken;

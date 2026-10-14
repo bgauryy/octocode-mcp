@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiClient } from '../src/api/client.js';
 import { registerApi } from '../src/api/register.js';
-import { API_DIR_ENV, apiDir, instancesDir, listInstances, socketPath, writeRecord, type InstanceRecord } from '../src/api/registry.js';
+import { apiDir, instancesDir, listInstances, socketPath, writeRecord, type InstanceRecord } from '../src/api/registry.js';
 import { Subcommands } from '../src/shared/commands.js';
 import { fakeCtx, fakePi } from './fake-pi.js';
 import { tmp } from './helpers.js';
@@ -16,8 +16,9 @@ afterEach(async () => {
 });
 
 function setup(env: Record<string, string> = {}) {
-  const dir = tmp('octo-api-reg-');
-  vi.stubEnv(API_DIR_ENV, dir);
+  vi.stubEnv('OCTOCODE_HOME', tmp('octo-api-reg-'));
+  const dir = apiDir();
+  fs.mkdirSync(dir, { recursive: true });
   vi.stubEnv('OCTOCODE_API', '');
   vi.stubEnv('OCTOCODE_API_HTTP', '');
   for (const [name, value] of Object.entries(env)) vi.stubEnv(name, value);
@@ -119,14 +120,30 @@ describe('/octocode api', () => {
     await wired.start(headless);
     expect(headless.ui.notes).toEqual([]);
   });
+
+  it('says why a bad OCTOCODE_API_HTTP keeps the API off, and still binds for /octocode api on', async () => {
+    const { wired, ctx, run, notes } = setup({ OCTOCODE_API: '1', OCTOCODE_API_HTTP: 'abc' });
+    await wired.start(ctx);
+    expect(wired.api.instance).toBeUndefined();
+    expect(notes.at(-1)).toMatchObject({ type: 'warning', message: expect.stringContaining('OCTOCODE_API_HTTP=abc is not a port') });
+    await run('on');
+    expect(wired.api.instance?.socket ?? wired.api.instance?.http).toBeDefined();
+  });
+
+  it('stays off after /octocode api off even when OCTOCODE_API=1', async () => {
+    const { wired, ctx, run } = setup({ OCTOCODE_API: '1' });
+    await wired.start(ctx);
+    expect(wired.api.instance).toBeDefined();
+    await run('off');
+    expect(wired.api.instance).toBeUndefined();
+  });
 });
 
 describe('instance registry', () => {
   const record = (id: string, extra: Partial<InstanceRecord> = {}): InstanceRecord => ({ id, pid: process.pid, cwd: '/w', startedAt: 1, protocol: 1, ...extra });
 
-  it('resolves the directory from the override or the Octocode home', () => {
-    expect(apiDir({ [API_DIR_ENV]: ' relative/api ' })).toBe(path.resolve('relative/api'));
-    expect(path.isAbsolute(apiDir({}))).toBe(true);
+  it('lives in the Octocode home, with no separate override', () => {
+    expect(apiDir({ OCTOCODE_HOME: '/h', OCTOCODE_API_DIR: '/elsewhere' })).toBe(path.join('/h', 'pi-api'));
   });
 
   it('lists live records oldest first, skips corrupt or partial ones and sweeps dead ones with their sockets', () => {
@@ -151,7 +168,7 @@ describe('instance registry', () => {
   it('keeps a socket next to its record when the path fits and moves a long one to the temp directory', () => {
     expect(socketPath('/short', 'pi-1')).toBe(path.join('/short', 'pi-1.sock'));
     const long = socketPath(`/${'x'.repeat(120)}`, 'pi-2');
-    expect(path.basename(long)).toMatch(/^octocode-\d+-pi-2\.sock$/);
+    expect(path.basename(long)).toBe('pi-2.sock');
     expect(Buffer.byteLength(long)).toBeLessThan(110);
   });
 });

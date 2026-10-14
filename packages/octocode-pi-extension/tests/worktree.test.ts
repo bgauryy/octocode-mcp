@@ -2,6 +2,7 @@ import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { processStartTime } from '../src/shared/process.js';
 import { subagentProcessEnv } from '../src/subagents/process.js';
 import { createWorktree, describePrune, finishWorktree, isolationReport, mergeAgent, pendingRefs, pruneWorktrees, recordWorktreePid, worktreesDir } from '../src/subagents/worktree.js';
 import { tmp } from './helpers.js';
@@ -140,7 +141,7 @@ describe('isolated subagent worktrees', () => {
     fs.writeFileSync(path.join(worktree.path, 'src', 'a.txt'), 'orphaned work\n');
     const dead = spawnSync(process.execPath, ['-e', '0']).pid;
     const meta = `${worktree.path}.json`;
-    fs.writeFileSync(meta, JSON.stringify({ ...JSON.parse(fs.readFileSync(meta, 'utf8')), pids: [dead] }));
+    fs.writeFileSync(meta, JSON.stringify({ ...JSON.parse(fs.readFileSync(meta, 'utf8')), owners: [{ pid: dead }] }));
 
     expect(await pruneWorktrees(dir, home)).toEqual({ saved: [{ agentId: 'orphan-1', ref: 'refs/octocode/pi/orphan-1' }], kept: [] });
     expect(fs.existsSync(worktree.path)).toBe(false);
@@ -158,7 +159,7 @@ describe('isolated subagent worktrees', () => {
       const worktree = await createWorktree(dir, id, home);
       fs.writeFileSync(path.join(worktree.path, 'src', 'a.txt'), `${id}\n`);
       const meta = `${worktree.path}.json`;
-      fs.writeFileSync(meta, JSON.stringify({ ...JSON.parse(fs.readFileSync(meta, 'utf8')), pids: [dead] }));
+      fs.writeFileSync(meta, JSON.stringify({ ...JSON.parse(fs.readFileSync(meta, 'utf8')), owners: [{ pid: dead }] }));
       return worktree;
     };
     await orphan('race-1');
@@ -174,6 +175,26 @@ describe('isolated subagent worktrees', () => {
     fs.renameSync(`${stuck.path}.json`, `${stuck.path}.json.pruning-${dead}`);
     expect(await pruneWorktrees(dir, home)).toEqual({ saved: [{ agentId: 'stuck-1', ref: 'refs/octocode/pi/stuck-1' }], kept: [] });
     expect(fs.readdirSync(worktreesDir(dir, home))).toEqual([]);
+  });
+
+  it.runIf(process.platform !== 'win32')('releases a prune claim whose pid names another process now, and keeps one its own process holds', async () => {
+    const dir = repo();
+    const home = tmp();
+    const dead = spawnSync(process.execPath, ['-e', '0']).pid;
+    const orphan = async (id: string) => {
+      const worktree = await createWorktree(dir, id, home);
+      fs.writeFileSync(path.join(worktree.path, 'src', 'a.txt'), `${id}\n`);
+      const meta = `${worktree.path}.json`;
+      fs.writeFileSync(meta, JSON.stringify({ ...JSON.parse(fs.readFileSync(meta, 'utf8')), owners: [{ pid: dead }] }));
+      return worktree;
+    };
+    // The pruning session died and its pid went to this one's parent; the claim's start time tells them apart.
+    const reused = await orphan('reused-1');
+    fs.renameSync(`${reused.path}.json`, `${reused.path}.json.pruning-${process.ppid}-1`);
+    const held = await orphan('held-1');
+    fs.renameSync(`${held.path}.json`, `${held.path}.json.pruning-${process.ppid}-${processStartTime(process.ppid)}`);
+    expect(await pruneWorktrees(dir, home)).toEqual({ saved: [{ agentId: 'reused-1', ref: 'refs/octocode/pi/reused-1' }], kept: [] });
+    expect(fs.existsSync(`${held.path}.json.pruning-${process.ppid}-${processStartTime(process.ppid)}`)).toBe(true);
   });
 
   it('leaves a worktree whose owner record is unreadable but fresh, and warns about it once stale', async () => {
@@ -205,16 +226,33 @@ describe('isolated subagent worktrees', () => {
     expect(git(dir, 'for-each-ref', 'refs/octocode').trim()).toBe('');
   });
 
+  it.skipIf(process.platform === 'win32')('prunes a worktree whose owner pid now belongs to a later process, and reads older pid-only records', async () => {
+    const dir = repo();
+    const home = tmp();
+    const reused = await createWorktree(dir, 'reused-1', home);
+    const meta = `${reused.path}.json`;
+    // The pid runs, but it started later than the owner that recorded it.
+    fs.writeFileSync(meta, JSON.stringify({ ...JSON.parse(fs.readFileSync(meta, 'utf8')), owners: [{ pid: process.pid, started: 'Thu Jan 1 00:00:00 1970' }] }));
+    const legacy = await createWorktree(dir, 'legacy-1', home);
+    const { owners: _owners, ...rest } = JSON.parse(fs.readFileSync(`${legacy.path}.json`, 'utf8'));
+    fs.writeFileSync(`${legacy.path}.json`, JSON.stringify({ ...rest, pids: [process.pid] }));
+    expect((await pruneWorktrees(dir, home)).saved.map((entry) => entry.agentId)).toEqual(['reused-1']);
+    expect(fs.existsSync(legacy.path)).toBe(true);
+    await finishWorktree(legacy);
+  });
+
   it('keeps a worktree while its recorded subagent pid is alive, even after the parent died', async () => {
     const dir = repo();
     const home = tmp();
     const worktree = await createWorktree(dir, 'child-1', home);
     const meta = `${worktree.path}.json`;
     const dead = spawnSync(process.execPath, ['-e', '0']).pid;
-    fs.writeFileSync(meta, JSON.stringify({ ...JSON.parse(fs.readFileSync(meta, 'utf8')), pids: [dead] }));
+    fs.writeFileSync(meta, JSON.stringify({ ...JSON.parse(fs.readFileSync(meta, 'utf8')), owners: [{ pid: dead }] }));
     const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { stdio: 'ignore' });
     try {
       recordWorktreePid(worktree, child.pid!);
+      expect(JSON.parse(fs.readFileSync(meta, 'utf8')).owners.map((each: { pid: number }) => each.pid)).toEqual([dead, child.pid]);
+      // Bare pids too, so an older version pruning the same folder still sees the owners.
       expect(JSON.parse(fs.readFileSync(meta, 'utf8')).pids).toEqual([dead, child.pid]);
       expect(await pruneWorktrees(dir, home)).toEqual({ saved: [], kept: [] });
       expect(fs.existsSync(worktree.path)).toBe(true);
@@ -259,7 +297,7 @@ describe('isolated subagent worktrees', () => {
     for (const worktree of [saved, stuck]) {
       fs.writeFileSync(path.join(worktree.path, 'src', 'a.txt'), `${worktree.agentId} work\n`);
       const meta = `${worktree.path}.json`;
-      fs.writeFileSync(meta, JSON.stringify({ ...JSON.parse(fs.readFileSync(meta, 'utf8')), pids: [dead] }));
+      fs.writeFileSync(meta, JSON.stringify({ ...JSON.parse(fs.readFileSync(meta, 'utf8')), owners: [{ pid: dead }] }));
     }
     fs.writeFileSync(path.join(git(stuck.path, 'rev-parse', '--absolute-git-dir'), 'index.lock'), '');
     const report = await pruneWorktrees(dir, home);

@@ -1,12 +1,10 @@
-use bytes::{Bytes, BytesMut};
-use futures_util::StreamExt;
+use bytes::Bytes;
 use reqwest::{
     Client, StatusCode,
     header::{ACCEPT, HeaderMap, LOCATION, USER_AGENT},
 };
 use serde::Deserialize;
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 use std::{
     path::PathBuf,
     sync::Arc,
@@ -18,10 +16,11 @@ use super::{
     BudgetStop, GitHubEndpoint, ProviderError, ProviderErrorKind, ProviderErrorReason, RateLimit,
     RequestBudget, ResolvedCredential,
     budget::{
-        CircuitCause, GitHubBudget, GitHubResource, Group, LimiterKey, is_primary_rate_limit,
-        is_secondary_rate_limit, now_ms, pause, rate_limited_error,
+        Admission, CircuitCause, ExecutorConfig, GitHubBudget, GitHubResource, Group, KeyState,
+        LimiterKey, is_primary_rate_limit, is_secondary_rate_limit, now_ms, pause,
+        rate_limited_error,
     },
-    retry::{full_jitter, header_u64, retry_after_delay},
+    retry::{Backoff, BodyError, classify_status, header_u64, retry_after_delay},
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -43,6 +42,16 @@ pub struct RetryPolicy {
     /// The runtime sets `network.maxRateLimitWait`; the transport's own
     /// default is the retry-after cap.
     pub max_rate_limit_wait: Duration,
+}
+impl RetryPolicy {
+    /// The 5xx/network backoff: full jitter from `base_delay`, no floor.
+    fn backoff(&self) -> Backoff {
+        Backoff {
+            base: self.base_delay,
+            cap: MAX_BACKOFF,
+            floor: Duration::ZERO,
+        }
+    }
 }
 impl Default for RetryPolicy {
     fn default() -> Self {
@@ -196,6 +205,8 @@ pub struct GitHubTransport {
     renamed: Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
     /// Repository metadata reads, shared by the rows of a batch.
     pub(crate) repositories: Arc<super::search::RepositoryMemo>,
+    /// Where each owner's repositories are listed from, per credential.
+    pub(crate) owners: Arc<super::search::OwnerSources>,
 }
 impl GitHubTransport {
     pub fn new(endpoint: GitHubEndpoint, retry: RetryPolicy) -> Result<Self, ProviderError> {
@@ -212,15 +223,12 @@ impl GitHubTransport {
         retry: RetryPolicy,
         budget: Arc<GitHubBudget>,
     ) -> Result<Self, ProviderError> {
-        let client = Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
-            .map_err(|_| {
-                ProviderError::new(
-                    ProviderErrorKind::Configuration,
-                    "failed to initialize GitHub HTTP client",
-                )
-            })?;
+        let client = octocode_io::http::client(&Default::default()).map_err(|_| {
+            ProviderError::new(
+                ProviderErrorKind::Configuration,
+                "failed to initialize GitHub HTTP client",
+            )
+        })?;
         Ok(Self {
             client,
             endpoint,
@@ -230,7 +238,10 @@ impl GitHubTransport {
             graphql_enabled: true,
             cache: Arc::new(super::NoCache),
             renamed: Arc::default(),
-            repositories: Arc::default(),
+            repositories: Arc::new(super::KeyedFlight::retained(
+                super::search::REPOSITORY_MEMO_KEYS,
+            )),
+            owners: Arc::default(),
         })
     }
 
@@ -279,18 +290,17 @@ impl GitHubTransport {
         &self,
         context: &RequestContext,
         session: Option<&str>,
-    ) -> Result<super::CachePartition, ProviderError> {
-        let mut digest = Sha256::new();
-        digest.update(self.endpoint.rest(&[])?.as_str().as_bytes());
-        digest.update([0]);
-        if let Some(credential) = context.resolved_credential() {
-            digest.update(credential.expose_secret().as_bytes());
-        }
-        digest.update([0]);
-        if let Some(session) = session {
-            digest.update(session.as_bytes());
-        }
-        Ok(super::CachePartition(hex::encode(digest.finalize())))
+    ) -> Result<super::Partition, ProviderError> {
+        let partition = super::Partition::new(
+            self.endpoint.rest(&[])?.as_str(),
+            context
+                .resolved_credential()
+                .map(ResolvedCredential::secret),
+        );
+        Ok(match session {
+            Some(session) => partition.within(session),
+            None => partition,
+        })
     }
 
     /// Refuse a row's `searches` code searches before the first is sent when
@@ -367,12 +377,7 @@ impl GitHubTransport {
                 let reset = header_u64(&page.headers, "x-ratelimit-reset")
                     .unwrap_or_else(|| now_ms() / 1000 + 60);
                 state.exhaust(GitHubResource::Graphql.bucket(), reset);
-                let wait = Duration::from_millis(
-                    reset
-                        .saturating_mul(1000)
-                        .saturating_add(self.budget.config().reset_grace.as_millis() as u64)
-                        .saturating_sub(now_ms()),
-                );
+                let wait = self.budget.config().reset_wait(reset);
                 if attempt + 1 < self.retry.max_attempts
                     && wait <= self.retry.max_rate_limit_wait
                     && Instant::now() + wait < context.budget.wait_until
@@ -393,7 +398,7 @@ impl GitHubTransport {
             if parsed.errors.iter().any(GraphQlError::is_transient) {
                 // Octokit plugin-retry treats this GraphQL failure as a 500.
                 if attempt + 1 < self.retry.max_attempts {
-                    let delay = full_jitter(self.retry.base_delay, u32::from(attempt), MAX_BACKOFF);
+                    let delay = self.retry.backoff().next_delay(u32::from(attempt));
                     if pause(
                         delay,
                         context.budget.effective_deadline(),
@@ -436,7 +441,7 @@ impl GitHubTransport {
     /// the last attempt, cleared whenever GitHub answers without one.
     async fn run_attempts(
         &self,
-        mut spec: RequestSpec,
+        spec: RequestSpec,
         context: &RequestContext,
         failed: &mut Option<CircuitCause>,
     ) -> Result<ResponsePage, ProviderError> {
@@ -446,10 +451,43 @@ impl GitHubTransport {
                 "request URL is outside the configured GitHub API origin",
             ));
         }
-        let credential = context.resolved_credential();
-        let state = self.key_state(credential);
-        let config = self.budget.config();
-        let cap = self.retry.max_rate_limit_wait;
+        Attempts::new(self, spec, context, failed).run().await
+    }
+}
+
+/// How a failed attempt may be retried: `wait` is held to the retry limits,
+/// `sleep` is spent before the next attempt.
+struct RetryWait {
+    wait: Duration,
+    sleep: Duration,
+    /// A rate limit, waited out by the next attempt's admission.
+    rate_limited: bool,
+}
+
+/// The state one request's attempts share.
+struct Attempts<'a> {
+    transport: &'a GitHubTransport,
+    context: &'a RequestContext,
+    failed: &'a mut Option<CircuitCause>,
+    state: Arc<KeyState>,
+    config: &'a ExecutorConfig,
+    resource: GitHubResource,
+    group: Option<Group>,
+    spec: RequestSpec,
+    redirects: u8,
+    attempt: u8,
+    counted_window: bool,
+}
+
+impl<'a> Attempts<'a> {
+    fn new(
+        transport: &'a GitHubTransport,
+        spec: RequestSpec,
+        context: &'a RequestContext,
+        failed: &'a mut Option<CircuitCause>,
+    ) -> Self {
+        let state = transport.key_state(context.resolved_credential());
+        let config = transport.budget.config();
         let resource = GitHubResource::classify(&spec.url);
         let group = match (resource, spec.method) {
             (GitHubResource::Graphql, _) => Some(Group::Graphql),
@@ -458,124 +496,46 @@ impl GitHubTransport {
             (GitHubResource::Core, HttpMethod::Post) => Some(Group::Write),
             (GitHubResource::Core, HttpMethod::Get) => None,
         };
-        let mut redirects: u8 = 0;
-        let mut attempt: u8 = 0;
-        let mut counted_window = false;
+        Self {
+            transport,
+            context,
+            failed,
+            state,
+            config,
+            resource,
+            group,
+            spec,
+            redirects: 0,
+            attempt: 0,
+            counted_window: false,
+        }
+    }
+
+    /// Admit, send and classify attempts until one answers, fails for good,
+    /// or the retry policy gives up.
+    async fn run(mut self) -> Result<ResponsePage, ProviderError> {
         loop {
-            context.check()?;
-            // Admission waits (a rate-limit block, search spacing, the
-            // code-search window, a permit) may use the request time left or
-            // `cap`, whichever ends later, within the call's own deadline;
-            // the time they take is credited back to the request budget.
-            let queued = Instant::now();
-            let wait_deadline = context.budget.admission_deadline(cap);
-            state
-                .wait_unblocked(
-                    resource.bucket(),
-                    config,
-                    cap,
-                    wait_deadline,
-                    &context.budget.cancellation,
-                )
-                .await?;
-            // The code-search window is charged once per logical request.
-            let charge_window = resource == GitHubResource::CodeSearch && !counted_window;
-            let admission = state
-                .admit(
-                    group,
-                    config,
-                    charge_window,
-                    cap,
-                    wait_deadline,
-                    &context.budget.cancellation,
-                )
-                .await?;
-            context.budget.credit_wait(queued.elapsed());
-            counted_window |= charge_window;
-            let mut request = match spec.method {
-                HttpMethod::Get => self.client.get(spec.url.clone()),
-                HttpMethod::Post => self.client.post(spec.url.clone()),
-            }
-            .header(USER_AGENT, HTTP_USER_AGENT)
-            .header(ACCEPT, "application/vnd.github+json")
-            .header("x-github-api-version", "2022-11-28")
-            .headers(spec.headers.clone());
-            if let Some(token) = credential {
-                request = authorize(request, token.expose_secret());
-            }
-            if let Some(body) = &spec.body {
-                request = request.json(body);
-            }
-            let response = context.budget.wait(request.send()).await?;
-            let response = match response {
-                Ok(response) => response,
-                Err(_) => {
-                    // Release permits before backing off.
-                    drop(admission);
-                    *failed = Some(CircuitCause::Transport);
-                    if attempt + 1 < self.retry.max_attempts {
-                        let delay =
-                            full_jitter(self.retry.base_delay, u32::from(attempt), MAX_BACKOFF);
-                        pause(
-                            delay,
-                            context.budget.effective_deadline(),
-                            &context.budget.cancellation,
-                        )
-                        .await?;
-                        attempt += 1;
-                        continue;
-                    }
-                    return Err(ProviderError::new(
-                        ProviderErrorKind::Transport,
-                        "GitHub transport failed",
-                    ));
-                }
+            let admission = self.admit().await?;
+            let Some(response) = self.send().await? else {
+                // Release permits before backing off.
+                drop(admission);
+                self.back_off_transport().await?;
+                continue;
             };
             let status = response.status();
             let headers = response.headers().clone();
-            *failed = None;
-            state.observe(&headers, resource.bucket());
+            *self.failed = None;
+            self.state.observe(&headers, self.resource.bucket());
             if status.is_redirection() && status != StatusCode::NOT_MODIFIED {
                 drop(admission);
-                // GitHub answers 301 for renamed repositories; follow
-                // bounded same-origin GET redirects so renamed repos
-                // stay reachable. `permits` gates the new location, so
-                // the Authorization header never leaves the configured
-                // API origin.
-                let location = headers
-                    .get(LOCATION)
-                    .and_then(|value| value.to_str().ok())
-                    .and_then(|value| spec.url.join(value).ok());
-                if let Some(location) = location
-                    && matches!(spec.method, HttpMethod::Get)
-                    && redirects < 3
-                    && self.endpoint.permits(&location)
-                {
-                    redirects += 1;
-                    self.record_rename(&spec.url, &location);
-                    spec.url = location;
-                    continue;
-                }
-                return Err(ProviderError {
-                    kind: ProviderErrorKind::RedirectDenied,
-                    message: "GitHub API redirect was not followed".into(),
-                    status: Some(status.as_u16()),
-                    request_id: headers
-                        .get("x-github-request-id")
-                        .and_then(|value| value.to_str().ok())
-                        .map(Into::into),
-                    documentation_url: None,
-                    rate_limit: None,
-                    retryable: false,
-                    reason: None,
-                    sso_url: None,
-                });
+                self.follow_redirect(status, &headers)?;
+                continue;
             }
             if status.is_success() || status == StatusCode::NOT_MODIFIED {
-                let next = parse_next(&headers, &self.endpoint)?;
-                let body = read_bounded(response, context).await?;
+                let next = parse_next(&headers, &self.transport.endpoint)?;
+                let body = read_bounded(response, self.context).await?;
                 drop(admission);
-                state.record_success();
+                self.state.record_success();
                 return Ok(ResponsePage {
                     status: status.as_u16(),
                     headers,
@@ -583,119 +543,279 @@ impl GitHubTransport {
                     next,
                 });
             }
-            // A cancel while reading the error body is a cancel, not an empty
-            // body classified by status. An oversized body keeps the status
-            // classification but says the body was not read.
-            let (body, body_note) = match read_bounded(response, context).await {
-                Ok(body) => (body, None),
-                Err(error) if error.kind == ProviderErrorKind::Cancelled => {
-                    drop(admission);
-                    return Err(error);
-                }
-                Err(error) if error.kind == ProviderErrorKind::ResponseTooLarge => {
-                    (Bytes::new(), Some("error body exceeded limit"))
-                }
-                Err(_) => (Bytes::new(), Some("error body could not be read")),
+            let (body, body_note) = read_error_body(response, self.context).await?;
+            let (error, backoff) = self.classify(status, &headers, body, body_note);
+            drop(admission);
+            let Some(backoff) = backoff else {
+                return Err(error);
             };
-            let failure = classify_failure(status, &headers, &body, config);
-            let mut error = response_error(status, &headers, body);
-            if let Some(note) = body_note {
-                error.message = format!("{} ({note})", error.message).into_boxed_str();
-            }
-            let retry_wait = match failure {
-                Failure::Primary { reset, wait } => {
-                    let bucket = headers
-                        .get("x-ratelimit-resource")
-                        .and_then(|value| value.to_str().ok())
-                        .unwrap_or(resource.bucket())
-                        .to_owned();
-                    state.exhaust(&bucket, reset);
-                    error.kind = ProviderErrorKind::RateLimited;
-                    error.retryable = true;
-                    error.rate_limit = Some(Box::new(RateLimit {
+            self.retry(error, backoff).await?;
+        }
+    }
+
+    /// Wait out a short block, then take this attempt's permits and slots.
+    async fn admit(&mut self) -> Result<Admission, ProviderError> {
+        self.context.check()?;
+        let cap = self.transport.retry.max_rate_limit_wait;
+        // Admission waits (a rate-limit block, search spacing, the
+        // code-search window, a permit) may use the request time left or
+        // `cap`, whichever ends later, within the call's own deadline;
+        // the time they take is credited back to the request budget.
+        let queued = Instant::now();
+        let wait_deadline = self.context.budget.admission_deadline(cap);
+        self.state
+            .wait_unblocked(
+                self.resource.bucket(),
+                self.config,
+                cap,
+                wait_deadline,
+                &self.context.budget.cancellation,
+            )
+            .await?;
+        // The code-search window is charged once per logical request.
+        let charge_window = self.resource == GitHubResource::CodeSearch && !self.counted_window;
+        let admission = self
+            .state
+            .admit(
+                self.group,
+                self.config,
+                charge_window,
+                cap,
+                wait_deadline,
+                &self.context.budget.cancellation,
+            )
+            .await?;
+        self.context.budget.credit_wait(queued.elapsed());
+        self.counted_window |= charge_window;
+        Ok(admission)
+    }
+
+    /// Send the attempt within the request deadline; `None` when it failed
+    /// in transport.
+    async fn send(&self) -> Result<Option<reqwest::Response>, ProviderError> {
+        let spec = &self.spec;
+        let mut request = match spec.method {
+            HttpMethod::Get => self.transport.client.get(spec.url.clone()),
+            HttpMethod::Post => self.transport.client.post(spec.url.clone()),
+        }
+        .header(USER_AGENT, HTTP_USER_AGENT)
+        .header(ACCEPT, "application/vnd.github+json")
+        .header("x-github-api-version", "2022-11-28")
+        .headers(spec.headers.clone());
+        if let Some(token) = self.context.resolved_credential() {
+            request = authorize(request, token.expose_secret());
+        }
+        if let Some(body) = &spec.body {
+            request = request.json(body);
+        }
+        Ok(self.context.budget.wait(request.send()).await?.ok())
+    }
+
+    /// Back off after a transport failure, or fail once attempts run out.
+    async fn back_off_transport(&mut self) -> Result<(), ProviderError> {
+        *self.failed = Some(CircuitCause::Transport);
+        let retry = &self.transport.retry;
+        if self.attempt + 1 < retry.max_attempts {
+            let delay = retry.backoff().next_delay(u32::from(self.attempt));
+            pause(
+                delay,
+                self.context.budget.effective_deadline(),
+                &self.context.budget.cancellation,
+            )
+            .await?;
+            self.attempt += 1;
+            return Ok(());
+        }
+        Err(ProviderError::new(
+            ProviderErrorKind::Transport,
+            "GitHub transport failed",
+        ))
+    }
+
+    /// Point the next attempt at a redirect's location, or refuse it.
+    fn follow_redirect(
+        &mut self,
+        status: StatusCode,
+        headers: &HeaderMap,
+    ) -> Result<(), ProviderError> {
+        // GitHub answers 301 for renamed repositories; follow
+        // bounded same-origin GET redirects so renamed repos
+        // stay reachable. `permits` gates the new location, so
+        // the Authorization header never leaves the configured
+        // API origin.
+        let location = headers
+            .get(LOCATION)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| self.spec.url.join(value).ok());
+        if let Some(location) = location
+            && matches!(self.spec.method, HttpMethod::Get)
+            && self.redirects < 3
+            && self.transport.endpoint.permits(&location)
+        {
+            self.redirects += 1;
+            self.transport.record_rename(&self.spec.url, &location);
+            self.spec.url = location;
+            return Ok(());
+        }
+        Err(ProviderError {
+            kind: ProviderErrorKind::RedirectDenied,
+            message: "GitHub API redirect was not followed".into(),
+            status: Some(status.as_u16()),
+            request_id: headers
+                .get("x-github-request-id")
+                .and_then(|value| value.to_str().ok())
+                .map(Into::into),
+            documentation_url: None,
+            rate_limit: None,
+            retryable: false,
+            reason: None,
+            sso_url: None,
+        })
+    }
+
+    /// The error for a failed response, after recording any rate limit it
+    /// carries, and how it may be retried (`None`: not at all).
+    fn classify(
+        &mut self,
+        status: StatusCode,
+        headers: &HeaderMap,
+        body: Bytes,
+        body_note: Option<&str>,
+    ) -> (ProviderError, Option<RetryWait>) {
+        let failure = classify_failure(status, headers, &body, self.config);
+        let mut error = response_error(status, headers, body);
+        if let Some(note) = body_note {
+            error.message = format!("{} ({note})", error.message).into_boxed_str();
+        }
+        let resource = self.resource;
+        let backoff = match failure {
+            Failure::Primary { reset, wait } => {
+                let bucket = headers
+                    .get("x-ratelimit-resource")
+                    .and_then(|value| value.to_str().ok())
+                    .unwrap_or(resource.bucket())
+                    .to_owned();
+                self.state.exhaust(&bucket, reset);
+                error.kind = ProviderErrorKind::RateLimited;
+                error.retryable = true;
+                error.rate_limit =
+                    Some(Box::new(RateLimit {
                         remaining: Some(0),
                         reset_epoch_seconds: Some(reset),
-                        retry_after_seconds: Some(provider_retry_after(&headers).map_or_else(
+                        retry_after_seconds: Some(provider_retry_after(headers).map_or_else(
                             || crate::budget::ceil_secs(wait),
                             crate::budget::ceil_secs,
                         )),
                         resource: Some(bucket.into()),
                     }));
-                    // The next loop turn waits in `wait_unblocked`.
-                    Some((wait, Duration::ZERO, true))
-                }
-                Failure::Secondary { wait } => {
-                    *failed = Some(CircuitCause::Secondary);
-                    let cooldown_end = now_ms().saturating_add(wait.as_millis() as u64);
-                    state.cool_down(cooldown_end);
-                    error.kind = ProviderErrorKind::RateLimited;
-                    error.retryable = true;
-                    error.message = "GitHub secondary rate limit exceeded".into();
-                    error.rate_limit = Some(Box::new(RateLimit {
-                        remaining: header_u64(&headers, "x-ratelimit-remaining"),
-                        // The cooldown end: the primary window reset GitHub
-                        // also sends is unrelated to when a retry can run.
-                        reset_epoch_seconds: Some(cooldown_end.div_ceil(1000)),
-                        retry_after_seconds: Some(crate::budget::ceil_secs(wait)),
-                        resource: Some(
-                            headers
-                                .get("x-ratelimit-resource")
-                                .and_then(|value| value.to_str().ok())
-                                .unwrap_or(resource.bucket())
-                                .into(),
-                        ),
-                    }));
-                    Some((wait, Duration::ZERO, true))
-                }
-                Failure::Server => {
-                    *failed = Some(CircuitCause::Server);
-                    let requested = provider_retry_after(&headers);
-                    if let Some(requested) = requested {
-                        // A long provider delay fails fast below; the caller
-                        // still learns when to retry.
-                        error.rate_limit = Some(Box::new(RateLimit {
-                            remaining: None,
-                            reset_epoch_seconds: None,
-                            retry_after_seconds: Some(crate::budget::ceil_secs(requested)),
-                            resource: None,
-                        }));
-                    }
-                    let delay = requested.unwrap_or_else(|| {
-                        full_jitter(self.retry.base_delay, u32::from(attempt), MAX_BACKOFF)
-                    });
-                    Some((delay, delay, false))
-                }
-                Failure::Final => None,
-            };
-            drop(admission);
-            let Some((wait, sleep, rate_limited)) = retry_wait else {
-                return Err(error);
-            };
-            // A rate limit waits up to `cap` within the call's deadline (the
-            // next turn's admission waits and credits it); a 5xx backoff
-            // spends request time.
-            let (limit, deadline) = if rate_limited {
-                (cap, context.budget.wait_until)
-            } else {
-                (
-                    self.retry.max_retry_after,
-                    context.budget.effective_deadline(),
-                )
-            };
-            if attempt + 1 >= self.retry.max_attempts
-                || wait > limit
-                || Instant::now() + wait >= deadline
-            {
-                return Err(error);
+                // The next loop turn waits in `wait_unblocked`.
+                Some(RetryWait {
+                    wait,
+                    sleep: Duration::ZERO,
+                    rate_limited: true,
+                })
             }
-            pause(
-                sleep,
-                context.budget.effective_deadline(),
-                &context.budget.cancellation,
-            )
-            .await?;
-            attempt += 1;
+            Failure::Secondary { wait } => {
+                *self.failed = Some(CircuitCause::Secondary);
+                let cooldown_end = now_ms().saturating_add(wait.as_millis() as u64);
+                self.state.cool_down(cooldown_end);
+                error.kind = ProviderErrorKind::RateLimited;
+                error.retryable = true;
+                error.message = "GitHub secondary rate limit exceeded".into();
+                error.rate_limit = Some(Box::new(RateLimit {
+                    remaining: header_u64(headers, "x-ratelimit-remaining"),
+                    // The cooldown end: the primary window reset GitHub
+                    // also sends is unrelated to when a retry can run.
+                    reset_epoch_seconds: Some(cooldown_end.div_ceil(1000)),
+                    retry_after_seconds: Some(crate::budget::ceil_secs(wait)),
+                    resource: Some(
+                        headers
+                            .get("x-ratelimit-resource")
+                            .and_then(|value| value.to_str().ok())
+                            .unwrap_or(resource.bucket())
+                            .into(),
+                    ),
+                }));
+                Some(RetryWait {
+                    wait,
+                    sleep: Duration::ZERO,
+                    rate_limited: true,
+                })
+            }
+            Failure::Server => {
+                *self.failed = Some(CircuitCause::Server);
+                let requested = provider_retry_after(headers);
+                if let Some(requested) = requested {
+                    // A long provider delay fails fast in `retry`; the
+                    // caller still learns when to retry.
+                    error.rate_limit = Some(Box::new(RateLimit {
+                        remaining: None,
+                        reset_epoch_seconds: None,
+                        retry_after_seconds: Some(crate::budget::ceil_secs(requested)),
+                        resource: None,
+                    }));
+                }
+                let retry = &self.transport.retry;
+                let delay = retry.backoff().after(requested, u32::from(self.attempt));
+                Some(RetryWait {
+                    wait: delay,
+                    sleep: delay,
+                    rate_limited: false,
+                })
+            }
+            Failure::Final => None,
+        };
+        (error, backoff)
+    }
+
+    /// Sleep before the next attempt, or fail with `error` when attempts run
+    /// out or the wait is past its limit or the deadline.
+    async fn retry(
+        &mut self,
+        error: ProviderError,
+        backoff: RetryWait,
+    ) -> Result<(), ProviderError> {
+        let retry = &self.transport.retry;
+        let budget = &self.context.budget;
+        // A rate limit waits up to `cap` within the call's deadline (the
+        // next turn's admission waits and credits it); a 5xx backoff
+        // spends request time.
+        let (limit, deadline) = if backoff.rate_limited {
+            (retry.max_rate_limit_wait, budget.wait_until)
+        } else {
+            (retry.max_retry_after, budget.effective_deadline())
+        };
+        if self.attempt + 1 >= retry.max_attempts
+            || backoff.wait > limit
+            || Instant::now() + backoff.wait >= deadline
+        {
+            return Err(error);
         }
+        pause(
+            backoff.sleep,
+            budget.effective_deadline(),
+            &budget.cancellation,
+        )
+        .await?;
+        self.attempt += 1;
+        Ok(())
+    }
+}
+
+/// An error response's body, and why it is empty when it could not be read.
+/// A cancel while reading it is a cancel, not an empty body classified by
+/// status; an oversized body keeps the status classification.
+async fn read_error_body(
+    response: reqwest::Response,
+    context: &RequestContext,
+) -> Result<(Bytes, Option<&'static str>), ProviderError> {
+    match read_bounded(response, context).await {
+        Ok(body) => Ok((body, None)),
+        Err(error) if error.kind == ProviderErrorKind::Cancelled => Err(error),
+        Err(error) if error.kind == ProviderErrorKind::ResponseTooLarge => {
+            Ok((Bytes::new(), Some("error body exceeded limit")))
+        }
+        Err(_) => Ok((Bytes::new(), Some("error body could not be read"))),
     }
 }
 
@@ -740,18 +860,10 @@ fn classify_failure(
     let retry_after = requested.map(crate::budget::ceil_secs);
     let reset = header_u64(headers, "x-ratelimit-reset");
     let text = String::from_utf8_lossy(body);
-    let reset_wait = |reset: u64| {
-        Duration::from_millis(
-            reset
-                .saturating_mul(1000)
-                .saturating_add(config.reset_grace.as_millis() as u64)
-                .saturating_sub(now_ms()),
-        )
-    };
     if is_secondary_rate_limit(code, remaining, retry_after, &text) {
         let wait = match (requested, remaining, reset) {
             (Some(requested), _, _) => requested,
-            (None, Some(0), Some(reset)) => reset_wait(reset),
+            (None, Some(0), Some(reset)) => config.reset_wait(reset),
             _ => config.secondary_default,
         };
         return Failure::Secondary { wait };
@@ -762,47 +874,40 @@ fn classify_failure(
         });
         return Failure::Primary {
             reset,
-            wait: reset_wait(reset),
+            wait: config.reset_wait(reset),
         };
     }
-    if status.is_server_error() {
+    if classify_status(code).is_server() {
         Failure::Server
     } else {
         Failure::Final
     }
 }
 
+/// A response body within the request budget and its body limit.
 async fn read_bounded(
     response: reqwest::Response,
     context: &RequestContext,
 ) -> Result<Bytes, ProviderError> {
-    let mut stream = response.bytes_stream();
-    let mut result = BytesMut::new();
-    // The send phase is bounded by the request deadline; a body that stalls
-    // after the headers must be too, not only by the outer runtime timeout.
-    let stopped = |stop| match stop {
-        BudgetStop::Deadline => ProviderError::new(
-            ProviderErrorKind::Timeout,
-            "GitHub response body deadline exceeded",
-        ),
-        BudgetStop::Cancelled => stop.into(),
-    };
-    while let Some(chunk) = context.budget.wait(stream.next()).await.map_err(stopped)? {
-        let chunk = chunk.map_err(|_| {
-            ProviderError::new(
-                ProviderErrorKind::Transport,
-                "failed reading GitHub response",
-            )
-        })?;
-        if result.len().saturating_add(chunk.len()) > context.budget.max_body_bytes {
-            return Err(ProviderError::new(
+    crate::retry::read_bounded(response, &context.budget, context.budget.max_body_bytes)
+        .await
+        .map_err(|error| match error {
+            // A body that stalls after the headers is bounded by the
+            // request deadline too, not only by the outer runtime timeout.
+            BodyError::Stopped(BudgetStop::Deadline) => ProviderError::new(
+                ProviderErrorKind::Timeout,
+                "GitHub response body deadline exceeded",
+            ),
+            BodyError::Stopped(stop) => stop.into(),
+            BodyError::TooLarge => ProviderError::new(
                 ProviderErrorKind::ResponseTooLarge,
                 "GitHub response exceeded configured byte limit",
-            ));
-        }
-        result.extend_from_slice(&chunk);
-    }
-    Ok(result.freeze())
+            ),
+            BodyError::Transport => ProviderError::new(
+                ProviderErrorKind::Transport,
+                "failed reading GitHub response",
+            ),
+        })
 }
 
 fn parse_next(

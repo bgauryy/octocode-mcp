@@ -18,13 +18,13 @@ pub(crate) fn undeclared_paths(schema: &Value, output: &Value) -> Vec<String> {
     found
 }
 
+/// `schema` with its `$ref` resolved; an unresolved reference declares nothing.
 fn resolve<'a>(root: &'a Value, schema: &'a Value) -> &'a Value {
-    match schema.get("$ref").and_then(Value::as_str) {
-        Some(reference) => reference
-            .strip_prefix('#')
-            .and_then(|pointer| root.pointer(pointer))
-            .map_or(&Value::Null, |target| resolve(root, target)),
-        None => schema,
+    let resolved = super::resolve_ref(schema, &root["$defs"]);
+    if resolved.get("$ref").is_some() {
+        &Value::Null
+    } else {
+        resolved
     }
 }
 

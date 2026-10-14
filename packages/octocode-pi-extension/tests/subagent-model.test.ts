@@ -61,7 +61,7 @@ describe('buildAgentArgs model', () => {
   it('passes the resolved model, and never the profile\'s own unresolved preference', () => {
     const profile = { name: 'p', description: '', prompt: '', model: 'claude-haiku-5-5' };
     const model = (args: string[]) => args[args.indexOf('--model') + 1];
-    expect(model(buildAgentArgs('t', profile, 'anthropic/claude-haiku-5-5:low', undefined))).toBe('anthropic/claude-haiku-5-5:low');
-    expect(buildAgentArgs('t', profile, undefined, undefined)).not.toContain('--model');
+    expect(model(buildAgentArgs(profile, 'anthropic/claude-haiku-5-5:low', undefined))).toBe('anthropic/claude-haiku-5-5:low');
+    expect(buildAgentArgs(profile, undefined, undefined)).not.toContain('--model');
   });
 });

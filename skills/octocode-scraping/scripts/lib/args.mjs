@@ -18,7 +18,7 @@ export const MODE_ENDPOINT = { html: 'general', markdown: 'markdown', extended: 
 
 export function createArgParser(args) {
   const usage = (exitCode = 2) => {
-    console.error(`Usage: fetch.mjs --url <url> [--provider scrapingant|direct|cdp] [--mode html|markdown|extended|extract] [--extract-properties <text>] [--crawl --max-pages <n> [--sitemap] [--same-domain] [--delay-ms <n>]] [--session <id> [--append]] [--out <dir>] [--browser] [--wait-for <selector>] [--no-raw] [--max-raw-bytes <n>] [--max-text-bytes <n>] [--chunk-bytes <n>] [--extract-links] [--param k=v] [--cdp-port <n>] [--cdp-wait-ms <n>] [--wait-text <text>] [--cdp-stealth]\nDefault output: .octocode/tmp/scrape/<sessionId>\n`);
+    console.error(`Usage: fetch.mjs --url <url> [--provider scrapingant|direct|cdp] [--mode html|markdown|extended|extract] [--extract-properties <text>] [--crawl --max-pages <n> [--sitemap] [--span-hosts] [--delay-ms <n>]] [--allow-private-host] [--session <id> [--append]] [--out <dir>] [--browser] [--wait-for <selector>] [--proxy-type <type>] [--proxy-country <cc>] [--block-resource <type>]... [--no-raw] [--max-raw-bytes <n>] [--max-text-bytes <n>] [--chunk-bytes <n>] [--param k=v]... [--cdp-port <n>] [--cdp-wait-ms <n>] [--wait-text <text>] [--cdp-stealth|--no-cdp-stealth]\nLinks are always extracted. A crawl stays on the --url host unless --span-hosts is passed. Private, local, and link-local hosts are refused, including crawled links, redirects, and browser requests; --allow-private-host exempts only the --url origin (a local dev server). Tests only: --mock-status <n> --mock-body-file <file> [--mock-content-type <type>] [--mock-credit-cost <n>]\nDefault output: .octocode/octocode-scraping/tmp/<sessionId>\n`);
     process.exit(exitCode);
   };
   const take = (flag) => {
@@ -53,7 +53,8 @@ export function parsePassParams(allRepeated) {
 export function safeSessionId(input, targetUrl) {
   if (input) {
     const cleaned = input.replace(/[^A-Za-z0-9._-]/g, '-').slice(0, 120);
-    if (!cleaned) throw new Error('Invalid --session value after sanitization');
+    // `.` and `..` would resolve to the scrape folder or its parent instead of a session folder.
+    if (!cleaned || /^\.+$/.test(cleaned)) throw new Error('Invalid --session value after sanitization');
     return cleaned;
   }
   const u = new URL(targetUrl);
@@ -63,10 +64,20 @@ export function safeSessionId(input, targetUrl) {
   return `${stamp}-${host}-${hash}`;
 }
 
+const VALUE_FLAGS = new Set(['--url', '--mode', '--provider', '--extract-properties', '--max-pages', '--delay-ms', '--max-raw-bytes', '--max-text-bytes',
+  '--chunk-bytes', '--cdp-wait-ms', '--out', '--session', '--wait-for', '--proxy-type', '--proxy-country', '--block-resource', '--param',
+  '--mock-status', '--mock-body-file', '--mock-content-type', '--mock-credit-cost', '--cdp-port', '--wait-text']);
+const BOOLEAN_FLAGS = new Set(['--crawl', '--span-hosts', '--allow-private-host', '--sitemap', '--append', '--no-raw', '--browser', '--cdp-stealth', '--no-cdp-stealth']);
+
 export function parseConfig(args) {
   const parser = createArgParser(args);
   const { take, has, allRepeated, usage } = parser;
   if (has('--help') || has('-h')) usage(0);
+  // A mistyped flag would otherwise be ignored and the fetch would run with defaults.
+  for (let i = 0; i < args.length; i += 1) {
+    if (VALUE_FLAGS.has(args[i])) i += 1;
+    else if (!BOOLEAN_FLAGS.has(args[i])) throw new Error(`Unknown option: ${args[i]} (see fetch.mjs --help)`);
+  }
   const targetUrl = take('--url');
   if (!targetUrl) usage(2);
   new URL(targetUrl);
@@ -96,7 +107,7 @@ export function parseConfig(args) {
   if (take('--cdp-wait-ms') && (!Number.isSafeInteger(Number(take('--cdp-wait-ms'))) || Number(take('--cdp-wait-ms')) < 1)) throw new Error('--cdp-wait-ms must be a positive integer');
   const workspaceRoot = workspaceRootFor(process.cwd());
   const workspaceOutputBase = join(workspaceRoot, '.octocode');
-  const outBase = take('--out') ? resolve(take('--out')) : join(workspaceRoot, '.octocode', 'tmp', 'scrape');
+  const outBase = take('--out') ? resolve(take('--out')) : join(workspaceRoot, '.octocode', 'octocode-scraping', 'tmp');
   const outRelative = relative(workspaceOutputBase, outBase);
   if (outRelative.startsWith('..') || isAbsolute(outRelative)) {
     throw new Error(`--out must stay under ${workspaceOutputBase}`);
@@ -112,7 +123,10 @@ export function parseConfig(args) {
     crawl,
     maxPages,
     delayMs,
-    sameDomain: has('--same-domain'),
+    // Crawls stay on the --url host by default; --span-hosts follows links to other public hosts.
+    spanHosts: has('--span-hosts'),
+    // Only the --url origin is exempt; crawled links and redirects to other private hosts stay refused.
+    privateOrigin: has('--allow-private-host') ? new URL(targetUrl).origin : null,
     sitemap: has('--sitemap'),
     outBase,
     sessionId: safeSessionId(take('--session'), targetUrl),

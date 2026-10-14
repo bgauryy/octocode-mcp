@@ -40,7 +40,7 @@ mode, text on stderr otherwise.
 | `ghGetHistoryItem` | Read one PR, issue, commit, or comparison. |
 | `ghCloneRepo` | Clone a repository into the local cache for offline analysis. |
 | `artifactSearch` | Package lookup/discovery across 8 registries. |
-| `clasify` | Apply `locate`, `sufficient`, `relevant`, `supports`, `adds`, `yesno`, `choice`, or `score` questions across `resources[] × questions[]`, or batch independent matrices in `queries[]`. Requires a classification key (`OCTOCODE_CLASSIFICATION_API`). |
+| `clasify` | Answer keyed JEV `noul`, `choice`, or `score` questions over literal `state` or one `source` (a `localFetch`/`ghGetFileContent` selection or an HTTPS `url`), up to 5 rows in `queries[]`. Requires a classification key (`OCTOCODE_CLASSIFICATION_API`). |
 
 ### System
 
@@ -123,8 +123,7 @@ npx octocode lspSearch '{"queries":[{"path":"/ABS/repo/crates/runtime/src/runtim
 
 The brief is optional. Add `mainGoal` (the research question the query serves)
 and `reasoning` (why the query advances it) only in multi-call research on an
-unknown; omit both on simple lookups. A blank brief field is dropped. The
-legacy name `goal` is accepted for one release and maps to `mainGoal`.
+unknown; omit both on simple lookups. A blank brief field is dropped.
 Responses split follow-ups into two channels: `next` holds pages and coverage
 continuations (the result is incomplete until you run them), and `hints` holds
 optional leads, plus `hints.text` for a per-call fact no lead states. A `next` page or `hints` lead
@@ -624,7 +623,7 @@ failed rows disagree (a retryable failure, which carries `next.retry`, is a
 failed row like any other); every row empty (`1`); else `0`. An answering row
 never hides a failed one.
 
-Paging is success. A result with a `next.*`, `next.clasify` or
+Paging is success. A result with a `next.*` or
 `responsePagination` continuation, `pagination.hasMore`, or a partial source
 read exits `0`, exactly as the MCP server reports it (it has no exit codes):
 read `pagination.hasMore` and `next.*` to learn whether to continue. A script

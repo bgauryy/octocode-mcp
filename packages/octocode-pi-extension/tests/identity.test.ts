@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ADJECTIVES, AGENT_NAMES, agentName, checkGoal, CREATURES, GOAL_MAX_CHARS, GOAL_MAX_WORDS, MAX_NAME_CHARS } from '../src/team/identity.js';
+import { ADJECTIVES, AGENT_NAMES, agentName, checkGoal, CREATURES, MAX_NAME_CHARS } from '../src/team/identity.js';
 
 describe('agent names', () => {
   it('is a closed list of short, plain adjective-creature words', () => {
@@ -51,10 +51,9 @@ describe('agent names', () => {
 
 
 describe('agent goal', () => {
-  it('accepts a crisp goal of up to five words', () => {
-    expect(GOAL_MAX_WORDS).toBe(5);
+  it('accepts a goal with punctuation', () => {
     expect(checkGoal('audit auth token refresh')).toBe('audit auth token refresh');
-    expect(checkGoal('one two three four five')).toBe('one two three four five');
+    expect(checkGoal('PR9 policy + PR12 gate wiring')).toBe('PR9 policy + PR12 gate wiring');
   });
 
   it('collapses whitespace and strips terminal escapes instead of storing them', () => {
@@ -62,13 +61,9 @@ describe('agent goal', () => {
     expect(checkGoal('fix\u001b[2J the\u{e0041} bug')).toBe('fix the bug');
   });
 
-  it('refuses a goal over five words with the count, never truncating it', () => {
-    expect(() => checkGoal('audit the auth token refresh flow')).toThrow(/6 words.*at most 5 words/s);
-  });
-
-  it(`refuses a goal over ${GOAL_MAX_CHARS} characters`, () => {
-    expect(() => checkGoal('x'.repeat(GOAL_MAX_CHARS + 1))).toThrow(new RegExp(`${GOAL_MAX_CHARS + 1} characters.*at most ${GOAL_MAX_CHARS}`, 's'));
-    expect(checkGoal('x'.repeat(GOAL_MAX_CHARS))).toHaveLength(GOAL_MAX_CHARS);
+  it('accepts a long goal whole: it is a label, clipped only where it is shown', () => {
+    const long = 'audit the auth token refresh flow end to end across every service';
+    expect(checkGoal(long)).toBe(long);
   });
 
   it('refuses a missing, blank or non-text goal and says what to write', () => {

@@ -1,5 +1,3 @@
 # Octocode Documentation
 
-Write and improve technical documentation with verified claims and readable structure.
-
-Start with [SKILL.md](SKILL.md). See [output.md](output.md) for the result format.
+Technical documentation with verified claims and readable structure. Start with [SKILL.md](SKILL.md); [output.md](output.md) sets the result format.

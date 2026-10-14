@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadHooks, hookFiles } from '../src/hooks/config.js';
-import { globalPaths, HOME_NAMES, workspacePaths } from '../src/shared/home.js';
+import { globalPaths, HOME_NAMES, sessionDir, sessionDirName, workspacePaths } from '../src/shared/home.js';
 import { fingerprint, projectConfigFiles, projectTrustNow, saveDecision } from '../src/shared/trust.js';
 import { extraSkillDirs } from '../src/skills.js';
 import { loadProfiles } from '../src/subagents/profiles.js';
@@ -47,6 +47,22 @@ describe('layout', () => {
     const paths = workspacePaths(sub);
     expect(paths.root).toBe(root);
     expect(paths).toMatchObject({ dir: path.join(root, '.octocode'), skills: path.join(root, '.octocode', 'skills'), agents: path.join(root, '.octocode', 'agents'), hooks: path.join(root, '.octocode', 'hooks.json'), tmp: path.join(root, '.octocode', 'tmp') });
+  });
+});
+
+describe('session folders', () => {
+  it('refuses an id that would name the sessions folder or its parent, and keeps the name of every other id', () => {
+    for (const id of ['', '.', '..', '...']) {
+      expect(() => sessionDirName(id), JSON.stringify(id)).toThrow(/Invalid session id/);
+      expect(() => sessionDir(id, { OCTOCODE_HOME: tmp() })).toThrow(/Invalid session id/);
+    }
+    // Ids that were valid keep their folder, so no checkpoints or pending reports are orphaned.
+    expect(sessionDirName('a/b c:1')).toBe('a_b_c_1');
+    expect(sessionDirName('0190-aaaa-bbbb')).toBe('0190-aaaa-bbbb');
+    expect(sessionDirName('.hidden')).toBe('.hidden');
+    expect(sessionDirName('a..b')).toBe('a..b');
+    expect(sessionDirName('/')).toBe('_');
+    expect(sessionDirName('../x')).toBe('.._x');
   });
 });
 

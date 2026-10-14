@@ -4,6 +4,7 @@ Load when you review `unsafe`, validate untrusted input, build a Node addon (nap
 
 ## unsafe
 - Default to `#![forbid(unsafe_code)]` at the crate root. Otherwise `#![deny(unsafe_code)]` with `#[allow]` on the few audited modules.
+- A crate whose job is FFI (`libc`, `windows-sys`, process and job control) keeps `unsafe`. Deny `undocumented_unsafe_blocks` there. Do not `forbid(unsafe_code)` on that whole crate. A search that counts the token `unsafe` in string literals, keyword lists, and tests is not a missing `SAFETY` comment.
 - The `// SAFETY:` comment says why the invariant holds here; for FFI it states null-ness, lifetime, alignment, and thread-affinity. No invariant → not ready to ship.
 - Keep `unsafe` minimal, wrapped in a safe API that upholds the invariant; do not leak raw pointers/lifetimes across the boundary.
 - Run **Miri** (`cargo +nightly miri test`) on any crate with `unsafe`: it catches UB, data races, and invalid aliasing.
@@ -20,10 +21,10 @@ Load when you review `unsafe`, validate untrusted input, build a Node addon (nap
 - Arithmetic: debug panics on overflow, release wraps. Untrusted arithmetic uses `checked_*` / `saturating_*` / `try_into()`. Security-critical binaries can keep `overflow-checks = true` in `[profile.release]`.
 
 ## Hardening lints (opt in per crate, in `[lints.clippy]`)
-`undocumented_unsafe_blocks`, `multiple_unsafe_ops_per_block`, `indexing_slicing`, `arithmetic_side_effects`, `cast_possible_truncation`, `unwrap_used`/`expect_used`, `mem_forget`. Strictest on parsers and code touching untrusted bytes.
+`undocumented_unsafe_blocks`, `multiple_unsafe_ops_per_block`, `indexing_slicing`, `arithmetic_side_effects`, `cast_possible_truncation`, `unwrap_used`/`expect_used`, `mem_forget`. These are single lints, not a workspace group (`references/workspace.md`). `indexing_slicing` and `arithmetic_side_effects` are restriction lints and flood a parser or search crate; opt in only where a bad index or wrap is a security bug. Strictest on parsers and code touching untrusted bytes.
 
 ## Supply chain
-- `build.rs` and proc-macros run arbitrary code at build time: review new ones like code you execute. `cargo geiger` counts `unsafe` in the dep tree; `cargo vet` records who reviewed what.
+- `build.rs` and proc-macros run arbitrary code at build time: review new ones like code you execute. `cargo geiger` counts `unsafe` in the dep tree. A count is not a defect; Miri and `cargo careful` check behavior (`references/testing-and-tooling.md`). `cargo vet` records who reviewed what. `cargo unmaintained` flags abandoned crates and does not replace `cargo audit`.
 - `cargo auditable build` embeds the dep list so shipped binaries stay scannable. `deny.toml` bans duplicates, yanked crates, unknown registries, and git sources.
 
 ## FFI: panic must not cross the boundary

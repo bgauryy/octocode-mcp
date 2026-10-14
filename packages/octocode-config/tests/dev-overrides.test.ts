@@ -56,7 +56,7 @@ describe('contractDriftMessage', () => {
 });
 
 describe('configFieldEnvNames', () => {
-  it('lists a field env bindings in priority order', () => {
+  it('names the one variable a field binds', () => {
     expect(configFieldEnvNames('classification.api')).toEqual([
       'OCTOCODE_CLASSIFICATION_API',
     ]);

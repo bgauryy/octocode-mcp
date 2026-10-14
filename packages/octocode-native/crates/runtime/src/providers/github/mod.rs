@@ -4,19 +4,10 @@ mod dates;
 pub mod login;
 
 pub use auth::{
-    AuthMode, AuthSelection, Authentication, CredentialSource, CredentialStore, OAuthToken,
-    ResolvedCredential, StoredCredentials, configured_credential_host,
+    AuthMode, AuthSelection, Authentication, CredentialStore, OAuthToken, StoredCredentials,
+    configured_credential_host,
 };
 pub use dates::{resolve_date_window, utc_timestamp};
-#[cfg(test)]
-pub(crate) use octocode_github::NoCache;
-pub use octocode_github::{
-    CachePartition, CachedContent, CodeSearchItem, CodeSearchRequest, CommitListRequest,
-    ConditionalCache, ContentRequest, ContentResponse, ContentsEntry, GitHubBudget, GitHubEndpoint,
-    GitHubProvider, GitHubTransport, GraphQlError, HistoryPage, HistoryRequest, LimiterKey,
-    NamedRef, ProviderError, ProviderErrorKind, ProviderErrorReason, PullListRequest, RateLimit,
-    RefKind, RefMatch, RepositorySearchItem, RepositorySearchPage, RepositorySearchRequest,
-    RequestContext, RequestSpec, RetryPolicy, TextMatch, TreeRequest, TreeResponse,
-    qualifier_value, quote_search_keyword, search_phrase, validate_person_name,
-    validate_qualifier_value,
-};
+/// The public names the CLI (which does not depend on `octocode-github`) and
+/// `runtime/engine.rs` still use; runtime code names `octocode_github::`.
+pub use octocode_github::{ProviderError, ProviderErrorKind, ResolvedCredential};

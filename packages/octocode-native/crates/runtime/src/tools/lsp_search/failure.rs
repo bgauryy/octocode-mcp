@@ -204,8 +204,10 @@ pub(super) fn failure_hint(query: &LspSearchQuery, code: &str) -> Option<&'stati
     })
 }
 
-pub(super) fn empty_hint(category: &str) -> &'static str {
-    match category {
+/// The static tip of an empty category; `None` when the row's reason says
+/// it all.
+pub(super) fn empty_hint(category: &str) -> Option<&'static str> {
+    Some(match category {
         "noLocations" => {
             "Verify the symbol and anchor; then try references/definition alternatives or exact syntax/text search."
         }
@@ -213,14 +215,12 @@ pub(super) fn empty_hint(category: &str) -> &'static str {
             "Use localSearch or astSearch here, or run lspSearch where its project file (Cargo.toml, package.json) is present."
         }
         "unsupportedOperation" => "Choose an operation advertised by the lspSearch schema.",
-        "noDiagnostics" => {
-            "No errors or warnings were reported; confirm with the project's own type-check or build if it matters."
-        }
+        "noDiagnostics" => return None,
         "diagnosticsNotPublished" => {
             "Retry once the server has analyzed the file, or run the project's type-check/build for authoritative errors."
         }
         _ => "Use astSearch or localSearch to locate candidates, then localFetch exact source.",
-    }
+    })
 }
 
 pub(super) fn failure(
@@ -298,8 +298,10 @@ pub(super) fn empty(
         "category": category,
         "reason": reason,
         "lsp": { "serverAvailable": server_available },
-        "hints": [empty_hint(category)]
     });
+    if let Some(hint) = empty_hint(category) {
+        row["hints"] = json!([hint]);
+    }
     // A workspaceRoot-only query has no file: the row names none.
     if let Some(path) = query.path() {
         row["path"] = json!(path);
@@ -366,7 +368,11 @@ pub(super) fn mark_diagnostics_unpublished(row: &mut Value, query: &LspSearchQue
     row["reason"] = json!(format!(
         "The language server published no diagnostics for this document within {wait_ms} ms."
     ));
-    row["hints"] = json!([empty_hint("diagnosticsNotPublished")]);
+    row["hints"] = json!(
+        empty_hint("diagnosticsNotPublished")
+            .into_iter()
+            .collect::<Vec<_>>()
+    );
     mark_partial(row, query, "diagnosticsNotPublished", &[]);
 }
 
@@ -443,6 +449,76 @@ pub(super) fn with_next(query: &LspSearchQuery, mut value: Value) -> Value {
         });
     }
     value
+}
+
+/// A request whose path did not validate, as a row where its lead says
+/// what to do (a directory anchor, a missing path), else the failure.
+pub(super) fn path_failure(
+    query: &LspSearchQuery,
+    paths: &crate::policy::path::PathPolicy,
+    failure: LspFailure,
+) -> Result<Value, LspFailure> {
+    if let Some(row) = directory_anchor(query, paths) {
+        return Ok(row);
+    }
+    if failure.code != crate::policy::PATH_NOT_FOUND {
+        return Err(failure);
+    }
+    let mut row = json!({
+        "status": "error",
+        "errorCode": failure.code,
+        "error": failure.message,
+        "lsp": { "serverAvailable": false },
+    });
+    let requested = query.path().map(uri_to_path).unwrap_or_default();
+    if let Some(next) = crate::tools::result::missing_path_lead(paths, &requested) {
+        row["next"] = next;
+    }
+    Ok(row)
+}
+
+/// The `notAFile` row of a request whose file anchor names a directory,
+/// leading into it: a whole-word search for the named symbol, else the
+/// directory's file listing. `None` when the path is no authorized directory.
+pub(super) fn directory_anchor(
+    query: &LspSearchQuery,
+    paths: &crate::policy::path::PathPolicy,
+) -> Option<Value> {
+    let decoded = super::render::decode_uri_path(query.path()?).ok()?;
+    let directory = paths
+        .validate(&decoded)
+        .ok()
+        .filter(|valid| valid.canonical.is_dir())?
+        .canonical;
+    let name = paths
+        .workspace_relative(&directory)
+        .unwrap_or_else(|| directory.to_string_lossy().into_owned());
+    let mut row = json!({
+        "status": "error",
+        "errorCode": "notAFile",
+        "error": format!("{name} is a directory, not a file."),
+        "lsp": { "serverAvailable": false },
+    });
+    match query
+        .symbol_name()
+        .filter(|symbol| !symbol.trim().is_empty())
+    {
+        Some(symbol) => {
+            row["next"]["findText"] = crate::tools::result::Continuation::new(
+                ToolId::LocalSearch,
+                json!({"path": name, "matchString": symbol, "regex": "literal", "wholeWord": true, "caseMode": "sensitive"}),
+            )
+            .build();
+        }
+        None => {
+            row["next"]["list"] = crate::tools::result::Continuation::new(
+                ToolId::StructureSearch,
+                json!({"operation": "files", "path": name}),
+            )
+            .build();
+        }
+    }
+    Some(row)
 }
 
 /// `next.read` recovery: the symbol's match windows when a name anchored

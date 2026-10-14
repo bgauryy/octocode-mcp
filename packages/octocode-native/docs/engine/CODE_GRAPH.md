@@ -34,7 +34,7 @@ Reusable deterministic algorithms are in `src/graph/algorithms.rs`:
 - condensation and topological layers
 - transitive-edge detection
 
-`octocode-native/src/tools/ast_graph/algorithms.rs` only re-exports these engine primitives. The public `astTopology` response remains a syntax-confidence file-topology contract; semantic evidence isn't relabeled as syntax or exposed as proven symbol identity.
+`crates/runtime/src/tools/ast_graph/algorithms.rs` only re-exports these engine primitives. The public `astTopology` response remains a syntax-confidence file-topology contract; semantic evidence isn't relabeled as syntax or exposed as proven symbol identity.
 
 ## Persisted graphs (CLI)
 

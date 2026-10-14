@@ -495,16 +495,36 @@ impl NativeLspClient {
 
     /// Forget everything learned from the previous server process.
     fn reset_session_state(&self) {
-        if let Ok(mut capabilities) = self.inner.capabilities.lock() {
+        {
+            let mut capabilities = self
+                .inner
+                .capabilities
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             *capabilities = None;
         }
-        if let Ok(mut server_info) = self.inner.server_info.lock() {
+        {
+            let mut server_info = self
+                .inner
+                .server_info
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             *server_info = None;
         }
-        if let Ok(mut readiness) = self.inner.readiness.lock() {
+        {
+            let mut readiness = self
+                .inner
+                .readiness
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             *readiness = None;
         }
-        if let Ok(mut open_docs) = self.inner.open_docs.lock() {
+        {
+            let mut open_docs = self
+                .inner
+                .open_docs
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             open_docs.clear();
         }
     }
@@ -514,7 +534,12 @@ impl NativeLspClient {
         if child_guard.is_some() {
             return Err(Error::new("LSP client already started"));
         }
-        if let Ok(mut stderr_lines) = self.inner.stderr_lines.lock() {
+        {
+            let mut stderr_lines = self
+                .inner
+                .stderr_lines
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             stderr_lines.clear();
         }
         self.reset_session_state();
@@ -632,10 +657,20 @@ impl NativeLspClient {
                          octocode advertises utf-16; semantic positions cannot be resolved safely"
             )));
         }
-        if let Ok(mut capabilities) = self.inner.capabilities.lock() {
+        {
+            let mut capabilities = self
+                .inner
+                .capabilities
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             *capabilities = initialize_result.get("capabilities").cloned();
         }
-        if let Ok(mut server_info) = self.inner.server_info.lock() {
+        {
+            let mut server_info = self
+                .inner
+                .server_info
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             *server_info = initialize_result.get("serverInfo").cloned();
         }
         if let Err(error) = connection.notify("initialized", json!({})).await {
@@ -645,10 +680,20 @@ impl NativeLspClient {
 
         *self.inner.connection.lock().await = Some(connection);
         *self.inner.stderr_task.lock().await = stderr_task;
-        if let Ok(mut guard) = self.inner.memory_cap_guard.lock() {
+        {
+            let mut guard = self
+                .inner
+                .memory_cap_guard
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             *guard = Some(memory_cap_guard);
         }
-        if let Ok(mut guard) = self.inner.memory_watchdog.lock() {
+        {
+            let mut guard = self
+                .inner
+                .memory_watchdog
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             *guard = memory_watchdog;
         }
         *child_guard = Some(child);
@@ -667,7 +712,12 @@ impl NativeLspClient {
             let _ = connection.notify_best_effort("exit", Value::Null).await;
         }
         // The watchdog samples the child's pid: stop it before the reap.
-        if let Ok(mut guard) = self.inner.memory_watchdog.lock() {
+        {
+            let mut guard = self
+                .inner
+                .memory_watchdog
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             *guard = None;
         }
         if let Some(mut child) = child_guard.take() {
@@ -677,7 +727,12 @@ impl NativeLspClient {
         drop(child_guard);
         // Release the memory-cap Job Object only after the child is reaped;
         // closing it earlier would hard-kill a gracefully-exiting server.
-        if let Ok(mut guard) = self.inner.memory_cap_guard.lock() {
+        {
+            let mut guard = self
+                .inner
+                .memory_cap_guard
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             *guard = None;
         }
         if let Some(task) = self.inner.stderr_task.lock().await.take() {
@@ -700,7 +755,12 @@ impl NativeLspClient {
             .await
             .as_str()
             .to_owned();
-        if let Ok(mut slot) = self.inner.readiness.lock() {
+        {
+            let mut slot = self
+                .inner
+                .readiness
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             *slot = Some(readiness.clone());
         }
         Ok(readiness)
@@ -724,9 +784,11 @@ impl NativeLspClient {
     }
 
     pub fn has_capability(&self, capability: String) -> bool {
-        let Ok(capabilities) = self.inner.capabilities.lock() else {
-            return false;
-        };
+        let capabilities = self
+            .inner
+            .capabilities
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         capabilities
             .as_ref()
             .map(|value| capability_supported(value, &capability))
@@ -737,8 +799,8 @@ impl NativeLspClient {
         self.inner
             .readiness
             .lock()
-            .ok()
-            .and_then(|slot| slot.clone())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
     }
 
     fn readiness_is(&self, readiness: Readiness) -> bool {
@@ -967,10 +1029,18 @@ impl Drop for NativeLspClientInner {
             let _ = child.start_kill();
             let _ = child.try_wait();
         }
-        if let Ok(mut capabilities) = self.capabilities.lock() {
+        {
+            let mut capabilities = self
+                .capabilities
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             *capabilities = None;
         }
-        if let Ok(mut server_info) = self.server_info.lock() {
+        {
+            let mut server_info = self
+                .server_info
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             *server_info = None;
         }
     }
@@ -1050,7 +1120,12 @@ impl NativeLspClient {
             });
             connection.notify("textDocument/didChange", params).await
         };
-        if let Ok(mut open_docs) = self.inner.open_docs.lock() {
+        {
+            let mut open_docs = self
+                .inner
+                .open_docs
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             match &notification {
                 Ok(()) => open_docs.record(&uri, next_version, digest),
                 Err(_) => open_docs.rollback(&uri, next_version),
@@ -1304,12 +1379,20 @@ impl SnippetReadPolicy {
     }
 
     fn shared_read(&self, path: &str) -> Option<CachedRead> {
-        self.shared.as_ref()?.lock().ok()?.get(path).cloned()
+        self.shared
+            .as_ref()?
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(path)
+            .cloned()
     }
 
     fn share_read(&self, path: &str, read: &CachedRead) {
-        if let Some(mut shared) = self.shared.as_ref().and_then(|shared| shared.lock().ok()) {
-            shared.insert(path.to_owned(), read.clone());
+        if let Some(shared) = self.shared.as_ref() {
+            shared
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .insert(path.to_owned(), read.clone());
         }
     }
 
@@ -1559,18 +1642,20 @@ async fn read_snippet_source(path: PathBuf) -> Result<String> {
 }
 
 /// A UTF-8 regular file of at most `max_bytes`, read by
-/// [`crate::lsp::read_regular_bounded`].
+/// [`crate::text::read_source`].
 pub(crate) fn read_bounded_regular_file(path: &Path, max_bytes: u64) -> Result<String> {
-    use crate::lsp::BoundedRead;
-    let bytes = crate::lsp::read_regular_bounded(path, max_bytes).map_err(|error| match error {
-        BoundedRead::Io(err) => Error::new(err.to_string()),
-        BoundedRead::NotRegular => {
-            Error::new("not a regular file; LSP snippet content is read only from regular files")
-        }
-        BoundedRead::TooLarge(len) => Error::new(format!(
-            "file too large for LSP snippet content ({len} bytes > {max_bytes} bytes)"
-        )),
-    })?;
+    use crate::text::ReadError;
+    let bytes = crate::text::read_source(path, max_bytes)
+        .map_err(|error| match error {
+            ReadError::Io(err) => Error::new(err.to_string()),
+            ReadError::NotRegular => Error::new(
+                "not a regular file; LSP snippet content is read only from regular files",
+            ),
+            ReadError::TooLarge(len) => Error::new(format!(
+                "file too large for LSP snippet content ({len} bytes > {max_bytes} bytes)"
+            )),
+        })?
+        .bytes;
     String::from_utf8(bytes).map_err(|err| Error::new(format!("file is not valid UTF-8: {err}")))
 }
 
@@ -1703,9 +1788,9 @@ async fn read_capped_line<R: AsyncBufRead + Unpin>(
 }
 
 fn push_stderr_line(stderr_lines: &Arc<StdMutex<VecDeque<String>>>, line: String) {
-    let Ok(mut lines) = stderr_lines.lock() else {
-        return;
-    };
+    let mut lines = stderr_lines
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     while lines.len() >= STDERR_RING_CAPACITY {
         lines.pop_front();
     }

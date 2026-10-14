@@ -7,7 +7,7 @@
 //! `false`, and the exit class says the call did not succeed.
 #![allow(clippy::panic, clippy::unwrap_used)]
 
-use crate::support::{MOCK_PROVIDER_TIMEOUT_MS, Workspace};
+use crate::support::{self, MOCK_PROVIDER_TIMEOUT_MS, Workspace};
 use octocode_native::runtime::{ExitClass, ToolOutcome, ToolRuntime};
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path, path_regex};
@@ -42,19 +42,6 @@ fn has_recovery(data: &Value) -> bool {
             .and_then(Value::as_array)
             .is_some_and(|text| !text.is_empty());
     text || leads(data.get("hints")) || leads(data.get("next"))
-}
-
-async fn run(runtime: &ToolRuntime, probe: &Probe) -> ToolOutcome {
-    let mut row = probe.row.clone();
-    row["mainGoal"] = json!("empty/error row contract.");
-    runtime
-        .execute(
-            format!("b2-{}-{}", probe.tool, probe.status),
-            probe.tool.into(),
-            json!({"queries":[row]}),
-        )
-        .await
-        .unwrap_or_else(|error| panic!("{} {}: {error:?}", probe.tool, probe.status))
 }
 
 fn check(probe: &Probe, outcome: &ToolOutcome) -> Vec<String> {
@@ -270,18 +257,16 @@ async fn every_tool_empty_and_error_row_meets_the_row_contract() {
     ];
     let mut failures = Vec::new();
     for probe in &probes {
-        let outcome = run(&runtime, probe).await;
+        let outcome = support::run(&runtime, probe.tool, probe.row.clone(), &[]).await;
         failures.extend(check(probe, &outcome));
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
     runtime.close().await;
 }
 
-/// One missing path gets one recovery form on every local tool
-/// (today lspSearch/localFetch give text while structureSearch gives a
-/// `viewTree` lead). Ignored until the local lane's shared lead builder lands.
+/// One missing path gets one recovery form on every local tool: a
+/// `next.viewTree` lead to the nearest existing parent.
 #[tokio::test]
-#[ignore = "enable when the local tools unify the pathNotFound recovery"]
 async fn a_missing_path_gets_one_recovery_form_on_every_local_tool() {
     let workspace = Workspace::new();
     workspace.write("src/a.rs", "fn alpha() {}\n");
@@ -299,15 +284,7 @@ async fn a_missing_path_gets_one_recovery_form_on_every_local_tool() {
             json!({"path":"src/missing.rs","symbolName":"x","line":1,"operation":"definition"}),
         ),
     ] {
-        let outcome = run(
-            &runtime,
-            &Probe {
-                tool,
-                row,
-                status: "error",
-            },
-        )
-        .await;
+        let outcome = support::run(&runtime, tool, row, &[]).await;
         let data = outcome
             .structured_content
             .pointer("/results/0/data")

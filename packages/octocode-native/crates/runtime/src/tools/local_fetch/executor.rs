@@ -3,7 +3,6 @@ use super::pagination::{
     SourceLines, continuation, page_within, result_counts, sanitize_byte_page, sanitize_line_page,
 };
 use super::types::*;
-use super::validation::{decode_text, is_binary};
 use crate::security::scan::ContentScan;
 use crate::tools::cancel::CancellationCheck;
 use crate::tools::id::ToolId;
@@ -87,47 +86,22 @@ pub(crate) fn execute_local_fetch_ranked(
     if !q.goals.is_empty() && q.ranking.is_some() && q.full_content == Some(true) {
         return stale_snapshot(q);
     }
-    let validated = match paths.validate_read(Path::new(q.path.as_str())) {
-        Ok(path) => path,
-        Err(failure) => return path_failure(q, failure),
+    if let Some(refused) = context_without_match(q) {
+        return refused;
+    }
+    let (validated, meta) = match resolve_file(q, paths) {
+        Ok(resolved) => resolved,
+        Err(result) => return *result,
     };
-    let path = validated.canonical;
-    let display_path = validated.display;
-    let meta = match fs::metadata(&path) {
-        Ok(m) if m.is_file() => m,
-        Ok(m) if m.is_dir() => return not_a_file(q),
-        Ok(_) => {
-            return LocalFetchResult::error(
-                q.path.to_string(),
-                "fileAccessFailed",
-                "Path is not a regular file".into(),
-            );
-        }
-        Err(e) => {
-            return LocalFetchResult::error(q.path.to_string(), "fileAccessFailed", e.to_string());
-        }
-    };
+    let path = &validated.canonical;
+    let display_path = &validated.display;
     // Past the whole-file ceiling, only a streamed line window is served
     // (see `large_source`); past the streaming ceiling nothing is read.
     if meta.len() > super::large_source::MAX_STREAM_SOURCE_BYTES {
         return source_too_large(&q.path, meta.len(), SourceSizeLimit::Streaming);
     }
-    // One open serves the binary sniff and the whole read: the sniffed
-    // bytes start the buffer, sized from the stat.
     let in_memory = meta.len() <= MAX_SOURCE_BYTES;
-    let opened = fs::File::open(&path).and_then(|mut file| {
-        let capacity = if in_memory {
-            usize::try_from(meta.len()).map_or(BINARY_SAMPLE_BYTES, |len| len + 1)
-        } else {
-            BINARY_SAMPLE_BYTES
-        };
-        let mut bytes = Vec::with_capacity(capacity.max(BINARY_SAMPLE_BYTES));
-        let mut sample = [0_u8; BINARY_SAMPLE_BYTES];
-        let read = file.read(&mut sample)?;
-        bytes.extend_from_slice(&sample[..read]);
-        Ok((file, bytes))
-    });
-    let (file, sample) = match opened {
+    let (file, sample) = match open_with_sample(path, meta.len(), in_memory) {
         Ok(opened) => opened,
         Err(error) => {
             return LocalFetchResult::error(
@@ -137,67 +111,11 @@ pub(crate) fn execute_local_fetch_ranked(
             );
         }
     };
-    if is_binary(&sample) {
-        return refuse_binary(q, &display_path);
+    if octocode_engine::text::sniff(&sample) == octocode_engine::text::BinaryVerdict::Binary {
+        return refuse_binary(q, display_path);
     }
     if !in_memory {
-        let mut result = super::large_source::fetch_window(
-            q,
-            &path,
-            meta.len(),
-            meta.modified().ok().and_then(system_time_iso),
-            security,
-            cancel,
-            regex,
-        );
-        if result.status != "error" {
-            result.path = q.path.to_string();
-            if !q.goals.is_empty() {
-                if q.snapshot.is_some() && q.ranking.is_none() {
-                    return stale_snapshot(q);
-                }
-                let source = format!(
-                    "{}:{}",
-                    path.display(),
-                    result.source_sha256.as_deref().unwrap_or("")
-                );
-                let mut query_json = serde_json::to_value(q).unwrap_or_default();
-                // Streamed range heads advance their `ranges` selector as
-                // part of pagination. The skipped plan is source-wide.
-                if let Some(query) = query_json.as_object_mut() {
-                    query.remove("ranges");
-                }
-                let outcome = match crate::tools::ranking::order(
-                    ranking,
-                    &query_json,
-                    &source,
-                    q.ranking.as_ref().map(|s| s.as_str()),
-                    &[],
-                    Some("streamingSource"),
-                ) {
-                    Ok(outcome) => outcome,
-                    Err(crate::tools::ranking::Failure::Stale) => return stale_snapshot(q),
-                    Err(crate::tools::ranking::Failure::Cancelled) => {
-                        return LocalFetchResult::error(
-                            q.path.to_string(),
-                            "cancelled",
-                            "Ranking was cancelled".into(),
-                        );
-                    }
-                };
-                if let Some(read) = result
-                    .next
-                    .as_mut()
-                    .and_then(|next| next.continue_window.as_mut())
-                {
-                    read.query.ranking = outcome.token.parse().ok();
-                }
-                result.ranking = Some(outcome.receipt);
-            } else if q.ranking.is_some() {
-                return stale_snapshot(q);
-            }
-        }
-        return result;
+        return fetch_streamed(q, &validated, &meta, security, cancel, regex, ranking);
     }
     // Read at most the cap (+1 sentinel byte). Re-check the length in case the
     // file grew past the ceiling between the stat above and this read (TOCTOU).
@@ -213,8 +131,8 @@ pub(crate) fn execute_local_fetch_ranked(
     let mut result = process_fetched_content_ranked(
         q,
         &bytes,
-        &path,
-        &display_path,
+        path,
+        display_path,
         &SourceFacts {
             modified: meta.modified().ok().and_then(system_time_iso),
             window,
@@ -226,7 +144,161 @@ pub(crate) fn execute_local_fetch_ranked(
         ranking,
     );
     bind_continuation_to_source(&mut result);
+    name_read_file(&mut result, q, &validated.named);
     result
+}
+
+/// Name the read file by the canonical path the read resolved (symlinks
+/// followed, `.`/`..` folded), relative to the workspace when inside it
+/// ([`ValidatedRead::named`]): in the row, and in every read that continues
+/// the same file, so a continuation names the file its row names.
+/// Whole-file and streamed reads name it the same way.
+fn name_read_file(result: &mut LocalFetchResult, q: &LocalFetchQuery, named: &str) {
+    if result.path == q.path.as_str() {
+        named.clone_into(&mut result.path);
+    }
+    let (Some(next), Ok(path)) = (result.next.as_mut(), named.parse()) else {
+        return;
+    };
+    for read in next.reads_mut() {
+        if read.query.path == q.path {
+            read.query.path.clone_from(&path);
+        }
+    }
+}
+
+/// The validated path and its stat; a refused path, a directory, a
+/// non-regular file or a failed stat ends the read.
+fn resolve_file(
+    q: &LocalFetchQuery,
+    paths: &impl PathAccess,
+) -> Result<(ValidatedRead, fs::Metadata), Box<LocalFetchResult>> {
+    let validated = paths
+        .validate_read(Path::new(q.path.as_str()))
+        .map_err(|failure| Box::new(path_failure(q, failure)))?;
+    let meta = match fs::metadata(&validated.canonical) {
+        Ok(m) if m.is_file() => m,
+        Ok(m) if m.is_dir() => return Err(Box::new(not_a_file(q))),
+        Ok(_) => {
+            return Err(Box::new(LocalFetchResult::error(
+                q.path.to_string(),
+                "fileAccessFailed",
+                "Path is not a regular file".into(),
+            )));
+        }
+        Err(e) => {
+            return Err(Box::new(LocalFetchResult::error(
+                q.path.to_string(),
+                "fileAccessFailed",
+                e.to_string(),
+            )));
+        }
+    };
+    Ok((validated, meta))
+}
+
+/// One open serves the binary sniff and the whole read: the sniffed bytes
+/// start the buffer, sized from the stat.
+fn open_with_sample(
+    path: &Path,
+    len: u64,
+    in_memory: bool,
+) -> std::io::Result<(fs::File, Vec<u8>)> {
+    let mut file = fs::File::open(path)?;
+    let capacity = if in_memory {
+        usize::try_from(len).map_or(BINARY_SAMPLE_BYTES, |len| len + 1)
+    } else {
+        BINARY_SAMPLE_BYTES
+    };
+    let mut bytes = Vec::with_capacity(capacity.max(BINARY_SAMPLE_BYTES));
+    let mut sample = [0_u8; BINARY_SAMPLE_BYTES];
+    let read = file.read(&mut sample)?;
+    bytes.extend_from_slice(&sample[..read]);
+    Ok((file, bytes))
+}
+
+/// A source over the in-memory guard: its streamed line window, ranked
+/// when the read has goals.
+fn fetch_streamed(
+    q: &LocalFetchQuery,
+    file: &ValidatedRead,
+    meta: &fs::Metadata,
+    security: &impl ContentScan,
+    cancel: &impl CancellationCheck,
+    regex: &impl RegexMatch,
+    ranking: Option<&crate::tools::ranking::Runtime>,
+) -> LocalFetchResult {
+    let path = &file.canonical;
+    let mut result = super::large_source::fetch_window(
+        q,
+        path,
+        meta.len(),
+        meta.modified().ok().and_then(system_time_iso),
+        security,
+        cancel,
+        regex,
+    );
+    if result.status == "error" {
+        return result;
+    }
+    result.path = q.path.to_string();
+    name_read_file(&mut result, q, &file.named);
+    if q.goals.is_empty() {
+        return if q.ranking.is_some() {
+            stale_snapshot(q)
+        } else {
+            result
+        };
+    }
+    if q.snapshot.is_some() && q.ranking.is_none() {
+        return stale_snapshot(q);
+    }
+    let source = format!(
+        "{}:{}",
+        path.display(),
+        result.source_sha256.as_deref().unwrap_or("")
+    );
+    let mut query_json = serde_json::to_value(q).unwrap_or_default();
+    // Streamed range heads advance their `ranges` selector as
+    // part of pagination. The skipped plan is source-wide.
+    if let Some(query) = query_json.as_object_mut() {
+        query.remove("ranges");
+    }
+    let outcome = match crate::tools::ranking::order(
+        ranking,
+        &query_json,
+        &source,
+        q.ranking.as_ref().map(|s| s.as_str()),
+        &[],
+        Some("streamingSource"),
+    ) {
+        Ok(outcome) => outcome,
+        Err(failure) => return ranking_failure(q, failure),
+    };
+    if let Some(read) = result
+        .next
+        .as_mut()
+        .and_then(|next| next.continue_window.as_mut())
+    {
+        read.query.ranking = outcome.token.parse().ok();
+    }
+    result.ranking = Some(outcome.receipt);
+    result
+}
+
+/// The row for a ranking that could not order the source.
+fn ranking_failure(
+    q: &LocalFetchQuery,
+    failure: crate::tools::ranking::Failure,
+) -> LocalFetchResult {
+    match failure {
+        crate::tools::ranking::Failure::Stale => stale_snapshot(q),
+        crate::tools::ranking::Failure::Cancelled => LocalFetchResult::error(
+            q.path.to_string(),
+            "cancelled",
+            "Ranking was cancelled".into(),
+        ),
+    }
 }
 
 /// A directory named as a file: say so, and lead to its tree.
@@ -400,7 +472,10 @@ pub(crate) fn process_fetched_content_ranked(
     regex: &impl RegexMatch,
     ranking: Option<&crate::tools::ranking::Runtime>,
 ) -> LocalFetchResult {
-    let mut source = match prepare_source(q, bytes, source_path, security, cancel) {
+    if let Some(refused) = context_without_match(q) {
+        return refused;
+    }
+    let source = match prepare_source(q, bytes, source_path, security, cancel) {
         Ok(source) => source,
         Err(result) => return *result,
     };
@@ -408,110 +483,185 @@ pub(crate) fn process_fetched_content_ranked(
         Ok(extraction) => extraction,
         Err(error) => return extraction_error(q, error),
     };
+    let rank = RankInput {
+        q,
+        source_path,
+        provider_path,
+        sha256: &source.sha256,
+        runtime: ranking,
+    };
     if ext.count == Some(0) {
-        let mut result = no_match(q, &source, regex);
-        if q.goals.is_empty() {
-            return if q.ranking.is_some() {
-                stale_snapshot(q)
-            } else {
-                result
-            };
-        }
-        let query_json = serde_json::to_value(q).unwrap_or_default();
-        match crate::tools::ranking::order(
-            ranking,
-            &query_json,
-            &format!("{}:{}", source_path.display(), source.sha256),
-            q.ranking.as_ref().map(|token| token.as_str()),
-            &[],
-            None,
-        ) {
-            Ok(outcome) => result.ranking = Some(outcome.receipt),
-            Err(crate::tools::ranking::Failure::Stale) => return stale_snapshot(q),
-            Err(crate::tools::ranking::Failure::Cancelled) => {
-                return LocalFetchResult::error(
-                    q.path.to_string(),
-                    "cancelled",
-                    "Ranking was cancelled".into(),
-                );
-            }
-        }
-        return result;
+        return rank_no_match(&rank, no_match(q, &source, regex));
     }
     let mut view = select_view(q, &mut ext);
-    let rank_outcome = if q.goals.is_empty() {
-        if q.ranking.is_some() {
-            return stale_snapshot(q);
-        }
-        None
-    } else {
-        if q.offset().is_some_and(|offset| offset > 0) && q.ranking.is_none() {
-            return stale_snapshot(q);
-        }
-        let unsupported = if view.mode != MinifyMode::None
-            || q.full_content == Some(true)
-            || q.unit == Some(WindowUnit::Bytes)
-        {
-            Some("unsupportedView")
-        } else {
-            None
-        };
-        let (candidates, chunks) = super::ranking::chunks(
-            &view.text,
-            ext.source_lines.as_deref(),
-            source_path,
-            provider_path,
-            security,
-            ranking,
-            q.ranking.as_ref().map(|token| token.as_str()),
-            unsupported,
-        );
-        let query_json = serde_json::to_value(q).unwrap_or_default();
-        let outcome = match crate::tools::ranking::order(
-            ranking,
-            &query_json,
-            &format!("{}:{}", source_path.display(), source.sha256),
-            q.ranking.as_ref().map(|s| s.as_str()),
-            &candidates,
-            unsupported,
-        ) {
-            Ok(outcome) => outcome,
-            Err(crate::tools::ranking::Failure::Stale) => return stale_snapshot(q),
-            Err(crate::tools::ranking::Failure::Cancelled) => {
-                return LocalFetchResult::error(
-                    q.path.to_string(),
-                    "cancelled",
-                    "Ranking was cancelled".into(),
-                );
-            }
-        };
-        if matches!(
-            outcome.receipt.status,
-            crate::contracts::tool_types::RankingStatus::Ranked
-                | crate::contracts::tool_types::RankingStatus::Partial
-        ) {
-            let (text, source_lines) = super::ranking::reorder(&view.text, &chunks, &outcome.order);
-            view.text = text;
-            ext.source_lines = Some(source_lines);
-        }
-        Some(outcome)
+    let rank_outcome = match rank_view(&rank, &mut view, &mut ext, security) {
+        Ok(outcome) => outcome,
+        Err(result) => return *result,
     };
     if let Err(e) = cancel.check() {
         return LocalFetchResult::error(q.path.to_string(), "cancelled", e);
     }
-    // A complete view over the limit returns its first bounded page inline.
-    let bounded_view;
+    let cut = match cut_page(q, &view, &ext, &source, facts, source_path, security) {
+        Ok(cut) => cut,
+        Err(result) => return *result,
+    };
+    if let Err(e) = cancel.check() {
+        return LocalFetchResult::error(cut.q.path.to_string(), "cancelled", e);
+    }
+    page_result(cut, source, ext, view, rank_outcome, source_path, facts)
+}
+
+/// `contextLines` widens matchString hits; a read without matchString has
+/// none, so it is refused with the same read without `contextLines`.
+fn context_without_match(q: &LocalFetchQuery) -> Option<LocalFetchResult> {
+    if q.context_lines.is_none() || !q.match_strings().is_empty() {
+        return None;
+    }
+    let mut result = LocalFetchResult::error(
+        q.path.to_string(),
+        "invalidInput",
+        "contextLines widens matchString hits; this read has no matchString.".into(),
+    );
+    let mut query = q.clone();
+    query.context_lines = None;
+    result.next = Some(NextCalls {
+        repair: Some(Continuation { query }),
+        ..NextCalls::default()
+    });
+    Some(result)
+}
+
+/// What a goal ranking of one source reads.
+struct RankInput<'a> {
+    q: &'a LocalFetchQuery,
+    source_path: &'a std::path::Path,
+    provider_path: &'a str,
+    sha256: &'a str,
+    runtime: Option<&'a crate::tools::ranking::Runtime>,
+}
+
+impl RankInput<'_> {
+    /// The ranking's source key: the path and the digest of its bytes.
+    fn source_key(&self) -> String {
+        format!("{}:{}", self.source_path.display(), self.sha256)
+    }
+}
+
+/// A read that selected nothing carries the ranking receipt of its goals; a
+/// ranked replay without goals is stale.
+fn rank_no_match(rank: &RankInput, mut result: LocalFetchResult) -> LocalFetchResult {
+    let q = rank.q;
+    if q.goals.is_empty() {
+        return if q.ranking.is_some() {
+            stale_snapshot(q)
+        } else {
+            result
+        };
+    }
+    let query_json = serde_json::to_value(q).unwrap_or_default();
+    match crate::tools::ranking::order(
+        rank.runtime,
+        &query_json,
+        &rank.source_key(),
+        q.ranking.as_ref().map(|token| token.as_str()),
+        &[],
+        None,
+    ) {
+        Ok(outcome) => result.ranking = Some(outcome.receipt),
+        Err(failure) => return ranking_failure(q, failure),
+    }
+    result
+}
+
+/// Order the view's chunks by the read's goals. A read without goals, or a
+/// paged read without its ranking token, is not ranked here.
+fn rank_view(
+    rank: &RankInput,
+    view: &mut View,
+    ext: &mut super::extraction::Extraction,
+    security: &impl ContentScan,
+) -> Result<Option<crate::tools::ranking::Outcome>, Box<LocalFetchResult>> {
+    let q = rank.q;
+    if q.goals.is_empty() {
+        if q.ranking.is_some() {
+            return Err(Box::new(stale_snapshot(q)));
+        }
+        return Ok(None);
+    }
+    if q.offset().is_some_and(|offset| offset > 0) && q.ranking.is_none() {
+        return Err(Box::new(stale_snapshot(q)));
+    }
+    let unsupported = if view.mode != MinifyMode::None
+        || q.full_content == Some(true)
+        || q.unit == Some(WindowUnit::Bytes)
+    {
+        Some("unsupportedView")
+    } else {
+        None
+    };
+    let (candidates, chunks) = super::ranking::chunks(
+        &view.text,
+        ext.source_lines.as_deref(),
+        rank.source_path,
+        rank.provider_path,
+        security,
+        rank.runtime,
+        q.ranking.as_ref().map(|token| token.as_str()),
+        unsupported,
+    );
+    let query_json = serde_json::to_value(q).unwrap_or_default();
+    let outcome = crate::tools::ranking::order(
+        rank.runtime,
+        &query_json,
+        &rank.source_key(),
+        q.ranking.as_ref().map(|s| s.as_str()),
+        &candidates,
+        unsupported,
+    )
+    .map_err(|failure| Box::new(ranking_failure(q, failure)))?;
+    if matches!(
+        outcome.receipt.status,
+        crate::contracts::tool_types::RankingStatus::Ranked
+            | crate::contracts::tool_types::RankingStatus::Partial
+    ) {
+        let (text, source_lines) = super::ranking::reorder(&view.text, &chunks, &outcome.order);
+        view.text = text;
+        ext.source_lines = Some(source_lines);
+    }
+    Ok(Some(outcome))
+}
+
+/// The scanned page of a view, and the query it was cut for.
+struct CutPage<'a> {
+    /// The read's query; bounded when a complete view was over the window.
+    q: std::borrow::Cow<'a, LocalFetchQuery>,
+    view_limited: bool,
+    /// The page is the head of an unanchored read.
+    head: bool,
+    scanned: ScannedPage,
+}
+
+/// Cut the returned page from the view. A complete view over the limit
+/// returns its first bounded page inline.
+fn cut_page<'a>(
+    q: &'a LocalFetchQuery,
+    view: &View,
+    ext: &super::extraction::Extraction,
+    source: &Source,
+    facts: &SourceFacts,
+    source_path: &std::path::Path,
+    security: &impl ContentScan,
+) -> Result<CutPage<'a>, Box<LocalFetchResult>> {
     let view_limited =
         q.full_content == Some(true) && facts.window.is_some_and(|window| view.text.len() > window);
     let q = if view_limited {
-        bounded_view = bounded_query(q);
-        &bounded_view
+        std::borrow::Cow::Owned(bounded_query(q))
     } else {
-        q
+        std::borrow::Cow::Borrowed(q)
     };
-    let head_view = head_query(q, view.mode, view.text.len());
+    let head_view = head_query(&q, view.mode, view.text.len());
     let head = head_view.is_some();
-    let page_q = head_view.as_ref().unwrap_or(q);
+    let page_q = head_view.as_ref().unwrap_or(&q);
     // A selected view's first page may be held to the caller's preview
     // budget; its continuations page at the line page budget.
     let line_page_bytes = facts
@@ -523,42 +673,60 @@ pub(crate) fn process_fetched_content_ranked(
     let source_lines = (view.mode == MinifyMode::Standard && ext.source_lines.is_none())
         .then(|| SourceLines::of_gutter(&view.text, source.total_lines))
         .flatten();
-    let scanned = match scan_page(
-        q,
+    let scanned = scan_page(
+        &q,
         page_q,
         &view.text,
         line_page_bytes,
         source_path,
         security,
-        &source,
+        source,
         ext.start,
         source_lines.as_ref(),
-    ) {
-        Ok(scanned) => scanned,
-        Err(result) => return *result,
-    };
-    if let Err(e) = cancel.check() {
-        return LocalFetchResult::error(q.path.to_string(), "cancelled", e);
-    }
+    )?;
+    Ok(CutPage {
+        q,
+        view_limited,
+        head,
+        scanned,
+    })
+}
+
+/// The success row for a scanned page: its warnings, continuations and
+/// source anchors.
+fn page_result(
+    cut: CutPage,
+    mut source: Source,
+    mut ext: super::extraction::Extraction,
+    view: View,
+    rank_outcome: Option<crate::tools::ranking::Outcome>,
+    source_path: &std::path::Path,
+    facts: &SourceFacts,
+) -> LocalFetchResult {
+    let CutPage {
+        q,
+        view_limited,
+        head,
+        scanned,
+    } = cut;
+    let q = q.as_ref();
     let mut warnings = std::mem::take(&mut source.warnings);
     warnings.extend(std::mem::take(&mut ext.warnings));
     warnings.extend(scanned.warnings);
     let pg = scanned.page;
+    // The page shows a key block the source-wide pass redacted.
+    if source.key_blocks_redacted
+        && pg
+            .text
+            .contains(&crate::security::key_fragment_placeholder())
+    {
+        warnings.push(KEY_BLOCK_NOTE.into());
+    }
     warn_redacted(&pg.text, scanned.redacted, &source, &mut warnings);
     warn_unmatchable(q, &source, &ext.matched_lines, &mut warnings);
     let out_of_range = pg.out_of_range;
-    let mut next = page_next(q, &pg, head, &mut warnings);
-    if let Some(token) = rank_outcome.as_ref().map(|outcome| outcome.token.as_str())
-        && let Some(read) = next.as_mut().and_then(|next| next.continue_window.as_mut())
-    {
-        read.query.ranking = token.parse().ok();
-    }
-    // Follow-ups to data the extraction selected but did not return.
-    let follow_ups = std::mem::take(&mut ext.next);
-    if !out_of_range && !follow_ups.is_empty() {
-        next.get_or_insert_with(NextCalls::default)
-            .absorb(follow_ups);
-    }
+    let token = rank_outcome.as_ref().map(|outcome| outcome.token.as_str());
+    let next = continue_calls(q, &pg, head, token, &mut ext, &mut warnings);
     read_scope_warnings(q, &pg, head, source.total_lines, &mut warnings);
     // Redaction (source-wide for matchString, or on the page) replaces text
     // within lines; the anchors stay and the warning above says the text is
@@ -622,6 +790,30 @@ pub(crate) fn process_fetched_content_ranked(
     }
 }
 
+/// The page's continuations: its next page bound to the ranking token, plus
+/// follow-ups to data the extraction selected but did not return.
+fn continue_calls(
+    q: &LocalFetchQuery,
+    pg: &super::pagination::Page,
+    head: bool,
+    token: Option<&str>,
+    ext: &mut super::extraction::Extraction,
+    warnings: &mut Vec<String>,
+) -> Option<NextCalls> {
+    let mut next = page_next(q, pg, head, warnings);
+    if let Some(token) = token
+        && let Some(read) = next.as_mut().and_then(|next| next.continue_window.as_mut())
+    {
+        read.query.ranking = token.parse().ok();
+    }
+    let follow_ups = std::mem::take(&mut ext.next);
+    if !pg.out_of_range && !follow_ups.is_empty() {
+        next.get_or_insert_with(NextCalls::default)
+            .absorb(follow_ups);
+    }
+    next
+}
+
 /// The head page of an untargeted first read whose view would not fit one
 /// line page: paging through it is rarely what an unanchored read needs, and
 /// the head plus a locate (or an anchored read) costs a fraction of a page.
@@ -636,6 +828,11 @@ fn head_query(q: &LocalFetchQuery, mode: MinifyMode, view_bytes: usize) -> Optio
             ..q.clone()
         })
 }
+
+/// A returned window shows a private-key block redacted over the whole
+/// source before the window was cut.
+const KEY_BLOCK_NOTE: &str =
+    "Redacted private-key block(s) found in the source before selecting the window.";
 
 /// The decoded source, redacted before any window is cut from it.
 struct Source {
@@ -669,21 +866,17 @@ fn prepare_source(
         .map_err(|e| Box::new(LocalFetchResult::error(q.path.to_string(), "cancelled", e)))?;
     // Binary detection is a separate heuristic; text that is not UTF-8 is
     // decoded (Latin-1 or lossy UTF-8) with a warning, never refused.
-    let (raw, decode_warning) = decode_text(bytes);
+    let decoded = octocode_engine::text::decode(bytes);
+    let (raw, decode_warning) = (decoded.text.into_owned(), decoded.warning);
     let chars = raw.encode_utf16().count();
     let source_bytes = raw.len();
     let total_lines = line_count(&raw);
-    let mut warnings: Vec<String> = decode_warning.map(str::to_owned).into_iter().collect();
+    let warnings: Vec<String> = decode_warning.map(str::to_owned).into_iter().collect();
     // Redact whole private-key blocks across the full file BEFORE any
     // window/extraction, so a bounded read of an interior body line cannot leak a
     // key whose BEGIN/END markers fall outside the selected window (the anchored
     // built-in patterns only match a complete block in a single view).
     let (raw, key_blocks_redacted) = security.redact_key_blocks(&raw);
-    if key_blocks_redacted {
-        warnings.push(
-            "Redacted private-key block(s) found in the source before selecting the window.".into(),
-        );
-    }
     // matchString runs on redacted text: sanitize the whole source (line-count
     // preserving) before matching so a probe cannot confirm a secret that the
     // returned window would redact (exact-prefix oracle).
@@ -745,9 +938,35 @@ fn no_match(q: &LocalFetchQuery, source: &Source, regex: &impl RegexMatch) -> Lo
         query.case_mode = Some(ReadCaseMode::Insensitive);
         Continuation { query }
     });
+    // A `ranges` read that missed while this file has hits outside its
+    // ranges: the same read without them selects those lines.
+    let outside = q
+        .has_ranges()
+        .then(|| {
+            let mut whole = q.clone();
+            whole.ranges.clear();
+            let count = super::extraction::extract(&whole, &source.text, regex)
+                .ok()
+                .and_then(|extraction| extraction.count)
+                .unwrap_or(0);
+            (count > 0).then_some((count, whole))
+        })
+        .flatten();
+    let read = outside.map(|(count, query)| {
+        warnings.push(format!(
+            "{count} {} outside the requested ranges.",
+            if count == 1 {
+                "line matches"
+            } else {
+                "lines match"
+            }
+        ));
+        Continuation { query }
+    });
     // The text may live in another file of this directory: one localSearch
-    // there finds it (not offered when redactions hide the text).
-    let search = (!(source.match_redacted || source.key_blocks_redacted))
+    // there finds it (not offered when redactions hide the text, or when
+    // this file holds it outside the ranges).
+    let search = (read.is_none() && !(source.match_redacted || source.key_blocks_redacted))
         .then(|| {
             let dir = Path::new(q.path.as_str())
                 .parent()
@@ -765,6 +984,7 @@ fn no_match(q: &LocalFetchQuery, source: &Source, regex: &impl RegexMatch) -> Lo
         next: Some(NextCalls {
             text_search: search,
             ignore_case,
+            read,
             ..NextCalls::default()
         })
         .filter(|next| !next.is_empty()),
@@ -1292,7 +1512,7 @@ const REDACTED_MATCH_HINT: &str = "No visible line matches; this file's secrets 
 /// (the text may sit behind a placeholder) and a literal `|` (read as
 /// alternation by most agents; it is not one). The leads beside the row
 /// (`ignoreCase`, `findText`) are its next steps.
-pub(crate) fn no_match_hints(q: &LocalFetchQuery, redacted: bool) -> Vec<String> {
+fn no_match_hints(q: &LocalFetchQuery, redacted: bool) -> Vec<String> {
     let mut hints = Vec::new();
     if redacted {
         hints.push(REDACTED_MATCH_HINT.to_owned());
@@ -1309,11 +1529,7 @@ pub(crate) fn no_match_hints(q: &LocalFetchQuery, redacted: bool) -> Vec<String>
 
 /// Lines the same read selects when every pattern matches case-insensitively;
 /// 0 when the patterns do not compile that way either.
-pub(crate) fn insensitive_match_count(
-    q: &LocalFetchQuery,
-    text: &str,
-    regex: &impl RegexMatch,
-) -> usize {
+fn insensitive_match_count(q: &LocalFetchQuery, text: &str, regex: &impl RegexMatch) -> usize {
     let mut insensitive = q.clone();
     insensitive.case_mode = Some(ReadCaseMode::Insensitive);
     super::extraction::extract(&insensitive, text, regex)
@@ -1342,7 +1558,8 @@ mod source_size_tests {
     use crate::tools::cancel::NeverCancel;
     use std::fs;
 
-    use super::super::tests::{Paths, Temp, q};
+    use super::super::tests::{Paths, q};
+    use crate::tools::test_support::Fixture;
     use crate::security::scan::Passthrough;
 
     /// Read `req` under `dir` with a passthrough scan.
@@ -1359,7 +1576,7 @@ mod source_size_tests {
 
     #[test]
     fn source_above_the_streaming_ceiling_returns_file_too_large() {
-        let temp = Temp::new();
+        let temp = Fixture::new();
         let dir = temp.0.clone();
         let path = dir.join("huge.txt");
         // Sparse file just past the streaming ceiling — the size guard fires
@@ -1413,12 +1630,48 @@ mod source_size_tests {
         assert_eq!(result.terminal_limit, Some(true));
     }
 
+    /// A bare read of a source past the whole-file ceiling states the span it
+    /// returned (not the window it held) and a line pagination in file lines.
+    #[test]
+    fn a_streamed_bare_read_states_the_span_it_returned() {
+        let temp = Fixture::new();
+        let dir = temp.0.clone();
+        let path = dir.join("big.log");
+        let mut text = String::new();
+        let mut lines = 0usize;
+        while text.len() as u64 <= MAX_SOURCE_BYTES {
+            lines += 1;
+            text.push_str(&format!("line {lines} payload payload payload payload\n"));
+        }
+        fs::write(&path, &text).expect("write");
+        let first = fetch(&q(&path), &Paths(dir.clone()));
+        assert_eq!(first.status, "success", "{first:?}");
+        let returned = first.returned_lines.expect("returned lines");
+        assert_eq!(first.end_line, Some(returned), "{first:?}");
+        let served = format!("served lines 1-{returned} of {lines}");
+        assert!(
+            first
+                .warnings
+                .iter()
+                .any(|warning| warning.contains(&served)),
+            "{served}: {:?}",
+            first.warnings
+        );
+        let page = first.pagination.as_ref().expect("pagination");
+        assert_eq!(page.unit, WindowUnit::Lines, "{page:?}");
+        assert_eq!(page.offset, 0, "{page:?}");
+        assert_eq!(page.length, returned, "{page:?}");
+        assert_eq!(page.total_lines, lines, "{page:?}");
+        assert!(page.has_more, "{page:?}");
+        assert_eq!(page.next_offset, Some(returned), "{page:?}");
+    }
+
     // Past the whole-file ceiling a plain read streams a bounded line window:
     // exact whole-file totals, a digest-bound continuation that advances,
     // and matchString redirected to localSearch.
     #[test]
     fn oversized_text_source_is_served_as_streamed_line_windows() {
-        let temp = Temp::new();
+        let temp = Fixture::new();
         let dir = temp.0.clone();
         let path = dir.join("big.log");
         let mut text = String::new();
@@ -1509,7 +1762,7 @@ mod source_size_tests {
     // restarts at line 1.
     #[test]
     fn oversized_source_serves_several_ranges_in_one_read() {
-        let temp = Temp::new();
+        let temp = Fixture::new();
         let dir = temp.0.clone();
         let path = dir.join("big.log");
         let mut text = String::new();
@@ -1560,7 +1813,7 @@ mod source_size_tests {
     // first is reached once, in order, across the chunk boundary.
     #[test]
     fn oversized_source_line_chunks_continue_past_a_paged_chunk() {
-        let temp = Temp::new();
+        let temp = Fixture::new();
         let dir = temp.0.clone();
         let path = dir.join("big.log");
         let mut text = String::new();
@@ -1599,7 +1852,7 @@ mod source_size_tests {
 
     #[test]
     fn at_limit_plain_read_is_allowed() {
-        let temp = Temp::new();
+        let temp = Fixture::new();
         let dir = temp.0.clone();
         let path = dir.join("ok.txt");
         fs::write(&path, "hello\nworld\n").expect("write file");
@@ -1618,7 +1871,7 @@ mod source_size_tests {
     // — not the window sanitizer — closes the leak.
     #[test]
     fn interior_private_key_window_does_not_leak_in_non_key_named_file() {
-        let temp = Temp::new();
+        let temp = Fixture::new();
         let dir = temp.0.clone();
         let path = dir.join("notes.txt"); // deliberately NOT a *.pem/id_rsa path
         let body = "MIIEpQIBAAKCAQEAsplitKeyBodyLineOneAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
@@ -1650,7 +1903,7 @@ mod source_size_tests {
     #[test]
     fn match_string_cannot_probe_line_level_secrets() {
         use crate::security::ContentSecurity;
-        let temp = Temp::new();
+        let temp = Fixture::new();
         let dir = temp.0.clone();
         let path = dir.join("config.txt");
         let secret = "AKIAIOSFODNN7EXAMPLE";
@@ -1716,7 +1969,7 @@ mod source_size_tests {
     // never bare base64.
     #[test]
     fn innocent_base64_window_is_returned_byte_identical() {
-        let temp = Temp::new();
+        let temp = Fixture::new();
         let dir = temp.0.clone();
         let path = dir.join("data.txt");
         let blob = "aGVsbG8gd29ybGQgdGhpcyBpcyBqdXN0IGEgbG9uZyBiYXNlNjQgYmxvYg==";
@@ -1832,6 +2085,32 @@ mod line_page_scan_tests {
         assert_eq!(small.returned_lines, Some(500), "{small:?}");
         assert!(small.warnings.is_empty(), "{:?}", small.warnings);
         assert!(small.next.is_none(), "{small:?}");
+    }
+
+    /// The private-key note is a fact about the returned window: a page
+    /// that shows a redacted key block says so, a page elsewhere in the
+    /// same file does not.
+    #[test]
+    fn the_key_block_note_rides_only_on_pages_that_show_the_block() {
+        let body = "MIIEpAIBAAKCAQEAsplitKeyBodyLineABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        let source = format!(
+            "{}-----BEGIN RSA PRIVATE KEY-----\n{body}\n-----END RSA PRIVATE KEY-----\n{}",
+            filler(10),
+            filler(100)
+        );
+        let note = "Redacted private-key block(s) found in the source before selecting the window.";
+        let shows = fetch(&source, &lines_query(0, 20));
+        assert!(
+            shows.warnings.iter().any(|w| w == note),
+            "{:?}",
+            shows.warnings
+        );
+        let elsewhere = fetch(&source, &lines_query(50, 20));
+        assert!(
+            !elsewhere.warnings.iter().any(|w| w == note),
+            "{:?}",
+            elsewhere.warnings
+        );
     }
 
     #[test]
@@ -1950,6 +2229,45 @@ mod line_page_scan_tests {
             assert!(pages > 1, "chunk {chunk}");
             assert_eq!(union, expected, "chunk {chunk}");
         }
+    }
+
+    /// A byte window inside one long line that holds secrets returns that
+    /// window (redacted), not the whole line from column 0: the text starts
+    /// where `pagination.offset` says and stays near the asked length.
+    #[test]
+    fn a_byte_window_in_a_redacted_long_line_stays_in_its_window() {
+        let token = "ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let pad = "x".repeat(30_000);
+        let source = format!(
+            "{pad} aws_secret_access_key = \"AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCd\" {token} needle {pad}\n"
+        );
+        let expected = security()
+            .sanitize(&source, Path::new("/fixture/app.ts"))
+            .expect("scan")
+            .0;
+        assert_ne!(expected, source, "fixture holds a real secret");
+        let needle = source.find("needle").expect("needle");
+        for offset in [0, needle - 20] {
+            let result = fetch(&source, &bytes_query(offset, 100));
+            let content = result.content.as_deref().expect("content");
+            assert!(!content.contains("ghp_aaaa"), "{offset}: {content}");
+            assert!(content.len() < 200, "{offset}: {} bytes", content.len());
+            let page = result.pagination.as_ref().expect("pagination");
+            assert_eq!(page.offset, offset, "{page:?}");
+            assert!(page.has_more, "{page:?}");
+            assert!(
+                source[offset..].starts_with(&content[..content.len().min(10)])
+                    || content.starts_with(octocode_engine::security::REDACTION_PREFIX),
+                "{offset}: {content}"
+            );
+        }
+        let near = fetch(&source, &bytes_query(needle - 20, 100));
+        assert!(
+            near.content
+                .as_deref()
+                .is_some_and(|c| c.contains("needle")),
+            "{near:?}"
+        );
     }
 
     #[test]

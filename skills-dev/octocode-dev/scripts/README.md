@@ -17,6 +17,7 @@ Root automation for the Octocode monorepo. Call a script directly only for a fla
 | `runtime-import-contract.mjs` | Normalizes bare import specifiers and implements the build-time dependency ownership check shared by package builders (imported by `packages/octocode/build.mjs`). | Imported by build scripts; not run by hand |
 | `dev-unify-check.mjs` | Opt-in drift check for the native `dev-unify` feature: fails when the first `test:rust` selection compiles a crate that `build:dev` also builds, but with other features or profile settings (so every `cargo test` recompiles it). Uses nightly `cargo --unit-graph`, falls back to `cargo tree` feature sets (`--tree` forces it), skips without cargo. Not part of `verify` or CI. | `node skills-dev/octocode-dev/scripts/dev.mjs check:dev-unify [--json] [--tree]` · tests: `node --test skills-dev/octocode-dev/scripts/dev-unify-check.test.mjs` |
 | `docs-verify.mjs` | Validates links, workflow references, the public tool catalog, configuration keys, and publishing contracts. | `node skills-dev/octocode-dev/scripts/dev.mjs docs:verify` |
+| `check-research-guidance.mjs` | Validates every `octocode` example in `skills/octocode-research` (JSON `{tool,query}` blocks and CLI lines) against the live tool schemas. | `node skills-dev/octocode-dev/scripts/check-research-guidance.mjs [--self-test]` |
 
 ## Notes
 

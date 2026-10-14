@@ -47,16 +47,15 @@
     "@octocodeai/octocode-native-win32-x64-msvc": "20.2.0"
   },
   "devDependencies": {
-    "@types/node": "^24.13.4",
+    "@types/node": "^24.19.2",
     "typescript": "^6.0.3",
-    "vite": "^8.3.1",
-    "vitest": "^5.0.0"
+    "vite": "^8.3.4",
+    "vitest": "^5.0.4"
   },
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
-    "audit": "cargo audit -D unmaintained -D unsound -D yanked",
     "build": "node scripts/build-native.cjs --release",
     "build:dev": "node scripts/build-native.cjs",
     "build:target": "node scripts/build-native.cjs --release --target",
@@ -66,13 +65,13 @@
     "clean:cache": "cargo clean --workspace --profile dev",
     "test": "yarn test:scripts && vitest run && yarn test:rust",
     "test:node": "vitest run",
-    "test:rust": "cargo test --locked -p octocode-native -p octocode-github -p octocode-cli -p octocode-runtime-napi --features octocode-runtime-napi/napi-test,octocode-native/dev-unify && cargo test --locked -p octocode-engine --all-features",
-    "test:scripts": "node tests/platform.test.cjs && node --test tests/build-publication.test.cjs",
+    "test:rust": "cargo test --locked -p octocode-native -p octocode-github -p octocode-io -p octocode-cli -p octocode-runtime-napi --features octocode-runtime-napi/napi-test,octocode-native/dev-unify && cargo test --locked -p octocode-engine --all-features",
+    "test:scripts": "node tests/platform.test.cjs && node --test tests/build-publication.test.cjs tests/cargo-lints.test.cjs",
     "lint": "cargo clippy --locked --workspace --all-targets --all-features -- -D warnings",
     "fmt:rust": "cargo fmt --all",
     "fmt:rust:check": "cargo fmt --all -- --check",
     "typecheck": "tsc --noEmit && cargo check --locked --workspace --all-targets --all-features",
     "deny": "cargo deny check",
-    "verify": "yarn fmt:rust:check && yarn lint && tsc --noEmit && yarn test && yarn workspace @octocodeai/config check:tool-contract"
+    "verify": "yarn fmt:rust:check && yarn lint && yarn deny && tsc --noEmit && yarn test && yarn workspace @octocodeai/config check:tool-contract"
   }
 }

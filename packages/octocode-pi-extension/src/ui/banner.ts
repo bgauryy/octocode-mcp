@@ -113,7 +113,7 @@ function paintArt(paint: BannerPaint, line: string, width: number, split: number
   return out;
 }
 
-export interface BannerInfo {
+interface BannerInfo {
   version?: string | undefined;
   /** Short key hints for the second line, e.g. `ctrl+o expand`. */
   hints?: string[] | undefined;

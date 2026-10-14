@@ -1,30 +1,58 @@
-//! Fixtures shared by the local tools' tests.
+//! Fixtures shared by the tools' tests.
 use crate::policy::path::{PathPolicy, PathPolicyConfig};
 use crate::security::ContentSecurity;
 use crate::tools::cancel::CancellationCheck;
+use crate::tools::id::ToolId;
+use serde_json::Value;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
-/// A fresh directory under the system temp dir, removed on drop.
-pub(crate) struct Fixture(pub PathBuf);
+// Contract, lead and page-walk checks; the integration tests include the same
+// file (tests/support), so both kinds of test assert one way.
+use crate::contracts::{parsed_contract, validate, validate_output};
+#[allow(
+    dead_code,
+    reason = "the integration tests use the rest of the shared checks"
+)]
+pub(crate) mod checks;
+
+/// A fresh temporary directory, removed (with everything under it) on drop.
+/// `.0` is its path.
+pub(crate) struct Fixture(
+    pub PathBuf,
+    #[expect(dead_code, reason = "held only to remove the directory on drop")] tempfile::TempDir,
+);
 
 impl Fixture {
     pub(crate) fn new() -> Self {
-        static NEXT: AtomicU64 = AtomicU64::new(0);
-        let root = std::env::temp_dir().join(format!(
-            "octocode-tool-test-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        std::fs::create_dir_all(&root).expect("fixture");
-        Self(root)
+        let dir = tempfile::Builder::new()
+            .prefix("octocode-tool-test-")
+            .tempdir()
+            .expect("fixture");
+        Self(dir.path().to_path_buf(), dir)
+    }
+
+    /// Write `contents` to `relative` under the root, creating its parents.
+    pub(crate) fn write(&self, relative: &str, contents: impl AsRef<[u8]>) -> PathBuf {
+        let path = self.0.join(relative);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("fixture parents");
+        }
+        std::fs::write(&path, contents).expect("fixture write");
+        path
     }
 }
 
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
+/// A tool's raw executor `row` for `query`, shaped and finalized as the
+/// response stage ships it, satisfies the tool's output contract.
+pub(crate) fn assert_row_contract(tool: ToolId, query: &Value, row: &Value) {
+    use crate::response::continuations::{Scope, Sources, finalize};
+    let status = row["status"].as_str();
+    let shaped = crate::response::rows::result_row(tool, 0, query, row.clone(), status);
+    let mut public = serde_json::json!({ "results": [shaped] });
+    finalize(&mut public, tool, &Sources::Rows(&[]), &Scope::everything())
+        .expect("valid continuations");
+    checks::assert_output_contract(tool.as_str(), &public);
 }
 
 /// The path policy of a workspace rooted at `root`.
@@ -45,10 +73,9 @@ pub(crate) fn simple_policy(root: &Path) -> (PathPolicy, ContentSecurity) {
 /// (ignored by the path policy, not by config) and one visible source file.
 pub(crate) fn sensitive_fixture() -> Fixture {
     let root = Fixture::new();
-    std::fs::create_dir(root.0.join(".aws")).expect("sensitive directory");
-    std::fs::write(root.0.join(".aws/credentials"), "hidden\n".repeat(50)).expect("secret");
-    std::fs::write(root.0.join("terraform.tfstate"), "ignored\n".repeat(70)).expect("ignored");
-    std::fs::write(root.0.join("visible.rs"), "pub fn visible() {\n}\n").expect("source");
+    root.write(".aws/credentials", "hidden\n".repeat(50));
+    root.write("terraform.tfstate", "ignored\n".repeat(70));
+    root.write("visible.rs", "pub fn visible() {\n}\n");
     root
 }
 
@@ -63,5 +90,79 @@ impl CancellationCheck for AfterRoot {
         } else {
             Ok(())
         }
+    }
+}
+
+include!("test_support/production_source.rs");
+
+/// What [`production_text`] keeps and blanks.
+mod production_text_tests {
+    use super::production_text;
+
+    #[test]
+    fn test_items_are_blanked_and_production_after_them_stays() {
+        let source = "fn a() {}\n\
+            #[cfg(test)]\n\
+            fn only_in_tests() { let x = \"}\"; }\n\
+            fn b() { let _ = '\\''; let _ = '{'; }\n\
+            #[cfg(test)]\n\
+            use helper::{x, y};\n\
+            #[cfg(test)]\n\
+            impl<A, B> Probe for Pair<A, B> where A: Clone, B: Copy { fn p() {} }\n\
+            #[cfg(all(test, unix))]\n\
+            mod unix_tests { fn t() { r#\"} {\"#; } }\n\
+            fn c<'a>(x: &'a str) {\n    #[cfg(test)]\n    { note(1); }\n    #[cfg(test)]\n    note(2);\n    used();\n}\n\
+            #[cfg(test)]\n\
+            mod tests;\n\
+            #[cfg(not(test))]\n\
+            fn real() {}\n\
+            #[cfg(test)]\n\
+            thread_local! { static T: u8 = 0; }\n\
+            fn d() {}\n\
+            #[cfg(test)]\n\
+            mod tests {\n    fn e() {}\n}\n\
+            fn after_tests() {}\n";
+        let text = production_text(source);
+        assert_eq!(text.lines().count(), source.lines().count(), "lines kept");
+        for kept in [
+            "fn a() {}",
+            "fn b() { let _ = '\\''; let _ = '{'; }",
+            "fn c<'a>",
+            "used();",
+            "#[cfg(not(test))]",
+            "fn real() {}",
+            "fn d() {}",
+            "fn after_tests() {}",
+        ] {
+            assert!(text.contains(kept), "{kept} kept:\n{text}");
+        }
+        for blanked in [
+            "only_in_tests",
+            "helper",
+            "Probe",
+            "unix_tests",
+            "note(",
+            "mod tests",
+            "thread_local",
+            "fn e()",
+            "cfg(test)",
+            "all(test",
+        ] {
+            assert!(!text.contains(blanked), "{blanked} blanked:\n{text}");
+        }
+        // A blanked item keeps every later byte on its line.
+        let line = |text: &str, needle: &str| text.lines().position(|line| line.contains(needle));
+        assert_eq!(
+            line(&text, "fn after_tests"),
+            line(source, "fn after_tests")
+        );
+    }
+
+    #[test]
+    fn attributes_in_strings_and_comments_gate_nothing() {
+        let source = "// #[cfg(test)]\nfn a() {}\nconst S: &str = \"#[cfg(test)]\";\nfn b() {}\n";
+        assert_eq!(production_text(source), source);
+        let whole = "#![cfg(test)]\nfn a() {}\n";
+        assert_eq!(production_text(whole).trim(), "");
     }
 }

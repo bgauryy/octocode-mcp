@@ -20,7 +20,7 @@ const MARK: char = '@';
 /// Split `<snapshot>@<index>,…` into the pager's snapshot and the original
 /// indices of the continuation's `rows` rows. A malformed or mismatched mark
 /// is left in place, so the snapshot mismatches and the pager restarts.
-pub(crate) fn split_snapshot(snapshot: &str, rows: usize) -> Option<(String, Vec<usize>)> {
+pub(crate) fn unmark(snapshot: &str, rows: usize) -> Option<(String, Vec<usize>)> {
     let (base, mark) = snapshot.rsplit_once(MARK)?;
     let indices = mark
         .split(',')
@@ -145,12 +145,12 @@ mod tests {
         assert_eq!(marked, "@0,2");
         let snapshot = format!("response-v1:abc{marked}");
         assert_eq!(
-            split_snapshot(&snapshot, 2),
+            unmark(&snapshot, 2),
             Some(("response-v1:abc".to_owned(), vec![0, 2]))
         );
-        assert_eq!(split_snapshot(&snapshot, 3), None, "row count must match");
-        assert_eq!(split_snapshot("response-v1:abc@2,0", 2), None);
-        assert_eq!(split_snapshot("response-v1:abc", 1), None);
+        assert_eq!(unmark(&snapshot, 3), None, "row count must match");
+        assert_eq!(unmark("response-v1:abc@2,0", 2), None);
+        assert_eq!(unmark("response-v1:abc", 1), None);
         assert_eq!(mark(&admitted_indices(3, &[])), None, "0..n needs no mark");
     }
 }

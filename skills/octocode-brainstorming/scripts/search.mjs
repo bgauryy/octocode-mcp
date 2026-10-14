@@ -1,0 +1,181 @@
+#!/usr/bin/env node
+/**
+ * Multi-provider web search for brainstorming: Tavily, Exa, and Serper in parallel, merged by canonical URL.
+ * Results are leads, not evidence: read the page and record a verbatim quote before using a claim.
+ * Keys come from the process environment only and are never printed.
+ */
+import { fileURLToPath } from 'node:url';
+
+const PROVIDERS = {
+  tavily: { env: 'TAVILY_API_KEY', base: process.env.TAVILY_BASE_URL || 'https://api.tavily.com' },
+  exa: { env: 'EXA_API_KEY', base: process.env.EXA_BASE_URL || 'https://api.exa.ai' },
+  serper: { env: 'SERPER_API_KEY', base: process.env.SERPER_BASE_URL || 'https://google.serper.dev' },
+};
+const KINDS = ['web', 'news', 'papers'];
+const PAPER_DOMAINS = ['arxiv.org', 'openreview.net', 'aclanthology.org', 'dl.acm.org', 'ieeexplore.ieee.org', 'semanticscholar.org', 'nature.com', 'sciencedirect.com', 'link.springer.com', 'pubmed.ncbi.nlm.nih.gov'];
+const USAGE = `Usage: search.mjs --query <text> [--query <text>]... [--kind web|news|papers] [--providers tavily,exa,serper]
+                 [--limit <1-20>] [--since YYYY-MM-DD] [--include-domain <host>]... [--exclude-domain <host>]...
+
+Searches every provider whose key is in the process environment (TAVILY_API_KEY, EXA_API_KEY, SERPER_API_KEY)
+and merges results by canonical URL. Results seen by more providers or queries rank first.
+Pass keys without printing them, for example: EXA_API_KEY="$(npx octocode config get EXA_API_KEY)" node search.mjs ...
+Exit 0 with results, 1 when nothing was found or no provider could run, 2 for invalid input.`;
+
+function fail(code, message, exitCode = 1, extra = {}) {
+  console.log(JSON.stringify({ ok: false, ...extra, error: { code, message } }));
+  process.exit(exitCode);
+}
+
+function parseArgs(argv) {
+  const opts = { queries: [], kind: 'web', providers: null, limit: 8, since: null, include: [], exclude: [] };
+  const repeat = { '--query': 'queries', '--include-domain': 'include', '--exclude-domain': 'exclude' };
+  for (let i = 0; i < argv.length; i += 1) {
+    const flag = argv[i];
+    if (flag === '--help' || flag === '-h') { console.log(USAGE); process.exit(0); }
+    const value = argv[i + 1];
+    if (!['--query', '--kind', '--providers', '--limit', '--since', '--include-domain', '--exclude-domain'].includes(flag)) fail('invalidArguments', `Unknown option: ${flag} (see --help)`, 2);
+    if (value == null || value.startsWith('--')) fail('invalidArguments', `missing value for ${flag}`, 2);
+    i += 1;
+    if (repeat[flag]) opts[repeat[flag]].push(value.trim());
+    else if (flag === '--kind') opts.kind = value;
+    else if (flag === '--providers') opts.providers = value.split(',').map((s) => s.trim()).filter(Boolean);
+    else if (flag === '--limit') opts.limit = Number(value);
+    else if (flag === '--since') opts.since = value;
+  }
+  if (!opts.queries.filter(Boolean).length) fail('invalidArguments', 'at least one non-empty --query is required', 2);
+  if (!KINDS.includes(opts.kind)) fail('invalidArguments', `--kind must be one of ${KINDS.join(', ')}`, 2);
+  if (!Number.isSafeInteger(opts.limit) || opts.limit < 1 || opts.limit > 20) fail('invalidArguments', '--limit must be an integer from 1 to 20', 2);
+  if (opts.since && !/^\d{4}-\d{2}-\d{2}$/.test(opts.since)) fail('invalidArguments', '--since must be YYYY-MM-DD', 2);
+  for (const name of opts.providers || []) if (!PROVIDERS[name]) fail('invalidArguments', `unknown provider: ${name} (use ${Object.keys(PROVIDERS).join(', ')})`, 2);
+  return opts;
+}
+
+/** One identity per page: no scheme, www, fragment, trailing slash, or tracking parameters. */
+export function canonicalUrl(raw) {
+  try {
+    const u = new URL(raw);
+    u.hash = '';
+    for (const key of [...u.searchParams.keys()]) if (/^(utm_|ref$|ref_src$|gclid$|fbclid$|mc_|source$)/i.test(key)) u.searchParams.delete(key);
+    const host = u.hostname.toLowerCase().replace(/^www\./, '');
+    const path = u.pathname.replace(/\/+$/, '');
+    return `${host}${path}${u.search}`;
+  } catch {
+    return String(raw || '').trim();
+  }
+}
+
+async function post(url, headers, body) {
+  const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body), signal: AbortSignal.timeout(25_000) });
+  const text = await res.text();
+  let json = null;
+  try { json = JSON.parse(text); } catch {}
+  if (!res.ok) throw new Error(`HTTP ${res.status}${json?.error ? `: ${String(json.error.message || json.error).slice(0, 160)}` : ''}`);
+  return json || {};
+}
+
+const clip = (s, n = 320) => { const t = String(s || '').replace(/\s+/g, ' ').trim(); return t.length > n ? `${t.slice(0, n)}…` : t; };
+
+const SEARCHERS = {
+  async tavily(key, query, o) {
+    const body = { query, max_results: o.limit, search_depth: 'basic', topic: o.kind === 'news' ? 'news' : 'general', include_answer: false };
+    if (o.since) body.start_date = o.since;
+    const include = o.kind === 'papers' ? [...o.include, ...PAPER_DOMAINS] : o.include;
+    if (include.length) body.include_domains = include;
+    if (o.exclude.length) body.exclude_domains = o.exclude;
+    const j = await post(`${PROVIDERS.tavily.base}/search`, { Authorization: `Bearer ${key}` }, body);
+    return { rows: (j.results || []).map((r) => ({ url: r.url, title: r.title, snippet: r.content, published: r.published_date || null })) };
+  },
+  async exa(key, query, o) {
+    const body = { query, numResults: o.limit, type: 'auto', contents: { highlights: { numSentences: 2 } } };
+    if (o.kind === 'news') body.category = 'news';
+    if (o.kind === 'papers') body.category = 'research paper';
+    if (o.since) body.startPublishedDate = `${o.since}T00:00:00.000Z`;
+    if (o.include.length) body.includeDomains = o.include;
+    if (o.exclude.length) body.excludeDomains = o.exclude;
+    const j = await post(`${PROVIDERS.exa.base}/search`, { 'x-api-key': key }, body);
+    return {
+      rows: (j.results || []).map((r) => ({ url: r.url, title: r.title, snippet: (r.highlights || []).join(' … ') || r.text || '', published: r.publishedDate || null })),
+      costDollars: j.costDollars?.total ?? null,
+    };
+  },
+  async serper(key, query, o) {
+    const sites = [...o.include.map((d) => `site:${d}`)];
+    const q = [query, sites.length ? `(${sites.join(' OR ')})` : '', ...o.exclude.map((d) => `-site:${d}`)].filter(Boolean).join(' ');
+    const endpoint = o.kind === 'news' ? 'news' : o.kind === 'papers' ? 'scholar' : 'search';
+    const body = { q, num: o.limit };
+    if (o.since && endpoint !== 'scholar') {
+      const [y, m, d] = o.since.split('-');
+      body.tbs = `cdr:1,cd_min:${m}/${d}/${y}`;
+    }
+    const j = await post(`${PROVIDERS.serper.base}/${endpoint}`, { 'X-API-KEY': key }, body);
+    const list = endpoint === 'news' ? j.news : j.organic;
+    let rows = (list || []).map((r) => ({
+      url: r.link,
+      title: r.title,
+      snippet: [r.snippet, r.publicationInfo].filter(Boolean).join(' · '),
+      published: r.date || (r.year ? String(r.year) : null),
+      ...(r.pdfUrl ? { pdfUrl: r.pdfUrl } : {}),
+      ...(r.citedBy != null ? { citedBy: r.citedBy } : {}),
+    }));
+    // Scholar has no date filter, so drop papers older than --since by their year.
+    if (endpoint === 'scholar' && o.since) rows = rows.filter((r) => !/^\d{4}$/.test(r.published || '') || r.published >= o.since.slice(0, 4));
+    // Serper ignores num on some endpoints, so the limit is applied here.
+    return { rows: rows.slice(0, o.limit) };
+  },
+};
+
+export async function search(opts, env = process.env) {
+  const wanted = opts.providers || Object.keys(PROVIDERS);
+  const providers = {};
+  const jobs = [];
+  for (const name of wanted) {
+    const key = env[PROVIDERS[name].env]?.trim();
+    if (!key) { providers[name] = { status: 'skipped', reason: `${PROVIDERS[name].env} not set` }; continue; }
+    providers[name] = { status: 'ok', results: 0 };
+    for (const query of opts.queries) {
+      jobs.push(SEARCHERS[name](key, query, opts)
+        .then((out) => ({ name, query, ...out }))
+        .catch((error) => ({ name, query, error: error.message.replaceAll(key, '[key]') })));
+    }
+  }
+  const merged = new Map();
+  for (const out of await Promise.all(jobs)) {
+    const p = providers[out.name];
+    if (out.error) { p.errors = [...(p.errors || []), { query: out.query, message: out.error }]; continue; }
+    p.results += out.rows.length;
+    if (out.costDollars != null) p.costDollars = Number(((p.costDollars || 0) + out.costDollars).toFixed(4));
+    out.rows.forEach((row, index) => {
+      if (!row.url) return;
+      const id = canonicalUrl(row.url);
+      const hit = merged.get(id) || { url: row.url, title: row.title || null, snippet: clip(row.snippet), published: row.published || null, seenBy: [] };
+      if (!hit.published && row.published) hit.published = row.published;
+      if (!hit.snippet && row.snippet) hit.snippet = clip(row.snippet);
+      for (const extra of ['pdfUrl', 'citedBy']) if (row[extra] != null && hit[extra] == null) hit[extra] = row[extra];
+      hit.seenBy.push({ provider: out.name, query: out.query, rank: index + 1 });
+      merged.set(id, hit);
+    });
+  }
+  for (const p of Object.values(providers)) if (p.status === 'ok' && p.errors && !p.results) p.status = 'error';
+  const score = (h) => new Set(h.seenBy.map((s) => s.provider)).size * 10 + h.seenBy.length - Math.min(...h.seenBy.map((s) => s.rank)) / 100;
+  const results = [...merged.values()].sort((a, b) => score(b) - score(a));
+  return { providers, results };
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  const opts = parseArgs(process.argv.slice(2));
+  const ran = (opts.providers || Object.keys(PROVIDERS)).filter((n) => process.env[PROVIDERS[n].env]?.trim());
+  if (!ran.length) fail('missingKey', `no provider key in the environment; set one of ${Object.values(PROVIDERS).map((p) => p.env).join(', ')}`, 1);
+  const { providers, results } = await search(opts);
+  const ok = results.length > 0;
+  console.log(JSON.stringify({
+    ok,
+    kind: opts.kind,
+    since: opts.since,
+    queries: opts.queries,
+    providers,
+    totalResults: results.length,
+    results,
+    ...(ok ? {} : { error: { code: 'noResults', message: 'no provider returned a result; reword the query, change --kind, or drop filters' } }),
+  }, null, 2));
+  process.exit(ok ? 0 : 1);
+}

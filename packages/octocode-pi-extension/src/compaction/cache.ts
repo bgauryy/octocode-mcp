@@ -1,6 +1,7 @@
 import type { Api, Model } from '@earendil-works/pi-ai';
 import type { CacheWarmingDecisionEvent, CacheWarmingDecisionEventResult, ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
-import { CACHE_RETENTION_ENV } from '../shared/env.js';
+import { CACHE_RETENTION_ENV, envFlag, SUBAGENT_ENV } from '../shared/env.js';
+import { interactive } from '../shared/interactive.js';
 import { isRecord } from '../shared/util.js';
 
 /**
@@ -20,7 +21,10 @@ type CacheModel = Pick<Model<Api>, 'provider' | 'id' | 'api' | 'promptCache' | '
  * 5 minutes (`grantedLong` false), so its long tier is then the short one.
  */
 export function inferredPromptCache(model: Pick<Model<Api>, 'compat'>, grantedLong = true): PromptCache {
-  const long = grantedLong && !(isRecord(model.compat) && model.compat['supportsLongCacheRetention'] === false);
+  // Not every API compat object declares this flag (Bedrock and Mistral do not).
+  const compat = model.compat;
+  const deniesLong = compat !== undefined && 'supportsLongCacheRetention' in compat && compat.supportsLongCacheRetention === false;
+  const long = grantedLong && !deniesLong;
   return { short: INFERRED_CACHE_TTL_SECONDS.short, long: long ? INFERRED_CACHE_TTL_SECONDS.long : INFERRED_CACHE_TTL_SECONDS.short };
 }
 
@@ -108,8 +112,9 @@ export function warmingDecision(
   ctx: Pick<ExtensionContext, 'hasUI' | 'sessionManager'>,
   ttlMs: number | undefined,
   now = Date.now(),
+  isSubagent = envFlag(process.env, SUBAGENT_ENV),
 ): CacheWarmingDecisionEventResult | undefined {
-  if (!ctx.hasUI) return event.action === 'stop' ? undefined : { action: 'stop' };
+  if (!interactive(ctx, isSubagent)) return event.action === 'stop' ? undefined : { action: 'stop' };
   if (event.continuationProbability >= 1 || ttlMs === undefined) return undefined;
   const branch = ctx.sessionManager.getBranch();
   const since = lastReplyAt(branch);
@@ -140,7 +145,7 @@ export function lastReplyAt(branch: readonly unknown[]): number | undefined {
 }
 
 /** Idle gaps in a session branch: from a finished run's last reply to the next user prompt, in ms. */
-export function idleGaps(branch: readonly unknown[]): number[] {
+function idleGaps(branch: readonly unknown[]): number[] {
   const gaps: number[] = [];
   let finished: number | undefined;
   for (const entry of branch) {

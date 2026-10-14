@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 
 // Lines every skill's Saved report section shares with octocode-skills/output.md, word for word.
-const SHARED_OUTPUT_LINES = ['Start the file with this header', 'Before starting work that may repeat', 'Markdown that renders well:'];
+const SHARED_OUTPUT_LINES = ['Start the file with this header', 'Before starting work that may repeat', 'Evidence and visuals:', 'Markdown that renders well:'];
 
 function filesUnder(root) {
   const files = [];
@@ -44,7 +44,14 @@ function frontmatter(source) {
     }
     if (line.startsWith("'")) return line.match(/^'((?:''|[^'])*)'/)?.[1]?.replace(/''/g, "'") ?? null;
     if (/^[\[\]{&*!]/.test(line)) return null; // Advanced YAML needs a YAML-aware validator.
-    return line.replace(/\s+#.*$/, '').trim();
+    // A plain scalar may continue on indented lines; YAML folds them with single spaces.
+    const rest = match[1].split('\n');
+    const parts = [line];
+    for (const item of rest.slice(rest.findIndex((l) => l.startsWith(`${key}:`)) + 1)) {
+      if (!/^\s+\S/.test(item)) break;
+      parts.push(item.trim());
+    }
+    return parts.join(' ').replace(/\s+#.*$/, '').trim();
   };
   return { name: field('name'), description: field('description') };
 }
@@ -59,6 +66,39 @@ function localPaths(text) {
     if (target) { try { paths.add(decodeURIComponent(target)); } catch { paths.add(target); } }
   }
   return paths;
+}
+
+// GitHub-style heading slugs, so a renamed section breaks its #anchor links visibly.
+function headingAnchors(text) {
+  const anchors = new Set();
+  const seen = new Map();
+  const body = text.replace(/^(```|~~~)[^\n]*\n[\s\S]*?^\1[^\n]*$/gm, "");
+  for (const match of body.matchAll(/^ {0,3}#{1,6}\s+(.+?)\s*#*\s*$/gm)) {
+    const base = match[1].replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").toLowerCase().replace(/[^\p{L}\p{M}\p{N}\p{Pc} -]/gu, "").replace(/ /g, "-");
+    const count = seen.get(base) || 0;
+    seen.set(base, count + 1);
+    anchors.add(count ? `${base}-${count}` : base);
+  }
+  for (const match of text.matchAll(/<a\s+(?:name|id)=["']([^"']+)["']/gi)) anchors.add(match[1]);
+  return anchors;
+}
+
+function anchorLinks(text) {
+  const links = [];
+  for (const match of text.matchAll(/\]\(\s*(?:<([^>]+)>|([^\s)]+))(?:\s+["'][^\n]*?["'])?\s*\)/g)) {
+    const raw = match[1] || match[2];
+    const hash = raw.indexOf("#");
+    if (hash < 0) continue;
+    const target = raw.slice(0, hash);
+    if (/^(?:[a-z]+:|\/)/i.test(target) || /[<{*…]/.test(raw)) continue;
+    links.push({ target, anchor: raw.slice(hash + 1) });
+  }
+  return links;
+}
+
+// Fenced blocks hold commands and examples, not Markdown links.
+function withoutFences(text) {
+  return text.replace(/^ {0,3}(```|~~~)[^\n]*\n[\s\S]*?^ {0,3}\1[^\n]*$/gm, '');
 }
 
 function supportPaths(text) {
@@ -100,17 +140,36 @@ function review(dir) {
     }
   }
   if (texts.has('output.md') && files.includes('scripts/render-report.mjs') && !/^## Saved report\b[\s\S]*--manifest/m.test(texts.get('output.md'))) add('WARN', 'saved-report-missing', 'output.md should have a "## Saved report" section: when to save, the shared header, rendering with scripts/render-report.mjs, and --manifest for earlier reports.');
-  if (texts.has('output.md') && !texts.get('output.md').includes('.octocode/')) add('WARN', 'output-location-missing', `output.md should name where saved results go: <workspace>/.octocode/${name}/ (scratch under <workspace>/.octocode/tmp/).`);
+  if (texts.has('output.md') && !texts.get('output.md').includes('.octocode/')) add('WARN', 'output-location-missing', `output.md should name where saved results go: <workspace>/.octocode/${name}/ (scratch under <workspace>/.octocode/${name}/tmp/).`);
 
+  // The lobby routes resources through one table whose columns say when to load each file and why.
+  const resources = skill.match(/^## Resources\b[\s\S]*?^\|([^\n]*)\|\s*$/m);
+  if (resources && !/^\s*When\s*\|\s*Read[^|]*\|\s*Why\s*$/.test(resources[1])) add('WARN', 'resources-columns', 'SKILL.md Resources table should have the columns When | Read | Why.');
+  // Every file a skill writes stays under <workspace>/.octocode/<skill-name>/ (scratch in its tmp/), never a shared .octocode/tmp/.
+  const shared = /\.octocode\/tmp\/[A-Za-z0-9<{_-]|['"]\.octocode['"],\s*['"]tmp['"]/;
+  for (const path of files.filter((item) => /\.(md|mjs|js|cjs|sh|py)$/.test(item) && !['scripts/render-report.mjs', 'scripts/skill-review.mjs'].includes(item))) {  // these two hold the rule's own test fixtures
+    const source = texts.get(path) ?? readFileSync(join(dir, path), 'utf8');
+    if (shared.test(source)) add('WARN', 'output-outside-skill-folder', `${path} writes or points to <workspace>/.octocode/tmp/; use <workspace>/.octocode/${name}/tmp/ so every output stays in the skill's own folder.`);
+  }
   for (const [path, text] of texts) {
-    for (const target of localPaths(text)) {
+    const prose = withoutFences(text);
+    for (const target of localPaths(prose)) {
       if (target.includes('<') || target.includes('{') || target.includes('*') || target.includes('…')) continue;
       const full = resolve(dirname(join(dir, path)), target);
       if (!full.startsWith(dir + '/') && full !== dir) continue; // cross-skill handoffs are allowed
       if (!existsSync(full)) add('ERROR', 'missing-path', `${path} references missing ${target}.`);
     }
-    for (const target of supportPaths(text)) {
-      if (!existsSync(join(dir, target))) add('ERROR', 'missing-support-file', `${path} references missing ${target}.`);
+    const inProse = new Set(supportPaths(prose));
+    for (const target of new Set(supportPaths(text))) {
+      if (existsSync(join(dir, target))) continue;
+      // A path that appears only inside a fenced block may be an example; a real command still deserves a look.
+      if (inProse.has(target)) add('ERROR', 'missing-support-file', `${path} references missing ${target}.`);
+      else add('WARN', 'missing-support-file-in-code', `${path} names ${target} in a code block, and it does not exist; fix it if it is a real command.`);
+    }
+    for (const { target, anchor } of anchorLinks(prose)) {
+      const file = target ? relative(dir, resolve(dir, dirname(path), target)) : path;
+      if (!texts.has(file) || !anchor) continue;
+      if (!headingAnchors(texts.get(file)).has(decodeURIComponent(anchor))) add('ERROR', 'missing-anchor', `${path} links to #${anchor} in ${file}, which has no such heading.`);
     }
   }
   // Follow actual document routes from the lobby; two orphan pages linking each other do not count.
@@ -119,7 +178,7 @@ function review(dir) {
   while (pending.length) {
     const path = pending.pop();
     const text = texts.get(path) || '';
-    const targets = [...localPaths(text)].map((target) => relative(dir, resolve(dir, dirname(path), target)));
+    const targets = [...localPaths(withoutFences(text))].map((target) => relative(dir, resolve(dir, dirname(path), target)));
     targets.push(...supportPaths(text));
     for (const target of targets) {
       if (files.includes(target) && !reachable.has(target)) {
@@ -162,11 +221,32 @@ function selfTest() {
     source += '\n[Resources][guide]\n\n[guide]: references/a.md\n';
     writeFileSync(join(skill, 'SKILL.md'), source);
     if (review(skill).findings.length) throw new Error('reference-style route or linked catalog failed');
+    writeFileSync(join(skill, 'references/a.md'), '# Guide\n\n## Search the web\n\n## `--manifest` usage\n\n[B](b.md)\n\n[ok](#search-the-web) [ok](#--manifest-usage) [ok](b.md#a)\n');
+    writeFileSync(join(skill, 'references/b.md'), '# A\n\n[A](a.md#search-the-web)\n');
+    if (review(skill).findings.length) throw new Error('valid anchors rejected: ' + JSON.stringify(review(skill).findings));
+    writeFileSync(join(skill, 'references/b.md'), '# A\n\n[A](a.md#research-with-current-sources)\n');
+    if (!review(skill).findings.some((item) => item.code === 'missing-anchor')) throw new Error('renamed-section anchor was missed');
+    writeFileSync(join(skill, 'references/a.md'), '[B](b.md)\n');
+    writeFileSync(join(skill, 'references/b.md'), '[A](a.md)\n');
     source = source.replace('description: "Use when an example needs review."', 'description: |-\n  Review an example.');
     writeFileSync(join(skill, 'SKILL.md'), source);
     if (review(skill).findings.length) throw new Error('block scalar failed');
+    writeFileSync(join(skill, 'SKILL.md'), source.replace('description: |-\n  Review an example.', `description: Use when an example\n  ${'needs a long review. '.repeat(60)}`));
+    if (!review(skill).findings.some((item) => item.code === 'description-length')) throw new Error('a multi-line plain description escaped the length check');
+    writeFileSync(join(skill, 'README.md'), '# Example\n\n```md\n[link](not-here.md) [anchor](#nowhere)\n```\n\n```bash\nnode scripts/example-tool.mjs\n```\n');
+    const fenced = review(skill).findings.filter((item) => item.code !== 'description-length');
+    if (fenced.some((item) => item.level === 'ERROR') || !fenced.some((item) => item.code === 'missing-support-file-in-code')) throw new Error('fenced code was linted as links, or a missing command went unreported: ' + JSON.stringify(fenced));
+    writeFileSync(join(skill, 'README.md'), '# Example\n\nRuns save to `<workspace>/.octocode/tmp/example/<run>`.\n');
+    if (!review(skill).findings.some((item) => item.code === 'output-outside-skill-folder')) throw new Error('a shared .octocode/tmp/ output path was not flagged');
+    writeFileSync(join(skill, 'README.md'), '# Example\n\nRuns save to `<workspace>/.octocode/example-skill/tmp/<run>`; a scratch folder such as `.octocode/tmp/` is not a report location.\n');
+    if (review(skill).findings.some((item) => item.code === 'output-outside-skill-folder')) throw new Error('a skill tmp path or a passing mention was flagged');
+    writeFileSync(join(skill, 'README.md'), '# Example\n');
     writeFileSync(join(skill, 'SKILL.md'), source.replace('description: |-\n  Review an example.', 'description:\nlicense: MIT'));
     if (!review(skill).findings.some((item) => item.code === 'description-missing')) throw new Error('empty description consumed the next field');
+    writeFileSync(join(skill, 'SKILL.md'), `${source}\n## Resources\n\n| When | Read |\n|---|---|\n| Saving | [output.md](output.md) |\n`);
+    if (!review(skill).findings.some((item) => item.code === 'resources-columns')) throw new Error('a Resources table without Why was not flagged');
+    writeFileSync(join(skill, 'SKILL.md'), `${source}\n## Resources\n\n| When | Read or run | Why |\n|---|---|---|\n| Saving | [output.md](output.md) | Format |\n`);
+    if (review(skill).findings.some((item) => item.code === 'resources-columns')) throw new Error('a valid Resources table was flagged');
     writeFileSync(join(skill, 'SKILL.md'), source);
     const collection = join(dir, 'collection');
     mkdirSync(collection);

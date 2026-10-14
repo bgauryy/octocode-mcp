@@ -38,6 +38,23 @@ describe('Delivery', () => {
     expect(t.ctx.ui.notes).toEqual([]);
   });
 
+  it('tracks a message queued while a run prepares, before agent_start', async () => {
+    const fake = fakePi();
+    const delivery = Delivery.install(fake.pi);
+    let idle = true;
+    const ctx = fakeCtx({ cwd: '/x', mode: 'tui' });
+    (ctx as { isIdle: () => boolean }).isIdle = () => idle;
+    await fake.emit('session_start', {}, ctx);
+    // Pi is running before_agent_start handlers: it queues the report, but agent_start has not fired.
+    idle = false;
+    fake.pi.sendMessage(report('early'), { triggerTurn: true, deliverAs: 'followUp' });
+    expect(delivery.pending).toBe(1);
+    await fake.emit('agent_start', {}, ctx);
+    // Esc cleared Pi's queue: the report is added back, not lost.
+    await fake.emit('agent_settled', {}, ctx);
+    expect(fake.sent.at(-1)).toEqual({ message: expect.objectContaining({ content: 'report early' }), options: { triggerTurn: false } });
+  });
+
   it('re-appends messages an interrupt cleared, without starting a turn', async () => {
     const t = setup();
     await t.emit('session_start', {}, t.ctx);

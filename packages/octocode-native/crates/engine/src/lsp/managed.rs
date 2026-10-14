@@ -316,8 +316,9 @@ pub fn resolve_cached_server(root: &Path, name: &str, platform: &str) -> Option<
     if let Some(identity) = &identity
         && cache
             .lock()
-            .ok()
-            .is_some_and(|map| map.get(&bin_path) == Some(identity))
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(&bin_path)
+            == Some(identity)
     {
         return Some(bin_path);
     }
@@ -326,7 +327,10 @@ pub fn resolve_cached_server(root: &Path, name: &str, platform: &str) -> Option<
     HASH_CALLS.with(|calls| calls.set(calls.get() + 1));
     let matches =
         bytes.len() as u64 == marker.size && crate::digest::sha256(&bytes) == marker.binary_sha256;
-    if let Ok(mut map) = cache.lock() {
+    {
+        let mut map = cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         match identity {
             Some(identity) if matches => {
                 map.insert(bin_path.clone(), identity);

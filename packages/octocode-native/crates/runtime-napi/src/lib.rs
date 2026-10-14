@@ -3,69 +3,68 @@
 
 use napi::{Env, bindgen_prelude::PromiseRaw};
 use napi_derive::napi;
-use octocode_native::runtime::{HostOptions, RequestAdmission, RuntimeError, ToolRuntime};
+use octocode_native::runtime::error::mcp_result;
+use octocode_native::runtime::{Channel, HostOptions, RuntimeError, ToolRuntime};
 use octocode_native::security::{scrub_error_payload, scrub_error_text};
+use octocode_native::tools::id::{error_class, error_codes::ErrorClass};
 use serde_json::Value;
 use std::sync::Arc;
-
-/// Admit `request_id` with its request options (`{githubToken?}`), then run
-/// `call` on the runtime as a JS promise.
-fn spawn_admitted<'env, Fut>(
-    runtime: &Arc<ToolRuntime>,
-    env: &'env Env,
-    request_id: String,
-    options: Option<Value>,
-    call: impl FnOnce(Arc<ToolRuntime>, RequestAdmission) -> Fut,
-) -> napi::Result<PromiseRaw<'env, Value>>
-where
-    Fut: std::future::Future<Output = Result<Value, RuntimeError>> + Send + 'static,
-{
-    // Admission runs synchronously in the `#[napi]` call: guard it like the
-    // other sync boundary methods so a panic becomes a catchable error.
-    let admission = boundary_guard("admission", || {
-        runtime
-            .admit_with(request_id, options)
-            .map_err(boundary_error)
-    })?;
-    let future = call(Arc::clone(runtime), admission);
-    env.spawn_future(async move { future.await.map_err(boundary_error) })
-}
 
 #[napi]
 pub struct NativeRuntime {
     runtime: Arc<ToolRuntime>,
 }
 
-/// Contain a panic in a synchronous boundary method. napi (v3) does not wrap
-/// synchronous `#[napi]` calls in `catch_unwind`, so an unguarded panic here
-/// (deep in a dependency, or on pathological input) would unwind across the FFI
-/// boundary and abort the entire host process; it becomes a catchable error.
-fn boundary_guard<T>(what: &str, call: impl FnOnce() -> napi::Result<T>) -> napi::Result<T> {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(call)).unwrap_or_else(|_| {
-        Err(napi::Error::new(
+/// A rejection JS receives: the contract's class of the code decides the
+/// status (a caller error, a cancellation, or a failure).
+fn boundary_error(error: RuntimeError) -> napi::Error {
+    let status = match (error.code.as_str(), error_class(&error.code)) {
+        ("cancelled", _) => napi::Status::Cancelled,
+        (_, ErrorClass::InvalidInput) => napi::Status::InvalidArg,
+        _ => napi::Status::GenericFailure,
+    };
+    envelope(
+        status,
+        &error.code,
+        &error.message,
+        error.payload.map(|payload| *payload),
+    )
+}
+
+/// Run a synchronous boundary call; a panic becomes the same scrubbed
+/// `octocode.nativeError` envelope as any other failure. `#[napi(catch_unwind)]`
+/// stays on each entry point as the backstop that keeps the host alive.
+fn boundary<T>(call: impl FnOnce() -> napi::Result<T>) -> napi::Result<T> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(call)).unwrap_or_else(|payload| {
+        let message = payload
+            .downcast_ref::<&str>()
+            .map(|text| (*text).to_owned())
+            .or_else(|| payload.downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "native call panicked".to_owned());
+        Err(envelope(
             napi::Status::GenericFailure,
-            format!("{what} failed on pathological input"),
+            "internalError",
+            &message,
+            None,
         ))
     })
 }
 
-fn boundary_error(error: RuntimeError) -> napi::Error {
-    let status = match error.code.as_str() {
-        "invalidInput" | "securityValidationFailed" | "invalidCursor" | "staleCursor" => {
-            napi::Status::InvalidArg
-        }
-        "cancelled" => napi::Status::Cancelled,
-        _ => napi::Status::GenericFailure,
-    };
-    let message = scrub_error_text(&error.message);
-    let payload = error.payload.map(|payload| {
-        let mut payload = *payload;
+/// The JSON error envelope JS receives; the message and payload are scrubbed.
+fn envelope(
+    status: napi::Status,
+    code: &str,
+    message: &str,
+    payload: Option<Value>,
+) -> napi::Error {
+    let message = scrub_error_text(message);
+    let payload = payload.map(|mut payload| {
         scrub_error_payload(&mut payload);
         payload
     });
     let reason = serde_json::to_string(&serde_json::json!({
         "kind": "octocode.nativeError",
-        "code": error.code,
+        "code": code,
         "message": message,
         "payload": payload,
     }))
@@ -77,9 +76,9 @@ fn boundary_error(error: RuntimeError) -> napi::Error {
 
 #[napi]
 impl NativeRuntime {
-    #[napi(constructor)]
+    #[napi(constructor, catch_unwind)]
     pub fn new(options: Option<Value>) -> napi::Result<Self> {
-        boundary_guard("NativeRuntime::new", || {
+        boundary(|| {
             let options: HostOptions = match options {
                 Some(value) => serde_json::from_value(value).map_err(|_| {
                     napi::Error::new(napi::Status::InvalidArg, "Invalid native host options")
@@ -100,37 +99,19 @@ impl NativeRuntime {
     pub fn closed(&self) -> bool {
         self.runtime.requests.is_closed()
     }
-    #[napi]
+    #[napi(catch_unwind)]
     pub fn catalog(&self) -> napi::Result<Value> {
-        boundary_guard("catalog", || self.runtime.catalog().map_err(boundary_error))
+        boundary(|| self.runtime.catalog().map_err(boundary_error))
     }
-    #[napi]
-    pub fn execute<'env>(
-        &self,
-        env: &'env Env,
-        request_id: String,
-        tool: String,
-        input: Value,
-        options: Option<Value>,
-    ) -> napi::Result<PromiseRaw<'env, Value>> {
-        spawn_admitted(
-            &self.runtime,
-            env,
-            request_id,
-            options,
-            |runtime, admission| async move {
-                runtime
-                    .execute_admitted(admission, tool, input)
-                    .await
-                    .map(|outcome| outcome.structured_content)
-            },
-        )
+    #[napi(catch_unwind)]
+    pub fn cancel(&self, request_id: String) -> napi::Result<bool> {
+        boundary(|| Ok(self.runtime.requests.cancel(&request_id)))
     }
-    #[napi]
-    pub fn cancel(&self, request_id: String) -> bool {
-        self.runtime.requests.cancel(&request_id)
-    }
-    #[napi]
+    /// One MCP call: the `CallToolResult`, a rejected call included (a
+    /// typed tool error). Only a cancelled request or a closing runtime
+    /// rejects. Admission (with its request options, `{githubToken?}`) runs
+    /// before the promise exists, so a later `cancel` finds the request.
+    #[napi(catch_unwind)]
     pub fn execute_mcp<'env>(
         &self,
         env: &'env Env,
@@ -139,15 +120,21 @@ impl NativeRuntime {
         input: Value,
         options: Option<Value>,
     ) -> napi::Result<PromiseRaw<'env, Value>> {
-        spawn_admitted(
-            &self.runtime,
-            env,
-            request_id,
-            options,
-            |runtime, admission| async move {
-                runtime.execute_mcp_admitted(admission, tool, input).await
-            },
-        )
+        boundary(|| {
+            let admission = self.runtime.admit_with(request_id, options);
+            let runtime = Arc::clone(&self.runtime);
+            env.spawn_future(async move {
+                let result = match admission {
+                    Ok(admission) => {
+                        runtime
+                            .execute(admission, tool.clone(), input, Channel::Mcp)
+                            .await
+                    }
+                    Err(error) => Err(error),
+                };
+                mcp_result(&tool, result).map_err(boundary_error)
+            })
+        })
     }
     #[napi]
     pub async fn close(&self) {
@@ -180,6 +167,28 @@ mod tests {
         assert!(!error.reason.contains("ghp_"), "{}", error.reason);
         assert!(error.reason.contains("[REDACTED-"), "{}", error.reason);
     }
+    /// The contract's class of a code decides the rejection status; no
+    /// interface keeps its own code list.
+    #[test]
+    fn rejection_status_follows_the_declared_error_class() {
+        for (code, status) in [
+            ("invalidInput", napi::Status::InvalidArg),
+            ("pathPolicyDenied", napi::Status::InvalidArg),
+            ("cancelled", napi::Status::Cancelled),
+            ("securityValidationFailed", napi::Status::GenericFailure),
+            ("closed", napi::Status::GenericFailure),
+            ("notDeclared", napi::Status::GenericFailure),
+        ] {
+            let error = boundary_error(RuntimeError {
+                code: code.into(),
+                message: "m".into(),
+                payload: None,
+                validation_issues: None,
+            });
+            assert_eq!(error.status, status, "{code}");
+        }
+    }
+
     /// M4: a host `timeoutSecs` past the runtime's deadline range is a
     /// catchable constructor error, never a later panic in sync `execute`.
     #[test]
@@ -191,5 +200,27 @@ mod tests {
             panic!("an unrepresentable timeout must be rejected");
         };
         assert!(error.reason.contains("timeoutSecs"), "{}", error.reason);
+    }
+}
+
+#[cfg(test)]
+mod boundary_tests {
+    use super::boundary;
+
+    #[test]
+    fn a_panic_returns_the_scrubbed_native_error_envelope() {
+        let secret = "ghp_abcdefghijklmnopqrstuvwxyz0123456789";
+        let error = boundary(|| -> napi::Result<()> { panic!("failed with {secret}") })
+            .expect_err("a panic is an error, not an abort");
+        let envelope: serde_json::Value =
+            serde_json::from_str(&error.reason).expect("JSON envelope");
+        assert_eq!(envelope["kind"], "octocode.nativeError");
+        assert_eq!(envelope["code"], "internalError");
+        assert!(!error.reason.contains(secret), "{}", error.reason);
+    }
+
+    #[test]
+    fn a_normal_result_passes_through() {
+        assert_eq!(boundary(|| Ok::<_, napi::Error>(7)).expect("ok"), 7);
     }
 }

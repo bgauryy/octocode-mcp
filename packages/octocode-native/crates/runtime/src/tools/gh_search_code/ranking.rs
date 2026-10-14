@@ -1,5 +1,5 @@
 //! Stable match ranking with lexicographic tie-breaking.
-use crate::providers::github::{ProviderError, ProviderErrorKind};
+use octocode_github::{ProviderError, ProviderErrorKind};
 use serde_json::Value;
 use std::cmp::Reverse;
 

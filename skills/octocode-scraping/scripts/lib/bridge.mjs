@@ -1,13 +1,87 @@
-import { mkdir, readFile, writeFile, appendFile, readdir, stat } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, readdir, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join, relative, resolve, basename, extname } from 'node:path';
+import { fail } from './fail.mjs';
 
-const SECRET_HEADER = /^(cookie|set-cookie|authorization|proxy-authorization|x-api-key|x-auth-token|x-csrf-token)$/i;
+const SECRET_HEADER = /^(cookie|set-cookie|authorization|proxy-authorization|x-api-key|x-auth-token|x-access-token|x-csrf-token|x-xsrf-token|x-amz-security-token|x-goog-api-key|api-key)$/i;
 const SECRET_QUERY = /token|key|secret|session|auth|password|signature|jwt/i;
+// A field whose value is a credential: matched on the key's ending so `max_tokens` or `tokenType` stay readable.
+const SECRET_FIELD = /(?:token|secret|passw(?:or)?d|passcode|pwd|api[_-]?key|authorization|credentials?|signature|jwt|private[_-]?key|session[_-]?id|cookie)$|^(?:auth|sid|otp|pin|pass)$/i;
+// An input whose label names a credential; its typed value is redacted in DOM captures.
+const SECRET_LABEL = /passw|passcode|\bpin\b|\botp\b|one[- ]time|token|secret|api[ _-]?key|credential|\bcvc\b|\bcvv\b/i;
+const TEXTUAL_MIME = /json|text|xml|javascript|x-www-form-urlencoded|graphql/i;
+const REDACTED = '[REDACTED]';
+const TOKEN_SHAPES = [
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
+  /\beyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}/g,
+  /\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,})\b/g,
+  /\bAKIA[0-9A-Z]{16}\b/g,
+  /\bxox[abprs]-[A-Za-z0-9-]{10,}/g,
+  /\bsk-[A-Za-z0-9_-]{20,}/g,
+  /\bAIza[0-9A-Za-z_-]{35}\b/g,
+];
+
+const secretKey = (key) => SECRET_FIELD.test(String(key).replace(/[[\]]/g, ''));
+
+/**
+ * Mask credential values inside captured text (JSON, form bodies, header lines, known token shapes).
+ * Only the secret values change; the surrounding evidence stays readable.
+ */
+export function redactSecretsInText(input) {
+  if (typeof input !== 'string' || !input) return input;
+  let text = input;
+  for (const shape of TOKEN_SHAPES) text = text.replace(shape, REDACTED);
+  text = text.replace(/\b(Bearer|Basic|Token)\s+[A-Za-z0-9\-._~+/=]{6,}/g, `$1 ${REDACTED}`);
+  // JSON pairs, then the same pairs inside an escaped JSON string.
+  text = text.replace(/("((?:[^"\\]|\\.)*)"\s*:\s*)("(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false)/g,
+    (match, prefix, key) => (secretKey(key) ? `${prefix}"${REDACTED}"` : match));
+  text = text.replace(/(\\"([^"\\]*)\\"\s*:\s*)(\\"(?:[^"\\]|\\(?!"))*\\"|-?\d+(?:\.\d+)?)/g,
+    (match, prefix, key) => (secretKey(key) ? `${prefix}\\"${REDACTED}\\"` : match));
+  // Form and query pairs.
+  text = text.replace(/(^|[?&;\s])([A-Za-z0-9_.\-[\]]+)=([^&\s;#"'<>]+)/gm,
+    (match, lead, key) => (secretKey(key) ? `${lead}${key}=${REDACTED}` : match));
+  // Header-style lines.
+  text = text.replace(/^([A-Za-z][\w-]*)(\s*:\s*)(\S.*)$/gm,
+    (match, key, sep) => (SECRET_HEADER.test(key) || secretKey(key) ? `${key}${sep}${REDACTED}` : match));
+  return text;
+}
+
+/** Deep-redact parsed JSON: secret keys lose their values, labelled credential inputs lose typed text. */
+export function redactSecretsInJson(value) {
+  if (typeof value === 'string') return redactSecretsInText(value);
+  if (Array.isArray(value)) return value.map(redactSecretsInJson);
+  if (!value || typeof value !== 'object') return value;
+  const labelled = Object.entries(value).some(([k, v]) => (
+    /^(name|label|type|autocomplete|accessibleNameGuess|placeholder|id)$/i.test(k) && typeof v === 'string' && SECRET_LABEL.test(v)
+  ));
+  const out = {};
+  for (const [k, v] of Object.entries(value)) {
+    if (secretKey(k) && v != null && v !== '') out[k] = REDACTED;
+    else if (labelled && /^(value|text|defaultValue)$/i.test(k) && typeof v === 'string' && v) out[k] = REDACTED;
+    else out[k] = redactSecretsInJson(v);
+  }
+  return out;
+}
+
+/** Redact a HAR content object's text, decoding textual base64 bodies first; binary bodies pass through. */
+export function redactHarContent(content) {
+  if (!content || typeof content.text !== 'string' || !content.text) return content;
+  if (content.encoding === 'base64') {
+    if (!TEXTUAL_MIME.test(content.mimeType || '')) return content;
+    const decoded = Buffer.from(content.text, 'base64').toString('utf8');
+    const redacted = redactSecretsInText(decoded);
+    return redacted === decoded ? content : { ...content, text: Buffer.from(redacted, 'utf8').toString('base64') };
+  }
+  return { ...content, text: redactSecretsInText(content.text) };
+}
 
 export function takeArg(args, flag, def = '') {
   const i = args.indexOf(flag);
-  return i >= 0 && args[i + 1] != null ? args[i + 1] : def;
+  if (i < 0) return def;
+  const value = args[i + 1];
+  // A following flag is not a value: `--session-dir --query x` must fail, not read "--query" as a path.
+  if (value == null || value.startsWith('--')) fail('invalidArguments', `missing value for ${flag}`, 2);
+  return value;
 }
 
 export function hasFlag(args, flag) {
@@ -42,12 +116,12 @@ export function redactCookies(list = []) {
 
 export function redactPostData(postData) {
   if (!postData) return postData;
-  const text = String(postData.text ?? '');
-  if (!text) return { ...postData, text: '' };
-  if (/password|token|secret|authorization/i.test(text) || text.length > 4000) {
-    return { ...postData, text: '[REDACTED]', comment: 'body redacted' };
+  const out = { ...postData };
+  if (typeof out.text === 'string') out.text = redactSecretsInText(out.text);
+  if (Array.isArray(out.params)) {
+    out.params = out.params.map((p) => (secretKey(p?.name ?? '') ? { ...p, value: REDACTED } : p));
   }
-  return postData;
+  return out;
 }
 
 /** Best of chrome-devtools har-redact: mutate a HAR object in place and return counts. */
@@ -80,6 +154,8 @@ export function redactHarObject(har, { stripBodies = false } = {}) {
       }
       if (stripBodies && entry.response.content) {
         entry.response.content = { ...entry.response.content, text: '', encoding: undefined, comment: 'body stripped' };
+      } else if (entry.response.content) {
+        entry.response.content = redactHarContent(entry.response.content);
       }
     }
   }
@@ -128,6 +204,13 @@ export async function readJsonFile(path, fallback = null) {
   return JSON.parse(await readFile(path, 'utf8'));
 }
 
+/** Stop a corpus query on a folder that is not a scrape session, instead of answering "0 matches". */
+export function requireSession(dir) {
+  const markers = ['AGENT_INDEX.json', 'sources.jsonl', 'page-map.json', 'manifest.json', 'graph', 'extracts'];
+  if (markers.some((rel) => existsSync(join(dir, rel)))) return;
+  fail('sessionNotFound', `not a scrape session (none of ${markers.join(', ')}): ${dir}`, 1, { sessionDir: dir });
+}
+
 /** Session-relative JSON read (corpus helper scripts). */
 export async function readJson(dir, rel, fallback = null) {
   return readJsonFile(join(dir, rel), fallback);
@@ -139,10 +222,14 @@ export async function readJsonl(dir, rel) {
   return (await readFile(path, 'utf8')).trim().split('\n').filter(Boolean).map((line) => JSON.parse(line));
 }
 
-export async function appendJsonl(path, rows) {
-  if (!rows.length) return;
-  const text = `${rows.map((r) => JSON.stringify(r)).join('\n')}\n`;
-  await appendFile(path, text);
+/** Rewrite a JSONL file: drop rows that `isStale` matches, then append `rows`. */
+export async function replaceJsonl(path, rows, isStale) {
+  const kept = existsSync(path)
+    ? (await readFile(path, 'utf8')).split('\n').filter(Boolean).filter((line) => !isStale(JSON.parse(line)))
+    : [];
+  const all = [...kept, ...rows.map((r) => JSON.stringify(r))];
+  if (!all.length) return;
+  await writeFile(path, `${all.join('\n')}\n`);
 }
 
 export async function ensureDir(path) {
@@ -214,8 +301,7 @@ export async function listFilesRecursive(root, { include = null, excludeDir = ne
 }
 
 export function defaultCorpusInclude(rel) {
-  return /^(raw|text|extracts|cdp|snippets|indexes|graph|sources\.jsonl|AGENT_INDEX\.json|manifest\.json|MAP\.md|page-map\.json)\b/.test(rel)
-    || rel === 'sources.jsonl';
+  return /^(?:(?:raw|text|extracts|cdp|snippets|indexes|graph|reports)\/|(?:sources\.jsonl|AGENT_INDEX\.json|manifest\.json|MAP\.md|page-map\.json)$)/.test(rel);
 }
 
 export function defaultCdpArtifactInclude(rel) {
@@ -226,12 +312,14 @@ export function defaultCdpArtifactInclude(rel) {
 export async function concatCleanParts(sessionDir, pageId, { writeFull = false } = {}) {
   const textDir = join(sessionDir, 'text');
   if (!existsSync(textDir)) return { pageId, text: '', parts: [], fullRel: null };
+  const partNumber = (name) => Number((name.match(/\.clean\.part-(\d+)\.md$/) || [])[1] || 0);
   const names = (await readdir(textDir))
     .filter((n) => n.startsWith(`${pageId}.clean.part-`) && n.endsWith('.md'))
-    .sort();
+    .sort((a, b) => partNumber(a) - partNumber(b));
   const chunks = [];
   for (const name of names) chunks.push(await readFile(join(textDir, name), 'utf8'));
-  const text = chunks.join('\n');
+  // Parts are byte-exact splits of one text, so they join with nothing between them.
+  const text = chunks.join('');
   let fullRel = null;
   if (writeFull && text) {
     fullRel = `text/${pageId}.clean.md`;
@@ -260,10 +348,6 @@ export async function fileBytes(path) {
 
 export function safeScriptPath(scriptPath, cwd) {
   const abs = resolve(cwd, scriptPath);
-  const root = resolve(cwd);
-  if (!abs.startsWith(root) && !abs.includes(`${resolve(root, 'skills')}`)) {
-    // Allow scripts under cwd or skills/; reject obvious escapes outside workspace when possible.
-  }
   if (!existsSync(abs)) throw new Error(`script not found: ${abs}`);
   if (!/\.m?js$/i.test(extname(abs))) throw new Error('script must be a .mjs or .js file');
   return abs;

@@ -37,7 +37,7 @@ fn day(timestamp: &str) -> Option<String> {
 /// A failure dates what was answered and names the rest in
 /// [`PageDates::warning`]; entries past the first chunk are counted in
 /// [`PageDates::undated`].
-pub(super) async fn page_dates<C: crate::providers::github::ConditionalCache>(
+pub(super) async fn page_dates<C: octocode_github::ConditionalCache>(
     provider: &GitHubProvider<C>,
     owner: &str,
     repo: &str,
@@ -95,11 +95,12 @@ pub(super) async fn page_dates<C: crate::providers::github::ConditionalCache>(
                     .put(
                         partition,
                         key,
-                        crate::providers::github::CachedContent {
+                        octocode_github::CachedContent {
                             etag: None,
                             bytes: bytes.into(),
                             resolved_ref: commit_sha.to_owned(),
                         },
+                        octocode_github::Retention::Pinned,
                     )
                     .await;
             }

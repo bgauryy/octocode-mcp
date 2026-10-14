@@ -6,10 +6,10 @@ import { atomicWriteFile, atomicWriteFileSync } from '../src/shared/atomic.js';
 import { say, Subcommands, wordCompletions } from '../src/shared/commands.js';
 import { envFlag, envInt } from '../src/shared/env.js';
 import { dirsToRepoRoot, repoKey, sweepStaleOutputs, workspaceScratchDir } from '../src/shared/home.js';
-import { findManifest, packageRoot } from '../src/shared/package.js';
+import { findManifest, minimumPiVersion, packageRoot, versionBelow } from '../src/shared/package.js';
 import { killTree, processAlive, stopTree } from '../src/shared/process.js';
 import { formatCost, formatTokens, formatTokenUsage } from '../src/shared/format.js';
-import { addReply, capChars, capOutput, clipText, contentText, cutText, emptyTotals, settleWithin, unpricedModel } from '../src/shared/util.js';
+import { addReply, capChars, capOutput, clipText, contentText, cutText, emptyTotals, entryMessage, settleWithin, spendOf, unpricedModel } from '../src/shared/util.js';
 import { fakeCtx, fakePi } from './fake-pi.js';
 import { tmp } from './helpers.js';
 
@@ -18,6 +18,15 @@ describe('settleWithin', () => {
     const started = Date.now();
     await settleWithin(Promise.reject(new Error('boom')), 5_000);
     await settleWithin(new Promise(() => undefined), 30);
+    // No limit: only the work or the signal ends the wait.
+    const unlimited = new AbortController();
+    const open = settleWithin(new Promise(() => undefined), undefined, unlimited.signal);
+    let done = false;
+    void open.then(() => (done = true));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(done).toBe(false);
+    unlimited.abort();
+    await open;
     expect(Date.now() - started).toBeLessThan(1_000);
     const controller = new AbortController();
     const remove = vi.spyOn(controller.signal, 'removeEventListener');
@@ -68,6 +77,29 @@ describe('paths', () => {
     const loose = tmp('octocode-paths-');
     expect(dirsToRepoRoot(loose)).toEqual([loose]);
     expect(repoKey(loose).root).toBe(fs.realpathSync(loose));
+  });
+
+  it('counts a repository root at, above or equal to home, or `/`, as no workspace: cwd is the root', () => {
+    const home = tmp('octocode-paths-home-');
+    fs.mkdirSync(path.join(home, '.git'));
+    const proj = path.join(home, 'proj');
+    fs.mkdirSync(proj);
+    vi.stubEnv('HOME', home);
+    // A dotfiles repository at `~`: a project folder under it is its own root, not `~`.
+    expect(repoKey(proj)).toEqual({ key: fs.realpathSync(proj), root: fs.realpathSync(proj), name: 'proj' });
+    // A repository nested under home keeps its own git root.
+    const nested = path.join(proj, 'app');
+    fs.mkdirSync(path.join(nested, '.git'), { recursive: true });
+    expect(repoKey(nested).root).toBe(fs.realpathSync(nested));
+    // A root above home (here: the folder holding it) is no workspace either.
+    const above = tmp('octocode-paths-above-');
+    fs.mkdirSync(path.join(above, '.git'));
+    const inner = path.join(above, 'me');
+    fs.mkdirSync(inner);
+    vi.stubEnv('HOME', inner);
+    const elsewhere = path.join(above, 'other');
+    fs.mkdirSync(elsewhere);
+    expect(repoKey(elsewhere).root).toBe(fs.realpathSync(elsewhere));
   });
 
   it('resolves one checkout reached through a symlink to one repository', () => {
@@ -358,5 +390,32 @@ describe('usage display', () => {
     addReply(totals, { input: 100, output: 1, cost: { total: 0 } }, true);
     addReply(totals, 'not usage', false);
     expect(totals).toEqual({ input: 200, cacheRead: 80, output: 6, cost: 0.5, unpriced: true });
+  });
+});
+
+describe('spendOf', () => {
+  it('counts replies, tool results with usage and custom messages that report usage, nothing else', () => {
+    const usage = { input: 1, output: 2, cost: { total: 0.1 } };
+    expect(spendOf({ role: 'assistant', usage })?.usage).toBe(usage);
+    expect(spendOf({ role: 'toolResult', usage })?.usage).toBe(usage);
+    expect(spendOf({ role: 'toolResult' })).toBeUndefined();
+    expect(spendOf({ role: 'user', usage })).toBeUndefined();
+    // A background report: the run's usage and its unpriced verdict, judged like an `agent` result (no model named).
+    const report = spendOf({ role: 'custom', customType: 'octocode-agent-result', details: { usage, unpriced: true } });
+    expect(report).toEqual({ role: 'custom', usage, details: { unpriced: true } });
+    expect(unpricedModel(report)).toBe('a subagent model');
+    expect(spendOf({ role: 'custom', details: { id: 'x' } })).toBeUndefined();
+    expect(spendOf(entryMessage({ type: 'custom_message', customType: 'r', details: { usage } }))?.usage).toBe(usage);
+    expect(entryMessage({ type: 'label' })).toBeUndefined();
+  });
+});
+
+describe('Pi version floor', () => {
+  it('compares dotted versions and reads the floor of the peer range', () => {
+    expect(versionBelow('1.1.0', '1.2.0')).toBe(true);
+    expect(versionBelow('1.2.0', '1.2.0')).toBe(false);
+    expect(versionBelow('1.10.0', '1.2.0')).toBe(false);
+    expect(versionBelow('1.2.0-beta.1', '1.2.0')).toBe(false);
+    expect(minimumPiVersion()).toMatch(/^\d+\.\d+\.\d+$/);
   });
 });

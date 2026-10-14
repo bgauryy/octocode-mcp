@@ -1,41 +1,28 @@
 //! A short-lived store of results kept for continuation pages, keyed by the
 //! result's snapshot and the path policy that produced it. A hit is only a
 //! candidate: each owner re-validates what it reads before serving a page.
-use std::{
-    collections::VecDeque,
-    sync::{Mutex, MutexGuard, PoisonError},
-    time::{Duration, Instant},
-};
+use octocode_io::memo::{Memo, MemoLimits};
+use std::time::Duration;
 
-struct Slot<V> {
-    snapshot: String,
-    policy: String,
-    stored: Instant,
-    weight: usize,
-    value: V,
-}
-
+/// Values by snapshot, each stored with the policy that produced it.
 pub(crate) struct PageMemo<V> {
-    slots: Mutex<VecDeque<Slot<V>>>,
+    memo: Memo<String, (String, V)>,
     ttl: Duration,
-    max_entries: usize,
-    max_weight: usize,
 }
 
 impl<V> PageMemo<V> {
     /// A store that keeps a value for `ttl`, at most `max_entries` values,
-    /// and at most `max_weight` total weight; the oldest go first.
+    /// and at most `max_weight` total weight; the least recently used go
+    /// first.
     pub(crate) const fn new(ttl: Duration, max_entries: usize, max_weight: usize) -> Self {
         Self {
-            slots: Mutex::new(VecDeque::new()),
+            memo: Memo::new(MemoLimits {
+                max_entries,
+                max_weight,
+                keep_newest: false,
+            }),
             ttl,
-            max_entries,
-            max_weight,
         }
-    }
-
-    fn lock(&self) -> MutexGuard<'_, VecDeque<Slot<V>>> {
-        self.slots.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// `read` of the unexpired value stored for `snapshot` under `policy`.
@@ -45,49 +32,28 @@ impl<V> PageMemo<V> {
         policy: &str,
         read: impl FnOnce(&V) -> T,
     ) -> Option<T> {
-        let mut slots = self.lock();
-        slots.retain(|slot| slot.stored.elapsed() < self.ttl);
-        slots
-            .iter()
-            .find(|slot| slot.snapshot == snapshot && slot.policy == policy)
-            .map(|slot| read(&slot.value))
+        let hit = self.memo.get(snapshot)?;
+        let (stored_policy, value) = hit.value.as_ref();
+        (stored_policy == policy).then(|| read(value))
     }
 
-    /// Store `value`, first dropping expired values, an older value with the
-    /// same snapshot, and the oldest values beyond the entry and weight
-    /// budgets.
+    /// Store `value`, replacing any value for the same snapshot and dropping
+    /// expired values, then the least recently used beyond the entry and
+    /// weight budgets. A value over the weight budget is not kept.
     pub(crate) fn put(&self, snapshot: String, policy: String, weight: usize, value: V) {
-        let mut slots = self.lock();
-        slots.retain(|kept| kept.stored.elapsed() < self.ttl && kept.snapshot != snapshot);
-        let mut total = slots.iter().map(|kept| kept.weight).sum::<usize>();
-        while slots.len() >= self.max_entries || total + weight > self.max_weight {
-            let Some(oldest) = slots.pop_front() else {
-                break;
-            };
-            total -= oldest.weight;
-        }
-        slots.push_back(Slot {
-            snapshot,
-            policy,
-            stored: Instant::now(),
-            weight,
-            value,
-        });
+        self.memo
+            .insert(snapshot, (policy, value), weight, Some(self.ttl));
     }
 
     /// Drop the value stored for `snapshot`, as expiry or eviction would.
     pub(crate) fn evict(&self, snapshot: &str) {
-        self.lock().retain(|slot| slot.snapshot != snapshot);
+        self.memo.remove(snapshot);
     }
 
-    /// Stored snapshots, oldest first, and their total weight.
+    /// Stored snapshots, least recently used first, and their total weight.
     #[cfg(test)]
     pub(crate) fn contents(&self) -> (Vec<String>, usize) {
-        let slots = self.lock();
-        (
-            slots.iter().map(|slot| slot.snapshot.clone()).collect(),
-            slots.iter().map(|slot| slot.weight).sum(),
-        )
+        self.memo.contents()
     }
 }
 
@@ -107,9 +73,9 @@ mod tests {
         );
         memo.put("big".into(), "p".into(), 8, ());
         assert_eq!(memo.contents(), (vec!["big".into()], 8));
-        // A value over the weight budget alone is still kept.
+        // A value over the weight budget is not kept, and evicts nothing.
         memo.put("huge".into(), "p".into(), 11, ());
-        assert_eq!(memo.contents(), (vec!["huge".into()], 11));
+        assert_eq!(memo.contents(), (vec!["big".into()], 8));
     }
 
     #[test]

@@ -174,7 +174,7 @@ fn redact_key_block_lines<'a>(
     let fits = |value_line: &str, n: u32| {
         let core = strip_clip_markers(value_line).trim();
         source(n).is_some_and(|source| {
-            redaction_placeholder()
+            crate::security::redaction_placeholder()
                 .split(core)
                 .map(str::trim)
                 .all(|segment| segment.is_empty() || source.contains(segment))
@@ -219,22 +219,12 @@ fn redact_key_block_lines<'a>(
     out
 }
 
-/// A redaction placeholder (`[REDACTED-GITHUBTOKENS]`).
-fn redaction_placeholder() -> &'static regex::Regex {
-    static PLACEHOLDER: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-        #[allow(clippy::expect_used)]
-        regex::Regex::new(r"\[(?:CONTENT-)?REDACTED-[A-Z0-9_-]+\]").expect("static pattern")
-    });
-    &PLACEHOLDER
-}
-
 /// The bytes a key-block scan reads: the whole file within
 /// [`MAX_KEY_SCAN_BYTES`], or `None`.
 fn read_key_scan_bytes(source: &std::path::Path) -> Option<Vec<u8>> {
-    std::fs::metadata(source)
+    octocode_engine::text::read_source(source, MAX_KEY_SCAN_BYTES)
         .ok()
-        .filter(|meta| meta.len() <= MAX_KEY_SCAN_BYTES)
-        .and_then(|_| std::fs::read(source).ok())
+        .map(|source| source.bytes)
 }
 
 /// Replay `stored` on the stored scan it was made from. Its key-block scans
@@ -836,8 +826,6 @@ mod verification_tests {
             byte_offset: 0,
             value: value.into(),
             count: None,
-            kind: None,
-            score_hint: None,
             rank: None,
             original_chars: None,
         }

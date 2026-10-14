@@ -255,7 +255,13 @@ class Store(LeaseMixin, RecordsMixin, HealthMixin, CompletionMixin, DocumentsMix
 
     def complete(self, session, input):
         if 'reply' in input:
-            return self.send(session, dict(replyTo=input['message'], body=input['reply'], reasoning=input.get('reasoning', 'Complete received message'), key='complete:{}'.format(input['message'])), False, True)
+            body = catalog.text(input, 'reply')
+            reasoning = input.get('reasoning', 'Complete received message')
+            if 'outcome' in input:
+                # The reply body stays the exact answer; the outcome travels in reasoning, which inbox returns.
+                reasoning = 'Outcome: {}'.format(input['outcome']) + ('; ' + input['reasoning'] if 'reasoning' in input else '')
+                catalog.text(dict(reasoning=reasoning), 'reasoning')
+            return self.send(session, dict(replyTo=input['message'], body=body, reasoning=reasoning, key='complete:{}'.format(input['message'])), False, True)
         with transaction(self.db):
             self.known(session)
             messages = input.get('messages', [input.get('message')])

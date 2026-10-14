@@ -18,15 +18,15 @@ mod tests;
 pub use crate::contracts::tool_types::{
     GhSearchHistoryQuery, GhSearchHistoryQueryOwner, GhSearchHistoryQueryRepo,
 };
-use crate::providers::github::{
-    CommitListRequest, GitHubTransport, HistoryPage, HistoryRequest, ProviderError,
-    ProviderErrorKind, ProviderErrorReason, PullListRequest, RequestContext,
-};
 use crate::security::scan::ContentScan;
 use crate::tools::gh_shared::field_names;
 use crate::tools::num::usize_of;
 pub(crate) use errors::history_failure;
 use filters::Filters;
+use octocode_github::{
+    CommitListRequest, GitHubTransport, HistoryPage, HistoryRequest, ProviderError,
+    ProviderErrorKind, ProviderErrorReason, PullListRequest, RequestContext,
+};
 use serde_json::{Value, json};
 
 /// The operation discriminant of a [`GhSearchHistoryQuery`].
@@ -225,13 +225,17 @@ impl HistorySearch {
 /// it, that lead (keyed by name).
 #[derive(Debug)]
 pub struct HistoryFailure {
-    pub error: ProviderError,
+    /// Boxed, as in `GhFailure`: it is most of the failure's size.
+    pub error: Box<ProviderError>,
     pub next: Option<Value>,
 }
 
 impl From<ProviderError> for HistoryFailure {
     fn from(error: ProviderError) -> Self {
-        Self { error, next: None }
+        Self {
+            error: Box::new(error),
+            next: None,
+        }
     }
 }
 
@@ -247,8 +251,8 @@ pub async fn execute(
     let page = query.page().unwrap_or(1);
     let per = page_size(&query);
     let searching = query::uses_search(&query);
-    if searching {
-        crate::tools::gh_shared::reject_window(page, per)?;
+    if searching && let Err(error) = crate::tools::gh_shared::reject_window(page, per) {
+        return Err(window_failure(error, &query, per));
     }
     let mut unconfirmed = Vec::new();
     if searching && query.operation() == HistoryOperation::Commit {
@@ -270,6 +274,16 @@ pub async fn execute(
         terms,
         warnings,
     } = fetched.map_err(|error| missing_scope_failure(error, &query))?;
+    // A REST list follows a rename redirect itself: the rows are the
+    // renamed repository's, so its leads and pages name the canonical one.
+    let redirected = !searching
+        && query
+            .owner()
+            .zip(query.repo())
+            .is_some_and(|(owner, repo)| transport.followed_rename(owner, repo));
+    if redirected && let Some(warnings) = follow_rename(transport, &mut query, context).await? {
+        rename_warnings = warnings;
+    }
     // A commit list answers an unknown author with no rows; only an empty
     // list pays for confirming the login.
     if !searching && query.operation() == HistoryOperation::Commit && result.items.is_empty() {
@@ -484,6 +498,22 @@ async fn follow_rename(
     }
 }
 
+/// A page past GitHub's 1,000-result search window, with its one repair:
+/// the last reachable page (`repair`).
+fn window_failure(error: ProviderError, query: &HistorySearch, per: usize) -> HistoryFailure {
+    let failure = crate::tools::gh_shared::with_search_repair(
+        crate::tools::gh_shared::GhFailure::new(error, String::new()),
+        crate::tools::id::ToolId::GhSearchHistory,
+        &query.query,
+        per,
+        None,
+    );
+    HistoryFailure {
+        error: failure.error,
+        next: failure.next.map(|next| *next),
+    }
+}
+
 /// A bare GitHub 404 of a listing. A commit listing at a `ref` cannot tell
 /// a missing ref from a missing repository: the message names the ref and
 /// the refs listing is the one lead (it fails on a missing repository).
@@ -491,7 +521,10 @@ async fn follow_rename(
 fn missing_scope_failure(mut error: ProviderError, query: &HistorySearch) -> HistoryFailure {
     if error.reason == Some(ProviderErrorReason::UserNotFound) {
         let next = leads::without_users(query).map(|lead| json!({ "withoutUsers": lead }));
-        return HistoryFailure { error, next };
+        return HistoryFailure {
+            error: Box::new(error),
+            next,
+        };
     }
     if error.kind != ProviderErrorKind::NotFound || error.reason.is_some() {
         return error.into();
@@ -511,7 +544,7 @@ fn missing_scope_failure(mut error: ProviderError, query: &HistorySearch) -> His
     error.message =
         format!("Ref \"{reference}\" or repository {owner}/{repo} not found").into_boxed_str();
     HistoryFailure {
-        error,
+        error: Box::new(error),
         next: Some(
             serde_json::json!({"viewRefs": crate::tools::gh_shared::ref_recovery(owner, repo)}),
         ),

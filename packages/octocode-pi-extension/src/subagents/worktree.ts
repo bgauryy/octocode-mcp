@@ -3,8 +3,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { atomicWriteFileSync, sha256 } from '../shared/atomic.js';
+import { claimSuffix, parseClaim } from '../shared/claims.js';
 import { HOME_NAMES, octocodeHome, repoKey } from '../shared/home.js';
-import { processAlive } from '../shared/process.js';
+import { processStartTime, sameProcess } from '../shared/process.js';
 import { errorMessage } from '../shared/util.js';
 
 /**
@@ -79,7 +80,7 @@ export async function createWorktree(cwd: string, agentId: string, home = octoco
   // Never reuse a kept worktree's id: overwriting (then removing) its record would hide it from prune and reports.
   if (fs.existsSync(worktree) || fs.existsSync(`${worktree}.json`)) throw new Error(`A worktree for ${agentId} already exists at ${worktree}; start the agent again for a new id.`);
   // The owner record lets a later session prune worktrees whose parent process died.
-  atomicWriteFileSync(`${worktree}.json`, JSON.stringify({ pids: [process.pid], repo, base, createdAt: Date.now() }));
+  atomicWriteFileSync(`${worktree}.json`, JSON.stringify({ ...ownerFields([owner(process.pid)]), repo, base, createdAt: Date.now() }));
   try {
     await git(repo, ['worktree', 'add', '--detach', worktree, base]);
   } catch (error) {
@@ -98,20 +99,36 @@ export async function createWorktree(cwd: string, agentId: string, home = octoco
   };
 }
 
-/** Adds the subagent's own pid to the owner record, so a parent crash does not let a prune remove the worktree under a live child. */
+/** Adds the subagent's own process to the owner record, so a parent crash does not let a prune remove the worktree under a live child. */
 export function recordWorktreePid(worktree: Pick<Worktree, 'path'>, pid: number): void {
   const meta = `${worktree.path}.json`;
   try {
-    const owner = JSON.parse(fs.readFileSync(meta, 'utf8')) as Record<string, unknown>;
-    owner.pids = [...new Set([...ownerPids(owner), pid])];
-    atomicWriteFileSync(meta, JSON.stringify(owner));
+    const record = JSON.parse(fs.readFileSync(meta, 'utf8')) as Record<string, unknown>;
+    atomicWriteFileSync(meta, JSON.stringify({ ...record, ...ownerFields([...ownersOf(record).filter((each) => each.pid !== pid), owner(pid)]) }));
   } catch {
     // The record is gone: the worktree was already finished.
   }
 }
 
-function ownerPids(owner: { pids?: unknown }): unknown[] {
-  return Array.isArray(owner.pids) ? owner.pids : [];
+/** A process that keeps a worktree: its pid and start time, so a later process that reused the pid does not keep it forever. */
+interface Owner { pid: number; started?: string }
+
+const owner = (pid: number): Owner => {
+  const started = processStartTime(pid);
+  return started ? { pid, started } : { pid };
+};
+
+/** A record's owner fields: `owners` with start times, plus bare `pids` so an older version pruning the same folder still sees them. */
+const ownerFields = (owners: Owner[]) => ({ owners, pids: owners.map((each) => each.pid) });
+
+/** The owners in a record; a record from an older version lists only bare `pids`, judged by the pid alone. */
+function ownersOf(record: { owners?: unknown; pids?: unknown }): Owner[] {
+  const listed = Array.isArray(record.owners) ? record.owners : Array.isArray(record.pids) ? record.pids.map((pid: unknown) => ({ pid })) : [];
+  return listed.flatMap((each: unknown) => {
+    if (typeof each !== 'object' || each === null) return [];
+    const { pid, started } = each as { pid?: unknown; started?: unknown };
+    return typeof pid === 'number' ? [typeof started === 'string' ? { pid, started } : { pid }] : [];
+  });
 }
 
 /** An owner record this young that cannot be read may be mid-write by another session: leave its worktree alone. */
@@ -226,16 +243,16 @@ interface PruneReport {
   kept: Array<{ agentId: string; error: string }>;
 }
 
-/** An owner record being pruned is renamed `<agent>.json.pruning-<pid>` by the session that claimed it. */
-const CLAIM_SUFFIX = '.pruning-';
+/** An owner record being pruned is renamed `<agent>.json.pruning-<pid>-<start time>` by the session that claimed it (`shared/claims.ts`). */
+const CLAIM_MARKER = '.pruning-';
 
-/** Returns the owner records of prunes whose session died mid-way, so this prune can claim them again. */
+/** Returns the owner records of prunes whose session died mid-way (its pid and start time no longer name a running process), so this prune can claim them again. */
 function releaseDeadClaims(dir: string): void {
   for (const entry of fs.readdirSync(dir)) {
-    const at = entry.lastIndexOf(CLAIM_SUFFIX);
-    if (at < 0 || processAlive(Number(entry.slice(at + CLAIM_SUFFIX.length)))) continue;
+    const claim = parseClaim(entry, CLAIM_MARKER);
+    if (!claim || claim.running) continue;
     try {
-      fs.renameSync(path.join(dir, entry), path.join(dir, entry.slice(0, at)));
+      fs.renameSync(path.join(dir, entry), path.join(dir, claim.original));
     } catch {
       // Another session released it first.
     }
@@ -273,22 +290,22 @@ async function pruneDir(repo: string, dir: string): Promise<PruneReport> {
   for (const entry of fs.readdirSync(dir)) {
     if (!entry.endsWith('.json')) continue;
     const agentId = entry.slice(0, -'.json'.length);
-    let owner: { pids?: unknown; base?: unknown } = {};
+    let record: { owners?: unknown; pids?: unknown; base?: unknown } = {};
     try {
-      owner = JSON.parse(fs.readFileSync(path.join(dir, entry), 'utf8')) as typeof owner;
+      record = JSON.parse(fs.readFileSync(path.join(dir, entry), 'utf8')) as typeof record;
     } catch {
       // Unreadable: orphaned, unless it is fresh enough to be another session's record still being created.
       if (Date.now() - (fs.statSync(path.join(dir, entry), { throwIfNoEntry: false })?.mtimeMs ?? 0) < UNREADABLE_GRACE_MS) continue;
     }
-    if (ownerPids(owner).some(processAlive) || !ID_PATTERN.test(agentId)) continue;
+    if (ownersOf(record).some((each) => sameProcess(each.pid, each.started)) || !ID_PATTERN.test(agentId)) continue;
     // Two sessions starting together both see the orphan: only the one whose rename wins saves and removes it.
-    const claimed = path.join(dir, `${entry}${CLAIM_SUFFIX}${process.pid}`);
+    const claimed = path.join(dir, `${entry}${claimSuffix(CLAIM_MARKER)}`);
     try {
       fs.renameSync(path.join(dir, entry), claimed);
     } catch {
       continue;
     }
-    const worktree = { agentId, repo, path: path.join(dir, agentId), base: typeof owner.base === 'string' ? owner.base : '' };
+    const worktree = { agentId, repo, path: path.join(dir, agentId), base: typeof record.base === 'string' ? record.base : '' };
     try {
       const { ref } = await finishWorktree(worktree);
       fs.rmSync(claimed, { force: true });

@@ -614,7 +614,7 @@ fn malformed_yaml_is_parsed_once_without_changing_compile_errors() {
         errors.push(compile_matcher(&lang(extension), &query).err().unwrap());
     }
     assert_eq!(errors[0], errors[1]);
-    assert!(errors[0].starts_with("[structural.query.compileFailed] invalid rule YAML:"));
+    assert!(errors[0].starts_with("[structural.rule.invalid] invalid rule YAML:"));
     assert_eq!(RULE_PARSE_COUNT.with(std::cell::Cell::get), 1);
 }
 
@@ -865,4 +865,19 @@ fn rust_macro_bodies_without_the_anchor_keep_flat_tokens() {
     assert_eq!(found.len(), 3);
     // A body without the pattern's anchor keeps its flat tokens.
     assert!(run_pattern("fn t() { assert!(ok); }\n", "rs", "$X.unwrap()").is_empty());
+}
+
+/// The match deadline grows with the source: a large file (up to the 8 MiB
+/// parse limit) gets one more parse budget per MiB, so it is not cut by the
+/// budget a small file gets, and a small file keeps the shared budget.
+#[test]
+fn the_match_budget_scales_with_the_source_size() {
+    const MIB: usize = 1 << 20;
+    assert_eq!(match_budget(0), AST_EXECUTION_TIMEOUT);
+    assert_eq!(match_budget(MIB - 1), AST_EXECUTION_TIMEOUT);
+    assert_eq!(match_budget(3_600_000), AST_EXECUTION_TIMEOUT * 4);
+    assert_eq!(
+        match_budget(crate::signatures::MAX_PARSE_SIZE),
+        AST_EXECUTION_TIMEOUT * 9
+    );
 }

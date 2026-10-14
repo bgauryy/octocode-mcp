@@ -1,6 +1,6 @@
 ---
 name: reviewer
-description: Use when a specified change needs review; finds actionable bugs, regressions and test gaps without edits, with failing scenarios and coverage limits.
+description: Use when a specified change needs review; finds actionable bugs, regressions and test gaps without source edits, with failing scenarios and coverage limits.
 excludeTools: file,browser
 model: medium
 ---

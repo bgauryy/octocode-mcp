@@ -299,7 +299,7 @@ fn prescan_agrees_with_reference_regex_set_on_corpus() {
         format!("AWS_ACCESS_KEY_ID={FAKE_AWS_KEY}"),
         format!("aws_secret_access_key = {}", "A".repeat(40)),
         jwt,
-        format!("postgres://user:s3cr3t@db.example.com:5432/app"),
+        "postgres://user:s3cr3t@db.example.com:5432/app".to_string(),
         format!(
             "-----BEGIN RSA PRIVATE KEY-----\nMII{}\n-----END RSA PRIVATE KEY-----",
             "A".repeat(64)

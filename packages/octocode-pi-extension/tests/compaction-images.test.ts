@@ -51,7 +51,7 @@ function register(percent = 10) {
     cwd: '/repo',
     hasUI: true,
     ui: { notify },
-    sessionManager: { getSessionId: () => 's1', buildSessionProjection: () => ({ entries: [] }) },
+    sessionManager: { getSessionId: () => 's1', getBranch: () => [], buildSessionProjection: () => ({ entries: [] }) },
     getContextUsage: () => ({ tokens: 1, contextWindow: 100, percent }),
   };
   return { notify, fire: (name: string, event: unknown = {}) => handlers.get(name)!(event, ctx) };
@@ -95,6 +95,18 @@ describe('request too large (HTTP 413)', () => {
       const file = shown.startsWith('~') ? path.join(os.homedir(), shown.slice(2)) : shown;
       expect(fs.readFileSync(file).equals(Buffer.from(SHOT, 'base64'))).toBe(true);
     }
+  });
+
+  it('strips images the user attached too, oldest first with the tool results, keeping the newest', () => {
+    const pasted = { id: 'u0', message: { role: 'user', content: [{ type: 'text', text: 'see this' }, { type: 'image', data: SHOT, mimeType: 'image/png' }] } };
+    const entries = [pasted, ...history(2), { id: 'fail', message: failed() }];
+    const edits = planTooLargeRecovery(entries, 'fail', 1)!;
+    expect(edits.filter((edit) => edit.targetId !== 'fail').map((edit) => edit.targetId)).toEqual(['u0', 'r0']);
+    const content = (edits.find((edit) => edit.targetId === 'u0')!.replacement as { content: Array<{ text: string }> }).content;
+    expect(content[0]!.text).toBe('see this');
+    expect(content[1]!.text).toMatch(/^\[image from an earlier user message omitted; saved at /);
+    // A text-only user message is never touched.
+    expect(planTooLargeRecovery([{ id: 'u1', message: { role: 'user', content: 'hello' } }], undefined, 0)).toBeUndefined();
   });
 
   it('retries from agent_before_settle (Pi ignores turn_end continuation after an error): older images, then none, then stops', async () => {

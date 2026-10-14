@@ -1,17 +1,17 @@
 //! Main-compatible encrypted credentials. File mutation is serialized and atomic.
-use super::super::{ProviderError, ProviderErrorKind};
 use super::{StoredCredentials, normalize_host};
 use aes_gcm::{
     AesGcm,
     aead::{Aead, KeyInit, consts::U16},
     aes::Aes256,
 };
+use octocode_github::{ProviderError, ProviderErrorKind};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
     fs::{self, File},
     path::{Path, PathBuf},
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 // Main uses a 16-byte IV, not the 12-byte Aes256Gcm alias.
@@ -193,25 +193,17 @@ impl HomeStore {
             .create(&self.home)
             .map_err(|_| failure("cannot create credential home"))
     }
-    fn lock(&self) -> Result<StoreLock, ProviderError> {
+    fn lock(&self) -> Result<octocode_io::lock::LockedFile, ProviderError> {
         let file = private_open(&self.home.join(".credentials.lock"), true)?;
-        let deadline = Instant::now() + Duration::from_secs(5);
-        loop {
-            match file.try_lock() {
-                Ok(()) => return Ok(StoreLock(file)),
-                Err(std::fs::TryLockError::WouldBlock) if Instant::now() < deadline => {
-                    std::thread::sleep(Duration::from_millis(10))
-                }
-                _ => return Err(failure("cannot lock credential store")),
-            }
-        }
+        octocode_io::lock::lock_within(file, Duration::from_secs(5), Duration::from_millis(10))
+            .map_err(|_| failure("cannot lock credential store"))
     }
     fn atomic_write(&self, name: &str, bytes: &[u8]) -> Result<(), ProviderError> {
         let target = self.home.join(name);
         if exists(&target)? {
             let _ = private_open(&target, false)?;
         }
-        crate::private_file::write_atomic(&target, bytes, true)
+        octocode_io::atomic::write_atomic(&target, bytes, true)
             .map_err(|_| failure("cannot replace credentials"))
     }
     fn sync_home(&self) -> Result<(), ProviderError> {
@@ -222,12 +214,6 @@ impl HomeStore {
                 .map_err(|_| failure("cannot sync credential home"))?;
         }
         Ok(())
-    }
-}
-struct StoreLock(File);
-impl Drop for StoreLock {
-    fn drop(&mut self) {
-        let _ = self.0.unlock();
     }
 }
 fn failure(message: &str) -> ProviderError {

@@ -4,11 +4,11 @@
 use super::executor::*;
 use super::layout::*;
 use super::types::*;
-use crate::canonical_json::canonicalize;
 use crate::policy::prune::DefaultsFlag;
 use crate::tools::id::ToolId;
 use crate::tools::result::Continuation;
 use crate::tools::result::ToolError;
+use octocode_engine::digest::canonicalize_dropping_nulls;
 use serde_json::{Value, json};
 
 /// The page's continuations, and whether rows remain in its own files.
@@ -106,7 +106,10 @@ pub(super) fn changed_since_scan(query: &LocalSearchQuery) -> ToolError {
 pub(super) fn normalized_query(q: &LocalSearchQuery, streamed: bool) -> Value {
     let mut value = serde_json::to_value(q).unwrap_or_else(|_| json!({}));
     // `LocalSearchQuery` serializes to a JSON object.
-    #[allow(clippy::expect_used)]
+    #[expect(
+        clippy::expect_used,
+        reason = "the request is a JSON object by construction"
+    )]
     let o = value.as_object_mut().expect("request object");
     o.retain(|_, v| !v.is_null());
     o.entry("caseMode").or_insert(json!("smart"));
@@ -150,12 +153,16 @@ pub(super) fn build_next(
     let next_match_page = leftover_matches
         .then(|| cursor("matchPage", match_page))
         .flatten();
-    // Finish every match row in the current files before advancing files.
-    // Emitting nextPage on each match page creates duplicate executable
-    // routes to the same later file page. At the match-page ceiling the
-    // unreachable suffix is terminal, but later file pages remain reachable.
-    if (!leftover_matches || next_match_page.is_none())
-        && page < total_pages
+    // Rows left in the shown files (`nextMatchPage`) and later files
+    // (`nextPage`) are both offered on the page that opens a file group
+    // (matchPage 1), so the caller goes depth-first or breadth-first. A
+    // later match page of the same group does not offer `nextPage` again:
+    // that call was already offered, and every executable query appears
+    // once in the chain. A chain's first call (no snapshot yet) offers it
+    // at any match page, since no earlier page did.
+    let opens_file_group = match_page <= 1 || q.snapshot().is_none();
+    if page < total_pages
+        && opens_file_group
         && let Some(n) = crate::tools::paging::admitted_query(
             ToolId::LocalSearch,
             None,
@@ -216,7 +223,7 @@ pub(super) fn fingerprint(
             json!({"path":f.path,"matchCount":f.match_count,"matches":matches})
         })
         .collect::<Vec<_>>();
-    let canonical = canonicalize(
+    let canonical = canonicalize_dropping_nulls(
         json!([query_key,file_values,{"matchCount":stats.match_count.unwrap_or(0),"matchedLineCount":stats.matched_lines.unwrap_or(0),"fileCount":stats.files_matched.unwrap_or(files.len() as u32),"filesScanned":stats.files_searched.unwrap_or(0),"capped":stats.capped.unwrap_or(false),"capReason":stats.cap_reason,"errorCount":stats.error_count.filter(|n|*n>0),"firstError":stats.first_error} ]),
     );
     // v4: `matchCount`/`matchedLineCount`/`fileCount`, 1-based

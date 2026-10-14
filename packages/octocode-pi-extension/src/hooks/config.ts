@@ -18,6 +18,8 @@ export interface HookCommand {
   timeoutMs: number;
   /** The file it came from. */
   source: string;
+  /** Opt-in (`"failClosed": true`): a `PreToolUse` timeout, crash or invalid JSON denies the call instead of allowing it. */
+  failClosed?: true;
 }
 
 interface HookGroup {
@@ -58,7 +60,7 @@ export function parseHooks(value: unknown, source: string, into: HookConfig = em
       const commands = group.hooks.flatMap((hook): HookCommand[] => {
         if (!isRecord(hook) || hook.type !== 'command' || typeof hook.command !== 'string' || !hook.command.trim()) return [];
         const seconds = typeof hook.timeout === 'number' && hook.timeout > 0 ? Math.min(hook.timeout, MAX_TIMEOUT_S) : DEFAULT_TIMEOUT_S;
-        return [{ command: hook.command, timeoutMs: seconds * 1000, source }];
+        return [{ command: hook.command, timeoutMs: seconds * 1000, source, ...(hook.failClosed === true ? { failClosed: true as const } : {}) }];
       });
       if (commands.length > 0) into[event].push({ matcher: typeof group.matcher === 'string' ? group.matcher : '', hooks: commands });
     }
@@ -102,7 +104,7 @@ const CLAUDE_NAMES: Record<string, string[]> = {
 export const toolAliases = (tool: string): string[] => [tool, ...(CLAUDE_NAMES[tool] ?? [])];
 
 /** One hook dispatch: the matcher names, and the Claude Code `tool_name` / `tool_input` the hook receives on stdin. */
-export interface HookCall {
+interface HookCall {
   names: string[];
   tool_name: string;
   tool_input: unknown;
@@ -148,8 +150,13 @@ export function matches(matcher: string, names: string[]): boolean {
   }
 }
 
-/** The hooks matching `names`; the same command configured in several files runs once (as in Claude Code). */
+/** The hooks matching `names`; the same command configured in several files runs once (as in Claude Code), failing closed if any copy does. */
 export function commandsFor(config: HookConfig, event: HookEvent, names: string[]): HookCommand[] {
-  const seen = new Set<string>();
-  return config[event].filter((group) => matches(group.matcher, names)).flatMap((group) => group.hooks).filter((hook) => !seen.has(hook.command) && Boolean(seen.add(hook.command)));
+  const unique = new Map<string, HookCommand>();
+  for (const hook of config[event].filter((group) => matches(group.matcher, names)).flatMap((group) => group.hooks)) {
+    const first = unique.get(hook.command);
+    if (!first) unique.set(hook.command, hook);
+    else if (hook.failClosed && !first.failClosed) unique.set(hook.command, { ...first, failClosed: true });
+  }
+  return [...unique.values()];
 }

@@ -1,8 +1,8 @@
 //! The GitHub conditional cache on the shared [`Store`]. Provider cache
 //! partitions are minted by the transport after credential pinning.
-use crate::cache::{CacheClass, CacheConfig, CacheKey, Store, StorePartition};
-use crate::providers::github::{CachePartition, CachedContent, ConditionalCache};
-use std::{future::Future, path::PathBuf, pin::Pin, sync::Arc};
+use crate::cache::{CacheClass, CacheConfig, CacheKey, Store};
+use octocode_github::{CachedContent, ConditionalCache, Partition, Retention};
+use std::{future::Future, path::PathBuf, pin::Pin, sync::Arc, time::Duration};
 
 #[derive(Clone)]
 pub(super) struct GitHubContentCache {
@@ -24,46 +24,32 @@ impl GitHubContentCache {
         self.store.clear();
     }
 
-    fn key(partition: &CachePartition, resource: &str) -> CacheKey {
+    fn key(partition: &Partition, resource: &str) -> CacheKey {
         CacheKey {
             namespace: "github-content".into(),
+            scope: partition.identity().to_owned(),
             resource: resource.into(),
-            partition: StorePartition {
-                endpoint: "provider-partition-v1".into(),
-                credential_fingerprint: partition.identity().to_owned(),
-            },
         }
     }
 }
 
-/// Namespaces whose keys carry a resolved commit SHA (or a fact below one):
-/// their entries can never go stale.
-const COMMIT_PINNED: &[&str] = &[
-    "github-content",
-    "github-file-timestamp",
-    "github-tree-dates",
-    "git-tree",
-    "git-tree-walk",
-    "github-commit",
-];
+/// How long an ETag'd read is served without asking GitHub.
+const FRESH: Duration = Duration::from_secs(60);
+/// Lifetime of a read GitHub sent no ETag for.
+const TTL: Duration = Duration::from_secs(60);
 
-/// Mutable reads confirmed with GitHub on every use (a 304 is free).
-const ALWAYS_REVALIDATE: &[&str] = &["github-history"];
-
-fn namespace(resource: &str) -> &str {
-    resource
-        .split_once(':')
-        .map_or(resource, |(namespace, _)| namespace)
-}
-
-fn class(resource: &str, value: &CachedContent) -> CacheClass {
-    let namespace = namespace(resource);
-    if COMMIT_PINNED.contains(&namespace) {
-        CacheClass::Immutable
-    } else if value.etag.is_some() {
-        CacheClass::Revalidate
-    } else {
-        CacheClass::Volatile
+/// The store class of a read the provider retains as `retention`.
+fn class(retention: Retention, value: &CachedContent) -> CacheClass {
+    let revalidate = |fresh| match value.etag {
+        Some(_) => CacheClass::Revalidate { fresh },
+        None => CacheClass::Volatile { ttl: TTL },
+    };
+    match retention {
+        Retention::Pinned => CacheClass::Immutable,
+        Retention::Revalidate => revalidate(FRESH),
+        // Never fresh: every read is confirmed (a 304 is free).
+        Retention::AlwaysRevalidate => revalidate(Duration::ZERO),
+        Retention::Expires(ttl) => CacheClass::Volatile { ttl },
     }
 }
 
@@ -74,23 +60,24 @@ fn entry_bytes(key: &CacheKey, value: &CachedContent) -> usize {
         .saturating_add(value.resolved_ref.len())
         .saturating_add(value.etag.as_ref().map_or(0, String::len))
         .saturating_add(key.resource.len())
-        .saturating_add(key.partition.credential_fingerprint.len())
+        .saturating_add(key.scope.len())
         .saturating_add(std::mem::size_of::<CachedContent>())
 }
 
 impl ConditionalCache for GitHubContentCache {
     /// A fresh hit comes back without its ETag, so the provider serves it as
-    /// is; a stale `Revalidate` hit, or any mutable history read, keeps it
-    /// for one conditional request. The body is shared with the entry.
+    /// is; a stale `Revalidate` hit (an always-revalidated history read is
+    /// never fresh) keeps it for one conditional request. The body is shared
+    /// with the entry.
     fn get<'a>(
         &'a self,
-        partition: &'a CachePartition,
+        partition: &'a Partition,
         key: &'a str,
     ) -> Pin<Box<dyn Future<Output = Option<CachedContent>> + Send + 'a>> {
         Box::pin(async move {
             let cached = self.store.get(&Self::key(partition, key))?;
             let mut value = (*cached.value).clone();
-            if cached.fresh && !ALWAYS_REVALIDATE.contains(&namespace(key)) {
+            if cached.fresh {
                 value.etag = None;
             }
             Some(value)
@@ -99,12 +86,13 @@ impl ConditionalCache for GitHubContentCache {
 
     fn put<'a>(
         &'a self,
-        partition: &'a CachePartition,
+        partition: &'a Partition,
         key: String,
         value: CachedContent,
+        retention: Retention,
     ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
         Box::pin(async move {
-            let class = class(&key, &value);
+            let class = class(retention, &value);
             let key = Self::key(partition, &key);
             let bytes = entry_bytes(&key, &value);
             self.store.put(key, value, bytes, class);
@@ -118,9 +106,9 @@ mod tests {
     use crate::cache::tests::json_files;
     use std::{fs, path::Path, time::Duration};
 
-    async fn partition(identity: &str) -> CachePartition {
-        use crate::providers::RequestBudget;
-        use crate::providers::github::{
+    async fn partition(identity: &str) -> Partition {
+        use octocode_github::RequestBudget;
+        use octocode_github::{
             CredentialSource, GitHubEndpoint, GitHubTransport, RequestContext, ResolvedCredential,
             RetryPolicy,
         };
@@ -176,7 +164,12 @@ mod tests {
         let other_credential = partition("endpoint-a/credential-b").await;
         let other_endpoint = partition("endpoint-b/credential-a").await;
         cache()
-            .put(&first, "github-content:file".into(), content(None))
+            .put(
+                &first,
+                "github-content:file".into(),
+                content(None),
+                Retention::Pinned,
+            )
             .await;
         assert_eq!(
             cache().get(&first, "github-content:file").await,
@@ -198,32 +191,39 @@ mod tests {
     #[tokio::test]
     async fn commit_pinned_entries_outlive_the_ttl_and_listings_revalidate() {
         let dir = tempfile::tempdir().unwrap();
-        let config = CacheConfig {
-            fresh: Duration::from_secs(60),
-            ttl: Duration::from_secs(60),
-            ..CacheConfig::default()
-        };
+        let config = CacheConfig::default();
         let part = partition("endpoint/credential").await;
         let writer = GitHubContentCache::new(config.clone(), Some(dir.path().into()));
-        for key in [
-            "github-content:a",
-            "git-tree:o/r:sha",
-            "git-tree-walk:o/r:sha:lib:3",
-            "github-file-timestamp:a",
-            "github-commit:a",
-        ] {
-            writer.put(&part, key.into(), content(Some("v1"))).await;
+        for key in ["github-content:a", "git-tree:o/r:sha", "github-commit:a"] {
+            writer
+                .put(&part, key.into(), content(Some("v1")), Retention::Pinned)
+                .await;
         }
         writer
-            .put(&part, "github-tree:a".into(), content(Some("v1")))
+            .put(
+                &part,
+                "github-tree:a".into(),
+                content(Some("v1")),
+                Retention::Revalidate,
+            )
             .await;
         writer
-            .put(&part, "github-ref:a".into(), content(None))
+            .put(
+                &part,
+                "github-ref:a".into(),
+                content(None),
+                Retention::Expires(Duration::from_secs(60)),
+            )
             .await;
         // Inside the fresh window the listing is served without a request.
         assert_eq!(writer.get(&part, "github-tree:a").await.unwrap().etag, None);
         writer
-            .put(&part, "github-history:a".into(), content(Some("v1")))
+            .put(
+                &part,
+                "github-history:a".into(),
+                content(Some("v1")),
+                Retention::AlwaysRevalidate,
+            )
             .await;
         assert_eq!(
             writer.get(&part, "github-history:a").await.unwrap().etag,
@@ -233,13 +233,7 @@ mod tests {
 
         age_disk(dir.path(), 3_600);
         let reader = GitHubContentCache::new(config, Some(dir.path().into()));
-        for key in [
-            "github-content:a",
-            "git-tree:o/r:sha",
-            "git-tree-walk:o/r:sha:lib:3",
-            "github-file-timestamp:a",
-            "github-commit:a",
-        ] {
+        for key in ["github-content:a", "git-tree:o/r:sha", "github-commit:a"] {
             let hit = reader.get(&part, key).await.expect(key);
             assert_eq!(hit.etag, None, "{key} is served without revalidation");
             assert_eq!(hit.bytes, &b"private source"[..]);
@@ -266,6 +260,7 @@ mod tests {
                     etag: None,
                     resolved_ref: "sha".into(),
                 },
+                Retention::Pinned,
             )
             .await;
         let first = cache.get(&part, "github-content:big").await.unwrap();
@@ -280,7 +275,12 @@ mod tests {
         let part = partition("endpoint/credential").await;
         let cache = GitHubContentCache::new(CacheConfig::default(), Some(dir.path().into()));
         cache
-            .put(&part, "github-content:a".into(), content(None))
+            .put(
+                &part,
+                "github-content:a".into(),
+                content(None),
+                Retention::Pinned,
+            )
             .await;
         cache.clear();
         assert_eq!(cache.get(&part, "github-content:a").await, None);
@@ -289,7 +289,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn disk_bodies_are_base64_and_legacy_arrays_decode() {
+    async fn disk_bodies_are_base64_and_retired_arrays_are_discarded() {
         let dir = tempfile::tempdir().unwrap();
         let part = partition("endpoint/credential").await;
         let body = vec![b'a'; 3000];
@@ -302,6 +302,7 @@ mod tests {
                     etag: None,
                     resolved_ref: "sha".into(),
                 },
+                Retention::Pinned,
             )
             .await;
         let file = json_files(dir.path()).pop().unwrap();
@@ -313,9 +314,9 @@ mod tests {
         entry["value"]["bytes"] = serde_json::json!(b"legacy".to_vec());
         fs::write(&file, serde_json::to_vec(&entry).unwrap()).unwrap();
         let reader = GitHubContentCache::new(CacheConfig::default(), Some(dir.path().into()));
-        assert_eq!(
-            reader.get(&part, "github-content:k").await.unwrap().bytes,
-            &b"legacy"[..]
-        );
+        // Derived data: an entry from the retired array format is a miss, and
+        // the file is removed so the next read refetches it.
+        assert!(reader.get(&part, "github-content:k").await.is_none());
+        assert!(!file.exists());
     }
 }

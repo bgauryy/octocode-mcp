@@ -18,15 +18,24 @@ struct Variant {
     fields: HashMap<&'static str, &'static Value>,
 }
 
-/// The schema a local `$ref` (`#/$defs/<name>`) names, else `schema`
-/// itself. The one `$ref` resolver for contract schemas.
-pub(crate) fn resolve_ref<'a>(schema: &'a Value, defs: &'a Value) -> &'a Value {
+/// The schema a local `$ref` (`#/$defs/<name>`) names, followed through
+/// chained references, else `schema` itself. A result that still carries
+/// `$ref` names no definition in `defs`. The one `$ref` resolver for
+/// contract schemas (every contract reference is a `$defs` entry).
+pub(crate) fn resolve_ref<'a>(mut schema: &'a Value, defs: &'a Value) -> &'a Value {
+    // A cycle of pure references cannot describe a value; the bound stops it.
+    for _ in 0..32 {
+        let Some(target) = schema
+            .get("$ref")
+            .and_then(Value::as_str)
+            .and_then(|reference| reference.strip_prefix("#/$defs/"))
+            .and_then(|name| defs.get(name))
+        else {
+            break;
+        };
+        schema = target;
+    }
     schema
-        .get("$ref")
-        .and_then(Value::as_str)
-        .and_then(|reference| reference.strip_prefix("#/$defs/"))
-        .and_then(|name| defs.get(name))
-        .unwrap_or(schema)
 }
 
 /// Query-schema variants of one tool, built on first use from that tool's
@@ -163,7 +172,10 @@ pub fn query_schema_number(
 /// defect (a renamed or removed field), so it fails loudly instead of
 /// silently disabling the clamp.
 #[must_use]
-#[allow(clippy::panic)]
+#[expect(
+    clippy::panic,
+    reason = "a missing bound is a contract defect caught by the contract tests, never a request-time failure"
+)]
 pub fn query_schema_max(tool: ToolId, operation: Option<&str>, field: &str) -> usize {
     query_schema_number(tool, operation, field, "maximum")
         .and_then(|maximum| usize::try_from(maximum).ok())

@@ -6,18 +6,19 @@ const NOISY_LINK_TEXT = /^(skip to (main )?content|menu|more|open menu|close|tog
 
 export function classifyWorkflow(value) {
   const s = String(value || '').toLowerCase();
+  // Whole words only: "explanation" is not a plan, "capital" is not an api, "dockerfile" is not docs.
   const rules = [
-    ['pricing', /price|pricing|plans?|billing|checkout|buy|subscribe/],
-    ['signup', /sign\s*up|signup|register|start\s+(free|trial)|try\s+it|get\s+started|create\s+account/],
-    ['login', /log\s*in|login|sign\s*in|dashboard|account/],
-    ['api-reference', /api|endpoint|curl|token|request|response|sdk|reference|extract|markdown|json/],
-    ['docs', /docs?|guide|learn|tutorial|handbook|quickstart|getting\s+started/],
-    ['examples', /examples?|samples?|demo|github/],
-    ['support', /support|help|contact|faq|community/],
-    ['changelog', /changelog|release|updates?|version/],
-    ['blog', /blog|article|news|web-scraping-101/],
-    ['legal', /terms|privacy|legal|cookie/],
-    ['download', /download|install/]
+    ['pricing', /\b(?:prices?|pricing|plans?|billing|checkout|buy|subscribe)\b/],
+    ['signup', /\b(?:sign[\s_-]*up|register|start[\s_-]+(?:free|trial)|try[\s_-]+it|get[\s_-]+started|create[\s_-]+account)\b/],
+    ['login', /\b(?:log[\s_-]*in|sign[\s_-]*in|dashboard|accounts?)\b/],
+    ['api-reference', /\b(?:apis?|endpoints?|curl|tokens?|requests?|responses?|sdks?|reference|extract|markdown|json)\b/],
+    ['docs', /\b(?:docs?|documentation|guides?|learn|tutorials?|handbook|quickstart|getting[\s_-]+started)\b/],
+    ['examples', /\b(?:examples?|samples?|demos?|github)\b/],
+    ['support', /\b(?:support|help|contact|faq|community)\b/],
+    ['changelog', /\b(?:changelog|releases?|updates?|versions?)\b/],
+    ['blog', /\b(?:blog|articles?|news|web-scraping-101)\b/],
+    ['legal', /\b(?:terms|privacy|legal|cookies?)\b/],
+    ['download', /\b(?:downloads?|install|installation)\b/]
   ];
   for (const [type, rx] of rules) if (rx.test(s)) return type;
   return null;
@@ -26,16 +27,18 @@ export function classifyWorkflow(value) {
 export function classifyLink(link, rootUrl) {
   let url;
   try { url = new URL(link.href); } catch { return { ...link, kind: 'invalid', score: 0, reason: 'invalid-url', workflowType: link.workflowHint || classifyWorkflow(link.text) }; }
-  const root = new URL(rootUrl);
-  const sameHost = url.hostname === root.hostname;
-  const sameDomain = url.hostname === root.hostname || url.hostname.endsWith(`.${root.hostname}`);
+  // A partial session may lack a root URL; then no link counts as same-host.
+  let root = null;
+  try { root = new URL(rootUrl); } catch {}
+  const sameHost = Boolean(root) && url.hostname === root.hostname;
+  const sameDomain = Boolean(root) && (sameHost || url.hostname.endsWith(`.${root.hostname}`));
   const text = (link.text || '').trim();
   const pathDepth = url.pathname.split('/').filter(Boolean).length;
   let kind = sameHost ? 'internal' : sameDomain ? 'subdomain' : 'external';
   if (ASSET_EXT.test(url.pathname)) kind = 'asset';
   if (/mailto:|tel:/i.test(link.href)) kind = 'contact';
-  const samePageAnchor = sameHost && url.pathname === root.pathname && Boolean(url.hash);
-  const hashOnly = sameHost && url.pathname === root.pathname && (url.hash || url.href.endsWith('#'));
+  const samePageAnchor = sameHost && url.pathname === root?.pathname && Boolean(url.hash);
+  const hashOnly = sameHost && url.pathname === root?.pathname && (url.hash || url.href.endsWith('#'));
   const noisyLabel = NOISY_LINK_TEXT.test(text);
   const workflowType = link.workflowHint || classifyWorkflow(`${url.pathname} ${text}`);
   let score = 0;
@@ -53,13 +56,24 @@ export function classifyLink(link, rootUrl) {
   return { ...link, href: url.href, host: url.hostname, path: url.pathname, kind, score, reasons, workflowType, actionability: score >= 4 ? 'candidate' : 'noise' };
 }
 
+// Group rows by pageId once; filtering every array per page grows with pages × rows.
+export function byPage(rows = []) {
+  const groups = new Map();
+  for (const row of rows) {
+    if (!groups.has(row.pageId)) groups.set(row.pageId, []);
+    groups.get(row.pageId).push(row);
+  }
+  return groups;
+}
+
 export function buildSiteGraph({ rootUrl, pageMaps, sources, linksAll, headingsAll, elementRows = [] }) {
   const sourceByPage = new Map(sources.map((s) => [s.pageId, s]));
+  const headingsByPage = byPage(headingsAll), linksByPage = byPage(linksAll), elementsByPage = byPage(elementRows);
   const pages = pageMaps.map((page) => {
     const source = sourceByPage.get(page.pageId) || {};
-    const headings = headingsAll.filter((h) => h.pageId === page.pageId);
-    const links = linksAll.filter((l) => l.pageId === page.pageId).map((l) => classifyLink(l, rootUrl));
-    const elements = elementRows.filter((r) => r.pageId === page.pageId);
+    const headings = headingsByPage.get(page.pageId) || [];
+    const links = (linksByPage.get(page.pageId) || []).map((l) => classifyLink(l, rootUrl));
+    const elements = elementsByPage.get(page.pageId) || [];
     const topLinks = links.filter((l) => l.score >= 4).sort((a, b) => b.score - a.score);
     return {
       pageId: page.pageId,
@@ -176,7 +190,7 @@ export function buildUnifiedGraph({ rootUrl, pageMaps, siteGraph, workflowIndex,
   return { schemaVersion: 2, rootUrl, totals: { nodes: nodes.length, edges: edges.length, pages: pageMaps.length, actions: nodes.filter((n) => ['form', 'button', 'table', 'pagination'].includes(n.kind)).length, resources: nodes.filter((n) => ['resource', 'api', 'download'].includes(n.kind)).length }, nodes, edges };
 }
 
-export function pageSlice({ pageMaps, sources, linksAll, headingsAll, page = 1, pageSize = 20 }) {
+export function pageSlice({ pageMaps, sources, linksAll, headingsAll, page = 1, pageSize = 20, headingsByPage = byPage(headingsAll), linksByPage = byPage(linksAll) }) {
   const sourceByPage = new Map(sources.map((s) => [s.pageId, s]));
   const totalPages = Math.max(1, Math.ceil(pageMaps.length / pageSize));
   const safePage = Math.min(Math.max(1, page), totalPages);
@@ -191,8 +205,8 @@ export function pageSlice({ pageMaps, sources, linksAll, headingsAll, page = 1, 
       title: p.title,
       warning: source.targetLikelyError || null,
       textBytes: source.cleanTextBytes ?? 0,
-      headingCount: headingsAll.filter((h) => h.pageId === p.pageId).length,
-      linkCount: linksAll.filter((l) => l.pageId === p.pageId).length,
+      headingCount: (headingsByPage.get(p.pageId) || []).length,
+      linkCount: (linksByPage.get(p.pageId) || []).length,
       searchFirst: p.searchFirst
     };
   });
@@ -201,7 +215,8 @@ export function pageSlice({ pageMaps, sources, linksAll, headingsAll, page = 1, 
 
 export function pageSlices(args) {
   const totalPages = Math.max(1, Math.ceil(args.pageMaps.length / (args.pageSize || 20)));
-  return Array.from({ length: totalPages }, (_, i) => pageSlice({ ...args, page: i + 1 }));
+  const grouped = { headingsByPage: byPage(args.headingsAll), linksByPage: byPage(args.linksAll) };
+  return Array.from({ length: totalPages }, (_, i) => pageSlice({ ...args, ...grouped, page: i + 1 }));
 }
 
 export function compactStats(text) {

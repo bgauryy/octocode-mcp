@@ -1,50 +1,71 @@
-# Install, fetch, and sync
+# Discover, install, fetch, and sync
 
-Load when you install a skill, install or adapt a remote skill into a local folder, or symlink a local skill into vendor skill dirs. Why: confirm source, destination, and authority before any write; wrong scope hides the skill or pollutes every project.
+Load when finding, installing, fetching, adapting, or symlinking skills. Ask only for a missing choice or new authority (source, destinations, scope, conflict policy).
 
-An install copies or symlinks a `SKILL.md` folder into a path the runtime scans.
+## Discover
 
-1. Normalize the source: `owner/repo/path`, GitHub tree/blob URL, or a local path. Strip a trailing `SKILL.md`.
-2. Resolve from the request and session; ask only for missing choices: providers, scope per provider (user / project / custom), project root, mode.
-3. Read third-party scripts and hooks. This read needs no separate approval.
-4. Per destination, run `ls "<dest>/<skill-name>"` and apply the conflict choice.
-5. Apply the authorized plan. `--mode symlink` is the default; `copy` makes vendor copies, and `auto` uses the installer's platform default. The installer first copies the source to `<octocode-home>/skills/<name>`; mode controls vendor destinations. Check live help for supported options.
-6. Verify and give a reload hint.
+- Batch reads; web queries: topic plus "agent skill" or "SKILL.md".
+- Vary the angle: name (exact, hyphenated, aliases), subject, workflow verbs, ecosystem (agent, IDE, language, MCP), safety (gate, verify, scripts).
+- Seeds when sparse: `topic:agent-skills`, `anthropics/skills`, `vercel-labs/skills`, `obra/superpowers`, `microsoft/skills`, `trailofbits/skills`.
+- Verify aggregator entries (moderate confidence). Rank by fit, evidence, and host support, not popularity; report gaps.
+- Meta-skills (`find-skills`, `skills-discovery`, `skill-creator`) help mid-session; writes wait for the install plan.
 
-## Destinations
+```bash
+curl -G 'https://www.skills.sh/api/search' --data-urlencode 'q=<search terms>' --data 'limit=100' --compressed
+```
 
-| Provider | User | Project |
-|---|---|---|
-| claude | `<home>/.claude/skills/` | `<repo>/.claude/skills/` |
-| cursor | `<home>/.cursor/skills/` | `<repo>/.cursor/skills/` |
-| codex | `<home>/.agents/skills/` | `<repo>/.agents/skills/` |
-| opencode | `<home>/.config/opencode/skills/` | `<repo>/.opencode/skills/` |
-| pi | `<home>/.pi/agent/skills/` | `<repo>/.pi/skills/` |
-| copilot | `<home>/.copilot/skills/` | `<repo>/.github/skills/` |
-| gemini | `<home>/.gemini/skills/` | `<repo>/.gemini/skills/` |
-| other | path the runtime scans | confirmed in-repository path |
+Surfaces:
+- Keyword or topic: skills.sh search (above), GitHub, and web search in parallel.
+- Published or battle-tested: `https://www.skills.sh/<owner>/<repo>/<skill>`.
+- Claude Code plugins: `claude-plugins.dev` (REST); marketplace folders: `claudemarketplaces.com`, `mcpmarket.com/tools/skills`.
+- Curated: `agentskills.io` (`/clients`), `agentskills.me`.
+- Capability tag: `aiskillstore.io/v1/agent/search?capability=`; new skills: `aiskillstore.io/feed/new-skills.json`.
+- Microsoft or Azure: `microsoft.github.io/skills`.
+- Manifests: `llms.txt` / `llms-full.txt` (agentskills.io, aiskillstore.io, microsoft.github.io/skills); `.claude-plugin/marketplace.json`, `.claude-plugin/plugin.json` (plugin repositories).
 
-Project scope fits repository-specific skills; user scope fits general ones. Treat an unknown provider as a custom path and confirm the runtime scans it.
+Installers:
+- `npx -y octocode skill`: preferred ([Install](#install)); fetch a remote skill first ([Fetch](#fetch-a-remote-skill)).
+- Third party, check live help: `npx skills add <gh-url> --agent <host> --skill <name>` (symlinks by default); `npx skills-installer install @owner/repo/skill --client <host>`.
+- Claude Code native: `/plugin marketplace add`, then `/plugin install`.
+
+## Install
+
+- Readback: before any write, restate source, destinations, scope, authority, and done-when.
+- Normalize the source (`owner/repo/path`, GitHub tree or blob URL, local path); strip a trailing `SKILL.md`.
+- Resolve providers, per-provider scope (user, project, custom), project root, and mode from the request and session.
+- Read third-party scripts and hooks first (no separate approval).
+- Per destination, `ls "<dest>/<skill-name>"`; apply the user's conflict choice.
+- Apply with exactly one scope; preview with `--dry-run`; other options in live help:
+
+```bash
+npx -y octocode skill install --add <dir> --platform <hosts> --global
+npx -y octocode skill install --add <dir> --platform <hosts> --project-dir <repo>
+npx -y octocode skill install --add <dir> --path <dest>
+```
+
+- `--global`: user scope (general skills); `--project-dir <repo>`: project scope (repository-specific); `--path <dest>`: custom destination.
+- `--mode symlink` (default) links vendor destinations to `<octocode-home>/skills/<name>`; `--mode copy` copies; `--mode auto` uses the platform default.
+- Verify the install; report per [output](../output.md#response).
+
+Destinations (user under `<home>/`, project under `<repo>/`): claude `.claude/skills/`; cursor `.cursor/skills/`; codex `.agents/skills/`; gemini `.gemini/skills/`; user / project: opencode `.config/opencode/skills/` / `.opencode/skills/`, pi `.pi/agent/skills/` / `.pi/skills/`, copilot `.copilot/skills/` / `.github/skills/`. Other: a custom path the runtime scans (project: confirmed in-repository).
 
 ## Fetch a remote skill
 
-Fetch → scan → gate before any destination write.
-
 1. Confirm intent: verbatim install or adapt.
-2. Normalize the source and resolve destinations (steps 1–2 above).
-3. Inspect through `octocode-research`, then fetch: `npx -y octocode ghCloneRepo '{"queries":[{"owner":"OWNER","repo":"REPO","path":"PATH"}]}'` (add `"ref":"<ref>"`; omit `path` for the whole repository). The checkout stays in the Octocode cache at the result's `location.localPath`.
-4. Validate: the folder has `SKILL.md` with `name` + `description`.
-5. Safety-scan `SKILL.md`, scripts, and any host hooks; flag risk before any write.
-6. To adapt, use the shared standard in `SKILL.md`. Reuse only license-allowed patterns and cite the source.
-7. Check conflicts (step 4 above).
-8. Write and verify `test -f <dest>/SKILL.md`.
-9. Report each destination result and how the runtime reloads skills.
+2. Normalize the source, resolve destinations, check conflicts ([Install](#install)).
+3. Inspect through `octocode-research`, then fetch: `npx -y octocode ghCloneRepo '{"queries":[{"owner":"OWNER","repo":"REPO","path":"PATH"}]}'` (`"ref":"<ref>"` for a branch or tag; no `path` for the whole repository); checkout at the result's `location.localPath`.
+4. Validate: `SKILL.md` with `name` and `description`.
+5. Safety-scan `SKILL.md`, scripts, and host hooks; flag risk before any write.
+6. Adapting: follow [SKILL.md](../SKILL.md); reuse only license-allowed patterns; cite the source.
+7. Write, verify with `test -f <dest>/SKILL.md`, and report per [output](../output.md#response).
 
-Never write fetched scripts or hooks silently or rename silently. Surface missing or restrictive licenses. Intent flip mid-flow: keep the cache and resume from step 5 or 6.
+- Never silently write or rename fetched scripts or hooks; surface missing or restrictive licenses.
+- Intent flips mid-flow: keep the cache, resume at step 5 or 6.
 
 ## Sync a local skill to vendors
 
-Use `scripts/skill-sync.mjs` for a stable local source you control (dogfood or live edits), or when the user asks to sync or symlink. For published skills, prefer the install command. Existing authority can cover source, destinations, and conflict policy; ask only for authority not yet granted.
+- `scripts/skill-sync.mjs`: for a stable local skill you control, or on request; published skills use the install command.
+- Read the dry-run plan (no `--approve`) first:
 
 ```bash
 node scripts/skill-sync.mjs <skill-dir> --platforms top
@@ -53,14 +74,13 @@ node scripts/skill-sync.mjs <skill-dir> --platforms claude,cursor --approve --fo
 node scripts/skill-sync.mjs --list-vendors
 ```
 
-- `--force` replaces conflicts. The script never prompts.
-- `top` = `claude`, `cursor`, `codex` (`<home>/.agents/skills`). `all` adds `opencode`, `pi`, `copilot`, `gemini`.
-- The script mirrors the shared installer registry (CI contract-tests the mirror) because an installed skill cannot import workspace packages.
+- `--force` replaces conflicts; the script never prompts.
+- `top`: `claude`, `cursor`, `codex`; `all` adds `opencode`, `pi`, `copilot`, `gemini`.
 
 ## Recovery
 
-- Missing parent directory: create it when the requested installation covers that destination.
+- Discovery, fetch, or source access fails: check path and access, try another surface or a source the request covers; report the gap.
+- Missing parent directory: create it if the request covers that destination.
 - Permission denied: report the path; offer another scope.
-- Partial multi-target: report per destination; do not roll back others without asking.
+- Partial failure: keep successes, report per destination, roll back only when asked.
 - Invalid frontmatter: do not install.
-- A missing or inaccessible source: check its path and access, then report the gap or use another source covered by the request.

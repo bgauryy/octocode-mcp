@@ -7,7 +7,7 @@ use crate::tools::root_read::read_rank;
 /// an error (like ghGetFileContent), never a silent default-branch listing,
 /// and every page of one listing reads the same tree. The recursive tree is
 /// fetched by the resolved commit SHA, never by the ref name.
-pub(super) async fn resolve_listing_ref<C: crate::providers::github::ConditionalCache>(
+pub(super) async fn resolve_listing_ref<C: octocode_github::ConditionalCache>(
     provider: &GitHubProvider<C>,
     query: &GhStructureQuery,
     context: &RequestContext,
@@ -30,7 +30,7 @@ pub(super) async fn resolve_listing_ref<C: crate::providers::github::Conditional
 
 /// The default branch's name, memoized per repository for the cache's
 /// volatile lifetime (like the HEAD commit memo beside it).
-pub(super) async fn default_branch<C: crate::providers::github::ConditionalCache>(
+pub(super) async fn default_branch<C: octocode_github::ConditionalCache>(
     provider: &GitHubProvider<C>,
     owner: &str,
     repo: &str,
@@ -61,11 +61,12 @@ pub(super) async fn default_branch<C: crate::providers::github::ConditionalCache
             .put(
                 partition,
                 key,
-                crate::providers::github::CachedContent {
+                octocode_github::CachedContent {
                     etag: None,
                     bytes: branch.as_bytes().to_vec().into(),
                     resolved_ref: branch.clone(),
                 },
+                octocode_github::Retention::Revalidate,
             )
             .await;
     }

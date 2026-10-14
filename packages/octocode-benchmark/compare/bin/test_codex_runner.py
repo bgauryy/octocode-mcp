@@ -2,7 +2,7 @@
 """Codex transcript and isolation regressions without paid model/provider calls."""
 import json, os, subprocess, sys, tempfile, unittest
 from pathlib import Path
-from codex_runner import command, DISABLED_FEATURES, main as run_codex
+from codex_runner import command, DISABLED_FEATURES, semantic_gates, main as run_codex
 from transcript_to_log import parse_codex
 from mcp_probe import has_goals
 from render_question import prepare_question
@@ -51,6 +51,19 @@ class CodexRunnerTests(unittest.TestCase):
     def test_recursive_schema_gate(self):
         self.assertTrue(has_goals({'properties':{'queries':{'items':{'properties':{'goals':{'type':'array'}}}}}}))
         self.assertFalse(has_goals({'description':'goals are optional'}))
+    def test_public_clasify_and_internal_goals_have_independent_gates(self):
+        inherited = {'OCTOCODE_CLASSIFICATION_API': 'test-credential'}
+        for beta, ranking, expected in [('false','false',(False,False)),
+                ('false','true',(False,True)), ('true','false',(True,False)),
+                ('true','true',(True,True))]:
+            with self.subTest(beta=beta, ranking=ranking):
+                server = {'env': {'OCTOCODE_BETA': beta, 'OCTOCODE_RANKING_ENABLED': ranking}}
+                self.assertEqual(semantic_gates(server, inherited), expected)
+        for restriction in [{'TOOLS_TO_RUN':'localSearch,localFetch'}, {'DISABLE_TOOLS':'clasify'}]:
+            server = {'env': {'OCTOCODE_BETA':'true','OCTOCODE_RANKING_ENABLED':'true', **restriction}}
+            self.assertEqual(semantic_gates(server, inherited), (False,True))
+        server = {'env': {'OCTOCODE_BETA':'true','OCTOCODE_RANKING_ENABLED':'true','OCTOCODE_CLASSIFICATION_API':'  '}}
+        self.assertEqual(semantic_gates(server, inherited), (False,False))
 class CodexBudgetTests(unittest.TestCase):
     def test_stdout_eof_before_successful_exit_does_not_signal_worker(self):
         with tempfile.TemporaryDirectory() as td:

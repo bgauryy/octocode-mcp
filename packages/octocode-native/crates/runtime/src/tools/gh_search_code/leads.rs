@@ -270,7 +270,7 @@ pub(super) fn unsearched_ref_read(query: &GhSearchCodeQuery) -> Option<Value> {
 const BROADEN_VARIANTS: usize = 2;
 
 /// An empty search's broader variants, one per narrowing it can drop: each
-/// set filter (`path`, `filename`, `extensions`, `language`), then each
+/// set filter (`path`, `filename`, `extensions`), then each
 /// keyword of a multi-keyword search. A variant that returns rows names what
 /// emptied the search. Variants the tool would reject are skipped, and no
 /// more are offered than `window_room`, the code searches the window has left.
@@ -289,7 +289,7 @@ pub(super) fn broaden_search(query: &GhSearchCodeQuery, window_room: usize) -> O
             "ref",
         ],
     );
-    let mut variants = ["path", "filename", "extensions", "language"]
+    let mut variants = ["path", "filename", "extensions"]
         .into_iter()
         .filter(|filter| base.get(filter).is_some())
         .map(|filter| without(&base, &[filter]))

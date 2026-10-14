@@ -5,6 +5,7 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NO_REPLY, startCdpStub, type CdpHandler, type CdpStub } from './fixtures/cdp-stub.js';
 import { fakePermission } from './fake-pi.js';
+import type { PermissionMode } from '../src/permission/mode.js';
 
 const launch = vi.hoisted(() => vi.fn());
 vi.mock('chrome-launcher', () => ({ launch }));
@@ -66,15 +67,15 @@ function handler(onClick: (ref: string, page: Parameters<CdpHandler>[2]) => unkn
   };
 }
 
-async function setup(handle: CdpHandler) {
+async function setup(handle: CdpHandler, mode: PermissionMode = 'workspace') {
   const cdp = await startCdpStub({ handle });
   stubs.push(cdp);
   vi.stubEnv('OCTOCODE_CHROME_PORT', String(cdp.port));
-  return { cdp, ...register() };
+  return { cdp, ...register(mode) };
 }
 
-function register() {
-  const browser = new BrowserTool(fakePermission());
+function register(mode: PermissionMode = 'workspace') {
+  const browser = new BrowserTool(fakePermission(mode));
   tools.push(browser);
   let tool: Tool | undefined;
   const handlers = new Map<string, () => Promise<void>>();
@@ -125,7 +126,8 @@ describe('browser dialogs', () => {
 
 describe('browser upload', () => {
   it('sets files on a file input, or through the chooser an upload button opens', async () => {
-    const { cdp, cwd, run, text } = await setup(handler());
+    // Full mode: an upload is browser control, which the other modes ask about (tests/browser-reach covers that).
+    const { cdp, cwd, run, text } = await setup(handler(), 'full');
     // Chrome gets the real path (the temp dir itself sits behind a symlink on macOS).
     const real = fs.realpathSync(cwd);
     fs.writeFileSync(path.join(cwd, 'a.txt'), 'a');
@@ -170,9 +172,8 @@ describe('browser private-address guard', () => {
       return { result: { value: true } };
     };
     const { cdp, run, text } = await setup(handler(click, navigate));
-    vi.stubEnv('OCTOCODE_WEB_ALLOW_PRIVATE', '');
     expect(await text({ action: 'navigate', url: 'https://93.184.216.34/' })).toContain('# Stub');
-    expect(cdp.commands.find((command) => command.method === 'Fetch.enable')?.params).toEqual({ patterns: [{ urlPattern: '*', resourceType: 'Document', requestStage: 'Request' }] });
+    expect(cdp.commands.find((command) => command.method === 'Fetch.enable')?.params).toEqual({ patterns: [{ urlPattern: '*', requestStage: 'Request' }] });
     expect(cdp.commands.find((command) => command.method === 'Fetch.continueRequest')?.params).toEqual({ requestId: 'r' });
 
     await expect(run({ action: 'navigate', url: 'https://93.184.216.34/to-private' })).rejects.toThrow(`Navigation failed: net::ERR_BLOCKED_BY_CLIENT (blocked ${PRIVATE}: Blocked private or local address: 169.254.169.254.`);

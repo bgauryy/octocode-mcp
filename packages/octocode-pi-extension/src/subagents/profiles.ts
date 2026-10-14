@@ -3,7 +3,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { parseArgs, parseFrontmatter, SettingsManager, type ExtensionContext } from '@earendil-works/pi-coding-agent';
 import type { Permission } from '../permission/ask.js';
-import type { ActionClass } from '../permission/mode.js';
+import { actionNoun, actionWhy, declaredPermissions, type ActionClass } from '../permission/mode.js';
+import { sha256 } from '../shared/atomic.js';
 import { globalPaths, piAgentDir, projectAgentDirs } from '../shared/home.js';
 import { packageRoot } from '../shared/package.js';
 
@@ -22,6 +23,12 @@ export interface AgentProfile {
   mcp?: false;
   /** True: the child runs the user's command hooks (`OCTOCODE_HOOKS`); by default subagents do not. */
   hooks?: true;
+  /** Classes the profile asks the user to allow its child (`permissions:` front matter, only the declarable ones); the spawn prompt lists them. */
+  permissions?: ActionClass[];
+  /** Names in `permissions:` that cannot be declared; ignored, and reported when the profiles load. */
+  ignoredPermissions?: string[];
+  /** Hash of the profile file's content (set when it is read from a file): a change to it is a new question for the user. */
+  hash?: string;
 }
 
 const BUNDLED_DIR = path.join(packageRoot(), 'subagents');
@@ -66,6 +73,7 @@ export function parseProfile(fallbackName: string, text: string): AgentProfile {
   const tools = field('tools');
   const excludeTools = field('excludeTools');
   const model = field('model');
+  const { declared, ignored } = declaredPermissions(frontmatter['permissions']);
   selectedTools(tools);
   // Switches take YAML booleans only: a quoted "false" is a string, and a string never flips a switch.
   const flag = (key: string) => {
@@ -83,6 +91,9 @@ export function parseProfile(fallbackName: string, text: string): AgentProfile {
     ...(flag('visibleBrowser') === true ? { visibleBrowser: true } : {}),
     ...(flag('mcp') === false ? { mcp: false as const } : {}),
     ...(flag('hooks') === true ? { hooks: true as const } : {}),
+    ...(declared.length > 0 ? { permissions: declared } : {}),
+    ...(ignored.length > 0 ? { ignoredPermissions: ignored } : {}),
+    hash: sha256(text).slice(0, 16),
   };
 }
 
@@ -123,22 +134,37 @@ export function profileReach(profile: AgentProfile | undefined, defaultTools?: r
 const REACH_TEXT: Record<string, string> = { 'file.workspace': 'edit files in the repository', shell: 'run shell commands' };
 
 /**
- * The `agent.spawn` ask, showing the profile, what its tools reach and the task. Returns the grant for the child: the
- * classes the profile reaches when the user allowed this spawn, none when the mode itself allows spawning (the child
- * inherits the mode). A refusal throws, before anything starts.
+ * The `agent.spawn` ask, showing the profile, what its tools reach, the permissions it declares and the task. Returns
+ * the grant for the child: the classes the profile reaches when the user allowed this spawn (none when the mode itself
+ * allows spawning: the child inherits the mode), and the classes the profile declared. A profile that declares
+ * permissions forces this prompt in manual and workspace (reason `profile.permissions`), listing each class; the answer
+ * is remembered for the session for that profile's content, so an edit asks again. Full allows it and records the
+ * reason. A refusal throws, before anything starts.
  */
-export async function askSpawn(permission: Permission, ctx: Pick<ExtensionContext, 'hasUI' | 'ui'>, profile: AgentProfile | undefined, task: string, signal?: AbortSignal, defaultTools?: readonly string[]): Promise<ActionClass[]> {
+export async function askSpawn(permission: Permission, ctx: Pick<ExtensionContext, 'hasUI' | 'ui' | 'cwd'>, profile: AgentProfile | undefined, task: string, signal?: AbortSignal, defaultTools?: readonly string[], origin: { toolCallId?: string; goal?: string } = {}): Promise<ActionClass[]> {
   const name = profile?.name ?? 'general';
   const reach = profileReach(profile, defaultTools);
+  const declared = profile?.permissions ?? [];
   const may = reach.length > 0 ? `may ${reach.map((action) => REACH_TEXT[action]).join(' and ')}` : 'may only read and research';
+  const seen = `${name} ${profile?.hash ?? ''} ${declared.join(',')}`;
+  const needsAnswer = declared.length > 0 && !permission.profileSeen(seen);
   const verdict = await permission.check(ctx, {
     action: 'agent.spawn',
     title: 'Start this subagent?',
-    what: [`${name} ${may}; everything else still asks, and asks are denied in the child.`, `task: ${task}`],
+    what: [
+      `${name} ${may}; everything else still asks, and asks are denied in the child.`,
+      ...declared.map((action) => `permission it declares: ${action} (${actionNoun(action)})`),
+      `task: ${task}`,
+    ],
+    ...(needsAnswer ? { reasons: ['profile.permissions' as const], reason: declared.map((action) => `the profile declares ${action}: ${actionWhy(action)}`).join('\n') } : {}),
     // Keyed by reach too: a profile edited to reach further later is a new question.
     grant: { key: `${name} ${reach.join(',')}`, label: `${name} subagents` },
+    ...(origin.toolCallId ? { toolCallId: origin.toolCallId } : {}),
+    ...(origin.goal ? { purpose: origin.goal } : {}),
+    cwd: ctx.cwd,
     ...(signal ? { signal } : {}),
   });
   if (!verdict.allowed) throw new Error(verdict.message);
-  return verdict.via === 'mode' ? [] : reach;
+  if (needsAnswer && verdict.via === 'user') permission.markProfileSeen(seen);
+  return [...new Set([...(verdict.via === 'mode' ? [] : reach), ...declared])];
 }

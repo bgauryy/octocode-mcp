@@ -5,12 +5,10 @@ use crate::ProviderError;
 use std::{
     fs::TryLockError,
     path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
+    sync::Arc,
     time::{Duration, Instant, SystemTime},
 };
 use tokio_util::sync::CancellationToken;
-
-static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// How often a held state lock is retried.
 const LOCK_POLL: Duration = Duration::from_millis(5);
@@ -20,7 +18,30 @@ const WRITE_LOCK_WAIT: Duration = Duration::from_secs(1);
 
 pub(super) struct Persist {
     pub(super) path: PathBuf,
-    pub(super) seen: Option<SystemTime>,
+    pub(super) seen: Option<FileStamp>,
+}
+
+/// What tells one write of the state file from the next: every write renames
+/// a fresh file, so its inode changes even when two writes share an mtime.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct FileStamp {
+    modified: Option<SystemTime>,
+    len: u64,
+    #[cfg(unix)]
+    inode: (u64, u64),
+}
+
+fn file_stamp(path: &Path) -> Option<FileStamp> {
+    let meta = std::fs::metadata(path).ok()?;
+    Some(FileStamp {
+        modified: meta.modified().ok(),
+        len: meta.len(),
+        #[cfg(unix)]
+        inode: {
+            use std::os::unix::fs::MetadataExt;
+            (meta.dev(), meta.ino())
+        },
+    })
 }
 
 impl KeyFacts {
@@ -103,7 +124,7 @@ impl KeyState {
     }
 
     /// Merge the on-disk view when another process has written it since we
-    /// last looked (one `stat` per logical request).
+    /// last looked (one `stat` per logical request; see [`FileStamp`]).
     pub fn refresh_from_disk(&self) {
         let mut persist = self
             .persist
@@ -112,13 +133,13 @@ impl KeyState {
         let Some(persist) = persist.as_mut() else {
             return;
         };
-        let Ok(modified) = std::fs::metadata(&persist.path).and_then(|meta| meta.modified()) else {
+        let Some(stamp) = file_stamp(&persist.path) else {
             return;
         };
-        if persist.seen == Some(modified) {
+        if persist.seen == Some(stamp) {
             return;
         }
-        persist.seen = Some(modified);
+        persist.seen = Some(stamp);
         let Some(disk) = std::fs::read(&persist.path)
             .ok()
             .and_then(|bytes| serde_json::from_slice::<KeyFacts>(&bytes).ok())
@@ -146,10 +167,9 @@ impl KeyState {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .as_ref()
             .map(|persist| persist.path.clone());
-        let Some((path, parent)) = path.and_then(|path| {
-            let parent = path.parent()?.to_path_buf();
-            std::fs::create_dir_all(&parent).ok()?;
-            Some((path, parent))
+        let Some(path) = path.and_then(|path| {
+            std::fs::create_dir_all(path.parent()?).ok()?;
+            Some(path)
         }) else {
             return Ok(reserve(&mut self.facts()));
         };
@@ -166,13 +186,24 @@ impl KeyState {
             let result = reserve(&mut facts);
             (result, facts.blocking_view(now_ms()))
         };
-        self.write_view(&path, &parent, on_disk.as_deref(), &view);
+        self.write_view(&path, on_disk.as_deref(), &view);
         Ok(result)
     }
 
     /// Load-merge-write via a unique temp file + atomic rename.
-    pub(super) fn persist(&self) {
-        self.persist_with(|_| {});
+    /// Mirror the blocking facts to disk. On an async worker the write runs on
+    /// the blocking pool: it takes the peer lock and may wait for it up to
+    /// `WRITE_LOCK_WAIT`. Each write merges the current view into the file, so
+    /// two writes finishing out of order still leave the latest facts. Runtime
+    /// shutdown waits for pending blocking writes, so none is lost at exit.
+    pub(super) fn persist(self: &Arc<Self>) {
+        match tokio::runtime::Handle::try_current() {
+            Ok(handle) => {
+                let state = Arc::clone(self);
+                drop(handle.spawn_blocking(move || state.persist_with(|_| {})));
+            }
+            Err(_) => self.persist_with(|_| {}),
+        }
     }
 
     /// [`Self::persist`] with `adjust` applied to the merged view before the
@@ -213,35 +244,29 @@ impl KeyState {
             view.merge(disk, now);
         }
         adjust(&mut view);
-        self.write_view(&path, parent, on_disk.as_deref(), &view);
+        self.write_view(&path, on_disk.as_deref(), &view);
     }
 
     /// Write `view` unless the file already holds it, through a unique temp
     /// file and an atomic rename; the caller holds the file lock.
-    fn write_view(&self, path: &Path, parent: &Path, on_disk: Option<&[u8]>, view: &KeyFacts) {
+    fn write_view(&self, path: &Path, on_disk: Option<&[u8]>, view: &KeyFacts) {
         let Ok(bytes) = serde_json::to_vec(view) else {
             return;
         };
         if on_disk == Some(bytes.as_slice()) {
             return;
         }
-        let tmp = parent.join(format!(
-            ".{}.{}.{}.tmp",
-            self.key.file_name(),
-            std::process::id(),
-            TMP_COUNTER.fetch_add(1, Ordering::Relaxed)
-        ));
-        if std::fs::write(&tmp, bytes).is_ok() && std::fs::rename(&tmp, path).is_err() {
-            let _ = std::fs::remove_file(&tmp);
-        }
-        if let Ok(modified) = std::fs::metadata(path).and_then(|meta| meta.modified())
+        // No fsync: this is a rebuildable cache, and a flush here would hold the
+        // peer lock for a disk write (see `WRITE_LOCK_WAIT`). The rename keeps it whole.
+        let _ = octocode_io::atomic::write_atomic(path, &bytes, false);
+        if let Some(stamp) = file_stamp(path)
             && let Some(persist) = self
                 .persist
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .as_mut()
         {
-            persist.seen = Some(modified);
+            persist.seen = Some(stamp);
         }
     }
 }
@@ -292,20 +317,83 @@ async fn lock_file(
 
 /// [`lock_file`] for synchronous writers: `None` when the lock is not taken by
 /// `deadline`, so a stalled peer cannot hold the caller indefinitely.
-fn lock_file_blocking(path: &Path, deadline: Instant) -> Option<std::fs::File> {
+fn lock_file_blocking(path: &Path, deadline: Instant) -> Option<octocode_io::lock::LockedFile> {
     let file = open_lock_file(path)?;
-    loop {
-        match try_lock_once(&file)? {
-            true => return Some(file),
-            false if Instant::now() >= deadline => return None,
-            false => std::thread::sleep(LOCK_POLL),
-        }
-    }
+    octocode_io::lock::lock_within(
+        file,
+        deadline.saturating_duration_since(Instant::now()),
+        LOCK_POLL,
+    )
+    .ok()
 }
 
 #[cfg(test)]
 mod tests {
     use super::super::*;
+
+    /// A rate-limit fact learned on an async worker never waits for the peer
+    /// lock there; it still reaches the file once the peer lets go.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_cooldown_on_an_async_worker_does_not_wait_for_the_peer_lock() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let key = LimiterKey::new("ghe.example", Some("tok"));
+        let budget = GitHubBudget::relaxed();
+        let state = budget.key_state(&key, Some(dir.path()));
+        let file = dir.path().join(key.file_name());
+        let mut lock_name = file.as_os_str().to_os_string();
+        lock_name.push(".lock");
+        let peer = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(std::path::PathBuf::from(lock_name))
+            .expect("lock file");
+        let held = octocode_io::lock::lock_within(peer, Duration::ZERO, Duration::from_millis(10))
+            .expect("peer holds the lock");
+        let until = now_ms() + 60_000;
+        let started = Instant::now();
+        state.cool_down(until);
+        assert!(
+            started.elapsed() < Duration::from_millis(200),
+            "cool_down blocked the worker for {:?}",
+            started.elapsed()
+        );
+        drop(held);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let written = std::fs::read(&file)
+                .ok()
+                .and_then(|bytes| serde_json::from_slice::<KeyFacts>(&bytes).ok())
+                .is_some_and(|facts| facts.cooldown_until_ms >= until);
+            if written {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "the cooldown never reached the file"
+            );
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_persisted_budget_file_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let key = LimiterKey::new("ghe.example", Some("tok"));
+        {
+            let budget = GitHubBudget::relaxed();
+            let state = budget.key_state(&key, Some(dir.path()));
+            state.cool_down(now_ms() + 30_000);
+        }
+        let mode = std::fs::metadata(dir.path().join(key.file_name()))
+            .expect("state file")
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o600);
+    }
 
     #[test]
     fn disk_state_round_trips_blocking_facts_only() {
@@ -374,6 +462,36 @@ mod tests {
             serde_json::from_slice(&std::fs::read(dir.path().join(key.file_name())).expect("file"))
                 .expect("json");
         assert_eq!(disk.last_start_ms.len(), 8 * 25);
+    }
+
+    /// A peer's write in the same clock tick as the last one seen is still
+    /// merged: every write renames a fresh file, so its identity changes even
+    /// when its mtime does not.
+    #[test]
+    fn a_peer_write_with_an_unchanged_mtime_is_still_merged() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let key = LimiterKey::new("ghe.example", Some("tok"));
+        let file = dir.path().join(key.file_name());
+        let (peer_budget, budget) = (GitHubBudget::relaxed(), GitHubBudget::relaxed());
+        let peer = peer_budget.key_state(&key, Some(dir.path()));
+        let first = now_ms() + 30_000;
+        peer.cool_down(first);
+        let mtime = std::fs::metadata(&file)
+            .and_then(|meta| meta.modified())
+            .expect("mtime");
+        let state = budget.key_state(&key, Some(dir.path()));
+        state.refresh_from_disk();
+        assert_eq!(state.facts().cooldown_until_ms, first);
+
+        let second = first + 30_000;
+        peer.cool_down(second);
+        std::fs::File::options()
+            .write(true)
+            .open(&file)
+            .and_then(|file| file.set_modified(mtime))
+            .expect("same tick");
+        state.refresh_from_disk();
+        assert_eq!(state.facts().cooldown_until_ms, second);
     }
 
     /// A repeat of the same blocking fact leaves the file in place; a new

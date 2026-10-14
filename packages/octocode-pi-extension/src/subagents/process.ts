@@ -3,19 +3,21 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Usage } from '@earendil-works/pi-ai';
-import { BROWSER_VISIBLE_ENV, CACHE_RETENTION_ENV, childCacheRetention, envInt, HOOKS_ENV, MCP_ENV, PARENT_SESSION_ENV, PERMISSION_ENV, PERMISSION_GRANTS_ENV, SUBAGENT_ENV, TRUST_ROOT_ENV } from '../shared/env.js';
+import { BROWSER_VISIBLE_ENV, CACHE_RETENTION_ENV, childCacheRetention, HOOKS_ENV, MCP_ENV, PARENT_SESSION_ENV, PERMISSION_ENV, PERMISSION_GRANTS_ENV, PERMISSION_RELAY_ENV, SUBAGENT_ENV, TRUST_ROOT_ENV } from '../shared/env.js';
 import type { ActionClass, PermissionMode } from '../permission/mode.js';
 import { NEEDS_APPROVAL } from '../permission/ask.js';
 import { atomicWriteFileSync, sha256 } from '../shared/atomic.js';
 import { formatDuration } from '../shared/format.js';
-import { sessionOutputDir } from '../shared/home.js';
-import { stopTree } from '../shared/process.js';
-import { sanitizeTerminalText } from '../shared/sanitize.js';
-import { addUsage, contentText, emptyUsage, isRecord, toolHint } from '../shared/util.js';
+import { privateDir, sessionOutputDir } from '../shared/home.js';
+import { adoptTree, groupAlive, groupStartTimes, prepareTree, processStartTime, sameProcess, stopTree } from '../shared/process.js';
+import { redactSecrets, sanitizeTerminalText } from '../shared/sanitize.js';
+import { addUsage, capChars, contentText, cutText, emptyUsage, isRecord, settleWithin, toolHint } from '../shared/util.js';
 import { AGENT_COLLABORATE_ENV, AGENT_ID_ENV, AGENT_GOAL_ENV, AGENT_ROLE_ENV, AGENT_SCRATCH_ENV, PARENT_ID_ENV, PARENT_PID_ENV, TEAM_WORKSPACE_ENV } from '../team/store.js';
 import { profileExcludes, type AgentProfile } from './profiles.js';
 import { imagesOf } from './screenshots.js';
+import { Thought, thoughtGist } from '../shared/thought.js';
 import { ReportTracker } from './report.js';
+import { ChildRelay, type RelayHost } from './relay.js';
 
 /** The child's place in the team: its name (id), its role (profile), its goal, and the agent that started it. */
 export interface Identity {
@@ -35,6 +37,8 @@ export interface Identity {
   parentSession?: string;
   /** The parent's permission mode now, and what its spawn ask granted: the child is never looser than its parent. */
   permission?: { mode: PermissionMode; grants: readonly ActionClass[] };
+  /** The parent can ask a person: the child sends its approval dialogs to the parent (`OCTOCODE_PERMISSION_RELAY`) instead of denying them. */
+  relay?: boolean;
 }
 
 /**
@@ -47,7 +51,7 @@ export function subagentProcessEnv(profile: AgentProfile | undefined, base: Node
   const inherited = { ...base };
   // User settings survive; run identity, trust delegation, permissions and browser mode belong to this child.
   const owned = [
-    ...[HOOKS_ENV, TRUST_ROOT_ENV, BROWSER_VISIBLE_ENV, PERMISSION_ENV, PERMISSION_GRANTS_ENV, CACHE_RETENTION_ENV],
+    ...[HOOKS_ENV, TRUST_ROOT_ENV, BROWSER_VISIBLE_ENV, PERMISSION_ENV, PERMISSION_GRANTS_ENV, PERMISSION_RELAY_ENV, CACHE_RETENTION_ENV],
     ...[AGENT_ID_ENV, AGENT_ROLE_ENV, PARENT_ID_ENV, AGENT_GOAL_ENV, AGENT_COLLABORATE_ENV, AGENT_SCRATCH_ENV, PARENT_SESSION_ENV, PARENT_PID_ENV],
   ];
   for (const key of owned) delete inherited[key];
@@ -68,7 +72,9 @@ export function subagentProcessEnv(profile: AgentProfile | undefined, base: Node
     ...(identity?.trustRoot ? { [TRUST_ROOT_ENV]: identity.trustRoot } : {}),
     ...(identity?.scratch ? { [AGENT_SCRATCH_ENV]: identity.scratch } : {}),
     ...(identity?.parentSession ? { [PARENT_SESSION_ENV]: identity.parentSession } : {}),
-    ...(identity ? { [PARENT_PID_ENV]: String(process.pid) } : {}),
+    // The pid and its start time name this process, so a child never mistakes a later process with the pid for its parent.
+    ...(identity ? { [PARENT_PID_ENV]: [process.pid, processStartTime(process.pid)].filter(Boolean).join(' ') } : {}),
+    ...(identity?.relay ? { [PERMISSION_RELAY_ENV]: '1' } : {}),
     ...(identity?.permission ? { [PERMISSION_ENV]: identity.permission.mode } : {}),
     ...(identity?.permission?.grants.length ? { [PERMISSION_GRANTS_ENV]: identity.permission.grants.join(',') } : {}),
   };
@@ -106,12 +112,16 @@ function promptFile(prompt: string, dir: string): string {
   return file;
 }
 
+/**
+ * The Pi arguments of a child. It runs in RPC mode: the task is not an argument (RPC ignores a positional task and
+ * rejects `@file`) but a `prompt` command that `runSubagent` writes to its stdin, so a task of any length goes whole.
+ */
 export function buildAgentArgs(
-  task: string, profile: AgentProfile | undefined, model: string | undefined, extension = selfExtensionPath(), promptDir?: string,
+  profile: AgentProfile | undefined, model: string | undefined, extension = selfExtensionPath(), promptDir?: string,
   session?: { dir: string; id: string },
 ): string[] {
   // Ephemeral, unless it lingers: then its conversation is saved under its own name, and a follow-up resumes it.
-  const args = ['--mode', 'json', ...(session ? ['--session-dir', session.dir, '--session-id', session.id] : ['--no-session'])];
+  const args = ['--mode', 'rpc', ...(session ? ['--session-dir', session.dir, '--session-id', session.id] : ['--no-session'])];
   // `--no-extensions` also turns off Pi's built-in MCP and tool-search extensions, which serve Octocode's research tools
   // and the user's own deferred MCP servers: load them back unless the profile opts out of MCP.
   if (extension) args.push('--no-extensions', '-e', extension, ...(profile?.mcp === false ? [] : ['-e', 'builtin:mcp', '-e', 'builtin:tool-search']));
@@ -121,44 +131,44 @@ export function buildAgentArgs(
   if (profile?.tools) args.push('--tools', profile.tools);
   if (profile?.excludeTools) args.push('--exclude-tools', profileExcludes(profile.excludeTools).join(','));
   if (profile?.prompt) args.push('--append-system-prompt', promptFile(profile.prompt, promptDir ?? sessionOutputDir('output')));
-  // `--` stops Pi's flag parsing, so a task starting with `-` stays the message; Pi still reads a positional `@path`
-  // after `--` as a file to attach, so a leading `@` gets a space in front.
-  args.push('--', task.startsWith('@') ? ` ${task}` : task);
   return args;
 }
 
-/** How long a cancelled subagent gets to exit after SIGTERM before it is killed. */
-const SUBAGENT_STOP_GRACE_MS = 5_000;
+/** How long a stopped subagent gets to exit after SIGTERM before it is killed (a session shutdown, a permission change, a stall). */
+export const SUBAGENT_STOP_GRACE_MS = 5_000;
+/** The same for a stop the user asked for (Esc, `/agents kill`): the row frees at once instead of after the full grace. */
+const USER_STOP_GRACE_MS = 1_000;
+/** How long an aborted child gets to report `agent_settled` before the stop falls back to signals. */
+export const ABORT_SETTLE_MS = 1_000;
+/** Abort reason of a stop the user asked for; any other reason gets the full grace. */
+export const USER_STOP = 'user stop';
 /** JSON events can contain images; a malformed child must not grow an unterminated frame forever. */
 export const MAX_EVENT_BYTES = 16 * 1024 * 1024;
-
-/** Minutes a child may go without emitting any output while its model is generating (default 10; 0 disables). */
-export const SUBAGENT_IDLE_ENV = 'OCTOCODE_SUBAGENT_IDLE_MINUTES';
-/** Optional wall-clock limit in minutes for one subagent run (default 0: none). */
-export const SUBAGENT_MAX_ENV = 'OCTOCODE_SUBAGENT_MAX_MINUTES';
-const DEFAULT_IDLE_MINUTES = 10;
-/**
- * Extra quiet time allowed while a tool runs or the run is settling after its answer: a foreground bash command and the
- * hold on background jobs may each stay silent for up to 15 minutes without the child being hung.
- */
-const BUSY_GRACE_MS = 15 * 60_000;
 
 /** After the child exits, how long its stdio gets to drain before the run settles without waiting for `close` (a grandchild may hold the pipes open). */
 const EXIT_GRACE_MS = 1_000;
 
 export interface WatchdogLimits {
-  /** Quiet time before a generating child counts as hung (Infinity: never). */
+  /**
+   * Quiet time before a child counts as hung: no running tool, not settling after its answer, and no event at all. A
+   * running tool (or the hold on background jobs after the answer) is busy, however long it stays silent: it ends on
+   * its own deadline, and the user can stop it.
+   */
   idleMs: number;
-  /** Total run time before the child is stopped (Infinity: never). */
-  maxMs: number;
+  /**
+   * How long a busy child may stay busy past a call (or its answer) when that call declares no `timeout`; a call that
+   * declares one gets that. Past it plus `idleMs`, a tool that never ends (or a hold that never settles) is hung.
+   */
+  busyMs: number;
 }
 
-export function watchdogLimits(env: NodeJS.ProcessEnv = process.env): WatchdogLimits {
-  const minutes = (name: string, fallback: number) => {
-    const value = envInt(env, name, fallback, { min: 0 });
-    return value === 0 ? Number.POSITIVE_INFINITY : value * 60_000;
-  };
-  return { idleMs: minutes(SUBAGENT_IDLE_ENV, DEFAULT_IDLE_MINUTES), maxMs: minutes(SUBAGENT_MAX_ENV, 0) };
+/** A model stream silent this long has stalled; busy time is bounded by each call's own deadline, else 15 minutes (bash's default). */
+export const WATCHDOG: WatchdogLimits = { idleMs: 10 * 60_000, busyMs: 15 * 60_000 };
+
+/** A call's own deadline in ms: its `timeout` argument (seconds), when it declares one. */
+function declaredTimeout(args: unknown): number | undefined {
+  const seconds = isRecord(args) ? args['timeout'] : undefined;
+  return typeof seconds === 'number' && seconds > 0 ? seconds * 1000 : undefined;
 }
 
 /** Why a child ended without a usable answer: its exit code, or the signal that killed it. */
@@ -170,6 +180,10 @@ export function exitReason(code: number | null, signal: NodeJS.Signals | null): 
 export interface ChildProgress {
   /** A tool call it started (`→ bash ls`). */
   activity?: string | undefined;
+  /** A step of its reasoning that is not a tool call: a thought's gist (`✻ …`) or its narration (`› …`) once a reply ends. */
+  step?: string | undefined;
+  /** The gist of the thinking it streams now; empty once that thinking ends. */
+  thinking?: string | undefined;
   /** Its usage so far. */
   usage: Usage;
   /** The assistant reply that just ended (with its `provider`, `model` and `usage`): its model may have no pricing. */
@@ -178,6 +192,8 @@ export interface ChildProgress {
   image?: { data: string; mimeType: string };
   /** A tool call the child could not run without the user's approval (it has no one to ask). */
   denied?: boolean;
+  /** The child waits for the user's answer to a dialog (`true`), or that answer arrived (`false`). */
+  waiting?: boolean;
 }
 
 interface SubagentOutcome {
@@ -187,7 +203,27 @@ interface SubagentOutcome {
   error?: string;
 }
 
-export function runSubagent(
+/**
+ * Whether the exited child's process group (POSIX; the child leads one) still has live members. Each is checked against
+ * the start time `ps` just reported, so a pid the system handed to another process is never signalled; when `ps`
+ * cannot be read, a live group counts. Windows has no process group: the child's Job Object (`adoptTree`) ends its
+ * tree through `stopTree`, which the caller runs after any exit.
+ */
+function leftBehind(pgid: number | undefined): boolean {
+  if (pgid === undefined || process.platform === 'win32') return false;
+  const members = groupStartTimes(pgid);
+  return members ? members.some((member) => sameProcess(member.pid, member.started)) : groupAlive(pgid);
+}
+
+/**
+ * Runs one child in Pi's RPC mode and resolves with its report. The task is sent as a `prompt` command on stdin. The
+ * child's dialogs (`extension_ui_request`) go to `host.ui` when the parent can ask a person (see `ChildRelay`) and are
+ * answered `cancelled` otherwise, which is what a child with no UI got before; its audit entries go to `host.permission`.
+ * stdin is closed once the run settles (RPC children do not exit by themselves), and a stop is `abort`, then
+ * `agent_settled`, then closed stdin, with signals only for a child that does not follow.
+ */
+export async function runSubagent(
+  task: string,
   args: string[],
   cwd: string,
   profile: AgentProfile | undefined,
@@ -195,47 +231,95 @@ export function runSubagent(
   signal: AbortSignal | undefined,
   onProgress: (progress: ChildProgress) => void,
   onSpawn?: (pid: number) => void,
-  limits: WatchdogLimits = watchdogLimits(),
+  limits: WatchdogLimits = WATCHDOG,
+  host?: RelayHost,
 ): Promise<SubagentOutcome> {
-  if (signal?.aborted) return Promise.reject(new Error('Subagent cancelled'));
+  if (signal?.aborted) throw new Error('Subagent cancelled');
   const { command, prefix } = piInvocation();
+  // Windows: the helper that owns the child's job runs before the child, so no grandchild escapes the job.
+  await prepareTree();
+  if (signal?.aborted) throw new Error('Subagent cancelled');
   return new Promise((resolve, reject) => {
     // Detached on POSIX so the child leads a process group: cancelling kills its whole tree (MCP servers, Chrome, bash).
-    const child = spawn(command, [...prefix, ...args], { cwd, env: subagentProcessEnv(profile, process.env, identity), stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
+    const child = spawn(command, [...prefix, ...args], { cwd, env: subagentProcessEnv(profile, process.env, identity), stdio: ['pipe', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
+    adoptTree(child.pid);
     const usage = emptyUsage();
-    const report = new ReportTracker(identity.scratch);
+    const report = new ReportTracker(identity.scratch ?? reportDir(identity.id));
     let buffer = '';
     let stderr = '';
     let frameBytes = 0;
     let streamFailure: Error | undefined;
+    // A write to a child that already exited fails with EPIPE; its exit settles the run.
+    child.stdin.on('error', () => undefined);
+    const send = (command: Record<string, unknown>): boolean => {
+      if (child.stdin.destroyed || child.stdin.writableEnded) return false;
+      child.stdin.write(`${JSON.stringify(command)}\n`);
+      return true;
+    };
+    /** Closing stdin is how an RPC child is told to shut down in order. */
+    const closeInput = () => {
+      if (!child.stdin.destroyed && !child.stdin.writableEnded) child.stdin.end();
+    };
+    /** Between `agent_start` and `agent_settled`: only a running child has anything to abort. */
+    let running = false;
+    let settledSeen = false;
+    let onSettled: (() => void) | undefined;
+    const settledEvent = new Promise<void>((resolve) => void (onSettled = resolve));
+    let onExit: (() => void) | undefined;
+    const exitEvent = new Promise<void>((resolve) => void (onExit = resolve));
+    const stop = async (graceMs: number): Promise<void> => {
+      if (running && send({ type: 'abort' })) await settleWithin(settledEvent, ABORT_SETTLE_MS);
+      closeInput();
+      // A child that settled leaves on its own once its input is closed; one that did not gets the signals at once.
+      if (settledSeen) await settleWithin(exitEvent, graceMs);
+      await stopTree(child.pid, graceMs);
+    };
     // One stop per run. The run settles only after it: the SIGKILL of a tree that ignored SIGTERM (and of detached
     // helpers like a Chrome the child launched) then happens before the parent can exit, not on a timer lost with it.
     let stopped: Promise<void> | undefined;
     const abort = () => {
-      stopped ??= stopTree(child.pid, SUBAGENT_STOP_GRACE_MS);
+      relay.cancelAll();
+      stopped ??= stop(signal?.reason === USER_STOP ? USER_STOP_GRACE_MS : SUBAGENT_STOP_GRACE_MS);
     };
     signal?.addEventListener('abort', abort, { once: true });
     // Watchdog: a child stuck on a stalled model stream emits nothing; stop it instead of spinning forever.
-    const startedAt = Date.now();
-    let activeAt = startedAt;
+    let activeAt = Date.now();
     let lastActivity = 'started';
     let toolsRunning = 0;
     let settling = false;
+    /** While busy (tools running, or settling after the answer), the child is hung only past this moment. */
+    let busyUntil = 0;
+    /** The longest deadline of a background job it started: settling waits for timed jobs. */
+    let jobsMs = 0;
     let stalled: Error | undefined;
     let cancelled = false;
-    const watchdog = Number.isFinite(limits.idleMs) || Number.isFinite(limits.maxMs)
-      ? setInterval(() => {
-        if (streamFailure || stalled) return;
+    const thought = new Thought();
+    // While the child waits for the user's answer it is not hung, however long the user takes.
+    let waitingSince = 0;
+    const relay = new ChildRelay(identity, host, {
+      send: (response) => void send({ type: 'extension_ui_response', ...response }),
+      onWaiting: (waiting) => {
         const now = Date.now();
-        const quietLimit = limits.idleMs + (toolsRunning > 0 || settling ? BUSY_GRACE_MS : 0);
-        const last = `last activity: ${lastActivity}, ${formatDuration(now - activeAt)} ago`;
-        if (now - activeAt >= quietLimit) stalled = new Error(`Subagent stopped: no output for ${formatDuration(now - activeAt)}; ${last}. Its process tree was killed.`);
-        else if (now - startedAt >= limits.maxMs) stalled = new Error(`Subagent stopped: it ran past its ${formatDuration(limits.maxMs)} limit (${SUBAGENT_MAX_ENV}); ${last}. Its process tree was killed.`);
-        else return;
-        abort();
-      }, Math.max(250, Math.min(30_000, limits.idleMs / 4, limits.maxMs / 4)))
-      : undefined;
-    watchdog?.unref();
+        if (waiting) waitingSince = now;
+        else {
+          // The wait does not count against the child's deadlines.
+          busyUntil += now - waitingSince;
+          activeAt = now;
+        }
+        progress({ usage, waiting });
+      },
+    });
+    const watchdog = setInterval(() => {
+      const now = Date.now();
+      if (streamFailure || stalled || relay.open > 0) return;
+      const busy = toolsRunning > 0 || settling;
+      if (busy ? now < busyUntil : now - activeAt < limits.idleMs) return;
+      stalled = busy
+        ? new Error(`Subagent stopped: ${lastActivity} ran past its own deadline; last output ${formatDuration(now - activeAt)} ago. Its process tree was killed.`)
+        : new Error(`Subagent stopped: no output for ${formatDuration(now - activeAt)}; last activity: ${lastActivity}, ${formatDuration(now - activeAt)} ago. Its process tree was killed.`);
+      abort();
+    }, Math.max(250, Math.min(30_000, limits.idleMs / 4)));
+    watchdog.unref();
     // Progress is display only: a failure there (a screenshot write, a stale render) must not throw out of the stream handler.
     const progress: typeof onProgress = (update) => {
       try {
@@ -244,20 +328,52 @@ export function runSubagent(
         // Keep the run going; the final answer does not depend on it.
       }
     };
+    /** The prompt command's own answer; every other `response` is for a command this parent never sends. */
+    const promptResponse = (event: Record<string, unknown>) => {
+      if (event['command'] !== 'prompt') return;
+      if (event['success'] === false) {
+        streamFailure = new Error(`Subagent rejected its task: ${typeof event['error'] === 'string' ? event['error'] : 'no reason given'}`);
+        abort();
+        return;
+      }
+      // An extension command consumed the prompt: no run starts, so no `agent_settled` will come.
+      if (isRecord(event['data']) && event['data']['disposition'] === 'handled') closeInput();
+    };
     const handleLine = (line: string) => {
       const event = parseEvent(line);
       if (!event) return;
+      if (event['type'] === 'response') return promptResponse(event);
+      if (event['type'] === 'extension_ui_request') return relay.handle(event);
       // Calls a tool makes itself (a codemode script) are part of that call, not activity of their own.
       if (event['parentToolCallId']) return;
+      if (event['type'] === 'agent_start') running = true;
       if (event['type'] === 'agent_settled') {
         // Pi can abort after a normal reply or between tools without an aborted assistant message.
         // A watchdog stopping shutdown after an answer still preserves that completed report.
         cancelled = event['aborted'] === true && !stalled;
+        running = false;
+        settledSeen = true;
+        onSettled?.();
+        // The run is over and the report is in: the child has nothing left to do, so it is told to leave.
+        closeInput();
+        return;
+      }
+      // A new turn or a streaming reply means the previous turn's tools are over, even one that never reported its end.
+      if (event['type'] === 'turn_start' || event['type'] === 'message_update') toolsRunning = 0;
+      // A turn after the answer (a background job's report woke it) is a model turn again, not settling.
+      if (event['type'] === 'turn_start') settling = false;
+      if (event['type'] === 'message_update' && isRecord(event['assistantMessageEvent'])) {
+        const update = event['assistantMessageEvent'];
+        if (update['type'] === 'thinking_start') thought.reset();
+        if (update['type'] === 'thinking_delta' && typeof update['delta'] === 'string' && thought.add(update['delta'])) progress({ usage, thinking: thought.gist ?? '' });
         return;
       }
       if (event['type'] === 'tool_execution_start') {
         toolsRunning++;
         settling = false;
+        const own = declaredTimeout(event['args']);
+        if (own !== undefined && isRecord(event['args']) && event['args']['background'] === true) jobsMs = Math.max(jobsMs, own);
+        busyUntil = Math.max(busyUntil, Date.now() + (own ?? limits.busyMs) + limits.idleMs);
         lastActivity = describeToolCall(event['toolName'], event['args']);
         progress({ activity: lastActivity, usage });
       }
@@ -275,8 +391,11 @@ export function runSubagent(
         return;
       }
       addUsage(usage, message['usage']);
-      progress({ usage, reply: message });
+      thought.reset();
+      for (const step of replySteps(message)) progress({ usage, step });
+      progress({ usage, reply: message, thinking: '' });
       settling = message['stopReason'] !== 'toolUse';
+      if (settling) busyUntil = Date.now() + Math.max(jobsMs, limits.busyMs) + limits.idleMs;
       lastActivity = settling ? 'answered; settling' : 'model turn';
       report.answer(assistantText(message), message['stopReason'], message['errorMessage']);
     };
@@ -303,7 +422,7 @@ export function runSubagent(
       }
     });
     child.stderr.setEncoding('utf8').on('data', (chunk: string) => {
-      stderr = (stderr + chunk).slice(-4000);
+      stderr = cutText(stderr + chunk, 4000, { chars: true, tail: true });
     });
     // The run settles once, from `close` (stdio drained) or, when a grandchild that left the process group keeps the
     // pipes open, from `exit` plus a short grace: the tool call must return and its slot be freed either way.
@@ -312,6 +431,7 @@ export function runSubagent(
     const finish = (): boolean => {
       if (finished) return false;
       finished = true;
+      relay.cancelAll();
       clearInterval(watchdog);
       clearTimeout(exitGrace);
       signal?.removeEventListener('abort', abort);
@@ -321,8 +441,14 @@ export function runSubagent(
       if (finish()) reject(error);
     });
     child.on('exit', (code, exitSignal) => {
+      onExit?.();
+      // A dialog of a child that is gone has nobody to answer: close it in the parent's UI.
+      relay.cancelAll();
       if (finished) return;
       clearInterval(watchdog);
+      // What the child left in its own process group (an MCP server, a dev server, a Chrome) dies with the run, and
+      // before the run settles: the caller removes the child's worktree next, and a holder must not outlive that.
+      if (leftBehind(child.pid)) stopped ??= stopTree(child.pid, SUBAGENT_STOP_GRACE_MS);
       exitGrace = setTimeout(() => settle(code, exitSignal), EXIT_GRACE_MS);
     });
     child.on('close', (code, exitSignal) => settle(code, exitSignal));
@@ -334,15 +460,16 @@ export function runSubagent(
     const conclude = (code: number | null, exitSignal: NodeJS.Signals | null) => {
       for (const stream of [child.stdout, child.stderr]) stream.destroy();
       if (buffer.trim()) handleLine(buffer);
-      const { text: finalText, error, answered } = report.result();
+      const { text: finalText, body: progress, pointer, error, answered } = report.result();
       if (streamFailure) reject(streamFailure);
       // A child stopped while settling after its answer still delivers that answer.
       else if (stalled && !answered) reject(stalled);
-      else if (signal?.aborted) reject(new Error('Subagent cancelled'));
+      else if (signal?.aborted && !answered) reject(new Error('Subagent cancelled'));
       // The child's report and stderr are untrusted text headed for the model and the terminal. A crash before any
       // final answer is a failure even when the child narrated progress first: narration is not a report.
       else if (code !== 0 && !answered) {
-        const last = finalText ? `\nLast progress: ${sanitizeTerminalText(finalText).trim().slice(0, 500)}` : '';
+        // The progress text is cut to 500 characters (the cut is stated); the pointer to the saved report is always kept.
+        const last = finalText ? `\nLast progress: ${capChars(sanitizeTerminalText(progress).trim(), 500)}${pointer ? `\n${sanitizeTerminalText(pointer)}` : ''}` : '';
         reject(new Error(`Subagent ${exitReason(code, exitSignal)}: ${sanitizeTerminalText(stderr).trim() || 'no output'}${last}`));
       }
       else {
@@ -357,7 +484,17 @@ export function runSubagent(
       streamFailure = error instanceof Error ? error : new Error(String(error));
       abort();
     }
+    if (!streamFailure) send({ type: 'prompt', message: task });
   });
+}
+
+/** Where a child without a scratch folder (an unwritable workspace) spills a long report, so a cut report always has its whole copy. */
+function reportDir(id: string): string | undefined {
+  try {
+    return privateDir(path.join(sessionOutputDir('output'), `agent-${id.replace(/[^\w.-]/g, '_')}`));
+  } catch {
+    return undefined;
+  }
 }
 
 function parseEvent(line: string): Record<string, unknown> | undefined {
@@ -377,6 +514,20 @@ export function assistantText(message: unknown): string | undefined {
     .join('\n')
     .trim();
   return text || undefined;
+}
+
+/** A reply's reasoning as trail lines: each thinking block's gist, then its narration when tool calls follow (a final answer is the report). */
+export function replySteps(message: Record<string, unknown>): string[] {
+  if (!Array.isArray(message['content'])) return [];
+  const steps: string[] = [];
+  for (const part of message['content']) {
+    if (!isRecord(part)) continue;
+    const gist = part['type'] === 'thinking' && typeof part['thinking'] === 'string' ? thoughtGist(part['thinking'], true) : undefined;
+    if (gist) steps.push(`✻ ${gist}`);
+  }
+  const narration = message['stopReason'] === 'toolUse' ? assistantText(message) : undefined;
+  if (narration) steps.push(`› ${redactSecrets(narration.replace(/\s+/g, ' '))}`);
+  return steps;
 }
 
 function describeToolCall(name: unknown, args: unknown): string {

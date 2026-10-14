@@ -107,4 +107,4 @@ Imports do not start a server or create storage.
 `runCommunicationMcp(argv)` starts the stdio server.
 `runCommunicationCli(argv, io?)` runs one CLI invocation and returns an exit code.
 `createCommunicationCli()` reads the catalog and returns the shared CLI specification.
-Node.js 24.15+ (24.x), Python 3.9+, SQLite 3.42+, and FTS5 are required for the npm route.
+Runtime requirements: [installation](INSTALLATION.md).

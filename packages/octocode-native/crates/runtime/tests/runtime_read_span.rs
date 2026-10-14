@@ -2,7 +2,7 @@
 //! shares the response window so every row returns content.
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 
-use crate::support;
+use crate::support::{self, Run as _};
 
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -49,7 +49,7 @@ async fn walk(
         hops += 1;
         assert!(hops < 50, "walk terminates");
         let page = runtime
-            .execute(
+            .run(
                 format!("walk-{hops}"),
                 tool.into(),
                 json!({"queries":[next.clone()]}),
@@ -86,7 +86,7 @@ async fn a_batch_of_reads_shares_the_window_and_every_row_returns_content() {
             .map(|path| json!({"path": path, "fullContent": true})),
     );
     let mcp = runtime
-        .execute_mcp(
+        .run_mcp(
             "share".into(),
             "localFetch".into(),
             json!({"queries": queries}),
@@ -142,7 +142,7 @@ async fn a_batch_that_fits_is_unchanged_and_carries_no_banner() {
     let b = workspace.write("b.txt", numbered_file("b", 20));
     let runtime = workspace.runtime(&[("OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH", WINDOW.to_string())]);
     let mcp = runtime
-        .execute_mcp(
+        .run_mcp(
             "fits".into(),
             "localFetch".into(),
             json!({"queries":[{"path":a},{"path":b}]}),
@@ -164,7 +164,7 @@ async fn a_budget_cut_range_continues_exactly_the_rest_of_the_requested_spans() 
     let path = workspace.write("big.txt", numbered_file("big", 2_000));
     let runtime = workspace.runtime(&[]);
     let outcome = runtime
-        .execute(
+        .run(
             "cut".into(),
             "localFetch".into(),
             json!({"queries":[{"path": path, "ranges": ["10-20", "100-1900"]}]}),
@@ -224,7 +224,7 @@ async fn a_match_window_that_cuts_its_declaration_offers_the_rest_as_a_lead() {
     let path = workspace.write("src/lib.rs", SOURCE);
     let runtime = workspace.runtime(&[]);
     let outcome = runtime
-        .execute(
+        .run(
             "lead".into(),
             "localFetch".into(),
             json!({"queries":[{"path": path, "matchString": "needle here", "contextLines": 2,
@@ -239,7 +239,7 @@ async fn a_match_window_that_cuts_its_declaration_offers_the_rest_as_a_lead() {
     let query = &lead["query"]["queries"][0];
     assert_eq!(query["ranges"], json!(["1-9", "15-21"]), "{query}");
     let rest = runtime
-        .execute(
+        .run(
             "lead-run".into(),
             "localFetch".into(),
             json!({"queries":[query.clone()]}),
@@ -266,7 +266,7 @@ async fn a_match_window_that_cuts_its_declaration_offers_the_rest_as_a_lead() {
         json!({"path": path, "matchString": "needle here", "block": true}),
     ] {
         let outcome = runtime
-            .execute(
+            .run(
                 "no-lead".into(),
                 "localFetch".into(),
                 json!({"queries":[query.clone()]}),

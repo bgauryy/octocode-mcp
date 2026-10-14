@@ -30,7 +30,7 @@ interface TickerSource {
 }
 
 /** A cheap change marker for the database file and its WAL: writes by any process move it. */
-export function dbStamp(file: string): string {
+function dbStamp(file: string): string {
   return [file, `${file}-wal`]
     .map((entry) => {
       const stat = fs.statSync(entry, { throwIfNoEntry: false });

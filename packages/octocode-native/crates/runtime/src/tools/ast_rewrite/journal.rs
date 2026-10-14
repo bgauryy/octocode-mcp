@@ -17,7 +17,7 @@ use std::{
 pub(super) fn persist_journal(path: &Path, journal: &Journal) -> Result<(), RewriteError> {
     let bytes = serde_json::to_vec(journal)
         .map_err(|error| RewriteError::new("transactionFailed", error.to_string()))?;
-    crate::private_file::write_atomic(path, &bytes, true).map_err(io_error)?;
+    octocode_io::atomic::write_atomic(path, &bytes, true).map_err(io_error)?;
     Ok(())
 }
 

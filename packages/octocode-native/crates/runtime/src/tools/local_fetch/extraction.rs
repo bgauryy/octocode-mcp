@@ -741,6 +741,7 @@ pub(super) fn byte_windows(
     let mut text = String::new();
     let mut last_end = 0;
     let mut selected = Vec::new();
+    let starts = octocode_engine::text::line_starts(content);
     for (start, end) in spans {
         let mut a = start.saturating_sub(bytes);
         while !content.is_char_boundary(a) {
@@ -771,13 +772,8 @@ pub(super) fn byte_windows(
             }
         }
         text.push_str(&content[a..b]);
-        let first_line = content[..a].bytes().filter(|byte| *byte == b'\n').count() + 1;
-        let last_byte = b.saturating_sub(1);
-        let last_line = content.as_bytes()[..last_byte.min(content.len())]
-            .iter()
-            .filter(|byte| **byte == b'\n')
-            .count()
-            + 1;
+        let first_line = octocode_engine::text::line_at(&starts, a);
+        let last_line = octocode_engine::text::line_at(&starts, b.saturating_sub(1));
         selected.extend(first_line..=last_line.max(first_line));
         last_end = b
     }

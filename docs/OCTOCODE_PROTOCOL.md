@@ -22,7 +22,7 @@ Context is a coding agent's scarcest resource. Whole files, whole diffs, and raw
 | **Connections** (graph) | Who imports this file? What does it depend on? Is it reachable? | `astTopology` (beta, CLI), LSP call hierarchy |
 | **History** | Which change introduced this, what did the PR do, what differs between two refs? | `ghSearchHistory`, `ghGetHistoryItem` |
 | **Packages** | Which repository and directory hold this package's source? | `artifactSearch` |
-| **Judgment** (optional) | Which candidate matters, where in the file is the answer, is this snippet enough? | `clasify` |
+| **Judgment** (optional) | Which captured candidate to read first; a typed decision about held or unread source | `classifiers` on search/fetch, `clasify` |
 
 ## 2. The research loop: zoom out, zoom in, prove
 
@@ -30,7 +30,7 @@ Context is a coding agent's scarcest resource. Whole files, whole diffs, and raw
 flowchart LR
   S[SCOPE<br/>local or remote, which repo/ref] --> O[ORIENT - zoom out<br/>tree, outline, PR summary]
   O --> F[SEARCH<br/>text, AST, filtered PR query]
-  F -->|list to classify, big known file, absence screen| C[clasify locate/scout]
+  F -->|typed decision over unread source| C[clasify]
   F --> R[READ EXACT - zoom in<br/>match window, line range, SHA]
   C --> R
   R --> P[PROVE<br/>LSP identity, diff, references]
@@ -58,7 +58,7 @@ External to local is one flow: `artifactSearch` maps a package to its repository
 
 ### 3.2 Optional brief for multi-call research
 - `mainGoal` (the research question) and `reasoning` (why this call advances it) are optional on every tool. A blank brief is dropped.
-- Why: a lookup spends nothing on a brief and cannot fail for a missing one; in research, `mainGoal` gives `clasify` the intent it needs; a research call explains itself in its own row.
+- Why: a lookup spends nothing on a brief and cannot fail for a missing one; a research call explains itself in its own row. The brief is metadata: it never drives ranking or reaches the classifier.
 - Rules: [OCTOCODE_WORKFLOWS.md](OCTOCODE_WORKFLOWS.md#briefs-maingoal-and-reasoning).
 
 ### 3.3 Context engineering: instructions, descriptions, schemas
@@ -99,16 +99,16 @@ External to local is one flow: `artifactSearch` maps a package to its repository
 - **LSP:** real language servers (tsserver, rust-analyzer, pyright, clangd, …) resolve definitions, references, call hierarchy, hover, and diagnostics from 1-based positions taken from a real anchor. A missing server gives a `serverUnavailable` error and a `hints.textSearch` lead.
 - **Ranking:** hits in a file rank declaration > deciding statement (assignment, `if`, `return`, `throw`) > code > comment. For an exact identifier, the file that declares it ranks first.
 
-### 3.10 Goals and clasify: selective evidence
-- Optional `goals` ranks source evidence only on `localFetch`, `localSearch`, `ghGetFileContent`, and `ghSearchCode`, within a disclosed selected view or provider page. Other tools have no ranking controls and keep their ordinary behavior; eligible but incomplete operations can report a skip. `clasify` independently returns locations or typed judgments before the agent reads selected bodies. Both routes use the configured classification provider.
-- Choose semantic selection when it can avoid later reads; prefer an adequate cheap exact route. Use one semantic stage per relevance decision. A useful typed label for held evidence is a separate deliverable, not a saving on context already read.
+### 3.10 Classifiers and clasify: selective evidence
+- Optional `classifiers` (self-contained evidence questions) rank source evidence only on `localFetch`, `localSearch`, `ghGetFileContent`, and `ghSearchCode`, within a disclosed selected view or provider page, before the tool returns. Other tools have no ranking controls and keep their ordinary behavior; eligible but incomplete operations can report a skip. Public `clasify` answers JEV `noul`, `choice` and `score` questions over literal state or an internally captured source. Both routes share one evaluator, cache and provider.
+- Choose semantic selection when it can avoid later reads; prefer an adequate cheap exact route. Do not repeat a relevance decision: classifiers already ordered the candidates. A useful typed answer about held evidence is a separate deliverable, not a saving on context already read.
 - Scores order attention, not proof. Verify deciding source, retain unjudged candidates and required continuations, and keep incomplete scope unresolved. No universal score or file-count cutoff determines usefulness.
-- Ranking is disabled by default; its optional fields require ranking enabled and a nonblank classification API credential, independently of beta and public `clasify` visibility. Public `clasify` needs the credential and beta. Setup, outputs, shared internals, prompts, and measured tradeoffs: [goals and clasify guide](OCTOCODE_CLASIFY.md#availability).
+- Ranking is disabled by default; its optional fields require ranking enabled and a nonblank classification API credential, independently of beta and public `clasify` visibility. Public `clasify` needs the credential and beta. Setup, outputs and availability: [classifier and clasify guide](OCTOCODE_CLASIFY.md#availability).
 
 ### 3.11 Security: sanitize input and output
 - **Input:** the contract is validated before execution; unknown fields are rejected and nothing is silently clamped. Local paths stay inside the sandbox, and sensitive files are refused even inside allowed roots.
 - **Output:** the native secret scanner reads every byte bound for the model, including PEM blocks split across page windows, and replaces values with typed markers. Searches never match inside a secret.
-- **Classification egress:** `clasify` and enabled `goals` send sanitized evidence and questions to the configured classifier. Their payloads exclude credentials and continuation tokens. Details: [SECURITY.md](SECURITY.md#classification-egress).
+- **Classification egress:** `clasify` and enabled `classifiers` send sanitized evidence and questions to the configured classifier. Their payloads exclude credentials and continuation tokens. Details: [SECURITY.md](SECURITY.md#classification-egress).
 
 ### 3.12 Local caching and GitHub rate limits
 - GitHub file bodies and listings are cached in memory and, with persistent storage, on a disk cache that the CLI and MCP share. Reads at a commit SHA never need revalidation.
@@ -130,7 +130,7 @@ Earlier scripted tool-level comparisons measured single tool calls, not agent ou
 | Reproducible evidence | Reads return `commitSha`, pages stay pinned to it, and PRs carry `headSha` and `mergeCommitSha`. |
 | Precision | LSP references are exact (`rg -w`: 0.26–0.62). Symbols were exact on 6 of 6 files (regexes and ctags: 0.81–0.98). Codemods matched ast-grep on 5 of 5; sed was wrong on 4 of 5. |
 | Hostile input | 0 of 5 fake secrets leaked (rg: 3 of 3). A 3.2 MB file costs 18k characters, and a 2 MB minified line costs 710. |
-| `clasify` on how and where questions | Whole-file locate: 10 of 10 (rg: 9 of 10), with 43% fewer files opened. |
+| Semantic selection (removed Locate flow, historical) | Whole-file locate: 10 of 10 (rg: 9 of 10), with 43% fewer files opened. |
 | Local parity with rg | Same accuracy (14 of 15), with about 8% more characters for the citable line gutter. |
 
 | Where plain tools win | Why |

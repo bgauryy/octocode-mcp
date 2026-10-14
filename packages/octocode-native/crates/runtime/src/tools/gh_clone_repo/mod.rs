@@ -4,11 +4,11 @@ mod git;
 mod process;
 
 use crate::policy::{PolicyError, PolicyErrorCode, path::PathPolicy};
-use crate::providers::github::{
+use crate::tools::cancel::CancellationCheck;
+use octocode_github::{
     ConditionalCache, GitHubEndpoint, GitHubProvider, ProviderError, ProviderErrorKind,
     ProviderErrorReason, RequestContext, ResolvedCredential,
 };
-use crate::tools::cancel::CancellationCheck;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
@@ -251,8 +251,9 @@ pub(crate) fn explain_git_failure(
     mut git: CloneError,
     answer: Result<String, ProviderError>,
 ) -> CloneFailure {
-    let Err(api) = answer else {
-        return CloneFailure::Clone(git);
+    let api = match answer {
+        Ok(sha) => return CloneFailure::Clone(abbreviated_sha(query, &sha).unwrap_or(git)),
+        Err(api) => api,
     };
     match (api.kind, api.reason) {
         (_, Some(ProviderErrorReason::RefNotFound)) => {
@@ -285,6 +286,36 @@ pub(crate) fn explain_git_failure(
             CloneFailure::Clone(git)
         }
     }
+}
+
+/// A `ref` git cannot clone because it abbreviates the commit `sha` that
+/// `commits/{ref}` resolved: invalid input naming the full SHA, with the
+/// clone at it as the lead. `None` for any other ref.
+fn abbreviated_sha(query: &GhCloneRepoQuery, sha: &str) -> Option<CloneError> {
+    let reference = query.ref_.as_deref()?;
+    let abbreviated = reference.len() < sha.len()
+        && reference.bytes().all(|byte| byte.is_ascii_hexdigit())
+        && sha
+            .to_ascii_lowercase()
+            .starts_with(&reference.to_ascii_lowercase());
+    if !abbreviated {
+        return None;
+    }
+    let mut retry = serde_json::to_value(query).ok()?;
+    retry["ref"] = serde_json::json!(sha);
+    Some(CloneError {
+        next: Some(Box::new(serde_json::json!({
+            "cloneFullSha": crate::tools::result::Continuation::new(crate::tools::id::ToolId::GhCloneRepo, retry)
+                .confidence("exact")
+                .build()
+        }))),
+        ..CloneError::new(
+            "invalidInput",
+            format!(
+                "ref \"{reference}\" abbreviates commit {sha}; git checks out a branch, tag, or full commit SHA"
+            ),
+        )
+    })
 }
 
 /// A path the policy denies, under the flat code the local tools share
@@ -472,6 +503,14 @@ fn cache_hit(
     }))
 }
 
+/// What publishing a checked-out stage left at its cache entry.
+enum Published {
+    /// The stage replaced the entry; its recorded metadata.
+    Fresh(cache::CacheMeta),
+    /// The entry already held a valid checkout; the stage is discarded.
+    Cached(CacheHit),
+}
+
 /// Check out into a stage, verify it, and publish it. `branch` is `None` for
 /// a default-branch clone: git resolves the remote HEAD and the branch it
 /// checked out names the cache entry (and the default-branch alias).
@@ -512,6 +551,18 @@ fn fresh_clone(
             return Err(error);
         }
     };
+    // A default-branch clone records which branch the default resolved to.
+    let write_alias = || {
+        if branch.is_none() {
+            cache::write_default_branch_alias(
+                &context.config.cache_home,
+                &query.owner,
+                &query.repo,
+                repository_url,
+                &resolved,
+            );
+        }
+    };
     let publish = (|| {
         let clone_dir = match locked_dir {
             Some(dir) => dir.to_path_buf(),
@@ -523,6 +574,22 @@ fn fresh_clone(
             Some(_) => None,
             None => Some(cache::CloneLock::acquire(&clone_dir, context)?),
         };
+        // That entry may already hold a valid checkout (an explicit-ref
+        // clone of the same branch): keep it rather than replace it.
+        if locked_dir.is_none() && !query.force_refresh.unwrap_or(false) {
+            let sparse_key = sparse.map(Sparse::key);
+            let identity = cache::Identity {
+                owner: &query.owner,
+                repo: &query.repo,
+                branch: &resolved,
+                sparse_key: sparse_key.as_deref(),
+                depth,
+            };
+            if let Some(hit) = cache_hit(context, &clone_dir, &identity)? {
+                write_alias();
+                return Ok((clone_dir, Published::Cached(hit)));
+            }
+        }
         let meta = write_stage_meta(
             query,
             sparse,
@@ -537,19 +604,15 @@ fn fresh_clone(
             return Err(dirty_checkout(&clone_dir));
         }
         cache::promote(&context.config.cache_home, &stage, &clone_dir)?;
-        if branch.is_none() {
-            cache::write_default_branch_alias(
-                &context.config.cache_home,
-                &query.owner,
-                &query.repo,
-                repository_url,
-                &resolved,
-            );
-        }
-        Ok::<_, CloneError>((clone_dir, meta))
+        write_alias();
+        Ok::<_, CloneError>((clone_dir, Published::Fresh(meta)))
     })();
     let (clone_dir, meta) = match publish {
-        Ok(value) => value,
+        Ok((clone_dir, Published::Fresh(meta))) => (clone_dir, meta),
+        Ok((clone_dir, Published::Cached(hit))) => {
+            discard_stage(context, &stage);
+            return result(sparse, depth, &resolved, &clone_dir, hit);
+        }
         Err(error) => {
             discard_stage(context, &stage);
             return Err(error);
@@ -801,7 +864,7 @@ fn validate_query(query: &GhCloneRepoQuery) -> Result<(), CloneError> {
         ));
     }
     for path in sparse.as_ref().map_or(&[][..], Sparse::paths) {
-        if !crate::tools::gh_shared::is_repo_relative(path) {
+        if !is_sparse_path(path) {
             return Err(CloneError::new(
                 "invalidInput",
                 "path must be a non-empty repo-relative path without traversal",
@@ -809,6 +872,24 @@ fn validate_query(query: &GhCloneRepoQuery) -> Result<(), CloneError> {
         }
     }
     Ok(())
+}
+
+/// A sparse checkout path that stays inside the repository: not blank, no
+/// backslash, no root or drive prefix (`/x`, `C:x`), and no `.` or `..`
+/// segment (an interior `a/./b` included, which `Path::components`
+/// would silently normalize away). A trailing `/` names a directory.
+fn is_sparse_path(path: &str) -> bool {
+    let drive = path.as_bytes().get(1) == Some(&b':')
+        && path.as_bytes().first().is_some_and(u8::is_ascii_alphabetic);
+    !path.trim().is_empty()
+        && !path.contains('\\')
+        && !path.starts_with('/')
+        && !drive
+        && path
+            .strip_suffix('/')
+            .unwrap_or(path)
+            .split('/')
+            .all(|segment| !matches!(segment, "." | ".."))
 }
 
 fn repository_url(

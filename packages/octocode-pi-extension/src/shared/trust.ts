@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { getAgentDir, hasTrustRequiringProjectResources, ProjectTrustStore, type ExtensionCommandContext, type ExtensionContext } from '@earendil-works/pi-coding-agent';
+import { getAgentDir, hasTrustRequiringProjectResources, parseFrontmatter, ProjectTrustStore, type ExtensionCommandContext, type ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { atomicWriteFileSync, sha256 } from './atomic.js';
 import { say, wordCompletions, type Subcommands } from './commands.js';
 import { sanitizeTerminalText } from './sanitize.js';
@@ -87,12 +87,24 @@ export function describeProjectConfig(cwd: string, files = projectConfigFiles(cw
   let plain = 0;
   for (const file of files) {
     const shown = oneLine(path.relative(realPath(cwd), file) || file);
-    const runs = file.endsWith('.json') ? commandsIn(parseJson(readText(file))) : [];
+    // A profile that declares permissions is listed with them, and never folded into the count of plain files.
+    const runs = file.endsWith('.json') ? commandsIn(parseJson(readText(file))) : file.endsWith('.md') ? permissionsIn(readText(file)) : [];
     if (runs.length === 0 && ++plain > MAX_PLAIN_FILES) continue;
     lines.push(`- ${shown}${runs.length ? ':' : ''}`, ...runs.map((run) => `    ${oneLine(run)}`));
   }
   if (plain > MAX_PLAIN_FILES) lines.push(`… ${plain - MAX_PLAIN_FILES} more file(s) without commands`);
   return lines.join('\n');
+}
+
+/** `permissions: browser.control` for a profile (a `.md` file) whose front matter names classes, every name as written (the profile loader decides which it honours); none for any other file. */
+function permissionsIn(text: string): string[] {
+  try {
+    const value = parseFrontmatter<Record<string, unknown>>(text).frontmatter['permissions'];
+    const names = (Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : value === undefined ? [] : [value]).map((name) => String(name).trim()).filter(Boolean);
+    return names.length > 0 ? [`permissions: ${names.join(', ')}`] : [];
+  } catch {
+    return [];
+  }
 }
 
 const ENV_REFERENCE = /\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-[^}]*)?\}/g;
@@ -125,7 +137,8 @@ function envSent(server: Record<string, unknown>): string | undefined {
 
 /**
  * Answers of `projectTrustNow` for a few seconds: a session start asks from four places (skills, hooks,
- * profiles, memory), and each answer re-reads and re-hashes the project's config files. A decision clears it.
+ * profiles, memory), and each answer re-reads and re-hashes the project's config files. A decision clears it. Only a
+ * refusal is memoized: a `true` that lets a hook start commands is always computed fresh.
  */
 const TRUST_MEMO_MS = 5_000;
 
@@ -160,12 +173,14 @@ function trustState(ctx: Pick<ProjectContext, 'cwd' | 'isProjectTrusted'>, home?
   const decided = piDecided(ctx.cwd);
   const memoKey = `${ctx.cwd}\0${process.env[TRUST_ROOT_ENV] ?? ''}\0${process.env[SUBAGENT_ENV] ?? ''}\0${home ?? ''}\0${trusted}\0${decided}\0${store}\0${stamp.join('|')}`;
   const now = Date.now();
+  // A size and mtime stamp can miss a same-size rewrite within the window. A memoized refusal errs safe; a memoized
+  // `true` for a project whose hooks start commands would let an edited hook run unreviewed, so it is never kept.
   const memo = trustMemo.get(memoKey);
   if (memo && now - memo.at < TRUST_MEMO_MS) return memo.state;
   for (const [key, entry] of trustMemo) if (now - entry.at >= TRUST_MEMO_MS) trustMemo.delete(key);
   const sha = fingerprint(files);
   const state = { value: computeTrust(ctx.cwd, files, sha, trusted, decided, home), files, sha };
-  trustMemo.set(memoKey, { at: now, state });
+  if (state.value !== true || !startsCommands(ctx.cwd, files)) trustMemo.set(memoKey, { at: now, state });
   return state;
 }
 
@@ -173,7 +188,7 @@ function trustState(ctx: Pick<ProjectContext, 'cwd' | 'isProjectTrusted'>, home?
  * This process is an isolated subagent working in a linked worktree of the repository at `OCTOCODE_TRUST_ROOT`, which
  * its parent sets only when it trusts that repository: the parent's trust covers the worktree, a path Pi never saw.
  */
-export function inheritsTrust(cwd: string, env: NodeJS.ProcessEnv = process.env): boolean {
+function inheritsTrust(cwd: string, env: NodeJS.ProcessEnv = process.env): boolean {
   const root = env[TRUST_ROOT_ENV];
   return Boolean(root && path.isAbsolute(root) && envFlag(env, SUBAGENT_ENV) && isWorktreeOf(storeKey(cwd), realPath(root)));
 }

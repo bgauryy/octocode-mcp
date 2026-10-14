@@ -48,9 +48,21 @@ def terminate(proc):
         except subprocess.TimeoutExpired: os.killpg(proc.pid,signal.SIGKILL); proc.wait()
 
 
+def semantic_gates(server, env):
+    """Expected gates for explicitly configured benchmark arms, independently."""
+    effective = {**env, **server.get('env', {})}
+    credential = bool(effective.get('OCTOCODE_CLASSIFICATION_API', '').strip())
+    selected = {name.strip() for name in effective.get('TOOLS_TO_RUN', '').split(',') if name.strip()}
+    disabled = {name.strip() for name in effective.get('DISABLE_TOOLS', '').split(',') if name.strip()}
+    clasify = (credential and effective.get('OCTOCODE_BETA') == 'true'
+               and (not selected or 'clasify' in selected) and 'clasify' not in disabled)
+    goals = credential and effective.get('OCTOCODE_RANKING_ENABLED') == 'true'
+    return clasify, goals
+
+
 @contextmanager
 def classification_trace(server, env, run):
-    enabled = server.get("env", {}).get("OCTOCODE_RANKING_ENABLED") == "true"
+    enabled = any(semantic_gates(server, env))
     if not enabled or os.environ.get("BENCH_CLASSIFICATION_TRACE") != "1":
         yield None
         return
@@ -104,7 +116,7 @@ def main():
             (run/'prompt.template.md').write_bytes(args.prompt.read_bytes())
             args.prompt.write_text(prompt)
         server['env'].setdefault('WORKSPACE_ROOT',str(lab))
-        clasify=server['env'].get('OCTOCODE_RANKING_ENABLED')=='true'
+        clasify, goals = semantic_gates(server, env)
         metadata={'runner':'codex','model':args.model,'mcp':True,'timeout':args.timeout,
             'max_tool_calls':args.max_tool_calls,'budget_unit':'tool_calls','builtins_disabled':list(DISABLED_FEATURES),
             'prompt_sha256':hashlib.sha256(prompt.encode()).hexdigest(),
@@ -112,7 +124,7 @@ def main():
             'usage_scope':'Codex reported solver tokens; JEV provider tokens are separate'}
         (run/'runner.json').write_text(json.dumps(metadata,indent=1))
         try:
-            receipt=probe(server,clasify,clasify,env,lab,sentinel)
+            receipt=probe(server,clasify,goals,env,lab,sentinel)
             (run/'preflight.json').write_text(json.dumps(receipt,indent=1))
             if not receipt['ok']: raise RuntimeError('; '.join(receipt['problems']))
         except Exception as exc:

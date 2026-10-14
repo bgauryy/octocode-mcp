@@ -543,7 +543,10 @@ async fn execute_page(
 ) -> Result<Value, LspFailure> {
     cancel.check().map_err(LspFailure::cancelled)?;
     let original_root = query.workspace_root().map(str::to_owned);
-    let path = query.resolve_paths(paths)?;
+    let path = match query.resolve_paths(paths) {
+        Ok(path) => path,
+        Err(failure) => return failure::path_failure(&query, paths, failure),
+    };
     match run_page(
         &query,
         path,
@@ -643,6 +646,7 @@ async fn run_page(
         &scope,
         anchor.resolved_symbol,
     );
+    receipt::relative_server_roots(&mut result, paths);
     if matches!(query.operation().as_str(), "references" | "callers") {
         locations::attach_read_lead(&mut result);
     }

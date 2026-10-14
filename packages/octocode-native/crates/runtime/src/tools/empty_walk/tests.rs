@@ -30,13 +30,9 @@ fn typescript(root: &Path) -> impl FnMut(Walk) -> Result<Hits, String> + '_ {
 }
 
 fn typescript_probe(root: &Path) -> FileProbe<'_> {
-    FileProbe::new(
-        root,
-        PruneMode::SyntaxVisible,
-        1_000,
-        &|_| Ok(true),
-        &|path| path.extension().is_some_and(|ext| ext == "ts"),
-    )
+    FileProbe::new(root, PruneMode::SyntaxVisible, 1_000, &|_| true, &|path| {
+        path.extension().is_some_and(|ext| ext == "ts")
+    })
 }
 
 fn skipped(root: &Path, walk: Walk) -> super::Diagnosis {
@@ -360,4 +356,45 @@ fn a_probe_stays_within_the_request_globs() {
         .find(DEFAULTS.lifting(&[Cause::Hidden]))
         .expect("probe");
     assert_eq!(found.count, 2, "{found:?}");
+}
+
+/// Every relaxed walk a diagnosis asks about is answered from one fully
+/// lifted walk: each file is admitted once, however many walks are probed.
+#[test]
+fn one_walk_answers_every_relaxed_walk() {
+    let root = repo("gen/\n", &["gen", ".cfg", "node_modules/pkg", "src"]);
+    let admitted = Cell::new(0);
+    let permits = |_: &Path| {
+        admitted.set(admitted.get() + 1);
+        true
+    };
+    let keep = |path: &Path| path.extension().is_some_and(|ext| ext == "ts");
+    let probe =
+        FileProbe::new(&root.0, PruneMode::SyntaxVisible, 1_000, &permits, &keep).beyond(DEFAULTS);
+    let verdict = diagnose(&root.0, PruneMode::SyntaxVisible, DEFAULTS, |walk| {
+        probe.find(walk)
+    })
+    .expect("probe");
+    let Verdict::Skipped(diagnosis) = verdict else {
+        panic!("{verdict:?}")
+    };
+    assert_eq!(
+        diagnosis.causes(),
+        [Cause::Ignored, Cause::Hidden, Cause::DefaultExcluded]
+    );
+    assert_eq!(diagnosis.found().count, 3);
+    // `.gitignore`, `visible.md` and the four `needle.ts` files, once each.
+    assert_eq!(admitted.get(), 6);
+}
+
+/// A stopped probe is cut, never an error: absence there is unproven.
+#[test]
+fn a_stopped_probe_is_cut() {
+    let root = repo("", &[".cfg"]);
+    let stop = || true;
+    let found = typescript_probe(&root.0)
+        .stopping(&stop)
+        .find(DEFAULTS.lifting(&[Cause::Hidden]))
+        .expect("probe");
+    assert!(found.cut && found.count == 0, "{found:?}");
 }

@@ -116,7 +116,7 @@ pub(crate) fn string_literals(root: Node<'_>) -> Vec<std::ops::Range<usize>> {
     let mut found = Vec::new();
     let mut stack = vec![root];
     while let Some(node) = stack.pop() {
-        if crate::search::classify::is_string_kind(node.kind()) {
+        if super::kinds::is_string_kind(node.kind()) {
             found.push(node.byte_range());
             continue;
         }

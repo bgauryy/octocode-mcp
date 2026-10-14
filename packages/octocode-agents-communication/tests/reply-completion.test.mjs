@@ -39,6 +39,30 @@ test('complete reply commits final response and handling atomically; identical r
   assert.equal(f.db.prepare('SELECT acknowledgedAt FROM deliveries WHERE message=?').get(sent.id).acknowledgedAt,null,'Recipient still must handle the reply');
 });
 
+test('complete outcome is stored in reasoning with the reply unchanged, idempotent, and only valid with message and reply', t => {
+  const f = fixture(t), body = id => f.db.prepare('SELECT body FROM messages WHERE id=?').get(id).body, why = id => f.db.prepare('SELECT reasoning FROM messages WHERE id=?').get(id).reasoning;
+  for (const input of [
+    { ...f.reply, outcome: 'needs-input' }, { ...f.reply, outcome: 'Done' }, { ...f.reply, outcome: 1 },
+  ]) assert.throws(() => f.complete(input), /not an allowed value|invalid type/, JSON.stringify(input));
+  assert.throws(() => f.complete({ message: f.request.id, outcome: 'done' }), /outcome needs one message and its reply/);
+  assert.throws(() => f.complete({ messages: [f.request.id], outcome: 'done' }), /outcome needs one message and its reply/);
+  assert.throws(() => f.complete({ messages: [f.request.id], outcome: 'done', reply: 'Batch' }), /outcome needs one message and its reply/);
+  assert.throws(() => f.complete({ ...f.reply, outcome: 'done', reply: '  ' }), /Invalid reply: blank/);
+  assert.equal(f.stamp(), null);
+  const input = { ...f.reply, outcome: 'partial' }, sent = f.complete(input);
+  assert.deepEqual(sent, { completed: true, count: 1, id: sent.id, recipients: 1 });
+  assert.equal(body(sent.id), 'Reviewed; checks pass', 'the reply body stays the exact answer');
+  assert.equal(why(sent.id), 'Outcome: partial; Return completed review');
+  assert.deepEqual(f.complete(input), sent, 'identical retry returns the stored result');
+  assert.throws(() => f.complete({ ...input, outcome: 'done' }), /Final reply already stored with different content/);
+  assert.throws(() => f.complete(f.reply), /Final reply already stored with different content/);
+  assert.equal(f.db.prepare('SELECT count(*) n FROM messages WHERE sender=?').get(f.receiver).n, 1);
+  const why2 = fixture(t), withWhy = why2.complete({ ...why2.reply, outcome: 'done', reasoning: 'Checks ran' });
+  assert.equal(why2.db.prepare('SELECT reasoning FROM messages WHERE id=?').get(withWhy.id).reasoning, 'Outcome: done; Checks ran');
+  const plain = fixture(t), unchanged = plain.complete(plain.reply);
+  assert.equal(plain.db.prepare('SELECT body FROM messages WHERE id=?').get(unchanged.id).body, 'Reviewed; checks pass', 'reply without outcome is stored unchanged');
+});
+
 test('progress FYI leaves request pending; completion uses default purpose and no follow-up reply after silent completion', t => {
   const f=fixture(t);
   f.send({to:f.sender,replyRequired:false,body:'Review ongoing',reasoning:'Progress update'});

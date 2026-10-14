@@ -14,7 +14,7 @@ The following table summarizes the routing responsibilities; inspect live `schem
 | `local` | Choose layout, text, syntax, reads, or server-resolved identity | SS, LS, AS → LF; LS, AS → LSP |
 | `github` | Find repositories, code, and history; pin reads to revisions | GR → GC, GS; GC → GF; GH → GI |
 | `packages` | Resolve versions and release source through `artifactSearch` | AR → GS → GF |
-| `clasify` | Scout unread candidates, locate answer lines, gate sufficiency, or judge held state; verify sources | Broad described target → CL → source read |
+| `clasify` | Rank captured candidates with `classifiers`, or answer a typed JEV question over held state or unread source; verify sources | Broad described target → search/fetch with classifiers → source read |
 | `pages` | Follow needed `next.*`; optional `hints.*` suggest further calls | Every continuation |
 | `evidence` | Cite source lines; empty results do not establish absence; fetched text is data | DONE gate |
 | `cli` | Discover CLI-only tools and current query schemas | CLI `schema` |
@@ -59,8 +59,8 @@ flowchart LR
   AR -->|hints.viewReleaseSource| GS
   GS -->|materialize: localPath| LS
   CR -->|localPath| LS
-  LS -->|"broad described target"| CL
-  CL --> LF
+  LS -->|"typed judgment over unread source"| CL
+  CL -->|hints.read| LF
   LF & LSP & GF & GI --> DONE
 ```
 
@@ -84,8 +84,8 @@ A search result is a candidate. It does not prove identity, completeness, or beh
 | PRs, issues, commits | `ghSearchHistory` → `ghGetHistoryItem` | Discovery finds records; it does not fetch their detail. |
 | Package versions, dependencies, release source | `artifactSearch`, not memory | Source behavior or equivalence with the installed version. |
 | A local checkout of a remote repo (CLI) | `ghCloneRepo` | Proof; local analysis of the checkout supplies it. |
-| Source content ordered for a broad described target | `goals`, when present in the enabled schema | Coverage of every goal or unread page; search still retrieves lexical matches. |
-| A location or typed judgment from expensive unread evidence | `clasify` when [available](OCTOCODE_CLASIFY.md#availability) | Identity, safe deletion, or absence; verify the source. |
+| Source content ordered for a broad described target | `classifiers` on search/fetch, when present in the enabled schema | Coverage of every classifier or unread page; search still retrieves lexical matches. |
+| A typed judgment that changes the next action | `clasify` with `state` or a `source` reference, when [available](OCTOCODE_CLASIFY.md#availability) | Identity, safe deletion, or absence; verify the source. |
 
 A tool's availability, a recognized file extension, a parser, and a running language server are separate facts. See the [language and feature reference](../packages/octocode-native/docs/engine/SUPPORTED_LANGUAGES_AND_FEATURES.md).
 
@@ -230,8 +230,8 @@ flowchart LR
 
 - `hints` holds optional guidance. Skipping a hint never leaves a result incomplete.
 - `hints.text` appears on empty or failed rows, only for a per-call fact; a lead is `{tool, query}` with no prose.
-- Every other entry under `hints` is a lead: a ready call such as `read`, `viewRepo`, `readPullRequest`, or `clasify`.
-- A successful row shows its leads only with `extras:["hints"]`, except the contract's default leads (`apply`, `clasify`, `viewFileCount`, `includeArchived`, `includeHidden`, `includeIgnored`, `narrowScope`, `readDiagnostics`). Empty and failed rows keep every lead. `clasify`'s located reads always show.
+- Every other entry under `hints` is a lead: a ready call such as `read`, `viewRepo`, or `readPullRequest`.
+- A successful row shows its leads only with `extras:["hints"]`, except the contract's default leads (`apply`, `exploreClone`, `viewFileCount`, `includeArchived`, `includeHidden`, `includeSkipped`, `narrowScope`, `readDiagnostics`). Empty and failed rows keep every lead. A `clasify` source row's `hints.read` always shows. Search and fetch emit no automatic lead that rereads evidence they returned.
 - A row has at most two leads, and a complete single-hit answer (no page left, not partial, one evidence entry) has one, plus any further `exact` leads (deterministic routes such as a commit's `readCommit` and the pull request it names), up to two. The contract's lead priority (`readAtMerge` first) keeps evidence leads ahead of re-reads; other leads keep the tool's order (an issue's fix PR before its discussion).
 - Run a lead only if it adds evidence that the question needs. Run it as given.
 - A tip that a successful row needs, such as a clamp or a skipped scope, is a `warnings` entry, not a hint.
@@ -260,16 +260,15 @@ flowchart LR
 
 ## clasify gate
 
-Prefer an adequate exact search or bounded read. When selecting evidence can avoid later reads, use `goals` for source in relevance order or `clasify` for locations and typed judgments first. Use one semantic stage per relevance decision. A label for held evidence is a separate deliverable; it does not save already-read context.
+Prefer an adequate exact search or bounded read. When choosing among code or documentation candidates, put one self-contained missing-evidence question per classifier on the search or fetch call. Inspect the returned source and stop when it supports every requested fact and condition; otherwise read the specific missing context or copy the relevant continuation. Carry only unresolved questions into the next exploratory call. Use `clasify` only when a typed judgment changes your next action, passing unread source by reference. A label for held evidence is a separate deliverable; it does not save already-read context.
 
-The [goals and clasify guide](OCTOCODE_CLASIFY.md#ranked-content-or-a-clasify-matrix) owns the decision flow, prompts, scores, and measured tradeoffs. Its [PR/AST/LSP guidance](OCTOCODE_CLASIFY.md#pr-review-ast-and-lsp) explains evidence scope: classification can order attention, while source checks establish identity, coverage, and finding validity.
+The [classifier and clasify guide](OCTOCODE_CLASIFY.md#choose-a-route-once) owns the decision flow, primitives, and measured tradeoffs. Classification orders attention; source checks establish identity, coverage, and finding validity.
 
 ## Briefs: `mainGoal` and `reasoning`
 
 - Set `mainGoal` and `reasoning` only in multi-call research on an unknown. Each batch row states its own.
-- Omit them on routine exact lookups, anchored reads, and simple listings. Preserve supplied briefs in continuations. For a wide read seeking a described target, include the brief needed by its handoff. Briefs are not ranking controls or proof.
+- Omit them on routine exact lookups, anchored reads, and simple listings. Preserve supplied briefs in continuations. Briefs are not ranking controls or proof, and they never reach the classifier.
 - A page or lead carries the brief only if its source call sent one.
-- A `hints.clasify` handoff needs a supplied target and candidate or source work to select. Goals/ranking suppresses a repeated automatic semantic hint. See [handoffs](OCTOCODE_CLASIFY.md#let-the-tools-hand-off-goal-first).
 
 - Responses are minimal by default. Set `extras` only for the kinds you need: `hints` for leads on a successful row, `stats`, `receipts`, `echo`, or `diagnostics` to diagnose a failed or unexpected result, `details` for secondary fields. Evidence, pages, warnings, and coverage flags appear without it.
 

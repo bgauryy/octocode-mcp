@@ -45,7 +45,8 @@ pub struct ConfigFieldSpec {
     pub file: bool,
     pub resolved: bool,
     pub credential: bool,
-    pub env: &'static [ConfigEnvBinding],
+    /// The one environment variable that sets this field, if any.
+    pub env: Option<ConfigEnvBinding>,
     pub default_json: &'static str,
     pub minimum: Option<f64>,
     pub maximum: Option<f64>,
@@ -55,6 +56,24 @@ pub struct ConfigFieldSpec {
 }
 
 include!(concat!(env!("OUT_DIR"), "/config_contract.rs"));
+
+impl ConfigFieldSpec {
+    /// The environment variable that sets this field, if any.
+    #[must_use]
+    pub fn env_name(&self) -> Option<&'static str> {
+        self.env.map(|binding| binding.name)
+    }
+
+    /// `path (ENV)`, or the bare path for a field no variable sets: how a
+    /// message names the setting to change.
+    #[must_use]
+    pub fn display_name(&self) -> String {
+        match self.env_name() {
+            Some(env) => format!("{} ({env})", self.path),
+            None => self.path.to_owned(),
+        }
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum FileInput {
@@ -183,6 +202,30 @@ impl ConfigOutput {
     }
     pub fn env_value(&self, key: &str) -> Option<&str> {
         self.effective_env.get(key).map(String::as_str)
+    }
+    /// A digest of what this configuration makes a runtime do: its home, the
+    /// resolved settings, the selected credential (by digest), and the
+    /// effective value of every variable the config contract declares. Two
+    /// configurations with equal digests run tools alike, so a warm server
+    /// keyed on it never answers under stale settings.
+    #[must_use]
+    pub fn identity_digest(&self) -> String {
+        use std::fmt::Write as _;
+        let mut identity = format!("{}\n{:?}\n", self.home.display(), self.resolved);
+        if let Some(token) = &self.token {
+            let _ = writeln!(
+                identity,
+                "token={}:{}",
+                token.source(),
+                crate::digest::sha256(token.token().as_bytes())
+            );
+        }
+        for name in DECLARED_ENV_KEYS {
+            if let Some(value) = self.effective_env.get(*name) {
+                let _ = writeln!(identity, "{name}={value}");
+            }
+        }
+        crate::digest::sha256(identity.as_bytes())
     }
     /// The effective environment without the values a workspace `.env`
     /// supplied: a repository-controlled file never steers credential

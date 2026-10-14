@@ -71,26 +71,22 @@ impl ContentScan for super::ContentSecurity {
 /// returns exactly what the scanner produced for them; redaction is unchanged.
 /// One memo must only ever wrap one scanner (the owning runtime's policy).
 pub struct SanitizedViewMemo {
-    entries: std::sync::Mutex<std::collections::VecDeque<MemoEntry>>,
+    entries: octocode_io::memo::Memo<[u8; 32], ScanOutcome>,
 }
 
 type ScanOutcome = Result<(String, Vec<String>), (String, String)>;
 
-struct MemoEntry {
-    key: [u8; 32],
-    bytes: usize,
-    outcome: std::sync::Arc<ScanOutcome>,
-}
-
 impl SanitizedViewMemo {
-    const MAX_ENTRIES: usize = 8;
-    const MAX_BYTES: usize = 32 * 1024 * 1024;
     /// Small views are cheap to rescan; memoizing them only churns entries.
     const MIN_TEXT_BYTES: usize = 16 * 1024;
 
     pub fn new() -> Self {
         Self {
-            entries: std::sync::Mutex::new(std::collections::VecDeque::new()),
+            entries: octocode_io::memo::Memo::new(octocode_io::memo::MemoLimits {
+                max_entries: 8,
+                max_weight: 32 * 1024 * 1024,
+                keep_newest: false,
+            }),
         }
     }
 
@@ -104,46 +100,23 @@ impl SanitizedViewMemo {
         digest.finalize().into()
     }
 
+    /// The scan of `text`, remembered for large views. The caller owns the
+    /// returned outcome, so a hit copies it once, outside the memo's lock.
     fn scan(&self, text: &str, path: &Path, inner: &impl ContentScan) -> ScanOutcome {
         if text.len() < Self::MIN_TEXT_BYTES {
             return inner.sanitize(text, path);
         }
         let key = Self::key(text, path);
-        {
-            let mut entries = self.entries.lock().unwrap_or_else(|p| p.into_inner());
-            if let Some(entry) = entries
-                .iter()
-                .position(|entry| entry.key == key)
-                .and_then(|index| entries.remove(index))
-            {
-                let outcome = std::sync::Arc::clone(&entry.outcome);
-                entries.push_back(entry);
-                return (*outcome).clone();
-            }
+        if let Some(hit) = self.entries.get(&key) {
+            return hit.value.as_ref().clone();
         }
         let outcome = inner.sanitize(text, path);
         let bytes = text.len().saturating_add(match &outcome {
             Ok((safe, warnings)) => safe.len() + warnings.iter().map(String::len).sum::<usize>(),
             Err((code, message)) => code.len() + message.len(),
         });
-        if bytes <= Self::MAX_BYTES {
-            let mut entries = self.entries.lock().unwrap_or_else(|p| p.into_inner());
-            if !entries.iter().any(|entry| entry.key == key) {
-                entries.push_back(MemoEntry {
-                    key,
-                    bytes,
-                    outcome: std::sync::Arc::new(outcome.clone()),
-                });
-            }
-            let mut total: usize = entries.iter().map(|entry| entry.bytes).sum();
-            while entries.len() > Self::MAX_ENTRIES || total > Self::MAX_BYTES {
-                let Some(evicted) = entries.pop_front() else {
-                    break;
-                };
-                total = total.saturating_sub(evicted.bytes);
-            }
-        }
-        outcome
+        let stored = self.entries.insert(key, outcome, bytes, None);
+        std::sync::Arc::try_unwrap(stored).unwrap_or_else(|shared| shared.as_ref().clone())
     }
 }
 

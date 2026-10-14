@@ -129,6 +129,8 @@ def command(name, value):
         raise ValueError('Supply exactly one recipient: to or topic')
     if name == 'complete' and isinstance(value, dict) and 'reasoning' in value and 'reply' not in value:
         raise ValueError('Invalid complete: to handle without replying, omit reasoning and use message or messages only. Do not add a reply merely to satisfy validation; handled informational messages need no reply.')
+    if name == 'complete' and isinstance(value, dict) and 'outcome' in value and ('messages' in value or 'reply' not in value):
+        raise ValueError('Invalid complete: outcome needs one message and its reply: {message, outcome, reply}. Complete FYIs with message or messages and no outcome; leave unfinished work pending.')
     item = definition(name)
     stored_lengths({key: item for key, item in value.items() if key != 'data'} if name == 'record' and isinstance(value, dict) else value)
     if 'inputSchema' in item:

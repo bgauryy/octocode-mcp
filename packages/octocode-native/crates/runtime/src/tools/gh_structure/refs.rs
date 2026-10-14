@@ -2,15 +2,15 @@
 use super::*;
 use crate::contracts::tool_types::ExtraKind;
 use crate::contracts::tool_types::GhStructureQueryOperation;
-use crate::providers::github::{NamedRef, RefKind, RefMatch};
 use crate::tools::paging::push_warnings;
 use octocode_github::MAX_PER_PAGE;
+use octocode_github::{NamedRef, RefKind, RefMatch};
 
 /// Refs per page when `pageSize` is omitted (a tree page is 300 entries).
 const DEFAULT_REFS_PER_PAGE: usize = 30;
 
 /// Run a non-tree operation; `None` for the tree listing.
-pub(super) async fn execute_operation<C: crate::providers::github::ConditionalCache>(
+pub(super) async fn execute_operation<C: octocode_github::ConditionalCache>(
     provider: &GitHubProvider<C>,
     query: &GhStructureQuery,
     context: &RequestContext,
@@ -27,7 +27,7 @@ pub(super) async fn execute_operation<C: crate::providers::github::ConditionalCa
 /// read only when asked. A page continues while a listed kind has more, so
 /// every listed tag (and branch) is named exactly once. A tag name is
 /// itself a ref, so tags carry no SHA. With `ref`: that ref's commit and its `refKind` only.
-async fn refs<C: crate::providers::github::ConditionalCache>(
+async fn refs<C: octocode_github::ConditionalCache>(
     provider: &GitHubProvider<C>,
     query: &GhStructureQuery,
     context: &RequestContext,
@@ -138,7 +138,7 @@ async fn refs<C: crate::providers::github::ConditionalCache>(
 }
 
 /// Bytes of code per language on the default branch, largest first.
-async fn languages<C: crate::providers::github::ConditionalCache>(
+async fn languages<C: octocode_github::ConditionalCache>(
     provider: &GitHubProvider<C>,
     query: &GhStructureQuery,
     context: &RequestContext,

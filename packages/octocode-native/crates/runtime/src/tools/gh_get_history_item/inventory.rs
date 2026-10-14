@@ -190,8 +190,13 @@ pub(super) struct ShapedFiles {
     /// In-scope text files a `matchString` could not search because GitHub
     /// sent no patch for them, as compact `!reason path` rows.
     pub(super) unsearched: Vec<String>,
-    /// The first of those paths (the source-read template).
-    pub(super) first_unsearched: Option<String>,
+    /// The first of those paths (the source-read template), and whether
+    /// the change removed it (its text is at the base).
+    pub(super) first_unsearched: Option<(String, bool)>,
+    /// `(dropped, listed)`: in-scope searched files a `matchString` dropped
+    /// for holding no hit, beside files it kept; `None` when it dropped none
+    /// or kept none (an unmatched literal is stated on its own).
+    pub(super) match_dropped: Option<(usize, usize)>,
     /// Files whose `matchString` context the hunks cut short, with the
     /// new-side windows to read at the head.
     pub(super) clipped: Vec<(String, Vec<String>)>,
@@ -285,18 +290,29 @@ pub(super) fn shape_pr_files(
         scope,
     };
     let unsearched = match needle.as_deref() {
-        Some(needle) if patch_mode != "none" => unsearched_files(&files, &filter, needle),
+        Some(_) if patch_mode != "none" => unsearched_files(&files, &filter),
         _ => Vec::new(),
     };
-    let first_unsearched = unsearched.first().map(|(_, path)| path.clone());
+    let first_unsearched = unsearched
+        .first()
+        .map(|(_, path, removed)| (path.clone(), *removed));
+    let unsearched_count = unsearched.len();
     let unsearched = unsearched
         .into_iter()
-        .map(|(reason, path)| format!("!{reason} {path}"))
+        .map(|(reason, path, _)| format!("!{reason} {path}"))
         .collect::<Vec<_>>();
+    let in_scope = files
+        .iter()
+        .filter(|file| scope.is_none_or(|scope| scope.matches(file)))
+        .count();
     let filtered = files
         .into_iter()
         .filter(|file| filter.matches(file))
         .collect::<Vec<_>>();
+    let dropped = in_scope.saturating_sub(filtered.len() + unsearched_count);
+    let match_dropped =
+        (needle.is_some() && !query.later_page() && dropped > 0 && !filtered.is_empty())
+            .then_some((dropped, in_scope));
     let per_page = file_page_size(query, patch_mode != "none");
     let (slice, page) = state.paginate(filtered, query.page(), Some(per_page));
     let review = review_selection(&slice, patch_window(None, query.auto_page_chars));
@@ -304,11 +320,10 @@ pub(super) fn shape_pr_files(
     // first (status, change counts, hunks), then the patches in file order.
     let summary = (patch_mode != "none" && query.char_offset().is_none())
         .then(|| group_by_directory(&slice, summary_row));
-    let more_files = page.get("hasMore").and_then(Value::as_bool) == Some(true);
     // The summary rides the first window of a page whose patches do not
     // all fit it: its chars come out of that window, so the row (summary
     // plus patches) still fits one response page and never splits into a
-    // part without patch rows.
+    // part without patch rows. A page whose patches fit shows them alone.
     let summary_chars = summary
         .as_ref()
         .filter(|summary| !summary.is_empty())
@@ -316,8 +331,6 @@ pub(super) fn shape_pr_files(
     let include_patch = patch_mode != "none";
     let patches = if summary_chars == 0 {
         shape_patch_page(slice, include_patch, query)
-    } else if more_files {
-        shape_patch_page_reserving(slice, include_patch, query, summary_chars)
     } else {
         let whole = shape_patch_page(slice.clone(), include_patch, query);
         if whole.cursor.is_none() {
@@ -336,6 +349,7 @@ pub(super) fn shape_pr_files(
             review,
             unsearched,
             first_unsearched,
+            match_dropped,
             clipped: Vec::new(),
         };
     }
@@ -348,7 +362,7 @@ pub(super) fn shape_pr_files(
         })
         .collect::<Vec<_>>();
     if let Some(summary) = summary
-        && (patches.cursor.is_some() || more_files)
+        && patches.cursor.is_some()
         && !summary.is_empty()
     {
         row["fileSummary"] = Value::Array(summary);
@@ -369,6 +383,7 @@ pub(super) fn shape_pr_files(
         review,
         unsearched,
         first_unsearched,
+        match_dropped,
         clipped: patches.clipped,
     }
 }

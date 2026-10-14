@@ -1,29 +1,63 @@
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { formatDuration } from '../shared/format.js';
-import { dialogsWaiting, onDialogsChange } from '../shared/locks.js';
-import { clip } from '../shared/render.js';
-import { toolHint } from '../shared/util.js';
+import { dialogsWaiting, onDialogsChange, promptTitle } from '../shared/locks.js';
+import { clip, queryTarget } from '../shared/render.js';
+import { redactSecrets } from '../shared/sanitize.js';
+import { Thought } from '../shared/thought.js';
+import { firstLine, isRecord, toolHint } from '../shared/util.js';
 
 /** What the model is doing between tool runs. */
-export type Phase = 'idle' | 'model' | 'thinking' | 'writing' | 'calling';
+type Phase = 'idle' | 'model' | 'thinking' | 'writing' | 'calling';
 
 interface RunningTool {
   name: string;
   hint: string;
+  /** Queries of the call beyond the one `hint` names. */
+  more: number;
   startedAt: number;
   /** Its `tool_call` checks (reservations, the bash guard, PreToolUse hooks) run now; set while they do. */
   checkingSince?: number;
 }
 
 const TICK_MS = 1_000;
+/** A consequential call's line is replaced at most this often; calls inside the window count into it (`+3`). */
+const ACTION_LINE_MS = 1_000;
 /** Elapsed time shows once a step has taken this long. */
 const SHOW_ELAPSED_MS = 2_000;
-const HINT_MAX = 48;
-const TITLE_MAX = 60;
+/** Pi's working line wraps, and a wrap moves the editor: every line stays within this many columns. */
+const LINE_MAX = 70;
+/** Room kept for a ` · 12m34s` tail, so the clipped detail does not shift as the time grows. */
+const TAIL_ROOM = 9;
+/** A parallel batch names this many tools, then counts the rest. */
+const BATCH_NAMES = 2;
 
 /** `mcp__octocode__localSearch` → `localSearch`: the server prefix only costs width. */
 export function shortToolName(name: string): string {
   return name.replace(/^mcp__[^_]+(?:_[^_]+)*?__/, '');
+}
+
+/** Text for the working line and the shared team database: one line, URL credentials dropped, secrets redacted. */
+function safeText(text: string): string {
+  return redactSecrets(firstLine(text).replace(/\b([a-z][a-z0-9+.-]*:\/\/)[^\s/@]*@/gi, '$1'));
+}
+
+/**
+ * What a call works on: the goal of an `agent` call, the first query's target of a batched call (`file` and the
+ * Octocode tools take `{queries: [...]}`) with the count of the others, else the top-level argument `toolHint` picks.
+ */
+export function callTarget(name: string, args: unknown): { hint: string; more: number } {
+  const input = isRecord(args) ? args : {};
+  if (shortToolName(name) === 'agent' && typeof input['goal'] === 'string') return { hint: safeText(input['goal']), more: 0 };
+  const queries = Array.isArray(input['queries']) ? input['queries'].filter(isRecord) : [];
+  if (queries.length > 0) return { hint: safeText(queryTarget(queries[0]!)), more: queries.length - 1 };
+  return { hint: toolHint(args), more: 0 };
+}
+
+/** `head` then `detail` clipped to the room LINE_MAX leaves, then `tail`; `sep` joins head and a non-empty detail. */
+function fit(head: string, sep: string, detail: string, tail: string): string {
+  if (!detail) return `${head}${tail}`;
+  const room = LINE_MAX - head.length - sep.length - Math.max(tail.length, TAIL_ROOM);
+  return `${head}${sep}${clip(detail, Math.max(room, 12))}${tail}`;
 }
 
 /**
@@ -35,23 +69,36 @@ export class Activity {
   private phaseAt = 0;
   private readonly tools = new Map<string, RunningTool>();
   private prompt: { title: string; at: number } | undefined;
+  /** The latest consequential call the permission check let through, while its tool runs. */
+  private action: { head: string; text: string; warn: boolean; at: number; more: number } | undefined;
+  private readonly thought = new Thought();
 
   start(now: number): void {
     this.tools.clear();
+    this.action = undefined;
     this.prompt = undefined;
+    this.thought.reset();
     this.setPhase('model', now);
   }
 
   end(): void {
     this.tools.clear();
+    this.action = undefined;
     this.prompt = undefined;
+    this.thought.reset();
     this.phase = 'idle';
   }
 
-  /** An assistant streaming event: `thinking_delta`, `text_start`, `toolcall_delta`, … */
-  stream(type: string, now: number): void {
+  /** An assistant streaming event (`thinking_delta` with its `delta`, `text_start`, `toolcall_delta`, …); true when the line changed. */
+  stream(type: string, now: number, delta?: string): boolean {
     const phase: Phase | undefined = type.startsWith('thinking') ? 'thinking' : type.startsWith('text') ? 'writing' : type.startsWith('toolcall') ? 'calling' : undefined;
-    if (phase && phase !== this.phase) this.setPhase(phase, now);
+    if (type === 'thinking_start') this.thought.reset();
+    const thought = type === 'thinking_delta' && typeof delta === 'string' && this.thought.add(delta);
+    if (phase && phase !== this.phase) {
+      this.setPhase(phase, now);
+      return true;
+    }
+    return thought && this.phase === 'thinking';
   }
 
   /** The assistant message is complete: its tools run next, or the run ends. */
@@ -60,11 +107,29 @@ export class Activity {
   }
 
   toolStart(id: string, name: string, args: unknown, now: number): void {
-    this.tools.set(id, { name: shortToolName(name), hint: toolHint(args), startedAt: now });
+    this.tools.set(id, { name: shortToolName(name), ...callTarget(name, args), startedAt: now });
   }
 
   toolEnd(id: string, now: number): void {
-    if (this.tools.delete(id) && this.tools.size === 0 && this.phase !== 'idle') this.setPhase('model', now);
+    if (this.tools.delete(id) && this.tools.size === 0) {
+      this.action = undefined;
+      if (this.phase !== 'idle') this.setPhase('model', now);
+    }
+  }
+
+  /**
+   * A call the permission check let through (`what` is its first target). The line changes at most once per
+   * `ACTION_LINE_MS`: a burst inside the window only raises the `+n` count, except a ⚠ call, which always shows itself.
+   * True when the line changed.
+   */
+  consequential(action: string, what: string, warn: boolean, now: number): boolean {
+    const held = this.action;
+    if (held && now - held.at < ACTION_LINE_MS && !(warn && !held.warn)) {
+      held.more += 1;
+      return true;
+    }
+    this.action = { head: action, text: what, warn, at: now, more: 0 };
+    return true;
   }
 
   /** A call's `tool_call` checks started (`active`) or ended. Pi checks the calls of a batch one at a time. */
@@ -76,7 +141,7 @@ export class Activity {
   }
 
   promptStart(title: string | undefined, now: number): void {
-    this.prompt = { title: title ?? '', at: now };
+    this.prompt = { title: title ? safeText(title) : '', at: now };
   }
 
   promptEnd(): void {
@@ -92,30 +157,32 @@ export class Activity {
     const since = (at: number) => (now !== undefined && now - at >= SHOW_ELAPSED_MS ? ` · ${formatDuration(now - at)}` : '');
     if (this.prompt) {
       const queued = queuedDialogs > 0 ? ` (+${queuedDialogs} queued)` : '';
-      return `Waiting for you${this.prompt.title ? `: ${clip(this.prompt.title, TITLE_MAX)}` : ''}${queued}${since(this.prompt.at)}`;
+      return fit('Waiting for you', ': ', this.prompt.title, `${queued}${since(this.prompt.at)}`);
     }
+    if (this.action && this.tools.size > 0) return fit(`${this.action.warn ? '⚠ ' : ''}${this.action.head}`, ': ', this.action.text, this.action.more > 0 ? ` +${this.action.more}` : '');
     const running = [...this.tools.values()];
+    const call = (verb: string, tool: RunningTool, at: number) => fit(`${verb} ${tool.name}`, ' ', tool.hint, `${tool.more > 0 ? ` +${tool.more}` : ''}${since(at)}`);
     const checking = running.find((tool) => tool.checkingSince !== undefined);
-    if (checking) return `Checking ${checking.name}${checking.hint ? ` ${clip(checking.hint, HINT_MAX)}` : ''}${since(checking.checkingSince!)}`;
-    if (running.length === 1) {
-      const [tool] = running as [RunningTool];
-      return `Running ${tool.name}${tool.hint ? ` ${clip(tool.hint, HINT_MAX)}` : ''}${since(tool.startedAt)}`;
-    }
+    if (checking) return call('Checking', checking, checking.checkingSince!);
+    if (running.length === 1) return call('Running', running[0]!, running[0]!.startedAt);
     if (running.length > 1) {
       const counts = new Map<string, number>();
       for (const tool of running) counts.set(tool.name, (counts.get(tool.name) ?? 0) + 1);
-      const names = [...counts].map(([name, count]) => (count > 1 ? `${name} ×${count}` : name)).join(' · ');
-      return `Running ${running.length} tools: ${names}${since(Math.min(...running.map((tool) => tool.startedAt)))}`;
+      const shown = [...counts].slice(0, BATCH_NAMES);
+      const names = shown.map(([name, count]) => (count > 1 ? `${name} ×${count}` : name)).join(' · ');
+      const rest = running.length - shown.reduce((sum, [, count]) => sum + count, 0);
+      return fit(`Running ${running.length} tools`, ': ', names, `${rest > 0 ? ` +${rest}` : ''}${since(Math.min(...running.map((tool) => tool.startedAt)))}`);
     }
-    if (this.phase === 'thinking') return `Thinking${since(this.phaseAt)}`;
-    if (this.phase === 'writing') return 'Writing';
-    if (this.phase === 'calling') return 'Preparing tool calls';
-    return undefined;
+    if (this.phase === 'thinking') return fit('Thinking', ': ', this.thought.gist ?? '', since(this.phaseAt));
+    if (this.phase === 'writing') return `Writing${since(this.phaseAt)}`;
+    if (this.phase === 'calling') return `Preparing tool calls${since(this.phaseAt)}`;
+    // Before the first token (after a prompt or tool results): Pi's bare "Working" until the wait is long enough to time.
+    return since(this.phaseAt) ? `Waiting for model${since(this.phaseAt)}` : undefined;
   }
 
   /** Whether a step is under way whose elapsed time grows (worth a repaint every second). */
   ticking(): boolean {
-    return this.phase !== 'idle' && (this.tools.size > 0 || this.prompt !== undefined || this.phase === 'thinking');
+    return this.phase !== 'idle';
   }
 
   private setPhase(phase: Phase, now: number): void {
@@ -129,10 +196,12 @@ export class Activity {
  * shows it to the parent and teammates). With a UI, Pi's working line shows the line with elapsed time, repainted each
  * second while a step runs; Pi's default comes back when the run ends.
  */
-export interface ActivityControl {
+interface ActivityControl {
   activity: Activity;
   /** The gate pipeline (src/index.ts) reports a call's `tool_call` checks starting and ending. */
   checking(id: string, active: boolean): void;
+  /** A call the permission check let through (`onAction` of the permission state). */
+  consequential(action: string, what: string, warn: boolean): void;
 }
 
 export function registerActivity(pi: ExtensionAPI, options: { onChange?: (line: string | undefined) => void; workingLine: boolean }): ActivityControl {
@@ -150,7 +219,8 @@ export function registerActivity(pi: ExtensionAPI, options: { onChange?: (line: 
       reported = line;
       options.onChange?.(line);
     }
-    if (!options.workingLine || !ctx?.hasUI) return;
+    // Only the TUI draws a working line: RPC's setWorkingMessage is a no-op, so nothing there needs a repaint timer.
+    if (!options.workingLine || !ctx?.hasUI || ctx.mode !== 'tui') return;
     const working = activity.describe(Date.now(), dialogsWaiting());
     if (working !== shown) {
       shown = working;
@@ -193,9 +263,8 @@ export function registerActivity(pi: ExtensionAPI, options: { onChange?: (line: 
   });
   pi.on('message_update', async (event) => {
     if (event.message.role !== 'assistant') return;
-    const before = activity.phase;
-    activity.stream(event.assistantMessageEvent.type, Date.now());
-    if (activity.phase !== before) paint();
+    const update = event.assistantMessageEvent;
+    if (activity.stream(update.type, Date.now(), update.type === 'thinking_delta' ? update.delta : undefined)) paint();
   });
   pi.on('message_end', async (event) => {
     if (event.message.role !== 'assistant') return;
@@ -213,7 +282,7 @@ export function registerActivity(pi: ExtensionAPI, options: { onChange?: (line: 
     paint();
   });
   pi.on('ui_prompt_start', async (event) => {
-    activity.promptStart(event.title, Date.now());
+    activity.promptStart(promptTitle(event), Date.now());
     paint();
   });
   pi.on('ui_prompt_end', async () => {
@@ -223,6 +292,9 @@ export function registerActivity(pi: ExtensionAPI, options: { onChange?: (line: 
   pi.on('agent_settled', async () => stop());
   return {
     activity,
+    consequential: (action, what, warn) => {
+      if (activity.consequential(action, what, warn, Date.now())) paint();
+    },
     checking: (id, active) => {
       activity.checking(id, active, Date.now());
       paint();

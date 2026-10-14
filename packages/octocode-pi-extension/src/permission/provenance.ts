@@ -53,7 +53,7 @@ interface Source {
   at: number;
 }
 
-export interface ProvenanceOptions {
+interface ProvenanceOptions {
   /** The repository root reads are trusted under (default: the git toplevel of `cwd`). */
   workspaceRoot?: (cwd: string) => string;
   /** A tool's annotations (`pi.getAllTools()`); without them `mcp__*` tools count as open-world and not read-only. */
@@ -63,7 +63,7 @@ export interface ProvenanceOptions {
   now?: () => number;
 }
 
-export interface ProvenanceHit {
+interface ProvenanceHit {
   /** The dialog line: `contains text from web https://example.com/install (2 min ago)`. */
   why: string;
 }
@@ -148,7 +148,7 @@ function capBytes(text: string, maxBytes: number): string {
 
 const isNetworkCommand = (command: string): boolean => commandNames(command).some((name) => NETWORK.has(name.toLowerCase()));
 
-export class Provenance {
+class Provenance {
   /** Hash → its slot in the ring below. */
   private readonly index = new Map<number, number>();
   /** Oldest-first eviction: `keys[slot]` is the hash written there, `ids[slot]` its source (0: an atom first seen in trusted output). */

@@ -23,7 +23,7 @@ async function closedPort() {
   return port;
 }
 
-test('a sandbox run writes nothing at the .octocode root: helpers are staged under tmp/chrome-devtools/helpers', async () => {
+test('a sandbox run writes only inside .octocode/octocode-chrome-devtools: helpers are staged under its tmp/helpers', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'chrome-sandbox-layout-'));
   try {
     writeFileSync(join(cwd, 'task.mjs'), 'export async function run() {}\n');
@@ -40,10 +40,10 @@ test('a sandbox run writes nothing at the .octocode root: helpers are staged und
     const root = join(cwd, '.octocode');
     assert.deepEqual(
       readdirSync(root),
-      ['tmp'],
-      'only the tmp folder sits at the .octocode root'
+      ['octocode-chrome-devtools'],
+      'only the skill folder sits at the .octocode root'
     );
-    const helpers = join(root, 'tmp', 'chrome-devtools', 'helpers');
+    const helpers = join(root, 'octocode-chrome-devtools', 'tmp', 'helpers');
     for (const helper of [
       'dom-actionability.mjs',
       'human-input.mjs',

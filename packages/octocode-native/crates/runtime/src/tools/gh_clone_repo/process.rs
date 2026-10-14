@@ -252,7 +252,7 @@ impl AskPass {
             )),
             token = shell_quote(token),
         );
-        let mut file = crate::private_file::create_new(&helper.script, 0o700)
+        let mut file = octocode_io::atomic::create_new(&helper.script, 0o700)
             .map_err(|error| failed(error.to_string()))?;
         std::io::Write::write_all(&mut file, body.as_bytes())
             .map_err(|error| failed(error.to_string()))?;
@@ -371,7 +371,7 @@ fn scrub(text: &str, token: Option<&str>, home: &Path) -> String {
     // pattern — not the token replace above — stops a reversible credential
     // from leaking if git echoes a request.
     static AUTH: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-        #[allow(clippy::expect_used)]
+        #[expect(clippy::expect_used, reason = "static pattern, valid by construction")]
         regex::Regex::new(r"(?i)Authorization:\s*(Bearer|token|Basic)\s+\S+")
             .expect("static authorization regex")
     });

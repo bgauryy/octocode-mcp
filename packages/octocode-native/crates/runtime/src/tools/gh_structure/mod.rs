@@ -6,13 +6,11 @@ use crate::tools::gh_shared::{
     search_failure, tree_recovery, with_ref_recovery,
 };
 use crate::tools::id::ToolId;
+use crate::tools::result::ToolData;
 use crate::tools::result::query_row;
-use crate::{
-    providers::github::{
-        ContentsEntry, GitHubProvider, ProviderError, ProviderErrorKind, ProviderErrorReason,
-        RequestContext, TreeRequest,
-    },
-    tools::result::ToolData,
+use octocode_github::{
+    ContentsEntry, GitHubProvider, ProviderError, ProviderErrorKind, ProviderErrorReason,
+    RequestContext, TreeRequest,
 };
 use serde_json::{Map, Value, json};
 use std::collections::HashSet;
@@ -32,7 +30,7 @@ use traverse::*;
 /// Run one ghStructure row. A listing of a missing path names the path and
 /// lists the nearest existing directory (case-corrected) with
 /// `hints.viewTree`; without a located directory it lists the parent.
-pub async fn run<C: crate::providers::github::ConditionalCache>(
+pub async fn run<C: octocode_github::ConditionalCache>(
     provider: &GitHubProvider<C>,
     query: &GhStructureQuery,
     request: Result<&RequestContext, ProviderError>,
@@ -72,7 +70,7 @@ pub async fn run<C: crate::providers::github::ConditionalCache>(
 /// lookup tells a missing commit (named like any missing ref, with
 /// `hints.viewRefs`) from a missing repository; any other outcome keeps the
 /// original error.
-async fn classify_unresolved_sha<C: crate::providers::github::ConditionalCache>(
+async fn classify_unresolved_sha<C: octocode_github::ConditionalCache>(
     provider: &GitHubProvider<C>,
     query: &GhStructureQuery,
     context: &RequestContext,
@@ -110,11 +108,11 @@ fn file_failure(error: ProviderError, at: &RepoPath<'_>) -> GhFailure {
         read["ref"] = json!(reference);
     }
     let mut failure = search_failure(error, None);
-    failure.next = Some(json!({
+    failure.next = Some(Box::new(json!({
         "read": crate::tools::result::Continuation::new(ToolId::GhGetFileContent, read)
             .confidence("exact")
             .build()
-    }));
+    })));
     failure
 }
 
@@ -153,7 +151,9 @@ fn path_failure(
         path: &directory,
         ..*at
     };
-    failure.next = Some(json!({ "viewTree": tree_recovery(&listing, depth, confidence) }));
+    failure.next = Some(Box::new(
+        json!({ "viewTree": tree_recovery(&listing, depth, confidence) }),
+    ));
     match hint {
         Some(hint) => failure.hint(hint),
         None => failure,
@@ -198,7 +198,7 @@ struct Traversal {
     omitted: std::collections::BTreeMap<String, usize>,
 }
 
-pub(crate) async fn execute<C: crate::providers::github::ConditionalCache>(
+pub(crate) async fn execute<C: octocode_github::ConditionalCache>(
     provider: &GitHubProvider<C>,
     query: &GhStructureQuery,
     context: &RequestContext,
@@ -452,7 +452,7 @@ mod tests {
             recorded: Vec::new(),
         };
         let read = || {
-            Acquired::Read(Ok(crate::providers::github::ContentResponse {
+            Acquired::Read(Ok(octocode_github::ContentResponse {
                 bytes: b"owned".to_vec().into(),
                 resolved_ref: "main".into(),
                 etag: None,
@@ -563,7 +563,7 @@ mod tests {
     /// missing path (not an empty listing), so the viewTree recovery runs.
     #[test]
     fn a_root_missing_from_the_git_tree_is_not_found() {
-        let tree: crate::providers::github::TreeResponse = serde_json::from_value(json!({
+        let tree: octocode_github::TreeResponse = serde_json::from_value(json!({
             "sha":"s","truncated":false,"tree":[
                 {"path":"src","type":"tree"},{"path":"src/lib.rs","type":"blob"}
             ]
@@ -581,7 +581,7 @@ mod tests {
     /// names it beside the directories it skips by design.
     #[test]
     fn a_submodule_is_named_not_silently_dropped() {
-        let tree: crate::providers::github::TreeResponse = serde_json::from_value(json!({
+        let tree: octocode_github::TreeResponse = serde_json::from_value(json!({
             "sha":"s","truncated":false,"tree":[
                 {"path":"src","type":"tree"},
                 {"path":"third_party/zlib","type":"commit"},
@@ -665,9 +665,8 @@ mod tests {
 
     mod provider_tests {
         use super::*;
-        use crate::providers::github::RetryPolicy;
-        use crate::tools::gh_shared::test_support::{fixture_context, mock_provider, mount_json};
-        use std::time::Duration;
+        use crate::tools::gh_shared::test_support::{default_context, mock_provider, mount_json};
+        use octocode_github::RetryPolicy;
         use wiremock::matchers::{method, path};
         use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -706,7 +705,7 @@ mod tests {
             }
             let home = tempfile::tempdir().expect("home");
             let provider = mock_provider(&server, RetryPolicy::default());
-            let context = fixture_context(Duration::from_secs(5), 1 << 20);
+            let context = default_context();
             let failure = run(
                 &provider,
                 &query(json!({"owner":"a","repo":"typo"})),
@@ -768,7 +767,7 @@ mod tests {
         async fn list(server: &MockServer, value: Value) -> Result<ToolData, ProviderError> {
             let home = tempfile::tempdir().expect("home");
             let provider = mock_provider(server, RetryPolicy::default());
-            let context = fixture_context(Duration::from_secs(5), 1 << 20);
+            let context = default_context();
             execute(&provider, &query(value), &context, home.path()).await
         }
 
@@ -989,7 +988,7 @@ mod tests {
             )
             .await;
             let provider = mock_provider(&server, RetryPolicy::default());
-            let context = fixture_context(Duration::from_secs(5), 1 << 20);
+            let context = default_context();
             let home = tempfile::tempdir().expect("home");
             let failure = run(
                 &provider,

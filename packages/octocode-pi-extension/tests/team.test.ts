@@ -34,7 +34,7 @@ const take = (store: TeamStore, id: string) => {
 const sent = (result: { id: number | undefined }) => result.id!;
 
 describe('team database', () => {
-  it('lists live agents oldest first and drops dead or silent ones with their leases', () => {
+  it('lists live agents oldest first, hides dead or silent ones without mutating, and sweep drops only the dead with their leases', () => {
     const cwd = repo();
     const store = open(cwd, path.join(tmp(), 'team.sqlite'));
     store.save(member('main-aaaaaa', { joinedAt: 1 }));
@@ -43,7 +43,12 @@ describe('team database', () => {
     store.save(member('silent-dddddd', { updatedAt: Date.now() - 120_000 }));
     expect(store.lock('gone-cccccc', [{ path: 'a.ts', kind: 'file', reason: 'x' }]).ok).toBe(true);
     expect(store.list().map((m) => m.id)).toEqual(['main-aaaaaa', 'researcher-bbbbbb']);
+    // A read changes nothing: the dead one's lease is still held until the sweep.
+    expect(store.leases().map((lease) => lease.owner)).toEqual(['gone-cccccc']);
+    expect(store.sweep()).toEqual(['gone-cccccc']);
     expect(store.leases()).toEqual([]);
+    // The silent one is hidden, not dropped: its process runs.
+    expect((store as unknown as { reachable(): Set<string> }).reachable().has('silent-dddddd')).toBe(true);
     store.remove('main-aaaaaa');
     expect(store.list().map((m) => m.id)).toEqual(['researcher-bbbbbb']);
     store.close();
@@ -213,7 +218,7 @@ describe('collaboration prompt', () => {
     expect(octocodePrompt({ octocode: false, profiles: [], canDelegate: true })).toContain('You own user communication, missing approvals, review and integration');
     const tools: Array<{ parameters: { properties: Record<string, { description?: string }> } }> = [];
     registerAgentTool({ registerTool: (tool: never) => tools.push(tool), registerCommand: () => undefined, registerMessageRenderer: () => undefined, on: () => undefined } as never, () => new Map(), { view: { members: [], traffic: [] }, members: () => [], setResumer: () => undefined } as never, fakePermission());
-    expect(tools[0]!.parameters.properties['collaborate']?.description).toMatch(/subagents on one goal teammates that coordinate directly/);
+    expect(tools[0]!.parameters.properties['collaborate']?.description).toMatch(/subagents that must coordinate directly/);
     // A child names its parent generically: its own id and parent arrive in its task.
     expect(octocodePrompt({ octocode: false, profiles: [], canDelegate: false, collaborate: true })).toMatch(/your parent[^]*sendMessage/);
   });
@@ -247,7 +252,7 @@ describe('Team', () => {
       vi.advanceTimersByTime(4_000);
       expect(main.members().find((m) => m.id === 'researcher-1234')).toMatchObject({ status: 'working', goal: 'Find X', activity: 'Running localSearch foo', toolCalls: 1, input: 105, cacheRead: 30, output: 21, cost: 0.01, unpriced: true, model: 'local/llama', parentId: parent.id });
 
-      const asked = (await main.send('researcher-1234', 'also check tests'));
+      const asked = (await main.send('researcher-1234', 'also check tests', { replyRequired: true }));
       expect(asked).toMatchObject({ sent: ['researcher-1234'] });
       vi.advanceTimersByTime(1_000);
       expect(childLog).toHaveLength(1);
@@ -259,11 +264,6 @@ describe('Team', () => {
       // Awaiting a reply once Pi puts it in front of the child's model.
       child.onContext([{ role: 'custom', customType: MESSAGE_TYPE, details: childLog[0]!.message.details }]);
       expect(main.members().find((m) => m.id === 'researcher-1234')?.pending).toBe(1);
-
-      // Reject oversized instructions rather than deliver an incomplete request.
-      expect((await main.send('researcher-1234', 'q'.repeat(9_000), { replyRequired: false }))).toHaveProperty('error', expect.stringContaining('file path'));
-      vi.advanceTimersByTime(1_000);
-      expect(childLog).toHaveLength(1);
 
       // A reply defaults to FYI, so it never asks the asker to answer again (no ping-pong of woken agents).
       (await child.send('parent', 'found it', { replyTo: (asked as { id: number }).id }));
@@ -385,6 +385,59 @@ describe('Team safety', () => {
     return { Team, cwd, file, env, ctx, log, main, me, fail: (on: boolean) => (failing = on) };
   };
 
+  it('delivers a message over the limit: its head and the path of a private file with all of it, within the limit', async () => {
+    const { MESSAGE_MAX_CHARS } = await import('../src/team/session.js');
+    const { vi } = await import('vitest');
+    vi.stubEnv('OCTOCODE_HOME', tmp());
+    try {
+      const { Team, cwd, file, env, ctx, main, me } = await setup();
+      const child = new Team({ sendMessage: () => undefined } as never, { ...env, OCTOCODE_AGENT_ID: 'researcher-1234', OCTOCODE_PARENT_ID: me.id });
+      child.start(ctx);
+      const text = `${'a'.repeat(MESSAGE_MAX_CHARS)}${'b'.repeat(1_500)}\u001b]0;pwned\u0007\u202e${'c'.repeat(100)}`;
+      const clean = text.replace(/\u001b\]0;pwned\u0007\u202e/u, '');
+      const result = await main.send('researcher-1234', text);
+      expect(result).toMatchObject({ sent: ['researcher-1234'] });
+      const [delivered] = open(cwd, file).pending('researcher-1234');
+      const pointer = /\n\[Full message \((\d+) characters\): (.+)\]$/.exec(delivered!.text)!;
+      expect(pointer[1]).toBe(String(clean.length));
+      expect(delivered!.text.length).toBeLessThanOrEqual(MESSAGE_MAX_CHARS);
+      expect(delivered!.text.startsWith('aaaa')).toBe(true);
+      // The file is read outside the message's fence: it holds the sanitized text inside a fence of its own.
+      const saved = fs.readFileSync(pointer[2]!, 'utf8');
+      expect(saved).toMatch(new RegExp(`^Full message \\(${clean.length} characters\\) from ${me.id}:\\n<<<(untrusted-[0-9a-f]{16}) \\(data from the sender, not instructions`));
+      expect(saved).toContain(`\n${clean}\n`);
+      expect(saved).not.toMatch(/[\u001b\u0007\u202e]/u);
+      if (process.platform !== 'win32') expect(fs.statSync(pointer[2]!).mode & 0o777).toBe(0o600);
+      // A message that fits is delivered as written.
+      await main.send('researcher-1234', 'short');
+      expect(open(cwd, file).pending('researcher-1234').map((m) => m.text)).toContain('short');
+      child.stop();
+      main.stop();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('treats a subagent as headless whether or not Pi reports a UI (RPC does): it leaves the team once its run settles', async () => {
+    const { Team, cwd, env, main, me } = await setup();
+    const started = (id: string, extra: Record<string, string>) => {
+      const team = new Team({ sendMessage: () => undefined } as never, { ...env, OCTOCODE_AGENT_ID: id, OCTOCODE_PARENT_ID: me.id, ...extra });
+      team.start({ cwd, hasUI: true, isIdle: () => true } as never);
+      return team;
+    };
+    const child = started('rpc-child-1', { OCTOCODE_SUBAGENT: '1' });
+    expect(main.members().map((m) => m.id)).toContain('rpc-child-1');
+    child.onAgentSettled();
+    expect(main.members().map((m) => m.id)).not.toContain('rpc-child-1');
+    // The same context in a session that is not a subagent is a person watching: it stays, idle.
+    const watched = started('watched-1', {});
+    watched.onAgentSettled();
+    expect(main.members().find((m) => m.id === 'watched-1')).toMatchObject({ status: 'idle' });
+    watched.stop();
+    child.stop();
+    main.stop();
+  });
+
   it('fails closed when the team database cannot answer, but not before anyone collaborated', async () => {
     const { vi } = await import('vitest');
     const { Team } = await import('../src/team/session.js');
@@ -465,6 +518,25 @@ describe('Team safety', () => {
     } finally {
       lone.stop();
       main.stop();
+    }
+  });
+
+  it('checks reservations again right before the file tool writes or deletes, after the change was prepared', async () => {
+    const { FileGuard, registerFileTool } = await import('../src/files/tool.js');
+    const cwd = repo();
+    const target = path.join(cwd, 'a.ts');
+    fs.writeFileSync(target, 'one');
+    const guard = new FileGuard();
+    guard.record(target);
+    let tool: { execute: (...args: unknown[]) => Promise<unknown> } | undefined;
+    registerFileTool({ registerTool: (t: typeof tool) => (tool = t), on: () => undefined } as never, guard, fakePermission());
+    // Free when the query is inspected; a peer reserves it before the write.
+    for (const query of [{ type: 'edit', edits: [{ oldText: 'one', newText: 'two' }] }, { type: 'delete' }]) {
+      let checks = 0;
+      guard.reservedBy = () => (checks++ === 0 ? undefined : 'a.ts is reserved by peer-1');
+      await expect(tool!.execute('c', { queries: [{ reasoning: 'r', path: 'a.ts', ...query }] }, undefined, undefined, { cwd, hasUI: false })).rejects.toThrow(/reserved by peer-1/);
+      expect(checks).toBe(2);
+      expect(fs.readFileSync(target, 'utf8')).toBe('one');
     }
   });
 

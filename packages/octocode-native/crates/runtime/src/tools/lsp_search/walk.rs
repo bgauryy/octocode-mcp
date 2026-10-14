@@ -914,25 +914,10 @@ pub(super) fn compact_calls(row: &mut Value, all: &[Value], paths: &PathPolicy) 
     let declared = declaring_files(all.iter().chain(items));
     let mut files: Vec<(CallGroup, serde_json::Map<String, Value>)> = Vec::new();
     for item in items {
-        let Some((key, node)) = call_node(item) else {
+        let Some((group, call)) = filed_call(item, &declared, paths) else {
             continue;
         };
-        let declared_in = node_path(node);
-        // Call sites lie in the caller: the listed node for incoming calls,
-        // the expanded node for outgoing ones.
-        let path = match key {
-            "to" => item
-                .get(CALLER_PATH)
-                .and_then(Value::as_str)
-                .map(str::to_owned)
-                .or_else(|| item.get("via").filter(|via| via.is_object()).map(node_path))
-                .unwrap_or_else(|| declared_in.clone()),
-            _ => declared_in.clone(),
-        };
-        let sites = call_sites(item);
-        let call = call_row(node, item, &sites, (&path, &declared_in), &declared, paths);
         // One entry per (direction, file).
-        let group = (key, path);
         let index = match files.iter().position(|(seen, _)| *seen == group) {
             Some(index) => index,
             None => {
@@ -967,6 +952,84 @@ pub(super) fn compact_calls(row: &mut Value, all: &[Value], paths: &PathPolicy) 
 
 /// A compact file entry's identity: direction key and file.
 type CallGroup = (&'static str, String);
+
+/// The file entry a call item is filed under and its call row (see
+/// [`compact_calls`]); `None` for an item that is not a call edge.
+fn filed_call(
+    item: &Value,
+    declared: &HashMap<(String, u64), HashSet<String>>,
+    paths: &PathPolicy,
+) -> Option<(CallGroup, Value)> {
+    let (key, node) = call_node(item)?;
+    let declared_in = node_path(node);
+    // Call sites lie in the caller: the listed node for incoming calls,
+    // the expanded node for outgoing ones.
+    let path = match key {
+        "to" => item
+            .get(CALLER_PATH)
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+            .or_else(|| item.get("via").filter(|via| via.is_object()).map(node_path))
+            .unwrap_or_else(|| declared_in.clone()),
+        _ => declared_in.clone(),
+    };
+    let sites = call_sites(item);
+    let call = call_row(node, item, &sites, (&path, &declared_in), declared, paths);
+    Some(((key, path), call))
+}
+
+/// One page of hierarchy `items` (see [`salted_items_payload`]), call
+/// edges compacted to per-file call rows (see [`compact_calls`]). A page is
+/// cut on what its rows print as, so it fills `budget`.
+pub(super) fn call_items_payload(
+    query: &LspSearchQuery,
+    items: &[Value],
+    salt: Option<&str>,
+    budget: usize,
+    paths: &PathPolicy,
+) -> Value {
+    let (sizes, reserve) = compact_call_sizes(items, paths);
+    // A page that opens inside a file's run of calls repeats its file entry,
+    // which the sizes charge only to the run's first call.
+    let mut row = salted_items_payload(
+        query,
+        query.operation().as_str(),
+        json!(items),
+        salt,
+        budget.saturating_sub(reserve).max(1),
+        |_| sizes,
+    );
+    compact_calls(&mut row, items, paths);
+    row
+}
+
+/// Characters each call edge costs a page as the compact row it prints as:
+/// its call row, plus its file entry when the edge before it is filed
+/// elsewhere; and the largest file entry. Items that are not all call
+/// edges print as themselves.
+fn compact_call_sizes(items: &[Value], paths: &PathPolicy) -> (Vec<usize>, usize) {
+    use crate::tools::stream_page::json_chars;
+    if items.iter().any(|item| call_node(item).is_none()) {
+        return (super::render::plain_sizes(items), 0);
+    }
+    let declared = declaring_files(items.iter());
+    let mut previous: Option<CallGroup> = None;
+    let mut largest = 0;
+    let sizes = items
+        .iter()
+        .map(|item| {
+            let Some((group, call)) = filed_call(item, &declared, paths) else {
+                return json_chars(item) + 1;
+            };
+            let entry = json_chars(&json!({"path": group.1, "matches": []})) + 1;
+            largest = largest.max(entry);
+            let opens = previous.as_ref() != Some(&group);
+            previous = Some(group);
+            json_chars(&call) + 1 + if opens { entry } else { 0 }
+        })
+        .collect();
+    (sizes, largest)
+}
 
 /// The direction key (`from` or `to`) and node of a call item.
 fn call_node(item: &Value) -> Option<(&'static str, &Value)> {
@@ -1608,15 +1671,14 @@ pub(super) async fn hierarchy(
     let mut row = if items.is_empty() && !builtin_lib_names(&walks).is_empty() {
         json!({"path": query.path(), "lsp": {"serverAvailable": true}})
     } else {
-        salted_items_payload(
+        call_items_payload(
             query,
-            query.operation().as_str(),
-            json!(items.clone()),
+            &items,
             verified.as_ref().and_then(Importers::digest),
             budget,
+            paths,
         )
     };
-    compact_calls(&mut row, &items, paths);
     if let Some(note) = class_uses_warning(query.operation().as_str(), &roots) {
         crate::tools::paging::push_warnings(&mut row, [note]);
     }

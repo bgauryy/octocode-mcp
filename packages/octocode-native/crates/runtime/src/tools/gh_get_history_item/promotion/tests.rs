@@ -785,3 +785,24 @@ fn issue_pages_use_the_published_include_spelling() {
     assert_eq!(comments["sections"], json!(["comments"]), "{out}");
     assert!(comments.get("content").is_none(), "{out}");
 }
+
+/// `next.readRawBody` re-reads the comment surface it names with every
+/// comment kind the call read: discussion and inline review comments both.
+#[test]
+fn raw_body_read_keeps_every_comment_kind() {
+    for sections in [
+        json!(["comments", "reviewComments"]),
+        json!(["reviewComments"]),
+        json!(["comments"]),
+    ] {
+        let query: HistoryItemRequest = HistoryItemRequest::from_row(json!({
+            "operation":"pullRequest","owner":"a","repo":"b","number":1,
+            "sections":sections.clone()
+        }))
+        .expect("pr query");
+        let mut out = json!({"pullRequests":[{"number":1}]});
+        attach_raw_body_read(&mut out, &query, &["comments"]);
+        let next = &out["next"]["readRawBody"]["query"]["queries"][0];
+        assert_eq!(next["sections"], sections, "{next}");
+    }
+}

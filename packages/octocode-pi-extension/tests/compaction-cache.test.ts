@@ -48,7 +48,7 @@ function fakePi(models: TestModel[]) {
     hasUI: true,
     cwd: '/repo',
     modelRegistry: { getAll: () => catalog, find: (provider: string, id: string) => catalog.find((model) => model.provider === provider && model.id === id) },
-    sessionManager: { getSessionId: () => 's1' },
+    sessionManager: { getSessionId: () => 's1', getBranch: () => [] },
     getContextUsage: () => ({ tokens: 1, contextWindow: 1_000_000, percent: usage.percent }),
   };
   return { pi, ctx, handlers, registerProvider, usage, catalog: () => catalog, fire: (name: string, event: unknown = {}) => handlers.get(name)!(event, ctx) };
@@ -173,6 +173,14 @@ describe('granted tier and warming', () => {
     expect(warmingDecision({ ...idle, action: 'warm' }, ctx, 60 * minute, now)).toEqual({ action: 'stop' });
     expect(warmingDecision({ ...idle, continuationProbability: 1 }, ctx, 5 * minute, now)).toBeUndefined();
     expect(warmingDecision({ ...idle, action: 'warm' }, { hasUI: false, sessionManager: { getBranch: () => branch } } as never, 5 * minute, now)).toEqual({ action: 'stop' });
+    // A subagent reports a UI over RPC but nobody idles at it: it never keeps a cache warm, by argument or by its env.
+    expect(warmingDecision({ ...idle, action: 'warm' }, ctx, 5 * minute, now, true)).toEqual({ action: 'stop' });
+    vi.stubEnv('OCTOCODE_SUBAGENT', '1');
+    try {
+      expect(warmingDecision({ ...idle, action: 'warm' }, ctx, 5 * minute, now)).toEqual({ action: 'stop' });
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
 

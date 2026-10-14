@@ -260,6 +260,13 @@ function runSelfTest() {
     mkdirSync(nested, { recursive: true });
     const protectedResult = applyRow({ destDir: temp, destPath: join(temp, 'parent'), action: 'conflict-dir', reason: 'contains source' }, nested, { force: true });
     if (protectedResult.result !== 'blocked' || !existsSync(nested)) failures.push('source-containing destination was not protected');
+    const realSource = join(temp, 'real-skill');
+    mkdirSync(realSource);
+    const aliasSource = join(temp, 'alias-skill');
+    symlinkSync(realSource, aliasSource, isWin ? 'junction' : 'dir');
+    const vendorLink = join(temp, 'vendor-link');
+    symlinkSync(realSource, vendorLink, isWin ? 'junction' : 'dir');
+    if (!linksToSource(inspectDest(vendorLink).resolved, aliasSource)) failures.push('a link to the source reached through a symlinked folder must count as linked');
   } finally { rmSync(temp, { recursive: true, force: true }); }
   return { ok: failures.length === 0, failures };
 }
@@ -287,6 +294,11 @@ function inspectDest(destPath) {
   return { state: 'other' };
 }
 
+/** True when a destination link's realpath is the source; the source may itself be reached through a symlink. */
+function linksToSource(resolvedDest, sourcePath) {
+  return Boolean(resolvedDest) && resolve(resolvedDest) === realpathSync(sourcePath);
+}
+
 function planRows(sourcePath, skillName, platformIds, projectRoot) {
   const rows = [];
   const seenDest = new Map(); // destPath -> first platform
@@ -308,9 +320,7 @@ function planRows(sourcePath, skillName, platformIds, projectRoot) {
         action = 'skip-dup-path';
         reason = `same path as ${dupOf}`;
       } else if (existing.state === 'symlink') {
-        const same =
-          existing.resolved &&
-          resolve(existing.resolved) === resolve(sourcePath);
+        const same = linksToSource(existing.resolved, sourcePath);
         if (same) {
           action = 'ok';
           reason = 'already linked to source';

@@ -14,12 +14,12 @@ import { clipText, contentText, firstLine, isRecord } from './util.js';
  *        up to 3 preview lines
  *        … +K lines (ctrl+o to expand)
  *
- * The glyph is ○ before execution, ● accent while running (with a live 1s ticker), ● green when done and ✗ red on
- * error. Expanded shows every line. Every string drawn here is sanitized: tool arguments and output are untrusted.
+ * The glyph is ○ before execution (`waiting` once Pi started the call but its checks or approval still run), ● accent
+ * while running (the newest row with a live 1s clock), ● green when done and ✗ red on error. Expanded shows every line. Every string drawn here is sanitized: tool arguments and output are untrusted.
  */
 
 /** Result lines shown while collapsed. */
-const COLLAPSED_LINES = 3;
+export const COLLAPSED_LINES = 3;
 /** Header summary budget in characters, before the width clip. */
 const SUMMARY_CHARS = 120;
 const SUMMARY_CHARS_EXPANDED = 200;
@@ -55,8 +55,12 @@ export function clip(text: string, max: number): string {
 
 /** Renderer state kept per tool row (`context.state`). */
 export interface ToolRow {
+  /** When a row without a call id first drew as running (see `runStart`). */
   startedAt?: number;
-  timer?: ReturnType<typeof setInterval>;
+  /** The row holds the clock now: it is the newest running row (see `track`). */
+  ticking?: boolean;
+  /** The row took the clock once; a row that lost it to a newer one never takes it back. */
+  clocked?: boolean;
   /** `checks 1.2s · queued 3s`: the time the call waited before it ran (see `timingOf`). */
   waits?: string;
   /** The call was interrupted (Esc, a kill, a requested stop), not failed: drawn `◼` in the warning colour. */
@@ -76,6 +80,8 @@ export interface RenderContext {
   durationMs?: number | undefined;
   /** The call's arguments (Pi passes them to both renderers). */
   args?: unknown;
+  /** The tool call the row draws; its run start is what `timed` recorded under it. */
+  toolCallId?: string;
 }
 
 type Phase = 'pending' | 'running' | 'done' | 'error' | 'stopped';
@@ -104,32 +110,80 @@ function glyph(theme: Theme, phase: Phase): string {
   }
 }
 
-/** Live row tickers, so a session switch can stop the ones whose rows will never get a final result. */
-const rowTimers = new Set<ReturnType<typeof setInterval>>();
+/**
+ * When each call's run began, recorded by `timed`. Pi marks a batch's calls started before their `tool_call` checks
+ * and approval dialogs ran, and its final duration counts only the run: the live clock starts here to match it.
+ */
+const runStarts = new Map<string, number>();
+/** Bounded: nested calls (`file` running Pi's tools) record starts no row ever reads; dropped oldest first. */
+const RUN_STARTS_MAX = 512;
+/** Rows drawn as waiting, each redrawn once when its run begins. */
+const waitingRows = new Map<string, () => void>();
 
-/** Stop every running row's ticker (on `session_shutdown`: the old session's rows are gone from the screen). */
-export function stopRowTimers(): void {
-  for (const timer of rowTimers) clearInterval(timer);
-  rowTimers.clear();
+function markRun(toolCallId: string): void {
+  if (runStarts.has(toolCallId)) return;
+  runStarts.set(toolCallId, Date.now());
+  if (runStarts.size > RUN_STARTS_MAX) runStarts.delete(runStarts.keys().next().value!);
+  const redraw = waitingRows.get(toolCallId);
+  waitingRows.delete(toolCallId);
+  redraw?.();
 }
 
-/** Start the 1s ticker while running and stop it on the final result, following Pi's bash renderer. */
+/** When the row's run began, or undefined while it still waits for its checks, approval or a lock. */
+function runStart(context: RenderContext, state: ToolRow): number | undefined {
+  return typeof context.toolCallId === 'string' ? runStarts.get(context.toolCallId) : (state.startedAt ??= Date.now());
+}
+
+/**
+ * The one ticking row. A changed line above the viewport makes pi-tui clear and redraw the whole scrollback, so a
+ * clock ticking on a row that scrolled off would flicker and yank the user out of scrollback every second. Only the
+ * newest running row ticks (it is the last row, nearest the viewport); the working line shows how long the run took.
+ */
+let clock: { state: ToolRow; invalidate: () => void; timer: ReturnType<typeof setInterval> } | undefined;
+
+function stopClock(): void {
+  if (!clock) return;
+  clearInterval(clock.timer);
+  clock.state.ticking = false;
+  clock = undefined;
+}
+
+/** Stop the clock and forget run starts (on `agent_end` and `session_shutdown`: no row is still running). */
+export function stopRowTimers(): void {
+  stopClock();
+  waitingRows.clear();
+  runStarts.clear();
+}
+
+/**
+ * The newest running row takes the clock; the row that held it drops its time (redrawn once, while it still sits just
+ * above the new row) and never ticks again. The clock stops on the final result.
+ */
 function track(context: RenderContext, phase: Phase): ToolRow {
   const state = rowState(context);
+  const id = context.toolCallId;
   if (phase === 'running') {
-    state.startedAt ??= Date.now();
-    if (!state.timer && context.invalidate) {
+    if (id !== undefined && context.invalidate && runStart(context, state) === undefined) waitingRows.set(id, context.invalidate);
+    if (!state.clocked && context.invalidate) {
+      state.clocked = true;
+      const previous = clock?.invalidate;
+      stopClock();
+      // Redrawn after this pass: invalidating another row from inside this row's render would re-enter Pi's display.
+      if (previous) queueMicrotask(previous);
       const invalidate = context.invalidate;
-      state.timer = setInterval(() => invalidate(), 1_000);
-      state.timer.unref?.();
-      rowTimers.add(state.timer);
+      const timer = setInterval(() => {
+        if (runStart(context, state) !== undefined) invalidate();
+      }, 1_000);
+      timer.unref?.();
+      clock = { state, invalidate, timer };
+      state.ticking = true;
     }
-  } else if (phase === 'done' || phase === 'error') {
-    if (state.timer) {
-      clearInterval(state.timer);
-      rowTimers.delete(state.timer);
+  } else if (phase !== 'pending') {
+    if (clock?.state === state) stopClock();
+    if (id !== undefined) {
+      runStarts.delete(id);
+      waitingRows.delete(id);
     }
-    state.timer = undefined;
   }
   return state;
 }
@@ -137,18 +191,24 @@ function track(context: RenderContext, phase: Phase): ToolRow {
 /** Summaries of an interrupted call: Esc (`aborted`), a kill or a requested stop. */
 const STOPPED = /^(?:error:\s*)?(?:(?:the )?(?:operation|request|run) (?:was )?aborted|aborted|interrupted|cancell?ed|stopped\b)/i;
 
-/** A list of lines clipped to the render width (`wrap` lines wrap instead). */
+/**
+ * A list of lines clipped to the render width (`wrap` lines wrap instead). The output is cached per width until the
+ * next `set`: pi-tui draws up to 60 frames a second while streaming, and its Box compares a child's lines by identity.
+ */
 class Lines implements Component {
   private rows: Array<{ text: string; wrap?: boolean; indent?: string }> = [];
   private header: { left: string; summary: string; right: string } | undefined;
+  private cache: { width: number; lines: string[] } | undefined;
 
   set(header: Lines['header'], rows: Lines['rows']): this {
     this.header = header;
     this.rows = rows;
+    this.cache = undefined;
     return this;
   }
 
   render(width: number): string[] {
+    if (this.cache?.width === width) return this.cache.lines;
     const out: string[] = [];
     if (this.header) {
       const { left, summary, right } = this.header;
@@ -165,33 +225,48 @@ class Lines implements Component {
       // A width narrower than the indent still gets lines that fit: the indent and text are clipped together.
       for (const line of wrapped.length > 0 ? wrapped : ['']) out.push(truncateToWidth(`${indent}${line}`, width, '…'));
     }
+    this.cache = { width, lines: out };
     return out;
   }
 
-  invalidate(): void {}
+  invalidate(): void {
+    this.cache = undefined;
+  }
 }
 
 function lines(context: RenderContext): Lines {
   return context.lastComponent instanceof Lines ? context.lastComponent : new Lines();
 }
 
+/** Header sub-lines shown while collapsed, when more than one would be folded. */
+const COLLAPSED_SUB_LINES = 3;
+
 /**
  * `<glyph> Name(summary) · 1.2s`, clipped to the width with the time kept. `lines` are extra sub-lines (one per
- * query of a batched call), clipped to the width; callers sanitize them (they may be styled). Pi owns completed
- * execution timing; the local clock estimates elapsed time only while running. Custom messages can supply a duration.
+ * query of a batched call), clipped to the width; collapsed, the first 3 show and `… +N more` counts the rest. Callers
+ * sanitize them (they may be styled). Pi owns completed execution timing; while running, the newest row shows the time
+ * since its run began (`timed` records it, so the tool must be wrapped by `timed`), and a row still waiting for its
+ * checks, approval or lock says `waiting`. Custom messages can supply a duration.
  */
 export function toolHeader(theme: Theme, context: RenderContext, name: string, summary: string, options: { durationMs?: number; meta?: string; lines?: string[] } = {}): Component {
   const base = phaseOf(context);
   const state = track(context, base);
-  const phase: Phase = base === 'error' && state.stopped ? 'stopped' : base;
-  const measured = phase === 'running' && state.startedAt !== undefined ? Date.now() - state.startedAt : undefined;
+  const start = base === 'running' ? runStart(context, state) : undefined;
+  const waiting = base === 'running' && start === undefined;
+  const phase: Phase = base === 'error' && state.stopped ? 'stopped' : waiting ? 'pending' : base;
+  const measured = state.ticking && start !== undefined ? Date.now() - start : undefined;
   const duration = context.durationMs ?? options.durationMs ?? measured;
   const finished = phase === 'done' || phase === 'error' || phase === 'stopped';
-  const meta = [options.meta ? clip(options.meta, 60) : '', duration !== undefined && phase !== 'pending' ? formatDuration(duration, true) : '', finished ? (state.waits ?? '') : ''].filter(Boolean);
+  const time = waiting ? 'waiting' : duration !== undefined && phase !== 'pending' ? formatDuration(duration, true) : '';
+  const meta = [options.meta ? clip(options.meta, 60) : '', time, finished ? (state.waits ?? '') : ''].filter(Boolean);
   const text = clip(summary, context.expanded ? SUMMARY_CHARS_EXPANDED : SUMMARY_CHARS);
   const left = `${glyph(theme, phase)} ${theme.fg('toolTitle', theme.bold(clip(name, 60)))}${text ? theme.fg('muted', '(') : ''}`;
   const right = `${text ? theme.fg('muted', ')') : ''}${meta.length > 0 ? theme.fg('dim', ` · ${meta.join(' · ')}`) : ''}`;
-  const rows = (options.lines ?? []).map((line) => ({ text: `  ${line}` }));
+  const sub = options.lines ?? [];
+  // Folding one line would cost the line it saves.
+  const folded = !context.expanded && sub.length > COLLAPSED_SUB_LINES + 1;
+  const rows = (folded ? sub.slice(0, COLLAPSED_SUB_LINES) : sub).map((line) => ({ text: `  ${line}` }));
+  if (folded) rows.push({ text: `  ${theme.fg('dim', `… +${sub.length - COLLAPSED_SUB_LINES} more (${expandKey()} to expand)`)}` });
   return lines(context).set({ left, summary: text ? theme.fg('muted', text) : '', right }, rows);
 }
 
@@ -207,6 +282,8 @@ interface ResultBlockOptions {
   summary: string;
   /** Raw output: sanitized and coloured here. */
   body?: string;
+  /** How many lines the whole body has when `body` holds only its tail (a collapsed command output), for `+K lines`. */
+  totalLines?: number;
   /** Pre-styled body lines (for diffs); the caller sanitized their text. Used instead of `body`. */
   lines?: string[];
   /** Pre-styled lines shown before the body only when expanded (a subagent's prompt); the caller sanitized them. */
@@ -258,19 +335,22 @@ export function resultBlock(theme: Theme, context: RenderContext, options: Resul
   const color = stopped ? 'warning' : error ? 'error' : 'toolOutput';
   const rows: Array<{ text: string; wrap?: boolean; indent?: string }> = [];
   if (summary) rows.push({ text: `${theme.fg('dim', GUTTER)}${theme.fg(color, error && !/^(error|failed)\b|\bfailed\b/i.test(summary) ? `Error: ${summary}` : stopped ? summary.replace(/^error:\s*/i, '') : summary)}` });
-  const body = options.lines ?? (options.body ? bodyLines(options.body).map((line) => theme.fg(color, line)) : []);
+  // Raw body lines are coloured only where shown: a collapsed preview colours its few lines, not the whole output.
+  const raw = options.lines ? undefined : options.body ? bodyLines(options.body) : [];
+  const paint = (line: string) => (raw ? theme.fg(color, line) : line);
+  const body = options.lines ?? raw!;
   const max = Math.max(0, options.max ?? COLLAPSED_LINES);
   const first = (index: number) => (!summary && index === 0 ? theme.fg('dim', GUTTER) : INDENT);
   const preface = options.preface ?? [];
   if (options.expanded ?? context.expanded) {
     preface.forEach((line, index) => rows.push({ text: line, wrap: true, indent: first(index) }));
-    body.forEach((line, index) => rows.push({ text: line, wrap: true, indent: first(index + preface.length) }));
+    body.forEach((line, index) => rows.push({ text: paint(line), wrap: true, indent: first(index + preface.length) }));
     if (options.spill) rows.push({ text: `${INDENT}${theme.fg('dim', `${options.spillLabel ?? 'saved'}: ${clip(shortPath(options.spill), 300)}`)}` });
   } else {
     // Blank lines waste preview rows; they still count as hidden and show when expanded.
-    const filled = body.filter((line) => line.replace(/\u001b\[[0-9;]*m/g, '').trim() !== '');
-    const shown = options.tail ? filled.slice(Math.max(0, filled.length - max)) : filled.slice(0, max);
-    const hidden = body.length - shown.length;
+    const filled = body.filter((line) => (raw ? line : line.replace(/\u001b\[[0-9;]*m/g, '')).trim() !== '');
+    const shown = (options.tail ? filled.slice(Math.max(0, filled.length - max)) : filled.slice(0, max)).map(paint);
+    const hidden = Math.max(options.totalLines ?? 0, body.length) - shown.length;
     // The preface is named, not counted: `+2 lines` must mean two more lines of the body.
     const more = preface.length > 0 ? ` · ${options.prefaceLabel ?? 'more'}` : '';
     const folded = hidden > 0 || more !== '';
@@ -307,12 +387,13 @@ export function timingOf(details: unknown): { waits?: string } {
 }
 
 /**
- * Keep `checkMs` / `queuedMs` in the result when a call waited before it ran (see `takeTiming`). Pi owns execution
- * duration; this wrapper records only the approval and queue waits. Existing details are merged, never replaced.
- * Pi passes the tool call id first; that is how the wait is found.
+ * Keep `checkMs` / `queuedMs` in the result when a call waited before it ran (see `takeTiming`), and start the row's
+ * live clock. Pi owns execution duration; this wrapper records only the approval and queue waits. Existing details
+ * are merged, never replaced. Pi passes the tool call id first; that is how the wait is found.
  */
 export function timed<A extends unknown[], R>(execute: (...args: A) => Promise<R>): (...args: A) => Promise<R> {
   return (async (...args: A) => {
+    if (typeof args[0] === 'string') markRun(args[0]);
     const waits = typeof args[0] === 'string' ? takeTiming(args[0]) : {};
     const result = await execute(...args);
     if (!isRecord(result) || Object.keys(waits).length === 0) return result;
@@ -333,16 +414,46 @@ export function timedTool<TParams extends TSchema, TDetails, TState>(
   options: { exclusive?: boolean } = {},
 ): ToolDefinition<TParams, TDetails, TState> {
   const execute = timed(tool.execute.bind(tool));
-  return { ...tool, execute: options.exclusive ? exclusive(execute) : execute };
+  if (!options.exclusive) return { ...tool, execute };
+  const queued = exclusive(execute);
+  // Pi's duration counts the lock wait (it times `execute`), so the live clock starts before the lock too.
+  return {
+    ...tool,
+    execute: (...args: Parameters<typeof execute>) => {
+      if (typeof args[0] === 'string') markRun(args[0]);
+      return queued(...args);
+    },
+  };
 }
 
 export function resultText(result: { content: Array<{ type: string; text?: string }> }): string {
   return sanitizeTerminalText(contentText(result.content, { image: '[image]' }));
 }
 
-/** A coloured footer status in the TUI; plain text for RPC clients, which would otherwise receive raw escape codes. */
-export function statusColor(ctx: Pick<ExtensionContext, 'mode' | 'ui'>, color: Parameters<Theme['fg']>[0], text: string): string {
-  return ctx.mode === 'tui' ? ctx.ui.theme.fg(color, text) : text;
+type ColorToken = Parameters<Theme['fg']>[0];
+
+/** What `statusColor` painted, by its output, so the footer can repaint it in the live theme (`livePaint`). */
+const painted = new Map<string, { color: ColorToken; text: string }>();
+/** Bounded: counts in statuses change; a status evicted while still shown keeps its colours until the next theme switch. */
+const PAINTED_MAX = 64;
+
+/**
+ * A coloured footer status in the TUI; plain text for RPC clients, which would otherwise receive raw escape codes.
+ * The footer repaints it with the theme of each frame, so a theme switch reaches statuses set before it.
+ */
+export function statusColor(ctx: Pick<ExtensionContext, 'mode' | 'ui'>, color: ColorToken, text: string): string {
+  if (ctx.mode !== 'tui') return text;
+  const out = ctx.ui.theme.fg(color, text);
+  painted.delete(out);
+  painted.set(out, { color, text });
+  if (painted.size > PAINTED_MAX) painted.delete(painted.keys().next().value!);
+  return out;
+}
+
+/** A status `statusColor` made, painted again with `theme` (the live one); any other text as it is. */
+export function livePaint(text: string, theme: Pick<Theme, 'fg'>): string {
+  const entry = painted.get(text);
+  return entry ? theme.fg(entry.color, entry.text) : text;
 }
 
 /** Search terms first (what the call looks for), then where it looks. */

@@ -1,6 +1,6 @@
 # Records and scoped queries
 
-Load when you query history, memories, events, or record fields. Why: distinguish history cursors from operational IDs.
+Load when you query history, memories, events, or record fields.
 
 ## Envelope and IDs
 

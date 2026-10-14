@@ -174,9 +174,11 @@ impl<C: Clone> InFlight<C> {
     }
 
     fn complete(&self, result: SharedResult<C>) {
-        if let Ok(mut slot) = self.result.lock()
-            && slot.is_none()
-        {
+        let mut slot = self
+            .result
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if slot.is_none() {
             *slot = Some(result);
             self.notify.notify_waiters();
         }
@@ -185,9 +187,12 @@ impl<C: Clone> InFlight<C> {
     async fn wait(&self) -> SharedResult<C> {
         loop {
             let notified = self.notify.notified();
-            if let Ok(slot) = self.result.lock()
-                && let Some(result) = slot.clone()
-            {
+            let current = self
+                .result
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone();
+            if let Some(result) = current {
                 return result;
             }
             notified.await;
@@ -908,7 +913,7 @@ pub fn canonical_lsp_key(config: &JsLanguageServerConfig) -> Result<String> {
         .unwrap_or_default()
         .into_iter()
         .collect::<BTreeMap<_, _>>();
-    let initialization_options = canonical_json(
+    let initialization_options = crate::digest::canonical_json_keep_nulls(
         config
             .initialization_options
             .clone()
@@ -952,24 +957,6 @@ fn normalize_workspace_root(root: &str) -> Result<String> {
         }
     }
     Ok(normalized.to_string_lossy().into_owned())
-}
-
-/// Deep copy of `value` with every object's keys sorted, so equal JSON
-/// hashes and compares equal regardless of key order.
-pub fn canonical_json(value: Value) -> Value {
-    match value {
-        Value::Array(items) => Value::Array(items.into_iter().map(canonical_json).collect()),
-        Value::Object(map) => {
-            let sorted = map
-                .into_iter()
-                .map(|(key, value)| (key, canonical_json(value)))
-                .collect::<BTreeMap<_, _>>();
-            let mut canonical = serde_json::Map::new();
-            canonical.extend(sorted);
-            Value::Object(canonical)
-        }
-        scalar => scalar,
-    }
 }
 
 #[cfg(test)]

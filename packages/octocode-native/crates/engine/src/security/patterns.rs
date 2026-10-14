@@ -1601,7 +1601,10 @@ fn ascii_word_boundaries(pattern: &str) -> String {
 pub fn pattern_regex(idx: usize) -> &'static Regex {
     // Built-in pattern strings are constants validated by the pattern tests; a
     // compile failure is a build-time bug, not a runtime condition.
-    #[allow(clippy::expect_used)]
+    #[expect(
+        clippy::expect_used,
+        reason = "built-in patterns are valid by construction"
+    )]
     PATTERN_REGEX_CELLS[idx].get_or_init(|| {
         Regex::new(&ascii_word_boundaries(PATTERNS[idx].regex)).expect(PATTERNS[idx].name)
     })

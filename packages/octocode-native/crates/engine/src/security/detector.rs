@@ -162,7 +162,10 @@ fn build_prescan() -> Prescan {
         }
     }
     // Aho-Corasick over a fixed literal set cannot fail to build.
-    #[allow(clippy::expect_used)]
+    #[expect(
+        clippy::expect_used,
+        reason = "built from static patterns, valid by construction"
+    )]
     let ac = AhoCorasickBuilder::new()
         .ascii_case_insensitive(true)
         .build(&literals)

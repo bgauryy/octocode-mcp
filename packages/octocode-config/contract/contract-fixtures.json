@@ -1999,6 +1999,35 @@
     "accepted": false
   },
   {
+    "id": "history-search.qualifier-unmerged-beside-state",
+    "tool": "ghSearchHistory",
+    "input": {
+      "queries": [
+        {
+          "operation": "pullRequest",
+          "owner": "o",
+          "repo": "r",
+          "state": "closed",
+          "qualifiers": "-is:merged is:unmerged"
+        }
+      ]
+    },
+    "accepted": true,
+    "normalized": {
+      "queries": [
+        {
+          "owner": "o",
+          "repo": "r",
+          "state": "closed",
+          "qualifiers": "-is:merged is:unmerged",
+          "operation": "pullRequest",
+          "page": 1,
+          "pageSize": 10
+        }
+      ]
+    }
+  },
+  {
     "id": "history-search.qualifier-draft-beside-state",
     "tool": "ghSearchHistory",
     "input": {

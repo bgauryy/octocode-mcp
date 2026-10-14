@@ -1,0 +1,73 @@
+# Analysis
+
+Load when modeling a design, boundary, interface, or flow, or when topology, cycles, reachability, dead code, duplication, coupling, or efficiency affects a decision.
+
+## Model the wiring
+
+- Name each hop's interface ([contract trace](checks.md#contract-trace)); make invalid states unrepresentable; keep core decisions apart from UI, storage, transport.
+- Record `module/layer -> responsibility -> owned data/invariants -> public interface -> allowed dependencies`.
+- Cross-check views; each hides what another exposes: static (file/symbol edges), control (who initiates, retries, cancels, handles errors), data ([data-flow trace](checks.md#data-flow-trace)), ownership (invariants, lifecycles, contracts), runtime (config, registries, processes, generated artifacts, dynamic dispatch).
+- Rejoin views for 1-3 scenarios as `trigger -> decision -> transformation -> side effect -> result/error`; note unresolved reflection, queues, registration, external systems, trust and transaction boundaries.
+- Name the quality attribute judged (correctness, security, changeability, performance, operability); [kill the strongest alternate](#kill-the-strongest-alternate) for look-alike signals.
+- Enforce layering in the build (`cargo deny` `[bans]` for Rust, a boundary test for TypeScript); a prose-only rule is `inferred`.
+- Generated source of truth (contract, schema, rule table): assert each hand-copied string (messages, allowlists, defaults) exists in the generated source; outcome parity tests miss copied text.
+
+## Decompose large tasks
+
+- Split into the smallest verifiable problems (inputs, outputs, verification point); order by dependency edges.
+- Parallelize only with clear ownership and a latency or independent-evidence gain, never to hide failures.
+- Compose after parts pass; test shared interfaces end to end.
+
+## Choose the narrowest evidence lane
+
+Topology triages file relationships; it never proves symbol identity (use semantic references), data/control flow, runtime behavior, or impact.
+
+| Question | Start with | Candidate for |
+|---|---|---|
+| What a file affects or relies on | `astTopology` `dependents`/`dependencies`; `graph query impact <ref>` (`impact --since <rev>` for a diff) | Blast radius, coupling |
+| Layer reachability | `astTopology` `path` or `graph query path <from> <to>`, plus the declared rule | Boundary crossing |
+| Mutual dependency | `astTopology` `cycles` (`runtimeCycle` splits runtime from type-only) or `graph query cycles` | Initialization or change coupling |
+| Unreachable or removable | `astTopology` `reachability`/`deadCode` with explicit `entrypoints` and `includeTests` | Alternate entrypoint, stale code |
+| New edges or cycles | `astTopology` `drift` vs a baseline root, or `graph query issues --baseline <snapshot>` | Drift |
+| Review order | `graph query issues` (ranked hypotheses with `controls` and `verify` commands) | Hotspot, never a finding |
+
+- Not topology: duplicated policy or leaky interfaces (scenarios, consumers, AST/LSP, history); runtime cost (profile, end-to-end benchmark); slow builds (timed clean/warm runs, I/O, process, cache counts).
+- Rust: `astTopology` with `rustWorkspace: "cargo"`, or crate edges from `cargo metadata --format-version 1` (or `cargo tree -e normal`); `rust-best-practices` when installed.
+- One bounded question: `astTopology`. Repeated: `npx octocode graph ingest <path>`, then `npx octocode graph query <op>`; re-ingest when `graph query stale` lists changed files.
+- Reruns: fix the absolute scan root, entrypoints, exclusions, test policy, page size.
+- Run `deadCode` `hints.references` leads unchanged.
+- Before an absence or completeness claim, check consumers outside the scanned roots and coverage signals: `astTopology` `coverage.state`, `isPartial`, `partialReasons`, `coverage.imports.unresolvedInternal` (diagnostics are counts until paged via `next.nextDiagnosticPage`), `pagination.outOfRange` on an empty page; `lspSearch` `coverage.exhaustive`; `graph` `callInternalRecall` and finding `tier`. Cold LSP servers undercount references: rerun, or treat partial as a lower bound.
+
+## Kill the strongest alternate
+
+| Signal | Common false explanation | Required control |
+|---|---|---|
+| Cycle | Type-only closing edge; intentionally cohesive module | Exact-read every edge; check `edgeKinds` and runtime impact; prove implicit edges (`java-same-package`, no import line) with `lspSearch` references |
+| Unreachable/dead | Subpath export, CLI/plugin/framework registration, dynamic import, tests or consumers outside the root | Inspect manifests, configs, broader consumers; verify symbols separately |
+| Barrel-only export | External or deep-import public contract | Package surface and external consumers (`dependents` rows with `reexportVia`, file-grouped `lspSearch` references) |
+| Cross-folder edge | Folder names imply layers without a rule | Find an authoritative rule or label the boundary inferred |
+| Similar code | Distinct rules, trust boundaries, volatility | Compare semantics, edge cases, ownership, change pressure |
+| Wide node or long path | Composition root, generated registry, stable shared value, cold path | Inspect responsibilities; measure the claimed cost |
+| Small interface | Unsafe call sequence or leaked lifecycle | Consumer workflows, invariants, errors, cancellation, versioning |
+
+- Each control is a [hypothesis test](../SKILL.md#steps); an alternate left unresolved keeps the finding a candidate.
+
+## Proof and ranking
+
+- Prove in order: `graph candidate -> exact decisive edges/code -> AST shape -> LSP definitions/references/callers -> representative data/control/ownership trace -> config/test/runtime/measurement -> verdict`.
+
+- Affected scope: graph dependents/path plus semantic references to the changed symbol.
+- Layer violation: exact path, importing symbol, authoritative rule, quality impact.
+- Dead code / delete: explicit roots, export/re-export chain, semantic references excluding declarations, registration/config search, then tests/build.
+- Coupling or god module: graph breadth plus mixed responsibilities and real consumer or change impact, not size.
+- Duplication: semantic equivalence, shared invariant, shared change pressure, not text similarity.
+- Separation/interface: inward framework/storage/view dependency, invariant owner, consumer contract, policy test seam.
+- Hot path: named workload and budget; end-to-end baseline before blaming a symbol; attributed cost (fan-out, I/O, copying, allocation, cache, locks, retries, waits); inclusive/exclusive, p50/tail.
+- Efficiency: correctness, latency, throughput, and memory guardrails hold; centrality, call count, or one flame-graph sample is no proof.
+
+- Rank by `evidence strength x consequence x actionability`; report partial scans, inferred roots, warnings, unsupported semantic tools, unmeasured claims.
+
+## Affected scope
+
+- Before a change, map direct and second-order effects on: interfaces, callers, dependency edges; persisted data, schemas, defaults, migrations; latency, memory, retries, concurrency, failure containment; trust boundaries, sensitive data, authorization, untrusted or model output; tests, telemetry, rollout, rollback, generated outputs, records. Material ones only; a surprising omission gets N/A with a reason.
+- On Verify, retrace for stale copies, asymmetric branches, changed defaults, widened impact.

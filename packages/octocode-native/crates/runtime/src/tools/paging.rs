@@ -4,7 +4,7 @@
 //! ends at a terminal limit instead, written by [`terminal_limit`], the one
 //! writer of `terminalLimit`, so the rest is stated as unreachable rather
 //! than offered by a lead the tool would reject.
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
 use crate::tools::id::ToolId;
 
@@ -67,72 +67,125 @@ pub(crate) fn next_cursor(
     None
 }
 
-/// Marks `row` partial for `reason`: `isPartial`, the reason once in
-/// `partialReasons`, and each warning once in `warnings`.
-pub(crate) fn mark_partial(row: &mut Value, reason: &str, warnings: &[String]) {
-    let Some(object) = row.as_object_mut() else {
-        return;
-    };
-    object.insert("isPartial".into(), json!(true));
-    if let Some(reasons) = object
-        .entry("partialReasons")
-        .or_insert_with(|| json!([]))
-        .as_array_mut()
-        && !reasons.iter().any(|known| known == reason)
-    {
-        reasons.push(json!(reason));
+/// A row the partial owners write: a JSON row, or its object a tool is
+/// still building. A non-object row is left alone.
+pub(crate) trait RowFields {
+    fn fields(&mut self) -> Option<&mut Map<String, Value>>;
+}
+
+impl RowFields for Value {
+    fn fields(&mut self) -> Option<&mut Map<String, Value>> {
+        self.as_object_mut()
     }
-    if warnings.is_empty() {
+}
+
+impl RowFields for Map<String, Value> {
+    fn fields(&mut self) -> Option<&mut Map<String, Value>> {
+        Some(self)
+    }
+}
+
+impl<T: RowFields + ?Sized> RowFields for &mut T {
+    fn fields(&mut self) -> Option<&mut Map<String, Value>> {
+        (**self).fields()
+    }
+}
+
+/// Appends each of `values` not already in the list under `key`, creating
+/// the list (or replacing a non-list) for a first value.
+fn append_once<'a>(
+    object: &mut Map<String, Value>,
+    key: &str,
+    values: impl IntoIterator<Item = &'a str>,
+) {
+    let mut values = values.into_iter().peekable();
+    if values.peek().is_none() {
         return;
     }
-    if let Some(existing) = object
-        .entry("warnings")
-        .or_insert_with(|| json!([]))
-        .as_array_mut()
-    {
-        for warning in warnings {
-            if !existing.iter().any(|known| known == warning) {
-                existing.push(json!(warning));
+    let entry = object.entry(key).or_insert_with(|| json!([]));
+    if !entry.is_array() {
+        *entry = json!([]);
+    }
+    if let Some(list) = entry.as_array_mut() {
+        for value in values {
+            if !list.iter().any(|known| known == value) {
+                list.push(json!(value));
             }
         }
     }
 }
 
-/// Appends `warnings` to the row's `warnings`, creating the list only for a
-/// first warning; a non-object row is left alone.
-pub(crate) fn push_warnings(row: &mut Value, warnings: impl IntoIterator<Item = String>) {
-    let Some(object) = row.as_object_mut() else {
+/// Marks `row` partial for `reason`: `isPartial`, the reason once after the
+/// row's own `partialReasons`, and each warning once in `warnings`.
+pub(crate) fn mark_partial(row: &mut impl RowFields, reason: &str, warnings: &[String]) {
+    let Some(object) = row.fields() else {
         return;
     };
-    for warning in warnings {
-        if let Some(existing) = object
-            .entry("warnings")
-            .or_insert_with(|| json!([]))
-            .as_array_mut()
-        {
-            existing.push(json!(warning));
-        }
-    }
+    object.insert("isPartial".into(), json!(true));
+    append_once(object, "partialReasons", [reason]);
+    append_once(object, "warnings", warnings.iter().map(String::as_str));
+}
+
+/// Appends each of `warnings` once to the row's `warnings`, creating the
+/// list only for a first warning.
+pub(crate) fn push_warnings(row: &mut impl RowFields, warnings: impl IntoIterator<Item = String>) {
+    let Some(object) = row.fields() else {
+        return;
+    };
+    let warnings = warnings.into_iter().collect::<Vec<_>>();
+    append_once(object, "warnings", warnings.iter().map(String::as_str));
 }
 
 /// Marks `row` as ending at a limit no continuation lifts: [`mark_partial`]
 /// plus `terminalLimit:true`.
-pub(crate) fn terminal_limit(row: &mut Value, reason: &str, warnings: &[String]) {
+pub(crate) fn terminal_limit(row: &mut impl RowFields, reason: &str, warnings: &[String]) {
     mark_partial(row, reason, warnings);
-    if let Some(object) = row.as_object_mut() {
+    if let Some(object) = row.fields() {
         object.insert("terminalLimit".into(), json!(true));
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{CURSOR_MAXIMUM, next_cursor};
+    use super::{CURSOR_MAXIMUM, mark_partial, next_cursor, push_warnings, terminal_limit};
     use crate::tools::id::ToolId;
-    use serde_json::{Value, json};
+    use serde_json::{Map, Value, json};
+
+    /// The partial owners write a row or its object alike: a reason is
+    /// appended after the row's own once, a warning is appended once.
+    #[test]
+    fn partial_marks_append_once_on_a_row_or_its_object() {
+        let mut object: Map<String, Value> = json!({
+            "isPartial": true,
+            "partialReasons": ["scopeCut"],
+            "warnings": ["first"]
+        })
+        .as_object()
+        .cloned()
+        .expect("object");
+        mark_partial(&mut object, "pageCeiling", &["ceiling".to_owned()]);
+        mark_partial(&mut object, "pageCeiling", &["ceiling".to_owned()]);
+        push_warnings(&mut object, ["first".to_owned(), "second".to_owned()]);
+        assert_eq!(
+            Value::Object(object.clone()),
+            json!({"isPartial": true, "partialReasons": ["scopeCut", "pageCeiling"],
+                "warnings": ["first", "ceiling", "second"]})
+        );
+        terminal_limit(&mut object, "pageCeiling", &[]);
+        assert_eq!(object["terminalLimit"], true);
+        assert_eq!(object["partialReasons"], json!(["scopeCut", "pageCeiling"]));
+        let mut row = json!({"partialReasons": "malformed"});
+        mark_partial(&mut row, "cap", &[]);
+        assert_eq!(row, json!({"partialReasons": ["cap"], "isPartial": true}));
+        let mut scalar = json!(1);
+        push_warnings(&mut scalar, ["x".to_owned()]);
+        assert_eq!(scalar, json!(1), "a non-object row is left alone");
+    }
 
     /// Every bounded numeric cursor field of every tool's query schema, per
     /// variant: `(tool, operation, field, maximum)`. Cursor fields are the
-    /// ones a continuation advances: pages and scan or materialize offsets.
+    /// one list ([`crate::tools::result::CURSOR_FIELDS`]) less a content
+    /// `offset`, which advances by its window, not by one.
     fn bounded_cursors() -> Vec<(ToolId, Option<String>, String, u64)> {
         let mut found = Vec::new();
         for tool in ToolId::ALL {
@@ -151,10 +204,8 @@ mod tests {
                     .map(str::to_owned);
                 for (field, field_schema) in fields {
                     let field_schema = crate::contracts::resolve_ref(field_schema, defs);
-                    let cursor = field == "page"
-                        || (field.ends_with("Page") && !field.ends_with("PerPage"))
-                        || field == "scanOffset"
-                        || field == "materializeOffset";
+                    let cursor = field != "offset"
+                        && crate::tools::result::CURSOR_FIELDS.contains(&field.as_str());
                     if let Some(maximum) = field_schema["maximum"].as_u64().filter(|_| cursor) {
                         found.push((tool, operation.clone(), field.clone(), maximum));
                     }
@@ -225,9 +276,17 @@ mod tests {
             r#"(\[|insert\()"({names})"(\]\s*=|\.into\(\),)\s*json!\([^;]*\+\s*1\)|"({names})"\s*:\s*[\w.()]+\s*\+\s*1\b"#
         ))
         .expect("regex");
+        // Hand-advanced cursors the guard found once it read past each file's
+        // first `#[cfg(test)]`, each owed to its tool module's migration onto
+        // `admitted`; the list only shrinks.
+        const PENDING: &[&str] = &[
+            // A page re-derived for a smaller page size is never checked
+            // against the contract maximum of `page`.
+            "tools/clasify/run/hydrate.rs",
+        ];
         let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-        let mut dirs = vec![src];
-        let mut found = Vec::new();
+        let mut dirs = vec![src.clone()];
+        let (mut found, mut pending) = (Vec::new(), Vec::new());
         while let Some(dir) = dirs.pop() {
             for entry in std::fs::read_dir(&dir).expect("src dir") {
                 let path = entry.expect("entry").path();
@@ -244,15 +303,30 @@ mod tests {
                 if !name.ends_with(".rs") || name == "tests.rs" || name.ends_with("_tests.rs") {
                     continue;
                 }
-                let text = std::fs::read_to_string(&path).expect("source");
-                let text = text.split("#[cfg(test)]").next().unwrap_or_default();
-                found.extend(
-                    advanced
-                        .find_iter(text)
-                        .map(|hit| format!("{}: {}", path.display(), hit.as_str())),
-                );
+                let relative = path
+                    .strip_prefix(&src)
+                    .unwrap_or(&path)
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                let text = crate::tools::test_support::production_source(&path);
+                let hits = advanced
+                    .find_iter(&text)
+                    .map(|hit| format!("{relative}: {}", hit.as_str()));
+                if PENDING.contains(&relative.as_str()) {
+                    if hits.count() > 0 {
+                        pending.push(relative);
+                    }
+                } else {
+                    found.extend(hits);
+                }
             }
         }
         assert!(found.is_empty(), "cursor advanced by hand: {found:#?}");
+        for file in PENDING {
+            assert!(
+                pending.iter().any(|seen| seen == file),
+                "{file} no longer advances a cursor by hand: drop it from PENDING"
+            );
+        }
     }
 }

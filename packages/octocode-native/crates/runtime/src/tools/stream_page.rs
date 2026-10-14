@@ -20,7 +20,14 @@ const ROW_SKELETON_CHARS: usize = 2_000;
 const FREE_TEXT_CHARS: usize = 1_200;
 
 /// Query fields that never change which rows a page holds.
-const UNSIZED_QUERY_FIELDS: [&str; 5] = ["mainGoal", "reasoning", "page", "matchPage", "snapshot"];
+const UNSIZED_QUERY_FIELDS: [&str; 6] = [
+    "mainGoal",
+    "reasoning",
+    "page",
+    "matchPage",
+    "snapshot",
+    "ranking",
+];
 
 /// Counts the UTF-16 units of UTF-8 written to it.
 struct Utf16Counter(usize);
@@ -120,7 +127,8 @@ mod tests {
     fn reserve_ignores_free_text_and_cursor_fields() {
         let first = json!({"mainGoal": "g", "reasoning": "r", "path": "src", "matchString": "x"});
         let later = json!({"mainGoal": "a much longer goal", "reasoning": "reworded",
-            "path": "src", "matchString": "x", "page": 7, "snapshot": "lexical-live-v2:abc"});
+            "path": "src", "matchString": "x", "page": 7, "snapshot": "lexical-live-v2:abc",
+            "ranking": "saved-order-added-after-the-first-page"});
         assert_eq!(reserve_chars(&first, 2), reserve_chars(&later, 2));
         let wider = json!({"path": "src", "matchString": "a longer search"});
         assert!(reserve_chars(&wider, 2) > reserve_chars(&first, 2));

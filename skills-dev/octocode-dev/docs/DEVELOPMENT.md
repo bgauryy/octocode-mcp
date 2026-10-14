@@ -88,20 +88,23 @@ Run from the repo root. Repo-wide tasks run through `node skills-dev/octocode-de
 
 ### Tool health
 
-`$DEV test:tools` (`octocode-local-testing/harness/tool-health.mjs`) is the quick end-to-end alarm for every tool in the contract. It runs each tool through the built CLI (`--json`) and the MCP stdio server and checks:
+`$DEV test:tools` (`octocode-local-testing/harness/tool-health.mjs`) is the quick end-to-end alarm for every tool in the contract. It first runs the driver's self-test (`harness/tool-health/driver.test.mjs`), then runs each tool through the built CLI (`--json`) and the MCP stdio server and checks:
 
 - **happy**: the primary operation exits 0, returns rows with the key fields, and validates against the contract `outputSchema`;
-- **continuation**: replaying the `next.*` page lead to the end gives non-empty pages, no duplicate rows, and exactly the unpaged rows;
+- **continuation**: walking the `next.*` page lead to its end gives non-empty pages, every row exactly once, and exactly the unpaged rows; `walks` cover a tool's other page channels (PR file pages and patch windows, the clasify locate walk, astTopology deadCode pages);
+- **explore**: every seed is explored by `harness/tool-health/driver.mjs`. Every `next.*` and `hints.*` lead runs once, and every response must validate against its tool's `outputSchema`. A lead must be accepted and satisfy its key family's predicates (`harness/lead-predicates.mjs`, shared with `lead-replay`). A lead that cycles back to a query on its own path, or repeats another lead of the same response, fails;
+- **facts**: hint and warning sentences of 30+ characters must not repeat tool descriptions or server instructions, and must not repeat in every call of a tool across different query shapes;
 - **empty**: exit 1 with a hint or lead on both surfaces;
 - **invalid**: a typed contract `errorCode`, exit 2;
-- **parity**: the CLI and MCP evidence, page leads and status class match (`hints` are surface guidance and leads to CLI-only tools are excluded, since MCP omits those tools);
-- **latency**: every call fits the tool's budget; all timings are recorded.
+- **parity**: the CLI and MCP evidence, page leads, status class and explored query graph match (`hints` are surface guidance and leads to CLI-only tools are excluded, since MCP omits those tools);
+- **latency**: every call fits the tool's budget; all timings are recorded;
+- **extra**: tool-specific checks, such as clone auth and the clone's local follow-up leads, and astRewrite `apply` on a temp copy writing exactly the previewed diff.
 
-It is hermetic: a temp `OCTOCODE_HOME`/`HOME`, no user token, fixtures in `octocode-local-testing/fixtures/tool-health/`, and a loopback mock (`harness/tool-health/mock-server.mjs`) for GitHub REST (`GITHUB_API_URL`), git smart HTTP, an npm registry (`registryUrl` with `OCTOCODE_ALLOW_PRIVATE_REGISTRY`) and the classification provider (`OCTOCODE_CLASSIFICATION_API_HOST`). Every proxy variable points at a dead loopback port, so a request that would leave the machine fails the run. It runs four tools at a time and takes under a minute. GitHub search tools share one lane, because the runtime spaces search requests 2 s apart. A contract tool without a case fails the run. Cases live in `harness/tool-health/cases.mjs`.
+It is hermetic: a temp `OCTOCODE_HOME`/`HOME`, no user token, fixtures in `octocode-local-testing/fixtures/tool-health/` (or a per-tool temp copy with extra files), and a loopback mock (`harness/tool-health/mock-server.mjs`) for GitHub REST (`GITHUB_API_URL`), git smart HTTP, an npm registry (`registryUrl` with `OCTOCODE_ALLOW_PRIVATE_REGISTRY`) and the classification provider (`OCTOCODE_CLASSIFICATION_API_HOST`). Every proxy variable points at a dead loopback port, so a request that would leave the machine fails the run. Each tool and surface gets its own fake GitHub token and its own MCP server. The runtime paces GitHub searches per token, so all tools run in parallel; a run takes about 15 s. `--deep` adds seeds for more operations and allows more leads per seed (about 25 s). A contract tool without a case fails the run. Cases live in `harness/tool-health/cases.mjs`.
 
-Run it after `build:dev`. It is not part of `test:ci`, because CI builds no native binary. To run some tools only, pass their names: `$DEV test:tools ghSearchCode,localFetch`.
+Run it after `build:dev`. CI runs it in the `e2e` job after its own `build:dev`. To run some tools only, pass their names: `$DEV test:tools ghSearchCode,localFetch` (add `--deep` for the wider exploration).
 
-Each tool prints one line, `PASS`/`FAIL`/`SKIP`, with its total and slowest-call time. A `FAIL` line names the first failing check, for example `FAIL ghSearchCode … — empty.hint.mcp: …`. A check name is `<phase>.<what>[.<surface>]`, with phase happy, continuation, empty, invalid, parity, latency or extra. A `SKIP` line states its reason, such as a missing TypeScript language server. Every check, its detail and per-call timings are in `octocode-local-testing/results/tool-health.json`. The run exits non-zero on any `FAIL`.
+Each tool prints one line, `PASS`/`FAIL`/`SKIP`, with its total and slowest-call time, call count and checks. A `FAIL` line names the first failing check, for example `FAIL ghSearchCode … — empty.hint.mcp: …`; every failing check is listed at the end. A check name is `<phase>.<what>[.<surface>]`, with phase happy, continuation, walk, explore, facts, empty, invalid, parity, latency or extra. A `SKIP` line states its reason, such as a missing TypeScript language server. Every check, its detail, the explored lead keys and per-call timings are in `octocode-local-testing/results/tool-health.json`. The run exits non-zero on any `FAIL`.
 
 ### Cargo builds
 

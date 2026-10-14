@@ -105,7 +105,10 @@ impl<'a> StructuralQuery<'a> {
             .get_or_init(|| {
                 // `parsed_rule` is only reached for rule queries, which always
                 // carry `self.rule` — the invariant is upheld by the caller.
-                #[allow(clippy::expect_used)]
+                #[expect(
+                    clippy::expect_used,
+                    reason = "only rule queries reach this compile path"
+                )]
                 super::octo::parse_rule(self.rule.expect("only rule queries compile a rule"))
             })
             .as_ref()

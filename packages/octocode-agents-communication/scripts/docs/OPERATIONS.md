@@ -43,15 +43,12 @@ flowchart LR
   P --> T[Inspect before any explicit delivery retry]
 ```
 
-If a Pi send/record fails, retain the retry key from its error and inspect history.
-An error can follow a committed write. Retry unchanged input with that explicit key only when needed.
-A new tool-call ID alone creates a different automatic key.
+For a failed Pi send/record, follow [retry keys](WORKFLOW.md#intent-limits-and-retries).
 
 Leave releases pending claims without acknowledging mail. Resume also discards stale claims and leases.
 Staged/submitted/uncertain dispatches remain: inspect `health`, current dispatch records, and the actual recipient.
 Restart or leave/resume does not authorize automatic replay.
 For an expired required request, the recipient gives a final explanation through `complete {message,reply}` after restoring its live binding.
-Handled FYIs/answers use `complete {message}`; unfinished work stays pending.
 
 
 | Error | Cause and recovery |

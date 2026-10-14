@@ -4,8 +4,9 @@
 //! answers become the bare
 //! label / P(yes) / level / exists unless the distribution is uncertain, and
 //! `best` rows become `{resourceId?, path?, lines, exists, probability}` with
-//! one exact read of the top window in `next.read`. Runner-up windows stay
-//! under `debug`.
+//! one exact read of the top window in `next.read` unless that row already
+//! names it (localFetch of its file and span). Runner-up windows stay under
+//! `debug`.
 use crate::tools::id::ToolId;
 use serde_json::{Map, Value, json};
 
@@ -44,6 +45,7 @@ pub(super) fn compact_query_result(output: &mut Value, matrix: &Matrix<'_>) {
         output
             .pointer(&format!("/best/{}/0/next/read", escape(id)))
             .cloned()
+            .map(|read| (*id, read))
     });
     if let Some(best) = output.get_mut("best").and_then(Value::as_object_mut) {
         for rows in best.values_mut() {
@@ -54,8 +56,13 @@ pub(super) fn compact_query_result(output: &mut Value, matrix: &Matrix<'_>) {
             }
         }
     }
-    if let Some(read) = top_read {
-        output["next"]["read"] = read;
+    if let Some((id, read)) = top_read {
+        let implied = output
+            .pointer(&format!("/best/{}/0", escape(id)))
+            .is_some_and(|row| implied_row_read(row, &read, matrix.single_resource, &paths));
+        if !implied {
+            output["next"]["read"] = read;
+        }
     }
     if let Some(next) = output.pointer_mut("/next/clasify") {
         unify_continuation(next, matrix, &paths);
@@ -592,6 +599,30 @@ fn implied_local_read(fields: &Map<String, Value>, key: &str, path: &Value) -> b
         && row.get("ranges") == Some(&json!([format!("{line}-{end}")]))
 }
 
+/// Whether `read` is only localFetch of a compact `best` row's file and
+/// span, so the row itself names it (see [`implied_local_read`]).
+fn implied_row_read(
+    row: &Value,
+    read: &Value,
+    single: Option<&str>,
+    paths: &Map<String, Value>,
+) -> bool {
+    let path = row.get("path").or_else(|| {
+        row.get("resourceId")
+            .and_then(Value::as_str)
+            .or(single)
+            .and_then(|id| paths.get(id))
+    });
+    let (Some(path), Some(line), Some(end)) = (path, row.get("line"), row.get("endLine")) else {
+        return false;
+    };
+    let mut fields = Map::new();
+    fields.insert("line".into(), line.clone());
+    fields.insert("endLine".into(), end.clone());
+    fields.insert("next".into(), json!({"read": read}));
+    implied_local_read(&fields, "next", path)
+}
+
 /// The bare verdict: locate exists, P(yes), or a certain label/level.
 pub(super) fn bare_verdict(answer: &Value) -> Value {
     if let Some(exists) = answer.get("exists") {
@@ -780,17 +811,46 @@ mod tests {
                         "resources":[{"id":"f","tool":"localFetch","query":{"path":"src/server.c","ranges":["2608-8615"],"reasoning":"own"},"prefilter":["cron"]}],
                         "questions":[{"id":"t","type":"locate","ask":"timer"}],
                         "carry":{"t":[{"line":1551,"endLine":1558,"exists":0.96,"probability":0.68}]}
-                    }]},
-                    "read":read(1551,1558)
+                    }]}
                 }
             })
         );
-        // The resource, the resume read, and the top-window read name the file.
-        assert_eq!(output.to_string().matches("src/server.c").count(), 3);
+        // The resource and the resume read name the file; the top window's
+        // read is only its path and span, which `best[0]` already names.
+        assert_eq!(output.to_string().matches("src/server.c").count(), 2);
         // About half: `coverage` is a `{state}` object since the vocabulary
         // merge, 10 bytes more than the string it replaced, on both sides.
         let after = output.to_string().len();
         assert!(after * 100 < before * 51, "{after} vs {before}");
+    }
+
+    /// The top window's read restates `best[0]` when it is only localFetch of
+    /// that row's file and span: it goes, as an implied page read does. A
+    /// read that adds a fact (a `snapshot` pin) stays.
+    #[test]
+    fn an_implied_top_read_is_not_repeated_beside_best() {
+        let output = |query: Value| {
+            json!({
+                "id":"m",
+                "best":{"where":[{"resourceId":"f","exists":0.9,"startLine":5,"endLine":9,
+                    "probability":0.8,"path":"src/a.rs",
+                    "next":{"read":{"tool":"localFetch","confidence":"exact","query":query}}}]},
+                "resources":[{"id":"f","pages":[{"source":{"path":"src/b.rs"},
+                    "answers":{"where":{"exists":0.1,"matches":[]}}}]}]
+            })
+        };
+        let matrix = Matrix {
+            single_resource: Some("f"),
+            locate_ids: &["where"],
+            default_max_chars: 80_000,
+        };
+        let mut implied = output(json!({"path":"src/a.rs","ranges":["5-9"]}));
+        compact_query_result(&mut implied, &matrix);
+        assert!(implied.pointer("/next/read").is_none(), "{implied}");
+        assert_eq!(implied["best"]["where"][0]["path"], "src/a.rs", "{implied}");
+        let mut pinned = output(json!({"path":"src/a.rs","ranges":["5-9"],"snapshot":"s"}));
+        compact_query_result(&mut pinned, &matrix);
+        assert_eq!(pinned["next"]["read"]["query"]["snapshot"], "s", "{pinned}");
     }
 
     /// A one-page locate of a whole file states each fact once: the window in

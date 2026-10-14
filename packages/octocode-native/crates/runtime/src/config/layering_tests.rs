@@ -644,17 +644,17 @@ fn workspace_eligibility_follows_the_workspace_dotenv_boundary() {
     for field in CONFIG_FIELDS.iter().filter(|field| field.file) {
         assert_eq!(
             super::resolver::workspace_file_allowed(field),
-            field.env.iter().all(|b| !PROTECTED_KEYS.contains(&b.name)),
+            !field.env.is_some_and(|b| PROTECTED_KEYS.contains(&b.name)),
             "{}",
             field.path
         );
     }
     let protected = ConfigFieldSpec {
-        env: &[ConfigEnvBinding {
+        env: Some(ConfigEnvBinding {
             name: "PATH",
             normalize: None,
             invalid: ConfigInvalidEnv::Skip,
-        }],
+        }),
         ..CONFIG_FIELDS[1]
     };
     assert!(!super::resolver::workspace_file_allowed(&protected));

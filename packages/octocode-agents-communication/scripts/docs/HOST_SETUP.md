@@ -1,24 +1,10 @@
 # Host setup and administration
 
-Load when configuring identity, delivery, tool profiles, edit guards, or storage. Why: host configuration is separate from ordinary agent work.
+Load when configuring identity, delivery, tool profiles, edit guards, or storage.
 Use [installation](INSTALLATION.md) for bundle setup and [the operating guide](../../OPERATING.md) for coordination.
-Use [commands](COMMANDS.md) or [records](RECORDS.md) for examples and type lookup.
+Use [commands](COMMANDS.md) for every command with an example, and [records](RECORDS.md) for type lookup.
 
 `<command> '<json>' --workspace <repo> --database <db> --session <id>`; `-` reads stdin. Before unfamiliar CLI calls, read `<command> --help` or `schema <command>`; don't guess JSON fields. Bare `schema` includes full protocol/SQL; workers expose a subset.
-
-| Purpose | Commands |
-| --- | --- |
-| Identity | `join`, `heartbeat`, `resume`, `leave`, `set_status`; `binding` for adapter preflight |
-| Discovery | `peers`, `activity`, `context` |
-| Messages | `send_message`, `notify_all`, `subscribe`, `inbox`, `inbox wait`, `complete` |
-| Documents | `share_document`, `read_document` |
-| Leases | `locks`, `lock`, `lock_many`, `renew`, `unlock`, `check_paths`, `check_write` |
-| Delivery | `attach`, `listen`, `dispatch`, `hook`, `confirm_delivery`, `retry_delivery` |
-| Hosts | `mcp`, `run`, `host-hook`, `host-config`, `completion-check`, `record_usage` |
-| Local dashboard | `view` |
-| State | `fetch`, `record`, `health` |
-| Database | `db info`, `db protocol`, `db migrate`, `db export`, `db retention`, `db compact`, `prune` |
-| Help | `skill`, `schema`, `schema tools` |
 Records: `schema types --compact` inventories all fields; `schema type <type>` gives schema, event meaning, routing and a validated example. These discovery commands open no database.
 
 ## Setup

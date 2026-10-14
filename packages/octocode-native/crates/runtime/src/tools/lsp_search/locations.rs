@@ -12,7 +12,7 @@ use super::LspSearchQuery;
 use super::failure::{continuation, empty};
 use super::render::{
     PageCut, as_array, document_symbol_rows, flatten_document_symbol, page_window, paginate,
-    plain_sizes, symbol_kind_name, uri_to_path,
+    plain_sizes, split_snapshot, symbol_kind_name, uri_to_path,
 };
 use super::source::SourceCache;
 use crate::tools::id::ToolId;
@@ -137,16 +137,17 @@ pub(super) async fn salted_locations(
         locations.clone()
     };
     let sizes = location_sizes(&entries, grouped, compact, query.context_lines());
-    let (page, mut pagination) = paginate(
+    let (page, pagination) = paginate(
         &entries,
         query.page().unwrap_or(1),
         &PageCut {
             page_size: query.page_size(),
             budget,
             sizes: &sizes,
+            snapshot: &snapshot,
+            resume: resume_at(query),
         },
     );
-    pagination["snapshot"] = json!(snapshot);
     let mut declaration_reads: Vec<Value> = Vec::new();
     let mut row = if grouped {
         json!({ "kind": kind, "files": page })
@@ -613,16 +614,30 @@ fn salted_snapshot(
     if let Some(salt) = salt {
         identity["salt"] = json!(salt);
     }
-    let canonical = crate::canonical_json::canonicalize(identity);
+    let canonical = octocode_engine::digest::canonicalize_dropping_nulls(identity);
     // v3: object rows, 1-based columns, matchCount totals, pageSize on
     // every page.
     format!("lsp-v3:{}", crate::digest::json_sha256(&canonical))
 }
 
-/// A later page whose `snapshot` no longer matches; a page without one
-/// pins nothing and pages the current answer.
+/// A later page whose `snapshot` no longer matches, or names a row its check
+/// does not bind to this page; a page without one pins nothing and pages the
+/// current answer.
 pub(super) fn snapshot_mismatch(query: &LspSearchQuery, actual: &str) -> bool {
-    query.page().unwrap_or(1) > 1 && query.snapshot().is_some_and(|pinned| pinned != actual)
+    let page = query.page().unwrap_or(1) as usize;
+    page > 1
+        && query.snapshot().is_some_and(|pinned| {
+            split_snapshot(pinned, page).is_none_or(|(digest, _)| digest != actual)
+        })
+}
+
+/// The row a later page's copied cursor starts at, when it names one.
+fn resume_at(query: &LspSearchQuery) -> Option<usize> {
+    let page = query.page().unwrap_or(1) as usize;
+    query
+        .snapshot()
+        .filter(|_| page > 1)
+        .and_then(|pinned| split_snapshot(pinned, page)?.1)
 }
 
 /// The stale-snapshot row; its restart walks from the first location page
@@ -643,17 +658,19 @@ pub(super) fn items_payload(
     value: Value,
     budget: usize,
 ) -> Value {
-    salted_items_payload(query, kind, value, None, budget)
+    salted_items_payload(query, kind, value, None, budget, plain_sizes)
 }
 
 /// [`items_payload`] whose snapshot also covers `salt` (see
-/// [`salted_locations`]).
+/// [`salted_locations`]) and whose rows cost a page what `sizes` says they
+/// print as.
 pub(super) fn salted_items_payload(
     query: &LspSearchQuery,
     kind: &str,
     value: Value,
     salt: Option<&str>,
     budget: usize,
+    sizes: impl FnOnce(&[Value]) -> Vec<usize>,
 ) -> Value {
     let raw_items = as_array(&value);
     if kind == "documentSymbols" {
@@ -679,17 +696,18 @@ pub(super) fn salted_items_payload(
     if snapshot_mismatch(query, &snapshot) {
         return snapshot_changed(query);
     }
-    let sizes = plain_sizes(&raw_items);
-    let (page, mut pagination) = paginate(
+    let sizes = sizes(&raw_items);
+    let (page, pagination) = paginate(
         &raw_items,
         query.page().unwrap_or(1),
         &PageCut {
             page_size: query.page_size(),
             budget,
             sizes: &sizes,
+            snapshot: &snapshot,
+            resume: resume_at(query),
         },
     );
-    pagination["snapshot"] = json!(snapshot);
     json!({
         "kind": kind,
         "matches": page,
@@ -725,12 +743,14 @@ fn document_symbols_payload(query: &LspSearchQuery, raw_items: &[Value], budget:
             )) + 1
         })
         .collect::<Vec<_>>();
-    let (window, mut pagination) = page_window(
+    let (window, pagination) = page_window(
         query.page().unwrap_or(1),
         &PageCut {
             page_size: query.page_size(),
             budget,
             sizes: &sizes,
+            snapshot: &snapshot,
+            resume: resume_at(query),
         },
     );
     let page = if window.is_empty() {
@@ -738,7 +758,6 @@ fn document_symbols_payload(query: &LspSearchQuery, raw_items: &[Value], budget:
     } else {
         symbols[spans[window.start].start..spans[window.end - 1].end].to_vec()
     };
-    pagination["snapshot"] = json!(snapshot);
     let mut row = json!({
         "kind": "documentSymbols",
         "symbols": document_symbol_rows(&page, &symbols),

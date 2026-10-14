@@ -31,18 +31,10 @@ export {
 export const DEFAULT_CONFIG = Object.freeze(DEFAULT_CONFIG_VALUE);
 
 /**
- * Per-request execution budget for interactive surfaces (CLI and MCP): cold
- * start plus one logical LSP request — initialize, Java readiness, retries,
- * delays, and transport overhead. The native CLI's
- * `INTERACTIVE_EXECUTION_TIMEOUT_SECS` uses the same value.
- */
-export const INTERACTIVE_EXECUTION_TIMEOUT_SECS = 300;
-
-/**
- * Env var names bound to a config field (e.g. `classification.api`), in the
- * generated priority order. Empty for an unknown path or an env-less field.
+ * The env var bound to a config field (e.g. `classification.api`), as a list
+ * of at most one name. Empty for an unknown path or an env-less field.
  */
 export function configFieldEnvNames(fieldPath: string): readonly string[] {
   const field = CONFIG_FIELDS.find(candidate => candidate.path === fieldPath);
-  return (field?.env ?? []).map(binding => binding.name);
+  return field?.env ? [field.env.name] : [];
 }

@@ -8,23 +8,21 @@ use crate::contracts::tool_types::ExtraKind;
 use crate::tools::id::ToolId;
 use serde_json::{Map, Value};
 
-/// The contract name of `kind`, as a query's `extras` spells it.
-#[must_use]
-pub fn name(kind: ExtraKind) -> &'static str {
-    match kind {
-        ExtraKind::Hints => "hints",
-        ExtraKind::Details => "details",
-        ExtraKind::Stats => "stats",
-        ExtraKind::Receipts => "receipts",
-        ExtraKind::Echo => "echo",
-        ExtraKind::Diagnostics => "diagnostics",
-    }
-}
-
 /// Whether a raw query's `extras` names `kind`.
 #[must_use]
 pub fn wants(query: &Value, kind: ExtraKind) -> bool {
-    wants_name(query, name(kind))
+    query
+        .get("extras")
+        .and_then(Value::as_array)
+        .is_some_and(|kinds| kinds.iter().any(|value| names(value, kind)))
+}
+
+/// Whether one `extras` entry is `kind`'s contract name.
+pub(crate) fn names(value: &Value, kind: ExtraKind) -> bool {
+    value
+        .as_str()
+        .and_then(|name| name.parse::<ExtraKind>().ok())
+        == Some(kind)
 }
 
 fn wants_name(query: &Value, kind: &str) -> bool {
@@ -134,7 +132,11 @@ mod tests {
     /// every extra path has somewhere to land.
     fn base_data(tool: ToolId) -> Value {
         match tool {
-            ToolId::GhSearchRepo => json!({"repositories":[{"owner":"o","repo":"r"}]}),
+            // An owner listing's page facts carry the `providerPagesRead` stat.
+            ToolId::GhSearchRepo => json!({
+                "repositories":[{"owner":"o","repo":"r"}],
+                "pagination":{"currentPage":1,"hasMore":false}
+            }),
             ToolId::GhSearchCode => {
                 json!({"files":[{"path":"a.rs","matches":[{"value":"x"}]}]})
             }
@@ -454,13 +456,7 @@ mod tests {
                 {
                     continue;
                 }
-                let text = std::fs::read_to_string(&path).expect("read source");
-                // Only an inline test module ends production code; a lone
-                // `#[cfg(test)]` item must not hide the rest of the file.
-                let production = text
-                    .match_indices("#[cfg(test)]")
-                    .find(|(at, marker)| text[at + marker.len()..].trim_start().starts_with("mod "))
-                    .map_or(text.as_str(), |(at, _)| &text[..at]);
+                let production = crate::tools::test_support::production_source(&path);
                 let count = production
                     .lines()
                     .filter(|line| !line.trim_start().starts_with("//"))

@@ -19,13 +19,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-/// Public classification is gated by its configured key and beta setting.
-/// Ranking uses the same provider without requiring this tool to be visible.
-const CLASSIFICATION_TOOL: ToolId = ToolId::Clasify;
-
-const LOCAL_DISABLED: &str =
-    "Local tools are disabled (OCTOCODE_ENABLE_LOCAL=false); graph commands read local files.";
-
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HostOptions {
@@ -37,8 +30,8 @@ pub struct HostOptions {
     pub trusted_project: bool,
     #[serde(default)]
     pub surface: RuntimeSurface,
-    /// Override the per-request execution timeout in seconds (default: 60).
-    /// Interactive surfaces set 300 to exceed cold start plus one LSP request.
+    /// Override the per-request execution timeout in seconds (default:
+    /// [`super::lifecycle::DEFAULT_TIMEOUT`], the budget of every surface).
     #[serde(default)]
     pub timeout_secs: Option<u64>,
 }
@@ -85,12 +78,17 @@ pub struct ToolRuntime {
     page_replays: Arc<PageReplayMemo>,
     /// Registry answers for artifactSearch; `None` under memory storage.
     artifact_cache: Option<Arc<crate::providers::artifact::ArtifactCache>>,
-    /// Resolved from the immutable config and surface. Provider failures are
-    /// request-local and do not remove an advertised tool.
-    available_tools: std::sync::RwLock<Arc<[&'static str]>>,
+    /// Resolved once from the immutable config and surface. Provider
+    /// failures are request-local and do not remove an advertised tool.
+    availability: Arc<super::availability::ToolAvailability>,
+    /// Provider settings and the ranking switch, resolved once.
+    clasify: crate::tools::clasify::ClasifySettings,
+    ranking_available: bool,
     lsp_execution_config: Arc<crate::tools::lsp_search::LspExecutionConfig>,
     /// The sandbox workspace root (configured workspaceRoot, else host cwd).
     workspace_root: PathBuf,
+    /// Vendor selected by `classification.type`, resolved once at construction.
+    classification: &'static dyn crate::providers::classification::ClassificationProvider,
 }
 
 /// One paged response's envelope before paging, replayed only for a request
@@ -125,7 +123,10 @@ impl PageReplayMemo {
     const TTL: Duration = Duration::from_secs(120);
 
     fn get(&self, key: &[u8; 32], snapshot: &str) -> Option<PageReplay> {
-        let mut entries = self.entries.lock().ok()?;
+        let mut entries = self
+            .entries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         entries.retain(|entry| entry.stored.elapsed() < Self::TTL);
         let position = entries
             .iter()
@@ -139,9 +140,10 @@ impl PageReplayMemo {
         if entry.bytes > Self::MAX_BYTES {
             return;
         }
-        let Ok(mut entries) = self.entries.lock() else {
-            return;
-        };
+        let mut entries = self
+            .entries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         entries.retain(|stored| stored.key != entry.key && stored.stored.elapsed() < Self::TTL);
         entries.push_back(entry);
         let mut bytes: usize = entries.iter().map(|stored| stored.bytes).sum();
@@ -168,8 +170,8 @@ fn page_replay_key(
     use sha2::{Digest, Sha256};
     // A request-supplied token partitions replays: one caller's page never
     // answers another caller's continuation.
-    let credential = credential
-        .map(|credential| hex::encode(Sha256::digest(credential.expose_secret().as_bytes())));
+    let credential =
+        credential.map(|credential| crate::digest::sha256(credential.expose_secret().as_bytes()));
     let identity = json!({
         "tool": tool,
         "mcp": mcp,
@@ -178,11 +180,22 @@ fn page_replay_key(
         "credential": credential,
     });
     Sha256::digest(
-        crate::canonical_json::canonicalize(identity)
+        octocode_engine::digest::canonicalize_dropping_nulls(identity)
             .to_string()
             .as_bytes(),
     )
     .into()
+}
+
+/// What the caller of one call reads.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Channel {
+    /// The structured JSON only (a CLI writing JSON).
+    Structured,
+    /// The structured JSON and the rendered text (a CLI on a terminal).
+    Rendered,
+    /// An MCP CallToolResult: both, under MCP admission (no `cliOnly` tool).
+    Mcp,
 }
 
 #[derive(Debug)]
@@ -312,18 +325,6 @@ fn output_contract_error(tool: &str, error: contracts::ContractValidationError) 
     }
 }
 
-/// The MCP CallToolResult, built by move (the structured content is never
-/// re-serialized).
-fn mcp_result(result: ToolOutcome) -> Result<Value, RuntimeError> {
-    let content = serde_json::to_value(result.content)
-        .map_err(|_| RuntimeError::new("response", "Cannot serialize response"))?;
-    let mut response = serde_json::Map::with_capacity(3);
-    response.insert("content".into(), content);
-    response.insert("structuredContent".into(), result.structured_content);
-    response.insert("isError".into(), Value::Bool(result.all_failed));
-    Ok(Value::Object(response))
-}
-
 /// The batch parallelism budget: how many threads one batch runs its
 /// queries on, and how many cores each query's parallel directory walk may
 /// use. Read-only rows fan out one thread per query; mutating and
@@ -422,7 +423,7 @@ impl ToolRuntime {
         let home = std::env::home_dir()
             .ok_or_else(|| RuntimeError::new("config", "Cannot resolve home directory"))?;
         let input = config::acquire_config_input(
-            options.env.unwrap_or_else(|| std::env::vars().collect()),
+            options.env.unwrap_or_else(octocode_io::env::vars_lossy),
             cwd,
             home,
             options.trusted_project,
@@ -443,14 +444,12 @@ impl ToolRuntime {
             super::maintenance::run_if_due(&runtime.config.home);
         }
         if let Some(secs) = options.timeout_secs {
-            // Replace the default 60-second runtime with the caller-specified timeout.
-            // Interactive surfaces use 300 s so initialize, Java readiness,
-            // request retries, and cleanup fit below the outer deadline.
+            // An embedder's budget replaces the surface default.
             runtime.requests = RequestRuntime::new(RuntimeLimits {
                 timeout: std::time::Duration::from_secs(secs),
                 ..RuntimeLimits::default()
             })
-            .map_err(|e| RuntimeError::new("runtime", format!("{e:?}")))?;
+            .map_err(runtime_execution_error)?;
         }
         Ok(runtime)
     }
@@ -483,8 +482,8 @@ impl ToolRuntime {
         })
         .map_err(|error| RuntimeError::new("policy", error.message))?;
         let security = ContentSecurity::new();
-        let requests = RequestRuntime::new(RuntimeLimits::default())
-            .map_err(|e| RuntimeError::new("runtime", format!("{e:?}")))?;
+        let requests =
+            RequestRuntime::new(RuntimeLimits::default()).map_err(runtime_execution_error)?;
         let response_dir = config::is_persistent_storage_enabled(&config.resolved)
             .then(|| octocode_home.join("tmp").join("response"));
         let github_cache = super::github_cache::GitHubContentCache::new(
@@ -509,17 +508,40 @@ impl ToolRuntime {
                         .lsp
                         .cache_dir
                         .clone()
-                        .map(|dir| ("OCTOCODE_LSP_CACHE_DIR".to_owned(), dir)),
+                        .zip(config::field::LSP_CACHE_DIR.env_name())
+                        .map(|(dir, env)| (env.to_owned(), dir)),
                 )
                 .collect(),
             octocode_home: Some(octocode_home),
             lead_cache: std::sync::Arc::default(),
             prewarm_state: std::sync::Arc::default(),
         });
-        let mut runtime = Self {
+        let classification = crate::providers::classification::provider_for(
+            config.resolved.classification.r#type.as_str(),
+        )
+        .ok_or_else(|| {
+            RuntimeError::new(
+                "invalidClassificationConfiguration",
+                format!(
+                    "classification.type \"{}\" has no registered provider",
+                    config.resolved.classification.r#type
+                ),
+            )
+        })?;
+        let availability = Arc::new(super::availability::ToolAvailability::resolve(
+            &config,
+            input.runtime_surface,
+        ));
+        let clasify = clasify_settings(&config, classification);
+        let ranking_available = ranking_available(&config, &availability);
+        Ok(Self {
             requests,
             input,
             config,
+            classification,
+            availability,
+            clasify,
+            ranking_available,
             paths: Arc::new(paths),
             security: Arc::new(security),
             github_cache,
@@ -528,18 +550,9 @@ impl ToolRuntime {
             local_views: Arc::default(),
             page_replays: Arc::default(),
             artifact_cache,
-            available_tools: std::sync::RwLock::default(),
             lsp_execution_config,
             workspace_root,
-        };
-        runtime.available_tools = std::sync::RwLock::new(
-            ToolId::ALL
-                .iter()
-                .filter(|id| runtime.resolve_available(**id))
-                .map(|id| id.as_str())
-                .collect(),
-        );
-        Ok(runtime)
+        })
     }
 
     pub fn config(&self) -> &ConfigOutput {
@@ -562,81 +575,6 @@ impl ToolRuntime {
         self.github_cache.clear();
     }
 
-    /// The classification credential (`classification.api`): a blank value
-    /// is an explicit opt-out.
-    fn classification_key(&self) -> Option<&str> {
-        let env = crate::config::CONFIG_FIELDS
-            .iter()
-            .find(|field| field.path == "classification.api")?
-            .env
-            .first()?
-            .name;
-        self.config
-            .env_value(env)
-            .filter(|value| !value.trim().is_empty())
-    }
-
-    /// Provider settings for one clasify call, resolved before the blocking
-    /// worker starts.
-    fn clasify_settings(&self) -> crate::tools::clasify::ClasifySettings {
-        let provider = crate::providers::classification::provider_for(
-            self.config.resolved.classification.r#type.as_str(),
-        );
-        crate::tools::clasify::ClasifySettings {
-            key: self
-                .classification_key()
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(|value| SecretString::from(value.to_owned())),
-            base_url: self
-                .config
-                .env_value("OCTOCODE_CLASSIFICATION_API_HOST")
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(str::to_owned)
-                .unwrap_or_else(|| provider.default_host().to_owned()),
-            endpoint_path: provider.endpoint_path().to_owned(),
-            model: provider.default_model().to_owned(),
-            provider,
-            timeout: Duration::from_millis(self.config.resolved.network.timeout as u64),
-            retries: self.config.resolved.network.max_retries as u32,
-            max_concurrency: self.config.resolved.classification.max_concurrency as usize,
-        }
-    }
-
-    /// True when `tools.enabled`/`tools.disabled` (not a feature gate)
-    /// excludes the tool, so the remedy is the tool list.
-    fn excluded_by_tool_list(&self, tool: &str) -> bool {
-        let tools = &self.config.resolved.tools;
-        tools
-            .enabled
-            .as_ref()
-            .is_some_and(|names| !names.iter().any(|name| name == tool))
-            || tools
-                .disabled
-                .as_ref()
-                .is_some_and(|names| names.iter().any(|name| name == tool))
-    }
-
-    /// A visible read tool may use the provider through its opt-in `goals`
-    /// field even when the public clasify tool is hidden. Derive eligibility
-    /// from the embedded contract instead of maintaining another tool list.
-    fn ranking_surface_enabled(&self) -> bool {
-        self.config.resolved.ranking.enabled
-            && self
-                .available_tools()
-                .iter()
-                .filter_map(|name| ToolId::from_name(name))
-                .any(|id| {
-                    id != CLASSIFICATION_TOOL
-                        && crate::contracts::query_schema_value(id, None, "goals", "type").is_some()
-                })
-    }
-
-    fn ranking_available(&self) -> bool {
-        self.classification_key().is_some() && self.ranking_surface_enabled()
-    }
-
     /// Resolved presentation switches shared by MCP and CLI discovery.
     fn presentation(&self) -> Value {
         let mcp = &self.config.resolved.mcp;
@@ -652,7 +590,7 @@ impl ToolRuntime {
             .collect();
         json!({
             "deferred": deferred,
-            "ranking": self.ranking_available(),
+            "ranking": self.ranking_available,
         })
     }
 
@@ -660,114 +598,33 @@ impl ToolRuntime {
     /// the same path policy and content security as the local tools.
     pub fn graph_ingest(&self, options: &graph_store::IngestOptions) -> graph_store::GraphOutput {
         if !self.config.resolved.local.enabled {
-            return graph_store::GraphOutput::error(5, "graph.localDisabled", LOCAL_DISABLED);
+            return graph_local_disabled();
         }
         graph_store::ingest(
             options,
             &self.paths,
             &self.security,
             &crate::tools::cancel::NeverCancel,
-            self.config.env_value("OCTOCODE_CARGO"),
+            self.config.env_value(config::environment::OCTOCODE_CARGO),
         )
     }
 
     /// CLI `graph query`: answers one bounded question from a snapshot.
     pub fn graph_query(&self, options: &graph_store::QueryOptions) -> graph_store::GraphOutput {
         if !self.config.resolved.local.enabled {
-            return graph_store::GraphOutput::error(5, "graph.localDisabled", LOCAL_DISABLED);
+            return graph_local_disabled();
         }
         graph_store::query(options, &self.paths)
     }
 
     pub fn is_available(&self, tool: &str) -> bool {
-        self.available_tools().contains(&tool)
+        self.availability.is_available(tool)
     }
 
-    fn available_tools(&self) -> Arc<[&'static str]> {
-        self.available_tools
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone()
-    }
-
-    /// What keeps `tool` off this runtime, naming the setting (and its
-    /// environment variables) that disabled it.
-    fn unavailable_reason(&self, tool: &str) -> String {
-        let setting = |path: &str| {
-            let env = crate::config::CONFIG_FIELDS
-                .iter()
-                .find(|field| field.path == path)
-                .map(|field| {
-                    field
-                        .env
-                        .iter()
-                        .map(|binding| binding.name)
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default();
-            if env.is_empty() {
-                path.to_owned()
-            } else {
-                format!("{path} ({})", env.join(" | "))
-            }
-        };
-        let tools = &self.config.resolved.tools;
-        if tools
-            .disabled
-            .as_ref()
-            .is_some_and(|names| names.iter().any(|name| name == tool))
-        {
-            return format!("{} lists it.", setting("tools.disabled"));
-        }
-        if tools
-            .enabled
-            .as_ref()
-            .is_some_and(|names| !names.iter().any(|name| name == tool))
-        {
-            return format!("{} does not list it.", setting("tools.enabled"));
-        }
-        let Some(id) = ToolId::from_name(tool) else {
-            return "no such tool.".into();
-        };
-        let missing = self.missing_config_paths(id);
-        if missing.is_empty() {
-            "this surface does not run it.".into()
-        } else {
-            format!(
-                "it needs {}.",
-                missing
-                    .iter()
-                    .map(|path| setting(path))
-                    .collect::<Vec<_>>()
-                    .join(" and ")
-            )
-        }
-    }
-
-    /// All unmet config prerequisites for a tool. The contract contributes
-    /// the beta flag; the credential remains a separate prerequisite, so
-    /// hiding public clasify never disables goals on other tools.
-    fn missing_config_paths(&self, id: ToolId) -> Vec<&'static str> {
-        id.availability_config_paths()
-            .filter(|path| match *path {
-                "local.enabled" => !self.config.resolved.local.enabled,
-                "local.beta" => !self.config.resolved.local.beta,
-                "storage.mode" => {
-                    self.input.runtime_surface != RuntimeSurface::Cli
-                        || self.config.resolved.storage.mode != "persistent"
-                }
-                "classification.api" => self.classification_key().is_none(),
-                _ => true,
-            })
-            .collect()
-    }
-
-    fn resolve_available(&self, id: ToolId) -> bool {
-        let tool = id.as_str();
-        if self.input.runtime_surface != RuntimeSurface::Cli && id.is_cli_only() {
-            return false;
-        }
-        self.missing_config_paths(id).is_empty() && !self.excluded_by_tool_list(tool)
+    /// Whether `tool` runs on this runtime and why not; `None` for an unknown
+    /// tool.
+    pub fn availability(&self, tool: &str) -> Option<&super::availability::Availability> {
+        self.availability.get(tool)
     }
 
     /// The resolved language-server settings `lspSearch` discovers with.
@@ -798,36 +655,24 @@ impl ToolRuntime {
     /// the enforcement contract fingerprint. Presentation and MCP instructions
     /// are delivered to agents by the JS layers from `@octocodeai/octocode-core`.
     pub fn catalog(&self) -> Result<Value, RuntimeError> {
-        let contract = contracts::parsed_contract()
-            .map_err(|_| RuntimeError::new("contract", "Embedded contract is invalid"))?;
-        let tools = contract["tools"]
-            .as_array()
-            .ok_or_else(|| RuntimeError::new("contract", "Embedded catalog is invalid"))?
-            .iter()
-            .map(|tool| {
-                let name = tool.get("name").and_then(Value::as_str).unwrap_or_default();
+        // Generated constants only: the catalog never parses the contract.
+        let tools = ToolId::ALL
+            .into_iter()
+            .map(|id| {
+                let name = id.as_str();
                 let mut entry = json!({
                     "name": name,
-                    "shortDescription": tool["shortDescription"],
+                    "shortDescription": id.short_description(),
                     "available": self.is_available(name),
                 });
-                if self.excluded_by_tool_list(name) {
-                    entry["unavailableReason"] = json!("toolsList");
-                } else if self.input.runtime_surface != RuntimeSurface::Cli
-                    && ToolId::from_name(name).is_some_and(ToolId::is_cli_only)
-                {
-                    entry["unavailableReason"] = json!("cliOnly");
-                } else if ToolId::from_name(name)
-                    .is_some_and(|id| !self.missing_config_paths(id).is_empty())
-                {
-                    entry["unavailableReason"] = json!("missingConfiguration");
+                if let Some(reason) = self.availability(name).and_then(|a| a.reason_code()) {
+                    entry["unavailableReason"] = json!(reason);
                 }
                 entry
             })
             .collect::<Vec<_>>();
         Ok(json!({
-            "contractFormatVersion": contract["contractFormatVersion"],
-            "fingerprint": contract["fingerprint"],
+            "fingerprint": contracts::tool_types::TOOL_TYPES_CONTRACT_FINGERPRINT,
             "grammarCapabilities": octocode_engine::portable::grammar_capabilities(),
             // Languages whose lspSearch server resolves here (resolution only);
             // hosts render it into the lspSearch description.
@@ -835,16 +680,6 @@ impl ToolRuntime {
             "presentation": self.presentation(),
             "tools": tools,
         }))
-    }
-
-    pub async fn execute(
-        &self,
-        request_id: String,
-        tool: String,
-        input: Value,
-    ) -> Result<ToolOutcome, RuntimeError> {
-        let admission = self.admit(request_id)?;
-        self.execute_admitted(admission, tool, input).await
     }
 
     pub fn admit(&self, request_id: String) -> Result<super::RequestAdmission, RuntimeError> {
@@ -891,59 +726,25 @@ impl ToolRuntime {
         })
     }
 
-    pub async fn execute_admitted(
+    /// Run one admitted call and answer in `channel`. Every interface
+    /// (CLI, warm server, N-API/MCP) executes through here; a rejected call
+    /// projects once through [`super::error::tool_error_result`].
+    pub async fn execute(
         &self,
         admission: super::RequestAdmission,
         tool: String,
         input: Value,
+        channel: Channel,
     ) -> Result<ToolOutcome, RuntimeError> {
         let input = contracts::normalize_input(&tool, input);
-        self.execute_channel(admission, tool, input, false, false)
-            .await
-    }
-
-    /// [`Self::execute`] that also renders the text channel MCP clients read
-    /// (`ToolOutcome::content`), for a CLI writing to a terminal.
-    pub async fn execute_rendered(
-        &self,
-        request_id: String,
-        tool: String,
-        input: Value,
-    ) -> Result<ToolOutcome, RuntimeError> {
-        let admission = self.admit(request_id)?;
-        let input = contracts::normalize_input(&tool, input);
-        self.execute_channel(admission, tool, input, false, true)
-            .await
-    }
-
-    /// [`Self::admit`] then [`Self::execute_mcp_admitted`] in one call. The
-    /// napi addon admits separately so it can reject before spawning; the
-    /// integration tests use this form.
-    pub async fn execute_mcp(
-        &self,
-        request_id: String,
-        tool: String,
-        input: Value,
-    ) -> Result<Value, RuntimeError> {
-        let admission = self.admit(request_id)?;
-        self.execute_mcp_admitted(admission, tool, input).await
-    }
-
-    pub async fn execute_mcp_admitted(
-        &self,
-        admission: super::RequestAdmission,
-        tool: String,
-        input: Value,
-    ) -> Result<Value, RuntimeError> {
-        let input = contracts::normalize_input(&tool, input);
-        let result = match self
-            .execute_channel(admission, tool.clone(), input, true, true)
-            .await
-        {
-            Ok(result) => result,
-            Err(error) => return super::error::mcp_input_error(&tool, &error).ok_or(error),
-        };
-        mcp_result(result)
+        self.execute_channel(
+            admission,
+            tool,
+            input,
+            channel == Channel::Mcp,
+            channel != Channel::Structured,
+        )
+        .await
     }
 
     async fn execute_channel(
@@ -971,7 +772,7 @@ impl ToolRuntime {
         };
         let clasify = if id.is_clasify() {
             crate::tools::clasify::reject_response_pagination(&input)?;
-            Some(self.clasify_settings())
+            Some(self.clasify.clone())
         } else {
             None
         };
@@ -992,7 +793,7 @@ impl ToolRuntime {
             .response_snapshot
             .as_deref()
             .filter(|_| rejected_rows.is_empty())
-            .and_then(|snapshot| super::row_indices::split_snapshot(snapshot, queries.len()));
+            .and_then(|snapshot| super::row_indices::unmark(snapshot, queries.len()));
         let row_indices = match marked {
             Some((snapshot, indices)) => {
                 options.response_snapshot = Some(snapshot);
@@ -1043,47 +844,44 @@ impl ToolRuntime {
     /// actionable reason it may not.
     fn admit_tool(&self, tool: &str, mcp: bool) -> Result<ToolId, RuntimeError> {
         // Contract `cliOnly` tools run only from the CLI. MCP never executes
-        // them, even if an embedder used a CLI host surface.
+        // them, even if an embedder used a CLI host surface. A parked tool
+        // says so on every surface.
         let requested = ToolId::from_name(tool);
-        if mcp && requested.is_some_and(ToolId::is_cli_only) {
+        if mcp && requested.is_some_and(|id| id.is_cli_only() && !id.is_disabled()) {
             return Err(RuntimeError::new(
                 "toolUnavailable",
                 format!("Tool {tool} is not available through MCP; run `octocode {tool}`."),
             ));
         }
-        let unavailable = || {
-            RuntimeError::new(
-                "toolUnavailable",
+        let (Some(id), Some(availability)) = (requested, self.availability(tool)) else {
+            return Err(RuntimeError::new(
+                "invalidInput",
                 format!(
-                    "Tool {tool} is not available in this native runtime: {}",
-                    self.unavailable_reason(tool)
+                    "No tool is named {tool}; use one of {}.",
+                    self.availability.available().join(", ")
                 ),
-            )
+            ));
         };
-        if self.is_available(tool) {
-            return requested.ok_or_else(unavailable);
+        if availability.is_available() {
+            return Ok(id);
         }
-        if !mcp
-            && !self.excluded_by_tool_list(tool)
-            && let Some(id) = requested
-            && self
-                .missing_config_paths(id)
-                .iter()
-                .any(|path| matches!(*path, "local.beta" | "classification.api"))
-        {
-            let mut message = format!(
-                "Tool {tool} is not available: {}",
-                self.unavailable_reason(tool)
-            );
-            if id == CLASSIFICATION_TOOL && self.classification_key().is_none() {
-                let provider = crate::providers::classification::provider_for(
-                    self.config.resolved.classification.r#type.as_str(),
-                );
-                message.push_str(&format!(" Provider setup: {}", provider.docs_url()));
+        let reason = availability.reason_text();
+        if !mcp && availability.needs_opt_in() {
+            let mut message = format!("Tool {tool} is not available: {reason}");
+            if id == ToolId::Clasify
+                && super::availability::classification_key(&self.config).is_none()
+            {
+                message.push_str(&format!(
+                    " Provider setup: {}",
+                    self.classification.docs_url()
+                ));
             }
             return Err(RuntimeError::new("missingConfiguration", message));
         }
-        Err(unavailable())
+        Err(RuntimeError::new(
+            "toolUnavailable",
+            format!("Tool {tool} is not available in this native runtime: {reason}"),
+        ))
     }
 
     /// Validated, security-checked rows to run, and the rows rejected by
@@ -1117,7 +915,7 @@ impl ToolRuntime {
                     &query,
                     &prefix,
                     mcp,
-                    |name| self.is_available(name),
+                    &self.availability,
                 ));
             }
             if issues.is_empty() {
@@ -1168,12 +966,66 @@ impl ToolRuntime {
             lsp_pool: self.lsp_pool.clone(),
             local_views: self.local_views.clone(),
             lsp_execution_config: self.lsp_execution_config.clone(),
-            available_tools: self.available_tools(),
-            ranking_available: self.ranking_available(),
-            clasify: self.clasify_settings(),
+            availability: self.availability.clone(),
+            ranking_available: self.ranking_available,
+            clasify: self.clasify.clone(),
             artifact_cache: self.artifact_cache.clone(),
         }
     }
+}
+
+/// `graph` reads local files, so it runs only where local tools do.
+fn graph_local_disabled() -> graph_store::GraphOutput {
+    graph_store::GraphOutput::error(
+        "missingConfiguration",
+        format!(
+            "Local tools are disabled; graph commands read local files. Set {}.",
+            config::field::LOCAL_ENABLED.display_name()
+        ),
+    )
+}
+
+/// Provider settings for every clasify call and ranked read of a runtime.
+fn clasify_settings(
+    config: &ConfigOutput,
+    provider: &'static dyn crate::providers::classification::ClassificationProvider,
+) -> crate::tools::clasify::ClasifySettings {
+    crate::tools::clasify::ClasifySettings {
+        key: super::availability::classification_key(config)
+            .map(|value| SecretString::from(value.to_owned())),
+        base_url: config::field::CLASSIFICATION_API_HOST
+            .env_name()
+            .and_then(|env| config.env_value(env))
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+            .unwrap_or_else(|| provider.default_host().to_owned()),
+        endpoint_path: provider.endpoint_path().to_owned(),
+        model: provider.default_model().to_owned(),
+        provider,
+        timeout: Duration::from_millis(config.resolved.network.timeout as u64),
+        retries: config.resolved.network.max_retries as u32,
+        max_concurrency: config.resolved.classification.max_concurrency as usize,
+    }
+}
+
+/// A visible read tool may use the provider through its opt-in `goals`
+/// field even when the public clasify tool is hidden; eligibility comes from
+/// the embedded contract instead of another tool list.
+fn ranking_available(
+    config: &ConfigOutput,
+    availability: &super::availability::ToolAvailability,
+) -> bool {
+    super::availability::classification_key(config).is_some()
+        && config.resolved.ranking.enabled
+        && availability
+            .available()
+            .iter()
+            .filter_map(|name| ToolId::from_name(name))
+            .any(|id| {
+                id != ToolId::Clasify
+                    && crate::contracts::query_schema_value(id, None, "goals", "type").is_some()
+            })
 }
 
 /// Contract-validated rows by input index, and the invalid ones. Row
@@ -1273,7 +1125,7 @@ impl ChannelRun {
             // An MCP-mode call can never execute a contract `cliOnly` tool
             // (see the admission check in `execute_channel`).
             !(mcp && ToolId::from_name(target).is_some_and(ToolId::is_cli_only))
-                && self.dispatcher.available_tools.contains(&target)
+                && self.dispatcher.availability.is_available(target)
         };
         let scope = continuations::Scope {
             is_available: &available,
@@ -1559,23 +1411,12 @@ fn json_bytes(value: &Value) -> usize {
 }
 
 fn runtime_execution_error(error: ExecutionError) -> RuntimeError {
-    RuntimeError::new(
-        match error {
-            ExecutionError::Closed => "closed",
-            ExecutionError::Busy => "busy",
-            ExecutionError::DuplicateRequest => "duplicateRequest",
-            ExecutionError::Cancelled => "cancelled",
-            ExecutionError::Timeout => "timeout",
-            ExecutionError::UnroutedTool => "unroutedTool",
-            ExecutionError::InvalidLimits | ExecutionError::WorkerFailed => "executionFailed",
-        },
-        format!("{error:?}"),
-    )
+    RuntimeError::new(error.code(), error.to_string())
 }
 
 impl CancellationCheck for ExecutionContext {
     fn check(&self) -> Result<(), String> {
-        ExecutionContext::check(self).map_err(|error| format!("{error:?}"))
+        ExecutionContext::check(self).map_err(|error| error.to_string())
     }
 }
 
@@ -1593,16 +1434,19 @@ mod output_recovery_tests {
             &json!({"owner":"a","repo":"b"}),
             render::TextFormat::Yaml,
         );
-        mcp_result(ToolOutcome {
-            structured_content: structured,
-            content: vec![TextContent {
-                r#type: "text".into(),
-                text,
-            }],
-            source_digest: None,
-            failure: Some(FailureKind::Execution),
-            all_failed,
-        })
+        super::super::error::mcp_result(
+            "ghCloneRepo",
+            Ok(ToolOutcome {
+                structured_content: structured,
+                content: vec![TextContent {
+                    r#type: "text".into(),
+                    text,
+                }],
+                source_digest: None,
+                failure: Some(FailureKind::Execution),
+                all_failed,
+            }),
+        )
         .expect("MCP response")
     }
 
@@ -1782,10 +1626,14 @@ mod construction_tests {
                 ("DISABLE_TOOLS", "ghSearchRepo"),
             ],
         );
+        let resolved = super::super::availability::ToolAvailability::resolve(
+            runtime.config(),
+            RuntimeSurface::Mcp,
+        );
         for id in ToolId::ALL {
             assert_eq!(
                 runtime.is_available(id.as_str()),
-                runtime.resolve_available(id),
+                resolved.is_available(id.as_str()),
                 "{id}"
             );
         }

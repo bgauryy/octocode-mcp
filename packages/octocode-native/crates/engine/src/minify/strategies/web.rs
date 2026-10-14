@@ -20,14 +20,14 @@ pub fn minify_css_quality(content: &str) -> String {
 
 // Constant patterns: a compile failure is a build-time programming error, not a
 // runtime condition — `expect` is the correct fail-loud contract here.
-#[allow(clippy::expect_used)]
+#[expect(clippy::expect_used, reason = "static pattern, valid by construction")]
 static WEB_BLOCK_OR_COMMENT: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         r"(?is)(<!--.*?-->)|(<script\b[^>]*>)(.*?)(</script\s*>)|(<style\b[^>]*>)(.*?)(</style\s*>)",
     )
     .expect("embedded web block regex must compile")
 });
-#[allow(clippy::expect_used)]
+#[expect(clippy::expect_used, reason = "static pattern, valid by construction")]
 static ATTR_TYPE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"(?i)\btype\s*=\s*["']([^"']*)["']"#).expect("type attr regex must compile")
 });

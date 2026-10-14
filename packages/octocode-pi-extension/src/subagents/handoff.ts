@@ -1,7 +1,9 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { atomicWriteFileSync } from '../shared/atomic.js';
+import { claimSuffix, parseClaim } from '../shared/claims.js';
 import { privateDir, readPaths, sessionDir, sweepStaleOutputs, workspacePaths, workspaceScratchDir } from '../shared/home.js';
 import { processStartTime, sameProcess } from '../shared/process.js';
 import type { ResultDetails } from './render.js';
@@ -61,13 +63,15 @@ export async function sweepScratch(root: string): Promise<void> {
 }
 
 /** Background reports finishing within this window reach the parent together, as one wake. */
-export const REPORT_BATCH_MS = 1_500;
+const REPORT_BATCH_MS = 1_500;
 
 export interface Report {
   content: string;
   details: ResultDetails;
   /** Start a parent turn for it (not for a stop someone asked for, nor a report the parent already read). */
   wake: boolean;
+  /** Names this one report wherever it is saved, claimed or queued, so a copy is never delivered twice; stamped when it is first queued or saved. */
+  reportId?: string;
 }
 
 /**
@@ -76,47 +80,110 @@ export interface Report {
  */
 export const pendingReportsDir = (sessionId: string, env: NodeJS.ProcessEnv = process.env): string => path.join(sessionDir(sessionId, env), 'reports', 'pending');
 
+/**
+ * A pending report being delivered is renamed `<report>.json.claim-<pid>-<start time>` by the process that took it
+ * (`shared/claims.ts`): it is deleted once Pi accepted the message and renamed back when it did not, and a claim whose
+ * process died is given back by the next take, so a crash between claim and send loses nothing.
+ */
+const CLAIM_MARKER = '.claim-';
+
+/** The pending files behind the reports `takePendingReports` returned: where each is claimed, and the name it goes back to. */
+const claims = new WeakMap<Report, { claim: string; file: string }>();
+
 /** Saves a report nobody could receive; never throws (a report that cannot be saved is lost, as before). */
 export function savePendingReport(dir: string, id: string, report: Report): void {
   try {
     privateDir(dir);
-    atomicWriteFileSync(path.join(dir, `${Date.now()}-${id.replace(/[^\w.-]/g, '_')}.json`), JSON.stringify(report), { mode: 0o600 });
+    const saved: Report = { ...report, reportId: report.reportId ?? crypto.randomUUID() };
+    atomicWriteFileSync(path.join(dir, `${Date.now()}-${id.replace(/[^\w.-]/g, '_')}.json`), JSON.stringify(saved), { mode: 0o600 });
   } catch {
     // No disk: nothing more to do.
   }
 }
 
-/** The saved reports, oldest first, each removed as it is taken so it is delivered once. */
+/** Gives back claims whose process is gone (pid and start time), so the take below claims them again. */
+function releaseDeadClaims(dir: string, names: readonly string[]): void {
+  for (const name of names) {
+    const claim = parseClaim(name, CLAIM_MARKER);
+    if (!claim || !claim.original.endsWith('.json') || claim.running) continue;
+    try {
+      fs.renameSync(path.join(dir, name), path.join(dir, claim.original));
+    } catch {
+      // Another process gave it back first.
+    }
+  }
+}
+
+/**
+ * The saved reports, oldest first, each claimed by a rename so two processes never take one. The claim stays until
+ * `ReportQueue` delivers the report (deleted) or fails to (renamed back); a report saved twice is delivered once.
+ */
 export function takePendingReports(dir: string): Report[] {
   let names: string[];
   try {
+    releaseDeadClaims(dir, fs.readdirSync(dir));
     names = fs.readdirSync(dir).filter((name) => name.endsWith('.json')).sort();
   } catch {
     return [];
   }
+  const seen = new Set<string>();
   return names.flatMap((name) => {
     const file = path.join(dir, name);
+    const claim = `${file}${claimSuffix(CLAIM_MARKER)}`;
     try {
-      const report = JSON.parse(fs.readFileSync(file, 'utf8')) as Report;
-      fs.rmSync(file, { force: true });
-      return [{ ...report, content: `(Arrived after the session restarted) ${report.content}` }];
+      fs.renameSync(file, claim);
     } catch {
+      return [];
+    }
+    try {
+      const report = JSON.parse(fs.readFileSync(claim, 'utf8')) as Report;
+      if (report.reportId !== undefined && seen.has(report.reportId)) {
+        fs.rmSync(claim, { force: true });
+        return [];
+      }
+      if (report.reportId !== undefined) seen.add(report.reportId);
+      const taken = { ...report, content: `(Arrived after the session restarted) ${report.content}` };
+      claims.set(taken, { claim, file });
+      return [taken];
+    } catch {
+      // Unreadable: it stays where it was.
+      try {
+        fs.renameSync(claim, file);
+      } catch {
+        // Gone meanwhile.
+      }
       return [];
     }
   });
 }
 
+/** Most report ids a queue remembers for deduplication. */
+const KNOWN_REPORTS = 256;
+
 /**
  * Delivers background reports. Reports that finish close together are batched: all are sent at once and only the last
- * may start a turn, so three subagents finishing in a second cost one parent turn instead of three.
+ * may start a turn, so three subagents finishing in a second cost one parent turn instead of three. Delivery is
+ * at-least-once: a report taken from the pending folder is deleted only after Pi accepted it, one Pi refused (the
+ * session ended) goes back to the folder, and `persist` saves what is still queued; a report is queued once per id.
  */
 export class ReportQueue {
   private queued: Report[] = [];
   private timer: NodeJS.Timeout | undefined;
+  /** Ids of reports queued or delivered, oldest first. */
+  private readonly known = new Set<string>();
+  /** The pending folder of the Pi session this queue serves: where a report that could not be sent is saved. */
+  pendingDir: string | undefined;
 
   constructor(private readonly pi: ExtensionAPI, private readonly windowMs = REPORT_BATCH_MS) {}
 
   add(report: Report): void {
+    report.reportId ??= crypto.randomUUID();
+    if (this.known.has(report.reportId)) {
+      this.settle(report);
+      return;
+    }
+    this.known.add(report.reportId);
+    if (this.known.size > KNOWN_REPORTS) this.known.delete(this.known.values().next().value!);
     this.queued.push(report);
     if (this.timer) return;
     this.timer = setTimeout(() => this.flush(), this.windowMs);
@@ -134,9 +201,42 @@ export class ReportQueue {
         // followUp: read once the current turn ends; triggerTurn wakes an idle parent, once per batch.
         this.pi.sendMessage({ customType: RESULT_TYPE, content: report.content, display: true, details: report.details }, { triggerTurn: wake && index === batch.length - 1, deliverAs: 'followUp' });
       } catch {
-        // The session ended before the subagent finished.
+        // The session ended before the subagent finished: the report waits for the next start.
+        this.retain(report);
+        return;
       }
+      this.settle(report);
     });
+  }
+
+  /** Saves what is still queued for the next start of the session (a shutdown that does not send it). */
+  persist(): void {
+    clearTimeout(this.timer);
+    this.timer = undefined;
+    const batch = this.queued;
+    this.queued = [];
+    for (const report of batch) this.retain(report);
+  }
+
+  /** The report reached Pi (or is a copy of one that did): its pending file is no longer needed. */
+  private settle(report: Report): void {
+    const claim = claims.get(report);
+    claims.delete(report);
+    if (claim) fs.rmSync(claim.claim, { force: true });
+  }
+
+  /** The report did not reach Pi: it goes back to the pending folder, and may be queued again when taken. */
+  private retain(report: Report): void {
+    if (report.reportId !== undefined) this.known.delete(report.reportId);
+    const claim = claims.get(report);
+    claims.delete(report);
+    if (claim) {
+      try {
+        fs.renameSync(claim.claim, claim.file);
+      } catch {
+        // The claim is gone; nothing to give back.
+      }
+    } else if (this.pendingDir) savePendingReport(this.pendingDir, report.details.id, report);
   }
 }
 

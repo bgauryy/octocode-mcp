@@ -74,6 +74,19 @@ describe('recent changes by agent', () => {
     expect(text(await changes(b, { paths: ['nothing/'] }))).toBe('No agent changed files under nothing/ in the last 60m. Files changed outside agents (you, bash, git) are not tracked: search files by modification time for those.');
   });
 
+  it('says changes are kept a day when a longer window is asked for, and searches that day', async () => {
+    const { a, b } = await pair();
+    a.team.join();
+    await toolCall(a, 'write', { path: 'src/one.ts' }, {});
+    const listed = text(await changes(b, { withinMinutes: 10_080 }));
+    expect(listed).toMatch(/^Files changed by agents in the last 1440m \(newest first\):/);
+    expect(listed).toContain('src/one.ts');
+    expect(listed).toContain('(You asked for 10080m; changes are kept only 24h');
+    expect(text(await changes(b, { withinMinutes: 10_080, paths: ['nothing/'] }))).toContain('in the last 1440m.');
+    expect(text(await changes(b, { withinMinutes: 10_080, paths: ['nothing/'] }))).toContain('changes are kept only 24h');
+    expect(text(await changes(b, { withinMinutes: 120 }))).not.toContain('You asked for');
+  });
+
   it('never creates the team database for a session that does not collaborate', async () => {
     const cwd = tmp();
     const db = path.join(tmp(), 'team.sqlite');

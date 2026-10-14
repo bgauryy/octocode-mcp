@@ -3,12 +3,15 @@ import { truncateToWidth, visibleWidth, type Component } from '@earendil-works/p
 import { formatCost, formatDuration, formatTokenUsage } from '../shared/format.js';
 import { clip, statusColor } from '../shared/render.js';
 import type { Team } from './session.js';
+import { GOAL_SHOWN_CHARS } from './identity.js';
 import type { Member, Traffic } from './model.js';
 
 /** Static text only: the rows are pure in (members, width, now), so repainting never moves the transcript. */
 
 const WIDGET_KEY = 'octocode-agents';
 const STATUS_KEY = 'octocode-team';
+/** Footer count of background subagents the panel does not show (the team database is off, or they have not joined yet). */
+const BACKGROUND_KEY = 'octocode-subagents';
 const MAX_ROWS = 6;
 /** Recent messages shown under the agents, picked after filtering out other sessions' traffic. */
 const TRAFFIC_ROWS = 3;
@@ -29,11 +32,9 @@ const OPTIONAL = ['tokens', 'cost', 'tools', 'flags', 'age', 'model', 'role'] as
 type Column = 'glyph' | 'name' | 'goal' | 'state' | (typeof OPTIONAL)[number];
 const ORDER: Column[] = ['glyph', 'name', 'role', 'goal', 'model', 'state', 'age', 'tools', 'tokens', 'cost', 'flags'];
 const SEPARATOR = ' · ';
-/** A stored goal is at most 40 characters (`goal.ts`); rows written by other versions may hold more. */
-const GOAL_MAX = 48;
 
 /** `anthropic/claude-opus-4-5` → `claude-opus-4-5`: the provider adds width, not meaning, in a one-line row. */
-export const modelLabel = (model: string | undefined) => safe(model?.slice(model.lastIndexOf('/') + 1), MODEL_MAX);
+const modelLabel = (model: string | undefined) => safe(model?.slice(model.lastIndexOf('/') + 1), MODEL_MAX);
 
 const plural = (count: number, one: string, many = `${one}s`) => `${count} ${count === 1 ? one : many}`;
 
@@ -49,7 +50,7 @@ function cells(member: Member, depth: number, now: number): Record<Column, Cell>
     glyph: { text: working ? '●' : '○', color: working ? 'accent' : 'dim' },
     name: { text: `${depth > 0 ? `${'  '.repeat(depth - 1)} └ ` : ''}${safe(member.id, 64)}`, color: working ? 'text' : 'muted' },
     role: { text: safe(member.role, 24), color: 'muted' },
-    goal: { text: safe(member.goal, GOAL_MAX), color: working ? 'text' : 'muted' },
+    goal: { text: safe(member.goal, GOAL_SHOWN_CHARS), color: working ? 'text' : 'muted' },
     model: { text: modelLabel(member.model), color: 'muted' },
     state: { text: working ? 'working' : 'idle', color: working ? 'accent' : 'dim' },
     age: { text: formatDuration(now - member.joinedAt), color: 'dim', right: true },
@@ -172,19 +173,52 @@ export class AgentsView {
   /** Last footer text sent: an unchanged one is not sent again on every tick. */
   private status: string | undefined;
   private render: (() => void) | undefined;
+  /** Background subagents this session runs, and the footer text last sent for them. */
+  private background = 0;
+  private backgroundStatus: string | undefined;
+  private ctx: ExtensionContext | undefined;
 
   constructor(private readonly team: Team) {}
 
   start(ctx: ExtensionContext): void {
-    // A terminal widget: RPC clients ignore component factories, so the 1 s ticker would feed nothing there.
-    if (!ctx.hasUI || ctx.mode !== 'tui') return;
+    if (!ctx.hasUI) return;
     this.stop(ctx);
+    this.ctx = ctx;
+    this.showBackground(ctx);
+    // A terminal widget: RPC clients ignore component factories, so the 1 s ticker would feed nothing there.
+    if (ctx.mode !== 'tui') return;
     this.unwatch = this.team.watch(() => this.paint(ctx));
+  }
+
+  /** How many background subagents run now: counted in the footer while the panel does not show them. */
+  setBackground(count: number): void {
+    this.background = count;
+    if (this.ctx) this.showBackground(this.ctx);
+  }
+
+  private showBackground(ctx: ExtensionContext): void {
+    const text = this.background > 0 && !this.shown ? statusColor(ctx, 'accent', plural(this.background, 'background agent')) : undefined;
+    if (text === this.backgroundStatus) return;
+    this.backgroundStatus = text;
+    try {
+      ctx.ui.setStatus(BACKGROUND_KEY, text);
+    } catch {
+      // The session was replaced.
+    }
   }
 
   stop(ctx?: ExtensionContext): void {
     this.unwatch?.();
     this.unwatch = undefined;
+    this.ctx = undefined;
+    if (ctx && this.backgroundStatus !== undefined) {
+      this.backgroundStatus = undefined;
+      try {
+        ctx.ui.setStatus(BACKGROUND_KEY, undefined);
+      } catch {
+        // The session was replaced.
+      }
+    }
     if (ctx && (this.shown || this.status !== undefined)) this.clear(ctx);
     this.render = undefined;
     this.members = [];
@@ -217,14 +251,16 @@ export class AgentsView {
       // The same liveness filter as widgetLines: a widget with no rows is never mounted.
       const visible = descendants(liveMembers(this.members, Date.now()), self).length > 0;
       if (error) {
-        // A foreign or newer database turns the team off for this session; a locked one is retried on the next tick.
+        // A foreign database turns the team off for this session; a locked one is retried on the next tick.
         // Either way the widget keeps its state, and mounts once a read succeeds.
         this.setStatus(ctx, retrying ? statusColor(ctx, 'warning', `team retrying: ${safe(error, 80)}`) : statusColor(ctx, 'error', `team off: ${safe(error, 80)}`));
+        this.showBackground(ctx);
         return;
       }
       this.setStatus(ctx, undefined);
       if (!visible) {
         if (this.shown) this.clear(ctx);
+        this.showBackground(ctx);
         return;
       }
       if (!this.shown) {
@@ -242,6 +278,7 @@ export class AgentsView {
         );
       }
       this.render?.();
+      this.showBackground(ctx);
     } catch {
       // The session was replaced while painting.
     }

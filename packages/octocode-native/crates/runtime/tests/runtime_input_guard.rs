@@ -1,6 +1,6 @@
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use crate::support;
+use crate::support::{self, Run as _};
 
 use serde_json::{Value, json};
 use support::Workspace;
@@ -29,7 +29,7 @@ async fn credential_shaped_search_text_is_rejected_not_rewritten() {
     let runtime = workspace.runtime(&[]);
 
     let error = runtime
-        .execute(
+        .run(
             "secret-single".into(),
             "localSearch".into(),
             json!({"queries":[row(json!({"path":root,"matchString":TOKEN}))]}),
@@ -44,7 +44,7 @@ async fn credential_shaped_search_text_is_rejected_not_rewritten() {
     assert!(message.contains("credential"), "{payload}");
 
     let mcp = runtime
-        .execute_mcp(
+        .run_mcp(
             "secret-mcp".into(),
             "localSearch".into(),
             json!({"queries":[row(json!({"path":root,"matchString":TOKEN}))]}),
@@ -69,7 +69,7 @@ async fn a_credential_row_is_isolated_and_never_reaches_continuations() {
         row(json!({"path":root,"matchString":TOKEN})),
     ]});
     let outcome = runtime
-        .execute("secret-batch".into(), "localSearch".into(), input)
+        .run("secret-batch".into(), "localSearch".into(), input)
         .await
         .expect("valid rows still run");
     let rows = outcome.structured_content["results"].as_array().unwrap();
@@ -89,7 +89,7 @@ async fn a_credential_row_is_isolated_and_never_reaches_continuations() {
         .expect("isolated batch output contract");
 
     let fetch = runtime
-        .execute(
+        .run(
             "secret-fetch".into(),
             "localFetch".into(),
             json!({"queries":[
@@ -124,7 +124,7 @@ async fn an_oversized_row_fails_in_band_while_other_rows_run() {
         row(json!({"path":root,"matchString":"needle"})),
     ]});
     let mcp = runtime
-        .execute_mcp("oversized".into(), "localSearch".into(), input.clone())
+        .run_mcp("oversized".into(), "localSearch".into(), input.clone())
         .await
         .expect("an oversized row is a row error, not a call failure");
     assert_eq!(mcp["isError"], false, "{mcp}");
@@ -137,7 +137,7 @@ async fn an_oversized_row_fails_in_band_while_other_rows_run() {
     assert_ne!(rows[1]["status"], "error");
 
     let error = runtime
-        .execute(
+        .run(
             "oversized-single".into(),
             "localSearch".into(),
             json!({"queries":[row(json!({"path":root,"matchString":"x".repeat(10_001)}))]}),
@@ -146,7 +146,7 @@ async fn an_oversized_row_fails_in_band_while_other_rows_run() {
         .expect_err("no valid row to run");
     assert_eq!(error.code, "invalidInput");
     let mcp = runtime
-        .execute_mcp(
+        .run_mcp(
             "oversized-single-mcp".into(),
             "localSearch".into(),
             json!({"queries":[row(json!({"path":root,"matchString":"x".repeat(10_001)}))]}),
@@ -167,7 +167,7 @@ async fn numeric_and_boolean_strings_are_coerced_for_typed_fields() {
     let file = workspace.write("src/a.txt", "one\ntwo\nthree\n");
     let runtime = workspace.runtime(&[]);
     let outcome = runtime
-        .execute(
+        .run(
             "coerce".into(),
             "localFetch".into(),
             json!({"queries":[
@@ -184,7 +184,7 @@ async fn numeric_and_boolean_strings_are_coerced_for_typed_fields() {
 
     for bad in [json!("2.0"), json!("02"), json!(" 2"), json!("two")] {
         let error = runtime
-            .execute(
+            .run(
                 "coerce-bad".into(),
                 "localFetch".into(),
                 json!({"queries":[row(json!({"path":file,"matchString":"two","contextLines":bad}))]}),
@@ -219,7 +219,7 @@ async fn clasify_redacts_evidence_but_rejects_a_credential_in_a_resource_read() 
         "questions":[{"id":"relevant","type":"yesno","ask":"Is evidence present?"}]
     }]});
     let error = runtime
-        .execute("clasify-secret".into(), "clasify".into(), input)
+        .run("clasify-secret".into(), "clasify".into(), input)
         .await
         .expect_err("a resource read must not run a rewritten query");
     assert_eq!(error.code, "invalidInput");

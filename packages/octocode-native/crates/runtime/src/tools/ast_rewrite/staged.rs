@@ -2,9 +2,9 @@
 //! `remainingMatches` postcondition share the staged tree, and the source side
 //! of the check reuses the scan's own parse.
 
+use octocode_engine::signatures::languages::parser_for_path;
 use octocode_engine::structural::{
     CompiledRewrite, MAX_REWRITE_CONTENT_BYTES, compile_rewrite, count_syntax_errors,
-    rewrite_parser_for_path,
 };
 use serde_json::{Value, json};
 use std::{cell::RefCell, collections::HashMap};
@@ -64,7 +64,7 @@ impl StagedAnalyzer {
     /// Same per-file parser the scan used (`.tsx` under `typescript` is TSX), so
     /// JSX is not counted as damage by a grammar that cannot parse it.
     fn parser(&self, path: &str) -> String {
-        rewrite_parser_for_path(&self.selector, path)
+        parser_for_path(&self.selector, path)
     }
 
     /// Syntax errors in content the scan did not report on (fallback only).

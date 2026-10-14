@@ -1,6 +1,6 @@
 # Ready checks (`src/engine/cdp-checks/`)
 
-Load when running a check, reading its artifacts, or capturing HAR. Why: Choose a check and read its full artifacts. Run `node "$CDP" schema check [name]` to discover recipes; `check <name> --options JSON` sets their listed knobs. Dedicated commands: `snapshot`, `screenshot`, `run`, `query`, `artifact`. Artifacts: `.octocode/tmp/chrome-devtools/<timestamp>/`, printed as `[ARTIFACT]`.
+Load when running a check, reading its artifacts, or capturing HAR. Why: Choose a check and read its full artifacts. Run `node "$CDP" schema check [name]` to discover recipes; `check <name> --options JSON` sets their listed knobs. Dedicated commands: `snapshot`, `screenshot`, `run`, `query`, `artifact`. Artifacts: `.octocode/octocode-chrome-devtools/tmp/<timestamp>/`, printed as `[ARTIFACT]`.
 
 | Check | Does | Knobs |
 |---|---|---|

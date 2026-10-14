@@ -223,7 +223,7 @@ describe('backlog store', () => {
 describe('backlog tool', () => {
   it('pages every matching item and every note with executable continuations', async () => {
     const t = setup();
-    for (let i = 0; i < 53; i++) await t.text({ op: 'add', title: `Task ${i}`, state: 'todo' });
+    for (let i = 0; i < 53; i++) await t.text({ op: 'add', title: `Task ${i}`, goal: 'it works', state: 'todo' });
     const next = (text: string) => JSON.parse(text.match(/^Next: backlog (.+)$/m)![1]!);
     const first = await t.text({ op: 'list', limit: 50 });
     const second = await t.text(next(first));
@@ -248,8 +248,8 @@ describe('backlog tool', () => {
 
   it('adds proposals to backlog, lists open work with a triage line, and gets details', async () => {
     const t = setup();
-    expect(await t.text({ op: 'add', title: 'Add memory tool', body: 'with BM25', priority: 'p1', tags: ['mem'] })).toBe('Added B1 [backlog p1] Add memory tool #mem');
-    await t.text({ op: 'add', title: 'Accepted', state: 'todo' });
+    expect(await t.text({ op: 'add', title: 'Add memory tool', goal: 'it works', body: 'with BM25', priority: 'p1', tags: ['mem'] })).toBe('Added B1 [backlog p1] Add memory tool #mem');
+    await t.text({ op: 'add', title: 'Accepted', goal: 'it works', state: 'todo' });
     expect(await t.text({ op: 'list' })).toBe('B2 [todo p2] Accepted\n1 proposed item(s) await triage (list with states: ["backlog"]).');
     expect(await t.text({ op: 'update', id: 'B1', state: 'ongoing', note: 'starting' })).toBe('Updated B1 [ongoing p1] Add memory tool #mem (you)');
     const detail = await t.text({ op: 'get', id: 'b1' });
@@ -262,13 +262,13 @@ describe('backlog tool', () => {
 
   it('requires a note to finish and refuses secrets', async () => {
     const t = setup();
-    await t.text({ op: 'add', title: 'task', state: 'todo' });
+    await t.text({ op: 'add', title: 'task', goal: 'it works', state: 'todo' });
     await expect(t.call({ op: 'update', id: 'B1', state: 'done' })).rejects.toThrow(/needs a note/);
-    await expect(t.call({ op: 'add', title: 'token', body: `use ${SECRET}` })).rejects.toThrow(/secret/);
+    await expect(t.call({ op: 'add', title: 'token', goal: 'it works', body: `use ${SECRET}` })).rejects.toThrow(/secret/);
     await expect(t.call({ op: 'update', id: 'B1', note: SECRET })).rejects.toThrow(/secret/);
     await expect(t.call({ op: 'update', id: 'B1', tags: [SECRET] })).rejects.toThrow(/secret/);
     // A secret note on add is refused before anything is stored.
-    await expect(t.call({ op: 'add', title: 'fast', state: 'done', note: SECRET })).rejects.toThrow(/secret/);
+    await expect(t.call({ op: 'add', title: 'fast', goal: 'it works', state: 'done', note: SECRET })).rejects.toThrow(/secret/);
     expect(await t.text({ op: 'list', states: ['todo'] })).toBe('B1 [todo p2] task');
     await expect(t.call({ op: 'update', id: 'B1' })).rejects.toThrow(/needs something to change/);
     await expect(t.call({ op: 'get' })).rejects.toThrow(/needs an id/);
@@ -280,21 +280,21 @@ describe('backlog tool', () => {
 
   it('refuses an add it cannot complete before creating anything, so a retry leaves no duplicate', async () => {
     const t = setup();
-    await expect(t.call({ op: 'add', title: 'shipped', state: 'done' })).rejects.toThrow(/note/);
-    await expect(t.call({ op: 'add', title: 'idea', note: 'context' })).rejects.toThrow(/note only with state ongoing or done/);
+    await expect(t.call({ op: 'add', title: 'shipped', goal: 'it works', state: 'done' })).rejects.toThrow(/note/);
+    await expect(t.call({ op: 'add', title: 'idea', goal: 'it works', note: 'context' })).rejects.toThrow(/note only with state ongoing or done/);
     expect(storeFor(fs.realpathSync(t.cwd)).counts()).toMatchObject({ backlog: 0, todo: 0, done: 0 });
-    expect(await t.text({ op: 'add', title: 'shipped', state: 'done', note: 'merged; tests pass' })).toMatch(/^Added B1 \[done/);
+    expect(await t.text({ op: 'add', title: 'shipped', goal: 'it works', state: 'done', note: 'merged; tests pass' })).toMatch(/^Added B1 \[done/);
   });
 
   it('removes an item and its notes, but not one another live session holds', async () => {
     const t = setup();
-    await t.text({ op: 'add', title: 'dup', state: 'todo' });
+    await t.text({ op: 'add', title: 'dup', goal: 'it works', state: 'todo' });
     await t.text({ op: 'update', id: 'B1', note: 'a note' });
     expect(await t.text({ op: 'remove', id: 'b1' })).toBe('Removed B1 "dup" and its notes.');
     await expect(t.call({ op: 'get', id: 'B1' })).rejects.toThrow(/No backlog item B1/);
     await expect(t.call({ op: 'remove', id: 'B1' })).rejects.toThrow(/No backlog item/);
     await expect(t.call({ op: 'remove' })).rejects.toThrow(/needs an id/);
-    await t.text({ op: 'add', title: 'held', state: 'todo' });
+    await t.text({ op: 'add', title: 'held', goal: 'it works', state: 'todo' });
     session('other-session', process.ppid);
     storeFor(fs.realpathSync(t.cwd)).update('B2', { state: 'ongoing' }, { id: 'other-session' });
     await expect(t.call({ op: 'remove', id: 'B2' })).rejects.toThrow(/ongoing for other-session/);
@@ -302,7 +302,7 @@ describe('backlog tool', () => {
 
   it('refuses to claim an item another live session holds, naming it', async () => {
     const t = setup();
-    await t.text({ op: 'add', title: 'task', state: 'todo' });
+    await t.text({ op: 'add', title: 'task', goal: 'it works', state: 'todo' });
     session('other-session', process.ppid);
     storeFor(fs.realpathSync(t.cwd)).update('B1', { state: 'ongoing' }, { id: 'other-session' });
     await expect(t.call({ op: 'update', id: 'B1', state: 'ongoing' })).rejects.toThrow(/other-session/);
@@ -310,8 +310,8 @@ describe('backlog tool', () => {
 
   it('in a subagent: adds only to backlog and updates only its or its parent\'s items', async () => {
     const parent = setup();
-    await parent.text({ op: 'add', title: 'delegated', state: 'todo' });
-    await parent.text({ op: 'add', title: 'unrelated', state: 'todo' });
+    await parent.text({ op: 'add', title: 'delegated', goal: 'it works', state: 'todo' });
+    await parent.text({ op: 'add', title: 'unrelated', goal: 'it works', state: 'todo' });
     storeFor(fs.realpathSync(parent.cwd)).update('B1', { state: 'ongoing' }, { id: 'parent-session' });
     const sub = setup({ isSubagent: true, agentId: 'general-1', parentSession: 'parent-session' });
     expect(sub.tool.parameters.properties.op.enum).toEqual(['list', 'get', 'add', 'update']);
@@ -321,10 +321,10 @@ describe('backlog tool', () => {
     expect(sub.tool.parameters.properties.op.description).not.toContain('remove');
     expect(sub.tool.promptGuidelines.join(' ')).not.toContain('set it ongoing');
     expect(await sub.text({ op: 'list' })).toBe('B1 [ongoing p2] delegated (parent)\nB2 [todo p2] unrelated');
-    expect(await sub.text({ op: 'add', title: 'follow-up', state: 'todo' })).toBe('Added B3 [backlog p2] follow-up');
+    expect(await sub.text({ op: 'add', title: 'follow-up', goal: 'it works', state: 'todo' })).toBe('Added B3 [backlog p2] follow-up');
     expect(storeFor(fs.realpathSync(sub.cwd)).get('B3')!.createdBy).toBe('agent:general-1');
     // A proposal takes no note, and the parent has not claimed it, so the hint points at body, not a later update.
-    await expect(sub.call({ op: 'add', title: 'with note', note: 'details' })).rejects.toThrow('A subagent adds without a note: put the details in body.');
+    await expect(sub.call({ op: 'add', title: 'with note', goal: 'it works', note: 'details' })).rejects.toThrow('A subagent adds without a note: put the details in body.');
     await expect(sub.call({ op: 'update', id: 'B2', state: 'ongoing' })).rejects.toThrow(/not claimed by your parent/);
     await expect(sub.call({ op: 'update', id: 'B1', title: 'renamed' })).rejects.toThrow(/only the state and notes/);
     await expect(sub.call({ op: 'update', id: 'B1', state: 'todo' })).rejects.toThrow(/sets only ongoing or done/);
@@ -335,8 +335,8 @@ describe('backlog tool', () => {
 
   it('links follow-ups with from: shows the origin and derived items in get, filters list, and lets a subagent link only on add', async () => {
     const t = setup();
-    await t.text({ op: 'add', title: 'Root task', state: 'todo' });
-    expect(await t.text({ op: 'add', title: 'Follow-up', from: 'B1' })).toBe('Added B2 [backlog p2] Follow-up (from B1)');
+    await t.text({ op: 'add', title: 'Root task', goal: 'it works', state: 'todo' });
+    expect(await t.text({ op: 'add', title: 'Follow-up', goal: 'it works', from: 'B1' })).toBe('Added B2 [backlog p2] Follow-up (from B1)');
     const root = await t.text({ op: 'get', id: 'B1' });
     expect(root).toContain('Derived items (1):\n- B2 [backlog p2] Follow-up (from B1)');
     const child = await t.text({ op: 'get', id: 'B2' });
@@ -344,12 +344,12 @@ describe('backlog tool', () => {
     expect(child).toMatch(/- .* ago agent · created from B1/);
     expect(await t.text({ op: 'list', from: 'B1', states: ['backlog'] })).toBe('B2 [backlog p2] Follow-up (from B1)');
     expect(await t.text({ op: 'update', id: 'B2', from: '' })).toBe('Updated B2 [backlog p2] Follow-up');
-    await expect(t.call({ op: 'add', title: 'x', from: 'B9' })).rejects.toThrow(/No backlog item B9 to link from/);
+    await expect(t.call({ op: 'add', title: 'x', goal: 'it works', from: 'B9' })).rejects.toThrow(/No backlog item B9 to link from/);
     expect(rendered(t.tool.renderCall({ op: 'add', from: 'B1' }, theme, {}))).toContain('from B1');
 
     storeFor(fs.realpathSync(t.cwd)).update('B1', { state: 'ongoing' }, { id: 'parent-session' });
     const sub = setup({ isSubagent: true, agentId: 'general-1', parentSession: 'parent-session' });
-    expect(await sub.text({ op: 'add', title: 'Found while working', from: 'B1' })).toBe('Added B3 [backlog p2] Found while working (from B1)');
+    expect(await sub.text({ op: 'add', title: 'Found while working', goal: 'it works', from: 'B1' })).toBe('Added B3 [backlog p2] Found while working (from B1)');
     await expect(sub.call({ op: 'update', id: 'B1', from: 'B3' })).rejects.toThrow(/only the state and notes/);
   });
 
@@ -367,7 +367,7 @@ describe('backlog tool', () => {
   it('renders a call line and refreshes the footer counts after a call', async () => {
     const t = setup();
     const ctx = fakeCtx({ cwd: t.cwd });
-    await t.call({ op: 'add', title: 'one', state: 'todo' }, ctx);
+    await t.call({ op: 'add', title: 'one', goal: 'it works', state: 'todo' }, ctx);
     expect(ctx.ui.statuses.get('octocode-backlog')).toBe('backlog 1 todo · /backlog');
     await t.call({ op: 'update', id: 'B1', state: 'ongoing' }, ctx);
     expect(ctx.ui.statuses.get('octocode-backlog')).toBe('backlog 1 ongoing · /backlog');
@@ -377,7 +377,7 @@ describe('backlog tool', () => {
     expect(ctx.ui.statuses.get('octocode-backlog')).toBeUndefined();
     expect(rendered(t.tool.renderCall({ op: 'update', id: 'B1', state: 'done' }, theme, {}))).toBe('○ Backlog(update B1 → done)');
     const row = async (params: Record<string, unknown>) => rendered(t.tool.renderResult(await t.call(params, ctx), { expanded: false }, theme, { args: params, isPartial: false, expanded: false }));
-    expect(await row({ op: 'add', title: 'two' })).toBe('  ⎿  Added B2 · backlog');
+    expect(await row({ op: 'add', title: 'two', goal: 'it works' })).toBe('  ⎿  Added B2 · backlog');
     expect(await row({ op: 'update', id: 'B2', state: 'todo' })).toBe('  ⎿  B2 → todo');
     expect(await row({ op: 'list', states: ['todo', 'done'], limit: 1 })).toMatch(/^ {2}⎿ {2}1 of 2 items\n {5}B\d \[/);
     expect(await row({ op: 'list', states: ['ongoing'] })).toMatch(/^ {2}⎿ {2}No items/);
@@ -396,7 +396,7 @@ describe('backlog status', () => {
   it('gives RPC clients the same status text and clears it when the database becomes unreadable', async () => {
     const t = setup();
     const rpc = fakeCtx({ cwd: t.cwd, mode: 'rpc' });
-    await t.call({ op: 'add', title: 'one', state: 'todo' }, rpc);
+    await t.call({ op: 'add', title: 'one', goal: 'it works', state: 'todo' }, rpc);
     await t.call({ op: 'update', id: 'B1', state: 'ongoing' }, rpc);
     expect(rpc.ui.statuses.get('octocode-backlog')).toBe('backlog 1 ongoing · /backlog');
     expect(rpc.ui.widgets.has('octocode-backlog')).toBe(false);
@@ -553,5 +553,137 @@ describe('/octocode backlog', () => {
     expect(rows).toHaveLength(6);
     const ctx = fakeCtx({ cwd: tmp, ui: { custom: (factory) => new Promise((resolve) => factory({ requestRender: () => undefined, terminal: { rows: 40 } }, theme, {}, resolve).handleInput(KEY.escape)) } });
     expect(await showBoard(ctx, { title: 'x', self: 's', load: () => store.list().items, move: () => undefined })).toBeUndefined();
+  });
+});
+
+describe('backlog fields: where, why, evidence, plan', () => {
+  const FIELDS = {
+    goal: 'Search finds an item by path; focused tests pass.',
+    paths: ['src/backlog/store.ts', 'src/backlog/'],
+    why: 'Agents lose the reason behind an item after a resume.',
+    evidence: ['src/backlog/store.ts:87 — body copied into notes', 'yarn test → 2 failures'],
+    plan: 'Add four columns, then render them.\nKeep search on LIKE.',
+  };
+
+  it('stores each field with entries cleaned to single lines, and finds an item by a path substring or an evidence word', () => {
+    const store = storeFor('r');
+    const item = store.add({ title: 'search', ...FIELDS, paths: ['  src/backlog/store.ts ', 'src/backlog/store.ts', '', 'docs/\nA.md'], createdBy: 'user' });
+    expect(item).toMatchObject({ paths: ['src/backlog/store.ts', 'docs/ A.md'], why: FIELDS.why, evidence: FIELDS.evidence, plan: FIELDS.plan });
+    store.add({ title: 'unrelated', createdBy: 'user' });
+    expect(store.get('B2')).toMatchObject({ paths: [], why: '', evidence: [], plan: '' });
+    const found = (query: string) => store.list({ query }).items.map((each) => each.ref);
+    expect(found('backlog/store')).toEqual(['B1']);
+    expect(found('2 failures')).toEqual(['B1']);
+    expect(found('after a resume')).toEqual(['B1']);
+    expect(found('four columns')).toEqual(['B1']);
+    expect(found('100%')).toEqual([]);
+  });
+
+  it('logs every changed field with the old value in full, and nothing when a field is set to what it was', () => {
+    const store = storeFor('r');
+    const item = store.add({ title: 'fields', ...FIELDS, state: 'todo', createdBy: 'user' });
+    store.update(item.ref, { paths: ['src/a.ts'], why: 'new why', evidence: ['one'], plan: 'new plan' }, { id: 's1' });
+    store.update(item.ref, { paths: ['src/a.ts'], why: 'new why', evidence: ['one'], plan: 'new plan' }, { id: 's1' });
+    const blank = store.add({ title: 'blank', createdBy: 'user' });
+    store.update(blank.ref, { why: 'w', evidence: ['e'], plan: 'p', paths: ['x'] }, { id: 's1' });
+    const [first, ...more] = store.notes(item, 50);
+    expect(more).toEqual([]);
+    expect(first!.text).toBe(
+      `paths src/backlog/store.ts, src/backlog/ → src/a.ts · why replaced; it was:\n${FIELDS.why} · evidence replaced; it was:\n${FIELDS.evidence.join('\n')} · plan replaced; it was:\n${FIELDS.plan}`,
+    );
+    expect(store.notes(blank)[0]!.text).toBe('paths none → x · why added · evidence added · plan added');
+    expect(store.update(item.ref, { paths: [] }, { id: 's1' }).paths).toEqual([]);
+  });
+
+  it('refuses a secret in any new field', () => {
+    const store = storeFor('r');
+    for (const field of ['why', 'plan']) expect(() => store.add({ title: 't', [field]: `use ${SECRET}`, createdBy: 'user' })).toThrow(new RegExp(`${field} .*secret`));
+    expect(() => store.add({ title: 't', evidence: ['fine', SECRET], createdBy: 'user' })).toThrow(/evidence .*secret/);
+    const item = store.add({ title: 't', createdBy: 'user' });
+    expect(() => store.update(item.ref, { paths: [SECRET] }, { id: 's1' })).toThrow(/paths .*secret/);
+  });
+
+  it('adds with every field through the tool; get shows Goal, Where, Why, Evidence, Plan, then times, body and notes; list stays one line', async () => {
+    const t = setup();
+    expect(await t.text({ op: 'add', title: 'Path search', ...FIELDS, body: 'More background.', state: 'todo' })).toBe('Added B1 [todo p2] Path search');
+    await t.text({ op: 'update', id: 'B1', note: 'looked at it' });
+    const detail = await t.text({ op: 'get', id: 'B1' });
+    const order = ['Goal: Search finds', 'Where: src/backlog/store.ts, src/backlog/', 'Why: Agents lose', 'Evidence:\n- src/backlog/store.ts:87 — body copied into notes\n- yarn test → 2 failures', 'Plan: Add four columns, then render them.\n  Keep search on LIKE.', 'created ', 'More background.', 'Notes and changes:'];
+    const at = order.map((part) => detail.indexOf(part));
+    expect(at.every((index) => index >= 0)).toBe(true);
+    expect([...at].sort((a, b) => a - b)).toEqual(at);
+    expect(await t.text({ op: 'list' })).toBe('B1 [todo p2] Path search');
+    expect(await t.text({ op: 'list', query: 'src/backlog/' })).toBe('B1 [todo p2] Path search');
+    expect(await t.text({ op: 'update', id: 'B1', paths: ['src/x.ts'], plan: 'Replace it.' })).toBe('Updated B1 [todo p2] Path search');
+    expect(await t.text({ op: 'get', id: 'B1' })).toContain('Where: src/x.ts\n');
+    expect(await t.text({ op: 'get', id: 'B1' })).toContain('Plan: Replace it.\n');
+  });
+
+  it('omits the sections an item leaves empty', async () => {
+    const t = setup();
+    await t.text({ op: 'add', title: 'Plain', goal: 'It works.', why: 'Because.' });
+    const detail = await t.text({ op: 'get', id: 'B1' });
+    expect(detail).toContain('Goal: It works.');
+    expect(detail).toContain('Why: Because.');
+    for (const heading of ['Where:', 'Evidence:', 'Plan:']) expect(detail).not.toContain(heading);
+  });
+
+  it('requires a goal when an agent adds, before anything is stored, but not when the user adds', async () => {
+    const t = setup();
+    await expect(t.call({ op: 'add', title: 'no goal' })).rejects.toThrow(/add needs a goal/);
+    await expect(t.call({ op: 'add', title: 'blank goal', goal: '  ' })).rejects.toThrow(/add needs a goal/);
+    expect(storeFor(fs.realpathSync(t.cwd)).list({ states: ['backlog'] }).total).toBe(0);
+    await t.command.handler('add by the user', fakeCtx({ cwd: t.cwd, hasUI: false }));
+    expect(storeFor(fs.realpathSync(t.cwd)).get('B1')).toMatchObject({ title: 'by the user', goal: '' });
+  });
+
+  it('describes each field by its decision rule, and says an update replaces the whole body', () => {
+    const { properties } = setup().tool.parameters;
+    expect(properties.paths.description).toMatch(/files, dirs or components/);
+    expect(properties.why.description).toMatch(/why it matters/);
+    expect(properties.evidence.description).toMatch(/observations/);
+    expect(properties.plan.description).toMatch(/approach and steps/);
+    expect(properties.body.description).toMatch(/update replaces the whole text/);
+    expect(properties.paths.type).toBe('array');
+    expect(properties.evidence.type).toBe('array');
+  });
+
+  it('lets a subagent propose with every field, but update only state and notes', async () => {
+    const parent = setup();
+    await parent.text({ op: 'add', title: 'delegated', goal: 'Done.', state: 'todo' });
+    storeFor(fs.realpathSync(parent.cwd)).update('B1', { state: 'ongoing' }, { id: 'parent-session' });
+    const sub = setup({ isSubagent: true, agentId: 'general-1', parentSession: 'parent-session' });
+    expect(Object.keys(sub.tool.parameters.properties)).toEqual(expect.arrayContaining(['paths', 'why', 'evidence', 'plan']));
+    await sub.text({ op: 'add', title: 'found', ...FIELDS, from: 'B1' });
+    expect(storeFor(fs.realpathSync(sub.cwd)).get('B2')).toMatchObject({ paths: FIELDS.paths, evidence: FIELDS.evidence, why: FIELDS.why, plan: FIELDS.plan });
+    await expect(sub.call({ op: 'add', title: 'no goal', why: 'x' })).rejects.toThrow(/add needs a goal/);
+    for (const change of [{ paths: ['x'] }, { why: 'x' }, { evidence: ['x'] }, { plan: 'x' }]) {
+      await expect(sub.call({ op: 'update', id: 'B1', ...change })).rejects.toThrow(/only the state and notes/);
+    }
+  });
+
+  it('hands every saved field to the agent with "do"', async () => {
+    const t = setup();
+    storeFor(fs.realpathSync(t.cwd)).add({ title: 'Fix search', ...FIELDS, body: 'Extra.', state: 'todo', createdBy: 'user' });
+    await t.command.handler('do B1', fakeCtx({ cwd: t.cwd, hasUI: false }));
+    const message = t.sent.at(-1)!.message;
+    expect(message).toContain('Where: src/backlog/store.ts, src/backlog/');
+    expect(message).toContain('Why: Agents lose');
+    expect(message).toContain('- yarn test → 2 failures');
+    expect(message).toContain('Plan: Add four columns');
+    expect(message).toContain('Extra.');
+  });
+
+  it('shows the fields in /backlog <id> and in the markdown export', async () => {
+    const t = setup();
+    storeFor(fs.realpathSync(t.cwd)).add({ title: 'Fix search', ...FIELDS, state: 'todo', createdBy: 'user' });
+    const ctx = fakeCtx({ cwd: t.cwd, hasUI: false });
+    await t.command.handler('B1', ctx);
+    const shown = ctx.ui.notes.at(-1)!.message;
+    expect(shown).toMatch(/Goal: .*\nWhere: src\/backlog\/store\.ts, src\/backlog\/\nWhy: .*\nEvidence:\n- .*\n- .*\nPlan: /);
+    await t.command.handler('export', ctx);
+    const markdown = fs.readFileSync(path.join(t.cwd, '.octocode', 'backlog.md'), 'utf8');
+    expect(markdown).toContain('  Where: src/backlog/store.ts, src/backlog/\n  Why: Agents lose the reason behind an item after a resume.\n  Evidence:\n  - src/backlog/store.ts:87');
+    expect(markdown).toContain('  Plan: Add four columns, then render them.\n    Keep search on LIKE.');
   });
 });

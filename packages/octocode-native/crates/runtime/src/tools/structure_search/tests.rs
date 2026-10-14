@@ -128,15 +128,34 @@ fn invalid_time_filters_are_rejected_instead_of_skipped() {
 
 #[test]
 fn invalid_size_filter_is_invalid_input_not_an_execution_failure() {
-    let root = Fixture::new();
-    std::fs::write(root.0.join("source.rs"), "source\n").expect("source");
-    let error = run(
-        &root.0,
-        json!({"operation":"files","mainGoal": "test", "reasoning":"test","path":root.0,"size":{"greater":"10zz"}}),
-    )
-    .expect_err("an unparsable size must be rejected");
-    assert_eq!(error.code, "invalidInput", "{error:?}");
-    assert!(error.message.contains("10zz"), "{}", error.message);
+    // The contract's `size` pattern rejects an unreadable bound before the
+    // walk runs, and names the field.
+    for (size, field) in [
+        (json!({"greater":"10zz"}), "size.greater"),
+        (json!({"greater":"1.5k","less":"k"}), "size.less"),
+    ] {
+        let error = crate::contracts::validate_query(
+            "structureSearch",
+            json!({"operation":"files","path":".","size":size}),
+        )
+        .expect_err("an unparsable size is invalid input");
+        let paths: Vec<String> = error
+            .issues
+            .iter()
+            .map(|issue| issue.path.join("."))
+            .collect();
+        assert!(
+            paths.iter().any(|path| path.ends_with(field)),
+            "{field}: {paths:?}"
+        );
+    }
+    for valid in ["10k", "1.5m", "200", "3gb"] {
+        crate::contracts::validate_query(
+            "structureSearch",
+            json!({"operation":"files","path":".","size":{"greater":valid}}),
+        )
+        .unwrap_or_else(|error| panic!("{valid}: {error:?}"));
+    }
 }
 
 #[test]
@@ -571,7 +590,31 @@ fn tree_and_files_summaries_count_symlinks_alike() {
     };
     let tree = summary("tree");
     assert_eq!(tree["files"], 2, "{tree}");
+    // A link's own length is no file content: bytes count regular files.
+    assert_eq!(tree["bytes"], 0, "{tree}");
     assert_eq!(tree, summary("files"));
+}
+
+/// Both operations' `summary` totals the listing (every page of it, within
+/// `maxEntries`), never entries the walk cut off.
+#[test]
+fn summaries_total_the_listing_not_the_whole_walk() {
+    let root = Fixture::new();
+    for name in ["a.rs", "b.rs", "c.rs", "d.rs", "e.rs"] {
+        std::fs::write(root.0.join(name), "xy").expect("file");
+    }
+    for operation in ["tree", "files"] {
+        let out = run(
+            &root.0,
+            json!({"operation": operation, "path": root.0, "maxEntries": 2, "entryType": "f"}),
+        )
+        .expect("listing");
+        assert_eq!(
+            out["summary"],
+            json!({"files": 2, "dirs": 0, "bytes": 4}),
+            "{operation}: {out}"
+        );
+    }
 }
 
 /// A tree entry has the one listing-entry shape `files` uses and the output
@@ -888,12 +931,14 @@ fn tree_follows_gitignore_and_reports_withheld_sensitive_entries() {
     )
     .expect("tree");
     assert_eq!(names(&out), [".gitignore", "main.rs"], "{out}");
-    // `.git`, `.env.production`, `.npmrc`: named by policy, not by path.
+    // `.env.production`, `.npmrc`: named by policy, not by path. The
+    // repository's own `.git`, withheld from every walk, is not news.
     assert_eq!(
-        out["warnings"][0],
-        "3 entries withheld by path policy: security-policy dirs .git/; 2 credential files.",
+        out["warnings"][0], "2 entries withheld by path policy: 2 credential files.",
         "{out}"
     );
+    let files = run(&root.0, json!({"operation":"files","path":root.0})).expect("files");
+    assert!(!files.to_string().contains(".git/"), "{files}");
     let all = run(
         &root.0,
         json!({"operation":"tree","mainGoal":"test","reasoning":"test","path":root.0,"includeHidden":true,"includeIgnored":true}),
@@ -915,7 +960,7 @@ fn tree_follows_gitignore_and_reports_withheld_sensitive_entries() {
 
 /// `files` leaves out `.gitignore`d entries like the tree and localSearch, and
 /// prunes ignored directories during the walk instead of listing their
-/// contents; `defaultExcludes:false` walks everything.
+/// contents; `includeIgnored` walks everything.
 #[test]
 fn files_follows_gitignore_and_prunes_ignored_directories() {
     let root = Fixture::new();
@@ -955,7 +1000,7 @@ fn files_follows_gitignore_and_prunes_ignored_directories() {
     );
     let all = run(
         &root.0,
-        json!({"operation":"files","mainGoal":"test","reasoning":"test","path":root.0,"include":["package.json","*.node"],"defaultExcludes":false}),
+        json!({"operation":"files","mainGoal":"test","reasoning":"test","path":root.0,"include":["package.json","*.node"],"includeIgnored":true}),
     )
     .expect("files");
     assert_eq!(paths(&all).len(), 4, "{all}");
@@ -1637,7 +1682,19 @@ fn tree_depth_defaults_to_children_and_include_searches_every_level() {
         json!({"operation":"tree","path":root.0,"include":["helper"]}),
     )
     .expect("include");
-    assert!(found.to_string().contains("deep_helper.rs"), "{found}");
+    assert!(
+        found["files"]
+            .as_array()
+            .is_some_and(|dirs| dirs.iter().any(|dir| {
+                dir["files"].as_array().is_some_and(|names| {
+                    names.iter().any(|name| {
+                        name.as_str()
+                            .is_some_and(|n| n.starts_with("deep_helper.rs"))
+                    })
+                })
+            })),
+        "{found}"
+    );
     assert!(!found.to_string().contains("top.rs"), "{found}");
 }
 
@@ -1875,9 +1932,8 @@ fn files_never_lists_root_dot() {
 }
 
 /// A gitignored directory named like a default-pruned one is lifted
-/// in one hop. The files walk lists `.gitignore`d entries once the default
-/// prune is off, so the retry sets that one flag, the smallest that lists
-/// the files; the hint names the pruned directory.
+/// in one hop: the retry lifts both the ignore rules and the prune, and the
+/// hint names the directory.
 #[test]
 fn include_ignored_lead_lifts_gitignore_and_prune_in_one_hop() {
     let root = Fixture::new();
@@ -1894,7 +1950,7 @@ fn include_ignored_lead_lifts_gitignore_and_prune_in_one_hop() {
     assert_eq!(out["status"], "empty", "{out}");
     let retry = out["next"]["includeSkipped"]["query"]["queries"][0].clone();
     assert_eq!(retry["defaultExcludes"], false, "{out}");
-    assert!(retry.get("includeIgnored").is_none(), "{out}");
+    assert_eq!(retry["includeIgnored"], true, "{out}");
     assert!(
         out["hints"][0]
             .as_str()
@@ -1903,7 +1959,18 @@ fn include_ignored_lead_lifts_gitignore_and_prune_in_one_hop() {
     );
     assert!(!out["warnings"].to_string().contains("target/"), "{out}");
     let found = run(&root.0, retry).expect("retry");
-    assert!(found["files"].to_string().contains("x.rlib"), "{found}");
+    assert!(
+        found["files"]
+            .as_array()
+            .is_some_and(|dirs| dirs.iter().any(|dir| {
+                dir["files"].as_array().is_some_and(|names| {
+                    names
+                        .iter()
+                        .any(|name| name.as_str().is_some_and(|n| n.starts_with("x.rlib")))
+                })
+            })),
+        "{found}"
+    );
 }
 
 /// The tree summary states only the file and directory counts, and
@@ -2283,6 +2350,61 @@ fn a_tree_names_a_symlink_that_leaves_the_allowed_roots() {
         let out = run(&root.0, json!({"operation":operation,"path":root.0})).expect("listing");
         assert_eq!(
             out["warnings"][0], "1 entry withheld by path policy: 1 symlink not followed.",
+            "{operation}: {out}"
+        );
+    }
+}
+
+/// An empty listing's probe of what it skipped stops at its first hits: it
+/// proves "some" and names the reason without walking the whole directory.
+#[test]
+fn an_empty_listings_probe_stops_at_its_first_hits() {
+    let root = Fixture::new();
+    std::fs::create_dir_all(root.0.join("build/gen")).expect("build");
+    std::fs::create_dir(root.0.join("src")).expect("src");
+    std::fs::write(root.0.join("src/lib.rs"), "x\n").expect("lib");
+    for index in 0..40 {
+        std::fs::write(root.0.join(format!("build/gen/f{index:02}.ts")), "x\n").expect("ts");
+    }
+    for operation in ["files", "tree"] {
+        let out = run(
+            &root.0,
+            json!({"operation": operation, "path": root.0, "extensions": ["ts"]}),
+        )
+        .expect("listing");
+        assert_eq!(out["status"], "empty", "{out}");
+        let hint = out["hints"][0].as_str().expect("hint");
+        assert_eq!(
+            hint, "At least 9 entries sit behind skipped paths (build/); the lead lists them.",
+            "{out}"
+        );
+        let retry = &out["next"]["includeSkipped"]["query"]["queries"][0];
+        assert_eq!(retry["defaultExcludes"], false, "{out}");
+        // The lead itself lists every one of them.
+        let found = run(&root.0, retry.clone()).expect("retry");
+        assert_ne!(found["status"], "empty", "{found}");
+    }
+}
+
+/// An empty listing names the ignore rule behind it workspace-relative,
+/// like its rows, never relative to the listed directory.
+#[test]
+fn skip_reasons_name_ignore_files_workspace_relative() {
+    let root = Fixture::new();
+    std::fs::create_dir(root.0.join(".git")).expect("repository marker");
+    std::fs::write(root.0.join(".gitignore"), "*.gen.ts\n").expect("gitignore");
+    std::fs::create_dir_all(root.0.join("sub/inner")).expect("dirs");
+    std::fs::write(root.0.join("sub/inner/a.gen.ts"), "x\n").expect("generated");
+    for operation in ["files", "tree"] {
+        let out = run(
+            &root.0,
+            json!({"operation": operation, "path": "sub/inner", "extensions": ["ts"]}),
+        )
+        .expect("listing");
+        assert_eq!(out["status"], "empty", "{out}");
+        assert_eq!(
+            out["hints"][0],
+            "1 entry sits behind skipped paths (.gitignore:1 '*.gen.ts'); the lead lists them.",
             "{operation}: {out}"
         );
     }

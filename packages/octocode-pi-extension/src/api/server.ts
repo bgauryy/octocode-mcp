@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
 import type { EventLog } from './events.js';
+import { removeSocket } from './registry.js';
 import { ERR, failure, isResponse, MAX_FRAME_BYTES, parseRequest, RpcError, success, type ApiEvent, type RpcRequest, type RpcResponse } from './protocol.js';
 import { errorMessage } from '../shared/util.js';
 
@@ -46,19 +47,27 @@ export class ApiServer {
     private readonly token: string,
   ) {}
 
-  /** Listen on a Unix socket: owner-only file permissions are the authentication. */
+  /**
+   * Listen on a Unix socket: owner-only file permissions are the authentication. They are in force from the moment the
+   * socket exists: the umask masks group and other bits for the `listen` call (which binds synchronously), so no other
+   * user can connect between the bind and a `chmod`.
+   */
   listenUnix(file: string): Promise<void> {
     fs.rmSync(file, { force: true });
     const server = net.createServer((socket) => this.accept(socket));
     this.unix = server;
     return new Promise((resolve, reject) => {
       server.once('error', reject);
-      server.listen(file, () => {
-        if (process.platform !== 'win32') fs.chmodSync(file, 0o600);
-        this.socketFile = file;
-        server.off('error', reject);
-        resolve();
-      });
+      const umask = process.platform === 'win32' ? undefined : process.umask(0o177);
+      try {
+        server.listen(file, () => {
+          this.socketFile = file;
+          server.off('error', reject);
+          resolve();
+        });
+      } finally {
+        if (umask !== undefined) process.umask(umask);
+      }
     });
   }
 
@@ -207,6 +216,6 @@ export class ApiServer {
     for (const server of [this.unix, this.web]) if (server?.listening) closing.push(new Promise((resolve) => server.close(() => resolve())));
     this.web?.closeAllConnections();
     await Promise.all(closing);
-    if (this.socketFile) fs.rmSync(this.socketFile, { force: true });
+    if (this.socketFile) removeSocket(this.socketFile);
   }
 }

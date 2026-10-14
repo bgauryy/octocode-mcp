@@ -59,6 +59,32 @@ const rows = [];
   check('astTopology: tokio unsupported-linking gaps under 200 (was 1,023)', !first.out.isError && !first.out.rowErrors && !!rowData(first.out)?.coverage && (coverage['unsupported-linking'] ?? 0) < 200, JSON.stringify(coverage));
 }
 
+// astSearch match and symbols over the native crates (this repository): walk
+// cost of a whole-tree pattern scan, three runs each.
+{
+  const crates = path.resolve(import.meta.dirname, '../../packages/octocode-native/crates');
+  for (const query of [
+    { operation: 'match', path: crates, language: 'rust', pattern: 'fn $NAME() {}', maxFiles: 5000 },
+    { operation: 'symbols', path: path.join(crates, 'engine/src'), symbolName: 'walk_builder' },
+  ]) {
+    const runs = [];
+    for (let i = 0; i < 3; i++) runs.push(await timed('astSearch', query));
+    rows.push({ case: `astSearch ${query.operation} native crates`, page1: runs[0].ms, page2: '-', repeat: Math.min(...runs.slice(1).map(r => r.ms)) });
+    check(`astSearch ${query.operation} native crates succeeds`, runs.every(r => !r.out.isError && !r.out.rowErrors), JSON.stringify(rowData(runs[0].out)?.errorCode ?? ''));
+  }
+}
+
+// Real-repo import-resolution tallies (manual): OCTOCODE_GRAPH_SANITY_ROOTS=a:b
+// prints each root's astTopology cycles coverage (diagnostic counts by code)
+// and a sample of unresolved internal imports.
+for (const root of (process.env.OCTOCODE_GRAPH_SANITY_ROOTS ?? '').split(':').filter(Boolean)) {
+  const started = performance.now();
+  const out = cliEntry('astTopology', { queries: [{ operation: 'cycles', path: root, maxFiles: 20000, extras: ['diagnostics'] }] });
+  const data = rowData(out);
+  const unresolved = (data?.diagnostics ?? []).filter(d => d.code === 'unresolved-internal').slice(0, 8);
+  console.log(`SANITY ${root} ms=${Math.round(performance.now() - started)} coverage=${JSON.stringify(data?.coverage ?? data?.errorCode)}\n  sample unresolved: ${JSON.stringify(unresolved, null, 2)}`);
+}
+
 console.table(rows);
 const result = summary();
 writeResults('perf', { ...result, rows });

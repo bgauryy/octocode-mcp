@@ -62,6 +62,7 @@ When a script flag or path rule is unclear, read `scripts/README.md`. Scripts:
 |---|---|
 | `run <script>`, `verify`, `check`, `report`, `check-outputs`; after editing it run `node --test skills-dev/octocode-dev/scripts/workspace-health.test.mjs` | `scripts/workspace-health.mjs` |
 | Debugging the `docs:verify` gate | `scripts/docs-verify.mjs` |
+| A tool contract changed; check `octocode-research` examples against live schemas | `scripts/check-research-guidance.mjs [--json] [--self-test]` |
 | Dedupe flags beyond `deps:dedupe` | `scripts/dedupe-deps.mjs` |
 | Local resolutions on (`setup`) / off before publish | `scripts/dev-setup.mjs` / `scripts/prepublish.mjs` |
 | Starting a tool audit | `scripts/tool-inventory.mjs [tool] [--json]` |

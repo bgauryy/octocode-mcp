@@ -1,40 +1,28 @@
-use super::RuntimeError;
+//! The one projection of a rejected call. The CLI (JSON and terminal), the
+//! warm server, and MCP all answer a [`RuntimeError`] with
+//! [`tool_error_result`]: the typed `{error, details?, errorCode}` envelope
+//! and its one-line text.
+
+use super::{RuntimeError, ToolOutcome};
+use crate::tools::id::ToolId;
 use serde_json::{Value, json};
 
-/// Project a typed contract failure into the CallToolResult shape MCP
-/// returns: the same actionable projection the CLI prints (`error` plus its
-/// repair `details`, typed with `errorCode`); an output contract violation
-/// keeps its cause. Runtime and transport faults remain errors at
-/// the NAPI boundary.
-pub fn mcp_input_error(tool: &str, error: &RuntimeError) -> Option<Value> {
-    // A response that breaks its own output contract names the broken field
-    // (contract paths, no request data): the agent sees the cause instead of
-    // the interface's generic failure.
-    if error.code == "outputContractViolation" {
-        let message = crate::security::scrub_error_text(&error.message);
-        return Some(json!({
-            "content": [{"type":"text","text":format!("{message} (errorCode: outputContractViolation)")}],
-            "isError": true
-        }));
-    }
-    (error.code == "invalidInput").then(|| {
-        let envelope = typed_error_envelope(error);
-        let detail = tool_error_text(&envelope).unwrap_or_default();
-        json!({
-            "content": [{"type":"text","text":format!(
-                "Input validation error: Invalid arguments for tool {tool}: {detail} (errorCode: invalidInput)"
-            )}],
-            "structuredContent": envelope,
-            "isError": true
-        })
-    })
+/// A rejected call as every surface prints it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ToolError {
+    /// `{error, details?, errorCode}`: MCP structuredContent, CLI JSON stdout.
+    pub envelope: Value,
+    /// The error, each repair detail, then `(errorCode: code)`: MCP text
+    /// content, CLI terminal stderr.
+    pub text: String,
 }
 
-/// The `{error, details?, errorCode}` envelope of a rejected call, typed with
-/// the error's `errorCode`: the formatted payload when validation built one, else
-/// the bare message. MCP returns it as structuredContent and the CLI prints
-/// it on stdout, so both surfaces answer with one row.
-pub fn typed_error_envelope(error: &RuntimeError) -> Value {
+/// Project `error`, raised by a call to `tool`, for every surface. The
+/// envelope is the formatted payload validation built, else the message,
+/// typed with the error's `errorCode`; a timeout without details names what
+/// to try next for that tool. Every string is secret-scrubbed.
+#[must_use]
+pub fn tool_error_result(tool: &str, error: &RuntimeError) -> ToolError {
     let mut envelope = match error.payload.as_deref() {
         Some(payload @ Value::Object(_)) => payload.clone(),
         _ => crate::contracts::tool_error(&error.message, Vec::new()),
@@ -42,14 +30,66 @@ pub fn typed_error_envelope(error: &RuntimeError) -> Value {
     if envelope.get("errorCode").is_none() {
         envelope["errorCode"] = json!(error.code);
     }
+    if error.code == "timeout" && envelope.get("details").is_none() {
+        envelope["details"] = json!([timeout_hint(tool)]);
+    }
     crate::security::scrub_error_payload(&mut envelope);
-    envelope
+    let code = envelope["errorCode"].as_str().unwrap_or(&error.code);
+    let detail =
+        error_line(&envelope).unwrap_or_else(|| crate::security::scrub_error_text(&error.message));
+    // The MCP SDK's own wording for a rejected input, so a client keyed on it
+    // sees native validation the same way.
+    let text = if error.code == "invalidInput" {
+        format!(
+            "Input validation error: Invalid arguments for tool {tool}: {detail} (errorCode: {code})"
+        )
+    } else {
+        format!("{detail} (errorCode: {code})")
+    };
+    ToolError { envelope, text }
 }
 
-/// An error envelope → one line: the error, then each repair detail. The
-/// one text projection of a tool error: MCP input errors and the CLI terminal
-/// channel both print it.
-pub fn tool_error_text(payload: &Value) -> Option<String> {
+/// The MCP `CallToolResult` of a finished call, built by move (the structured
+/// content is never re-serialized). A rejected call answers as a tool error;
+/// only a cancelled request or a closing runtime stays an error, because no
+/// client is waiting for its answer.
+pub fn mcp_result(
+    tool: &str,
+    result: Result<ToolOutcome, RuntimeError>,
+) -> Result<Value, RuntimeError> {
+    let outcome = match result {
+        Ok(outcome) => outcome,
+        Err(error) if matches!(error.code.as_str(), "cancelled" | "closed") => return Err(error),
+        Err(error) => {
+            let ToolError { envelope, text } = tool_error_result(tool, &error);
+            return Ok(json!({
+                "content": [{"type": "text", "text": text}],
+                "structuredContent": envelope,
+                "isError": true,
+            }));
+        }
+    };
+    let content = serde_json::to_value(outcome.content)
+        .map_err(|_| RuntimeError::new("response", "Cannot serialize response"))?;
+    let mut response = serde_json::Map::with_capacity(3);
+    response.insert("content".into(), content);
+    response.insert("structuredContent".into(), outcome.structured_content);
+    response.insert("isError".into(), Value::Bool(outcome.all_failed));
+    Ok(Value::Object(response))
+}
+
+/// What to try after a timeout. Only lspSearch starts a language server, whose
+/// first call can take about a minute; any other tool timed out on its work.
+fn timeout_hint(tool: &str) -> &'static str {
+    if tool == ToolId::LspSearch.as_str() {
+        "Retry -- the first call initialises the language server (~60 s cold start)."
+    } else {
+        "Retry, or narrow the call: fewer queries, a smaller path or repository scope, or a tighter filter."
+    }
+}
+
+/// An error envelope → one line: the error, then each repair detail.
+fn error_line(payload: &Value) -> Option<String> {
     let error = payload.get("error")?.as_str()?;
     let details = payload
         .get("details")
@@ -81,8 +121,12 @@ mod tests {
         }
     }
 
+    fn mcp(tool: &str, error: RuntimeError) -> Value {
+        mcp_result(tool, Err(error)).expect("an MCP tool error")
+    }
+
     fn text(tool: &str, input: Value) -> String {
-        let result = mcp_input_error(tool, &invalid(tool, input)).expect("an MCP error");
+        let result = mcp(tool, invalid(tool, input));
         assert_eq!(result["isError"], true);
         // The structured row is the CLI's error envelope, typed: an agent
         // reading structuredContent branches on errorCode. The caller knows
@@ -108,11 +152,10 @@ mod tests {
     /// rejection) still answers with the typed envelope.
     #[test]
     fn bare_invalid_input_errors_are_typed() {
-        let result = mcp_input_error(
+        let result = mcp(
             "clasify",
-            &RuntimeError::new("invalidInput", "clasify pages by itself"),
-        )
-        .expect("an MCP error");
+            RuntimeError::new("invalidInput", "clasify pages by itself"),
+        );
         assert_eq!(
             result["structuredContent"],
             json!({"error":"clasify pages by itself","errorCode":"invalidInput"})
@@ -167,29 +210,90 @@ mod tests {
 
     /// A response that breaks its own output contract is a tool defect the
     /// agent must see, not a generic "failed to execute": MCP returns the
-    /// scrubbed cause as a tool error.
+    /// scrubbed cause as a typed tool error.
     #[test]
     fn output_contract_violations_surface_their_cause() {
-        let error = RuntimeError {
-            code: "outputContractViolation".into(),
-            message: "ghGetHistoryItem produced a response that violates its canonical output contract: results.0.data.pullRequests.0.files: Value length 0 is below the minimum of 1".into(),
-            payload: None,
-            validation_issues: None,
-        };
-        let result = mcp_input_error("ghGetHistoryItem", &error).expect("an MCP error");
+        let error = RuntimeError::new(
+            "outputContractViolation",
+            "ghGetHistoryItem produced a response that violates its canonical output contract: results.0.data.pullRequests.0.files: Value length 0 is below the minimum of 1",
+        );
+        let result = mcp("ghGetHistoryItem", error);
         assert_eq!(result["isError"], true);
+        assert_eq!(
+            result["structuredContent"]["errorCode"],
+            "outputContractViolation"
+        );
         let text = result["content"][0]["text"].as_str().expect("text");
-        assert!(text.contains("outputContractViolation"), "{text}");
+        assert!(
+            text.ends_with("(errorCode: outputContractViolation)"),
+            "{text}"
+        );
         assert!(
             text.contains("pullRequests.0.files: Value length 0"),
             "{text}"
         );
     }
 
+    /// Every request-level failure is a typed tool error on MCP, as on the
+    /// CLI; only a cancelled request or a closing runtime stays an error.
     #[test]
-    fn other_failures_stay_runtime_errors() {
+    fn every_failure_but_cancellation_is_a_tool_error() {
+        for code in ["toolUnavailable", "missingConfiguration", "busy", "timeout"] {
+            let result = mcp("localFetch", RuntimeError::new(code, "m"));
+            assert_eq!(result["isError"], true, "{code}");
+            assert_eq!(result["structuredContent"]["errorCode"], code, "{code}");
+            let text = result["content"][0]["text"].as_str().expect("text");
+            assert!(text.starts_with("m"), "{code}: {text}");
+            assert!(text.ends_with(&format!("(errorCode: {code})")), "{text}");
+        }
+        for code in ["cancelled", "closed"] {
+            let error = mcp_result("localFetch", Err(RuntimeError::new(code, "m")))
+                .expect_err("no client waits for it");
+            assert_eq!(error.code, code);
+        }
+    }
+
+    /// A timeout tells every tool's caller what to try; only lspSearch blames
+    /// the language server's cold start.
+    #[test]
+    fn every_timeout_names_its_next_step() {
+        let timeout = || RuntimeError::new("timeout", "Tool call timed out.");
+        let lsp = tool_error_result("lspSearch", &timeout());
+        assert!(lsp.text.starts_with("Tool call timed out."), "{}", lsp.text);
         assert!(
-            mcp_input_error("localFetch", &RuntimeError::new("toolUnavailable", "x")).is_none()
+            lsp.text.contains("initialises the language server"),
+            "{}",
+            lsp.text
         );
+        for other in ["localSearch", "ghSearchCode", "artifactSearch"] {
+            let result = tool_error_result(other, &timeout());
+            assert!(
+                result.text.contains("Retry, or narrow"),
+                "{other}: {}",
+                result.text
+            );
+            assert!(!result.text.contains("language server"), "{other}");
+            assert_eq!(result.envelope["details"].as_array().map(Vec::len), Some(1));
+        }
+    }
+
+    #[test]
+    fn errors_are_secret_scrubbed_in_envelope_and_text() {
+        let token = format!("ghp_{}", "a".repeat(37));
+        for payload in [
+            None,
+            Some(json!({"error": format!("x {token}"), "detail": [token.clone()]})),
+        ] {
+            let error = RuntimeError {
+                code: "providerError".into(),
+                message: format!("upstream rejected {token}"),
+                payload: payload.map(Box::new),
+                validation_issues: None,
+            };
+            let result = tool_error_result("localFetch", &error);
+            let printed = format!("{} {}", result.envelope, result.text);
+            assert!(!printed.contains("ghp_"), "{printed}");
+            assert!(printed.contains("[REDACTED-"), "{printed}");
+        }
     }
 }

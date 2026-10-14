@@ -9,6 +9,8 @@ export interface Member {
   role: string;
   parentId?: string;
   pid: number;
+  /** When the process `pid` names started (`processStartTime`), absent where unknown: with the pid it names one process, which a later one that got the pid is not. */
+  started?: string;
   status: 'idle' | 'working';
   /** What it works on, in at most five words (`goal.ts`). The database column keeps its older name, `task`. */
   goal?: string;
@@ -100,11 +102,13 @@ export function toMember(row: Row): Member {
   const activity = text(row['activity']);
   const parentId = text(row['parent_id']);
   const model = text(row['model']);
+  const started = text(row['started']);
   return {
     id: String(row['id']),
     role: String(row['role']),
     ...(parentId ? { parentId } : {}),
     pid: num(row['pid']),
+    ...(started ? { started } : {}),
     status: row['status'] === 'working' ? 'working' : 'idle',
     ...(goal ? { goal } : {}),
     ...(activity ? { activity } : {}),

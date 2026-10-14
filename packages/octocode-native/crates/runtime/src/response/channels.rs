@@ -34,11 +34,7 @@ const ROW_ANCHORS: [&str; 2] = ["id", "warnings"];
 /// A resource-major query (clasify) also leads `hints` before `next`: its
 /// `hints.read` is the move to make before walking on.
 pub(super) fn lead_continuations(structured: &mut Value, tool: ToolId) {
-    let rows_key = if tool.output().resource_major() {
-        "queries"
-    } else {
-        "results"
-    };
+    let rows_key = tool.output().rows_key();
     for row in structured
         .get_mut(rows_key)
         .and_then(Value::as_array_mut)
@@ -247,8 +243,7 @@ fn merge_repeats(next: &mut Map<String, Value>, tool: ToolId) {
         let limit = template["tool"]
             .as_str()
             .and_then(ToolId::from_name)
-            .map_or(1, max_rows)
-            .max(1);
+            .map_or(1, crate::tools::result::rows_per_call);
         let mut at = next
             .keys()
             .position(|name| *name == group.members[0])
@@ -275,16 +270,6 @@ fn merge_repeats(next: &mut Map<String, Value>, tool: ToolId) {
             at += 1;
         }
     }
-}
-
-/// Rows one call of `tool` accepts (the contract's `queries.maxItems`).
-fn max_rows(tool: ToolId) -> usize {
-    crate::contracts::tool_contract(tool)
-        .ok()
-        .and_then(|contract| contract.pointer("/inputSchema/properties/queries/maxItems"))
-        .and_then(Value::as_u64)
-        .and_then(|limit| usize::try_from(limit).ok())
-        .unwrap_or(1)
 }
 
 /// Moves every lead out of `next` into `hints`, capped unless `withheld`

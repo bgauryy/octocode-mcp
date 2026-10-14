@@ -1,7 +1,5 @@
 # Octocode Brainstorming
 
-Explore an idea or decision with several subagents researching distinct directions. Use available Tavily, Exa, Serper, or web tools, verify source freshness and quality, and explain the evidence behind each conclusion.
+Explore an idea, claim, or decision from several directions and recommend from quote-verified evidence: validate, find ideas, find best practices, or compare options.
 
-The parent reconciles findings and owns the recommendation. If workers or search tools are unavailable, report the limitation and use the available research paths.
-
-Start with [SKILL.md](SKILL.md). See [output.md](output.md) for the result format.
+Start with [SKILL.md](SKILL.md). Setup: the search keys (`TAVILY_API_KEY`, `EXA_API_KEY`, `SERPER_API_KEY`) are optional; without them the host's web tools still work.

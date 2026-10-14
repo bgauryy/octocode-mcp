@@ -37,7 +37,7 @@ function register() {
   let tool: Tool | undefined;
   const pi = { registerTool: (definition: Tool) => (tool = definition), on: () => undefined } as unknown as ExtensionAPI;
   registerBrowserTool(pi, browser);
-  const run = (params: Record<string, unknown>) => tool!.execute('id', params, undefined, undefined, fakeCtx({ cwd: process.cwd(), hasUI: false }));
+  const run = (params: Record<string, unknown>, model?: unknown) => tool!.execute('id', params, undefined, undefined, fakeCtx({ cwd: process.cwd(), hasUI: false, ...(model ? { model } : {}) }));
   const text = async (params: Record<string, unknown>) => (await run(params)).content.map((part) => part.text ?? `[${part.type}]`).join('\n');
   return { run, text };
 }
@@ -88,7 +88,7 @@ describe('browser screenshots', () => {
     expect(captures(cdp).map((params) => (params['clip'] as { scale: number } | undefined)?.scale)).toEqual([undefined, 0.5]);
     expect(captures(cdp)[1]).toMatchObject({ clip: { x: 0, y: 0, width: 1280, height: 800, scale: 0.5 } });
     expect(result.content[0]).toEqual({ type: 'image', data: 'QUJD', mimeType: 'image/jpeg' });
-    expect(result.content[1]!.text).toMatch(/^Screenshot of the visible page, retaken smaller to fit \(jpeg at 0\.5x scale, 1 KB\)\./);
+    expect(result.content[1]!.text).toMatch(/^Screenshot of the visible page, retaken smaller to fit \(jpeg at 0\.5x scale, 1 KB; limit 439 KB\)\./);
     expect(fs.statSync(savedPath(result)!).size).toBe(Buffer.from(BIG, 'base64').length);
   });
 
@@ -96,8 +96,20 @@ describe('browser screenshots', () => {
     const { run } = await shots({ full: BIG, '0.5': BIG, '0.25': BIG });
     const result = await run({ action: 'screenshot' });
     expect(result.content.map((part) => part.type)).toEqual(['text']);
-    expect(result.content[0]!.text).toMatch(/^Screenshot too large for the context, not shown \(jpeg, \d+ KB\)\./);
+    expect(result.content[0]!.text).toMatch(/^Screenshot too large for the context, not shown \(jpeg, \d+ KB; limit 439 KB\)\./);
     expect(fs.existsSync(savedPath(result)!)).toBe(true);
+  });
+
+  it("takes the budget from the model's own byte limit when it is smaller, and says which limit applied", async () => {
+    const mid = 'A'.repeat(300_000);
+    const model = { provider: 'p', id: 'm', inputLimits: { images: { resize: { maxBytes: 100_000 } } } };
+    const { cdp, run } = await shots({ full: mid, '0.5': 'QUJD' });
+    const result = await run({ action: 'screenshot' }, model);
+    // 300,000 characters fit the default budget but not this model's 100,000: retaken smaller.
+    expect(captures(cdp).map((params) => (params['clip'] as { scale: number } | undefined)?.scale)).toEqual([undefined, 0.5]);
+    expect(result.content[1]!.text).toMatch(/retaken smaller to fit \(jpeg at 0\.5x scale, 1 KB; limit 73 KB\)/);
+    const unlimited = await run({ action: 'screenshot' });
+    expect(unlimited.content[0]).toMatchObject({ type: 'image', data: mid });
   });
 
   it('retakes the visible region after horizontal and vertical scrolling', async () => {
@@ -125,8 +137,8 @@ describe('browser page events are bounded', () => {
     await text({ action: 'screenshot' });
     const consoleText = await text({ action: 'console' });
     expect(consoleText.startsWith('[log] start-')).toBe(true);
-    expect(consoleText.length).toBeLessThan(2_200);
-    expect(consoleText).toMatch(/…$/);
+    expect(consoleText.length).toBeLessThan(2_300);
+    expect(consoleText).toMatch(/… \[\d+ more characters cut\]$/);
     const listing = (await text({ action: 'download' })).split('\n');
     expect(listing.some((line) => line.includes('file-149.bin'))).toBe(true);
     expect(listing.some((line) => line.includes('file-0.bin'))).toBe(false);

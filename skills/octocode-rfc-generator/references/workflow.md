@@ -1,27 +1,32 @@
 # RFC workflow
 
-Use to choose the deliverable or audit an existing proposal. [output.md](../output.md) owns the single-file structure and language.
+Load when planning evidence, auditing an RFC, or a disagreement survives source review. [output](../output.md) owns structure; `octocode-research` owns tools and verification.
 
-## Choose the result
+## Gather evidence
 
-- An open consequential decision produces one RFC with its execution plan inside it.
-- A settled decision that needs only implementation steps produces one plan when that is the user's request.
-- A review returns findings, or updates the existing RFC when edits are requested. Preserve accepted history and make the current decision clear.
-
-## Work through the dependencies
-
-1. Verify the current state, problem, and constraints. Investigate alternatives that could realistically meet the goal.
-2. Resolve deciding blockers before presenting a final recommendation. A blocked draft explains the open choice and next useful check.
-3. Define acceptance criteria, then write steps in dependency order. A step consumes an available prerequisite or an earlier step's result.
-4. Explain material compatibility, security, migration, and rollback implications with an accountable owner where needed.
-5. Review the whole argument for evidence, consistency, and readable language. Deliver only the RFC and a concise handoff.
-
-Keep prerequisites, success metrics, implementation, and references as sections in the same file. Working notes and tool records are internal research material; never append them to the RFC or create sidecar reports by default.
+- Per [checklist area](checklist.md#completeness) that could change the decision: current source, callers, tests; local constraints, prior art, primary docs for options; real consumers and reversible steps for a migration; a dependency's current release, maintained source, license, integration points, limits; a reproducible baseline, and a benchmark when measurement decides.
+- Deciding claim: verify in the original source; search snippets are leads.
+- Doubtful or conflicting deciding claim: Hypothesis test: claim, strongest rival, distinguishing check, result (confirmed, dismissed, unresolved); unresolved stays an open choice.
+- Keep material counterarguments.
 
 ## Audit an existing RFC
 
-Read the proposal and any existing supporting material, then verify the live code it describes. Identify implemented work, wanted gaps, contradictions, or superseded choices. Explain whether to keep, update, or retire it with deciding evidence.
+- Read the proposal and its support; verify the live code it describes.
+- Find implemented work, wanted gaps, contradictions, superseded choices; recommend keep, update, or retire, with deciding evidence. Feedback: objection (blocks; states the consequence) vs concern (non-blocking). Shipped work that diverged: After Action Review: intended, happened, why different, next.
+- Authorized edits: update substance in place, keep accepted decisions, make the current decision clear; no audit headers, transcripts, diary, or review metadata.
+- Archive or delete only within the user's scope; update references.
 
-For authorized edits, update substantive content in the existing RFC while preserving accepted decisions. Do not add audit headers, probe transcripts, or generated review metadata. Archive or delete only within the user's existing scope, and update affected references.
+## Optional clasify review
 
-Next: [research](research-playbook.md), [completeness](rfc-completeness.md), and [output](../output.md).
+Only when a consequential disagreement survives source review, no direct check settles it, and a typed judgment could change the next action; ordinary evidence review is the default. `octocode-research` owns `clasify` admission and mechanics.
+
+- Keep RFC revision, criteria, source evidence, proposed answers, and gaps together; [closure rules](checklist.md#track-and-close-questions) still apply.
+- Delegated reviewers (when authorized): Delphi: same evidence, independent first positions, then share; keep dissent. Give each a different question; keep partial returns; you keep write authority and judgment.
+- First run `npx octocode schema clasify --view query`. Needs `OCTOCODE_CLASSIFICATION_API` in `<HOME>/.octocode/.env`; check presence without displaying it.
+- Note the intended next action; submit typed questions over the exact evidence and competing arguments, with an uncertainty outcome where needed.
+- Inspect every result page, error, and coverage limit. Confidence is not correctness: verify the deciding source before updating. A provider answer never grants implementation authority.
+- Missing capability or failed call: partial, not approved; retry only with a useful repair or new evidence.
+- Update the same RFC with supported conclusion, dissent, remaining uncertainty; omit requests, receipts, timing, usage.
+- Measuring whether assisted review helps: `octocode-eval-benchmark`; no evaluation report in the RFC.
+
+Next: close deciding gaps with the [checklist](checklist.md).

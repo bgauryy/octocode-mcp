@@ -2,7 +2,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { formatDuration } from '../src/shared/format.js';
-import { appKey, clip, expandKey, plural, queryTarget, resultBlock, stopRowTimers, timed, timedTool, timingOf, toolHeader, type ToolRow } from '../src/shared/render.js';
+import { appKey, clip, expandKey, livePaint, plural, queryTarget, resultBlock, statusColor, stopRowTimers, timed, timedTool, timingOf, toolHeader, type ToolRow } from '../src/shared/render.js';
 import { recordCheck } from '../src/shared/locks.js';
 import { visibleWidth } from '@earendil-works/pi-tui';
 import { rendered, theme } from './fake-pi.js';
@@ -52,17 +52,102 @@ describe('toolHeader', () => {
     const context = row({ executionStarted: true });
     const header = toolHeader(theme, context, 'Bash', 'sleep 2');
     expect(rendered(header)).toBe('● Bash(sleep 2) · 0ms');
-    expect(context.state.timer).toBeDefined();
+    expect(context.state.ticking).toBe(true);
     vi.advanceTimersByTime(2_100);
     expect(context.invalidate).toHaveBeenCalledTimes(2);
     const doneContext = { ...context, isPartial: false, durationMs: 1_900 };
     const done = toolHeader(theme, { ...doneContext, lastComponent: header }, 'Bash', 'sleep 2');
     expect(done).toBe(header);
     expect(rendered(done)).toBe('● Bash(sleep 2) · 1.9s');
-    expect(context.state.timer).toBeUndefined();
+    expect(context.state.ticking).toBe(false);
     vi.advanceTimersByTime(5_000);
     expect(context.invalidate).toHaveBeenCalledTimes(2);
     expect(rendered(toolHeader(theme, doneContext, 'Bash', 'sleep 2'))).toBe('● Bash(sleep 2) · 1.9s');
+  });
+
+  it('ticks only the newest running row: an older row drops its time once and never ticks again', async () => {
+    vi.useFakeTimers();
+    try {
+      const older = row({ executionStarted: true });
+      toolHeader(theme, older, 'Bash', 'build');
+      vi.advanceTimersByTime(1_100);
+      expect(older.invalidate).toHaveBeenCalledTimes(1);
+      expect(rendered(toolHeader(theme, older, 'Bash', 'build'))).toBe('● Bash(build) · 1.1s');
+      const newer = row({ executionStarted: true });
+      toolHeader(theme, newer, 'Read', 'a.ts');
+      await Promise.resolve();
+      // One redraw to drop the time while the row still sits above the new one; then it stays put.
+      expect(older.invalidate).toHaveBeenCalledTimes(2);
+      expect(rendered(toolHeader(theme, older, 'Bash', 'build'))).toBe('● Bash(build)');
+      vi.advanceTimersByTime(3_000);
+      expect(older.invalidate).toHaveBeenCalledTimes(2);
+      expect(newer.invalidate).toHaveBeenCalledTimes(3);
+      // The newest finishing does not hand the clock back: the older row may have scrolled off by then.
+      toolHeader(theme, { ...newer, isPartial: false, durationMs: 3_000 }, 'Read', 'a.ts');
+      vi.advanceTimersByTime(3_000);
+      expect(older.invalidate).toHaveBeenCalledTimes(2);
+      expect(rendered(toolHeader(theme, older, 'Bash', 'build'))).toBe('● Bash(build)');
+    } finally {
+      stopRowTimers();
+      vi.useRealTimers();
+    }
+  });
+
+  it('says waiting while the call waits for its checks or approval, and starts the clock when its run begins', async () => {
+    vi.useFakeTimers();
+    try {
+      const context = row({ executionStarted: true, toolCallId: 'call-wait' });
+      expect(rendered(toolHeader(theme, context, 'Bash', 'ls'))).toBe('○ Bash(ls) · waiting');
+      vi.advanceTimersByTime(5_000);
+      // Nothing to tick while waiting.
+      expect(context.invalidate).not.toHaveBeenCalled();
+      expect(rendered(toolHeader(theme, context, 'Bash', 'ls'))).toBe('○ Bash(ls) · waiting');
+      const run = timed(async (_id: string) => {
+        await new Promise((resolve) => setTimeout(resolve, 2_000));
+        return { content: [] };
+      });
+      const done = run('call-wait');
+      // The run's start redraws the row at once.
+      expect(context.invalidate).toHaveBeenCalledTimes(1);
+      expect(rendered(toolHeader(theme, context, 'Bash', 'ls'))).toBe('● Bash(ls) · 0ms');
+      await vi.advanceTimersByTimeAsync(2_000);
+      await done;
+      expect(rendered(toolHeader(theme, context, 'Bash', 'ls'))).toBe('● Bash(ls) · 2.0s');
+      // Pi's duration (the run only) matches the live clock.
+      expect(rendered(toolHeader(theme, { ...context, isPartial: false, durationMs: 2_000 }, 'Bash', 'ls'))).toBe('● Bash(ls) · 2.0s');
+    } finally {
+      stopRowTimers();
+      vi.useRealTimers();
+    }
+  });
+
+  it('starts an exclusive tool clock before its lock, as Pi times execute', async () => {
+    const tool = timedTool({ name: 't', label: 'T', description: '', parameters: {} as never, execute: async () => ({ content: [], details: {} }) }, { exclusive: true });
+    const context = row({ executionStarted: true, toolCallId: 'call-lock' });
+    toolHeader(theme, context, 'T', 'x');
+    const pending = tool.execute('call-lock', {} as never, undefined, undefined, {} as never);
+    expect(rendered(toolHeader(theme, context, 'T', 'x'))).toMatch(/^● T\(x\) · \d+ms$/);
+    await pending;
+    stopRowTimers();
+  });
+
+  it('folds batch sub-lines while collapsed: three, then +N more', () => {
+    const sub = Array.from({ length: 10 }, (_, index) => `query ${index}`);
+    const collapsed = rendered(toolHeader(theme, row(), 'localSearch', '10 queries', { lines: sub })).split('\n');
+    expect(collapsed).toEqual(['○ localSearch(10 queries)', '  query 0', '  query 1', '  query 2', `  … +7 more (${expandKey()} to expand)`]);
+    expect(rendered(toolHeader(theme, row({ expanded: true }), 'localSearch', '10 queries', { lines: sub })).split('\n')).toHaveLength(11);
+    // Folding one line would not save one.
+    expect(rendered(toolHeader(theme, row(), 'x', '4 queries', { lines: sub.slice(0, 4) })).split('\n')).toHaveLength(5);
+  });
+
+  it('caches its lines per width until the next set, so pi-tui sees the same strings each frame', () => {
+    const header = toolHeader(theme, row(), 'Bash', 'ls');
+    const first = header.render(80);
+    expect(header.render(80)).toBe(first);
+    expect(header.render(60)).not.toBe(first);
+    const again = toolHeader(theme, row({ lastComponent: header }), 'Bash', 'pwd');
+    expect(again).toBe(header);
+    expect(rendered(again)).toBe('○ Bash(pwd)');
   });
 
   it('marks errors with ✗ and clips to the width while keeping the time', () => {
@@ -171,6 +256,29 @@ describe('timed', () => {
     const fast = (await run('call-fast')) as unknown as { details: Record<string, unknown> };
     expect(fast.details.checkMs).toBeUndefined();
     expect(fast.details.queuedMs).toBeUndefined();
+  });
+});
+
+describe('resultBlock colouring', () => {
+  it('colours only the lines a collapsed preview shows, and counts the hidden rest', () => {
+    let painted = 0;
+    const counting = { ...(theme as object), fg: (_color: string, text: string) => ((painted += 1), text) } as never;
+    const body = Array.from({ length: 1_000 }, (_, index) => `line ${index}`).join('\n');
+    const text = rendered(resultBlock(counting, row({ isPartial: false }), { summary: 'exit 0', body, tail: true }));
+    expect(text).toContain('… +997 lines');
+    expect(painted).toBeLessThan(10);
+    expect(rendered(resultBlock(theme, row({ isPartial: false }), { summary: 'exit 0', body: 'a\nb', totalLines: 50, tail: true }))).toContain('… +48 lines');
+  });
+});
+
+describe('statusColor', () => {
+  it('lets the footer repaint a status in the live theme', () => {
+    const old = { fg: (color: string, text: string) => `<old ${color}>${text}` };
+    const status = statusColor({ mode: 'tui', ui: { theme: old } } as never, 'accent', '✉ 2 queued');
+    expect(status).toBe('<old accent>✉ 2 queued');
+    expect(livePaint(status, { fg: (color: string, text: string) => `<new ${color}>${text}` } as never)).toBe('<new accent>✉ 2 queued');
+    expect(livePaint('plain', { fg: () => 'x' } as never)).toBe('plain');
+    expect(statusColor({ mode: 'rpc', ui: { theme: old } } as never, 'accent', 'x')).toBe('x');
   });
 });
 

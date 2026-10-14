@@ -2,6 +2,7 @@ import type { ExtensionCommandContext } from '@earendil-works/pi-coding-agent';
 import { say, type Subcommands } from '../shared/commands.js';
 import { MODELS_DEV_ENV, catalogFile, listedCost, loadCatalog, lookup, modelsDevEnabled, readCatalog, type Catalog } from './catalog.js';
 import { sanitizeTerminalText } from '../shared/sanitize.js';
+import { clipText } from '../shared/util.js';
 import { MODEL_TIERS, isModelTier, resolveTier, routeModel, type ModelRef } from './model.js';
 import type { AgentProfile } from './profiles.js';
 
@@ -15,7 +16,7 @@ const window = (tokens: number | undefined) => (tokens ? (tokens >= 1_000_000 ? 
 /** A remote description, made safe for the terminal and kept to one short line. */
 const describe = (text: string) => {
   const clean = sanitizeTerminalText(text).replace(/\s+/g, ' ').trim();
-  return clean.length > 120 ? `${clean.slice(0, 119)}…` : clean;
+  return clipText(clean, 120);
 };
 const name = (model: ModelRef) => `${model.provider}/${model.id}`;
 

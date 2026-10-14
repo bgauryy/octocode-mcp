@@ -22,7 +22,6 @@ use super::{
 };
 use reqwest::header::HeaderMap;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, HashMap, VecDeque},
     path::Path,
@@ -135,6 +134,19 @@ impl ExecutorConfig {
         }
     }
 
+    /// Epoch milliseconds from which a primary bucket that resets at
+    /// `reset` (epoch seconds) may be retried: the reset plus the grace.
+    pub fn reset_until_ms(&self, reset: u64) -> u64 {
+        reset
+            .saturating_mul(1000)
+            .saturating_add(self.reset_grace.as_millis() as u64)
+    }
+
+    /// How long from now until [`Self::reset_until_ms`].
+    pub fn reset_wait(&self, reset: u64) -> Duration {
+        Duration::from_millis(self.reset_until_ms(reset).saturating_sub(now_ms()))
+    }
+
     /// No pacing — used by unit tests that do not exercise throttling.
     pub fn relaxed() -> Self {
         Self {
@@ -170,13 +182,10 @@ pub struct LimiterKey {
 impl LimiterKey {
     pub fn new(host: &str, token: Option<&str>) -> Self {
         let host = credential_host(&host.trim().to_ascii_lowercase()).to_owned();
-        let token = match token.filter(|value| !value.is_empty()) {
-            Some(token) => {
-                let digest = Sha256::digest(token.as_bytes());
-                hex::encode(&digest[..8])
-            }
-            None => "anon".to_owned(),
-        };
+        let token = token.map(secrecy::SecretString::from);
+        let token = crate::Partition::new(host.as_str(), token.as_ref())
+            .credential_tag()
+            .to_owned();
         Self { host, token }
     }
 
@@ -542,6 +551,41 @@ impl Queued {
     }
 }
 
+/// `(group, start, previous start, window slot, mirrored to disk)`.
+type ReservedSlot = (Group, u64, Option<u64>, bool, bool);
+
+/// A reserved start and window slot that hands itself back unless kept: an
+/// explicit failure awaits the release, and a dropped admission future (a
+/// timeout wrapper, a `select!` that lost) releases it from `Drop`.
+struct Reserved {
+    state: Arc<KeyState>,
+    slot: Option<ReservedSlot>,
+}
+
+impl Reserved {
+    /// The request was admitted: the slot stays taken.
+    fn keep(mut self) {
+        self.slot = None;
+    }
+
+    /// Hand the slot back and wait for the disk copy.
+    async fn release(mut self) {
+        if let Some((group, start, previous, window, persisted)) = self.slot.take() {
+            self.state
+                .release_reservation(group, start, previous, window, persisted)
+                .await;
+        }
+    }
+}
+
+impl Drop for Reserved {
+    fn drop(&mut self) {
+        if let Some(slot) = self.slot.take() {
+            self.state.release_reservation_detached(slot);
+        }
+    }
+}
+
 impl Drop for Queued {
     fn drop(&mut self) {
         self.counts
@@ -675,10 +719,7 @@ impl KeyState {
         if let Some(bucket) = facts.buckets.get(resource)
             && bucket.remaining == 0
         {
-            let until = bucket
-                .reset
-                .saturating_mul(1000)
-                .saturating_add(config.reset_grace.as_millis() as u64);
+            let until = config.reset_until_ms(bucket.reset);
             if until > now && block.as_ref().is_none_or(|b| b.until_ms < until) {
                 block = Some(Block {
                     until_ms: until,
@@ -695,14 +736,14 @@ impl KeyState {
     /// Pre-send gate: wait out a short block (≤ `cap` and inside the
     /// deadline) or fail fast without sending.
     pub async fn wait_unblocked(
-        &self,
+        self: &Arc<Self>,
         resource: &str,
         config: &ExecutorConfig,
         cap: Duration,
         deadline: Instant,
         cancellation: &CancellationToken,
     ) -> Result<(), ProviderError> {
-        self.refresh_from_disk();
+        self.refresh_off_thread().await;
         for _ in 0..4 {
             let Some(block) = self.blocked(resource, config) else {
                 return Ok(());
@@ -726,7 +767,7 @@ impl KeyState {
     /// is re-checked before it is sent: the reservation is handed back and
     /// the attempt waits the block out, or fails fast like the gate before it.
     pub async fn admit(
-        &self,
+        self: &Arc<Self>,
         group: Option<Group>,
         config: &ExecutorConfig,
         count_code_search: bool,
@@ -770,7 +811,7 @@ impl KeyState {
     /// the reservation and permits were handed back.
     #[allow(clippy::too_many_arguments)]
     async fn try_admit(
-        &self,
+        self: &Arc<Self>,
         group: Option<Group>,
         resource: &str,
         config: &ExecutorConfig,
@@ -779,7 +820,7 @@ impl KeyState {
         deadline: Instant,
         cancellation: &CancellationToken,
     ) -> Result<Option<Admission>, ProviderError> {
-        let mut reservation = None;
+        let mut reservation: Option<Reserved> = None;
         let mut permits = Vec::with_capacity(2);
         if let Some(group) = group {
             let plan = SlotPlan::new(group, config, count_code_search, cap, deadline);
@@ -798,7 +839,7 @@ impl KeyState {
                 // once. The reserve below stays authoritative: a peer process
                 // can fill the window meanwhile.
                 if persisted {
-                    self.refresh_from_disk();
+                    self.refresh_off_thread().await;
                 }
                 let facts = self.facts();
                 let (entered, ahead) = lane.map(|lane| Queued::enter(lane, window)).unzip();
@@ -849,7 +890,10 @@ impl KeyState {
                 } else {
                     reserve(&mut self.facts())?
                 };
-                reservation = Some((group, start, previous, window, persisted));
+                reservation = Some(Reserved {
+                    state: Arc::clone(self),
+                    slot: Some((group, start, previous, window, persisted)),
+                });
                 if let Err(error) = pause(
                     Duration::from_millis(start.saturating_sub(now_ms())),
                     deadline,
@@ -859,7 +903,9 @@ impl KeyState {
                 {
                     // Nothing was sent: hand back the reserved start and window
                     // slot so they do not throttle later requests.
-                    self.release_reservation(group, start, previous, window, persisted);
+                    if let Some(reserved) = reservation.take() {
+                        reserved.release().await;
+                    }
                     return Err(error);
                 }
             }
@@ -868,20 +914,23 @@ impl KeyState {
         let global = match global {
             Ok(permit) => permit,
             Err(error) => {
-                if let Some((group, start, previous, window, persisted)) = reservation {
-                    self.release_reservation(group, start, previous, window, persisted);
+                if let Some(reserved) = reservation {
+                    reserved.release().await;
                 }
                 return Err(error);
             }
         };
         // The sleeps above can span a response that set a cooldown or
         // exhausted the bucket: never send into a block learned meanwhile.
-        self.refresh_from_disk();
+        self.refresh_off_thread().await;
         if self.blocked(resource, config).is_some() {
-            if let Some((group, start, previous, window, persisted)) = reservation {
-                self.release_reservation(group, start, previous, window, persisted);
+            if let Some(reserved) = reservation {
+                reserved.release().await;
             }
             return Ok(None);
+        }
+        if let Some(reserved) = reservation {
+            reserved.keep();
         }
         permits.push(global);
         Ok(Some(Admission { _permits: permits }))
@@ -889,8 +938,8 @@ impl KeyState {
 
     /// Hand back a reservation in memory and, when mirrored, on disk: the
     /// disk copy was written before the wait and a plain merge would restore it.
-    fn release_reservation(
-        &self,
+    async fn release_reservation(
+        self: &Arc<Self>,
         group: Group,
         start: u64,
         previous: Option<u64>,
@@ -899,12 +948,44 @@ impl KeyState {
     ) {
         self.facts().release(group.name(), start, previous, window);
         if persisted {
-            self.persist_with(|view| view.release(group.name(), start, previous, window));
+            // The persist takes the peer-shared file lock and may poll it: keep
+            // that wait off the async worker.
+            let state = Arc::clone(self);
+            let _ = tokio::task::spawn_blocking(move || {
+                state.persist_with(|view| view.release(group.name(), start, previous, window));
+            })
+            .await;
         }
     }
 
+    /// [`Self::release_reservation`] without awaiting: the in-memory slot is
+    /// handed back at once and the disk copy on the blocking pool.
+    fn release_reservation_detached(
+        self: &Arc<Self>,
+        (group, start, previous, window, persisted): ReservedSlot,
+    ) {
+        self.facts().release(group.name(), start, previous, window);
+        if persisted {
+            let state = Arc::clone(self);
+            let write = move || {
+                state.persist_with(|view| view.release(group.name(), start, previous, window))
+            };
+            match tokio::runtime::Handle::try_current() {
+                Ok(handle) => drop(handle.spawn_blocking(write)),
+                Err(_) => write(),
+            }
+        }
+    }
+
+    /// `refresh_from_disk` for async callers: the stat and read run on a
+    /// blocking thread, not on the executor worker that polls this request.
+    async fn refresh_off_thread(self: &Arc<Self>) {
+        let state = Arc::clone(self);
+        let _ = tokio::task::spawn_blocking(move || state.refresh_from_disk()).await;
+    }
+
     /// Record the primary bucket carried by any response.
-    pub fn observe(&self, headers: &HeaderMap, fallback_resource: &str) {
+    pub fn observe(self: &Arc<Self>, headers: &HeaderMap, fallback_resource: &str) {
         let (Some(remaining), Some(reset)) = (
             header_u64(headers, "x-ratelimit-remaining"),
             header_u64(headers, "x-ratelimit-reset"),
@@ -970,7 +1051,7 @@ impl KeyState {
     }
 
     /// Mark a resource exhausted until `reset` (epoch seconds).
-    pub fn exhaust(&self, resource: &str, reset: u64) {
+    pub fn exhaust(self: &Arc<Self>, resource: &str, reset: u64) {
         self.facts().buckets.insert(
             resource.to_owned(),
             Bucket {
@@ -982,7 +1063,7 @@ impl KeyState {
     }
 
     /// Secondary limit: every caller of this key waits until `until_ms`.
-    pub fn cool_down(&self, until_ms: u64) {
+    pub fn cool_down(self: &Arc<Self>, until_ms: u64) {
         {
             let mut facts = self.facts();
             facts.cooldown_until_ms = facts.cooldown_until_ms.max(until_ms);
@@ -1125,6 +1206,18 @@ impl GitHubBudget {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn reset_wait_is_the_reset_plus_grace_from_now() {
+        let config = super::ExecutorConfig::octokit();
+        let now = super::now_ms() / 1000;
+        assert_eq!(config.reset_wait(now.saturating_sub(10)), Duration::ZERO);
+        let wait = config.reset_wait(now + 10);
+        assert!(
+            wait > Duration::from_secs(9) && wait <= Duration::from_secs(11),
+            "{wait:?}"
+        );
+        assert_eq!(config.reset_until_ms(5), 6_000);
+    }
     use super::*;
 
     #[test]
@@ -1449,6 +1542,36 @@ mod tests {
             .err()
             .expect("cancelled");
         assert_eq!(error.kind, ProviderErrorKind::Cancelled);
+        let facts = state.facts();
+        assert_eq!(facts.code_search_ms.len(), 2, "no phantom window slot");
+        assert!(
+            facts
+                .last_start_ms
+                .get(Group::CodeSearch.name())
+                .is_none_or(|start| *start <= now_ms()),
+            "no phantom spacing reservation"
+        );
+    }
+
+    /// A caller that drops the admission future mid-wait (a timeout wrapper, a
+    /// `select!` that loses) leaves no phantom slot either.
+    #[tokio::test]
+    async fn a_dropped_window_wait_releases_its_reserved_slot() {
+        let (budget, state) = full_code_search_window();
+        let token = CancellationToken::new();
+        let dropped = tokio::time::timeout(
+            Duration::from_millis(100),
+            state.admit(
+                Some(Group::CodeSearch),
+                budget.config(),
+                true,
+                Duration::from_secs(2),
+                Instant::now() + Duration::from_secs(10),
+                &token,
+            ),
+        )
+        .await;
+        assert!(dropped.is_err(), "the wait was dropped, not completed");
         let facts = state.facts();
         assert_eq!(facts.code_search_ms.len(), 2, "no phantom window slot");
         assert!(

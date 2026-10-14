@@ -17,7 +17,7 @@ use std::sync::{
 use std::time::{Duration, Instant, SystemTime};
 
 use super::relevance;
-use super::walk::{WalkFlags, build_overrides, walk_builder};
+use super::walk::{Prune, walk_builder};
 use crate::error::{Error, ErrorKind, Result};
 use grep_matcher::Matcher;
 use grep_pcre2::RegexMatcherBuilder as Pcre2MatcherBuilder;
@@ -26,7 +26,6 @@ use grep_searcher::{BinaryDetection, Searcher, SearcherBuilder, Sink, SinkContex
 use ignore::types::TypesBuilder;
 use ignore::{WalkBuilder, WalkState};
 
-use crate::search::classify;
 use crate::search::text_parser::{FileEntry, RawMatch, assemble_file, strip_trailing_newline};
 use crate::text::file_extension::extension_of;
 use crate::text::utf8_offsets::{byte_to_utf16_offset, ceil_char_boundary, floor_char_boundary};
@@ -47,8 +46,7 @@ const DEFAULT_MAX_SNIPPET_CHARS: u32 = 500;
 /// single-line, minified/generated) file cannot force a giant line buffer plus a
 /// lossy-UTF8 copy. Callers may override via [`TextSearchOptions::max_file_bytes`].
 /// Skipped files are surfaced as a `maxFileSize` cap reason, never silently
-/// dropped. Mirrors the classification guard (`classify.rs`), but larger so real
-/// source files (including sizeable generated ones) are still searched.
+/// dropped.
 pub(crate) const DEFAULT_MAX_SEARCH_FILE_BYTES: u64 = 20 * 1024 * 1024;
 
 /// Default per-file ceiling for line-oriented (non-multiline) search. Line
@@ -484,7 +482,11 @@ impl CollectState {
                     .map(|name| name.to_string_lossy().into_owned())
             })
             .flatten();
-        if let Ok(mut groups) = self.skipped_binary_extensions.lock() {
+        {
+            let mut groups = self
+                .skipped_binary_extensions
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             let (count, names) = groups.entry(extension).or_default();
             *count = count.saturating_add(1);
             names.extend(name);
@@ -498,14 +500,22 @@ impl CollectState {
         self.binary_quit.store(true, Ordering::Relaxed);
         self.binary_file_count.fetch_add(1, Ordering::Relaxed);
         // Every binary-quit file is named: each is a coverage gap.
-        if let Ok(mut files) = self.binary_files.lock() {
+        {
+            let mut files = self
+                .binary_files
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             files.push(path.to_string_lossy().into_owned());
         }
     }
 
     /// Remember a directory the prune list skipped, root-relative.
     fn record_pruned(&self, relative: String) {
-        if let Ok(mut dirs) = self.pruned_dirs.lock() {
+        {
+            let mut dirs = self
+                .pruned_dirs
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             dirs.push(relative);
         }
     }
@@ -514,9 +524,11 @@ impl CollectState {
         // `u64` cannot overflow; the snapshot saturates to `u32`, so a count
         // stuck at u32::MAX still reports incomplete coverage.
         self.error_count.fetch_add(1, Ordering::Relaxed);
-        if let Ok(mut detail) = self.first_error.lock()
-            && detail.is_none()
-        {
+        let mut detail = self
+            .first_error
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if detail.is_none() {
             *detail = Some(message.chars().take(512).collect());
         }
     }
@@ -538,16 +550,17 @@ impl CollectState {
     /// Take the files finished so far plus every counter. Files a worker
     /// finishes after the snapshot are not included.
     fn snapshot(&self) -> CollectResult {
-        let recs = self
-            .recs
-            .lock()
-            .map(|mut guard| std::mem::take(&mut *guard))
-            .unwrap_or_default();
+        let recs = std::mem::take(
+            &mut *self
+                .recs
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        );
         let first_error = self
             .first_error
             .lock()
-            .ok()
-            .and_then(|mut detail| detail.take());
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
         CollectResult {
             recs,
             files_searched: self.files_searched.load(Ordering::Relaxed),
@@ -560,46 +573,46 @@ impl CollectState {
             timed_out: self.timed_out.load(Ordering::Relaxed),
             size_skipped: self.size_skipped.load(Ordering::Relaxed),
             binary_quit: self.binary_quit.load(Ordering::Relaxed),
-            binary_files: self
-                .binary_files
-                .lock()
-                .map(|files| {
-                    let mut files = files.clone();
-                    files.sort();
-                    files
-                })
-                .unwrap_or_default(),
+            binary_files: {
+                let mut files = self
+                    .binary_files
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .clone();
+                files.sort();
+                files
+            },
             binary_file_count: saturate_u32(self.binary_file_count.load(Ordering::Relaxed)),
             skipped_binary_count: self.skipped_binary_count.load(Ordering::Relaxed),
-            pruned_dirs: self
-                .pruned_dirs
-                .lock()
-                .map(|dirs| {
-                    let mut dirs = dirs.clone();
-                    dirs.sort();
-                    dirs
-                })
-                .unwrap_or_default(),
-            skipped_binary_extensions: self
-                .skipped_binary_extensions
-                .lock()
-                .map(|groups| {
-                    let mut groups = groups
-                        .iter()
-                        .map(|(extension, (count, names))| BinaryExtensionCount {
-                            extension: extension.clone(),
-                            count: *count,
-                            names: names.iter().cloned().collect(),
-                        })
-                        .collect::<Vec<_>>();
-                    groups.sort_by(|a, b| {
-                        b.count
-                            .cmp(&a.count)
-                            .then_with(|| a.extension.cmp(&b.extension))
-                    });
-                    groups
-                })
-                .unwrap_or_default(),
+            pruned_dirs: {
+                let mut dirs = self
+                    .pruned_dirs
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .clone();
+                dirs.sort();
+                dirs
+            },
+            skipped_binary_extensions: {
+                let groups = self
+                    .skipped_binary_extensions
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                let mut groups = groups
+                    .iter()
+                    .map(|(extension, (count, names))| BinaryExtensionCount {
+                        extension: extension.clone(),
+                        count: *count,
+                        names: names.iter().cloned().collect(),
+                    })
+                    .collect::<Vec<_>>();
+                groups.sort_by(|a, b| {
+                    b.count
+                        .cmp(&a.count)
+                        .then_with(|| a.extension.cmp(&b.extension))
+                });
+                groups
+            },
             cancelled: self.cancelled.load(Ordering::Relaxed),
             error_count: saturate_u32(self.error_count.load(Ordering::Relaxed)),
             first_error,
@@ -715,8 +728,6 @@ impl<M: Matcher> Sink for CollectSink<'_, M> {
                             byte_offset: start as u32,
                             value,
                             count: None,
-                            kind: None,
-                            score_hint: None,
                             rank: None,
                             original_chars: None,
                         });
@@ -736,8 +747,6 @@ impl<M: Matcher> Sink for CollectSink<'_, M> {
                     byte_offset: 0,
                     value: line_text,
                     count: None,
-                    kind: None,
-                    score_hint: None,
                     rank: None,
                     original_chars: None,
                 });
@@ -810,19 +819,15 @@ impl<M: Matcher> Sink for CollectSink<'_, M> {
     }
 }
 
-/// Build the gitignore-aware walker with `-g` overrides, `-t` types, hidden and
-/// no-ignore handling. Results are sorted after parallel traversal to reproduce
+/// Build the walker under the request's ignore policy with `-g` overrides and
+/// `-t` types. Results are sorted after parallel traversal to reproduce
 /// `--sort`/`--sortr` deterministically.
 fn build_walk_builder(opts: &TextSearchOptions) -> Result<WalkBuilder> {
     let mut wb = walk_builder(
         Path::new(&opts.path),
-        &WalkFlags {
-            hidden: opts.hidden.unwrap_or(false),
-            no_ignore: opts.no_ignore.unwrap_or(false),
-            no_ignore_global: true,
-            // The public tool contract counts files in the root as maxDepth 0.
-            max_depth: opts.max_depth.map(|max_depth| max_depth as usize + 1),
-        },
+        opts.ignore,
+        // The public tool contract counts files in the root as maxDepth 0.
+        opts.max_depth.map(|max_depth| max_depth as usize + 1),
     );
 
     if let Some(lang) = opts.lang_type.as_deref().filter(|l| !l.is_empty()) {
@@ -839,24 +844,16 @@ fn build_walk_builder(opts: &TextSearchOptions) -> Result<WalkBuilder> {
         || opts.exclude.as_ref().is_some_and(|v| !v.is_empty());
     if has_globs {
         wb.overrides(
-            build_overrides(
+            super::glob::compile(
                 Path::new(&opts.path),
                 opts.include.as_deref().unwrap_or_default(),
                 opts.exclude.as_deref().unwrap_or_default(),
-            )
-            .map_err(|error| Error::with_kind(ErrorKind::InvalidInput, error))?,
+            )?
+            .overrides(),
         );
     }
 
     Ok(wb)
-}
-
-/// Whether a walked directory is on the prune list (`exclude_dir`), by name
-/// at any depth.
-fn prunes(opts: &TextSearchOptions, name: &std::ffi::OsStr) -> bool {
-    opts.exclude_dir
-        .as_deref()
-        .is_some_and(|dirs| dirs.iter().any(|dir| std::ffi::OsStr::new(dir) == name))
 }
 
 fn capture_sort_time(opts: &TextSearchOptions, entry: &ignore::DirEntry) -> Option<SystemTime> {
@@ -896,53 +893,13 @@ fn build_searcher(
     sb.build()
 }
 
-/// Open a walk entry for searching without following a symlink, and confirm
-/// the opened handle is a regular file. The walk reported a regular file, but
-/// the path can be replaced (by a symlink, FIFO, or directory) before the
-/// open; checking the handle closes that window. Unix opens non-blocking so a
-/// FIFO swapped in cannot hang the open. Returns the file and its metadata.
-fn open_regular(path: &Path) -> std::io::Result<(std::fs::File, std::fs::Metadata)> {
-    let mut options = std::fs::OpenOptions::new();
-    options.read(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::OpenOptionsExt;
-        // FILE_FLAG_OPEN_REPARSE_POINT: open a symlink itself, not its target.
-        options.custom_flags(0x0020_0000);
-    }
-    let file = options.open(path)?;
-    let meta = file.metadata()?;
-    if !meta.is_file() {
-        return Err(std::io::Error::other(
-            "not a regular file when opened (the path changed after the walk)",
-        ));
-    }
-    Ok((file, meta))
-}
-
-/// Bytes before a first NUL that read as text: valid UTF-8 without control
-/// bytes other than whitespace and ESC. Binary headers (PNG, ELF, Mach-O,
-/// archives) fail this within their first bytes.
-fn is_text_prefix(prefix: &[u8]) -> bool {
-    std::str::from_utf8(prefix).is_ok_and(|text| {
-        !text.bytes().any(|byte| {
-            byte == 0x7f || (byte < 0x20 && !matches!(byte, b'\t' | b'\n' | b'\r' | 0x0c | 0x1b))
-        })
-    })
-}
-
 /// Whether a file quit at its first NUL is binary from its leading bytes,
-/// and so outside a text search: the bytes before the
-/// NUL are not text, or they are a short single-line header that matched
-/// nothing. A match, a complete text line, or a long text run before the
-/// NUL is searchable text the cut leaves unread.
+/// and so outside a text search: the bytes before the NUL are binary by the
+/// one sniff ([`crate::text::sniff`]), or they are a short single-line header
+/// that matched nothing. A match, a complete text line, or a long text run
+/// before the NUL is searchable text the cut leaves unread.
 fn is_leading_binary(prefix: &[u8], matched: bool) -> bool {
-    !is_text_prefix(prefix)
+    crate::text::sniff(prefix) == crate::text::BinaryVerdict::Binary
         || (!matched && prefix.len() < LEADING_BINARY_BYTES && !prefix.contains(&b'\n'))
 }
 
@@ -969,6 +926,9 @@ struct SourceTap<'f> {
     head: [u8; HEAD_BYTES],
     head_len: usize,
     keep_head: bool,
+    /// Every byte read, up to [`FILE_TERMS_MAX_BYTES`], when file-level terms
+    /// are checked against this same read.
+    copy: Option<Vec<u8>>,
     /// A read returned no bytes: the file was read to its end.
     eof: bool,
 }
@@ -1022,13 +982,14 @@ impl Hashed {
 }
 
 impl<'f> SourceTap<'f> {
-    fn new(file: &'f std::fs::File, hash: bool, keep_head: bool) -> Self {
+    fn new(file: &'f std::fs::File, hash: bool, keep_head: bool, copy: bool) -> Self {
         Self {
             file,
             hashed: hash.then(Hashed::new),
             head: [0; HEAD_BYTES],
             head_len: 0,
             keep_head,
+            copy: copy.then(Vec::new),
             eof: false,
         }
     }
@@ -1062,12 +1023,22 @@ impl std::io::Read for SourceTap<'_> {
             self.head[self.head_len..self.head_len + take].copy_from_slice(&bytes[..take]);
             self.head_len += take;
         }
+        if let Some(copy) = &mut self.copy {
+            let room = usize::try_from(FILE_TERMS_MAX_BYTES).unwrap_or(usize::MAX) - copy.len();
+            copy.extend_from_slice(&bytes[..read.min(room)]);
+        }
         Ok(read)
     }
 }
 
 /// Bytes read to check one file's file-level terms.
 const FILE_TERMS_MAX_BYTES: u64 = 64 * 1024 * 1024;
+
+/// The bytes a search read from a file, and whether it read to the end.
+struct CopiedRead {
+    bytes: Vec<u8>,
+    eof: bool,
+}
 
 /// `file_contains_all` / `file_contains_none`, compiled once per search.
 /// Each term is smart-case on its own: one with an uppercase letter is
@@ -1128,18 +1099,25 @@ impl FileTerms {
         })
     }
 
-    /// Whether `path` holds every required term and no excluded one. An
-    /// unreadable file fails the check.
-    fn pass(&self, path: &Path) -> bool {
-        let mut bytes = Vec::new();
-        let read = std::fs::File::open(path).and_then(|file| {
-            std::io::Read::read_to_end(
-                &mut std::io::Read::take(file, FILE_TERMS_MAX_BYTES),
-                &mut bytes,
-            )
-        });
-        if read.is_err() {
+    /// Whether the searched read's bytes hold every required term and no
+    /// excluded one: the copy the search kept, completed from the open file
+    /// when the search stopped before its end. A failed read fails the check.
+    fn pass(&self, copied: Option<CopiedRead>, file: &std::fs::File) -> bool {
+        use std::io::{Read, Seek, SeekFrom};
+        let Some(CopiedRead { mut bytes, eof }) = copied else {
             return false;
+        };
+        let len = bytes.len() as u64;
+        if !eof && len < FILE_TERMS_MAX_BYTES {
+            let mut handle = file;
+            let rest = handle.seek(SeekFrom::Start(len)).and_then(|_| {
+                handle
+                    .take(FILE_TERMS_MAX_BYTES - len)
+                    .read_to_end(&mut bytes)
+            });
+            if rest.is_err() {
+                return false;
+            }
         }
         let mut found = vec![false; self.required];
         for (matcher, kinds) in &self.automatons {
@@ -1177,7 +1155,12 @@ impl WorkerRecs<'_> {
     fn push(&mut self, rec: FileRec) {
         self.state.record_kept(rec.submatches, rec.matched_lines);
         if self.eager {
-            if let Ok(mut shared) = self.state.recs.lock() {
+            {
+                let mut shared = self
+                    .state
+                    .recs
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
                 retain_into(self.opts, self.mode, self.limit, &mut shared, rec);
             }
         } else {
@@ -1191,7 +1174,12 @@ impl Drop for WorkerRecs<'_> {
         if self.local.is_empty() {
             return;
         }
-        if let Ok(mut shared) = self.state.recs.lock() {
+        {
+            let mut shared = self
+                .state
+                .recs
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             for rec in self.local.drain(..) {
                 retain_into(self.opts, self.mode, self.limit, &mut shared, rec);
             }
@@ -1258,6 +1246,8 @@ struct FileOutcome {
     /// `relevance` only: the leading bytes declare a generated file; `None`
     /// when the read did not reach them.
     generated_header: Option<bool>,
+    /// The searched bytes, when file-level terms are checked.
+    copied: Option<CopiedRead>,
 }
 
 impl<M: Matcher> From<CollectSink<'_, M>> for FileOutcome {
@@ -1276,6 +1266,7 @@ impl<M: Matcher> From<CollectSink<'_, M>> for FileOutcome {
             declares: sink.declares,
             hashed: None,
             generated_header: None,
+            copied: None,
         }
     }
 }
@@ -1295,6 +1286,8 @@ struct FileSearcher<'a, M: Matcher> {
     digest_max_bytes: Option<u64>,
     /// Keep the leading bytes for the generated-header check.
     keep_head: bool,
+    /// Keep the read bytes for the file-level terms check.
+    copy: bool,
     words: Option<&'a AhoCorasick>,
 }
 
@@ -1306,7 +1299,7 @@ impl<M: Matcher> FileSearcher<'_, M> {
     /// and the rest of the file.
     fn search(&mut self, file: &std::fs::File, len: u64) -> std::io::Result<FileOutcome> {
         let hash = self.digest_max_bytes.is_some_and(|max| len <= max);
-        let mut tap = SourceTap::new(file, hash, self.keep_head);
+        let mut tap = SourceTap::new(file, hash, self.keep_head, self.copy);
         let mut sink = CollectSink::new(
             self.matcher,
             self.work,
@@ -1331,6 +1324,10 @@ impl<M: Matcher> FileSearcher<'_, M> {
             let mut outcome = FileOutcome::from(sink);
             outcome.generated_header = header(outcome.matched_lines > 0);
             outcome.hashed = tap.hashed;
+            outcome.copied = tap.copy.map(|bytes| CopiedRead {
+                bytes,
+                eof: tap.eof,
+            });
             return Ok(outcome);
         };
         let prefix = read_prefix(file, offset)?;
@@ -1356,6 +1353,10 @@ impl<M: Matcher> FileSearcher<'_, M> {
             let mut hashed = Hashed::new();
             hashed.update(&prefix);
             hashed
+        });
+        outcome.copied = tap.copy.map(|bytes| CopiedRead {
+            bytes,
+            eof: tap.eof,
         });
         Ok(outcome)
     }
@@ -1384,9 +1385,7 @@ fn collect<M: Matcher + Sync>(
     control: WalkControl<'_>,
 ) -> Result<()> {
     let WalkControl {
-        deadline,
-        cancelled,
-        eager,
+        deadline, eager, ..
     } = control;
     let only_matching = opts.only_matching.unwrap_or(false);
     // only-matching emits bare spans; only-matching ignores context too.
@@ -1395,7 +1394,6 @@ fn collect<M: Matcher + Sync>(
     } else {
         0
     };
-    let keep_unmatched = mode == Mode::FilesWithoutMatch;
     let limit = collection_limit(opts);
 
     let max_file_bytes =
@@ -1416,17 +1414,23 @@ fn collect<M: Matcher + Sync>(
         walk_builder.threads(threads as usize);
     }
 
-    let identifier = identifier_search(opts);
-    let file_terms = FileTerms::new(opts);
-    let file_terms = &file_terms;
-    let attributes = ranks_by_relevance(opts)
-        .then(|| relevance::GitAttributes::new(Path::new(&opts.path)))
-        .flatten();
-    let attributes = &attributes;
-    let words = ranks_by_relevance(opts)
-        .then(|| alternation_words(opts))
-        .flatten();
-    let words = &words;
+    let scope = WalkScope {
+        opts,
+        prune: Prune::new(opts.exclude_dir.iter().flatten()),
+        state,
+        control,
+        max_file_bytes,
+        keep_unmatched: mode == Mode::FilesWithoutMatch,
+        identifier: identifier_search(opts),
+        file_terms: FileTerms::new(opts),
+        attributes: ranks_by_relevance(opts)
+            .then(|| relevance::GitAttributes::new(Path::new(&opts.path)))
+            .flatten(),
+        words: ranks_by_relevance(opts)
+            .then(|| alternation_words(opts))
+            .flatten(),
+    };
+    let scope = &scope;
     walk_builder.build_parallel().run(|| {
         let path_filter = Arc::clone(&path_filter);
         let mut worker_recs = WorkerRecs {
@@ -1454,176 +1458,259 @@ fn collect<M: Matcher + Sync>(
             stop: &state.stop,
             digest_max_bytes: opts.digest_max_bytes,
             keep_head: ranks_by_relevance(opts),
-            words: words.as_ref(),
+            copy: scope.file_terms.is_some(),
+            words: scope.words.as_ref(),
         };
 
-        Box::new(move |dent| {
-            // Between entries: end the walk on stop, cancellation, or the
-            // deadline, keeping the files already finished.
-            if state.stopped() {
-                return WalkState::Quit;
-            }
-            if cancelled() {
-                state.cancelled.store(true, Ordering::Relaxed);
-                state.stop.store(true, Ordering::Relaxed);
-                return WalkState::Quit;
-            }
-            if let Some(deadline) = deadline
-                && Instant::now() >= deadline
-            {
-                state.timed_out.store(true, Ordering::Relaxed);
-                state.stop.store(true, Ordering::Relaxed);
-                return WalkState::Quit;
-            }
-            let dent = match dent {
-                Ok(d) => d,
-                Err(error) => {
-                    state.record_error(error.to_string());
-                    return WalkState::Continue;
-                }
-            };
-            let is_dir = dent.file_type().is_some_and(|kind| kind.is_dir());
-            if !path_filter.allows(dent.path(), is_dir) {
-                return if is_dir {
-                    WalkState::Skip
-                } else {
-                    WalkState::Continue
-                };
-            }
-            if is_dir && dent.depth() > 0 && prunes(opts, dent.file_name()) {
-                let relative = dent.path().strip_prefix(&opts.path).unwrap_or(dent.path());
-                state.record_pruned(relative.to_string_lossy().replace('\\', "/"));
-                return WalkState::Skip;
-            }
-            if !dent.file_type().is_some_and(|t| t.is_file()) {
-                return WalkState::Continue;
-            }
-            let path: &Path = dent.path();
-
-            // Skip files above the byte ceiling before opening them, so a
-            // pathological multi-GB file cannot force a giant buffer + lossy
-            // copy. Surfaced as `maxFileSize`; not counted in `files_searched`.
-            let over_ceiling = |len: u64| {
-                if len > max_file_bytes {
-                    state.size_skipped.store(true, Ordering::Relaxed);
-                    true
-                } else {
-                    false
-                }
-            };
-            if dent
-                .metadata()
-                .ok()
-                .is_some_and(|meta| over_ceiling(meta.len()))
-            {
-                return WalkState::Continue;
-            }
-            // Keep successful files, but report incomplete coverage when
-            // opening or matching fails. A skipped file proves no absence.
-            let (file, meta) = match open_regular(path) {
-                Ok(opened) => opened,
-                Err(error) => {
-                    state.record_error(format!("{}: {error}", path.display()));
-                    return WalkState::Continue;
-                }
-            };
-            let file_len = meta.len();
-            if over_ceiling(file_len) {
-                return WalkState::Continue;
-            }
-            let outcome = match files.search(&file, file_len) {
-                Ok(outcome) => outcome,
-                Err(error) => {
-                    // The file opened; std never reports a read failure as
-                    // `Other`, which carries the matcher's own errors (the
-                    // searcher's and this sink's `io::Error::other`).
-                    if error.kind() == std::io::ErrorKind::Other {
-                        state.pattern_error_count.fetch_add(1, Ordering::Relaxed);
-                    }
-                    // Root-relative, or the file's name when it is the root.
-                    let shown = path
-                        .strip_prefix(&opts.path)
-                        .ok()
-                        .filter(|relative| !relative.as_os_str().is_empty())
-                        .or_else(|| path.file_name().map(Path::new))
-                        .unwrap_or(path);
-                    state.record_error(format!("{}: {error}", shown.display()));
-                    return WalkState::Continue;
-                }
-            };
-            let relative = path
-                .strip_prefix(&opts.path)
-                .unwrap_or(path)
-                .to_string_lossy();
-            let generated = ranks_by_relevance(opts)
-                && outcome.matched_lines > 0
-                && (relevance::is_generated_path(&relative)
-                    || attributes
-                        .as_ref()
-                        .is_some_and(|marks| marks.marks_generated(path))
-                    || outcome.generated_header.unwrap_or_else(|| {
-                        read_prefix(&file, relevance::GENERATED_HEADER_BYTES)
-                            .is_ok_and(|prefix| relevance::has_generated_header(&prefix))
-                    }));
-            if outcome.span_cap_reached {
-                state.span_capped.store(true, Ordering::Relaxed);
-            }
-            if outcome.deadline_hit {
-                state.timed_out.store(true, Ordering::Relaxed);
-            }
-            state.files_searched.fetch_add(1, Ordering::Relaxed);
-            state.bytes_searched.fetch_add(file_len, Ordering::Relaxed);
-            if outcome.opaque {
-                // Binary from its leading bytes: outside a text search, so
-                // any bytes that happened to match are not hits.
-                state.record_skipped_binary(path);
-                return WalkState::Continue;
-            } else if outcome.binary {
-                // Text after the NUL was not searched: coverage is partial.
-                state.record_binary(path);
-            }
-
-            let has_match = outcome.matched_lines > 0;
-            // A binary file quit before any match is *unknown*, not "without
-            // match": a files-without view never lists it.
-            if outcome.binary && !has_match && keep_unmatched {
-                return WalkState::Continue;
-            }
-            if has_match == keep_unmatched {
-                // Normal/files-only/count modes keep matched files;
-                // files-without-match keeps the rest.
-                return WalkState::Continue;
-            }
-
-            if file_terms.as_ref().is_some_and(|terms| !terms.pass(path)) {
-                return WalkState::Continue;
-            }
-            let demoted =
-                generated || (ranks_by_relevance(opts) && relevance::is_demoted_path(&relative));
-            // A stopped walk keeps what it found without reading further.
-            let source = outcome
-                .hashed
-                .filter(|_| !state.stopped())
-                .and_then(|hashed| hashed.finish(&file, &meta));
-            drop(file);
-            worker_recs.push(FileRec {
-                path: dent.path().to_string_lossy().into_owned(),
-                entry: outcome.entry,
-                matched_lines: outcome.matched_lines,
-                submatches: outcome.submatches,
-                om_matches: outcome.om_matches,
-                sort_time: capture_sort_time(opts, &dent),
-                line_weight: outcome.line_weight,
-                covered: outcome.covered,
-                demoted,
-                generated,
-                declares: outcome.declares && identifier,
-                source,
-            });
-            WalkState::Continue
-        })
+        Box::new(move |dent| scope.visit(dent, &*path_filter, &mut files, &mut worker_recs))
     });
     Ok(())
+}
+
+/// Walk-wide settings and shared state every worker reads while visiting.
+struct WalkScope<'a> {
+    opts: &'a TextSearchOptions,
+    /// Directories never walked (`exclude_dir`), recorded when skipped.
+    prune: Prune,
+    state: &'a CollectState,
+    control: WalkControl<'a>,
+    max_file_bytes: u64,
+    /// Files-without-match: keep unmatched files instead of matched ones.
+    keep_unmatched: bool,
+    identifier: bool,
+    file_terms: Option<FileTerms>,
+    attributes: Option<relevance::GitAttributes>,
+    words: Option<AhoCorasick>,
+}
+
+impl WalkScope<'_> {
+    /// Search one walk entry and keep its record; returns how the walk goes on.
+    fn visit<M: Matcher>(
+        &self,
+        dent: std::result::Result<ignore::DirEntry, ignore::Error>,
+        path_filter: &dyn TextSearchPathFilter,
+        files: &mut FileSearcher<'_, M>,
+        worker_recs: &mut WorkerRecs<'_>,
+    ) -> WalkState {
+        let (opts, state) = (self.opts, self.state);
+        let dent = match self.admit(dent, path_filter) {
+            Ok(dent) => dent,
+            Err(walk_state) => return walk_state,
+        };
+        let path: &Path = dent.path();
+        let Some((file, meta)) = self.open_within_ceiling(&dent) else {
+            return WalkState::Continue;
+        };
+        let file_len = meta.len();
+        let Some(outcome) = self.search_file(files, &file, file_len, path) else {
+            return WalkState::Continue;
+        };
+        let relative = path
+            .strip_prefix(&opts.path)
+            .unwrap_or(path)
+            .to_string_lossy();
+        let generated = ranks_by_relevance(opts)
+            && outcome.matched_lines > 0
+            && (relevance::is_generated_path(&relative)
+                || self
+                    .attributes
+                    .as_ref()
+                    .is_some_and(|marks| marks.marks_generated(path))
+                || outcome.generated_header.unwrap_or_else(|| {
+                    read_prefix(&file, relevance::GENERATED_HEADER_BYTES)
+                        .is_ok_and(|prefix| relevance::has_generated_header(&prefix))
+                }));
+        if outcome.span_cap_reached {
+            state.span_capped.store(true, Ordering::Relaxed);
+        }
+        if outcome.deadline_hit {
+            state.timed_out.store(true, Ordering::Relaxed);
+        }
+        state.files_searched.fetch_add(1, Ordering::Relaxed);
+        state.bytes_searched.fetch_add(file_len, Ordering::Relaxed);
+        if outcome.opaque {
+            // Binary from its leading bytes: outside a text search, so
+            // any bytes that happened to match are not hits.
+            state.record_skipped_binary(path);
+            return WalkState::Continue;
+        } else if outcome.binary {
+            // Text after the NUL was not searched: coverage is partial.
+            state.record_binary(path);
+        }
+
+        let has_match = outcome.matched_lines > 0;
+        // A binary file quit before any match is *unknown*, not "without
+        // match": a files-without view never lists it.
+        if outcome.binary && !has_match && self.keep_unmatched {
+            return WalkState::Continue;
+        }
+        if has_match == self.keep_unmatched {
+            // Normal/files-only/count modes keep matched files;
+            // files-without-match keeps the rest.
+            return WalkState::Continue;
+        }
+
+        let copied = outcome.copied;
+        if self
+            .file_terms
+            .as_ref()
+            .is_some_and(|terms| !terms.pass(copied, &file))
+        {
+            return WalkState::Continue;
+        }
+        let demoted =
+            generated || (ranks_by_relevance(opts) && relevance::is_demoted_path(&relative));
+        // A stopped walk keeps what it found without reading further.
+        let source = outcome
+            .hashed
+            .filter(|_| !state.stopped())
+            .and_then(|hashed| hashed.finish(&file, &meta));
+        drop(file);
+        worker_recs.push(FileRec {
+            path: dent.path().to_string_lossy().into_owned(),
+            entry: outcome.entry,
+            matched_lines: outcome.matched_lines,
+            submatches: outcome.submatches,
+            om_matches: outcome.om_matches,
+            sort_time: capture_sort_time(opts, &dent),
+            line_weight: outcome.line_weight,
+            covered: outcome.covered,
+            demoted,
+            generated,
+            declares: outcome.declares && self.identifier,
+            source,
+        });
+        WalkState::Continue
+    }
+
+    /// The entry when it is a file to search, or the walk state to return
+    /// for it (stop, cancellation, deadline, walk error, filter, prune).
+    fn admit(
+        &self,
+        dent: std::result::Result<ignore::DirEntry, ignore::Error>,
+        path_filter: &dyn TextSearchPathFilter,
+    ) -> std::result::Result<ignore::DirEntry, WalkState> {
+        let (opts, state) = (self.opts, self.state);
+        // Between entries: end the walk on stop, cancellation, or the
+        // deadline, keeping the files already finished.
+        if state.stopped() {
+            return Err(WalkState::Quit);
+        }
+        if (self.control.cancelled)() {
+            state.cancelled.store(true, Ordering::Relaxed);
+            state.stop.store(true, Ordering::Relaxed);
+            return Err(WalkState::Quit);
+        }
+        if let Some(deadline) = self.control.deadline
+            && Instant::now() >= deadline
+        {
+            state.timed_out.store(true, Ordering::Relaxed);
+            state.stop.store(true, Ordering::Relaxed);
+            return Err(WalkState::Quit);
+        }
+        let dent = match dent {
+            Ok(d) => d,
+            Err(error) => {
+                state.record_error(error.to_string());
+                return Err(WalkState::Continue);
+            }
+        };
+        let is_dir = dent.file_type().is_some_and(|kind| kind.is_dir());
+        if !path_filter.allows(dent.path(), is_dir) {
+            return Err(if is_dir {
+                WalkState::Skip
+            } else {
+                WalkState::Continue
+            });
+        }
+        if self.prune.prunes_entry(&dent) {
+            let relative = dent.path().strip_prefix(&opts.path).unwrap_or(dent.path());
+            state.record_pruned(relative.to_string_lossy().replace('\\', "/"));
+            return Err(WalkState::Skip);
+        }
+        if !dent.file_type().is_some_and(|t| t.is_file()) {
+            return Err(WalkState::Continue);
+        }
+        Ok(dent)
+    }
+
+    /// Whether a file of `len` bytes is above the byte ceiling (recorded as
+    /// a size skip).
+    fn over_ceiling(&self, len: u64) -> bool {
+        if len > self.max_file_bytes {
+            self.state.size_skipped.store(true, Ordering::Relaxed);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// The entry's opened file and metadata, or `None` when it is above the
+    /// byte ceiling or fails to open (recorded as an error).
+    fn open_within_ceiling(
+        &self,
+        dent: &ignore::DirEntry,
+    ) -> Option<(std::fs::File, std::fs::Metadata)> {
+        // Skip files above the byte ceiling before opening them, so a
+        // pathological multi-GB file cannot force a giant buffer + lossy
+        // copy. Surfaced as `maxFileSize`; not counted in `files_searched`.
+        if dent
+            .metadata()
+            .ok()
+            .is_some_and(|meta| self.over_ceiling(meta.len()))
+        {
+            return None;
+        }
+        let path = dent.path();
+        // Keep successful files, but report incomplete coverage when
+        // opening or matching fails. A skipped file proves no absence.
+        let (file, meta) = match crate::text::source::open_regular(path) {
+            Ok(opened) => opened,
+            Err(error) => {
+                self.state
+                    .record_error(format!("{}: {error}", path.display()));
+                return None;
+            }
+        };
+        if self.over_ceiling(meta.len()) {
+            return None;
+        }
+        Some((file, meta))
+    }
+
+    /// The file's search outcome, or `None` when the search failed (recorded
+    /// as an error, and as a pattern error when the matcher raised it).
+    fn search_file<M: Matcher>(
+        &self,
+        files: &mut FileSearcher<'_, M>,
+        file: &std::fs::File,
+        file_len: u64,
+        path: &Path,
+    ) -> Option<FileOutcome> {
+        match files.search(file, file_len) {
+            Ok(outcome) => Some(outcome),
+            Err(error) => {
+                // The file opened; std never reports a read failure as
+                // `Other`, which carries the matcher's own errors (the
+                // searcher's and this sink's `io::Error::other`).
+                if error.kind() == std::io::ErrorKind::Other {
+                    self.state
+                        .pattern_error_count
+                        .fetch_add(1, Ordering::Relaxed);
+                }
+                // Root-relative, or the file's name when it is the root.
+                let shown = path
+                    .strip_prefix(&self.opts.path)
+                    .ok()
+                    .filter(|relative| !relative.as_os_str().is_empty())
+                    .or_else(|| path.file_name().map(Path::new))
+                    .unwrap_or(path);
+                self.state
+                    .record_error(format!("{}: {error}", shown.display()));
+                None
+            }
+        }
+    }
 }
 
 /// Sort `recs` into the final result order and truncate to the collection cap.
@@ -1810,7 +1897,7 @@ fn build_result(
     let count_unique = opts.count_unique.unwrap_or(false);
     let bytes_searched = Some(bytes_as_i64(bytes_searched));
     let search_time = Some(elapsed_human(elapsed));
-    let mut files: Vec<TextSearchFile> = recs
+    let files: Vec<TextSearchFile> = recs
         .into_iter()
         .map(|r| {
             let source = r.source;
@@ -1855,20 +1942,12 @@ fn build_result(
         })
         .collect();
 
-    // Optional AST classification: only meaningful for Normal mode (the other
-    // modes carry no per-line snippets to anchor a parse position).
-    if opts.classify_matches.unwrap_or(false) && matches!(mode, Mode::Normal) {
-        classify::classify_text_files(&mut files, classify::DEFAULT_CLASSIFY_FILE_CAP);
-    }
-
-    // Every view describes the same collection. Only count-lines changes the
-    // unit of match_count; completeness and resource evidence must stay shared.
+    // Every view describes the same collection. Count-lines never enumerates
+    // submatches, so it has no occurrence count: `match_count` is unknown
+    // there (its line count is `matched_lines`); completeness and resource
+    // evidence stay shared.
     let stats = TextSearchStats {
-        match_count: Some(if matches!(mode, Mode::CountLines) {
-            total_matched_lines
-        } else {
-            total_submatches
-        }),
+        match_count: (!matches!(mode, Mode::CountLines)).then_some(total_submatches),
         matched_lines: Some(total_matched_lines),
         files_matched: Some(files_matched),
         files_searched: Some(saturate_u32(files_searched)),

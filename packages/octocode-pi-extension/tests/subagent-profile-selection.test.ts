@@ -33,7 +33,7 @@ describe('profile selectors against native Pi tool exposure', () => {
     vi.stubEnv('OCTOCODE_SUBAGENT', '1');
     vi.stubEnv('OCTOCODE_MCP', '0');
     const profile = { name: 'selection-test', description: '', prompt: '', ...fields };
-    const args = parseArgs(buildAgentArgs('task', profile, undefined, '/extension'));
+    const args = parseArgs(buildAgentArgs(profile, undefined, '/extension'));
     const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false }, ...(defaults ? { defaultTools: defaults } : {}) });
     const resourceLoader = new DefaultResourceLoader({
       cwd, agentDir, settingsManager, extensionFactories: [{ name: 'octocode', factory: octocode }],

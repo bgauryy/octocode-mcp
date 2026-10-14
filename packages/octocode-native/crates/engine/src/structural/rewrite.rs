@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt;
 use std::time::Instant;
 
@@ -15,9 +15,8 @@ use ast_grep_core::{
 use serde::{Deserialize, Deserializer, Serialize, de};
 use serde_json::Value;
 
-use crate::search::classify::{is_comment_kind, is_string_kind};
-use crate::signatures::extractor::AST_EXECUTION_TIMEOUT;
-use crate::signatures::languages::{LanguageEntry, all_entries};
+use super::kinds::{is_comment_kind, is_string_kind};
+use crate::signatures::languages::{self, LanguageEntry};
 use crate::text::utf8_offsets::LineIndex;
 
 use super::kinds::named_kind_id;
@@ -39,9 +38,7 @@ struct RewriteLanguage {
 
 impl RewriteLanguage {
     fn from_selector(selector: &str) -> Option<Self> {
-        let entry = all_entries()
-            .iter()
-            .find(|entry| matches_selector(entry, selector))?;
+        let entry = languages::select(selector).next()?;
         let extension = entry
             .extensions
             .iter()
@@ -53,56 +50,6 @@ impl RewriteLanguage {
 
     fn octocode_language(&self) -> AgLanguage {
         AgLanguage::new(self.extension, self.entry)
-    }
-}
-
-fn matches_selector(entry: &LanguageEntry, selector: &str) -> bool {
-    entry.name.eq_ignore_ascii_case(selector)
-        || entry
-            .language_id
-            .is_some_and(|id| id.eq_ignore_ascii_case(selector))
-        || entry
-            .selector_aliases
-            .iter()
-            .any(|alias| alias.eq_ignore_ascii_case(selector))
-        || entry
-            .extensions
-            .iter()
-            .any(|ext| ext.eq_ignore_ascii_case(selector))
-}
-
-pub(super) fn rewrite_language_extensions(selector: &str) -> Option<HashSet<&'static str>> {
-    let mut extensions: HashSet<&'static str> = all_entries()
-        .iter()
-        .filter(|entry| matches_selector(entry, selector))
-        .flat_map(|entry| entry.extensions.iter().copied())
-        .collect();
-    if extensions.is_empty() {
-        return None;
-    }
-    if selector.eq_ignore_ascii_case("cpp") || selector.eq_ignore_ascii_case("c++") {
-        extensions.insert("h");
-    }
-    Some(extensions)
-}
-
-/// The parser a rewrite uses for `path` under `selector`: the file's own
-/// extension when it belongs to the selector's family (`.tsx` under
-/// `typescript` needs the TSX grammar), `.h` as C++ under `cpp`, else the
-/// selector. Scanning and syntax-regression checks must agree on this, or JSX
-/// files are error-counted with a grammar that rejects JSX.
-pub fn rewrite_parser_for_path(selector: &str, path: &str) -> String {
-    let extension = crate::text::file_extension::extension_of(path, true, "");
-    if extension.is_empty() {
-        return selector.to_owned();
-    }
-    let is_cpp = selector.eq_ignore_ascii_case("cpp") || selector.eq_ignore_ascii_case("c++");
-    if extension == "h" && is_cpp {
-        return "cpp".to_owned();
-    }
-    match rewrite_language_extensions(selector) {
-        Some(extensions) if extensions.contains(extension.as_str()) => extension,
-        _ => selector.to_owned(),
     }
 }
 
@@ -206,6 +153,10 @@ pub struct CompiledRewrite {
     config: RuleConfig<RewriteLanguage>,
     fixer: Fixer,
     layout: Option<Layout>,
+    /// The fixer and layout of a template with line breaks, written CRLF,
+    /// for a CRLF file: only the template's breaks are converted, never
+    /// captured text.
+    crlf: Option<(Fixer, Option<Layout>)>,
     macros: Option<MacroBodies>,
     /// The symbol a bare-identifier rule renames (see
     /// [`widen_identifier_pattern`]); its word-level mentions are accounted.
@@ -216,32 +167,79 @@ pub fn compile_rewrite(mut rule_config: Value) -> Result<CompiledRewrite, String
     let anchors = pattern_anchors(&rule_config);
     let layout = Layout::new(&rule_config);
     let bare_name = widen_identifier_pattern(&mut rule_config);
+    let crlf = crlf_config(&rule_config)
+        .map(|crlf| {
+            let layout = Layout::new(&crlf);
+            fixer_of(&rule_config_of(crlf)?).map(|fixer| (fixer, layout))
+        })
+        .transpose()?;
+    let config = rule_config_of(rule_config)?;
+    let fixer = fixer_of(&config)?;
+    let macros = MacroBodies::for_language(&config.language.entry.language, anchors);
+    Ok(CompiledRewrite {
+        config,
+        fixer,
+        layout,
+        crlf,
+        macros,
+        bare_name,
+    })
+}
+
+fn rule_config_of(rule_config: Value) -> Result<RuleConfig<RewriteLanguage>, String> {
     let serialized: SerializableRuleConfig<RewriteLanguage> =
         serde_json::from_value(rule_config)
             .map_err(|error| format!("[structural.rewrite.invalid] {error}"))?;
-    let config = RuleConfig::try_from(serialized, &GlobalRules::default()).map_err(|error| {
+    RuleConfig::try_from(serialized, &GlobalRules::default()).map_err(|error| {
         format!(
             "[structural.rewrite.invalid] {}",
             rule_config_message(&error)
         )
-    })?;
+    })
+}
+
+fn fixer_of(config: &RuleConfig<RewriteLanguage>) -> Result<Fixer, String> {
     let mut fixers = config
         .get_fixer()
         .map_err(|error| format!("[structural.rewrite.invalid] {error}"))?;
     if fixers.len() != 1 {
         return Err("[structural.rewrite.invalid] exactly one fixer is required".to_owned());
     }
-    let fixer = fixers
+    fixers
         .pop()
-        .ok_or_else(|| "[structural.rewrite.invalid] a fixer is required".to_owned())?;
-    let macros = MacroBodies::for_language(&config.language.entry.language, anchors);
-    Ok(CompiledRewrite {
-        config,
-        fixer,
-        layout,
-        macros,
-        bare_name,
-    })
+        .ok_or_else(|| "[structural.rewrite.invalid] a fixer is required".to_owned())
+}
+
+/// `rule_config` with its fix template's bare line breaks written CRLF;
+/// `None` when the template has none.
+fn crlf_config(rule_config: &Value) -> Option<Value> {
+    let mut config = rule_config.clone();
+    let template = match config.get_mut("fix")? {
+        Value::Object(fix) => fix.get_mut("template")?,
+        fix => fix,
+    };
+    let text = template.as_str()?;
+    let mut written = String::with_capacity(text.len() + 8);
+    let mut previous = None;
+    for ch in text.chars() {
+        if ch == '\n' && previous != Some('\r') {
+            written.push('\r');
+        }
+        written.push(ch);
+        previous = Some(ch);
+    }
+    if written.len() == text.len() {
+        return None;
+    }
+    *template = Value::String(written);
+    Some(config)
+}
+
+/// A file whose first line break is CRLF.
+fn is_crlf(content: &str) -> bool {
+    content
+        .find('\n')
+        .is_some_and(|newline| content[..newline].ends_with('\r'))
 }
 
 /// Whether a grammar's node kind names an identifier: `identifier` and the
@@ -400,7 +398,7 @@ impl CompiledRewrite {
     pub fn run(&self, content: &str) -> Result<Vec<StructuralRewriteMatch>, String> {
         self.scan_before(
             content,
-            Instant::now() + AST_EXECUTION_TIMEOUT,
+            super::octo::match_deadline(content),
             CountErrors::WhenMatched,
         )
         .map(|scan| scan.matches)
@@ -410,7 +408,7 @@ impl CompiledRewrite {
     pub fn scan(&self, content: &str) -> Result<RewriteScan, String> {
         self.scan_before(
             content,
-            Instant::now() + AST_EXECUTION_TIMEOUT,
+            super::octo::match_deadline(content),
             CountErrors::Always,
         )
     }
@@ -420,7 +418,7 @@ impl CompiledRewrite {
         content: &str,
         count: CountErrors,
     ) -> Result<RewriteScan, String> {
-        self.scan_before(content, Instant::now() + AST_EXECUTION_TIMEOUT, count)
+        self.scan_before(content, super::octo::match_deadline(content), count)
     }
 
     /// Parses with the shared deadline-bound parser (ast-grep's own parse has no
@@ -554,7 +552,10 @@ impl CompiledRewrite {
         output: &mut Vec<StructuralRewriteMatch>,
     ) -> Result<(), String> {
         let config = &self.config;
-        let fixer = &self.fixer;
+        let (fixer, layout) = match &self.crlf {
+            Some((fixer, layout)) if is_crlf(content) => (fixer, layout),
+            _ => (&self.fixer, &self.layout),
+        };
         let grep = AstGrep::doc(StrDoc {
             src: content.to_owned(),
             lang: config.language.clone(),
@@ -578,8 +579,7 @@ impl CompiledRewrite {
                 ));
             }
             let replaced = fixer.get_replaced_range(&matched, &config.matcher);
-            let replacement = self
-                .layout
+            let replacement = layout
                 .as_ref()
                 .and_then(|layout| layout.replacement(&matched, &config.language, content))
                 .unwrap_or_else(|| fixer.generate_replacement(&matched));
@@ -683,7 +683,7 @@ pub fn count_syntax_errors(content: &str, language_selector: &str) -> Result<u32
     let language = RewriteLanguage::from_selector(language_selector).ok_or_else(|| {
         format!("[structural.rewrite.invalid] {language_selector} is not supported")
     })?;
-    let deadline = Instant::now() + AST_EXECUTION_TIMEOUT;
+    let deadline = super::octo::match_deadline(content);
     let tree = parse_tree_with_deadline(&language.entry.language, content, deadline)
         .map_err(|error| format!("[{}] {}", error.code, error.message))?;
     Ok(count_tree_errors(&tree))
@@ -715,6 +715,32 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    /// In a CRLF file (its first line break), the template's line breaks
+    /// are written CRLF; captured text keeps its own, so a bare `\n` inside
+    /// a mixed-ending file's capture is never rewritten.
+    #[test]
+    fn a_crlf_file_gets_crlf_template_breaks_and_keeps_captured_ones() {
+        let rule = |fix: &str| {
+            json!({
+                "id":"octocode-inline-rewrite","language":"typescript","severity":"warning",
+                "message":"Octocode inline structural rewrite",
+                "rule":{"pattern":"oldCall($A)"},
+                "fix":fix
+            })
+        };
+        let source = "const z = 0;\r\nconst a = oldCall(x +\ny);\r\n";
+        let found = rewrite(source, rule("newCall(\n$A\n)")).expect("rewrite");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].replacement, "newCall(\r\nx +\ny\r\n)");
+        // An LF file keeps the template as written.
+        let lf = rewrite(
+            "const z = 0;\nconst a = oldCall(x +\r\ny);\n",
+            rule("newCall(\n$A\n)"),
+        )
+        .expect("rewrite");
+        assert_eq!(lf[0].replacement, "newCall(\nx +\r\ny\n)");
+    }
 
     /// A template that sets a multi-capture off with spaces keeps the source's
     /// line break there: a class body written on its own lines stays on its
@@ -1079,22 +1105,17 @@ mod tests {
 
     #[test]
     fn parser_for_path_follows_the_file_extension_within_the_family() {
-        assert_eq!(rewrite_parser_for_path("typescript", "src/App.tsx"), "tsx");
-        assert_eq!(rewrite_parser_for_path("typescript", "src/a.ts"), "ts");
-        assert_eq!(rewrite_parser_for_path("cpp", "include/w.h"), "cpp");
-        assert_eq!(rewrite_parser_for_path("c", "include/w.h"), "h");
+        use crate::signatures::languages::parser_for_path;
+        assert_eq!(parser_for_path("typescript", "src/App.tsx"), "tsx");
+        assert_eq!(parser_for_path("typescript", "src/a.ts"), "ts");
+        assert_eq!(parser_for_path("cpp", "include/w.h"), "cpp");
+        assert_eq!(parser_for_path("c", "include/w.h"), "h");
         // A nonstandard suffix keeps the explicit selector.
-        assert_eq!(
-            rewrite_parser_for_path("typescript", "script.foo"),
-            "typescript"
-        );
-        assert_eq!(
-            rewrite_parser_for_path("typescript", "Makefile"),
-            "typescript"
-        );
+        assert_eq!(parser_for_path("typescript", "script.foo"), "typescript");
+        assert_eq!(parser_for_path("typescript", "Makefile"), "typescript");
         // JSX counted with the TSX grammar is clean; with TS it is broken.
         let jsx = "export const App = () => <div>hi</div>;\n";
-        let parser = rewrite_parser_for_path("typescript", "App.tsx");
+        let parser = parser_for_path("typescript", "App.tsx");
         assert_eq!(count_syntax_errors(jsx, &parser).expect("tsx"), 0);
         assert!(count_syntax_errors(jsx, "typescript").expect("ts") > 0);
     }

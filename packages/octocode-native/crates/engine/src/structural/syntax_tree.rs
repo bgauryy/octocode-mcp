@@ -55,9 +55,6 @@ struct Pending<'tree> {
     included_parent: Option<u32>,
 }
 
-/// Recovery for a walk stopped by its deadline or node budget.
-const BUDGET_RECOVERY: &str = "Follow nextOffset through the numbered nodes. Nodes past this stop are not listed; query them with a match pattern or read their lines with localFetch.";
-
 fn diagnostic(
     code: &str,
     severity: &str,
@@ -211,32 +208,26 @@ fn inspect_bounded(
     {
         if Instant::now() >= deadline {
             status = "partial".to_owned();
-            diagnostics.push(
-                diagnostic(
-                    "syntaxTree.budget.deadline",
-                    "warning",
-                    "walk",
-                    "Syntax-tree traversal exceeded its execution deadline",
-                    file_path,
-                )
-                .with_recovery(BUDGET_RECOVERY),
-            );
+            diagnostics.push(diagnostic(
+                "syntaxTree.budget.deadline",
+                "warning",
+                "walk",
+                "Syntax-tree traversal exceeded its execution deadline",
+                file_path,
+            ));
             break;
         }
         let included = !named_only || node.is_named();
         let next_parent = if included {
             if next_id >= max_nodes {
                 status = "partial".to_owned();
-                diagnostics.push(
-                    diagnostic(
-                        "syntaxTree.budget.nodeLimit",
-                        "warning",
-                        "walk",
-                        format!("Syntax-tree traversal reached the {max_nodes} node limit"),
-                        file_path,
-                    )
-                    .with_recovery(BUDGET_RECOVERY),
-                );
+                diagnostics.push(diagnostic(
+                    "syntaxTree.budget.nodeLimit",
+                    "warning",
+                    "walk",
+                    format!("Syntax-tree traversal reached the {max_nodes} node limit"),
+                    file_path,
+                ));
                 break;
             }
             let id = next_id as u32;
@@ -405,9 +396,9 @@ mod tests {
             .iter()
             .find(|d| d.code == "syntaxTree.budget.nodeLimit")
             .expect("budget diagnostic");
-        let recovery = stop.recovery.as_deref().unwrap_or_default();
-        assert!(!recovery.contains("extension"), "{recovery}");
-        assert!(recovery.contains("nextOffset"), "{recovery}");
+        // The engine names no tool or contract field: the runtime words
+        // the recovery by code.
+        assert_eq!(stop.recovery, None);
     }
 
     /// A diagnostic names a recovery only when it has one that fits it: a

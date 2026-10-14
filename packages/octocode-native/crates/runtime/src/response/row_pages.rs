@@ -3,7 +3,6 @@
 //! planned into fragments by size; only the requested page is built.
 
 use serde_json::{Map, Value, json};
-use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 use std::ops::Range;
 
@@ -26,7 +25,11 @@ fn volatile_reserve(fields: &Map<String, Value>) -> usize {
             _ => json!("x".repeat(40)),
         }
     }
-    json_chars(&shape(&Value::Object(fields.clone()))) - 1
+    let shaped: Map<String, Value> = fields
+        .iter()
+        .map(|(key, child)| (key.clone(), shape(child)))
+        .collect();
+    json_chars(&shaped) - 1
 }
 
 #[cfg(test)]
@@ -737,7 +740,7 @@ pub(super) fn paginate_rows(
         _ => Vec::new(),
     };
     volatile.resize(rows.len(), None);
-    let overhead = json_chars(&Value::Object(structured.clone())) + "\"results\":[],".len();
+    let overhead = json_chars(&structured) + "\"results\":[],".len();
     // Room for the envelope warning a page with rows left over leads with.
     let row_budget = budget
         .saturating_sub(overhead + INCOMPLETE_BANNER_CHARS)
@@ -746,7 +749,7 @@ pub(super) fn paginate_rows(
     let total = full.encode_utf16().count();
     let snapshot = format!(
         "response-rows-v2:{}",
-        hex::encode(Sha256::digest(full.as_bytes()))
+        crate::digest::sha256(full.as_bytes())
     );
     let requested = options.response_offset.unwrap_or(0);
     let changed = options.response_snapshot.as_deref() != Some(&snapshot);
@@ -783,7 +786,7 @@ pub(super) fn paginate_rows(
         lead_with_incomplete_banner(&mut structured, later, plan.rows);
     }
     let has_more = requested + 1 < plan.total_pages;
-    let char_length = json_chars(&Value::Object(structured.clone()));
+    let char_length = json_chars(&structured);
     (
         structured,
         ResponsePagination {

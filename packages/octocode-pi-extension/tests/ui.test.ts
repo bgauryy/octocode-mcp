@@ -3,6 +3,7 @@ import { rgbColor, styleText, visibleWidth } from '@earendil-works/pi-tui';
 import { bannerHeader, packageVersion, registerUi, spinnerFrames, themeRamp, tokensPerSecond } from '../src/ui/chrome.js';
 import { BANNER_HEIGHT } from '../src/ui/banner.js';
 import { fakeCtx, fakePi, theme } from './fake-pi.js';
+import { toolHeader } from '../src/shared/render.js';
 
 /** A theme with concrete colours, styled as a truecolor terminal would be. */
 const colorTheme = {
@@ -63,6 +64,31 @@ describe('chrome', () => {
     const child = fakePi();
     registerUi(child.pi, true);
     expect(child.handlers.size).toBe(0);
+  });
+
+  it('repaints the spinner and thinking label when a theme switch invalidates the header, and stops row clocks at run end', async () => {
+    const fake = fakePi();
+    registerUi(fake.pi, false);
+    const ctx = fakeCtx({ cwd: '/work/app' });
+    await fake.emit('session_start', { reason: 'resume' }, ctx);
+    const ui = ctx.ui as never as { thinkingLabel: string; theme: unknown };
+    ui.theme = { ...(theme as object), fg: (color: string, text: string) => `<${color}>${text}` };
+    const header = (ctx.ui.header as (tui: unknown, theme: unknown) => { invalidate(): void; dispose(): void })({ requestRender: vi.fn() }, theme);
+    expect(ui.thinkingLabel).not.toContain('<thinkingText>');
+    header.invalidate();
+    expect(ui.thinkingLabel).toContain('<thinkingText>');
+    header.dispose();
+
+    vi.useFakeTimers();
+    try {
+      const invalidate = vi.fn();
+      toolHeader(theme, { executionStarted: true, isPartial: true, state: {}, invalidate }, 'Bash', 'x');
+      await fake.emit('agent_end', { messages: [] }, ctx);
+      vi.advanceTimersByTime(3_000);
+      expect(invalidate).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('shines the banner only on a fresh startup, never on /resume, /new, /fork, /reload or over a resumed transcript', async () => {

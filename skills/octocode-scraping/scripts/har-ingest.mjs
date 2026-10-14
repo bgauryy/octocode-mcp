@@ -3,31 +3,37 @@
  * Bridge: CDP HAR / network bodies → scrape session corpus (best of both skills).
  *
  * Flow A (CDP → scrape): ingest redacted HAR + bodies into session/cdp/ + extracts + sources.jsonl
- * Flow B (scrape → CDP packet): --export-packet writes extracts/bridge-handoff.json for graph-actionability
+ * Flow B (scrape → CDP packet): --export-packet writes extracts/bridge-handoff.json with the actionable graph nodes
  *
  * Usage:
  *   node har-ingest.mjs --session-dir <scrapeSession> --har <file.har> [--bodies <network-bodies.json>]
- *   node har-ingest.mjs --session-dir <scrapeSession> --from-cdp-dir <.octocode/tmp/chrome-devtools/...>
+ *   node har-ingest.mjs --session-dir <scrapeSession> --from-cdp-dir <.octocode/octocode-chrome-devtools/tmp/...>
  *   node har-ingest.mjs --session-dir <scrapeSession> --export-packet
  *   node har-ingest.mjs --session-dir <scrapeSession> --har <file.har> --filter api --domain walmart.com
  */
-import { copyFile, writeFile, readFile } from 'node:fs/promises';
+import { writeFile, readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   takeArg,
   hasFlag,
   redactHarObject,
+  redactSecretsInText,
+  redactSecretsInJson,
+  redactUrl,
   compactHarEntry,
   filterHarRows,
   readJsonFile,
-  appendJsonl,
+  replaceJsonl,
   ensureDir,
   thinPageHint,
   patchAgentIndexForBridge,
   discoverCdpArtifacts,
   fileBytes,
 } from './lib/bridge.mjs';
+import { fail } from './lib/fail.mjs';
 
 function usage(code = 2) {
   console.error(`Usage:
@@ -45,13 +51,13 @@ if (hasFlag(args, '--help') || hasFlag(args, '-h')) usage(0);
 const sessionDir = resolve(takeArg(args, '--session-dir'));
 if (!sessionDir || sessionDir === resolve('')) usage();
 if (!existsSync(sessionDir)) {
-  console.log(JSON.stringify({ ok: false, error: `session-dir not found: ${sessionDir}` }));
-  process.exit(1);
+  fail('sessionNotFound', `session-dir not found: ${sessionDir}`, 1);
 }
 
 const exportPacket = hasFlag(args, '--export-packet');
 const filter = takeArg(args, '--filter', 'all');
-const minMs = Number(takeArg(args, '--min-ms', '1000')) || 1000;
+const minMs = Number(takeArg(args, '--min-ms', '1000'));
+if (!Number.isFinite(minMs) || minMs < 0) fail('invalidArguments', '--min-ms must be a non-negative number', 2);
 const stripBodies = hasFlag(args, '--strip-bodies');
 const noRedact = hasFlag(args, '--no-redact');
 const domain = takeArg(args, '--domain', '');
@@ -92,7 +98,7 @@ async function writeExportPacket(extra = {}) {
     searchFirst: ['AGENT_INDEX.json', 'extracts/bridge-handoff.json', 'cdp/', 'extracts/cdp-network.jsonl', 'extracts/cdp-bodies.jsonl'],
     next: thinHints.length
       ? ['Run CDP network/HAR on the URL', 'har-ingest.mjs --from-cdp-dir <run>', 'corpus-run.mjs --regex on cdp/extracts']
-      : ['Optional: graph-actionability-check.mjs --graph graph/graph.json'],
+      : [`Optional: node ${fileURLToPath(new URL('./graph-navigate.mjs', import.meta.url))} --session-dir ${sessionDir} --view actionNodes`],
     ...extra,
   };
   const rel = 'extracts/bridge-handoff.json';
@@ -127,14 +133,17 @@ if (fromCdpDir) {
   bodiesPath = bodiesPath || found.bodies;
   capturePaths = found.captures;
   if (!harPath && !bodiesPath && !capturePaths.length) {
-    console.log(JSON.stringify({ ok: false, error: 'no .har, network-bodies.json, page-snapshot.json, or dom-check.json under --from-cdp-dir', fromCdpDir: resolve(fromCdpDir), files: found.files.map((f) => f.rel).slice(0, 30) }));
-    process.exit(1);
+    fail('notFound', 'no .har, network-bodies.json, page-snapshot.json, or dom-check.json under --from-cdp-dir', 1, { fromCdpDir: resolve(fromCdpDir), files: found.files.map((f) => f.rel).slice(0, 30) });
   }
 }
 
 if (!harPath && !bodiesPath && !capturePaths.length) usage();
 
 const ingestedAt = new Date().toISOString();
+// Content-addressed ids: re-ingesting the same capture replaces its rows instead of duplicating them,
+// and two different captures never overwrite each other's files.
+const ingestId = (kind, text) => `cdp-${kind}-${createHash('sha256').update(text).digest('hex').slice(0, 12)}`;
+const corpusRun = fileURLToPath(new URL('./corpus-run.mjs', import.meta.url));
 const cdpFiles = [];
 const networkRows = [];
 const bodyRows = [];
@@ -146,10 +155,11 @@ let filteredCount = 0;
 if (harPath) {
   const absHar = resolve(harPath);
   if (!existsSync(absHar)) {
-    console.log(JSON.stringify({ ok: false, error: `HAR not found: ${absHar}` }));
-    process.exit(1);
+    fail('notFound', `HAR not found: ${absHar}`, 1);
   }
-  const har = JSON.parse(await readFile(absHar, 'utf8'));
+  const harText = await readFile(absHar, 'utf8');
+  const har = JSON.parse(harText);
+  const harId = ingestId('har', harText);
   if (!noRedact) {
     const meta = redactHarObject(har, { stripBodies });
     redactMeta = {
@@ -166,11 +176,11 @@ if (harPath) {
   filteredCount = rows.length;
 
   // Keep full redacted HAR on disk; extracts get filtered compact rows (pager-smart).
-  const harOutRel = `cdp/${basename(absHar).replace(/\.har$/i, '')}.redacted.har`;
+  const harOutRel = `cdp/${harId}.${noRedact ? 'raw' : 'redacted'}.har`;
   await writeFile(join(sessionDir, harOutRel), `${JSON.stringify(har, null, 2)}\n`, { mode: 0o600 });
   cdpFiles.push(harOutRel);
 
-  const compactRel = 'cdp/network-summary.json';
+  const compactRel = `cdp/${harId}-network-summary.json`;
   await writeFile(join(sessionDir, compactRel), `${JSON.stringify({
     sourceHar: absHar,
     filter,
@@ -190,6 +200,7 @@ if (harPath) {
   for (const row of rows) {
     networkRows.push({
       kind: 'cdp-network',
+      ingestId: harId,
       ingestedAt,
       pageId: null,
       ...row,
@@ -198,7 +209,7 @@ if (harPath) {
   }
 
   sourceRows.push({
-    pageId: `cdp-har-${Date.now().toString(36)}`,
+    pageId: harId,
     url: rows[0]?.url || existingSources[0]?.url || absHar,
     route: 'bridge:har-ingest',
     provider: 'cdp-bridge',
@@ -226,21 +237,21 @@ if (harPath) {
 if (bodiesPath) {
   const absBodies = resolve(bodiesPath);
   if (!existsSync(absBodies)) {
-    console.log(JSON.stringify({ ok: false, error: `bodies file not found: ${absBodies}` }));
-    process.exit(1);
+    fail('notFound', `bodies file not found: ${absBodies}`, 1);
   }
-  const bodies = JSON.parse(await readFile(absBodies, 'utf8'));
+  const bodiesText = await readFile(absBodies, 'utf8');
+  const bodies = JSON.parse(bodiesText);
+  const bodiesId = ingestId('bodies', bodiesText);
   const list = Array.isArray(bodies) ? bodies : (bodies.bodies || bodies.entries || [bodies]);
-  const outRel = 'cdp/network-bodies.json';
-  // Shallow redact: never keep auth-looking string fields in wrapper metadata
+  const outRel = `cdp/${bodiesId}-network-bodies.json`;
+  // Mask credential values in every body and URL; the rest of each body stays as evidence.
   const safeList = list.map((b, i) => {
-    const url = typeof b.url === 'string' ? b.url : '';
+    const rawUrl = typeof b.url === 'string' ? b.url : '';
+    const url = noRedact ? rawUrl : redactUrl(rawUrl);
     let bodyText = b.body ?? b.text ?? '';
     if (typeof bodyText !== 'string') bodyText = JSON.stringify(bodyText);
-    if (/password|authorization|\"token\"/i.test(bodyText) && bodyText.length > 500) {
-      bodyText = '[REDACTED]';
-    }
-    const bodyFileRel = `cdp/body-${String(i + 1).padStart(3, '0')}.txt`;
+    if (!noRedact) bodyText = redactSecretsInText(bodyText);
+    const bodyFileRel = `cdp/${bodiesId}-body-${String(i + 1).padStart(3, '0')}.txt`;
     return { index: i, requestId: b.requestId || null, url, bodyText, bodyFileRel };
   });
 
@@ -249,6 +260,7 @@ if (bodiesPath) {
     cdpFiles.push(item.bodyFileRel);
     bodyRows.push({
       kind: 'cdp-body',
+      ingestId: bodiesId,
       ingestedAt,
       requestId: item.requestId,
       url: item.url,
@@ -262,11 +274,8 @@ if (bodiesPath) {
   await writeFile(join(sessionDir, outRel), `${JSON.stringify(safeList.map(({ bodyText, ...rest }) => ({ ...rest, chars: bodyText.length })), null, 2)}\n`, { mode: 0o600 });
   cdpFiles.push(outRel);
 
-  // Also copy original path reference note
-  await copyFile(absBodies, join(sessionDir, 'cdp', `source-${basename(absBodies)}`)).catch(() => {});
-
   sourceRows.push({
-    pageId: `cdp-bodies-${Date.now().toString(36)}`,
+    pageId: bodiesId,
     url: safeList[0]?.url || existingSources[0]?.url || absBodies,
     route: 'bridge:har-ingest',
     provider: 'cdp-bridge',
@@ -287,20 +296,26 @@ if (bodiesPath) {
     providerStatus: null,
     providerDetail: null,
     targetLikelyError: null,
-    bridge: { type: 'bodies', count: safeList.length },
+    bridge: { type: 'bodies', count: safeList.length, sourceFile: absBodies },
   });
 }
 
 for (const capturePath of capturePaths) {
   const absCapture = resolve(capturePath);
   const name = basename(absCapture);
-  const data = JSON.parse(await readFile(absCapture, 'utf8'));
-  const outRel = `cdp/${name}`;
-  await copyFile(absCapture, join(sessionDir, outRel));
+  const captureText = await readFile(absCapture, 'utf8');
+  const original = JSON.parse(captureText);
+  const captureId = ingestId('capture', captureText);
+  const data = noRedact ? original : redactSecretsInJson(original);
+  if (!noRedact && typeof data.location === 'string') data.location = redactUrl(data.location);
+  if (!noRedact && typeof data.url === 'string') data.url = redactUrl(data.url);
+  const outRel = `cdp/${captureId}-${name}`;
+  await writeFile(join(sessionDir, outRel), `${JSON.stringify(data, null, 2)}\n`, { mode: 0o600 });
   cdpFiles.push(outRel);
   const isSnapshot = /^page-snapshot\.json$/i.test(name);
   const row = isSnapshot ? {
     kind: 'cdp-page-snapshot',
+    ingestId: captureId,
     ingestedAt,
     url: data.url || existingSources[0]?.url || null,
     refCount: Object.keys(data.refs || {}).length,
@@ -308,6 +323,7 @@ for (const capturePath of capturePaths) {
     evidence: { file: outRel },
   } : {
     kind: 'cdp-dom-check',
+    ingestId: captureId,
     ingestedAt,
     url: data.location || existingSources[0]?.url || null,
     found: Boolean(data.found),
@@ -321,7 +337,7 @@ for (const capturePath of capturePaths) {
   };
   captureRows.push(row);
   sourceRows.push({
-    pageId: `cdp-capture-${Date.now().toString(36)}-${captureRows.length}`,
+    pageId: captureId,
     url: row.url || absCapture,
     route: 'bridge:cdp-capture',
     provider: 'cdp-bridge',
@@ -333,7 +349,7 @@ for (const capturePath of capturePaths) {
     text: 'extracts/cdp-captures.jsonl',
     textParts: [],
     rawTruncated: false,
-    rawBytes: await fileBytes(absCapture),
+    rawBytes: await fileBytes(join(sessionDir, outRel)),
     textTruncated: false,
     textBytes: JSON.stringify(row).length,
     cleanTextBytes: JSON.stringify(row).length,
@@ -346,10 +362,11 @@ for (const capturePath of capturePaths) {
   });
 }
 
-await appendJsonl(join(sessionDir, 'extracts/cdp-network.jsonl'), networkRows);
-await appendJsonl(join(sessionDir, 'extracts/cdp-bodies.jsonl'), bodyRows);
-await appendJsonl(join(sessionDir, 'extracts/cdp-captures.jsonl'), captureRows);
-await appendJsonl(sourcesPath, sourceRows);
+const ingestIds = new Set(sourceRows.map((row) => row.pageId));
+await replaceJsonl(join(sessionDir, 'extracts/cdp-network.jsonl'), networkRows, (row) => ingestIds.has(row.ingestId));
+await replaceJsonl(join(sessionDir, 'extracts/cdp-bodies.jsonl'), bodyRows, (row) => ingestIds.has(row.ingestId));
+await replaceJsonl(join(sessionDir, 'extracts/cdp-captures.jsonl'), captureRows, (row) => ingestIds.has(row.ingestId));
+await replaceJsonl(sourcesPath, sourceRows, (row) => ingestIds.has(row.pageId));
 
 const { packet, rel: handoffRel } = await writeExportPacket({
   ingested: {
@@ -378,7 +395,7 @@ Thin hints: ${thinHints.length ? thinHints.join('; ') : 'none'}
 ${cdpFiles.map((f) => `- \`${f}\``).join('\n') || '- (none)'}
 
 ## Next
-1. \`corpus-run.mjs --session-dir ${sessionDir} --roots cdp,extracts --regex '<pattern>'\`
+1. \`node ${corpusRun} --session-dir ${sessionDir} --roots cdp,extracts --regex '<pattern>'\`
 2. Prefer local proof over reopening Chrome when the API body is already under \`cdp/\`.
 `);
 
@@ -402,7 +419,7 @@ console.log(JSON.stringify({
   },
   redact: noRedact ? null : { headerRowsTouched: redactMeta.headerRowsTouched, cookiesRedacted: redactMeta.cookiesRedacted, entries: redactMeta.entries },
   next: [
-    `node skills/octocode-scraping/scripts/corpus-run.mjs --session-dir ${sessionDir} --roots cdp,extracts --regex 'product|itemId|offerId'`,
+    `node ${corpusRun} --session-dir ${sessionDir} --roots cdp,extracts --regex 'product|itemId|offerId'`,
     ...(thinHints.length ? ['Thin page detected earlier — trust cdp/ bodies over text/*.clean.part-*.md'] : []),
   ],
   packetSelectors: packet.selectors.length,

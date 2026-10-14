@@ -1,8 +1,9 @@
 //! Routing (search or REST list) and the GitHub search terms a query runs.
 use super::{GhSearchHistoryQuery, HistoryOperation, HistorySearch};
-use crate::providers::github::{
-    ProviderError, ProviderErrorKind, quote_search_keyword, resolve_date_window,
-    validate_person_name, validate_qualifier_value,
+use crate::providers::github::resolve_date_window;
+use octocode_github::{
+    ProviderError, ProviderErrorKind, quote_search_keyword, validate_person_name,
+    validate_qualifier_value,
 };
 
 /// A keyword-less issue listing keeps the REST list order (newest first)
@@ -41,6 +42,7 @@ pub(super) fn should_use_search_for_prs(q: &HistorySearch) -> bool {
         || q.repo().is_none()
         || needs_issue_search_qualifiers(q)
         || f.draft.is_some()
+        || f.unmerged.is_some()
         || f.reviewed_by.is_some()
         || f.review_requested.is_some()
         || f.status.is_some()
@@ -252,6 +254,9 @@ fn issue_terms(
     push_qualifier(out, "is", q.state().as_deref())?;
     if let Some(draft) = f.draft {
         out.push(if draft { "is:draft" } else { "-is:draft" }.into());
+    }
+    if f.unmerged == Some(true) {
+        out.push("is:unmerged".into());
     }
     for (k, v) in [("author", q.author())]
         .into_iter()

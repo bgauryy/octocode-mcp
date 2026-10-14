@@ -9,10 +9,10 @@ import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-const HELP = `Render skill Markdown output as one self-contained HTML report and open it.
+const HELP = `Render skill Markdown output as one self-contained HTML report. The page stays closed.
 
 Usage:
-  node scripts/render-report.mjs <file.md | folder> [--out <file.html>] [--title <text>] [--no-open] [--json]
+  node scripts/render-report.mjs <file.md | folder> [--out <file.html>] [--title <text>] [--open] [--json]
   node scripts/render-report.mjs <file.md | folder> --manifest
   node scripts/render-report.mjs --self-test
   node scripts/render-report.mjs --help
@@ -22,13 +22,14 @@ node_modules/, and dot folders) as a library; <workspace>/.octocode renders all 
 
 Default output, next to the source when it is under <workspace>/.octocode/:
   <name>.md -> <name>.html        <folder> -> <folder>/index.html
-Other sources go to <workspace>/.octocode/view/<name>/index.html.
+Other sources go to <workspace>/.octocode/<this skill>/view/<name>/index.html.
 
 The page renders Markdown locally (GFM tables, task lists, alerts, footnotes, code highlighting),
 links code references such as \`src/a.ts:12\` that exist in the workspace to your editor, lists every
 cited source, and has search, a contents rail, light/dark themes, and print styles. Mermaid diagrams
 load mermaid from a pinned CDN; offline, the diagram source is shown instead. Raw HTML is escaped.
-Opens the page unless --no-open, CI is set, or no display is available.
+Leaves the page closed. Pass --open only when the reader asked to see it. --no-open is
+accepted and keeps the page closed. CI, or Linux with no display, also stays closed.
 
 --manifest writes no HTML. It prints one JSON catalog for agents: for every report, its path,
 skill, kind, title, date, header fields (status, confidence, question, next, and any others),
@@ -461,6 +462,7 @@ function client(kit, MERMAID_URL) {
 
     cites = [];
     const cite = (a, kind, key, label) => { a.id = a.id || `cite-${cites.length}`; cites.push({ id: a.id, kind, key, label: label || a.textContent.trim() || key }); };
+    const refKind = (rel) => /\.(md|markdown)$/i.test(rel) ? 'doc' : 'code';
     const codeLink = (a, ref) => {
       const loc = ref.rel + (ref.line ? `:${ref.line}` : '');
       a.href = editorUrl(ref.abs, ref.line);
@@ -468,7 +470,7 @@ function client(kit, MERMAID_URL) {
       a.dataset.line = ref.line || '';
       a.classList.add('coderef');
       a.title = `Open ${loc} in your editor`;
-      cite(a, 'code', loc, loc);
+      cite(a, refKind(ref.rel), loc, loc);
     };
     $$('a[href]', art).forEach((a) => {
       const raw = a.getAttribute('href');
@@ -513,6 +515,12 @@ function client(kit, MERMAID_URL) {
       pre.prepend(bar);
     });
 
+    if (f.source) {
+      const root = String(data.workspace || '').replace(/\\/g, '/').replace(/\/$/, '');
+      const abs = String(f.source).replace(/\\/g, '/');
+      const rel = root && abs.startsWith(root + '/') ? abs.slice(root.length + 1) : abs;
+      cites.push({ id: 'source-doc', kind: 'doc', key: rel, label: rel });
+    }
     renderSources();
     renderMeta(f, art, toc.length, n);
   }
@@ -524,6 +532,12 @@ function client(kit, MERMAID_URL) {
       return `<span class="meta-item"><span class="meta-k">${esc(k)}</span>${tone ? chip(v, tone) : `<span class="meta-v">${esc(v)}</span>`}</span>`;
     });
     if (f.date && !f.meta.date) items.unshift(`<span class="meta-item"><span class="meta-k">date</span><span class="meta-v">${esc(f.date)}</span></span>`);
+    if (f.source) {
+      const root = String(data.workspace || '').replace(/\\/g, '/').replace(/\/$/, '');
+      const abs = String(f.source).replace(/\\/g, '/');
+      const rel = root && abs.startsWith(root + '/') ? abs.slice(root.length + 1) : abs;
+      items.push(`<span class="meta-item"><span class="meta-k">source</span><a class="meta-v" id="source-doc" href="${editorUrl(abs)}">${esc(rel)}</a></span>`);
+    }
     const sources = new Set(cites.map((c) => c.key)).size;
     const stats = [
       `${Math.max(1, Math.round(words / 230))} min read`,
@@ -539,7 +553,8 @@ function client(kit, MERMAID_URL) {
     const groups = new Map();
     for (const c of cites) {
       let g = 'Workspace code';
-      if (c.kind === 'web') { try { g = new URL(c.key).hostname.replace(/^www\./, ''); } catch { g = 'Links'; } }
+      if (c.kind === 'doc') g = 'Local docs';
+      else if (c.kind === 'web') { try { g = new URL(c.key).hostname.replace(/^www\./, ''); } catch { g = 'Links'; } }
       if (!groups.has(g)) groups.set(g, new Map());
       const m = groups.get(g);
       if (!m.has(c.key)) m.set(c.key, { ...c, ids: [] });
@@ -548,7 +563,8 @@ function client(kit, MERMAID_URL) {
     sourceList = [...groups.values()].flatMap((m) => [...m.values()]);
     $('#tab-sources').textContent = sourceList.length ? `Sources (${sourceList.length})` : 'Sources';
     if (!sourceList.length) { $('#sources').innerHTML = '<p class="muted">This document cites no links or workspace files.</p>'; return; }
-    const order = [...groups.keys()].sort((a, b) => (a === 'Workspace code' ? -1 : b === 'Workspace code' ? 1 : groups.get(b).size - groups.get(a).size || a.localeCompare(b)));
+    const rank = (name) => name === 'Local docs' ? 0 : name === 'Workspace code' ? 1 : 2;
+    const order = [...groups.keys()].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
     $('#sources').innerHTML = '<button type="button" class="linkbtn" data-act="copy-sources">Copy list as Markdown</button>'
       + order.map((g) => `<div class="src-group"><h3>${esc(g)} <small>${groups.get(g).size}</small></h3>${[...groups.get(g).values()].map((s) => `<a href="#" class="src" data-jump="${esc(s.ids[0])}" title="${esc(s.key)}"><span class="src-label">${esc(s.label)}</span>`
         + `${s.kind === 'web' && s.label !== s.key ? `<span class="src-url">${esc(s.key.replace(/^https?:\/\/(www\.)?/, ''))}</span>` : ''}${s.ids.length > 1 ? `<span class="src-count">cited ${s.ids.length} times</span>` : ''}</a>`).join('')}</div>`).join('');
@@ -1077,7 +1093,7 @@ function collect(target, options = {}) {
     const first = rel.includes('/') ? rel.split('/')[0] : '';
     const kind = meta.kind || kindFor(full);
     const group = KINDS[first] || underOctocode ? first : (rel.includes('/') ? path.dirname(rel) : '');
-    return { path: rel, group, kind, meta, body, refs: resolveRefs(body, path.dirname(full), workspace) };
+    return { path: rel, group, kind, meta, body, source: toPosix(full), refs: resolveRefs(body, path.dirname(full), workspace) };
   });
   return { abs, isDir, workspace, root, rels, files, underOctocode, kit };
 }
@@ -1121,12 +1137,27 @@ function contractFor(skill) {
 
 const localDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-export function checkReport(full, meta, body, workspace) {
+// A file inside a report folder that is not the folder's entry point (README.md, RFC.md, index.md) and carries
+// no report header is a supporting file: run logs, cases, transcripts. It is neither checked nor cataloged.
+export function supportingFile(full, meta, workspace) {
   const rel = toPosix(path.relative(path.join(workspace, '.octocode'), full)).split('/');
-  // A skill report written into scratch space (a subagent's tmp/agents/<id>/ folder, say) never reaches the
-  // catalog. tmp/showcase holds the rendered sample set and is exempt.
-  if (rel[0] === 'tmp' && rel[1] !== 'showcase' && meta.status && meta.question)
-    return [`${rel.slice(1).join('/')}: this has a report header but sits in .octocode/tmp/, which the catalog skips; save it as .octocode/<skill>/<YYYY-MM-DD>-<slug>.md`];
+  // Only the folder's top-level README.md, RFC.md, or index.md is its entry point; nested ones are supporting files.
+  if (rel.length < 3 || rel[0] === '..' || !KINDS[rel[0]] || (rel.length === 3 && PRIMARY.includes(rel[2].toLowerCase()))) return null;
+  const top = path.join(workspace, '.octocode', rel[0], rel[1]);
+  const hasPrimary = fs.existsSync(top) && fs.readdirSync(top).some((x) => PRIMARY.includes(x.toLowerCase()));
+  if (hasPrimary) return { folder: rel[1], hasPrimary };
+  return meta.status || meta.question ? null : { folder: rel[1], hasPrimary };
+}
+
+export function checkReport(full, meta, body, workspace) {
+  const support = supportingFile(full, meta, workspace);
+  if (support) return support.hasPrimary ? [] : [`${support.folder}/: a report folder needs README.md (or RFC.md) as its entry point`];
+  const rel = toPosix(path.relative(path.join(workspace, '.octocode'), full)).split('/');
+  // A skill report written into scratch space (.octocode/<skill>/tmp/, or a legacy .octocode/tmp/) never reaches
+  // the catalog. tmp/showcase holds the rendered sample set and is exempt.
+  const scratch = rel[0] === 'tmp' ? rel[1] !== 'showcase' : rel[1] === 'tmp';
+  if (scratch && meta.status && meta.question)
+    return [`${rel.join('/')}: this has a report header but sits in a tmp/ folder, which the catalog skips; save it as .octocode/<skill>/<YYYY-MM-DD>-<slug>.md`];
   if (rel.length < 2 || rel[0] === '..' || !KINDS[rel[0]]) return [];
   const skill = rel[0];
   const warnings = [];
@@ -1172,7 +1203,7 @@ export function buildReport(target, options = {}) {
   };
   const firstH1 = (files[0].body.match(/^ {0,3}#\s+(.+?)\s*#*\s*$/m) || [])[1];
   const title = options.title || (files.length > 1 && !payload.primary ? rootName : (files[0].meta.title || (firstH1 || rels[0]).replace(/[`*_]/g, '')));
-  const warnings = files.flatMap((f) => checkReport(path.join(root, f.path), f.meta, f.body, workspace));
+  const warnings = [...new Set(files.flatMap((f) => checkReport(path.join(root, f.path), f.meta, f.body, workspace)))];
   return { html: pageHtml(payload, title), files: rels, workspace, isDir, abs, warnings };
 }
 
@@ -1220,7 +1251,7 @@ const kitTone = (status) => (toneKit ||= mdKit()).toneOf(status);
 
 export function buildManifest(target, options = {}) {
   const { workspace, root, files } = collect(target, options);
-  const documents = files.map((f) => {
+  const documents = files.filter((f) => !supportingFile(path.join(root, f.path), f.meta, workspace)).map((f) => {
     const full = path.join(root, f.path);
     const { title, lead, headings } = outline(f.body);
     const header = {};
@@ -1228,6 +1259,9 @@ export function buildManifest(target, options = {}) {
     const other = Object.fromEntries(Object.entries(f.meta).filter(([k]) => !HEADER_KEYS.includes(k) && k !== 'title' && k !== 'date'));
     const html = pageFor(full, workspace);
     const rel = toPosix(path.relative(workspace, full));
+    // A status outside the skill's contract gets no tone, so an invalid word never looks like success.
+    const statuses = (skillFor(full) && contractFor(skillFor(full))?.statuses) || [];
+    const validStatus = !statuses.length || statuses.some((w) => w.toLowerCase() === String(header.status).toLowerCase());
     return {
       path: rel.startsWith('..') ? toPosix(full) : rel,
       skill: skillFor(full) || null,
@@ -1235,7 +1269,7 @@ export function buildManifest(target, options = {}) {
       title: f.meta.title || title || path.basename(f.path),
       date: f.meta.date || (f.path.match(/(\d{4}-\d{2}-\d{2})/) || [])[1] || null,
       ...header,
-      ...(header.status ? { statusTone: STATUS_TONE[kitTone(header.status)] || null } : {}),
+      ...(header.status ? { statusTone: validStatus ? STATUS_TONE[kitTone(header.status)] || null : null } : {}),
       ...(Object.keys(other).length ? { meta: other } : {}),
       lead: lead || null,
       headings,
@@ -1268,7 +1302,9 @@ export function defaultOut(abs, isDir, workspace) {
   const inside = abs === octo || abs.startsWith(octo + path.sep);
   if (inside) return isDir ? path.join(abs, 'index.html') : abs.replace(/\.(md|markdown)$/i, '') + '.html';
   const name = path.basename(abs).replace(/\.(md|markdown)$/i, '') || 'report';
-  return path.join(octo, 'view', name, 'index.html');
+  // Every skill output stays in that skill's own folder, so a page for an outside source goes there too.
+  const own = path.basename(SCRIPT_SKILL_DIR);
+  return path.join(octo, KINDS[own] ? own : 'octocode-skills', 'view', name, 'index.html');
 }
 
 function canOpen() {
@@ -1283,12 +1319,13 @@ function openFile(file) {
 }
 
 function parseArgs(argv) {
-  const args = { positional: [], open: true, json: false };
+  const args = { positional: [], open: false, json: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--out') args.out = argv[++i];
     else if (a === '--title') args.title = argv[++i];
     else if (a === '--workspace') args.workspace = argv[++i];
+    else if (a === '--open') args.open = true;
     else if (a === '--no-open') args.open = false;
     else if (a === '--json') args.json = true;
     else if (a === '--manifest') args.manifest = true;
@@ -1345,18 +1382,22 @@ function selfTest() {
     const data = JSON.parse(one.html.match(/id="report-data">([\s\S]*?)<\/script>/)[1]);
     check('workspace from .octocode', one.workspace === dir || fs.realpathSync(one.workspace) === fs.realpathSync(dir));
     check('code refs resolve', data.files[0].refs['src/a.ts:3']?.line === 3 && data.files[0].refs['../../src/a.ts#L1'] && !data.files[0].refs['src/none.ts']);
+    check('source path recorded', data.files[0].source.endsWith('2025-01-02-topic.md'));
     check('frontmatter and kind', data.files[0].meta.status === 'Draft' && data.files[0].kind === 'Research');
     check('script-safe embedding', !/<\/script><b>/.test(one.html.split('id="report-data">')[1].split('</script>')[0]));
     check('default out beside source', defaultOut(one.abs, false, one.workspace) === md.replace(/\.md$/, '.html'));
     const lib = buildReport(path.join(dir, '.octocode'));
     check('library collects and orders newest first', lib.files.length === 2 && lib.files[0].endsWith('2025-01-02-topic.md'));
     check('library default out', defaultOut(lib.abs, true, lib.workspace) === path.join(dir, '.octocode', 'index.html'));
-    check('outside source goes to view', defaultOut(path.join(dir, 'docs', 'x.md'), false, dir) === path.join(dir, '.octocode', 'view', 'x', 'index.html'));
+    check('outside source goes to the skill view folder', defaultOut(path.join(dir, 'docs', 'x.md'), false, dir) === path.join(dir, '.octocode', KINDS[path.basename(SCRIPT_SKILL_DIR)] ? path.basename(SCRIPT_SKILL_DIR) : 'octocode-skills', 'view', 'x', 'index.html'));
     fs.writeFileSync(path.join(rdir, '2025-01-03-full.md'), '---\nstatus: Confirmed\nconfidence: high\nquestion: Where does it go?\nnext: Ship it\nowner: me\n---\n# Full\n\nThe answer is here,\nacross two lines.\n\n## Evidence\n\nSee `src/a.ts:3` and https://example.com/a.\n\n```md\n# not a heading\n```\n\n### Gaps\n');
     const man = buildManifest(path.join(dir, '.octocode'));
     const full = man.documents[0];
     check('manifest lists every report newest first', man.count === 3 && full.path === '.octocode/octocode-research/2025-01-03-full.md');
     check('manifest status tone', full.statusTone === 'done');
+    fs.writeFileSync(path.join(rdir, '2025-01-05-invalid.md'), '---\nstatus: Done\nquestion: Q?\n---\n# Invalid\n\nLead.\n');
+    check('invalid status has no tone', buildManifest(path.join(dir, '.octocode')).documents.find((d) => d.path.endsWith('invalid.md')).statusTone === null);
+    fs.rmSync(path.join(rdir, '2025-01-05-invalid.md'));
     check('manifest header fields', full.status === 'Confirmed' && full.confidence === 'high' && full.question === 'Where does it go?' && full.next === 'Ship it' && full.meta.owner === 'me');
     check('manifest outline', full.title === 'Full' && full.lead === 'The answer is here, across two lines.' && full.headings.length === 2 && full.headings[1].text === 'Gaps');
     fs.writeFileSync(path.join(rdir, '2025-01-04-table.md'), '# Table first\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\nThe lead after the table.\n');
@@ -1375,8 +1416,26 @@ function selfTest() {
       check('report check flags date and missing header', /written/.test(warn('2000-01-01-old.md')) && /no status/.test(warn('2000-01-01-old.md')) && /no question/.test(warn('2000-01-01-old.md')));
       check('report check flags folder, status word, and section', ((w) => /single report is one file/.test(w) && /"Confirmed" is not one of/.test(w) && /## Findings/.test(w))(warn(`${today}-folder/notes.md`)));
     }
+    {
+      const run = path.join(roastDir, `${today}-run`);
+      fs.mkdirSync(path.join(run, 'cases'), { recursive: true });
+      fs.writeFileSync(path.join(run, 'README.md'), '---\nstatus: Confirmed\nquestion: Q?\n---\n# Run\n\nLead.\n');
+      fs.writeFileSync(path.join(run, 'cases', 'case-01.md'), '# Case 1\n\nTranscript.\n');
+      fs.writeFileSync(path.join(run, 'cases', 'README.md'), '# Cases\n');
+      check('supporting files in a report folder are not checked', !/case-01|cases\/README/.test(buildReport(run).warnings.join('\n')));
+      check('supporting files stay out of the manifest', !buildManifest(path.join(dir, '.octocode')).documents.some((d) => d.path.includes('case-01')));
+      const bare = path.join(roastDir, `${today}-bare`);
+      fs.mkdirSync(bare);
+      for (const n of ['a.md', 'b.md']) fs.writeFileSync(path.join(bare, n), '# Note\n');
+      const bareWarnings = buildReport(bare).warnings;
+      check('a folder without an entry point warns once', bareWarnings.length === 1 && /needs README.md/.test(bareWarnings[0]));
+      fs.rmSync(run, { recursive: true });
+      fs.rmSync(bare, { recursive: true });
+    }
     fs.mkdirSync(path.join(dir, '.octocode', 'tmp', 'agents', 'x'), { recursive: true });
     check('report check flags a report left in scratch space', /catalog skips/.test(checkReport(path.join(dir, '.octocode', 'tmp', 'agents', 'x', 'r.md'), { status: 'Ready', question: 'Q?' }, '', dir).join('')));
+    fs.mkdirSync(path.join(dir, '.octocode', 'octocode-research', 'tmp'), { recursive: true });
+    check('report check flags a report left in a skill tmp folder', /catalog skips/.test(checkReport(path.join(dir, '.octocode', 'octocode-research', 'tmp', 'r.md'), { status: 'Ready', question: 'Q?' }, '', dir).join('')));
     const ap = contractFor('octocode-agentic-prompts');
     if (ap) {
       const apDir = path.join(dir, '.octocode', 'octocode-agentic-prompts');

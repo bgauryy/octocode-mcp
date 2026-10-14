@@ -102,7 +102,7 @@ Join creates a UUID and 60-second presence. It captures the current Git branch w
 
 ## Required intent
 
-New mail, leases and documents require nonblank `reasoning`, at most 512 UTF-8 bytes. It is immutable, describes purpose, and is not a reasoning transcript. Retry keys require unchanged payload/routing. Generic events/memories use their typed data contract.
+New mail, leases and documents require nonblank `reasoning`, at most 512 UTF-8 bytes. Immutable intent (purpose, plus done-when for mail), not a reasoning transcript. Retry keys require unchanged payload/routing. Generic events/memories use their typed data contract.
 
 ## Path leases
 

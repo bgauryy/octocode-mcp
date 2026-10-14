@@ -1,94 +1,24 @@
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use crate::support;
+use crate::support::{self, Run as _};
 
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
-use support::{LocateTopPassage, Workspace};
+use support::{Judge, Strategy, Workspace};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
-
-#[derive(Clone)]
-struct CandidateJudgment;
-
-impl Respond for CandidateJudgment {
-    fn respond(&self, request: &Request) -> ResponseTemplate {
-        let body: Value = serde_json::from_slice(&request.body).expect("provider request");
-        let relevant = body["state"]
-            .to_string()
-            .contains("retries stop after three failed attempts");
-        let answers = body["questions"]
-            .as_object()
-            .expect("grouped questions")
-            .keys()
-            .map(|id| {
-                (
-                    id.clone(),
-                    json!({"type":"noul", "noul": if relevant { 0.98 } else { 0.05 }}),
-                )
-            })
-            .collect::<serde_json::Map<_, _>>();
-        ResponseTemplate::new(200).set_body_json(json!({
-            "model":"fixture", "answers":answers,
-            "usage":{"input_tokens":2,"output_tokens":1}
-        }))
-    }
-}
-
-/// Choose only among the passage labels in each request. A bounded line
-/// window may present fewer labels than the broader source payload.
-#[derive(Clone)]
-struct FirstOfferedPassage;
-
-impl Respond for FirstOfferedPassage {
-    fn respond(&self, request: &Request) -> ResponseTemplate {
-        let body: Value = serde_json::from_slice(&request.body).expect("provider request");
-        let answers = body["questions"]
-            .as_object()
-            .expect("grouped questions")
-            .iter()
-            .map(|(id, question)| {
-                let answer = if question["type"] == "choice" {
-                    let labels = question["criteria"]
-                        .as_object()
-                        .expect("choice labels")
-                        .keys()
-                        .collect::<Vec<_>>();
-                    let rest = if labels.len() > 1 {
-                        0.01 / (labels.len() - 1) as f64
-                    } else {
-                        0.0
-                    };
-                    let probabilities = labels
-                        .iter()
-                        .enumerate()
-                        .map(|(index, label)| {
-                            (
-                                (*label).clone(),
-                                json!(if index == 0 { 0.99 } else { rest }),
-                            )
-                        })
-                        .collect::<serde_json::Map<_, _>>();
-                    json!({"type":"choice","choice":labels[0],"confidence":0.99,
-                        "probabilities":probabilities})
-                } else {
-                    json!({"type":"noul","noul":0.99})
-                };
-                (id.clone(), answer)
-            })
-            .collect::<serde_json::Map<_, _>>();
-        ResponseTemplate::new(200).set_body_json(json!({
-            "model":"fixture","answers":answers,
-            "usage":{"input_tokens":5,"output_tokens":2}
-        }))
-    }
-}
 
 async fn assert_candidate_walk(total: usize, page: u64, page_size: u64, expected: u64) {
     let server = MockServer::builder().start().await;
     Mock::given(method("POST"))
         .and(path("/v1/systemone"))
-        .respond_with(CandidateJudgment)
+        .respond_with(Judge {
+            strategy: Strategy::StateContains {
+                needle: "retries stop after three failed attempts",
+                yes: 0.98,
+                no: 0.05,
+            },
+        })
         .expect(expected)
         .mount(&server)
         .await;
@@ -116,7 +46,7 @@ async fn assert_candidate_walk(total: usize, page: u64, page_size: u64, expected
         "extras":["hints"]
     });
     let outcome = runtime
-        .execute(
+        .run(
             "search-handoff".into(),
             "localSearch".into(),
             json!({"queries":[search.clone()]}),
@@ -129,14 +59,17 @@ async fn assert_candidate_walk(total: usize, page: u64, page_size: u64, expected
     assert_eq!(matrix["reasoning"], search["reasoning"]);
     assert_eq!(matrix["resources"][0]["tool"], "localSearch");
     assert_eq!(matrix["resources"][0]["candidateEvidence"], "fileChunks");
-    assert_eq!(matrix["questions"][1]["type"], "sufficient");
+    // One question per candidate; the goal is its ask, not a second brief.
+    assert_eq!(matrix["questions"].as_array().map(Vec::len), Some(1));
+    assert_eq!(matrix["questions"][0]["ask"], search["mainGoal"]);
+    assert!(matrix.get("mainGoal").is_none(), "{matrix}");
     let mut visited = BTreeSet::new();
     let mut deciding_read = None;
     let mut complete = false;
     // Every call screens at least one candidate.
     for _ in 0..expected {
         let outcome = runtime
-            .execute(
+            .run(
                 "classify-handoff".into(),
                 "clasify".into(),
                 json!({"queries":[matrix]}),
@@ -156,13 +89,11 @@ async fn assert_candidate_walk(total: usize, page: u64, page_size: u64, expected
                 "repeated candidate: {path}"
             );
             assert!(page["answers"]["relevant"].is_number(), "{page}");
-            assert!(page["answers"]["sufficient"].is_number(), "{page}");
             if page["answers"]["relevant"].as_f64().unwrap() > 0.9 {
                 assert!(
                     path.ends_with(&format!("file{:02}.txt", total - 1)),
                     "{page}"
                 );
-                assert_eq!(page["answers"]["sufficient"], 0.98);
                 // A page whose read is just its path and span implies it.
                 deciding_read = Some(page.pointer("/hints/read").cloned().unwrap_or_else(|| {
                     json!({"tool":"localFetch","query":{"queries":[{
@@ -187,7 +118,7 @@ async fn assert_candidate_walk(total: usize, page: u64, page_size: u64, expected
     );
     let read = deciding_read.expect("the last file must be screened");
     let verified = runtime
-        .execute(
+        .run(
             "verify-source".into(),
             read["tool"].as_str().unwrap().into(),
             read["query"].clone(),
@@ -218,7 +149,13 @@ async fn metadata_handoff_keeps_unseen_file_bodies_out_of_provider_evidence() {
     let server = MockServer::builder().start().await;
     Mock::given(method("POST"))
         .and(path("/v1/systemone"))
-        .respond_with(CandidateJudgment)
+        .respond_with(Judge {
+            strategy: Strategy::StateContains {
+                needle: "retries stop after three failed attempts",
+                yes: 0.98,
+                no: 0.05,
+            },
+        })
         .mount(&server)
         .await;
     let workspace = Workspace::new();
@@ -231,7 +168,7 @@ async fn metadata_handoff_keeps_unseen_file_bodies_out_of_provider_evidence() {
         ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
     ]);
     let search = runtime
-        .execute(
+        .run(
             "metadata-search".into(),
             "localSearch".into(),
             json!({"queries":[{
@@ -249,7 +186,7 @@ async fn metadata_handoff_keeps_unseen_file_bodies_out_of_provider_evidence() {
     );
     assert!(server.received_requests().await.unwrap().is_empty());
     let screened = runtime
-        .execute("metadata-classify".into(), "clasify".into(), matrix)
+        .run("metadata-classify".into(), "clasify".into(), matrix)
         .await
         .expect("metadata handoff replays");
     octocode_native::contracts::validate_output("clasify", &screened.structured_content)
@@ -289,7 +226,7 @@ async fn unfinished_local_read_offers_optional_locate_and_preserves_source_cover
         let runtime = &runtime;
         async move {
             runtime
-                .execute(
+                .run(
                     "read".into(),
                     "localFetch".into(),
                     json!({"queries":[query]}),
@@ -352,9 +289,11 @@ async fn skipped_stream_goals_offer_executable_snapshot_bound_locate() {
     let server = MockServer::builder().start().await;
     Mock::given(method("POST"))
         .and(path("/v1/systemone"))
-        .respond_with(LocateTopPassage {
-            top: 0.99,
-            exists: 0.99,
+        .respond_with(Judge {
+            strategy: Strategy::TopPassage {
+                top: 0.99,
+                exists: 0.99,
+            },
         })
         .mount(&server)
         .await;
@@ -373,7 +312,7 @@ async fn skipped_stream_goals_offer_executable_snapshot_bound_locate() {
         ("REQUEST_TIMEOUT", "30000".into()),
     ]);
     let read = runtime
-        .execute(
+        .run(
             "stream-goals".into(),
             "localFetch".into(),
             json!({"queries":[{"path":file,
@@ -385,7 +324,9 @@ async fn skipped_stream_goals_offer_executable_snapshot_bound_locate() {
     let data = &read.structured_content["results"][0]["data"];
     assert_eq!(data["ranking"]["status"], "skipped", "{data}");
     assert_eq!(data["ranking"]["reason"], "streamingSource", "{data}");
-    assert_eq!(data["isPartial"], true, "{data}");
+    // The rest of the source is reached by the page's own pagination.
+    assert_eq!(data["pagination"]["hasMore"], true, "{data}");
+    assert_eq!(data["pagination"]["unit"], "lines", "{data}");
     assert!(server.received_requests().await.unwrap().is_empty());
     let digest = data
         .pointer("/next/continueWindow/query/queries/0/snapshot")
@@ -409,7 +350,7 @@ async fn skipped_stream_goals_offer_executable_snapshot_bound_locate() {
     );
     assert!(matrix["resources"][0]["query"].get("goals").is_none());
     let located = runtime
-        .execute(
+        .run(
             "locate-stream".into(),
             "clasify".into(),
             lead["query"].clone(),
@@ -425,7 +366,7 @@ async fn skipped_stream_goals_offer_executable_snapshot_bound_locate() {
     assert_eq!(verify["tool"], "localFetch", "{response}");
     assert_eq!(verify["query"]["queries"][0]["snapshot"], digest);
     let source = runtime
-        .execute(
+        .run(
             "verify-stream".into(),
             "localFetch".into(),
             verify["query"].clone(),
@@ -447,9 +388,11 @@ async fn streamed_brief_without_goals_offers_executable_snapshot_bound_locate() 
     let server = MockServer::builder().start().await;
     Mock::given(method("POST"))
         .and(path("/v1/systemone"))
-        .respond_with(LocateTopPassage {
-            top: 0.99,
-            exists: 0.99,
+        .respond_with(Judge {
+            strategy: Strategy::TopPassage {
+                top: 0.99,
+                exists: 0.99,
+            },
         })
         .mount(&server)
         .await;
@@ -468,7 +411,7 @@ async fn streamed_brief_without_goals_offers_executable_snapshot_bound_locate() 
         ("REQUEST_TIMEOUT", "30000".into()),
     ]);
     let first = runtime
-        .execute(
+        .run(
             "stream-brief".into(),
             "localFetch".into(),
             json!({"queries":[{"path":file,
@@ -478,7 +421,9 @@ async fn streamed_brief_without_goals_offers_executable_snapshot_bound_locate() 
         .await
         .expect("streamed brief read");
     let data = &first.structured_content["results"][0]["data"];
-    assert_eq!(data["isPartial"], true, "{data}");
+    // The rest of the source is reached by the page's own pagination.
+    assert_eq!(data["pagination"]["hasMore"], true, "{data}");
+    assert_eq!(data["pagination"]["unit"], "lines", "{data}");
     assert!(
         data.get("ranking").is_none(),
         "brief did not request ranking"
@@ -494,7 +439,7 @@ async fn streamed_brief_without_goals_offers_executable_snapshot_bound_locate() 
     assert_eq!(resource["unit"], "lines");
     assert_eq!(resource["offset"], 100);
     let located = runtime
-        .execute(
+        .run(
             "locate-brief".into(),
             "clasify".into(),
             lead["query"].clone(),
@@ -509,7 +454,7 @@ async fn streamed_brief_without_goals_offers_executable_snapshot_bound_locate() 
         source_window["snapshot"]
     );
     let checked = runtime
-        .execute(
+        .run(
             "verify-brief".into(),
             verify["tool"].as_str().unwrap().into(),
             verify["query"].clone(),
@@ -531,7 +476,9 @@ async fn implicit_line_unit_brief_handoff_executes_its_copied_window() {
     let server = MockServer::builder().start().await;
     Mock::given(method("POST"))
         .and(path("/v1/systemone"))
-        .respond_with(FirstOfferedPassage)
+        .respond_with(Judge {
+            strategy: Strategy::FirstLabel,
+        })
         .mount(&server)
         .await;
     let workspace = Workspace::new();
@@ -542,7 +489,7 @@ async fn implicit_line_unit_brief_handoff_executes_its_copied_window() {
         ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
     ]);
     let first = runtime
-        .execute(
+        .run(
             "brief-line-page".into(),
             "localFetch".into(),
             json!({"queries":[{"path":file,"unit":"lines","length":1,
@@ -563,7 +510,7 @@ async fn implicit_line_unit_brief_handoff_executes_its_copied_window() {
     assert_eq!(resource["offset"], source_window["offset"]);
     assert!(resource.get("unit").is_none(), "copy actual wire query");
     let located = runtime
-        .execute(
+        .run(
             "locate-implicit-lines".into(),
             "clasify".into(),
             lead["query"].clone(),
@@ -574,7 +521,7 @@ async fn implicit_line_unit_brief_handoff_executes_its_copied_window() {
     assert_eq!(response["best"]["target"][0]["line"], 2, "{response}");
     let verify = &response["hints"]["read"];
     let checked = runtime
-        .execute(
+        .run(
             "verify-implicit-lines".into(),
             verify["tool"].as_str().unwrap().into(),
             verify["query"].clone(),

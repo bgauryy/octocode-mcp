@@ -4,21 +4,21 @@ The `clasify` tool's transport, batch scheduler, context capture, and paging
 engine are all vendor-agnostic. Adding a new classification API is exactly
 **four steps** — no changes to those layers.
 
-Reference implementation: [`src/providers/classification/jev.rs`](../crates/runtime/src/providers/classification/jev.rs)
+Reference implementation: [`jev.rs`](../crates/runtime/src/providers/classification/jev.rs)
 
 ---
 
 ## 1 — Create the vendor file
 
 ```
-src/providers/classification/<vendor>.rs
+crates/runtime/src/providers/classification/<vendor>.rs
 ```
 
 Implement `ClassificationProvider` for your vendor.
 Every method is documented in [`mod.rs`](../crates/runtime/src/providers/classification/mod.rs).
 
 ```rust
-// src/providers/classification/myvendor.rs
+// crates/runtime/src/providers/classification/myvendor.rs
 use super::{ClassificationProvider, ProviderContractError};
 use serde_json::{Value, json};
 
@@ -26,11 +26,6 @@ pub struct MyVendor;
 pub static MY_VENDOR: MyVendor = MyVendor;
 
 impl ClassificationProvider for MyVendor {
-    fn id(&self) -> &'static str { "myvendor" }
-
-    /// Vendor-specific key var accepted alongside OCTOCODE_CLASSIFICATION_API.
-    fn key_env(&self) -> &'static str { "OCTOCODE_MYVENDOR_KEY" }
-
     fn default_host(&self) -> &'static str { "https://api.myvendor.ai" }
     fn default_model(&self) -> &'static str { "myvendor-v1" }
     fn endpoint_path(&self) -> &'static str { "v1/classify" }
@@ -92,7 +87,7 @@ impl ClassificationProvider for MyVendor {
 
 ## 2 — Register the module
 
-In `src/providers/classification/mod.rs`, add:
+In `crates/runtime/src/providers/classification/mod.rs`, add:
 
 ```rust
 pub mod myvendor;
@@ -105,22 +100,27 @@ pub mod myvendor;
 In the same file:
 
 ```rust
-pub fn provider_for(vendor: &str) -> &'static dyn ClassificationProvider {
+pub fn provider_for(vendor: &str) -> Option<&'static dyn ClassificationProvider> {
     match vendor {
-        "jev"      => &jev::JEV,
-        "myvendor" => &myvendor::MY_VENDOR,   // ← add this
-        _          => &jev::JEV,              // fallback guard, keep last
+        "jev" => Some(&jev::JEV),
+        "myvendor" => Some(&myvendor::MY_VENDOR), // ← add this
+        _ => None,
     }
 }
 ```
+
+An unknown id is `None`, never a default vendor. `ToolRuntime::new` resolves the
+provider once and fails with `invalidConfiguration` for an id no arm matches, so a
+new vendor that is missing its arm is reported at startup. Add a case to the
+`provider_for_resolves_only_registered_vendors` test.
 
 ---
 
 ## 4 — Extend the config contract
 
-The `classification.type` enum lives in the shared `octocode-core` contracts repo
-(`../octocode-mcp-host/packages/octocode-core`).  Add `"myvendor"` to the enum,
-then regenerate:
+The `classification.type` enum is generated into the config contract
+(`packages/octocode-config`, see `src/config/contract.generated.ts`). Add `"myvendor"`
+to the enum where the contract declares it, then regenerate:
 
 ```bash
 yarn contracts:regen   # repo root: regenerates packages/octocode-config/contract/
@@ -145,10 +145,10 @@ new `providers/classification/myvendor.rs`.
 
 ## Checklist
 
-- [ ] `src/providers/classification/myvendor.rs` created
+- [ ] `crates/runtime/src/providers/classification/myvendor.rs` created
 - [ ] `pub mod myvendor;` added to `mod.rs`
-- [ ] `"myvendor"` arm added to `provider_for()`
-- [ ] `"myvendor"` added to the `classification.type` enum in `octocode-core`
+- [ ] `"myvendor"` arm added to `provider_for()` (no default arm)
+- [ ] `"myvendor"` added to the `classification.type` enum in the config contract
 - [ ] `yarn contracts:regen` run; `packages/octocode-config/contract/` changes committed
 - [ ] At least one integration test exercises `clasify` with a mock of your API
-      (see `tests/runtime_clasify.rs` for the existing Jev fixture pattern)
+      (see `crates/runtime/tests/runtime_clasify.rs` for the existing Jev fixture pattern)

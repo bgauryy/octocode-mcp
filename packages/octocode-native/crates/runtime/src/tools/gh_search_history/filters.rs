@@ -1,6 +1,6 @@
 //! The `qualifiers` string parsed once into typed search filters.
 use super::{GhSearchHistoryQuery, HistoryOperation};
-use crate::providers::github::{ProviderError, ProviderErrorKind};
+use octocode_github::{ProviderError, ProviderErrorKind};
 
 /// The filters a `qualifiers` string sets.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -25,6 +25,8 @@ pub(super) struct Filters {
     pub state: Option<String>,
     pub archived: Option<bool>,
     pub draft: Option<bool>,
+    /// `is:unmerged` / `-is:merged`: closed without merging (pull requests).
+    pub unmerged: Option<bool>,
     pub review_requested: Option<String>,
     pub reviewed_by: Option<String>,
     pub review: Option<String>,
@@ -68,6 +70,7 @@ enum Field {
     State,
     Archived,
     Draft,
+    Unmerged,
     ReviewRequested,
     ReviewedBy,
     Review,
@@ -111,6 +114,7 @@ impl Field {
             Self::State => "state",
             Self::Archived => "archived",
             Self::Draft => "draft",
+            Self::Unmerged => "unmerged",
             Self::ReviewRequested => "review-requested",
             Self::ReviewedBy => "reviewed-by",
             Self::Review => "review",
@@ -240,6 +244,13 @@ fn setting(
 ) -> Result<(Field, Setting), ProviderError> {
     Ok(match (field, value) {
         (Field::State, "draft") if pull_request => (Field::Draft, Setting::Flag(!negated)),
+        // Closed without merging: GitHub's `is:unmerged`, also spelled `-is:merged`.
+        (Field::State, "unmerged") if pull_request && !negated => {
+            (Field::Unmerged, Setting::Flag(true))
+        }
+        (Field::State, "merged") if pull_request && negated => {
+            (Field::Unmerged, Setting::Flag(true))
+        }
         (Field::State, "open" | "closed") if !negated => (field, Setting::Text(value.into())),
         (Field::State, "merged") if pull_request && !negated => {
             (field, Setting::Text(value.into()))
@@ -258,7 +269,7 @@ fn setting(
             return Err(qualifier_error(format!(
                 "qualifiers: is:{value} is not supported; use open, closed{}.",
                 if pull_request {
-                    ", merged, or draft"
+                    ", merged, unmerged, or draft"
                 } else {
                     ""
                 }
@@ -325,11 +336,11 @@ impl Filters {
             Field::Merged => text(&mut self.merged, value),
             Field::Head => text(&mut self.head, value),
             Field::Base => text(&mut self.base, value),
-            Field::Archived | Field::Draft => {
-                let slot = if field == Field::Draft {
-                    &mut self.draft
-                } else {
-                    &mut self.archived
+            Field::Archived | Field::Draft | Field::Unmerged => {
+                let slot = match field {
+                    Field::Draft => &mut self.draft,
+                    Field::Unmerged => &mut self.unmerged,
+                    _ => &mut self.archived,
                 };
                 match (slot.is_some(), value) {
                     (false, Setting::Flag(flag)) => {

@@ -2,11 +2,19 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use ignore::gitignore::Gitignore;
 use regex::Regex;
 
+use super::glob;
+use super::walk::{IgnorePolicy, IgnoreRules, Prune, Stop};
 use crate::error::{Error, ErrorKind};
 use crate::text::file_extension::extension_of;
 use crate::types::{FileSystemEntry, FileSystemQueryOptions, FileSystemQueryResult};
+
+/// A walk's policy callback: the path and its directory-entry type (`None`
+/// for the root, or when the platform did not report it). `false` leaves the
+/// entry out, and a directory with everything under it.
+pub type EntryFilter<'a> = dyn Fn(&Path, Option<fs::FileType>) -> bool + 'a;
 
 const DEFAULT_LIMIT: usize = 10_000;
 /// Hard ceiling on directory-recursion depth. Symlink cycles are already
@@ -23,12 +31,12 @@ struct CompiledQuery {
     max_depth: Option<u32>,
     min_depth: u32,
     show_hidden: bool,
-    name_globs: Vec<Regex>,
-    /// `names` entries containing `/`: matched against the root-relative path
-    /// and ORed with the basename globs.
-    name_path_globs: Vec<Regex>,
+    /// The ignore rules the walk honors; `None` with `includeIgnored`.
+    ignore_rules: Option<IgnoreRules>,
+    /// `names`: an entry is listed when one of them matches it (see
+    /// [`glob`]).
+    names: Option<Gitignore>,
     extensions: Vec<String>,
-    path_glob: Option<Regex>,
     regex: Option<Regex>,
     entry_type: Option<String>,
     empty: bool,
@@ -41,10 +49,10 @@ struct CompiledQuery {
     executable: bool,
     readable: bool,
     writable: bool,
-    exclude_dir: Vec<String>,
-    /// Caller exclusions: basename globs and root-relative path globs.
-    exclude_names: Vec<Regex>,
-    exclude_paths: Vec<Regex>,
+    prune: Prune,
+    /// Caller exclusions (see [`glob`]): a matching directory is skipped with
+    /// everything under it.
+    exclude: Option<Gitignore>,
     limit: usize,
     warnings: Vec<String>,
 }
@@ -55,27 +63,22 @@ struct QueryState {
     total_discovered: u32,
     skipped: u32,
     permission_denied: u32,
+    ignored: u32,
     pruned_dirs: Vec<String>,
 }
 
-pub(crate) fn query_file_system_filtered_inner(
+/// Walk `options.path` in name order, listing the entries its filters
+/// match. `admit` decides each descendant before it is inspected or counted
+/// (a denied directory is not entered); ignore rules decide it before that.
+/// `stop` cancels the walk ([`ErrorKind::Cancelled`]).
+pub(crate) fn query_file_system(
     options: FileSystemQueryOptions,
-    allow_path: &dyn Fn(&Path) -> Result<bool, String>,
-) -> Result<FileSystemQueryResult, Error> {
-    query_file_system_typed_inner(options, &|path, _| allow_path(path))
-}
-
-/// [`query_file_system_filtered_inner`] whose policy callback also gets each
-/// descendant's directory-entry type (`None` for the root, or when the
-/// platform could not report it), so a policy check need not stat the path
-/// again.
-pub(crate) fn query_file_system_typed_inner(
-    options: FileSystemQueryOptions,
-    allow_path: &crate::portable::FileSystemEntryFilter<'_>,
+    admit: &EntryFilter<'_>,
+    stop: &Stop<'_>,
 ) -> Result<FileSystemQueryResult, Error> {
     let query = CompiledQuery::new(options)?;
     let mut state = QueryState::default();
-    if !allow_path(&query.root, None).map_err(Error::new)? {
+    if !admit(&query.root, None) {
         return Err(Error::new("Filesystem query root is denied by path policy"));
     }
     let root_metadata = fs::symlink_metadata(&query.root).map_err(|err| {
@@ -105,7 +108,7 @@ pub(crate) fn query_file_system_typed_inner(
     }
 
     if root_metadata.is_dir() && (query.recursive || !query.include_root) {
-        walk_children(&query.root, 1, &query, &mut state, allow_path)?;
+        walk_children(&query.root, 1, &query, &mut state, admit, stop)?;
     } else if !root_metadata.is_dir() && !query.include_root {
         return Err(Error::new(format!(
             "Filesystem query root is not a directory: {}",
@@ -120,6 +123,7 @@ pub(crate) fn query_file_system_typed_inner(
         was_capped,
         skipped: state.skipped,
         permission_denied: state.permission_denied,
+        ignored: state.ignored,
         warnings: query.warnings,
         pruned_dirs: state.pruned_dirs,
     })
@@ -129,34 +133,17 @@ impl CompiledQuery {
     fn new(options: FileSystemQueryOptions) -> Result<Self, Error> {
         let root = PathBuf::from(options.path);
         let mut warnings = Vec::new();
-        let (path_names, base_names): (Vec<String>, Vec<String>) = options
-            .names
-            .unwrap_or_default()
-            .into_iter()
-            .partition(|name| name.contains('/'));
-        let name_globs = compile_globs(base_names, "names", &mut warnings);
-        let name_path_globs = compile_globs(path_names, "names", &mut warnings);
-        let (exclude_paths, exclude_names): (Vec<String>, Vec<String>) = options
-            .exclude
-            .unwrap_or_default()
-            .into_iter()
-            .map(|glob| {
-                glob.trim_start_matches("./")
-                    .trim_end_matches('/')
-                    .to_owned()
-            })
-            .filter(|glob| !glob.is_empty())
-            .partition(|glob| glob.contains('/'));
-        let exclude_names = compile_globs(exclude_names, "exclude", &mut warnings);
-        let exclude_paths = compile_globs(exclude_paths, "exclude", &mut warnings);
+        let names = options.names.unwrap_or_default();
+        let names = glob::set(&root, names.iter().map(String::as_str), "names")?;
+        let exclude = options.exclude.unwrap_or_default();
+        let exclude = glob::set(
+            &root,
+            exclude
+                .iter()
+                .map(|glob| glob.strip_prefix('!').unwrap_or(glob)),
+            "exclude",
+        )?;
         let extensions = normalize_extensions(options.extensions.unwrap_or_default());
-        let path_glob = match options.path_pattern {
-            Some(pattern) => Some(
-                compile_glob(&pattern, "pathPattern")
-                    .map_err(|err| Error::with_kind(ErrorKind::InvalidInput, err.reason))?,
-            ),
-            None => None,
-        };
         let regex = match options.regex {
             Some(pattern) => Some(Regex::new(&pattern).map_err(|err| {
                 Error::with_kind(
@@ -178,18 +165,21 @@ impl CompiledQuery {
             ));
         }
 
+        let IgnorePolicy {
+            include_ignored,
+            include_hidden,
+        } = options.ignore;
         Ok(Self {
+            ignore_rules: (!include_ignored).then(|| IgnoreRules::new(&root)),
             root,
             include_root: options.include_root.unwrap_or(false),
             recursive: options.recursive.unwrap_or(true),
             stop_at_limit: options.stop_at_limit.unwrap_or(true),
             max_depth: options.max_depth,
             min_depth,
-            show_hidden: options.show_hidden.unwrap_or(true),
-            name_globs,
-            name_path_globs,
+            show_hidden: include_hidden,
+            names,
             extensions,
-            path_glob,
             regex,
             entry_type: options.entry_type,
             empty: options.empty.unwrap_or(false),
@@ -214,9 +204,8 @@ impl CompiledQuery {
             executable: options.executable.unwrap_or(false),
             readable: options.readable.unwrap_or(false),
             writable: options.writable.unwrap_or(false),
-            exclude_dir: options.exclude_dir.unwrap_or_default(),
-            exclude_names,
-            exclude_paths,
+            prune: Prune::new(options.exclude_dir.iter().flatten()),
+            exclude,
             limit: options.limit.map(|n| n as usize).unwrap_or(DEFAULT_LIMIT),
             warnings,
         })
@@ -224,21 +213,24 @@ impl CompiledQuery {
 }
 
 impl CompiledQuery {
-    /// Whether a caller `exclude` glob names this entry: by name at any
-    /// depth, or by its path below the root. A directory also matches a
-    /// `dir/**` glob, so it is skipped whole.
-    fn excludes(&self, path: &Path, name: &str, is_dir: bool) -> bool {
-        if self.exclude_names.iter().any(|glob| glob.is_match(name)) {
-            return true;
+    /// Whether a caller `exclude` glob matches this entry.
+    fn excludes(&self, path: &Path, is_dir: bool) -> bool {
+        self.exclude
+            .as_ref()
+            .is_some_and(|exclude| glob::matches(exclude, path, is_dir))
+    }
+
+    /// Whether the ignore rules leave this entry out; counted as ignored
+    /// unless it is a dot entry out of view.
+    fn ignores(&self, path: &Path, name: &str, is_dir: bool, state: &mut QueryState) -> bool {
+        let ignored = self
+            .ignore_rules
+            .as_ref()
+            .is_some_and(|rules| rules.is_ignored(path, is_dir));
+        if ignored && (self.show_hidden || !name.starts_with('.')) {
+            state.ignored += 1;
         }
-        if self.exclude_paths.is_empty() {
-            return false;
-        }
-        let relative = normalize_path(path.strip_prefix(&self.root).unwrap_or(path));
-        let as_dir = is_dir.then(|| format!("{relative}/"));
-        self.exclude_paths.iter().any(|glob| {
-            glob.is_match(&relative) || as_dir.as_deref().is_some_and(|dir| glob.is_match(dir))
-        })
+        ignored
     }
 }
 
@@ -247,7 +239,8 @@ fn walk_children(
     depth: u32,
     query: &CompiledQuery,
     state: &mut QueryState,
-    allow_path: &crate::portable::FileSystemEntryFilter<'_>,
+    admit: &EntryFilter<'_>,
+    stop: &Stop<'_>,
 ) -> Result<(), Error> {
     if depth > MAX_RECURSION_DEPTH {
         state.skipped += 1;
@@ -292,23 +285,17 @@ fn walk_children(
         if query.stop_at_limit && state.total_discovered as usize > query.limit {
             return Ok(());
         }
+        if stop() {
+            return Err(Error::cancelled());
+        }
 
         let path = dir_entry.path();
         // The entry type comes with the directory listing on common
         // platforms; the policy check and the name filters use it, and only
         // an entry those admit is stat'ed for its size and times.
         let file_type = dir_entry.file_type().ok();
-        // Authorize before metadata, matching (which can inspect empty
-        // directories), discovery counters, or recursive traversal.
-        if !allow_path(&path, file_type).map_err(Error::new)? {
-            continue;
-        }
         let file_name = dir_entry.file_name();
         let name = file_name.to_string_lossy();
-        if !query.show_hidden && name.starts_with('.') {
-            continue;
-        }
-
         let mut metadata = None;
         let kind = match file_type {
             Some(file_type) => EntryKind::of(file_type),
@@ -317,14 +304,24 @@ fn walk_children(
                 None => continue,
             },
         };
-
         let is_directory = kind.is_dir;
-        if is_directory && query.exclude_dir.iter().any(|dir| dir == name.as_ref()) {
+        if query.ignores(&path, &name, is_directory, state) {
+            continue;
+        }
+        // Authorize before metadata, matching (which can inspect empty
+        // directories), discovery counters, or recursive traversal.
+        if !admit(&path, file_type) {
+            continue;
+        }
+        if !query.show_hidden && name.starts_with('.') {
+            continue;
+        }
+        if is_directory && query.prune.names(&file_name) {
             let relative = path.strip_prefix(&query.root).unwrap_or(&path);
             state.pruned_dirs.push(normalize_path(relative));
             continue;
         }
-        if query.excludes(&path, &name, is_directory) {
+        if query.excludes(&path, is_directory) {
             continue;
         }
 
@@ -333,7 +330,7 @@ fn walk_children(
         }
 
         if query.recursive && is_directory {
-            walk_children(&path, depth + 1, query, state, allow_path)?;
+            walk_children(&path, depth + 1, query, state, admit, stop)?;
             if query.stop_at_limit && state.total_discovered as usize > query.limit {
                 return Ok(());
             }
@@ -422,29 +419,8 @@ fn visit_path(
 
 /// The filters an entry's name, path and type decide.
 fn matches_names(path: &Path, name: &str, kind: EntryKind, query: &CompiledQuery) -> bool {
-    // pathPattern is authored relative to the search root (e.g. packages/*/src/**).
-    // Match against the root-relative path so absolute temp/cwd prefixes do not
-    // silently zero out every result.
-    let relative_path = || {
-        path.strip_prefix(&query.root)
-            .map(normalize_path)
-            .unwrap_or_else(|_| normalize_path(path))
-    };
-    if !query.name_globs.is_empty() || !query.name_path_globs.is_empty() {
-        let named = query.name_globs.iter().any(|re| re.is_match(name)) || {
-            let relative = relative_path();
-            query
-                .name_path_globs
-                .iter()
-                .any(|re| re.is_match(&relative))
-        };
-        if !named {
-            return false;
-        }
-    }
-    if let Some(path_glob) = &query.path_glob
-        && !path_glob.is_match(&relative_path())
-        && !path_glob.is_match(&normalize_path(path))
+    if let Some(names) = &query.names
+        && !glob::matches(names, path, kind.is_dir)
     {
         return false;
     }
@@ -502,9 +478,12 @@ fn matches_extension(name: &str, kind: EntryKind, extensions: &[String]) -> bool
     // Directories are traversal state, not extension matches. `walk_children`
     // recurses independently after this predicate, so excluding them from the
     // result set does not prune descendants that may have an allowed extension.
-    if !kind.is_file {
-        return false;
-    }
+    kind.is_file && has_extension(name, extensions)
+}
+
+/// Whether `name` ends in one of `extensions`, normalized as a query's are
+/// (lowercase, no leading dot).
+pub(crate) fn has_extension(name: &str, extensions: &[String]) -> bool {
     let extension = extension_of(name, true, "");
     !extension.is_empty() && extensions.iter().any(|allowed| allowed == &extension)
 }
@@ -717,156 +696,12 @@ fn parse_size(raw: &str) -> Option<u64> {
     Some((value * multiplier).round() as u64)
 }
 
-fn normalize_extensions(values: Vec<String>) -> Vec<String> {
+pub(crate) fn normalize_extensions(values: Vec<String>) -> Vec<String> {
     values
         .into_iter()
         .map(|value| value.trim().trim_start_matches('.').to_lowercase())
         .filter(|value| !value.is_empty())
         .collect()
-}
-
-fn compile_globs(values: Vec<String>, label: &str, warnings: &mut Vec<String>) -> Vec<Regex> {
-    values
-        .into_iter()
-        .map(|value| compile_glob(&value, label))
-        .filter_map(|result| match result {
-            Ok(regex) => Some(regex),
-            Err(err) => {
-                warnings.push(err.reason);
-                None
-            }
-        })
-        .collect()
-}
-
-#[derive(Debug)]
-struct GlobError {
-    reason: String,
-}
-
-fn compile_glob(pattern: &str, label: &str) -> std::result::Result<Regex, GlobError> {
-    let out = format!("^{}$", glob_body_to_regex(pattern));
-    Regex::new(&out).map_err(|err| GlobError {
-        reason: format!("{label} glob skipped: invalid pattern '{pattern}' ({err})"),
-    })
-}
-
-/// Translates one glob pattern into a regex body (no `^`/`$` anchors).
-///
-/// Supports `**`/`*` (any run of characters), `?` (single character), and one
-/// level of shell-style brace alternation (`{a,b,c}` -> `(?:a|b|c)`), with
-/// each alternative itself glob-translated — `*.{ts,tsx}` and
-/// `{*.test.js,*.spec.js}` both work, not just literal-string alternatives.
-/// Nested braces and an unclosed `{` are not parsed as a group — the `{` is
-/// treated as a literal character, the same fallback this function used for
-/// every character before brace support existed, rather than mis-parsing a
-/// pattern this function doesn't fully understand.
-fn glob_body_to_regex(pattern: &str) -> String {
-    // Collapse `**` to a single wildcard token before translating `*` so
-    // `packages/**/src` does not become `.*.*` (two greedy dots).
-    // `**/` also matches zero directories (`a/**/b` matches `a/b`).
-    let collapsed = pattern.replace("**/", "\u{0002}").replace("**", "\u{0001}");
-    let chars: Vec<char> = collapsed.chars().collect();
-    let mut out = String::new();
-    let mut i = 0;
-    while i < chars.len() {
-        match chars[i] {
-            '\u{0001}' | '*' => {
-                out.push_str(".*");
-                i += 1;
-            }
-            '\u{0002}' => {
-                out.push_str("(?:.*/)?");
-                i += 1;
-            }
-            '?' => {
-                out.push('.');
-                i += 1;
-            }
-            '{' => match find_matching_brace(&chars, i) {
-                Some(close) if !chars[i + 1..close].contains(&'{') => {
-                    let inner: String = chars[i + 1..close].iter().collect();
-                    let alternatives = inner
-                        .split(',')
-                        .map(glob_body_to_regex)
-                        .collect::<Vec<_>>()
-                        .join("|");
-                    out.push_str("(?:");
-                    out.push_str(&alternatives);
-                    out.push(')');
-                    i = close + 1;
-                }
-                _ => {
-                    out.push_str(&regex::escape("{"));
-                    i += 1;
-                }
-            },
-            '[' => match class_end(&chars, i) {
-                Some(close) => {
-                    push_class(&chars[i + 1..close], &mut out);
-                    i = close + 1;
-                }
-                None => {
-                    out.push_str(&regex::escape("["));
-                    i += 1;
-                }
-            },
-            ch => {
-                out.push_str(&regex::escape(&ch.to_string()));
-                i += 1;
-            }
-        }
-    }
-    out
-}
-
-/// Index of the `]` closing the character class opened at `open_idx`. A `]`
-/// right after `[` (or `[!`/`[^`) is a member, as in globset and POSIX.
-fn class_end(chars: &[char], open_idx: usize) -> Option<usize> {
-    let mut at = open_idx + 1;
-    if matches!(chars.get(at), Some('!' | '^')) {
-        at += 1;
-    }
-    if chars.get(at) == Some(&']') {
-        at += 1;
-    }
-    chars
-        .iter()
-        .skip(at)
-        .position(|&c| c == ']')
-        .map(|offset| at + offset)
-}
-
-/// A glob class body (`!`/`^` negates, `a-z` ranges) as a regex class whose
-/// other characters, regex class operators included, are literal members.
-fn push_class(body: &[char], out: &mut String) {
-    let (negated, body) = match body.first() {
-        Some('!' | '^') => (true, &body[1..]),
-        _ => (false, body),
-    };
-    out.push('[');
-    if negated {
-        out.push('^');
-    }
-    for (index, &ch) in body.iter().enumerate() {
-        if ch == '-' && index > 0 && index + 1 < body.len() {
-            out.push('-');
-        } else {
-            out.push_str(&regex::escape(&ch.to_string()));
-        }
-    }
-    out.push(']');
-}
-
-/// Index of the `}` matching the `{` at `open_idx`, ignoring nested braces
-/// (a nested `{` inside the scanned range makes the caller reject the whole
-/// group rather than trying to resolve nesting).
-fn find_matching_brace(chars: &[char], open_idx: usize) -> Option<usize> {
-    chars
-        .iter()
-        .skip(open_idx + 1)
-        .position(|&c| c == '}')
-        .map(|offset| open_idx + 1 + offset)
 }
 
 fn normalize_path(path: &Path) -> String {
@@ -887,7 +722,7 @@ mod tests {
     fn query_file_system_inner(
         options: FileSystemQueryOptions,
     ) -> Result<FileSystemQueryResult, String> {
-        query_file_system_filtered_inner(options, &|_| Ok(true)).map_err(|err| err.reason)
+        query_file_system(options, &|_, _| true, &|| false).map_err(|err| err.reason)
     }
 
     fn temp_root(name: &str) -> PathBuf {
@@ -990,7 +825,7 @@ mod tests {
     #[test]
     fn query_errors_carry_their_kind() {
         let kind = |options: FileSystemQueryOptions| {
-            query_file_system_filtered_inner(options, &|_| Ok(true))
+            query_file_system(options, &|_, _| true, &|| false)
                 .expect_err("rejected")
                 .kind()
                 .clone()
@@ -1018,6 +853,87 @@ mod tests {
             }),
             ErrorKind::NotFound
         );
+        for (names, exclude) in [
+            (Some(vec!["[.ts".to_owned()]), None),
+            (None, Some(vec!["{a,b".to_owned()])),
+        ] {
+            assert_eq!(
+                kind(FileSystemQueryOptions {
+                    path: ".".to_owned(),
+                    names,
+                    exclude,
+                    ..Default::default()
+                }),
+                ErrorKind::InvalidGlob
+            );
+        }
+    }
+
+    #[test]
+    fn a_stopped_walk_is_cancelled() {
+        let root = temp_root("stopped");
+        File::create(root.join("a.ts")).expect("a");
+        let error = query_file_system(
+            FileSystemQueryOptions {
+                path: root.to_string_lossy().to_string(),
+                ..Default::default()
+            },
+            &|_, _| true,
+            &|| true,
+        )
+        .expect_err("stopped");
+        assert_eq!(*error.kind(), ErrorKind::Cancelled);
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    /// The walk leaves out what the ignore rules leave out, counts it, and
+    /// walks it with `includeIgnored`.
+    #[test]
+    fn ignore_rules_are_honored_counted_and_lifted() {
+        let root = temp_root("ignore_rules");
+        fs::create_dir_all(root.join(".git")).expect("repository marker");
+        fs::create_dir_all(root.join("gen")).expect("gen");
+        fs::write(
+            root.join(".gitignore"),
+            "gen/
+*.log
+.cache
+",
+        )
+        .expect("gitignore");
+        for file in ["a.rs", "b.log", "gen/x.rs", ".cache"] {
+            File::create(root.join(file)).expect("file");
+        }
+        let files = |ignore: IgnorePolicy| {
+            let found = query_file_system_inner(FileSystemQueryOptions {
+                path: root.to_string_lossy().to_string(),
+                entry_type: Some("f".to_owned()),
+                ignore,
+                ..Default::default()
+            })
+            .expect("query");
+            let mut paths = found
+                .entries
+                .iter()
+                .map(|entry| entry.relative_path.replace('\\', "/"))
+                .collect::<Vec<_>>();
+            paths.sort();
+            (paths, found.ignored)
+        };
+        // A dot entry out of view is not counted as ignored.
+        assert_eq!(files(IgnorePolicy::default()), (vec!["a.rs".to_owned()], 2));
+        let shown = IgnorePolicy {
+            include_ignored: false,
+            include_hidden: true,
+        };
+        assert_eq!(
+            files(shown),
+            (vec![".gitignore".to_owned(), "a.rs".to_owned()], 3)
+        );
+        let (all, ignored) = files(IgnorePolicy::ALL);
+        assert_eq!(all, [".cache", ".gitignore", "a.rs", "b.log", "gen/x.rs"]);
+        assert_eq!(ignored, 0);
+        fs::remove_dir_all(root).expect("cleanup");
     }
 
     #[test]
@@ -1240,113 +1156,40 @@ mod tests {
     }
 
     #[test]
-    fn path_pattern_filters_monorepo_layout() {
-        let root = temp_root("path_pattern");
-        fs::create_dir_all(root.join("packages/a/src/tools")).expect("create a");
-        fs::create_dir_all(root.join("packages/b/src")).expect("create b");
-        fs::create_dir_all(root.join("other/src/tools")).expect("create other");
-        File::create(root.join("packages/a/src/tools/scheme.ts")).expect("a scheme");
-        File::create(root.join("packages/b/src/main.ts")).expect("b main");
-        File::create(root.join("other/src/tools/skip.ts")).expect("other skip");
-
-        let result = query_file_system_inner(FileSystemQueryOptions {
-            path: root.to_string_lossy().to_string(),
-            path_pattern: Some("packages/*/src/tools/**".to_owned()),
-            entry_type: Some("f".to_owned()),
-            recursive: Some(true),
-            ..Default::default()
-        })
-        .expect("query pathPattern");
-
-        assert_eq!(result.entries.len(), 1);
-        assert_eq!(result.entries[0].name, "scheme.ts");
-        assert!(
-            result.entries[0]
-                .path
-                .contains("packages/a/src/tools/scheme.ts")
-        );
-        fs::remove_dir_all(root).expect("cleanup");
-    }
-
-    #[test]
-    fn path_pattern_supports_brace_expansion() {
-        // Shell-style `{a,b}` alternation, not a literal substring match.
-        let root = temp_root("path_pattern_brace");
+    fn slash_names_match_paths_below_the_root_with_braces_and_never_cross_a_slash_with_star() {
+        let root = temp_root("path_names_brace");
         fs::create_dir_all(root.join("packages/react/src")).expect("react dir");
-        fs::create_dir_all(root.join("packages/react-dom/src")).expect("react-dom dir");
+        fs::create_dir_all(root.join("packages/react-dom/src/deep")).expect("react-dom dir");
         fs::create_dir_all(root.join("packages/scheduler/src")).expect("scheduler dir");
         File::create(root.join("packages/react/src/ReactHooks.js")).expect("react hooks");
-        File::create(root.join("packages/react-dom/src/ReactDOMHooks.js"))
+        File::create(root.join("packages/react-dom/src/deep/ReactDOMHooks.js"))
             .expect("react-dom hooks");
         File::create(root.join("packages/scheduler/src/Scheduler.js")).expect("scheduler file");
-
-        let result = query_file_system_inner(FileSystemQueryOptions {
-            path: root.to_string_lossy().to_string(),
-            path_pattern: Some("packages/{react,react-dom}/src/**".to_owned()),
-            entry_type: Some("f".to_owned()),
-            recursive: Some(true),
-            ..Default::default()
-        })
-        .expect("query pathPattern with brace expansion");
-
-        let mut names = result
+        let names = |glob: &str| {
+            let mut names = query_file_system_inner(FileSystemQueryOptions {
+                path: root.to_string_lossy().to_string(),
+                names: Some(vec![glob.to_owned()]),
+                entry_type: Some("f".to_owned()),
+                ..Default::default()
+            })
+            .expect("query")
             .entries
-            .iter()
-            .map(|entry| entry.name.as_str())
+            .into_iter()
+            .map(|entry| entry.name)
             .collect::<Vec<_>>();
-        names.sort_unstable();
-        assert_eq!(names, vec!["ReactDOMHooks.js", "ReactHooks.js"]);
+            names.sort_unstable();
+            names
+        };
+        assert_eq!(
+            names("packages/{react,react-dom}/src/**"),
+            ["ReactDOMHooks.js", "ReactHooks.js"]
+        );
+        assert_eq!(
+            names("packages/*/src/*.js"),
+            ["ReactHooks.js", "Scheduler.js"]
+        );
+        assert_eq!(names("*.[jt]s").len(), 3);
+        assert_eq!(names("[!R]*.js"), ["Scheduler.js"]);
         fs::remove_dir_all(root).expect("cleanup");
-    }
-
-    #[test]
-    fn compile_glob_brace_alternatives_are_each_glob_translated() {
-        // Each alternative inside `{...}` must itself support glob wildcards,
-        // not just be a literal string — `*.{ts,tsx}` should match both a
-        // plain `.ts` file and any `.tsx` file, and `{*.test.js,*.spec.js}`
-        // should match either whole-alternative wildcard.
-        let re = compile_glob("*.{ts,tsx}", "pathPattern").expect("compiles");
-        assert!(re.is_match("Button.ts"));
-        assert!(re.is_match("Button.tsx"));
-        assert!(!re.is_match("Button.js"));
-
-        let re2 = compile_glob("{*.test.js,*.spec.js}", "pathPattern").expect("compiles");
-        assert!(re2.is_match("Foo.test.js"));
-        assert!(re2.is_match("Foo.spec.js"));
-        assert!(!re2.is_match("Foo.js"));
-    }
-
-    #[test]
-    fn compile_glob_unclosed_brace_falls_back_to_literal() {
-        // A malformed pattern (no closing `}`) must not panic or silently
-        // eat the rest of the pattern — treat the stray `{` as a literal
-        // character.
-        let re = compile_glob("packages/{react/src", "pathPattern").expect("compiles");
-        assert!(re.is_match("packages/{react/src"));
-        assert!(!re.is_match("packages/react/src"));
-    }
-
-    #[test]
-    fn compile_glob_character_classes_match_like_globset() {
-        // `[...]` is a glob character class (as localSearch's globset reads
-        // it), not literal text: `*.[jt]s` lists `.js` and `.ts` files.
-        let re = compile_glob("*.[jt]s", "names").expect("compiles");
-        assert!(re.is_match("a.ts") && re.is_match("a.js"));
-        assert!(!re.is_match("a.cs") && !re.is_match("a.[jt]s"));
-        let range = compile_glob("agent[A-Z]*.ts", "names").expect("compiles");
-        assert!(range.is_match("agentHost.ts") && !range.is_match("agent-host.ts"));
-        let negated = compile_glob("[!a]*", "names").expect("compiles");
-        assert!(negated.is_match("b.ts") && !negated.is_match("a.ts"));
-        let caret = compile_glob("[^a]*", "names").expect("compiles");
-        assert!(caret.is_match("b.ts") && !caret.is_match("a.ts"));
-        // `]` first in a class is a member; regex class operators stay literal.
-        let bracket = compile_glob("x[]&~-]y", "names").expect("compiles");
-        for name in ["x]y", "x&y", "x~y", "x-y"] {
-            assert!(bracket.is_match(name), "{name}");
-        }
-        assert!(!bracket.is_match("xay"));
-        // An unclosed `[` stays a literal character.
-        let open = compile_glob("[.ts", "names").expect("compiles");
-        assert!(open.is_match("[.ts") && !open.is_match("a.ts"));
     }
 }

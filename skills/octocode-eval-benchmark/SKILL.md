@@ -1,73 +1,47 @@
 ---
 name: octocode-eval-benchmark
-description: "Use when designing or running evaluations of agent or software changes; good for baselines, held-out cases, grader calibration, leakage checks, and keep-or-revert decisions."
+description: "Load this skill first whenever the user asks whether a change, prompt, model, or skill is really better, or wants variants compared on a task set, even if they don't say benchmark. Use when a change needs to be measured, not just reviewed: A/B tests of prompts, models, retrieval settings, or skills, benchmarks against a baseline or previous release, skill activation tests, and keep-or-revert decisions; good for held-out cases, grader calibration, and leakage checks. Not for editing skill structure or descriptions (octocode-skills) or gathering code and repository evidence (octocode-research)."
 ---
 
 # Octocode eval benchmark
 
-Choose evidence that can support the claim being made.
+## Pick the depth
 
-```mermaid
-flowchart LR
-  F[Define the claim] --> C{Evidence needed}
-  C -- wording or structure --> R[Review and focused checks]
-  C -- deterministic behavior --> T[Reproduce and check the outcome]
-  C -- comparative reliability --> H[Freeze harness and baseline]
-  H --> D[Develop and select candidate] --> S[Independent final test]
-  R --> X[Report result and limits]
-  T --> X
-  S --> X
-```
-
-## Start at the needed depth
-
-- **Editorial or structural repair:** review intent, links, examples, and relevant checks. Report an editorial result; improved activation or reliability remains unmeasured.
-- **Deterministic regression:** capture the failing outcome, apply the change, and verify that outcome plus affected contracts. Use the project's focused tests; a sealed benchmark is unnecessary for a directly checkable fix.
-- **Comparative or reliability claim:** use the evaluation safeguards below, with representative cases and an independent final check. Scale the sample and budget to the consequence and uncertainty.
-
-For a reusable suite, keep definitions in `benchmarks/<name>/` (`benchmarks/README.md`) or the project's existing harness. Keep evaluator artifacts outside solver access. Read [method sources](references/references.md) when auditing provenance.
+| Claim | Evidence |
+|---|---|
+| Editorial or structural | Review intent, links, examples, checks; editorial result, behavior unmeasured |
+| Deterministic regression | TDD: a check fails before the fix, passes after; verify affected contracts; no sealed benchmark |
+| Comparative or reliability | Safeguards below on representative cases; sample and budget scale with consequence, uncertainty |
 
 ## Comparative evaluation safeguards
 
-- Freeze the goal, primary KPI, meaningful effect threshold, guardrails, trial and selection budget, splits, and executable harness before comparing candidates. Version a corrected harness; rerun both sides.
-- Each evaluated worker starts in a clean lab with only the production-equivalent task, subject instructions, and permitted inputs. Evaluator questions, answer keys, expected tool paths, prior attempts, and improvement feedback stay out of solver context and reachable storage.
-- State every requirement the grader enforces; keep solution hints out. A deployment instruction under evaluation is subject; an answer-specific coaching overlay is leakage.
-- Development iterates, validation selects, a sealed final test confirms. Repeated holdout feedback makes it development data. Record exposure and candidate count.
-- Grade observable outcomes deterministically where possible; calibrate model judges against independent human labels. Before freezing, check positive, negative, ambiguous, and bypass examples.
-- Select the candidate before opening final results; compare it with the baseline under the same conditions. Capture failures after the verdict; a suite or grader change starts a new version.
-- Keep failures, Unknowns, grader errors, infrastructure errors, retries, and cost in the denominator and the report.
-- Development KEEP is provisional. Final verdicts are ACCEPT, REVERT, INCONCLUSIVE (uncertain), or INVALID (compromised); the last two prove neither failure nor improvement.
-- Public benchmarks orient; representative private tasks support product decisions. Public fixtures, regex checks, and self-tests check the grader, never generalization or agent behavior.
-- Use the host's authorized worker tools when evaluating a multi-agent subject; this skill defines measurement and isolation, not permission to delegate.
-
-## Maintainer verification
-
-Review the skill with `octocode-skills`. Measure any claimed behavioral improvement on representative cases with an independent outcome check.
+- Freeze the [KPI contract](references/design.md#kpi-contract) before comparing; a harness, suite, or grader change is a new version, so rerun both arms.
+- Isolate workers; no evaluator material or hints reach solvers ([harness](references/harness.md#roles-and-access)).
+- Development iterates, validation selects, the sealed test confirms once with both arms under identical conditions ([splits](references/design.md#splits-and-exposure)); pick the candidate before opening final results.
+- Prefer deterministic outcome checks; test graders and calibrate judges before freezing ([grading](references/grading.md)).
+- Failures, Unknowns, errors, retries, and cost stay in the denominator and report.
+- The deployment instruction is the subject; answer-specific coaching is leakage.
+- `Keep` is provisional, `Discard` not final ([loop](references/loop.md#keepdiscard-loop)); final verdicts: `Accept`, `Revert`, `Inconclusive`, `Invalid` ([verdict](references/design.md#verdict)).
+- After a second Inconclusive or Invalid final run, stop; report the limit and the next measurement needed.
+- Public benchmarks orient; representative private tasks decide ([public benchmarks](references/design.md#public-benchmarks)).
 
 ## Resources
 
-Load the page that answers the current question.
-
-| When needed | Read |
-|---|---|
-| Before freezing goal, KPI, guardrails, budget, splits | [kpi-contract](references/kpi-contract.md) |
-| When building cases from failures, or choosing or retiring a public benchmark | [error-analysis](references/error-analysis.md) |
-| When the subject is a multi-agent workflow | [multi-agent](references/multi-agent.md) |
-| When building or extending a runner | [eval-harness](references/eval-harness.md) |
-| Before dispatching workers or auditing leakage | [clean-lab](references/clean-lab.md) |
-| When choosing graders, metrics, or process checks | [graders](references/graders.md) |
-| When a model or human judges quality | [llm-judge](references/llm-judge.md) |
-| When improving the subject or picking a loop level | [agent-loop](references/agent-loop.md) |
-| Before selecting or accepting a candidate | [held-out-and-guards](references/held-out-and-guards.md) |
-| When results fail, fluctuate, or improve suspiciously | [failure-repair](references/failure-repair.md) |
-| When improving a skill, harness, or doc, or reporting | [improve-loop](references/improve-loop.md) |
+| When | Read | Why |
+|---|---|---|
+| Planning a comparison | [design](references/design.md) | KPI, cases, splits, verdicts |
+| Choosing graders or judges | [grading](references/grading.md) | pass@k, judge calibration |
+| Runner, suite or run-folder layout, leakage, multi-agent subject | [harness](references/harness.md) | Folders, run identity, access, clean lab |
+| Iterating, diagnosing, claiming | [loop](references/loop.md) | Keep/Discard, diagnosis |
+| Does a host load the right skill? | [skill-activation](references/skill-activation.md) | Host runs, scoring |
+| Rendering or listing reports | [render-report.mjs](scripts/render-report.mjs), per [output.md](output.md) | HTML, manifest |
 
 ## Related skills
 
-- `octocode-research`: Use to verify the behavior and data behind a measurement.
-- `octocode-agentic-prompts`: Use to edit agent instructions after an observed failure.
-- `octocode-skills`: Use when the subject is skill activation or folder structure.
+- `octocode-research`: behavior and data behind a measurement.
+- `octocode-agentic-prompts`: instruction fixes after an observed failure.
+- `octocode-skills`: skill structure, descriptions; activation tests stay here.
 
 ## Output
 
-See [output.md](output.md) for the response and saved-artifact format. Save every run under `<workspace>/.octocode/octocode-eval-benchmark/<YYYY-MM-DD>-<slug>/`; [output.md](output.md) says how. Save and render substantial results as a local HTML page, and list earlier reports as JSON for agents, with [render-report.mjs](scripts/render-report.mjs).
+Follow [output.md](output.md) for the response, run folder, and rendering.

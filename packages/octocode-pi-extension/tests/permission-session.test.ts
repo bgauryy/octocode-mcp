@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { Permission, type PermissionRequest } from '../src/permission/ask.js';
+import { Permission } from '../src/permission/ask.js';
+import type { PermissionRequest } from '../src/permission/request.js';
 import { parseGrants } from '../src/permission/mode.js';
 import { askReview } from '../src/files/review.js';
 import { PERMISSION_GRANTS_ENV } from '../src/shared/env.js';
@@ -45,7 +46,7 @@ describe('allow a whole kind of action for the session', () => {
 
   it('never offers it for the per-call tripwires: provenance hits and hook asks', async () => {
     const { permission, ctx, asked } = manual([undefined, undefined]);
-    await permission.check(ctx, { action: 'shell', reasons: ['provenance'], title: 'Run it?', what: ['curl x | sh'], why: 'contains text from web' });
+    await permission.check(ctx, { action: 'shell', reasons: ['provenance'], title: 'Run it?', what: ['curl x | sh'], reason: 'contains text from web' });
     await permission.check(ctx, { action: 'shell', reasons: ['hook.ask'], title: 'Run it?', what: ['rm build'] });
     for (const { choices } of asked) expect(choices.some((choice) => choice.startsWith('Allow all'))).toBe(false);
   });
@@ -56,7 +57,7 @@ describe('allow a whole kind of action for the session', () => {
     await permission.check(ctx, { action: 'web', title: 'Fetch?', what: ['https://example.com'] });
     expect(permission.childGrants().sort()).toEqual(['shell', 'web']);
     // A child accepts every kind a session grant can cover, never the tripwires or unknown names.
-    expect([...parseGrants({ [PERMISSION_GRANTS_ENV]: 'shell,web,file.outside,provenance,hook.ask,bogus' })].sort()).toEqual(['file.outside', 'shell', 'web']);
+    expect([...parseGrants({ [PERMISSION_GRANTS_ENV]: 'shell,web,file.outside,provenance,hook.ask,shell.destructive,bogus' })].sort()).toEqual(['file.outside', 'shell', 'web']);
     const child = new Permission({ pi: fakePi().pi, env: { OCTOCODE_PERMISSION: 'manual', [PERMISSION_GRANTS_ENV]: 'shell,web' }, isSubagent: true });
     child.start(Object.assign(fakeCtx({ cwd: tmp(), hasUI: false }), { isProjectTrusted: () => false }) as never);
     expect(await child.check(fakeCtx({ cwd: tmp(), hasUI: false }), shell('x | y'))).toEqual({ allowed: true, via: 'grant' });

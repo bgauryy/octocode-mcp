@@ -5,6 +5,7 @@ use crate::signatures::extractor::AST_EXECUTION_TIMEOUT;
 
 use super::language::AgLanguage;
 use super::query::StructuralQuery;
+use super::types::StructuralDiagnostic;
 
 mod line_index_support;
 mod matching;
@@ -26,6 +27,7 @@ use matching::{
     CandidateVisitor, CaptureEnv, MatchWithKind, collect_kind_matches, visit_named_expanding_macros,
 };
 use pattern::CompiledPattern;
+pub use rule::RULE_INVALID;
 use rule::{CompiledRule, Document};
 
 #[cfg(test)]
@@ -52,6 +54,26 @@ pub(super) fn compile_matcher(
     })
 }
 
+/// The diagnostic of a query that does not compile: a rule that does not
+/// parse as a rule is [`RULE_INVALID`], a rule or pattern this grammar
+/// cannot compile is `structural.query.compileFailed`.
+pub(super) fn compile_diagnostic(message: &str) -> StructuralDiagnostic {
+    if message.starts_with(&format!("[{RULE_INVALID}] ")) {
+        StructuralDiagnostic::new(RULE_INVALID, "error", "match", message.to_owned())
+            .with_recovery("Fix the rule object: the message names the key or value it rejects.")
+    } else {
+        StructuralDiagnostic::new(
+            "structural.query.compileFailed",
+            "error",
+            "match",
+            message.to_owned(),
+        )
+        .with_recovery(
+            "Check the structural pattern or YAML rule against this file's language grammar.",
+        )
+    }
+}
+
 fn compile_matcher_inner(
     lang: &AgLanguage,
     query: &StructuralQuery<'_>,
@@ -65,7 +87,7 @@ fn compile_matcher_inner(
     let macros = MacroBodies::for_language(&language, anchors);
     match query.parts() {
         (Some(pattern), None) if is_document_probe(pattern) => Ok(Box::new(move |content| {
-            let deadline = Instant::now() + AST_EXECUTION_TIMEOUT;
+            let deadline = match_deadline(content);
             parse_tree_with_deadline(&language, content, deadline).map(|tree| {
                 let root = tree.root_node();
                 vec![MatchWithKind::new(
@@ -77,7 +99,7 @@ fn compile_matcher_inner(
         (Some(pattern), None) => {
             let compiled = CompiledPattern::new(lang, pattern)?;
             Ok(Box::new(move |content| {
-                let deadline = Instant::now() + AST_EXECUTION_TIMEOUT;
+                let deadline = match_deadline(content);
                 if compiled.is_special() {
                     return compiled.find_special_matches(content, deadline);
                 }
@@ -121,7 +143,7 @@ fn compile_matcher_inner(
             let language = lang.tree_sitter_language();
             if let Some(kind) = compiled.simple_kind().map(str::to_owned) {
                 return Ok(Box::new(move |content| {
-                    let deadline = Instant::now() + AST_EXECUTION_TIMEOUT;
+                    let deadline = match_deadline(content);
                     let tree = parse_tree_with_deadline(&language, content, deadline)?;
                     collect_kind_matches(
                         tree.root_node(),
@@ -134,7 +156,7 @@ fn compile_matcher_inner(
                 }));
             }
             Ok(Box::new(move |content| {
-                let deadline = Instant::now() + AST_EXECUTION_TIMEOUT;
+                let deadline = match_deadline(content);
                 let tree = parse_tree_with_deadline(&language, content, deadline)?;
                 let line_index = LineIndex::tree_sitter(content);
                 let mut matches = Vec::new();
@@ -175,6 +197,20 @@ fn compile_matcher_inner(
         }
         _ => unreachable!("StructuralQuery validates the query shape"),
     }
+}
+
+/// How long matching may take on a source of `len` bytes: the shared parse
+/// budget, plus one more per whole MiB, so a large source (the parse limit
+/// is 8 MiB) is not cut nondeterministically by a small file's budget. A cut
+/// match discards the file's matches, and no page resumes inside a file.
+pub(super) fn match_budget(len: usize) -> std::time::Duration {
+    let extra = u32::try_from(len >> 20).unwrap_or(u32::MAX);
+    AST_EXECUTION_TIMEOUT.saturating_mul(extra.saturating_add(1))
+}
+
+/// The match deadline of `content`, from now (see [`match_budget`]).
+pub(super) fn match_deadline(content: &str) -> Instant {
+    Instant::now() + match_budget(content.len())
 }
 
 fn is_document_probe(pattern: &str) -> bool {

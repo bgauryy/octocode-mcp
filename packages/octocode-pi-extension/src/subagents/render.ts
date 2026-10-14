@@ -1,9 +1,12 @@
+import type { Usage } from '@earendil-works/pi-ai';
 import type { AgentToolResult, MessageRenderer, Theme, ToolRenderResultOptions } from '@earendil-works/pi-coding-agent';
 import { Box, type Component } from '@earendil-works/pi-tui';
+import { fencedBody } from '../shared/fence.js';
 import { formatCost, formatDuration, formatTokenUsage, shortPath } from '../shared/format.js';
 import { clip, timingOf, plural, resultBlock, toolHeader, type RenderContext } from '../shared/render.js';
 import { sanitizeTerminalText } from '../shared/sanitize.js';
 import { contentText, isRecord } from '../shared/util.js';
+import type { ReportStatus } from './report.js';
 
 /**
  * How the `agent` tool and a background subagent's report message are drawn: `● Agent(profile · goal) · 38s`, then live
@@ -21,7 +24,10 @@ export interface RunDetails {
   toolCalls: number;
   /** Tool calls the child could not run without the user's approval. */
   denied?: number | undefined;
+  /** Its latest steps: tool calls (`→ bash ls`), thoughts (`✻ …`) and narration (`› …`). */
   activity: string[];
+  /** The gist of the thinking it streams now. */
+  thinking?: string;
   /** Every prompt token (uncached, cache reads and writes); `cacheRead` is the part read from cache. */
   input: number;
   cacheRead: number;
@@ -31,12 +37,18 @@ export interface RunDetails {
   unpriced: boolean;
   startedAt: number;
   seconds?: number;
-  /** running: foreground, still working; background: returned at once, the report arrives as a message. */
-  status: 'running' | 'background' | 'done' | 'failed';
+  /** waiting: for a free slot; running: foreground, still working; background: returned at once, the report arrives as a message. */
+  status: 'waiting' | 'running' | 'background' | 'done' | 'failed';
+  /** The child waits for the user's answer to one of its dialogs (shown in this session). */
+  waiting?: boolean;
+  /** Someone stopped the run; it is closing (the child, an isolated run's worktree). */
+  stopping?: boolean;
   /** The `provider/id` it runs on (with any `:thinking` suffix); absent when it runs on the parent's model. */
   model?: string;
   /** The profile's preferred model, unavailable here: the run fell back to the parent's model. */
   fallback?: string;
+  /** The outcome word its report starts with; absent while it runs and when the report names none. */
+  outcome?: ReportStatus;
   /** The subagent's latest screenshot, saved to this path. */
   shot?: string;
 }
@@ -48,6 +60,8 @@ export interface ResultDetails {
   profile?: string;
   goal?: string;
   status: 'done' | 'failed' | 'stopped';
+  /** The outcome word the report starts with (`failed` for a crashed run); absent when it names none. */
+  outcome?: ReportStatus;
   /** The `⎿` line, e.g. `Done (name · 4 tool calls · ↑12k ↓2k · ≈$0.12 · 38s)`. */
   summary: string;
   durationMs?: number;
@@ -55,10 +69,14 @@ export interface ResultDetails {
   requested?: boolean;
   /** The full prompt the subagent was given, shown when the report is expanded. */
   task?: string;
+  /** The run's total model usage (Pi's `Usage`): the parent's footer and session index count it (`spendOf`). */
+  usage?: Usage;
+  /** Whether any of the run's replies came from a model without pricing (then `usage.cost` leaves them out). */
+  unpriced?: boolean;
 }
 
 /** The model a run is on: its `provider/id`, marked as the parent's when the profile's preference was unavailable. */
-export function modelLabel(details: Pick<RunDetails, 'model' | 'fallback'>): string {
+function modelLabel(details: Pick<RunDetails, 'model' | 'fallback'>): string {
   if (!details.fallback) return details.model ?? '';
   return `${details.model ?? 'parent model'} (${details.fallback} unavailable)`;
 }
@@ -73,9 +91,10 @@ function runStats(details: Progress, ...extra: string[]): string {
   return [details.id, plural(details.toolCalls, 'tool call'), deniedLabel(details), formatTokenUsage(details), formatCost(details), ...extra, modelLabel(details)].filter(Boolean).join(' · ');
 }
 
-/** `Done (inky-kraken · 4 tool calls · ↑12k (80% cached) ↓2k · ≈$0.12 · 38s · provider/id)`. */
-export function doneSummary(details: Progress, durationMs: number | undefined): string {
-  return `Done (${runStats(details, durationMs === undefined ? '' : formatDuration(durationMs, true))})`;
+/** `Done (inky-kraken · 4 tool calls · ↑12k (80% cached) ↓2k · ≈$0.12 · 38s · provider/id)`; `Blocked (…)` when the report says so. */
+export function doneSummary(details: Progress & Pick<RunDetails, 'outcome'>, durationMs: number | undefined): string {
+  const label = details.outcome ? `${details.outcome.charAt(0).toUpperCase()}${details.outcome.slice(1)}` : 'Done';
+  return `${label} (${runStats(details, durationMs === undefined ? '' : formatDuration(durationMs, true))})`;
 }
 
 interface AgentArgs {
@@ -93,7 +112,7 @@ const argsOf = (context: RenderContext): AgentArgs => (isRecord(context.args) ? 
  * `Prompt` and the task, then the heading of what follows (`Report`, `Progress`): the expanded view's preface. Task
  * text comes from the model and may carry escape sequences; it is sanitized here.
  */
-export function promptPreface(theme: Theme, task: string | undefined, next: string | undefined): string[] {
+function promptPreface(theme: Theme, task: string | undefined, next: string | undefined): string[] {
   const rows = sanitizeTerminalText(task ?? '').replace(/\t/g, '   ').split('\n');
   while (rows.length > 0 && rows.at(-1)!.trim() === '') rows.pop();
   while (rows.length > 0 && rows[0]!.trim() === '') rows.shift();
@@ -120,10 +139,17 @@ export function renderAgentResult(result: AgentToolResult<unknown>, { isPartial 
     const more = rest.join('\n');
     return resultBlock(theme, context, { summary: head, body: more, prefaceLabel: 'prompt', preface: promptPreface(theme, task, more.trim() ? 'Output' : undefined), ...timingOf(result.details) });
   }
+  // Waiting for a slot: the row says how many run before it.
+  if (isPartial && details.status === 'waiting') return resultBlock(theme, context, { summary: body, lines: [], max: 0, prefaceLabel: 'prompt', preface: promptPreface(theme, task, undefined) });
   if (isPartial) {
     // Live progress: counts, then the latest steps (the header carries the running clock).
-    const lines = [...details.activity.slice(-3).map((line) => theme.fg('dim', clip(line, 200))), ...(details.shot ? [theme.fg('dim', `📷 ${clip(shortPath(details.shot), 200)}`)] : [])];
-    return resultBlock(theme, context, { summary: runStats(details), lines, max: lines.length, prefaceLabel: 'prompt', preface: promptPreface(theme, task, lines.length > 0 ? 'Progress' : undefined) });
+    const lines = [
+      ...details.activity.slice(-3).map((line) => theme.fg('dim', clip(line, 200))),
+      ...(details.thinking ? [theme.italic(theme.fg('thinkingText', `✻ ${clip(details.thinking, 200)}…`))] : []),
+      ...(details.shot ? [theme.fg('dim', `📷 ${clip(shortPath(details.shot), 200)}`)] : []),
+    ];
+    const summary = details.stopping ? `stopping… (${runStats(details)})` : details.waiting ? `waiting for your approval (${runStats(details)})` : runStats(details);
+    return resultBlock(theme, context, { summary, lines, max: lines.length, prefaceLabel: 'prompt', preface: promptPreface(theme, task, lines.length > 0 ? 'Progress' : undefined) });
   }
   if (details.status === 'background') {
     // The first line is for the model; only a later note (an isolation warning) is worth expanding to.
@@ -138,10 +164,20 @@ export function renderAgentResult(result: AgentToolResult<unknown>, { isPartial 
  * A background subagent's report, drawn like the tool row it came from: `● Agent(id)` then `⎿ Done (…)` and
  * the report; expanded, the full prompt comes first.
  */
+/** A report's text for the screen: the child's words without their fence lines, then the parent's own footer. */
+function reportBody(text: string): string {
+  const body = fencedBody(text);
+  if (body === text) return text;
+  const lines = text.split('\n');
+  const marker = /^<<<(\S+) /.exec(lines.find((line) => line.startsWith('<<<untrusted-')) ?? '')?.[1];
+  const footer = marker ? lines.slice(lines.lastIndexOf(`${marker}>>>`) + 1).join('\n').trim() : '';
+  return footer ? `${body}\n\n${footer}` : body;
+}
+
 export const renderAgentMessage: MessageRenderer = (message, { expanded, outputPad }, theme) => {
   const details = (message.details ?? {}) as Partial<ResultDetails>;
   const [head = '', ...rest] = contentText(message.content).split('\n');
-  const report = rest.join('\n');
+  const report = reportBody(rest.join('\n'));
   const stopped = details.status === 'stopped';
   // A stop (asked for or not) is an interruption, not a failure: drawn `◼` in the warning colour.
   const context = { isPartial: false, isError: details.status === 'failed' || stopped, expanded, state: stopped ? { stopped: true } : {} };

@@ -249,7 +249,8 @@
             "description": "Subscribed topic; mutually exclusive with to."
           },
           "body": {
-            "$ref": "#/$defs/body"
+            "$ref": "#/$defs/body",
+            "description": "Requests and blockers use SBAR: situation, background, assessment, request."
           },
           "key": {
             "$ref": "#/$defs/key"
@@ -258,7 +259,8 @@
             "$ref": "#/$defs/ttlMs"
           },
           "reasoning": {
-            "$ref": "#/$defs/reasoning"
+            "$ref": "#/$defs/reasoning",
+            "description": "Intent: purpose and done-when; ≤512 UTF-8 bytes."
           },
           "wake": {
             "$ref": "#/$defs/wake"
@@ -317,7 +319,8 @@
             "$ref": "#/$defs/ttlMs"
           },
           "reasoning": {
-            "$ref": "#/$defs/reasoning"
+            "$ref": "#/$defs/reasoning",
+            "description": "Intent: purpose and done-when; ≤512 UTF-8 bytes."
           },
           "wake": {
             "$ref": "#/$defs/wake"
@@ -387,7 +390,7 @@
     },
     {
       "name": "complete",
-      "description": "Complete requests with message+reply; handled FYIs with message/messages only. Keep unfinished work pending; retry unchanged.",
+      "description": "Complete requests with message+outcome+reply; handled FYIs with message/messages only. Keep unfinished work pending; retry unchanged.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -408,7 +411,19 @@
             "description": "Message IDs to complete without a reply."
           },
           "reply": {
-            "$ref": "#/$defs/body"
+            "$ref": "#/$defs/body",
+            "description": "Final answer."
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "done",
+              "partial",
+              "failed",
+              "refused",
+              "canceled"
+            ],
+            "description": "Final status; needs message and reply. Prefixes the stored reasoning; the reply stays exact."
           },
           "reasoning": {
             "$ref": "#/$defs/reasoning",
@@ -431,6 +446,10 @@
         "dependentRequired": {
           "reply": [
             "message"
+          ],
+          "outcome": [
+            "message",
+            "reply"
           ],
           "reasoning": [
             "reply"
@@ -2197,7 +2216,7 @@
       "minLength": 1,
       "maxLength": 512,
       "pattern": "\\S",
-      "description": "Intent; at most 512 UTF-8 bytes."
+      "description": "Purpose; ≤512 UTF-8 bytes."
     },
     "wake": {
       "enum": [
@@ -2521,7 +2540,8 @@
             "$ref": "#/$defs/ttlMs"
           },
           "reasoning": {
-            "$ref": "#/$defs/reasoning"
+            "$ref": "#/$defs/reasoning",
+            "description": "Intent: purpose and done-when; ≤512 UTF-8 bytes."
           },
           "wake": {
             "$ref": "#/$defs/wake"

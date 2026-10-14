@@ -7,6 +7,9 @@ use serde_json::Value;
 
 pub(crate) struct Output;
 impl ToolOutput for Output {
+    fn reports_scan_totals(&self) -> bool {
+        true
+    }
     fn fallback_hint(&self, query: &Value) -> &'static str {
         // A pattern must parse as one complete node of the target grammar.
         if query["operation"] == "match" && query["pattern"].is_string() {
@@ -21,8 +24,13 @@ impl ToolOutput for Output {
             // The typed error and terminalLimit (plus a findText lead
             // when a literal was searched) are the whole answer.
             "fileTooLarge" => crate::tools::output::NO_HINT,
-            "languageRequired" | "languageUnsupported" | "languageMismatch" => {
+            "languageRequired" | "languageUnsupported" => {
                 "Set language to the grammar of the source files (e.g. \"typescript\", \"rust\")."
+            }
+            // The message names the file's own grammar and both repairs.
+            "languageMismatch" => crate::tools::output::NO_HINT,
+            "symbolsUnsupported" => {
+                "Set language (a file) or languageGlobs (a directory) to the grammar the source is written in."
             }
             "languageFileRequired" => {
                 "For a directory, drop language: each extension picks its grammar; languageGlobs overrides (e.g. {cpp:[\"**/*.h\"]})."

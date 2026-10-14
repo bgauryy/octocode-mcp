@@ -1,6 +1,6 @@
 //! GitHub search query syntax shared by ghSearchRepo and ghSearchCode,
 //! matching the canonical provider query builders.
-use crate::providers::github::qualifier_value;
+use octocode_github::qualifier_value;
 
 /// Emit `key:value` as one term (quoted when the value holds whitespace,
 /// quotes, or parentheses) so it cannot split into stray keywords.

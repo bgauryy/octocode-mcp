@@ -23,5 +23,7 @@ pub mod signatures;
 pub mod structural;
 #[cfg(test)]
 mod test_cpu;
+#[cfg(test)]
+pub(crate) mod test_support;
 pub mod text;
 pub mod types;

@@ -57,20 +57,14 @@
     "envBinding": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["priority"],
+      "required": ["name"],
       "properties": {
-        "priority": { "type": "integer", "minimum": 0 },
+        "name": { "$ref": "#/$defs/envName" },
         "dotenv": { "$ref": "#/$defs/dotenvPolicy" },
         "normalize": { "type": "string", "enum": ["trim", "lower"] },
         "invalid": { "type": "string", "enum": ["skip", "default"] },
         "workspaceNarrowsTo": { "type": "string", "minLength": 1 }
       }
-    },
-    "envBindings": {
-      "type": "object",
-      "minProperties": 1,
-      "propertyNames": { "$ref": "#/$defs/envName" },
-      "additionalProperties": { "$ref": "#/$defs/envBinding" }
     },
     "commonField": {
       "type": "object",
@@ -79,7 +73,7 @@
         "type": { "type": "string" },
         "description": { "type": "string", "minLength": 1 },
         "notes": { "type": "string" },
-        "env": { "$ref": "#/$defs/envBindings" },
+        "env": { "$ref": "#/$defs/envBinding" },
         "credential": { "type": "boolean" },
         "displayDefault": { "type": "string" },
         "itemFormat": { "type": "string", "enum": ["path"] },

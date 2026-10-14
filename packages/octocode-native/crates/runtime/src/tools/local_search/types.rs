@@ -163,10 +163,12 @@ pub struct SearchFile {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchStats {
-    #[serde(rename = "matchCount")]
-    pub total_occurrences: u32,
-    #[serde(rename = "matchedLineCount")]
-    pub matched_lines: u32,
+    /// Occurrences; absent when the view did not count them.
+    #[serde(rename = "matchCount", skip_serializing_if = "Option::is_none")]
+    pub total_occurrences: Option<u32>,
+    /// Matched lines; absent when the view did not count them.
+    #[serde(rename = "matchedLineCount", skip_serializing_if = "Option::is_none")]
+    pub matched_lines: Option<u32>,
     #[serde(skip)]
     pub files_matched: u32,
     #[serde(rename = "filesScanned")]

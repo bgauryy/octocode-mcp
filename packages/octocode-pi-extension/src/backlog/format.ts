@@ -7,14 +7,14 @@ export const STATE_TITLE: Record<State, string> = { ongoing: 'Ongoing', todo: 'T
 export const BOARD_ORDER: readonly State[] = STATES;
 
 /** Who holds an item, from the reader's side: `(you)`, `(parent)` (a subagent's parent), `(@main-1a2b)`, or nothing. */
-export function holder(item: Item, self?: string, parents?: ReadonlySet<string>): string {
+function holder(item: Item, self?: string, parents?: ReadonlySet<string>): string {
   if (!item.assignee || item.state !== 'ongoing') return '';
   if (item.assignee === self) return ' (you)';
   return parents?.has(item.assignee) ? ' (parent)' : ` (@${sanitizeTerminalText(item.assignee)})`;
 }
 
 /** ` (from B12)` when the item came from another one. */
-export const fromText = (item: Item): string => (item.from === undefined ? '' : ` (from B${item.from})`);
+const fromText = (item: Item): string => (item.from === undefined ? '' : ` (from B${item.from})`);
 
 /** `B14 [ongoing p1] Title #tag (from B12) (you)` */
 export function itemLine(item: Item, self?: string, parents?: ReadonlySet<string>): string {
@@ -23,7 +23,7 @@ export function itemLine(item: Item, self?: string, parents?: ReadonlySet<string
 }
 
 /** A compact span: `45s`, `12m`, `5h20m`, `3d4h`. */
-export function span(ms: number): string {
+function span(ms: number): string {
   const safe = Math.max(0, ms);
   const day = 86_400_000;
   if (safe < day) return formatDuration(safe).replace(/(\d+m)\d+s$/, '$1');
@@ -32,10 +32,10 @@ export function span(ms: number): string {
   return `${days}d${hours ? `${hours}h` : ''}`;
 }
 
-export const ago = (at: number, now: number) => `${span(now - at)} ago`;
+const ago = (at: number, now: number) => `${span(now - at)} ago`;
 
 /** Local wall-clock time, `2026-10-12 21:03`. */
-export function stamp(at: number): string {
+function stamp(at: number): string {
   const date = new Date(at);
   const pad = (value: number) => String(value).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
@@ -48,7 +48,7 @@ const who = (id: string, self?: string, parents?: ReadonlySet<string>) => (id ==
  * When things happened to an item, oldest first: `created 2026-10-09 14:00 (3d ago) by agent · claimed 2h ago by you ·
  * done 5m ago (took 1h55m) · updated 5m ago`.
  */
-export function timeline(item: Item, now: number, self?: string, parents?: ReadonlySet<string>): string[] {
+function timeline(item: Item, now: number, self?: string, parents?: ReadonlySet<string>): string[] {
   const holder = item.assignee ? ` by ${who(item.assignee, self, parents)}` : '';
   const parts = [`created ${stamp(item.createdAt)} (${ago(item.createdAt, now)}) by ${sanitizeTerminalText(item.createdBy)}`];
   if (item.startedAt) parts.push(`claimed ${ago(item.startedAt, now)}${item.state === 'done' ? '' : holder}`);
@@ -58,18 +58,23 @@ export function timeline(item: Item, now: number, self?: string, parents?: Reado
   return parts;
 }
 
-/** How long the item has been where it is: claimed for ongoing, since done for done, since created otherwise. */
-export function stateAge(item: Item, now: number): string {
-  const since = item.state === 'ongoing' ? (item.startedAt ?? item.updatedAt) : item.state === 'done' ? (item.doneAt ?? item.updatedAt) : item.createdAt;
-  return span(now - since);
-}
-
 /** A note's text with later lines indented under its bullet (a change note may carry a whole replaced body). */
 const indented = (text: string, indent: string) => sanitizeTerminalText(text).replace(/\n/g, `\n${indent}`);
 
 /** `- 5m ago you: text` for a note, `- 5m ago you · state todo → ongoing` for a change the store logged. */
-export function noteLine(note: Note, now: number, self?: string, parents?: ReadonlySet<string>): string {
+function noteLine(note: Note, now: number, self?: string, parents?: ReadonlySet<string>): string {
   return `- ${ago(note.at, now)} ${who(note.author, self, parents)}${note.kind === 'change' ? ' ·' : ':'} ${indented(note.text, '  ')}`;
+}
+
+/** The item's saved fields in reading order, empty ones omitted: Goal, Where, Why, Evidence (one `-` line per entry), Plan. */
+export function itemFields(item: Item): string[] {
+  const lines: string[] = [];
+  if (item.goal) lines.push(`Goal: ${sanitizeTerminalText(item.goal)}`);
+  if (item.paths.length) lines.push(`Where: ${item.paths.map((path) => sanitizeTerminalText(path)).join(', ')}`);
+  if (item.why) lines.push(`Why: ${indented(item.why, '  ')}`);
+  if (item.evidence.length) lines.push('Evidence:', ...item.evidence.map((entry) => `- ${sanitizeTerminalText(entry)}`));
+  if (item.plan) lines.push(`Plan: ${indented(item.plan, '  ')}`);
+  return lines;
 }
 
 interface DetailOptions {
@@ -84,13 +89,11 @@ interface DetailOptions {
   derived?: readonly Item[];
 }
 
-/** The whole item: header, goal, times, origin, body, derived items and its notes. */
+/** The whole item: header, goal, where, why, evidence, plan, times, origin, body, derived items and its notes. */
 export function itemDetail(item: Item, notes: Note[], totalNotes: number, now: number, options: DetailOptions = {}): string {
   const { self, parents } = options;
   const meta = [...timeline(item, now, self, parents), options.version ? `version ${item.version}` : ''].filter(Boolean);
-  const lines = [itemLine(item, self, parents)];
-  if (item.goal) lines.push(`Goal: ${sanitizeTerminalText(item.goal)}`);
-  lines.push(meta.join(' · '));
+  const lines = [itemLine(item, self, parents), ...itemFields(item), meta.join(' · ')];
   if (options.origin) lines.push(`From: ${itemLine(options.origin, self, parents)}`);
   if (item.body) lines.push('', sanitizeTerminalText(item.body));
   if (options.derived?.length) lines.push('', `Derived items (${options.derived.length}):`, ...options.derived.map((child) => `- ${itemLine(child, self, parents)}`));
@@ -136,7 +139,7 @@ export function exportMarkdown(store: BacklogStore, repoName: string, now: numbe
       const tags = item.tags.map((tag) => ` #${tag}`).join('');
       const who = item.assignee ? ` — ${sanitizeTerminalText(item.assignee)}` : '';
       lines.push(`- **${item.ref}** [${priorityName(item.priority)}] ${sanitizeTerminalText(item.title)}${tags}${fromText(item)}${who}`);
-      if (item.goal) lines.push(`  Goal: ${sanitizeTerminalText(item.goal)}`);
+      lines.push(...itemFields(item).flatMap((field) => field.split('\n')).map((line) => `  ${line}`));
       const times = [`created ${stamp(item.createdAt)} by ${sanitizeTerminalText(item.createdBy)}`, item.startedAt ? `claimed ${stamp(item.startedAt)}` : '', item.doneAt ? `done ${stamp(item.doneAt)}` : ''];
       lines.push(`  _${times.filter(Boolean).join(' · ')}_`);
       for (const line of item.body ? sanitizeTerminalText(item.body).split('\n') : []) lines.push(`  ${line}`.trimEnd());

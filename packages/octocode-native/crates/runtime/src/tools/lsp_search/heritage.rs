@@ -141,14 +141,14 @@ pub(super) fn describe(bases: &[BaseType]) -> String {
         .collect::<Vec<_>>()
         .join(", ");
     format!(
-        "This server has no type hierarchy: supertypes are the definitions of the heritage clause ({clauses}) read from source. They are direct bases only; run supertypes on a base to climb further."
+        "Supertypes are the definitions of the heritage clause ({clauses}) read from source: direct bases only."
     )
 }
 
 /// The caller-facing note of a subtypes answer taken from
 /// `textDocument/implementation`.
 pub(super) fn describe_implementation() -> String {
-    "This server has no type hierarchy: subtypes are its textDocument/implementation answer, direct and transitive subtypes together; which are direct is not marked.".to_owned()
+    "Subtypes are the server's textDocument/implementation answer: direct and transitive subtypes together, not marked.".to_owned()
 }
 
 /// Whether a failed `textDocument/implementation` request leaves the syntax
@@ -516,7 +516,11 @@ mod tests {
             line: 0,
             character: 0,
         }];
-        assert!(describe(&bases).contains("direct bases only"));
+        let note = describe(&bases);
+        assert_eq!(
+            note,
+            "Supertypes are the definitions of the heritage clause (extends Base) read from source: direct bases only."
+        );
         let failure = LspFailure::invalid_query("x");
         assert!(describe_scan(&failure, "Base", 3, "subtypes").contains("direct subtypes only"));
         let implementations = describe_scan(&failure, "Base", 3, "implementation");

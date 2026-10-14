@@ -2,8 +2,8 @@
 //! derived from public page cursors, and the page objects reported back.
 use super::inventory::max_inventory_page;
 use super::{DEFAULT_PAGE_SIZE, HistoryItemRequest, fetch};
-use crate::providers::github::{GitHubTransport, ProviderError, RequestContext};
 use octocode_github::MAX_PER_PAGE;
+use octocode_github::{GitHubTransport, ProviderError, RequestContext};
 use serde_json::{Value, json};
 
 /// PR and commit file lists stop at 3000 files (30 batches of 100).

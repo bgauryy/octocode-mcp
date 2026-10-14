@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { ExtensionAPI, ExtensionContext, Theme } from '@earendil-works/pi-coding-agent';
 import { mixColors, rgbColor, type Color, type TUI } from '@earendil-works/pi-tui';
 import { packageRoot } from '../shared/package.js';
-import { appKey, expandKey, statusColor } from '../shared/render.js';
+import { appKey, expandKey, statusColor, stopRowTimers } from '../shared/render.js';
 import { bannerLines, type BannerPaint } from './banner.js';
 import { registerFooter } from './footer.js';
 
@@ -74,8 +74,11 @@ export function spinnerFrames(theme: Theme): string[] {
   });
 }
 
-/** The banner as Pi's header component. `shineFrom` starts the one-time light sweep. */
-export function bannerHeader(tui: Pick<TUI, 'requestRender'>, theme: Theme, shineFrom: number | undefined) {
+/**
+ * The banner as Pi's header component. `shineFrom` starts the one-time light sweep. `onInvalidate` runs when Pi
+ * invalidates the header: a theme switch does, and Pi has no theme event for extensions.
+ */
+export function bannerHeader(tui: Pick<TUI, 'requestRender'>, theme: Theme, shineFrom: number | undefined, onInvalidate?: () => void) {
   // Read from the theme again on invalidate: Pi invalidates components when the theme changes.
   const painted = (): BannerPaint => {
     const ramp = themeRamp(theme);
@@ -113,6 +116,7 @@ export function bannerHeader(tui: Pick<TUI, 'requestRender'>, theme: Theme, shin
     invalidate(): void {
       cached = undefined;
       paint = painted();
+      onInvalidate?.();
     },
     dispose: stop,
   };
@@ -138,9 +142,7 @@ export function registerUi(pi: ExtensionAPI, isSubagent: boolean): void {
     const fresh = event.reason === 'startup' && !ctx.sessionManager.getBranch().some((entry) => entry.type === 'message');
     if (ctx.mode === 'tui') decorate(ctx, fresh ? Date.now() : undefined);
   });
-  pi.on('agent_start', async (_event, ctx) => {
-    // The spinner and thinking label are painted once; repaint them per run so a theme switch reaches them.
-    if (ctx.hasUI && ctx.mode === 'tui') paintIndicators(ctx);
+  pi.on('agent_start', async () => {
     generated = { output: 0, ms: 0 };
     messageStartedAt = undefined;
   });
@@ -154,6 +156,8 @@ export function registerUi(pi: ExtensionAPI, isSubagent: boolean): void {
     messageStartedAt = undefined;
   });
   pi.on('agent_end', async (_event, ctx) => {
+    // Every call of the run ended. Pi drops rows it never gave a result here; their clocks must not tick on.
+    stopRowTimers();
     if (!ctx.hasUI) return;
     const speed = tokensPerSecond(generated.output, generated.ms);
     if (speed !== undefined) ctx.ui.setStatus(SPEED_STATUS, statusColor(ctx, 'dim', `${speed.toFixed(0)} tok/s`));
@@ -161,7 +165,8 @@ export function registerUi(pi: ExtensionAPI, isSubagent: boolean): void {
 }
 
 function decorate(ctx: ExtensionContext, shineFrom: number | undefined): void {
-  ctx.ui.setHeader((tui, current) => bannerHeader(tui, current, shineFrom));
+  // The spinner and thinking label are painted strings: repaint them whenever a theme switch invalidates the header.
+  ctx.ui.setHeader((tui, current) => bannerHeader(tui, current, shineFrom, () => paintIndicators(ctx)));
   paintIndicators(ctx);
 }
 

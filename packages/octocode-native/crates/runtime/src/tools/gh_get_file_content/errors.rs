@@ -1,7 +1,6 @@
 //! A failed ghGetFileContent read: one message, one hint and one recovery
 //! per row, chosen from the provider error and the missing-path walk.
 use super::GhGetFileContentQuery;
-use crate::providers::github::{ProviderError, ProviderErrorKind, ProviderErrorReason};
 use crate::tools::gh_shared::{
     GITHUB_AUTH_RECOVERY_HINT, GhFailure, PathRecovery, REPOSITORY_ACCESS_HINT, RepoPath,
     parent_dir, provider_message, repository_not_found, tree_recovery, validation_message,
@@ -9,6 +8,7 @@ use crate::tools::gh_shared::{
 };
 use crate::tools::id::ToolId;
 use crate::tools::result::{Continuation, query_row};
+use octocode_github::{ProviderError, ProviderErrorKind, ProviderErrorReason};
 use serde_json::{Value, json};
 
 pub(super) fn repo_path(query: &GhGetFileContentQuery) -> RepoPath<'_> {
@@ -98,8 +98,60 @@ pub(crate) fn failure(
     if let Some(hint) = hint {
         failure = failure.hint(hint);
     }
-    failure.next = next;
+    failure.next = next.map(Box::new);
     identity(failure)
+}
+
+/// The clone URL a submodule-path error names (`is a git submodule (URL)`).
+pub(super) fn submodule_url(error: &ProviderError) -> Option<&str> {
+    if error.kind != ProviderErrorKind::Validation || error.status.is_some() {
+        return None;
+    }
+    let (_, rest) = error.message.split_once("is a git submodule (")?;
+    rest.split_once(')').map(|(url, _)| url)
+}
+
+/// `owner`/`repo` of a github.com clone URL (https, ssh or git scheme).
+pub(super) fn github_repository(url: &str) -> Option<(String, String)> {
+    let rest = [
+        "https://github.com/",
+        "http://github.com/",
+        "git://github.com/",
+        "ssh://git@github.com/",
+        "git@github.com:",
+    ]
+    .iter()
+    .find_map(|prefix| url.strip_prefix(prefix))?;
+    let mut parts = rest.trim_end_matches('/').splitn(2, '/');
+    let owner = parts.next().filter(|part| !part.is_empty())?;
+    let repo = parts.next()?;
+    let repo = repo.strip_suffix(".git").unwrap_or(repo);
+    (!repo.is_empty() && !repo.contains('/')).then(|| (owner.to_owned(), repo.to_owned()))
+}
+
+/// The recovery of a submodule path: the submodule's GitHub repository at
+/// the commit the parent pins (when the listing named it), else, for a
+/// submodule hosted elsewhere, the fact that it is not on GitHub.
+pub(super) fn submodule_recovery(
+    mut failure: GhFailure,
+    repository: Option<(String, String)>,
+    pinned: Option<&str>,
+) -> GhFailure {
+    let Some((owner, repo)) = repository else {
+        return failure.hint("The submodule's repository is not on GitHub.");
+    };
+    let at = RepoPath {
+        owner: &owner,
+        repo: &repo,
+        path: "",
+        reference: pinned,
+    };
+    let confidence = if pinned.is_some() { "high" } else { "low" };
+    failure.hints.clear();
+    failure.next = Some(Box::new(
+        json!({ "viewTree": tree_recovery(&at, None, confidence) }),
+    ));
+    failure
 }
 
 /// A path that did not resolve: the case-corrected file, the nearest

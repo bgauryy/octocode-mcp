@@ -17,14 +17,20 @@ impl FileFilter<'_> {
     pub(super) fn is_trivial(&self) -> bool {
         self.needle.is_none() && self.scope.is_none()
     }
+    /// In scope, and (with a needle) its patch holds the needle: a path
+    /// alone never keeps a file, whose whole patch would answer nothing.
     pub(super) fn matches(&self, file: &Value) -> bool {
-        let path = str_at(file, "/filename").unwrap_or("");
         self.scope.is_none_or(|scope| scope.matches(file))
             && self.needle.is_none_or(|n| {
-                path.to_lowercase().contains(n)
-                    || str_at(file, "/patch").is_some_and(|v| v.to_lowercase().contains(n))
+                str_at(file, "/patch").is_some_and(|v| v.to_lowercase().contains(n))
             })
     }
+}
+
+/// The per-call count of changed files a `matchString` dropped: in scope,
+/// searched, and holding no hit.
+pub(super) fn match_dropped_warning(dropped: usize, listed: usize) -> String {
+    format!("matchString dropped {dropped} of {listed} changed files: no patch line holds it.")
 }
 
 /// One `include` entry.
@@ -134,14 +140,14 @@ impl InventoryFilter {
 }
 
 /// Scanned files a patch search skipped: selected and in scope, but GitHub
-/// sent no patch (too large, or omitted past the diff budget) and the path
-/// itself does not match. Binary files hold no text to search. Only REST
-/// entries (with a blob `sha`) say anything about patches.
+/// sent no patch (too large, or omitted past the diff budget). Binary files
+/// hold no text to search. Only REST entries (with a blob `sha`) say
+/// anything about patches. Each is `(reason, path, removed)`: a removed
+/// file's text is at the base, not the head.
 pub(super) fn unsearched_files(
     files: &[Value],
     filter: &FileFilter<'_>,
-    needle: &str,
-) -> Vec<(&'static str, String)> {
+) -> Vec<(&'static str, String, bool)> {
     let scope_only = FileFilter {
         needle: None,
         ..*filter
@@ -154,7 +160,11 @@ pub(super) fn unsearched_files(
         .filter_map(|file| {
             let reason = missing_patch_reason(file).filter(|r| *r != "binary")?;
             let path = str_at(file, "/filename")?;
-            (!path.to_lowercase().contains(needle)).then(|| (reason, path.to_owned()))
+            Some((
+                reason,
+                path.to_owned(),
+                str_at(file, "/status") == Some("removed"),
+            ))
         })
         .collect()
 }

@@ -3,13 +3,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import { CONFIG_DIR_NAME, getAgentDir, type ExtensionAPI, type ExtensionContext, type ToolDefinition } from '@earendil-works/pi-coding-agent';
-import { MCP_ENV, MCP_WAIT_ENV, envFlag, envInt } from '../shared/env.js';
+import { MCP_ENV, envFlag } from '../shared/env.js';
 import { octocodeHome } from '../shared/home.js';
+import { packageRoot } from '../shared/package.js';
 import { OCTOCODE_SERVER, OCTOCODE_TOOL_PREFIX } from '../shared/octocode-tools.js';
 import { sanitizeTerminalText } from '../shared/sanitize.js';
 import type { Tool } from '@earendil-works/pi-mcp';
 import { OctocodeServer, type Launch, type ServerStatus } from './client.js';
-import { octocodeToolDefinition } from './tools.js';
+import { octocodeToolDefinition, TurnBudget } from './tools.js';
 
 /**
  * Octocode MCP (local code, LSP, GitHub and package registry research) runs on this extension's own MCP client
@@ -18,12 +19,20 @@ import { octocodeToolDefinition } from './tools.js';
  * `mcp.json` (`~/.pi/agent/mcp.json`, `.pi/mcp.json`) takes precedence, which is how users override or disable it: then
  * Pi's MCP owns the server and this extension starts nothing.
  */
+/** The `octocode-mcp` range this package's `package.json` depends on (the one source of the version this extension runs). */
+function octocodeMcpRange(): string {
+  const manifest = JSON.parse(fs.readFileSync(path.join(packageRoot(), 'package.json'), 'utf8')) as { dependencies?: Record<string, string> };
+  const range = manifest.dependencies?.['octocode-mcp'];
+  if (!range) throw new Error('package.json has no octocode-mcp dependency');
+  return range;
+}
+
 /**
- * The octocode-mcp releases this extension runs: 20.2.0 or a later 20.x, the first with the tool contract it expects.
- * The package.json dependency has the same range, so installing or updating the extension fetches the newest
- * compatible server; in this monorepo `dev setup` resolves it to the workspace build (`packages/octocode-mcp`).
+ * The octocode-mcp releases this extension runs, as an npx spec: the `package.json` dependency range, so installing or
+ * updating the extension and the npx fallback fetch the same newest compatible server; in this monorepo `dev setup`
+ * resolves the dependency to the workspace build (`packages/octocode-mcp`).
  */
-export const OCTOCODE_MCP_SPEC = 'octocode-mcp@^20.2.0';
+export const OCTOCODE_MCP_SPEC = `octocode-mcp@${octocodeMcpRange()}`;
 
 /** The server process: the installed octocode-mcp bin under this Node, else the newest npm release through npx. */
 export function octocodeLaunch(cwd: string, env: NodeJS.ProcessEnv = process.env, entry = octocodeMcpEntry()): Launch {
@@ -34,11 +43,14 @@ export function octocodeLaunch(cwd: string, env: NodeJS.ProcessEnv = process.env
   return { ...command, cwd, env: { WORKSPACE_ROOT: cwd, ALLOWED_PATHS: allowed } };
 }
 
-/** The longest the first prompt waits for the server to connect, in seconds. */
-const DEFAULT_CONNECT_WAIT_SECONDS = 10;
+/**
+ * The longest the first prompt waits for a connect in progress, so the server's instructions are in that request. A
+ * failed connect or the user's Esc ends the wait at once; a slower start (a first `npx` download) joins a later prompt.
+ */
+const CONNECT_WAIT_MS = 10_000;
 
 /** Whether the Octocode MCP server is switched on for this process (`OCTOCODE_MCP=0` turns it off). */
-export const octocodeMcpEnabled = (env: NodeJS.ProcessEnv = process.env): boolean => envFlag(env, MCP_ENV, true);
+const octocodeMcpEnabled = (env: NodeJS.ProcessEnv = process.env): boolean => envFlag(env, MCP_ENV, true);
 
 /**
  * The `octocode` entry of Pi's `mcp.json` (global, then the trusted project's replacement or settings override), which
@@ -76,16 +88,20 @@ export class OctocodeMcp {
   /** What is registered with Pi under each tool name; Pi cannot unregister, so a withdrawn tool is registered hidden. */
   private readonly registered = new Map<string, { tool: Tool; definition: ToolDefinition }>();
   private ctx: ExtensionContext | undefined;
+  /** The text this turn's results have put in the context; `registerOctocodeMcp` resets it at every `turn_start`. */
+  readonly turn = new TurnBudget();
   /** Who ran the server when the session started. */
   private owned: OctocodeOwner = { by: 'off' };
 
   private readonly env: NodeJS.ProcessEnv;
+  private readonly connectWaitMs: number;
 
   constructor(
     private readonly pi: Pick<ExtensionAPI, 'registerTool'>,
-    options: { env?: NodeJS.ProcessEnv; version?: string; launch?: (cwd: string) => Launch } = {},
+    options: { env?: NodeJS.ProcessEnv; version?: string; launch?: (cwd: string) => Launch; connectWaitMs?: number } = {},
   ) {
     this.env = options.env ?? process.env;
+    this.connectWaitMs = options.connectWaitMs ?? CONNECT_WAIT_MS;
     this.server = new OctocodeServer({
       launch: options.launch ?? ((cwd) => octocodeLaunch(cwd, this.env)),
       clientInfo: { name: 'octocode-pi-extension', version: options.version ?? '0' },
@@ -109,10 +125,10 @@ export class OctocodeMcp {
     else await this.server.close();
   }
 
-  /** Waits for the server to connect, at most `OCTOCODE_MCP_WAIT_SECONDS` (default 10); false when it is not connected. */
+  /** Waits for the server to connect (see CONNECT_WAIT_MS); false when it is not connected. */
   ready(ctx: ExtensionContext): Promise<boolean> {
     this.ctx = ctx;
-    return this.server.ready(envInt(this.env, MCP_WAIT_ENV, DEFAULT_CONNECT_WAIT_SECONDS, { min: 0 }) * 1000, ctx.signal);
+    return this.server.ready(this.connectWaitMs, ctx.signal);
   }
 
   /** The server's `initialize` instructions (how its tools work together), sanitized: the server's text is not trusted. */
@@ -169,7 +185,7 @@ export class OctocodeMcp {
       const previous = this.registered.get(name);
       // Pi rebuilds the complete registry per registration. A reconnect or an unrelated tool change needs no rebuild.
       if (previous && isDeepStrictEqual(previous.tool, tool) && isDeepStrictEqual(previous.definition.namespace, namespace)) continue;
-      const definition = octocodeToolDefinition(tool, { prefix: OCTOCODE_TOOL_PREFIX, namespace, call: (name, args, signal) => this.server.call(name, args, signal) });
+      const definition = octocodeToolDefinition(tool, { prefix: OCTOCODE_TOOL_PREFIX, namespace, call: (name, args, signal) => this.server.call(name, args, signal), budget: this.turn });
       this.registered.set(definition.name, { tool, definition });
       this.pi.registerTool(definition);
     }
@@ -199,6 +215,7 @@ export function registerOctocodeMcp(pi: ExtensionAPI, version?: string): Octocod
   const mcp = new OctocodeMcp(pi, { ...(version ? { version } : {}) });
   pi.on('session_start', async (_event, ctx) => mcp.start(ctx));
   pi.on('session_shutdown', async () => mcp.close());
+  pi.on('turn_start', async () => mcp.turn.reset());
   return mcp;
 }
 

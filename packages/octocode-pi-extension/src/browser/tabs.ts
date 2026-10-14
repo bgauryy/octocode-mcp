@@ -1,5 +1,5 @@
 import { setTimeout as sleep } from 'node:timers/promises';
-import { errorMessage } from '../shared/util.js';
+import { cutText } from '../shared/util.js';
 import { openTab, pageTargets, switchTo, type BrowserSession, type PageTarget } from './cdp.js';
 
 /**
@@ -19,7 +19,7 @@ async function orderedTabs(session: BrowserSession): Promise<PageTarget[]> {
 /** One line per tab, the driven one marked `*`. */
 export async function describeTabs(session: BrowserSession): Promise<string> {
   const tabs = await orderedTabs(session);
-  const lines = tabs.map((tab, index) => `${tab.id === session.targetId ? '*' : ' '} [${index + 1}] ${(tab.title || '(untitled)').slice(0, 80)} — ${(tab.url ?? '').slice(0, 120)}`);
+  const lines = tabs.map((tab, index) => `${tab.id === session.targetId ? '*' : ' '} [${index + 1}] ${cutText(tab.title || '(untitled)', 80, { chars: true })} — ${cutText(tab.url ?? '', 120, { chars: true })}`);
   return `Tabs (${tabs.length}; * = driven):\n${lines.join('\n')}\ntab with index switches to one; tab with url opens a new one.`;
 }
 
@@ -33,16 +33,23 @@ async function whenLoaded(session: BrowserSession, timeoutMs = 10_000, signal?: 
   }
 }
 
-/** Switches to tab number `index` (from `describeTabs`). */
-export async function selectTab(session: BrowserSession, index: number | undefined, signal?: AbortSignal): Promise<void> {
+/**
+ * Switches to tab number `index` (from `describeTabs`). Driving another tab is the agent choosing its page, like
+ * `navigate`: `open` runs first for a tab on a web address (the permission check, a private host included), and a
+ * refusal leaves the session where it was.
+ */
+export async function selectTab(session: BrowserSession, index: number | undefined, open: (url: string) => Promise<void>, signal?: AbortSignal): Promise<void> {
   const tabs = await orderedTabs(session);
   const tab = index === undefined ? undefined : tabs[index - 1];
   if (!tab) throw new Error(`No tab ${index ?? ''}. ${await describeTabs(session)}`);
-  if (tab.id !== session.targetId) await switchTo(session, tab);
+  if (tab.id !== session.targetId) {
+    if (tab.url && /^(https?|wss?):/i.test(tab.url)) await open(tab.url);
+    await switchTo(session, tab);
+  }
   await whenLoaded(session, 10_000, signal);
 }
 
-/** Opens `url` in a new tab and drives it. The tab opens blank, so the session's guard sees the first load too. */
+/** Opens `url` in a new tab and drives it. The tab opens blank, so the session's policy sees the first load too. */
 export async function newTab(session: BrowserSession, url: string, signal?: AbortSignal): Promise<void> {
   await switchTo(session, await openTab(session.port, 'about:blank'));
   delete session.blocked;
@@ -61,7 +68,8 @@ export async function tabIds(session: BrowserSession): Promise<Set<string> | und
 
 /**
  * When an action opened a tab (`window.open`, a popup, a link its script sent to a new window), the session moves to
- * it, as a user's attention would; returns the tab, or undefined when none opened.
+ * it, as a user's attention would; returns the tab, or undefined when none opened. The browser held the popup before it
+ * ran until the session's network setup was on it (see `guardTargets` in `cdp.ts`), so its first request was checked too.
  */
 export async function followNewTab(session: BrowserSession, before: Set<string> | undefined, signal?: AbortSignal): Promise<PageTarget | undefined> {
   if (!before) return undefined;
@@ -69,22 +77,5 @@ export async function followNewTab(session: BrowserSession, before: Set<string> 
   if (!opened) return undefined;
   await switchTo(session, opened);
   await whenLoaded(session, 10_000, signal);
-  await guardOpenedPage(session, signal);
   return opened;
-}
-
-/**
- * A tab the page opened started loading before the session drove it, so the guard has not seen its first load: its
- * address is checked once it is loaded, and a refused page is replaced by a blank one.
- */
-async function guardOpenedPage(session: BrowserSession, signal?: AbortSignal): Promise<void> {
-  if (!session.guard) return;
-  const url = await session.page.evaluate<string>('location.href', signal).catch(() => '');
-  if (!/^https?:/i.test(url)) return;
-  try {
-    await session.guard(url);
-  } catch (error) {
-    session.blocked = `${url}: ${errorMessage(error)}`;
-    await session.page.send('Page.navigate', { url: 'about:blank' }, signal);
-  }
 }

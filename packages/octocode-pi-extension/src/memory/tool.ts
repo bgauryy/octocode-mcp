@@ -3,9 +3,8 @@ import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-a
 import { Type } from 'typebox';
 import { clip, timingOf, plural, resultBlock, timedTool, toolHeader } from '../shared/render.js';
 import type { Permission } from '../permission/ask.js';
-import { sanitizeTerminalText } from '../shared/sanitize.js';
 import { projectTrustNow } from '../shared/trust.js';
-import { clipText, firstLine, textResult } from '../shared/util.js';
+import { textResult } from '../shared/util.js';
 import { memoryLabel, parseMemoryId } from './query.js';
 import { MEMORY_KINDS, MemoryError, memoryLine, refuseMemorySecrets, type Memory, type MemoryStore } from './store.js';
 
@@ -20,7 +19,7 @@ function memoryPrompt(subagent: boolean): { description: string; ops: string; pr
     'Retrieve or maintain durable decisions and preferences across sessions. ' +
     (subagent
       ? 'Read-only in a subagent: report anything worth remembering to your parent. '
-      : "Near-duplicates and secrets are refused; global or pinned changes need a trusted project and the user's confirmation. ") +
+      : "Near-duplicates and secrets are refused; global or pinned changes need a trusted project. ") +
     'An untrusted project shows only global memories.';
   const ops =
     'search: relevant notes by query; get: full note by id; list: pinned notes first, then newest' +
@@ -71,7 +70,7 @@ function listText(memories: readonly Memory[], empty: string): string {
 /**
  * Registers the `memory` tool over the store `storeFor(ctx)` opens (one per repository). A subagent may only read: its
  * parent decides what is worth remembering. Global and pinned memories reach every session, so changing them needs a
- * trusted project and passes the `memory.shared` permission ask (refused without a UI unless the mode allows it); an
+ * trusted project (an invariant no mode skips, recorded in the audit); a save in a trusted project is immediate. An
  * untrusted project reads only global memories, matching what auto-injection shows there.
  */
 export function registerMemoryTool(pi: ExtensionAPI, storeFor: (ctx: ExtensionContext) => MemoryStore, options: { isSubagent: boolean; permission: Permission }): void {
@@ -90,31 +89,29 @@ export function registerMemoryTool(pi: ExtensionAPI, storeFor: (ctx: ExtensionCo
         ? { scope: Type.Optional(StringEnum(['project', 'global', 'all'] as const, { description: 'search/list: all (default; global plus this repository)' })) }
         : {
             scope: Type.Optional(StringEnum(['project', 'global', 'all'] as const, { description: 'set: project (default) or global; search/list: all (default; global plus this repository)' })),
-            title: Type.Optional(Type.String({ maxLength: 120, description: 'set: specific one-line title' })),
-            body: Type.Optional(Type.String({ maxLength: 1500, description: 'set: the note itself' })),
-            keywords: Type.Optional(Type.String({ maxLength: 200, description: 'set: synonyms/terms that should retrieve this memory' })),
+            title: Type.Optional(Type.String({ description: 'set: specific one-line title' })),
+            body: Type.Optional(Type.String({ description: 'set: the note itself; keep it short, it may be injected into every session' })),
+            keywords: Type.Optional(Type.String({ description: 'set: synonyms/terms that should retrieve this memory' })),
             kind: Type.Optional(StringEnum(MEMORY_KINDS, { description: 'set: what sort of note (default fact)' })),
             pinned: Type.Optional(Type.Boolean({ description: 'set: always inject this memory (keep pinned ones few and short)' })),
           }),
-      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 20, description: `search/list: most results (default ${DEFAULT_LIMIT})` })),
+      limit: Type.Optional(Type.Integer({ description: `search/list: most results (default ${DEFAULT_LIMIT})` })),
     }),
     async execute(_toolCallId, input, signal, _onUpdate, ctx) {
       // The subagent schema omits the set-only fields; set is refused there before they are read.
       const params = input as MemoryParams;
       signal?.throwIfAborted();
       const store = storeFor(ctx);
-      const limit = params.limit ?? DEFAULT_LIMIT;
+      const limit = Math.max(1, Math.floor(params.limit ?? DEFAULT_LIMIT));
       const trusted = projectTrustNow(ctx) === true;
       const readScope = trusted ? (params.scope ?? 'all') : 'global';
       const note = (text: string) => (trusted ? text : `${text}\n${HIDDEN_NOTE}`);
-      /** The `memory.shared` ask for a change that reaches every session; a refusal throws. */
-      const askShared = async (title: string, what: string[]) => {
-        const verdict = await options.permission.check(ctx, { action: 'memory.shared', title, what, ...(signal ? { signal } : {}) });
-        if (!verdict.allowed) throw new MemoryError(verdict.message);
-      };
       /** Refuses changing a memory that reaches every session (global or pinned) unless the project is trusted. */
       const guardWide = (wide: boolean, what: string) => {
-        if (wide && !trusted) throw new MemoryError(`Refused: ${what} is shared with every session, and this is an untrusted project. Ask the user to /trust it, or save a plain project memory.`);
+        if (!wide || trusted) return;
+        const refusal = `Refused: ${what} is shared with every session, and this is an untrusted project. Ask the user to /trust it, or save a plain project memory.`;
+        options.permission.refused([`memory ${what}`], refusal, 'memory');
+        throw new MemoryError(refusal);
       };
       const id = params.id === undefined ? undefined : parseMemoryId(params.id);
       if (params.id !== undefined && id === undefined) throw new Error(`"${params.id}" is not a memory id (M<n>).`);
@@ -125,8 +122,11 @@ export function registerMemoryTool(pi: ExtensionAPI, storeFor: (ctx: ExtensionCo
       switch (params.op) {
         case 'search': {
           if (!params.query?.trim()) throw new Error('search needs query.');
-          const hits = store.search(params.query, readScope, limit);
-          return textResult(note(listText(hits, 'No memory matches.')), { ids: hits.map((hit) => hit.id) });
+          // One past the limit tells whether more match without counting them all (the ranking window is a few times the limit).
+          const found = store.search(params.query, readScope, limit + 1);
+          const hits = found.slice(0, limit);
+          const more = found.length > hits.length ? '\n… more memories match; raise limit, or narrow the query.' : '';
+          return textResult(note(`${listText(hits, 'No memory matches.')}${more}`), { ids: hits.map((hit) => hit.id) });
         }
         case 'get': {
           const found = store.get(needId());
@@ -149,7 +149,6 @@ export function registerMemoryTool(pi: ExtensionAPI, storeFor: (ctx: ExtensionCo
           const current = found;
           if (params.op === 'delete') {
             if (current) guardWide(current.scope === 'global' || current.pinned, `deleting ${memoryLabel(current.id)}`);
-            if (current && (current.scope === 'global' || current.pinned)) await askShared(`Delete ${current.scope === 'global' ? 'global' : 'pinned'} memory?`, [memoryLine(current, 120)]);
             const removed = store.delete(needId());
             return textResult(`Deleted ${memoryLine(removed, 60)}`, { ids: [removed.id] });
           }
@@ -160,15 +159,6 @@ export function registerMemoryTool(pi: ExtensionAPI, storeFor: (ctx: ExtensionCo
           // Refusals the store would raise come first, so the user is never asked about a save that then fails.
           refuseMemorySecrets(params);
           if (!current && !params.title?.trim()) throw new MemoryError('A new memory needs a title.');
-          // Saving into shared state, or taking a memory out of it (a global moved to the project, a pin removed), asks.
-          const unpinned = current?.pinned === true && !pinned;
-          if (global || pinned || current?.scope === 'global' || unpinned) {
-            const label = [global ? 'global' : current?.scope === 'global' ? 'formerly global' : '', pinned ? 'pinned' : unpinned ? 'unpinned' : ''].filter(Boolean).join(', ');
-            const title = firstLine(sanitizeTerminalText(params.title ?? current?.title ?? ''));
-            const body = clipText(sanitizeTerminalText(params.body ?? current?.body ?? '').trim(), 400);
-            const move = current && current.scope !== (params.scope ?? current.scope) ? [`Scope: ${current.scope} → ${params.scope}`] : [];
-            await askShared(`Save ${label} memory?`, [title, ...(body ? [body] : []), ...move, `It will be shown to every ${global ? 'session in every repository' : 'session here'}.`]);
-          }
           const { memory, created } = store.set({
             ...(id !== undefined ? { id } : {}),
             ...(params.scope ? { scope: params.scope } : {}),

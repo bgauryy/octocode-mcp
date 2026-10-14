@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 pub fn octocode_home(env: &BTreeMap<String, String>, cwd: &Path, os_home: &Path) -> PathBuf {
-    env.get("OCTOCODE_HOME")
+    env.get(super::environment::OCTOCODE_HOME)
         .map(|s| s.trim())
         .filter(|s| !s.is_empty())
         .map(|s| {

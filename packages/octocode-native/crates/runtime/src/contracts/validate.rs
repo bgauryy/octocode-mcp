@@ -526,7 +526,7 @@ fn apply_batch_rules(rules: &Value, input: &Value) -> Result<(), ContractValidat
 /// validation: a JSON-encoded `queries` array, JSON-encoded or bare-scalar
 /// values in list-only fields, exact integer/boolean strings in
 /// integer/boolean-only fields, line-range spellings, near-miss members of
-/// closed string sets, and blank optional values dropped (see `coerce`). A
+/// closed string sets. Blank optional selectors are retained for validation. A
 /// bare query row runs as a one-row `queries` (see [`one_row_envelope`]); any
 /// other shape without `queries` is returned unchanged for validation to
 /// reject. Nothing is validated or defaulted, and an unknown tool is returned
@@ -558,7 +558,6 @@ pub fn normalize_input(tool_name: &str, input: Value) -> Value {
     };
     for row in rows {
         coerce::coerce_lossless(&typed, row);
-        coerce::drop_blank_optionals(&typed, row);
     }
     input
 }
@@ -1381,10 +1380,10 @@ mod tests {
         }
     }
 
-    /// Near-miss enum members, line-number pairs and blank optional values
-    /// repair against the real tool contracts, so the row then validates.
+    /// Near-miss enum members and line-number pairs repair against the real
+    /// tool contracts, so the row then validates.
     #[test]
-    fn near_misses_pairs_and_blank_optionals_validate_after_normalization() {
+    fn near_misses_and_pairs_validate_after_normalization() {
         let brief = json!({"mainGoal":"g","reasoning":"r"});
         let with = |extra: Value| {
             let mut row = brief.clone();
@@ -1425,15 +1424,44 @@ mod tests {
             assert_eq!(normalized.pointer(pointer), Some(&expected), "{tool}");
             validate(tool, normalized).unwrap_or_else(|error| panic!("{tool}: {error:?}"));
         }
-        let blank = normalize_input(
-            "artifactSearch",
-            with(json!({"ecosystem":"npm","packageName":"zod","version":" "})),
-        );
-        assert!(blank["queries"][0].get("version").is_none(), "{blank}");
-        validate("artifactSearch", blank).expect("blank optional dropped");
         let required = normalize_input("localSearch", with(json!({"path":" ","matchString":"x"})));
         assert_eq!(required["queries"][0]["path"], " ");
         assert!(validate("localSearch", required).is_err());
+    }
+
+    #[test]
+    fn blank_optional_source_selectors_survive_normalization_and_fail_validation() {
+        let github = json!({"queries":[{
+            "owner":"octocat","repo":"Hello-World","path":"README.md",
+            "mainGoal":"Read the requested source version.",
+            "reasoning":"Keep the caller's source selector exact."
+        }]});
+        let package = json!({"queries":[{
+            "ecosystem":"npm","packageName":"zod",
+            "mainGoal":"Read the requested package version.",
+            "reasoning":"Keep the caller's source selector exact."
+        }]});
+        for (tool, mut input, field, value) in [
+            ("ghGetFileContent", github.clone(), "ref", json!("  ")),
+            ("ghGetFileContent", github, "ranges", json!([])),
+            ("artifactSearch", package, "version", json!(" ")),
+        ] {
+            input["queries"][0][field] = value.clone();
+            let normalized = normalize_input(tool, input);
+            assert_eq!(
+                normalized["queries"][0][field], value,
+                "{tool}.{field}: {normalized}"
+            );
+            let error =
+                validate(tool, normalized).expect_err("blank selector must fail before dispatch");
+            assert!(
+                error
+                    .issues
+                    .iter()
+                    .any(|issue| issue.path.join(".").ends_with(field)),
+                "{tool}.{field}: {error:?}"
+            );
+        }
     }
 
     #[test]

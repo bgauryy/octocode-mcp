@@ -7,9 +7,12 @@
 //
 // Version defaults to the `latest` dist-tag of @octocodeai/octocode-native.
 // Hashes are computed from the registry's bytes, never from a local `npm pack`
-// (a repack is not guaranteed to be byte-identical).
+// (a repack is not guaranteed to be byte-identical). The host platform's
+// binary is extracted and must report `octocode <version>`, the formula's test.
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -35,10 +38,29 @@ async function json(url) {
   return response.json();
 }
 
-async function sha256(url) {
+async function download(url) {
   const response = await fetch(url);
   if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`);
-  return createHash('sha256').update(Buffer.from(await response.arrayBuffer())).digest('hex');
+  return Buffer.from(await response.arrayBuffer());
+}
+
+// npm platform package this machine can execute; Linux hosts are assumed glibc.
+const HOST = `${process.platform}-${process.arch}${process.platform === 'linux' ? '-gnu' : ''}`;
+
+/** Throws unless the tarball's `package/octocode` prints `octocode <version>`. */
+function checkBinaryVersion(tarball, platform, version) {
+  const dir = mkdtempSync(path.join(tmpdir(), 'octocode-brew-'));
+  try {
+    writeFileSync(path.join(dir, 'pkg.tgz'), tarball);
+    execFileSync('tar', ['-xzf', 'pkg.tgz', 'package/octocode'], { cwd: dir });
+    const reported = execFileSync(path.join(dir, 'package', 'octocode'), ['--version'], { encoding: 'utf8' }).trim();
+    if (reported !== `octocode ${version}`) {
+      throw new Error(`${PACKAGE}-${platform}@${version} ships a binary that reports "${reported}"; republish with a fresh build before rendering the formula.`);
+    }
+    console.log(`${platform.padEnd(16)} binary reports ${reported}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 const version = requested ?? (await json(`${REGISTRY}/${PACKAGE}/latest`)).version;
@@ -48,7 +70,9 @@ for (const [os, arches] of Object.entries(TARGETS)) {
   for (const [arch, platform] of Object.entries(arches)) {
     const name = `${PACKAGE}-${platform}`;
     const { dist } = await json(`${REGISTRY}/${name}/${version}`);
-    blocks[os][arch] = { url: dist.tarball, sha256: await sha256(dist.tarball) };
+    const tarball = await download(dist.tarball);
+    if (platform === HOST) checkBinaryVersion(tarball, platform, version);
+    blocks[os][arch] = { url: dist.tarball, sha256: createHash('sha256').update(tarball).digest('hex') };
     console.log(`${platform.padEnd(16)} ${blocks[os][arch].sha256}`);
   }
 }

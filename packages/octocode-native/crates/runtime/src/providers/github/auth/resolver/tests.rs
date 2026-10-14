@@ -282,3 +282,61 @@ async fn rejected_stored_token_falls_back_to_gh_on_the_next_request() {
     assert_eq!(next.token(), "gh-token");
     assert_eq!(next.source_label(), "gh-cli");
 }
+/// A stored token remembered while fresh is selected again once it
+/// expires: an expired memo entry is a miss, so the next request reloads and
+/// refreshes instead of sending the expired token until GitHub rejects it.
+#[tokio::test]
+async fn memoized_stored_credential_refreshes_once_it_expires() {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let mut soon = stored(false);
+    // Fresh now; inside the refresh skew two seconds from now.
+    soon.token.expires_at = Some((now + 5 * 60 + 2).to_string());
+    let mut backend = Backend::new(Some(soon));
+    let mut refreshed = stored(false);
+    refreshed.token.token = "refreshed-token".into();
+    backend.refreshed = Ok(Some(refreshed));
+    let auth = authentication(None);
+    let budget = budget();
+    let first = auth
+        .resolve_with("github.com", AuthMode::Request, &budget, &backend)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(first.token(), "stored-token");
+    tokio::time::sleep(Duration::from_millis(3100)).await;
+    let next = auth
+        .resolve_with("github.com", AuthMode::Request, &budget, &backend)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(next.token(), "refreshed-token");
+    assert_eq!(backend.calls(), ["load", "load", "refresh"]);
+}
+/// GitHub rejecting an expired stored token (401) refreshes it: expiry is
+/// checked before rejection, so the rejection never blocks the refresh.
+#[tokio::test]
+async fn rejected_expired_stored_token_refreshes() {
+    let mut backend = Backend::new(Some(stored(true)));
+    let mut refreshed = stored(false);
+    refreshed.token.token = "refreshed-token".into();
+    backend.refreshed = Ok(Some(refreshed));
+    let auth = authentication(None);
+    auth.reject(
+        "github.com",
+        Some(&ResolvedCredential::new(
+            "stored-token",
+            CredentialSource::Storage,
+        )),
+    );
+    let next = auth
+        .resolve_with("github.com", AuthMode::Request, &budget(), &backend)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(next.token(), "refreshed-token");
+    assert_eq!(next.source_label(), "platform");
+    assert_eq!(backend.calls(), ["load", "refresh"]);
+}

@@ -103,71 +103,6 @@ pub(super) fn coerce_lossless(candidates: &[Typed<'_>], value: &mut Value) {
     }
 }
 
-/// Drops a row's blank optional values: an empty or whitespace-only string,
-/// or an empty list, in a field no variant requires and every alternative
-/// rejects as blank. Such a value carries nothing, so it means the field was
-/// omitted; a required field keeps its value for the validator to name.
-pub(super) fn drop_blank_optionals(candidates: &[Typed<'_>], row: &mut Value) {
-    let variants = flatten_all(candidates);
-    let required: Vec<&str> = variants
-        .iter()
-        .filter_map(|(_, schema)| schema.get("required")?.as_array())
-        .flatten()
-        .filter_map(Value::as_str)
-        .collect();
-    let Value::Object(object) = row else {
-        return;
-    };
-    object.retain(|key, value| {
-        if required.contains(&key.as_str()) || !is_blank(value) {
-            return true;
-        }
-        let fields = variants
-            .iter()
-            .filter_map(|&(root, schema)| {
-                schema
-                    .get("properties")?
-                    .get(key)
-                    .map(|field| (root, field))
-            })
-            .collect::<Vec<_>>();
-        let alternatives = flatten_all(&fields);
-        alternatives.is_empty()
-            || !alternatives
-                .iter()
-                .all(|(_, schema)| rejects_blank(schema, value))
-    });
-}
-
-fn is_blank(value: &Value) -> bool {
-    match value {
-        Value::String(text) => text.trim().is_empty(),
-        Value::Array(items) => items.is_empty(),
-        _ => false,
-    }
-}
-
-/// Whether a flattened schema rejects this blank string or empty list.
-fn rejects_blank(schema: &Value, value: &Value) -> bool {
-    let at_least = |key: &str| {
-        schema
-            .get(key)
-            .and_then(Value::as_u64)
-            .is_some_and(|n| n >= 1)
-    };
-    match value {
-        Value::String(text) => {
-            types(schema).is_some_and(|names| names == ["string"])
-                && ((text.is_empty() && at_least("minLength"))
-                    || schema.get("pattern").and_then(Value::as_str) == Some(r"\S"))
-        }
-        Value::Array(_) => {
-            types(schema).is_some_and(|names| names == ["array"]) && at_least("minItems")
-        }
-        _ => false,
-    }
-}
-
 /// Whether `schema` (an array schema at any `$ref`/union depth) has items
 /// that accept `value`, e.g. to decide if wrapping a scalar is sound advice.
 pub(super) fn items_accept(root: &Value, schema: &Value, value: &Value) -> bool {
@@ -808,46 +743,6 @@ mod tests {
         // An open string alternative vetoes repair.
         let open = json!({"anyOf":[{"type":"string","enum":["a"]},{"type":"string"}]});
         assert_eq!(coerced(&open, json!("as")), json!("as"));
-    }
-
-    /// A blank value in an optional field every alternative rejects as blank
-    /// (`pattern:"\\S"`, `minLength`, `minItems`) carries nothing, so it is
-    /// dropped; required fields and values a schema accepts stay.
-    #[test]
-    fn blank_optional_values_drop_and_required_ones_stay() {
-        let row = json!({
-            "type":"object",
-            "required":["path"],
-            "properties":{
-                "path":{"type":"string","pattern":"\\S"},
-                "branch":{"type":"string","pattern":"\\S"},
-                "ref":{"type":"string","minLength":1},
-                "keywords":{"type":"array","minItems":1,"items":{"type":"string"}},
-                "include":{"type":"array","items":{"type":"string"}},
-                "note":{"type":"string"},
-                "label":{"anyOf":[{"type":"string","minLength":1},{"type":"string"}]}
-            }
-        });
-        let mut value = json!({
-            "path":"  ","branch":" ","ref":"","keywords":[],"include":[],
-            "note":"","label":"","other":""
-        });
-        super::drop_blank_optionals(&[(&row, &row)], &mut value);
-        assert_eq!(
-            value,
-            json!({"path":"  ","include":[],"note":"","label":"","other":""})
-        );
-        let mut spaced = json!({"ref":" "});
-        super::drop_blank_optionals(&[(&row, &row)], &mut spaced);
-        assert_eq!(spaced, json!({"ref":" "}), "minLength accepts whitespace");
-        // A field one variant requires stays in every row.
-        let union = json!({"anyOf":[
-            {"type":"object","required":["ref"],"properties":{"ref":{"type":"string","minLength":1}}},
-            {"type":"object","properties":{"ref":{"type":"string","minLength":1}}}
-        ]});
-        let mut kept = json!({"ref":""});
-        super::drop_blank_optionals(&[(&union, &union)], &mut kept);
-        assert_eq!(kept, json!({"ref":""}));
     }
 
     #[test]

@@ -1,4 +1,4 @@
-use super::http::RegistryClient;
+use super::http::{JSON, RegistryClient};
 use super::util::{endpoint, object_for, parse_url, required, rows, string, total};
 use super::{
     ArtifactError, ArtifactItem, ArtifactProviderPage, ArtifactProviderState, ArtifactSearchQuery,
@@ -70,7 +70,7 @@ pub(crate) async fn maven(
         ],
     )?;
     let response = client
-        .json(ArtifactType::Maven, url, false, None)
+        .json(ArtifactType::Maven, url, false, None, None, JSON)
         .await?
         .ok_or_else(|| super::util::invalid(ArtifactType::Maven))?;
     let data = object_for(
@@ -120,17 +120,22 @@ pub(crate) async fn maven(
     })
 }
 
-/// Keyword terms as a Central search query: each word ANDed (the keywords'
-/// documented meaning; the endpoint rejects bare whitespace with HTTP 400).
-/// Query-syntax characters (field `:`, quotes, groups, wildcards, operators)
-/// separate words rather than reach the endpoint, which answers them with
-/// 400/404; `-`, `.` and `_` stay, as artifact names use them.
+/// Keyword terms as a Central search query: the words ANDed, or the
+/// artifactId they spell hyphen-joined (`jackson databind` finds
+/// `jackson-databind`, which Central indexes as one token). The endpoint
+/// rejects bare whitespace with HTTP 400, and a single word stays bare (a
+/// one-word group answers 404). Query-syntax characters (field `:`, quotes,
+/// groups, wildcards, operators) separate words rather than reach the
+/// endpoint; `-`, `.` and `_` stay, as artifact names use them.
 fn solr_terms(terms: &str) -> String {
-    terms
+    let words = terms
         .split(|c: char| c.is_whitespace() || "+&|!(){}[]^\"~*?:\\/".contains(c))
         .filter(|word| !word.is_empty())
-        .collect::<Vec<_>>()
-        .join(" AND ")
+        .collect::<Vec<_>>();
+    match words.as_slice() {
+        [] | [_] => words.concat(),
+        _ => format!("({}) OR a:{}", words.join(" AND "), words.join("-")),
+    }
 }
 
 async fn exact(
@@ -298,10 +303,10 @@ async fn repository_from_pom(
 mod tests {
     use super::super::types::{StaticHttp, artifact_query, test_budget};
     use super::*;
-    use crate::providers::RequestBudget;
     use crate::providers::artifact::http::{
         ArtifactHttp, ArtifactHttpFuture, ArtifactHttpRequest, ArtifactHttpResponse,
     };
+    use octocode_github::RequestBudget;
 
     /// Returns pre-set responses in insertion order; further calls 404.
     struct SequenceMock {
@@ -384,20 +389,22 @@ mod tests {
 
     /// Maven Central's Solr search answers HTTP 400 to whitespace-
     /// separated terms ("markdown parser"), which surfaced as an
-    /// `invalidInput` row for a schema-valid query. Terms are ANDed (the
-    /// documented keyword semantics); query-syntax characters split words.
+    /// `invalidInput` row for a schema-valid query. Words are ANDed, or
+    /// name the artifactId they spell hyphen-joined (Central indexes
+    /// `jackson-databind` as one token, so `jackson AND databind` alone
+    /// misses it); query-syntax characters split words.
     #[tokio::test]
     async fn maven_discovery_ands_terms_and_splits_query_syntax() {
         for (keywords, expected) in [
             (
                 serde_json::json!(["markdown parser"]),
-                "markdown AND parser",
+                "(markdown AND parser) OR a:markdown-parser",
             ),
             (
-                serde_json::json!(["markdown", "parser"]),
-                "markdown AND parser",
+                serde_json::json!(["jackson", "databind"]),
+                "(jackson AND databind) OR a:jackson-databind",
             ),
-            (serde_json::json!(["a:b (c)"]), "a AND b AND c"),
+            (serde_json::json!(["a:b (c)"]), "(a AND b AND c) OR a:a-b-c"),
             (serde_json::json!(["spring-boot"]), "spring-boot"),
             (serde_json::json!(["guava"]), "guava"),
         ] {

@@ -29,6 +29,21 @@ describe('CLI presentation embedded by the native binary', () => {
     expect((views.full as Json).usage).toEqual([`octocode lspSearch '{"queries":[ … ]}'`]);
   });
 
+  it('emits the core value-only clasify projection for a surface without delegated tools', () => {
+    const valueOnly = tool('clasify').valueOnly as Json;
+    const views = valueOnly.views as Json;
+    const catalog = getPublicToolCatalogWithAddons({ availableTools: [] });
+    const expected = catalog.tools.find(entry => entry.name === 'clasify')!.querySchema as Json;
+    const { $schema: _schema, ...canonical } = expected;
+    expect((views.query as Json).querySchema).toEqual(
+      publishedInputSchema(getDirectToolDefinitionsWithAddons({ availableTools: [] }).find(entry => entry.name === 'clasify')!.inputSchema, 'row')
+    );
+    expect((views.full as Json).querySchema).toEqual(canonical);
+    expect(JSON.stringify(views)).not.toMatch(/"tool":\{"type":"string","enum"/);
+    expect(tool('clasify').help).not.toContain('"tool":"localFetch"');
+    expect(presentation.clasifyContextTools).toEqual([...CLASIFY_SCOUT_TOOL_NAMES]);
+  });
+
   it('lists the continuation fields the query view hides, one line each', () => {
     const fields = (name: string) => ((tool(name).views as Json).query as Json).continuationFields as Record<string, string>;
     expect(Object.keys(fields('localSearch')).sort()).toEqual(['extras', 'includeHidden', 'matchPage', 'page', 'snapshot']);

@@ -11,11 +11,11 @@ import { Type, type Static } from 'typebox';
 import { atomicWriteFile, changedOnDisk, sha256, sha256File } from '../shared/atomic.js';
 import { canonicalPath, isWithin, repoKey, resolveToolPath } from '../shared/home.js';
 import type { Permission } from '../permission/ask.js';
+import { systemLines } from '../permission/effect.js';
 import { runsLater, stateFolderRefusal } from '../permission/gate.js';
 import { lastUserEntry, type Capture, type Checkpoints } from './checkpoint.js';
 import { askReview } from './review.js';
-import { exclusive } from '../shared/locks.js';
-import { timed } from '../shared/render.js';
+import { timedTool } from '../shared/render.js';
 import { renderFileCall, renderFileResult, type QueryOutcome } from './render.js';
 import { readPaths } from '../shared/home.js';
 import { contentText, elisionMarkers, errorMessage, isRecord } from '../shared/util.js';
@@ -46,6 +46,8 @@ interface Snapshot {
   ino: number;
   mode: number;
   sha256?: string;
+  /** The read showed a range or a truncated view, not the whole file. */
+  partial?: boolean;
 }
 
 /** Content known without reading the file again (e.g. what was just written). */
@@ -70,6 +72,10 @@ function unreadRefusal(display: string): string {
   return `${display} already exists and was not read in this session. Read it with \`read\` before modifying it.`;
 }
 
+function partialRefusal(display: string, mode: 'write' | 'delete'): string {
+  return `${display}: you read only part of it; read the whole file (no offset/limit) before ${mode}, or use an edit (an exact match proves the region you saw).`;
+}
+
 function rereadRefusal(display: string): string {
   return `${display}: your earlier read of it is no longer in your context. Read it again with \`read\` before modifying it.`;
 }
@@ -83,14 +89,17 @@ export class FileGuard {
   /** Set by the team layer: why another agent's reservation forbids changing `file`, if it does. */
   reservedBy: ((file: string) => string | undefined) | undefined;
 
-  /** Remember the file as read now (stat only). `known`: its content digest when the caller has it (kept if the size agrees). */
-  record(file: string, known?: KnownContent): void {
+  /**
+   * Remember the file as read now (stat only). `known`: its content digest when the caller has it (kept if the size
+   * agrees). `partial`: the read showed a range or a cut view, so an edit is allowed but a write or delete is not.
+   */
+  record(file: string, known?: KnownContent, partial = false): void {
     const real = canonicalPath(file);
     const stat = statOf(real);
     this.#reread.delete(real);
     this.#changed.delete(real);
     if (!stat) this.#seen.delete(real);
-    else this.#seen.set(real, known && known.size === stat.size ? { ...stat, sha256: known.sha256 } : stat);
+    else this.#seen.set(real, { ...stat, ...(known && known.size === stat.size ? { sha256: known.sha256 } : {}), ...(partial ? { partial } : {}) });
   }
 
   /** Forget one file, e.g. after /octocode rewind replaced it: the model must read it again before writing it. */
@@ -106,16 +115,16 @@ export class FileGuard {
    * fork), compaction or branch switch. A file read earlier but no longer in view must be read again. One in view
    * counts as read when it was not modified after the read (`at`, ms); otherwise it is stale.
    */
-  restore(inContext: Iterable<{ file: string; at: number }>): void {
+  restore(inContext: Iterable<{ file: string; at: number; partial?: boolean }>): void {
     for (const real of this.#seen.keys()) this.#reread.add(real);
     this.#seen.clear();
     this.#changed.clear();
-    for (const { file, at } of inContext) {
+    for (const { file, at, partial } of inContext) {
       const real = canonicalPath(file);
       const stat = statOf(real);
       if (!stat) continue;
       this.#reread.delete(real);
-      if (Math.max(stat.mtimeMs, stat.ctimeMs) <= at) this.#seen.set(real, stat);
+      if (Math.max(stat.mtimeMs, stat.ctimeMs) <= at) this.#seen.set(real, { ...stat, ...(partial ? { partial } : {}) });
       else this.#changed.add(real);
     }
   }
@@ -123,6 +132,8 @@ export class FileGuard {
   /**
    * Returns an error message when the mutation must be refused, else undefined. An existing file must have been read
    * (or written by this tool) in this session, and not changed on disk or left the context since; a new file is free.
+   * A write or delete also needs the whole file read; an edit does not, because its exact match proves the edited
+   * region was seen.
    */
   check(file: string, mode: 'edit' | 'write' | 'delete', display: string): string | undefined {
     return this.inspect(file, mode, display).refusal;
@@ -142,6 +153,7 @@ export class FileGuard {
     if (this.#changed.has(real)) return { refusal: staleRefusal(display) };
     const seen = this.#seen.get(real);
     if (!seen) return { refusal: unreadRefusal(display) };
+    if (seen.partial && mode !== 'edit') return { refusal: partialRefusal(display, mode) };
     // ctime and inode also move on a same-size rewrite that restored the mtime, or a rename over the file. With a
     // known digest a same-size move is left to the content check (a touch or a no-op rewrite is not a change).
     const moved = seen.mtimeMs !== current.mtimeMs || seen.ctimeMs !== current.ctimeMs || seen.size !== current.size || seen.ino !== current.ino;
@@ -194,13 +206,13 @@ const QuerySchema = Type.Object({
         oldText: Type.String({ description: 'Exact text to replace; unique in the original file; keep it small' }),
         newText: Type.String({ description: 'Replacement text' }),
       }),
-      { minItems: 1, description: 'For edit: all replacements for this file, matched against the original content; must not overlap' },
+      { description: 'For edit: all replacements for this file, matched against the original content; must not overlap' },
     ),
   ),
   content: Type.Optional(Type.String({ description: 'For write: the complete new file content' })),
 });
 
-const Params = Type.Object({ queries: Type.Array(QuerySchema, { minItems: 1, maxItems: 10 }) });
+const Params = Type.Object({ queries: Type.Array(QuerySchema) });
 type FileQuery = Static<typeof QuerySchema>;
 
 
@@ -209,7 +221,7 @@ type FileQuery = Static<typeof QuerySchema>;
  * what was checked (`checked`: the digest of `initial`, the bytes already read for this change; null = still absent).
  * Pi's first read of that file is served from `initial` instead of the disk.
  */
-function guardedOperations(display: string, checked: string | null, initial?: { file: string; data: Buffer }) {
+function guardedOperations(display: string, checked: string | null, initial?: { file: string; data: Buffer }, reserved?: () => void) {
   let read: string | undefined;
   let written: KnownContent | undefined;
   let cached = initial;
@@ -228,6 +240,7 @@ function guardedOperations(display: string, checked: string | null, initial?: { 
       return data;
     },
     writeFile: async (file: string, content: string) => {
+      reserved?.();
       try {
         await atomicWriteFile(file, content, read ?? checked);
         written = { sha256: sha256(content), size: Buffer.byteLength(content) };
@@ -253,10 +266,15 @@ async function runQuery(
   try {
     if (query.type === 'edit' && !query.edits?.length) throw new Error('edit needs a non-empty edits array.');
     if (query.type === 'write' && query.content === undefined) throw new Error('write needs content.');
-    const outside = await workspaceRefusal(file, query, ctx, signal, permission);
+    const outside = await workspaceRefusal(file, query, ctx, signal, permission, id);
     if (outside) throw new Error(outside);
     const { refusal, current, expected } = guard.inspect(file, query.type, query.path);
     if (refusal) throw new Error(refusal);
+    // Checked again right before the write: a peer may reserve the file while the change is prepared (asks, reads, checkpoint).
+    const reserved = () => {
+      const now = guard.reservedBy?.(file);
+      if (now) throw new Error(now);
+    };
     // The one read before the change: it serves the content check, the checkpoint and Pi's edit engine. The atomic
     // write's compare-and-swap is the only other read.
     const data = current
@@ -279,13 +297,14 @@ async function runQuery(
         signal?.throwIfAborted();
         if (((await sha256File(file)) ?? null) !== checked) throw changedOnDisk(query.path);
         signal?.throwIfAborted();
+        reserved();
         await fs.promises.rm(file);
       });
       guard.record(file);
       const unsaved = await settleCheckpoint(ctx, checkpoints, capture, file, true, null);
       return { ...base, ok: true, message: `Deleted ${query.path}${note}${unsaved}` };
     }
-    operations = guardedOperations(query.path, checked, data ? { file, data } : undefined);
+    operations = guardedOperations(query.path, checked, data ? { file, data } : undefined, reserved);
     const tool = query.type === 'edit' ? createEditToolDefinition(ctx.cwd, { operations }) : createWriteToolDefinition(ctx.cwd, { operations });
     const args = query.type === 'edit' ? { path: query.path, edits: query.edits } : { path: query.path, content: query.content };
     const result = await tool.execute(`${id}:${index}`, args as never, signal, undefined, ctx);
@@ -308,10 +327,13 @@ async function runQuery(
  * Why `file` may not be changed for its place: inside Octocode's state folder (always refused, in every mode), or
  * outside the repository and the `file.outside` ask was not allowed. Undefined when the change may go ahead.
  */
-async function workspaceRefusal(file: string, query: FileQuery, ctx: ExtensionToolContext, signal: AbortSignal | undefined, permission: Permission): Promise<string | undefined> {
+async function workspaceRefusal(file: string, query: FileQuery, ctx: ExtensionToolContext, signal: AbortSignal | undefined, permission: Permission, toolCallId: string): Promise<string | undefined> {
   const real = canonicalPath(file);
   const home = stateFolderRefusal(real, query.path, 'the file tool');
-  if (home) return home;
+  if (home) {
+    permission.refused([`${query.type} ${real}`], home, 'file');
+    return home;
+  }
   const root = repoKey(ctx.cwd).root;
   const inside = isWithin(real, root);
   if (inside && !runsLater(real, root)) return undefined;
@@ -320,11 +342,19 @@ async function workspaceRefusal(file: string, query: FileQuery, ctx: ExtensionTo
     action: 'file.outside',
     title: inside ? 'Change a file that runs in later sessions?' : 'Change a file outside the workspace?',
     what: [`${query.type} ${real}`, `workspace: ${root}`],
-    why: inside ? `it loads code, hooks or instructions in later sessions. ${query.reasoning}` : query.reasoning,
+    purpose: query.reasoning,
+    toolCallId,
+    cwd: ctx.cwd,
     grant: { key: dir, label: `file changes under ${dir}` },
     ...(signal ? { signal } : {}),
   });
   return verdict.allowed ? undefined : `${query.path} is ${inside ? 'a file that runs in later sessions' : `outside the workspace (${root})`}. ${verdict.message}`;
+}
+
+/** The batch's `purpose`: what its changes' `reasoning` fields say, in order; none when they say nothing (the assistant's message then stands in). */
+function changePurpose(queries: readonly Pick<FileQuery, 'reasoning'>[]): { purpose?: string } {
+  const said = [...new Set(queries.map((query) => query.reasoning?.trim()).filter(Boolean))];
+  return said.length > 0 ? { purpose: said.join('; ') } : {};
 }
 
 /** The first output-cut placeholder a change would add to the file (one already in the file or the replaced text is fine). */
@@ -362,7 +392,7 @@ export function returnedContent(toolName: string, input: Record<string, unknown>
 }
 
 export function registerFileTool(pi: ExtensionAPI, guard: FileGuard, permission: Permission, checkpoints?: Checkpoints): void {
-  pi.registerTool({
+  pi.registerTool(timedTool({
     name: 'file',
     label: 'File',
     description:
@@ -375,16 +405,17 @@ export function registerFileTool(pi: ExtensionAPI, guard: FileGuard, permission:
     parameters: Params,
     // `file` calls run one at a time (the guard, review dialog and checkpoints are shared); other tools batched beside
     // them still run in parallel. Each path's writes also queue behind Pi's edit/write through withFileMutationQueue.
-    execute: exclusive(timed(async (id: string, params: Static<typeof Params>, signal: AbortSignal | undefined, _onUpdate: unknown, ctx: ExtensionToolContext) => {
+    execute: async (id: string, params: Static<typeof Params>, signal: AbortSignal | undefined, _onUpdate: unknown, ctx: ExtensionToolContext) => {
+      if (params.queries.length === 0) throw new Error('No queries: pass at least one edit, write or delete query.');
       const outcomes: QueryOutcome[] = [];
       // When the mode asks (manual), the review is the ask: nothing is applied until the user has said yes to each
       // change (or to all of them). Without a UI to ask in, the batch is refused.
       let rejected = new Map<number, string | undefined>();
       const verdict = await permission.check(
         ctx,
-        { action: 'file.workspace', title: 'Apply these file changes?', what: params.queries.map((query) => `${query.type} ${query.path}`), ...(signal ? { signal } : {}) },
+        { action: 'file.workspace', title: 'Apply these file changes?', what: params.queries.map((query) => `${query.type} ${query.path}`), ...changePurpose(params.queries), toolCallId: id, cwd: ctx.cwd, ...(signal ? { signal } : {}) },
         async (dialogCtx, request) => {
-          const answer = await askReview(dialogCtx, params.queries, request.signal);
+          const answer = await askReview(dialogCtx, params.queries, request.signal, systemLines(request, permission.mode));
           if (answer === 'cancelled') return undefined;
           if (answer === 'session') return 'kind';
           rejected = answer;
@@ -404,14 +435,14 @@ export function registerFileTool(pi: ExtensionAPI, guard: FileGuard, permission:
       }
       if (outcomes.every((outcome) => !outcome.ok)) throw new Error(formatOutcomes(outcomes));
       return { content: [{ type: 'text' as const, text: formatOutcomes(outcomes) }], details: { outcomes } };
-    })),
+    },
     renderCall: renderFileCall,
     renderResult: renderFileResult,
-  });
+  }, { exclusive: true }));
 
   pi.on('tool_result', async (event, ctx) => {
     if (event.isError) return;
     const known = returnedContent(event.toolName, event.input, event.content, event.details);
-    for (const file of readPaths(event.toolName, event.input, ctx.cwd)) guard.record(file, known);
+    for (const file of readPaths(event.toolName, event.input, ctx.cwd)) guard.record(file, known, known === undefined);
   });
 }

@@ -24,14 +24,12 @@ The runtime scans untrusted provider and filesystem content before rendering. De
 
 ### Classification egress
 
-`clasify` and enabled `goals` send sanitized evidence to the configured provider (`OCTOCODE_CLASSIFICATION_API_HOST`, default Jev); classification sends nothing without a key. Ranking sends the goals and authorized candidate evidence: paths with returned matches, raw text windows with source line numbers, or the selected metadata and snippets of result rows. It does not hydrate unseen bodies or widen requested fields, sections, or ranges. Each public clasify request carries:
+`clasify` and enabled `classifiers` send sanitized evidence to the configured provider (`OCTOCODE_CLASSIFICATION_API_HOST`, default Jev); classification sends nothing without a key. Ranking sends the classifier questions and authorized candidate evidence: paths with returned matches, raw text windows with source line numbers, or the selected snippets of result rows. It does not hydrate unseen bodies or widen requested fields, sections, or ranges. Each public clasify request carries:
 
-- the captured evidence, sanitized like a direct tool call, including a search page's absolute `base`;
-- the matrix `mainGoal` and `reasoning`, when set;
-- the question text;
-- a `read` descriptor naming the tool and its query (search text, paths, repositories).
+- the model and the caller's keyed questions, unchanged;
+- one state: the caller's literal `state`, or the complete selected source captured through the authorized reader and sanitized like a direct tool call.
 
-The `read` query passes the input security policy first: a rejected query is dropped, secrets are redacted, and paging tokens (`snapshot`) are removed. Treat classification goals, questions, briefs, and selected evidence as disclosed to that provider. Shared path policy and sanitation apply before either route sends evidence.
+`mainGoal` and `reasoning` are never sent. A source reference passes the input security policy before capture; secrets are redacted before sending. A URL source is fetched over HTTPS only, under the address policy at connection and every redirect, with bounded size and redirects; no GitHub or other stored credential is sent to that origin. Treat classifier questions, clasify questions and selected evidence as disclosed to that provider. Shared path policy and sanitation apply before either route sends evidence.
 
 ## Filesystem policy
 

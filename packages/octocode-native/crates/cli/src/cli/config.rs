@@ -236,7 +236,7 @@ pub fn set(
     match value {
         Ok(value) => edit(runtime, key, Some(&value), json_out),
         Err(message) => {
-            emit_error(message, json_out);
+            emit_error("invalidInput", message, json_out);
             2
         }
     }
@@ -262,7 +262,7 @@ fn read_stdin_value() -> Result<String, &'static str> {
 }
 
 fn edit(runtime: &ToolRuntime, key: &str, value: Option<&str>, json_out: bool) -> u8 {
-    let path = runtime.config().home.join(".env");
+    let path = runtime.inspect_config().global_env_path;
     match octocode_native::config::edit_scoped_env(&path, key, value, false, None) {
         Ok(changed) => {
             let action = if value.is_some() { "set" } else { "unset" };
@@ -281,12 +281,17 @@ fn edit(runtime: &ToolRuntime, key: &str, value: Option<&str>, json_out: bool) -
             }
         }
         Err(error) => {
-            emit_error(&format!("Cannot edit global config: {error}"), json_out);
-            if error.kind() == io::ErrorKind::InvalidInput {
-                2
+            let code = if error.kind() == io::ErrorKind::InvalidInput {
+                "invalidInput"
             } else {
-                5
-            }
+                "fileAccessFailed"
+            };
+            emit_error(
+                code,
+                &format!("Cannot edit global config: {error}"),
+                json_out,
+            );
+            super::exit_code(octocode_native::runtime::ExitClass::of_code(code))
         }
     }
 }

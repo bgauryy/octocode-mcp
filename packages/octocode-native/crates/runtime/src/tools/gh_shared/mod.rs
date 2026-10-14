@@ -7,13 +7,13 @@ pub(crate) mod test_support;
 #[cfg(test)]
 mod tests;
 
-use crate::providers::github::{
-    ConditionalCache, GitHubProvider, ProviderError, ProviderErrorKind, ProviderErrorReason,
-    RequestContext,
-};
 use crate::tools::id::ToolId;
 use crate::tools::paging::push_warnings;
 use crate::tools::result::{Continuation, query_row};
+use octocode_github::{
+    ConditionalCache, GitHubProvider, ProviderError, ProviderErrorKind, ProviderErrorReason,
+    RequestContext,
+};
 use serde_json::{Value, json};
 
 /// Hints are rendered whole only up to the response guidance limit (120
@@ -39,10 +39,12 @@ pub(crate) const REPOSITORY_ACCESS_HINT: &str =
 /// metadata.
 #[derive(Debug)]
 pub struct GhFailure {
-    pub error: ProviderError,
+    /// The error and the recovery lead are boxed: they are most of the
+    /// failure's size, and every GitHub tool returns it on its error path.
+    pub error: Box<ProviderError>,
     pub message: String,
     pub hints: Vec<String>,
-    pub next: Option<Value>,
+    pub next: Option<Box<Value>>,
     /// Fields the error row names besides the error (a file's identity).
     pub fields: Vec<(&'static str, Value)>,
 }
@@ -50,7 +52,7 @@ pub struct GhFailure {
 impl GhFailure {
     pub(crate) fn new(error: ProviderError, message: impl Into<String>) -> Self {
         Self {
-            error,
+            error: Box::new(error),
             message: message.into(),
             hints: Vec::new(),
             next: None,
@@ -190,13 +192,16 @@ pub(crate) fn with_ref_recovery(mut failure: GhFailure, owner: &str, repo: &str)
     if failure.error.reason != Some(ProviderErrorReason::RefNotFound) {
         return failure;
     }
-    let mut next = failure.next.take().unwrap_or_else(|| json!({}));
+    let mut next = failure.next.take().unwrap_or_else(|| Box::new(json!({})));
     next["viewRefs"] = ref_recovery(owner, repo);
     failure.next = Some(next);
     failure
 }
 
-/// The memo of a repository's canonical `owner/repo` (volatile cache class).
+/// How long a repository's canonical name is remembered.
+const CANONICAL_TTL: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// The memo of a repository's canonical `owner/repo`.
 fn canonical_key(owner: &str, repo: &str) -> String {
     format!("repo-canonical:{owner}/{repo}").to_ascii_lowercase()
 }
@@ -225,11 +230,12 @@ pub(crate) async fn remember_canonical<C: ConditionalCache>(
             .put(
                 &partition,
                 canonical_key(owner, repo),
-                crate::providers::github::CachedContent {
+                octocode_github::CachedContent {
                     etag: None,
                     bytes: full_name.as_bytes().to_vec().into(),
-                    resolved_ref: full_name.to_owned(),
+                    resolved_ref: String::new(),
                 },
+                octocode_github::Retention::Expires(CANONICAL_TTL),
             )
             .await;
     }
@@ -340,7 +346,7 @@ pub(crate) fn with_search_repair(
         return failure;
     };
     failure.hints.clear();
-    let mut next = failure.next.take().unwrap_or_else(|| json!({}));
+    let mut next = failure.next.take().unwrap_or_else(|| Box::new(json!({})));
     next[name] = lead;
     failure.next = Some(next);
     failure

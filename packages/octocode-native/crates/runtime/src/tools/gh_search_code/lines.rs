@@ -3,8 +3,8 @@
 //! page is read (core API quota, through the contents cache) and its keyword
 //! lines are listed as `"<line>\t<text>"` (the numbered-line form), the way
 //! `grep -n` would: with several keywords, the lines holding all of them.
-use crate::providers::github::{GitHubProvider, ProviderError, ProviderErrorKind, RequestContext};
 use crate::security::scan::ContentScan;
+use octocode_github::{GitHubProvider, ProviderError, ProviderErrorKind, RequestContext};
 use std::path::Path;
 
 /// Hit lines listed per file; a file with more states `matchCount`, and its
@@ -54,7 +54,7 @@ pub(super) enum FileHits {
 }
 
 /// Resolve `reference` (`None`: the default branch HEAD) to a commit SHA.
-pub(super) async fn resolve_commit<C: crate::providers::github::ConditionalCache>(
+pub(super) async fn resolve_commit<C: octocode_github::ConditionalCache>(
     provider: &GitHubProvider<C>,
     owner: &str,
     repo: &str,
@@ -69,7 +69,7 @@ pub(super) async fn resolve_commit<C: crate::providers::github::ConditionalCache
 /// Read each path at `sha` concurrently and list its keyword lines.
 /// Cancellation and auth/rate failures propagate as `Unavailable` for the
 /// file, except cancellation, which aborts.
-pub(super) async fn resolve_files<C: crate::providers::github::ConditionalCache>(
+pub(super) async fn resolve_files<C: octocode_github::ConditionalCache>(
     provider: &GitHubProvider<C>,
     owner: &str,
     repo: &str,
@@ -83,7 +83,7 @@ pub(super) async fn resolve_files<C: crate::providers::github::ConditionalCache>
     let reads = paths.iter().map(|path| async move {
         provider
             .get_file_content(
-                &crate::providers::github::ContentRequest {
+                &octocode_github::ContentRequest {
                     owner: owner.to_owned(),
                     repo: repo.to_owned(),
                     path: path.clone(),

@@ -34,8 +34,11 @@ export interface Capture {
 }
 
 export interface RewindResult {
+  /** Back at the state before every chosen change. */
   restored: string[];
-  /** Changed since the agent's change (or its checkpoint is gone): left as they are. */
+  /** Restored back through the newest changes, then stopped at one that could not be: the file is in between, and that checkpoint stays. */
+  partly: string[];
+  /** Changed since the agent's change (or its checkpoint is gone): left as they are, and the checkpoint stays. */
   skipped: string[];
 }
 
@@ -206,31 +209,42 @@ export class Checkpoints {
     return [...new Set(turns)].sort((a, b) => b - a);
   }
 
-  /** Undo the given turns, newest change first; drops their checkpoints. */
+  /**
+   * Undo the given turns, newest change first. A checkpoint is dropped only once its restore succeeded: when one
+   * fails (the file changed since, its blob is corrupt, the write errors) that path stops there, and that entry and
+   * every older chosen entry for it stay with their blobs, so a second rewind can retry from the state the file is in.
+   */
   async rewind(turns: number[]): Promise<RewindResult> {
     const chosen = new Set(turns);
-    const restored = new Set<string>();
-    const skipped = new Set<string>();
+    const undone = new Map<string, number>();
+    const stuck = new Set<string>();
+    const kept = new Set<CheckpointEntry>();
     for (const entry of this.entries.filter((candidate) => chosen.has(candidate.turn) && candidate.after !== undefined).reverse()) {
-      if (skipped.has(entry.path)) continue;
-      const current = (await digestOf(entry.path)) ?? null;
-      if (current !== entry.after) {
-        restored.delete(entry.path);
-        skipped.add(entry.path);
+      if (!stuck.has(entry.path) && (await this.undo(entry))) {
+        undone.set(entry.path, (undone.get(entry.path) ?? 0) + 1);
         continue;
       }
-      try {
-        await this.restore(entry, current);
-        restored.add(entry.path);
-      } catch {
-        restored.delete(entry.path);
-        skipped.add(entry.path);
-      }
+      stuck.add(entry.path);
+      kept.add(entry);
     }
-    this.entries = this.entries.filter((entry) => !chosen.has(entry.turn));
+    this.entries = this.entries.filter((entry) => !chosen.has(entry.turn) || kept.has(entry));
     await this.rewrite();
     await this.collect();
-    return { restored: [...restored], skipped: [...skipped] };
+    const result: RewindResult = { restored: [], partly: [], skipped: [...stuck].filter((file) => !undone.has(file)) };
+    for (const file of undone.keys()) (stuck.has(file) ? result.partly : result.restored).push(file);
+    return result;
+  }
+
+  /** Restore one entry if the file is still as the agent left it; whether it was restored. */
+  private async undo(entry: CheckpointEntry): Promise<boolean> {
+    const current = (await digestOf(entry.path)) ?? null;
+    if (current !== entry.after) return false;
+    try {
+      await this.restore(entry, current);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private async restore(entry: CheckpointEntry, current: string | null): Promise<void> {

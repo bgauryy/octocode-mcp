@@ -109,6 +109,22 @@ describe('openAgentDb', () => {
 
   });
 
+  it('adds the agents.started column to a database from before it existed', () => {
+    const { DatabaseSync } = loadSqlite();
+    const file = path.join(tmp(), 'older.db');
+    const old = new DatabaseSync(file);
+    old.exec(`PRAGMA application_id=${AGENT_APPLICATION_ID};
+      CREATE TABLE agents (id TEXT PRIMARY KEY, workspace TEXT NOT NULL, role TEXT NOT NULL, parent_id TEXT, pid INTEGER NOT NULL, status TEXT NOT NULL, task TEXT, activity TEXT, joined_at INTEGER NOT NULL, seen_at INTEGER NOT NULL);
+      INSERT INTO agents (id, workspace, role, pid, status, joined_at, seen_at) VALUES ('a1', 'w', 'main', 42, 'idle', 1, 2);`);
+    old.close();
+    const agent = openAgentDb(file);
+    try {
+      expect(agent.db.prepare('SELECT id, pid, started FROM agents').all()).toEqual([{ id: 'a1', pid: 42, started: null }]);
+    } finally {
+      agent.close();
+    }
+  });
+
   it('adds what a database from another build lacks, and never removes or rewrites anything', () => {
     const { DatabaseSync } = loadSqlite();
     const file = path.join(tmp(), 'old.db');
@@ -129,6 +145,8 @@ describe('openAgentDb', () => {
     const agent = openAgentDb(file);
     try {
       expect(agent.db.prepare('SELECT title, goal, started_at, state FROM backlog').all()).toEqual([{ title: 'keep me', goal: '', started_at: null, state: 'todo' }]);
+      // The where/why/evidence/plan columns are added with an empty default, so an older row reads as having none.
+      expect(agent.db.prepare('SELECT paths, why, evidence, plan FROM backlog').all()).toEqual([{ paths: '', why: '', evidence: '', plan: '' }]);
       expect(agent.db.prepare('SELECT text, kind FROM backlog_notes').all()).toEqual([{ text: 'a note', kind: 'note' }]);
       const names = (agent.db.prepare("SELECT name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'").all() as Array<{ name: string }>).map((row) => row.name);
       expect(names).toEqual(expect.arrayContaining(['agents', 'backlog_board', 'memories', 'edits', 'memories_fts']));

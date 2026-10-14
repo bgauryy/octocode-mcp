@@ -72,11 +72,20 @@ pub(super) struct CompiledRule {
     pub(super) candidate_plan: CandidatePlan,
 }
 
+/// The engine tag of a rule that does not parse as a rule (malformed YAML,
+/// an unknown key, no matcher, a bad regex); a rule naming what this
+/// grammar cannot compile is `structural.query.compileFailed`.
+pub const RULE_INVALID: &str = "structural.rule.invalid";
+
+fn invalid_rule(message: &str) -> String {
+    format!("[{RULE_INVALID}] {message}")
+}
+
 pub(in crate::structural) fn parse_rule(rule: &str) -> Result<RawRule, String> {
     #[cfg(test)]
     RULE_PARSE_COUNT.with(|count| count.set(count.get() + 1));
     if rule.len() > 64_000 {
-        return Err("structural rule exceeds 64000 byte limit".to_owned());
+        return Err(invalid_rule("structural rule exceeds 64000 byte limit"));
     }
     let value: serde_yaml_ng::Value =
         serde_yaml_ng::from_str(rule).map_err(|err| yaml_error(&err))?;
@@ -105,9 +114,9 @@ pub const EXAMPLE_RULE: &str =
 fn yaml_error(err: &serde_yaml_ng::Error) -> String {
     let message = format!("invalid rule YAML: {err}");
     if message.contains("unknown field") {
-        format!("{message}. Example rule: {EXAMPLE_RULE}")
+        invalid_rule(&format!("{message}. Example rule: {EXAMPLE_RULE}"))
     } else {
-        message
+        invalid_rule(&message)
     }
 }
 
@@ -118,7 +127,7 @@ thread_local! {
 
 fn validate_rule_depth(rule: &RawRule, depth: usize) -> Result<(), String> {
     if depth >= 64 {
-        return Err("structural rule exceeds 64 nesting levels".to_owned());
+        return Err(invalid_rule("structural rule exceeds 64 nesting levels"));
     }
     for child in rule
         .all
@@ -162,7 +171,7 @@ impl CompiledRule {
             .as_deref()
             .map(Regex::new)
             .transpose()
-            .map_err(|err| format!("invalid rule regex: {err}"))?;
+            .map_err(|err| invalid_rule(&format!("invalid rule regex: {err}")))?;
         let has = raw
             .has
             .as_deref()
@@ -206,7 +215,9 @@ impl CompiledRule {
             candidate_plan: CandidatePlan::Any,
         };
         if compiled.is_empty() {
-            return Err("invalid rule: rule must contain at least one matcher".to_string());
+            return Err(invalid_rule(
+                "invalid rule: rule must contain at least one matcher",
+            ));
         }
         compiled.candidate_plan = compiled.compute_candidate_plan();
         Ok(compiled)

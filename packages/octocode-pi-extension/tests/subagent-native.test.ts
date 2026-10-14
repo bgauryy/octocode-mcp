@@ -52,7 +52,7 @@ describe('native Pi subagent completion', () => {
       const script = path.join(cwd, 'pi');
       fs.writeFileSync(script, `process.stdout.write(${JSON.stringify(`${records.join('\n')}\n`)});`);
       process.argv[1] = script;
-      const result = await runSubagent([], cwd, undefined, { id: 'native-test' }, undefined, () => undefined);
+      const result = await runSubagent('', [], cwd, undefined, { id: 'native-test' }, undefined, () => undefined);
       if (boundary === 'completed') {
         expect(result.text).toBe('REPORT');
         expect(result.error).toBeUndefined();

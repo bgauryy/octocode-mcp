@@ -75,9 +75,6 @@ struct Tool {
     name: &'static str,
     /// Causes the tool's default walk skips by.
     skips: &'static [Cause],
-    /// The tool's walk lists `.gitignore`d entries once the default prune is
-    /// off, so `defaultExcludes:false` alone lifts both.
-    defaults_lift_ignored: bool,
     /// The `next` channel that carries the lead for `scenario`.
     channel: fn(&Scenario) -> &'static str,
     /// The query row over `root` that looks for `needle`.
@@ -115,7 +112,6 @@ fn local_search() -> Tool {
     Tool {
         name: "localSearch",
         skips: &FLAGGED,
-        defaults_lift_ignored: false,
         channel: |_| "includeSkipped",
         query: |root| row(root, json!({"matchString": "needle"})),
         run: |root, query| {
@@ -135,7 +131,6 @@ fn ast_match() -> Tool {
     Tool {
         name: "astSearch match",
         skips: &FLAGGED,
-        defaults_lift_ignored: false,
         channel: |_| "includeSkipped",
         query: |root| {
             row(
@@ -163,7 +158,6 @@ fn ast_symbols() -> Tool {
     Tool {
         name: "astSearch symbols",
         skips: &[Cause::Ignored, Cause::Hidden, Cause::DefaultExcluded],
-        defaults_lift_ignored: false,
         channel: |_| "includeSkipped",
         query: |root| {
             row(
@@ -186,7 +180,6 @@ fn structure(operation: &'static str, skips: &'static [Cause]) -> Tool {
             "structureSearch files"
         },
         skips,
-        defaults_lift_ignored: operation == "files",
         channel: |_| "includeSkipped",
         query: if operation == "tree" {
             |root| row(root, json!({"operation": "tree", "extensions": ["ts"]}))
@@ -209,7 +202,6 @@ fn ast_rewrite() -> Tool {
     Tool {
         name: "astRewrite",
         skips: &FLAGGED,
-        defaults_lift_ignored: false,
         channel: |_| "includeSkipped",
         query: |root| {
             row(
@@ -295,13 +287,10 @@ fn a_match_behind_a_skipped_path_is_named_and_its_lead_lifts_only_that() {
             let root = repo(scenario, "needle.ts", "function needle() {}\n");
             let query = (tool.query)(&root.0);
             let out = (tool.run)(&root.0, &query);
-            let mut effective = FLAGGED
+            let effective = FLAGGED
                 .into_iter()
                 .filter(|cause| scenario.causes.contains(cause) && tool.skips.contains(cause))
                 .collect::<Vec<_>>();
-            if tool.defaults_lift_ignored && effective.contains(&Cause::DefaultExcluded) {
-                effective.retain(|cause| *cause != Cause::Ignored);
-            }
             if effective.is_empty() {
                 assert!((tool.found)(&out), "{label}: walked without a lead: {out}");
                 continue;

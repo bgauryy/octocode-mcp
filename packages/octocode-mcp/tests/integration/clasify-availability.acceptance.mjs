@@ -11,6 +11,85 @@ const root = process.cwd();
 const base = path.join(root, '.octocode/octocode-dev/clasify-availability');
 await fs.mkdir(base, { recursive: true });
 const fixture = await fs.mkdtemp(path.join(base, 'fixture-'));
+const rankingTools = new Set([
+  'localFetch',
+  'localSearch',
+  'ghGetFileContent',
+  'ghSearchCode',
+]);
+const { clasifyContextTools } = JSON.parse(
+  await fs.readFile(
+    path.join(root, 'packages/octocode-config/contract/cli-presentation.json'),
+    'utf8'
+  )
+);
+
+function cliSchema(project, env, args) {
+  const started = Date.now();
+  const result = spawnSync(
+    process.execPath,
+    [path.join(root, 'packages/octocode/out/octocode.js'), 'schema', ...args],
+    { env, cwd: project, encoding: 'utf8', timeout: 15000 }
+  );
+  assert.equal(
+    result.status,
+    0,
+    `${args.join(' ')}: ${JSON.stringify({
+      error: result.error?.code,
+      signal: result.signal,
+      elapsedMs: Date.now() - started,
+      stderr: result.stderr,
+    })}`
+  );
+  return JSON.parse(result.stdout);
+}
+
+function assertRankingFields(
+  properties,
+  required,
+  expected,
+  label,
+  compact = false
+) {
+  for (const field of ['goals', 'ranking']) {
+    // MCP omits continuation-only fields even when enabled; copied next.*
+    // requests are still accepted by the native contract.
+    assert.equal(
+      Object.hasOwn(properties ?? {}, field),
+      expected && !(compact && field === 'ranking'),
+      `${label}: ${field}`
+    );
+    assert.ok(!required?.includes(field), `${label}: ${field} is optional`);
+  }
+}
+
+function resourceTools(value) {
+  if (Array.isArray(value)) return value.flatMap(resourceTools);
+  if (!value || typeof value !== 'object') return [];
+  return [
+    ...(value.properties?.tool?.enum ?? []),
+    ...Object.values(value).flatMap(resourceTools),
+  ];
+}
+
+function assertAvailableExamples(value, allowed, label) {
+  if (!value || typeof value !== 'object') return;
+  const examples = [
+    ...(value.examples ?? []),
+    ...(value.example ? [value.example] : []),
+  ];
+  for (const example of examples) {
+    for (const resource of example.resources ?? []) {
+      if (resource.tool)
+        assert.ok(
+          allowed.includes(resource.tool),
+          `${label}: unavailable example delegate ${resource.tool}`
+        );
+    }
+  }
+  for (const child of Object.values(value))
+    assertAvailableExamples(child, allowed, label);
+}
 const request = {
   queries: [
     {
@@ -166,6 +245,73 @@ const cases = [
     config: { tools: { enabled: ['clasify', 'ghSearchCode'] } },
     enabled: false,
   },
+  {
+    name: 'home-config-ranking-without-beta',
+    config: {
+      ranking: { enabled: true },
+      classification: { api: 'fixture-key' },
+    },
+    enabled: false,
+    goals: true,
+  },
+  {
+    name: 'hidden-clasify-retains-goals',
+    env: {
+      OCTOCODE_BETA: 'true',
+      OCTOCODE_RANKING_ENABLED: 'true',
+      OCTOCODE_CLASSIFICATION_API: 'fixture-key',
+      DISABLE_TOOLS: 'clasify',
+    },
+    enabled: false,
+    goals: true,
+  },
+  {
+    name: 'workspace-cannot-enable-ranking',
+    env: { OCTOCODE_CLASSIFICATION_API: 'fixture-key' },
+    projectEnv: 'OCTOCODE_RANKING_ENABLED=true\n',
+    enabled: false,
+    goals: false,
+  },
+  {
+    name: 'workspace-can-disable-ranking',
+    config: {
+      ranking: { enabled: true },
+      classification: { api: 'fixture-key' },
+    },
+    projectEnv: 'OCTOCODE_RANKING_ENABLED=false\n',
+    enabled: false,
+    goals: false,
+  },
+  {
+    name: 'process-empty-disables-home-ranking',
+    config: {
+      ranking: { enabled: true },
+      classification: { api: 'fixture-key' },
+    },
+    env: { OCTOCODE_CLASSIFICATION_API: '' },
+    enabled: false,
+    goals: false,
+  },
+  {
+    name: 'process-whitespace-disables-home-ranking',
+    config: {
+      ranking: { enabled: true },
+      classification: { api: 'fixture-key' },
+    },
+    env: { OCTOCODE_CLASSIFICATION_API: '   ' },
+    enabled: false,
+    goals: false,
+  },
+  ...[
+    ['clasify'],
+    ['clasify', 'localFetch'],
+    ['clasify', 'ghGetFileContent'],
+  ].map(allowed => ({
+    name: `clasify-delegates-${allowed.join('-')}`,
+    config: { tools: { enabled: allowed } },
+    env: { OCTOCODE_BETA: 'true', OCTOCODE_CLASSIFICATION_API: 'fixture-key' },
+    enabled: true,
+  })),
 ];
 let providerCalls = 0;
 let providerAvailable = true;
@@ -191,7 +337,10 @@ const provider = http.createServer(async (req, res) => {
     })
   );
 });
-await new Promise(resolve => provider.listen(0, '127.0.0.1', resolve));
+await new Promise((resolve, reject) => {
+  provider.once('error', reject);
+  provider.listen(0, '127.0.0.1', resolve);
+});
 const results = [];
 try {
   for (const row of cases) {
@@ -215,29 +364,35 @@ try {
       ...row.env,
     };
     const client = new Client({ name: 'clasify-availability', version: '1' });
+    let stderr = '';
     try {
       const beforeCalls = providerCalls;
-      await client.connect(
-        new StdioClientTransport({
-          command: process.execPath,
-          args: [path.join(root, 'packages/octocode-mcp/dist/index.js')],
-          cwd: project,
-          env,
-          stderr: 'pipe',
-        })
-      );
+      const transport = new StdioClientTransport({
+        command: process.execPath,
+        args: [path.join(root, 'packages/octocode-mcp/dist/index.js')],
+        cwd: project,
+        env,
+        stderr: 'pipe',
+      });
+      transport.stderr?.on('data', chunk => {
+        stderr += chunk;
+      });
+      await client.connect(transport);
       const catalog = await client.listTools();
       for (const tool of catalog.tools) {
         const queries = tool.inputSchema.properties?.queries;
-        assert.equal(queries?.minItems, 1, `${tool.name}: nonempty query batch`);
-        assert.match(queries?.description ?? '', /even one query/, tool.name);
-        const supportsGoals = [
-          'localFetch', 'localSearch', 'ghGetFileContent', 'ghSearchCode',
-        ].includes(tool.name);
         assert.equal(
-          Boolean(queries?.items?.properties?.goals),
-          supportsGoals && (row.goals ?? false),
-          `${row.name}: ${tool.name} goals scope`
+          queries?.minItems,
+          1,
+          `${tool.name}: nonempty query batch`
+        );
+        assert.match(queries?.description ?? '', /even one query/, tool.name);
+        assertRankingFields(
+          queries?.items?.properties,
+          queries?.items?.required,
+          rankingTools.has(tool.name) && (row.goals ?? false),
+          `${row.name}: MCP ${tool.name}`,
+          true
         );
       }
       assert.equal(
@@ -245,49 +400,44 @@ try {
         0,
         `${row.name}: discovery does not contact the provider`
       );
-      const codeSearch = catalog.tools.find(t => t.name === 'ghSearchCode');
-      const mcpGoals =
-        codeSearch?.inputSchema.properties?.queries?.items?.properties?.goals;
+      const cliCatalog = cliSchema(project, env, []);
       assert.equal(
-        Boolean(mcpGoals),
-        row.goals ?? false,
-        `${row.name}: MCP goals require API and ranking opt-in`
+        cliCatalog.tools.some(t => t.name === 'clasify'),
+        row.enabled,
+        row.name
       );
-      const readSchema = spawnSync(
-        process.execPath,
-        [
-          path.join(root, 'packages/octocode/out/octocode.js'),
-          'schema',
-          'ghSearchCode',
-          '--view',
-          'full',
-        ],
-        { env, cwd: project, encoding: 'utf8', timeout: 15000 }
-      );
-      assert.equal(readSchema.status, 0, row.name);
-      assert.equal(
-        Boolean(JSON.parse(readSchema.stdout).querySchema?.properties?.goals),
-        row.goals ?? false,
-        `${row.name}: CLI goals require API and ranking opt-in`
-      );
+      if (!row.goals) {
+        assert.ok(
+          cliCatalog.tools.every(t => !/\b(goals|ranking)\??\b/.test(t.fields)),
+          `${row.name}: disabled fields absent from CLI catalog`
+        );
+      }
+      for (const tool of rankingTools) {
+        for (const view of ['query', 'full']) {
+          const schema = cliSchema(project, env, [tool, '--view', view]);
+          assertRankingFields(
+            { ...schema.querySchema?.properties, ...schema.continuationFields },
+            schema.querySchema?.required,
+            row.goals ?? false,
+            `${row.name}: CLI ${tool} ${view}`
+          );
+          assert.ok(
+            !schema.moreFields?.some(field =>
+              ['goals', 'ranking'].includes(field)
+            ),
+            `${row.name}: ranking controls are exposed or omitted, never hidden in moreFields`
+          );
+        }
+      }
       if (row.localEnabled !== undefined)
         assert.equal(
           catalog.tools.some(t => t.name === 'localFetch'),
           row.localEnabled,
           row.name
         );
-      const schema = spawnSync(
-        process.execPath,
-        [
-          path.join(root, 'packages/octocode/out/octocode.js'),
-          'schema',
-          'clasify',
-        ],
-        { env, cwd: project, encoding: 'utf8', timeout: 15000 }
-      );
-      assert.equal(schema.status, 0, row.name);
+      const schema = cliSchema(project, env, ['clasify']);
       assert.equal(
-        JSON.parse(schema.stdout).availability.enabled,
+        schema.availability.enabled,
         row.enabled,
         `${row.name}: CLI discovery`
       );
@@ -296,6 +446,47 @@ try {
         row.enabled,
         row.name
       );
+      if (row.enabled) {
+        const mcpClasify = catalog.tools.find(tool => tool.name === 'clasify');
+        const resources =
+          mcpClasify.inputSchema.properties.queries.items.properties.resources;
+        const compact = cliSchema(project, env, ['clasify', '--view', 'query']);
+        const expectedCli = clasifyContextTools.filter(name =>
+          cliCatalog.tools.some(t => t.name === name)
+        );
+        const expectedMcp = clasifyContextTools.filter(name =>
+          catalog.tools.some(t => t.name === name)
+        );
+        assert.deepEqual(
+          resourceTools(resources),
+          expectedMcp,
+          `${row.name}: MCP advertises only available delegates`
+        );
+        assert.deepEqual(
+          resourceTools(compact.querySchema),
+          expectedCli,
+          `${row.name}: CLI query view advertises only available delegates`
+        );
+        assert.deepEqual(
+          resourceTools(schema.querySchema),
+          expectedCli,
+          `${row.name}: CLI full view advertises only available delegates`
+        );
+        if (JSON.stringify(expectedCli) === JSON.stringify(expectedMcp)) {
+          assert.deepEqual(
+            compact.querySchema.properties.resources,
+            resources,
+            `${row.name}: same enabled delegates produce the same CLI/MCP resource schema`
+          );
+        }
+        const variants = cliSchema(project, env, [
+          'clasify',
+          '--view',
+          'variants',
+        ]);
+        for (const view of [schema, compact, variants])
+          assertAvailableExamples(view, expectedCli, row.name);
+      }
       if (!row.enabled) {
         // Shared guidance refers callers to the exposed controls.
         assert.ok(
@@ -343,6 +534,10 @@ try {
         enabled: row.enabled,
         goals: row.goals ?? false,
         passed: true,
+      });
+    } catch (error) {
+      throw new Error(`${row.name}: ${error.message}\n${stderr}`, {
+        cause: error,
       });
     } finally {
       await client.close();
@@ -408,5 +603,5 @@ try {
   await fs.rm(fixture, { recursive: true, force: true });
 }
 console.log(
-  `PASS ${results.length}/${cases.length} isolated CLI/MCP API and beta scenarios`
+  `PASS ${results.length} isolated CLI/MCP API, beta and recovery scenarios`
 );

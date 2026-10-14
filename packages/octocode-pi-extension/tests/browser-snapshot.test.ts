@@ -1,5 +1,21 @@
+import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { formatChanges, formatSnapshot } from '../src/browser/snapshot.js';
+import type { BrowserSession } from '../src/browser/cdp.js';
+import { formatChanges, formatSnapshot, snapshot } from '../src/browser/snapshot.js';
+
+const sessionOf = (data: unknown) => ({ page: { untilDialog: <T>(work: Promise<T>) => work, evaluate: async () => data } }) as unknown as BrowserSession;
+
+describe('snapshot spill', () => {
+  it('saves the full snapshot sanitized, so the model never reads page escapes or bidi text through the file', async () => {
+    const items = Array.from({ length: 1_000 }, (_, index) => `[${index + 1}] button "Action \u202e${index + 1}"`);
+    const out = await snapshot(sessionOf({ title: 'Big \u001b]0;pwned\u0007', url: 'https://example.com', text: `page\u200d text ${'word '.repeat(10_000)}\u{e0041}`, items }));
+    const file = /Full snapshot \(every element and all text\): (\S+);/.exec(out)![1]!.replace(/^~/, process.env['HOME']!);
+    const saved = fs.readFileSync(file, 'utf8');
+    expect(saved).toContain('[1000] button "Action 1000"');
+    expect(saved).toMatch(/page text /);
+    expect(saved).not.toMatch(/[\u001b\u0007\u202e\u200d\u{e0041}]/u);
+  });
+});
 
 describe('formatSnapshot', () => {
   it('keeps the element list first and fills the rest of 8 KB with page text', () => {

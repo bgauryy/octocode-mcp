@@ -3,25 +3,21 @@
 //! `octo mcp`. JSON clients use their native server map; codex writes
 //! `[mcp_servers.octocode]` TOML; goose writes `extensions.octocode` YAML.
 use super::mcp_clients::{self, CLIENTS, ClientSpec, EntryShape};
-use super::mcp_manage::{self, ServerSpec};
+use super::mcp_manage::{self, Method, ServerSpec};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 
 /// The env name bound to the `local.enabled` config key (`OCTOCODE_ENABLE_LOCAL`).
 fn local_enabled_env() -> Option<&'static str> {
-    octocode_native::config::CONFIG_FIELDS
-        .iter()
-        .find(|field| field.path == "local.enabled")
-        .and_then(|field| field.env.first())
-        .map(|binding| binding.name)
+    octocode_native::config::field::LOCAL_ENABLED.env_name()
 }
 
 /// The GitHub token env var `--pass-env` forwards; one of the config
 /// contract's `ENV_TOKEN_VARS` (a unit test pins that).
-const PASS_ENV_TOKEN: &str = "GITHUB_TOKEN";
+const PASS_ENV_TOKEN: &str = octocode_native::config::environment::GITHUB_TOKEN;
 
 fn server_spec(args: &InstallArgs) -> ServerSpec {
-    let mut spec = ServerSpec::new(args.method.as_deref().unwrap_or("npx"));
+    let mut spec = ServerSpec::new(args.method);
     if args.pass_env {
         for key in local_enabled_env().into_iter().chain([PASS_ENV_TOKEN]) {
             if let Ok(value) = std::env::var(key)
@@ -47,30 +43,42 @@ fn install_entry(shape: EntryShape, spec: &ServerSpec) -> Result<Value, String> 
     Ok(server)
 }
 
+/// `octocode install`: add the Octocode MCP server to an agent client's configuration.
+#[derive(clap::Args, Debug, Default)]
 pub struct InstallArgs {
+    /// Client id from `--list`, e.g. `claude-code`, `cursor`, `claude-desktop`.
+    #[arg(long, value_name = "ID")]
     pub ide: Option<String>,
+    /// Overwrite an existing MCP server entry.
+    #[arg(long)]
     pub force: bool,
+    /// Preview the config that would be written without making any changes.
+    #[arg(long)]
     pub dry_run: bool,
+    /// Verify that the MCP config already contains a valid Octocode entry.
+    #[arg(long)]
     pub check: bool,
+    /// List supported client ids.
+    #[arg(long)]
     pub list: bool,
+    /// Print JSON: the global `--json`.
+    #[arg(skip)]
     pub json: bool,
+    /// Override whether local (filesystem) tools are enabled in the MCP server.
+    #[arg(long)]
     pub enable_local: Option<bool>,
+    /// Pass through additional environment variables to the MCP server process.
+    #[arg(long)]
     pub pass_env: bool,
-    /// Installation runner: "npx" (default), "bunx", or "pnpm".
-    pub method: Option<String>,
-    /// Restore config from this .bak file path and exit.
+    /// Installation runner.
+    #[arg(long, value_enum, default_value_t)]
+    pub method: Method,
+    /// Restore a client config from the `.bak` file an earlier install left beside it.
+    #[arg(long, value_name = "FILE")]
     pub rollback: Option<String>,
 }
 
 pub fn run(args: InstallArgs) -> u8 {
-    if args
-        .method
-        .as_deref()
-        .is_some_and(|method| !matches!(method, "npx" | "bunx" | "pnpm"))
-    {
-        eprintln!("Installation method must be npx, bunx, or pnpm.");
-        return 2;
-    }
     // Rollback mode: restore the backup an earlier install left beside the config
     if let Some(ref bak_str) = args.rollback {
         let bak = PathBuf::from(bak_str);
@@ -135,6 +143,7 @@ pub fn run(args: InstallArgs) -> u8 {
     }
     let Some(requested_ide) = args.ide.as_deref().filter(|value| !value.is_empty()) else {
         super::emit_error(
+            "invalidInput",
             "Usage: octocode install --ide <id> [--force] [--dry-run] [--check] [--json]; ids: octocode install --list",
             args.json,
         );
@@ -149,7 +158,11 @@ pub fn run(args: InstallArgs) -> u8 {
     }
     let Some((client, config_path)) = client.and_then(|client| Some((client, client.home_path()?)))
     else {
-        super::emit_error(&unknown_client_message(requested_ide), args.json);
+        super::emit_error(
+            "invalidInput",
+            &unknown_client_message(requested_ide),
+            args.json,
+        );
         return 2;
     };
     match install(client, &config_path, &args) {
@@ -280,20 +293,15 @@ pub(super) fn valid_server(client: &ClientSpec, root: &Value) -> bool {
     let Some((command, args)) = command_line(client.shape, server) else {
         return false;
     };
-    let runner = Path::new(command)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or(command);
-    matches!(
-        runner,
-        "npx" | "npx.cmd" | "bunx" | "bunx.exe" | "pnpm" | "pnpm.cmd"
-    ) && args.iter().all(Value::is_string)
+    let Some(method) = Method::of_command(command) else {
+        return false;
+    };
+    args.iter().all(Value::is_string)
         && args.iter().any(|arg| {
             arg.as_str()
                 .is_some_and(|value| value == "octocode-mcp" || value.starts_with("octocode-mcp@"))
         })
-        && (runner != "pnpm" && runner != "pnpm.cmd"
-            || args.first().and_then(Value::as_str) == Some("dlx"))
+        && (method != Method::Pnpm || args.first().and_then(Value::as_str) == Some("dlx"))
 }
 
 fn report_check(
@@ -466,7 +474,7 @@ fn render_fixture(
     let text = existing.unwrap_or("");
     let keys = client.server_keys();
     let root = mcp_manage::parse_document(client.format, text)?;
-    let server = mcp_manage::default_entry(client, args.method.as_deref().unwrap_or("npx"));
+    let server = mcp_manage::default_entry(client, args.method);
     let already = Existing::of(mcp_manage::entry_at(client, &root, &keys), &server);
     let rendered = mcp_manage::render_document(client, text, &keys, Some(&server))?;
     Ok((rendered, already))
@@ -486,15 +494,7 @@ mod tests {
     fn default_args() -> super::InstallArgs {
         super::InstallArgs {
             ide: Some("cursor".into()),
-            force: false,
-            dry_run: false,
-            check: false,
-            list: false,
-            json: false,
-            enable_local: None,
-            pass_env: false,
-            method: None,
-            rollback: None,
+            ..super::InstallArgs::default()
         }
     }
 
@@ -537,7 +537,7 @@ mod tests {
     #[test]
     fn server_uses_bunx_when_specified() {
         let spec = server_spec(&super::InstallArgs {
-            method: Some("bunx".into()),
+            method: crate::cli::mcp_manage::Method::Bunx,
             ..default_args()
         });
         let server = install_entry(EntryShape::Stdio, &spec).expect("allowed");

@@ -364,10 +364,6 @@ fn take_patches(value: &mut Value, label: &str, out: &mut Vec<(String, String)>)
     }
 }
 
-/// Patch-window fields a span header restates (`chars a-b of T`); the rest
-/// derive from the shown patch length.
-const SPAN_FIELDS: [&str; 6] = ["unit", "offset", "length", "total", "hasMore", "nextOffset"];
-
 /// The `(header, patch)` section of a changed-file row with a non-empty
 /// patch, plus the row's fields the header does not carry (with its path),
 /// or `None` when the header carries all of them.
@@ -426,7 +422,8 @@ fn patch_section(row: &Value, label: &str) -> Option<((String, String), Option<V
             let from = page.get("offset").and_then(Value::as_u64).unwrap_or(0);
             let total = page.get("total").and_then(Value::as_u64).unwrap_or(0);
             if let Some(Value::Object(window)) = rest.get_mut("patchPagination") {
-                for key in SPAN_FIELDS {
+                // The span header restates the window (`chars a-b of T`).
+                for key in super::pages::SpanFacts::KEYS {
                     window.shift_remove(key);
                 }
                 if window.is_empty() {

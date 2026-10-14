@@ -1275,10 +1275,9 @@ fn is_node_executable(path: &Path) -> bool {
 fn find_python_user_script(script_name: &str) -> Option<String> {
     let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))?;
     let home = PathBuf::from(home);
-    for candidate in [home.join(".local/bin").join(script_name)] {
-        if candidate.exists() {
-            return Some(candidate.to_string_lossy().into_owned());
-        }
+    let candidate = home.join(".local/bin").join(script_name);
+    if candidate.exists() {
+        return Some(candidate.to_string_lossy().into_owned());
     }
 
     let python_dir = home.join("Library/Python");

@@ -1,4 +1,4 @@
-use super::http::RegistryClient;
+use super::http::{JSON, RegistryClient};
 use super::util::{
     commit_sha, coordinate_path, date_prefix, endpoint, github_slug, license, object_for,
     parse_url, repository_url, required, rows, safe_url, string, total,
@@ -40,8 +40,7 @@ pub(crate) async fn pypi(
     );
     artifact.version = string(info.get("version"));
     artifact.description = string(info.get("summary"));
-    artifact.license =
-        string(info.get("license_expression")).or_else(|| string(info.get("license")));
+    artifact.license = pypi_license(info);
     let links = info.get("project_urls").and_then(Value::as_object);
     artifact.homepage = safe_url(info.get("home_page"))
         .or_else(|| links.and_then(|value| safe_url(value.get("Homepage"))));
@@ -101,6 +100,47 @@ pub(crate) async fn pypi(
     Ok(ArtifactProviderPage::single(artifact))
 }
 
+/// A PyPI release's license as a short name: the SPDX `license_expression`,
+/// else a one-line `license` field, else the last `License :: …`
+/// classifier's name. Many projects put the full license text in `license`
+/// (numpy: 46 KB); that is no license name and is never the row's license.
+fn pypi_license(info: &serde_json::Map<String, Value>) -> Option<String> {
+    const SHORT: usize = 100;
+    string(info.get("license_expression"))
+        .or_else(|| {
+            string(info.get("license"))
+                .map(|license| license.trim().to_owned())
+                .filter(|license| {
+                    !license.is_empty() && license.len() < SHORT && !license.contains('\n')
+                })
+        })
+        .or_else(|| {
+            info.get("classifiers")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .filter_map(|classifier| classifier.strip_prefix("License :: "))
+                .filter_map(|path| path.rsplit(" :: ").next())
+                .map(str::trim)
+                .rfind(|name| !name.is_empty())
+                .map(str::to_owned)
+        })
+}
+
+/// The release a PEP 440 `==`/`===` pin names (no wildcard, one clause):
+/// such a pin selects a yanked release too (PEP 592), so it is an exact
+/// lookup, not a specifier pip resolves.
+fn pypi_pin(specifier: &str) -> Option<&str> {
+    let specifier = specifier.trim();
+    let pinned = specifier
+        .strip_prefix("===")
+        .or_else(|| specifier.strip_prefix("=="))?
+        .trim();
+    (!pinned.is_empty() && !pinned.contains(['<', '>', '=', '!', '~', ',', '*', ' ']))
+        .then_some(pinned)
+}
+
 /// The PyPI release document for `version` (none: the latest release; a
 /// bare number is exact; operators make a PEP 440 specifier), or `None`
 /// when the project or the resolved release is unknown.
@@ -115,16 +155,20 @@ async fn pypi_release_json(
             super::util::encode_component(package_name)
         ))
     };
-    // A bare release number is exact; operators make a PEP 440 specifier.
+    // A bare release number or an `==`/`===` pin is exact; other operators
+    // make a PEP 440 specifier.
     let requested = version.filter(|value| *value != "latest");
-    let exact = requested.filter(|value| {
-        !value.contains(['<', '>', '=', '!', '~', ',', '*'])
-            && !matches!(VersionSpec::parse(value), VersionSpec::Tag(_))
+    let exact = requested.and_then(|value| {
+        pypi_pin(value).or_else(|| {
+            (!value.contains(['<', '>', '=', '!', '~', ',', '*'])
+                && !matches!(VersionSpec::parse(value), VersionSpec::Tag(_)))
+            .then_some(value)
+        })
     });
     let response = match (requested, exact) {
         (None, _) => {
             client
-                .json(ArtifactType::Pypi, project("")?, true, None)
+                .json(ArtifactType::Pypi, project("")?, true, None, None, JSON)
                 .await?
         }
         (Some(_), Some(version)) => {
@@ -134,11 +178,13 @@ async fn pypi_release_json(
                     project(&format!("{}/", super::util::encode_component(version)))?,
                     true,
                     None,
+                    None,
+                    JSON,
                 )
                 .await?;
             if found.is_none()
                 && let Some(project) = client
-                    .json(ArtifactType::Pypi, project("")?, true, None)
+                    .json(ArtifactType::Pypi, project("")?, true, None, None, JSON)
                     .await?
             {
                 return Err(super::npm::version_not_found(
@@ -151,7 +197,7 @@ async fn pypi_release_json(
         }
         (Some(specifier), None) => {
             let Some(project_json) = client
-                .json(ArtifactType::Pypi, project("")?, true, None)
+                .json(ArtifactType::Pypi, project("")?, true, None, None, JSON)
                 .await?
             else {
                 return Ok(None);
@@ -159,11 +205,20 @@ async fn pypi_release_json(
             let releases = pypi_releases(&project_json, false);
             let Some(resolved) = pypi_resolve(specifier, releases.iter().map(String::as_str))
             else {
-                return Err(super::npm::version_not_found(
-                    package_name,
-                    specifier,
-                    &pypi_releases(&project_json, true),
-                ));
+                let all = pypi_releases(&project_json, true);
+                // Only yanked releases match: name the newest (a pin selects it).
+                if let Some(yanked) = pypi_resolve(specifier, all.iter().map(String::as_str)) {
+                    let mut error = ArtifactError::new(
+                        "versionNotFound",
+                        format!(
+                            "{package_name} has no unyanked version matching \"{specifier}\"; yanked {yanked} matches"
+                        ),
+                    )
+                    .with_status(404);
+                    error.nearest = vec![yanked];
+                    return Err(error);
+                }
+                return Err(super::npm::version_not_found(package_name, specifier, &all));
             };
             client
                 .json(
@@ -171,6 +226,8 @@ async fn pypi_release_json(
                     project(&format!("{}/", super::util::encode_component(&resolved)))?,
                     true,
                     None,
+                    None,
+                    JSON,
                 )
                 .await?
         }
@@ -251,8 +308,8 @@ async fn crate_release(
         super::util::encode_component(version)
     ))?;
     let (metadata, record) = tokio::join!(
-        client.json(ArtifactType::Crates, metadata, true, None),
-        client.json(ArtifactType::Crates, record, true, None)
+        client.json(ArtifactType::Crates, metadata, true, None, None, JSON),
+        client.json(ArtifactType::Crates, record, true, None, None, JSON)
     );
     let (Some(metadata), Some(record)) = (metadata?, record?) else {
         return Ok(None);
@@ -310,7 +367,7 @@ async fn crate_dependencies(
     ))
     .ok()?;
     let listing = client
-        .json(ArtifactType::Crates, url, true, None)
+        .json(ArtifactType::Crates, url, true, None, None, JSON)
         .await
         .ok()??;
     Some(
@@ -363,7 +420,10 @@ pub(crate) async fn crates(
             "https://crates.io/api/v1/crates/{}",
             super::util::encode_component(name)
         ))?;
-        let Some(response) = client.json(ArtifactType::Crates, url, true, None).await? else {
+        let Some(response) = client
+            .json(ArtifactType::Crates, url, true, None, None, JSON)
+            .await?
+        else {
             return Ok(ArtifactProviderPage::empty(Some(0)));
         };
         let body = object_for(&response, ArtifactType::Crates)?;
@@ -420,6 +480,14 @@ pub(crate) async fn crates(
     }
     let page = state.page.unwrap_or(1);
     let size = query.page_size();
+    // crates.io rejects (HTTP 400) a relevance page that starts at or past
+    // its candidate limit: that page is the limit, without a request.
+    if page.saturating_sub(1).saturating_mul(size as u64) >= CRATES_RELEVANCE_LIMIT {
+        return Ok(ArtifactProviderPage {
+            terminal_limit: Some(crates_limit(None)),
+            ..ArtifactProviderPage::empty(None)
+        });
+    }
     let url = keyword_url("https://crates.io/api/v1/crates", query, page, size)?;
     let (data, artifacts) =
         keyword_rows(client, ArtifactType::Crates, url, "crates", crate_item).await?;
@@ -427,7 +495,33 @@ pub(crate) async fn crates(
         .get("meta")
         .and_then(Value::as_object)
         .and_then(|meta| total(meta.get("total")));
-    paged(artifacts, count, page, size, ArtifactType::Crates)
+    let mut page = paged(artifacts, count, page, size, ArtifactType::Crates)?;
+    // The next page would start at the limit: the rest is unreachable.
+    if page
+        .next_state
+        .as_ref()
+        .and_then(|next| next.page)
+        .is_some_and(|next| (next - 1).saturating_mul(size as u64) >= CRATES_RELEVANCE_LIMIT)
+    {
+        page.next_state = None;
+        page.terminal_limit = Some(crates_limit(count));
+    }
+    Ok(page)
+}
+
+/// crates.io serves a relevance-sorted keyword search only below this many
+/// results (`RELEVANCE_CANDIDATE_LIMIT`).
+const CRATES_RELEVANCE_LIMIT: u64 = 1000;
+
+/// The terminal limit of a crates.io keyword search, with its total when
+/// known.
+fn crates_limit(total: Option<u64>) -> String {
+    let of = total
+        .map(|total| format!(" of {total}"))
+        .unwrap_or_default();
+    format!(
+        "crates.io serves only the first {CRATES_RELEVANCE_LIMIT}{of} results of a keyword search; narrow the keywords to reach the rest."
+    )
 }
 
 /// An exact Go module or package lookup on pkg.go.dev, pinned to
@@ -446,12 +540,12 @@ async fn go_exact(
         )
     };
     let mut response = client
-        .json(ArtifactType::Go, lookup("module")?, true, None)
+        .json(ArtifactType::Go, lookup("module")?, true, None, None, JSON)
         .await?;
     let mut is_package = false;
     if response.is_none() {
         response = client
-            .json(ArtifactType::Go, lookup("package")?, true, None)
+            .json(ArtifactType::Go, lookup("package")?, true, None, None, JSON)
             .await?;
         is_package = true;
     }
@@ -467,7 +561,7 @@ async fn go_exact(
         if let Some(version) = version.as_deref() {
             let versions_url = parse_url(&format!("https://pkg.go.dev/v1/versions/{path}"))?;
             if let Some(listing) = client
-                .json(ArtifactType::Go, versions_url, true, None)
+                .json(ArtifactType::Go, versions_url, true, None, None, JSON)
                 .await?
             {
                 let published = listing
@@ -526,7 +620,7 @@ async fn go_exact(
         ))?;
         // The proxy is a lead source only: its failure leaves the lookup.
         if let Some(origin) = client
-            .json(ArtifactType::Go, info, true, None)
+            .json(ArtifactType::Go, info, true, None, None, JSON)
             .await
             .ok()
             .flatten()
@@ -578,7 +672,7 @@ pub(crate) async fn go(
             ],
         )?;
         let response = client
-            .json(ArtifactType::Go, url, false, None)
+            .json(ArtifactType::Go, url, false, None, None, JSON)
             .await?
             .ok_or_else(|| super::util::invalid(ArtifactType::Go))?;
         let data = object_for(&response, ArtifactType::Go)?.clone();
@@ -746,7 +840,7 @@ pub(crate) async fn packagist(
             coordinate_path(&name)
         ))?;
         let mut response = client
-            .json(ArtifactType::Packagist, tagged_url, true, None)
+            .json(ArtifactType::Packagist, tagged_url, true, None, None, JSON)
             .await?;
         let mut entries = packagist_entries(response.as_ref(), &name)?;
         if entries.is_empty() {
@@ -755,7 +849,7 @@ pub(crate) async fn packagist(
                 coordinate_path(&name)
             ))?;
             response = client
-                .json(ArtifactType::Packagist, dev_url, true, None)
+                .json(ArtifactType::Packagist, dev_url, true, None, None, JSON)
                 .await?;
             entries = packagist_entries(response.as_ref(), &name)?;
         }
@@ -835,7 +929,10 @@ pub(crate) async fn rubygems(
             "https://rubygems.org/api/v1/gems/{}.json",
             super::util::encode_component(name)
         ))?;
-        let Some(response) = client.json(ArtifactType::Rubygems, url, true, None).await? else {
+        let Some(response) = client
+            .json(ArtifactType::Rubygems, url, true, None, None, JSON)
+            .await?
+        else {
             return Ok(ArtifactProviderPage::empty(Some(0)));
         };
         return Ok(ArtifactProviderPage::single(gem(object_for(
@@ -861,7 +958,7 @@ pub(crate) async fn rubygems(
             ],
         )?;
         let response = client
-            .json(ArtifactType::Rubygems, url, false, None)
+            .json(ArtifactType::Rubygems, url, false, None, None, JSON)
             .await?
             .ok_or_else(|| super::util::invalid(ArtifactType::Rubygems))?;
         let fetched = rows(&response, ArtifactType::Rubygems)?;
@@ -925,7 +1022,10 @@ async fn keyword_rows(
     item: fn(&serde_json::Map<String, Value>) -> Result<ArtifactItem, ArtifactError>,
 ) -> Result<(serde_json::Map<String, Value>, Vec<ArtifactItem>), ArtifactError> {
     let invalid = || super::util::invalid(artifact_type);
-    let Some(Value::Object(data)) = client.json(artifact_type, url, false, None).await? else {
+    let Some(Value::Object(data)) = client
+        .json(artifact_type, url, false, None, None, JSON)
+        .await?
+    else {
         return Err(invalid());
     };
     let artifacts = rows(data.get(key).ok_or_else(invalid)?, artifact_type)?
@@ -975,10 +1075,10 @@ fn paged(
 mod tests {
     use super::super::types::{StaticHttp, artifact_query, test_budget};
     use super::*;
-    use crate::providers::RequestBudget;
     use crate::providers::artifact::http::{
         ArtifactHttp, ArtifactHttpFuture, ArtifactHttpRequest, ArtifactHttpResponse,
     };
+    use octocode_github::RequestBudget;
     use serde_json::json;
 
     /// Answers by URL path (exact match); anything else is a 404. Records
@@ -1165,6 +1265,85 @@ mod tests {
             "the `v` tag is checked first and ends the check"
         );
         assert_eq!(tags.seen()[1], "psf/requests@v2.31.0");
+    }
+
+    /// PEP 592: an `==`/`===` pin selects a yanked release; a range that
+    /// only yanked releases match says so and offers the newest one.
+    #[tokio::test]
+    async fn pypi_pins_select_yanked_releases_and_ranges_name_them() {
+        let mut yanked = pypi_release("2.32.0");
+        yanked["info"]["yanked"] = json!(true);
+        let http = RouteHttp::new(vec![
+            ("/pypi/requests/json", pypi_project()),
+            ("/pypi/requests/2.32.0/json", yanked),
+        ]);
+        let b = test_budget();
+        let client = RegistryClient::uncached(&http, &b);
+        for pin in ["==2.32.0", "===2.32.0", "== 2.32.0"] {
+            let page = pypi(&versioned(ArtifactType::Pypi, "requests", pin), &client)
+                .await
+                .unwrap_or_else(|error| panic!("{pin}: {error:?}"));
+            assert_eq!(
+                page.artifacts[0].version.as_deref(),
+                Some("2.32.0"),
+                "{pin}"
+            );
+            assert_eq!(page.artifacts[0].yanked, Some(true), "{pin}");
+        }
+        let only_yanked = pypi(
+            &versioned(ArtifactType::Pypi, "requests", ">=2.32.0,<2.32.2"),
+            &client,
+        )
+        .await
+        .expect_err("only a yanked release matches");
+        assert_eq!(only_yanked.code, "versionNotFound");
+        assert!(
+            only_yanked.message.contains("yanked 2.32.0"),
+            "{only_yanked:?}"
+        );
+        assert_eq!(only_yanked.nearest, ["2.32.0"]);
+    }
+
+    /// The row's license is a short identifier: the SPDX expression, a
+    /// one-line license field, else the license classifier; never the full
+    /// license text some projects put in `license`.
+    #[tokio::test]
+    async fn pypi_license_is_short_never_the_license_text() {
+        let text = format!(
+            "Copyright (c) 2005-2024, NumPy Developers.\nAll rights reserved.\n{}",
+            "Redistribution and use in source and binary forms. ".repeat(40)
+        );
+        let cases = [
+            (
+                json!({"license_expression": "BSD-3-Clause", "license": text}),
+                Some("BSD-3-Clause"),
+            ),
+            (json!({"license": "Apache 2.0"}), Some("Apache 2.0")),
+            (
+                json!({"license": text, "classifiers": [
+                    "Programming Language :: Python",
+                    "License :: OSI Approved :: BSD License"
+                ]}),
+                Some("BSD License"),
+            ),
+            (json!({"license": text}), None),
+        ];
+        for (fields, expected) in cases {
+            let mut release = pypi_release("2.31.0");
+            for (key, value) in fields.as_object().expect("fields") {
+                release["info"][key] = value.clone();
+            }
+            let http = RouteHttp::new(vec![("/pypi/requests/2.31.0/json", release)]);
+            let b = test_budget();
+            let client = RegistryClient::uncached(&http, &b);
+            let page = pypi(
+                &versioned(ArtifactType::Pypi, "requests", "2.31.0"),
+                &client,
+            )
+            .await
+            .expect("release");
+            assert_eq!(page.artifacts[0].license.as_deref(), expected, "{fields}");
+        }
     }
 
     fn serde_crate_document() -> Value {
@@ -1378,6 +1557,44 @@ mod tests {
             missing.nearest.iter().any(|version| version == "1.0.100"),
             "{missing:?}"
         );
+    }
+
+    /// crates.io answers a relevance search only below result 1000 (an
+    /// explicit page starting there is HTTP 400): the page that reaches it
+    /// ends with a terminal limit and no next page, and a page past it is
+    /// that limit without a request.
+    #[tokio::test]
+    async fn crates_discovery_stops_at_the_first_1000_results() {
+        let rows = (0..100)
+            .map(|n| json!({"name": format!("c{n}"), "max_version": "1.0.0"}))
+            .collect::<Vec<_>>();
+        let http = RouteHttp::new(vec![(
+            "/api/v1/crates",
+            json!({"crates": rows, "meta": {"total": 23391}}),
+        )]);
+        let b = test_budget();
+        let client = RegistryClient::uncached(&http, &b);
+        let query = artifact_query(
+            json!({"ecosystem": "crates", "keywords": ["jwt"], "pageSize": 100}),
+            None,
+        );
+        let at = |page: u64| ArtifactProviderState {
+            page: Some(page),
+            ..Default::default()
+        };
+        let inside = crates(&query, &at(9), &client).await.expect("page 9");
+        assert_eq!(inside.next_state.and_then(|state| state.page), Some(10));
+        assert!(inside.terminal_limit.is_none());
+        let last = crates(&query, &at(10), &client).await.expect("page 10");
+        assert_eq!(last.artifacts.len(), 100);
+        assert!(last.next_state.is_none());
+        let reason = last.terminal_limit.expect("terminal limit");
+        assert!(reason.contains("first 1000 of 23391"), "{reason}");
+        let requests = http.seen().len();
+        let past = crates(&query, &at(11), &client).await.expect("page 11");
+        assert!(past.artifacts.is_empty() && past.next_state.is_none());
+        assert!(past.terminal_limit.is_some());
+        assert_eq!(http.seen().len(), requests, "no request past the reach");
     }
 
     async fn crate_lookup(

@@ -1,89 +1,88 @@
 ---
 name: octocode-research
-description: "Use when a code or repository claim needs evidence; good for tracing callers, runtime wiring, regressions, change impact, GitHub history, and finding described answers in unread files."
+description: "Load this skill first whenever a question is about this codebase or a package: who calls a function, where something is used, what breaks if it changes, when a bug started, or what a dependency version changed, even when a quick search looks enough. Use when a code, repository, or package question needs evidence: who calls what, how a request flows, when a regression started, what a change breaks, whether a pull request is safe, or package versions, dependencies, breaking changes, and CVEs; good for tracing callers and runtime wiring, GitHub history, and finding answers in unread files. Not for open ideas or option comparisons (octocode-brainstorming), architecture decisions (octocode-architect), or public web pages (octocode-scraping)."
 ---
 
 # Octocode Research
 
-tools: `npx -y octocode` / `octocode-mcp`
-
-The semantic check is conditional: use it when a judgment changes the next read.
+Settle a code or repository claim with the cheapest evidence that proves it. Tools: Octocode MCP, else `npx -y octocode`.
 
 ```mermaid
 flowchart LR
-  F[FRAME] --> C[CLASSIFY] --> M[MODEL] --> S{"SEMANTIC?"}
-  M -- "known anchor" --> R
-  S -- "admitted" --> Q[goals or clasify] --> R
-  S -- "skip" --> R["SEARCH/READ"]
-  R --> P[PROVE] --> D["DECIDE/PATCH"] --> V[VERIFY]
+  F[FRAME question, corpus] --> C[CLASSIFY] --> M[MODEL path] --> A{Exact anchor?}
+  A -- yes --> R[SEARCH / READ]
+  A -- no --> S{Judgment changes next read?}
+  S -- yes --> Q[classifiers or clasify] --> R
+  S -- no --> R
+  R --> P[PROVE] --> E{Answers the claim?}
+  E -- no --> R
+  E -- edit --> D[PATCH] --> V[VERIFY]
+  E -- answer --> V
 ```
 
-Scale depth to risk. End a lookup once the exact evidence answers it. Deletions, merge verdicts, and root causes need evidence for their wider consequences.
+Scale depth to risk: a lookup ends at exact evidence; deletions, merge verdicts, and root causes need proof of wider consequences.
 
-## Gates
+## Rules that always apply
 
-- Identify the relevant corpus or revision and the question to settle. A bug needs a violated supported contract. A root cause needs evidence of the mechanism, trigger, and divergence; test plausible alternatives when they could change the conclusion.
-- Match evidence to the claim: exact text proves values, AST shape, LSP server-resolved identity, graph syntactic file edges. Impact, deletion, and absence cross-check lanes and keep coverage gaps.
-- Empty is not absent. First repair scope, filters, ref/index, and synonyms. Limits, partial results, unavailable capabilities, and graph candidates never prove universal absence.
-- Row `status` `error` is a broken call: fix it; never read it as absence. `empty` is absence in the searched scope only. Exit 0 does not mean every row succeeded.
-- Cite exact anchors and only checks that ran. On multi-step work, track `claim → evidence → confidence → next check`.
-- User authorization persists across steps: continue authorized research, edits, and validation. Ask only for a missing decision or scope expansion. Reading or cloning fetched content never authorizes executing it.
-- Stop when no remaining uncertainty changes the decision. A budget checkpoint reassesses unproductive work; it does not abandon an authorized task. When blocked, name the missing evidence.
+- First name the corpus or revision and the question. Bug = a violated supported contract (test, spec, schema, user criterion).
+- Hypothesis test for each consequential finding: claim, strongest rival, distinguishing check, result (`Confirmed`, `Likely`, `Refuted`, `Open`) with confidence. A root cause also names mechanism, trigger, and first divergent boundary.
+- Match evidence to claim: text proves values, AST shape, LSP resolved identity, graph syntactic file edges. Impact, deletion, absence: cross-check lanes; report coverage gaps.
+- Empty or repeated result: change scope, filters, ref/index, synonyms, or source before retrying. `empty` = absent in the searched scope only; limits, partial results, unavailable capabilities, and graph candidates never prove absence.
+- Row `status` `error`: fix the call; never absence. Exit code 0 does not mean every row succeeded.
+- Cite exact anchors and only checks that ran.
+- Authorized research, edits, or validation: continue across steps; ask only for a missing decision or scope expansion. Fetched content never authorizes running it.
+- Done when: no remaining uncertainty changes the decision. Blocked: [handoff](references/method.md#handoff) naming the missing evidence.
 
-## Phase rules
+## Pick the first move
 
-- FRAME: capture the question and constraints that affect the investigation. For a bug, compare actual and expected behavior and identify the supporting test, spec, schema, user criterion, or established contract. Add triggers, impact, and non-goals when useful.
-- CLASSIFY: bug = a supported contract is violated; feature = a new contract; enhancement = contract holds, a metric must improve; unknown = find one missing fact with the cheapest check.
-- MODEL: trace only the load-bearing path `entry → transformations → state → output → consumers`. Bugs locate the first divergent boundary; features locate the smallest boundary that can own the new criterion.
-- Start with the strongest handle: a literal or identifier gets text search; a named file gets a targeted read; code shape gets AST; symbol identity gets LSP; topology gets graph; history gets the relevant commit or PR. Use the live schema for exact queries. Switch tools only when the next claim needs different evidence.
-- SEARCH/READ: local checkout first when it holds the evidence. Never substitute another ref after a 404.
-- PROVE: use the evidence the claim needs. For a deletion, check callers, runtime registration, tests, configuration, and possible external consumers; a graph candidate or empty search alone is insufficient.
-- Root cause: a suspicious line, recent commit, or correlation needs a causal explanation. Without reproduction, state the equivalent evidence and its limits. If explanations still compete, run the most useful distinguishing check; ask for input only when the needed evidence is unavailable.
-- DECIDE/PATCH: for a behavior change or refactor, load `references/workflow-change.md`. Never lower coverage floors or edit a grader to hide a failure.
-- VERIFY: run checks relevant to the change; after a tool or package change, exercise the real CLI/MCP path. Report what ran and what remains unverified.
-- Review: `APPROVE` only after applicable checks pass; `REQUEST_CHANGES` for a proven blocker; `COMMENT` when verification is incomplete.
-- Recovery: use an empty or stalled result to revise scope, query, or evidence source. Keep changes understandable and avoid repeating a call without a reason it can produce new evidence.
+- Task class and done-when: [method](references/method.md#classify-the-task).
+- Literal or identifier: `localSearch`, `ghSearchCode`. Named file: `localFetch`, `ghGetFileContent`.
+- Code shape / symbol identity: `astSearch` / `lspSearch`. History: `ghSearchHistory`, `ghGetHistoryItem`.
+- Repo-wide topology: `npx octocode graph ingest <path>`, then `graph query <op>`; re-ingest on a new revision.
 
-## SEMANTIC? (goals or clasify)
+Trace only `entry → transformations → state → output → consumers`; switch tools only when the next claim needs different evidence. Prefer a local checkout; after a 404, never substitute another ref.
 
-Use a semantic route when selecting unread evidence could avoid later reads, or when a typed label is itself needed. Prefer a cheap exact anchor when it answers the question. Choose optional read-tool `goals` for source content first, or `clasify` for locations/judgments first; do not repeat the same relevance decision in both. Prefer direct reads for bounded evidence. Use deterministic tools for exhaustive coverage and identity. Source evidence settles findings; typed opinions cannot dismiss them. Verify deciding source and keep incomplete scope unresolved. If unavailable, use targeted reads. Admission and evidence-scope checks live in `references/clasify.md`.
+## Prove, then act
 
-## Tools
+- Deletion: callers, runtime registration, tests, configuration, external consumers; a graph candidate or empty search is not enough.
+- Never lower coverage floors or edit a grader to hide a failure.
+- Verify with checks relevant to the change; after a tool or package change, run the real CLI or MCP path.
+- Review verdict: `APPROVE` only after applicable checks pass; `REQUEST_CHANGES` for a proven blocker; `COMMENT` when verification is incomplete.
 
-- Prefer exposed Octocode MCP tools; else `npx -y octocode`. Read `schema <name> --view query` before an unfamiliar call or after a validation error.
-- GitHub access can use `GH_TOKEN` or `GITHUB_TOKEN`. Optional read-tool goals need a nonblank `OCTOCODE_CLASSIFICATION_API` and ranking enabled; public `clasify` needs the credential and beta (`OCTOCODE_BETA=1`). Beta topology also uses `OCTOCODE_BETA=1`. These and optional local-tool settings such as `OCTOCODE_ENABLE_LOCAL`, `OCTOCODE_STORAGE_MODE`, and `OCTOCODE_LSP_PREWARM` can be set in `<HOME>/.octocode/.env`; inspect live config before changing them. Never print credential values.
-- Batch ≤5 independent rows; keep dependent probes sequential. Add `mainGoal`/`reasoning` only in multi-call research on an unknown; omit them on simple lookups.
-- Run each `next.*` page unchanged, or narrow it and name what stays unread; `hints.*` leads are optional (a successful row shows most only with `extras:["hints"]`).
-- Read the smallest useful span (`references/reading-flows.md`); expand when nearby context can resolve the claim.
-- Repo-wide topology: run `npx octocode graph ingest <path>`, then `npx octocode graph query <op>`. Refresh an index when its source revision changes.
+## Classifiers or clasify?
+
+Use a semantic route only when choosing unread evidence saves later reads or a typed judgment changes the next action; else an exact anchor or bounded read. Choosing which captured source to read: optional `classifiers` on the search or fetch call; a typed judgment over held state or unread source: `clasify`; exhaustive coverage or identity: deterministic tools.
+
+Never ask both for the same relevance decision. Typed opinions never dismiss a finding; source does. Route unavailable or incomplete: targeted reads, scope left unresolved.
+
+## Tools and setup
+
+- Unfamiliar or failed call: `schema <name> --view query`. Env and availability: [octocode](references/octocode.md#16-public-tools); never print credentials.
+- Batch up to 5 independent rows; dependent probes stay sequential. `mainGoal`/`reasoning` only in multi-call research.
+- `next.*`: run unchanged, or narrow and name what stays unread; `hints.*` leads: [octocode](references/octocode.md).
 
 ## Resources
 
-Load the page that answers the current question.
-
-| When needed | Read |
-|---|---|
-| Loops, budgets, workers, briefs, landscapes | [campaigns](references/campaigns.md) |
-| Task class or first move unclear | [algorithm](references/algorithm.md) |
-| Typed judgment, semantic locate, saved artifacts | [clasify](references/clasify.md) |
-| Local checkout | [workflow-local](references/workflow-local.md) |
-| Section, declaration, full file | [reading-flows](references/reading-flows.md) |
-| Remote repo, package, history, web, local vs remote | [workflow-external](references/workflow-external.md) |
-| Invocation, pagination, exit codes | [octocode](references/octocode.md) |
-| Query templates | [tool-examples](references/tool-examples.md) |
-| Root cause, callers, cycles, reachability, deletion | [code-research](references/code-research.md) |
-| Behavior change or refactor | [workflow-change](references/workflow-change.md) |
-| PR or diff review | [workflow-pr-review](references/workflow-pr-review.md) |
+| When | Read | Why |
+|---|---|---|
+| Task class, mode, proof bar; callers, cycles, reachability, deletion, root cause | [method](references/method.md) | Done-when, modes, proof |
+| Outline, exact span, or full file | [method](references/method.md#read-the-smallest-span) | Selectors, minify |
+| Loops, budgets, workers, handoffs, repo landscapes | [method](references/method.md#campaigns) | Multi-pass control |
+| Checkout, artifact, or dependency | [workflows](references/workflows.md#local) | Local, AST, LSP, graph |
+| Remote repo, package, history, docs | [workflows](references/workflows.md#external-and-github) | GitHub, packages, history |
+| Behavior change or refactor | [workflows](references/workflows.md#change-impact) | RED-GREEN, blast radius |
+| PR, diff, staged changes, one file to review | [workflows](references/workflows.md#pr-review) | Modes, order, report |
+| Invocation, templates, setup, pagination, exit codes, hints | [octocode](references/octocode.md) | Catalog, recovery |
+| Classifiers, typed judgment | [clasify](references/clasify.md) | Admission, requests, results |
+| Saving or listing reports | [render-report.mjs](scripts/render-report.mjs) | Commands in [output](output.md) |
 
 ## Related skills
 
-- `octocode-architect`: Use when evidence must support an architecture decision.
-- `octocode-brainstorming`: Use when the question is still an open idea rather than a code claim.
+- `octocode-architect`: evidence for an architecture decision.
+- `octocode-brainstorming`: an open idea, not a code claim.
+- `octocode-scraping`: public web pages.
+- `octocode-chrome-devtools`: a live browser.
 
 ## Output
 
-See [output.md](output.md) for the response and saved-artifact format. Save substantial results under `<workspace>/.octocode/octocode-research/`; [output.md](output.md) says when and how. Save and render substantial results as a local HTML page, and list earlier reports as JSON for agents, with [render-report.mjs](scripts/render-report.mjs).
-
-## Maintainer check
-
-`scripts/check-guidance.mjs` checks live Octocode tool grammar when that contract changes; it does not grade the wording of research answers.
+Follow [output.md](output.md).

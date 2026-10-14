@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
-import { envFlag, envInt } from '../shared/env.js';
+import { envInt } from '../shared/env.js';
 import { shortPath } from '../shared/format.js';
 import { errorMessage } from '../shared/util.js';
 import type { Team } from '../team/session.js';
@@ -10,14 +10,7 @@ import type { AgentProfile } from './profiles.js';
 import { agentScratch, dropEmptyScratch, type ReadReports, type ReportQueue } from './handoff.js';
 import type { Background } from './command.js';
 
-/** Starting a subagent: who it is (name, role, goal), whether the limit allows it, and the task text it receives. */
-
-const COLLABORATE_ENV = 'OCTOCODE_SUBAGENT_COLLABORATE';
-
-/** Whether subagents collaborate when a call does not say: `OCTOCODE_SUBAGENT_COLLABORATE` = 1/true/on, else no. */
-export function collaborateByDefault(env: NodeJS.ProcessEnv = process.env): boolean {
-  return envFlag(env, COLLABORATE_ENV);
-}
+/** Starting a subagent: who it is (name, role, goal), its slot under the limit, and the task text it receives. */
 
 /** The task a collaborating subagent receives: its own task plus who else is on the team (`name`: `role: goal`) and how to reach them. */
 export function teamTask(task: string, parentId: string, others: Array<[string, string]>): string {
@@ -40,24 +33,67 @@ export function withIdentity(task: string, identity: Pick<Identity, 'id' | 'role
 export const MAX_SUBAGENTS_ENV = 'OCTOCODE_MAX_SUBAGENTS';
 const DEFAULT_MAX_SUBAGENTS = 3;
 
-/** How many subagents may run at once: `OCTOCODE_MAX_SUBAGENTS` (a positive integer), else 3. Many parallel children get messy. */
+/** How many subagents may run at once: `OCTOCODE_MAX_SUBAGENTS` (a positive integer), else 3. A call past it waits for a slot. */
 export function maxSubagents(env: NodeJS.ProcessEnv = process.env): number {
   const value = envInt(env, MAX_SUBAGENTS_ENV, DEFAULT_MAX_SUBAGENTS);
   return value >= 1 ? value : DEFAULT_MAX_SUBAGENTS;
 }
 
-export const SUBAGENT_LINGER_ENV = 'OCTOCODE_SUBAGENT_LINGER_SECONDS';
+const SUBAGENT_LINGER_ENV = 'OCTOCODE_SUBAGENT_LINGER_SECONDS';
 
 /** Seconds a finished background subagent stays reachable (a message resumes its saved conversation); 0 = off. */
 export function lingerSeconds(env: NodeJS.ProcessEnv = process.env): number {
   return Math.max(0, envInt(env, SUBAGENT_LINGER_ENV, 0));
 }
 
-/** The refusal for a call over the limit, or undefined when there is room. */
-export function subagentLimitError(active: Iterable<string>, limit: number): string | undefined {
+/** The refusal for a resume while every slot is taken (a message is answered now; it does not wait for a slot). */
+export function subagentLimitError(active: Iterable<string>, limit: number): string {
   const ids = [...active];
-  if (ids.length < limit) return undefined;
-  return `${ids.length} subagents are already running (${ids.join(', ')}); the limit is ${limit}. Wait for one to finish (background answers arrive as messages), pass the work to a running subagent with \`sendMessage\`, or do it yourself. The limit is set by ${MAX_SUBAGENTS_ENV}.`;
+  return `${ids.length} subagents are already running${ids.length ? ` (${ids.join(', ')})` : ''}; the limit is ${limit}. Wait for one to finish (background answers arrive as messages), pass the work to a running subagent with \`sendMessage\`, or do it yourself. The limit is set by ${MAX_SUBAGENTS_ENV}.`;
+}
+
+/**
+ * Subagent slots under `maxSubagents()`. A call past the limit waits, first come first served, until a run gives its
+ * slot back; its signal (Esc, a turn abort) gives up the wait. A slot given back passes straight to the next waiter.
+ */
+export class Slots {
+  private taken = 0;
+  private readonly waiting: Array<() => void> = [];
+
+  constructor(private readonly limit: () => number = maxSubagents) {}
+
+  /** Takes a free slot without waiting; false when all are in use or someone already waits. */
+  tryTake(): boolean {
+    if (this.waiting.length > 0 || this.taken >= this.limit()) return false;
+    this.taken += 1;
+    return true;
+  }
+
+  /** Takes a slot, waiting while all are in use; `onWait` hears how many run when the wait begins. */
+  async take(signal: AbortSignal | undefined, onWait?: (running: number) => void): Promise<void> {
+    signal?.throwIfAborted();
+    if (this.tryTake()) return;
+    onWait?.(this.taken);
+    await new Promise<void>((resolve, reject) => {
+      const grant = () => {
+        signal?.removeEventListener('abort', cancel);
+        resolve();
+      };
+      const cancel = () => {
+        const index = this.waiting.indexOf(grant);
+        if (index >= 0) this.waiting.splice(index, 1);
+        reject(new Error('Cancelled while waiting for a subagent slot.'));
+      };
+      this.waiting.push(grant);
+      signal?.addEventListener('abort', cancel, { once: true });
+    });
+  }
+
+  give(): void {
+    const next = this.waiting.shift();
+    if (next) next();
+    else this.taken = Math.max(0, this.taken - 1);
+  }
 }
 
 /** State of one agent tool registration; a replaced session starts clean. */
@@ -71,11 +107,15 @@ export interface AgentRuns {
   read: ReadReports;
   /** Subagents running now (foreground and background), by name. */
   running: Map<string, string | undefined>; // A `role: goal` line is present once a collaborating run launches.
+  /** Their slots under the limit, taken before the spawn ask and given back by `Run.release`. */
+  slots: Slots;
+  /** Called when a background run starts or ends: the footer counts them while the agents panel cannot show them. */
+  changed: () => void;
   /** Bumped when a session ends: a background run started under an earlier session drops its late report. */
   session: number;
 }
 
-export interface AgentParams {
+interface AgentParams {
   task: string;
   /** Already checked (`checkGoal`). */
   goal: string;
@@ -97,19 +137,26 @@ export interface Run {
   release: () => void;
 }
 
-/**
- * Checks the profile and the subagent limit, then claims a slot. Checked and claimed with no await in between, so
- * parallel calls in one turn cannot overshoot the limit. `avoid`: names to skip besides the team's (existing refs of isolated runs).
- */
-export function claimRun(runs: AgentRuns, profiles: Map<string, AgentProfile>, params: AgentParams, ctx: Pick<ExtensionContext, 'cwd' | 'sessionManager' | 'modelRegistry' | 'model'>, avoid: Iterable<string> = [], resumed?: Run['identity']): Run {
-  const { cwd } = ctx;
+/** What a call asks for, checked before anything waits, asks or starts: its profile and the model it routes to. */
+type RunPlan = Pick<Run, 'profile' | 'route'>;
+
+/** Checks the profile and routes the model; throws the refusal (unknown profile, unavailable model). */
+export function planRun(profiles: Map<string, AgentProfile>, params: Pick<AgentParams, 'profile' | 'model'>, ctx: Pick<ExtensionContext, 'modelRegistry' | 'model'>): RunPlan {
   const profile = params.profile ? profiles.get(params.profile) : undefined;
   if (params.profile && !profile) throw new Error(`Unknown profile "${params.profile}". Available: ${[...profiles.keys()].join(', ')}`);
-  const overLimit = subagentLimitError(runs.running.keys(), maxSubagents());
-  if (overLimit) throw new Error(overLimit);
   // An explicit model is strict; a profile's is a preference that falls back to this session's model.
   const route = routeModel({ explicit: params.model, preferred: profile?.model, available: ctx.modelRegistry?.getAvailable() ?? [], parent: ctx.model, catalog: currentCatalog() });
   if ('error' in route) throw new Error(route.error);
+  return { profile, route };
+}
+
+/**
+ * Names the run and claims it, in the slot the caller already took (`runs.slots`); `release` gives the slot back.
+ * `avoid`: names to skip besides the team's (existing refs of isolated runs).
+ */
+export function claimRun(runs: AgentRuns, plan: RunPlan, params: AgentParams, ctx: Pick<ExtensionContext, 'cwd' | 'sessionManager'>, avoid: Iterable<string> = [], resumed?: Run['identity']): Run {
+  const { cwd } = ctx;
+  const { profile, route } = plan;
   // Joining gives the child its parent's address for sendMessage; without a usable team database it still runs, alone.
   let parentId: string | undefined;
   let teamNote = '';
@@ -118,7 +165,7 @@ export function claimRun(runs: AgentRuns, profiles: Map<string, AgentProfile>, p
   } catch (error) {
     teamNote = `\n\n(Started without the team: ${errorMessage(error)}. It cannot message you or its teammates.)`;
   }
-  const collaborate = parentId !== undefined && (params.collaborate ?? collaborateByDefault());
+  const collaborate = parentId !== undefined && params.collaborate === true;
   // A resumed run continues as the same agent: name, role, goal, scratch folder and permission.
   const identity: Run['identity'] = resumed ?? {
     id: runs.team.newName([...runs.running.keys(), ...avoid]),
@@ -133,6 +180,7 @@ export function claimRun(runs: AgentRuns, profiles: Map<string, AgentProfile>, p
   if (scratch) identity.scratch = scratch;
   const release = () => {
     if (!runs.running.delete(identity.id)) return;
+    runs.slots.give();
     const kept = scratch && !dropEmptyScratch(scratch);
     runs.team.rememberFinished(identity.id, `its report (or failure) already reached you${kept ? ` (files it handed back, and its full report when cut, are in ${shortPath(scratch)})` : ''}.`);
   };

@@ -10,10 +10,6 @@ type MemoryScope = 'global' | 'project';
 /** Which memories a read sees: `all` is global plus this repository's project memories. */
 export type ScopeFilter = MemoryScope | 'all';
 
-export const TITLE_MAX = 120;
-export const BODY_MAX = 1500;
-const KEYWORDS_MAX = 200;
-
 export interface Memory {
   id: number;
   scope: MemoryScope;
@@ -122,6 +118,13 @@ export class MemoryStore {
     return rows.map(toMemory);
   }
 
+  /** The `updatedAt` of each of `ids` that still exists, in one query. */
+  updatedAt(ids: readonly number[]): Map<number, number> {
+    if (ids.length === 0) return new Map();
+    const rows = this.db.prepare('SELECT id, updated_at FROM memories WHERE id IN (SELECT value FROM json_each(?))').all(JSON.stringify(ids)) as Row[];
+    return new Map(rows.map((row) => [Number(row['id']), Number(row['updated_at'])]));
+  }
+
   count(scope: ScopeFilter = 'all'): number {
     const where = this.scopeSql(scope);
     const row = this.db.prepare(`SELECT count(*) AS n FROM memories m WHERE ${where.sql}`).get(...where.params) as Row;
@@ -186,9 +189,9 @@ export class MemoryStore {
   }
 
   private insert(input: MemoryInput & { author: string; sourceSession?: string; hideProject?: boolean }, now: number): { memory: Memory; created: boolean } {
-    const title = storedText(input.title, TITLE_MAX);
+    const title = storedText(input.title);
     if (!title) throw new MemoryError('A new memory needs a title.');
-    const body = storedText(input.body, BODY_MAX);
+    const body = storedText(input.body);
     const scope = input.scope ?? 'project';
     const duplicate = this.duplicateOf(scope, title, body);
     // An untrusted project cannot read project memories: name the duplicate without showing it.
@@ -200,26 +203,28 @@ export class MemoryStore {
       .prepare(
         'INSERT INTO memories (scope, repo_key, kind, title, body, keywords, pinned, author, source_session, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       )
-      .run(scope, scope === 'project' ? this.repoKey : null, input.kind ?? 'fact', title, body, storedText(input.keywords, KEYWORDS_MAX), input.pinned ? 1 : 0, input.author, input.sourceSession ?? null, now, now);
+      .run(scope, scope === 'project' ? this.repoKey : null, input.kind ?? 'fact', title, body, storedText(input.keywords), input.pinned ? 1 : 0, input.author, input.sourceSession ?? null, now, now);
     return { memory: this.get(Number(result.lastInsertRowid))!, created: true };
   }
 
-  private update(id: number, input: MemoryInput, now: number): { memory: Memory; created: boolean } {
+  /** An edit makes `input.author` the author: an agent edit of a user's memory must not keep the user tag. */
+  private update(id: number, input: MemoryInput & { author: string }, now: number): { memory: Memory; created: boolean } {
     const current = this.get(id);
     if (!current) throw new MemoryError(`No memory ${memoryLabel(id)} here (it may belong to another repository).`);
-    const title = input.title === undefined ? current.title : storedText(input.title, TITLE_MAX);
+    const title = input.title === undefined ? current.title : storedText(input.title);
     if (!title) throw new MemoryError('A memory needs a title.');
     const scope = input.scope ?? current.scope;
     this.db
-      .prepare('UPDATE memories SET scope = ?, repo_key = ?, kind = ?, title = ?, body = ?, keywords = ?, pinned = ?, updated_at = ? WHERE id = ?')
+      .prepare('UPDATE memories SET scope = ?, repo_key = ?, kind = ?, title = ?, body = ?, keywords = ?, pinned = ?, author = ?, updated_at = ? WHERE id = ?')
       .run(
         scope,
         scope === 'project' ? (current.scope === 'project' ? current.repoKey : this.repoKey) : null,
         input.kind ?? current.kind,
         title,
-        input.body === undefined ? current.body : storedText(input.body, BODY_MAX),
-        input.keywords === undefined ? current.keywords : storedText(input.keywords, KEYWORDS_MAX),
+        input.body === undefined ? current.body : storedText(input.body),
+        input.keywords === undefined ? current.keywords : storedText(input.keywords),
         (input.pinned ?? current.pinned) ? 1 : 0,
+        input.author,
         now,
         id,
       );
@@ -261,10 +266,12 @@ export class MemoryStore {
   }
 }
 
+/** `project, decision, pinned`: where a memory lives, what it is, and whether it is pinned. */
+export const memoryTags = (memory: Memory): string => [memory.scope, memory.kind, ...(memory.pinned ? ['pinned'] : [])].join(', ');
+
 /** `M3 (project, decision, pinned) Title — body`, one line, body clipped to `bodyChars`. */
 export function memoryLine(memory: Memory, bodyChars = 160): string {
-  const tags = [memory.scope, memory.kind, ...(memory.pinned ? ['pinned'] : [])].join(', ');
   const body = memory.body.replace(/\s+/g, ' ').trim();
   const clipped = clipText(body, bodyChars);
-  return `${memoryLabel(memory.id)} (${tags}) ${memory.title.replace(/\s+/g, ' ')}${clipped ? ` — ${clipped}` : ''}`;
+  return `${memoryLabel(memory.id)} (${memoryTags(memory)}) ${memory.title.replace(/\s+/g, ' ')}${clipped ? ` — ${clipped}` : ''}`;
 }

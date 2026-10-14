@@ -104,7 +104,7 @@ comm peers
 Confirm both sessions appear in `peers`. If a name was already taken, `join` returns a suffixed name; copy that exact name or ID. In `coordinator`, send the request to the recipient:
 
 ```sh
-agent send_message '{"to":"api-reviewer","body":"Review src/api.ts for compatibility.","reasoning":"Resolve API compatibility before handoff","key":"api-review-1","conversationId":"api-review"}'
+agent send_message '{"to":"api-reviewer","body":"Situation: src/api.ts changed. Request: review it for compatibility.","reasoning":"Resolve API compatibility before handoff; done when risks are listed","key":"api-review-1","conversationId":"api-review"}'
 ```
 
 In the recipient, read pending mail using its own binding:
@@ -113,10 +113,10 @@ In the recipient, read pending mail using its own binding:
 agent fetch '{"incoming":true,"type":"message","limit":20}'
 ```
 
-After doing the requested work, use the request's `items[].data.messageId` as the number passed to `--message` and provide the final answer:
+After doing the requested work, use the request's `items[].data.messageId` as the number passed to `--message` and complete with outcome and reply:
 
 ```sh
-agent complete --message RECEIVED_MESSAGE_ID --reply 'Reviewed src/api.ts; the response shape is compatible.'
+agent complete --message RECEIVED_MESSAGE_ID --outcome done --reply 'Reviewed src/api.ts; the response shape is compatible.'
 ```
 
 `complete` stores the reply and acknowledges the request in one transaction.
@@ -127,8 +127,8 @@ agent fetch '{"incoming":true,"type":"message","limit":20}'
 agent complete --message ANSWER_MESSAGE_ID
 ```
 
-Replace `ANSWER_MESSAGE_ID` with that answer's `data.messageId`.
-Use `data.messageId` for fetched records; `recordId` is only a history cursor.
+Replace `ANSWER_MESSAGE_ID` with that answer's `data.messageId` (`recordId` is only a history cursor).
+Message bodies follow the protocols in [OPERATING.md](OPERATING.md#send-and-handle-messages): SBAR requests, outcome-first replies, readbacks, and review comments.
 For informational mail (`replyRequired:false`), complete the handled ID without `reply`.
 Leave unfinished work pending.
 
@@ -244,8 +244,7 @@ Record-type discovery needs no binding; version 0.1.0 rejects workspace, databas
 Record `path` retains the originating worktree, even when another worktree reads it.
 `record` saves repository-shared memories/events without notifying peers. Use `send_message` when another agent must act.
 Narrow fetches by type, sender/recipient, branch, time, text, or scalar payload fields.
-Follow each `next.command` with `next.input` unchanged and the same binding until no continuation remains.
-Oversized hook references carry `data.bodyOmitted:true` and `data.next` for the intact record; fetch it before handling.
+Follow every continuation and oversized-body reference as [record queries](scripts/docs/RECORDS.md#read-complete-pages) describes.
 
 Operational tables enforce current state and transactions alongside the append-only history.
 Existing v1/v2/v3/v4 stores need an explicit, backed-up migration with old clients stopped.
@@ -265,7 +264,7 @@ The dashboard reads an existing database, uses a loopback URL token, and stops w
 It shows full paginated history and operational views. Participant-scoped `fetch` exposes only permitted records.
 [Operations and recovery](scripts/docs/OPERATIONS.md) explains uncertain offers, expiry, snapshots, and retention.
 
-`db export` writes a verified snapshot to a new absolute path. Document files need a separate backup. `db retention` reports aged records and `db compact` reclaims unused space while retaining history; `prune` removes expired leases. Stop old clients before an explicit `db migrate`. If an existing WAL database rejects your Python runtime, follow the reported SQLite upgrade guidance and use the same compatible interpreter for every writer and hook.
+`db export` writes a verified snapshot to a new absolute path; back up document files separately. Retention, compaction, `prune`, migration, and WAL interpreter errors are covered in operations.
 
 Only a successful `lock`/`lock_many` grants an advisory reservation.
 Leases, Git activity, and native host validation remain worktree-local.

@@ -3,8 +3,8 @@
 
 use super::LspSearchQuery;
 use super::anchor::is_anchored;
+use octocode_engine::digest::canonical_json_keep_nulls;
 use octocode_engine::lsp::client::NativeLspClient;
-use octocode_engine::lsp::pool::canonical_json;
 use octocode_engine::lsp::types::JsLanguageServerConfig;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -104,9 +104,7 @@ pub(super) fn apply_rust_context(
 }
 
 pub(super) fn rust_fingerprint(context: &Value) -> String {
-    use sha2::{Digest, Sha256};
-    let canonical = serde_json::to_vec(context).unwrap_or_default();
-    format!("rust-v1:{}", hex::encode(Sha256::digest(canonical)))
+    format!("rust-v1:{}", crate::digest::json_sha256(context))
 }
 
 pub(super) fn attach_provider_context(
@@ -234,12 +232,25 @@ pub(super) fn drop_same_uri(value: &mut Value, canonical_uri: &str) {
     }
 }
 
+/// Spell the server's `workspaceRoot` (on the row, and in its receipt)
+/// relative to the workspace like every row path; a root outside it stays
+/// absolute.
+pub(super) fn relative_server_roots(row: &mut Value, paths: &crate::policy::path::PathPolicy) {
+    for pointer in ["/workspaceRoot", "/lsp/receipt/workspaceRoot"] {
+        if let Some(root) = row.pointer_mut(pointer)
+            && let Some(relative) = root
+                .as_str()
+                .and_then(|root| paths.workspace_relative(root))
+        {
+            *root = json!(relative);
+        }
+    }
+}
+
 pub(super) fn resolved_server_receipt(
     config: &JsLanguageServerConfig,
     client: &NativeLspClient,
 ) -> Value {
-    use sha2::{Digest, Sha256};
-
     const CAPABILITIES: [&str; 10] = [
         "definitionProvider",
         "typeDefinitionProvider",
@@ -266,7 +277,7 @@ pub(super) fn resolved_server_receipt(
         .unwrap_or_else(|_| Path::new(&config.workspace_root).to_path_buf())
         .to_string_lossy()
         .into_owned();
-    let configuration = canonical_json(json!([
+    let configuration = canonical_json_keep_nulls(json!([
         config
             .initialization_options
             .clone()
@@ -288,10 +299,8 @@ pub(super) fn resolved_server_receipt(
         "command": config.command,
         "source": source,
         "workspaceRoot": config.workspace_root,
-        "workspaceFingerprint": hex::encode(Sha256::digest(workspace.as_bytes())),
-        "configurationFingerprint": hex::encode(Sha256::digest(
-            serde_json::to_vec(&configuration).unwrap_or_default()
-        )),
+        "workspaceFingerprint": crate::digest::sha256(workspace.as_bytes()),
+        "configurationFingerprint": crate::digest::json_sha256(&configuration),
         "capabilities": capabilities
     });
     if let Some(argv) = config.args.as_ref().filter(|argv| !argv.is_empty()) {

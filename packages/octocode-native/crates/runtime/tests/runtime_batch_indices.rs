@@ -4,7 +4,7 @@
 //! first page and the snapshot mark keeps the admitted rows' indices.
 #![allow(clippy::panic, clippy::unwrap_used)]
 
-use crate::support::Workspace;
+use crate::support::{Run as _, Workspace};
 use serde_json::{Value, json};
 
 /// Row indices a page shows: structured rows, or `result: N` headers of a
@@ -50,7 +50,7 @@ async fn a_rejected_row_keeps_later_row_indices_on_the_next_page() {
             input["responseScope"] = json!(scope);
         }
         let first = runtime
-            .execute("r7-1".into(), "localFetch".into(), input)
+            .run("r7-1".into(), "localFetch".into(), input)
             .await
             .unwrap();
         let page = &first.structured_content;
@@ -76,7 +76,7 @@ async fn a_rejected_row_keeps_later_row_indices_on_the_next_page() {
             pages += 1;
             assert!(pages < 20, "page walk ends");
             let out = runtime
-                .execute(format!("r7-{pages}"), "localFetch".into(), query)
+                .run(format!("r7-{pages}"), "localFetch".into(), query)
                 .await
                 .unwrap();
             let page = &out.structured_content;

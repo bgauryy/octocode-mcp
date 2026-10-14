@@ -4,7 +4,9 @@ import { EventLog } from './events.js';
 import { apiDir, ensurePrivateDir, newInstanceId, newToken, removeRecord, socketPath, writeRecord, type InstanceRecord } from './registry.js';
 import { ApiServer, type Connection } from './server.js';
 import { DEFAULT_EVENT_TYPES, ERR, numberParam, PROTOCOL_VERSION, RpcError, stringParam } from './protocol.js';
-import { sanitizeTerminalText } from '../shared/sanitize.js';
+import { apiClientLabel, fencedBody, fenceUntrusted, headerText, messageHeader } from '../shared/fence.js';
+import { redactSecrets, sanitizeTerminalText } from '../shared/sanitize.js';
+import { saveFullOutput } from '../shared/spill.js';
 import { envFlag } from '../shared/env.js';
 import { formatClock } from '../shared/format.js';
 import { clip, resultBlock } from '../shared/render.js';
@@ -13,11 +15,32 @@ import { capChars, contentText, errorMessage, toolHint } from '../shared/util.js
 const API_ENV = 'OCTOCODE_API';
 const API_HTTP_ENV = 'OCTOCODE_API_HTTP';
 const EXTERNAL_MESSAGE_TYPE = 'octocode-external-message';
+/** Session entry (`pi.appendEntry`, never sent to the model) written for every turn an API client starts. */
+const EXTERNAL_AUDIT_TYPE = 'octocode-external';
+/** Senders a client may not claim: the user, the team's own API sender, and (checked per call) any live agent. */
+const RESERVED_SENDERS = new Set(['user', 'external']);
 
 /** Messages land in the agent's context and are never trimmed. */
 const EXTERNAL_MAX_CHARS = 32_000;
 const WAIT_DEFAULT_MS = 600_000;
 const RESULT_MAX_CHARS = 64_000;
+
+/**
+ * Model text for an event or a history entry: credential-looking spans redacted first (so a secret that straddles the
+ * limit is never left half-visible), then, over `RESULT_MAX_CHARS`, cut with the whole redacted text saved to a file
+ * the note names (or the note says it could not be saved).
+ */
+function boundedText(text: string): string {
+  const safe = redactSecrets(text);
+  if (safe.length <= RESULT_MAX_CHARS) return safe;
+  // The same answer reaches `message`, `agent.end` and the history: one file for it, not one per channel.
+  if (lastSpilled?.text === safe) return lastSpilled.shown;
+  const file = saveFullOutput(safe, 'api message');
+  const shown = capChars(safe, RESULT_MAX_CHARS, file ? `the whole text is in ${file}` : 'the whole text could not be saved');
+  lastSpilled = { text: safe, shown };
+  return shown;
+}
+let lastSpilled: { text: string; shown: string } | undefined;
 
 /** What the API needs from the team (kept as an interface so the API domain stays independent of it). */
 export interface AgentDirectory {
@@ -38,11 +61,11 @@ interface ApiOptions {
   http?: number | undefined;
 }
 
-/** The transports the environment asks for, or undefined when the API is off. */
+/** The transports the environment asks for, or undefined when the API is off. A bad port throws its reason instead of silently serving nothing. */
 export function optionsFromEnv(env: NodeJS.ProcessEnv = process.env, platform = process.platform): ApiOptions | undefined {
   const httpText = env[API_HTTP_ENV]?.trim();
-  const port = httpText === undefined || httpText === '' ? undefined : Number(httpText);
-  if (port !== undefined && (!Number.isInteger(port) || port < 0 || port > 65_535)) return undefined;
+  const port = httpText === undefined || httpText === '' ? undefined : /^\d+$/.test(httpText) ? Number(httpText) : Number.NaN;
+  if (port !== undefined && !(port >= 0 && port <= 65_535)) throw new Error(`Octocode API is off: ${API_HTTP_ENV}=${httpText} is not a port (0-65535; 0 picks a free one).`);
   const on = envFlag(env, API_ENV);
   if (!on && port === undefined) return undefined;
   const socket = on && platform !== 'win32';
@@ -115,7 +138,7 @@ export class OctocodeApi {
       const text = last ? contentText(last.content, { separator: '' }) : '';
       const stopReason = last && 'stopReason' in last ? String(last.stopReason) : undefined;
       this.lastAssistantText = text;
-      this.lastResult = { text: capChars(text, RESULT_MAX_CHARS), ...(stopReason ? { stopReason } : {}) };
+      this.lastResult = { text: boundedText(text), ...(stopReason ? { stopReason } : {}) };
       log.publish('agent.end', this.lastResult);
     });
     // `wait` answers once Pi has settled: after agent_end it may still continue (a queued follow-up, a compaction
@@ -132,12 +155,12 @@ export class OctocodeApi {
     pi.on('message_end', (event) => {
       if (!this.server) return;
       const { role } = event.message;
-      if (role === 'assistant' || role === 'user') log.publish('message', { role, text: capChars(contentText(event.message.content, { separator: '' }), RESULT_MAX_CHARS) });
+      if (role === 'assistant' || role === 'user') log.publish('message', { role, text: boundedText(contentText(event.message.content, { separator: '' })) });
     });
     pi.on('message_update', (event) => {
       if (!this.server) return;
       const inner = event.assistantMessageEvent as { type?: string; delta?: unknown };
-      if (inner.type === 'text_delta' && typeof inner.delta === 'string') log.publish('message.delta', { delta: inner.delta });
+      if (inner.type === 'text_delta' && typeof inner.delta === 'string') log.publish('message.delta', { delta: redactSecrets(inner.delta) });
     });
     pi.on('tool_execution_start', (event) => {
       if (!this.server) return;
@@ -156,8 +179,8 @@ export class OctocodeApi {
     pi.on('session_compact', () => void (this.server && log.publish('compaction', {})));
   }
 
-  /** Bind to the session and start serving when the environment asks for it. */
-  async start(ctx: ExtensionContext, options: ApiOptions | undefined = optionsFromEnv(this.env)): Promise<void> {
+  /** Bind to the session, and serve on `options` (undefined: bound, not serving). */
+  async start(ctx: ExtensionContext, options: ApiOptions | undefined): Promise<void> {
     await this.stop();
     this.ctx = ctx;
     if (!options) return;
@@ -244,7 +267,7 @@ export class OctocodeApi {
         return { aborted: wasBusy };
       }
       case 'messages.list':
-        return this.history(numberParam(params, 'limit', { min: 1, max: 100 }) ?? 20);
+        return this.history(numberParam(params, 'limit', { min: 1, max: 100 }) ?? 20, numberParam(params, 'before', { min: 0, max: Number.MAX_SAFE_INTEGER }));
       case 'events.subscribe': {
         if (!connection.subscribe) throw new RpcError(ERR.invalidRequest, 'Streaming needs the socket transport or GET /events');
         const since = numberParam(params, 'since', { min: 0, max: Number.MAX_SAFE_INTEGER });
@@ -269,6 +292,7 @@ export class OctocodeApi {
     const to = stringParam(params, 'to')!;
     const text = this.label(stringParam(params, 'text', { max: this.agents.maxChars ?? AGENT_MESSAGE_MAX_CHARS })!);
     const result = await this.agents.tell(to, text);
+    this.audit({ method: 'agents.tell', to, chars: text.length, accepted: !(result && typeof result === 'object' && 'error' in result) });
     if (result && typeof result === 'object' && typeof (result as { error?: unknown }).error === 'string') throw new RpcError(ERR.invalidParams, (result as { error: string }).error);
     return result;
   }
@@ -277,10 +301,28 @@ export class OctocodeApi {
     return sanitizeTerminalText(text);
   }
 
+  /** Records an API-started turn in the session (a `octocode-external` entry), so what an outside program caused can be reviewed. */
+  private audit(data: Record<string, unknown>): void {
+    try {
+      this.pi.appendEntry(EXTERNAL_AUDIT_TYPE, { at: Date.now(), ...data });
+    } catch {
+      // The session ended: nothing to record in.
+    }
+  }
+
+  /** The sender name a client gave, on one line; a name that would pass for the user, the team or a live agent is refused. */
+  private sender(params: Record<string, unknown>): string {
+    const given = stringParam(params, 'from', { max: 64, optional: true });
+    const from = headerText((given ?? 'external client').replaceAll('"', ' '), 64) || 'external client';
+    const taken = this.agents.list().some((agent) => typeof agent === 'object' && agent !== null && (agent as { id?: unknown }).id === from);
+    if (RESERVED_SENDERS.has(from.toLowerCase()) || taken) throw new RpcError(ERR.invalidParams, `The sender name ${JSON.stringify(from)} is reserved for the user or a team agent; name your client instead (for example "ci bot"). Nothing was sent.`);
+    return from;
+  }
+
   private async send(params: Record<string, unknown>): Promise<unknown> {
     const ctx = this.session();
     const text = this.label(stringParam(params, 'text', { max: EXTERNAL_MAX_CHARS })!);
-    const from = sanitizeTerminalText(stringParam(params, 'from', { max: 64, optional: true }) ?? 'external client').replace(/[\r\n"\s]+/g, ' ').trim() || 'external client';
+    const from = this.sender(params);
     const mode = params['mode'] ?? 'auto';
     if (mode !== 'auto' && mode !== 'steer' && mode !== 'followUp') throw new RpcError(ERR.invalidParams, 'mode must be auto, steer or followUp');
     const wait = params['wait'] === true;
@@ -288,6 +330,7 @@ export class OctocodeApi {
     const id = `x${++this.counter}`;
     const busy = !ctx.isIdle();
     const deliverAs = mode === 'followUp' ? 'followUp' : 'steer';
+    const at = Date.now();
 
     let waiting: Promise<{ text: string; stopReason?: string }> | undefined;
     let timer: NodeJS.Timeout | undefined;
@@ -305,14 +348,15 @@ export class OctocodeApi {
     }
     try {
       this.pi.sendMessage(
-        { customType: EXTERNAL_MESSAGE_TYPE, content: `Message from ${from} through the Octocode API:\n${text}`, display: true, details: { id, from, at: Date.now() } },
+        { customType: EXTERNAL_MESSAGE_TYPE, content: fenceUntrusted(messageHeader(apiClientLabel(from), at), text), display: true, details: { id, from, at } },
         { triggerTurn: true, deliverAs },
       );
     } catch (error) {
       clearTimeout(timer);
       throw new RpcError(ERR.unavailable, `The session could not take the message: ${errorMessage(error)}`);
     }
-    this.log.publish('external.message', { id, from, text: capChars(text, 2_000), queued: busy ? deliverAs : 'turn' });
+    this.audit({ method: 'message.send', id, from, mode: deliverAs, queued: busy ? deliverAs : 'turn', chars: text.length });
+    this.log.publish('external.message', { id, from, text: redactSecrets(capChars(text, 2_000)), queued: busy ? deliverAs : 'turn' });
     const accepted = { id, queued: busy ? deliverAs : 'turn' };
     if (!waiting) return accepted;
     try {
@@ -322,17 +366,29 @@ export class OctocodeApi {
     }
   }
 
-  private history(limit: number): unknown {
+  /**
+   * One page of the transcript's user and assistant text, oldest first: the `limit` messages before index `before`
+   * (default: the end). Every message carries its `index`; `earlier.before` is the next page's `before` and is absent
+   * on the first page of the transcript. A text over `RESULT_MAX_CHARS` is cut with its whole text saved to a file.
+   */
+  private history(limit: number, before?: number): unknown {
     const ctx = this.session();
-    const messages: Array<{ role: string; text: string }> = [];
+    const all: Array<{ role: string; text: string }> = [];
     for (const entry of ctx.sessionManager.getBranch()) {
       const message = (entry as { type?: string; message?: { role?: string; content?: unknown } }).message;
       if ((entry as { type?: string }).type !== 'message' || !message?.role) continue;
       if (message.role !== 'user' && message.role !== 'assistant') continue;
       const text = contentText(message.content, { separator: '' });
-      if (text) messages.push({ role: message.role, text: capChars(text, 8_000) });
+      if (text) all.push({ role: message.role, text });
     }
-    return { messages: messages.slice(-limit), last: this.lastAssistantText ? capChars(this.lastAssistantText, 8_000) : null };
+    const end = Math.min(before ?? all.length, all.length);
+    const start = Math.max(end - limit, 0);
+    return {
+      messages: all.slice(start, end).map(({ role, text }, offset) => ({ index: start + offset, role, text: boundedText(text) })),
+      total: all.length,
+      ...(start > 0 ? { earlier: { before: start } } : {}),
+      last: this.lastAssistantText ? boundedText(this.lastAssistantText) : null,
+    };
   }
 }
 
@@ -342,9 +398,8 @@ function registerExternalMessageRenderer(pi: ExtensionAPI): void {
     const details = message.details as { from?: unknown; at?: unknown } | undefined;
     const from = clip(String(details?.from ?? 'API client'), 60);
     const text = contentText(message.content);
-    // The content leads with `Message from <client> through the Octocode API:` for the model; the header says it.
-    const newline = text.indexOf('\n');
-    const body = newline >= 0 && text.slice(0, newline).endsWith(' through the Octocode API:') ? text.slice(newline + 1) : text;
+    // The content is the fenced message the model reads; the header above says who sent it, so draw only the body.
+    const body = fencedBody(text);
     const box = new Box(outputPad ?? 1, 0);
     box.addChild(new Text(`${theme.fg('accent', '✉')} ${theme.fg('toolTitle', theme.bold(`from ${from}`))} ${theme.fg('dim', `· Octocode API · ${formatClock(typeof details?.at === 'number' ? details.at : Date.now())}`)}`, 0, 0));
     box.addChild(resultBlock(theme, { expanded }, { summary: '', body, error: false }));

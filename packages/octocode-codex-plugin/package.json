@@ -34,8 +34,8 @@
     "prepack": "yarn build && yarn typecheck && yarn test"
   },
   "devDependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.0",
-    "@types/node": "^24.13.4",
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@types/node": "^24.19.2",
     "ajv": "^8.20.0",
     "typescript": "^6.0.3"
   }

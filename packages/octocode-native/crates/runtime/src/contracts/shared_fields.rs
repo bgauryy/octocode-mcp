@@ -136,7 +136,9 @@ pub(crate) fn hoist(rows: &mut [Value]) -> Option<Map<String, Value>> {
     }
     for leaf in shared_leaves_mut(rows) {
         for key in shared.keys() {
-            leaf.remove(key);
+            // `remove` swaps the last key into the gap; the entry keeps the
+            // order the tool wrote.
+            leaf.shift_remove(key);
         }
     }
     Some(shared)
@@ -291,6 +293,27 @@ mod tests {
             if let Err(error) = validate_output(tool, &output) {
                 panic!("{tool}: {:?}\n{output}", error.issues);
             }
+        }
+    }
+
+    /// Hoisting a shared key leaves every entry's other keys in the order
+    /// the tool wrote them.
+    #[test]
+    fn hoisting_keeps_the_entry_key_order() {
+        let mut rows = vec![json!({"index":0,"data":{"rows":[
+            {"a":1,"same":"x","b":2,"c":3},
+            {"a":4,"same":"x","b":5,"c":6}
+        ]}})];
+        let shared = super::hoist(&mut rows).expect("the shared key hoists");
+        assert_eq!(shared["same"], "x");
+        for row in rows[0]["data"]["rows"].as_array().expect("rows") {
+            let keys = row
+                .as_object()
+                .expect("entry")
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>();
+            assert_eq!(keys, ["a", "b", "c"], "{row}");
         }
     }
 

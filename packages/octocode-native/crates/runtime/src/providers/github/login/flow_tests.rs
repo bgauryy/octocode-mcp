@@ -440,3 +440,56 @@ fn slow_down_adopts_the_returned_interval_with_an_rfc_floor() {
     assert_eq!(slow_down_interval(secs(5), None), secs(10));
     assert_eq!(slow_down_interval(secs(10), Some(3)), secs(15));
 }
+
+/// A refresh on a new runtime reaches the provider while an earlier runtime
+/// sits idle or closed: the login client is pooled per runtime, so no
+/// connection whose dispatch task lives on another runtime is reused.
+#[test]
+fn a_new_runtime_refreshes_through_its_own_client() {
+    let server_runtime = tokio::runtime::Runtime::new().unwrap();
+    let server = server_runtime.block_on(async {
+        let server = MockServer::builder().start().await;
+        Mock::given(method("POST"))
+            .and(path("/login/oauth/access_token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(token()))
+            .expect(3)
+            .mount(&server)
+            .await;
+        server
+    });
+    let mut stored = tests::stored(Some("2000-01-01T00:00:00Z"), Some("old-refresh"));
+    stored.hostname = "fixture.example".into();
+    let refresh = |runtime: &tokio::runtime::Runtime| {
+        runtime.block_on(async {
+            tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                refresh_stored_credentials(
+                    stored.clone(),
+                    &endpoints(&server),
+                    "client",
+                    &|_: &StoredCredentials| Ok(()),
+                ),
+            )
+            .await
+            .expect("refresh stalled on another runtime's connection")
+            .unwrap()
+            .token
+            .token
+        })
+    };
+    let runtime = || {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+    };
+    // The first runtime stays open but is no longer driven.
+    let idle = runtime();
+    assert_eq!(refresh(&idle), "synthetic-access");
+    let closed = runtime();
+    assert_eq!(refresh(&closed), "synthetic-access");
+    drop(closed);
+    assert_eq!(refresh(&runtime()), "synthetic-access");
+    drop(idle);
+    server_runtime.block_on(server.verify());
+}

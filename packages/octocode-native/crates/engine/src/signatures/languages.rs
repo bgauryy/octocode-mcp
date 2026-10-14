@@ -243,6 +243,117 @@ pub fn find_entry(ext: &str) -> Option<&'static LanguageEntry> {
     LANGUAGE_TABLE.iter().find(|e| e.extensions.contains(&ext))
 }
 
+/// Whether `entry` is the grammar `selector` names: its name, language id,
+/// or one of its extensions (ASCII case-insensitive).
+fn names(entry: &LanguageEntry, selector: &str) -> bool {
+    entry.name.eq_ignore_ascii_case(selector)
+        || entry
+            .language_id
+            .is_some_and(|id| id.eq_ignore_ascii_case(selector))
+        || entry
+            .extensions
+            .iter()
+            .any(|ext| ext.eq_ignore_ascii_case(selector))
+}
+
+/// Whether `selector` selects `entry`: [`names`] it, or names its family
+/// through a selector alias (`typescript` also selects TSX).
+pub fn selects(entry: &LanguageEntry, selector: &str) -> bool {
+    names(entry, selector)
+        || entry
+            .selector_aliases
+            .iter()
+            .any(|alias| alias.eq_ignore_ascii_case(selector))
+}
+
+/// Every grammar `selector` selects, in registry order.
+pub fn select(selector: &str) -> impl Iterator<Item = &'static LanguageEntry> {
+    let selector = selector.trim().to_owned();
+    LANGUAGE_TABLE
+        .iter()
+        .filter(move |entry| selects(entry, &selector))
+}
+
+/// The one grammar `selector` names by name, language id or extension;
+/// `None` when it names none, or several.
+pub fn select_one(selector: &str) -> Option<&'static LanguageEntry> {
+    let selector = selector.trim();
+    let mut named = LANGUAGE_TABLE.iter().filter(|entry| names(entry, selector));
+    let entry = named.next()?;
+    named.next().is_none().then_some(entry)
+}
+
+/// Whether `selector` is C++ (`cpp` / `c++`), whose family also parses `.h`
+/// headers (C's extension by default).
+fn is_cpp(selector: &str) -> bool {
+    selector.eq_ignore_ascii_case("cpp") || selector.eq_ignore_ascii_case("c++")
+}
+
+/// The extensions (lowercase, no dot) a selector's family parses: every
+/// selected grammar's, plus `h` under C++. A `.ext` selector is that one
+/// registered extension. `None` when it selects nothing.
+pub fn family_extensions(selector: &str) -> Option<std::collections::BTreeSet<String>> {
+    let selector = selector.trim().to_ascii_lowercase();
+    if let Some(extension) = selector.strip_prefix('.') {
+        return find_entry(extension)
+            .map(|_| std::collections::BTreeSet::from([extension.to_owned()]));
+    }
+    let mut extensions: std::collections::BTreeSet<String> = select(&selector)
+        .flat_map(|entry| entry.extensions.iter().map(|ext| ext.to_ascii_lowercase()))
+        .collect();
+    if extensions.is_empty() {
+        return None;
+    }
+    if is_cpp(&selector) {
+        extensions.insert("h".to_owned());
+    }
+    Some(extensions)
+}
+
+/// The parser extension for `path` under `selector`: the file's own
+/// extension when it belongs to the selector's family (`.tsx` under
+/// `typescript` needs the TSX grammar), `h` parsed as C++ under `cpp`, else
+/// the selector itself.
+pub fn parser_for_path(selector: &str, path: &str) -> String {
+    let extension = crate::text::file_extension::extension_of(path, true, "");
+    if extension.is_empty() {
+        return selector.to_owned();
+    }
+    if extension == "h" && is_cpp(selector) {
+        return "cpp".to_owned();
+    }
+    match family_extensions(selector) {
+        Some(extensions) if extensions.contains(&extension) => extension,
+        _ => selector.to_owned(),
+    }
+}
+
+/// The selector a caller writes for a grammar: its language id (`rust`,
+/// `typescript`), else its lowercased name.
+pub fn label(entry: &LanguageEntry) -> String {
+    entry
+        .language_id
+        .map_or_else(|| entry.name.to_ascii_lowercase(), str::to_owned)
+}
+
+/// Built JS extension (no dot) → the extensions TypeScript tries for the
+/// module it names, in order: the source of the same module, then its
+/// declaration file.
+pub const JS_SOURCE_SWAPS: &[(&str, &[&str])] = &[
+    ("js", &["ts", "tsx", "d.ts"]),
+    ("jsx", &["tsx", "d.ts"]),
+    ("mjs", &["mts", "d.mts"]),
+    ("cjs", &["cts", "d.cts"]),
+];
+
+/// [`JS_SOURCE_SWAPS`] of one built extension (empty for any other).
+pub fn js_source_swaps(extension: &str) -> &'static [&'static str] {
+    JS_SOURCE_SWAPS
+        .iter()
+        .find(|(built, _)| *built == extension)
+        .map_or(&[], |(_, sources)| sources)
+}
+
 /// The full registry — the single source of truth for grammar capabilities.
 pub fn all_entries() -> &'static [LanguageEntry] {
     &LANGUAGE_TABLE

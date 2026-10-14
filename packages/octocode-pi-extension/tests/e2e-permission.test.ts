@@ -86,7 +86,7 @@ async function headless(env: Record<string, string>) {
     await session.prompt(prompt);
     return turns.slice(start);
   };
-  return { cwd, home, run };
+  return { cwd, home, run, session };
 }
 
 afterEach(() => {
@@ -118,20 +118,34 @@ describe('permission modes in a headless run', () => {
     expect(fs.existsSync(path.join(cwd, 'ran.txt'))).toBe(false);
   }, 60_000);
 
-  it('keeps the catastrophic-command block in full mode while in-repo work runs unasked', async () => {
-    const { cwd, home, run } = await headless({ OCTOCODE_PERMISSION: 'full' });
+  // `mkfs.zzz` matches the catastrophic patterns and is not an installed command: the shell reports it missing and nothing is formatted.
+  const DESTRUCTIVE = 'rm app.ts; mkfs.zzz /dev/null';
+
+  it('runs a catastrophic command in full, audited as shell.destructive, and keeps in-repo work unasked', async () => {
+    const { cwd, run, session } = await headless({ OCTOCODE_PERMISSION: 'full' });
     const [, after] = await run('go', [
       calls(
-        fauxToolCall('bash', { command: 'rm -rf ~' }),
+        fauxToolCall('bash', { command: DESTRUCTIVE }),
         fauxToolCall('file', { queries: [{ reasoning: 'add', type: 'write', path: 'new.txt', content: 'x' }] }),
       ),
       say('done'),
     ]);
-    expect(after![0]).toMatchObject({ toolName: 'bash', isError: true });
     expect(after![0]!.text).not.toContain(NEEDS_APPROVAL);
-    expect(fs.existsSync(home)).toBe(true);
+    expect(fs.existsSync(path.join(cwd, 'app.ts'))).toBe(false);
     expect(after![1]).toMatchObject({ toolName: 'file', isError: false });
     expect(fs.readFileSync(path.join(cwd, 'new.txt'), 'utf8')).toBe('x');
+    const audit = session.sessionManager.getEntries().flatMap((entry) => (entry.type === 'custom' && entry.customType === 'octocode-permission' ? [entry.data as { action: string; allowed: boolean; via: string; mode: string }] : []));
+    expect(audit).toContainEqual(expect.objectContaining({ action: 'shell.destructive', allowed: true, via: 'mode', mode: 'full' }));
+    expect(audit).toContainEqual(expect.objectContaining({ action: 'file.workspace', allowed: true, via: 'mode', mode: 'full' }));
+  }, 60_000);
+
+  it('refuses a catastrophic command in workspace with no one to ask, and runs none of it', async () => {
+    const { cwd, run } = await headless({ OCTOCODE_PERMISSION: 'workspace' });
+    const [, after] = await run('go', [calls(fauxToolCall('bash', { command: DESTRUCTIVE })), say('blocked')]);
+    expect(after![0]!.isError).toBe(true);
+    expect(after![0]!.text.startsWith(NEEDS_APPROVAL)).toBe(true);
+    expect(after![0]!.text).toContain('OCTOCODE_PERMISSION=full');
+    expect(fs.existsSync(path.join(cwd, 'app.ts'))).toBe(true);
   }, 60_000);
 
   it('denies an ask in a headless main session and names the mode that would allow it', async () => {

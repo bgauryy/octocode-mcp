@@ -88,8 +88,11 @@ pub(super) fn embed_tool_contract() -> Result<(), Box<dyn Error>> {
     ] {
         println!("cargo:rerun-if-changed={}", file(name).display());
     }
-    let text = fs::read_to_string(file("tool-contract.json"))?;
-    let contract: Value = serde_json::from_str(&text)?;
+    // Re-serialize compactly: the source is pretty-printed, and every artifact
+    // embeds the full contract. Key order is kept (`preserve_order`), so the
+    // spans below are computed on the exact bytes that are embedded.
+    let contract: Value = serde_json::from_str(&fs::read_to_string(file("tool-contract.json"))?)?;
+    let text = serde_json::to_string(&contract)?;
     let spans = tool_spans(
         &text,
         contract

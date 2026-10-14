@@ -16,7 +16,16 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 
-/** Bundles `<dist>/index.js` into `<dist>/pi/octocode-<hash>.js` and writes `<dist>/pi-entry.cjs`; returns the entry path. */
+/** The bundle name `<dir>/current` points to, or undefined before the first build. */
+function readCurrent(dir) {
+  try {
+    return fs.readFileSync(path.join(dir, 'current'), 'utf8').trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Bundles `<dist>/index.js` into `<dist>/pi/octocode-<hash>.js` (keeping the previous bundle) and writes `<dist>/pi-entry.cjs`; returns the entry path. */
 export async function bundlePiEntry(dist) {
   const result = await build({
     entryPoints: [path.join(dist, 'index.js')],
@@ -31,11 +40,21 @@ export async function bundlePiEntry(dist) {
   const name = `octocode-${crypto.createHash('sha256').update(code).digest('hex').slice(0, 16)}.js`;
   // Two folders below the package root, like every compiled module, so paths found from `import.meta.url` still hold.
   const dir = path.join(dist, 'pi');
-  fs.rmSync(dir, { recursive: true, force: true });
   fs.mkdirSync(dir, { recursive: true });
+  const previous = readCurrent(dir);
   fs.writeFileSync(path.join(dir, name), code);
-  // The pointer to the current bundle, written last: a reload mid-build still finds a complete bundle.
-  fs.writeFileSync(path.join(dir, 'current'), name);
+  // The pointer to the current bundle, swapped last and atomically: a reload mid-build, or a build that dies half way,
+  // still finds a complete bundle.
+  const pointer = path.join(dir, 'current.tmp');
+  fs.writeFileSync(pointer, name);
+  fs.renameSync(pointer, path.join(dir, 'current'));
+  // Only the new and the previous bundle stay: a process that read the old pointer just before the swap can still import
+  // it. A rebuild with the same content keeps the bundles it found.
+  if (previous !== name) {
+    for (const file of fs.readdirSync(dir)) {
+      if (file.startsWith('octocode-') && file.endsWith('.js') && file !== name && file !== previous) fs.rmSync(path.join(dir, file), { force: true });
+    }
+  }
   const entry = path.join(dist, 'pi-entry.cjs');
   fs.writeFileSync(
     entry,

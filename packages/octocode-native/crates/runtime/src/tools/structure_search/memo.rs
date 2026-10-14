@@ -7,9 +7,9 @@
 //! stored rows before serving a page. An entry created in a directory that
 //! held no listed entry is not seen until the walk expires.
 use super::super::page_memo::PageMemo;
+use crate::tools::source::{Link, StampSet};
 use std::{
     any::Any,
-    path::PathBuf,
     sync::Arc,
     time::{Duration, SystemTime},
 };
@@ -19,41 +19,18 @@ const MAX_ENTRIES: usize = 16;
 const MAX_TOTAL_ROWS: usize = 400_000;
 const TTL: Duration = Duration::from_secs(60);
 
-/// An entry as it was when its walk was stored.
-#[derive(Clone, Debug, PartialEq)]
-pub(super) struct Stamp {
-    path: PathBuf,
-    identity: octocode_engine::graph::SourceStamp,
-}
-
-impl Stamp {
-    /// The entry's current size and time, `None` when it is gone.
-    pub(super) fn of(path: PathBuf) -> Option<Self> {
-        let meta = std::fs::symlink_metadata(&path).ok()?;
-        let identity = crate::tools::source::cache_stamp(&meta)?;
-        Some(Self { identity, path })
-    }
-
-    #[cfg(test)]
-    fn read(path: &std::path::Path) -> Option<(u64, Option<SystemTime>)> {
-        let meta = std::fs::symlink_metadata(path).ok()?;
-        Some((
-            if meta.is_dir() { 0 } else { meta.len() },
-            meta.modified().ok(),
-        ))
-    }
-
-    /// Whether the entry still has its stored size and time (no path copy).
-    fn unchanged(&self) -> bool {
-        std::fs::symlink_metadata(&self.path)
-            .ok()
-            .and_then(|meta| crate::tools::source::cache_stamp(&meta))
-            == Some(self.identity)
-    }
+/// A listed entry's size and modification time as `symlink_metadata` reads
+/// them now (a directory's size is 0).
+fn observed(path: &std::path::Path) -> Option<(u64, Option<SystemTime>)> {
+    let meta = std::fs::symlink_metadata(path).ok()?;
+    Some((
+        if meta.is_dir() { 0 } else { meta.len() },
+        meta.modified().ok(),
+    ))
 }
 
 /// A listed entry with the size and time its walk read (a directory's size
-/// is 0, as [`Stamp`] records it).
+/// is 0, as [`observed`] reads it).
 pub(super) struct Seen<'a> {
     pub path: &'a std::path::Path,
     pub size: u64,
@@ -80,42 +57,26 @@ impl<'a> Seen<'a> {
     }
 }
 
-/// The stamps of `listed` entries (as their walk read them, so no entry is
-/// stat'ed again) plus every directory holding one and the walked `root`
-/// (stat'ed now), deduplicated.
-fn stamps(root: &std::path::Path, listed: Vec<Seen<'_>>) -> Option<Vec<Stamp>> {
-    let mut known =
-        std::collections::BTreeMap::<&std::path::Path, Option<(u64, Option<SystemTime>)>>::new();
-    known.insert(root, None);
+/// The stamps of `listed` entries plus every directory holding one and the
+/// walked `root`, deduplicated; `None` when a listed entry no longer has the
+/// size and time its walk read (it changed before it could be stamped).
+fn stamps(root: &std::path::Path, listed: Vec<Seen<'_>>) -> Option<StampSet> {
+    let mut paths = std::collections::BTreeSet::from([root.to_path_buf()]);
     for seen in &listed {
         if let Some(parent) = seen.path.parent() {
-            known.entry(parent).or_insert(None);
+            paths.insert(parent.to_path_buf());
         }
+        paths.insert(seen.path.to_path_buf());
     }
-    for seen in listed {
-        known.insert(seen.path, Some((seen.size, seen.modified)));
-    }
-    known
-        .into_iter()
-        .map(|(path, seen)| {
-            let stamp = Stamp::of(path.to_path_buf())?;
-            if let Some((size, modified)) = seen
-                && {
-                    let meta = std::fs::symlink_metadata(path).ok()?;
-                    let walked_size = if meta.is_dir() { 0 } else { meta.len() };
-                    walked_size != size || meta.modified().ok() != modified
-                }
-            {
-                return None;
-            }
-            Some(stamp)
-        })
-        .collect()
+    let stamps = StampSet::capture(paths, Link::Itself, None)?;
+    listed
+        .iter()
+        .all(|seen| observed(seen.path) == Some((seen.size, seen.modified)))
+        .then_some(stamps)
 }
 
 struct Walk {
-    /// Shared so a page checks them without copying every stored path.
-    stamps: Arc<[Stamp]>,
+    stamps: StampSet,
     walk: Arc<dyn Any + Send + Sync>,
 }
 
@@ -126,9 +87,9 @@ static STORE: PageMemo<Walk> = PageMemo::new(TTL, MAX_ENTRIES, MAX_TOTAL_ROWS);
 /// one is evicted.
 pub(super) fn get<T: Any + Send + Sync>(snapshot: &str, policy: &str) -> Option<Arc<T>> {
     let (walk, stamps) = STORE.get(snapshot, policy, |stored| {
-        (Arc::clone(&stored.walk), Arc::clone(&stored.stamps))
+        (Arc::clone(&stored.walk), stored.stamps.clone())
     })?;
-    if stamps.iter().all(Stamp::unchanged) {
+    if stamps.unchanged() {
         return walk.downcast::<T>().ok();
     }
     evict(snapshot);
@@ -156,7 +117,6 @@ pub(super) fn put<T: Listed>(
     let Some(stamps) = stamps(root, listed) else {
         return;
     };
-    let stamps = stamps.into();
     let walk: Arc<dyn Any + Send + Sync> = Arc::clone(walk) as _;
     STORE.put(snapshot, policy, rows, Walk { stamps, walk });
 }
@@ -168,6 +128,7 @@ pub(super) fn evict(snapshot: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     #[test]
     fn a_stored_walk_is_served_until_a_listed_directory_changes() {
@@ -177,7 +138,7 @@ mod tests {
         struct One(PathBuf);
         impl Listed for One {
             fn sources(&self) -> Vec<Seen<'_>> {
-                let (size, modified) = Stamp::read(&self.0).expect("listed file");
+                let (size, modified) = observed(&self.0).expect("listed file");
                 vec![Seen {
                     path: self.0.as_path(),
                     size,
@@ -206,7 +167,7 @@ mod tests {
         let root = tempfile::tempdir().expect("root");
         let file = root.path().join("a.txt");
         std::fs::write(&file, "ab\n").expect("initial source");
-        let stamp = Stamp::of(file.clone()).expect("stamp");
+        let stamp = StampSet::capture([file.clone()], Link::Itself, None).expect("stamp");
         let old_time = std::fs::metadata(&file)
             .expect("metadata")
             .modified()

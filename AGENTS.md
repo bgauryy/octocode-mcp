@@ -12,7 +12,8 @@ runner, tool audits and the developer docs
 ([development](skills-dev/octocode-dev/docs/DEVELOPMENT.md),
 [release](skills-dev/octocode-dev/docs/RELEASE.md),
 [tool quality](skills-dev/octocode-dev/docs/TOOL_QUALITY.md),
-[config changes](skills-dev/octocode-dev/docs/ADDING_CONFIG.md)). Load any other local skill that
+[config changes](skills-dev/octocode-dev/docs/ADDING_CONFIG.md),
+[scraping scripts](skills-dev/octocode-dev/docs/SCRAPING_MAINTENANCE.md)). Load any other local skill that
 fits the task (e.g. `rust-best-practices`). Edit source docs, never build copies or generated ones.
 
 ## How it fits together
@@ -69,7 +70,7 @@ Package versions are independent; the release line is listed under Release.
 
 ## Setup, run, develop
 
-Prerequisites: Node `^24.15.0`, Yarn 4.9.1 (`corepack enable`), and Rust 1.96.0 (pinned by
+Prerequisites: Node `^24.15.0`, Yarn 4.9.1 (`corepack enable`), and Rust 1.99.0 (pinned by
 `packages/octocode-native/rust-toolchain.toml`). Contract changes also need the sibling checkout
 `../octocode-mcp-host` and `cargo install cargo-typify --version 0.8.0 --locked`.
 
@@ -88,7 +89,7 @@ $DEV verify                      # dedupe, docs, and each package's verify
 Without `setup`, `@octocodeai/octocode-core` resolves from npm at the version pinned in
 `packages/octocode-config/package.json`. The local MCP server is the stdio command
 `node packages/octocode-mcp/dist/index.js`. End-to-end suites:
-`node octocode-local-testing/harness/run-all.mjs`. CI runs `$DEV lint:ci` and `$DEV test:ci`.
+`node octocode-local-testing/harness/run-all.mjs`. CI runs `$DEV lint:ci` and `$DEV test:ci` (which starts with `$DEV skills:check`; run that after editing anything under `skills/`).
 
 Change rules:
 

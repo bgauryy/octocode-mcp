@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { withDialog } from '../src/shared/locks.js';
 import { showAskDialog, type AskQuestion, type AskResult } from '../src/ask/dialog.js';
 import { formatAnswers, registerAskUser } from '../src/ask/tool.js';
+import { promptTitle } from '../src/shared/locks.js';
 import { fakeCtx, fakePi, rendered, theme } from './fake-pi.js';
 import { CURSOR_MARKER, visibleWidth } from '@earendil-works/pi-tui';
 
@@ -49,6 +50,18 @@ describe('askUser', () => {
       dialog.handleInput(KEY.escape);
     }) } });
     await showAskDialog(ctx, [{ ...scope, question: 'Which\u001b]0;hidden\u0007 scope?' }]);
+  });
+
+  it('titles its dialog with the question, the count first, for the working line and notifications', async () => {
+    const titles: Array<string | undefined> = [];
+    const ctx = fakeCtx({ cwd: '.', ui: { custom: async () => {
+      titles.push(promptTitle({ kind: 'custom' }));
+      return { cancelled: true, answers: [] };
+    } } });
+    await showAskDialog(ctx, [scope]);
+    await showAskDialog(ctx, [scope, extras]);
+    expect(titles).toEqual([scope.question, `2 questions: ${scope.question}`]);
+    expect(promptTitle({ kind: 'custom' })).toBeUndefined();
   });
 
   it('redraws on a focus change, so the cursor marker follows focus', async () => {
@@ -240,6 +253,16 @@ describe('askUser tool', () => {
     const typed = await tool.execute('c', multi, undefined, undefined, fakeCtx({ cwd: '.', mode: 'rpc', ui: { selects: ['2. Tests', 'Write an answer'], inputs: ['CI'] } }));
     expect(typed.details.answers[0]).toEqual({ question: 'Which extras?', answer: 'Tests, CI', custom: true, picks: ['Tests'], typed: 'CI' });
     expect(typed.content[0].text).toBe('"Which extras?" → Tests + (typed) CI');
+  });
+
+  it('says how many empty questions and options it did not ask', async () => {
+    const questions = [{ question: 'Which?', options: [{ label: 'A' }, { label: '  ' }, { label: '' }] }, { question: '   ' }, { question: '' }, { question: ' ' }];
+    const result = await tool.execute('c', { questions }, undefined, undefined, fakeCtx({ cwd: '.', mode: 'rpc', ui: { selects: ['1. A'] } }));
+    expect(result.content[0].text).toBe('"Which?" → A\n(Not asked: 3 empty questions and 2 options with an empty label.)');
+    const one = await tool.execute('c', { questions: [{ question: 'Which?', options: [{ label: 'A' }] }, { question: '' }] }, undefined, undefined, fakeCtx({ cwd: '.', mode: 'rpc', ui: { selects: ['1. A'] } }));
+    expect(one.content[0].text).toBe('"Which?" → A\n(Not asked: 1 empty question.)');
+    // Nothing skipped, nothing said.
+    expect((await tool.execute('c', { questions: [{ question: 'Which?', options: [{ label: 'A' }] }] }, undefined, undefined, fakeCtx({ cwd: '.', mode: 'rpc', ui: { selects: ['1. A'] } }))).content[0].text).toBe('"Which?" → A');
   });
 
   it('distinguishes duplicate labels and choices named after UI actions in RPC mode', async () => {

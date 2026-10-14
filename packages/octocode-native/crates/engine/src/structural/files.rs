@@ -1,65 +1,79 @@
+use std::collections::BTreeMap;
 use std::collections::HashMap;
-use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use ignore::overrides::Override;
 use rayon::prelude::*;
 
 use super::language::AgLanguage;
-use super::octo::{ExecutionError, OctoCompiledMatcher, compile_matcher};
+use super::octo::{ExecutionError, OctoCompiledMatcher, compile_diagnostic, compile_matcher};
 use super::query::{Prefilter, StructuralQuery, invalid_query_explanation};
 use super::types::{
     StructuralDetailedMatch, StructuralDiagnostic, StructuralSearchDetailedFileResult,
     StructuralSearchFilesDetailedResult, StructuralSearchFilesOptions,
 };
-use crate::search::walk::{WalkFlags, build_overrides, walk_builder};
+use crate::error::{Error, Result as EngineResult};
+use crate::search::glob::Globs;
+use crate::search::walk::{IgnorePolicy, Prune, Stop, pruned_walk_builder};
 use crate::signatures::languages;
 use crate::text::file_extension::extension_of;
 
-/// Test helper: [`search_files_detailed_filtered_with_extension`] with no
-/// path policy and each file's own extension.
+/// Test helper: [`search_files`] with no path policy and each file's own
+/// extension.
 #[cfg(test)]
 pub(crate) fn search_files_detailed(
     options: StructuralSearchFilesOptions,
-) -> Result<StructuralSearchFilesDetailedResult, String> {
-    search_files_detailed_filtered_with_extension(options, &|_| Ok(true), &|path| {
-        extension_for_path(path).unwrap_or_default()
-    })
+) -> EngineResult<StructuralSearchFilesDetailedResult> {
+    search_files(
+        options,
+        &|_| true,
+        &|path| extension_for_path(path).unwrap_or_default(),
+        &|| false,
+    )
 }
 
-/// Detailed structural search with caller-owned descendant policy and
-/// cancellation, plus a caller-selected parser for ambiguous paths. The
-/// `allow_path` callback runs before candidate accounting, literal prefilter
-/// reads, metadata reads, and source reads; file paths remain unchanged in
-/// diagnostics and match IDs.
+/// Detailed structural search with caller-owned descendant policy and a
+/// caller-selected parser for ambiguous paths. `admit` decides each walked
+/// entry before candidate accounting, literal prefilter reads, metadata
+/// reads, and source reads; file paths remain unchanged in diagnostics and
+/// match IDs. `stop` cancels the walk and the scan
+/// ([`crate::error::ErrorKind::Cancelled`]).
 ///
 /// An unset `max_files` caps nothing but the time: the scan evaluates
 /// candidates in chunks and stops at the first chunk boundary past
 /// [`crate::scan_budget::SCAN_TIME_BUDGET`], reporting where it resumes
 /// ([`StructuralSearchFilesDetailedResult::scan_resume`]). An explicit
 /// `max_files` is the caller's window and is never cut by time.
-pub fn search_files_detailed_filtered_with_extension(
+pub fn search_files(
     options: StructuralSearchFilesOptions,
-    allow_path: &(dyn Fn(&Path) -> Result<bool, String> + Sync),
+    admit: &(dyn Fn(&Path) -> bool + Sync),
     select_extension: &(dyn Fn(&Path) -> String + Sync),
-) -> Result<StructuralSearchFilesDetailedResult, String> {
-    search_files_with_budget(
-        options,
-        allow_path,
-        select_extension,
-        Some(crate::scan_budget::SCAN_TIME_BUDGET),
-    )
+    stop: &Stop<'_>,
+) -> EngineResult<StructuralSearchFilesDetailedResult> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        search_files_with_budget(
+            options,
+            admit,
+            select_extension,
+            stop,
+            Some(crate::scan_budget::SCAN_TIME_BUDGET),
+        )
+    }))
+    .unwrap_or_else(|_| {
+        Err(Error::new(
+            "structural detailed file search failed on pathological input",
+        ))
+    })
 }
 
-/// [`search_files_detailed_filtered_with_extension`] with its time budget
-/// (`None` evaluates every candidate).
+/// [`search_files`] with its time budget (`None` evaluates every candidate).
 pub(crate) fn search_files_with_budget(
     options: StructuralSearchFilesOptions,
-    allow_path: &(dyn Fn(&Path) -> Result<bool, String> + Sync),
+    admit: &(dyn Fn(&Path) -> bool + Sync),
     select_extension: &(dyn Fn(&Path) -> String + Sync),
+    stop: &Stop<'_>,
     budget: Option<std::time::Duration>,
-) -> Result<StructuralSearchFilesDetailedResult, String> {
+) -> EngineResult<StructuralSearchFilesDetailedResult> {
     let StructuralSearchFilesOptions {
         path,
         pattern,
@@ -67,8 +81,7 @@ pub(crate) fn search_files_with_budget(
         include,
         exclude,
         exclude_dir,
-        hidden,
-        no_ignore,
+        ignore,
         max_depth,
         max_files,
         skip_files,
@@ -82,8 +95,10 @@ pub(crate) fn search_files_with_budget(
     };
 
     let root = PathBuf::from(&path);
-    if !allow_path(&root)? {
-        return Err("Structural search root is denied by path policy".to_owned());
+    if !admit(&root) {
+        return Err(Error::new(
+            "Structural search root is denied by path policy",
+        ));
     }
     check_root_exists(&root)?;
     let timed = max_files.is_none();
@@ -94,21 +109,23 @@ pub(crate) fn search_files_with_budget(
     let prefilter = query.prefilter();
     let query_explanation = query.explanation_with_prefilter(&prefilter);
 
-    let overrides = build_overrides(
+    let globs = crate::search::glob::compile(
         &root,
         &include.unwrap_or_default(),
         &exclude.unwrap_or_default(),
     )?;
     let mut candidate_files = collect_files(
         &root,
-        overrides,
-        &exclude_dir.unwrap_or_default(),
-        max_files.saturating_add(1),
-        hidden,
-        no_ignore,
-        max_depth,
-        allow_path,
+        &Walked {
+            globs: &globs,
+            prune: Prune::new(exclude_dir.iter().flatten()),
+            ignore,
+            max_depth,
+            max_files: max_files.saturating_add(1),
+        },
+        admit,
         &|_| true,
+        stop,
     )?;
     let scan_truncated = candidate_files.len() > max_files;
     candidate_files.truncate(max_files);
@@ -122,9 +139,10 @@ pub(crate) fn search_files_with_budget(
     // prefilter, parse and match files in parallel. `collect` keeps candidate
     // order, and the serial fold below rebuilds the same counters.
     let scan = FileScan {
-        allow_path,
+        admit,
+        stop,
         select_extension,
-        anchors: AnchorFilter::new(&prefilter)?,
+        anchors: AnchorFilter::new(&prefilter).map_err(Error::new)?,
         matchers: compile_matchers(&candidate_files, select_extension, &query),
         max_file_bytes,
     };
@@ -141,7 +159,7 @@ pub(crate) fn search_files_with_budget(
             chunk
                 .par_iter()
                 .map(|file_path| scan.file(file_path))
-                .collect::<Result<Vec<_>, String>>()?,
+                .collect::<EngineResult<Vec<_>>>()?,
         );
     }
     let scan_truncated = scan_truncated || scan_resume.is_some();
@@ -248,7 +266,8 @@ type FileOutcome = Option<(Tally, StructuralSearchDetailedFileResult)>;
 
 /// Shared, read-only state of the parallel per-file scan.
 struct FileScan<'a> {
-    allow_path: &'a (dyn Fn(&Path) -> Result<bool, String> + Sync),
+    admit: &'a (dyn Fn(&Path) -> bool + Sync),
+    stop: &'a Stop<'a>,
     select_extension: &'a (dyn Fn(&Path) -> String + Sync),
     anchors: Option<AnchorFilter>,
     matchers: CompiledMatchers,
@@ -257,8 +276,11 @@ struct FileScan<'a> {
 
 impl FileScan<'_> {
     /// Gate, read, and match one candidate. `None` when path policy denies it.
-    fn file(&self, file_path: &Path) -> Result<FileOutcome, String> {
-        if !(self.allow_path)(file_path)? {
+    fn file(&self, file_path: &Path) -> EngineResult<FileOutcome> {
+        if (self.stop)() {
+            return Err(Error::cancelled());
+        }
+        if !(self.admit)(file_path) {
             return Ok(None);
         }
         let path_string = file_path.to_string_lossy().to_string();
@@ -290,16 +312,7 @@ impl FileScan<'_> {
                     path_string.clone(),
                     "unsupported",
                     "unsupportedExtension",
-                    StructuralDiagnostic::new(
-                        "structural.language.unsupported",
-                        "warning",
-                        "parse",
-                        format!("Structural search does not support .{ext} files."),
-                    )
-                    .with_path(path_string)
-                    .with_recovery(
-                        "Use text search for this extension or add a tree-sitter grammar mapping.",
-                    ),
+                    unsupported_language(&path_string),
                 ),
             )));
         };
@@ -364,19 +377,15 @@ impl FileScan<'_> {
                         skipped_file(path_string, "truncated", "queryCompile", diagnostic),
                     );
                 }
-                return (Tally::CompileFailure, skipped_file(
-                    path_string.clone(),
-                    "parserFailed",
-                    "queryCompile",
-                    StructuralDiagnostic::new(
-                        "structural.query.compileFailed",
-                        "error",
-                        "match",
-                        message.clone(),
-                    )
-                    .with_path(path_string)
-                    .with_recovery("Check the structural pattern or YAML rule against this file's language grammar."),
-                ));
+                return (
+                    Tally::CompileFailure,
+                    skipped_file(
+                        path_string.clone(),
+                        "parserFailed",
+                        "queryCompile",
+                        compile_diagnostic(message).with_path(path_string),
+                    ),
+                );
             }
         };
 
@@ -405,6 +414,22 @@ impl FileScan<'_> {
             },
         )
     }
+}
+
+/// The diagnostic of a file whose extension selects no grammar, naming the
+/// extension it has (or that it has none).
+pub(super) fn unsupported_language(file_path: &str) -> StructuralDiagnostic {
+    let extension = match extension_of(file_path, true, "").as_str() {
+        "" => "files with no extension".to_owned(),
+        extension => format!(".{extension} files"),
+    };
+    StructuralDiagnostic::new(
+        "structural.language.unsupported",
+        "warning",
+        "parse",
+        format!("Structural search has no grammar for {extension}."),
+    )
+    .with_path(file_path)
 }
 
 /// The skipped-file row and tally for a source that failed its read gates.
@@ -437,9 +462,6 @@ fn source_skipped(
                 format!(
                     "File is {len} bytes, above the structural search limit of {max_file_bytes} bytes."
                 ),
-            )
-            .with_recovery(
-                "Raise maxFileBytes or inspect the file with a narrower text search first.",
             ),
         ),
         SourceSkip::Unreadable(err) | SourceSkip::NotUtf8(err) => (
@@ -467,20 +489,17 @@ enum SourceSkip {
     NotUtf8(std::io::Error),
 }
 
-/// Read a candidate's UTF-8 source behind the size gate: metadata first, so
-/// an oversized file is never read.
+/// Read a candidate's UTF-8 source through the one bounded reader: an
+/// oversized file is refused from its handle's size, never read whole.
 fn read_source(path: &Path, max_file_bytes: u64) -> Result<String, SourceSkip> {
-    let len = fs::metadata(path).map_err(SourceSkip::Metadata)?.len();
-    if len > max_file_bytes {
-        return Err(SourceSkip::Large(len));
+    match crate::text::read_source(path, max_file_bytes) {
+        Ok(source) => source_text(source.bytes),
+        Err(crate::text::ReadError::TooLarge(len)) => Err(SourceSkip::Large(len)),
+        Err(crate::text::ReadError::Io(err)) => Err(SourceSkip::Unreadable(err)),
+        Err(crate::text::ReadError::NotRegular) => Err(SourceSkip::Metadata(
+            std::io::Error::other("not a regular file"),
+        )),
     }
-    fs::read_to_string(path).map_err(|err| {
-        if err.kind() == std::io::ErrorKind::InvalidData {
-            SourceSkip::NotUtf8(err)
-        } else {
-            SourceSkip::Unreadable(err)
-        }
-    })
 }
 
 #[derive(Default)]
@@ -621,42 +640,32 @@ impl AnchorFilter {
     /// bytes kept for the parse; a larger one is streamed only until the first
     /// anchor, never held in memory, since the parse skips it anyway.
     fn check(&self, path: &Path, max_file_bytes: u64) -> Anchored {
-        use std::io::Read as _;
-        let Ok(mut file) = fs::File::open(path) else {
-            return Anchored::Miss;
+        let bytes = match crate::text::read_source(path, max_file_bytes) {
+            Ok(source) => source.bytes,
+            Err(crate::text::ReadError::TooLarge(len)) => {
+                let hit = match &self.automaton {
+                    None => true,
+                    Some(automaton) => crate::text::source::open_regular(path)
+                        .ok()
+                        .and_then(|(mut file, _)| {
+                            automaton.try_stream_find_iter(&mut file).ok()?.next()
+                        })
+                        .is_some_and(|found| found.is_ok()),
+                };
+                return if hit {
+                    Anchored::Large(len)
+                } else {
+                    Anchored::Miss
+                };
+            }
+            Err(_) => return Anchored::Miss,
         };
-        let Ok(len) = file.metadata().map(|meta| meta.len()) else {
-            return Anchored::Miss;
-        };
-        if len > max_file_bytes {
-            let hit = match &self.automaton {
-                None => true,
-                Some(automaton) => automaton
-                    .try_stream_find_iter(&mut file)
-                    .ok()
-                    .and_then(|mut found| found.next())
-                    .is_some_and(|found| found.is_ok()),
-            };
-            return if hit {
-                Anchored::Large(len)
-            } else {
-                Anchored::Miss
-            };
-        }
-        let mut bytes = Vec::with_capacity(usize::try_from(len).unwrap_or(0).saturating_add(1));
-        if file.read_to_end(&mut bytes).is_err() {
-            return Anchored::Miss;
-        }
         if self
             .automaton
             .as_ref()
             .is_some_and(|automaton| !automaton.is_match(&bytes))
         {
             return Anchored::Miss;
-        }
-        // A file that grew past the cap while it was read is skipped as large.
-        if bytes.len() as u64 > max_file_bytes {
-            return Anchored::Large(bytes.len() as u64);
         }
         Anchored::Hit(bytes)
     }
@@ -673,89 +682,70 @@ fn source_text(bytes: Vec<u8>) -> Result<String, SourceSkip> {
     })
 }
 
-/// Loud existence check shared by every entry point — mirrors the message
-/// `collect_files` produces so all prefilter branches fail identically.
-fn check_root_exists(root: &Path) -> Result<(), String> {
-    fs::metadata(root).map(|_| ()).map_err(|err| {
-        format!(
-            "Cannot access structural search path '{}': {err}",
-            root.display()
+/// Loud existence check shared by every entry point.
+fn check_root_exists(root: &Path) -> EngineResult<std::fs::Metadata> {
+    fs::metadata(root).map_err(|err| {
+        Error::io(
+            &err,
+            format!(
+                "Cannot access structural search path '{}': {err}",
+                root.display()
+            ),
         )
     })
 }
 
-#[allow(clippy::too_many_arguments)]
+/// What a structural walk takes: its globs, pruned directory names, ignore
+/// policy, depth (the root's entries are depth 1), and how many files it
+/// collects.
+struct Walked<'a> {
+    globs: &'a Globs,
+    prune: Prune,
+    ignore: IgnorePolicy,
+    max_depth: Option<u32>,
+    max_files: usize,
+}
+
+/// The candidate files under `root`, in path order. A file root is its own
+/// candidate when the globs and `accept_file` admit it.
 fn collect_files(
     root: &Path,
-    overrides: Override,
-    exclude_dir: &[String],
-    max_files: usize,
-    hidden: Option<bool>,
-    no_ignore: Option<bool>,
-    max_depth: Option<u32>,
-    allow_path: &(dyn Fn(&Path) -> Result<bool, String> + Sync),
+    walked: &Walked<'_>,
+    admit: &(dyn Fn(&Path) -> bool + Sync),
     accept_file: &dyn Fn(&Path) -> bool,
-) -> Result<Vec<PathBuf>, String> {
-    if !allow_path(root)? {
-        return Err("Structural search root is denied by path policy".to_owned());
-    }
-    let metadata = fs::metadata(root).map_err(|err| {
-        format!(
-            "Cannot access structural search path '{}': {err}",
-            root.display()
-        )
-    })?;
-
+    stop: &Stop<'_>,
+) -> EngineResult<Vec<PathBuf>> {
+    let metadata = check_root_exists(root)?;
     if metadata.is_file() {
-        return Ok(
-            if !overrides.matched(root, false).is_ignore() && accept_file(root) {
-                vec![root.to_path_buf()]
-            } else {
-                Vec::new()
-            },
-        );
+        let admitted = !walked.globs.overrides().matched(root, false).is_ignore();
+        return Ok(if admitted && accept_file(root) {
+            vec![root.to_path_buf()]
+        } else {
+            Vec::new()
+        });
     }
     if !metadata.is_dir() {
         return Ok(Vec::new());
     }
-
-    let excluded: HashSet<String> = exclude_dir.iter().cloned().collect();
-    // Unlike the text lane, `no_ignore` keeps the global gitignore,
-    // `.git/info/exclude`, and parent ignore files, and `max_depth` counts the
-    // root's entries as depth 1.
-    let mut builder = walk_builder(
+    let mut builder = pruned_walk_builder(
         root,
-        &WalkFlags {
-            hidden: hidden == Some(true),
-            no_ignore: no_ignore == Some(true),
-            no_ignore_global: false,
-            max_depth: max_depth.map(|n| n as usize),
-        },
+        walked.ignore,
+        walked.max_depth.map(|n| n as usize),
+        walked.prune.clone(),
     );
     builder
-        .overrides(overrides)
-        .sort_by_file_path(Ord::cmp)
-        .filter_entry(move |entry| {
-            if entry.depth() == 0 {
-                return true;
-            }
-            if entry.file_type().is_some_and(|ft| ft.is_dir()) {
-                let name = entry.file_name().to_string_lossy();
-                return !excluded.contains(name.as_ref());
-            }
-            true
-        });
-
+        .overrides(walked.globs.overrides())
+        .sort_by_file_path(Ord::cmp);
     let mut out = Vec::new();
     for result in builder.build() {
-        if out.len() >= max_files {
+        if out.len() >= walked.max_files {
             break;
         }
-        let Ok(entry) = result else { continue };
-        if !allow_path(entry.path())? {
-            continue;
+        if stop() {
+            return Err(Error::cancelled());
         }
-        if !entry.file_type().is_some_and(|ft| ft.is_file()) {
+        let Ok(entry) = result else { continue };
+        if !entry.file_type().is_some_and(|ft| ft.is_file()) || !admit(entry.path()) {
             continue;
         }
         let path = entry.into_path();
@@ -831,19 +821,22 @@ pub struct StructuralRewriteFilesResult {
 /// rule, fix, etc.), as accepted by ast-grep's `--inline-rules`.
 pub fn rewrite_files(
     options: super::types::StructuralRewriteFilesOptions,
-) -> Result<StructuralRewriteFilesResult, String> {
+) -> EngineResult<StructuralRewriteFilesResult> {
     let root = std::path::PathBuf::from(&options.path);
     check_root_exists(&root)?;
 
     let rule_config: serde_json::Value = serde_json::from_str(&options.rule_config_json)
-        .map_err(|e| format!("[structural.rewrite.json] {e}"))?;
+        .map_err(|e| Error::new(format!("[structural.rewrite.json] {e}")))?;
     let selector = rule_config
         .get("language")
         .and_then(serde_json::Value::as_str)
-        .ok_or_else(|| "[structural.rewrite.invalid] language is required".to_owned())?
+        .ok_or_else(|| Error::new("[structural.rewrite.invalid] language is required"))?
         .to_owned();
-    let extensions = super::rewrite::rewrite_language_extensions(&selector)
-        .ok_or_else(|| format!("[structural.rewrite.invalid] {selector} is not supported"))?;
+    let extensions = languages::family_extensions(&selector).ok_or_else(|| {
+        Error::new(format!(
+            "[structural.rewrite.invalid] {selector} is not supported"
+        ))
+    })?;
 
     let include = options.include.unwrap_or_default();
     let exclude = options.exclude.unwrap_or_default();
@@ -853,22 +846,23 @@ pub fn rewrite_files(
         .max_file_bytes
         .map_or(crate::signatures::MAX_PARSE_SIZE as u64, u64::from);
 
-    let overrides = build_overrides(&root, &include, &exclude)?;
+    let globs = crate::search::glob::compile(&root, &include, &exclude)?;
     let is_single_file = root.is_file();
     let candidate_files = collect_files(
         &root,
-        overrides,
-        &exclude_dir,
-        max_files.saturating_add(1),
-        options.hidden,
-        options.no_ignore,
-        options.max_depth,
-        &|_| Ok(true),
+        &Walked {
+            globs: &globs,
+            prune: Prune::new(&exclude_dir),
+            ignore: options.ignore,
+            max_depth: options.max_depth,
+            max_files: max_files.saturating_add(1),
+        },
+        &|_| true,
         &|path| {
             is_single_file
-                || extension_for_path(path)
-                    .is_some_and(|extension| extensions.contains(extension.as_str()))
+                || extension_for_path(path).is_some_and(|extension| extensions.contains(&extension))
         },
+        &|| false,
     )?;
     // `collect_files` was asked for `max_files + 1`; if it returned more than
     // `max_files` the candidate scan was truncated and files beyond the cap were
@@ -880,7 +874,7 @@ pub fn rewrite_files(
     // under `cpp`), so compile the rule once per distinct parser language before
     // the parallel scan instead of once per file.
     let parser_for = |path: &std::path::Path| -> String {
-        super::rewrite::rewrite_parser_for_path(&selector, &path.to_string_lossy())
+        languages::parser_for_path(&selector, &path.to_string_lossy())
     };
     let mut compiled: HashMap<String, Result<super::rewrite::CompiledRewrite, String>> =
         HashMap::new();
@@ -986,8 +980,7 @@ mod rewrite_coverage_tests {
             include: None,
             exclude: None,
             exclude_dir: None,
-            hidden: Some(false),
-            no_ignore: Some(false),
+            ignore: crate::search::walk::IgnorePolicy::default(),
             max_depth: None,
             max_files: Some(1),
             max_file_bytes: Some(1_000_000),
@@ -1026,8 +1019,7 @@ mod rewrite_coverage_tests {
             include: None,
             exclude: None,
             exclude_dir: None,
-            hidden: Some(false),
-            no_ignore: Some(false),
+            ignore: crate::search::walk::IgnorePolicy::default(),
             max_depth: None,
             max_files: Some(10),
             max_file_bytes: Some(1_000_000),
@@ -1071,8 +1063,7 @@ mod rewrite_coverage_tests {
             include: None,
             exclude: None,
             exclude_dir: None,
-            hidden: Some(false),
-            no_ignore: Some(false),
+            ignore: crate::search::walk::IgnorePolicy::default(),
             max_depth: None,
             max_files: Some(2_000),
             max_file_bytes: Some(64),

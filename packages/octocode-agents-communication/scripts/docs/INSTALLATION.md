@@ -1,6 +1,6 @@
 # Install and bind a participant
 
-Load when the host has no communication binding. Why: setup belongs outside ordinary worker context.
+Load when the host has no communication binding.
 
 `Install complete folder → choose shared DB → bind identity → verify discovery`.
 

@@ -104,13 +104,14 @@ async fn native_cli_status_reports_a_rejected_token_as_invalid() {
         let output = tokio::task::spawn_blocking(move || command.output().unwrap())
             .await
             .unwrap();
+        // Not authenticated is the documented auth exit in either mode.
+        assert_eq!(output.status.code(), Some(4));
         if json_out {
             let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
             assert_eq!(value["authenticated"], false, "{value}");
             assert_eq!(value["verification"], "invalid", "{value}");
             assert_eq!(value["tokenSource"], "env", "{value}");
         } else {
-            assert_eq!(output.status.code(), Some(1));
             assert!(
                 String::from_utf8_lossy(&output.stderr).contains("invalid token"),
                 "{}",

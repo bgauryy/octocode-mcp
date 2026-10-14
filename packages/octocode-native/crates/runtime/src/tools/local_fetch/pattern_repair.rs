@@ -2,23 +2,6 @@
 
 use super::types::{Continuation, LocalFetchQuery, MatchString, ReadRegex};
 
-/// Syntax characters a Rust regex (and PCRE2) pattern escapes to match them
-/// literally.
-const SYNTAX: &[char] = &[
-    '\\', '^', '$', '.', '*', '+', '?', '(', ')', '[', ']', '{', '}', '|', '/',
-];
-
-fn escape(text: &str) -> String {
-    let mut escaped = String::with_capacity(text.len() * 2);
-    for c in text.chars() {
-        if SYNTAX.contains(&c) {
-            escaped.push('\\');
-        }
-        escaped.push(c);
-    }
-    escaped
-}
-
 /// Whether `pattern` compiles under the read's own regex engine.
 fn compiles(pattern: &str, pcre2: bool) -> bool {
     octocode_engine::portable::validate_text_pattern(pattern, false, pcre2).valid
@@ -30,7 +13,7 @@ fn repair_item(item: &str, pcre2: bool) -> String {
     crate::regex_repair::close_unclosed_group(item, pcre2)
         .or_else(|| crate::regex_repair::repair_alternation(item, pcre2))
         .filter(|repaired| compiles(repaired, pcre2))
-        .unwrap_or_else(|| escape(item))
+        .unwrap_or_else(|| regex::escape(item))
 }
 
 /// The same read, repaired; `None` when the read is not a regex or every item

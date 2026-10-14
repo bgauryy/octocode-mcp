@@ -1,43 +1,35 @@
-# Change discipline: refactor and ship a slice
+# Change discipline
 
-Load before any source edit: when a proven architecture or algorithm finding needs a code change, the user asks to improve the design, or Code or Review is shipping a slice. A plausible target diagram is not a safe migration; a slice is incomplete until its behavior and repository state agree.
+Load when about to edit source: a proven fix, a requested design improvement, or an agent's slice. A slice is done only when behavior and repository state agree.
 
 ## Refactor
 
-Do not refactor a candidate whose impact or acceptance check is undefined.
+- No refactor while a candidate's impact or acceptance check is undefined.
 
-| Finding | Small safe move | Guardrail |
-|---|---|---|
-| Mixed responsibility | extract one cohesive capability behind the existing call shape | characterization and unchanged public behavior |
-| Wrong-way dependency | introduce a consumer-owned port; move infrastructure to an adapter | contract test and exact negative dependency check |
-| Leaky transport/storage/view type | map to a boundary value or DTO at the edge | serialization, validation, and compatibility tests |
-| Hidden orchestration/effects | expose the use-case boundary and effect owner | success, error, retry, timeout, cancellation |
-| Repeated policy | centralize only proven shared knowledge/change pressure | preserve genuinely divergent edge cases |
-| Over-wide interface | derive focused capabilities from real consumer groups | no capability loss or one-interface-per-call ceremony |
-| Measured repeated work | fix I/O/computation or cache/lifetime ownership | same benchmark conditions plus correctness/resource limits |
-| Harmful runtime cycle | break the least stable edge through inversion, events, or responsibility movement | initialization/integration checks; ignore type-only cycles |
+Safe moves (finding → move; guardrail):
+- Mixed responsibility → extract one cohesive capability behind the existing call shape; characterization tests.
+- Wrong-way dependency → consumer-owned port, infrastructure in an adapter; contract test, negative dependency check.
+- Leaky transport/storage/view type → boundary value or DTO at the edge; serialization, validation, compatibility tests.
+- Hidden orchestration or effects → expose the use-case boundary and effect owner; success, error, retry, timeout, cancellation.
+- Repeated policy → centralize only proven shared knowledge and change pressure; keep divergent edge cases.
+- Over-wide interface → focused capabilities from real consumer groups; no capability loss.
+- Measured repeated work → fix I/O, computation, or cache/lifetime ownership; same benchmark conditions and limits.
+- Harmful runtime cycle (not type-only) → break the least stable edge (inversion, events, moved responsibility); initialization and integration checks.
 
-Prefer boundaries around capability, volatility, and ownership—not arbitrary technical nouns. Point dependencies toward stable policy, keep construction visible at a small number of composition roots, and make transactions, retries, cancellation, failure, and observability ownership explicit. Duplicate simple syntax before abstracting unrelated concepts.
-
-Migration: freeze behavior → create seam → move one scenario → redirect callers → verify architecture and runtime sensors → repeat → remove old paths only after semantic and external-consumer checks. Prefer reversible vertical slices over layer-by-layer rewrites; update architecture docs when they are part of the contract. Return to `references/algorithm-review.md` or `references/architecture-analysis.md` when the seam exposes an unproven assumption.
+- Boundaries: cut by capability, volatility, and ownership, not technical nouns; dependencies point toward stable policy; construction stays at few composition roots; transactions, retries, cancellation, failure, and observability each get an owner. Prefer duplicated simple syntax over abstracting unrelated concepts.
+- Migrate in reversible vertical slices, not layer rewrites: freeze behavior, create a seam, move one scenario, redirect callers, run architecture and runtime sensors, repeat. Remove old paths only after semantic and external-consumer checks; update architecture docs that are part of the contract.
+- A seam exposing an unproven assumption: back to [checks](checks.md#algorithms) or [analysis](analysis.md).
 
 ## Verify the slice
 
-- Verify that the first failing assertion fails for the intended reason.
-- Do not stub the dependency whose integration or behavior the test claims to prove.
-- Run the narrowest relevant checks, then expand according to affected scope; compare results with the recorded baseline.
-- Passing assertion text inside a non-zero process is failed verification.
-- Clean up acquired resources; preserve generated-code ownership.
-- For optimization, record the metric.
+- The first failing assertion fails for the intended reason.
+- Never stub the dependency the test claims to prove.
+- Run the narrowest checks, widen with affected scope, compare with the baseline.
+- Passing assertion text in a non-zero process is a failure.
+- Release acquired resources; preserve generated-code ownership.
+- Optimization: record the metric.
+- Remove dead imports and obsolete code the change created or exposed; fix affected formatting, stale comments, naming drift. Broader cleanup and bookkeeping: [gates](../SKILL.md#gates).
 
-## Cleanup and bookkeeping
+## Done
 
-Leave touched territory clean: remove dead imports and obsolete code created or exposed by the change; fix affected formatting, stale comments, naming drift, and minor structural clutter when the cleanup is safe. If cleanup changes public behavior, ownership, architecture, or meaningful review scope, report it as separate work instead of smuggling it into the slice.
-
-Discover repository conventions rather than updating every possible record. Avoid blanket version bumps, lockfile churn, snapshot acceptance, or changelog entries without a repository-specific reason.
-
-## Definition of done
-
-The owned interface behaves as intended on normal and named edge paths, and every remaining failure carries a class and attribution evidence.
-
-Next: use `references/output-contracts.md` to report a consequential result; otherwise return a concise outcome and verification summary.
+The owned interface behaves as intended on normal and named edge paths; every remaining failure has a class and attribution evidence. Report per the [decision record](../output.md#decision-record) (low-risk: slice, impact, verify).

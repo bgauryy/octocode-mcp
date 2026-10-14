@@ -35,8 +35,8 @@
 # No win, so no linker override — matches the Rust perf book for macOS.
 
 # ── Linux: mold (apt install mold) ────────────────────────────────────────────
-# mold is 5–10× faster than GNU BFD at linking large Rust binaries. CI already
-# uses mold via `rui314/setup-mold` in the workflow.
+# mold is 5–10× faster than GNU BFD at linking large Rust binaries. The native
+# CI job (`.github/workflows/ci.yml`) installs it with `rui314/setup-mold`.
 #
 # [target.x86_64-unknown-linux-gnu]
 # linker = "clang"

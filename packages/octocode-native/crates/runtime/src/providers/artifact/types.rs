@@ -189,8 +189,8 @@ fn page_size_defaults_from_the_contract() {
 
 /// A request budget no artifact test exhausts.
 #[cfg(test)]
-pub(crate) fn test_budget() -> crate::providers::RequestBudget {
-    crate::providers::RequestBudget::with_timeout(std::time::Duration::from_secs(10), 10_000_000)
+pub(crate) fn test_budget() -> octocode_github::RequestBudget {
+    octocode_github::RequestBudget::with_timeout(std::time::Duration::from_secs(10), 10_000_000)
 }
 
 /// Answers every request with status 200 and one fixed body.
@@ -209,7 +209,7 @@ impl super::http::ArtifactHttp for StaticHttp {
     fn get<'a>(
         &'a self,
         _req: super::http::ArtifactHttpRequest,
-        _budget: &'a crate::providers::RequestBudget,
+        _budget: &'a octocode_github::RequestBudget,
     ) -> super::http::ArtifactHttpFuture<'a> {
         let body = self.0.clone();
         Box::pin(async move { Ok(super::http::ArtifactHttpResponse { status: 200, body }) })

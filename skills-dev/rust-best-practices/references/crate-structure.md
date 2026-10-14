@@ -4,7 +4,7 @@ Load when you decide module boundaries or file placement inside a crate, what go
 
 ## Files & modules
 - `src/lib.rs` is the library root and public surface. `src/main.rs` is a thin binary: args → lib → exit code. Logic lives in the library so it is testable.
-- A module is `foo.rs`, or `foo.rs` + `foo/` (preferred since the 2018 style), or `foo/mod.rs`. Pick one per crate; enforce it with clippy `mod_module_files` (bans `mod.rs`) or `self_named_module_files`.
+- A module is `foo.rs`, or `foo.rs` plus `foo/` for its children. `foo/mod.rs` still works. Pick one style per crate and do not mix them. `mod_module_files` or `self_named_module_files` can lock the choice once the crate already follows it.
 - `pub(crate)` by default; `pub use` the intended API from `lib.rs` so consumers get a flat, stable path. Nothing reaches in by deep path.
 - Cargo auto-discovers `src/bin/<name>.rs`, `examples/`, `tests/`, `benches/`. Add `[[bin]]`/`[[test]]` entries only when a target needs settings (`harness = false`, `required-features`).
 
@@ -16,7 +16,7 @@ Load when you decide module boundaries or file placement inside a crate, what go
 - If the domain depends on infrastructure, invert it with a trait that infra implements.
 
 ## Hierarchy limits
-- **God file:** > ~400 LOC *and* more than one responsibility → split by responsibility into its owning layer. Size alone is not the signal; a big pure-data file is fine.
+- **God file:** more than one responsibility in one file → split by responsibility into its owning layer. Size alone is not the signal; a big pure-data file is fine. The owning rule is `octocode-clean-agentic-code/references/code-smells.md` (Structure).
 - **God module/folder:** files span several domains, or flat names need prefixes (`user_api.rs`, `user_db.rs`) → one sub-module per domain.
 - **Misplaced file:** business logic under `utils/`, a model under `config/`, persistence in the API layer → move it to its layer, update `use` paths, verify with build + LSP.
 - One file = one concern; one module = one domain.
@@ -25,6 +25,7 @@ Load when you decide module boundaries or file placement inside a crate, what go
 - **By domain/capability, not technical kind.** `app-search`, `app-config`, `app-http` beat `app-models`, `app-traits`, `app-utils`. A crate answers "what does it do?".
 - **Along dependency weight.** Heavy deps (tokio, reqwest, oxc, napi) go in the edge crates that need them, so the core compiles fast and works without them.
 - **Pure core, I/O at the edges.** Core crates take filesystem, network, env, clock, and global state as parameters or traits, so wasm, napi, and CLI reuse them.
+- **Sans-IO for a protocol or parser core.** The core is a synchronous state machine: feed bytes in, poll bytes to send, and pass time in as `Instant`. The driver crate owns the socket. Quinn keeps `quinn-proto` free of sockets and drives it from Tokio. A CLI that reads files in `main` stays ordinary code.
 - **Thin entry crates.** `*-cli`, `*-napi`, `*-server` parse transport → call library → map errors. Octocode separates engine algorithms, the runtime `rlib`, and CLI/N-API host crates. The engine denies stdout/stderr printing.
 - **Forced splits:** a proc-macro is its own crate (`app-macros`/`app-derive`); raw C bindings go in `foo-sys`, the safe wrapper in `foo`.
 - **No `common`/`utils` grab-bag crate**: everything depends on it, so every edit rebuilds everything. Give each helper a home domain, or name the crate after its one job (`app-paths`).
@@ -52,4 +53,4 @@ Load when you decide module boundaries or file placement inside a crate, what go
 1. In the current crate, make the module self-contained: only `pub(crate)` surface used by siblings, no `super::`/`crate::` reach-ins, its own error type.
 2. `cargo new --lib crates/app-x`, move the files, add `app-x.workspace = true` where used.
 3. Keep old paths compiling with `pub use app_x::…;`, migrate callers, delete the shim.
-4. Verify: `cargo check --workspace --all-targets`, tests, `cargo machete`, `cargo build --timings` (rebuild graph improved).
+4. Verify: `cargo check --workspace --all-targets`, tests, an unused-dependency scan (`references/testing-and-tooling.md`), `cargo build --timings` (rebuild graph improved).

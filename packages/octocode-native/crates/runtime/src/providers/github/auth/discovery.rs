@@ -1,7 +1,7 @@
 //! Optional GitHub CLI discovery, using the runtime's explicit environment.
-use super::super::ProviderError;
 use super::resolver::{bounded, resolution_stopped};
-use crate::providers::RequestBudget;
+use octocode_github::ProviderError;
+use octocode_github::RequestBudget;
 use secrecy::SecretString;
 use std::{collections::BTreeMap, ffi::OsString, process::Stdio, time::Duration};
 use tokio::io::AsyncReadExt;
@@ -189,7 +189,7 @@ mod tests {
         let result = run_command(shell("exec sleep 30"), &budget).await;
         assert_eq!(
             result.unwrap_err().kind,
-            super::super::super::ProviderErrorKind::Timeout
+            octocode_github::ProviderErrorKind::Timeout
         );
         assert!(start.elapsed() < Duration::from_secs(2));
         let budget = RequestBudget::with_timeout(Duration::from_secs(30), 1);
@@ -200,7 +200,7 @@ mod tests {
         });
         assert_eq!(
             result.unwrap_err().kind,
-            super::super::super::ProviderErrorKind::Cancelled
+            octocode_github::ProviderErrorKind::Cancelled
         );
     }
 }

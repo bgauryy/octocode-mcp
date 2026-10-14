@@ -1,45 +1,57 @@
 ---
 name: octocode-roast
-description: "Use when someone asks for a blunt, evidence-backed code critique; good for ranking defects, debt, hot paths, and cleanup priorities."
+description: "Load this skill first whenever the user asks for a roast or a savage, brutal, harsh, or no-mercy critique of code, a pull request, or a design. Use when someone asks for a blunt, brutal, or harsh critique or roast of code, a repository, a config, or a design; good for ranking defects, debt, hot paths, and cleanup priorities with evidence, then fixing the worst offenders when asked. Not for a neutral pull-request review (octocode-research) or cleanup without a critique (octocode-clean-agentic-code)."
 ---
 
 # Octocode Roast
 
 Critique code sharply; prove each finding and give a repair path.
 
-```mermaid
-flowchart LR
-  T[TARGET] --> I[INSPECT] --> N[INVENTORY] --> A[AUTOPSY] --> C{CHECKPOINT}
-  C -->|fixes authorized or chosen| R[REDEEM]
-  C -->|critique only| S[Stop]
-```
-
 ## Rules
 
-- Punch the code, not the coder: no insults about ability, identity, or experience.
-- Cite or drop it: every major finding needs an exact anchor, mechanism, impact, confidence, and repair move. Pattern-only matches stay leads with stated confidence.
-- Use explicit user targets first; widen to diff/repo scope only when no target exists or the user approves.
-- Never reveal a secret; redact values and keep security or production-sensitive findings restrained.
-- Rank by demonstrated impact and confidence: security, data loss, correctness, and user-visible performance outrank maintainability and taste.
-- Match the requested tone; savage/nuclear language only on explicit request. A critique request returns findings; a request that includes fixes authorizes scoped repairs. Ask only about effects outside that scope.
-- Report a missing target or evidence gap without inventing findings. Verify authorized repairs with the target project's relevant checks.
+- Code, never the coder: no insults about ability, identity, or experience.
+- Tone as requested; savage or nuclear only on explicit request.
+- A major finding fills the [finding shape](#flow) and passes its [hypothesis test](references/sin-catalog.md#rank-findings); else drop it or keep it as a stated-confidence lead.
+- Rank by demonstrated impact and confidence: security, data loss, correctness, user-visible performance before maintainability and taste.
+- Secrets: redact values; restrain security and production detail.
+- Critique request: findings only. A fixes request authorizes scoped repairs; ask only about effects outside that scope.
+- Missing target or evidence: report the gap; invent no findings.
+
+## Flow
+
+1. **Target**: named files, directories, symbols, or lines; else a requested diff or branch; whole repo only on request or approval.
+2. **Inspect**: structure, search, semantics, reachability, affected scope.
+3. **Inventory**: rank with [sin-catalog](references/sin-catalog.md); if the list buries the decision, show the top and summarize the rest. Finding shape:
+
+   ```text
+   {severity}. {title} — `path:line`
+   Evidence/mechanism: {what the code does}
+   Impact: {observable consequence}
+   Confidence: {high|medium|low}
+   Repair: {smallest safe move}
+   Roast: {one evidence-specific line}
+   ```
+
+4. **Autopsy**: highest-impact offender, not the funniest. Split it into responsibilities or failure paths (quantify only measured properties); explain risk, contract crossings, and repair staging.
+5. **Checkpoint** (BLUF): findings and repair paths, highest impact first, plus autopsy or debt inventory when useful. Critique-only is done here; for fixes, load [redemption-flow](references/redemption-flow.md).
+
+## Parallel roasting
+
+Monorepo or many risk categories: split only independent domains (security, architecture, performance) with no shared mutable state; without workers or delegation approval, go sequentially.
+
+- Brief (intent): one domain, done-when, exact paths; return Outcome (done, partial, failed), scope, findings in the finding shape, non-findings (risky patterns checked), limits (missing tools, unreadable paths); the worker picks the method.
+- Parent: dedupe as workers return; verify load-bearing claims; own ranking, autopsy, repairs.
 
 ## Resources
 
-Load the page that answers the current question.
-
-| When needed | Read |
-|---|---|
-| When the target is clear: phases, finding shape, output order | [roast-playbook](references/roast-playbook.md) |
-| When a monorepo or many independent categories | [parallel-roasting](references/parallel-roasting.md) |
-| For severity labels, language leads | [sin-catalog](references/sin-catalog.md) |
-| When repairs are chosen | [redemption-flow](references/redemption-flow.md) |
+| When | Read | Why |
+|---|---|---|
+| Ranking the inventory | [sin-catalog](references/sin-catalog.md) | Tiers, leads |
+| Fixes wanted or offered | [redemption-flow](references/redemption-flow.md) | Options, repairs, checks |
+| Final answer or saved report | [output.md](output.md) | Format |
+| Render or list reports | [render-report.mjs](scripts/render-report.mjs) | HTML, manifest |
 
 ## Related skills
 
-- `octocode-research`: Use to verify each significant finding.
-- `octocode-clean-agentic-code`: Use when the user authorizes behavior-preserving cleanup.
-
-## Output
-
-See [output.md](output.md) for the response and saved-artifact format. Save substantial results under `<workspace>/.octocode/octocode-roast/`; [output.md](output.md) says when and how. Save and render substantial results as a local HTML page, and list earlier reports as JSON for agents, with [render-report.mjs](scripts/render-report.mjs).
+- Finding verification or neutral PR review: `octocode-research`.
+- Authorized behavior-preserving cleanup: `octocode-clean-agentic-code`.

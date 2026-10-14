@@ -298,9 +298,10 @@ pub fn sanitize_line_page(
 /// margin as line pages and the engine's chunk overlap, and PEM/key blocks
 /// were already redacted over the full file before selection.
 ///
-/// Offsets stay in raw-view coordinates. A redacted line cut by the page end
-/// is emitted whole (clean) and the page extends to that line's end, so a
-/// secret straddling the boundary is never split across two pages. Returns
+/// Offsets stay in raw-view coordinates. A redacted line is sliced to the
+/// page's raw range on its sanitized text: a secret cut by a page boundary
+/// shows its placeholder on the page its span ends in, never raw bytes, and
+/// the page keeps the offset and length it states. Returns
 /// `Ok(None)` when redaction changes the line structure even over the whole
 /// view; the caller then falls back to the whole-view scan.
 pub fn sanitize_byte_page(
@@ -342,9 +343,6 @@ pub fn sanitize_byte_page(
     Ok(None)
 }
 
-/// A redacted line longer than this is sliced to the page instead of being
-/// emitted whole.
-const LONG_REDACTED_LINE_BYTES: usize = 64 * 1024;
 /// Unchanged text after a placeholder used to find where its span ends.
 const ANCHOR_BYTES: usize = 32;
 
@@ -392,8 +390,8 @@ fn clean_offset(raw: &str, clean: &str, raw_at: usize) -> usize {
 }
 
 /// Rebuild a raw-coordinate byte page from a sanitized window with the same
-/// line count: unchanged lines keep their raw slice, redacted lines are
-/// emitted whole from the clean window (extending the page end if needed).
+/// line count: unchanged lines keep their raw slice, redacted lines give the
+/// slice of their sanitized text that maps onto the page's raw range.
 fn map_clean_window(
     view: &str,
     from: usize,
@@ -407,7 +405,7 @@ fn map_clean_window(
         return None;
     }
     let start = raw.pagination.offset;
-    let mut end = start + raw.pagination.length;
+    let end = start + raw.pagination.length;
     let mut text = String::with_capacity(raw.text.len());
     let mut position = from;
     for (raw_line, clean_line) in raw_lines.iter().zip(&clean_lines) {
@@ -419,16 +417,16 @@ fn map_clean_window(
         }
         if raw_line == clean_line {
             text.push_str(&view[line_start.max(start)..line_end.min(end)]);
-        } else if raw_line.len() > LONG_REDACTED_LINE_BYTES {
-            // A long redacted line (a minified bundle, an embedded base64
-            // blob) is sliced, not emitted whole: map the page's raw range
-            // onto the sanitized line so the page stays chunk-sized.
-            let from = clean_offset(raw_line, clean_line, start.saturating_sub(line_start));
-            let to = clean_offset(raw_line, clean_line, end.min(line_end) - line_start);
-            text.push_str(&clean_line[from..to.max(from)]);
         } else {
-            text.push_str(clean_line);
-            end = end.max(line_end);
+            // Map the page's raw range onto the sanitized line, so the page
+            // stays the window it states.
+            let from = clean_offset(raw_line, clean_line, start.saturating_sub(line_start));
+            let to = if end >= line_end {
+                clean_line.len()
+            } else {
+                clean_offset(raw_line, clean_line, end - line_start)
+            };
+            text.push_str(&clean_line[from..to.max(from)]);
         }
     }
     let total = view.len();

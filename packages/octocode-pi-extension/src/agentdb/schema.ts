@@ -19,9 +19,12 @@ export const AGENT_APPLICATION_ID = 0x4f635067;
 /**
  * Sessions (`pid_started`: the process start time, so a reused pid is not taken for the session; `unpriced`: part of
  * its usage came from a model without pricing), the backlog (`goal`: what done means; `started_at`: when it was last
- * claimed; `from_item`: the row id of the item it came from, cleared by the store when that item is removed) and its
+ * claimed; `from_item`: the row id of the item it came from, cleared by the store when that item is removed;
+ * `paths` and `evidence`: one entry per line, so a substring search over the column finds a path or a fact, and
+ * `why` and `plan`: free text) and its
  * notes (`kind`: the agent's text or the change log the store writes on every update), memories and the team tables
- * (`agents.cache_read`: prompt tokens read from cache).
+ * (`agents.cache_read`: prompt tokens read from cache; `agents.started`: the start time of the process `pid` names, so
+ * heartbeats and liveness tell it from a later process that got the same pid).
  */
 const SCHEMA = `
 CREATE TABLE sessions (
@@ -32,6 +35,7 @@ CREATE TABLE sessions (
 CREATE TABLE backlog (
   id INTEGER PRIMARY KEY AUTOINCREMENT, repo_key TEXT NOT NULL, seq INTEGER NOT NULL,
   title TEXT NOT NULL, goal TEXT NOT NULL DEFAULT '', body TEXT NOT NULL DEFAULT '',
+  paths TEXT NOT NULL DEFAULT '', why TEXT NOT NULL DEFAULT '', evidence TEXT NOT NULL DEFAULT '', plan TEXT NOT NULL DEFAULT '',
   state TEXT NOT NULL CHECK(state IN ('backlog','todo','ongoing','done')),
   priority INTEGER NOT NULL DEFAULT 2 CHECK(priority BETWEEN 0 AND 3), tags TEXT NOT NULL DEFAULT '',
   assignee TEXT, created_by TEXT NOT NULL, source_session TEXT,
@@ -60,7 +64,7 @@ CREATE TABLE agents (
   status TEXT NOT NULL CHECK(status IN ('idle','working')), task TEXT, activity TEXT,
   joined_at INTEGER NOT NULL, seen_at INTEGER NOT NULL,
   tool_calls INTEGER NOT NULL DEFAULT 0, input INTEGER NOT NULL DEFAULT 0, cache_read INTEGER NOT NULL DEFAULT 0, output INTEGER NOT NULL DEFAULT 0,
-  cost REAL NOT NULL DEFAULT 0, unpriced INTEGER NOT NULL DEFAULT 0, model TEXT);
+  cost REAL NOT NULL DEFAULT 0, unpriced INTEGER NOT NULL DEFAULT 0, model TEXT, started TEXT);
 CREATE INDEX agents_scope ON agents(workspace, joined_at);
 CREATE TABLE messages (
   id INTEGER PRIMARY KEY AUTOINCREMENT, workspace TEXT NOT NULL, sender TEXT NOT NULL, body TEXT NOT NULL,

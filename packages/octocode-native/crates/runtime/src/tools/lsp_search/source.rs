@@ -34,14 +34,14 @@ pub(super) enum SourceReadError {
 /// opened handle, capped read). Blocking: async callers use
 /// [`read_bounded_source_async`].
 pub(super) fn read_bounded_source(path: &Path) -> Result<String, SourceReadError> {
-    use octocode_engine::lsp::BoundedRead;
-    let bytes = octocode_engine::lsp::read_regular_bounded(path, MAX_LSP_DIDOPEN_BYTES).map_err(
-        |error| match error {
-            BoundedRead::TooLarge(len) => SourceReadError::TooLarge(len),
-            BoundedRead::NotRegular => SourceReadError::Unreadable("not a regular file".into()),
-            BoundedRead::Io(error) => SourceReadError::Unreadable(error.to_string()),
-        },
-    )?;
+    use octocode_engine::text::ReadError;
+    let bytes = octocode_engine::text::read_source(path, MAX_LSP_DIDOPEN_BYTES)
+        .map_err(|error| match error {
+            ReadError::TooLarge(len) => SourceReadError::TooLarge(len),
+            ReadError::NotRegular => SourceReadError::Unreadable("not a regular file".into()),
+            ReadError::Io(error) => SourceReadError::Unreadable(error.to_string()),
+        })?
+        .bytes;
     String::from_utf8(bytes)
         .map_err(|error| SourceReadError::Unreadable(format!("not valid UTF-8: {error}")))
 }

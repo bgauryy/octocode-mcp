@@ -1,42 +1,20 @@
 use super::*;
+use crate::contracts::tool_types::{GhCloneRepoQueryPathArrayItem, GhCloneRepoQueryRef};
 use crate::policy::path::PathPolicyConfig;
-use crate::providers::github::CredentialSource;
 use crate::tools::cancel::NeverCancel;
+use crate::tools::test_support;
+use octocode_github::CredentialSource;
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Barrier, Mutex};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 fn api_github_endpoint() -> GitHubEndpoint {
     GitHubEndpoint::new("https://api.github.com/".parse().expect("static URL"))
         .expect("static endpoint")
-}
-
-static TEMP_ID: AtomicU64 = AtomicU64::new(0);
-
-struct Temp(PathBuf);
-impl Temp {
-    fn new(label: &str) -> Self {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "octocode-clone-{label}-{}-{nonce}-{}",
-            std::process::id(),
-            TEMP_ID.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir_all(&path).expect("create fixture root");
-        Self(path)
-    }
-}
-impl Drop for Temp {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
 }
 
 struct RewriteRunner {
@@ -108,7 +86,7 @@ impl GitRunner for UnreachableGit {
 }
 
 struct Fixture {
-    _temp: Temp,
+    _temp: test_support::Fixture,
     work: PathBuf,
     bare_url: String,
     first_commit: String,
@@ -116,7 +94,7 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
-        let temp = Temp::new("repo");
+        let temp = test_support::Fixture::new();
         let work = temp.0.join("work");
         let bare = temp.0.join("origin.git");
         git(
@@ -263,8 +241,8 @@ fn fixture_main_meta() -> cache::CacheMeta {
 }
 
 /// A temp root and the existing clone-cache `home` inside it.
-fn home_root(label: &str) -> (Temp, PathBuf) {
-    let root = Temp::new(label);
+fn home_root() -> (test_support::Fixture, PathBuf) {
+    let root = test_support::Fixture::new();
     let cache_home = root.0.join("home");
     fs::create_dir_all(&cache_home).expect("home");
     (root, cache_home)
@@ -288,7 +266,30 @@ fn query() -> GhCloneRepoQuery {
 
 /// One sparse path, as a single-string `path`.
 fn one(path: &str) -> GhCloneRepoQueryPath {
-    GhCloneRepoQueryPath::String(path.to_owned())
+    GhCloneRepoQueryPath::String(path.parse().expect("valid sparse fixture path"))
+}
+
+fn many(paths: &[&str]) -> GhCloneRepoQueryPath {
+    GhCloneRepoQueryPath::Array(
+        paths
+            .iter()
+            .map(|path| {
+                (*path)
+                    .parse::<GhCloneRepoQueryPathArrayItem>()
+                    .expect("valid sparse fixture path")
+            })
+            .collect(),
+    )
+}
+
+fn reference(value: &str) -> GhCloneRepoQueryRef {
+    value.parse().expect("valid fixture branch or commit")
+}
+
+fn rejects_sparse_path(path: &str) -> bool {
+    let mut row = serde_json::to_value(query()).expect("fixture query JSON");
+    row["path"] = serde_json::json!(path);
+    serde_json::from_value::<GhCloneRepoQuery>(row).is_err()
 }
 
 fn parse_query(value: serde_json::Value) -> GhCloneRepoQuery {
@@ -336,7 +337,7 @@ fn missing_repository_names_the_repository_with_a_recovery_hint() {
 #[test]
 fn clone_rows_continue_into_local_tools_and_name_the_cache_age() {
     let fixture = Fixture::new();
-    let (root, cache_home) = home_root("next");
+    let (root, cache_home) = home_root();
     let policy = root_policy(&root.0);
     let endpoint = api_github_endpoint();
     let runner = fixture_runner(&fixture);
@@ -429,7 +430,7 @@ fn clone_rows_continue_into_local_tools_and_name_the_cache_age() {
 #[test]
 fn creates_a_new_configured_home_before_authorizing_the_clone_target() {
     let fixture = Fixture::new();
-    let root = Temp::new("new-home");
+    let root = test_support::Fixture::new();
     let cache_home = root.0.join("new").join("home");
     let policy = PathPolicy::new(PathPolicyConfig {
         workspace_root: Some(fixture.work.clone()),
@@ -455,7 +456,7 @@ fn creates_a_new_configured_home_before_authorizing_the_clone_target() {
 #[test]
 fn clones_with_only_the_clones_root_allowed_under_an_existing_home() {
     let fixture = Fixture::new();
-    let (_root, cache_home) = home_root("clones-root-only");
+    let (_root, cache_home) = home_root();
     let policy = PathPolicy::new(PathPolicyConfig {
         workspace_root: Some(fixture.work.clone()),
         additional_roots: vec![cache::clones_root(&cache_home)],
@@ -478,8 +479,8 @@ fn clones_with_only_the_clones_root_allowed_under_an_existing_home() {
 
 #[test]
 fn denied_cache_home_is_not_created() {
-    let root = Temp::new("allowed");
-    let outside = Temp::new("denied");
+    let root = test_support::Fixture::new();
+    let outside = test_support::Fixture::new();
     let cache_home = outside.0.join("home");
     let policy = root_policy(&root.0);
     let endpoint = api_github_endpoint();
@@ -514,7 +515,7 @@ fn policy_denials_use_the_codes_the_local_tools_share() {
 
 #[test]
 fn withheld_cache_home_is_denied_as_path_policy() {
-    let root = Temp::new("withheld");
+    let root = test_support::Fixture::new();
     let cache_home = root.0.join(".ssh").join("home");
     let policy = root_policy(&root.0);
     let endpoint = api_github_endpoint();
@@ -530,7 +531,7 @@ fn withheld_cache_home_is_denied_as_path_policy() {
 #[test]
 fn clones_caches_refreshes_sparse_tag_and_commit_without_token_argv() {
     let fixture = Fixture::new();
-    let (root, cache_home) = home_root("cache");
+    let (root, cache_home) = home_root();
     let policy = root_policy(&root.0);
     let endpoint = api_github_endpoint();
     let derived = "https://github.com/fixture-owner/fixture-repo.git";
@@ -624,7 +625,7 @@ fn clones_caches_refreshes_sparse_tag_and_commit_without_token_argv() {
     for branch in ["v1".to_owned(), fixture.first_commit.clone()] {
         let pinned = execute_clone(
             &GhCloneRepoQuery {
-                ref_: Some(branch),
+                ref_: Some(reference(&branch)),
                 ..query()
             },
             &context,
@@ -634,7 +635,7 @@ fn clones_caches_refreshes_sparse_tag_and_commit_without_token_argv() {
     }
     let pinned_sparse = execute_clone(
         &GhCloneRepoQuery {
-            ref_: Some(fixture.first_commit.clone()),
+            ref_: Some(reference(&fixture.first_commit)),
             path: Some(one("src")),
             ..query()
         },
@@ -664,7 +665,7 @@ fn clones_caches_refreshes_sparse_tag_and_commit_without_token_argv() {
 #[test]
 fn dirty_checkout_preserves_tracked_untracked_ignored_and_user_metadata_names() {
     let fixture = Fixture::new();
-    let (root, cache_home) = home_root("preserve");
+    let (root, cache_home) = home_root();
     let policy = root_policy(&root.0);
     let endpoint = api_github_endpoint();
     let runner = fixture_runner(&fixture);
@@ -755,7 +756,7 @@ fn refresh_rechecks_user_changes_written_while_fetching() {
         }
     }
     let fixture = Fixture::new();
-    let (root, cache_home) = home_root("late-write");
+    let (root, cache_home) = home_root();
     let policy = root_policy(&root.0);
     let endpoint = api_github_endpoint();
     let runner = LateWriteRunner {
@@ -789,7 +790,7 @@ fn refresh_rechecks_user_changes_written_while_fetching() {
 #[test]
 fn clone_eviction_preserves_dirty_expired_and_over_budget_checkouts() {
     let fixture = Fixture::new();
-    let (root, cache_home) = home_root("dirty-eviction");
+    let (root, cache_home) = home_root();
     let policy = root_policy(&root.0);
     let endpoint = api_github_endpoint();
     let runner = fixture_runner(&fixture);
@@ -803,7 +804,7 @@ fn clone_eviction_preserves_dirty_expired_and_over_budget_checkouts() {
     fs::write(&evidence, "preserve through eviction\n").expect("owned evidence");
     execute_clone(
         &GhCloneRepoQuery {
-            ref_: Some("v1".into()),
+            ref_: Some(reference("v1")),
             ..query()
         },
         &context,
@@ -824,7 +825,7 @@ fn clone_eviction_preserves_dirty_expired_and_over_budget_checkouts() {
     .expect("expire");
     execute_clone(
         &GhCloneRepoQuery {
-            ref_: Some(fixture.first_commit.clone()),
+            ref_: Some(reference(&fixture.first_commit)),
             ..query()
         },
         &context,
@@ -838,7 +839,7 @@ fn clone_eviction_preserves_dirty_expired_and_over_budget_checkouts() {
 
 #[test]
 fn metadata_write_preserves_repository_pid_temp_filename() {
-    let stage = Temp::new("metadata-pid-temp");
+    let stage = test_support::Fixture::new();
     let evidence = stage
         .0
         .join(format!("{}.tmp-{}", cache::META_FILE, std::process::id()));
@@ -869,7 +870,7 @@ fn metadata_write_preserves_repository_pid_temp_filename() {
 
 #[test]
 fn metadata_write_rejects_existing_source_without_overwrite() {
-    let stage = Temp::new("metadata-create-race");
+    let stage = test_support::Fixture::new();
     let destination = stage.0.join(cache::META_FILE);
     fs::write(&destination, "source arrived after inspection\n").expect("source evidence");
     let meta = fixture_main_meta();
@@ -915,7 +916,7 @@ fn repository_metadata_filename_conflict_never_replaces_an_existing_checkout() {
         }
     }
     let fixture = Fixture::new();
-    let (root, cache_home) = home_root("metadata-collision");
+    let (root, cache_home) = home_root();
     let policy = root_policy(&root.0);
     let endpoint = api_github_endpoint();
     let runner = CollisionRunner {
@@ -975,7 +976,7 @@ fn repository_metadata_filename_conflict_never_replaces_an_existing_checkout() {
 #[test]
 fn sparse_file_path_checks_out_only_that_file() {
     let fixture = Fixture::new();
-    let (root, cache_home) = home_root("sparse-file");
+    let (root, cache_home) = home_root();
     let policy = root_policy(&root.0);
     let endpoint = api_github_endpoint();
     let runner = fixture_runner(&fixture);
@@ -988,7 +989,7 @@ fn sparse_file_path_checks_out_only_that_file() {
         ] {
             let clone = execute_clone(
                 &GhCloneRepoQuery {
-                    ref_: branch.clone(),
+                    ref_: branch.as_deref().map(reference),
                     path: Some(one(file)),
                     ..query()
                 },
@@ -1010,7 +1011,7 @@ fn sparse_file_path_checks_out_only_that_file() {
 #[test]
 fn corruption_expiry_stale_lock_and_failed_publication_preserve_cache() {
     let fixture = Fixture::new();
-    let (root, cache_home) = home_root("recovery");
+    let (root, cache_home) = home_root();
     let policy = root_policy(&root.0);
     let endpoint = api_github_endpoint();
     let runner = fixture_runner(&fixture);
@@ -1073,7 +1074,7 @@ fn corruption_expiry_stale_lock_and_failed_publication_preserve_cache() {
 #[test]
 fn cache_limits_live_lock_and_failed_sparse_refresh_are_bounded() {
     let fixture = Fixture::new();
-    let (root, cache_home) = home_root("limits");
+    let (root, cache_home) = home_root();
     let policy = root_policy(&root.0);
     let endpoint = api_github_endpoint();
     let runner = fixture_runner(&fixture);
@@ -1085,7 +1086,7 @@ fn cache_limits_live_lock_and_failed_sparse_refresh_are_bounded() {
     let main_path = PathBuf::from(&main.location.local_path);
     let tag = execute_clone(
         &GhCloneRepoQuery {
-            ref_: Some("v1".into()),
+            ref_: Some(reference("v1")),
             ..query()
         },
         &context,
@@ -1118,7 +1119,7 @@ fn cache_limits_live_lock_and_failed_sparse_refresh_are_bounded() {
     .expect("live lock metadata");
     let error = execute_clone(
         &GhCloneRepoQuery {
-            ref_: Some("v1".into()),
+            ref_: Some(reference("v1")),
             ..query()
         },
         &context,
@@ -1147,7 +1148,7 @@ fn cache_limits_live_lock_and_failed_sparse_refresh_are_bounded() {
 
 #[test]
 fn missing_branch_endpoint_git_and_portable_paths_fail_closed() {
-    let (root, cache_home) = home_root("negative");
+    let (root, cache_home) = home_root();
     let policy = root_policy(&root.0);
     let endpoint = api_github_endpoint();
     let config = CloneConfig::persistent(&cache_home);
@@ -1196,15 +1197,10 @@ fn missing_branch_endpoint_git_and_portable_paths_fail_closed() {
         "https://example.test/prefix/owner%20name/repo%23name.git"
     );
     for sparse_path in [r"..\escape", r"src\portable"] {
-        let error = execute_clone(
-            &GhCloneRepoQuery {
-                path: Some(one(sparse_path)),
-                ..query()
-            },
-            &context,
-        )
-        .expect_err("portable sparse traversal");
-        assert_eq!(error.code, "invalidInput");
+        assert!(
+            rejects_sparse_path(sparse_path),
+            "contract must reject portable sparse path: {sparse_path}"
+        );
     }
 }
 
@@ -1223,7 +1219,7 @@ impl CancellationCheck for FlagCancel {
 #[test]
 fn system_git_cancellation_kills_and_reaps_process_group() {
     use std::os::unix::fs::PermissionsExt;
-    let root = Temp::new("cancel");
+    let root = test_support::Fixture::new();
     let script = root.0.join("git-fixture.sh");
     let pid_file = root.0.join("child.pid");
     fs::write(
@@ -1297,7 +1293,7 @@ fn system_git_cancellation_kills_and_reaps_process_group() {
 #[cfg(unix)]
 #[test]
 fn system_git_timeout_and_failure_output_are_bounded_and_redacted() {
-    let root = Temp::new("process-errors");
+    let root = test_support::Fixture::new();
     // Installed Git avoids measuring cold loading of a freshly created
     // executable. Test-only aliases still exercise real subprocess stderr,
     // credential scrubbing, deadlines and process-group cleanup.
@@ -1397,7 +1393,7 @@ fn system_git_timeout_and_failure_output_are_bounded_and_redacted() {
 #[test]
 fn concurrent_requests_publish_once_and_validation_fails_closed() {
     let fixture = Fixture::new();
-    let (root, cache_home) = home_root("race");
+    let (root, cache_home) = home_root();
     let policy = Arc::new(root_policy(&root.0));
     let endpoint = Arc::new(api_github_endpoint());
     let runner = Arc::new(fixture_runner(&fixture));
@@ -1445,23 +1441,9 @@ fn concurrent_requests_publish_once_and_validation_fails_closed() {
             .is_err(),
         "the contract rejects a traversal owner"
     );
-    let invalid = GhCloneRepoQuery {
-        path: Some(one("../escape")),
-        ..query()
-    };
-    let context = CloneContext {
-        config: &config,
-        endpoint: &endpoint,
-        credential: None,
-        resolved_default_branch: Some("main"),
-        cancellation: &NeverCancel,
-        deadline: Instant::now() + Duration::from_secs(30),
-        path_policy: &policy,
-        git: runner.as_ref(),
-    };
-    assert_eq!(
-        execute_clone(&invalid, &context).expect_err("invalid").code,
-        "invalidInput"
+    assert!(
+        rejects_sparse_path("../escape"),
+        "contract must reject sparse parent traversal before clone"
     );
 }
 
@@ -1479,7 +1461,7 @@ fn repository_symlinks_are_checked_out_as_plain_files() {
         .trim()
         .to_owned();
 
-    let (root, cache_home) = home_root("symlinks");
+    let (root, cache_home) = home_root();
     let policy = root_policy(&root.0);
     let endpoint = api_github_endpoint();
     let runner = fixture_runner(&fixture);
@@ -1489,7 +1471,7 @@ fn repository_symlinks_are_checked_out_as_plain_files() {
     for (branch, sparse) in [("main", None), (head.as_str(), None), ("main", Some("src"))] {
         let clone = execute_clone(
             &GhCloneRepoQuery {
-                ref_: Some(branch.into()),
+                ref_: Some(reference(branch)),
                 path: sparse.map(one),
                 ..query()
             },
@@ -1530,7 +1512,7 @@ fn repository_symlinks_are_checked_out_as_plain_files() {
 #[test]
 fn uppercase_commit_refs_share_the_cache_and_mismatched_meta_is_a_miss() {
     let fixture = Fixture::new();
-    let (root, cache_home) = home_root("sha-case");
+    let (root, cache_home) = home_root();
     let policy = root_policy(&root.0);
     let endpoint = api_github_endpoint();
     let runner = fixture_runner(&fixture);
@@ -1539,7 +1521,7 @@ fn uppercase_commit_refs_share_the_cache_and_mismatched_meta_is_a_miss() {
     let context = setup(&runner, &config, &endpoint, &policy, &NeverCancel, None);
     let lower = execute_clone(
         &GhCloneRepoQuery {
-            ref_: Some(fixture.first_commit.clone()),
+            ref_: Some(reference(&fixture.first_commit)),
             ..query()
         },
         &context,
@@ -1547,7 +1529,7 @@ fn uppercase_commit_refs_share_the_cache_and_mismatched_meta_is_a_miss() {
     .expect("lowercase sha clone");
     let upper = execute_clone(
         &GhCloneRepoQuery {
-            ref_: Some(fixture.first_commit.to_ascii_uppercase()),
+            ref_: Some(reference(&fixture.first_commit.to_ascii_uppercase())),
             ..query()
         },
         &context,
@@ -1565,7 +1547,7 @@ fn uppercase_commit_refs_share_the_cache_and_mismatched_meta_is_a_miss() {
     fs::write(&meta_path, serde_json::to_vec(&meta).expect("json")).expect("write meta");
     let again = execute_clone(
         &GhCloneRepoQuery {
-            ref_: Some(fixture.first_commit.clone()),
+            ref_: Some(reference(&fixture.first_commit)),
             ..query()
         },
         &context,
@@ -1579,7 +1561,7 @@ fn uppercase_commit_refs_share_the_cache_and_mismatched_meta_is_a_miss() {
 struct Bench {
     fixture: Fixture,
     /// Holds the temp directory for the bench's lifetime.
-    _root: Temp,
+    _root: test_support::Fixture,
     policy: PathPolicy,
     endpoint: GitHubEndpoint,
     runner: RewriteRunner,
@@ -1587,9 +1569,9 @@ struct Bench {
 }
 
 impl Bench {
-    fn new(label: &str) -> Self {
+    fn new() -> Self {
         let fixture = Fixture::new();
-        let (root, cache_home) = home_root(label);
+        let (root, cache_home) = home_root();
         let policy = root_policy(&root.0);
         let runner = fixture_runner(&fixture);
         let mut config = CloneConfig::persistent(&cache_home);
@@ -1641,7 +1623,7 @@ fn unbranched() -> GhCloneRepoQuery {
 /// needs the repository metadata API.
 #[test]
 fn unbranched_clone_resolves_the_default_branch_with_git_and_hits_by_alias() {
-    let bench = Bench::new("default-branch");
+    let bench = Bench::new();
     let context = bench.context();
     let fresh = execute_clone(&unbranched(), &context).expect("default-branch clone");
     assert_eq!(fresh.location.resolved_ref, "main");
@@ -1681,14 +1663,11 @@ fn unbranched_clone_resolves_the_default_branch_with_git_and_hits_by_alias() {
 /// to exact non-cone patterns so nothing else is included.
 #[test]
 fn multiple_sparse_paths_check_out_every_path() {
-    let bench = Bench::new("multi-sparse");
+    let bench = Bench::new();
     let context = bench.context();
     let both = execute_clone(
         &GhCloneRepoQuery {
-            path: Some(GhCloneRepoQueryPath::Array(vec![
-                "src/nested".into(),
-                "other".into(),
-            ])),
+            path: Some(many(&["src/nested", "other"])),
             ..query()
         },
         &context,
@@ -1714,10 +1693,7 @@ fn multiple_sparse_paths_check_out_every_path() {
 
     let reordered = execute_clone(
         &GhCloneRepoQuery {
-            path: Some(GhCloneRepoQueryPath::Array(vec![
-                "other".into(),
-                "src/nested".into(),
-            ])),
+            path: Some(many(&["other", "src/nested"])),
             ..query()
         },
         &context,
@@ -1730,10 +1706,7 @@ fn multiple_sparse_paths_check_out_every_path() {
 
     let mixed = execute_clone(
         &GhCloneRepoQuery {
-            path: Some(GhCloneRepoQueryPath::Array(vec![
-                "README.md".into(),
-                "src/nested".into(),
-            ])),
+            path: Some(many(&["README.md", "src/nested"])),
             ..query()
         },
         &context,
@@ -1747,10 +1720,7 @@ fn multiple_sparse_paths_check_out_every_path() {
 
     let missing = execute_clone(
         &GhCloneRepoQuery {
-            path: Some(GhCloneRepoQueryPath::Array(vec![
-                "src".into(),
-                "nope".into(),
-            ])),
+            path: Some(many(&["src", "nope"])),
             ..query()
         },
         &context,
@@ -1764,7 +1734,7 @@ fn multiple_sparse_paths_check_out_every_path() {
 /// `depth` fetches that many commits and keys its own cache entry.
 #[test]
 fn history_depth_fetches_that_many_commits() {
-    let bench = Bench::new("depth");
+    let bench = Bench::new();
     let context = bench.context();
     bench.fixture.push_second();
     let shallow = execute_clone(&query(), &context).expect("shallow");
@@ -1794,7 +1764,7 @@ fn history_depth_fetches_that_many_commits() {
 /// existing ref leaves the git error with the API answer as a hint.
 #[test]
 fn git_failures_are_explained_by_the_ref_answer() {
-    use crate::providers::github::{ProviderError, ProviderErrorKind, ProviderErrorReason};
+    use octocode_github::{ProviderError, ProviderErrorKind, ProviderErrorReason};
     let git = || CloneError {
         code: "gitFailed".into(),
         message: "git clone failed: fatal: Remote branch nope not found".into(),
@@ -1875,7 +1845,7 @@ fn git_failures_are_explained_by_the_ref_answer() {
 #[test]
 fn cache_hits_skip_the_git_probe_and_report_the_recorded_size() {
     let fixture = Fixture::new();
-    let (root, cache_home) = home_root("hit-cost");
+    let (root, cache_home) = home_root();
     let policy = root_policy(&root.0);
     let endpoint = api_github_endpoint();
     let runner = fixture_runner(&fixture);
@@ -1900,4 +1870,103 @@ fn cache_hits_skip_the_git_probe_and_report_the_recorded_size() {
         !seen.iter().any(|call| call.contains("--version")),
         "a cache hit probed git: {seen:?}"
     );
+}
+
+/// The native sparse-path rule holds on its own, whatever the contract
+/// pattern admits: no root, drive, backslash, `.`/`..` segment or blank.
+#[test]
+fn sparse_path_validation_rejects_traversal_absolute_and_backslash() {
+    for path in [
+        "../escape",
+        "a/../b",
+        "a/..",
+        "./a",
+        "a/./b",
+        ".",
+        "..",
+        "/abs",
+        "/",
+        "C:/x",
+        "c:x",
+        "a\\b",
+        "\\\\server\\share",
+        "",
+        "  ",
+    ] {
+        assert!(!is_sparse_path(path), "{path:?} must be rejected");
+    }
+    for path in [
+        "src",
+        "a/b",
+        "src/",
+        ".github/workflows",
+        "a..b",
+        "...",
+        "docs/C:x",
+    ] {
+        assert!(is_sparse_path(path), "{path:?} must be accepted");
+    }
+}
+
+/// A default-branch clone that resolves to a branch already cached by an
+/// explicit `ref` reuses that entry instead of replacing it.
+#[test]
+fn unbranched_clone_reuses_the_entry_an_explicit_ref_cached() {
+    let bench = Bench::new();
+    let context = bench.context();
+    let named = execute_clone(&query(), &context).expect("named clone");
+    assert!(!named.location.cached);
+    let marker = Path::new(&named.location.local_path).join(".git/octocode-entry-marker");
+    fs::write(&marker, "kept").expect("marker");
+
+    let default = execute_clone(&unbranched(), &context).expect("default-branch clone");
+    assert!(default.location.cached, "{default:?}");
+    assert_eq!(default.location.resolved_ref, "main");
+    assert_eq!(default.location.local_path, named.location.local_path);
+    assert_eq!(default.location.commit_sha, named.location.commit_sha);
+    assert!(marker.is_file(), "the cached entry was not replaced");
+
+    // The alias is recorded, so the next default-branch call runs no git.
+    let network = bench.clones_seen();
+    let again = execute_clone(&unbranched(), &context).expect("aliased hit");
+    assert!(again.location.cached);
+    assert_eq!(bench.clones_seen(), network);
+}
+
+/// An abbreviated SHA is input git cannot clone: when `commits/{ref}`
+/// resolves it, the error names the full SHA and offers the clone at it.
+#[test]
+fn a_short_sha_ref_is_invalid_input_naming_the_full_sha() {
+    let full = "666df7c1234567890abcdef1234567890abcdef0";
+    let short = parse_query(serde_json::json!({
+        "owner": "o", "repo": "r", "ref": "666DF7C", "mainGoal": "test", "reasoning": "r"
+    }));
+    let git = CloneError::new(
+        "gitFailed",
+        "git clone failed: fatal: Remote branch 666DF7C not found",
+    );
+    match explain_git_failure(&short, git, Ok(full.to_owned())) {
+        CloneFailure::Clone(error) => {
+            assert_eq!(error.code, "invalidInput", "{error:?}");
+            assert!(error.message.contains(full), "{error:?}");
+            assert!(error.message.contains("\"666DF7C\""), "{error:?}");
+            let retry = &error.next.as_ref().expect("retry lead")["cloneFullSha"];
+            assert_eq!(retry["tool"], "ghCloneRepo", "{error:?}");
+            assert_eq!(retry["query"]["queries"][0]["ref"], full, "{error:?}");
+            assert_eq!(retry["query"]["queries"][0]["repo"], "r", "{error:?}");
+        }
+        CloneFailure::Provider(error) => panic!("{error:?}"),
+    }
+    // A branch the API resolves still leaves the git error standing.
+    let branch = parse_query(serde_json::json!({
+        "owner": "o", "repo": "r", "ref": "feature", "mainGoal": "test", "reasoning": "r"
+    }));
+    match explain_git_failure(
+        &branch,
+        CloneError::new("gitFailed", "x"),
+        Ok(full.to_owned()),
+    ) {
+        CloneFailure::Clone(error) => assert_eq!(error.code, "gitFailed"),
+        CloneFailure::Provider(error) => panic!("{error:?}"),
+    }
 }

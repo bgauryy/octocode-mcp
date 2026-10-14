@@ -3,24 +3,25 @@ import path from 'node:path';
 import { createBashToolDefinition, type ExtensionAPI, type ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import { say, wordCompletions, type Subcommands } from '../shared/commands.js';
-import { envInt } from '../shared/env.js';
+import { SUBAGENT_ENV, envFlag } from '../shared/env.js';
 import { PRIVATE_FILE_MODE, moveFile } from '../shared/home.js';
 import { formatDuration, shortPath } from '../shared/format.js';
-import { statusColor, timedTool, toolHeader } from '../shared/render.js';
-import { renderBashResult, renderJobMessage, type BashDetails } from './render.js';
-import { contentText, errorMessage, isRecord } from '../shared/util.js';
-import { BashJobs, JOB_TYPE, MAX_TIMER_SECONDS, jobReport, shellEnv, shellSettings, type BashJob, type JobExit, type ShellSettings } from './bash-jobs.js';
+import { plural, statusColor, timedTool, toolHeader } from '../shared/render.js';
+import { renderBashResult, renderJobMessage, RERUN_HINT, type BashDetails } from './render.js';
+import { contentText, errorMessage, firstLine, isRecord } from '../shared/util.js';
+import { BashJobs, JOB_TYPE, jobReport, reapOrphanJobs, shellEnv, shellSettings, type BashJob, type JobExit, type OrphanJob, type ShellSettings } from './bash-jobs.js';
+import { foregroundOperations, strayNote } from './bash-run.js';
 
 /**
- * Pi's `bash`, with two changes: a waited-for command always has a deadline (Pi's has none, so a server, watcher or
- * prompt hangs the turn until the user presses Esc), and `background: true` starts a job whose exit arrives later as
- * a message. The foreground path is Pi's own tool (streaming, truncation, the live `Elapsed` timer, the user's
- * `shellPath` and `shellCommandPrefix` settings), only with the timeout filled in. Background jobs use the same shell,
- * prefix and environment. Job logs and the full output of a truncated command live in the session's `bash/` folder
+ * Pi's `bash`, with two changes: a waited-for command has a deadline when the call names none (Pi's has none, so a
+ * server, watcher or prompt hangs the turn until the user presses Esc), and `background: true` starts a job whose exit
+ * arrives later as a message. The foreground path is Pi's own tool (streaming, truncation, the live `Elapsed` timer,
+ * the user's `shellPath` and `shellCommandPrefix` settings), with the timeout filled in and its process handling from
+ * bash-run.ts (a grace before SIGKILL, processes left running are named). Background jobs use the same shell, prefix
+ * and environment. Job logs and the full output of a truncated command live in the session's `bash/` folder
  * (`sessionOutputDir`), never in the shared temp directory.
  */
 
-const BASH_TIMEOUT_ENV = 'OCTOCODE_BASH_TIMEOUT';
 /** `structuredContent` of a background start; a foreground command returns Pi's own bash output. */
 const BACKGROUND_OUTPUT = Type.Object({
   job: Type.String({ description: 'Job id, for `/octocode jobs kill <id>`' }),
@@ -28,7 +29,7 @@ const BACKGROUND_OUTPUT = Type.Object({
   log: Type.String({ description: 'Log file with the combined output' }),
 });
 
-/** Longest wait for a foreground command, in seconds. */
+/** Deadline of a foreground command whose call names none, in seconds. */
 export const DEFAULT_BASH_TIMEOUT = 15 * 60;
 
 /**
@@ -44,16 +45,20 @@ function adoptFullOutput(text: string, from: string | undefined, dir: string): {
   return { text: text.split(from).join(shortPath(to)), path: to };
 }
 
-/** The foreground deadline in seconds: `OCTOCODE_BASH_TIMEOUT` (a positive integer), else 15 minutes. */
-export function bashTimeoutLimit(env: NodeJS.ProcessEnv = process.env): number {
-  const value = envInt(env, BASH_TIMEOUT_ENV, DEFAULT_BASH_TIMEOUT);
-  // Node timers fire at once past ~24.8 days, which would stop every command immediately.
-  return value >= 1 ? Math.min(value, MAX_TIMER_SECONDS) : DEFAULT_BASH_TIMEOUT;
+/** The timeout a foreground call runs with: what it asked for, else `DEFAULT_BASH_TIMEOUT`. */
+export function effectiveTimeout(requested: unknown): number {
+  return typeof requested === 'number' && Number.isFinite(requested) && requested > 0 ? requested : DEFAULT_BASH_TIMEOUT;
 }
 
-/** The timeout a call runs with: what it asked for, never above `limit`; the limit when it asked for none. */
-export function effectiveTimeout(requested: unknown, limit: number): number {
-  return typeof requested === 'number' && Number.isFinite(requested) && requested > 0 ? Math.min(requested, limit) : limit;
+/** The notice for jobs found running after their Pi died (`reapOrphanJobs`). */
+function orphanNotice(orphans: readonly OrphanJob[]): string {
+  const line = (job: OrphanJob) => `  ${job.id} · pid ${job.pid} · ${firstLine(job.command).slice(0, 80)}\n    log: ${shortPath(job.log)}`;
+  const stopped = orphans.filter((job) => job.stopped);
+  const unsure = orphans.filter((job) => !job.stopped);
+  return [
+    ...(stopped.length ? [`Stopped ${plural(stopped.length, 'background bash job')} left running by a Pi that exited without ending ${stopped.length === 1 ? 'it' : 'them'}:`, ...stopped.map(line)] : []),
+    ...(unsure.length ? [`Left alone, since they could not be confirmed as these jobs (the pid may belong to another process now): ${plural(unsure.length, 'background bash job')} of a Pi that exited; stop one yourself with kill -- -<pid> if it is still the job:`, ...unsure.map(line)] : []),
+  ].join('\n');
 }
 
 export function registerBashTool(
@@ -62,19 +67,12 @@ export function registerBashTool(
   jobs = new BashJobs(),
   settingsFor: (ctx: ExtensionContext) => ShellSettings = (ctx) => shellSettings(ctx.cwd, ctx.isProjectTrusted()),
 ): BashJobs {
-  // Pi's bash for the settings in force; rebuilt only when they change.
-  let builtin = createBashToolDefinition(process.cwd());
-  let builtFor = '{}';
-  const builtinFor = (settings: ShellSettings) => {
-    const key = JSON.stringify(settings);
-    if (key !== builtFor) {
-      builtin = createBashToolDefinition(process.cwd(), settings);
-      builtFor = key;
-    }
-    return builtin;
-  };
-  const limit = bashTimeoutLimit();
+  // Pi's bash, for its output schema; each call builds its own with that call's settings and process handling.
+  const builtin = createBashToolDefinition(process.cwd());
   let current: ExtensionContext | undefined;
+  // Set from session_shutdown: a job that ends meanwhile reports without waking anyone.
+  let closing = false;
+  const reportedAtShutdown = new WeakSet<BashJob>();
   const showJobs = () => {
     try {
       if (current) current.ui.setStatus('octocode-bash', jobs.jobs.size > 0 ? statusColor(current, 'accent', `${jobs.jobs.size} bash job${jobs.jobs.size === 1 ? '' : 's'}`) : undefined);
@@ -94,21 +92,37 @@ export function registerBashTool(
   const onExit = (job: BashJob, exit: JobExit) => {
     showJobs();
     // Reported at session_shutdown already, while the session could still record it.
-    if (job.stopped === 'session end') return;
-    report(job, exit, true);
+    if (reportedAtShutdown.has(job)) return;
+    // A stop the user asked for is recorded for the model without starting a turn.
+    report(job, exit, !closing && job.stopped !== 'user');
   };
 
-  pi.on('session_start', async (_event, ctx) => {
+  pi.on('session_start', async (event, ctx) => {
     current = ctx;
+    closing = false;
+    // Pi has no hook before a reload: the jobs it stopped are named here, from the note the shutdown left.
+    const reloaded = event?.reason === 'reload' ? jobs.takeReloadNote() : [];
+    if (reloaded.length > 0) say(ctx, [`/reload stopped ${plural(reloaded.length, 'background bash job')}:`, ...reloaded.map((job) => `  ${job.id} · ${firstLine(job.command).slice(0, 80)}\n    log: ${shortPath(job.log)}`)].join('\n'), 'warning');
+    // Subagents leave this to the top-level Pi.
+    if (envFlag(process.env, SUBAGENT_ENV)) return;
+    const orphans = await reapOrphanJobs(jobs.recordDirs());
+    if (orphans.length > 0) say(ctx, orphanNotice(orphans), 'warning');
   });
-  pi.on('session_shutdown', async () => {
-    // Reported before stopping, without waking anyone: a resumed session then knows they did not finish.
+  pi.on('session_shutdown', async (event) => {
+    closing = true;
+    const reason = event?.reason === 'reload' ? 'reload' : 'session end';
     const now = Date.now();
-    for (const job of jobs.jobs.values()) {
-      job.stopped ??= 'session end';
+    const running = jobs.running();
+    // Reported before stopping, without waking anyone: a resumed session then knows they did not finish.
+    for (const job of running) {
+      job.stopped ??= reason;
+      reportedAtShutdown.add(job);
       report(job, { code: null, signal: null, seconds: Math.round((now - job.startedAt) / 1000) }, false);
     }
-    await jobs.stopAll('session end');
+    if (reason === 'reload') jobs.noteReload(running);
+    // A job that exited just before reports its own status once its last output drained (within the drain time).
+    const ending = [...jobs.jobs.values()].filter((job) => job.exited).map((job) => job.done);
+    await Promise.all([jobs.stopAll(reason), ...ending]);
     current = undefined;
   });
   pi.registerMessageRenderer(JOB_TYPE, (message, { expanded, outputPad }, theme) => renderJobMessage(contentText(message.content), expanded, theme, outputPad ?? 1));
@@ -133,7 +147,7 @@ export function registerBashTool(
     label: 'bash',
     description:
       'Run shell commands in the working directory: builds, tests, git, formatters and installed CLIs. Foreground calls wait for completion and return combined output; large output keeps a tail and names the full log. ' +
-      'Background calls return a job id, pid and log path; completion arrives automatically as a message. A timeout does not undo side effects: inspect the result before rerunning a command.',
+      'Background calls return a job id, pid and log path; completion arrives automatically as a message. Never sleep-poll for jobs or files. A timeout does not undo side effects: inspect the result before rerunning a command.',
     // Pi's own snippet ("ls, grep, find") would contradict the Octocode research routing.
     promptSnippet: 'Run shell commands: builds, tests, git',
     ...(builtin.constrainedSampling !== undefined ? { constrainedSampling: builtin.constrainedSampling } : {}),
@@ -143,7 +157,7 @@ export function registerBashTool(
     promptGuidelines: [],
     parameters: Type.Object({
       command: Type.String({ description: 'Shell command to execute' }),
-      timeout: Type.Optional(Type.Number({ description: `Timeout in seconds; foreground at most ${limit}s (the default). A background job has none unless given` })),
+      timeout: Type.Optional(Type.Number({ description: `Timeout in seconds; foreground default ${DEFAULT_BASH_TIMEOUT}s. A background job has none unless given` })),
       background: Type.Optional(Type.Boolean({ description: 'Start the command and return at once; its exit arrives later as a message. For servers, watchers and long builds' })),
     }),
     async execute(toolCallId, params, signal, onUpdate, ctx) {
@@ -162,11 +176,13 @@ export function registerBashTool(
         ].join('\n');
         return { content: [{ type: 'text' as const, text }], structuredContent: { job: job.id, pid: job.pid, log: job.log }, details: { job: job.id, pid: job.pid, log: job.log } as BashDetails };
       }
-      const timeout = effectiveTimeout(params.timeout, limit);
+      const timeout = effectiveTimeout(params.timeout);
       // Pi reports the spill file in its updates' details; a timeout or abort throws, and only the updates name it then.
       let spilled: string | undefined;
+      let group: number | undefined;
+      const run = createBashToolDefinition(process.cwd(), { ...settings, operations: foregroundOperations(settings, (pid) => (group = pid)) });
       try {
-        const result = await builtinFor(settings).execute(
+        const raw = await run.execute(
           toolCallId,
           { command: params.command, timeout },
           signal,
@@ -176,6 +192,8 @@ export function registerBashTool(
           },
           ctx,
         );
+        const stray = group === undefined ? undefined : strayNote(group);
+        const result = stray ? { ...raw, content: [{ type: 'text' as const, text: `${contentText(raw.content)}\n\n${stray}` }] } : raw;
         const details: BashDetails = { ...result.details };
         if (!details.fullOutputPath) return { ...result, details };
         const moved = adoptFullOutput(contentText(result.content), details.fullOutputPath, jobs.logDir());
@@ -186,13 +204,13 @@ export function registerBashTool(
       } catch (error) {
         const message = adoptFullOutput(errorMessage(error), spilled, jobs.logDir()).text;
         if (!/Command timed out after/.test(message)) throw new Error(message);
-        throw new Error(`${message}.\nIf it needs longer, rerun it with background: true and check its log; if it waits for input, pass the input or a non-interactive flag.`);
+        throw new Error(`${message}.\n${RERUN_HINT} with a longer timeout, or with background: true and check its log; if it waits for input, pass the input or a non-interactive flag.`);
       }
     },
     renderCall(args, theme, context) {
       // The timeout shows only when the model set one; the default deadline is in the tool description.
       const asked = typeof args.timeout === 'number' && args.timeout > 0 ? args.timeout : undefined;
-      const timeout = asked ? `timeout ${formatDuration((args.background ? asked : effectiveTimeout(asked, limit)) * 1000)}` : '';
+      const timeout = asked ? `timeout ${formatDuration(asked * 1000)}` : '';
       const meta = [args.background ? 'background' : '', timeout].filter(Boolean).join(' · ');
       return toolHeader(theme, context, 'Bash', typeof args.command === 'string' ? args.command : '', meta ? { meta } : {});
     },

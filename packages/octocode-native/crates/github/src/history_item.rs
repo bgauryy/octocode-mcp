@@ -121,6 +121,11 @@ impl GitHubTransport {
                         // Non-empty marks a page with a next page.
                         resolved_ref: response.next.map(String::from).unwrap_or_default(),
                     },
+                    if pinned {
+                        super::Retention::Pinned
+                    } else {
+                        super::Retention::AlwaysRevalidate
+                    },
                 )
                 .await;
         }

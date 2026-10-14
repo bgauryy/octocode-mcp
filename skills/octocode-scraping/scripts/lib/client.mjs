@@ -1,10 +1,11 @@
 import { readFile, writeFile, mkdir, unlink } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { resolve, dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { basename, dirname, join, resolve, sep } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
+import { guardedFetch } from './net-guard.mjs';
 
 export async function fetchScrapingAnt({ url, pageId, config, apiKey }) {
   const apiUrl = new URL(`https://api.scrapingant.com/v2/${config.endpoint}`);
@@ -88,13 +89,15 @@ export async function fetchDirect({ url, pageId, config }) {
       contentType = config.mockContentType;
       body = config.mockBodyFile ? await readFile(config.mockBodyFile, 'utf8') : '';
     } else {
-      let res = await fetch(url, { headers: DIRECT_HEADERS, signal: AbortSignal.timeout(20_000) });
+      // Every redirect hop is checked, so a public page cannot bounce the fetch onto an internal host.
+      const guard = { allowOrigin: config.privateOrigin || null };
+      let res = await guardedFetch(url, { headers: DIRECT_HEADERS, signal: AbortSignal.timeout(20_000) }, guard);
       retryAfter = retryAfterMs(res.headers.get('retry-after'));
       // Honor a short server-requested pause once. Longer delays are surfaced to
       // the caller instead of blocking an agent run for an unbounded interval.
       if ((res.status === 429 || res.status === 503) && retryAfter !== null && retryAfter <= 10_000) {
         await sleep(retryAfter);
-        res = await fetch(url, { headers: DIRECT_HEADERS, signal: AbortSignal.timeout(20_000) });
+        res = await guardedFetch(url, { headers: DIRECT_HEADERS, signal: AbortSignal.timeout(20_000) }, guard);
         retryAfter = retryAfterMs(res.headers.get('retry-after'));
       }
       status = res.status;
@@ -154,11 +157,11 @@ function robotsRuleMatches(rulePath, path) {
 
 /** Fetch and compile one origin's robots policy. 4xx means unavailable/allow;
  * transport errors and 5xx conservatively disallow this short crawl. */
-export async function fetchRobotsPolicy(targetUrl) {
+export async function fetchRobotsPolicy(targetUrl, { allowOrigin = null } = {}) {
   const robotsUrl = new URL('/robots.txt', targetUrl).href;
   const fetchedAt = new Date().toISOString();
   try {
-    const res = await fetch(robotsUrl, { headers: DIRECT_HEADERS, signal: AbortSignal.timeout(10_000) });
+    const res = await guardedFetch(robotsUrl, { headers: DIRECT_HEADERS, signal: AbortSignal.timeout(10_000) }, { allowOrigin });
     if (res.status >= 500) {
       return { url: robotsUrl, status: res.status, fetchedAt, check: () => ({ allowed: false, reason: `robots.txt temporarily unavailable (HTTP ${res.status})` }) };
     }
@@ -250,33 +253,52 @@ export async function fetchCdp({ url, pageId, config }) {
     return { pageId, url, status: 0, contentType: '', body: '', fetchError: `Chrome launch failed: ${launch.error}`, creditCost: null, fetchedAt };
   }
 
-  const runnerDir = resolve(CDP_SPAWN_CWD, '.octocode', 'tmp', 'cdp-provider');
+  const runnerDir = resolve(CDP_SPAWN_CWD, '.octocode', 'octocode-scraping', 'tmp', 'cdp-provider');
   await mkdir(runnerDir, { recursive: true });
   const runnerPath = join(runnerDir, `${pageId}-${randomUUID()}-runner.mjs`);
-  const bodyPath = join(runnerDir, `${pageId}-${randomUUID()}-body.html`);
+  // The sandbox writes only below .octocode/octocode-chrome-devtools/tmp; its TMPDIR is there, so the body goes to TMPDIR.
+  const bodyName = `${pageId}-${randomUUID()}-body.html`;
+  const sandboxTree = resolve(CDP_SPAWN_CWD, '.octocode', 'octocode-chrome-devtools', 'tmp');
+  let bodyPath = null;
   const waitMs = config.cdpWaitMs ?? 8000;
+  // The runner's sandbox reads only its own folder, so the guard is staged beside it.
+  const netGuardPath = join(runnerDir, `${pageId}-${randomUUID()}-net-guard.mjs`);
+  await writeFile(netGuardPath, await readFile(join(__cdpDir, 'net-guard.mjs')), { mode: 0o600 });
+  const netGuardUrl = pathToFileURL(netGuardPath).href;
   await writeFile(runnerPath, `import { writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { resolvedUrlProblem } from ${JSON.stringify(netGuardUrl)};
 export async function run(cdp) {
-  // The Chrome sandbox stages its helpers under <cwd>/.octocode/tmp/chrome-devtools/helpers.
-  const { waitForPageReady } = await import(pathToFileURL(resolve(process.cwd(), '.octocode', 'tmp', 'chrome-devtools', 'helpers', 'dom-actionability.mjs')).href);
+  // The Chrome sandbox stages its helpers under <cwd>/.octocode/octocode-chrome-devtools/tmp/helpers.
+  const { waitForPageReady } = await import(pathToFileURL(resolve(process.cwd(), '.octocode', 'octocode-chrome-devtools', 'tmp', 'helpers', 'dom-actionability.mjs')).href);
+  // Chrome follows redirects and runs page scripts itself, so every request it makes is paused here and
+  // failed when it targets a private, local, or link-local host (only the --allow-private-host origin is exempt).
+  const refused = [];
+  cdp.on('Fetch.requestPaused', async ({ requestId, request }) => {
+    const problem = /^https?:/i.test(request.url) ? await resolvedUrlProblem(request.url, { allowOrigin: ${JSON.stringify(config.privateOrigin || null)} }) : null;
+    if (problem) { refused.push(request.url); await cdp.send('Fetch.failRequest', { requestId, errorReason: 'AccessDenied' }).catch(() => {}); }
+    else await cdp.send('Fetch.continueRequest', { requestId }).catch(() => {});
+  });
+  await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] });
   await cdp.send('Page.enable', {});
   await cdp.send('Network.enable', {});
   let status = 0;
   const { frameTree } = await cdp.send('Page.getFrameTree');
   cdp.on('Network.responseReceived', (p) => { if (p.type === 'Document' && p.frameId === frameTree.frame.id) status = p.response.status; });
   const navigation = await cdp.send('Page.navigate', { url: ${JSON.stringify(url)} });
-  if (navigation.errorText) throw new Error(navigation.errorText);
+  if (navigation.errorText) throw new Error(refused.length ? 'refused: private, local, or link-local host ' + refused[0] : navigation.errorText);
   if (!await waitForPageReady(cdp, ${waitMs}, { selector: ${JSON.stringify(config.waitFor || '')}, text: ${JSON.stringify(config.waitText || '')} })) throw new Error('CDP readiness timed out');
   const result = await cdp.send('Runtime.evaluate', { expression: 'document.documentElement.outerHTML', returnByValue: true });
   if (result.exceptionDetails || typeof result.result?.value !== 'string') throw new Error('CDP HTML extraction failed');
-  writeFileSync(${JSON.stringify(bodyPath)}, result.result.value, { mode: 0o600 });
-  console.log('CDP_FETCH_RESULT:' + JSON.stringify({ status, bodyPath: ${JSON.stringify(bodyPath)} }));
+  const bodyPath = join(process.env.TMPDIR || tmpdir(), ${JSON.stringify(bodyName)});
+  writeFileSync(bodyPath, result.result.value, { mode: 0o600 });
+  console.log('CDP_FETCH_RESULT:' + JSON.stringify({ status, bodyPath, refused }));
 }
 `);
 
-  let status = 0, body = '', fetchError = null;
+  let status = 0, body = '', fetchError = null, refusedRequests = [];
   try {
     // --stealth applies the package's emulation and its self-test gate before run(cdp).
     const run = chrome(['script', runnerPath, '--port', port, '--new-tab', 'about:blank', '--timeout', String(waitMs + 15000), '--no-reload', ...(config.cdpStealth === true ? ['--stealth'] : [])], { timeout: waitMs + 30000, maxBuffer: 16 * 1024 * 1024 });
@@ -285,7 +307,11 @@ export async function run(cdp) {
     if (line) {
       const parsed = JSON.parse(line.slice('CDP_FETCH_RESULT:'.length));
       status = parsed.status || 0;
-      if (parsed.bodyPath !== bodyPath) throw new Error('CDP body artifact path mismatch');
+      refusedRequests = parsed.refused || [];
+      const real = (path) => { try { return realpathSync(path); } catch { return resolve(path); } };
+      const reported = real(String(parsed.bodyPath || ''));
+      if (!reported.startsWith(real(sandboxTree) + sep) || basename(reported) !== bodyName) throw new Error('CDP body artifact path mismatch');
+      bodyPath = reported;
       body = await readFile(bodyPath, 'utf8');
     } else if (/ERR_ACCESS_DENIED|Access to this API has been restricted/.test(run.stderr || '')) {
       fetchError = 'CDP sandbox ERR_ACCESS_DENIED — the sandbox Permission Model blocked a path. CDP_SPAWN_CWD=' + CDP_SPAWN_CWD + '. This should resolve automatically; if it persists, ensure node_modules exists at or above that path.';
@@ -296,10 +322,11 @@ export async function run(cdp) {
     fetchError = error instanceof Error ? error.message : String(error);
   } finally {
     await unlink(runnerPath).catch(() => {});
-    await unlink(bodyPath).catch(() => {});
+    await unlink(netGuardPath).catch(() => {});
+    if (bodyPath) await unlink(bodyPath).catch(() => {});
   }
 
-  return { pageId, url, status, contentType: 'text/html', body, fetchError, creditCost: null, fetchedAt };
+  return { pageId, url, status, contentType: 'text/html', body, fetchError, refusedRequests, creditCost: null, fetchedAt };
 }
 
 export async function cleanupCdp(config = {}) {
@@ -314,18 +341,30 @@ export async function cleanupCdp(config = {}) {
   chrome(['cleanup', '--port', port]);
 }
 
-export async function discoverSitemap({ targetUrl, maxPages, sameDomain }) {
+export async function discoverSitemap({ targetUrl, maxPages, spanHosts = false, privateOrigin = null }) {
   const discovered = [];
   try {
-    const smUrl = new URL('/sitemap.xml', targetUrl).href;
-    const response = await fetch(smUrl, { headers: DIRECT_HEADERS, signal: AbortSignal.timeout(20_000) });
-    if (!response.ok) return { discovered, error: `Sitemap discovery failed: HTTP ${response.status}` };
-    const { body: sm, truncated } = await readBodyBounded(response, 1_000_000);
-    if (truncated) return { discovered, error: 'Sitemap discovery stopped at the 1 MB response bound' };
-    const locs = [...sm.matchAll(/<loc>(.*?)<\/loc>/g)].map((m) => m[1].trim()).filter(Boolean);
-    for (const loc of locs) {
+    const readSitemap = async (url) => {
+      const response = await guardedFetch(url, { headers: DIRECT_HEADERS, signal: AbortSignal.timeout(20_000) }, { allowOrigin: privateOrigin });
+      if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`);
+      const { body, truncated } = await readBodyBounded(response, 1_000_000);
+      if (truncated) throw new Error(`stopped at the 1 MB response bound for ${url}`);
+      return { isIndex: /<sitemapindex[\s>]/i.test(body), locs: [...body.matchAll(/<loc>\s*(.*?)\s*<\/loc>/g)].map((m) => m[1].trim()).filter(Boolean) };
+    };
+    const addPages = (locs) => {
+      for (const loc of locs) {
+        if (discovered.length >= maxPages) break;
+        if (spanHosts || new URL(loc).hostname === new URL(targetUrl).hostname) discovered.push(loc);
+      }
+    };
+    const root = await readSitemap(new URL('/sitemap.xml', targetUrl).href);
+    if (!root.isIndex) { addPages(root.locs); return { discovered, error: null }; }
+    // A sitemap index lists child sitemaps, not pages: read one level of children within the page budget.
+    for (const child of root.locs) {
       if (discovered.length >= maxPages) break;
-      if (!sameDomain || new URL(loc).hostname === new URL(targetUrl).hostname) discovered.push(loc);
+      if (!spanHosts && new URL(child).hostname !== new URL(targetUrl).hostname) continue;
+      const sitemap = await readSitemap(child);
+      if (!sitemap.isIndex) addPages(sitemap.locs);
     }
     return { discovered, error: null };
   } catch (error) {

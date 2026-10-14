@@ -5,7 +5,7 @@
 //!
 //! A scan is stored only when every file it evaluated, every directory
 //! holding one, and the root were last written at least
-//! [`SourceStamp::SETTLE`] before the scan started, so no write can race the
+//! [`SETTLE`] before the scan started, so no write can race the
 //! reads it was built from. A stored scan is served only while each of those
 //! stamps (size, change times, inode) is unchanged: an edit, or an entry
 //! created, removed or renamed beside a scanned file, drops it and the page
@@ -13,7 +13,11 @@
 //! the stored files before serving a page. An entry created in a directory
 //! that held no scanned file, or an edit of an ignore file, is not seen until
 //! the scan expires.
+//!
+//! [`SETTLE`]: octocode_engine::graph::SourceStamp::SETTLE
 use super::super::page_memo::PageMemo;
+use crate::tools::source::{Link, StampSet};
+#[cfg(test)]
 use octocode_engine::graph::SourceStamp;
 use std::{
     path::{Path, PathBuf},
@@ -30,8 +34,7 @@ const MAX_TOTAL_BYTES: usize = 64 * 1024 * 1024;
 const TTL: Duration = Duration::from_secs(60);
 
 struct Stored<T> {
-    /// Shared so a page checks them without copying every stored path.
-    stamps: Arc<[(PathBuf, SourceStamp)]>,
+    stamps: StampSet,
     scan: Arc<T>,
 }
 
@@ -51,16 +54,9 @@ impl<T> ScanMemo<T> {
     /// is unchanged; a changed one is evicted.
     pub(super) fn get(&self, snapshot: &str, key: &str) -> Option<Arc<T>> {
         let (scan, stamps) = self.store.get(snapshot, key, |stored| {
-            (Arc::clone(&stored.scan), Arc::clone(&stored.stamps))
+            (Arc::clone(&stored.scan), stored.stamps.clone())
         })?;
-        let unchanged = stamps.iter().all(|(path, stamp)| {
-            std::fs::metadata(path)
-                .ok()
-                .and_then(|meta| SourceStamp::of(&meta))
-                .as_ref()
-                == Some(stamp)
-        });
-        if unchanged {
+        if stamps.unchanged() {
             return Some(scan);
         }
         self.evict(snapshot);
@@ -91,17 +87,9 @@ impl<T> ScanMemo<T> {
             }
             paths.insert(source.clone());
         }
-        let mut stamps = Vec::with_capacity(paths.len());
-        for path in paths {
-            let Some(stamp) = std::fs::metadata(&path)
-                .ok()
-                .and_then(|meta| SourceStamp::settled(&meta, started))
-            else {
-                return;
-            };
-            stamps.push((path, stamp));
-        }
-        let stamps = stamps.into();
+        let Some(stamps) = StampSet::capture(paths, Link::Follow, Some(started)) else {
+            return;
+        };
         self.store
             .put(snapshot, key, bytes, Stored { stamps, scan });
     }

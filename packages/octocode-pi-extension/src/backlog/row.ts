@@ -5,6 +5,10 @@ export interface Row<State extends string> {
   title: string;
   goal: string;
   body: string;
+  paths: string;
+  why: string;
+  evidence: string;
+  plan: string;
   state: State;
   priority: number;
   tags: string;
@@ -20,6 +24,9 @@ export interface Row<State extends string> {
   version: number;
 }
 
+/** A stored list (one entry per line) as entries. */
+const lines = (text: string): string[] => (text ? text.split('\n') : []);
+
 export const toItem = <State extends string>(row: Row<State>) => ({
   rowId: row.id,
   seq: row.seq,
@@ -27,6 +34,10 @@ export const toItem = <State extends string>(row: Row<State>) => ({
   title: row.title,
   goal: row.goal,
   body: row.body,
+  paths: lines(row.paths),
+  why: row.why,
+  evidence: lines(row.evidence),
+  plan: row.plan,
   state: row.state,
   priority: row.priority,
   tags: row.tags ? row.tags.split(' ') : [],

@@ -15,8 +15,8 @@ import { join } from 'node:path';
 /** Port 9 (discard) on loopback refuses at once. */
 export const DEAD_PROXY = 'http://127.0.0.1:9';
 export const LOOPBACK_NO_PROXY = 'localhost,127.0.0.1,::1';
-/** GitHub tokens (GH_TOKEN, GITHUB_TOKEN, GH_ENTERPRISE_TOKEN, ...) and classifier settings. */
-export const CREDENTIAL_ENV = /^(?:GH|GITHUB)_(?:\w+_)?TOKEN$|^OCTOCODE_CLASSIFICATION_/;
+/** Any `*TOKEN` the host shell carries (GitHub, CI, editor sessions) and classifier settings. */
+export const CREDENTIAL_ENV = /TOKEN$|^OCTOCODE_CLASSIFICATION_/;
 /** Flags that switch suites onto live services. */
 export const LIVE_ENV = ['OCTOCODE_LIVE', 'RUN_MCP_LIVE', 'RUN_CHROME_LIVE', 'OCTOCODE_CHROME_DEBUG_E2E'];
 const PROXY_ENV = ['HTTPS_PROXY', 'HTTP_PROXY', 'ALL_PROXY'];

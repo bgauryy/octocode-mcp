@@ -3,6 +3,7 @@ import path from 'node:path';
 import { NOTIFY_ENV, NOTIFY_METHOD_ENV } from '../shared/env.js';
 import { sanitizeTerminalText } from '../shared/sanitize.js';
 import { clipText, contentText, firstLine } from '../shared/util.js';
+import { promptTitle } from '../shared/locks.js';
 
 /**
  * "Answer ready" and "waiting for you" signals for a terminal in the background, after Codex's
@@ -12,10 +13,13 @@ import { clipText, contentText, firstLine } from '../shared/util.js';
  * Pi enables focus reports (CSI ?1004) only in fullscreen mode, and that mode consumes them. So in the regular TUI this
  * enables them itself and reads `ESC [ I` / `ESC [ O`; without focus reports (fullscreen) it falls back to idleness: a
  * run that took long while the user typed nothing.
+ *
+ * The terminal signals are the TUI's own. The Notification hooks (user scripts) fire in any mode with a UI, RPC
+ * included, where a client shows the dialogs.
  */
 
-export type NotifyCondition = 'off' | 'unfocused' | 'always';
-export type NotifyMethod = 'osc9' | 'osc777' | 'osc99' | 'bel';
+type NotifyCondition = 'off' | 'unfocused' | 'always';
+type NotifyMethod = 'osc9' | 'osc777' | 'osc99' | 'bel';
 type Focus = 'unknown' | 'focused' | 'unfocused';
 
 /** What fired a notice, in Claude Code's Notification vocabulary. */
@@ -85,7 +89,7 @@ export function notificationSequence(method: NotifyMethod, title: string, body: 
   return env['TMUX'] ? `\x1bPtmux;${osc.replaceAll('\x1b', '\x1b\x1b')}\x1b\\` : osc;
 }
 
-export interface NotifyOptions {
+interface NotifyOptions {
   /**
    * Notices for the Notification hooks, whether or not the terminal was signalled: a dialog when it opens, an unread
    * answer after a minute without input (Claude Code's `idle_prompt`).
@@ -95,7 +99,7 @@ export interface NotifyOptions {
   write?: (data: string) => void;
 }
 
-/** Registers the notifier for the root session's TUI; returns nothing to drive: it follows Pi's events. */
+/** Registers the notifier for the root session; returns nothing to drive: it follows Pi's events. */
 export function registerNotify(pi: ExtensionAPI, options: NotifyOptions = {}): void {
   const env = options.env ?? process.env;
   const write = options.write ?? ((data: string) => void process.stdout.write(data));
@@ -135,9 +139,11 @@ export function registerNotify(pi: ExtensionAPI, options: NotifyOptions = {}): v
     if (focus !== 'unknown') return focus === 'unfocused';
     return runStartedAt !== undefined && now - runStartedAt >= AWAY_MS && now - lastInputAt >= AWAY_MS;
   };
+  const tui = (current: ExtensionContext | undefined): current is ExtensionContext => current?.mode === 'tui' && current.hasUI;
   const fire = (notice: Notice, hook: boolean) => {
-    if (!ctx) return;
+    if (!ctx?.hasUI) return;
     if (hook) options.onNotice?.(notice, ctx);
+    if (!tui(ctx)) return;
     const now = Date.now();
     if (condition === 'off' || !away(now) || now - lastNoticeAt < DEBOUNCE_MS) return;
     lastNoticeAt = now;
@@ -152,7 +158,7 @@ export function registerNotify(pi: ExtensionAPI, options: NotifyOptions = {}): v
     clearIdle();
     ctx = current;
     marked = false;
-    if (current.mode !== 'tui' || !current.hasUI) return;
+    if (!tui(current)) return;
     current.ui.setTitle(baseTitle(current));
     unsubscribe = current.ui.onTerminalInput((data) => {
       if (data === FOCUS_IN || data === FOCUS_OUT) {
@@ -172,14 +178,14 @@ export function registerNotify(pi: ExtensionAPI, options: NotifyOptions = {}): v
     }
   });
   pi.on('session_info_changed', async (_event, current) => {
-    if (current.mode === 'tui' && current.hasUI) current.ui.setTitle(`${marked ? `${MARK} ` : ''}${baseTitle(current)}`);
+    if (tui(current)) current.ui.setTitle(`${marked ? `${MARK} ` : ''}${baseTitle(current)}`);
   });
   pi.on('session_shutdown', async () => {
     clearIdle();
     unsubscribe?.();
     unsubscribe = undefined;
     dropExitHook();
-    if (ctx?.mode === 'tui' && ctx.hasUI && condition !== 'off') write(FOCUS_OFF);
+    if (tui(ctx) && condition !== 'off') write(FOCUS_OFF);
     unmark();
     ctx = undefined;
   });
@@ -198,7 +204,7 @@ export function registerNotify(pi: ExtensionAPI, options: NotifyOptions = {}): v
   pi.on('agent_settled', async () => {
     const answer = lastAnswer;
     lastAnswer = '';
-    if (ctx?.mode === 'tui' && answer) {
+    if (ctx?.hasUI && answer) {
       fire({ type: 'idle_prompt', title: 'Octocode: answer ready', message: answer }, false);
       const current = ctx;
       clearIdle();
@@ -208,8 +214,9 @@ export function registerNotify(pi: ExtensionAPI, options: NotifyOptions = {}): v
     runStartedAt = undefined;
   });
   pi.on('ui_prompt_start', async (event) => {
-    if (ctx?.mode !== 'tui') return;
+    // Only the agent's dialogs: one the user opened (a `/permission` or `/octocode` picker) needs no call back.
+    if (runStartedAt === undefined) return;
     const type: NoticeType = event.kind === 'confirm' ? 'permission_prompt' : 'elicitation_dialog';
-    fire({ type, title: 'Octocode: waiting for you', message: event.title ?? 'A question needs your answer' }, true);
+    fire({ type, title: 'Octocode: waiting for you', message: promptTitle(event) ?? 'A question needs your answer' }, true);
   });
 }

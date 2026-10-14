@@ -1,17 +1,15 @@
 //! One lazy selection flow for tool requests and read-only auth inspection.
-use super::super::{ProviderError, ProviderErrorKind, login};
-use super::{
-    CredentialSource, ResolvedCredential, StoredCredentials, configured_credential_host,
-    normalize_host,
-};
+use super::super::login;
+use super::{StoredCredentials, configured_credential_host, normalize_host};
 use crate::config::ConfigOutput;
-use crate::providers::{BudgetStop, RequestBudget};
+use octocode_github::{BudgetStop, RequestBudget};
+use octocode_github::{CredentialSource, ProviderError, ProviderErrorKind, ResolvedCredential};
 use secrecy::ExposeSecret;
 use std::{
     collections::{HashMap, HashSet},
     future::Future,
     sync::{Arc, Mutex, Once},
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 
 /// How long "no credential" is remembered, so a login made in another
@@ -48,6 +46,9 @@ impl AuthSelection {
 struct Remembered {
     selection: Option<AuthSelection>,
     at: Instant,
+    /// When a remembered stored credential must be refreshed; past it the
+    /// entry is a miss, so the next request reloads and refreshes.
+    refresh_due: Option<SystemTime>,
 }
 
 pub struct Authentication {
@@ -55,10 +56,10 @@ pub struct Authentication {
     /// Request credentials resolve once per host per process: a `gh` spawn or
     /// a store read per query row is pure overhead.
     memo: Mutex<HashMap<String, Remembered>>,
-    /// Digests of the host-scoped tokens GitHub rejected in this process. A
+    /// Host partitions of the tokens GitHub rejected in this process. A
     /// rejected stored or `gh` token is skipped, so the next request falls
     /// back as a fresh selection would instead of sending it again.
-    rejected: Mutex<HashSet<[u8; 32]>>,
+    rejected: Mutex<HashSet<octocode_github::Partition>>,
 }
 impl Authentication {
     pub fn new(config: Arc<ConfigOutput>) -> Self {
@@ -76,7 +77,10 @@ impl Authentication {
             self.rejected
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .insert(token_digest(&host, credential.expose_secret()));
+                .insert(octocode_github::Partition::new(
+                    host.as_str(),
+                    Some(credential.secret()),
+                ));
         }
         self.memo
             .lock()
@@ -84,10 +88,11 @@ impl Authentication {
             .remove(&host);
     }
     fn is_rejected(&self, host: &str, token: &str) -> bool {
+        let token = secrecy::SecretString::from(token);
         self.rejected
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .contains(&token_digest(host, token))
+            .contains(&octocode_github::Partition::new(host, Some(&token)))
     }
     fn remembered(&self, host: &str) -> Option<Option<AuthSelection>> {
         let memo = self
@@ -95,18 +100,22 @@ impl Authentication {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let entry = memo.get(host)?;
-        (entry.selection.is_some() || entry.at.elapsed() < ANONYMOUS_MEMO)
-            .then(|| entry.selection.clone())
+        let live = match entry.selection {
+            Some(_) => entry.refresh_due.is_none_or(|due| SystemTime::now() < due),
+            None => entry.at.elapsed() < ANONYMOUS_MEMO,
+        };
+        live.then(|| entry.selection.clone())
     }
-    fn remember(&self, host: &str, selection: &Option<AuthSelection>) {
+    fn remember(&self, host: &str, resolved: &Resolved) {
         self.memo
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .insert(
                 host.to_owned(),
                 Remembered {
-                    selection: selection.clone(),
+                    selection: resolved.selection.clone(),
                     at: Instant::now(),
+                    refresh_due: resolved.refresh_due,
                 },
             );
     }
@@ -149,11 +158,11 @@ impl Authentication {
         {
             return Ok(selection);
         }
-        let selection = self.resolve_stored(&host, mode, budget, backend).await?;
+        let resolved = self.resolve_stored(&host, mode, budget, backend).await?;
         if mode == AuthMode::Request {
-            self.remember(&host, &selection);
+            self.remember(&host, &resolved);
         }
-        Ok(selection)
+        Ok(resolved.selection)
     }
     async fn resolve_stored(
         &self,
@@ -161,13 +170,17 @@ impl Authentication {
         mode: AuthMode,
         budget: &RequestBudget,
         backend: &impl AuthBackend,
-    ) -> Result<Option<AuthSelection>, ProviderError> {
+    ) -> Result<Resolved, ProviderError> {
         let host = host.to_owned();
         // Keychain calls are blocking OS operations. Await their worker to completion,
-        // then check the budget before starting any further I/O.
+        // then check the budget before starting any further I/O. Expiry is
+        // checked before rejection: GitHub rejecting an expired token is a
+        // reason to refresh it, not to skip it.
         let stored = match backend.load(&host).await {
             Ok(Some((stored, _)))
-                if mode == AuthMode::Request && self.is_rejected(&host, &stored.token.token) =>
+                if mode == AuthMode::Request
+                    && !login::is_token_expired(&stored)
+                    && self.is_rejected(&host, &stored.token.token) =>
             {
                 Ok(None)
             }
@@ -179,7 +192,7 @@ impl Authentication {
             Ok(Some((stored, source)))
                 if mode == AuthMode::Inspect || !login::is_token_expired(&stored) =>
             {
-                return Ok(Some(from_stored(stored, source)));
+                return Ok(Resolved::stored(stored, source));
             }
             Ok(Some((_, source))) => {
                 let client_id = Some(login::client_id_for_host(
@@ -197,7 +210,7 @@ impl Authentication {
                     )),
                 };
                 match refreshed {
-                    Ok(Some(stored)) => return Ok(Some(from_stored(stored, source))),
+                    Ok(Some(stored)) => return Ok(Resolved::stored(stored, source)),
                     Ok(None) => {} // Deleted while waiting: never reuse the stale token.
                     Err(error) if is_budget_error(&error) => return Err(error),
                     Err(error) => storage_error = Some(error),
@@ -210,10 +223,10 @@ impl Authentication {
         if let Some(token) = backend.gh(&host, budget).await?
             && !(mode == AuthMode::Request && self.is_rejected(&host, token.expose_secret()))
         {
-            return Ok(Some(AuthSelection {
+            return Ok(Resolved::untimed(Some(AuthSelection {
                 credential: ResolvedCredential::new(token, CredentialSource::GhCli),
                 username: None,
-            }));
+            })));
         }
         match storage_error {
             // No token and no usable store (headless, CI, sandboxed home):
@@ -223,10 +236,10 @@ impl Authentication {
                     && error.kind == ProviderErrorKind::CredentialStoreUnavailable =>
             {
                 warn_anonymous(&host);
-                Ok(None)
+                Ok(Resolved::untimed(None))
             }
             Some(error) => Err(error),
-            None => Ok(None),
+            None => Ok(Resolved::untimed(None)),
         }
     }
 }
@@ -239,18 +252,26 @@ fn warn_anonymous(host: &str) {
         );
     });
 }
-fn token_digest(host: &str, token: &str) -> [u8; 32] {
-    use sha2::{Digest, Sha256};
-    let mut digest = Sha256::new();
-    digest.update(host.as_bytes());
-    digest.update([0]);
-    digest.update(token.as_bytes());
-    digest.finalize().into()
+/// A selection and when it must be refreshed.
+struct Resolved {
+    selection: Option<AuthSelection>,
+    refresh_due: Option<SystemTime>,
 }
-fn from_stored(stored: StoredCredentials, source: CredentialSource) -> AuthSelection {
-    AuthSelection {
-        credential: ResolvedCredential::new(stored.token.token, source),
-        username: (!stored.username.is_empty()).then_some(stored.username),
+impl Resolved {
+    fn untimed(selection: Option<AuthSelection>) -> Self {
+        Self {
+            selection,
+            refresh_due: None,
+        }
+    }
+    fn stored(stored: StoredCredentials, source: CredentialSource) -> Self {
+        Self {
+            refresh_due: login::refresh_due(&stored),
+            selection: Some(AuthSelection {
+                credential: ResolvedCredential::new(stored.token.token, source),
+                username: (!stored.username.is_empty()).then_some(stored.username),
+            }),
+        }
     }
 }
 

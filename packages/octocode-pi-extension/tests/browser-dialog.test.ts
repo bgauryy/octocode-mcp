@@ -143,13 +143,12 @@ describe('browser: an open dialog ends waits promptly', () => {
 });
 
 describe('browser: every page the session switches to gets the same setup', () => {
-  it('applies the download folder and the locale to a tab it opens', async () => {
-    vi.stubEnv('OCTOCODE_BROWSER_LOCALE', 'de-DE');
+  it('applies the download folder to a tab it opens', async () => {
     const { cdp, text } = await setup(chrome().handle);
     expect(await text({ action: 'download' })).toContain('No downloads yet');
     await text({ action: 'tab', url: 'https://example.com/other' });
     const onTab = cdp.commands.filter((command) => command.target === 'tab-2').map((command) => command.method);
-    expect(onTab).toContain('Emulation.setLocaleOverride');
+    expect(onTab).toContain('Page.enable');
     const downloads = cdp.commands.filter((command) => command.target === 'tab-2' && command.method === 'Browser.setDownloadBehavior');
     expect(downloads.map((command) => command.params)).toEqual([{ behavior: 'allow', downloadPath: path.join(sessionOutputDir('output'), 'downloads'), eventsEnabled: true }]);
   }, 15_000);
@@ -166,8 +165,7 @@ describe('sharedChromePort', () => {
     expect(sharedChromePort({})).toBeUndefined();
     expect(sharedChromePort({ OCTOCODE_CHROME_PORT: '' })).toBeUndefined();
     expect(sharedChromePort({ OCTOCODE_CHROME_PORT: ' 9333 ' })).toBe(9333);
-    expect(sharedChromePort({ OCTOCODE_CHROME_PORT: 'abc' })).toBe(9222);
-    expect(sharedChromePort({ OCTOCODE_CHROME_PORT: '0' })).toBe(1);
-    expect(sharedChromePort({ OCTOCODE_CHROME_PORT: '99999' })).toBe(65_535);
+    // Not a port: refused with the reason, never guessed at (a default or a clamped port is someone else's Chrome).
+    for (const raw of ['abc', '0', '99999', '92.22']) expect(() => sharedChromePort({ OCTOCODE_CHROME_PORT: raw })).toThrow(`OCTOCODE_CHROME_PORT=${raw} is not a TCP port`);
   });
 });

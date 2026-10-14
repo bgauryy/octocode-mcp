@@ -4,11 +4,11 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { registerMcpCommand } from '../src/mcp/command.js';
 import { configuredOctocodeServer, OCTOCODE_MCP_SPEC, OctocodeMcp, octocodeLaunch, registerOctocodeMcp } from '../src/mcp/octocode.js';
-import { octocodeToolDefinition, sanitizeJson, toToolResult } from '../src/mcp/tools.js';
+import { octocodeToolDefinition, sanitizeJson, TEXT_MAX_BYTES, toToolResult, TURN_MAX_CHARS, TurnBudget } from '../src/mcp/tools.js';
 import { Subcommands } from '../src/shared/commands.js';
 import { isOctocodeTool } from '../src/shared/octocode-tools.js';
 import { fakeCtx, fakePi, rendered, theme } from './fake-pi.js';
-import { tmp } from './helpers.js';
+import { noisyPng, pixelSize, tmp } from './helpers.js';
 
 const ECHO = path.join(import.meta.dirname, 'fixtures', 'echo-mcp.mjs');
 const echo = (cwd: string) => ({ command: process.execPath, args: [ECHO], cwd, env: {} });
@@ -23,11 +23,11 @@ const alive = (pid: number) => {
 };
 
 /** An Octocode MCP wired to a fake Pi and a stdio launch the test chooses. */
-function session(launch: (cwd: string) => ReturnType<typeof echo>, options: { env?: NodeJS.ProcessEnv; hasUI?: boolean } = {}) {
+function session(launch: (cwd: string) => ReturnType<typeof echo>, options: { env?: NodeJS.ProcessEnv; hasUI?: boolean; connectWaitMs?: number } = {}) {
   const fake = fakePi();
   const cwd = tmp();
   const ctx = fakeCtx({ cwd, hasUI: options.hasUI ?? true });
-  const mcp = new OctocodeMcp(fake.pi, { launch, env: { OCTOCODE_MCP_WAIT_SECONDS: '20', ...options.env }, version: '1.2.3' });
+  const mcp = new OctocodeMcp(fake.pi, { launch, env: { ...options.env }, version: '1.2.3', connectWaitMs: options.connectWaitMs ?? 20_000 });
   const call = async (tool: string, params: Record<string, unknown> = {}, signal?: AbortSignal) =>
     (await fake.tools.get(`mcp__octocode__${tool}`).execute('call-1', params, signal, undefined, ctx)) as { content: Array<{ type: string; text?: string }>; isError?: boolean };
   return { fake, cwd, ctx, mcp, call, notes: ctx.ui.notes };
@@ -46,11 +46,11 @@ describe('Octocode MCP launch and ownership', () => {
     expect(fs.existsSync(octocodeLaunch('/w').args[0]!)).toBe(true);
   });
 
-  it('runs octocode-mcp 20.2.0 or a later 20.x: the dependency and the npx fallback share the range', () => {
+  it('runs the octocode-mcp range of package.json: the dependency and the npx fallback share it', () => {
     const manifest = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', 'package.json'), 'utf8')) as { dependencies: Record<string, string> };
-    expect(manifest.dependencies['octocode-mcp']).toBe('^20.2.0');
-    expect(OCTOCODE_MCP_SPEC).toBe('octocode-mcp@^20.2.0');
-    expect(octocodeLaunch('/w', {}, '')).toMatchObject({ command: 'npx', args: ['-y', 'octocode-mcp@^20.2.0'] });
+    const range = manifest.dependencies['octocode-mcp']!;
+    expect(OCTOCODE_MCP_SPEC).toBe(`octocode-mcp@${range}`);
+    expect(octocodeLaunch('/w', {}, '')).toMatchObject({ command: 'npx', args: ['-y', `octocode-mcp@${range}`] });
   });
 
   it('reads an octocode entry from Pi\'s mcp.json, the trusted project file replacing the global one', () => {
@@ -286,6 +286,16 @@ describe('Octocode MCP client', () => {
     await mcp.close();
   });
 
+  it('strips terminal escape sequences from the server stderr in the failure text and the notice', async () => {
+    const { ctx, mcp, notes } = session((cwd) => exits(cwd, 'boom \u001b]0;pwned\u0007\u001b[31mred\u001b[0m\u202e!'));
+    await mcp.start(ctx);
+    expect(await mcp.ready(ctx)).toBe(false);
+    const error = mcp.status().error!;
+    expect(error).toContain('boom red!');
+    expect(error).not.toMatch(/[\u001b\u0007\u202e]/);
+    expect(notes[0]!.message).not.toMatch(/[\u001b\u0007\u202e]/);
+  });
+
   it('reports a failed connect at once: notifies once, retries once on a later ready, then stays failed', async () => {
     const launch = vi.fn((cwd: string) => exits(cwd));
     const { fake, ctx, mcp, notes } = session(launch);
@@ -315,9 +325,9 @@ describe('Octocode MCP client', () => {
     expect(notes).toHaveLength(0);
   });
 
-  it('waits for a slow connect no longer than OCTOCODE_MCP_WAIT_SECONDS, and ends it with the session', async () => {
+  it('waits for a slow connect no longer than its bound, and ends it with the session', async () => {
     const hangs = (cwd: string) => ({ command: process.execPath, args: ['-e', 'setTimeout(() => {}, 60000)'], cwd, env: {} });
-    const { ctx, mcp } = session(hangs, { env: { OCTOCODE_MCP_WAIT_SECONDS: '0' } });
+    const { ctx, mcp } = session(hangs, { connectWaitMs: 0 });
     await mcp.start(ctx);
     expect(await mcp.ready(ctx)).toBe(false);
     expect(mcp.status().state).toBe('connecting');
@@ -326,7 +336,7 @@ describe('Octocode MCP client', () => {
     done.abort();
     expect(await mcp.ready({ ...ctx, signal: done.signal } as never)).toBe(false);
     const aborted = new AbortController();
-    const waiting = session(hangs, { env: { OCTOCODE_MCP_WAIT_SECONDS: '30' } });
+    const waiting = session(hangs, { connectWaitMs: 30_000 });
     await waiting.mcp.start(waiting.ctx);
     const pending = waiting.mcp.ready({ ...waiting.ctx, signal: aborted.signal } as never);
     aborted.abort();
@@ -403,8 +413,9 @@ describe('Octocode tool results and rendering', () => {
   const binding = { prefix: 'mcp__octocode__', namespace: { name: 'mcp__octocode' }, call: async () => ({ content: [{ type: 'text' as const, text: 'ok' }] }) };
 
   it('gives a page over 20 KB to the model whole: no cut, no marker, non-ASCII intact', async () => {
-    const page = `${'- row: héllo wörld — 日本語\n'.repeat(2_000)}  next:\n    continueChars: { charOffset: 20000 }\n${'- last row ✓\n'.repeat(500)}`;
+    const page = `${'- row: héllo wörld — 日本語\n'.repeat(1_100)}  next:\n    continueChars: { charOffset: 20000 }\n${'- last row ✓\n'.repeat(300)}`;
     expect(Buffer.byteLength(page)).toBeGreaterThan(40 * 1024);
+    expect(Buffer.byteLength(page)).toBeLessThan(TEXT_MAX_BYTES);
     const result = await toToolResult('localFetch', { content: [{ type: 'text', text: page }, { type: 'image', data: 'aW1n', mimeType: 'image/png' }] }, false);
     expect(result.content).toEqual([{ type: 'text', text: page }, { type: 'image', data: 'aW1n', mimeType: 'image/png' }]);
     expect(result).not.toHaveProperty('structuredContent');
@@ -417,7 +428,7 @@ describe('Octocode tool results and rendering', () => {
     const bigImage = 'A'.repeat(700_000);
     const result = await toToolResult('localSearch', { content: [{ type: 'text', text: huge }, { type: 'image', data: bigImage, mimeType: 'image/png' }, { type: 'image', data: 'aW1n', mimeType: 'image/png' }] }, false);
     const [text, dropped, kept] = result.content as Array<{ type: string; text?: string; data?: string }>;
-    expect(Buffer.byteLength(text!.text!)).toBeLessThan(210_000);
+    expect(Buffer.byteLength(text!.text!)).toBeLessThanOrEqual(TEXT_MAX_BYTES);
     expect(text!.text).toContain('tail line');
     const textFile = /Full output: (\S+?); search/.exec(text!.text!)?.[1];
     expect(fs.readFileSync(textFile!.replace(/^~/, os.homedir()), 'utf8')).toBe(huge);
@@ -450,6 +461,24 @@ describe('Octocode tool results and rendering', () => {
     expect(out.content).toEqual([{ type: 'text', text: 'ok' }]);
   });
 
+  it('resizes an oversized image to the active model\'s image limit and keeps the coordinate note', async () => {
+    const original = noisyPng(512);
+    const image = { type: 'image' as const, data: original.toString('base64'), mimeType: 'image/png' };
+    const withImage = { ...binding, call: async () => ({ content: [image] }) };
+    const run = async (model: unknown) => {
+      const out = (await octocodeToolDefinition(tool, withImage).execute('id', {}, undefined, undefined, { model } as never)) as { content: Array<{ type: string; text?: string; data?: string }> };
+      return { shown: out.content.find((part) => part.type === 'image')!, note: out.content.find((part) => part.type === 'text')!.text! };
+    };
+    const small = await run({ inputLimits: { images: { resize: { maxWidth: 120, maxHeight: 90 } } } });
+    expect(pixelSize(small.shown.data!)).toEqual({ width: 90, height: 90 });
+    expect(small.note).toContain('original 512x512, displayed at 90x90');
+    expect(fs.readFileSync(/Original saved to (\S+?\.png)\./.exec(small.note)![1]!)).toEqual(original);
+    // A model without image metadata gets the default 1568 px limit, which this image already fits: only the byte budget applies.
+    const unknown = await run(undefined);
+    expect(pixelSize(unknown.shown.data!)).toEqual({ width: 512, height: 512 });
+    expect((await toToolResult('t', { content: [image] }, false, { maxWidth: 60, maxHeight: 60 })).content.map((part) => part.type)).toEqual(['image', 'text']);
+  }, 30_000);
+
   it('renders a call by what it looks for and a result as a compact block', () => {
     const definition = octocodeToolDefinition(tool, binding);
     const context = (extra: object = {}) => ({ lastComponent: undefined, state: {}, args: {}, toolCallId: 'c', invalidate: () => undefined, cwd: '/w', executionStarted: true, argsComplete: true, isPartial: false, expanded: false, showImages: false, isError: false, ...extra }) as never;
@@ -468,14 +497,89 @@ describe('Octocode tool results and rendering', () => {
   });
 });
 
+describe('Octocode result size budgets', () => {
+  const fileOf = (shown: string) => fs.readFileSync(/Full output: (\S+?); search/.exec(shown)![1]!.replace(/^~/, os.homedir()), 'utf8');
+  /** A page like the server's: rows, then the `next` continuation at the very end. */
+  const page = (bytes: number, mark: string) => `${'- row: some repository text\n'.repeat(Math.ceil(bytes / 28))}next:\n  continueChars: { charOffset: ${mark} }\n`;
+  const shown = (result: Awaited<ReturnType<typeof toToolResult>>) => (result.content[0] as { text: string }).text;
+
+  it('keeps the cap near 50,000 characters: above the server\'s own page of 50,000 characters plus its header, below 100 KB', () => {
+    expect(TEXT_MAX_BYTES).toBeGreaterThan(50_100);
+    expect(TEXT_MAX_BYTES).toBeLessThanOrEqual(64_000);
+  });
+
+  it('passes a server page of 50,052 bytes (the largest measured) whole', async () => {
+    const full = `${'x'.repeat(50_000)}\n${'y'.repeat(51)}`;
+    expect(Buffer.byteLength(full)).toBe(50_052);
+    expect(shown(await toToolResult('localFetch', { content: [{ type: 'text', text: full }] }, false))).toBe(full);
+  });
+
+  it('spills a part over the cap whole: the preview keeps the tail where `next` lives and names the file holding all of it', async () => {
+    const huge = page(120_000, '777');
+    const result = await toToolResult('localSearch', { content: [{ type: 'text', text: huge }] }, false);
+    const text = shown(result);
+    expect(Buffer.byteLength(text)).toBeLessThanOrEqual(TEXT_MAX_BYTES);
+    expect(text).toContain('continueChars: { charOffset: 777 }');
+    expect(text).toMatch(/\[… \d+ lines omitted …\]/);
+    expect(fileOf(text)).toBe(huge);
+  });
+
+  it('counts the results of one turn and spills what passes the budget, each whole to its own file', async () => {
+    const budget = new TurnBudget();
+    const pages = Array.from({ length: 6 }, (_, i) => page(TEXT_MAX_BYTES - 100, String(i)));
+    const results = [];
+    for (const text of pages) results.push(shown(await toToolResult('localFetch', { content: [{ type: 'text', text }] }, false, undefined, budget)));
+    // Whole while the turn is under budget: three results fit in 200,000 characters.
+    expect(results.slice(0, 3)).toEqual(pages.slice(0, 3));
+    // The fourth is cut to what is left; the later ones to a short preview. All keep the tail and name a file with the whole text.
+    for (const [i, text] of results.slice(3).entries()) {
+      expect(text).toContain(`continueChars: { charOffset: ${i + 3} }`);
+      expect(fileOf(text)).toBe(pages[i + 3]);
+    }
+    const sizes = results.map((text) => text.length);
+    expect(sizes.slice(0, 4).reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(TURN_MAX_CHARS + 100);
+    expect(sizes[4]!).toBeLessThan(8_000);
+    expect(sizes[5]!).toBeLessThan(8_000);
+  });
+
+  it('starts a new turn with the whole budget, and counts only what the model gets', async () => {
+    const budget = new TurnBudget();
+    for (let i = 0; i < 5; i++) await toToolResult('localFetch', { content: [{ type: 'text', text: page(TEXT_MAX_BYTES - 100, String(i)) }] }, false, undefined, budget);
+    expect(budget.limit()).toBeLessThan(8_000);
+    budget.reset();
+    expect(budget.limit()).toBe(TEXT_MAX_BYTES);
+    const small = new TurnBudget();
+    for (let i = 0; i < 100; i++) await toToolResult('t', { content: [{ type: 'text', text: 'x'.repeat(1_000) }] }, false, undefined, small);
+    expect(small.limit()).toBe(TEXT_MAX_BYTES);
+  });
+
+  it('resets the turn budget when Pi starts a turn', async () => {
+    const fake = fakePi();
+    const mcp = registerOctocodeMcp(fake.pi);
+    mcp.turn.charge(TURN_MAX_CHARS);
+    expect(mcp.turn.limit()).toBeLessThan(8_000);
+    await fake.fire('turn_start', { type: 'turn_start' }, fakeCtx({ cwd: tmp() }));
+    expect(mcp.turn.limit()).toBe(TEXT_MAX_BYTES);
+  });
+});
+
 describe('Octocode result sanitizing', () => {
-  it('sanitizes tool results: text parts and structured content, clean ones untouched', async () => {
+  it('shows control and invisible characters as escapes in tool results: text parts and structured content, clean ones untouched', async () => {
     const dirty = 'a\u202eb\u{e0041}\u{e0042}c\u001b]0;title\u0007d\u001b[31me\u0000f';
     const result = await toToolResult('localSearch', { content: [{ type: 'text', text: dirty }, { type: 'image', data: 'x', mimeType: 'image/png' }], structuredContent: { files: [{ path: 'p', text: dirty, n: 1 }] } }, true);
-    expect(result.content).toEqual([{ type: 'text', text: 'abcdef' }, { type: 'image', data: 'x', mimeType: 'image/png' }]);
-    expect(result.structuredContent).toEqual({ files: [{ path: 'p', text: 'abcdef', n: 1 }] });
+    const shown = 'a\\u{202e}b\\u{e0041}\\u{e0042}c\\u{1b}]0;title\\u{7}d\\u{1b}[31me\\u{0}f';
+    expect(result.content).toEqual([{ type: 'text', text: shown }, { type: 'image', data: 'x', mimeType: 'image/png' }]);
+    expect(result.structuredContent).toEqual({ files: [{ path: 'p', text: shown, n: 1 }] });
     const clean = { a: ['x', { b: 'tab\there\n' }], n: 1 };
     expect(sanitizeJson(clean)).toBe(clean);
-    expect(sanitizeJson([dirty, 1, null])).toEqual(['abcdef', 1, null]);
+    expect(sanitizeJson([dirty, 1, null])).toEqual([shown, 1, null]);
+  });
+
+  it('keeps what a file holds visible to the model: ZWJ, BOM, bidi, tag characters and CRLF', async () => {
+    const text = '1\tok = "a\u200db"\r\n2\tBOM\ufeffmid\r\n3\tzero\u200bwidth \u202eevil\u202c\n4\ttag\u{e0041}\rend';
+    const result = await toToolResult('localFetch', { content: [{ type: 'text', text }] }, false);
+    expect(result.content).toEqual([{ type: 'text', text: '1\tok = "a\\u{200d}b"\\r\n2\tBOM\\u{feff}mid\\r\n3\tzero\\u{200b}width \\u{202e}evil\\u{202c}\n4\ttag\\u{e0041}\\rend' }]);
+    // Nothing raw that steers a terminal is left.
+    expect(JSON.stringify(result.content)).not.toMatch(/[\u0000-\u0008\u000b-\u001f\u202a-\u202e\u200b-\u200d\ufeff]/u);
   });
 });

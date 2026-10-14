@@ -58,6 +58,7 @@ fn bench_structural_search(c: &mut Criterion) {
                     let result = structural_search_detailed(
                         black_box(source.as_str()),
                         black_box("service.ts"),
+                        None,
                         black_box(Some(pattern)),
                         black_box(None),
                     )

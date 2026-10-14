@@ -1,14 +1,121 @@
 //! Content identity: the canonical lowercase-hex SHA-256 digest (64 chars)
 //! that graph identities and cache keys are built from.
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 pub fn sha256(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
 }
 
+/// Copy `reader` into `writer` in fixed-size blocks, returning the byte count
+/// and the [`sha256`] of exactly the bytes copied, so a large file is hashed
+/// without being held in memory.
+pub fn copy_hashed(
+    mut reader: impl std::io::Read,
+    mut writer: impl std::io::Write,
+) -> std::io::Result<(u64, String)> {
+    let mut hasher = Sha256::new();
+    let mut block = vec![0_u8; 64 * 1024];
+    let mut len = 0_u64;
+    loop {
+        let read = match reader.read(&mut block) {
+            Ok(0) => break,
+            Ok(read) => read,
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) => return Err(error),
+        };
+        hasher.update(&block[..read]);
+        writer.write_all(&block[..read])?;
+        len += read as u64;
+    }
+    Ok((len, hex::encode(hasher.finalize())))
+}
+
+/// Keys sorted recursively, explicit nulls kept. For configuration a server
+/// reads, where `null` is a value.
+#[must_use]
+pub fn canonical_json_keep_nulls(value: Value) -> Value {
+    match value {
+        Value::Array(items) => {
+            Value::Array(items.into_iter().map(canonical_json_keep_nulls).collect())
+        }
+        Value::Object(map) => {
+            let sorted = map
+                .into_iter()
+                .map(|(key, value)| (key, canonical_json_keep_nulls(value)))
+                .collect::<std::collections::BTreeMap<_, _>>();
+            let mut canonical = serde_json::Map::new();
+            canonical.extend(sorted);
+            Value::Object(canonical)
+        }
+        scalar => scalar,
+    }
+}
+
+/// Keys sorted recursively and null object members dropped, so equal
+/// identities serialize to equal bytes.
+#[must_use]
+pub fn canonicalize_dropping_nulls(value: Value) -> Value {
+    match value {
+        Value::Object(map) => {
+            let mut entries = map
+                .into_iter()
+                .filter(|(_, v)| !v.is_null())
+                .collect::<Vec<_>>();
+            entries.sort_by(|a, b| a.0.cmp(&b.0));
+            Value::Object(
+                entries
+                    .into_iter()
+                    .map(|(key, value)| (key, canonicalize_dropping_nulls(value)))
+                    .collect(),
+            )
+        }
+        Value::Array(items) => {
+            Value::Array(items.into_iter().map(canonicalize_dropping_nulls).collect())
+        }
+        value => value,
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::sha256;
+    use super::{canonical_json_keep_nulls, canonicalize_dropping_nulls, sha256};
+    use serde_json::json;
+
+    #[test]
+    fn copy_hashed_reports_what_it_wrote() {
+        let mut out = Vec::new();
+        let (len, digest) = super::copy_hashed(&b"abc"[..], &mut out).expect("copy");
+        assert_eq!((len, out.as_slice()), (3, &b"abc"[..]));
+        assert_eq!(digest, sha256(b"abc"));
+        let (len, digest) = super::copy_hashed(&b""[..], std::io::sink()).expect("empty");
+        assert_eq!((len, digest), (0, sha256(b"")));
+    }
+
+    #[test]
+    fn keep_nulls_sorts_keys_and_keeps_explicit_nulls() {
+        let value = canonical_json_keep_nulls(json!({"b": null, "a": {"y": 1, "x": [null]}}));
+        assert_eq!(
+            serde_json::to_string(&value).unwrap(),
+            r#"{"a":{"x":[null],"y":1},"b":null}"#
+        );
+    }
+
+    #[test]
+    fn dropping_nulls_makes_equal_identities_serialize_equally() {
+        let a =
+            canonicalize_dropping_nulls(json!({"b": 1, "a": {"y": [{"q": 1, "p": null}], "x": 2}}));
+        let b =
+            canonicalize_dropping_nulls(json!({"a": {"x": 2, "y": [{"q": 1}]}, "b": 1, "c": null}));
+        assert_eq!(
+            serde_json::to_vec(&a).unwrap(),
+            serde_json::to_vec(&b).unwrap()
+        );
+        assert_eq!(
+            serde_json::to_string(&a).unwrap(),
+            r#"{"a":{"x":2,"y":[{"q":1}]},"b":1}"#
+        );
+    }
 
     #[test]
     fn sha256_matches_known_vectors() {

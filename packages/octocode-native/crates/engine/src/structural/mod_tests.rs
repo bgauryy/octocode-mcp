@@ -11,7 +11,8 @@ fn public_structural_errors_retain_native_codes() {
             Some("kind: not_a_real_kind"),
             "structural.query.compileFailed",
         ),
-        (None, Some("kind: ["), "structural.query.compileFailed"),
+        (None, Some("kind: ["), "structural.rule.invalid"),
+        (None, Some("kindx: call"), "structural.rule.invalid"),
         (None, None, "structural.query.invalid"),
     ] {
         let error = search("fn main() {}", "rs", pattern, rule)
@@ -30,6 +31,34 @@ fn public_structural_errors_retain_native_codes() {
         .expect("typed failure");
     assert_eq!(result.status, "parserFailed");
     assert!(diagnostic_codes(&result).contains(&"structural.query.compileFailed"));
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// A rule that does not parse as a rule (malformed YAML, an unknown key, no
+/// matcher, a bad regex) is `structural.rule.invalid`, apart from a rule or
+/// pattern this grammar cannot compile (`structural.query.compileFailed`),
+/// in a single-content search and in a file scan alike.
+#[test]
+fn rule_parse_errors_have_their_own_code() {
+    let root = temp_root("rule_parse_error_code");
+    fs::write(root.join("fixture.rs"), "fn main() {}").unwrap();
+    for (rule, expected) in [
+        ("kind: [", "structural.rule.invalid"),
+        ("kindx: function_item", "structural.rule.invalid"),
+        ("has:\n  field: name\n", "structural.rule.invalid"),
+        ("stopBy: end", "structural.rule.invalid"),
+        ("regex: '('", "structural.rule.invalid"),
+        ("kind: not_a_real_kind", "structural.query.compileFailed"),
+        ("pattern: 'fn ???'", "structural.query.compileFailed"),
+    ] {
+        let single = search_detailed("fn main() {}", "fixture.rs", "rs", None, Some(rule));
+        assert_eq!(single.status, "parserFailed", "{rule}");
+        assert_eq!(single.diagnostics.len(), 1, "{rule}");
+        assert_eq!(single.diagnostics[0].code, expected, "{rule}");
+        let scan = search_files_detailed(review_file_options(&root, rule, 10)).expect("scan");
+        assert_eq!(scan.status, "parserFailed", "{rule}");
+        assert!(diagnostic_codes(&scan).contains(&expected), "{rule}");
+    }
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -110,8 +139,7 @@ fn structural_review_rule_prefilter_preserves_directory_recall() {
             include: None,
             exclude: None,
             exclude_dir: None,
-            hidden: None,
-            no_ignore: None,
+            ignore: crate::search::walk::IgnorePolicy::default(),
             max_depth: None,
             max_files: None,
             skip_files: None,
@@ -341,8 +369,7 @@ fn search_files_finds_matches_and_prefilters_non_matching_files() {
         include: None,
         exclude_dir: None,
         exclude: None,
-        hidden: None,
-        no_ignore: None,
+        ignore: crate::search::walk::IgnorePolicy::default(),
         max_depth: None,
         max_files: Some(10),
         skip_files: None,
@@ -379,8 +406,7 @@ fn search_files_errors_on_nonexistent_root_for_every_prefilter_branch() {
             include: None,
             exclude_dir: None,
             exclude: None,
-            hidden: None,
-            no_ignore: None,
+            ignore: crate::search::walk::IgnorePolicy::default(),
             max_depth: None,
             max_files: Some(10),
             skip_files: None,
@@ -392,7 +418,7 @@ fn search_files_errors_on_nonexistent_root_for_every_prefilter_branch() {
                 ok.total_matches
             ),
             Err(err) => assert!(
-                err.contains("Cannot access structural search path"),
+                err.reason.contains("Cannot access structural search path"),
                 "unexpected error text: {err}"
             ),
         }
@@ -415,8 +441,7 @@ fn search_files_respects_excluded_directories_and_large_file_limit() {
         include: Some(vec!["*.ts".to_owned()]),
         exclude_dir: Some(vec!["node_modules".to_owned()]),
         exclude: None,
-        hidden: None,
-        no_ignore: None,
+        ignore: crate::search::walk::IgnorePolicy::default(),
         max_depth: None,
         max_files: Some(10),
         skip_files: None,
@@ -445,8 +470,7 @@ fn search_files_reports_non_utf8_and_oversized_sources_per_file() {
         include: None,
         exclude_dir: None,
         exclude: None,
-        hidden: None,
-        no_ignore: None,
+        ignore: crate::search::walk::IgnorePolicy::default(),
         max_depth: None,
         max_files: Some(10),
         skip_files: None,
@@ -505,8 +529,7 @@ fn search_files_accepts_single_file_root() {
         include: None,
         exclude_dir: None,
         exclude: None,
-        hidden: None,
-        no_ignore: None,
+        ignore: crate::search::walk::IgnorePolicy::default(),
         max_depth: None,
         max_files: None,
         skip_files: None,
@@ -593,8 +616,7 @@ fn detailed_file_search_explains_prefilter_and_unsupported_files() {
         include: None,
         exclude_dir: None,
         exclude: None,
-        hidden: None,
-        no_ignore: None,
+        ignore: crate::search::walk::IgnorePolicy::default(),
         max_depth: None,
         max_files: Some(10),
         skip_files: None,
@@ -702,7 +724,7 @@ fn search_detailed_reports_oversize_as_truncated() {
         .find(|d| d.code == "structural.content.tooLarge")
         .expect("a tooLarge diagnostic must explain the cap");
     assert!(diag.message.contains(&CAP.to_string()));
-    assert!(diag.recovery.is_some());
+    assert_eq!(diag.recovery, None, "the runtime words it by code");
 }
 
 #[test]
@@ -835,8 +857,7 @@ fn search_files_supports_recursive_glob_includes() {
         include: Some(vec!["src/**/*.ts".to_owned()]),
         exclude_dir: None,
         exclude: None,
-        hidden: None,
-        no_ignore: None,
+        ignore: crate::search::walk::IgnorePolicy::default(),
         max_depth: None,
         max_files: Some(50),
         skip_files: None,
@@ -872,8 +893,7 @@ fn search_files_honors_dot_ignore_files() {
         include: None,
         exclude_dir: None,
         exclude: None,
-        hidden: None,
-        no_ignore: None,
+        ignore: crate::search::walk::IgnorePolicy::default(),
         max_depth: None,
         max_files: Some(50),
         skip_files: None,
@@ -903,8 +923,7 @@ fn search_files_prefilters_rule_by_inner_pattern() {
         include: None,
         exclude_dir: None,
         exclude: None,
-        hidden: None,
-        no_ignore: None,
+        ignore: crate::search::walk::IgnorePolicy::default(),
         max_depth: None,
         max_files: Some(50),
         skip_files: None,
@@ -932,8 +951,7 @@ fn search_files_operator_only_pattern_parses_every_candidate() {
         include: None,
         exclude_dir: None,
         exclude: None,
-        hidden: None,
-        no_ignore: None,
+        ignore: crate::search::walk::IgnorePolicy::default(),
         max_depth: None,
         max_files: Some(50),
         skip_files: None,
@@ -961,8 +979,7 @@ fn operator_spacing_does_not_split_directory_and_file_results() {
             include: None,
             exclude_dir: None,
             exclude: None,
-            hidden: None,
-            no_ignore: None,
+            ignore: crate::search::walk::IgnorePolicy::default(),
             max_depth: None,
             max_files: Some(50),
             skip_files: None,
@@ -1036,14 +1053,14 @@ fn structural_files_honor_scope_options() {
         // Default (hidden:None) ignores dot-files.
         (
             "hidden:Some(true) includes .hidden.ts",
-            |o| o.hidden = Some(true),
+            |o| o.ignore.include_hidden = true,
             &[".hidden.ts"],
             &[],
         ),
         // .gitignore excludes gitignored.ts.
         (
             "no_ignore:Some(true) includes the .gitignored file",
-            |o| o.no_ignore = Some(true),
+            |o| o.ignore.include_ignored = true,
             &["gitignored.ts"],
             &[],
         ),
@@ -1065,8 +1082,7 @@ fn structural_files_honor_scope_options() {
             include: None,
             exclude: None,
             exclude_dir: None,
-            hidden: None,
-            no_ignore: None,
+            ignore: crate::search::walk::IgnorePolicy::default(),
             max_depth: None,
             max_files: Some(50),
             skip_files: None,
@@ -1104,8 +1120,7 @@ fn structural_anchor_prefilter_prunes_beyond_max_depth_before_search() {
         include: None,
         exclude_dir: None,
         exclude: None,
-        hidden: None,
-        no_ignore: None,
+        ignore: crate::search::walk::IgnorePolicy::default(),
         // Structural native depth counts the root as 0 and root files as 1.
         max_depth: Some(1),
         max_files: Some(10),
@@ -1141,8 +1156,7 @@ fn search_files_prefilter_read_feeds_the_parse_and_keeps_skip_reasons() {
         include: None,
         exclude_dir: None,
         exclude: None,
-        hidden: None,
-        no_ignore: None,
+        ignore: crate::search::walk::IgnorePolicy::default(),
         max_depth: None,
         max_files: Some(10),
         skip_files: None,
@@ -1212,8 +1226,7 @@ fn search_files_separates_unsupported_from_prefilter_skips() {
         include: None,
         exclude_dir: None,
         exclude: None,
-        hidden: None,
-        no_ignore: None,
+        ignore: crate::search::walk::IgnorePolicy::default(),
         max_depth: None,
         max_files: Some(10),
         skip_files: None,
@@ -1292,8 +1305,7 @@ fn review_file_options(
         include: None,
         exclude: None,
         exclude_dir: None,
-        hidden: None,
-        no_ignore: None,
+        ignore: crate::search::walk::IgnorePolicy::default(),
         max_depth: Some(1),
         max_files: Some(limit),
         skip_files: None,
@@ -1481,8 +1493,7 @@ fn scan_options(root: &std::path::Path, skip: u32) -> StructuralSearchFilesOptio
         include: None,
         exclude: None,
         exclude_dir: None,
-        hidden: None,
-        no_ignore: None,
+        ignore: crate::search::walk::IgnorePolicy::default(),
         max_depth: None,
         max_files: None,
         skip_files: Some(skip),
@@ -1522,8 +1533,9 @@ fn a_scan_past_its_time_budget_resumes_exactly_once() {
         calls += 1;
         let result = files::search_files_with_budget(
             scan_options(&root, skip),
-            &|_| Ok(true),
+            &|_| true,
             &|_| "ts".to_owned(),
+            &|| false,
             Some(std::time::Duration::ZERO),
         )
         .expect("scan");

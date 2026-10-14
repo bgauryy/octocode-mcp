@@ -4,12 +4,12 @@ import { formatDuration } from '../shared/format.js';
 import { resultBlock } from '../shared/render.js';
 import { say, type Subcommands } from '../shared/commands.js';
 import { HOOKS_ENV, envFlag } from '../shared/env.js';
-import { sanitizeTerminalText } from '../shared/sanitize.js';
+import { redactSecrets, sanitizeTerminalText } from '../shared/sanitize.js';
 import { configFileLines, repoKey, tildePath } from '../shared/home.js';
 import { projectTrust } from '../shared/trust.js';
-import { clipText, contentText, errorMessage, isRecord } from '../shared/util.js';
+import { clipText, contentText, errorMessage, firstLine, isRecord } from '../shared/util.js';
 import { commandsFor, emptyHooks, HOOK_EVENTS, hookCalls, hookFiles, loadHooks, type HookCommand, type HookConfig, type HookEvent } from './config.js';
-import { capContext, interpret, runHook, type HookVerdict } from './runner.js';
+import { capContext, failureOf, interpret, runHook, type HookVerdict } from './runner.js';
 
 /**
  * Optional adapter for Claude Code / Codex command hooks, adapted from the native host's hook dispatcher:
@@ -30,6 +30,39 @@ const STOP_CONTINUE_CAP = 8;
 /** A hook run this slow is reported once: PreToolUse hooks hold back every call of the batch. */
 const SLOW_HOOK_MS = 5_000;
 
+/**
+ * Shows `label` in the footer status while `work` runs, with its elapsed time in the TUI. For hooks that run after Pi
+ * removed its working indicator (Stop runs after `agent_end`): without it a slow hook looks like a finished, stuck run.
+ */
+async function withStatus<T>(ctx: ExtensionContext, label: string, work: () => Promise<T>): Promise<T> {
+  if (!ctx.hasUI) return work();
+  const started = Date.now();
+  const show = () => {
+    const ms = Date.now() - started;
+    ctx.ui.setStatus(STATUS_KEY, `${label}${ms >= 1_000 ? ` · ${formatDuration(ms)}` : ''}`);
+  };
+  show();
+  // RPC clients get the label once; only the TUI repaints the time.
+  const timer = ctx.mode === 'tui' ? setInterval(show, 1_000) : undefined;
+  timer?.unref?.();
+  try {
+    return await work();
+  } finally {
+    if (timer) clearInterval(timer);
+    try {
+      ctx.ui.setStatus(STATUS_KEY, undefined);
+    } catch {
+      // The session was replaced.
+    }
+  }
+}
+
+/** `Stop hook: <command>` (`+N` for the others): one line, its secrets redacted. */
+function hooksLabel(event: HookEvent, hooks: HookCommand[]): string {
+  const command = clipText(firstLine(redactSecrets(sanitizeTerminalText(hooks[0]?.command ?? ''))), 48);
+  return `${event} hook: ${command}${hooks.length > 1 ? ` +${hooks.length - 1}` : ''}`;
+}
+
 /** Time each hook command took, for `/octocode hooks`. */
 interface HookTiming {
   runs: number;
@@ -38,7 +71,7 @@ interface HookTiming {
 }
 
 /** What a Notification hook receives besides the common fields (Claude Code's shape). */
-export interface HookNotice {
+interface HookNotice {
   message: string;
   title?: string;
   /** Claude Code's `notification_type`: `permission_prompt`, `elicitation_dialog` or `idle_prompt`. */
@@ -74,7 +107,7 @@ function hooksReport(enabled: boolean, config: HookConfig, errors: string[], cwd
     config[event].flatMap((group) =>
       group.hooks.map((hook) => {
         const command = clipText(hook.command, 80);
-        return `  ${event} [${group.matcher || '*'}] ${command} (${tildePath(hook.source, home)})${timingText(timings.get(`${event}\0${hook.command}`))}`;
+        return `  ${event} [${group.matcher || '*'}] ${command}${hook.failClosed ? ' [failClosed]' : ''} (${tildePath(hook.source, home)})${timingText(timings.get(`${event}\0${hook.command}`))}`;
       }),
     ),
   );
@@ -88,7 +121,10 @@ function hooksReport(enabled: boolean, config: HookConfig, errors: string[], cwd
   ].join('\n');
 }
 
-export function registerHooks(pi: ExtensionAPI, env: NodeJS.ProcessEnv = process.env, home?: string): HooksView {
+/** Records a `PreToolUse` hook that gave no answer (`allowed`: the call went ahead) in the permission audit. */
+type HookFailureSink = (what: readonly string[], note: string, allowed: boolean) => void;
+
+export function registerHooks(pi: ExtensionAPI, env: NodeJS.ProcessEnv = process.env, home?: string, onFailure?: HookFailureSink): HooksView {
   let config: HookConfig = emptyHooks();
   let errors: string[] = [];
   const enabled = hooksEnabled(env);
@@ -131,6 +167,23 @@ export function registerHooks(pi: ExtensionAPI, env: NodeJS.ProcessEnv = process
     return result;
   };
 
+  /** Hooks already warned about for a failure, so each is shown once per Pi process (every failure is audited). */
+  const failureWarned = new Set<string>();
+  /**
+   * A `PreToolUse` hook gave no answer. Hooks fail open, so the call goes ahead unless the hook is `failClosed`; either
+   * way the user sees a warning (once per hook, with a UI) and the audit records it. Returns the block reason when failing closed.
+   */
+  const hookFailed = (ctx: ExtensionContext, hook: HookCommand, failure: string, tool: string): string | undefined => {
+    const closed = hook.failClosed === true;
+    const command = clipText(firstLine(redactSecrets(sanitizeTerminalText(hook.command))), 80);
+    onFailure?.([`PreToolUse hook ${failure}: ${command}`, `tool: ${tool}`], closed ? 'hook failed; failClosed denied the call' : 'hook failed; hooks fail open, the call was allowed', !closed);
+    if (ctx.hasUI && !failureWarned.has(hook.command)) {
+      failureWarned.add(hook.command);
+      ctx.ui.notify(`PreToolUse hook ${failure}: ${command}. ${closed ? 'The call was denied (failClosed).' : 'The call was allowed (hooks fail open); set "failClosed": true on the hook to deny instead.'}`, 'warning');
+    }
+    return closed ? `PreToolUse hook ${failure} and is set to failClosed: ${command}` : undefined;
+  };
+
   /**
    * Runs the hooks matching `names` in parallel, as Claude Code does; any block blocks, and verdicts combine in
    * config order. Most tool calls match no hook, so the input (which may join a large tool result) is built only when
@@ -140,9 +193,17 @@ export function registerHooks(pi: ExtensionAPI, env: NodeJS.ProcessEnv = process
     const hooks = commandsFor(config, event, names);
     if (hooks.length === 0) return {};
     root ??= repoKey(ctx.cwd).root;
-    const payload = { session_id: ctx.sessionManager.getSessionId(), transcript_path: ctx.sessionManager.getSessionFile() ?? '', cwd: ctx.cwd, hook_event_name: event, ...input() };
+    const payload: Record<string, unknown> = { session_id: ctx.sessionManager.getSessionId(), transcript_path: ctx.sessionManager.getSessionFile() ?? '', cwd: ctx.cwd, hook_event_name: event, ...input() };
     const env = { CLAUDE_PROJECT_DIR: root };
-    const verdicts = await Promise.all(hooks.map(async (hook) => interpret(event, await timeHook(ctx, event, hook, () => runHook(hook, payload, ctx.cwd, env, signal)))));
+    const verdicts = await Promise.all(
+      hooks.map(async (hook) => {
+        const run = await timeHook(ctx, event, hook, () => runHook(hook, payload, ctx.cwd, env, signal));
+        const verdict = interpret(event, run);
+        const failure = event === 'PreToolUse' ? failureOf(hook, run, signal?.aborted === true) : undefined;
+        const block = failure ? hookFailed(ctx, hook, failure, String(payload['tool_name'] ?? '')) : undefined;
+        return block ? { ...verdict, block } : verdict;
+      }),
+    );
     const block = verdicts.map((verdict) => verdict.block).filter(Boolean).join('\n\n');
     const context = verdicts.map((verdict) => verdict.context).filter(Boolean).join('\n\n');
     const ask = verdicts.map((verdict) => verdict.ask).filter(Boolean).join('\n\n');
@@ -231,9 +292,11 @@ export function registerHooks(pi: ExtensionAPI, env: NodeJS.ProcessEnv = process
     if (!event.parentToolCallId) stopContinues = 0;
   });
   pi.on('agent_before_settle', async (event, ctx) => {
-    if (event.outcome !== 'completed' || commandsFor(config, 'Stop', []).length === 0) return undefined;
+    const stops = commandsFor(config, 'Stop', []);
+    if (event.outcome !== 'completed' || stops.length === 0) return undefined;
     const last = [...event.context.llmMessages].reverse().find((message) => message.role === 'assistant');
-    const verdict = await dispatch(ctx, 'Stop', [], () => ({ stop_hook_active: stopContinues > 0, last_assistant_message: last ? contentText(last.content) : '' }));
+    // Pi removed its working indicator at `agent_end`; the footer status shows the hooks still running.
+    const verdict = await withStatus(ctx, hooksLabel('Stop', stops), () => dispatch(ctx, 'Stop', [], () => ({ stop_hook_active: stopContinues > 0, last_assistant_message: last ? contentText(last.content) : '' })));
     if (!verdict.block || stopContinues >= STOP_CONTINUE_CAP) return undefined;
     stopContinues += 1;
     // Pi replaces the boundary's entries with a handler's: keep what earlier handlers proposed.

@@ -2,8 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
-import { DEFAULT_BASH_TIMEOUT, bashTimeoutLimit, effectiveTimeout, registerBashTool } from '../src/files/bash.js';
+import { DEFAULT_BASH_TIMEOUT, effectiveTimeout, registerBashTool } from '../src/files/bash.js';
 import { BashJobs, jobReport, logTail, prefixed, shellSettings, type ShellSettings } from '../src/files/bash-jobs.js';
+import { RERUN_HINT } from '../src/files/render.js';
 import { Subcommands } from '../src/shared/commands.js';
 import { setCurrentSession } from '../src/shared/home.js';
 import { groupAlive, processAlive } from '../src/shared/process.js';
@@ -19,22 +20,14 @@ const until = async (check: () => boolean, ms = 5_000) => {
 };
 
 describe('bash deadline', () => {
-  it('defaults to 15 minutes, reads OCTOCODE_BASH_TIMEOUT, and ignores nonsense', () => {
+  it('honours the timeout a call asks for, longer or shorter, and fills a missing one with 15 minutes', () => {
     expect(DEFAULT_BASH_TIMEOUT).toBe(900);
-    expect(bashTimeoutLimit({})).toBe(900);
-    expect(bashTimeoutLimit({ OCTOCODE_BASH_TIMEOUT: '60' })).toBe(60);
-    expect(bashTimeoutLimit({ OCTOCODE_BASH_TIMEOUT: '0' })).toBe(900);
-    expect(bashTimeoutLimit({ OCTOCODE_BASH_TIMEOUT: '99999999' })).toBe(2_147_483);
-    expect(bashTimeoutLimit({ OCTOCODE_BASH_TIMEOUT: 'soon' })).toBe(900);
-  });
-
-  it('fills a missing timeout with the limit and only lets a call shorten it', () => {
-    expect(effectiveTimeout(undefined, 900)).toBe(900);
-    expect(effectiveTimeout(30, 900)).toBe(30);
-    expect(effectiveTimeout(5_000, 900)).toBe(900);
-    expect(effectiveTimeout(0, 900)).toBe(900);
-    expect(effectiveTimeout(-1, 900)).toBe(900);
-    expect(effectiveTimeout(Number.NaN, 900)).toBe(900);
+    expect(effectiveTimeout(undefined)).toBe(900);
+    expect(effectiveTimeout(30)).toBe(30);
+    expect(effectiveTimeout(5_000)).toBe(5_000);
+    expect(effectiveTimeout(0)).toBe(900);
+    expect(effectiveTimeout(-1)).toBe(900);
+    expect(effectiveTimeout(Number.NaN)).toBe(900);
   });
 });
 
@@ -54,7 +47,7 @@ describe('bash tool', () => {
     expect(tool.name).toBe('bash');
     expect(Object.keys(tool.parameters.properties)).toEqual(['command', 'timeout', 'background']);
     expect(tool.promptGuidelines).toEqual([]);
-    expect(tool.parameters.properties.timeout.description).toContain('foreground at most 900s');
+    expect(tool.parameters.properties.timeout.description).toContain('foreground default 900s');
     expect(tool.parameters.properties.background.description).toContain('long builds');
     // Pi's bash output, or a background start: codemode scripts get structuredContent only when this is declared.
     const variants = tool.outputSchema.anyOf.map((variant: { properties: object }) => Object.keys(variant.properties));
@@ -141,8 +134,12 @@ describe('bash tool', () => {
   it('rotates a background job log at its cap without losing or reordering output', async () => {
     const jobs = new BashJobs(tmp());
     let exited = false;
-    const job = await jobs.start('i=0; while [ $i -lt 3000 ]; do echo "line $i padding padding padding"; i=$((i+1)); done', tmp(), undefined, () => (exited = true), { maxLogBytes: 8 * 1024 });
+    let exit: Parameters<typeof jobReport>[1] | undefined;
+    const job = await jobs.start('i=0; while [ $i -lt 3000 ]; do echo "line $i padding padding padding"; i=$((i+1)); done', tmp(), undefined, (_job, done) => ((exited = true), (exit = done)), { maxLogBytes: 8 * 1024 });
     await until(() => exited);
+    // The report to the model says the log rotated, where the older part is, and that older output than that is gone.
+    expect(exit!.logRotations).toBeGreaterThan(1);
+    expect(jobReport(job, exit!)).toContain(`log rotated at its size cap ${exit!.logRotations} times: ${job.log}.1 holds the part before this log; output before that was dropped and cannot be recovered`);
     const log = fs.readFileSync(job.log, 'utf8');
     const previous = fs.readFileSync(`${job.log}.1`, 'utf8');
     expect(Buffer.byteLength(log)).toBeLessThanOrEqual(8 * 1024);
@@ -248,7 +245,8 @@ describe('bash tool', () => {
     await commands.get('jobs')!.handler('kill nope', ctx);
     expect(ctx.ui.notes.at(-1)!.message).toMatch(/No background bash job "nope"/);
     expect(sent[0]!.message.details).toEqual({ id: 'bash-1', log: first!.log });
-    expect(sent[0]!.options).toEqual({ triggerTurn: true, deliverAs: 'followUp' });
+    // The user stopped it: the model learns of it without a turn being started for it.
+    expect(sent[0]!.options).toEqual({ triggerTurn: false, deliverAs: 'followUp' });
     await fire('session_shutdown', {}, ctx);
     await second!.done;
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -302,23 +300,30 @@ describe('bash tool', () => {
     expect(jobs.jobs.size).toBe(0);
   });
 
-  it('refuses a job past the running limit', async () => {
+  it('starts more than eight jobs at once: there is no running limit', async () => {
     const jobs = new BashJobs(tmp());
     const cwd = tmp();
-    for (let index = 0; index < 8; index++) await jobs.start('sleep 30', cwd, undefined, () => undefined);
-    await expect(jobs.start('sleep 30', cwd, undefined, () => undefined)).rejects.toThrow(/limit is 8/);
+    for (let index = 0; index < 9; index++) await jobs.start('sleep 30', cwd, undefined, () => undefined);
+    expect(jobs.jobs.size).toBe(9);
     await jobs.stopAll('session end');
     await Promise.all([...jobs.jobs.values()].map((job) => job.done));
   });
 
-  it('reports a finished job and cuts its log tail to whole lines', () => {
+  it('reports a finished job with its last lines and counts the earlier ones the log keeps', () => {
     const dir = tmp();
     const log = path.join(dir, 'job.log');
     fs.writeFileSync(log, `${'x'.repeat(5000)}\nlast line\n`);
-    expect(logTail(log)).toBe('last line\n');
-    expect(logTail(path.join(dir, 'missing.log'))).toBe('');
+    expect(logTail(log)).toEqual({ text: 'last line', earlier: 1 });
+    expect(logTail(path.join(dir, 'missing.log'))).toEqual({ text: '', earlier: 0 });
     const job = { id: 'bash-9', command: 'make', cwd: dir, pid: 1, log, startedAt: 0, done: Promise.resolve({ code: 0, signal: null, seconds: 75 }) };
-    expect(jobReport(job, { code: 0, signal: null, seconds: 75 })).toBe(`Background bash bash-9 finished after 1m15s: make\nLog: job.log\nlast line`);
+    expect(jobReport(job, { code: 0, signal: null, seconds: 75 })).toBe(`Background bash bash-9 finished after 1m15s: make\nLog: job.log\n[+1 earlier line in the log]\nlast line`);
+    // One rotation keeps the earlier output in `.1`; nothing is said to be dropped.
+    expect(jobReport(job, { code: 0, signal: null, seconds: 75, logRotations: 1 })).toBe(`Background bash bash-9 finished after 1m15s: make\nLog: job.log\nlog rotated at its size cap: job.log.1 holds the part before this log\n[+1 earlier line in the log]\nlast line`);
+    // The tail is the end of the log (not the start of its last few KB), and nothing before it goes uncounted.
+    fs.writeFileSync(log, Array.from({ length: 100 }, (_, index) => `line ${index + 1}`).join('\n'));
+    const report = jobReport(job, { code: 0, signal: null, seconds: 1 }).split('\n');
+    expect(report.slice(2, 4)).toEqual(['[+60 earlier lines in the log]', 'line 61']);
+    expect(report.at(-1)).toBe('line 100');
   });
 
   it('strips terminal escapes from the reported log tail', () => {
@@ -355,13 +360,37 @@ describe('bash rendering', () => {
     expect(rendered(tool.renderResult({ content: [{ type: 'text', text: '(no output)' }] }, { expanded: false, isPartial: false }, theme, done()))).toBe('  ⎿  exit 0 · no output');
   });
 
+  it('reads only the tail of a collapsed output, with the same counts as the whole', () => {
+    const { tool } = setup();
+    const many = Array.from({ length: 500 }, (_, index) => `line ${index + 1}`).join('\n');
+    const texts = [
+      `\n\n${many}\n\nCommand exited with code 0`,
+      `head\n\n\n${many}\n\n\n`,
+      `a\rprogress 50%\rprogress 100%\n\u2028${many}\n\u001b[31mred\u001b[0m\n   \n`,
+      `${many}\n\n[Showing lines 1-500 of 9000. Full output: /tmp/out.log]\n\nCommand exited with code 0`,
+      'x\n\n\n\ny\n\n\nz',
+    ];
+    for (const text of texts) {
+      for (const isPartial of [true, false]) {
+        const view = (expanded: boolean) => rendered(tool.renderResult({ content: [{ type: 'text', text }] }, { expanded, isPartial }, theme, done())).split('\n');
+        const collapsed = view(false);
+        const expanded = view(true);
+        expect(collapsed[0]!.replace(' (ctrl+o to expand)', '')).toBe(expanded[0]);
+        const hidden = Number(/\+(\d+) lines?/.exec(collapsed[1]!)?.[1] ?? 0);
+        const body = expanded.slice(1).filter((line) => !line.trimStart().startsWith('saved:'));
+        expect(hidden + collapsed.slice(2).length).toBe(body.length);
+        expect(collapsed.slice(-3)).toEqual(body.filter((line) => line.trim() !== '').slice(-3));
+      }
+    }
+  });
+
   it('draws failures as errors and keeps the spill path', () => {
     const { tool } = setup();
     const text = 'a\nb\n\n[Showing lines 1-2 of 900. Full output: /tmp/out.log]\n\nCommand exited with code 2';
     const lines = rendered(tool.renderResult({ content: [{ type: 'text', text }] }, { expanded: false, isPartial: false }, theme, done({ isError: true }))).split('\n');
     expect(lines).toEqual(['  ⎿  Error: exit 2 · 900 lines (ctrl+o to expand)', '     a', '     b']);
     expect(rendered(tool.renderResult({ content: [{ type: 'text', text }] }, { expanded: true, isPartial: false }, theme, done({ isError: true })))).toMatch(/\n {5}saved: \/tmp\/out\.log$/);
-    const timeout = rendered(tool.renderResult({ content: [{ type: 'text', text: 'Command timed out after 120 seconds.\nIf it needs longer, rerun it with background: true and check its log.' }] }, { expanded: false, isPartial: false }, theme, done({ isError: true })));
+    const timeout = rendered(tool.renderResult({ content: [{ type: 'text', text: `Command timed out after 120 seconds.\n${RERUN_HINT} with a longer timeout, or with background: true and check its log.` }] }, { expanded: false, isPartial: false }, theme, done({ isError: true })));
     expect(timeout).toBe('  ⎿  Error: timed out after 2m · no output');
     const killed = rendered(tool.renderResult({ content: [{ type: 'text', text: 'build line\n\nCommand terminated without an exit code' }] }, { expanded: false, isPartial: false }, theme, done({ isError: true })));
     expect(killed.split('\n')[0]).toBe('  ⎿  Error: terminated (no exit code) · 1 line');

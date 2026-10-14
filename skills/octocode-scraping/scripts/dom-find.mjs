@@ -2,7 +2,7 @@
 import { paginate } from './lib/pagination.mjs';
 import { fileURLToPath } from 'node:url';
 import { resolve, join } from 'node:path';
-import { readJson as readJsonFile, readJsonl as readJsonlFile, takeArg } from './lib/bridge.mjs';
+import { readJson as readJsonFile, readJsonl as readJsonlFile, takeArg, requireSession } from './lib/bridge.mjs';
 
 function usage(code = 2) {
   console.error('Usage: dom-find.mjs --session-dir <dir> [--kind form|button|table|meta|jsonld|canonical|code-block] [--workflow <type>] [--page-id <id>] [--query <text>] [--limit <n>] [--view <list>] [--cursor-<list> <n>]');
@@ -14,6 +14,7 @@ if (args.includes('--help') || args.includes('-h')) usage(0);
 const sessionDir = take('--session-dir');
 if (!sessionDir) usage();
 const dir = resolve(sessionDir);
+requireSession(dir);
 const kind = take('--kind');
 const workflow = take('--workflow');
 const pageId = take('--page-id');

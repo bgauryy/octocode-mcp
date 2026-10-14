@@ -239,6 +239,9 @@ fn recovery_hint(code: &str) -> Option<&'static str> {
         "editOverlap" => {
             "Innermost first: rule {pattern:P, not:{has:{pattern:P with new $VARS, stopBy:\"end\"}}}; apply, repeat. Or narrow path."
         }
+        "expectedHashSetMismatch" | "expectedHashMissing" => {
+            "Copy expectedHashes from the preview unchanged; with selectedMatchIds they must cover each selected file."
+        }
         "postconditionFailed" => {
             "remainingMatches counts only the files this apply rewrites; adjust equals or the selection, then preview again."
         }
@@ -297,7 +300,8 @@ fn execute(
         .filter(|_| query.page() > 1)
         .zip(query.snapshot())
         .and_then(|(key, pinned)| {
-            preview_memo::reuse(key, pinned, &boundary, |path| paths.permits_discovery(path))
+            let discovery = paths.discovery_walk();
+            preview_memo::reuse(key, pinned, &boundary, |path| discovery.permits(path))
         });
     let (prepared, coverage, snapshot) = match reused {
         Some(hit) => (
@@ -342,14 +346,18 @@ fn execute(
             "matchCount":0,"affectedFiles":0,"matches":[],"files":[]
         });
         attach_receipts(&mut empty, &query, &executable);
-        note_skipped_matches(
-            &mut empty,
-            &query,
-            &root,
-            &coverage,
-            cancellation,
-            &analyzer,
-        )?;
+        if let Some(unchanged) = coverage.unchanged() {
+            empty["hints"] = json!([unchanged]);
+        } else {
+            note_skipped_matches(
+                &mut empty,
+                &query,
+                &root,
+                &coverage,
+                cancellation,
+                &analyzer,
+            )?;
+        }
         empty
     } else {
         let all_matches = prepared
@@ -381,6 +389,12 @@ fn execute(
         )
     };
     drop(lock);
+    // Files the rewrite leaves unchanged are not listed beside the changed.
+    if value["status"] != "empty"
+        && let Some(unchanged) = coverage.unchanged()
+    {
+        push_warnings(&mut value, [unchanged]);
+    }
     mark_gaps(&mut value, &coverage);
     mark_mentions(&mut value, &coverage, paths);
     push_warnings(&mut value, recovery_warnings);
@@ -532,11 +546,10 @@ fn mark_mentions(value: &mut Value, coverage: &RewriteCoverage, paths: &PathPoli
     let (text, text_lines) = listing(false);
     let (code, code_lines) = listing(true);
     if code > 0 {
-        value["isPartial"] = json!(true);
-        value["partialReasons"] = json!([UNCOVERED_CODE_POSITIONS]);
-        push_warnings(
+        crate::tools::paging::mark_partial(
             value,
-            [format!(
+            UNCOVERED_CODE_POSITIONS,
+            &[format!(
                 "{code} code position(s) hold the renamed name as a whole word, but no identifier kind of the grammar matched them, so a rename leaves them: {code_lines}."
             )],
         );
@@ -562,8 +575,10 @@ fn mark_gaps(value: &mut Value, coverage: &RewriteCoverage) {
         }
         return;
     }
-    value["isPartial"] = json!(true);
     value["coverage"] = coverage.to_json();
+    for reason in coverage.reasons() {
+        crate::tools::paging::mark_partial(value, reason, &[]);
+    }
     if value["status"] != "empty" {
         value["terminalLimit"] = json!(true);
     }
@@ -628,6 +643,7 @@ fn infer_language(
 ) -> Result<String, RewriteError> {
     let required = |message: String| RewriteError::new("languageRequired", message);
     let candidates = if directory {
+        let discovery = paths.discovery_walk();
         let prune =
             crate::policy::prune::PruneMode::SyntaxVisible.directories(query.default_excludes());
         let (include, exclude) = (
@@ -637,19 +653,23 @@ fn infer_language(
         ast_rule::present_grammars(
             root,
             &prune,
-            query.include_hidden(),
-            query.include_ignored(),
+            Walk {
+                ignored: query.include_ignored(),
+                hidden: query.include_hidden(),
+                default_excludes: !prune.is_empty(),
+            },
             query.max_files(),
             crate::tools::empty_walk::Globs {
                 include: &include,
                 exclude: &exclude,
             },
-            &|path| {
-                cancellation.check()?;
-                Ok(paths.permits_discovery(path))
-            },
+            &|path| discovery.permits(path),
+            &|| cancellation.check().is_err(),
         )
-        .map_err(required)?
+        .map_err(|error| match error.kind() {
+            octocode_engine::error::ErrorKind::Cancelled => cancelled(error.reason),
+            _ => required(error.reason),
+        })?
         .into_iter()
         .collect::<Vec<_>>()
     } else {
@@ -670,11 +690,48 @@ fn infer_language(
         ast_rule::GrammarChoice::Absent => Err(required(
             "No supported grammar under path compiles this rule; set language.".to_owned(),
         )),
-        ast_rule::GrammarChoice::Several(several) => Err(required(format!(
-            "Several grammars under path compile this rule ({}); set language to one of them.",
-            several.join(", ")
-        ))),
+        ast_rule::GrammarChoice::Several(several) => {
+            let mut error = required(format!(
+                "Several grammars under path compile this rule ({}); set language to one of them.",
+                several.join(", ")
+            ));
+            error.next = Some(Box::new(
+                json!({"repair": language_repair(query, &several)}),
+            ));
+            Err(error)
+        }
     }
+}
+
+/// One repair lead that previews the query once per candidate grammar, as
+/// a batch within the input limit (the most frequent grammars lead), like
+/// astSearch's.
+fn language_repair(query: &RewriteRequest, languages: &[String]) -> Value {
+    let mut base = continuation_query(query, Path::new(&query.path()));
+    if let Some(fields) = base.as_object_mut() {
+        for key in [
+            "snapshot",
+            "expectedHashes",
+            "selectedMatchIds",
+            "postconditions",
+        ] {
+            fields.remove(key);
+        }
+    }
+    base["apply"] = json!(false);
+    base["page"] = json!(1);
+    let queries = languages
+        .iter()
+        .take(crate::tools::result::rows_per_call(ToolId::AstRewrite))
+        .map(|language| {
+            let mut row = base.clone();
+            row["language"] = json!(language);
+            row
+        })
+        .collect::<Vec<_>>();
+    crate::tools::result::Continuation::input(ToolId::AstRewrite, json!({ "queries": queries }))
+        .confidence("exact")
+        .build()
 }
 
 /// [`rule_error`] for the request's own parser.
@@ -740,6 +797,9 @@ struct RewriteCoverage {
     skipped_errored: u32,
     /// Files read and evaluated; an empty answer states it.
     files_scanned: u32,
+    /// Matched files whose rewrite reproduces the source, and their matches.
+    unchanged_files: u32,
+    unchanged_matches: u32,
     /// Whole-word mentions of a renamed symbol that no match covers.
     mentions: Arc<[Mention]>,
 }
@@ -755,6 +815,19 @@ struct Mention {
     in_code: bool,
 }
 impl RewriteCoverage {
+    /// How many matches, in how many files, reproduce their source.
+    fn unchanged(&self) -> Option<String> {
+        let plural = |count: u32, one: &str, many: &str| {
+            format!("{count} {}", if count == 1 { one } else { many })
+        };
+        (self.unchanged_matches > 0).then(|| {
+            format!(
+                "{} in {}: the rewrite leaves the source unchanged.",
+                plural(self.unchanged_matches, "match", "matches"),
+                plural(self.unchanged_files, "file", "files")
+            )
+        })
+    }
     fn has_gaps(&self) -> bool {
         self.scan_truncated
             || self.skipped_unreadable > 0
@@ -762,14 +835,22 @@ impl RewriteCoverage {
             || self.skipped_binary > 0
             || self.skipped_errored > 0
     }
+    /// `partialReasons` of the gaps, as astSearch names them.
+    fn reasons(&self) -> Vec<&'static str> {
+        let skipped = self.skipped_unreadable
+            + self.skipped_large
+            + self.skipped_binary
+            + self.skipped_errored
+            > 0;
+        [(self.scan_truncated, "maxFiles"), (skipped, "filesSkipped")]
+            .into_iter()
+            .filter_map(|(gap, reason)| gap.then_some(reason))
+            .collect()
+    }
+    /// The shared `coverage` of a scan with gaps: `partial` and its reasons
+    /// (the warning counts each skip).
     fn to_json(&self) -> Value {
-        json!({
-            "scanTruncated": self.scan_truncated,
-            "skippedUnreadable": self.skipped_unreadable,
-            "skippedLarge": self.skipped_large,
-            "skippedBinary": self.skipped_binary,
-            "skippedErrored": self.skipped_errored,
-        })
+        json!({"state":"partial","reason":self.reasons().join(", ")})
     }
     fn warning(&self) -> String {
         format!(
@@ -832,9 +913,17 @@ fn note_skipped_matches(
     let Verdict::Skipped(diagnosis) = verdict else {
         value["hints"] = json!([ast_rule::empty_match_hint(
             coverage.files_scanned,
-            query.language(),
-            query.pattern().is_some()
+            Some(query.lang()).filter(|language| !language.is_empty())
         )]);
+        // A single file's syntax tree shows the node shapes the rule names.
+        if root.is_file() && coverage.files_scanned > 0 {
+            value["next"]["viewTree"] = crate::tools::result::Continuation::new(
+                ToolId::AstSearch,
+                json!({"operation":"syntaxTree","path":root,"language":query.lang()}),
+            )
+            .confidence("medium")
+            .build();
+        }
         return Ok(());
     };
     let mut retry = continuation_query(query, Path::new(&query.path()));
@@ -875,14 +964,18 @@ fn run_scan(
             exclude_dir: Some(
                 crate::policy::prune::PruneMode::SyntaxVisible.directories(walk.default_excludes),
             ),
-            hidden: Some(walk.hidden),
-            no_ignore: Some(walk.ignored),
+            ignore: walk.policy(),
             max_depth: None,
             max_files: Some(max_files),
             max_file_bytes: Some(1_000_000),
         },
     )
-    .map_err(engine_error)?;
+    .map_err(|error| match error.kind() {
+        octocode_engine::error::ErrorKind::InvalidGlob => {
+            RewriteError::new("invalidGlob", error.reason)
+        }
+        _ => engine_error(error.reason),
+    })?;
     cancellation.check().map_err(cancelled)?;
     let mentions: Arc<[Mention]> = files
         .files
@@ -903,6 +996,7 @@ fn run_scan(
         skipped_binary: files.skipped_binary,
         skipped_errored: files.skipped_errored,
         files_scanned: files.files_scanned,
+        ..RewriteCoverage::default()
     };
 
     #[cfg(test)]
@@ -1004,9 +1098,17 @@ fn prepare(
         .terminal());
     }
     let mut files = Vec::new();
+    let mut coverage = coverage;
     let mut total_patch_bytes = 0usize;
     for (absolute, (raw, scanned_errors)) in grouped {
         let file = prepare_file(absolute, raw, scanned_errors, context)?;
+        // Matches whose replacements reproduce the source change nothing:
+        // the file is not offered for a write.
+        if file.after == file.before {
+            coverage.unchanged_files += 1;
+            coverage.unchanged_matches += u32::try_from(file.matches.len()).unwrap_or(u32::MAX);
+            continue;
+        }
         total_patch_bytes = total_patch_bytes.saturating_add(file.patch.len());
         if total_patch_bytes > context.options.max_patch_bytes {
             return Err(RewriteError::new(
@@ -1100,6 +1202,7 @@ fn prepare_file(
     })?;
     let before_hash = sha256(&before);
     let relative = portable_relative(context.boundary, &absolute)?;
+    // The engine writes a template's line breaks in the file's own ending.
     let matches = prepare_matches(&relative, &before_hash, raw)?;
     let after = apply_edits(&before, &matches)?;
     let after_text = std::str::from_utf8(&after).map_err(|_| {
@@ -1112,9 +1215,13 @@ fn prepare_file(
         Some(errors) => errors,
         None => context.analyzer.count_errors(&relative, content)?,
     };
-    let after_facts =
-        check_syntax_regression(context.analyzer, &relative, before_errors, after_text)?;
     let shown = shown_path(context.paths, &absolute);
+    let after_facts = check_syntax_regression(
+        context.analyzer,
+        (&relative, &shown),
+        before_errors,
+        after_text,
+    )?;
     let patch = create_unified_patch(patch_path(&shown, &relative), content, after_text);
     let mut matches = matches;
     for matched in &mut matches {
@@ -1256,9 +1363,10 @@ fn prepare_matches(
 /// cleanly does not mean the result is valid code; comparing ERROR/MISSING
 /// node counts keeps rewrites of already-broken files possible while blocking
 /// templates that introduce new damage.
+/// `(path, shown)`: the analyzer's key and the public spelling.
 fn check_syntax_regression(
     analyzer: &StagedAnalyzer,
-    path: &str,
+    (path, shown): (&str, &str),
     before_errors: u32,
     after: &str,
 ) -> Result<Option<StagedFacts>, RewriteError> {
@@ -1275,7 +1383,7 @@ fn check_syntax_regression(
              Fix the rewrite template before retrying.",
         )
         .detail(json!({
-            "path": path,
+            "path": shown,
             "beforeErrorNodes": before_errors,
             "afterErrorNodes": after_errors,
         })));
@@ -1354,14 +1462,21 @@ fn select(
             continue;
         }
         let after = apply_edits(&file.before, &file_matches)?;
+        if after == file.before {
+            continue;
+        }
         let before_text = std::str::from_utf8(&file.before)
             .map_err(|_| RewriteError::new("encodingUnsupported", "Invalid UTF-8 source."))?;
         let after_text = std::str::from_utf8(&after)
             .map_err(|_| RewriteError::new("sourceMismatch", "Invalid UTF-8 replacement."))?;
         // A subset of individually-clean edits can still break syntax (e.g.
         // dropping one of a paired open/close rewrite), so re-check here.
-        let after_facts =
-            check_syntax_regression(analyzer, &file.path, file.before_errors, after_text)?;
+        let after_facts = check_syntax_regression(
+            analyzer,
+            (&file.path, &file.shown),
+            file.before_errors,
+            after_text,
+        )?;
         let patch = create_unified_patch(file.patch_path(), before_text, after_text);
         total_patch_bytes = total_patch_bytes.saturating_add(patch.len());
         if total_patch_bytes > max_patch_bytes {
@@ -1449,26 +1564,39 @@ fn validate_expected_hashes(
         .map(|file| file.absolute.clone())
         .collect::<BTreeSet<_>>();
     let expected_set = expected.keys().cloned().collect::<BTreeSet<_>>();
-    if actual != expected_set {
+    // A selection rewrites a subset of the preview's files: the preview's
+    // whole set (next.apply's) covers it, each selected hash still checked.
+    let covered = if query.selected_match_ids().is_some() {
+        actual.is_subset(&expected_set)
+    } else {
+        actual == expected_set
+    };
+    if !covered {
+        let shown = |set: &BTreeSet<PathBuf>| {
+            set.iter()
+                .map(|path| shown_path(paths, path))
+                .collect::<Vec<_>>()
+        };
         return Err(RewriteError::new(
             "expectedHashSetMismatch",
-            "Apply requires exactly the affected file paths returned by the matching preview.",
+            "Apply requires expectedHashes for exactly the files the matching preview rewrites (with selectedMatchIds: at least the selected files).",
         )
-        .detail(json!({"expectedPaths":expected_set,"actualPaths":actual})));
+        .detail(json!({"expectedPaths":shown(&expected_set),"actualPaths":shown(&actual)})));
     }
     for file in files {
         let Some(hash) = expected.get(&file.absolute) else {
             return Err(RewriteError::new(
                 "expectedHashMissing",
-                "Apply requires the preview beforeHash for every affected absolute path.",
-            ));
+                "Apply requires the preview beforeHash for every affected path.",
+            )
+            .detail(json!({"path":file.shown})));
         };
         if hash != &file.before_hash {
             return Err(RewriteError::new(
                 "hashMismatch",
                 "An expected source hash no longer matches; preview again before applying.",
             )
-            .detail(json!({"path":file.absolute,"expected":hash,"actual":file.before_hash})));
+            .detail(json!({"path":file.shown,"expected":hash,"actual":file.before_hash})));
         }
     }
     Ok(())
@@ -1648,39 +1776,24 @@ pub(super) fn state_dir_uid_suffix() -> String {
     }
 }
 
-/// Create `path` (and any missing parents) with owner-only `0700` permissions on
-/// unix, then verify the resulting directory is owned by the current uid. The
-/// journal and lock roots live under `std::env::temp_dir()`, a shared,
-/// world-writable location; this prevents another local user from pre-creating a
-/// predictable directory and racing on its contents or planting journals/locks.
+/// Create `path` owner-only and refuse a directory another user owns; the
+/// journal and lock roots live under the shared temp directory. The contract is
+/// `octocode_io::atomic::create_private_dir_all`; this maps its refusal to the
+/// rewrite error code.
 fn create_private_dir_all(path: &Path) -> Result<(), RewriteError> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::{DirBuilderExt, MetadataExt};
-        fs::DirBuilder::new()
-            .recursive(true)
-            .mode(0o700)
-            .create(path)
-            .map_err(io_error)?;
-        let metadata = fs::metadata(path).map_err(io_error)?;
-        // SAFETY: getuid() takes no arguments, has no preconditions, cannot fail,
-        // and only reads the caller's real user id.
-        let current_uid = unsafe { libc::getuid() };
-        if metadata.uid() != current_uid {
-            return Err(RewriteError::new(
+    octocode_io::atomic::create_private_dir_all(path).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::PermissionDenied {
+            RewriteError::new(
                 "fileAccessFailed",
                 format!(
                     "Refusing to use a directory owned by another user: {}",
                     path.display()
                 ),
-            ));
+            )
+        } else {
+            io_error(error)
         }
-    }
-    #[cfg(not(unix))]
-    {
-        fs::create_dir_all(path).map_err(io_error)?;
-    }
-    Ok(())
+    })
 }
 
 #[cfg(test)]

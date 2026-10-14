@@ -1,0 +1,24 @@
+[package]
+name = "octocode-io"
+version.workspace = true
+publish = false
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "The one owner of owner-only atomic file writes and HTTP client policy for Octocode"
+
+[dependencies]
+getrandom = { workspace = true }
+hex = { workspace = true }
+reqwest = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["rt", "net", "io-util", "time", "macros"] }
+
+[lints]
+workspace = true

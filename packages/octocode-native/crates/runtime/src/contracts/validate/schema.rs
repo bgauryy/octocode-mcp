@@ -40,16 +40,15 @@ pub(super) fn validate_schema(
             return Err(issue("schema.not", path.clone(), message));
         }
     }
-    if let Some(reference) = schema.get("$ref").and_then(Value::as_str) {
-        let target = root
-            .pointer(reference.strip_prefix('#').unwrap_or(reference))
-            .ok_or_else(|| {
-                issue(
-                    "schema.unsupported-ref",
-                    path.clone(),
-                    format!("Unresolved schema reference: {reference}"),
-                )
-            })?;
+    if schema.get("$ref").is_some() {
+        let target = super::super::resolve_ref(schema, &root["$defs"]);
+        if let Some(reference) = target.get("$ref") {
+            return Err(issue(
+                "schema.unsupported-ref",
+                path.clone(),
+                format!("Unresolved schema reference: {reference}"),
+            ));
+        }
         return validate_schema(root, target, value, path);
     }
     let union = schema
@@ -214,13 +213,7 @@ fn validate_object(
     if let Some(properties) = properties {
         for (name, field_schema) in properties {
             // A shared field (`$ref`) declares its default on the definition.
-            let field_schema = field_schema
-                .get("$ref")
-                .and_then(Value::as_str)
-                .and_then(|reference| {
-                    root.pointer(reference.strip_prefix('#').unwrap_or(reference))
-                })
-                .unwrap_or(field_schema);
+            let field_schema = super::super::resolve_ref(field_schema, &root["$defs"]);
             if !object.contains_key(name)
                 && let Some(default) = field_schema.get("default")
             {
@@ -579,6 +572,52 @@ pub(super) fn boolean_enum_hint(values: &[Value], received: &Value) -> Option<St
 mod tests {
     use super::validate_schema;
     use serde_json::{Value, json};
+
+    /// Every `pattern` the contract declares compiles with the engine the
+    /// validator runs. One that does not (a look-around, say) rejects every
+    /// value of its field as the caller's invalid input, so the field is
+    /// unusable; it is a contract defect and fails here instead.
+    #[test]
+    fn every_contract_pattern_compiles_with_the_validator_engine() {
+        fn patterns<'a>(value: &'a Value, at: String, out: &mut Vec<(String, &'a str)>) {
+            match value {
+                Value::Object(map) => {
+                    for (key, child) in map {
+                        if key == "pattern"
+                            && let Some(pattern) = child.as_str()
+                        {
+                            out.push((at.clone(), pattern));
+                        }
+                        patterns(child, format!("{at}/{key}"), out);
+                    }
+                }
+                Value::Array(items) => {
+                    for (index, child) in items.iter().enumerate() {
+                        patterns(child, format!("{at}/{index}"), out);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let contract: Value =
+            serde_json::from_str(crate::contracts::contract_json()).expect("contract");
+        let mut found = Vec::new();
+        patterns(&contract, String::new(), &mut found);
+        assert!(!found.is_empty(), "the contract declares patterns");
+        let broken: Vec<_> = found
+            .into_iter()
+            .filter_map(|(at, pattern)| {
+                super::compiled_pattern(pattern)
+                    .err()
+                    .map(|error| format!("{at}: {pattern}: {}", error.lines().last().unwrap_or("")))
+            })
+            .collect();
+        assert!(
+            broken.is_empty(),
+            "uncompilable contract patterns:\n{}",
+            broken.join("\n")
+        );
+    }
 
     #[test]
     fn boolean_for_an_on_off_enum_names_the_intended_value() {

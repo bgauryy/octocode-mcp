@@ -2,10 +2,11 @@ import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { openAgentDb, sharedAgentDb, type AgentDb } from '../agentdb/db.js';
 import { agentDbPath, canonicalPath, repoKey } from '../shared/home.js';
-import { processAlive } from '../shared/process.js';
+import { processAlive, sameProcess } from '../shared/process.js';
 import { EditLog } from './edits.js';
 import { num, type Row } from '../agentdb/rows.js';
-import { toLease, toMember, toMessage, toTraffic, type DeadLetter, type Lease, type LeaseRequest, type Member, type Message, type SendOptions, type Traffic } from './model.js';
+import { ancestorKeys, leaseKey, overlappingRequests } from './lease-key.js';
+import { text, toLease, toMember, toMessage, toTraffic, type DeadLetter, type Lease, type LeaseRequest, type Member, type Message, type SendOptions, type Traffic } from './model.js';
 
 /**
  * The team tables of the agent database: who works in this repository, what they say to each other, and which files
@@ -34,18 +35,21 @@ export const AGENT_SCRATCH_ENV = 'OCTOCODE_AGENT_SCRATCH';
 /** Absolute path used as-is as the team workspace (e.g. a subagent in a git worktree joins its parent's team). */
 export const TEAM_WORKSPACE_ENV = 'OCTOCODE_TEAM_WORKSPACE';
 
-/** An agent that has not refreshed its row for this long (or whose process is gone) is dropped. */
+/** An agent that has not refreshed its row for this long is hidden from `list` (a stalled process: suspended, or on a machine that slept). Only its process ending, or it leaving, drops the row and its mail. */
 const STALE_MS = 60_000;
 /** Leases live this long past the owner's last heartbeat, so a crashed owner frees its files quickly. */
 export const LEASE_MS = 90_000;
 const MESSAGE_RETENTION_MS = 24 * 3_600_000;
 export const INBOX_BATCH_SIZE = 32;
 const PRUNE_INTERVAL_MS = 60_000;
-const MAX_LEASES_PER_CALL = 32;
 
-/** Whether an agent row is dead: it stopped heartbeating, or its process is gone. The one test behind `list` and lease ownership. */
-function agentGone(seenAt: number, pid: number, now: number): boolean {
-  return now - seenAt > STALE_MS || !processAlive(pid);
+/** A member has not heartbeat for `STALE_MS`: its process may only be stalled, so it is hidden but keeps its mail and row. */
+const stale = (seenAt: number, now: number): boolean => now - seenAt > STALE_MS;
+
+/** The process a member row names: the pid and, where known, its start time, so a reused pid is not taken for it. */
+interface ProcessIdentity {
+  pid: number;
+  started?: string | undefined;
 }
 
 /**
@@ -59,13 +63,14 @@ export function teamWorkspace(cwd: string, env: NodeJS.ProcessEnv = process.env)
 }
 
 /**
- * Canonical comparison key: each component NFD-normalised and case-folded, so `Src/A.ts` and `src/a.ts`
- * collide on every platform (a deliberately conservative choice, as in the skill's lock contract).
+ * Canonical comparison key of `file` below `workspace`: its components folded as `lease-key.ts` says (the rules the
+ * agents-communication package shares), so `Src/A.ts` and `src/a.ts` collide on every platform. Keys written by an
+ * earlier build used `toLowerCase`; they differ only for names whose folding is not lower-casing (`ß`, `ς`, ligatures),
+ * and a reservation lives at most `LEASE_MS` past its owner's heartbeat, so none outlives the process that wrote it.
  */
 export function pathKey(workspace: string, file: string): string {
   const relative = path.relative(workspace, canonicalPath(path.resolve(workspace, file)));
-  const parts = relative.split(path.sep).filter((part) => part && part !== '.');
-  return `/${parts.map((part) => part.normalize('NFD').toLowerCase()).join('/')}`.replace(/\/$/, '');
+  return leaseKey(relative.split(path.sep));
 }
 
 /** Busy wait for a background write (heartbeat, delivery): a locked database is retried on the next tick instead. */
@@ -138,31 +143,105 @@ export class TeamStore {
     )`).run(now - MESSAGE_RETENTION_MS);
     this.db.prepare('DELETE FROM leases WHERE expires_at < ?').run(now);
     this.edits.prune(now);
+    this.sweep(now);
     this.prunedAt = now;
   }
 
   // ── agents ────────────────────────────────────────────────────────────────
 
-  /** Heartbeat: writes the member row and runs the periodic prune (at most once a minute). */
-  save(member: Member): void {
+  /**
+   * Heartbeat: refreshes the member row and runs the periodic prune (at most once a minute). The row is matched by id,
+   * pid and start time, so a process never writes over a row another process holds; a row that is gone (swept while
+   * this process was stalled) is inserted again. False when another process holds the id.
+   */
+  save(member: Member): boolean {
     this.prune(member.updatedAt);
-    this.db
-      .prepare(
-        `INSERT INTO agents (id, workspace, role, parent_id, pid, status, task, activity, model, joined_at, seen_at, tool_calls, input, cache_read, output, cost, unpriced)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(id) DO UPDATE SET status=excluded.status, task=excluded.task, activity=excluded.activity, model=excluded.model, seen_at=excluded.seen_at,
-           tool_calls=excluded.tool_calls, input=excluded.input, cache_read=excluded.cache_read, output=excluded.output, cost=excluded.cost, unpriced=excluded.unpriced`,
-      )
-      .run(member.id, this.workspace, member.role, member.parentId ?? null, member.pid, member.status, member.goal ?? null, member.activity ?? null, member.model ?? null,
-        member.joinedAt, member.updatedAt, member.toolCalls, member.input, member.cacheRead, member.output, member.cost, member.unpriced ? 1 : 0);
+    return this.refresh(member) || this.insert(member);
   }
 
-  /** Leave: the agent and its reservations go; the messages it never read become dead letters the sender can see. */
-  remove(id: string, now = Date.now()): void {
-    this.transaction(() => {
-      this.db.prepare('DELETE FROM agents WHERE id = ?').run(id);
-      this.db.prepare('DELETE FROM leases WHERE owner = ?').run(id);
-      this.db.prepare('UPDATE deliveries SET dead_at = ? WHERE recipient = ? AND delivered_at IS NULL AND dead_at IS NULL').run(now, id);
+  /** The heartbeat's `UPDATE`: matches the row only while it still names this process. */
+  private refresh(member: Member): boolean {
+    const { changes } = this.db
+      .prepare(
+        `UPDATE agents SET status = ?, task = ?, activity = ?, model = ?, seen_at = ?, tool_calls = ?, input = ?, cache_read = ?, output = ?, cost = ?, unpriced = ?
+         WHERE id = ? AND pid = ? AND started IS ?`,
+      )
+      .run(
+        member.status, member.goal ?? null, member.activity ?? null, member.model ?? null, member.updatedAt, member.toolCalls, member.input, member.cacheRead, member.output, member.cost,
+        member.unpriced ? 1 : 0, member.id, member.pid, member.started ?? null,
+      );
+    return changes > 0;
+  }
+
+  /** Adds the row unless the id is taken (`ON CONFLICT DO NOTHING`, so a name held by another process is never overwritten); whether it was added. */
+  private insert(member: Member): boolean {
+    const row = this.db
+      .prepare(
+        `INSERT INTO agents (id, workspace, role, parent_id, pid, started, status, task, activity, model, joined_at, seen_at, tool_calls, input, cache_read, output, cost, unpriced)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO NOTHING RETURNING id`,
+      )
+      .get(member.id, this.workspace, member.role, member.parentId ?? null, member.pid, member.started ?? null, member.status, member.goal ?? null, member.activity ?? null, member.model ?? null,
+        member.joinedAt, member.updatedAt, member.toolCalls, member.input, member.cacheRead, member.output, member.cost, member.unpriced ? 1 : 0);
+    return row !== undefined;
+  }
+
+  /**
+   * Takes the name `member.id` in one write transaction. False when another running process holds it: the caller
+   * draws another name. A row of this same process (a second join) is refreshed; one whose process is gone is
+   * retired first (its unread mail becomes dead letters) and the name is taken over.
+   */
+  join(member: Member): boolean {
+    return this.transaction(() => {
+      if (this.insert(member) || this.refresh(member)) return true;
+      const holder = this.db.prepare('SELECT pid, started FROM agents WHERE id = ?').get(member.id) as Row | undefined;
+      if (holder && sameProcess(num(holder['pid']), text(holder['started']))) return false;
+      this.retire(member.id, Date.now());
+      return this.insert(member);
+    });
+  }
+
+  /**
+   * Leave: the agent and its reservations go; the messages it never read become dead letters the sender can see. With
+   * `owner` (a process leaving its own row) nothing is removed when the row now names another process.
+   */
+  remove(id: string, now = Date.now(), owner?: ProcessIdentity): boolean {
+    return this.transaction(() => {
+      if (owner) {
+        const row = this.db.prepare('SELECT pid, started FROM agents WHERE id = ?').get(id) as Row | undefined;
+        if (row && (num(row['pid']) !== owner.pid || (text(row['started']) ?? null) !== (owner.started ?? null))) return false;
+      }
+      this.retire(id, now);
+      return true;
+    });
+  }
+
+  /** Deletes the row, releases the leases and dead-letters the unread mail of `id`; the one place a member is dropped. */
+  private retire(id: string, now: number): void {
+    this.db.prepare('DELETE FROM agents WHERE id = ?').run(id);
+    this.db.prepare('DELETE FROM leases WHERE owner = ?').run(id);
+    this.db.prepare('UPDATE deliveries SET dead_at = ? WHERE recipient = ? AND delivered_at IS NULL AND dead_at IS NULL').run(now, id);
+  }
+
+  /**
+   * Retires every member whose process is gone (`sameProcess`: dead, or a later process that got its pid): the one place
+   * a member that did not leave is dropped and its unread mail dead-lettered. A stale member (alive, silent) is kept.
+   * Each is judged outside the write lock and retired only if its row still names the process judged, so a member that
+   * joined again under the same name meanwhile is left alone. Returns the ids retired.
+   */
+  sweep(now = Date.now()): string[] {
+    const rows = this.db.prepare('SELECT id, pid, started FROM agents').all() as Row[];
+    const gone = rows.filter((row) => !sameProcess(num(row['pid']), text(row['started'])));
+    return gone.flatMap((row) => (this.reap(String(row['id']), { pid: num(row['pid']), started: text(row['started']) }, now) ? [String(row['id'])] : []));
+  }
+
+  /** Retires `id` if its row still names `judged` (or is already gone, leaving leases of a member with no row to clean). */
+  private reap(id: string, judged: ProcessIdentity | undefined, now: number): boolean {
+    return this.transaction(() => {
+      const row = this.db.prepare('SELECT pid, started FROM agents WHERE id = ?').get(id) as Row | undefined;
+      if (row && (judged === undefined || num(row['pid']) !== judged.pid || (text(row['started']) ?? null) !== (judged.started ?? null))) return false;
+      this.retire(id, now);
+      return true;
     });
   }
 
@@ -184,7 +263,10 @@ export class TeamStore {
     return (this.db.prepare('SELECT id FROM agents').all() as Row[]).map((row) => String(row['id']));
   }
 
-  /** Live agents of this workspace, oldest first, with unanswered-message counts and held paths. Dead ones are removed. */
+  /**
+   * Visible agents of this workspace, oldest first, with unanswered-message counts and held paths. A stale one (silent
+   * for `STALE_MS`) or one whose process is gone is left out; nothing is removed here, `sweep` and `remove` do that.
+   */
   list(now = Date.now()): Member[] {
     const rows = this.db
       .prepare(
@@ -193,12 +275,7 @@ export class TeamStore {
          FROM agents a WHERE a.workspace = ? ORDER BY a.joined_at, a.id`,
       )
       .all(this.workspace) as Row[];
-    const live: Member[] = [];
-    for (const row of rows) {
-      const member = toMember(row);
-      if (agentGone(member.updatedAt, member.pid, now)) this.remove(member.id);
-      else live.push(member);
-    }
+    const live = rows.map(toMember).filter((member) => !stale(member.updatedAt, now) && processAlive(member.pid));
     const held = this.leases(now);
     return live.map((member) => {
       const locks = held.filter((lease) => lease.owner === member.id).map((lease) => (lease.kind === 'tree' ? `${lease.path}/` : lease.path));
@@ -206,18 +283,25 @@ export class TeamStore {
     });
   }
 
+  /** Ids of this workspace's agents that can still read mail: every one whose process runs, stale (stalled) ones included. */
+  private reachable(): Set<string> {
+    const rows = this.db.prepare('SELECT id, pid FROM agents WHERE workspace = ?').all(this.workspace) as Row[];
+    return new Set(rows.filter((row) => processAlive(num(row['pid']))).map((row) => String(row['id'])));
+  }
+
   // ── messages ──────────────────────────────────────────────────────────────
 
   /**
-   * Store one message for every live recipient. A reply completes the delivery it answers. Recipients that are no
-   * longer live are refused and returned in `departed`; with none left, nothing is stored and `id` is undefined.
+   * Store one message for every recipient that can still read it (a stalled, stale one keeps its mail). A reply
+   * completes the delivery it answers. Recipients that left or whose process ended are refused and returned in
+   * `departed`; with none left, nothing is stored and `id` is undefined.
    * `wake` (a question, or a sender outside the team) lets it start an idle recipient's turn; otherwise only the
    * answer to a question that recipient asked, and still awaited, wakes it.
    */
   send(from: string, to: string[], body: string, options: SendOptions & { replyRequired: boolean; wake?: boolean }, now = Date.now()): { id: number | undefined; departed: string[] } {
     return this.transaction(() => {
-      // Liveness is read in the same IMMEDIATE transaction as the insert: no recipient can leave in between.
-      const live = new Set(this.list(now).map((member) => member.id));
+      // Read in the same IMMEDIATE transaction as the insert: no recipient can leave in between.
+      const live = this.reachable();
       const departed = to.filter((recipient) => !live.has(recipient));
       const recipients = to.filter((recipient) => live.has(recipient));
       if (recipients.length === 0) return { id: undefined, departed };
@@ -319,9 +403,7 @@ export class TeamStore {
   /** A live lease held by someone other than `self` that covers `file` (or, for a tree request, lies under it). */
   conflict(file: string, self: string, kind: 'file' | 'tree' = 'file', now = Date.now()): Lease | undefined {
     const key = pathKey(this.workspace, file);
-    const ancestors: string[] = [];
-    for (let at = key.lastIndexOf('/'); at > 0; at = key.lastIndexOf('/', at - 1)) ancestors.push(key.slice(0, at));
-    ancestors.push('');
+    const ancestors = ancestorKeys(key);
     const marks = ancestors.map(() => '?').join(',');
     // Same key, a tree above it, or (for a tree request) anything below it. Component boundaries, not string prefixes.
     const query = this.db.prepare(
@@ -332,21 +414,32 @@ export class TeamStore {
       const row = query.get(this.workspace, self, now, key, ...ancestors, kind, `${key}/`, `${key}0`) as Row | undefined;
       if (!row) return undefined;
       const lease = toLease(row);
-      // A crashed owner (killed, never left) frees its files now rather than when the lease runs out.
-      if (!this.ownerGone(lease.owner, now)) return lease;
-      this.remove(lease.owner, now);
+      // A crashed owner (killed, never left) frees its files now rather than when the lease runs out; a stalled one
+      // (alive, silent) keeps them until they lapse, since its process may resume.
+      if (!this.retireOwner(lease.owner, now)) return lease;
     }
   }
 
-  /** Whether a lease owner is gone: it has no row (it left), its process died, or it stopped heartbeating. */
-  private ownerGone(owner: string, now: number): boolean {
-    const row = this.db.prepare('SELECT pid, seen_at FROM agents WHERE id = ?').get(owner) as Row | undefined;
-    return row === undefined || agentGone(num(row['seen_at']), num(row['pid']), now);
+  /** Retires a lease owner that is gone (it has no row, or its process died or was replaced); whether it was. */
+  private retireOwner(owner: string, now: number): boolean {
+    const row = this.db.prepare('SELECT pid, started FROM agents WHERE id = ?').get(owner) as Row | undefined;
+    const judged = row ? { pid: num(row['pid']), started: text(row['started']) } : undefined;
+    if (judged && sameProcess(judged.pid, judged.started)) return false;
+    return this.reap(owner, judged, now);
   }
 
-  /** Reserve every request or none: a conflict with another live lease rejects the whole set. */
+  /**
+   * Reserve every request or none: a conflict with another live lease rejects the whole set. The requests must not
+   * overlap each other (a tree and a path under it, two spellings of one path, a path twice): that is an error, as in
+   * the agents-communication package, because the caller's intent is then unclear (ask for the tree alone).
+   */
   lock(owner: string, requests: LeaseRequest[], now = Date.now()): { ok: true; leases: Lease[] } | { ok: false; conflicts: Array<{ path: string; heldBy: Lease }> } {
-    if (requests.length === 0 || requests.length > MAX_LEASES_PER_CALL) throw new Error(`Give 1–${MAX_LEASES_PER_CALL} paths.`);
+    if (requests.length === 0) throw new Error('Give at least one path.');
+    const overlap = overlappingRequests(requests.map((request) => ({ ...request, key: pathKey(this.workspace, request.path) })));
+    if (overlap) {
+      const shown = (request: LeaseRequest) => path.relative(this.workspace, canonicalPath(path.resolve(this.workspace, request.path))) || '.';
+      throw new Error(`Requested paths overlap: ${shown(overlap[0])} and ${shown(overlap[1])}. Nothing was locked; reserve the tree alone, or each path once.`);
+    }
     return this.transaction(() => {
       this.prune(now);
       const conflicts = requests.flatMap((request) => {

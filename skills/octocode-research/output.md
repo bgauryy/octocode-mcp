@@ -1,22 +1,20 @@
 # Output
 
-Deliver task content only. Never append probe output or generated process metadata.
-
-Use plain text or Markdown with source links; use a table only when it helps compare evidence.
+Task content only; no probe output or process metadata. Plain text or Markdown with source links; tables only to compare evidence.
 
 ## Response
 
-Direct answer, exact source anchors, confidence, material coverage gaps, and next check only if needed. For a decision add verdict, risk, and verification.
+BLUF: answer and confidence first, then evidence (exact source anchors), limits (material coverage gaps), next check only if needed. Decisions add verdict, risk, verification; a root cause adds cause, affected contract, fix, verification; a refactor adds mode and tier, invariants, changes, and verification commands with exit codes.
 
 ## Saved result
 
-Save a report under the rule in Saved report, at `<workspace>/.octocode/octocode-research/<YYYY-MM-DD>-<slug>.md`; put intermediate files such as large requests to the `clasify` classification tool under `<workspace>/.octocode/tmp/`. `<workspace>` is the root of the project being worked on (its repository root, else the current directory), never a folder inside an existing `.octocode/`. A path the user names takes precedence; a harness or subagent scratch folder such as `.octocode/tmp/` does not, so save the report here and only link it from scratch notes. Follow data continuations or state an explicit terminal limit.
+Reports: `<workspace>/.octocode/octocode-research/<YYYY-MM-DD>-<slug>.md`; intermediate files in its `tmp/`. `<workspace>` = repository root, else the current directory, never a folder inside `.octocode/`. A user-named path wins; a scratch folder such as `.octocode/tmp/` does not (save here, link from scratch notes).
 
 ## Saved report
 
-Save and render the result when it has a table, a diagram, or more than about 40 lines or five findings, or when the user asks; keep a short answer in chat. When the user or the project's instructions (for example `AGENTS.md`) ask to keep every result, save every result. The save path is under Saved result.
+Save and render when the result has a table, a diagram, over ~40 lines or five findings, or the user asks; else answer in chat. Save every result when the user or project instructions say so.
 
-Start the file with this header, which people see as chips and agents read from the catalog. `status` (exactly one of the listed words) and `question` are required; add `confidence` when it applies and `next` only when something is pending (never `none`). Keep each value on one line:
+Start the file with this header, one value per line: `status` (one listed word) and `question` are required; add `confidence` when it applies and `next` only when something is pending (never `none`).
 
 ```yaml
 ---
@@ -27,15 +25,15 @@ next: <the one next action for whoever continues, in the imperative>
 ---
 ```
 
-Follow the header with the `#` title and a lead paragraph that states the answer, before any table or list; the catalog shows that paragraph to agents. Always include, in this order, `## Answer` (the direct answer and its confidence), `## Scope` (repositories, refs, and paths covered), `## Evidence` (exact source anchors), `## Gaps` (unread or unproven parts), and `## Checks` (what ran and its result). Add `## Next` only when something is pending. They extend the research handoff in `references/algorithm.md`, with the question and confidence also in the header, so a later agent can continue from the file.
+Follow the header with the `#` title and a lead paragraph that states the answer. Always include, in this order, `## Answer` (the direct answer and its confidence), `## Scope` (repositories, refs, and paths covered), `## Evidence` (exact source anchors), `## Gaps` (unread or unproven parts), and `## Checks` (what ran and its result). Add `## Next` only when something is pending.
 
-Name the file with today's date from `date +%F`, never a remembered or example date, and use the same source for any checked-on date inside the report; a single report is one `.md` file, not a folder. Render it and fix any `warning:` lines it prints (they check this contract), then reply with a short summary, the `.html` path for the person, and the `.md` path for agents and later sessions:
+Date the file name with `date +%F`, never from memory; one report = one `.md` file. Render, fix every `warning:` line, and reply with a short summary and the `.html` and `.md` paths:
 
 ```bash
 node <skill-folder>/scripts/render-report.mjs <saved.md>
 ```
 
-`<skill-folder>` is this skill's installed folder, the one that holds this file; report paths resolve from the current directory, normally `<workspace>`. It writes `<saved>.html` beside the Markdown and opens it. Pass `--no-open` in headless or CI runs. Markdown stays the source; re-render after edits.
+`<skill-folder>` holds this file; `--open` only when the user asks. Markdown is the source; re-render after edits.
 
 Before starting work that may repeat an earlier report, list the saved ones:
 
@@ -43,6 +41,10 @@ Before starting work that may repeat an earlier report, list the saved ones:
 node <skill-folder>/scripts/render-report.mjs <workspace>/.octocode --manifest
 ```
 
-It prints JSON with every report's path, skill, kind, title, date, header fields, a shared `statusTone` (`done`, `attention`, `failed`, `open`, or `inactive`) that reads the skill's status words the same way across skills, other one-line header keys (`meta`), lead, headings, links, code references, and rendered page (`html`, which may be a folder's `index.html`), newest first; pass `<workspace>/.octocode/octocode-research` to see only this skill's reports. Read a matching report's Markdown, not its HTML.
+`<workspace>/.octocode/octocode-research` lists only this skill's reports; read the Markdown, not the HTML.
 
-Markdown that renders well: `##` sections; tables for comparisons, with a plain word such as `High`, `Confirmed`, or `P1` alone in a cell (it becomes a colored chip, colored by its column: high fit is good, high risk is not); `> [!WARNING]`-style alerts for risks; task lists for next steps; `mermaid` fences for flows and charts; code references as `` `path/to/file.ts:42` `` (linked to the person's editor when the file exists); and full source URLs (collected under Sources).
+Evidence and visuals: back every claim with its evidence (a `path:line` reference, a command and its result, or a source link), and show shaped data (shares, scores, trends, trade-offs, flows) as a chart or diagram, not prose.
+
+Charts here: a `flowchart` of the traced path (caller to callee, request to handler) labeled `path:line`; a `timeline` of relevant history.
+
+Markdown that renders well: `##` sections; tables with a plain word such as `High`, `Confirmed`, or `P1` alone in a cell (shown as a colored chip); `> [!WARNING]` alerts for risks; task lists for next steps; `mermaid` flows (`flowchart`, `sequenceDiagram`, `timeline`, `gantt`) and charts (`pie`, `xychart-beta`, `quadrantChart`, `radar-beta`); code references as `` `path/to/file.ts:42` ``; source links with a short label.

@@ -48,12 +48,12 @@ globset = { workspace = true }
 hex = { workspace = true }
 ignore = { workspace = true }
 moka = { version = "0.12", default-features = false, features = ["sync"] }
-oxc_allocator = "=0.152.0"
-oxc_ast = "=0.152.0"
-oxc_ast_visit = "=0.152.0"
-oxc_parser = "=0.152.0"
-oxc_semantic = "=0.152.0"
-oxc_span = "=0.152.0"
+oxc_allocator = "=0.154.0"
+oxc_ast = "=0.154.0"
+oxc_ast_visit = "=0.154.0"
+oxc_parser = "=0.154.0"
+oxc_semantic = "=0.154.0"
+oxc_span = "=0.154.0"
 rayon = "1"
 regex = { workspace = true }
 regex-syntax = "0.8"
@@ -87,6 +87,7 @@ windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_System_
 [dev-dependencies]
 criterion = { version = "0.8" }
 proptest = "1"
+tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 
 [[bench]]
@@ -99,6 +100,10 @@ harness = false
 
 [[bench]]
 name = "minify"
+harness = false
+
+[[bench]]
+name = "graph"
 harness = false
 
 [features]

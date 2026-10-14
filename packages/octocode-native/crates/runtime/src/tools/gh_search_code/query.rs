@@ -1,7 +1,7 @@
 //! ghSearchCode query syntax.
 use super::GhSearchCodeQuery;
-use crate::providers::github::{qualifier_value, quote_search_keyword, search_phrase};
 use crate::tools::gh_shared::query::push;
+use octocode_github::{qualifier_value, quote_search_keyword, search_phrase};
 
 /// The search query; `extension` narrows a multi-extension query to one of
 /// them (GitHub ANDs repeated `extension:` qualifiers).

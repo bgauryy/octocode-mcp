@@ -4,7 +4,7 @@
 #![allow(clippy::unwrap_used)]
 use crate::support::{Workspace, envelope, row_data, row_status};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use octocode_native::runtime::{RuntimeError, ToolOutcome, ToolRuntime};
+use octocode_native::runtime::{Channel, RuntimeError, ToolOutcome, ToolRuntime};
 use serde_json::{Value, json};
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -16,10 +16,11 @@ async fn read_as(runtime: &ToolRuntime, token: &str, file: &str) -> ToolOutcome 
         .admit_with("req".into(), Some(json!({"githubToken": token})))
         .expect("admitted");
     runtime
-        .execute_admitted(
+        .execute(
             admission,
             "ghGetFileContent".into(),
             envelope(json!({"owner":"a","repo":"b","path":file,"ref":SHA,"minify":"none"})),
+            Channel::Structured,
         )
         .await
         .expect("row result")
@@ -171,14 +172,19 @@ async fn rejected_request_token_never_falls_back_or_echoes() {
         let admission = runtime
             .admit_with("req".into(), Some(json!({"githubToken": bad})))
             .unwrap();
-        let result = runtime
-            .execute_mcp_admitted(
-                admission,
-                "ghGetFileContent".into(),
-                envelope(json!({"owner":"a","repo":"b","path":"x.txt","ref":SHA})),
-            )
-            .await
-            .unwrap();
+        let tool = "ghGetFileContent";
+        let result = octocode_native::runtime::error::mcp_result(
+            tool,
+            runtime
+                .execute(
+                    admission,
+                    tool.into(),
+                    envelope(json!({"owner":"a","repo":"b","path":"x.txt","ref":SHA})),
+                    Channel::Mcp,
+                )
+                .await,
+        )
+        .unwrap();
         let text = result.to_string();
         assert!(!text.contains(&bad), "token echoed: {text}");
         assert!(!text.contains("ambient body"), "fell back: {text}");

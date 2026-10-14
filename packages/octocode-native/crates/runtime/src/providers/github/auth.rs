@@ -7,8 +7,6 @@ pub use credential_store::CredentialStore;
 pub use resolver::{AuthMode, AuthSelection, Authentication};
 pub use storage::{OAuthToken, StoredCredentials};
 
-pub use octocode_github::{CredentialSource, ResolvedCredential};
-
 /// The credential host a configured GitHub API URL authenticates against
 /// ([`octocode_github::credential_host`]); every surface (tool requests, CLI
 /// auth status, login, logout) keys credentials by it. Returns `None` when

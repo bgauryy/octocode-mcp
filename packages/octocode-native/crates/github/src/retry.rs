@@ -1,7 +1,116 @@
-//! Retry timing shared by every HTTP client: response headers, the
-//! provider-requested delay, and full-jitter backoff.
+//! The one retry owner every HTTP client shares (GitHub, artifact
+//! registries, classification): response headers, the provider-requested
+//! delay, jittered [`Backoff`], [`classify_status`], and the bounded body
+//! reader [`read_bounded`]. Each client keeps its own constants and policy.
+use crate::{BudgetStop, RequestBudget};
+use bytes::{Bytes, BytesMut};
+use futures_util::StreamExt;
 use reqwest::header::{HeaderMap, RETRY_AFTER};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+/// Full-jitter exponential backoff: uniform in `[0, base * 2^attempt]`,
+/// bounded by `cap`, never below `floor` (so `Retry-After: 0` cannot
+/// hot-loop where a floor is set).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Backoff {
+    pub base: Duration,
+    pub cap: Duration,
+    pub floor: Duration,
+}
+
+impl Backoff {
+    /// The jittered wait before retry `attempt` (0-based).
+    pub fn next_delay(&self, attempt: u32) -> Duration {
+        full_jitter(self.base, attempt, self.cap).max(self.floor)
+    }
+
+    /// The provider's requested delay (floored), else [`Self::next_delay`].
+    pub fn after(&self, requested: Option<Duration>, attempt: u32) -> Duration {
+        requested.map_or_else(|| self.next_delay(attempt), |delay| delay.max(self.floor))
+    }
+}
+
+/// What an HTTP status says about retrying. Each client decides which
+/// classes it retries; the classification itself is shared.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StatusClass {
+    /// 2xx.
+    Success,
+    /// 3xx.
+    Redirect,
+    /// 429: the client is over its rate.
+    RateLimited,
+    /// 503 or 529: the provider sheds load.
+    Overloaded,
+    /// 408: the provider timed the request out.
+    Timeout,
+    /// 500, 502, 504: a transient server failure.
+    Transient,
+    /// Any other 5xx (501, 505, ...).
+    ServerFault,
+    /// Any other status.
+    Final,
+}
+
+impl StatusClass {
+    /// Any 5xx class.
+    pub fn is_server(self) -> bool {
+        matches!(self, Self::Overloaded | Self::Transient | Self::ServerFault)
+    }
+}
+
+pub fn classify_status(status: u16) -> StatusClass {
+    match status {
+        200..=299 => StatusClass::Success,
+        300..=399 => StatusClass::Redirect,
+        429 => StatusClass::RateLimited,
+        503 | 529 => StatusClass::Overloaded,
+        408 => StatusClass::Timeout,
+        500 | 502 | 504 => StatusClass::Transient,
+        500..=599 => StatusClass::ServerFault,
+        _ => StatusClass::Final,
+    }
+}
+
+/// A send failure worth another attempt: the connection could not be
+/// opened, timed out, or failed while the request was in flight.
+pub fn is_retryable_send(error: &reqwest::Error) -> bool {
+    error.is_connect() || error.is_timeout() || error.is_request()
+}
+
+/// Why a bounded body read stopped short.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BodyError {
+    /// The request budget stopped the read.
+    Stopped(BudgetStop),
+    /// The body exceeded the limit.
+    TooLarge,
+    /// The connection failed mid-body.
+    Transport,
+}
+
+/// A response body read within `budget` and at most `limit` bytes. A body
+/// that stalls after its headers is bounded by the request deadline too.
+pub async fn read_bounded(
+    response: reqwest::Response,
+    budget: &RequestBudget,
+    limit: usize,
+) -> Result<Bytes, BodyError> {
+    let mut body = BytesMut::new();
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = budget
+        .wait(stream.next())
+        .await
+        .map_err(BodyError::Stopped)?
+    {
+        let chunk = chunk.map_err(|_| BodyError::Transport)?;
+        if body.len().saturating_add(chunk.len()) > limit {
+            return Err(BodyError::TooLarge);
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body.freeze())
+}
 
 /// A header's non-negative integer value, surrounding whitespace ignored.
 pub(crate) fn header_u64(headers: &HeaderMap, name: &str) -> Option<u64> {
@@ -45,6 +154,22 @@ pub fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
     let day_of_year = (153 * month_prime + 2) / 5 + day - 1;
     let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
     era * 146_097 + day_of_era - 719_468
+}
+
+/// `(year, month, day)` for a count of days since 1970-01-01, the inverse of
+/// [`days_from_civil`]; month and day are 1-based.
+pub fn civil_from_days(days: i64) -> (i64, i64, i64) {
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let day_of_era = z - era * 146_097;
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_prime = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month_prime + 2) / 5 + 1;
+    let month = month_prime + if month_prime < 10 { 3 } else { -9 };
+    let year = year_of_era + era * 400 + i64::from(month <= 2);
+    (year, month, day)
 }
 
 /// Parse an RFC 9110 IMF-fixdate (`Sun, 06 Nov 1994 08:49:37 GMT`).
@@ -184,6 +309,84 @@ mod tests {
         assert_eq!(
             full_jitter(Duration::ZERO, 3, Duration::from_secs(1)),
             Duration::ZERO
+        );
+    }
+
+    #[test]
+    fn backoff_is_jittered_capped_and_floored() {
+        let backoff = Backoff {
+            base: Duration::from_millis(500),
+            cap: Duration::from_secs(8),
+            floor: Duration::from_millis(100),
+        };
+        let mut distinct = std::collections::HashSet::new();
+        for attempt in 0..40 {
+            let delay = backoff.next_delay(attempt);
+            assert!(delay >= backoff.floor && delay <= backoff.cap);
+            distinct.insert(delay);
+        }
+        assert!(distinct.len() > 10, "backoff is not jittered");
+        assert_eq!(backoff.after(Some(Duration::ZERO), 0), backoff.floor);
+        assert_eq!(
+            backoff.after(Some(Duration::from_secs(2)), 5),
+            Duration::from_secs(2)
+        );
+        let unfloored = Backoff {
+            floor: Duration::ZERO,
+            ..backoff
+        };
+        assert_eq!(unfloored.after(Some(Duration::ZERO), 0), Duration::ZERO);
+    }
+
+    #[test]
+    fn statuses_classify_once_for_every_client() {
+        use StatusClass::*;
+        for (status, class) in [
+            (200, Success),
+            (304, Redirect),
+            (301, Redirect),
+            (429, RateLimited),
+            (503, Overloaded),
+            (529, Overloaded),
+            (408, Timeout),
+            (500, Transient),
+            (502, Transient),
+            (504, Transient),
+            (501, ServerFault),
+            (505, ServerFault),
+            (400, Final),
+            (403, Final),
+            (404, Final),
+        ] {
+            assert_eq!(classify_status(status), class, "{status}");
+        }
+        assert!(Overloaded.is_server() && Transient.is_server() && ServerFault.is_server());
+        assert!(!RateLimited.is_server() && !Timeout.is_server());
+    }
+
+    #[tokio::test]
+    async fn bodies_are_read_within_the_limit_and_the_budget() {
+        use wiremock::{Mock, MockServer, ResponseTemplate, matchers::method};
+        let server = MockServer::builder().start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(500).set_body_bytes(vec![b'x'; 64]))
+            .mount(&server)
+            .await;
+        let budget = RequestBudget::with_timeout(Duration::from_secs(5), 1024);
+        let get = || reqwest::get(server.uri());
+        let body = read_bounded(get().await.expect("response"), &budget, 64)
+            .await
+            .expect("within the limit");
+        assert_eq!(body.len(), 64);
+        assert_eq!(
+            read_bounded(get().await.expect("response"), &budget, 63).await,
+            Err(BodyError::TooLarge)
+        );
+        let response = get().await.expect("response");
+        budget.cancellation.cancel();
+        assert_eq!(
+            read_bounded(response, &budget, 64).await,
+            Err(BodyError::Stopped(BudgetStop::Cancelled))
         );
     }
 }

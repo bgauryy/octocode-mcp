@@ -12,11 +12,11 @@ writeFileSync(
   'OCTOCODE_BETA=1\nOCTOCODE_CLASSIFICATION_API=validation-parity-fake-key\nOCTOCODE_CLASSIFICATION_API_HOST=http://127.0.0.1:9\n'
 );
 
-// One case list, two surfaces of the real addon: the MCP error text and the
-// CLI error details must give the same repair guidance, because native is the
-// only validator. Needs a current native build.
+// One case list, two surfaces of the real addon: the MCP and CLI surfaces
+// answer a rejected call with the same typed envelope and repair guidance,
+// because native is the only validator and the only error projection. Needs a
+// current native build.
 type Runtime = {
-  execute(requestId: string, tool: string, input: unknown): Promise<unknown>;
   executeMcp(requestId: string, tool: string, input: unknown): Promise<unknown>;
   close(): Promise<void>;
 };
@@ -24,9 +24,9 @@ type Runtime = {
 const { NativeRuntime } = loadNativeBinding() as unknown as {
   NativeRuntime: new (options: { surface: string }) => Runtime;
 };
-const runtime = new NativeRuntime({ surface: 'cli' });
+const cliRuntime = new NativeRuntime({ surface: 'cli' });
 const mcpRuntime = new NativeRuntime({ surface: 'mcp' });
-afterAll(() => Promise.all([runtime.close(), mcpRuntime.close()]));
+afterAll(() => Promise.all([cliRuntime.close(), mcpRuntime.close()]));
 
 const brief = { mainGoal: 'g', reasoning: 'r' };
 
@@ -36,9 +36,10 @@ type ToolErrorEnvelope = {
   details?: string[];
 };
 
-const mcpMessage = async (tool: string, input: unknown) => {
-  const result = (await mcpRuntime.executeMcp(
-    `mcp-${request++}`,
+let request = 0;
+const rejection = async (runtime: Runtime, tool: string, input: unknown) => {
+  const result = (await runtime.executeMcp(
+    `parity-${request++}`,
     tool,
     input
   )) as {
@@ -51,27 +52,6 @@ const mcpMessage = async (tool: string, input: unknown) => {
     text: (result.content ?? []).map(block => block.text ?? '').join('\n'),
     envelope: result.structuredContent,
   };
-};
-
-let request = 0;
-const nativeDetails = async (tool: string, input: unknown) => {
-  try {
-    await runtime.execute(`parity-${request++}`, tool, input);
-  } catch (error) {
-    const thrown = JSON.parse((error as Error).message) as {
-      code?: string;
-      payload: ToolErrorEnvelope;
-    };
-    return {
-      // The first repair is `error`; any others follow in `details`.
-      text: [thrown.payload.error ?? '', ...(thrown.payload.details ?? [])]
-        .filter(Boolean)
-        .join('\n'),
-      code: thrown.code,
-      envelope: thrown.payload,
-    };
-  }
-  return { text: '', code: undefined, envelope: undefined };
 };
 
 const cases: ReadonlyArray<{
@@ -151,8 +131,8 @@ const cases: ReadonlyArray<{
 describe('CLI and MCP validation guidance parity', () => {
   it.each(cases)('$name', async ({ tool, query, says, never = [] }) => {
     const input = { queries: [{ ...brief, ...query }] };
-    const mcp = await mcpMessage(tool, input);
-    const cli = await nativeDetails(tool, input);
+    const mcp = await rejection(mcpRuntime, tool, input);
+    const cli = await rejection(cliRuntime, tool, input);
     // Both surfaces answer with the same typed error envelope: the error
     // itself, no kind/version/tool frame.
     for (const envelope of [mcp.envelope, cli.envelope]) {
@@ -164,8 +144,9 @@ describe('CLI and MCP validation guidance parity', () => {
       expect(envelope).not.toHaveProperty('version');
       expect(envelope).not.toHaveProperty('tool');
     }
-    expect(mcp.text).toContain('(errorCode: invalidInput)');
-    expect(cli.code).toBe('invalidInput');
+    for (const text of [mcp.text, cli.text]) {
+      expect(text).toContain('(errorCode: invalidInput)');
+    }
     const surfaces = { mcp: mcp.text, cli: cli.text };
     for (const [surface, text] of Object.entries(surfaces)) {
       expect(text, surface).not.toBe('');

@@ -217,6 +217,10 @@ pub struct NextCalls {
         default
     )]
     pub ignore_case: Option<Continuation>,
+    /// The same match read without its `ranges`, after the ranges selected
+    /// no line while the file has hits outside them.
+    #[serde(rename = "read", skip_serializing_if = "Option::is_none", default)]
+    pub read: Option<Continuation>,
     /// The same read with each regex item that does not compile repaired.
     #[serde(rename = "repair", skip_serializing_if = "Option::is_none", default)]
     pub repair: Option<Continuation>,
@@ -237,6 +241,7 @@ impl NextCalls {
             find_file,
             text_search,
             ignore_case,
+            read,
             repair,
         } = other;
         for (mine, theirs) in [
@@ -248,6 +253,7 @@ impl NextCalls {
             (&mut self.read_block, read_block),
             (&mut self.expand_context, expand_context),
             (&mut self.ignore_case, ignore_case),
+            (&mut self.read, read),
             (&mut self.repair, repair),
         ] {
             if mine.is_none() {
@@ -267,6 +273,24 @@ impl NextCalls {
 
     pub fn is_empty(&self) -> bool {
         *self == NextCalls::default()
+    }
+
+    /// The localFetch reads among these continuations.
+    pub fn reads_mut(&mut self) -> impl Iterator<Item = &mut Continuation> {
+        [
+            &mut self.continue_window,
+            &mut self.read_bounded_lines,
+            &mut self.restart,
+            &mut self.whole_lines,
+            &mut self.continue_block,
+            &mut self.read_block,
+            &mut self.expand_context,
+            &mut self.ignore_case,
+            &mut self.read,
+            &mut self.repair,
+        ]
+        .into_iter()
+        .flatten()
     }
 
     /// Whether a continuation reads more of this result (a page), as opposed
@@ -686,6 +710,9 @@ pub struct SourceFacts {
 pub struct ValidatedRead {
     pub canonical: PathBuf,
     pub display: String,
+    /// What a row names the read file by: the canonical path relative to
+    /// the workspace when inside it, else the canonical path.
+    pub named: String,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PathFailure {
@@ -804,6 +831,9 @@ impl PathAccess for crate::policy::path::PathPolicy {
     fn validate_read(&self, path: &Path) -> Result<ValidatedRead, PathFailure> {
         crate::policy::path::PathPolicy::validate_read(self, path)
             .map(|validated| ValidatedRead {
+                named: self
+                    .workspace_relative(&validated.canonical)
+                    .unwrap_or_else(|| validated.canonical.to_string_lossy().into_owned()),
                 canonical: validated.canonical,
                 display: validated.display,
             })

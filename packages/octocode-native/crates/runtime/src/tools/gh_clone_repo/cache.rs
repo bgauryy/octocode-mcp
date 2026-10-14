@@ -1,7 +1,7 @@
 use super::{CloneContext, CloneError, check_control, hash};
 use crate::cache::evictions::log_eviction;
 use crate::civil_date::{days_from_civil, iso8601_millis};
-use crate::private_file::write_atomic;
+use octocode_io::atomic::write_atomic;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{self, Write};
@@ -768,11 +768,8 @@ mod tests {
 
     #[test]
     fn default_branch_alias_round_trips_and_expires() {
-        let home = std::env::temp_dir().join(format!(
-            "octocode-alias-{}-{}",
-            std::process::id(),
-            now_millis()
-        ));
+        let home_dir = crate::tools::test_support::Fixture::new();
+        let home = home_dir.0.clone();
         let endpoint = "https://example.test";
         assert_eq!(
             default_branch_alias(&home, "O", "R", endpoint, Duration::from_secs(60)),

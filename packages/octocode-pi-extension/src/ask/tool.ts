@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
-import { clip, timingOf, resultBlock, timedTool, toolHeader } from '../shared/render.js';
+import { clip, plural, timingOf, resultBlock, timedTool, toolHeader } from '../shared/render.js';
 import { Type } from 'typebox';
 import { withDialog } from '../shared/locks.js';
 import { sanitizeTerminalText } from '../shared/sanitize.js';
@@ -73,35 +73,43 @@ export function registerAskUser(pi: ExtensionAPI): void {
     name: 'askUser',
     label: 'Ask user',
     description:
-      'Ask the user for preferences or facts that tools cannot discover and that change your next step. Batch up to 4 related, self-contained questions in one call. ' +
+      'Ask the user for preferences or facts that tools cannot discover and that change your next step. Batch related, self-contained questions in one call. ' +
       'Give 2-4 choices when the answers are known (omit options for free text), with a supported recommendation first labelled \' (Recommended)\'; the UI always adds a write-in field, so do not add "Other".',
     promptSnippet: 'Ask the user a question only they can answer',
     parameters: Type.Object({
       questions: Type.Array(
         Type.Object({
-          question: Type.String({ minLength: 1, description: 'Self-contained question with the context needed to answer' }),
-          header: Type.Optional(Type.String({ description: 'Tab label, at most 12 characters; omit for an automatic question number' })),
+          question: Type.String({ description: 'Self-contained question with the context needed to answer' }),
+          header: Type.Optional(Type.String({ description: 'Short tab label (about 12 characters are shown); omit for an automatic question number' })),
           options: Type.Optional(Type.Array(
             Type.Object({
-              label: Type.String({ minLength: 1, description: 'Concise answer label (1-5 words)' }),
+              label: Type.String({ description: 'Concise answer label' }),
               description: Type.Optional(Type.String({ description: 'Practical effect or trade-off, when it helps distinguish the choices' })),
             }),
-            { maxItems: 4 },
           )),
           multiSelect: Type.Optional(Type.Boolean({ description: 'true: choices are not exclusive; the user may pick several. Default false: exactly one choice' })),
         }),
-        { minItems: 1, maxItems: 4 },
       ),
     }),
     async execute(_id, params, signal, _onUpdate, ctx) {
       // multiSelect means nothing without options: a free-text question opens its editor directly.
-      const questions = params.questions.map((q) => ({ ...q, options: q.options ?? [], ...(q.header ? { header: clip(q.header, 12) } : {}), ...(q.options?.length ? {} : { multiSelect: false }) }));
+      let skippedOptions = 0;
+      const questions = params.questions.filter((q) => q.question.trim()).map((q) => {
+        const options = (q.options ?? []).filter((option) => option.label.trim());
+        skippedOptions += (q.options?.length ?? 0) - options.length;
+        return { ...q, options, ...(q.header ? { header: clip(q.header, 12) } : {}), ...(options.length ? {} : { multiSelect: false }) };
+      });
+      if (questions.length === 0) throw new Error('Ask at least one question with text.');
       const result: AskResult = signal?.aborted
         ? { answers: [], cancelled: true, reason: 'aborted' }
         : !ctx.hasUI
           ? { answers: [], cancelled: true, reason: 'unavailable' }
           : await withDialog(() => (ctx.mode === 'tui' ? showAskDialog(ctx, questions, signal) : askWithDialogs(ctx, questions, signal)), signal);
-      return { content: [{ type: 'text', text: formatAnswers(result) }], details: result };
+      // Empty questions and options are not asked: say how many, so a missing answer is not mistaken for a skipped one.
+      const skippedQuestions = params.questions.length - questions.length;
+      const skipped = [skippedQuestions > 0 && plural(skippedQuestions, 'empty question'), skippedOptions > 0 && plural(skippedOptions, 'option with an empty label', 'options with an empty label')].filter(Boolean);
+      const note = skipped.length > 0 ? `\n(Not asked: ${skipped.join(' and ')}.)` : '';
+      return { content: [{ type: 'text', text: `${formatAnswers(result)}${note}` }], details: result };
     },
     renderCall(args, theme, context) {
       const headers = (args.questions ?? []).map((q) => clip(String(q?.header ?? ''), 24)).filter(Boolean).join(', ');

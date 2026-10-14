@@ -8,12 +8,12 @@
 //! below reach the local edges whose fields the schema alignment changed;
 //! the GitHub edges are replayed the same way by their provider tests.
 
-use crate::support;
+use crate::support::{self, Run as _};
 
 use octocode_native::contracts::{parsed_contract, validate};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
-use support::{Workspace, call};
+use support::Workspace;
 
 /// Names retired from `scope` (`input`: a row field; `lead`: a
 /// continuation name) for `tool`, from the shared retired-name deny-list.
@@ -33,34 +33,20 @@ struct Edge {
     query: Value,
 }
 
-/// Every `{tool, query}` under a `next` or `hints` key, never inside a call.
+/// Every `next` and `hints` lead of `value` (the response-paging call is
+/// replayed on its own), as edges from `from`.
 fn collect(from: &str, value: &Value, out: &mut Vec<Edge>) {
-    match value {
-        Value::Array(items) => items.iter().for_each(|item| collect(from, item, out)),
-        Value::Object(map) => {
-            for (key, child) in map {
-                if key == "next" || key == "hints" {
-                    if let Some(calls) = child.as_object() {
-                        for (name, call) in calls {
-                            if let (Some(tool), Some(query)) =
-                                (call.get("tool").and_then(Value::as_str), call.get("query"))
-                            {
-                                out.push(Edge {
-                                    from: from.to_owned(),
-                                    name: name.clone(),
-                                    tool: tool.to_owned(),
-                                    query: query.clone(),
-                                });
-                            }
-                        }
-                    }
-                } else if key != "query" {
-                    collect(from, child, out);
-                }
-            }
-        }
-        _ => {}
-    }
+    out.extend(
+        support::checks::leads(value)
+            .into_iter()
+            .filter(|lead| lead.channel != "responsePagination")
+            .map(|lead| Edge {
+                from: from.to_owned(),
+                name: lead.name,
+                tool: lead.tool,
+                query: lead.query,
+            }),
+    );
 }
 
 /// The rows of a continuation's complete input.
@@ -111,13 +97,6 @@ fn assert_current(edge: &Edge) {
     }
 }
 
-async fn run(runtime: &octocode_native::runtime::ToolRuntime, tool: &str, query: Value) -> Value {
-    let outcome = call(runtime, tool, query.clone())
-        .await
-        .unwrap_or_else(|error| panic!("{tool} {query}: {error:?}"));
-    checked(tool, &query, outcome.structured_content)
-}
-
 /// Runs a continuation exactly as emitted: no envelope, no brief added.
 async fn replay(
     runtime: &octocode_native::runtime::ToolRuntime,
@@ -125,7 +104,7 @@ async fn replay(
     input: Value,
 ) -> Value {
     let outcome = runtime
-        .execute("replay".into(), tool.into(), input.clone())
+        .run("replay".into(), tool.into(), input.clone())
         .await
         .unwrap_or_else(|error| panic!("{tool} {input}: {error:?}"));
     checked(tool, &input, outcome.structured_content)
@@ -259,7 +238,14 @@ async fn every_emitted_edge_is_current_strict_and_replays_verbatim() {
     ];
     let mut edges = Vec::new();
     for (tool, query) in seeds {
-        let output = run(&runtime, tool, query).await;
+        let output = checked(
+            tool,
+            &query,
+            support::run(&runtime, tool, query.clone(), &support::ALL_EXTRAS)
+                .await
+                .outcome
+                .structured_content,
+        );
         collect(tool, &output, &mut edges);
         if let Some(next) = output.pointer("/responsePagination/next") {
             let query = next["query"].clone();
@@ -268,7 +254,7 @@ async fn every_emitted_edge_is_current_strict_and_replays_verbatim() {
                 assert!(query.get(field).is_none(), "{next}");
             }
             let replay = runtime
-                .execute("replay".into(), tool.into(), query)
+                .run("replay".into(), tool.into(), query)
                 .await
                 .expect("response page replays");
             assert!(replay.structured_content["results"].is_array());

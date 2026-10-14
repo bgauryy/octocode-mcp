@@ -87,11 +87,17 @@ pub(super) fn finish_pr(
     if let Some(warning) = needle_missed {
         push_warnings(&mut out, [warning]);
     }
+    if let Some((dropped, listed)) = files.match_dropped {
+        push_warnings(
+            &mut out,
+            [super::filter::match_dropped_warning(dropped, listed)],
+        );
+    }
     promote_pr_continuations(&mut out, query);
     attach_full_patch_continuation(&mut out, query);
     attach_raw_body_read(&mut out, query, &minified);
-    if let Some(path) = &files.first_unsearched {
-        attach_unsearched_read(&mut out, query, path);
+    if let Some((path, sha)) = &files.first_unsearched {
+        attach_unsearched_read(&mut out, query, path, sha.as_deref());
     }
     attach_context_reads(&mut out, query, &files.clipped);
     // The row's next steps ride the response's leads (one capped list),
@@ -145,16 +151,22 @@ pub(super) fn finish_pr(
 }
 
 /// A `matchString` search that skipped patchless files covers only part of
-/// the diff: mark it partial and offer the literal search of the first
-/// skipped file's source at the PR head (a template for the rest).
-fn attach_unsearched_read(out: &mut Value, query: &HistoryItemRequest, path: &str) {
-    let source_sha = str_at(out, "/pullRequests/0/headSha").map(str::to_owned);
+/// the diff (a pull request's, a commit's or a comparison's): mark it
+/// partial and offer the literal search of the first skipped file's source
+/// at `sha` (the base for a removed file, else the head; a template for the
+/// rest).
+pub(super) fn attach_unsearched_read(
+    out: &mut Value,
+    query: &HistoryItemRequest,
+    path: &str,
+    sha: Option<&str>,
+) {
     out["isPartial"] = json!(true);
     match out.get_mut("partialReasons").and_then(Value::as_array_mut) {
         Some(reasons) => reasons.push(json!("patchUnavailable")),
         None => out["partialReasons"] = json!(["patchUnavailable"]),
     }
-    let (Some(needle), Some(sha)) = (query.match_string(), source_sha) else {
+    let (Some(needle), Some(sha)) = (query.match_string(), sha) else {
         return;
     };
     ensure_next(out);

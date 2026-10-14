@@ -69,7 +69,7 @@ describe('trusted dotenv credential fallbacks', () => {
 
   it.each([
     ...new Set(
-      CONFIG_FIELDS.flatMap(field => field.env.map(binding => binding.name))
+      CONFIG_FIELDS.flatMap(field => (field.env ? [field.env.name] : []))
     ),
   ].filter(key => !homeOnly.has(key)))('all product config bindings use the same source order: %s', key => {
     writeFileSync(join(home, '.env'), `${key}=home-value\nHOME_ONLY=home`);
@@ -117,13 +117,9 @@ describe('trusted dotenv credential fallbacks', () => {
     }
   );
 
-  const tokenGroups: readonly (readonly string[])[] = [
-    ENV_TOKEN_VARS,
-    ...CONFIG_FIELDS.filter(f => f.credential && f.env.length > 1).map(f =>
-      f.env.map(e => e.name)
-    ),
-  ];
-  for (const group of tokenGroups) {
+  // The GitHub token variables are the one group that selects one value;
+  // every setting has a single variable.
+  for (const group of [ENV_TOKEN_VARS]) {
     for (const higherAlias of group)
       for (const lowerAlias of group) {
         it(`${higherAlias} source priority beats ${lowerAlias} alias priority`, () => {

@@ -1,7 +1,3 @@
 # Octocode Chrome Devtools
 
-Use a live browser for interactive pages, authenticated state, or browser diagnostics.
-
-Start with [SKILL.md](SKILL.md). See [output.md](output.md) for the result format.
-
-Browser execution is supplied by `@octocodeai/octocode-chrome-devtools`; use its `skill` command for runtime setup.
+Live browser for interactive pages, logged-in state, and diagnostics. Start at [SKILL.md](SKILL.md); setup: the `skill` command of `@octocodeai/octocode-chrome-devtools`.

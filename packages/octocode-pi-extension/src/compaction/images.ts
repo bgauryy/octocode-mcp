@@ -21,7 +21,7 @@ const IMAGE_EXTENSIONS: Record<string, string> = { 'image/png': 'png', 'image/jp
  * Saves every image of a message to the session output folder, named by content: each as `<path> (sha256 …, n bytes)`,
  * or undefined when one could not be saved.
  */
-export function saveImages(message: unknown): string[] | undefined {
+function saveImages(message: unknown): string[] | undefined {
   const copies: string[] = [];
   for (const part of parts(message)) {
     if (!isRecord(part) || part['type'] !== 'image') continue;
@@ -32,22 +32,20 @@ export function saveImages(message: unknown): string[] | undefined {
   return copies;
 }
 
-/** The note that replaces a result's images: where they are saved, or that they could not be. */
-export function imageNote(paths: string[] | undefined): string {
-  return paths
-    ? `[image from an earlier tool call omitted; saved at ${paths.join(', ')}; read that file to see it again]`
-    : '[image from an earlier tool call omitted; it could not be saved]';
+/** The note that replaces a message's images: where they are saved, or that they could not be. */
+function imageNote(paths: string[] | undefined, from = 'an earlier tool call'): string {
+  return paths ? `[image from ${from} omitted; saved at ${paths.join(', ')}; read that file to see it again]` : `[image from ${from} omitted; it could not be saved]`;
 }
 
 export function parts(message: unknown): unknown[] {
   return isRecord(message) && Array.isArray(message['content']) ? message['content'] : [];
 }
 
-export function texts(message: unknown): string[] {
+function texts(message: unknown): string[] {
   return parts(message).flatMap((part) => (isRecord(part) && part['type'] === 'text' && typeof part['text'] === 'string' ? [part['text']] : []));
 }
 
-export function hasImage(message: unknown): boolean {
+function hasImage(message: unknown): boolean {
   return parts(message).some((part) => isRecord(part) && part['type'] === 'image');
 }
 
@@ -57,13 +55,13 @@ export function isRequestTooLarge(message: unknown): boolean {
 }
 
 /**
- * Context edits that let a request rejected as too large be sent again: every tool result's images except the newest
- * `keepImages` are replaced by a note, and the failed attempt (`failedId`) is omitted, since Pi cannot continue from an
- * assistant message; without it (Pi recovers that attempt itself) only images go. Undefined when no image is left to
- * remove, so a retry would fail the same way.
+ * Context edits that let a request rejected as too large be sent again: the images of every tool result and user
+ * message except the newest `keepImages` such messages are replaced by a note, oldest first, and the failed attempt
+ * (`failedId`) is omitted, since Pi cannot continue from an assistant message; without it (Pi recovers that attempt
+ * itself) only images go. Undefined when no image is left to remove, so a retry would fail the same way.
  */
 export function planTooLargeRecovery(entries: ContextEntry[], failedId: string | undefined, keepImages: number): ContextEditEntryDraft[] | undefined {
-  const withImages = entries.filter((entry) => isRecord(entry.message) && entry.message['role'] === 'toolResult' && hasImage(entry.message));
+  const withImages = entries.filter((entry) => isRecord(entry.message) && (entry.message['role'] === 'toolResult' || entry.message['role'] === 'user') && hasImage(entry.message));
   const strip = withImages.slice(0, Math.max(0, withImages.length - keepImages));
   if (strip.length === 0) return undefined;
   return [
@@ -73,12 +71,13 @@ export function planTooLargeRecovery(entries: ContextEntry[], failedId: string |
 }
 
 /**
- * A result's text parts with its images saved and replaced by one note naming the files. The session is stuck until
+ * A message's text parts with its images saved and replaced by one note naming the files. The session is stuck until
  * the bytes go, so an image that cannot be saved is still removed (the note says so).
  */
-export function withoutImages(message: unknown): Array<{ type: 'text'; text: string }> {
+function withoutImages(message: unknown): Array<{ type: 'text'; text: string }> {
   const paths = saveImages(message);
-  return [...texts(message).map((text) => ({ type: 'text' as const, text })), { type: 'text' as const, text: imageNote(paths) }];
+  const from = isRecord(message) && message['role'] === 'user' ? 'an earlier user message' : 'an earlier tool call';
+  return [...texts(message).map((text) => ({ type: 'text' as const, text })), { type: 'text' as const, text: imageNote(paths, from) }];
 }
 
 const length = (value: unknown) => (typeof value === 'string' ? value.length : 0);

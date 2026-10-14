@@ -101,6 +101,20 @@ impl PruneMode {
         }
     }
 
+    /// [`Self::directories`] less the names an `include` glob reaches into by
+    /// name (`build/*.rs`, `**/dist/**`, a bare `build`): naming a pruned
+    /// directory asks for its files. Credential stores stay pruned.
+    pub fn directories_with_includes(self, defaults: bool, include: &[String]) -> Vec<String> {
+        let named = |name: &str| {
+            include
+                .iter()
+                .any(|glob| glob.split(['/', '\\']).any(|segment| segment == name))
+        };
+        let mut names = self.directories(defaults);
+        names.retain(|name| CREDENTIAL_DIRECTORY_NAMES.contains(&name.as_str()) || !named(name));
+        names
+    }
+
     /// [`Self::directories`] without the credential stores. The read policy
     /// withholds those anyway, so a walk whose path-policy callback records
     /// what it denies (`discovery::Withheld`) meets them there and can
@@ -176,6 +190,23 @@ mod tests {
         ] {
             assert!(!search.contains(&name), "{name} is routinely real source");
         }
+    }
+
+    #[test]
+    fn an_include_naming_a_pruned_directory_lifts_only_that_prune() {
+        let include = [
+            "build/*.rs".to_owned(),
+            "src/**".to_owned(),
+            ".ssh/*".to_owned(),
+        ];
+        let names = PruneMode::SearchSafe.directories_with_includes(true, &include);
+        assert!(!names.iter().any(|name| name == "build"), "{names:?}");
+        assert!(names.iter().any(|name| name == "dist"), "{names:?}");
+        assert!(names.iter().any(|name| name == ".ssh"), "{names:?}");
+        assert_eq!(
+            PruneMode::SearchSafe.directories_with_includes(true, &[]),
+            PruneMode::SearchSafe.directories(true)
+        );
     }
 
     #[test]

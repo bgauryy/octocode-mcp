@@ -17,7 +17,7 @@ import { join } from 'node:path';
 const run = promisify(execFile);
 const skill = join(import.meta.dirname, '../..');
 const FAKE = join(skill, 'tests/fixtures/fake-chrome.mjs');
-const STATE = ['.octocode', 'tmp', 'chrome-devtools', 'browser-state'];
+const STATE = ['.octocode', 'octocode-chrome-devtools', 'tmp', 'browser-state'];
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), 'octo-cdp-cleanup-')));
 test.after(() => rmSync(root, { recursive: true, force: true }));

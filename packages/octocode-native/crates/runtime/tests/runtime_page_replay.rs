@@ -1,6 +1,6 @@
 #![allow(clippy::expect_used)]
 
-use crate::support;
+use crate::support::{self, Run as _};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
@@ -33,7 +33,7 @@ async fn a_matching_snapshot_pages_the_stored_envelope_without_re_executing() {
     let root = file.parent().unwrap().to_string_lossy().into_owned();
     let runtime = workspace.runtime(&[]);
     let first = runtime
-        .execute(
+        .run(
             "page-1".into(),
             "localSearch".into(),
             json!({
@@ -54,7 +54,7 @@ async fn a_matching_snapshot_pages_the_stored_envelope_without_re_executing() {
     // restart; the stored envelope keeps serving the same response.
     unreadable(&file, true);
     let second = runtime
-        .execute("page-2".into(), "localSearch".into(), next.clone())
+        .run("page-2".into(), "localSearch".into(), next.clone())
         .await
         .expect("second page");
     unreadable(&file, false);
@@ -67,7 +67,7 @@ async fn a_matching_snapshot_pages_the_stored_envelope_without_re_executing() {
     let mut stale: Value = next;
     stale["responseSnapshot"] = json!(format!("{}0", snapshot.as_str().unwrap()));
     let third = runtime
-        .execute("page-stale".into(), "localSearch".into(), stale)
+        .run("page-stale".into(), "localSearch".into(), stale)
         .await
         .expect("stale page");
     let page = &third.structured_content["responsePagination"];
@@ -125,7 +125,7 @@ async fn pages_at(server: &MockServer, reference: &str) {
     let workspace = Workspace::new();
     let runtime = workspace.runtime(&[("GITHUB_API_URL", format!("{}/api/v3", server.uri()))]);
     let first = runtime
-        .execute(
+        .run(
             "gh-page-1".into(),
             "ghGetFileContent".into(),
             json!({
@@ -144,7 +144,7 @@ async fn pages_at(server: &MockServer, reference: &str) {
 
     for page in ["gh-page-2", "gh-page-2-again"] {
         let replayed = runtime
-            .execute(page.into(), "ghGetFileContent".into(), next.clone())
+            .run(page.into(), "ghGetFileContent".into(), next.clone())
             .await
             .expect("replayed page");
         let page = &replayed.structured_content["responsePagination"];
@@ -155,7 +155,7 @@ async fn pages_at(server: &MockServer, reference: &str) {
     let mut stale = next;
     stale["responseSnapshot"] = json!("response-rows-v2:stale");
     runtime
-        .execute("gh-page-stale".into(), "ghGetFileContent".into(), stale)
+        .run("gh-page-stale".into(), "ghGetFileContent".into(), stale)
         .await
         .expect("a mismatched snapshot re-executes");
     runtime.close().await;
@@ -171,7 +171,7 @@ async fn rows_scope_pages_replay_the_stored_envelope() {
     let runtime = workspace.runtime(&[]);
     let row = |word: &str| json!({"path":root,"matchString":word,"mainGoal":"Find needles.","reasoning":"Exercise page replay."});
     let first = runtime
-        .execute(
+        .run(
             "rows-1".into(),
             "localSearch".into(),
             json!({"queries":[row("needle"), row("original")],
@@ -188,7 +188,7 @@ async fn rows_scope_pages_replay_the_stored_envelope() {
 
     unreadable(&file, true);
     let second = runtime
-        .execute("rows-2".into(), "localSearch".into(), next)
+        .run("rows-2".into(), "localSearch".into(), next)
         .await
         .expect("second rows page");
     unreadable(&file, false);
@@ -208,7 +208,7 @@ async fn a_continuation_replays_regardless_of_the_callers_key_order() {
     settle(&workspace.workspace);
     let runtime = workspace.runtime(&[]);
     let first = runtime
-        .execute(
+        .run(
             "order-1".into(),
             "localFetch".into(),
             json!({
@@ -223,7 +223,7 @@ async fn a_continuation_replays_regardless_of_the_callers_key_order() {
     assert_eq!(pagination["hasMore"], true, "{pagination}");
     unreadable(&file, true);
     let second = runtime
-        .execute(
+        .run(
             "order-2".into(),
             "localFetch".into(),
             pagination["next"]["query"].clone(),
@@ -277,7 +277,7 @@ async fn an_edit_between_pages_answers_like_a_fresh_runtime() {
     let root = file.parent().unwrap().to_string_lossy().into_owned();
     let persistent = workspace.runtime(&[]);
     let first = persistent
-        .execute(
+        .run(
             "fresh-1".into(),
             "localSearch".into(),
             json!({
@@ -295,12 +295,12 @@ async fn an_edit_between_pages_answers_like_a_fresh_runtime() {
     workspace.write("src/a.txt", lines("rewritten"));
     workspace.write("src/b.txt", lines("changed"));
     let replayed = persistent
-        .execute("fresh-2".into(), "localSearch".into(), next.clone())
+        .run("fresh-2".into(), "localSearch".into(), next.clone())
         .await
         .expect("persistent page");
     let fresh_runtime = workspace.runtime(&[]);
     let fresh = fresh_runtime
-        .execute("fresh-2".into(), "localSearch".into(), next)
+        .run("fresh-2".into(), "localSearch".into(), next)
         .await
         .expect("fresh page");
     let page = &replayed.structured_content["responsePagination"];

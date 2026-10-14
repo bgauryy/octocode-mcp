@@ -161,24 +161,22 @@ fn resolve_fields(
         let default: Value = serde_json::from_str(field.default_json)
             .map_err(|error| format!("generated default for {} is invalid: {error}", field.path))?;
         let mut selected = None;
-        for binding in field.env {
-            let Some(raw) = environment.get(binding.name) else {
-                continue;
-            };
+        if let Some(binding) = field.env
+            && let Some(raw) = environment.get(binding.name)
+        {
             let raw = Value::String(raw.clone());
             if let Some(value) = parse_candidate(field, &raw, true, binding.normalize) {
                 if let Some((given, used)) = clamp_of(field, &raw, true) {
                     on_clamped(field, binding.name, given, used);
                 }
                 selected = Some(value);
-                break;
-            }
-            if raw.as_str().is_some_and(|raw| !raw.trim().is_empty()) {
-                on_invalid_env(field, binding.name);
-            }
-            if binding.invalid == ConfigInvalidEnv::Default {
-                selected = Some(default.clone());
-                break;
+            } else {
+                if raw.as_str().is_some_and(|raw| !raw.trim().is_empty()) {
+                    on_invalid_env(field, binding.name);
+                }
+                if binding.invalid == ConfigInvalidEnv::Default {
+                    selected = Some(default.clone());
+                }
             }
         }
 
@@ -208,7 +206,7 @@ pub fn resolve_env_token(e: &BTreeMap<String, String>) -> Option<PrivateTokenSel
 /// `ResolvedConfig`, so inspection and `config get` cannot print their values.
 /// An explicit blank classification key is an opt-out, not a missing value.
 fn effective_disables_classification(effective: &BTreeMap<String, String>, key: &str) -> bool {
-    key == super::dotenv::CLASSIFICATION_KILL_SWITCH
+    super::dotenv::is_classification_kill_switch(key)
         && effective
             .get(key)
             .is_some_and(|value| value.trim().is_empty())
@@ -216,14 +214,13 @@ fn effective_disables_classification(effective: &BTreeMap<String, String>, key: 
 
 fn apply_credential_file_fallbacks(files: &[&Value], effective: &mut BTreeMap<String, String>) {
     for field in CONFIG_FIELDS.iter().filter(|field| field.credential) {
-        let Some(binding) = field.env.first() else {
+        let Some(binding) = field.env else {
             continue;
         };
-        if field.env.iter().any(|alias| {
-            effective
-                .get(alias.name)
-                .is_some_and(|value| !value.trim().is_empty())
-        }) || effective_disables_classification(effective, binding.name)
+        if effective
+            .get(binding.name)
+            .is_some_and(|value| !value.trim().is_empty())
+            || effective_disables_classification(effective, binding.name)
         {
             continue;
         }
@@ -245,8 +242,7 @@ fn apply_credential_file_fallbacks(files: &[&Value], effective: &mut BTreeMap<St
 pub(super) fn workspace_file_allowed(field: &ConfigFieldSpec) -> bool {
     !field
         .env
-        .iter()
-        .any(|binding| PROTECTED_KEYS.contains(&binding.name))
+        .is_some_and(|binding| PROTECTED_KEYS.contains(&binding.name))
 }
 
 /// A workspace file may still set a protected field to a value its
@@ -263,8 +259,7 @@ pub(super) fn workspace_setting_allowed(field: &ConfigFieldSpec, value: &Value) 
         || scalar.is_some_and(|value| {
             field
                 .env
-                .iter()
-                .any(|binding| super::dotenv::workspace_may_narrow(binding.name, value))
+                .is_some_and(|binding| super::dotenv::workspace_may_narrow(binding.name, value))
         })
 }
 

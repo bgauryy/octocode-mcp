@@ -11,12 +11,12 @@
 //! `issue` and `commit_compare` shape each operation; `filter`, `inventory` and
 //! `patch` own changed files and patch windows, `window` provider-batch paging, `pr_menu`,
 //! `patch_hop` and `promotion` every `next.*`, and `graphql` the PR fast path.
-use crate::providers::github::{
-    GitHubTransport, ProviderError, ProviderErrorKind, ProviderErrorReason, RequestContext,
-};
 use crate::security::scan::{ContentScan, sanitize_provider_text};
 use crate::tools::num::usize_of;
 use crate::tools::result::remove_nulls;
+use octocode_github::{
+    GitHubTransport, ProviderError, ProviderErrorKind, ProviderErrorReason, RequestContext,
+};
 use serde_json::Value;
 use std::path::Path;
 

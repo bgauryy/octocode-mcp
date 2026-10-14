@@ -3,7 +3,7 @@ import path from 'node:path';
 import { SessionManager, type ExtensionAPI, type ExtensionCommandContext, type SessionInfo } from '@earendil-works/pi-coding-agent';
 import { say, wordCompletions, type Subcommands } from '../shared/commands.js';
 import { formatCost } from '../shared/format.js';
-import { sessionDir } from '../shared/home.js';
+import { isWithin, sessionDir, sessionsRoot } from '../shared/home.js';
 import { contentText, errorMessage } from '../shared/util.js';
 import { shortDuration } from './brief.js';
 import { runningPid } from '../agentdb/liveness.js';
@@ -171,13 +171,26 @@ async function rename(pi: ExtensionAPI, ctx: ExtensionCommandContext, row: Liste
   ctx.ui.notify(`Renamed to "${name}".`, 'info');
 }
 
+/** The folder `forget` may delete: a session's own, strictly inside the sessions folder; undefined for an id that names anything else. */
+function forgettableDir(id: string): string | undefined {
+  try {
+    const dir = sessionDir(id);
+    return isWithin(dir, sessionsRoot()) && dir !== sessionsRoot() ? dir : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 async function forget(ctx: ExtensionCommandContext, index: SessionIndex | undefined, row: ListedSession, current: string | undefined): Promise<void> {
   if (row.info.id === current) return ctx.ui.notify('The current session cannot be forgotten while it runs.', 'warning');
   // Its process would keep writing output, logs and checkpoints into the folder, and its extras would come back.
   if (live(row) && row.extra?.pid !== process.pid) return ctx.ui.notify(`That session is open in another Pi process (pid ${row.extra?.pid}); close it there first.`, 'warning');
+  // Never let a malformed id resolve to the sessions folder itself or outside it: the delete is recursive.
+  const dir = forgettableDir(row.info.id);
+  if (!dir) return ctx.ui.notify(`Refusing to forget "${title(row)}": its id does not name a session folder.`, 'warning');
   const ok = await ctx.ui.confirm('Forget Octocode data', `Delete Octocode's saved output, bash logs, checkpoints and extras for "${title(row)}"? Pi's session file stays.`);
   if (!ok) return;
-  fs.rmSync(sessionDir(row.info.id), { recursive: true, force: true });
+  fs.rmSync(dir, { recursive: true, force: true });
   index?.forget(row.info.id);
   ctx.ui.notify(`Forgot Octocode data for "${title(row)}".`, 'info');
 }

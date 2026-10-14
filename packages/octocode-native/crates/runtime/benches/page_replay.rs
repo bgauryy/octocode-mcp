@@ -25,7 +25,7 @@ mod support;
 
 use std::time::{Duration, Instant};
 
-use octocode_native::runtime::ToolRuntime;
+use octocode_native::runtime::{Channel, ToolRuntime};
 use serde_json::{Value, json};
 use support::Workspace;
 
@@ -96,8 +96,9 @@ fn workloads(root: &str, wide: &str) -> Vec<Workload> {
 
 async fn call(runtime: &ToolRuntime, tool: &str, envelope: Value) -> (Value, Duration) {
     let started = Instant::now();
+    let admission = runtime.admit("bench".into()).expect("admitted");
     let outcome = runtime
-        .execute("bench".into(), tool.into(), envelope)
+        .execute(admission, tool.into(), envelope, Channel::Structured)
         .await
         .expect("tool call");
     (outcome.structured_content, started.elapsed())

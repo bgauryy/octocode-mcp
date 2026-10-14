@@ -7,6 +7,7 @@ use crate::{
     security::ContentSecurity,
     tools::cancel::CancellationCheck,
 };
+use octocode_engine::search::walk::IgnorePolicy;
 use octocode_engine::types::FileSystemQueryOptions;
 use serde_json::{Value, json};
 use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
@@ -147,7 +148,15 @@ pub fn execute_tree(
     let policy = paths.identity();
     let snapshot_in = q.snapshot.as_deref().map(String::as_str);
     let (walk, stored) = super::walked(q.page(), snapshot_in, &policy, || {
-        walk_tree(q, &validated.canonical, paths, security, cancel, requested)
+        walk_tree(
+            q,
+            &validated.canonical,
+            paths,
+            security,
+            cancel,
+            requested,
+            None,
+        )
     })?;
     // The page cut is part of the snapshot: a continuation under a
     // different response window restarts instead of skipping entries.
@@ -190,10 +199,11 @@ pub fn execute_tree(
         hidden: q.include_hidden == Some(true),
         default_excludes: q.default_excludes.defaults(),
     };
+    let bound = super::ProbeBound::new(super::PROBE_BUDGET);
     super::note_empty(
         &mut out,
         q,
-        &validated.canonical,
+        (&validated.canonical, paths),
         &walk.uncovered,
         shown,
         |relaxed| {
@@ -208,10 +218,13 @@ pub fn execute_tree(
                 paths,
                 security,
                 cancel,
-                requested,
+                super::PROBE_HITS,
+                Some(&bound),
             )?;
+            let cut = found.was_capped || bound.cut();
             Ok(super::found_entries(
                 found.rows.into_iter().map(|row| row.source),
+                cut,
             ))
         },
     )?;
@@ -219,7 +232,9 @@ pub fn execute_tree(
 }
 
 /// Walk the tree once: rows in listing order, cut to `requested`, with
-/// directories that have their own group not also listed bare.
+/// directories that have their own group not also listed bare. A probe walk
+/// (`bound`) stops at its first `requested` entries and admits nothing past
+/// its deadline.
 fn walk_tree(
     q: &StructureSearchQueryTree,
     root: &std::path::Path,
@@ -227,53 +242,56 @@ fn walk_tree(
     security: &ContentSecurity,
     cancel: &dyn CancellationCheck,
     requested: usize,
+    bound: Option<&super::ProbeBound>,
 ) -> Result<TreeWalk, ToolError> {
-    // Leave out what localSearch leaves out: `.gitignore`d entries (unless
-    // includeIgnored) and paths the path policy denies (sensitive names, and
-    // symlinks out of the allowed roots). Denied entries the listing would
-    // otherwise show are counted and reported, never silently dropped.
-    let gitignore = (!q.include_ignored.unwrap_or(false))
-        .then(|| crate::policy::gitignore::GitignoreFilter::new(root));
+    // Leave out what localSearch leaves out: ignored entries (unless
+    // includeIgnored, counted by the walk) and paths the path policy denies
+    // (sensitive names, and symlinks out of the allowed roots). Denied
+    // entries the listing would otherwise show are counted and reported,
+    // never silently dropped.
     let show_hidden = q.include_hidden.unwrap_or(false);
     let include = crate::policy::include::include_globs(&q.include);
     let probe = super::FilterProbe::new(root, &include, &q.extensions, None);
     let withheld = std::sync::Mutex::new(crate::policy::discovery::Withheld::default());
-    let (ignored, hidden) = (AtomicUsize::new(0), AtomicUsize::new(0));
+    let hidden = AtomicUsize::new(0);
     let pruned = PruneMode::SyntaxVisible.directories(q.default_excludes.defaults());
     let discovery = paths.discovery_walk();
-    let native = octocode_engine::portable::query_file_system_typed(
+    let native = octocode_engine::portable::query_file_system(
         FileSystemQueryOptions {
             path: root.to_string_lossy().into_owned(),
             include_root: Some(false),
             recursive: Some(true),
             max_depth: Some(q.walk_depth()),
-            show_hidden: Some(show_hidden),
+            ignore: IgnorePolicy::new(q.include_ignored, Some(show_hidden)),
             names: (!include.is_empty()).then(|| include.clone()),
             extensions: (!q.extensions.is_empty()).then(|| q.extensions.clone()),
             entry_type: q.entry_type.map(|kind| kind.to_string()),
             exclude_dir: Some(pruned.clone()),
             exclude: (!q.exclude.is_empty()).then(|| q.exclude.clone()),
             stop_at_limit: Some(true),
-            limit: Some(super::max_walk()),
+            limit: Some(bound.map_or(super::max_walk(), |_| {
+                u32::try_from(requested).unwrap_or(u32::MAX)
+            })),
             ..Default::default()
         },
         &|path, file_type| {
+            // The root itself stays admitted: a probe out of time lists
+            // nothing under it, never fails.
+            if path != root && bound.is_some_and(|bound| !bound.admits(path, file_type)) {
+                return false;
+            }
             // Dot entries out of view (no `hidden`) are neither listed nor
             // counted as withheld or ignored; the ones `includeHidden:true` would
             // walk (permitted, not ignored, not a pruned directory) are
             // counted as hidden.
             let name = crate::tools::display_name(path);
             let dot = name.starts_with('.');
-            if gitignore.as_ref().is_some_and(|filter| {
-                filter.is_ignored_as(path, file_type.map(|kind| kind.is_dir()))
-            }) {
-                if show_hidden || !dot {
-                    ignored.fetch_add(1, Relaxed);
-                }
-                return Ok(false);
-            }
-            let allowed = super::allow_discovery(path, file_type, &discovery, cancel)?;
-            if !allowed && (show_hidden || !dot) && probe.could_list(path) {
+            let allowed = discovery.permits_entry(path, file_type);
+            if !allowed
+                && (show_hidden || !dot)
+                && probe.could_list(path)
+                && super::reports_withheld(path)
+            {
                 withheld
                     .lock()
                     .unwrap_or_else(|error| error.into_inner())
@@ -282,12 +300,13 @@ fn walk_tree(
             if allowed && dot && !show_hidden && !(pruned.contains(&name) && path.is_dir()) {
                 hidden.fetch_add(1, Relaxed);
             }
-            Ok(allowed)
+            allowed
         },
+        &|| cancel.check().is_err(),
     )
     .map_err(|error| super::walk_error(error, q.path.as_str(), cancel))?;
     cancel.check().map_err(ToolError::cancelled)?;
-    let (mut rows, files, dirs, bytes) = tree_rows(&native.entries, security);
+    let mut rows = tree_rows(&native.entries, security);
     let available = rows.len();
     rows.truncate(requested);
     // An expanded scan lists only the walk-order rows past the window
@@ -295,6 +314,15 @@ fn walk_tree(
     let offset = q.scan_offset().min(rows.len());
     rows.drain(..offset);
     let covered = offset + rows.len();
+    // The summary totals this listing's rows, like `files`; bytes are
+    // regular files' (a symlink's own length is no content).
+    let (files, dirs, bytes) = rows.iter().fold((0, 0, 0), |(f, d, b), row| {
+        if row.kind == "directory" {
+            (f, d + 1, b)
+        } else {
+            (f + 1, d, b + row.size.unwrap_or(0))
+        }
+    });
     // One group per directory: `path`'s own entries first, then each
     // directory in walk order (component-wise path order), entries in walk
     // order within it. The sort is stable.
@@ -312,7 +340,7 @@ fn walk_tree(
         dirs,
         bytes,
         uncovered: super::Uncovered {
-            ignored: ignored.into_inner(),
+            ignored: native.ignored as usize,
             withheld: withheld
                 .into_inner()
                 .unwrap_or_else(|error| error.into_inner()),
@@ -323,36 +351,24 @@ fn walk_tree(
     })
 }
 
-/// Outline rows in walk order, with the file and directory counts and the
-/// files' total size.
+/// Outline rows in walk order.
 fn tree_rows(
     entries: &[octocode_engine::types::FileSystemEntry],
     security: &ContentSecurity,
-) -> (Vec<TreeRow>, usize, usize, i64) {
-    let (mut files, mut dirs, mut bytes) = (0_usize, 0_usize, 0_i64);
-    let rows = entries
+) -> Vec<TreeRow> {
+    entries
         .iter()
         .map(|entry| {
             let relative = security.sanitize_text(&entry.relative_path, None).content;
             let (dir, name) = relative.rsplit_once('/').unwrap_or(("", &relative));
             let mut file_size = None;
+            // A symlink counts as a non-directory entry, as `files` counts
+            // it; its size is the link's own.
             let kind = match entry.entry_type.as_str() {
-                "directory" => {
-                    dirs += 1;
-                    "directory"
-                }
-                // A symlink counts as a non-directory entry, as `files` counts
-                // it; its size is the link's own.
-                "symlink" => {
-                    files += 1;
-                    bytes += entry.size.unwrap_or(0);
-                    "symlink"
-                }
+                "directory" => "directory",
+                "symlink" => "symlink",
                 _ => {
-                    files += 1;
-                    let size = entry.size.unwrap_or(0);
-                    bytes += size;
-                    file_size = Some(size);
+                    file_size = Some(entry.size.unwrap_or(0));
                     "file"
                 }
             };
@@ -372,8 +388,7 @@ fn tree_rows(
                 },
             }
         })
-        .collect::<Vec<_>>();
-    (rows, files, dirs, bytes)
+        .collect()
 }
 
 /// A directory with its own `{dir, entries}` group is named by that group;

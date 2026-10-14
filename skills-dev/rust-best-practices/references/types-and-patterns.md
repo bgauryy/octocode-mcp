@@ -3,7 +3,7 @@
 Load when you design a struct/enum/trait, choose a primitive or smart pointer, port an OO object model, or need a named pattern. Why: the type shape fixes which states are representable and what every caller pays. Layout in memory: `references/performance-and-memory.md`. JS side of a napi type: `references/napi.md`.
 
 ## Objects
-- Object = `struct` + `impl` + traits. No inheritance (not even via `Deref` chains): compose structs; share behavior with traits and default methods.
+- Object = `struct` + `impl` + traits. Compose structs; share behavior with traits and default methods. `Deref` is not an inheritance tool (anti-patterns below).
 - Constructors are functions: `new` (infallible), `try_new`/`parse` → `Result`, `with_capacity`/`from_x`, `Default` (over a hand-written `new()` when fields have obvious zeros). Big optional config → `Config { a, ..Default::default() }`.
 - Private fields + validating constructor keep the invariant ("parse, don't validate"). Public fields only for plain data with no invariant; then skip getter/setter pairs.
 - Getters take the field name (`fn name(&self) -> &str`), no `get_`.
@@ -27,7 +27,8 @@ Load when you design a struct/enum/trait, choose a primitive or smart pointer, p
 
 ## Generics, `impl Trait`, `dyn`
 - Argument: `impl AsRef<Path>` / `impl Into<String>`; generic `<T: Trait>` when the type is named twice or stored.
-- Return: `impl Iterator<Item = T>`; `Box<dyn Trait>` only for runtime-chosen or heterogeneous values.
+- Return: `impl Iterator<Item = T>`; `Box<dyn Trait>` only for a runtime-chosen or heterogeneous value.
+- An `async fn` in a trait is not dyn-compatible on stable. Use it on a generic or `impl Trait` bound. `Box<dyn Trait>` stays a sync plugin slot. Native async-fn trait objects are an unshipped language goal ([traits](https://doc.rust-lang.org/reference/items/traits.html), [goal](https://rust-lang.github.io/goals/2026/afidt-box.html)).
 - Associated type when one natural choice per impl (`Iterator::Item`); generic param when many impls per type (`From<T>`).
 - Small, purpose-named traits. Extension trait instead of growing a foreign trait. Blanket impls only on traits you own.
 - Derive `Debug` on nearly everything; where valid also `Clone, Copy (small, no heap), PartialEq, Eq, Hash, PartialOrd, Ord, Default`; serde derives behind a feature in libraries.
@@ -66,6 +67,7 @@ Lifetimes in structs (`struct View<'a> { s: &'a str }`) suit short-lived views a
 | Command | `enum Command { … }` + one `apply` fn |
 | Visitor | `match` over an enum; a `Visit` trait with default methods for big ASTs (oxc/syn) |
 | Observer / event bus | channels (`mpsc`, `broadcast`), not stored callbacks with shared borrows |
+| Actor | task + handle + bounded channel (`references/idioms.md`) | an actor framework |
 | Singleton, global mutable state | pass a context struct (globals defeat test isolation); `OnceLock`/`LazyLock` only for global immutable state |
 | Decorator / middleware | wrapper implementing the same trait (tower `Layer`/`Service`) |
 | Dependency injection | constructor takes `impl Trait`/generic; tests pass a fake |
@@ -75,3 +77,5 @@ Lifetimes in structs (`struct View<'a> { s: &'a str }`) suit short-lived views a
 - `Rc<RefCell<T>>` graphs (often from an OO port) → index storage (`Vec<Node>` + `u32` ids, `slotmap`, `petgraph`) or `Arc` + message passing. `Rc` cycles leak; break back-edges with `Weak`.
 - God struct with all-`pub` fields plus accessors → split by responsibility.
 - Traits with one impl, generic params nobody varies → concrete until a second use.
+- **Deref polymorphism.** `Deref` and `DerefMut` are for pointer types (`Box`, `Rc`, `Arc`, a smart-pointer newtype). Implementing them so one struct inherits another's methods makes the conversion implicit, traits do not follow, and method resolution changes `self`'s type. Compose, or write the forwarding method. [Deref polymorphism](https://rust-unofficial.github.io/patterns/anti_patterns/deref.html).
+- **`#![deny(warnings)]` at the crate root.** A later rustc warning then fails the build. The manifest floor replaces it (`references/workspace.md`).

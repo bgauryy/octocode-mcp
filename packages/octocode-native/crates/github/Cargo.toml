@@ -9,6 +9,7 @@ repository.workspace = true
 description = "GitHub protocol and bounded provider operations for Octocode"
 
 [dependencies]
+octocode-io = { path = "../io" }
 base64 = { workspace = true }
 bytes = { workspace = true }
 futures-util = { workspace = true }

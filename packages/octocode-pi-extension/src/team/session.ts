@@ -1,17 +1,22 @@
 import fs from 'node:fs';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
-import { addReply, errorMessage } from '../shared/util.js';
+import { addReply, cutText, errorMessage } from '../shared/util.js';
+import { fenceUntrusted, headerText } from '../shared/fence.js';
 import { sanitizeTerminalText, storedText } from '../shared/sanitize.js';
 import { dbFailure, interruptRefusal, leaseAge, MESSAGE_MAX_CHARS, outside, resolveLockPath, resolveTarget, USER_SENDER } from './routing.js';
 import { AGENT_ID_ENV, PARENT_ID_ENV, PARENT_PID_ENV, pathKey, TeamStore } from './store.js';
-import { parentGone, terminateSelf } from '../shared/process.js';
+import { envFlag, SUBAGENT_ENV } from '../shared/env.js';
+import { interactive } from '../shared/interactive.js';
+import { parentGone, sameProcess, terminateSelf } from '../shared/process.js';
 import type { Lease, LeaseRequest, Member, SendOptions } from './model.js';
 import { Mail, mailIds } from './mail.js';
-import { HeldLeases, leaseIdleMs } from './held.js';
+import { HeldLeases, LEASE_IDLE_MS } from './held.js';
 import { Inbox } from './inbox.js';
+import { PeerLeases, type PeerLease } from './peer-leases.js';
 import type { EditLog } from './edits.js';
 import { AgentDbError } from '../agentdb/db.js';
-import { agentDbPath } from '../shared/home.js';
+import { agentDbPath, peerDbPath } from '../shared/home.js';
+import { saveFullOutput } from '../shared/spill.js';
 import { agentName, LINE_MAX, newMember } from './identity.js';
 import { TeamTicker, type TeamView } from './ticker.js';
 
@@ -22,6 +27,23 @@ export { EXTERNAL_SENDER, MESSAGE_MAX_CHARS, USER_SENDER } from './routing.js';
 const HEARTBEAT_MS = 5_000;
 /** Consecutive failed ticks (about 30s) before the agent hears that the team database is unavailable. */
 const FAILED_TICKS_NOTICE = 30;
+/** How often a subagent checks that the Pi process that started it still runs. */
+const PARENT_CHECK_MS = 1_000;
+/** Names drawn in turn when other processes keep taking them. */
+const JOIN_ATTEMPTS = 8;
+
+/**
+ * Whether the process named by `OCTOCODE_PARENT_PID` (`<pid> <start time>`, the start time when known) is gone. A
+ * direct parent is judged by the pid and reparenting; through a launcher, a recorded start time tells a later process
+ * that reused the pid from the parent.
+ */
+export function parentProcessGone(value: string): boolean {
+  const [pid = '', ...started] = value.trim().split(' ');
+  const parentPid = Number(pid);
+  if (!Number.isInteger(parentPid) || parentPid <= 0) return false;
+  if (parentGone(parentPid)) return true;
+  return process.ppid !== parentPid && started.length > 0 && !sameProcess(parentPid, started.join(' '));
+}
 
 /** This process's place in the team: joins, reports what it is doing, holds reservations and delivers messages sent to it. */
 export class Team {
@@ -36,7 +58,7 @@ export class Team {
       const file = agentDbPath(this.env);
       return this.ctx && (this.db || fs.existsSync(file)) ? file : undefined;
     },
-    // Background reads may prune departed agents (a write): never wait long for another process's lock.
+    // Reads never write, but share the connection's busy wait: never wait long for another process's lock.
     read: () => (this.db ? this.db.quick(() => this.snapshot()) : this.snapshot()),
     resumed: (since, now) => {
       try {
@@ -56,8 +78,12 @@ export class Team {
   /** When this agent last worked (or joined): an idle owner's reservations lapse `leaseIdleMs` after it. */
   private activeAt = 0;
   private readonly held = new HeldLeases();
+  /** The agents-communication package's path leases (read-only), opened on the first guarded write. */
+  private peers: PeerLeases | undefined;
   private readonly inbox = new Inbox();
   private readonly mail: Mail;
+  /** A subagent's check that its parent still runs: on from the session start, whether or not it joins the team. */
+  private parentWatch: NodeJS.Timeout | undefined;
   /** Subagents this session started that have finished: id → where their report went, for a later message to them. */
   private readonly finished = new Map<string, string>();
   /** Resumes a finished subagent that still lingers (set by the subagents domain); its receipt, else undefined. */
@@ -88,7 +114,24 @@ export class Team {
     try { this.stop(); } catch { /* the old row stays (locked or closed database) and ages out; stop() cleared the state */ }
     this.ctx = ctx;
     this.schemaProblem = undefined;
+    this.watchParent();
     if (this.env[AGENT_ID_ENV]) this.join();
+  }
+
+  /**
+   * A crashed parent's child spends tokens for nobody: once the parent is gone, Pi's SIGTERM path disposes the session
+   * and exits (ARCHITECTURE: Liveness). Its own unref'd timer, so a child that could not join the team stops too.
+   */
+  private watchParent(): void {
+    const parent = this.env[PARENT_PID_ENV];
+    if (!parent || this.parentWatch) return;
+    this.parentWatch = setInterval(() => {
+      if (!parentProcessGone(parent)) return;
+      clearInterval(this.parentWatch);
+      this.parentWatch = undefined;
+      terminateSelf();
+    }, PARENT_CHECK_MS);
+    this.parentWatch.unref();
   }
 
   /** The database opens on first use, so a session that never collaborates never creates it. */
@@ -109,7 +152,7 @@ export class Team {
     return this.schemaProblem;
   }
 
-  /** A name held by no member of the shared database, finished subagent of this session or caller in `inUse` (a subagent not yet in it). */
+  /** A name held by no member of the shared database, finished subagent of this session or caller in `inUse` (a subagent not yet in it, or a name another process took first). */
   newName(inUse: Iterable<string> = []): string {
     let live: string[] = [];
     try {
@@ -125,15 +168,30 @@ export class Team {
     const db = this.store(); // throws before the session starts
     const ctx = this.ctx!;
     if (!this.me) {
-      const now = Date.now();
-      this.activeAt = now;
-      this.me = newMember(this.env, ctx, this.env[AGENT_ID_ENV] ?? this.newName(), goal, now);
+      this.me = this.claimName(db, ctx, goal);
+      this.activeAt = this.me.joinedAt;
       this.ticker.sync();
     } else if (goal !== undefined) {
       this.me.goal = storedText(goal, LINE_MAX);
     }
     this.flush(db);
     return this.me;
+  }
+
+  /**
+   * Takes a name in the shared database: the one the parent chose for a subagent, else a free one. Two processes can
+   * draw the same free name; the database gives it to the first, and the other draws again (never overwrites the row).
+   */
+  private claimName(db: TeamStore, ctx: ExtensionContext, goal: string | undefined): Member {
+    const chosen = this.env[AGENT_ID_ENV];
+    const lost: string[] = [];
+    for (let attempt = 0; attempt < JOIN_ATTEMPTS; attempt += 1) {
+      const member = newMember(this.env, ctx, chosen ?? this.newName(lost), goal, Date.now());
+      if (db.join(member)) return member;
+      if (chosen) throw new Error(`The team name ${chosen} is held by another running agent.`);
+      lost.push(member.id);
+    }
+    throw new Error('No free team name: the names kept being taken by other agents joining at the same time. Try again.');
   }
 
   /** Leave the team and release everything held; the database stays open for the next join. State clears first: a refused removal still throws, but leaves nothing stale (the row ages out). */
@@ -144,13 +202,18 @@ export class Team {
     this.held.clear();
     this.inbox.reset(this.db, me?.id);
     this.mail.reset();
-    if (me && this.db) this.db.remove(me.id);
+    // Only a row that still names this process: a name another process holds now is not ours to remove.
+    if (me && this.db) this.db.remove(me.id, Date.now(), me);
   }
 
   /** Leave and let go of the database (session end; the process connection stays open for the next session). */
   stop(): void {
     try { this.leave(); } finally {
+      clearInterval(this.parentWatch);
+      this.parentWatch = undefined;
       this.db = undefined;
+      this.peers?.close();
+      this.peers = undefined;
       this.ticker.reset();
       this.finished.clear();
       this.ctx = undefined;
@@ -193,14 +256,17 @@ export class Team {
 
   /** Queue a message for the agents `to` resolves to; returns who got it and the message id, or an error text. */
   async send(
-    to: string, text: string, options: SendOptions & { from?: string | undefined; signal?: AbortSignal } = {},
+    recipient: string | undefined, text: string, options: SendOptions & { from?: string | undefined; signal?: AbortSignal } = {},
   ): Promise<{ sent: string[]; id: number; departed?: string[]; resumed?: string } | { error: string }> {
     options.signal?.throwIfAborted();
     const from = options.from ?? this.me?.id;
     if (!from) return { error: 'Join first: call coordinate with action "join".' };
-    if (text.length > MESSAGE_MAX_CHARS) return { error: `Message exceeds ${MESSAGE_MAX_CHARS} characters; send a summary and a file path to the full content. Nothing was sent.` };
     const db = this.store();
-    if (options.replyTo !== undefined && !db.replyTarget(options.replyTo)) return { error: `No message #${options.replyTo} in this repository to reply to; omit replyTo or use the number from the message you answer. Nothing was sent.` };
+    const answered = options.replyTo === undefined ? undefined : db.replyTarget(options.replyTo);
+    if (options.replyTo !== undefined && !answered) return { error: `No message #${options.replyTo} in this repository to reply to; omit replyTo or use the number from the message you answer. Nothing was sent.` };
+    // A reply goes to the sender of the message it answers unless the caller says otherwise.
+    const to = recipient ?? answered?.from;
+    if (to === undefined) return { error: 'Say who to send to: `to` (an agent id, role, "parent" or "all"), or `replyTo` (the message you answer). Nothing was sent.' };
     // A broadcast stays in the sender's session tree; the user's and an API client's in this session's tree.
     const scope = outside(from) ? this.me?.id : from;
     if (to === 'all' && !scope) return { error: 'No agents in this session yet: nothing to broadcast to.' };
@@ -211,12 +277,16 @@ export class Team {
     if (typeof targets === 'string') return { error: this.finished.has(to) ? `${to} has finished and takes no more messages; ${this.finished.get(to)} To continue its work, start a new agent and give it the context it needs.` : targets };
     const refused = options.interrupt ? interruptRefusal(members, targets, from, to, scope) : undefined;
     if (refused) return { error: refused };
-    // Replies default to FYI: an answer that asks for an answer makes two agents wake each other forever.
-    const replyRequired = options.replyRequired ?? (to !== 'all' && !outside(from) && options.replyTo === undefined);
+    // A message is FYI unless the sender says it needs an answer: a default that asked for answers made two agents wake each other forever.
+    const replyRequired = options.replyRequired ?? false;
     // Stored sanitized: every reader (the model, the panel, other processes) gets plain text.
+    const delivered = spilledMessage(sanitizeTerminalText(text), from);
+    if (typeof delivered !== 'string') return delivered;
     const reply = options.replyTo !== undefined ? { replyTo: options.replyTo } : {};
-    const { id, departed } = db.send(from, targets.map((target) => target.id), sanitizeTerminalText(text), { replyRequired, wake: outside(from), interrupt: options.interrupt === true, ...reply });
+    const flags = { replyRequired, wake: outside(from), interrupt: options.interrupt === true, ...reply };
+    const { id, departed } = db.send(from, targets.map((target) => target.id), delivered, flags);
     if (id === undefined) return { error: `${departed.join(', ')} left the team; the message was not sent.` };
+    if (from === USER_SENDER) this.mail.createdForUser(id);
     const sent = targets.map((target) => target.id).filter((target) => !departed.includes(target));
     return { sent, id, ...(departed.length > 0 ? { departed } : {}) };
   }
@@ -226,7 +296,7 @@ export class Team {
     const me = this.join();
     // Stored resolved from this session's cwd, the way edits resolve; conflicts still show the paths as given.
     const shown = new Map(paths.map((entry) => [resolveLockPath(this.ctx?.cwd, entry), entry]));
-    const requests: LeaseRequest[] = [...shown].map(([resolved, entry]) => ({ path: resolved, kind: /[\\/]$/.test(entry) ? 'tree' : 'file', reason }));
+    const requests: LeaseRequest[] = paths.map((entry) => ({ path: resolveLockPath(this.ctx?.cwd, entry), kind: /[\\/]$/.test(entry) ? 'tree' : 'file', reason }));
     const db = this.store();
     const result = db.lock(me.id, requests);
     if (!result.ok) return { ok: false, conflicts: result.conflicts.map((conflict) => ({ ...conflict, path: shown.get(conflict.path) ?? conflict.path })) };
@@ -255,17 +325,26 @@ export class Team {
    * database error all forbid it. A database error fails closed only for an agent that collaborates; a solo session
    * (never joined, nothing held) keeps editing when the database is missing, foreign, too new or unusable.
    */
-  private check(file: string): { lease?: Lease; lapsed?: string; error?: string } {
+  private check(file: string): { lease?: Lease; peer?: PeerLease; lapsed?: string; error?: string } {
     try {
       const db = this.existing();
-      if (!db) return {};
-      const lease = db.conflict(file, this.me?.id ?? USER_SENDER);
-      if (lease) return { lease };
-      const lapsed = this.lapsedCover(db, file);
-      return lapsed ? { lapsed } : {};
+      if (db) {
+        const lease = db.conflict(file, this.me?.id ?? USER_SENDER);
+        if (lease) return { lease };
+        const lapsed = this.lapsedCover(db, file);
+        if (lapsed) return { lapsed };
+      }
     } catch (error) {
-      return this.collaborating() ? { error: dbFailure(error) } : {};
+      if (this.collaborating()) return { error: dbFailure(error) };
     }
+    // Agents outside this team (Claude, Codex, Pi sessions that use agents-communication) reserve paths in their own database.
+    const peer = this.peerLeases().conflict(file);
+    return peer ? { peer } : {};
+  }
+
+  /** The package reads its home from the process environment, so this does too (not the team's injected `env`, which only carries a subagent's identity). */
+  private peerLeases(): PeerLeases {
+    return (this.peers ??= new PeerLeases(peerDbPath(), { self: () => this.ctx?.sessionManager.getSessionId(), warn: (text) => this.mail.notice(text) }));
   }
 
   /** A reservation of ours covering `file` that is no longer live in the database (now tracked as lapsed), if any. */
@@ -280,11 +359,12 @@ export class Team {
     return this.check(file).lease;
   }
 
-  /** Why the file may not be changed (another agent's reservation, our lapsed one, or an unreadable team database), or undefined. */
+  /** Why the file may not be changed (another agent's reservation, in this team or in agents-communication; our lapsed one; or an unreadable team database), or undefined. */
   reservation(absolute: string, display: string): string | undefined {
-    const { lease, lapsed, error } = this.check(absolute);
+    const { lease, peer, lapsed, error } = this.check(absolute);
     if (error) return `Team database unavailable (${error}); retry the change.`;
     if (lapsed) return `Your reservation on ${lapsed} lapsed; lock it again before editing ${display}.`;
+    if (peer) return sanitizeTerminalText(`${display} is reserved by ${peer.name} (${peer.vendor} agent in agents-communication; ${peer.reason}; ${leaseAge(peer)}). Do other work, or message ${peer.name} through agents-communication and retry after they unlock.`);
     return lease ? sanitizeTerminalText(`${display} is reserved by ${lease.owner} (${lease.reason}; ${leaseAge(lease)}). Do other work, or sendMessage ${lease.owner} and retry after they unlock.`) : undefined;
   }
 
@@ -298,7 +378,7 @@ export class Team {
     this.update((me) => void (me.status = 'working'), true);
   }
 
-  /** Delivers held interrupts first; a headless child then leaves because its print/JSON process exits. */
+  /** Delivers held interrupts first; a headless child then leaves because its parent closes its input. */
   onAgentSettled(): void {
     if (this.mail.settled()) return; // An interrupt stopped the run: its message starts the next turn.
     if (this.me && this.headless()) {
@@ -310,9 +390,9 @@ export class Team {
     this.update((me) => void (me.status = 'idle'), true);
   }
 
-  /** A subagent without a UI (print/JSON mode): once its run is over it gets no further turn. */
+  /** A subagent (no person to talk to, whatever its mode): once its run is over it gets no further turn. */
   private headless(): boolean {
-    return Boolean(this.env[AGENT_ID_ENV] && this.ctx && !this.ctx.hasUI);
+    return Boolean(this.env[AGENT_ID_ENV] && this.ctx && !interactive(this.ctx, envFlag(this.env, SUBAGENT_ENV)));
   }
 
   /** Pi is about to call the model with `messages`: team mail among them is now delivered. */
@@ -358,9 +438,9 @@ export class Team {
     const now = Date.now();
     this.me.updatedAt = now;
     if (this.me.status === 'working') this.activeAt = now;
-    db.save(this.me);
+    if (!db.save(this.me)) throw new Error(`The team name ${this.me.id} is held by another running agent; this agent's row cannot be refreshed.`);
     // Reservations live while their owner works; an idle owner's lapse once it has been idle too long.
-    const idle = now - this.activeAt >= leaseIdleMs(this.env);
+    const idle = now - this.activeAt >= LEASE_IDLE_MS;
     if (!idle) db.renew(this.me.id, now);
     this.savedAt = now;
     this.statusChanged = false;
@@ -374,9 +454,6 @@ export class Team {
   /** Two-phase delivery: hand what is waiting to Pi (the inbox records it once the model sees it), then the heartbeat. */
   private deliverPending(): void {
     if (!this.me || !this.db) return;
-    // A crashed parent's child spends tokens for nobody: Pi's SIGTERM path disposes the session and exits (ARCHITECTURE: Liveness).
-    const parentPid = Number(this.env[PARENT_PID_ENV] ?? 0);
-    if (parentPid && parentGone(parentPid)) return terminateSelf();
     const db = this.db;
     try {
       db.quick(() => this.deliverNow(db));
@@ -397,4 +474,19 @@ export class Team {
     this.flush(db);
     this.mail.reportDeadLetters(db, this.me.id);
   }
+}
+
+/**
+ * What goes to the readers of a message: `text` when it fits `MESSAGE_MAX_CHARS`; a longer one is saved whole to a
+ * private file and delivered as its head plus the file's path, still within the limit so no reader cuts the pointer off.
+ * `text` is already sanitized, and the file holds it the way the recipient's message would carry it: fenced as data from
+ * `from` (the user's own words excepted), because the recipient reads the file with `read`, outside the message's fence.
+ * An error when the file cannot be written (nothing is sent rather than a message with a silent gap).
+ */
+function spilledMessage(text: string, from: string): string | { error: string } {
+  if (text.length <= MESSAGE_MAX_CHARS) return text;
+  const file = saveFullOutput(from === USER_SENDER ? text : fenceUntrusted(`Full message (${text.length} characters) from ${headerText(from, 64)}`, text), 'message');
+  if (!file) return { error: `Message is ${text.length} characters (the limit is ${MESSAGE_MAX_CHARS}) and could not be saved to a file. Send a summary. Nothing was sent.` };
+  const note = `\n[Full message (${text.length} characters): ${file}]`;
+  return `${cutText(text, Math.max(0, MESSAGE_MAX_CHARS - note.length), { chars: true })}${note}`;
 }

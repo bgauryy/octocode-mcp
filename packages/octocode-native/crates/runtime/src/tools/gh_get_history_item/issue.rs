@@ -5,14 +5,14 @@ use super::text::{delivered_earlier, history_body_view, paginate_text, window_bo
 use super::util::{array, content_flag, map_comments, merge, str_at, string};
 use super::window::auto_page;
 use super::{DEFAULT_PAGE_SIZE, HistoryItemRequest, fetch, validation};
-use crate::providers::github::{
-    GitHubTransport, ProviderError, ProviderErrorKind, ProviderErrorReason, RequestContext,
-};
 use crate::tools::gh_shared::ensure_next;
 use crate::tools::id::ToolId;
 use crate::tools::paging::push_warnings;
 use crate::tools::result::{Continuation, remove_nulls};
 use octocode_github::MAX_PER_PAGE;
+use octocode_github::{
+    GitHubTransport, ProviderError, ProviderErrorKind, ProviderErrorReason, RequestContext,
+};
 use serde_json::{Map, Value, json};
 
 /// A pull-request read that 404ed: when the number is an issue, say so with

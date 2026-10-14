@@ -19,15 +19,15 @@ mod syntax_tree;
 mod types;
 
 pub use files::rewrite_files;
+pub use files::search_files;
 #[cfg(test)]
 use files::search_files_detailed;
-pub use files::search_files_detailed_filtered_with_extension;
-pub use octo::EXAMPLE_RULE;
+pub use octo::{EXAMPLE_RULE, RULE_INVALID};
 #[cfg(test)]
 use rewrite::rewrite;
 pub use rewrite::{
     CompiledRewrite, MAX_REWRITE_CONTENT_BYTES, UnmatchedMention, compile_rewrite,
-    count_syntax_errors, rewrite_parser_for_path,
+    count_syntax_errors,
 };
 pub use syntax_tree::{
     SyntaxTreeInspectOptions, SyntaxTreeInspectResult, SyntaxTreeNode, inspect_with_extension,
@@ -122,8 +122,7 @@ pub fn search_detailed(
                 content.len()
             ),
         )
-        .with_path(file_path)
-        .with_recovery("Target a smaller file; for this one, read bounded ranges with localFetch or search text with localSearch.");
+        .with_path(file_path);
         return no_matches(
             file_path,
             "truncated",
@@ -155,14 +154,7 @@ pub fn search_detailed(
 
     let query_explanation = query.explanation();
     let Some(entry) = languages::find_entry(ext) else {
-        let diagnostic = StructuralDiagnostic::new(
-            "structural.language.unsupported",
-            "warning",
-            "parse",
-            format!("Structural search does not support .{ext} files."),
-        )
-        .with_path(file_path)
-        .with_recovery("Use text search for this extension or add a tree-sitter grammar mapping.");
+        let diagnostic = files::unsupported_language(file_path);
         return no_matches(
             file_path,
             "unsupported",
@@ -185,16 +177,7 @@ pub fn search_detailed(
                     error.diagnostic(file_path),
                 );
             }
-            let diagnostic = StructuralDiagnostic::new(
-                "structural.query.compileFailed",
-                "error",
-                "match",
-                message.clone(),
-            )
-            .with_path(file_path)
-            .with_recovery(
-                "Check the structural pattern or YAML rule against this file's language grammar.",
-            );
+            let diagnostic = octo::compile_diagnostic(&message).with_path(file_path);
             return no_matches(
                 file_path,
                 "parserFailed",

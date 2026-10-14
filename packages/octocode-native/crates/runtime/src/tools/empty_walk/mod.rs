@@ -12,6 +12,8 @@
 //! Each tool builds the lead itself through its own continuation builder.
 
 use crate::policy::prune::PruneMode;
+use octocode_engine::error::Error;
+use octocode_engine::search::walk::{IgnorePolicy, IgnoreRules, Prune, pruned_walk_builder};
 use serde_json::{Value, json};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -20,6 +22,9 @@ use std::path::{Path, PathBuf};
 mod tests;
 #[cfg(test)]
 mod tool_tests;
+
+/// Wall-clock bound of a [`FileProbe`]'s one walk: past it the probe is cut.
+const PROBE_DEADLINE: std::time::Duration = std::time::Duration::from_millis(1200);
 
 /// Files of a probe's finding kept to name skip reasons.
 pub(crate) const SAMPLE_FILES: usize = 8;
@@ -38,6 +43,15 @@ pub(crate) enum Cause {
 }
 
 impl Cause {
+    /// This cause's bit in a file's [`FileProbe`] tag.
+    fn bit(self) -> u8 {
+        match self {
+            Self::Ignored => 1,
+            Self::Hidden => 2,
+            Self::DefaultExcluded => 4,
+        }
+    }
+
     pub(crate) fn label(self) -> &'static str {
         match self {
             Self::Ignored => "ignored",
@@ -80,24 +94,34 @@ impl Walk {
         .collect()
     }
 
-    /// The `ignore` walk of this scope that never descends into a `prune`d
-    /// directory: ignore files and hidden entries follow the flags, and
+    /// The engine ignore policy of this walk.
+    pub(crate) fn policy(self) -> IgnorePolicy {
+        IgnorePolicy {
+            include_ignored: self.ignored,
+            include_hidden: self.hidden,
+        }
+    }
+
+    /// The engine walk of this scope that never descends into a `prune`d
+    /// directory: ignore rules and hidden entries follow the flags, and
     /// `globs` scope it like the tool's own scan.
     pub(crate) fn walker(
         self,
         root: &Path,
         prune: &[String],
         globs: Globs<'_>,
-    ) -> Result<ignore::Walk, String> {
-        let mut builder = crate::tools::pruned_walk(root, prune.iter().cloned().collect());
-        builder
-            .hidden(!self.hidden)
-            .git_ignore(!self.ignored)
-            .git_exclude(!self.ignored)
-            .ignore(!self.ignored)
-            .parents(!self.ignored)
-            .overrides(globs.overrides(root)?);
+    ) -> Result<ignore::Walk, Error> {
+        let mut builder = pruned_walk_builder(root, self.policy(), None, Prune::new(prune));
+        builder.overrides(globs.overrides(root)?);
         Ok(builder.build())
+    }
+
+    /// The tag bits of the causes this walk lifts.
+    fn lifted_bits(self) -> u8 {
+        [Cause::Ignored, Cause::Hidden, Cause::DefaultExcluded]
+            .into_iter()
+            .filter(|cause| !self.skipping().contains(cause))
+            .fold(0, |bits, cause| bits | cause.bit())
     }
 
     /// This walk with `causes` lifted.
@@ -122,10 +146,9 @@ pub(crate) struct Globs<'a> {
 }
 
 impl Globs<'_> {
-    /// The gitignore-style override set the engine's walks apply, rooted at
-    /// `root`.
-    fn overrides(self, root: &Path) -> Result<ignore::overrides::Override, String> {
-        octocode_engine::search::walk::build_overrides(root, self.include, self.exclude)
+    /// The override set the engine's walks apply, rooted at `root`.
+    fn overrides(self, root: &Path) -> Result<ignore::overrides::Override, Error> {
+        Ok(octocode_engine::search::glob::compile(root, self.include, self.exclude)?.overrides())
     }
 }
 
@@ -246,6 +269,18 @@ pub(crate) fn diagnose<E>(
     root: &Path,
     mode: PruneMode,
     walk: Walk,
+    probe: impl FnMut(Walk) -> Result<Hits, E>,
+) -> Result<Verdict, E> {
+    diagnose_shown(root, mode, walk, &|path| below(root, path), probe)
+}
+
+/// [`diagnose`] whose reasons spell paths with `shown` (a tool whose rows
+/// name paths relative to the workspace names its rules the same way).
+pub(crate) fn diagnose_shown<E>(
+    root: &Path,
+    mode: PruneMode,
+    walk: Walk,
+    shown: &dyn Fn(&Path) -> String,
     mut probe: impl FnMut(Walk) -> Result<Hits, E>,
 ) -> Result<Verdict, E> {
     let off = walk.skipping();
@@ -325,10 +360,12 @@ pub(crate) fn diagnose<E>(
         }
     };
     let mut skips: Vec<Skip> = Vec::new();
+    let rules = std::cell::OnceCell::new();
     for (mask, found) in &revealed {
         let causes = subset(*mask);
         for file in found.sample.iter().take(SAMPLE_FILES) {
-            if let Some(skip) = skip_of(root, mode, file, &causes)
+            let rules = rules.get_or_init(|| IgnoreRules::new(root));
+            if let Some(skip) = skip_of(root, rules, mode, file, &causes, shown)
                 && !skips.iter().any(|known| known.reason == skip.reason)
             {
                 skips.push(skip);
@@ -342,23 +379,32 @@ pub(crate) fn diagnose<E>(
     }))
 }
 
-/// The files a walk reached, or why it could not be walked.
-type Reached = std::cell::OnceCell<Result<HashSet<PathBuf>, String>>;
+/// Every file one fully lifted walk reached, each tagged with the causes
+/// that hide it ([`Cause::bit`]), and whether the walk was cut.
+struct Tagged {
+    files: Vec<(PathBuf, u8)>,
+    cut: bool,
+}
 
 /// A file probe for a tool without a text engine of its own: the files under
-/// `root` that `keep` admits, within `budget` walked files, under a relaxed
-/// [`Walk`]. The walk is the discovery policy's (`permits`), `globs`, ignore
-/// files and prune list the tool's scan honors.
+/// `root` that `keep` admits, within `budget` walked files and
+/// [`PROBE_DEADLINE`], under a relaxed [`Walk`]. One walk with every cause lifted tags
+/// each file with the causes that hide it; every relaxed walk is then
+/// answered from those tags. The walk is the discovery policy's (`permits`),
+/// `globs`, ignore rules and prune list the tool's scan honors.
 pub(crate) struct FileProbe<'a> {
     root: PathBuf,
     mode: PruneMode,
     budget: usize,
+    deadline: std::time::Instant,
     globs: Globs<'a>,
-    permits: &'a dyn Fn(&Path) -> Result<bool, String>,
+    permits: &'a dyn Fn(&Path) -> bool,
     keep: &'a dyn Fn(&Path) -> bool,
-    /// The request's own walk and the files it reached, walked on first use:
-    /// those files are not behind anything, whatever they are.
-    reached_by: Option<(Walk, Reached)>,
+    /// The request's own walk: the files it reached are not behind anything.
+    requested: Option<Walk>,
+    /// The caller's cancellation: a stopped walk is cut.
+    stop: Option<&'a (dyn Fn() -> bool + 'a)>,
+    tagged: std::cell::OnceCell<Result<Tagged, String>>,
 }
 
 impl<'a> FileProbe<'a> {
@@ -366,17 +412,20 @@ impl<'a> FileProbe<'a> {
         root: &Path,
         mode: PruneMode,
         budget: usize,
-        permits: &'a dyn Fn(&Path) -> Result<bool, String>,
+        permits: &'a dyn Fn(&Path) -> bool,
         keep: &'a dyn Fn(&Path) -> bool,
     ) -> Self {
         Self {
             root: root.to_path_buf(),
             mode,
             budget,
+            deadline: std::time::Instant::now() + PROBE_DEADLINE,
             globs: Globs::default(),
             permits,
             keep,
-            reached_by: None,
+            requested: None,
+            stop: None,
+            tagged: std::cell::OnceCell::new(),
         }
     }
 
@@ -390,65 +439,121 @@ impl<'a> FileProbe<'a> {
     /// finding is then what relaxing skipped paths adds, not what the scan
     /// already saw (an empty result with other causes, such as a name filter).
     pub(crate) fn beyond(mut self, walk: Walk) -> Self {
-        self.reached_by = Some((walk, std::cell::OnceCell::new()));
+        self.requested = Some(walk);
         self
     }
 
-    /// The files `keep` admits under `walk`, in walk order, and whether the
-    /// walk hit the budget.
-    fn kept(&self, walk: Walk) -> Result<(Vec<PathBuf>, bool), String> {
-        let walker = walk.walker(
-            &self.root,
-            &self.mode.directories(walk.default_excludes),
-            self.globs,
-        )?;
-        let (mut kept, mut walked) = (Vec::new(), 0_usize);
-        for entry in walker {
+    /// Stops walking once `stop` is true: what was not walked is cut.
+    pub(crate) fn stopping(mut self, stop: &'a (dyn Fn() -> bool + 'a)) -> Self {
+        self.stop = Some(stop);
+        self
+    }
+
+    /// The one walk with every cause lifted, each kept file tagged with the
+    /// causes on its way: an ignore rule (an include glob's match aside), a
+    /// dot entry, or a default-pruned directory.
+    fn tag(&self) -> Result<Tagged, Error> {
+        let overrides = self.globs.overrides(&self.root)?;
+        let mut builder =
+            octocode_engine::search::walk::walk_builder(&self.root, IgnorePolicy::ALL, None);
+        builder
+            .overrides(overrides.clone())
+            .sort_by_file_name(std::ffi::OsStr::cmp);
+        let rules = IgnoreRules::new(&self.root);
+        let prune = Prune::new(self.mode.directories(true));
+        // Tag bits of each directory on the way to the current entry, by depth.
+        let mut inherited: Vec<u8> = vec![0];
+        let (mut files, mut walked) = (Vec::new(), 0_usize);
+        for entry in builder.build() {
             let Ok(entry) = entry else { continue };
-            if !entry.file_type().is_some_and(|kind| kind.is_file())
-                || !(self.permits)(entry.path())?
+            let depth = entry.depth();
+            if depth == 0 {
+                continue;
+            }
+            if std::time::Instant::now() >= self.deadline || self.stop.is_some_and(|stop| stop()) {
+                return Ok(Tagged { files, cut: true });
+            }
+            let path = entry.path();
+            let is_dir = entry.file_type().is_some_and(|kind| kind.is_dir());
+            inherited.truncate(depth);
+            let parent = inherited.last().copied().unwrap_or(0);
+            let mut bits = parent;
+            if parent & Cause::Ignored.bit() == 0
+                && !overrides.matched(path, is_dir).is_whitelist()
+                && rules.is_ignored(path, is_dir)
             {
+                bits |= Cause::Ignored.bit();
+            }
+            if entry.file_name().to_string_lossy().starts_with('.') {
+                bits |= Cause::Hidden.bit();
+            }
+            if prune.prunes_entry(&entry) {
+                bits |= Cause::DefaultExcluded.bit();
+            }
+            if is_dir {
+                inherited.push(bits);
+                continue;
+            }
+            if !entry.file_type().is_some_and(|kind| kind.is_file()) || !(self.permits)(path) {
                 continue;
             }
             walked += 1;
             if walked > self.budget {
-                return Ok((kept, true));
+                return Ok(Tagged { files, cut: true });
             }
-            if (self.keep)(entry.path()) {
-                kept.push(entry.path().to_path_buf());
+            if (self.keep)(path) {
+                files.push((path.to_path_buf(), bits));
             }
         }
-        Ok((kept, false))
+        Ok(Tagged { files, cut: false })
     }
 
     /// What the relaxed `walk` finds.
     pub(crate) fn find(&self, walk: Walk) -> Result<Hits, String> {
-        let (mut files, cut) = self.kept(walk)?;
-        if let Some((requested, reached)) = &self.reached_by {
-            let reached = reached
-                .get_or_init(|| Ok(self.kept(*requested)?.0.into_iter().collect()))
-                .as_ref()
-                .map_err(Clone::clone)?;
-            files.retain(|file| !reached.contains(file));
-        }
+        let tagged = self
+            .tagged
+            .get_or_init(|| self.tag().map_err(|error| error.reason))
+            .as_ref()
+            .map_err(Clone::clone)?;
+        let lifted = walk.lifted_bits();
+        let reached = self.requested.map(Walk::lifted_bits);
+        let mut files = tagged
+            .files
+            .iter()
+            .filter(|(_, bits)| bits & !lifted == 0)
+            .filter(|(_, bits)| reached.is_none_or(|reached| bits & !reached != 0))
+            .map(|(path, _)| path);
+        let sample = files
+            .by_ref()
+            .take(SAMPLE_FILES)
+            .cloned()
+            .collect::<Vec<_>>();
         Ok(Hits {
-            count: files.len(),
-            sample: files.into_iter().take(SAMPLE_FILES).collect(),
-            cut,
+            count: sample.len() + files.count(),
+            sample,
+            cut: tagged.cut,
         })
     }
 }
 
-/// Why the walk skipped `file`, by the first of `causes` that applies.
-fn skip_of(root: &Path, mode: PruneMode, file: &Path, causes: &[Cause]) -> Option<Skip> {
+/// Why the walk skipped `file`, by the first of `causes` that applies;
+/// paths in the reason spelled by `shown`.
+fn skip_of(
+    root: &Path,
+    rules: &IgnoreRules,
+    mode: PruneMode,
+    file: &Path,
+    causes: &[Cause],
+    shown: &dyn Fn(&Path) -> String,
+) -> Option<Skip> {
     [Cause::Ignored, Cause::Hidden, Cause::DefaultExcluded]
         .into_iter()
         .filter(|cause| causes.contains(cause))
         .find_map(|cause| {
             let (entry, reason) = match cause {
-                Cause::Ignored => ignored_entry(root, file),
-                Cause::Hidden => hidden_entry(root, file),
-                Cause::DefaultExcluded => excluded_entry(root, mode, file),
+                Cause::Ignored => ignored_entry(rules, file, shown),
+                Cause::Hidden => hidden_entry(root, file, shown),
+                Cause::DefaultExcluded => excluded_entry(root, mode, file, shown),
             }?;
             Some(Skip {
                 cause,
@@ -475,6 +580,7 @@ pub(crate) fn ignored_directories(
     let Ok(walker) = walk.walker(root, &pruned, Globs::default()) else {
         return Vec::new();
     };
+    let rules = IgnoreRules::new(root);
     let mut walked = HashSet::new();
     for entry in walker {
         if stop() {
@@ -505,7 +611,9 @@ pub(crate) fn ignored_directories(
                 && !walked.contains(&path)
                 && !pruned.contains(&name)
                 && (walk.hidden || !name.starts_with('.'));
-            if candidate && let Some(reason) = ignore_rule(root, &path, true) {
+            if candidate
+                && let Some(reason) = rule_shown(&rules, &path, true, &|path| below(root, path))
+            {
                 skips.push(Skip {
                     cause: Cause::Ignored,
                     entry: path,
@@ -535,41 +643,50 @@ fn prefixes(root: &Path, file: &Path) -> Vec<(PathBuf, bool)> {
         .collect()
 }
 
-fn ignored_entry(root: &Path, file: &Path) -> Option<(PathBuf, String)> {
-    let reason = ignore_rule(root, file, false)?;
-    let entry = prefixes(root, file)
-        .into_iter()
-        .find(|(prefix, is_dir)| ignore_rule(root, prefix, *is_dir).is_some())
-        .map_or_else(|| file.to_path_buf(), |(prefix, _)| prefix);
-    Some((entry, reason))
+/// The topmost ignored entry on the way to `file`, and its rule.
+fn ignored_entry(
+    rules: &IgnoreRules,
+    file: &Path,
+    shown: &dyn Fn(&Path) -> String,
+) -> Option<(PathBuf, String)> {
+    let reason = rules.why(file, false)?;
+    let entry = reason.entry.clone();
+    Some((entry, spell(&reason, shown)))
 }
 
-fn hidden_entry(root: &Path, file: &Path) -> Option<(PathBuf, String)> {
+fn hidden_entry(
+    root: &Path,
+    file: &Path,
+    shown: &dyn Fn(&Path) -> String,
+) -> Option<(PathBuf, String)> {
     prefixes(root, file)
         .into_iter()
         .find_map(|(prefix, is_dir)| {
             let name = prefix.file_name()?.to_string_lossy();
-            let relative = prefix.strip_prefix(root).ok()?.to_string_lossy();
             let slash = if is_dir { "/" } else { "" };
             name.starts_with('.')
-                .then(|| (prefix.clone(), format!("hidden {relative}{slash}")))
+                .then(|| (prefix.clone(), format!("hidden {}{slash}", shown(&prefix))))
         })
 }
 
 /// The first pruned directory on the way to `file`, else the file itself
 /// when it is a generated one the default excludes skip (`*.lock`).
-fn excluded_entry(root: &Path, mode: PruneMode, file: &Path) -> Option<(PathBuf, String)> {
+fn excluded_entry(
+    root: &Path,
+    mode: PruneMode,
+    file: &Path,
+    shown: &dyn Fn(&Path) -> String,
+) -> Option<(PathBuf, String)> {
     let pruned = mode.directories(true);
     let directory = prefixes(root, file)
         .into_iter()
         .filter(|(_, is_dir)| *is_dir)
         .find_map(|(prefix, _)| {
             let name = prefix.file_name()?.to_string_lossy();
-            let relative = prefix.strip_prefix(root).ok()?.to_string_lossy();
             pruned
                 .iter()
                 .any(|pruned| *pruned == name)
-                .then(|| (prefix.clone(), format!("{relative}/")))
+                .then(|| (prefix.clone(), format!("{}/", shown(&prefix))))
         });
     directory.or_else(|| {
         let name = file.file_name()?.to_string_lossy();
@@ -578,66 +695,48 @@ fn excluded_entry(root: &Path, mode: PruneMode, file: &Path) -> Option<(PathBuf,
     })
 }
 
-/// The ignore rule that skips `path` under `root`: the deciding ignore file,
-/// line and pattern (deepest ignore file first; a `!` re-include there ends
-/// the search), relative to `root` through `../` for a file above it. `None`
-/// when no rule applies.
+/// The ignore rule that keeps `path` out of a walk under `root`: the deciding
+/// ignore file, line and pattern, the file relative to `root` (through `../`
+/// for one above it). `None` when no rule applies.
 pub(crate) fn ignore_rule(root: &Path, path: &Path, is_dir: bool) -> Option<String> {
-    use ignore::Match;
-    use ignore::gitignore::GitignoreBuilder;
-    // The row never prints an absolute path.
-    let shown = |path: &Path| {
-        let relative = root
-            .ancestors()
-            .enumerate()
-            .find_map(|(up, base)| {
-                let rest = path.strip_prefix(base).ok()?;
-                Some("../".repeat(up) + &rest.to_string_lossy())
-            })
-            .unwrap_or_else(|| path.to_string_lossy().into_owned());
-        relative.replace('\\', "/")
-    };
-    let in_git = path.ancestors().any(|dir| dir.join(".git").exists());
-    for dir in path.ancestors().skip(1) {
-        let mut candidates = vec![dir.join(".ignore")];
-        if in_git {
-            candidates.push(dir.join(".gitignore"));
-            candidates.push(dir.join(".git/info/exclude"));
-        }
-        for source in candidates.into_iter().filter(|path| path.is_file()) {
-            let mut builder = GitignoreBuilder::new(dir);
-            if builder.add(&source).is_some() {
-                continue;
-            }
-            let Ok(rules) = builder.build() else {
-                continue;
-            };
-            match rules.matched_path_or_any_parents(path, is_dir) {
-                Match::Ignore(glob) => {
-                    let pattern = glob.original();
-                    let line = std::fs::read_to_string(&source)
-                        .ok()
-                        .and_then(|text| {
-                            text.lines()
-                                .enumerate()
-                                .filter(|(_, line)| line.trim_end() == pattern)
-                                .last()
-                                .map(|(index, _)| index + 1)
-                        })
-                        .map(|line| format!(":{line}"))
-                        .unwrap_or_default();
-                    return Some(format!("{}{line} '{pattern}'", shown(&source)));
-                }
-                Match::Whitelist(_) => return None,
-                Match::None => {}
-            }
-        }
-        // Ignore files stop at the repository that holds the search root. A
-        // repository nested under the root ends only its own rules: the
-        // outer ones decided whether the walk entered it at all.
-        if dir.join(".git").exists() && root.starts_with(dir) {
-            break;
-        }
-    }
-    None
+    rule_shown(&IgnoreRules::new(root), path, is_dir, &|path| {
+        below(root, path)
+    })
+}
+
+/// [`ignore_rule`] under prepared rules, the ignore file named by `shown`.
+fn rule_shown(
+    rules: &IgnoreRules,
+    path: &Path,
+    is_dir: bool,
+    shown: &dyn Fn(&Path) -> String,
+) -> Option<String> {
+    rules.why(path, is_dir).map(|reason| spell(&reason, shown))
+}
+
+/// `file:line 'pattern'`, the file named by `shown`.
+fn spell(
+    reason: &octocode_engine::search::walk::IgnoreReason,
+    shown: &dyn Fn(&Path) -> String,
+) -> String {
+    let line = reason
+        .line
+        .map(|line| format!(":{line}"))
+        .unwrap_or_default();
+    let source = reason.source.as_deref().map(shown).unwrap_or_default();
+    format!("{source}{line} '{}'", reason.pattern)
+}
+
+/// `path` relative to `root`, through `../` for a path above it: a row
+/// never prints an absolute path.
+fn below(root: &Path, path: &Path) -> String {
+    let relative = root
+        .ancestors()
+        .enumerate()
+        .find_map(|(up, base)| {
+            let rest = path.strip_prefix(base).ok()?;
+            Some("../".repeat(up) + &rest.to_string_lossy())
+        })
+        .unwrap_or_else(|| path.to_string_lossy().into_owned());
+    relative.replace('\\', "/")
 }

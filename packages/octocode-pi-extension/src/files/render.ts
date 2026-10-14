@@ -1,7 +1,7 @@
 import { renderDiff, type BashToolDetails, type Theme } from '@earendil-works/pi-coding-agent';
 import { Box, type Component } from '@earendil-works/pi-tui';
 import { formatDuration } from '../shared/format.js';
-import { clip, expandKey, plural, resultBlock, resultText, timingOf, toolHeader, type RenderContext } from '../shared/render.js';
+import { clip, COLLAPSED_LINES, expandKey, plural, resultBlock, resultText, timingOf, toolHeader, type RenderContext } from '../shared/render.js';
 import { sanitizeTerminalText } from '../shared/sanitize.js';
 import { contentText, isRecord } from '../shared/util.js';
 
@@ -22,17 +22,52 @@ export interface BashDetails {
 
 const BASH_STATUS = /^Command (?:exited with code (-?\d+)|timed out after (\d+) seconds|aborted|(terminated without an exit code))\.?$/;
 const TRUNCATION_NOTICE = /^\[Showing .*Full output: .+\]$/;
+/** How the bash tool's hint after a timeout starts; the renderer drops it from the output lines. */
+export const RERUN_HINT = 'If it needs longer, rerun it';
+
+/** A line Pi or the bash tool added around the output (status, truncation notice, rerun hint), not command output. */
+function noticeLine(trimmed: string): boolean {
+  return BASH_STATUS.test(trimmed) || TRUNCATION_NOTICE.test(trimmed) || trimmed.startsWith(RERUN_HINT);
+}
+
+const LINE_BREAK = /\r\n?|\n|[\u2028\u2029]/g;
+
+/**
+ * Where the last `keep` output lines start: the cut a collapsed preview needs, so a streaming update sanitizes and
+ * splits only its tail. Returns 0 when the part before the cut is blank (it would be trimmed, not counted).
+ */
+function tailCut(text: string, keep: number): number {
+  let end = text.length;
+  let kept = 0;
+  while (end > 0 && kept < keep) {
+    const start = text.lastIndexOf('\n', end - 1) + 1;
+    for (const line of sanitizeTerminalText(text.slice(start, end)).split('\n')) {
+      const trimmed = line.trim();
+      if (trimmed && !noticeLine(trimmed)) kept += 1;
+    }
+    end = start === 0 ? 0 : start - 1;
+    if (kept >= keep) return /\S/.test(text.slice(0, start)) ? start : 0;
+  }
+  return 0;
+}
 
 /**
  * The `⎿` summary and body of a bash result: `exit 0 · 12 lines`, `exit 1 · 3 lines` (drawn as an error),
  * `timed out after 2m`. Pi's status and truncation notices move into the summary; the body is the command output.
+ * With `keep` (a collapsed preview), the body is only the tail holding the last `keep` output lines and `lines` counts
+ * the whole body.
  */
-function bashOutcome(text: string, isError: boolean, running = false): { summary: string; body: string; spill?: string } {
+function bashOutcome(text: string, isError: boolean, running = false, keep?: number): { summary: string; body: string; lines?: number; spill?: string } {
   let status: string | undefined;
   let total: number | undefined;
   let spill: string | undefined;
+  // An error's message is its first line, so only a status-bearing result is read from its tail.
+  const cut = keep !== undefined && !isError ? tailCut(text, keep) : 0;
+  const head = text.slice(0, cut);
+  // Lines before the cut, less the leading blank ones the body trims (`tailCut` keeps a cut only after output).
+  const headLines = cut === 0 ? 0 : (head.match(LINE_BREAK)?.length ?? 0) - (/^\s*/.exec(head)![0].match(LINE_BREAK)?.length ?? 0);
   const body: string[] = [];
-  for (const line of sanitizeTerminalText(text).split('\n')) {
+  for (const line of sanitizeTerminalText(cut === 0 ? text : text.slice(cut)).split('\n')) {
     const trimmed = line.trim();
     const match = BASH_STATUS.exec(trimmed);
     if (match) {
@@ -45,19 +80,20 @@ function bashOutcome(text: string, isError: boolean, running = false): { summary
       spill = /Full output: (.+?)\]$/.exec(trimmed)?.[1];
       continue;
     }
-    if (trimmed.startsWith('If it needs longer, rerun it with background: true')) continue;
+    if (trimmed.startsWith(RERUN_HINT)) continue;
     body.push(line);
   }
   while (body.length > 0 && body.at(-1)!.trim() === '') body.pop();
-  while (body.length > 0 && body[0]!.trim() === '') body.shift();
+  while (cut === 0 && body.length > 0 && body[0]!.trim() === '') body.shift();
   if (body.length === 1 && body[0] === '(no output)') body.length = 0;
   if (isError && !status) {
     // Not a command status (a missing directory, a refused command): the message is the summary.
     return { summary: body.shift() ?? 'failed', body: body.join('\n'), ...(spill ? { spill } : {}) };
   }
-  const count = total ?? body.length;
+  const lines = headLines + body.length;
+  const count = total ?? lines;
   const size = count === 0 ? 'no output' : plural(count, 'line');
-  return { summary: running ? `running · ${size}` : `${status ?? 'exit 0'} · ${size}`, body: body.join('\n'), ...(spill ? { spill } : {}) };
+  return { summary: running ? `running · ${size}` : `${status ?? 'exit 0'} · ${size}`, body: body.join('\n'), ...(cut > 0 ? { lines } : {}), ...(spill ? { spill } : {}) };
 }
 
 /** A result as a renderer sees it. */
@@ -73,9 +109,11 @@ export function renderBashResult(result: ToolResultView, options: { expanded: bo
   if (details.job && !context.isError) {
     return resultBlock(theme, context, { summary: `job ${details.job} started (pid ${details.pid ?? '?'})`, max: 0, expanded: options.expanded, ...(details.log ? { spill: details.log, spillLabel: 'log' } : {}), ...timing });
   }
-  const outcome = bashOutcome(text, context.isError, options.isPartial);
+  // Collapsed, only the preview's tail is sanitized and split: a streaming command redraws on every update.
+  const outcome = bashOutcome(text, context.isError, options.isPartial, options.expanded ? undefined : COLLAPSED_LINES);
   const spill = details.fullOutputPath ?? outcome.spill;
-  return resultBlock(theme, context, { summary: outcome.summary, body: outcome.body, tail: true, expanded: options.expanded, ...(spill ? { spill } : {}), ...timing });
+  const total = outcome.lines !== undefined ? { totalLines: outcome.lines } : {};
+  return resultBlock(theme, context, { summary: outcome.summary, body: outcome.body, ...total, tail: true, expanded: options.expanded, ...(spill ? { spill } : {}), ...timing });
 }
 
 /** A finished background job: `● Job(bash-1: yarn build)` / `⎿  finished after 3s` and its output tail. */

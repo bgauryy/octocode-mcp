@@ -34,7 +34,7 @@ const ALLOWED: Record<string, string[]> = {
   team: ['shared', 'agentdb'],
   hooks: ['shared'],
   mcp: ['shared'],
-  web: ['shared'],
+  web: ['shared', 'permission'],
   browser: ['shared', 'web', 'permission'],
   compaction: ['shared', 'files'],
   ui: ['shared', 'permission'],

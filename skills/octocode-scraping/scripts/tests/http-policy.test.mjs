@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { discoverSitemap, fetchDirect, fetchRobotsPolicy } from '../lib/client.mjs';
 
+// Fixtures run on plain-HTTP 127.0.0.1; the network guard allows exactly that under this test flag.
+process.env.OCTOCODE_NET_GUARD_TEST_LOOPBACK = '1';
+
 let server;
 let origin;
 let retryRequests = 0;
@@ -67,7 +70,7 @@ test('direct fetch stops reading at the configured response bound', async () => 
 });
 
 test('sitemap discovery stays on the requested domain', async () => {
-  const result = await discoverSitemap({ targetUrl: `${origin}/docs`, maxPages: 5, sameDomain: true });
+  const result = await discoverSitemap({ targetUrl: `${origin}/docs`, maxPages: 5 });
   assert.equal(result.error, null);
   assert.deepEqual(result.discovered, [`${origin}/one`]);
 });

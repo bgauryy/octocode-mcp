@@ -1,22 +1,18 @@
 # Output
 
-Deliver task content only. Never append probe output or generated process metadata.
-
-Use Markdown for reviews and change summaries. `skill-review.mjs --json` returns `errorCount`, `warnCount`, and per-skill `results`; these are structural findings, not quality scores. `skill-sync.mjs --json` returns a destination plan or application results.
+Markdown, task content only. `skill-review.mjs --json` returns `errorCount`, `warnCount`, and per-skill `results` (structural findings, not quality scores); `skill-sync.mjs --json` returns a destination plan or applied results.
 
 ## Response
 
-For review: readiness verdict, actionable findings with file anchors and impact, and any unchecked area. Distinguish structural lint, editorial judgment, and measured activation. For edits: changed skills, support-file changes, and checks run. For install: destination and reload need.
-
-## Saved result
-
-Keep authored skills in their own canonical folders. Save a separate review under the rule in Saved report, at `<workspace>/.octocode/octocode-skills/<YYYY-MM-DD>-<slug>.md`. `<workspace>` is the root of the project being worked on (its repository root, else the current directory), never a folder inside an existing `.octocode/`. A path the user names takes precedence; a harness or subagent scratch folder such as `.octocode/tmp/` does not, so save the report here and only link it from scratch notes.
+- Review: BLUF readiness verdict; findings as review comments (Conventional Comments): label (issue, suggestion, question, nitpick, praise), blocking or not, file anchor, why (impact, kind); unchecked areas.
+- Edits: changed skills, support-file changes, checks run.
+- Install: destination, reload step.
 
 ## Saved report
 
-Edited skills stay in their canonical folders. Save and render a review, or a change report for edits that span several files, when it has a table, a diagram, or more than about 40 lines or five findings, or when the user asks. When the user or the project's instructions (for example `AGENTS.md`) ask to keep every result, save every result.
+Authored skills stay in their canonical folders; a separate review goes to `<workspace>/.octocode/octocode-skills/<YYYY-MM-DD>-<slug>.md` unless the user names a path. Save and render a review, or a multi-file change report, when it has a table, a diagram, over ~40 lines or five findings, or the user asks; keep every result when the user or project instructions say so.
 
-Start the file with this header, which people see as chips and agents read from the catalog. `status` (exactly one of the listed words) and `question` are required; add `confidence` when it applies and `next` only when something is pending (never `none`). Keep each value on one line:
+Start the file with this header, one value per line: `status` (one listed word) and `question` are required; add `confidence` when it applies and `next` only when something is pending (never `none`).
 
 ```yaml
 ---
@@ -27,20 +23,20 @@ next: <the one next action for whoever continues, in the imperative>
 ---
 ```
 
-Follow the header with the `#` title and a lead paragraph that states the answer, before any table or list; the catalog shows that paragraph to agents. Put findings under `## Findings` in one table, most severe first, then add `## Unchecked` for areas not reviewed:
+A lead paragraph under the `#` title states the answer.
+
+Put findings under `## Findings` as one table, most severe first, then add `## Unchecked` for areas that were not reviewed:
 
 | Skill | Location | Finding | Kind | Severity | Fix |
 |---|---|---|---|---|---|
 
-Kind is `lint`, `editorial`, or `activation`. Use `Critical`, `High`, `Medium`, or `Low` for severity. For a change report, use `## Changes` with one row per edited file (| Skill | Path | Change | Check |) and end with the `skill-review.mjs` result. Every saved report has either `## Findings` (a review) or `## Changes` (a change report).
+`Kind`: `lint`, `editorial`, or `activation`; severity: `Critical`, `High`, `Medium`, or `Low`. A change report has `## Changes`, one row per edited file, ending with the `skill-review.mjs` result. Every saved report has either `## Findings` (a review) or `## Changes` (a change report).
 
-Name the file with today's date from `date +%F`, never a remembered or example date, and use the same source for any checked-on date inside the report; a single report is one `.md` file, not a folder. Render it and fix any `warning:` lines it prints (they check this contract), then reply with a short summary, the `.html` path for the person, and the `.md` path for agents and later sessions:
+Date the file name with `date +%F`, never from memory. Render, fix every `warning:` line, and reply with a short summary and the `.html` and `.md` paths:
 
 ```bash
 node <skill-folder>/scripts/render-report.mjs <saved.md>
 ```
-
-`<skill-folder>` is this skill's installed folder, the one that holds this file; report paths resolve from the current directory, normally `<workspace>`. It writes `<saved>.html` beside the Markdown and opens it. Pass `--no-open` in headless or CI runs. Markdown stays the source; re-render after edits.
 
 Before starting work that may repeat an earlier report, list the saved ones:
 
@@ -48,6 +44,10 @@ Before starting work that may repeat an earlier report, list the saved ones:
 node <skill-folder>/scripts/render-report.mjs <workspace>/.octocode --manifest
 ```
 
-It prints JSON with every report's path, skill, kind, title, date, header fields, a shared `statusTone` (`done`, `attention`, `failed`, `open`, or `inactive`) that reads the skill's status words the same way across skills, other one-line header keys (`meta`), lead, headings, links, code references, and rendered page (`html`, which may be a folder's `index.html`), newest first; pass `<workspace>/.octocode/octocode-skills` to see only this skill's reports. Read a matching report's Markdown, not its HTML.
+`<skill-folder>` holds this file; `--open` only when the user asks. `<workspace>/.octocode/octocode-skills` lists only this skill's reports. Read the Markdown, not the HTML; re-render after edits.
 
-Markdown that renders well: `##` sections; tables for comparisons, with a plain word such as `High`, `Confirmed`, or `P1` alone in a cell (it becomes a colored chip, colored by its column: high fit is good, high risk is not); `> [!WARNING]`-style alerts for risks; task lists for next steps; `mermaid` fences for flows and charts; code references as `` `path/to/file.ts:42` `` (linked to the person's editor when the file exists); and full source URLs (collected under Sources).
+Evidence and visuals: back every claim with its evidence (a `path:line` reference, a command and its result, or a source link), and show shaped data (shares, scores, trends, trade-offs, flows) as a chart or diagram, not prose.
+
+Charts here: `radar-beta` of rating criteria before and after; `pie` of findings by kind.
+
+Markdown that renders well: `##` sections; tables with a plain word such as `High`, `Confirmed`, or `P1` alone in a cell (shown as a colored chip); `> [!WARNING]` alerts for risks; task lists for next steps; `mermaid` flows (`flowchart`, `sequenceDiagram`, `timeline`, `gantt`) and charts (`pie`, `xychart-beta`, `quadrantChart`, `radar-beta`); code references as `` `path/to/file.ts:42` ``; source links with a short label.

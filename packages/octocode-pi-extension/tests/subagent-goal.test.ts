@@ -46,22 +46,24 @@ function setup() {
 const reportOf = (text: string) => JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1));
 
 describe('the agent tool\'s goal', () => {
-  it('requires a goal of at most 5 words and 40 characters in the schema', () => {
+  it('requires a goal in the schema without a size limit (a refusal would echo every argument back), and says how much shows', () => {
     const { agent } = setup();
     const goal = agent.parameters.properties.goal;
     expect(agent.parameters.required).toContain('goal');
-    expect(goal).toMatchObject({ type: 'string', minLength: 1, maxLength: 40 });
-    expect(goal.description).toMatch(/at most 5 words/);
+    expect(goal).toEqual({ type: 'string', description: expect.any(String) });
+    expect(goal.description).toMatch(/about 48 characters fit/);
     expect(goal.description).toContain('audit auth token refresh');
+    expect(agent.parameters.properties.task).not.toHaveProperty('minLength');
   });
 
-  it('refuses a missing or over-long goal before anything starts, naming the problem', async () => {
+  it('refuses a missing or empty goal before anything starts, accepts an over-long one', async () => {
     const s = setup();
     await expect(s.run({ task: 'report' })).rejects.toThrow(/goal/i);
-    await expect(s.run({ task: 'report', goal: 'audit the auth token refresh flow now' })).rejects.toThrow(/7 words.*at most 5 words/s);
+    await expect(s.run({ task: 'report', goal: '  ' })).rejects.toThrow(/A goal is required/);
     expect(s.team.members()).toEqual([]);
-    // The slot was never claimed.
-    await expect(s.run({ task: 'report', goal: GOAL })).resolves.toBeDefined();
+    const long = 'audit the auth token refresh flow end to end across every service we run in production';
+    const result = await s.run({ task: 'report', goal: long });
+    expect(reportOf(result.content[0].text as string).goal).toBe(long);
   });
 
   it('names the child from the closed list and hands it name, role, goal and parent in env and task', async () => {

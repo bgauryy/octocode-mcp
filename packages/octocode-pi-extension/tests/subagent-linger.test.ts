@@ -137,7 +137,7 @@ describe('a lingering background subagent', () => {
       t.permission.setMode('manual', t.ctx);
       await t.control.settle();
       expect(t.control.background()).toBe(0);
-      expect(t.f.sent.some((entry) => String(entry.message.content).includes('stopped by permission change'))).toBe(true);
+      expect(t.f.sent.some((entry) => String(entry.message.content).includes('stopped by a permission change'))).toBe(true);
       t.ctx.ui.selects.push('Allow once');
       expect(await t.team.send(id, 'linger approved continuation', { replyRequired: false })).toHaveProperty('resumed');
       await t.control.settle();
@@ -146,6 +146,20 @@ describe('a lingering background subagent', () => {
       await t.control.stopAll();
       t.team.stop();
       delete process.env['OCTOCODE_SUBAGENT_LINGER_SECONDS'];
+    }
+  });
+
+  it('names a permission change as what stopped a foreground child, and shows it stopping meanwhile', async () => {
+    const t = setup('full');
+    try {
+      const updates: Array<{ content: Array<{ text: string }>; details: { stopping?: boolean } }> = [];
+      const running = t.f.tools.get('agent').execute('call-fg', { task: 'hang', goal: 'foreground' }, undefined, (update: never) => updates.push(update), t.ctx);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      t.permission.setMode('manual', t.ctx);
+      await expect(running).rejects.toThrow(/was stopped by a permission change\. Ask the user before starting it again\./);
+      expect(updates.some((update) => update.details.stopping === true && update.content[0]!.text === 'stopping…')).toBe(true);
+    } finally {
+      t.team.stop();
     }
   });
 
@@ -180,8 +194,8 @@ describe('a lingering background subagent', () => {
   }, 30_000);
 
   it('saves its conversation under its own name when lingering is on, and stays ephemeral otherwise', () => {
-    expect(buildAgentArgs('t', undefined, undefined, undefined, undefined)).toContain('--no-session');
-    const args = buildAgentArgs('t', undefined, undefined, undefined, undefined, { dir: '/s/session', id: 'inky-kraken' });
+    expect(buildAgentArgs(undefined, undefined, undefined, undefined)).toContain('--no-session');
+    const args = buildAgentArgs(undefined, undefined, undefined, undefined, { dir: '/s/session', id: 'inky-kraken' });
     expect(args).not.toContain('--no-session');
     expect(args.join(' ')).toContain('--session-dir /s/session --session-id inky-kraken');
   });

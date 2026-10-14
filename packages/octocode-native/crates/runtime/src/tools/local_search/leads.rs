@@ -255,13 +255,15 @@ impl Found<'_> {
                 value_cap: self.layout.budget_cap.unwrap_or(RESPONSE_VALUE_CHAR_BUDGET),
             }),
         );
-        for (index, expansion) in expansions.into_iter().enumerate() {
-            let name = if index == 0 {
-                "expandValues".to_owned()
-            } else {
-                format!("expandValues{}", index + 1)
-            };
-            add(name, expansion);
+        if let Some((lead, left)) = one_call(&expansions) {
+            add("expandValues".into(), lead);
+            if left > 0 {
+                warnings.push(format!(
+                    "expandValues reads {} of {} clipped-value windows; {left} more are on this page.",
+                    expansions.len() - left,
+                    expansions.len()
+                ));
+            }
         }
         // Binaries were never text to search: a row with hits states their
         // count in `stats`, an empty row says it in `warnings`, where the
@@ -1367,8 +1369,10 @@ fn probe_found(
     diagnosing_since: std::time::Instant,
 ) -> Hits {
     let mut options = options.clone();
-    options.no_ignore = Some(walk.ignored);
-    options.hidden = Some(walk.hidden);
+    options.ignore = octocode_engine::search::walk::IgnorePolicy {
+        include_ignored: walk.ignored,
+        include_hidden: walk.hidden,
+    };
     if !walk.default_excludes {
         options.exclude_dir = None;
     }
@@ -1685,4 +1689,29 @@ mod empty_hint_tests {
             assert!(!many.contains(advice), "{many}");
         }
     }
+}
+
+/// One executable call from `reads` (one-row calls of one tool, see
+/// [`expand_values`]): as many rows as one call accepts, and how many reads
+/// it leaves out. A page offers one value-expansion lead, not one per file.
+/// A default page is cut so its reads fit (see [`stream_pages`]); only a
+/// caller-sized page can leave reads out.
+fn one_call(reads: &[Value]) -> Option<(Value, usize)> {
+    let first = reads.first()?;
+    let tool = ToolId::from_name(first["tool"].as_str()?)?;
+    let limit = crate::tools::result::rows_per_call(tool);
+    let mut rows = Vec::new();
+    let mut left = 0;
+    for read in reads {
+        match crate::tools::result::continuation_row(read) {
+            Some(row) if read["tool"] == first["tool"] && rows.len() < limit => {
+                rows.push(row.clone());
+            }
+            _ => left += 1,
+        }
+    }
+    let call = Continuation::input(tool, json!({ "queries": rows }))
+        .confidence("exact")
+        .build();
+    Some((call, left))
 }

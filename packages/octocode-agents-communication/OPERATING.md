@@ -30,27 +30,32 @@ Use the editing branch only when you change files.
 Use `peers` for names, IDs, tasks, branches, worktree paths, and live presence.
 Live peers in one repository have unique names; `to` accepts a name or an exact ID. `join` may return a suffixed name (`api-2`).
 Use `set_status` when your task or availability changes.
-Linked Git worktrees share repository coordination when they use the same database.
-File leases, Git activity, and native host validation use the actual worktree. A lease does not protect the same path in another linked worktree.
+Linked Git worktrees on one database share coordination; file leases, Git activity, and native host validation stay per worktree, so a lease does not protect the same path in another worktree.
 Include the worktree and branch when you ask about files or hand off evidence.
 
 ## Send and handle messages
 
-Send a question, result, or blocker with evidence and a short operational `reasoning`.
+`reasoning` is intent: purpose and done-when, not private reasoning.
+Body, with evidence (paths, IDs, document names):
+
+- Request, blocker, or handoff (SBAR): situation (goal, remaining scope), background, assessment (evidence, blocker), request (next action).
+- Review comment (Conventional Comments): label (issue, suggestion, question, nitpick, praise), blocking or not, location, why.
+- Reply or result (BLUF): set `outcome` (done, partial, failed, refused, canceled); the reply states what changed, evidence, remaining risk, next action.
+- Readback: before a request that edits or spends, the receiver restates goal and done-when in a progress message.
+
+Answer what was asked. Do not echo acknowledgements, readiness, FYIs, the transcript, this guide, or the catalog; follow up only for new evidence or an open blocker.
 Use a direct recipient when one owner must act.
-Use `notify_all` only for a relevant announcement to every current live repository peer. It excludes the sender, defaults to passive/no reply, and does not backfill offline peers.
-Use `replyRequired:false` for information. Use `wake:"passive"` when the recipient needs no new turn.
-Wake and reply requirements are independent.
+Use `notify_all` only for an announcement every live repository peer needs (sender excluded; passive, no reply, no backfill).
+Use `replyRequired:false` for information and `wake:"passive"` when the recipient needs no new turn; the two are independent.
 
 | Received work | Action after handling |
 | --- | --- |
-| Request, `replyRequired:true` | `complete {message:ID,reply:"answer"}` |
+| Request, `replyRequired:true` | `complete {message:ID,outcome:"done",reply:"answer"}` |
 | FYI or answer, `replyRequired:false` | `complete {messages:[IDs]}` without `reply` or `reasoning` |
-| Unfinished request | Keep it pending; send progress with the same `conversationId` and `replyRequired:false` |
+| Unfinished request, or needs input | Keep it pending; send progress with the same `conversationId` and `replyRequired:false` |
 
 Only `complete` creates the final correlated reply. `replyTo` is output-only; progress uses `conversationId`.
-Use `data.messageId` from `fetch` or delivered records; `recordId` is only a history cursor.
-Use `item.id` from `inbox`; it is already the message ID.
+The message ID is `data.messageId` in `fetch` and delivered records, and `item.id` in `inbox`; `recordId` is only a history cursor.
 Read omitted bodies through their `data.next` before acting.
 Check mail at task boundaries, or use host delivery. Do not repeatedly poll from model turns.
 Delivery acceptance proves neither completed work nor user approval.
@@ -59,7 +64,7 @@ Delivery acceptance proves neither completed work nor user approval.
 
 Acquire `lock` or atomic `lock_many` before editing. Include the purpose in `reasoning`.
 Only `ok:true` grants a reservation. Retain each lease ID (`lease.id` from `lock`, `leases[].id` from `lock_many`) for renewal and release.
-On conflict, run the returned `next` (`wait:true`) and end your turn; the owners are notified. A "Lease granted" message wakes you holding the lease. Keep the request that needs it pending until then; do not complete it with a progress note. A deadlock refusal means release your held leases first.
+On conflict, run the returned `next` (`wait:true`) and end your turn; owners are notified, and a "Lease granted" message wakes you holding the lease. Until then keep the request that needs it pending; a progress note does not complete it. On a deadlock refusal, release your held leases first.
 Preserve peer changes. Leases and optional guards cover declared paths; they are not an OS fence.
 If identity, lease renewal, or write coverage fails, stop affected edits and reacquire live ownership.
 Use the binding's lifecycle policy. Managed owners maintain presence and live leases.
@@ -70,17 +75,16 @@ Release finished leases. Leave only an identity whose lifecycle this process own
 
 Use immutable `share_document` names for larger evidence; revisions need new names.
 Notify the next owner explicitly. Stored documents, memories, and events send no notification.
-A handoff names the goal, remaining scope, evidence, blocker, and next action.
 Follow each read continuation (`next.command` with `next.input`) unchanged, including empty pages. A `next` on a conflict or receipt is a suggested action, not a page.
 For retries, preserve the key and unchanged input. Inspect uncertain delivery before an explicit retry.
 
 ## Load details when needed
 
-The CLI `skill` response includes `referenceRoot`, the absolute path to these `scripts/docs/` files. Resolve a link's filename there when reading instructions returned by `npx` outside the package.
+Outside the package (instructions from `npx`), resolve each link's filename under `referenceRoot`, the absolute `scripts/docs/` path in the CLI `skill` response.
 
-- For installation or raw CLI binding, read [installation](scripts/docs/INSTALLATION.md).
-- For a command example or schema lookup, read [command reference](scripts/docs/COMMANDS.md).
-- For topics, retry keys, TTLs, or message examples, read [workflow details](scripts/docs/WORKFLOW.md).
-- For typed history and search, read [record queries](scripts/docs/RECORDS.md).
-- For MCP, native endpoints, or hooks, read [host setup](scripts/docs/HOST_SETUP.md).
-- For delivery failures or storage recovery, read [operations](scripts/docs/OPERATIONS.md).
+- Installation or raw CLI binding: [installation](scripts/docs/INSTALLATION.md).
+- Command example or schema lookup: [command reference](scripts/docs/COMMANDS.md).
+- Topics, retry keys, TTLs, message examples: [workflow details](scripts/docs/WORKFLOW.md).
+- Typed history and search: [record queries](scripts/docs/RECORDS.md).
+- MCP, native endpoints, hooks: [host setup](scripts/docs/HOST_SETUP.md).
+- Delivery failures, storage recovery: [operations](scripts/docs/OPERATIONS.md).

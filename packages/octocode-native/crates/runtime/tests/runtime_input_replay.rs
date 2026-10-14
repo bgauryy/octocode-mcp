@@ -6,7 +6,7 @@
 //! losslessly before validation. Each row is replayed bare, as the agents
 //! sent it: native runs a bare row as a one-row `queries`, on MCP and the CLI.
 
-use crate::support;
+use crate::support::{self, Run as _};
 
 use serde_json::{Value, json};
 use support::Workspace;
@@ -30,7 +30,7 @@ async fn rejected_benchmark_range_spellings_now_read() {
         let file = workspace.write(&relative, source());
         input["path"] = json!(file.to_string_lossy());
         let output = runtime
-            .execute_mcp(
+            .run_mcp(
                 format!("replay-{index}"),
                 "localFetch".into(),
                 input.clone(),
@@ -38,7 +38,7 @@ async fn rejected_benchmark_range_spellings_now_read() {
             .await
             .expect("executes");
         let cli = runtime
-            .execute(
+            .run(
                 format!("replay-cli-{index}"),
                 "localFetch".into(),
                 input.clone(),

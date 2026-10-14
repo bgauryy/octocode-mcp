@@ -30,3 +30,57 @@ jobs:
         run: node skills-dev/octocode-dev/scripts/dev.mjs lint:ci
       - name: Test
         run: node skills-dev/octocode-dev/scripts/dev.mjs test:ci
+
+  native:
+    name: Native (Rust)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/octocode-native
+    steps:
+      - uses: actions/checkout@v5
+      # rustup reads rust-toolchain.toml, so the pinned toolchain is the one used here.
+      - uses: rui314/setup-mold@v1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packages/octocode-native
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny,cargo-machete
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+      # Same commands as `yarn test:rust`: runtime-napi links only with its test feature.
+      - name: Test
+        run: |
+          cargo test --locked -p octocode-native -p octocode-github -p octocode-io -p octocode-cli -p octocode-runtime-napi --features octocode-runtime-napi/napi-test,octocode-native/dev-unify
+          cargo test --locked -p octocode-engine --all-features
+      - name: Supply chain (deny)
+        run: cargo deny --locked check
+      - name: Unused dependencies
+        run: cargo machete
+
+  # End-to-end tool health (dev.mjs test:tools): every tool through the built CLI
+  # and MCP server against hermetic fixtures and a loopback mock. It needs the
+  # native binary and addon, so it runs after the native job passes, on its own build.
+  e2e:
+    name: E2E tool health
+    needs: native
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - run: corepack enable
+      - uses: rui314/setup-mold@v1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packages/octocode-native
+      - run: yarn install --immutable --mode=skip-build
+      - name: Build (dev)
+        run: node skills-dev/octocode-dev/scripts/dev.mjs build:dev
+      - name: Tool health
+        run: node skills-dev/octocode-dev/scripts/dev.mjs test:tools

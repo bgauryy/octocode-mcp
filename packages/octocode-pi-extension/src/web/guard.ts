@@ -4,7 +4,6 @@ import https from 'node:https';
 import net from 'node:net';
 import { pipeline, Readable, type Transform } from 'node:stream';
 import zlib from 'node:zlib';
-import { envFlag } from '../shared/env.js';
 import { errorMessage } from '../shared/util.js';
 
 /** Redirect hops `web` follows; each target is checked before it is fetched. */
@@ -12,7 +11,7 @@ const MAX_REDIRECTS = 10;
 
 export type HostLookup = (hostname: string) => Promise<Array<{ address: string }>>;
 
-const defaultLookup: HostLookup = (hostname) => dnsLookup(hostname, { all: true, verbatim: true });
+export const defaultLookup: HostLookup = (hostname) => dnsLookup(hostname, { all: true, verbatim: true });
 
 /** Non-public IPv4 ranges: this network, private, CGNAT, loopback, link-local (cloud metadata), protocol/test/benchmark, multicast, reserved. */
 const V4_BLOCKS: ReadonlyArray<readonly [string, number]> = [
@@ -96,11 +95,6 @@ export function isBlockedIp(ip: string): boolean {
   );
 }
 
-/** `OCTOCODE_WEB_ALLOW_PRIVATE=1`: web fetches and browser navigation may reach private addresses without asking. */
-export function allowPrivate(env: NodeJS.ProcessEnv = process.env): boolean {
-  return envFlag(env, 'OCTOCODE_WEB_ALLOW_PRIVATE');
-}
-
 /** What a URL's host reaches: only public addresses (listed), any non-public one, or nothing that resolves here. */
 export type HostClass = { kind: 'public'; addresses: string[] } | { kind: 'private' } | { kind: 'unresolved'; error: unknown };
 
@@ -132,24 +126,33 @@ export class NetworkError extends Error {
 }
 
 export interface PublicFetchInit {
+  /** `GET` (default) or `POST`. */
+  method?: 'GET' | 'POST';
   headers?: Record<string, string>;
+  /** The request body (a `POST`); sent only with `redirect: 'error'`, because a redirect must not carry it elsewhere. */
+  body?: string;
+  /** `follow` (default) checks and follows redirects; `error` fails on the first one. */
+  redirect?: 'follow' | 'error';
   signal?: AbortSignal;
 }
 
 /**
- * GETs `url`, checking it and every redirect target before requesting it: http(s) only, and (unless
- * OCTOCODE_WEB_ALLOW_PRIVATE=1) a host that resolves only to public addresses. The connection goes to the checked
- * addresses, so a DNS answer that changes after the check (rebinding) cannot point it somewhere private.
+ * Requests `url` (a GET, or a POST with a body), checking it and every redirect target before requesting it: http(s)
+ * only, and a host that resolves only to public addresses. The connection goes to the checked addresses, so a DNS
+ * answer that changes after the check (rebinding) cannot point it somewhere private. `firstHopPrivate` lets the first
+ * request (the URL the user approved as a `net.private` ask) reach a private address; every redirect target is still
+ * checked, so a redirect never leads there.
  */
-export async function publicFetch(url: string, init: PublicFetchInit, options: { env?: NodeJS.ProcessEnv; lookup?: HostLookup; sameHost?: boolean } = {}): Promise<Response> {
-  const anyAddress = allowPrivate(options.env ?? process.env);
+export async function publicFetch(url: string, init: PublicFetchInit, options: { lookup?: HostLookup; sameHost?: boolean; firstHopPrivate?: boolean } = {}): Promise<Response> {
+  if (init.body !== undefined && init.redirect !== 'error') throw new Error("a request with a body must use redirect: 'error'");
   let target = new URL(url);
   for (let hop = 0; ; hop += 1) {
     if (target.protocol !== 'http:' && target.protocol !== 'https:') throw new Error(`web fetches http(s) URLs only, not ${target.protocol}`);
-    const response = await get(target, init, anyAddress ? undefined : await publicAddresses(target, options.lookup));
+    const response = await send(target, init, hop === 0 && options.firstHopPrivate ? undefined : await publicAddresses(target, options.lookup));
     const location = response.headers.get('location');
     if (response.status < 300 || response.status >= 400 || location === null) return response;
     await response.body?.cancel().catch(() => undefined);
+    if (init.redirect === 'error') throw new Error(`${target.host} answered with a redirect (HTTP ${response.status}); it is not followed`);
     if (hop >= MAX_REDIRECTS) throw new Error(`Too many redirects fetching ${url}`);
     const next = new URL(location, target);
     if (options.sameHost && !sameSite(target, next)) throw new CrossHostRedirect(target, next, response.status);
@@ -161,15 +164,15 @@ export async function publicFetch(url: string, init: PublicFetchInit, options: {
 async function publicAddresses(url: URL, lookup?: HostLookup): Promise<string[]> {
   const host = await classifyHost(url, lookup);
   if (host.kind === 'unresolved') throw new Error(`Could not resolve ${url.hostname}: ${errorMessage(host.error)}`);
-  if (host.kind === 'private') throw new Error(`Blocked private or non-public address: ${url.host}. Do not retry it: only the user can allow private addresses (by starting Pi with OCTOCODE_WEB_ALLOW_PRIVATE=1). For a local page, use \`browser\`, which asks the user first.`);
+  if (host.kind === 'private') throw new Error(`Blocked private or non-public address: ${url.host}. Do not retry it. A redirect is never followed to a private address; a local page the user wants read is a \`web\` URL of its own (the user is asked first), or use \`browser\`.`);
   return host.addresses;
 }
 
 /** Statuses whose response has no body. */
 const NULL_BODY_STATUSES = new Set([101, 103, 204, 205, 304]);
 
-/** One GET without following redirects; `addresses` (when given) are the only ones the connection may use. */
-function get(target: URL, init: PublicFetchInit, addresses: string[] | undefined): Promise<Response> {
+/** One request without following redirects; `addresses` (when given) are the only ones the connection may use. */
+function send(target: URL, init: PublicFetchInit, addresses: string[] | undefined): Promise<Response> {
   const { signal } = init;
   return new Promise((resolve, reject) => {
     if (signal?.aborted) return reject(signal.reason);
@@ -180,7 +183,7 @@ function get(target: URL, init: PublicFetchInit, addresses: string[] | undefined
     };
     const client = target.protocol === 'https:' ? https : http;
     // No pooled agent: a reused socket could lead to an address this request did not check.
-    const request = client.request(target, { agent: false, headers: { 'accept-encoding': 'gzip, deflate, br', ...init.headers }, ...(addresses && { lookup: pinnedLookup(addresses) }) }, (response) => {
+    const request = client.request(target, { method: init.method ?? 'GET', agent: false, headers: { 'accept-encoding': 'gzip, deflate, br', ...(init.body !== undefined && { 'content-length': String(Buffer.byteLength(init.body)) }), ...init.headers }, ...(addresses && { lookup: pinnedLookup(addresses) }) }, (response) => {
       incoming = response;
       response.once('close', () => signal?.removeEventListener('abort', onAbort));
       try {
@@ -195,7 +198,7 @@ function get(target: URL, init: PublicFetchInit, addresses: string[] | undefined
       reject(signal?.aborted ? signal.reason : new NetworkError(error));
     });
     signal?.addEventListener('abort', onAbort, { once: true });
-    request.end();
+    request.end(init.body);
   });
 }
 

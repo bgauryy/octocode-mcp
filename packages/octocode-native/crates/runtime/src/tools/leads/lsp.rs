@@ -4,9 +4,9 @@ use octocode_engine::lsp::config::{
 };
 use octocode_engine::lsp::workspace::resolve_workspace_root_for_file;
 use serde_json::{Value, json};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 type ProbeKey = (String, String, u64);
@@ -14,45 +14,48 @@ const MAX_PROBES: usize = 128;
 const NEGATIVE_TTL: Duration = Duration::from_secs(5);
 const POSITIVE_TTL: Duration = Duration::from_secs(300);
 
-#[derive(Debug, Default)]
-pub(crate) struct LeadProbeCache(Mutex<HashMap<ProbeKey, (bool, Instant)>>);
+/// Server availability per probe: a positive answer lives
+/// [`POSITIVE_TTL`], a negative one [`NEGATIVE_TTL`].
+pub(crate) struct LeadProbeCache(octocode_io::memo::Memo<ProbeKey, bool>);
+
+impl Default for LeadProbeCache {
+    fn default() -> Self {
+        Self(octocode_io::memo::Memo::new(
+            octocode_io::memo::MemoLimits {
+                max_entries: MAX_PROBES,
+                max_weight: MAX_PROBES,
+                keep_newest: false,
+            },
+        ))
+    }
+}
+
+impl std::fmt::Debug for LeadProbeCache {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LeadProbeCache")
+            .field("probes", &self.0.len())
+            .finish()
+    }
+}
 
 impl LeadProbeCache {
     fn get(&self, key: &ProbeKey) -> Option<bool> {
-        let mut entries = self.0.lock().ok()?;
-        let (available, observed) = entries.get(key).copied()?;
-        if observed.elapsed()
-            < if available {
-                POSITIVE_TTL
-            } else {
-                NEGATIVE_TTL
-            }
-        {
-            Some(available)
-        } else {
-            entries.remove(key);
-            None
-        }
+        self.0.get(key).map(|hit| *hit.value)
     }
 
     fn insert(&self, key: ProbeKey, available: bool, observed: Instant) {
-        if let Ok(mut entries) = self.0.lock() {
-            if entries.len() >= MAX_PROBES
-                && !entries.contains_key(&key)
-                && let Some(oldest) = entries
-                    .iter()
-                    .min_by_key(|(_, (_, when))| *when)
-                    .map(|(key, _)| key.clone())
-            {
-                entries.remove(&oldest);
-            }
-            entries.insert(key, (available, observed));
-        }
+        let ttl = if available {
+            POSITIVE_TTL
+        } else {
+            NEGATIVE_TTL
+        };
+        self.0
+            .insert_full(key, available, (), 1, Some(ttl), observed);
     }
 
     #[cfg(test)]
     fn len(&self) -> usize {
-        self.0.lock().map_or(0, |entries| entries.len())
+        self.0.len()
     }
 }
 
@@ -183,7 +186,8 @@ fn discovery() -> LspDiscoveryOptions {
     if let Some(options) = LEAD_DISCOVERY.with(|cell| cell.borrow().clone()) {
         return options;
     }
-    let env: BTreeMap<String, String> = std::env::vars()
+    let env: BTreeMap<String, String> = octocode_io::env::vars_lossy()
+        .into_iter()
         .filter(|(key, _)| key.starts_with("OCTOCODE_"))
         .collect();
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));

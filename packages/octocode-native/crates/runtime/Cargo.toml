@@ -34,6 +34,7 @@ harness = false
 dev-unify = ["dep:hyper", "dep:hyper-util", "dep:bitflags", "dep:fastrand", "dep:slab", "tokio-util/codec"]
 
 [dependencies]
+octocode-io = { path = "../io" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }

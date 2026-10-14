@@ -1,7 +1,7 @@
 // Integration test crate — assertions use unwrap/expect/panic freely.
 #![allow(clippy::expect_used, clippy::panic)]
 
-use crate::support;
+use crate::support::{self, Run as _};
 
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -31,7 +31,7 @@ async fn ordinary_tools_take_an_optional_brief() {
         ),
     ] {
         let outcome = runtime
-            .execute(
+            .run(
                 label.into(),
                 "localFetch".into(),
                 json!({"queries":[query]}),
@@ -55,7 +55,7 @@ async fn bulk_queries_preserve_indexes_and_isolate_domain_failures() {
     let runtime = workspace.runtime(&[]);
 
     let successful = runtime
-        .execute(
+        .run(
             "bulk-success".into(),
             "localFetch".into(),
             json!({"queries":[
@@ -76,7 +76,7 @@ async fn bulk_queries_preserve_indexes_and_isolate_domain_failures() {
     assert!(!successful.all_failed);
 
     let mixed = runtime
-        .execute(
+        .run(
             "bulk-mixed".into(),
             "localFetch".into(),
             json!({"queries":[
@@ -151,7 +151,7 @@ async fn mcp_local_fetch_snapshots_stale_only_the_mutated_batch_row() {
     let second_path = workspace.write("snapshot-second.txt", "second-1\nsecond-2\n");
     let runtime = workspace.runtime(&[]);
     let initial = runtime
-        .execute_mcp(
+        .run_mcp(
             "mcp-local-snapshot-batch".into(),
             "localFetch".into(),
             json!({"queries":[
@@ -188,7 +188,7 @@ async fn mcp_local_fetch_snapshots_stale_only_the_mutated_batch_row() {
 
     std::fs::write(&first_path, "changed-1\nchanged-2\n").expect("mutate first source");
     let resumed = runtime
-        .execute(
+        .run(
             "resume-local-snapshot-batch".into(),
             "localFetch".into(),
             json!({"queries":[first_next, second_next]}),
@@ -457,14 +457,17 @@ async fn host_options_environment_controls_embedded_tool_availability() {
         assert_eq!(entry["unavailableReason"], "cliOnly", "{name}");
     }
     let error = runtime
-        .execute_mcp(
+        .run_mcp(
             "mcp-topology".into(),
             "astTopology".into(),
             json!({"queries":[{"operation":"cycles","path":workspace.workspace}]}),
         )
         .await
-        .expect_err("astTopology is CLI-only");
-    assert_eq!(error.code, "toolUnavailable");
+        .expect("MCP answers a refused call as a tool error");
+    assert_eq!(
+        error["structuredContent"]["errorCode"], "toolUnavailable",
+        "astTopology is CLI-only: {error}"
+    );
     runtime.close().await;
 }
 
@@ -734,12 +737,6 @@ async fn resolved_lsp_config_path_reaches_engine_discovery() {
         "resolved config was ignored: {rendered}"
     );
     runtime.close().await;
-}
-
-#[tokio::test]
-async fn close_joins_a_fresh_runtime() {
-    let workspace = Workspace::new();
-    workspace.runtime(&[]).close().await;
 }
 
 /// Resolve an AST row path against the envelope `base` the runtime attaches.
@@ -1139,7 +1136,7 @@ async fn continuations_replay_without_the_request_brief() {
     }
     let runtime = workspace.runtime(&[]);
     let first = runtime
-        .execute(
+        .run(
             "page-1".into(),
             "localSearch".into(),
             json!({"queries":[{"path":workspace.workspace,"matchString":"needle","pageSize":1,
@@ -1158,7 +1155,7 @@ async fn continuations_replay_without_the_request_brief() {
     );
     // The continuation is the whole call: it runs exactly as emitted.
     let second = runtime
-        .execute(
+        .run(
             "page-2".into(),
             next["tool"].as_str().unwrap().into(),
             query,
@@ -1395,7 +1392,7 @@ async fn topology_path_echo_matches_caller_form_on_paged_cycles() {
     let next = data["next"]["nextPage"]["query"].clone();
     assert!(next.is_object(), "a second page: {data}");
     let second = runtime
-        .execute("test-2".into(), "astTopology".into(), next)
+        .run("test-2".into(), "astTopology".into(), next)
         .await
         .expect("cycles page 2");
     let data = row_data(&second);
@@ -1423,13 +1420,13 @@ async fn regex_match_limit_warning_and_its_opt_in_search_lead() {
         for mcp in [false, true] {
             let envelope = if mcp {
                 runtime
-                    .execute_mcp("limit-mcp".into(), "localFetch".into(), query.clone())
+                    .run_mcp("limit-mcp".into(), "localFetch".into(), query.clone())
                     .await
                     .expect("mcp call")["structuredContent"]
                     .clone()
             } else {
                 runtime
-                    .execute("limit-cli".into(), "localFetch".into(), query.clone())
+                    .run("limit-cli".into(), "localFetch".into(), query.clone())
                     .await
                     .expect("cli call")
                     .structured_content
@@ -1476,7 +1473,7 @@ async fn a_clipped_match_value_is_not_a_partial_result() {
     workspace.write("min.js", format!("needle {}\n", "x ".repeat(5_000)));
     let runtime = workspace.runtime(&[]);
     let outcome = runtime
-        .execute(
+        .run(
             "clipped-value".into(),
             "localSearch".into(),
             json!({"queries":[{"path":workspace.workspace.to_string_lossy(),"matchString":"needle"}]}),
@@ -1507,7 +1504,7 @@ async fn expand_values_of_a_long_line_windows_around_the_match() {
     workspace.write("min.js", format!("head\n{line}\ntail\n"));
     let runtime = workspace.runtime(&[]);
     let outcome = runtime
-        .execute(
+        .run(
             "long-line".into(),
             "localSearch".into(),
             json!({"queries":[{"path":workspace.workspace.to_string_lossy(),"matchString":"needleHere"}]}),
@@ -1523,7 +1520,7 @@ async fn expand_values_of_a_long_line_windows_around_the_match() {
     let offset = read["offset"].as_u64().expect("offset") as usize;
     assert!(offset > 100_000, "{read}");
     let page = runtime
-        .execute(
+        .run(
             "long-line-read".into(),
             "localFetch".into(),
             lead["query"].clone(),

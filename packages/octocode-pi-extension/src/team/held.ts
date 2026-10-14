@@ -1,16 +1,11 @@
-import { envInt } from '../shared/env.js';
 import { covers } from './routing.js';
 import type { Lease } from './model.js';
 
-/** Minutes an idle session keeps renewing its reservations; past that they lapse so a forgotten lock frees itself. */
-export const LEASE_IDLE_ENV = 'OCTOCODE_LEASE_IDLE_MINUTES';
-const DEFAULT_LEASE_IDLE_MINUTES = 30;
-
-/** How long an idle session keeps its reservations: `OCTOCODE_LEASE_IDLE_MINUTES` (0 = until the session ends), else 30 min. */
-export function leaseIdleMs(env: NodeJS.ProcessEnv = process.env): number {
-  const minutes = envInt(env, LEASE_IDLE_ENV, DEFAULT_LEASE_IDLE_MINUTES, { min: 0 });
-  return minutes === 0 ? Number.POSITIVE_INFINITY : minutes * 60_000;
-}
+/**
+ * How long an idle session keeps renewing its reservations; past that they lapse, so a lock forgotten by a session
+ * left open frees itself. A session that works renews them for as long as it works.
+ */
+export const LEASE_IDLE_MS = 30 * 60_000;
 
 /**
  * The reservations this agent believes it holds (`kind:key` → path as locked), and the ones found lapsed since: a

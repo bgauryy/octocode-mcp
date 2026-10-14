@@ -48,7 +48,7 @@ Measure; don't guess:
 - `cargo build -v` prints `Dirty <crate>: <reason>` for unexpected rebuilds.
 
 Fix, in order:
-1. Give build, test and lint the same package and feature selection. Merge test commands that differ only in packages; never run `cargo check` after `clippy` with the same selection (clippy already checks).
+1. Give the edit loop one package and feature selection: the dev build, the test command, and `cargo check` on that crate. Clippy on that same selection replaces the check when you want lints early; do not run both. A workspace `--all-features` Clippy is the handoff gate and a second copy of the unit graph. Commands are in `references/testing-and-tooling.md`. Merge test commands that differ only in packages.
 2. Unify dev-dep features through an opt-in feature that dev builds and tests enable and release never does:
    ```toml
    [features]

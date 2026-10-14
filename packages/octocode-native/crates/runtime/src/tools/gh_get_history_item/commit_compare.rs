@@ -13,12 +13,12 @@ use super::window::{
     paginate_collection, paginate_window,
 };
 use super::{HistoryItemRequest, ItemOperation, fetch, validation};
-use crate::providers::github::{GitHubTransport, ProviderError, RequestContext};
 use crate::tools::gh_shared::commit::{commit_date, utc_date};
 use crate::tools::gh_shared::ensure_next;
 use crate::tools::id::ToolId;
 use crate::tools::paging::push_warnings;
 use crate::tools::result::{Continuation, remove_nulls};
+use octocode_github::{GitHubTransport, ProviderError, RequestContext};
 use serde_json::{Value, json};
 
 /// GitHub's compare endpoint lists at most this many changed files.
@@ -136,9 +136,17 @@ pub(super) async fn commit(
     // Without the patches section the page still lists paths and line stats (no
     // patches) so the agent can pick files before paying for diffs.
     let listed_on_page = files.len();
-    let (files, cursor) = file_rows(files, query);
-    let match_removed_all =
-        query.include_diff() && listed_on_page > 0 && files.as_array().is_some_and(Vec::is_empty);
+    let FileRows {
+        rows: files,
+        cursor,
+        dropped,
+        unsearched,
+    } = file_rows(files, query);
+    // Files it could not search may hold the literal: no empty answer then.
+    let match_removed_all = query.include_diff()
+        && listed_on_page > 0
+        && unsearched.is_empty()
+        && files.as_array().is_some_and(Vec::is_empty);
     let cursors = DiffCursors::of_file_page(
         &page,
         cursor,
@@ -151,6 +159,23 @@ pub(super) async fn commit(
         && let Some(warning) = clamp_warning(query)
     {
         push_warnings(&mut out, [warning]);
+    }
+    if query.char_offset().is_none_or(|offset| offset == 0) {
+        if dropped > 0 && !match_removed_all {
+            push_warnings(
+                &mut out,
+                [super::filter::match_dropped_warning(
+                    dropped,
+                    listed_on_page,
+                )],
+            );
+        }
+        mark_unsearched(
+            &mut out,
+            query,
+            &unsearched,
+            (Some(sha.as_str()), parent.as_deref()),
+        );
     }
     attach_diff_continuations(
         &mut out,
@@ -201,30 +226,77 @@ pub(super) async fn commit(
     Ok(out)
 }
 
+/// A shaped file page: its rows, the patch-stream offset that continues
+/// them, how many in-scope files the `matchString` dropped (searched, no
+/// hit), and the files it could not search (GitHub sent no patch), each
+/// `(reason, path, removed)` like the pull-request file filter's.
+struct FileRows {
+    rows: Value,
+    cursor: Option<usize>,
+    dropped: usize,
+    unsearched: Vec<(&'static str, String, bool)>,
+}
+
 /// Changed files without patches read as the pull-request inventory
 /// (`M +3 -1 path`, grouped by directory); with patches, one row per file,
-/// and a `matchString` keeps the files whose path or patch it hits (the
-/// pull-request file filter), each narrowed to its hits.
-fn file_rows(files: Vec<Value>, query: &HistoryItemRequest) -> (Value, Option<usize>) {
+/// and a `matchString` keeps the files whose patch it hits (the
+/// pull-request file filter), each narrowed to its hits. A file GitHub sent
+/// without a patch was never searched: it is unsearched, not dropped.
+fn file_rows(files: Vec<Value>, query: &HistoryItemRequest) -> FileRows {
     if !query.include_diff() {
-        return (
-            Value::Array(super::inventory::compact_inventory(&files)),
-            None,
-        );
+        return FileRows {
+            rows: Value::Array(super::inventory::compact_inventory(&files)),
+            cursor: None,
+            dropped: 0,
+            unsearched: Vec::new(),
+        };
     }
     let needle = query.match_string().map(str::to_lowercase);
     let filter = super::filter::FileFilter {
         needle: needle.as_deref(),
         scope: None,
     };
+    let unsearched = match needle {
+        Some(_) => super::filter::unsearched_files(&files, &filter),
+        None => Vec::new(),
+    };
+    let listed = files.len();
     let files = files
         .into_iter()
         .filter(|file| filter.matches(file))
-        .collect();
+        .collect::<Vec<_>>();
+    let dropped = listed.saturating_sub(files.len() + unsearched.len());
     let (mut rows, cursor) = shape_files(files, true, query);
     // The narrowed-view marker is internal to the pull-request lead.
     super::patch_hop::take_reshaped_paths(Some(&mut rows), false);
-    (rows, cursor)
+    FileRows {
+        rows,
+        cursor,
+        dropped,
+        unsearched,
+    }
+}
+
+/// List the files a `matchString` could not search (`!reason path`, as on
+/// a pull request), mark the row partial, and lead to the literal search of
+/// the first one's source: at `old` for a removed file, else at `new`.
+fn mark_unsearched(
+    out: &mut Value,
+    query: &HistoryItemRequest,
+    unsearched: &[(&'static str, String, bool)],
+    (new, old): (Option<&str>, Option<&str>),
+) {
+    let Some((_, path, removed)) = unsearched.first() else {
+        return;
+    };
+    out["unsearchedFiles"] = json!(
+        unsearched
+            .iter()
+            .map(|(reason, path, _)| format!("!{reason} {path}"))
+            .collect::<Vec<_>>()
+    );
+    let sha = if *removed { old } else { new };
+    super::pr_finish::attach_unsearched_read(out, query, path, sha);
 }
 
 /// The read of one commit at its default sections.
@@ -563,7 +635,14 @@ fn attach_file_page(
     } else {
         Vec::new()
     };
-    let (files, cursor) = file_rows(files, query);
+    let listed_on_page = files.len();
+    let FileRows {
+        rows: files,
+        cursor,
+        dropped,
+        unsearched,
+    } = file_rows(files, query);
+    let kept_any = files.as_array().is_some_and(|files| !files.is_empty());
     let cursors = DiffCursors::of_file_page(
         &file_page,
         cursor,
@@ -574,6 +653,24 @@ fn attach_file_page(
     out["filePagination"] = file_page;
     if include_diff && let Some(warning) = clamp_warning(query) {
         push_warnings(out, [warning]);
+    }
+    if dropped > 0 && kept_any && !window {
+        push_warnings(
+            out,
+            [super::filter::match_dropped_warning(
+                dropped,
+                listed_on_page,
+            )],
+        );
+    }
+    if !window {
+        let head = out["headSha"].as_str().map(str::to_owned);
+        mark_unsearched(
+            out,
+            query,
+            &unsearched,
+            (head.as_deref(), str_at(raw, "/merge_base_commit/sha")),
+        );
     }
     if let Some(warning) = unmatched {
         push_warnings(out, [warning]);
@@ -718,7 +815,7 @@ fn commit_list_lead(
 /// after a hunk's `@@ … @@` counts as text: a hit there is not a changed line.
 fn match_removed_all_warning(needle: &str, listed: usize) -> String {
     format!(
-        "matchString matched 0 of {listed} changed files listed on this page (it searched {needle:?} in each file's path and diff text, hunk-header context included); drop matchString to list the files."
+        "matchString matched 0 of {listed} changed files listed on this page (it searched {needle:?} in each file's diff text, hunk-header context included); drop matchString to list the files."
     )
 }
 

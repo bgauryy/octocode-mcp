@@ -199,8 +199,10 @@ fn cached_query(language: &Language, body_query: &'static str) -> Option<Arc<Que
     let cache = QUERY_CACHE.get_or_init(|| RwLock::new(HashMap::new()));
     let key = (language.clone(), body_query);
 
-    if let Ok(cache) = cache.read()
-        && let Some(query) = cache.get(&key)
+    if let Some(query) = cache
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get(&key)
     {
         return Some(Arc::clone(query));
     }
@@ -213,10 +215,10 @@ fn cached_query(language: &Language, body_query: &'static str) -> Option<Arc<Que
     }
     // A concurrent caller may have compiled the same query first: keep
     // theirs so every caller shares one instance.
-    if let Ok(mut cache) = cache.write() {
-        return Some(Arc::clone(cache.entry(key).or_insert(query)));
-    }
-    Some(query)
+    let mut cache = cache
+        .write()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    Some(Arc::clone(cache.entry(key).or_insert(query)))
 }
 
 /// Test helper: `(1-based line number, trimmed text)` pairs.
@@ -438,90 +440,85 @@ fn extract_with_limits(
     let tree = parse_before(content, &cfg.language, deadline)?;
 
     // Compile (or reuse the cached compile of) the body query; if it fails
-    // (bad query or grammar mismatch) fall back gracefully to returning all
-    // non-blank lines (caller will fall back).
-    if let Some(query) = cached_query(&cfg.language, cfg.body_query) {
-        let mut cursor = QueryCursor::new();
-        cursor.set_match_limit(match_limit);
-        let body_capture = query.capture_index_for_name("body");
-        let mut progress = |_: &tree_sitter::QueryCursorState| {
-            if Instant::now() >= deadline {
-                ControlFlow::Break(())
-            } else {
-                ControlFlow::Continue(())
-            }
-        };
-        let mut matches = cursor.matches_with_options(
-            &query,
-            tree.root_node(),
-            content.as_bytes(),
-            QueryCursorOptions::new().progress_callback(&mut progress),
-        );
-        while let Some(m) = matches.next() {
-            if Instant::now() >= deadline {
-                return None;
-            }
-            for capture in m.captures() {
-                if Some(capture.index) != body_capture {
-                    continue;
-                }
-                let node = capture.node;
-                // A top-level IIFE body is the module's real scope (UMD
-                // wrappers, legacy bundles): outline inside it, don't drop it.
-                if is_top_level_iife_body(tree.root_node(), node) {
-                    continue;
-                }
-                let start = node.start_position().row;
-                let end = node.end_position().row;
-
-                // Detect brace-style vs indent-style body.
-                // Brace-style: the body node's FIRST BYTE is `{` (JS/TS/Go/Rust/C/Java etc.)
-                // Indent-style: first byte is NOT `{` (for example, a Python block).
-                let body_first_byte = content.as_bytes().get(node.start_byte()).copied();
-                let brace_style = body_first_byte == Some(b'{');
-                let mut signature_end = start;
-
-                if brace_style {
-                    // Keep opening `{` line ONLY; drop interior AND closing `}`.
-                    // Function heads are shown without the trailing `}`.
-                    // Class closing `}` is preserved naturally
-                    // because class_body is never queried.
-                    let hi = end.min(n.saturating_sub(1));
-                    if start < hi {
-                        keep[(start + 1)..=hi].fill(false);
-                    }
-                } else {
-                    // Drop all lines of the body (indent style). A body that
-                    // shares the signature's row (`def f(): return 1`) must
-                    // not erase the signature line.
-                    let hi = end.min(n.saturating_sub(1));
-                    let start_col = node.start_position().column;
-                    let sig_shares_row = lines.get(start).is_some_and(|l| {
-                        l.as_bytes()[..start_col.min(l.len())]
-                            .iter()
-                            .any(|b| !b.is_ascii_whitespace())
-                    });
-                    let lo = if sig_shares_row { start + 1 } else { start };
-                    if lo <= hi {
-                        keep[lo..=hi].fill(false);
-                    }
-                    signature_end = lo.saturating_sub(1);
-                }
-                if outline && let Some(function) = node.parent() {
-                    collapse_signature(function, signature_end, &mut keep, &mut elided);
-                }
-            }
+    // (bad query or grammar mismatch), `None` sends the caller to its heuristic.
+    let query = cached_query(&cfg.language, cfg.body_query)?;
+    let mut cursor = QueryCursor::new();
+    cursor.set_match_limit(match_limit);
+    let body_capture = query.capture_index_for_name("body");
+    let mut progress = |_: &tree_sitter::QueryCursorState| {
+        if Instant::now() >= deadline {
+            ControlFlow::Break(())
+        } else {
+            ControlFlow::Continue(())
         }
-        drop(matches);
-        if cursor.did_exceed_match_limit() || Instant::now() >= deadline {
+    };
+    let mut matches = cursor.matches_with_options(
+        &query,
+        tree.root_node(),
+        content.as_bytes(),
+        QueryCursorOptions::new().progress_callback(&mut progress),
+    );
+    while let Some(m) = matches.next() {
+        if Instant::now() >= deadline {
             return None;
         }
-        if outline {
-            collapse_docstrings(tree.root_node(), &lines, &mut keep, &mut elided);
+        for capture in m.captures() {
+            if Some(capture.index) != body_capture {
+                continue;
+            }
+            let node = capture.node;
+            // A top-level IIFE body is the module's real scope (UMD
+            // wrappers, legacy bundles): outline inside it, don't drop it.
+            if is_top_level_iife_body(tree.root_node(), node) {
+                continue;
+            }
+            let start = node.start_position().row;
+            let end = node.end_position().row;
+
+            // Detect brace-style vs indent-style body.
+            // Brace-style: the body node's FIRST BYTE is `{` (JS/TS/Go/Rust/C/Java etc.)
+            // Indent-style: first byte is NOT `{` (for example, a Python block).
+            let body_first_byte = content.as_bytes().get(node.start_byte()).copied();
+            let brace_style = body_first_byte == Some(b'{');
+            let mut signature_end = start;
+
+            if brace_style {
+                // Keep opening `{` line ONLY; drop interior AND closing `}`.
+                // Function heads are shown without the trailing `}`.
+                // Class closing `}` is preserved naturally
+                // because class_body is never queried.
+                let hi = end.min(n.saturating_sub(1));
+                if start < hi {
+                    keep[(start + 1)..=hi].fill(false);
+                }
+            } else {
+                // Drop all lines of the body (indent style). A body that
+                // shares the signature's row (`def f(): return 1`) must
+                // not erase the signature line.
+                let hi = end.min(n.saturating_sub(1));
+                let start_col = node.start_position().column;
+                let sig_shares_row = lines.get(start).is_some_and(|l| {
+                    l.as_bytes()[..start_col.min(l.len())]
+                        .iter()
+                        .any(|b| !b.is_ascii_whitespace())
+                });
+                let lo = if sig_shares_row { start + 1 } else { start };
+                if lo <= hi {
+                    keep[lo..=hi].fill(false);
+                }
+                signature_end = lo.saturating_sub(1);
+            }
+            if outline && let Some(function) = node.parent() {
+                collapse_signature(function, signature_end, &mut keep, &mut elided);
+            }
         }
-    } else {
-        // Query failed → fall back to heuristic (signal with None)
+    }
+    drop(matches);
+    if cursor.did_exceed_match_limit() || Instant::now() >= deadline {
         return None;
+    }
+    if outline {
+        collapse_docstrings(tree.root_node(), &lines, &mut keep, &mut elided);
     }
 
     let result: Vec<(usize, String)> = keep

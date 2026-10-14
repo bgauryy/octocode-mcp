@@ -12,7 +12,7 @@ const ENTRY = path.join(HERE, '..', process.env['OCTOCODE_E2E_ENTRY'] === 'dist'
 const octocode = (await import(ENTRY)).default as ExtensionFactory;
 
 // Hermetic: a run from inside a Pi subagent inherits its identity and settings, which change the prompt, tools and limits.
-for (const key of ['OCTOCODE_SUBAGENT', 'OCTOCODE_BROWSER_VISIBLE', 'OCTOCODE_PARENT_ID', 'OCTOCODE_AGENT_ID', 'OCTOCODE_AGENT_GOAL', 'OCTOCODE_AGENT_COLLABORATE', 'OCTOCODE_SUBAGENT_COLLABORATE', 'OCTOCODE_MAX_SUBAGENTS', 'OCTOCODE_DIRECT_TOOLS', 'OCTOCODE_HOME', 'OCTOCODE_AGENT_DB', 'OCTOCODE_MEMORY_AUTO', 'OCTOCODE_MCP_WAIT_SECONDS']) {
+for (const key of ['OCTOCODE_SUBAGENT', 'OCTOCODE_BROWSER_VISIBLE', 'OCTOCODE_PARENT_ID', 'OCTOCODE_AGENT_ID', 'OCTOCODE_AGENT_GOAL', 'OCTOCODE_AGENT_COLLABORATE', 'OCTOCODE_MAX_SUBAGENTS', 'OCTOCODE_HOME', 'OCTOCODE_AGENT_DB', 'OCTOCODE_MEMORY_AUTO', 'OCTOCODE_MCP']) {
   delete process.env[key];
 }
 
@@ -311,6 +311,20 @@ describe('with another MCP server and Octocode disabled', () => {
     expect(fs.readFileSync(path.join(s.cwd, 'existing.txt'), 'utf8')).toBe('replaced');
   });
 
+  it('answers a repeated read of an unchanged file with a note, and the file can still be rewritten after it', async () => {
+    fs.writeFileSync(path.join(s.cwd, 'twice.txt'), 'same line\n'.repeat(200));
+    const turns = await s.run('read twice', [
+      calls(fauxToolCall('read', { path: 'twice.txt' })),
+      calls(fauxToolCall('read', { path: 'twice.txt' })),
+      calls(fauxToolCall('file', { queries: [{ reasoning: 'replace', type: 'write', path: 'twice.txt', content: 'replaced' }] })),
+      say('done'),
+    ]);
+    const [first, second, rewrite] = turns.slice(-3);
+    expect(first!.lastResults[0]!.text).toContain('same line');
+    expect(second!.lastResults[0]!.text).toMatch(/^\[Unchanged since your earlier read of twice\.txt \(same range\)/);
+    expect(rewrite!.lastResults[0]!.text).toMatch(/OK write twice\.txt/);
+  });
+
   it('keeps every tool result verbatim: no context edits after a turn, even with a cold cache', async () => {
     fs.writeFileSync(path.join(s.cwd, 'big.txt'), 'line of text\n'.repeat(1_000));
     const reads = Array.from({ length: 22 }, () => fauxToolCall('read', { path: 'big.txt' }));
@@ -374,6 +388,10 @@ describe('compaction', () => {
     expect(log.length).toBeGreaterThan(0);
     expect(new Set(log.map((call) => call.model))).toEqual(new Set(['faux-1']));
     expect(log.some((call) => call.text.includes('keep the notes'))).toBe(true);
+    // The summary is asked for inside the session's own request (its messages, then one more), not as a standalone prompt.
+    expect(log[0]!.text).toContain('Please read notes.txt and create todo.txt');
+    expect(log[0]!.text).toContain('Stop here and write a context checkpoint');
+    expect(log[0]!.text).not.toContain('<conversation>');
     for (const section of ['## Errors & Fixes', '## Where We Stopped', '## Follow-ups', 'only record']) expect(log.some((call) => call.text.includes(section))).toBe(true);
     const entry = compactionEntries().at(-1)!;
     expect(entry.fromHook).toBe(true);
@@ -413,7 +431,8 @@ describe('compaction', () => {
     let calls = 0;
     s.faux.setResponses(Array.from({ length: 6 }, () => () => {
       calls += 1;
-      if (calls === 1) throw new Error('summary provider down');
+      // The cache-sharing request and Octocode's standalone one both fail; Pi's own summary then answers.
+      if (calls <= 2) throw new Error('summary provider down');
       return fauxAssistantMessage('## Goal\nDefault summary');
     }));
     await s.session.compact();

@@ -70,7 +70,7 @@ describe('team tools on a fake Pi', () => {
     const { a, b } = await pair();
     const coordinate = a.tools.get('coordinate');
     expect(text(await run(coordinate, { action: 'list' }, a.ctx))).toMatch(/no other agents|No agents/i);
-    const joined = text(await run(coordinate, { action: 'join', note: 'refactor auth\nsecond line' }, a.ctx));
+    const joined = text(await run(coordinate, { action: 'join', goal: 'refactor auth\nsecond line' }, a.ctx));
     expect(joined).toContain(a.team.id!);
     await expect(run(coordinate, { action: 'lock' }, a.ctx)).rejects.toThrow('lock needs paths.');
     expect(text(await run(coordinate, { action: 'lock', paths: ['src/a.ts', 'lib/'], reason: 'auth' }, a.ctx))).toBe('Reserved: src/a.ts, lib/. Unlock when your edits are done.');
@@ -138,6 +138,55 @@ describe('team tools on a fake Pi', () => {
     expect(reply).toBeInstanceOf(Error);
   });
 
+  it('sends a reply to the sender of the message it answers, and a message is an FYI unless it asks', async () => {
+    const { a, b } = await pair();
+    await run(a.tools.get('coordinate'), { action: 'join' }, a.ctx);
+    await run(b.tools.get('coordinate'), { action: 'join' }, b.ctx);
+    const send = a.tools.get('sendMessage');
+    const sent = await run(send, { to: b.team.id, message: 'which file?' }, a.ctx);
+    const mail = (agent: typeof a) => agent.sent.filter((entry) => entry.message.customType === MESSAGE_TYPE).flatMap((entry) => entry.message.details.messages);
+    await vi.waitFor(() => expect(mail(b)).toHaveLength(1), { timeout: 5_000 });
+    expect(mail(b)[0]).toMatchObject({ from: a.team.id, text: 'which file?', replyRequired: false });
+
+    // No `to`: the answer goes to the sender of message #id.
+    const reply = await run(b.tools.get('sendMessage'), { replyTo: sent.details.id, message: 'src/a.ts' }, b.ctx);
+    expect(reply.details).toMatchObject({ to: [a.team.id] });
+    await vi.waitFor(() => expect(mail(a)).toHaveLength(1), { timeout: 5_000 });
+    expect(mail(a)[0]).toMatchObject({ from: b.team.id, text: 'src/a.ts', replyRequired: false });
+
+    await expect(run(send, { message: 'to nobody' }, a.ctx)).rejects.toThrow(/Say who to send to: `to`.*or `replyTo`.*Nothing was sent/);
+    await expect(run(send, { replyTo: 987654, message: 'x' }, a.ctx)).rejects.toThrow(/No message #987654/);
+    expect(rendered(send.renderCall({ replyTo: 41, message: 'm' }, theme, {}))).toBe('○ Send(reply to #41)');
+    const properties = send.parameters.properties;
+    expect(send.parameters.required).toEqual(['message']);
+    expect(properties.replyRequired.description).toContain('false (the default)');
+    expect(send.description).toMatch(/lingers .*resumes with your message/);
+    expect(send.description).not.toContain('cannot receive');
+  });
+
+  it('refuses a lock call whose own paths overlap, and reserves nothing', async () => {
+    const { a } = await pair();
+    const coordinate = a.tools.get('coordinate');
+    await expect(run(coordinate, { action: 'lock', paths: ['src/', 'src/a.ts'] }, a.ctx)).rejects.toThrow(/Requested paths overlap: src and src\/a\.ts\. Nothing was locked; reserve the tree alone, or each path once\./);
+    await expect(run(coordinate, { action: 'lock', paths: ['x.ts', 'X.ts'] }, a.ctx)).rejects.toThrow(/Requested paths overlap/);
+    expect(a.team.members().find((entry) => entry.id === a.team.id)).toBeDefined();
+    expect(text(await run(coordinate, { action: 'unlock' }, a.ctx))).toBe('Released 0 reservation(s).');
+  });
+
+  it('offers join, leave and a goal only to an agent that joins by hand; a subagent joins and leaves with its run', () => {
+    const fake = fakePi();
+    registerCollab(fake.pi, new Team(fake.pi, { OCTOCODE_AGENT_DB: path.join(tmp(), 'team.sqlite') }));
+    const subagent = fake.tools.get('coordinate').parameters;
+    expect(subagent.properties.action.enum).toEqual(['list', 'lock', 'unlock', 'changes']);
+    expect(subagent.properties).not.toHaveProperty('goal');
+    const main = fakePi();
+    registerCollab(main.pi, new Team(main.pi, { OCTOCODE_AGENT_DB: path.join(tmp(), 'team.sqlite') }), { stopAgent: () => undefined });
+    const parameters = main.tools.get('coordinate').parameters;
+    expect(parameters.properties.action.enum).toEqual(['list', 'join', 'leave', 'lock', 'unlock', 'stop', 'changes']);
+    expect(parameters.properties.goal.description).toMatch(/^join: your goal\./);
+    expect(parameters.properties).not.toHaveProperty('note');
+  });
+
   it('tracks activity and renders messages and calls', async () => {
     const { a, b } = await pair();
     await run(a.tools.get('coordinate'), { action: 'join' }, a.ctx);
@@ -171,7 +220,7 @@ describe('team tools on a fake Pi', () => {
     expect(rendered(renderer({ content: 'plain text', details: { from: 'x' } }, { expanded: false }, theme))).toContain('plain text');
 
     const coordinate = a.tools.get('coordinate');
-    expect(rendered(coordinate.renderCall({ action: 'lock', paths: ['a.ts', 'b/'], note: 'n' }, theme, {}))).toBe('○ Coordinate(lock 2 paths "n")');
+    expect(rendered(coordinate.renderCall({ action: 'lock', paths: ['a.ts', 'b/'], goal: 'n' }, theme, {}))).toBe('○ Coordinate(lock 2 paths "n")');
     expect(rendered(coordinate.renderCall({ action: 'unlock', paths: ['a.ts'] }, theme, {}))).toBe('○ Coordinate(unlock a.ts)');
     expect(rendered(coordinate.renderCall({}, theme, {}))).toBe('○ Coordinate');
     const listed = await run(coordinate, { action: 'list' }, a.ctx);

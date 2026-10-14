@@ -1,8 +1,8 @@
 use super::{ArtifactError, ArtifactType};
-use crate::cache::{CacheClass, CacheConfig, CacheKey, Store, StorePartition};
-use crate::providers::{BudgetStop, RequestBudget, RuntimeClients};
-use bytes::BytesMut;
-use futures_util::StreamExt;
+use crate::cache::{CacheClass, CacheConfig, CacheKey, Store};
+use crate::providers::RuntimeClients;
+use octocode_github::{Backoff, BodyError, StatusClass};
+use octocode_github::{BudgetStop, RequestBudget};
 use reqwest::header::{ACCEPT, AUTHORIZATION, HeaderValue, USER_AGENT};
 use secrecy::{ExposeSecret, SecretString};
 use std::fmt;
@@ -14,31 +14,23 @@ use url::Url;
 
 /// One runtime's registry answers and release facts. A disk directory
 /// keeps them across CLI processes; without one they stay in memory.
-pub struct ArtifactCache(Store<Vec<u8>>);
+pub struct ArtifactCache(Store<serde_json::Value>);
 
 impl ArtifactCache {
     pub fn new(dir: Option<std::path::PathBuf>) -> Self {
-        Self(Store::new(
-            CacheConfig {
-                ttl: Duration::from_secs(300),
-                ..CacheConfig::default()
-            },
-            dir,
-        ))
+        Self(Store::new(CacheConfig::default(), dir))
     }
 }
 
-/// The cache partition of a read: anonymous, or a digest of the exact
-/// credential, so one token's answers never serve another caller.
-fn credential_partition(authorization: Option<&SecretString>) -> String {
-    use sha2::{Digest, Sha256};
-    authorization.map_or_else(
-        || "anonymous".to_owned(),
-        |secret| hex::encode(&Sha256::digest(secret.expose_secret().as_bytes())[..8]),
-    )
-}
+/// A registry answer lives five minutes: a new release shows up soon.
+const REGISTRY_ANSWER: CacheClass = CacheClass::Volatile {
+    ttl: Duration::from_secs(300),
+};
 
-fn cache_key(url: &Url, accept: &str, credential: &str) -> CacheKey {
+/// A read's key: the registry host scoped by the exact credential
+/// ([`octocode_github::Partition`]), so one token's answers never serve
+/// another caller.
+fn cache_key(url: &Url, accept: &str, authorization: Option<&SecretString>) -> CacheKey {
     // One URL can answer in several representations (npm's abbreviated
     // packument); the default JSON keeps its historical key.
     let resource = if accept == JSON {
@@ -48,26 +40,23 @@ fn cache_key(url: &Url, accept: &str, credential: &str) -> CacheKey {
     };
     CacheKey {
         namespace: "artifact".into(),
+        scope: octocode_github::Partition::new(url.host_str().unwrap_or("registry"), authorization)
+            .identity()
+            .to_owned(),
         resource,
-        partition: StorePartition {
-            endpoint: url.host_str().unwrap_or("registry").to_owned(),
-            credential_fingerprint: credential.to_owned(),
-        },
     }
 }
 
+/// Release facts are public: one unscoped namespace.
 fn fact_key(resource: &str) -> CacheKey {
     CacheKey {
         namespace: "artifact-fact".into(),
+        scope: String::new(),
         resource: resource.to_owned(),
-        partition: StorePartition {
-            endpoint: "registry".into(),
-            credential_fingerprint: "anonymous".into(),
-        },
     }
 }
 
-const JSON: &str = "application/json";
+pub(crate) const JSON: &str = "application/json";
 /// npm's abbreviated packument: versions and dist-tags without readmes.
 pub(crate) const NPM_INSTALL_JSON: &str = "application/vnd.npm.install-v1+json";
 
@@ -166,16 +155,18 @@ fn pinned_client(pin: &DnsPin) -> Result<reqwest::Client, ArtifactError> {
 }
 
 fn build_client(dns_pin: Option<&DnsPin>) -> Result<reqwest::Client, ArtifactError> {
-    let mut builder = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none());
-    if let Some(pin) = dns_pin {
-        // A proxy would resolve the target independently and defeat the pin.
-        // Custom registries admitted by this path therefore connect directly
-        // to the exact public addresses validated by npm policy.
-        builder = builder
-            .no_proxy()
-            .resolve_to_addrs(&pin.host, &pin.addresses);
-    }
-    builder.build().map_err(|_| {
+    // A pinned name connects directly to the exact public addresses validated
+    // by npm policy: a proxy would resolve the target independently.
+    let policy = octocode_io::http::ClientPolicy {
+        proxy: if dns_pin.is_some() {
+            octocode_io::http::Proxy::Direct
+        } else {
+            octocode_io::http::Proxy::System
+        },
+        resolve: dns_pin.map(|pin| (pin.host.clone(), pin.addresses.clone())),
+        ..octocode_io::http::ClientPolicy::default()
+    };
+    octocode_io::http::client(&policy).map_err(|_| {
         ArtifactError::new(
             "providerError",
             "Failed to initialize artifact registry HTTP client.",
@@ -210,45 +201,49 @@ impl ArtifactHttp for SystemArtifactHttp {
                         })?;
                     builder = builder.header(AUTHORIZATION, header);
                 }
-                let response = budget
-                    .wait(builder.send())
-                    .await
-                    .map_err(budget_error)?
-                    .map_err(transport_error)?;
+                let response = match budget.wait(builder.send()).await.map_err(budget_error)? {
+                    Ok(response) => response,
+                    Err(error) => {
+                        if octocode_github::is_retryable_send(&error)
+                            && attempt < self.retries
+                            && let Some(delay) = retry_delay(None, attempt, budget)
+                        {
+                            pause(delay, budget).await?;
+                            continue;
+                        }
+                        return Err(transport_error(error));
+                    }
+                };
                 let status = response.status();
-                if (status.is_server_error() || status.as_u16() == 429)
+                let class = octocode_github::classify_status(status.as_u16());
+                if (class.is_server() || class == StatusClass::RateLimited)
                     && attempt < self.retries
-                    && let Some(delay) = retry_delay(response.headers(), attempt, budget)
+                    && let Some(delay) = retry_delay(Some(response.headers()), attempt, budget)
                 {
                     drain(response, budget).await?;
-                    budget
-                        .wait(tokio::time::sleep(delay))
-                        .await
-                        .map_err(budget_error)?;
+                    pause(delay, budget).await?;
                     continue;
                 }
-                if status.is_redirection() {
+                if class == StatusClass::Redirect {
                     return Err(ArtifactError::new(
                         "providerError",
                         "Artifact registry redirects are not followed.",
                     )
                     .with_status(status.as_u16()));
                 }
-                let mut body = BytesMut::new();
-                let mut stream = response.bytes_stream();
-                while let Some(chunk) = budget.wait(stream.next()).await.map_err(budget_error)? {
-                    let chunk = chunk.map_err(transport_error)?;
-                    if body.len().saturating_add(chunk.len()) > budget.max_body_bytes {
-                        return Err(ArtifactError::new(
+                let body = octocode_github::read_bounded(response, budget, budget.max_body_bytes)
+                    .await
+                    .map_err(|error| match error {
+                        BodyError::Stopped(stop) => budget_error(stop),
+                        BodyError::TooLarge => ArtifactError::new(
                             "providerError",
                             "Artifact registry response exceeded the configured body limit.",
-                        ));
-                    }
-                    body.extend_from_slice(&chunk);
-                }
+                        ),
+                        BodyError::Transport => transport_error("body"),
+                    })?;
                 return Ok(ArtifactHttpResponse {
                     status: status.as_u16(),
-                    body: body.to_vec(),
+                    body: body.into(),
                 });
             }
             Err(ArtifactError::new(
@@ -266,41 +261,44 @@ const MAX_DRAIN_BYTES: usize = 64 * 1024;
 
 /// Read and discard a retried response's body, up to [`MAX_DRAIN_BYTES`].
 async fn drain(response: reqwest::Response, budget: &RequestBudget) -> Result<(), ArtifactError> {
-    let mut read = 0_usize;
-    let mut stream = response.bytes_stream();
-    while let Some(chunk) = budget.wait(stream.next()).await.map_err(budget_error)? {
-        let Ok(chunk) = chunk else {
-            return Ok(());
-        };
-        read = read.saturating_add(chunk.len());
-        if read > MAX_DRAIN_BYTES {
-            return Ok(());
-        }
+    match octocode_github::read_bounded(response, budget, MAX_DRAIN_BYTES).await {
+        Err(BodyError::Stopped(stop)) => Err(budget_error(stop)),
+        Ok(_) | Err(BodyError::TooLarge | BodyError::Transport) => Ok(()),
     }
-    Ok(())
+}
+
+async fn pause(delay: Duration, budget: &RequestBudget) -> Result<(), ArtifactError> {
+    budget
+        .wait(tokio::time::sleep(delay))
+        .await
+        .map_err(budget_error)
 }
 
 /// Longest wait before a retry; a registry that asks for more gets its
 /// answer returned now.
 const MAX_RETRY_WAIT: Duration = Duration::from_secs(10);
-const RETRY_BASE: Duration = Duration::from_millis(200);
+const BACKOFF: Backoff = Backoff {
+    base: Duration::from_millis(200),
+    cap: MAX_RETRY_WAIT,
+    floor: Duration::ZERO,
+};
 
-/// The wait before retrying: the registry's `Retry-After`, else full-jitter
+/// The wait before retrying: the registry's `Retry-After`, else jittered
 /// backoff. `None` when that wait exceeds [`MAX_RETRY_WAIT`] or the
 /// request's remaining time.
 fn retry_delay(
-    headers: &reqwest::header::HeaderMap,
+    headers: Option<&reqwest::header::HeaderMap>,
     attempt: u8,
     budget: &RequestBudget,
 ) -> Option<Duration> {
-    let delay = octocode_github::retry_after_delay(
-        headers,
-        Duration::from_secs(86_400),
-        std::time::SystemTime::now(),
-    )
-    .unwrap_or_else(|| {
-        octocode_github::full_jitter(RETRY_BASE, u32::from(attempt), MAX_RETRY_WAIT)
+    let requested = headers.and_then(|headers| {
+        octocode_github::retry_after_delay(
+            headers,
+            Duration::from_secs(86_400),
+            std::time::SystemTime::now(),
+        )
     });
+    let delay = BACKOFF.after(requested, u32::from(attempt));
     (delay <= MAX_RETRY_WAIT && std::time::Instant::now() + delay < budget.deadline)
         .then_some(delay)
 }
@@ -348,38 +346,11 @@ impl<'a> RegistryClient<'a> {
 }
 
 impl RegistryClient<'_> {
+    /// A registry's JSON answer for `url` in the `accept` representation
+    /// ([`JSON`] by default), through the runtime cache. `dns_pin` connects a
+    /// custom registry only to its validated addresses; `None` when absent
+    /// (404) and `not_found_is_empty`.
     pub async fn json(
-        &self,
-        artifact_type: ArtifactType,
-        url: Url,
-        not_found_is_empty: bool,
-        authorization: Option<SecretString>,
-    ) -> Result<Option<serde_json::Value>, ArtifactError> {
-        self.json_with_dns_pin(artifact_type, url, not_found_is_empty, authorization, None)
-            .await
-    }
-
-    pub(crate) async fn json_with_dns_pin(
-        &self,
-        artifact_type: ArtifactType,
-        url: Url,
-        not_found_is_empty: bool,
-        authorization: Option<SecretString>,
-        dns_pin: Option<DnsPin>,
-    ) -> Result<Option<serde_json::Value>, ArtifactError> {
-        self.json_as(
-            artifact_type,
-            url,
-            not_found_is_empty,
-            authorization,
-            dns_pin,
-            JSON,
-        )
-        .await
-    }
-
-    /// [`Self::json_with_dns_pin`] with an explicit `Accept` media type.
-    pub(crate) async fn json_as(
         &self,
         artifact_type: ArtifactType,
         url: Url,
@@ -388,15 +359,13 @@ impl RegistryClient<'_> {
         dns_pin: Option<DnsPin>,
         accept: &'static str,
     ) -> Result<Option<serde_json::Value>, ArtifactError> {
-        let key = cache_key(&url, accept, &credential_partition(authorization.as_ref()));
+        let key = cache_key(&url, accept, authorization.as_ref());
+        // Entries are stored parsed: a hit copies the answer, never reparses
+        // it. An entry that does not deserialize is a miss and is removed.
         if let Some(cache) = self.cache
             && let Some(hit) = cache.0.get(&key)
         {
-            match serde_json::from_slice(hit.value.as_ref()) {
-                Ok(value) => return Ok(Some(value)),
-                // An entry that does not parse is a miss, read again.
-                Err(_) => cache.0.remove(&key),
-            }
+            return Ok(Some(hit.value.as_ref().clone()));
         }
         let response = self
             .http
@@ -415,10 +384,12 @@ impl RegistryClient<'_> {
         };
         // Only a body that parses is cached, so a malformed answer never
         // outlives the call that received it.
-        let value = serde_json::from_slice(&bytes).map_err(|_| invalid_response(artifact_type))?;
+        let value: serde_json::Value =
+            serde_json::from_slice(&bytes).map_err(|_| invalid_response(artifact_type))?;
         if let Some(cache) = self.cache {
-            let size = bytes.len();
-            cache.0.put(key, bytes, size, CacheClass::Volatile);
+            cache
+                .0
+                .put(key, value.clone(), bytes.len(), REGISTRY_ANSWER);
         }
         Ok(Some(value))
     }
@@ -427,19 +398,20 @@ impl RegistryClient<'_> {
     /// published versions never change, so a fact never expires.
     pub(crate) fn fact(&self, resource: &str) -> Option<serde_json::Value> {
         let hit = self.cache?.0.get(&fact_key(resource))?;
-        serde_json::from_slice(hit.value.as_ref()).ok()
+        Some(hit.value.as_ref().clone())
     }
 
     pub(crate) fn remember_fact(&self, resource: &str, fact: &serde_json::Value) {
         let Some(cache) = self.cache else {
             return;
         };
-        if let Ok(bytes) = serde_json::to_vec(fact) {
-            let size = bytes.len();
-            cache
-                .0
-                .put(fact_key(resource), bytes, size, CacheClass::Immutable);
-        }
+        let size = crate::cache::json_len(fact);
+        cache.0.put(
+            fact_key(resource),
+            fact.clone(),
+            size,
+            CacheClass::Immutable,
+        );
     }
 
     pub async fn text(
@@ -509,13 +481,20 @@ impl RegistryClient<'_> {
             )
             .with_status(response.status)),
             // Remaining 4xx (except 408) are deterministic request errors:
-            // retrying cannot help, so name the status and blame the query.
+            // retrying cannot help, so name the status and the registry's
+            // own reason when it gives one.
             status @ 400..=499 if status != 408 => Err(ArtifactError::new(
                 "invalidInput",
-                format!(
-                    "{} registry rejected the request (HTTP {status}). Check the package name or query.",
-                    artifact_type.as_str()
-                ),
+                match rejection_detail(&response.body) {
+                    Some(detail) => format!(
+                        "{} registry rejected the request (HTTP {status}): {detail}",
+                        artifact_type.as_str()
+                    ),
+                    None => format!(
+                        "{} registry rejected the request (HTTP {status}).",
+                        artifact_type.as_str()
+                    ),
+                },
             )
             .with_status(status)),
             status => Err(ArtifactError::new(
@@ -528,6 +507,21 @@ impl RegistryClient<'_> {
             .with_status(status)),
         }
     }
+}
+
+/// The reason a JSON registry error body gives (`errors[0].detail`,
+/// `error`, `message`), on one line and at most 200 chars; registry text is
+/// data, quoted as the registry wrote it.
+fn rejection_detail(body: &[u8]) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_slice(body).ok()?;
+    let detail = value
+        .pointer("/errors/0/detail")
+        .or_else(|| value.get("error"))
+        .or_else(|| value.get("message"))
+        .and_then(serde_json::Value::as_str)?;
+    let line = detail.split_whitespace().collect::<Vec<_>>().join(" ");
+    let clipped = line.chars().take(200).collect::<String>();
+    (!clipped.is_empty()).then_some(clipped)
 }
 
 pub(crate) fn invalid_response(artifact_type: ArtifactType) -> ArtifactError {
@@ -608,6 +602,30 @@ mod tests {
         }
     }
 
+    /// A rejected request states the registry's own reason (a per-call
+    /// fact), not static advice.
+    #[test]
+    fn a_rejected_request_states_the_registrys_reason() {
+        let budget = super::super::types::test_budget();
+        let client = RegistryClient::uncached(&NoHttp, &budget);
+        let detail = "Cannot page beyond the first 1000 results when sorting by relevance.";
+        let error = client
+            .status(
+                ArtifactType::Crates,
+                ArtifactHttpResponse {
+                    status: 400,
+                    body: serde_json::to_vec(&serde_json::json!({"errors": [{"detail": detail}]}))
+                        .expect("body"),
+                },
+                true,
+            )
+            .expect_err("400");
+        assert_eq!(error.code, "invalidInput");
+        assert!(error.message.contains(detail), "{}", error.message);
+        let bare = classify(400).expect_err("400");
+        assert!(!bare.message.contains("Check the"), "{}", bare.message);
+    }
+
     #[test]
     fn server_errors_and_408_stay_retryable_provider_error() {
         for status in [408u16, 500, 502, 503] {
@@ -653,11 +671,13 @@ mod tests {
         let url = Url::parse("https://cache-disabled-test.invalid/pkg").expect("test URL");
         // First call — must hit HTTP.
         let _ = client
-            .json(ArtifactType::Npm, url.clone(), false, None)
+            .json(ArtifactType::Npm, url.clone(), false, None, None, JSON)
             .await;
         assert_eq!(calls.load(Ordering::Relaxed), 1, "first call must hit HTTP");
         // Second call with the same URL — must hit HTTP again (nothing written to cache).
-        let _ = client.json(ArtifactType::Npm, url, false, None).await;
+        let _ = client
+            .json(ArtifactType::Npm, url, false, None, None, JSON)
+            .await;
         assert_eq!(
             calls.load(Ordering::Relaxed),
             2,
@@ -690,7 +710,14 @@ mod tests {
         let token = |value: &str| Some(SecretString::from(format!("Bearer {value}")));
         for authorization in [token("a"), token("a"), token("b"), None, token("b")] {
             client
-                .json(ArtifactType::Npm, url.clone(), false, authorization)
+                .json(
+                    ArtifactType::Npm,
+                    url.clone(),
+                    false,
+                    authorization,
+                    None,
+                    JSON,
+                )
                 .await
                 .expect("read");
         }
@@ -741,7 +768,7 @@ mod tests {
             std::process::id()
         ))
         .expect("test URL");
-        let read = || client.json(ArtifactType::Npm, url.clone(), false, None);
+        let read = || client.json(ArtifactType::Npm, url.clone(), false, None, None, JSON);
         assert_eq!(read().await.expect_err("malformed").code, "providerError");
         assert_eq!(read().await.expect("retry").expect("body")["name"], "ok");
         assert_eq!(read().await.expect("cached").expect("body")["name"], "ok");
@@ -760,7 +787,21 @@ mod tests {
             calls: Arc::clone(&calls),
             bodies: vec![b"{\"name\":\"fresh\"}"],
         };
-        let cache = ArtifactCache::new(None);
+        let dir = tempfile::tempdir().expect("cache dir");
+        ArtifactCache::new(Some(dir.path().into())).0.put(
+            cache_key(
+                &Url::parse("https://poisoned-cache-test.invalid/pkg").expect("URL"),
+                JSON,
+                None,
+            ),
+            serde_json::json!({"name": "stale"}),
+            16,
+            REGISTRY_ANSWER,
+        );
+        for file in crate::cache::tests::json_files(dir.path()) {
+            std::fs::write(file, b"not json").expect("corrupt the entry");
+        }
+        let cache = ArtifactCache::new(Some(dir.path().into()));
         let budget = super::super::types::test_budget();
         let client = RegistryClient {
             http: &http,
@@ -768,20 +809,10 @@ mod tests {
             cache: Some(&cache),
             tags: None,
         };
-        let url = Url::parse(&format!(
-            "https://poisoned-cache-test.invalid/pkg-{}",
-            std::process::id()
-        ))
-        .expect("test URL");
-        cache.0.put(
-            cache_key(&url, JSON, "anonymous"),
-            b"not json".to_vec(),
-            8,
-            CacheClass::Volatile,
-        );
+        let url = Url::parse("https://poisoned-cache-test.invalid/pkg").expect("test URL");
         for _ in 0..2 {
             let value = client
-                .json(ArtifactType::Npm, url.clone(), false, None)
+                .json(ArtifactType::Npm, url.clone(), false, None, None, JSON)
                 .await
                 .expect("read")
                 .expect("body");
@@ -986,6 +1017,47 @@ mod tests {
             .expect("retried answer");
         assert_eq!(response.status, 200);
         assert_eq!(connections.load(Ordering::SeqCst), 1);
+    }
+
+    /// A connection that fails before any answer is retried like a 5xx
+    /// (the GitHub and classification transports already did); without a
+    /// retry left the transport failure is returned.
+    #[tokio::test]
+    async fn a_transport_failure_is_retried() {
+        for (retries, expected) in [(1_u8, Some(200_u16)), (0, None)] {
+            use std::io::{Read, Write};
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+            let address = listener.local_addr().expect("address");
+            std::thread::spawn(move || {
+                for (index, stream) in listener.incoming().enumerate() {
+                    let Ok(mut stream) = stream else {
+                        return;
+                    };
+                    let mut head = [0_u8; 4096];
+                    let _ = stream.read(&mut head);
+                    if index > 0 {
+                        let _ = stream.write_all(OK_JSON.as_bytes());
+                    }
+                }
+            });
+            let request = ArtifactHttpRequest {
+                url: Url::parse(&format!("http://{address}/pkg")).expect("test URL"),
+                accept: "application/json",
+                authorization: None,
+                dns_pin: None,
+            };
+            let budget = RequestBudget::with_timeout(Duration::from_secs(60), 1024);
+            let response = SystemArtifactHttp::shared()
+                .expect("HTTP client")
+                .with_retries(retries)
+                .get(request, &budget)
+                .await;
+            assert_eq!(
+                response.ok().map(|response| response.status),
+                expected,
+                "retries {retries}"
+            );
+        }
     }
 
     /// Two reads pinned to the same validated address share one client and

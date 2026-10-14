@@ -10,10 +10,9 @@ mod pagination;
 mod pattern_repair;
 mod ranking;
 mod types;
-mod validation;
+pub(crate) use executor::unanchored_first_read;
 pub use executor::{execute_local_fetch, process_fetched_content};
 pub(crate) use executor::{execute_local_fetch_ranked, process_fetched_content_ranked};
-pub(crate) use executor::{insensitive_match_count, no_match_hints, unanchored_first_read};
 pub use types::*;
 
 #[cfg(test)]

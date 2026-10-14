@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { leaseIdleMs } from '../src/team/held.js';
-import { MESSAGE_TYPE, Team, USER_SENDER } from '../src/team/session.js';
+import { LEASE_IDLE_MS } from '../src/team/held.js';
+import { MESSAGE_TYPE, parentProcessGone, Team, USER_SENDER } from '../src/team/session.js';
 import { registerCollab } from '../src/team/tools.js';
 import { leaseAge, resolveTarget, sessionTree, wakes } from '../src/team/routing.js';
 import type { Member } from '../src/team/model.js';
@@ -346,6 +346,39 @@ describe('headless subagent exit', () => {
     }
   });
 
+  it('stops a subagent whose parent is gone even when it never joined the team', () => {
+    vi.useFakeTimers();
+    const kill = vi.spyOn(process, 'kill').mockImplementation((pid) => {
+      if (pid === process.pid) return true;
+      throw Object.assign(new Error('no such process'), { code: 'ESRCH' });
+    });
+    try {
+      // No agent id: the child does not join, and the team database is never opened.
+      const fake = fakePi();
+      const team = new Team(fake.pi, { OCTOCODE_AGENT_DB: path.join(tmp(), 'missing', 'team.sqlite'), OCTOCODE_PARENT_PID: String(2 ** 22 + 12345) });
+      const ctx = fakeCtx({ cwd: repo(), hasUI: false });
+      team.start(ctx);
+      teams.push({ team, ctx });
+      expect(team.id).toBeUndefined();
+      vi.advanceTimersByTime(1_500);
+      expect(kill).toHaveBeenCalledWith(process.pid, 'SIGTERM');
+    } finally {
+      kill.mockRestore();
+    }
+  });
+
+  it('tells a parent that reused its pid from the parent by its start time', () => {
+    const ppid = vi.spyOn(process, 'ppid', 'get').mockReturnValue(1);
+    try {
+      // Through a launcher (the parent is not our ppid): the recorded start time decides.
+      expect(parentProcessGone(`${process.pid} Thu Jan  1 00:00:00 1970`)).toBe(process.platform !== 'win32');
+      expect(parentProcessGone(String(process.pid))).toBe(false);
+      expect(parentProcessGone('garbage')).toBe(false);
+    } finally {
+      ppid.mockRestore();
+    }
+  });
+
   it('keeps a child whose launcher exited while its parent still runs', () => {
     vi.useFakeTimers();
     const kill = vi.spyOn(process, 'kill').mockImplementation(() => true);
@@ -424,29 +457,24 @@ describe('reservation lifetime', () => {
     expect(store.conflict('a.ts', 'two', 'file', now + LEASE_MS + 1)).toBeDefined();
   });
 
-  it('defaults to 30 idle minutes, configurable, 0 meaning the whole session', () => {
-    expect(leaseIdleMs({})).toBe(30 * 60_000);
-    expect(leaseIdleMs({ OCTOCODE_LEASE_IDLE_MINUTES: '5' })).toBe(5 * 60_000);
-    expect(leaseIdleMs({ OCTOCODE_LEASE_IDLE_MINUTES: '0' })).toBe(Number.POSITIVE_INFINITY);
-  });
-
   it('stops renewing an idle session\'s reservations once it has been idle past the limit', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     const cwd = repo();
     const db = path.join(tmp(), 'team.sqlite');
-    const owner = agent(db, cwd, { OCTOCODE_LEASE_IDLE_MINUTES: '1' });
+    const owner = agent(db, cwd);
     const peer = agent(db, cwd);
     owner.team.lock(['src/a.ts'], 'auth');
     peer.team.join();
     expect(peer.team.reservation(path.join(cwd, 'src/a.ts'), 'src/a.ts')).toMatch(/reserved by .* \(auth; locked \d+s ago\)/);
-    // Idle for 2 minutes: heartbeats continue (the row stays fresh) but the lease is not renewed and runs out.
-    for (let minute = 0; minute < 4; minute++) {
+    // Idle past the limit: heartbeats continue (the row stays fresh) but the lease is not renewed and runs out.
+    const until = Date.now() + LEASE_IDLE_MS + 2 * LEASE_MS;
+    while (Date.now() < until) {
       vi.setSystemTime(Date.now() + 40_000);
       owner.team.join(); // a heartbeat-equivalent flush
       peer.team.join();
     }
     expect(peer.team.reservation(path.join(cwd, 'src/a.ts'), 'src/a.ts')).toBeUndefined();
-    expect(owner.sent.some((entry) => /lapsed after \dm idle/.test(String(entry.message.content)))).toBe(true);
+    expect(owner.sent.some((entry) => /lapsed after \d+m idle/.test(String(entry.message.content)))).toBe(true);
   });
 
   it('formats the lock age', () => {

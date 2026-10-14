@@ -127,3 +127,41 @@ test('body-text scan finds pages whose metadata lacks the terms and damps boiler
   const needle = readSuccess(spawnSync(process.execPath, [script, '--session-dir', sessionDir, '--query', 'needle', '--limit', '20'], { encoding: 'utf8' }));
   assert.equal(new Set(needle.suggestedFiles).size, needle.suggestedFiles.length);
 });
+
+test('corpus queries refuse a folder that is not a scrape session instead of reporting zero matches', () => {
+  const scripts = fileURLToPath(new URL('../', import.meta.url));
+  const empty = mkdtempSync(join(tmpdir(), 'not-a-session-'));
+  try {
+    for (const [name, extra] of [['corpus-find.mjs', ['--query', 'x']], ['dom-find.mjs', []], ['resource-list.mjs', []], ['graph-navigate.mjs', []]]) {
+      for (const dir of [join(empty, 'missing'), empty]) {
+        const res = spawnSync(process.execPath, [join(scripts, name), '--session-dir', dir, ...extra], { encoding: 'utf8' });
+        assert.equal(res.status, 1, `${name} ${dir}: ${res.stdout}`);
+        assert.equal(JSON.parse(res.stdout).error.code, 'sessionNotFound', name);
+      }
+    }
+  } finally { rmSync(empty, { recursive: true, force: true }); }
+});
+
+test('JSON key names never match a query; only values do', () => {
+  mkdirSync(join(sessionDir, 'extracts'));
+  writeFileSync(join(sessionDir, 'extracts/elements.jsonl'), [
+    { pageId: 'page-0', kind: 'table', _file: 'tables', source: 'html', headers: ['Plan', 'Price'], preview: 'Starter 10 dollars' },
+    { pageId: 'page-1', kind: 'jsonld', _file: 'jsonld', source: 'html', json: { '@type': 'Product', name: 'Widget' } },
+  ].map((r) => JSON.stringify(r)).join('\n') + '\n');
+  for (const keyName of ['source', 'pageId', 'headers', 'preview']) {
+    const res = spawnSync(process.execPath, [script, '--session-dir', sessionDir, '--query', keyName], { encoding: 'utf8' });
+    assert.equal(readSuccess(res).pagination.totalMatches, 0, keyName);
+  }
+  const widget = readSuccess(spawnSync(process.execPath, [script, '--session-dir', sessionDir, '--query', 'widget'], { encoding: 'utf8' }));
+  assert.equal(widget.matches[0].pageId, 'page-1');
+});
+
+test('page files come from the full roster, not the 20-page AGENT_INDEX', () => {
+  const pages = Array.from({ length: 26 }, (_, i) => ({ pageId: `page-${i}`, title: `Needle ${i}`, url: `https://example.test/${i}`, files: { textParts: [`text/page-${i}.clean.part-001.md`] } }));
+  writeFileSync(join(sessionDir, 'graph/site-graph.json'), JSON.stringify({ pages, edges: [] }));
+  writeFileSync(join(sessionDir, 'AGENT_INDEX.json'), JSON.stringify({ sessionId: 's', pages: pages.slice(0, 20) }));
+  writeFileSync(join(sessionDir, 'page-map.json'), JSON.stringify({ pages }));
+  const res = readSuccess(spawnSync(process.execPath, [script, '--session-dir', sessionDir, '--query', 'Needle', '--limit', '30'], { encoding: 'utf8' }));
+  const late = res.matches.find((m) => m.pageId === 'page-25');
+  assert.deepEqual(late.files.textParts, ['text/page-25.clean.part-001.md']);
+});

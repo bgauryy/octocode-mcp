@@ -64,6 +64,30 @@ mod tests {
             runtime_surface: RuntimeSurface::Mcp,
         }
     }
+    /// The identity digest follows every setting and declared variable,
+    /// including the config file's content, and ignores undeclared ones.
+    #[test]
+    fn identity_digest_tracks_declared_settings_only() {
+        let digest = |env: &[(&str, &str)], file: Option<&str>| {
+            let env = env
+                .iter()
+                .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
+                .collect();
+            resolve_config(&input(env, file)).identity_digest()
+        };
+        let base = digest(&[], None);
+        assert_eq!(digest(&[], None), base);
+        assert_eq!(digest(&[("TERM_SESSION_ID", "x")], None), base);
+        for name in DECLARED_ENV_KEYS {
+            assert_ne!(digest(&[(name, "/tmp/x")], None), base, "{name}");
+        }
+        assert_ne!(
+            digest(&[], Some("{\"local\":{\"enabled\":false}}")),
+            base,
+            "a config file edit"
+        );
+    }
+
     #[test]
     fn dotenv_edge_behavior() {
         assert_eq!(
@@ -500,7 +524,7 @@ mod tests {
     #[test]
     fn every_config_binding_loads_workspace_before_home_without_lsp_trust() {
         for field in CONFIG_FIELDS {
-            for binding in field.env {
+            if let Some(binding) = field.env {
                 let key = binding.name;
                 for explicit in [false, true] {
                     let mut i = input(BTreeMap::new(), None);
@@ -545,16 +569,13 @@ mod tests {
     }
 
     #[test]
-    fn token_aliases_obey_source_precedence_before_alias_priority() {
-        let groups = std::iter::once(ENV_TOKEN_VARS.to_vec()).chain(
-            CONFIG_FIELDS
-                .iter()
-                .filter(|field| field.credential && field.env.len() > 1)
-                .map(|field| field.env.iter().map(|binding| binding.name).collect()),
-        );
-        for group in groups {
-            for higher_alias in &group {
-                for lower_alias in &group {
+    fn token_variables_obey_source_precedence_before_token_priority() {
+        // The GitHub token variables are the one group of variables that
+        // select one value; every setting has a single variable.
+        {
+            let group = ENV_TOKEN_VARS;
+            for higher_alias in group {
+                for lower_alias in group {
                     for process in [false, true] {
                         let mut i = input(BTreeMap::new(), None);
                         if process {
@@ -584,9 +605,7 @@ mod tests {
                             }),
                             "{higher_alias} vs {lower_alias}"
                         );
-                        if group == ENV_TOKEN_VARS {
-                            assert_eq!(out.token.as_ref().map(|token| token.token()), selected);
-                        }
+                        assert_eq!(out.token.as_ref().map(|token| token.token()), selected);
                         assert!(!format!("{out:?}").contains("-secret"));
                     }
                 }

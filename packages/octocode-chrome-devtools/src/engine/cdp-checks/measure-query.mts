@@ -9,7 +9,7 @@
  *   measure-query.mjs --dir <cdp-run> --kind api --view sample
  *   measure-query.mjs --dir <cdp-run> --max-health 90 --view summary
  *   measure-query.mjs --dir <cdp-run> --har --filter failures [--min-ms 1000]
- *   measure-query.mjs --latest [--under .octocode/tmp/chrome-devtools]
+ *   measure-query.mjs --latest [--under .octocode/octocode-chrome-devtools/tmp]
  */
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -25,7 +25,7 @@ const hasFlag = flag => argv.includes(flag);
 if (hasFlag('--help') || hasFlag('-h')) {
   console.error(`Usage:
   measure-query.mjs --dir <cdp-run> [filters] [--view summary|findings|failures|slow|sample|resources|cookies|keys|all]
-  measure-query.mjs --latest [--under <tmp/chrome-devtools>] [filters]
+  measure-query.mjs --latest [--under <octocode-chrome-devtools/tmp>] [filters]
   measure-query.mjs --perf <file> --net <file> --storage <file> [filters]
 
 Filters:
@@ -169,7 +169,7 @@ function discoverInDir(dir) {
 
 let paths;
 if (hasFlag('--latest')) {
-  const under = getArg('--under', '.octocode/tmp/chrome-devtools');
+  const under = getArg('--under', '.octocode/octocode-chrome-devtools/tmp');
   const { files } = findLatestRuns(under);
   paths = {
     dir: under,

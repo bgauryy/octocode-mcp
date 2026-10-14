@@ -138,24 +138,63 @@ fn hydrated_search_next(state: &Value, receipt: &Value) -> Option<Value> {
     if let Some(next) = crate::tools::clasify::context::continuation_named(receipt, "nextPage") {
         return Some(next);
     }
+    let base = crate::tools::clasify::context::continuation_named(receipt, "nextMatchPage")?;
+    next_file_page(base, state)
+}
+
+/// `base` (a localSearch read of the page `state` shows, or one of its
+/// continuations) advanced to the first match page of the next file page:
+/// the admitted transition localSearch's own `nextPage` takes, so the pinned
+/// snapshot and ranking plan ride along. `None` on the last file page.
+fn next_file_page(mut base: Value, state: &Value) -> Option<Value> {
     let pagination = state.pointer("/results/0/data/pagination")?;
     let page = pagination.get("currentPage")?.as_u64()?;
     let total = pagination.get("totalPages")?.as_u64()?;
     if page >= total {
         return None;
     }
-    let page = u32::try_from(page).ok()?;
-    let mut next = crate::tools::clasify::context::continuation_named(receipt, "nextMatchPage")?;
     let query = crate::tools::paging::admitted_query(
-        crate::tools::id::ToolId::LocalSearch,
+        ToolId::LocalSearch,
         None,
-        next.get("query")?,
+        base.get("query")?,
         "page",
-        page,
+        u32::try_from(page).ok()?,
         &[("matchPage", 1)],
     )?;
-    next["query"] = query;
-    Some(next)
+    base["query"] = query;
+    Some(base)
+}
+
+/// The route past a localSearch file group's last match page. localSearch
+/// offers `nextPage` beside `nextMatchPage` only on the group's first match
+/// page (every executable query appears once in a chain), and the walk
+/// follows the inner axis there, so the last match page names no route to
+/// the later files. Their route is the read itself (`source`, which carries
+/// the chain's snapshot) advanced one file page: the query the opening page
+/// offered and the walk never ran. `None` while the page still offers a page
+/// route, on a first match page (it offers its own `nextPage`), and on the
+/// last file page.
+fn closing_match_page_next(source: &Value, state: &Value) -> Option<Value> {
+    if tool_of(source) != Some(ToolId::LocalSearch)
+        || source
+            .pointer("/query/matchPage")
+            .and_then(Value::as_u64)
+            .is_none_or(|match_page| match_page <= 1)
+    {
+        return None;
+    }
+    let offered = state
+        .pointer("/results/0/data/next")
+        .and_then(Value::as_object);
+    if offered
+        .is_some_and(|next| next.contains_key("nextMatchPage") || next.contains_key("nextPage"))
+    {
+        return None;
+    }
+    next_file_page(
+        json!({"tool": source.get("tool")?, "query": source.get("query")?}),
+        state,
+    )
 }
 
 /// The bounds every delegated read of one resource shares.
@@ -327,10 +366,12 @@ impl PageWalk<'_> {
             receipt
                 .as_ref()
                 .and_then(|receipt| hydrated_search_next(state, receipt))
+                .or_else(|| closing_match_page_next(&self.source, state))
         } else {
             receipt
                 .as_ref()
                 .and_then(crate::tools::clasify::context::continuation)
+                .or_else(|| closing_match_page_next(&self.source, state))
         };
         if !self.hydrated {
             let candidates = candidates
@@ -850,5 +891,52 @@ mod tests {
             )
             .is_none()
         );
+    }
+
+    /// localSearch offers `nextPage` only on a file group's first match page,
+    /// and the walk follows `nextMatchPage` there. The group's last match
+    /// page names no route, so the walk resumes at the next file page from
+    /// the read itself: page + 1 at matchPage 1, keeping its pinned snapshot
+    /// and ranking plan (the query the opening page offered and nobody ran).
+    #[test]
+    fn closing_match_page_resumes_at_the_next_file_page_once() {
+        let source = json!({"id":"files","tool":"localSearch","candidateEvidence":"search","query":{
+            "path":"/repo", "matchString":"marker", "page":1, "matchPage":3,
+            "pageSize":1, "matchPageSize":1, "snapshot":"pinned", "ranking":"saved"
+        }});
+        let page = |current: u64, next: Value| {
+            json!({"results":[{"data":{
+                "pagination":{"currentPage":current,"totalPages":2},
+                "next":next
+            }}]})
+        };
+        let next = closing_match_page_next(&source, &page(1, json!({})))
+            .expect("the next file page after the group's last match page");
+        assert_eq!(
+            next,
+            json!({"tool":"localSearch","query":{
+                "path":"/repo", "matchString":"marker", "page":2, "matchPage":1,
+                "pageSize":1, "matchPageSize":1, "snapshot":"pinned", "ranking":"saved"
+            }})
+        );
+        let route = json!({"tool":"localSearch","query":{}});
+        // A route the page offers is the walk's own; nothing is derived.
+        for offered in ["nextMatchPage", "nextPage"] {
+            assert!(
+                closing_match_page_next(&source, &page(1, json!({offered: route.clone()})))
+                    .is_none(),
+                "{offered}"
+            );
+        }
+        // The last file page ends the walk.
+        assert!(closing_match_page_next(&source, &page(2, json!({}))).is_none());
+        // A group's first match page offers its own nextPage when one exists.
+        let mut opening = source.clone();
+        opening["query"]["matchPage"] = json!(1);
+        assert!(closing_match_page_next(&opening, &page(1, json!({}))).is_none());
+        // Other tools page by their own routes.
+        let mut remote = source.clone();
+        remote["tool"] = json!("ghSearchCode");
+        assert!(closing_match_page_next(&remote, &page(1, json!({}))).is_none());
     }
 }

@@ -5,18 +5,22 @@ import { StringEnum } from '@earendil-works/pi-ai';
 import { Type, type Static } from 'typebox';
 import { answerDialog, dialogNotice, download, uploadFiles } from './actions.js';
 import { browserCallHeader, browserResult } from './render.js';
-import { openBrowser, type BrowserSession, type NavigationGuard } from './cdp.js';
+import { CONSOLE_KEEP, openBrowser, type BrowserSession, type NetworkEvent } from './cdp.js';
 import { click, drag, elementExpr, fillFields, hover, pressKey, refForText, settle, settleAfterLoad, typeInto, waitForText } from './input.js';
+import { PagePolicy } from './network.js';
+import type { BlockedConnection } from './proxy.js';
 import { screenshot } from './screenshot.js';
+import { imageLimits } from '../shared/vision.js';
 import { snapshot } from './snapshot.js';
 import { describeTabs, followNewTab, newTab, selectTab, tabIds } from './tabs.js';
 import type { Permission } from '../permission/ask.js';
+import { actionWhy, decide } from '../permission/mode.js';
 import { isWithin } from '../shared/home.js';
 import { resultText, timedTool } from '../shared/render.js';
 import { sanitizeTerminalText } from '../shared/sanitize.js';
 import { capOutputToFile } from '../shared/spill.js';
 import { textResult, withTimeout } from '../shared/util.js';
-import { allowPrivate, classifyHost } from '../web/guard.js';
+import { classifyHost } from '../web/guard.js';
 
 const ACTIONS = ['info', 'attach', 'navigate', 'snapshot', 'click', 'hover', 'drag', 'type', 'fill', 'press', 'wait', 'tabs', 'tab', 'evaluate', 'screenshot', 'console', 'dialog', 'upload', 'download', 'close'] as const;
 /** Actions that talk to the page, so an open JavaScript dialog must be answered first. */
@@ -33,20 +37,67 @@ export class BrowserTool {
   #session: BrowserSession | undefined;
   /** The latest tool call's context: where the navigation guard asks for confirmation. */
   #confirmer: Confirmer = NO_UI;
-  /** Checks every page and frame load the session's pages start, not only URLs the agent passes. */
-  readonly #guard: NavigationGuard = (url) => this.checkUrl(url);
+  /** The latest tool call's id: what the asks the call raises are tied to. */
+  #callId: string | undefined;
+  /** What the session's pages may request: every request, not only URLs the agent passes. Private hosts only when the agent opened them. */
+  readonly #policy: PagePolicy;
+  /** Refusals and reports already in the audit, so a page that repeats one writes it once. */
+  readonly #audited = new Set<string>();
+  /** What the last session lost before it ended (a tab closed for DNS rebinding), told with the next session's first result. */
+  #notice: string | undefined;
 
-  /** `permission` asks about private hosts and uploads; its session grants remember the hosts the user allowed. */
-  constructor(readonly permission: Permission) {}
+  /** `permission` asks about the pages the agent opens, private hosts and uploads; its session grants remember the hosts the user allowed. */
+  constructor(readonly permission: Permission) {
+    this.#policy = new PagePolicy({ report: (event) => this.#audit(event) });
+  }
 
-  /** Whether the browser may open `url`, asking through the latest tool call's context when it needs confirmation. */
-  checkUrl(url: string): Promise<void> {
-    return checkBrowserUrl(url, this.#confirmer, this.permission);
+  /**
+   * Whether the agent may open `url` (navigate, a new tab, switching to a tab): the page's own ask, one prompt for a
+   * private host. Once allowed, a private target is the one the page may load from, and the launched Chrome's proxy
+   * lets it through.
+   */
+  async open(url: string): Promise<void> {
+    await checkBrowserUrl(url, this.#confirmer, this.permission, this.#callId ?? '');
+    await this.approveTarget(url);
+  }
+
+  /** Lets the page and the proxy reach `url` (host and port) when it is not public: the agent chose it and the permission check allowed it. Never called for a page's own request. */
+  async approveTarget(url: string): Promise<void> {
+    const target = new URL(url);
+    if (await this.#policy.approve(target)) this.#session?.chrome?.proxy?.allow(target);
+  }
+
+  /** One audit entry per refusal or report: a page with many blocked requests to one host is not many entries. */
+  #audit(event: NetworkEvent): void {
+    const host = (url: string): string => {
+      try {
+        return new URL(url).host;
+      } catch {
+        return url;
+      }
+    };
+    const key = `${event.kind} ${host(event.url)}`;
+    if (event.kind !== 'rebinding' && this.#audited.has(key)) return;
+    this.#audited.add(key);
+    if (event.kind === 'blocked') this.permission.refused([event.url], `blocked a page request (${event.resourceType}): ${event.reason}`, 'browser');
+    else if (event.kind === 'websocket') this.permission.noted([event.url], `a page WebSocket was not blocked, reported only: ${event.reason}`, { allowed: true, via: 'reported', action: 'invariant', tool: 'browser' });
+    else {
+      this.#notice = `The tab was closed: ${event.url} answered from the private address ${event.address} (DNS rebinding).`;
+      this.permission.refused([`${event.url} -> ${event.address}`], 'closed the tab: a public name answered from a private address (DNS rebinding)', 'browser');
+    }
+  }
+
+  /** A connection the launched Chrome's filtering proxy refused (a page chose a private or unvetted host). */
+  #auditProxy(blocked: BlockedConnection): void {
+    if (this.#audited.has(`proxy ${blocked.host}`)) return;
+    this.#audited.add(`proxy ${blocked.host}`);
+    this.permission.refused([blocked.host], `the filtering proxy refused a page connection to ${blocked.reason === 'private' ? 'a local or private address' : 'a host it could not vet'}`, 'browser');
   }
 
   /** Remembers the calling tool's context for confirmations the session's pages trigger while it runs. */
-  useContext(ctx: Confirmer | undefined): void {
+  useContext(ctx: Confirmer | undefined, toolCallId?: string): void {
     this.#confirmer = ctx ?? NO_UI;
+    this.#callId = toolCallId;
   }
 
   /** Whether a browser is open now, without opening one. */
@@ -58,16 +109,24 @@ export class BrowserTool {
     if (this.#session?.page.open) return this.#session;
     // The page connection dropped: release what the old session owns before opening a new one.
     await this.close();
-    this.#session = await openBrowser(process.env, { guard: this.#guard, signal });
-    return this.#session;
+    return this.#start({ signal });
   }
 
   /** Drive a browser that is already open on a DevTools port, in its current page, instead of opening our own. */
   async attach(port: number | undefined, signal?: AbortSignal): Promise<BrowserSession> {
     if (!port) throw new Error('attach needs port (the DevTools port of an open browser).');
     await this.close();
-    this.#session = await openBrowser(process.env, { port, reuseTab: true, guard: this.#guard, signal });
-    return this.#session;
+    return this.#start({ port, reuseTab: true, signal });
+  }
+
+  async #start(options: { port?: number; reuseTab?: boolean; signal: AbortSignal | undefined }): Promise<BrowserSession> {
+    const session = await openBrowser(process.env, { ...options, policy: this.#policy, onBlocked: (blocked) => this.#auditProxy(blocked) });
+    // A Chrome that starts after the agent opened a private page must let the page's own requests through again.
+    for (const url of this.#policy.approved) session.chrome?.proxy?.allow(url);
+    if (this.#notice) session.warning = this.#notice;
+    this.#notice = undefined;
+    this.#session = session;
+    return session;
   }
 
   /**
@@ -80,9 +139,9 @@ export class BrowserTool {
     if (!session) return;
     const keep = options.keepVisible === true && session.profile !== undefined;
     // A persistent-profile Chrome left open by an earlier run is quit by an explicit close, like one we launched.
-    if (!keep && session.profile !== undefined && !session.chrome) await session.page.send('Browser.close').catch(() => undefined);
+    if (!keep && session.profile !== undefined && !session.chrome) await session.connection.send('Browser.close').catch(() => undefined);
     else if (!keep) await session.closeTab?.().catch(() => undefined);
-    session.page.close();
+    session.connection.close();
     // Detached: Chrome runs in its own process group, so it outlives this process once nothing waits on it.
     if (keep) session.chrome?.process?.unref();
     else await session.chrome?.kill();
@@ -95,8 +154,8 @@ const PARAMETERS = Type.Object({
   port: Type.Optional(Type.Integer({ description: 'attach: DevTools port of an open browser' })),
   ref: Type.Optional(Type.Integer({ description: 'Element number from snapshot (open shadow DOM and same-origin frames included)' })),
   to: Type.Optional(Type.Integer({ description: 'drag: element number to drop on (or give text instead)' })),
-  fields: Type.Optional(Type.Array(Type.Object({ ref: Type.Integer(), value: Type.String() }), { maxItems: 50, description: 'fill: fields to set' })),
-  index: Type.Optional(Type.Integer({ minimum: 1, description: 'tab: tab number from tabs' })),
+  fields: Type.Optional(Type.Array(Type.Object({ ref: Type.Integer(), value: Type.String() }), { description: 'fill: fields to set' })),
+  index: Type.Optional(Type.Integer({ description: 'tab: tab number from tabs' })),
   gone: Type.Optional(Type.Boolean({ description: 'wait: until text disappears' })),
   timeout: Type.Optional(Type.Number({ description: `wait (and navigate/snapshot with text): seconds (default ${WAIT_DEFAULT_S}, max ${WAIT_MAX_S})` })),
   text: Type.Optional(Type.String({ description: 'type: value to enter, replacing the current one. wait: text to wait for (gone: to disappear). navigate/snapshot: text to wait for before returning. drag: visible text of the drop zone. dialog: reply to a prompt().' })),
@@ -124,7 +183,8 @@ export function registerBrowserTool(pi: ExtensionAPI, browser: BrowserTool): voi
       'screenshot(format?): jpeg (default) or png, shrunk to fit; result names the full-size file\n' +
       'dialog(accept?, text?), upload(ref, files), download(ref?)\n' +
       'tabs, console, info, close, attach(port: an open browser)\n' +
-      'An element keeps its number while it stays on the page; a new document renumbers. Actions report what changed, so a fresh snapshot is rarely needed. A wait that times out fails with the current snapshot. Private/local addresses and uploads outside the workspace need the user\'s confirmation.',
+      'An element keeps its number while it stays on the page; a new document renumbers. Actions report what changed, so a fresh snapshot is rarely needed. A wait that times out fails with the current snapshot. Private/local addresses the agent opens (navigate, tab) and uploads outside the workspace need the user\'s confirmation. ' +
+      'Requests the page itself starts (images, frames, scripts, fetch, redirects) to a private or local address are blocked without asking, except the address you opened. WebSockets: a launched Chrome blocks them through a filtering proxy (as it does DNS rebinding); in an attached or persistent-profile Chrome only the page and its requests are checked, so a page WebSocket to a private address is not stopped and is only reported.',
     promptSnippet: 'Inspect rendered pages and act on current element refs',
     promptGuidelines: ['Inspect the outcome before repeating a browser click or submission, and use existing user authorization for actions with side effects.'],
     // One shared page: parallel actions would race (a click against a navigation, stale element refs), so browser calls
@@ -132,14 +192,14 @@ export function registerBrowserTool(pi: ExtensionAPI, browser: BrowserTool): voi
     parameters: PARAMETERS,
     renderCall: (args, theme, context) => browserCallHeader(args, theme, context),
     renderResult: (result, _options, theme, context) => browserResult(result, theme, context),
-    async execute(_id, params, signal, _onUpdate, ctx) {
+    async execute(id, params, signal, _onUpdate, ctx) {
       const { action } = params;
       const callCtx = { ...ctx, signal: signal ?? ctx.signal };
-      browser.useContext(callCtx);
+      browser.useContext(callCtx, id);
       if (isSessionAction(action)) return SESSION_HANDLERS[action](browser, params, signal);
       const session = await browser.session(signal);
       if (session.dialog && PAGE_ACTIONS.has(action)) return pageResult(dialogNotice(session.dialog));
-      return PAGE_HANDLERS[action]({ session, page: session.page, params, signal, ctx: callCtx, browser });
+      return PAGE_HANDLERS[action]({ session, page: session.page, params, signal, ctx: callCtx, browser, toolCallId: id });
     },
   }, { exclusive: true }));
   pi.on('session_shutdown', async () => browser.close({ keepVisible: true }));
@@ -159,6 +219,7 @@ interface PageAction {
   /** Read only by the actions that need it (upload checks); URL checks go through `browser`. */
   ctx: ExtensionContext;
   browser: BrowserTool;
+  toolCallId: string;
 }
 
 const SESSION_HANDLERS: Record<SessionAction, (browser: BrowserTool, params: BrowserParams, signal: AbortSignal | undefined) => Promise<ActionResult>> = {
@@ -196,19 +257,22 @@ async function input({ session, page, signal }: PageAction, start: () => Promise
   return pageResult(withBlockedNote(session, typeof note === 'string' && note ? `${note}\n\n${after}` : after));
 }
 
-/** `text` led by a line naming the page load the guard refused since the last report, which is then forgotten. */
+/** `text` led by a line naming the page request the policy refused, and one for what it could only report, since the last report; both are then forgotten. */
 function withBlockedNote(session: BrowserSession, text: string): string {
-  const blocked = session.blocked;
+  const { blocked, warning } = session;
   delete session.blocked;
-  return blocked ? `Blocked a page load: ${blocked}\n\n${text}` : text;
+  delete session.warning;
+  return `${blocked ? `Blocked a page load: ${blocked}\n\n` : ''}${warning ? `Warning: ${warning}\n\n` : ''}${text}`;
 }
 
 /**
- * Refuses non-http(s) URLs. A private or local host (loopback, LAN, cloud metadata) is a `net.private` permission ask
- * (allowed per host for the session) unless OCTOCODE_WEB_ALLOW_PRIVATE=1: page content steers the agent, so it must
- * not reach internal services the `web` tool deliberately blocks.
+ * The check on a page the *agent* opens (navigate, a new tab, switching to a tab); what the page itself requests is
+ * refused by `PagePolicy` without asking. Refuses non-http(s) URLs. A private or local host (loopback, LAN, cloud
+ * metadata) is a `net.private` permission ask (allowed per host for the session): page content steers the agent, so it
+ * must not reach internal services the `web` tool keeps out. A public page is the `browser` ask, and a private one is
+ * one prompt carrying both reasons.
  */
-export async function checkBrowserUrl(raw: string, ctx: Confirmer, permission: Permission): Promise<void> {
+export async function checkBrowserUrl(raw: string, ctx: Confirmer, permission: Permission, toolCallId: string): Promise<void> {
   let url: URL;
   try {
     url = new URL(raw);
@@ -216,29 +280,49 @@ export async function checkBrowserUrl(raw: string, ctx: Confirmer, permission: P
     throw new Error(`Not a URL: ${raw}`);
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error(`The browser opens http(s) URLs only, not ${url.protocol}`);
-  if (allowPrivate()) return;
   const host = await classifyHost(url);
-  if (host.kind === 'public') return;
+  const call = { toolCallId, ...(ctx.signal ? { signal: ctx.signal } : {}) };
+  if (host.kind === 'public') {
+    const verdict = await permission.check(ctx, { action: 'browser', title: 'Open this page?', what: [url.href], grant: { key: `host ${url.host}`, label: url.host }, ...call });
+    if (!verdict.allowed) throw new Error(verdict.message);
+    return;
+  }
   // A name that does not resolve here may still resolve in Chrome (its own DNS, hosts file, proxy) to a private address.
   const what = host.kind === 'private' ? 'a local or private network address' : 'a name that does not resolve here and may reach a local or private address';
-  const verdict = await permission.check(ctx, { action: 'net.private', title: 'Open a private address?', what: [`The browser wants to open ${url.host}, ${what}.`], grant: { key: url.host, label: url.host }, ...(ctx.signal ? { signal: ctx.signal } : {}) });
+  const alsoAsks = decide(permission.mode, 'browser') === 'ask';
+  const verdict = await permission.check(ctx, {
+    action: 'net.private',
+    title: 'Open a private address?',
+    what: [`The browser wants to open ${url.host}, ${what}.`],
+    ...(alsoAsks ? { reason: actionWhy('browser') } : {}),
+    grant: { key: url.host, label: url.host },
+    ...call,
+  });
   if (verdict.allowed) return;
   const blocked = host.kind === 'private' ? 'Blocked private or local address' : 'Blocked unresolved host';
-  throw new Error(`${blocked}: ${url.host}. ${verdict.message} The user can allow private addresses for good with OCTOCODE_WEB_ALLOW_PRIVATE=1.`);
+  throw new Error(`${blocked}: ${url.host}. ${verdict.message}`);
 }
 
 /**
- * Upload paths resolved against `cwd` and through symlinks: the files Chrome will read, returned for the upload. A
- * path outside the workspace (a symlink inside it pointing out included) is an `upload.outside` permission ask.
+ * Upload paths resolved against `cwd` and through symlinks: the files Chrome will read, returned for the upload. An
+ * upload is browser control and asks every call; a path outside the workspace (a symlink inside it pointing out
+ * included) makes it an outside upload too, and one prompt names both reasons.
  */
-export async function checkUploadPaths(files: readonly string[], ctx: Pick<ExtensionContext, 'cwd'> & Confirmer, permission: Permission): Promise<string[]> {
+export async function checkUploadPaths(files: readonly string[], ctx: Pick<ExtensionContext, 'cwd'> & Confirmer, permission: Permission, toolCallId?: string): Promise<string[]> {
   const root = realPath(path.resolve(ctx.cwd));
   const paths = files.map((file) => realPath(path.resolve(ctx.cwd, file)));
   const outside = paths.filter((file) => !isWithin(file, root));
-  if (outside.length === 0) return paths;
-  const verdict = await permission.check(ctx, { action: 'upload.outside', title: 'Upload files from outside the workspace?', what: outside, ...(ctx.signal ? { signal: ctx.signal } : {}) });
+  const verdict = await permission.check(ctx, {
+    action: 'browser.control',
+    ...(outside.length > 0 ? { also: ['upload.outside' as const] } : {}),
+    title: outside.length > 0 ? 'Upload files from outside the workspace?' : 'Upload files to the page?',
+    what: outside.length > 0 ? outside : paths,
+    ...(toolCallId ? { toolCallId } : {}),
+    cwd: ctx.cwd,
+    ...(ctx.signal ? { signal: ctx.signal } : {}),
+  });
   if (verdict.allowed) return paths;
-  throw new Error(`Refused to upload files outside the workspace: ${outside.join(', ')}. ${verdict.message}`);
+  throw new Error(outside.length > 0 ? `Refused to upload files outside the workspace: ${outside.join(', ')}. ${verdict.message}` : `Refused to upload files: ${verdict.message}`);
 }
 
 /** `file` with symlinks resolved; a missing tail (a file that does not exist yet) is kept under its real parent. */
@@ -253,7 +337,7 @@ function realPath(file: string): string {
 
 async function navigate({ session, page, params, signal, browser }: PageAction): Promise<ActionResult> {
   if (!params.url) throw new Error('navigate needs url');
-  await browser.checkUrl(params.url);
+  await browser.open(params.url);
   delete session.blocked;
   // The wait starts before the command so a fast load is not missed; `done` ends it when the command fails, and a
   // dialog (an alert() while loading holds the load event) ends it at once: the snapshot then reports the dialog.
@@ -332,14 +416,14 @@ const PAGE_HANDLERS: Record<PageActionName, (action: PageAction) => Promise<Acti
   wait,
   tabs: async ({ session }) => pageResult(await describeTabs(session)),
   tab: async ({ session, params, signal, browser }) => {
-    if (params.url) await browser.checkUrl(params.url);
+    if (params.url) await browser.open(params.url);
     if (params.url) await newTab(session, params.url, signal);
-    else await selectTab(session, params.index, signal);
+    else await selectTab(session, params.index, (target) => browser.open(target), signal);
     return pageResult(withBlockedNote(session, await snapshot(session, signal)));
   },
   dialog: async ({ session, params, signal }) => pageResult(await answerDialog(session, params.accept ?? true, params.text, signal)),
-  upload: async ({ page, params, signal, ctx, browser }) => {
-    const files = await checkUploadPaths(params.files ?? [], ctx, browser.permission);
+  upload: async ({ page, params, signal, ctx, browser, toolCallId }) => {
+    const files = await checkUploadPaths(params.files ?? [], ctx, browser.permission, toolCallId);
     return pageResult(await uploadFiles(page, requireRef(params.ref), elementExpr(requireRef(params.ref)), files, signal));
   },
   download: async ({ session, page, params, signal }) => {
@@ -347,8 +431,17 @@ const PAGE_HANDLERS: Record<PageActionName, (action: PageAction) => Promise<Acti
     return pageResult(await download(session, ref === undefined ? undefined : async () => void (await page.untilDialog(click(page, ref, signal))), signal));
   },
   evaluate,
-  screenshot: ({ page, params, signal }) => screenshot(page, params.format === 'png' ? 'png' : 'jpeg', signal),
-  console: async ({ session }) => pageResult(session.console.length > 0 ? capOutputToFile(sanitizeTerminalText(session.console.join('\n')), { label: 'browser_console' }) : '(no console messages)'),
+  screenshot: ({ page, params, signal, ctx }) => screenshot(page, params.format === 'png' ? 'png' : 'jpeg', signal, imageLimits(ctx.model)),
+  console: async ({ session }) => {
+    const { dropped, cleared } = session.consoleLost;
+    // The buffer is a limited window; what it no longer holds is gone, so say how much instead of looking complete.
+    const lost = [
+      ...(dropped > 0 ? [`[${dropped} earlier console line${dropped === 1 ? '' : 's'} dropped: only the last ${CONSOLE_KEEP} are kept]`] : []),
+      ...(cleared > 0 ? [`[${cleared} line${cleared === 1 ? '' : 's'} from earlier tabs discarded when the tab changed]`] : []),
+    ];
+    const lines = session.console.length > 0 ? capOutputToFile(sanitizeTerminalText(session.console.join('\n')), { label: 'browser_console' }) : '(no console messages)';
+    return pageResult([...lost, lines].join('\n'));
+  },
 };
 
 /** Page text (titles, snapshots, dialog messages, evaluate results) is untrusted: strip escape sequences before the model sees it. */

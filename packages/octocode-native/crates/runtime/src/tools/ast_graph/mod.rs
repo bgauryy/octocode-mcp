@@ -8,6 +8,7 @@ mod liveness;
 mod memo;
 mod packages;
 mod page;
+mod scope;
 pub mod store;
 mod types;
 

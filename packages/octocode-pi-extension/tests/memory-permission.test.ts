@@ -35,34 +35,27 @@ function memoryTool(mode: PermissionMode) {
   };
 }
 
-describe('shared memory permission', () => {
-  it('refuses a global or pinned memory without a UI instead of saving it unasked', async () => {
-    const run = memoryTool('workspace');
-    await expect(run({ op: 'set', title: 'Global note', scope: 'global' }, { hasUI: false })).rejects.toThrow(/global or pinned memory.*no one can be asked here/);
-    await expect(run({ op: 'set', title: 'Pinned note', pinned: true }, { hasUI: false })).rejects.toThrow(/no one can be asked here/);
-    expect(await run({ op: 'list' })).toBe('No memories yet.');
-    // full needs no ask, so a headless run may save it.
-    expect(await memoryTool('full')({ op: 'set', title: 'Global note', scope: 'global' }, { hasUI: false })).toMatch(/^Saved M1 \(global/);
-  });
-
-  it('asks before deleting a shared memory', async () => {
-    const run = memoryTool('workspace');
-    expect(await run({ op: 'set', title: 'Global note', scope: 'global' }, { selects: ['Allow once'] })).toMatch(/^Saved M1/);
-    await expect(run({ op: 'delete', id: 'M1' }, { selects: ['Deny'] })).rejects.toThrow(/denied/);
-    expect(await run({ op: 'delete', id: 'M1' }, { selects: ['Allow once'] })).toMatch(/^Deleted M1/);
-  });
-
-  it('returns denial notes for shared memory changes without changing the memory', async () => {
-    const run = memoryTool('workspace');
-    const refusal = { selects: ['Deny and tell the agent why…'], inputs: ['Keep this out of shared memory.'] };
-    await expect(run({ op: 'set', title: 'Global note', scope: 'global' }, refusal)).rejects.toThrow("User's note: Keep this out of shared memory.");
-    expect(await run({ op: 'list' })).toBe('No memories yet.');
-    await run({ op: 'set', title: 'Original note', scope: 'global' }, { selects: ['Allow once'] });
-    for (const change of [{ op: 'set', id: 'M1', title: 'Changed note' }, { op: 'delete', id: 'M1' }]) {
-      await expect(run(change, { selects: ['Deny and tell the agent why…'], inputs: ['Keep the original.'] })).rejects.toThrow("User's note: Keep the original.");
-      expect(await run({ op: 'get', id: 'M1' })).toContain('Original note');
+describe('shared memory', () => {
+  it('saves, changes and deletes a global or pinned memory at once in every mode, with no dialog and no UI', async () => {
+    for (const mode of ['manual', 'workspace', 'full'] as const) {
+      const run = memoryTool(mode);
+      expect(await run({ op: 'set', title: `Global ${mode}`, scope: 'global' }, { hasUI: false })).toMatch(/^Saved M\d+ \(global/);
+      expect(await run({ op: 'set', title: `Pinned ${mode}`, pinned: true }, { hasUI: false })).toMatch(/^Saved M\d+ \(project/);
     }
-    await expect(run({ op: 'delete', id: 'M1' }, { selects: ['Deny and tell the agent why…'], inputs: [undefined] })).rejects.toThrow(/dismissed/);
-    expect(await run({ op: 'get', id: 'M1' })).toContain('Original note');
+    const run = memoryTool('manual');
+    expect(await run({ op: 'set', id: 'M1', title: 'Changed note' }, { hasUI: false })).toMatch(/^Updated M1/);
+    expect(await run({ op: 'delete', id: 'M1' }, { hasUI: false })).toMatch(/^Deleted M1/);
+  });
+
+  it('refuses a global or pinned memory in an untrusted project in every mode, and audits the refusal', async () => {
+    fs.mkdirSync(path.join(cwd, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(cwd, '.claude', 'settings.json'), '{"hooks":{}}');
+    for (const mode of ['manual', 'workspace', 'full'] as const) {
+      const fake = fakePi();
+      registerMemory(fake.pi, { commands: new Subcommands(), isSubagent: false, permission: fakePermission(mode, { pi: fake.pi }) });
+      const ctx = Object.assign(fakeCtx({ cwd, hasUI: true }), { isProjectTrusted: () => false });
+      await expect(fake.tools.get('memory').execute('call', { op: 'set', title: 'Sneaky', scope: 'global' }, undefined, undefined, ctx)).rejects.toThrow(/untrusted project/);
+      expect(fake.entries.map((entry) => entry.data), mode).toEqual([expect.objectContaining({ action: 'invariant', allowed: false, via: 'invariant', what: ['memory a global or pinned memory'] })]);
+    }
   });
 });

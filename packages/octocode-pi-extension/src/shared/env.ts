@@ -12,9 +12,6 @@ export const HOOKS_ENV = 'OCTOCODE_HOOKS';
 /** `0` keeps the Octocode MCP server unregistered (set for a profile with `mcp: false`, e.g. the browser subagents). */
 export const MCP_ENV = 'OCTOCODE_MCP';
 
-/** Longest the first prompt waits for the Octocode server's connect, so its instructions are in that request (default 10; 0 = no wait). */
-export const MCP_WAIT_ENV = 'OCTOCODE_MCP_WAIT_SECONDS';
-
 /** `0` turns automatic memory injection off for this process (`/octocode memory auto off` turns it off everywhere). */
 export const MEMORY_AUTO_ENV = 'OCTOCODE_MEMORY_AUTO';
 
@@ -36,11 +33,14 @@ export const NOTIFY_METHOD_ENV = 'OCTOCODE_NOTIFY_METHOD';
 /** `0` turns the extra skill directories off everywhere. */
 export const EXTRA_SKILLS_ENV = 'OCTOCODE_EXTRA_SKILLS';
 
-/** `manual`, `workspace` or `full`: the permission mode a session starts in (unset: by project trust). Owned by the parent in a subagent. */
+/** `manual`, `workspace` or `full`: the permission mode a session starts in (unset: full). Owned by the parent in a subagent. */
 export const PERMISSION_ENV = 'OCTOCODE_PERMISSION';
 
 /** Set by the parent in a subagent: the action classes its `agent` spawn was allowed (comma-separated). */
 export const PERMISSION_GRANTS_ENV = 'OCTOCODE_PERMISSION_GRANTS';
+
+/** Set by the parent in a subagent whose parent can ask a person: the child sends its approval dialogs to the parent (RPC) instead of denying them. */
+export const PERMISSION_RELAY_ENV = 'OCTOCODE_PERMISSION_RELAY';
 
 /**
  * Pi's prompt-cache retention for session requests (read by pi-ai at each request and by Pi's cache warmer): `long` asks

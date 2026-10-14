@@ -3,7 +3,7 @@
 
 use super::{
     bool_value, config_path, integer, invalid, object, rust_enum_variant, rust_ident, set_path,
-    string, to_pascal,
+    string, to_pascal, to_screaming_snake,
 };
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
@@ -304,50 +304,44 @@ fn render_field_metadata(
     schema_version: i64,
 ) -> Result<(), Box<dyn Error>> {
     for (index, field) in all_fields.iter().enumerate() {
-        let env = field.definition.get("env").map_or(Ok(None), |value| {
-            Ok::<_, Box<dyn Error>>(Some(object(value, &format!("{}.env", field.path))?))
-        })?;
-        let mut bindings = env
-            .map(|bindings| {
-                bindings
-                    .iter()
-                    .map(|(name, value)| {
-                        let binding = object(value, &format!("{}.env.{name}", field.path))?;
-                        Ok((
-                            name,
-                            integer(
-                                binding
-                                    .get("priority")
-                                    .ok_or_else(|| invalid("env priority is required"))?,
-                                "env priority",
-                            )?,
-                            binding,
-                        ))
-                    })
-                    .collect::<Result<Vec<_>, Box<dyn Error>>>()
-            })
-            .transpose()?
-            .unwrap_or_default();
-        bindings.sort_by_key(|(_, priority, _)| *priority);
-        writeln!(output, "const FIELD_{index}_ENV: &[ConfigEnvBinding] = &[")?;
-        for (name, _, binding) in bindings {
-            let normalize = match binding.get("normalize").and_then(Value::as_str) {
-                Some("trim") => "Some(ConfigNormalize::Trim)",
-                Some("lower") => "Some(ConfigNormalize::Lower)",
-                Some(other) => return Err(invalid(format!("unsupported normalize mode {other}"))),
-                None => "None",
-            };
-            let invalid_mode = match binding.get("invalid").and_then(Value::as_str) {
-                Some("default") => "ConfigInvalidEnv::Default",
-                Some("skip") | None => "ConfigInvalidEnv::Skip",
-                Some(other) => return Err(invalid(format!("unsupported invalid mode {other}"))),
-            };
-            writeln!(
-                output,
-                "    ConfigEnvBinding {{ name: {name:?}, normalize: {normalize}, invalid: {invalid_mode} }},"
-            )?;
-        }
-        writeln!(output, "];\n")?;
+        let binding = field
+            .definition
+            .get("env")
+            .map(|value| object(value, &format!("{}.env", field.path)))
+            .transpose()?;
+        let rendered = match binding {
+            None => "None".to_owned(),
+            Some(binding) => {
+                let name = string(
+                    binding
+                        .get("name")
+                        .ok_or_else(|| invalid(format!("{}.env.name is required", field.path)))?,
+                    &format!("{}.env.name", field.path),
+                )?;
+                let normalize = match binding.get("normalize").and_then(Value::as_str) {
+                    Some("trim") => "Some(ConfigNormalize::Trim)",
+                    Some("lower") => "Some(ConfigNormalize::Lower)",
+                    Some(other) => {
+                        return Err(invalid(format!("unsupported normalize mode {other}")));
+                    }
+                    None => "None",
+                };
+                let invalid_mode = match binding.get("invalid").and_then(Value::as_str) {
+                    Some("default") => "ConfigInvalidEnv::Default",
+                    Some("skip") | None => "ConfigInvalidEnv::Skip",
+                    Some(other) => {
+                        return Err(invalid(format!("unsupported invalid mode {other}")));
+                    }
+                };
+                format!(
+                    "Some(ConfigEnvBinding {{ name: {name:?}, normalize: {normalize}, invalid: {invalid_mode} }})"
+                )
+            }
+        };
+        writeln!(
+            output,
+            "const FIELD_{index}_ENV: Option<ConfigEnvBinding> = {rendered};\n"
+        )?;
 
         let values = field
             .definition
@@ -422,6 +416,21 @@ fn render_field_metadata(
         )?;
     }
     writeln!(output, "];\n")?;
+    // One constant per field, named after its path: code names the setting
+    // it reads instead of searching CONFIG_FIELDS by a path string.
+    writeln!(
+        output,
+        "/// Every config field by its path (`classification.api` → `CLASSIFICATION_API`).\npub mod field {{\n    use super::{{CONFIG_FIELDS, ConfigFieldSpec}};"
+    )?;
+    for (index, field) in all_fields.iter().enumerate() {
+        writeln!(
+            output,
+            "    /// `{}`\n    pub const {}: &ConfigFieldSpec = &CONFIG_FIELDS[{index}];",
+            field.path,
+            to_screaming_snake(&field.path)
+        )?;
+    }
+    writeln!(output, "}}\n")?;
     Ok(())
 }
 
@@ -469,33 +478,38 @@ fn environment_arrays(
         let Some(bindings) = field.definition.get("env") else {
             continue;
         };
-        for (name, binding_value) in object(bindings, &format!("{}.env", field.path))? {
-            let binding = object(binding_value, &format!("{}.env.{name}", field.path))?;
-            match binding
-                .get("dotenv")
-                .and_then(Value::as_str)
-                .unwrap_or("all")
-            {
-                "never" => protected.push(name.clone()),
-                "home" => {
-                    protected.push(name.clone());
-                    home.push(name.clone());
-                }
-                "all" => {}
-                other => return Err(invalid(format!("unsupported dotenv policy {other}"))),
+        let binding = object(bindings, &format!("{}.env", field.path))?;
+        let name = string(
+            binding
+                .get("name")
+                .ok_or_else(|| invalid(format!("{}.env.name is required", field.path)))?,
+            &format!("{}.env.name", field.path),
+        )?
+        .to_owned();
+        match binding
+            .get("dotenv")
+            .and_then(Value::as_str)
+            .unwrap_or("all")
+        {
+            "never" => protected.push(name.clone()),
+            "home" => {
+                protected.push(name.clone());
+                home.push(name.clone());
             }
-            if let Some(value) = binding.get("workspaceNarrowsTo") {
-                narrow.push((
-                    name.clone(),
-                    string(
-                        value,
-                        &format!("{}.env.{name}.workspaceNarrowsTo", field.path),
-                    )?
-                    .to_owned(),
-                ));
-            }
-            sources.push(name.clone());
+            "all" => {}
+            other => return Err(invalid(format!("unsupported dotenv policy {other}"))),
         }
+        if let Some(value) = binding.get("workspaceNarrowsTo") {
+            narrow.push((
+                name.clone(),
+                string(
+                    value,
+                    &format!("{}.env.{name}.workspaceNarrowsTo", field.path),
+                )?
+                .to_owned(),
+            ));
+        }
+        sources.push(name);
     }
     tokens.sort_by_key(|(priority, _)| *priority);
     let unique = |values: Vec<String>| {
@@ -570,10 +584,42 @@ fn render(contract: &Value) -> Result<String, Box<dyn Error>> {
     }
     writeln!(output, "}}\n")?;
 
+    // The variables the contract declares outside any setting, by name, so
+    // code reading one fails to build when the contract drops it.
+    writeln!(
+        output,
+        "/// Environment variables the contract declares outside any setting.\npub mod environment {{"
+    )?;
+    for name in object(
+        root.get("environment")
+            .ok_or_else(|| invalid("contract.environment is required"))?,
+        "contract.environment",
+    )?
+    .keys()
+    {
+        writeln!(output, "    pub const {name}: &str = {name:?};")?;
+    }
+    writeln!(output, "}}\n")?;
     write_string_slice(&mut output, "ENV_TOKEN_VARS", &tokens)?;
     write_string_slice(&mut output, "PROTECTED_KEYS", &protected)?;
     write_string_slice(&mut output, "HOME_TRUSTED_ENV_KEYS", &home)?;
     write_string_slice(&mut output, "CONFIG_SOURCE_ENV_KEYS", &sources)?;
+    let declared: Vec<String> = object(
+        root.get("environment")
+            .ok_or_else(|| invalid("contract.environment is required"))?,
+        "contract.environment",
+    )?
+    .keys()
+    .cloned()
+    .chain(sources.iter().cloned())
+    .collect::<BTreeSet<_>>()
+    .into_iter()
+    .collect();
+    writeln!(
+        output,
+        "/// Every environment variable the config contract declares or binds."
+    )?;
+    write_string_slice(&mut output, "DECLARED_ENV_KEYS", &declared)?;
     writeln!(
         output,
         "/// Home-trusted switches a workspace may set only to this narrowing value.\npub const WORKSPACE_NARROW_ONLY: &[(&str, &str)] = &["

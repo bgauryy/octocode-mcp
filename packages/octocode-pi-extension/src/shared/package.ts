@@ -26,6 +26,27 @@ export function findManifest(fromDir: string, name: string, maxDepth = 6): { dir
   return undefined;
 }
 
+/** `a` < `b` for dotted numeric versions (`1.1.0` < `1.2.0`); a pre-release or build suffix is ignored. */
+export function versionBelow(a: string, b: string): boolean {
+  const parts = (version: string) => version.replace(/[-+].*$/, '').split('.').map((part) => Number.parseInt(part, 10) || 0);
+  const [x, y] = [parts(a), parts(b)];
+  for (let index = 0; index < Math.max(x.length, y.length); index++) {
+    if ((x[index] ?? 0) !== (y[index] ?? 0)) return (x[index] ?? 0) < (y[index] ?? 0);
+  }
+  return false;
+}
+
+/** The oldest Pi this package supports: the floor of its `@earendil-works/pi-coding-agent` peer range (`^1.2.0` → `1.2.0`). */
+export function minimumPiVersion(from: string = import.meta.url): string | undefined {
+  try {
+    const peers = findManifest(path.dirname(fileURLToPath(from)), PACKAGE_NAME)?.manifest['peerDependencies'];
+    const range = peers && typeof peers === 'object' ? (peers as Record<string, unknown>)['@earendil-works/pi-coding-agent'] : undefined;
+    return typeof range === 'string' ? /\d+(\.\d+)*/.exec(range)?.[0] : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * This package's root (the folder holding its `package.json`), found by walking up from a module. Source and compiled
  * modules sit at the same depth under `src/` and `dist/`, but not every module is at the top of it, so a fixed `..` breaks.

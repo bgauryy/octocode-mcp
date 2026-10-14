@@ -389,10 +389,18 @@ fn auth_login_and_skill_fail_closed() {
     let workspace = Workspace::new();
     let login = workspace
         .cli()
+        .args(["auth", "login", "--hostname", "github.com"])
+        .output()
+        .expect("auth login");
+    // No terminal for the device flow: the caller's request (2).
+    assert_eq!(login.status.code(), Some(2));
+    // The fixture's API host is an enterprise host without a client id.
+    let enterprise = workspace
+        .cli()
         .args(["auth", "login"])
         .output()
         .expect("auth login");
-    assert_eq!(login.status.code(), Some(1));
+    assert_eq!(enterprise.status.code(), Some(5));
     // Every skill subcommand runs in the npm launcher; with none on PATH the
     // host fails closed and names the rerun command.
     for args in [["skill", "list"], ["skill", "run"]] {
@@ -442,7 +450,7 @@ fn auth_status_ignores_whitespace_only_env_token() {
         .args(["auth", "status", "--json"])
         .output()
         .expect("auth status");
-    assert!(output.status.success() || output.status.code() == Some(1));
+    assert!(output.status.success() || output.status.code() == Some(4));
     let value: serde_json::Value = serde_json::from_str(stdout(&output)).expect("auth json");
     assert_ne!(
         value["tokenSource"], "env",
@@ -745,36 +753,19 @@ fn tool_reads_query_from_input_file() {
     );
 }
 
+/// `schema` lists every enabled tool with its compact field list, one line
+/// on a pipe, small enough to read whole.
 #[test]
-fn catalog_lists_the_machine_catalog_for_the_launcher() {
+fn schema_lists_compact_field_lists_for_every_enabled_tool() {
     let workspace = Workspace::new();
-    let output = workspace.cli().arg("catalog").output().expect("catalog");
+    let output = workspace.cli().arg("schema").output().expect("schema");
     assert!(output.status.success(), "{}", stderr(&output));
-    assert!(
-        output.stdout.len() < 20_000,
-        "machine catalog should stay token-efficient, got {} bytes",
-        output.stdout.len()
-    );
     assert_eq!(stdout(&output).trim_end().lines().count(), 1);
-    let value: serde_json::Value = serde_json::from_slice(&output.stdout).expect("catalog JSON");
-    // Presentation (kind, commands, descriptions, instructions) is `schema`'s;
-    // `catalog` carries machine facts only.
-    for presentation in ["kind", "commands", "output", "instructions"] {
-        assert!(value.get(presentation).is_none(), "{presentation}: {value}");
-    }
-    assert!(
-        value["fingerprint"]
-            .as_str()
-            .is_some_and(|fingerprint| fingerprint.len() == 64),
-        "machine catalog must carry the enforcement fingerprint: {value}"
-    );
-    let first = &value["tools"][0];
-    assert!(first["name"].is_string());
-    assert!(first.get("description").is_none(), "{first}");
-    assert!(first["fields"].is_string());
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).expect("schema JSON");
     // Union tools list every mode instead of an empty field list.
     for tool in value["tools"].as_array().expect("tools array") {
         assert_ne!(tool["fields"], "[]", "{}", tool["name"]);
+        assert!(tool.get("inputSchema").is_none(), "{tool}");
     }
     let fields_of = |name: &str| {
         value["tools"]
@@ -789,18 +780,14 @@ fn catalog_lists_the_machine_catalog_for_the_launcher() {
     // Several row forms list each by its variant name (the embedded CLI
     // presentation precomputes the lists from the core Zod rows).
     assert!(fields_of("astSearch").contains("match:rule[path*, rule*"));
-    assert!(fields_of("astTopology").starts_with("deadCode["));
     assert!(fields_of("lspSearch").starts_with("anchored["));
-    assert!(first["availability"]["enabled"].is_boolean());
-    let clone_tool = value["tools"]
-        .as_array()
-        .expect("tools array")
-        .iter()
-        .find(|tool| tool["name"] == "ghCloneRepo")
-        .expect("clone tool");
-    assert_eq!(clone_tool["availability"]["enabled"], true);
-    assert!(first.get("inputSchema").is_none());
-    assert!(first.get("outputSchema").is_none());
+    let clone = workspace
+        .cli()
+        .args(["schema", "ghCloneRepo"])
+        .output()
+        .expect("clone schema");
+    let clone: serde_json::Value = serde_json::from_slice(&clone.stdout).expect("clone JSON");
+    assert_eq!(clone["availability"]["enabled"], true, "{clone}");
 }
 
 /// The binary serves discovery itself: the catalog with agent instructions,
@@ -1275,4 +1262,49 @@ async fn github_authentication_failure_uses_exit_four_and_actionable_hint() {
     assert!(stdout(&output).contains("octocode auth login"));
     assert!(stdout(&output).contains("invalid env token"));
     assert!(!stdout(&output).contains("invalid-fixture-token"));
+}
+
+/// A tool the contract parks (`disabled`) is refused on the CLI even with the
+/// beta gate on, and neither `--help` nor `schema` lists it. Vacuous until
+/// the contract parks a tool; then it covers each one.
+#[test]
+fn disabled_tools_are_refused_and_absent_from_help_and_schema() {
+    use octocode_native::tools::id::ToolId;
+    let workspace = Workspace::new();
+    for tool in ToolId::ALL.into_iter().filter(|id| id.is_disabled()) {
+        let name = tool.as_str();
+        let help = workspace.cli().arg("--help").output().expect("help");
+        assert!(
+            !stdout(&help)
+                .lines()
+                .any(|line| line.trim_start().starts_with(&format!("{name} "))),
+            "{name} in help: {}",
+            stdout(&help)
+        );
+        let schema = workspace.cli().arg("schema").output().expect("schema");
+        let catalog: serde_json::Value = serde_json::from_slice(&schema.stdout).expect("schema");
+        assert!(
+            catalog["tools"]
+                .as_array()
+                .expect("tools")
+                .iter()
+                .all(|listed| listed["name"] != name),
+            "{name} listed: {catalog}"
+        );
+        let call = workspace
+            .cli()
+            .env("OCTOCODE_BETA", "true")
+            .args([name, "{}", "--json"])
+            .output()
+            .expect("call");
+        assert_eq!(exit_code(&call), Some(5), "{}", stdout(&call));
+        let error: serde_json::Value = serde_json::from_slice(&call.stdout).expect("envelope");
+        assert_eq!(error["errorCode"], "toolUnavailable", "{error}");
+        assert!(
+            error["error"]
+                .as_str()
+                .is_some_and(|text| text.contains("disabled in this build")),
+            "{error}"
+        );
+    }
 }

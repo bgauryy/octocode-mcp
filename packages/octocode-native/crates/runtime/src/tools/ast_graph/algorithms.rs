@@ -203,7 +203,10 @@ pub(super) fn dominators(
             continue;
         }
         // This branch is only reached with a frame on the stack.
-        #[allow(clippy::expect_used)]
+        #[expect(
+            clippy::expect_used,
+            reason = "the frame stack is non-empty inside this loop"
+        )]
         let node = frames.pop().expect("frame exists").node;
         postorder.push(node);
     }

@@ -3,15 +3,15 @@ import { resolve, join } from 'node:path';
 import { createReadStream } from 'node:fs';
 import { paginate } from './lib/pagination.mjs';
 import { fileURLToPath } from 'node:url';
-import { readJson as readJsonFile, readJsonl as readJsonlFile } from './lib/bridge.mjs';
+import { readJson as readJsonFile, readJsonl as readJsonlFile, requireSession } from './lib/bridge.mjs';
+import { fail } from './lib/fail.mjs';
 
 function usage(code = 2) {
   console.error('Usage: corpus-find.mjs --session-dir <dir> --query <text> [--limit <positive integer>] [--offset <non-negative integer>]');
   process.exit(code);
 }
 function invalid(message) {
-  console.log(JSON.stringify({ ok: false, error: { code: 'invalidArguments', message } }));
-  process.exit(2);
+  fail('invalidArguments', message, 2);
 }
 const args = process.argv.slice(2);
 if (args.includes('--help') || args.includes('-h')) usage(0);
@@ -40,6 +40,7 @@ const dir = resolve(sessionDir);
 const limit = integerOption('--limit', 20, 1);
 if (limit > 300) invalid('--limit must be <= 300');
 const offset = integerOption('--offset', 0, 0);
+requireSession(dir);
 const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
 const readJson = (rel, fallback = null) => readJsonFile(dir, rel, fallback);
 const readJsonl = (rel) => readJsonlFile(dir, rel);
@@ -107,6 +108,19 @@ function textScore(pageId) {
   }
   return score;
 }
+// Score values, never serialized rows: JSON key names such as "source" or "pageId" are not content.
+function leafText(value) {
+  if (value == null) return [];
+  if (typeof value !== 'object') return [String(value)];
+  return (Array.isArray(value) ? value : Object.values(value)).flatMap(leafText);
+}
+function elementText(e) {
+  const inputs = (e.inputs || []).flatMap((i) => [i.name, i.placeholder, i.type]);
+  return [e.text, e.preview, e.textPreview, e.action, e.href, e.key, e.content, e.language, e.type, e.kind, e.workflowHint, ...(e.labels || []), ...(e.headers || []), ...inputs, ...leafText(e.json)].filter(Boolean).join(' ');
+}
+// The capped AGENT_INDEX lists only the first pages; the roster in page-map.json lists them all.
+const roster = await readJson('page-map.json', { pages: [] });
+const filesByPage = new Map([...(agent.pages || []), ...(roster.pages || [])].filter((p) => p?.pageId && p.files).map((p) => [p.pageId, p.files]));
 const automationGraph = await readJson('graph/graph.json', { nodes: [], edges: [] });
 const workflows = await readJson('graph/workflows.json', { workflows: [] });
 const topLinks = await readJsonl('indexes/top-links.jsonl');
@@ -116,7 +130,7 @@ const candidates = [];
 const graphPageIds = new Set();
 for (const p of graph.pages || []) {
   graphPageIds.add(p.pageId);
-  candidates.push({ type: 'page', score: scoreText(`${p.title} ${p.url} ${JSON.stringify(p.headingOutline || [])}`) + textScore(p.pageId), textScore: textScore(p.pageId) || undefined, pageId: p.pageId, title: p.title, url: p.url, files: (agent.pages || []).find((x) => x.pageId === p.pageId)?.files });
+  candidates.push({ type: 'page', score: scoreText(`${p.title} ${p.url} ${(p.headingOutline || []).map((h) => h?.text ?? h).join(' ')}`) + textScore(p.pageId), textScore: textScore(p.pageId) || undefined, pageId: p.pageId, title: p.title, url: p.url, files: filesByPage.get(p.pageId) });
 }
 // Pages absent from the graph (e.g. plain-text payloads stored as one heading)
 // are still findable through their body text.
@@ -127,9 +141,9 @@ for (const [pageId, rec] of pageTexts) {
 }
 for (const l of topLinks) candidates.push({ type: 'link', score: scoreLabel(l.text, l.href) + scoreText(l.workflowType || '') + (l.score || 0) / 10, pageId: l.pageId, text: l.text, href: l.href, workflowType: l.workflowType || null });
 for (const n of automationGraph.nodes || []) candidates.push({ type: `graph:${n.kind}`, score: scoreLabel(n.text || n.title || n.kind, n.url) + scoreText((n.workflowTypes || []).join(' ')), pageId: n.pageId, nodeId: n.id, url: n.url, text: n.text || n.title || null, workflowTypes: n.workflowTypes || [], risk: n.risk || null, evidence: [n.source || { file: 'graph/graph.json' }] });
-for (const e of automationGraph.edges || []) candidates.push({ type: `edge:${e.kind}`, score: scoreLabel(e.label || e.kind, JSON.stringify(e.source || {})) + scoreText(e.workflowType || ''), edgeKind: e.kind, from: e.from, to: e.to, label: e.label || null, workflowType: e.workflowType || null, risk: e.risk || null, evidence: [e.source || { file: 'graph/graph.json' }] });
+for (const e of automationGraph.edges || []) candidates.push({ type: `edge:${e.kind}`, score: scoreLabel(e.label || e.kind, '') + scoreText(e.workflowType || ''), edgeKind: e.kind, from: e.from, to: e.to, label: e.label || null, workflowType: e.workflowType || null, risk: e.risk || null, evidence: [e.source || { file: 'graph/graph.json' }] });
 for (const w of workflows.workflows || []) candidates.push({ type: 'workflow', score: scoreText(`${w.workflowType} ${w.label} ${w.entryUrl}`) + (w.confidence === 'high' ? 1 : 0), workflowType: w.workflowType, label: w.label, entryUrl: w.entryUrl, evidence: w.evidence });
-for (const e of elements) candidates.push({ type: 'element', score: scoreText(JSON.stringify(e)), pageId: e.pageId, kind: e.kind || e._file, workflowHint: e.workflowHint || null, element: e });
+for (const e of elements) candidates.push({ type: 'element', score: scoreText(elementText(e)), pageId: e.pageId, kind: e.kind || e._file, workflowHint: e.workflowHint || null, element: e });
 for (const r of resources) candidates.push({ type: 'resource', score: scoreText(`${r.kind} ${r.src}`), pageId: r.pageId, kind: r.kind, src: r.src });
 const ranked = candidates.filter((c) => c.score > 0).sort((a, b) => b.score - a.score);
 const paging = await paginate({lists:{matches:ranked},files:['AGENT_INDEX.json','sources.jsonl','graph/site-graph.json','graph/graph.json','graph/workflows.json','indexes/top-links.jsonl','extracts/elements.jsonl','extracts/resources.jsonl'].map(p=>join(dir,p)).concat(bodyFiles),dir,args:['--limit',String(limit),'--cursor-matches',String(Math.min(offset,ranked.length)),...(options.get('--snapshot')?['--snapshot',options.get('--snapshot')]:[])],script:fileURLToPath(import.meta.url)});

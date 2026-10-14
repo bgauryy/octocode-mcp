@@ -717,7 +717,7 @@ fn annotate_forbidden_fields(
             let Some(properties) = branch.get("properties").and_then(Value::as_object) else {
                 continue;
             };
-            if properties.get(field).is_none_or(&forbids) {
+            if properties.get(field).is_none_or(forbids) {
                 continue;
             }
             for (name, schema) in properties {

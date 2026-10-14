@@ -209,18 +209,18 @@ fn skipped_files_outside_the_include_are_not_named() {
 
 /// An empty match names what it searched: the files parsed and the grammar,
 /// as `filesScanned` and in the hint, for a pattern and for a rule alike.
+/// The hint is only that fact (why a compiled query can match nothing is
+/// the tool description's); the shape is one `viewTree` lead away, even
+/// when the anchor prefilter skipped every file unparsed.
 #[test]
 fn an_empty_match_reports_the_files_it_parsed_and_the_grammar() {
     let root = Fixture::new();
     for name in ["a.ts", "b.ts", "c.ts"] {
         std::fs::write(root.0.join(name), "export const a = 1;\n").expect("source");
     }
-    for (query, shape) in [
-        (json!({"pattern":"zzNoSuch($$$A)"}), "whole nodes"),
-        (
-            json!({"rule":{"pattern":"zzNoSuch($$$A)"}}),
-            "astSearch operation:\"syntaxTree\"",
-        ),
+    for query in [
+        json!({"pattern":"zzNoSuch($$$A)"}),
+        json!({"rule":{"pattern":"zzNoSuch($$$A)"}}),
     ] {
         let mut row = json!({"operation":"match","path":root.0,"language":"typescript"});
         row.as_object_mut()
@@ -229,11 +229,18 @@ fn an_empty_match_reports_the_files_it_parsed_and_the_grammar() {
         let out = run(&root.0, row);
         assert_eq!(out["status"], "empty", "{out}");
         assert_eq!(out["filesScanned"], json!(3), "{out}");
-        let hint = out["hints"][0].as_str().expect("hint");
-        assert!(
-            hint.starts_with("0 matches in 3 typescript files."),
-            "{hint}"
+        assert_eq!(
+            out["hints"],
+            json!(["0 matches in 3 typescript files."]),
+            "{out}"
         );
-        assert!(hint.contains(shape), "{hint}");
+        let tree = &out["next"]["viewTree"]["query"]["queries"][0];
+        assert_eq!(tree["operation"], "syntaxTree", "{out}");
+        assert!(
+            tree["path"]
+                .as_str()
+                .is_some_and(|path| path.ends_with("a.ts")),
+            "{out}"
+        );
     }
 }

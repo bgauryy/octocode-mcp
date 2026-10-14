@@ -1,8 +1,6 @@
 # CLI command reference
 
-Load when you need a command example. Why: keep the full catalog outside ordinary worker context.
-
-Use the shell bindings from [installation](INSTALLATION.md). Reuse a host binding when one exists.
+Load when you need a command example. Use the shell bindings from [installation](INSTALLATION.md). Reuse a host binding when one exists.
 
 `comm` invokes `npx -y @octocodeai/octocode-agents-communication /cli` with workspace and database flags.
 `agent` adds the current `--session`. The default npm entry starts MCP instead.
@@ -11,7 +9,7 @@ Multiword commands also accept one token: `db info` becomes `db-info`, and `inbo
 The CLI adds `schema-types` and `schema-type` for record-type discovery.
 See [entry points](INTERFACES.md) for stdin, arrays, booleans, and workspace selection.
 
-Each row gives a runnable form after replacing IDs/paths/placeholders. JSON shown here is input; full optional fields and validation are available through `comm schema COMMAND` or `comm COMMAND --help`. Multiword commands use separate words, for example `comm schema 'db export'`.
+Each row is runnable after replacing IDs, paths, and placeholders; the JSON is input. For every optional field and validation rule, use `comm schema COMMAND` (multiword: `comm schema 'db export'`) or `comm COMMAND --help`.
 
 | Command | When to use it | Example |
 | --- | --- | --- |
@@ -22,11 +20,11 @@ Each row gives a runnable form after replacing IDs/paths/placeholders. JSON show
 | `resume` | Reuse an expired identity of the same vendor; reacquire leases. | `agent resume '{"vendor":"claude"}'` |
 | `leave` | Finish a lifecycle this process owns; release leases/subscriptions/claims. | `agent leave` |
 | `peers` | Find live collaborators and exact recipient IDs. | `agent peers` |
-| `send_message` | Ask one peer or publish to a subscribed topic. | `agent send_message '{"to":"api-reviewer","body":"Review the API","reasoning":"Resolve compatibility"}'` |
+| `send_message` | Ask one peer or publish to a subscribed topic. | `agent send_message '{"to":"api-reviewer","body":"Situation: API changed. Request: review src/api.ts for compatibility risks.","reasoning":"Resolve compatibility; done when risks are listed"}'` |
 | `notify_all` | A relevant announcement to current active peers. | `agent notify_all '{"body":"API review is ready","reasoning":"Coordinate review","replyRequired":false}'` |
 | `inbox` | Read pending unexpired deliveries; optionally one message. | `agent inbox '{"message":17}'` |
 | `inbox wait` | Explicitly wait for pending mail; does not renew presence or acknowledge it. | `agent inbox wait '{"timeoutMs":1000}'` |
-| `complete` | Handle a request with a final reply, or acknowledge read FYIs. | `agent complete '{"message":17,"reply":"Checked; supporting evidence: ..."}'` |
+| `complete` | Handle a request with an outcome and final reply, or acknowledge read FYIs. | `agent complete '{"message":17,"outcome":"done","reply":"Checked; evidence: ..."}'` |
 | `subscribe` | Replace the topics this identity receives. | `agent subscribe '{"topics":["api"]}'` |
 | `lock` | Reserve one file or subtree before editing; `wait:true` queues on conflict. | `agent lock '{"path":"src/api.ts","kind":"file","reasoning":"Implement reviewed API change"}'` |
 | `lock_many` | Reserve up to 32 distinct paths atomically; conflicts grant none. `wait:true` queues the set until every path is free. | `agent lock_many '{"paths":[{"path":"src/api.ts"},{"path":"tests/api.ts"}],"reasoning":"Change API and its tests"}'` |

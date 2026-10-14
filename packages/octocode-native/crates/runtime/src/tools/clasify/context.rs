@@ -1,5 +1,6 @@
 //! Validated, bounded tool context; never re-enters public request admission.
 use crate::response::rows;
+use crate::runtime::availability::ToolAvailability;
 use crate::runtime::{ExecutionContext, domain_dispatch::DomainDispatcher};
 use crate::tools::id::ToolId;
 use crate::{
@@ -142,57 +143,29 @@ pub(super) fn prepare(tool: &str, query: &Value) -> Result<Value, Classification
         .ok_or_else(|| error("invalidClassificationContext", "Context query is missing."))
 }
 
-/// Why a clasify context tool is unavailable: every possible prerequisite
-/// (with env bindings from the config contract) and the enabled context tools.
+/// Why a clasify context tool is unavailable: the runtime's one reason for
+/// it, and the enabled context tools.
 pub(crate) fn unavailable_context_message(
     tool: &str,
     mcp: bool,
-    available: impl Fn(&str) -> bool,
+    availability: &ToolAvailability,
 ) -> String {
-    let id = ToolId::from_name(tool);
     let enabled = crate::tools::id::clasify_policy::SCOUT_TOOLS
         .iter()
         .map(|id| id.as_str())
-        .filter(|name| available(name))
+        .filter(|name| availability.is_available(name))
         .collect::<Vec<_>>()
         .join(", ");
-    if mcp && id.is_some_and(ToolId::is_cli_only) {
+    if mcp && ToolId::from_name(tool).is_some_and(ToolId::is_cli_only) {
         return format!(
             "Context tool {tool} is available only through the CLI; run `octocode {tool}`. Enabled context tools: {enabled}."
         );
     }
-    let gates = id
-        .into_iter()
-        .flat_map(ToolId::availability_config_paths)
-        .map(|path| {
-            let vars = crate::config::CONFIG_FIELDS
-                .iter()
-                .find(|field| field.path == path)
-                .map(|field| {
-                    field
-                        .env
-                        .iter()
-                        .map(|binding| binding.name)
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default();
-            if vars.is_empty() {
-                path.to_owned()
-            } else {
-                format!("{path} ({})", vars.join(" | "))
-            }
-        })
-        .collect::<Vec<_>>();
-    let enable = if gates.is_empty() {
-        "Check tools.enabled/tools.disabled.".to_owned()
-    } else {
-        format!(
-            "Check {} and tools.enabled/tools.disabled.",
-            gates.join(" and ")
-        )
-    };
+    let reason = availability
+        .get(tool)
+        .map_or_else(|| "no such tool.".to_owned(), |a| a.reason_text());
     format!(
-        "Context tool {tool} is disabled in this runtime. {enable} Enabled context tools: {enabled}."
+        "Context tool {tool} is disabled in this runtime: {reason} Enabled context tools: {enabled}."
     )
 }
 
@@ -203,7 +176,7 @@ pub(crate) fn unavailable_context_issues(
     query: &Value,
     prefix: &[String],
     mcp: bool,
-    available: impl Fn(&str) -> bool,
+    availability: &ToolAvailability,
 ) -> Vec<contracts::ValidationIssue> {
     query["resources"]
         .as_array()
@@ -212,13 +185,15 @@ pub(crate) fn unavailable_context_issues(
         .enumerate()
         .filter_map(|(index, resource)| {
             let tool = resource.get("tool")?.as_str()?;
-            (ToolId::from_name(tool).is_some_and(is_context_tool) && !available(tool)).then(|| {
+            (ToolId::from_name(tool).is_some_and(is_context_tool)
+                && !availability.is_available(tool))
+            .then(|| {
                 let mut path = prefix.to_vec();
                 path.extend(["resources".to_owned(), index.to_string(), "tool".to_owned()]);
                 contracts::ValidationIssue {
                     rule_id: "clasify.context-tool-available".into(),
                     path,
-                    message: unavailable_context_message(tool, mcp, &available),
+                    message: unavailable_context_message(tool, mcp, availability),
                     schema: None,
                     received: Some(Value::String(tool.to_owned())),
                 }
@@ -297,12 +272,10 @@ fn read_tool<'a>(
         .ok_or_else(not_a_read)?;
     // Normally rejected at validation (`unavailable_context_issues`); kept for
     // embedders that dispatch a prepared matrix directly.
-    if !dispatcher.available_tools.contains(&tool) {
+    if !dispatcher.availability.is_available(tool) {
         let mut unavailable = error(
             "classificationContextUnavailable",
-            unavailable_context_message(tool, false, |name| {
-                dispatcher.available_tools.contains(&name)
-            }),
+            unavailable_context_message(tool, false, &dispatcher.availability),
         );
         unavailable.hints = Vec::new();
         return Err(ContextFailure::from(unavailable));
@@ -772,15 +745,13 @@ fn receipt_with_evaluation(
     if !next.is_empty() {
         receipt["next"] = Value::Object(next);
     }
-    if partial {
+    // A failed read judged nothing: its page error says so, and no
+    // limitation restates it.
+    if partial && evaluation_completed {
         let limitation = if terminal {
             "The read stopped at a terminal limit; evidence past it was not judged."
         } else if receipt.get("next").is_some() {
-            if evaluation_completed {
-                PAGE_ONLY_LIMITATION
-            } else {
-                "The read failed after a partial page; the rest was not judged."
-            }
+            PAGE_ONLY_LIMITATION
         } else {
             "The read returned incomplete evidence and no continuation; the rest was not judged."
         };
@@ -802,12 +773,6 @@ fn receipt_with_evaluation(
                 "Not followed: {} (reruns this read with wider analysis).",
                 reruns.join(", ")
             ),
-        );
-    }
-    if !evaluation_completed {
-        append_limitation(
-            &mut receipt,
-            "Context retrieval failed; classification was not run.",
         );
     }
     if receipt.to_string().len() > MAX_RECEIPT_BYTES {
@@ -834,14 +799,8 @@ fn receipt_with_evaluation(
         if let Some(object) = receipt.as_object_mut() {
             object.remove("next");
         }
-        receipt["limitations"] = if evaluation_completed {
-            json!(["Continuation metadata exceeded the receipt limit and was dropped."])
-        } else {
-            json!([
-                "Continuation metadata exceeded the receipt limit and was dropped.",
-                "Context retrieval failed; classification was not run."
-            ])
-        };
+        receipt["limitations"] =
+            json!(["Continuation metadata exceeded the receipt limit and was dropped."]);
     }
     receipt
 }
@@ -855,9 +814,11 @@ fn value_receipt(state: &Value) -> Value {
     })
 }
 
-/// Page axes nested inside an outer page. The last inner page re-emits the
-/// outer continuation, so following the inner axis first visits every branch;
-/// following the outer axis first drops the remaining inner pages for good.
+/// Page axes nested inside an outer page. Following the outer axis first
+/// drops the remaining inner pages for good, so the inner axis goes first.
+/// The outer route rides only beside the first inner page (a chain offers
+/// each query once); the walk resumes it after the last inner page
+/// (`run::capture::closing_match_page_next`).
 const INNER_PAGE_AXES: &[&str] = &["nextMatchPage"];
 
 /// Pages that re-run the shown page with wider analysis instead of reading
@@ -1442,6 +1403,19 @@ mod tests {
             receipt["limitations"].to_string().contains("continue"),
             "{receipt}"
         );
+    }
+
+    /// A failed read's page carries its error; its receipt restates nothing
+    /// of it (no "classification was not run", no "rest was not judged"),
+    /// while the continuation it offers stays.
+    #[test]
+    fn a_failed_read_receipt_does_not_restate_its_error() {
+        let state = json!({"results":[{"index":0,"data":{"isPartial":true,"next":{
+            "continueWindow":{"tool":"localFetch","query":{"queries":[{"path":"/tmp/f","mainGoal":"test","reasoning":"Read","offset":2}]}}
+        }}}]});
+        let receipt = failed_receipt("localFetch", &state, None);
+        assert!(receipt.get("limitations").is_none(), "{receipt}");
+        assert!(receipt["next"]["continueWindow"].is_object(), "{receipt}");
     }
 
     fn receipt_for_terminal() -> Value {

@@ -25,10 +25,10 @@ const changes = [
 
 describe('file change review', () => {
   it('describes each change with its reasoning and a bounded preview', () => {
-    expect(describeChange(changes[0]!)).toEqual(['edit src/a.ts · 1 edit', '  why: Fix the loop', '  - i <= n', '  + i < n']);
+    expect(describeChange(changes[0]!)).toEqual(['edit src/a.ts · 1 edit', '  - i <= n', '  + i < n', '  agent says (unverified): Fix the loop']);
     expect(describeChange(changes[1]!).join('\n')).toContain('+ export const x = 1;');
-    expect(describeChange(changes[2]!)).toContain('  removes the file');
-    expect(describeChange({ type: 'write', path: 'p', reasoning: 'r', content: 'one\n' })).toEqual(['write p', '  why: r', '  + one']);
+    expect(describeChange(changes[2]!)).toEqual(['delete old.ts', '  removes the file', '  agent says (unverified): Unused']);
+    expect(describeChange({ type: 'write', path: 'p', reasoning: 'r', content: 'one\n' })).toEqual(['write p', '  + one', '  agent says (unverified): r']);
     const long = describeChange({ type: 'write', path: 'p', reasoning: 'r', content: Array.from({ length: 20 }, (_, i) => `line ${i}`).join('\n') });
     expect(long.join('\n')).toContain('… 15 more line(s)');
   });
@@ -36,8 +36,12 @@ describe('file change review', () => {
   it('applies all, rejects all, or decides one by one', async () => {
     const all = ui({ selects: ['Apply all'] });
     expect([...(await askReview(all.ctx, changes))]).toEqual([]);
-    expect(all.asked[0]).toContain('1. edit src/a.ts — Fix the loop');
-    expect(all.asked[0]).toContain('3. delete old.ts — Unused');
+    expect(all.asked[0]).toContain('1. edit src/a.ts\n2. write src/new.ts\n3. delete old.ts');
+    // What the agent says comes last, per change and labelled unverified.
+    expect(all.asked[0].split('\n').slice(-3)).toEqual(['  1. agent says (unverified): Fix the loop', '  2. agent says (unverified): Add helper', '  3. agent says (unverified): Unused']);
+    const withReasons = ui({ selects: ['Apply all'] });
+    await askReview(withReasons.ctx, changes, undefined, ['▸ why it asks: it changes files in the repository (manual mode asks)']);
+    expect(withReasons.asked[0].indexOf('▸ why it asks')).toBeLessThan(withReasons.asked[0].indexOf('agent says'));
     expect(((await askReview(ui({ selects: ['Reject all'] }).ctx, changes)) as Map<number, string | undefined>).size).toBe(3);
     expect(await askReview(ui({}).ctx, changes)).toBe('cancelled'); // dismissed: no verdict
     const aborted = new AbortController();
@@ -47,7 +51,7 @@ describe('file change review', () => {
     const each = ui({ selects: ['Review one by one', 'Apply', 'Reject', 'Apply'] });
     expect([...(await askReview(each.ctx, changes))]).toEqual([[1, undefined]]);
     expect(each.asked[2]).toContain('Change 2 of 3');
-    expect(each.asked[2]).toContain('why: Add helper');
+    expect(each.asked[2]).toContain('agent says (unverified): Add helper');
   });
 
   it('keeps rejection notes for one file, the whole batch, and individual changes', async () => {

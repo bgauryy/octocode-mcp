@@ -30,9 +30,9 @@ pub(crate) struct DomainDispatcher {
     pub lsp_pool: Arc<octocode_engine::lsp::pool::LspClientPool>,
     pub local_views: Arc<crate::security::scan::SanitizedViewMemo>,
     pub lsp_execution_config: Arc<LspExecutionConfig>,
-    pub available_tools: Arc<[&'static str]>,
+    pub availability: Arc<super::availability::ToolAvailability>,
     /// Provider readiness and an enabled goals surface, independent of the
-    /// public clasify tool's visibility in `available_tools`.
+    /// public clasify tool's availability.
     pub ranking_available: bool,
     pub clasify: crate::tools::clasify::ClasifySettings,
     /// Registry answers for artifactSearch; `None` under memory storage.
@@ -180,10 +180,11 @@ impl DomainDispatcher {
         query: &Value,
         context: &ExecutionContext,
     ) -> Result<dispatch::DomainResult, ExecutionError> {
-        let query = match dispatch::parse_query(query) {
+        let query: crate::tools::lsp_search::LspSearchQuery = match dispatch::parse_query(query) {
             Ok(query) => query,
             Err(row) => return Ok(*row),
         };
+        let requested = query.path().map(str::to_owned);
         self.handle.block_on(async {
             match crate::tools::lsp_search::execute(
                 query,
@@ -200,13 +201,23 @@ impl DomainDispatcher {
                     // A cancelled/expired request is a runtime outcome,
                     // not a provider failure.
                     context.check()?;
-                    Ok(dispatch::provider_failure(
+                    let missing = failure.code == crate::policy::PATH_NOT_FOUND;
+                    let mut row = dispatch::provider_failure(
                         failure.message,
                         failure.code.into(),
                         vec![failure.hint.into()],
                         None,
                         Some(failure.retryable),
-                    ))
+                    );
+                    // The same recovery every local tool gives a missing path.
+                    if missing
+                        && let Some(next) = requested.as_deref().and_then(|requested| {
+                            crate::tools::result::missing_path_lead(&self.paths, requested)
+                        })
+                    {
+                        row.data["next"] = next;
+                    }
+                    Ok(row)
                 }
             }
         })
@@ -237,12 +248,15 @@ impl DomainDispatcher {
             allow_apply: self.config.resolved.local.beta,
             state_dir: self
                 .config
-                .env_value("OCTOCODE_AST_REWRITE_STATE_DIR")
+                .env_value(crate::config::environment::OCTOCODE_AST_REWRITE_STATE_DIR)
                 .filter(|dir| !dir.is_empty())
                 .map(PathBuf::from),
             ..Default::default()
         };
-        let cargo = self.config.env_value("OCTOCODE_CARGO").map(str::to_owned);
+        let cargo = self
+            .config
+            .env_value(crate::config::environment::OCTOCODE_CARGO)
+            .map(str::to_owned);
         let ranking = self.ranking_runtime(&context);
         // `lsp.prewarm`: `targeted` warms the server an offered lspSearch
         // call names; `all` also warms the file a read or search names.

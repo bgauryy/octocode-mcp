@@ -1,4 +1,6 @@
 import type { Api, Model } from '@earendil-works/pi-ai';
+import { estimateTokens, type ExtensionAPI, type ExtensionContext } from '@earendil-works/pi-coding-agent';
+import { CHARS_PER_TOKEN } from '../shared/tokens.js';
 
 /**
  * When compaction runs, beyond Pi's threshold: a breaker for compactions that keep refilling the context, and a
@@ -48,4 +50,35 @@ export const THRASH_MESSAGE =
 export function needsDownshiftCompaction(previous: Pick<Model<Api>, 'contextWindow'> | undefined, next: Pick<Model<Api>, 'contextWindow'>, tokens: number | null | undefined, reserveTokens: number): boolean {
   if (!previous || tokens === null || tokens === undefined || next.contextWindow <= 0) return false;
   return next.contextWindow < previous.contextWindow && tokens > next.contextWindow - reserveTokens;
+}
+
+/** The characters of the tool definitions declared to the model (name, description, parameters, guidelines of the active tools). */
+export function toolDefinitionChars(pi: Pick<ExtensionAPI, 'getActiveTools' | 'getAllTools'>): number {
+  try {
+    const active = new Set(pi.getActiveTools());
+    return pi.getAllTools().reduce((sum, tool) => {
+      if (!active.has(tool.name)) return sum;
+      const { name, description, parameters, promptGuidelines } = tool;
+      return sum + JSON.stringify({ name, description, parameters, promptGuidelines }).length;
+    }, 0);
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * The context's size in tokens: Pi's count, else (Pi has none after a compaction until the next reply) an estimate of
+ * what the next request carries: the system prompt, the active tool definitions (`toolChars`) and every message in the
+ * context, by Pi's own per-message estimate.
+ */
+export function contextTokens(ctx: Pick<ExtensionContext, 'getContextUsage' | 'getSystemPrompt' | 'sessionManager'>, toolChars = 0): number | undefined {
+  const tokens = ctx.getContextUsage()?.tokens;
+  if (typeof tokens === 'number') return tokens;
+  try {
+    const messages = ctx.sessionManager.buildSessionProjection().entries.flatMap((entry) => entry.messages);
+    const fixed = Math.ceil((ctx.getSystemPrompt().length + toolChars) / CHARS_PER_TOKEN);
+    return fixed + messages.reduce((sum, message) => sum + estimateTokens(message), 0);
+  } catch {
+    return undefined;
+  }
 }

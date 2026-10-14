@@ -7,7 +7,7 @@ use crate::security::ContentSecurity;
 use crate::tools::cancel::CancellationCheck;
 use crate::tools::result::ToolError;
 use octocode_engine::{portable::search_text_cancellable, types::TextSearchOptions};
-use serde_json::json;
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 /// Soft budget (in value chars) for a single localSearch response body.
@@ -142,7 +142,7 @@ pub(crate) fn execute_local_search_ranked(
         files: scanned,
         stats: scanned_stats,
     } = parsed;
-    let mut stats = search_stats(&scanned_stats, total_files);
+    let mut stats = search_stats(query.result_view, &scanned_stats, total_files);
     let (mut files, shown_redacted) = project_files(query, &layout, scanned, &redacted);
     let symbol = searched_symbol(query, &layout);
     // Rows render with the root's prefix, which the page cut charged.
@@ -220,6 +220,11 @@ pub(crate) fn execute_local_search_ranked(
         map.insert("viewTree".into(), scope_listing(query));
     }
     warnings.extend(uncollected);
+    warnings.extend(page_ceiling_warning(
+        query,
+        layout.total_pages,
+        next.as_ref(),
+    ));
     Ok(LocalSearchResult {
         status,
         stats,
@@ -233,6 +238,31 @@ pub(crate) fn execute_local_search_ranked(
         source_snapshot: Some(result_identity),
         source_root: output_root.to_path_buf(),
         ranking: rank_outcome.map(|rank| rank.receipt),
+    })
+}
+
+/// File pages past the last page a continuation can name: how many, and
+/// that a narrower search reaches them.
+fn page_ceiling_warning(
+    query: &LocalSearchQuery,
+    total_pages: u32,
+    next: Option<&Value>,
+) -> Option<String> {
+    let page = query.page().max(1);
+    let past = total_pages.saturating_sub(page);
+    (past > 0
+        && next.is_none_or(|next| next.get("nextPage").is_none())
+        && crate::tools::paging::admitted(
+            crate::tools::id::ToolId::LocalSearch,
+            None,
+            "page",
+            page as usize + 1,
+        )
+            .is_none())
+    .then(|| {
+        format!(
+            "Page {page} is the last page a continuation names; {past} later file pages need a narrower path or include."
+        )
     })
 }
 
@@ -485,6 +515,7 @@ pub(super) fn scan_query(
     let validated = search_root(query, paths)?;
     let options = search_options(query, &validated.canonical, walk_threads);
     check_pattern(query)?;
+    check_language(query)?;
     let search_options = options.clone();
     let policy_key = paths.identity();
     let ScanOutput {
@@ -600,13 +631,18 @@ pub(super) fn search_options(
         // Credential-named files are withheld, and generated files skipped
         // (both counted), by the walk's path filter, not by globs here.
         exclude: Some(query.exclude.clone().into_iter().collect()),
-        exclude_dir: Some(PruneMode::SearchSafe.directories(query.default_excludes.defaults())),
-        no_ignore: query.include_ignored,
+        exclude_dir: Some(
+            PruneMode::SearchSafe
+                .directories_with_includes(query.default_excludes.defaults(), &query.include),
+        ),
         // `includeIgnored` is the one "search everything" switch: it
         // walks hidden files too unless `hidden` says otherwise.
-        hidden: query
-            .include_hidden
-            .or(query.include_ignored.filter(|all| *all)),
+        ignore: octocode_engine::search::walk::IgnorePolicy::new(
+            query.include_ignored,
+            query
+                .include_hidden
+                .or(query.include_ignored.filter(|all| *all)),
+        ),
         max_depth: query.max_depth(),
         // The engine owns the relevance order (for a bare-identifier search,
         // source files declaring the name first; then count, then source
@@ -622,7 +658,6 @@ pub(super) fn search_options(
         }),
         sort_reverse: query.reverse,
         max_snippet_chars: Some(effective_match_content_length(query)),
-        classify_matches: Some(false),
         only_matching: Some(view == LocalSearchQueryResultView::MatchOnly),
         unique: Some(matches!(
             query.unique,
@@ -702,6 +737,7 @@ pub(super) fn scan(
                 // A malformed glob or file type is caller input.
                 let code = match error.kind() {
                     octocode_engine::error::ErrorKind::InvalidInput => "invalidInput",
+                    octocode_engine::error::ErrorKind::InvalidGlob => "invalidGlob",
                     _ => "executionFailed",
                 };
                 ToolError::new(code, error.to_string())
@@ -748,33 +784,52 @@ pub(super) fn order_files(
         }),
         // A count view under relevance ranks the most hits first; the stable
         // sort keeps the engine's relevance order (declaration before code,
-        // comment, string) among equal counts.
+        // comment, string) among equal counts. Under `reverse` the engine
+        // already reversed that order, so the fewest hits come first with
+        // ties left in the engine's reversed order: the exact reverse of the
+        // forward listing.
         LocalSearchQuerySort::Relevance if is_count_view(query) => {
-            files.sort_by_key(|file| std::cmp::Reverse(file.match_count));
+            if query.reverse.unwrap_or(false) {
+                files.sort_by_key(|file| file.match_count);
+            } else {
+                files.sort_by_key(|file| std::cmp::Reverse(file.match_count));
+            }
         }
         _ => {}
     }
-    if query.reverse.unwrap_or(false)
-        && !matches!(
-            sort,
-            LocalSearchQuerySort::Modified
-                | LocalSearchQuerySort::Accessed
-                | LocalSearchQuerySort::Created
-                | LocalSearchQuerySort::Relevance
-        )
-    {
+    // Relevance (count views included, above) and the time sorts arrive in
+    // order with `reverse` applied.
+    let engine_sorted = matches!(
+        sort,
+        LocalSearchQuerySort::Modified
+            | LocalSearchQuerySort::Accessed
+            | LocalSearchQuerySort::Created
+            | LocalSearchQuerySort::Relevance
+    );
+    if query.reverse.unwrap_or(false) && !engine_sorted {
         files.reverse();
     }
 }
 
-/// The response's totals from the scan.
+/// The response's totals from the scan, in the units the view counted:
+/// countLines counts no occurrences, and a filesWithout listing counts
+/// neither (its files hold no hit). A view with nothing listed states zero.
 pub(super) fn search_stats(
+    view: LocalSearchQueryResultView,
     scanned: &octocode_engine::types::TextSearchStats,
     total_files: u32,
 ) -> SearchStats {
+    let counted = |count: Option<u32>| {
+        let listed_without = view == LocalSearchQueryResultView::FilesWithout && total_files > 0;
+        if listed_without {
+            None
+        } else {
+            count.or((total_files == 0).then_some(0))
+        }
+    };
     SearchStats {
-        total_occurrences: scanned.match_count.unwrap_or(0),
-        matched_lines: scanned.matched_lines.unwrap_or(0),
+        total_occurrences: counted(scanned.match_count),
+        matched_lines: counted(scanned.matched_lines),
         files_matched: scanned.files_matched.unwrap_or(total_files),
         files_searched: scanned.files_searched.unwrap_or(0),
         bytes_searched: scanned.bytes_searched,

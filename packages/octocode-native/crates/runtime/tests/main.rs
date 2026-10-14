@@ -12,6 +12,7 @@ mod support;
 
 mod auth_discovery;
 mod contract_field_effects;
+mod lock_poison_policy;
 mod runtime_batch_indices;
 mod runtime_batch_response;
 mod runtime_clasify;
@@ -19,6 +20,7 @@ mod runtime_clasify_routing;
 mod runtime_d1_shapes;
 mod runtime_empty_error_rows;
 mod runtime_flow_edge_replay;
+mod runtime_generic_walk;
 mod runtime_gh_structure;
 mod runtime_github;
 mod runtime_github_cache;

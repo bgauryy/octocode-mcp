@@ -40,7 +40,7 @@ function exampleJson(example: Json): string {
 const shellQuote = (text: string): string => `'${text.replaceAll("'", `'\\''`)}'`;
 
 /** What follows clap's help for `<tool> --help`: required fields and one runnable example (workspace-relative, from the variant's Zod `examples` meta). */
-export function toolHelpSection(name: string): string {
+export function toolHelpSection(name: string, availableTools?: readonly string[]): string {
   const variants = getToolSchemaVariants(name);
   const lines = ['Input: one query object, or {"queries":[…]} to batch.'];
   if (variants.length === 1) {
@@ -50,11 +50,21 @@ export function toolHelpSection(name: string): string {
     const width = Math.max(...variants.map(variant => variant.name.length));
     for (const variant of variants) lines.push(`  ${variant.name.padEnd(width)}  ${variant.requires.join(', ')}`.trimEnd());
   }
-  const example = variants.map(variant => variant.example).find(candidate => candidate !== undefined);
+  const example = variants.map(variant => variant.example).find(candidate =>
+    candidate !== undefined && (!availableTools || exampleUsesAvailableTools(candidate, availableTools))
+  );
   if (example)
     lines.push('', 'Example:', `  octocode ${name} ${shellQuote(exampleJson(example))}`);
   lines.push('', `All fields: octocode schema ${name}`);
   return lines.join('\n');
+}
+
+function exampleUsesAvailableTools(example: Json, availableTools: readonly string[]): boolean {
+  const resources = example.resources;
+  return !Array.isArray(resources) || resources.every(resource =>
+    typeof resource !== 'object' || resource === null || !('tool' in resource) ||
+    (typeof resource.tool === 'string' && availableTools.includes(resource.tool))
+  );
 }
 
 /**
@@ -153,6 +163,8 @@ function rendered(definition: Definition, querySchema: Json): { views: Json; sel
 /** The `cli-presentation.json` the native binary embeds beside the enforcement contract. */
 export function buildCliPresentation(): Json {
   const availableTools = DIRECT_TOOL_DEFINITIONS.map(tool => tool.name);
+  const valueOnlyDefinitions = getDirectToolDefinitionsWithAddons({ availableTools: [] });
+  const valueOnlyCatalog = getPublicToolCatalogWithAddons({ availableTools: [] });
   const definitions = getDirectToolDefinitionsWithAddons({ availableTools });
   const rankedDefinitions = getDirectToolDefinitionsWithAddons({ availableTools, ranking: true });
   const catalog = getPublicToolCatalogWithAddons({ availableTools });
@@ -171,8 +183,14 @@ export function buildCliPresentation(): Json {
         shortDescription: definition.shortDescription,
         variantNames: Object.keys(operationSchemas(definition.inputSchema)),
         fields: compactFields(definition),
-        help: toolHelpSection(name),
+        help: toolHelpSection(name, name === 'clasify' ? [] : undefined),
         ...rendered(definition, querySchema),
+        ...(name === 'clasify' && {
+          valueOnly: rendered(
+            valueOnlyDefinitions.find(tool => tool.name === name)!,
+            valueOnlyCatalog.tools.find(tool => tool.name === name)!.querySchema as Json,
+          ),
+        }),
         // Emit only changed views; Rust selects them using native runtime truth.
         ...(JSON.stringify(querySchema) !== JSON.stringify(rankedSchema) && {
           ranking: {

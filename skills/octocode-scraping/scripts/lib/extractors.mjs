@@ -1,15 +1,18 @@
 import { bytes, stripTags } from './text.mjs';
 import { classifyWorkflow as workflowHint } from './analyzers.mjs';
 
-function attrValue(tag, name) {
-  const m = String(tag || '').match(new RegExp(`${name}\\s*=\\s*(["'])(.*?)\\1`, 'i'));
-  return m ? m[2] : '';
-}
-
+// Attribute names match whole (`href` never reads `data-href`); values may be quoted or bare (`src=/s.js`).
 function attrs(tag) {
   const out = {};
-  for (const m of String(tag || '').matchAll(/([A-Za-z_:][-A-Za-z0-9_:.]*)\s*=\s*(["'])(.*?)\2/g)) out[m[1].toLowerCase()] = m[3];
+  for (const m of String(tag || '').matchAll(/([A-Za-z_:][-A-Za-z0-9_:.]*)\s*=\s*(?:(["'])(.*?)\2|([^\s"'>`=]+))/g)) {
+    const name = m[1].toLowerCase();
+    if (!(name in out)) out[name] = m[3] ?? m[4] ?? '';
+  }
   return out;
+}
+
+function attrValue(tag, name) {
+  return attrs(tag)[name.toLowerCase()] ?? '';
 }
 
 function cssString(value) {
@@ -54,7 +57,6 @@ export function extractLinksFromHtml(html, baseUrl, pageId) {
     const selector = selectorFor('a', linkAttrs, href ? `a[href="${cssString(href)}"]` : 'a');
     try { rows.push({ pageId, href: new URL(href, baseUrl).href, text, selector, source: 'html', workflowHint: hint }); }
     catch { rows.push({ pageId, href, text, selector, source: 'html', workflowHint: hint }); }
-    if (rows.length >= 1000) break;
   }
   return rows;
 }
@@ -66,7 +68,6 @@ export function extractLinksFromMarkdown(markdown, baseUrl, pageId) {
   while ((m = rx.exec(markdown || ''))) {
     try { rows.push({ pageId, href: new URL(m[2], baseUrl).href, text: m[1].trim().slice(0, 300), source: 'markdown', workflowHint: workflowHint(`${m[2]} ${m[1]}`) }); }
     catch { rows.push({ pageId, href: m[2], text: m[1].trim().slice(0, 300), source: 'markdown', workflowHint: workflowHint(`${m[2]} ${m[1]}`) }); }
-    if (rows.length >= 1000) break;
   }
   return rows;
 }
@@ -74,7 +75,8 @@ export function extractLinksFromMarkdown(markdown, baseUrl, pageId) {
 export function extractHeadings(markdown, pageId) {
   return (markdown || '')
     .split(/\r?\n/)
-    .map((line) => line.match(/^(#{1,6})\s+(.+?)\s*#*\s*$/))
+    // CommonMark: a closing # run needs a space before it, so "C#" keeps its hash.
+    .map((line) => line.match(/^(#{1,6})\s+(.+?)(?:\s+#+)?\s*$/))
     .filter(Boolean)
     .map((m) => ({ pageId, level: m[1].length, text: m[2].trim().slice(0, 500), source: 'markdown', workflowHint: workflowHint(m[2]) }));
 }
@@ -86,7 +88,7 @@ export function extractMetaFromHtml(html, pageId) {
     const key = a.name || a.property || a['http-equiv'] || a.charset || null;
     if (key) rows.push({ pageId, key, content: (a.content || a.charset || '').slice(0, 1000), source: 'html', workflowHint: workflowHint(`${key} ${a.content || ''}`) });
   }
-  return rows.slice(0, 200);
+  return rows;
 }
 
 export function extractCanonicalFromHtml(html, baseUrl, pageId) {
@@ -110,7 +112,7 @@ export function extractJsonLdFromHtml(html, pageId) {
     try { parsed = JSON.parse(m[1].trim()); } catch {}
     rows.push({ pageId, type: parsed?.['@type'] || null, json: parsed, textBytes: bytes(m[1]), source: 'html', workflowHint: workflowHint(JSON.stringify(parsed || {}).slice(0, 1000)) });
   }
-  return rows.slice(0, 100);
+  return rows;
 }
 
 export function extractFormsFromHtml(html, baseUrl, pageId) {
@@ -120,13 +122,13 @@ export function extractFormsFromHtml(html, baseUrl, pageId) {
   while ((m = rx.exec(html || ''))) {
     const a = attrs(m[1]);
     const body = m[2] || '';
-    const inputs = [...body.matchAll(/<(input|select|textarea)\b([^>]*)>/gi)].map((x) => { const inputAttrs = attrs(x[2]); return { tag: x[1].toLowerCase(), name: inputAttrs.name || null, type: inputAttrs.type || x[1].toLowerCase(), placeholder: inputAttrs.placeholder || null, selector: selectorFor(x[1], inputAttrs) }; }).slice(0, 50);
-    const labels = [...body.matchAll(/<label\b[^>]*>([\s\S]*?)<\/label>/gi)].map((x) => stripTags(x[1]).slice(0, 200)).filter(Boolean).slice(0, 50);
+    const inputs = [...body.matchAll(/<(input|select|textarea)\b([^>]*)>/gi)].map((x) => { const inputAttrs = attrs(x[2]); return { tag: x[1].toLowerCase(), name: inputAttrs.name || null, type: inputAttrs.type || x[1].toLowerCase(), placeholder: inputAttrs.placeholder || null, selector: selectorFor(x[1], inputAttrs) }; });
+    const labels = [...body.matchAll(/<label\b[^>]*>([\s\S]*?)<\/label>/gi)].map((x) => stripTags(x[1]).slice(0, 200)).filter(Boolean);
     let action = a.action || '';
     try { if (action) action = new URL(action, baseUrl).href; } catch {}
     rows.push({ pageId, kind: 'form', action: action || null, method: (a.method || 'get').toLowerCase(), selector: selectorFor('form', a), labels, inputs, inputTypes: inputs.map((i) => i.type).filter(Boolean), workflowHint: workflowHint(`${action} ${labels.join(' ')} ${inputs.map((i) => i.name || '').join(' ')}`), source: 'html' });
   }
-  return rows.slice(0, 100);
+  return rows;
 }
 
 export function extractButtonsFromHtml(html, baseUrl, pageId) {
@@ -146,21 +148,24 @@ export function extractButtonsFromHtml(html, baseUrl, pageId) {
     const linkAttrs = attrs(m[1]);
     rows.push({ pageId, kind: 'cta-link', text, selector: selectorFor('a', linkAttrs, hrefRaw ? `a[href="${cssString(hrefRaw)}"]` : 'a'), type: null, href, workflowHint: hint, source: 'html' });
   }
-  return rows.slice(0, 300);
+  return rows;
 }
 
 export function extractTablesFromHtml(html, pageId) {
   const rows = [];
-  const rx = /<table\b[^>]*>([\s\S]*?)<\/table>/gi;
+  const rx = /<table\b([^>]*)>([\s\S]*?)<\/table>/gi;
   let m;
   while ((m = rx.exec(html || ''))) {
-    const table = m[1];
+    const tableAttrs = attrs(m[1]);
+    const table = m[2];
     const headers = [...table.matchAll(/<th\b[^>]*>([\s\S]*?)<\/th>/gi)].map((x) => stripTags(x[1]).slice(0, 200)).filter(Boolean);
     const rowCount = [...table.matchAll(/<tr\b[^>]*>/gi)].length;
     const preview = stripTags(table).slice(0, 500);
-    rows.push({ pageId, kind: 'table', selector: `table:nth-of-type(${rows.length + 1})`, headers, rowCount, preview, workflowHint: workflowHint(`${headers.join(' ')} ${preview}`), source: 'html' });
+    // Only an attribute selector is reliable; position counts tables in document order, not CSS siblings.
+    const selector = tableAttrs.id || tableAttrs.name || tableAttrs['aria-label'] || tableAttrs['data-testid'] ? selectorFor('table', tableAttrs) : null;
+    rows.push({ pageId, kind: 'table', selector, position: rows.length + 1, headers, rowCount, preview, workflowHint: workflowHint(`${headers.join(' ')} ${preview}`), source: 'html' });
   }
-  return rows.slice(0, 100);
+  return rows;
 }
 
 // Purely structural attribute extraction — same class of operation as extractFormsFromHtml/
@@ -182,7 +187,7 @@ export function extractResourcesFromHtml(html, baseUrl, pageId) {
   }
   for (const m of String(html || '').matchAll(/<img\b([^>]*)>/gi)) push('image', attrValue(m[1], 'src'));
   for (const m of String(html || '').matchAll(/<(?:video|audio|source)\b([^>]*)>/gi)) push('media', attrValue(m[1], 'src'));
-  return rows.slice(0, 500);
+  return rows;
 }
 
 export function extractCodeBlocksFromMarkdown(markdown, pageId) {
@@ -190,7 +195,7 @@ export function extractCodeBlocksFromMarkdown(markdown, pageId) {
   const rx = /```([^\n`]*)\n([\s\S]*?)```/g;
   let m;
   while ((m = rx.exec(markdown || ''))) rows.push({ pageId, kind: 'code-block', language: (m[1] || '').trim() || null, textPreview: m[2].trim().slice(0, 1000), textBytes: bytes(m[2]), workflowHint: workflowHint(m[2]), source: 'markdown' });
-  return rows.slice(0, 300);
+  return rows;
 }
 
 export function redactedCookies(value, pageId) {

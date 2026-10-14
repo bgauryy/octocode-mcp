@@ -1,17 +1,25 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { REPORT_MAX_BYTES, ReportTracker } from '../src/subagents/report.js';
+import { REPORT_MAX_BYTES, ReportTracker, reportStatus } from '../src/subagents/report.js';
 import { capOutput } from '../src/shared/util.js';
 import { tmp } from './helpers.js';
+
+describe('the outcome word a report starts with', () => {
+  it.each([
+    ['done', 'done'], ['Done. Fixed the bug.', 'done'], ['**Partial**: two of three', 'partial'], ['  \n blocked - needs a decision', 'blocked'], ['FAILED: tests red', 'failed'], ['`done`', 'done'],
+  ])('reads %j as %s', (text, status) => expect(reportStatus(text)).toBe(status));
+
+  it.each([[undefined], [''], ['Finished the work'], ['Not done yet'], ['doneness'], ['done-ish'], ['The task is done'], ['1. done']])('treats %j as unknown, never a failure', (text) => expect(reportStatus(text)).toBeUndefined());
+});
 
 describe('incremental subagent reports', () => {
   it('marks output-limit answers incomplete and accepts a later successful retry', () => {
     const report = new ReportTracker(tmp());
     report.answer('The analysis is unfinished', 'length');
-    expect(report.result()).toEqual({ text: 'The analysis is unfinished', answered: false, error: 'Model output limit reached; the report is incomplete' });
+    expect(report.result()).toEqual({ text: 'The analysis is unfinished', body: 'The analysis is unfinished', answered: false, error: 'Model output limit reached; the report is incomplete' });
     report.answer('Verified complete report', 'stop');
-    expect(report.result()).toEqual({ text: 'Verified complete report', answered: true });
+    expect(report.result()).toEqual({ text: 'Verified complete report', body: 'Verified complete report', answered: true });
   });
 
   it.each([
@@ -43,6 +51,10 @@ describe('incremental subagent reports', () => {
     report.answer(partial, 'error', 'provider failed');
     expect(report.result()).toMatchObject({ answered: false, error: 'provider failed' });
     expect(report.result().text).toContain('Full partial report:');
+    // The pointer is its own field, so a caller that shortens the body keeps it.
+    const { text, body, pointer } = report.result();
+    expect(pointer).toMatch(/^Full partial report: .*partial-report\.md/);
+    expect(text).toBe(`${body}\n${pointer}`);
     expect(Buffer.byteLength(report.result().text)).toBeLessThan(10 * 1024);
     expect(fs.readFileSync(path.join(scratch, 'partial-report.md'), 'utf8')).toBe(partial);
   });

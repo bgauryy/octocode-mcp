@@ -1,86 +1,85 @@
 ---
 name: octocode-skills
-description: "Use when creating, finding, reviewing, simplifying, repairing, installing, syncing, or tuning Agent Skills; good for skill descriptions, activation triggers, SKILL.md structure, supporting files, and host compatibility."
+description: "Load this skill first whenever a SKILL.md or skill folder is created, changed, reviewed, installed, or synced, including turning a workflow into a skill, before asking which skill or host. Use when creating, finding, reviewing, rating, simplifying, repairing, installing, or syncing Agent Skills: SKILL.md lobbies, descriptions and activation triggers, references, scripts, folder structure, and installs for Claude, Cursor, Codex, and other hosts; good for making a skill easy for agents to discover and follow. Not for writing a skill's domain content or prompts (octocode-agentic-prompts) or measuring activation (octocode-eval-benchmark)."
 ---
 
 # Octocode Skills
 
-Build skills that an agent can discover, follow, and verify. This file owns the collection's authoring and review standard.
+The collection's standard for building skills an agent can discover, follow, and verify.
 
 ```mermaid
 flowchart LR
-  S[Understand the request] --> I[Inspect the skill and its files]
-  I --> R[Review structure, triggers, and docs]
-  R --> A{Requested outcome}
-  A -- review --> O[Report findings and readiness]
-  A -- create or improve --> E[Edit the owning files]
-  A -- install or sync --> D[Inspect destinations and apply]
-  E --> V[Verify changed behavior and links]
+  S[Request] --> I[Inspect skill files]
+  I --> R[Review structure, triggers, docs]
+  R --> A{Outcome}
+  A -- review --> O[Findings and verdict]
+  A -- create or improve --> E[Edit owning files]
+  A -- install or sync --> D[Check destinations, apply]
+  E --> V{Lint and links pass?}
   D --> V
-  V -- unresolved defect --> R
-  V -- checked --> O
+  V -- no --> R
+  V -- yes --> O
 ```
 
 ## What belongs in a skill
 
-These are responsibilities, not a fixed template. Use headings and ordering that help the reader; add fields only for a real consumer.
+Add a field or file only for a real consumer.
 
-| Component | Purpose and guidance |
+| Component | Rule |
 |---|---|
-| `name` | A stable, recognizable identifier matching the folder. Keep the established name unless the scope changes; avoid names tied to one example or implementation detail. |
-| `description` and triggers | Tell agents what the skill helps accomplish and when to use it. Cover related intents with natural phrases such as “Use when…” and “good for…”. Include useful domain terms and varied examples; exact wording is not an activation gate. Keep setup and execution rules in the body. |
-| Frontmatter | `name` and `description` are required by the format. Add compatibility, tool permissions, or other host fields only when needed; see [frontmatter](references/frontmatter.md). No invented mandatory metadata. |
-| `SKILL.md` lobby | Give the purpose, useful default workflow, decision points, boundaries, verification, and output route. Keep ordinary guidance here; avoid another file for a few bullets. |
-| Mermaid | Show the real flow, branches, retries, or handoffs when that makes the skill easier to follow. Label deciding edges. Keep file inventories in a route table instead of turning the diagram into a directory tree. A simple instruction needs no diagram. |
-| Supporting files | Keep substantial optional detail in references. Route every reference and runnable script from the lobby with when and why to use it. A linked catalog can group a large set; group internal libraries, schemas, tests, and assets by their consumer. Remove unused files and duplicate guidance. |
-| Scripts and hooks | Keep real task logic: fetching, rendering, transformation, or contract checks. Prefer instructions for environment lookup and editorial judgment. Remove thin aliases, fixed-phrase graders, and hooks with no demonstrated event to handle. |
-| `output.md` | Explain usable formats and meaningful content, with a single authored artifact when it can serve the task. Keep probe output and process metadata out of deliverables. Require exact fields only for a real downstream contract. Name where saved results go: `<workspace>/.octocode/<skill-name>/<YYYY-MM-DD>-<slug>.md` for reports and authored artifacts (a multi-file result uses a `<YYYY-MM-DD>-<slug>/` folder whose primary file, such as `RFC.md` or `README.md`, is the path agents read), `<workspace>/.octocode/tmp/` for runtime captures and scratch files. `<workspace>` is the project root, never inside an existing `.octocode/`; a user-named path wins, and edits to project source stay in place. End with a `## Saved report` section for both readers: when to save (a table, a diagram, more than about 40 lines or five findings, or a user request; every result when the user or project instructions ask to keep them; always, when the artifact is the deliverable, such as an RFC or an eval run), the shared header (`status`, `confidence`, `question`, `next`; a real downstream contract, because `--manifest` reads it), the skill's report sections or findings table, rendering through the skill's `scripts/render-report.mjs` with the `.html` path for the person and the `.md` path for agents, and `--manifest` for finding earlier reports. The renderer is a byte-identical copy of this skill's canonical one, kept in sync by `scripts/report-viewer-sync.mjs`. |
-| Related skills | Name nearby skills in the lobby and explain when and why to use each. Keep the current task's owner clear; handoffs are conditional, not a required chain of skills. |
-| `README.md` | A concise human entry point: purpose, when useful, where to start, output, and setup only if needed. Link to the lobby instead of copying its rules. |
-| Configuration | Only for a real dependency: name the variables, when required, and `<HOME>/.octocode/.env`. Check presence with `npx octocode config check KEY`; resolve via `npx octocode config get KEY` only when needed and capture secrets without displaying them. `npx octocode config home` finds the configured home. Use the existing CLI or process environment; do not bundle an env reader. |
+| `name` | Matches the folder; stable; changes only with scope; never tied to one example or implementation. |
+| `description` | "Load this skill first whenever <concrete triggers>, even if ... . Use when ...; good for ...; Not for ... (neighbor)". Assertive trigger first (hosts under-trigger); load before asking for missing details. Related intents in varied natural phrasing; setup and execution rules in the body. |
+| Frontmatter | [Spec](https://agentskills.io/specification): required `name` and `description` (format and length checked by `skill-review.mjs`); optional `license` (name or bundled file), `compatibility` (real environment needs, ≤500 characters), `metadata` (string map, consumer only), experimental `allowed-tools` (space-separated). Prefer portable fields; verify a host extension or `allowed-tools` in that host's docs or loader and state the requirement; never copy one host's metadata, hooks, or permissions into every skill; no invented mandatory metadata. Advanced YAML or publishing: a YAML-aware validator (`skill-review.mjs` checks only common scalars). |
+| `SKILL.md` lobby | Purpose, one Mermaid flow, sections named for situations or steps, Resources, Related skills, Output route. |
+| Mermaid | Real flow, branches, retries, or handoffs, with labeled decision edges; none for a simple instruction; file inventories go in route tables. |
+| References | Optional detail. First line "Load when <trigger>."; "Next:" last only if the flow continues; flow or decision table only for branching. |
+| Resources table | When, Read, Why; routes every reference and runnable script, grouped by consumer when large; no unused files or duplicate guidance. |
+| Scripts and hooks | Real task logic only (fetch, render, transform, contract checks); environment lookup and judgment stay in instructions; no thin aliases, fixed-phrase graders, or hooks without a demonstrated event. |
+| `output.md` | Usable formats; one authored artifact when it serves; exact fields only for a real downstream consumer. Save to `<workspace>/.octocode/<skill-name>/<YYYY-MM-DD>-<slug>.md` (or a same-named folder with a primary file), scratch and captures to its `tmp/`. Ends with `## Saved report` (header, when to save, render, `--manifest`), whose shared lines `skill-review.mjs` checks. |
+| Related skills | "Use `<skill>` when ..."; conditional, never a required chain. |
+| `README.md` | Purpose, where to start, output, setup; links the lobby, never copies its rules. |
+| Configuration | Real dependencies only: each variable, when required, `<HOME>/.octocode/.env`. Check: `npx octocode config check KEY`; `npx octocode config get KEY` only when needed, secrets undisplayed; home: `npx octocode config home`. No bundled env reader. |
 
-## Deliver content only
+## Write style
 
-Never add probe output or generated process metadata to user-facing responses or artifacts: no tool transcripts, run or session IDs, receipts, worker rosters, generation timestamps, author/status tables, or research diaries. Keep the requested content, useful rationale, source citations, substantive measurements, and material limitations. Source dates or versions belong only where they establish a fact's applicability.
-
-Tool protocols and internal execution records retain the fields their consumers need; do not copy that bookkeeping into the deliverable. Check output guides, templates, and renderers for automatic additions. Prefer one document with sections when the reader needs one coherent result; extra artifacts need an explicit purpose requested by the user.
+- "When <condition>, <action>"; "because" only when not obvious.
+- Link a rule's owner; never restate it.
+- Short bullets and decision tables over paragraphs.
+- No personas, all caps, consumer-less word or count limits, research URLs, dates, or run anecdotes; official spec links may stay.
+- Deliverables: requested content, rationale, citations, substantive measurements, limitations, in one sectioned document; no transcripts, bookkeeping, run or session IDs, receipts, worker rosters, timestamps, author or status tables, or diaries, including ones templates and renderers add; source dates or versions only where they set applicability.
 
 ## Review and refine
 
-1. Read the target lobby, inventory supporting files, and read the affected docs and executable logic. Discover external candidates only when the source is unresolved; compare actual task fit, evidence, and host support before popularity.
-2. Run `node <this-skill>/scripts/skill-review.mjs <skill-or-collection-dir>` for structural findings. Check that shipped files are reachable from the lobby and included in packaging; a local ignored file can hide a broken installation.
-3. If available, use `octocode-agentic-prompts` to review descriptions, triggers, ambiguity, conflicting rules, and agent behavior. Use `octocode-documentation` to review the lobby, README, output guide, and supporting docs for clarity, links, examples, and consistent terminology. Apply their guidance within this task; do not recursively restart a skill review.
-4. Check activation against realistic requests with varied phrasing, implicit intent, and near-misses that belong to neighboring skills. Fix the intent boundary rather than adding exact keyword exceptions. For measured activation claims, test unused cases through the target host and record misses and false triggers.
-5. Edit the smallest owning surface. Reuse the user's existing authorization. A review-only request returns findings; an improvement request includes fixes and verification. Preserve meaningful contracts, useful scripts, and concurrent work.
-6. Rerun structural checks and the focused checks for changed executable behavior. Verify commands against live help and preserve standalone installation. Report checks that could not run.
+1. Read the lobby, supporting files, and affected code; search externally only for an unresolved source ([discover](references/install.md#discover)).
+2. Run `node <this-skill>/scripts/skill-review.mjs <skill-or-collection-dir>`; confirm shipped files are reachable from the lobby and packaged (a local ignored file can hide a broken install).
+3. Test activation with realistic requests written before editing (varied phrasing, implicit intent, neighbor near-misses, no-skill requests); fix the intent boundary, not keywords. Quick: a small model routes them from names and descriptions (finds confusions; scores above the host). Measured: unused requests through the target host ([skill-activation](../octocode-eval-benchmark/references/skill-activation.md)); record misses and false triggers.
+4. Edit the smallest owning surface: findings for a review, fixes plus verification for an improvement; preserve meaningful contracts, useful scripts, concurrent work.
+5. Done when: the structural check and changed-script checks pass, commands match live help, standalone install works; report checks not run.
 
-Choose the owner by the requested result: “make this skill discoverable” belongs here; “make this instruction produce the right action” belongs to `octocode-agentic-prompts`; “explain this behavior clearly” belongs to `octocode-documentation`. A task can use all three without repeating their workflows. Treat these as intent examples, not keyword rules.
+## Rate
 
-## Rating
+- Criteria: activation fit, workflow clarity, resource usefulness, output usability, verification; per material weakness: evidence, repair, and its check.
+- Verdict: **Ready**, or **Needs work** when a finding blocks, with the repair (or blocking dependency) as `next`.
+- Numeric ratings need a defined evaluation; compare a refinement before and after on the same criteria.
+- Lint checks structure, editorial review meaning, activation tests selection; one proves nothing about the others.
 
-Assess **activation fit, workflow clarity, resource usefulness, output usability, and verification**. Give evidence for each material weakness and the next repair. A useful overall verdict is **ready**, **needs refinement**, or **blocked by a named dependency**; exact labels are optional. Numeric ratings are subjective unless backed by a defined evaluation. Compare the same criteria before and after when rating a refinement.
+## Resources
 
-Lint checks files and structure. Editorial review checks meaning. Host activation tests check actual selection. Keep these conclusions separate; passing one does not prove the others.
-
-## Optional routes
-
-| Need | Resource |
-|---|---|
-| Find external candidates or choose a discovery surface | [discovery](references/discovery.md) |
-| Check portable fields or a host-specific requirement | [frontmatter](references/frontmatter.md) |
-| Install, adapt, sync, or handle destination conflicts | [installation](references/install.md) |
-| Check local structure and links; `--self-test` checks the checker | [skill-review.mjs](scripts/skill-review.mjs) |
-| Link a stable local source into vendor folders; inspect the dry-run before applying | [skill-sync.mjs](scripts/skill-sync.mjs) |
-
-For failed discovery or fetching, inspect the source repository or another available surface and report missing evidence. For install failures, preserve successful destinations and report the failed path. Ask only for an unresolved choice or new authority.
+| When | Read | Why |
+|---|---|---|
+| Finding, installing, fetching, adapting, syncing | [install](references/install.md) | Surfaces, installers, destinations, fetch gate, recovery |
+| Structure and links (`--self-test` checks the checker) | [skill-review.mjs](scripts/skill-review.mjs) | Structural findings |
+| Symlinking a local skill to vendors (dry-run first) | [skill-sync.mjs](scripts/skill-sync.mjs) | Provider symlinks |
+| Final answer or saved report | [output.md](output.md) | Response shape, header |
+| Rendering or listing reports | [render-report.mjs](scripts/render-report.mjs) | Canonical renderer; [report-viewer-sync.mjs](scripts/report-viewer-sync.mjs) copies it to every skill |
 
 ## Related skills
 
-- `octocode-agentic-prompts`: Review descriptions and trigger boundaries, and repair instruction behavior.
-- `octocode-documentation`: Check every affected document for clarity, accuracy, and usable structure.
-- `octocode-research`: Verify repository evidence and external skill sources.
-- `octocode-eval-benchmark`: Measure activation or outcome improvements when a behavioral claim needs evidence.
+- Use `octocode-agentic-prompts` when descriptions, triggers, or rule conflicts need review, or an instruction produces the wrong action.
+- Use `octocode-documentation` when the lobby, README, output guide, or references need clarity, accuracy, or structure review.
+- Use `octocode-research` when repository evidence or external skill sources need verification.
+- Use `octocode-eval-benchmark` when a behavioral or activation claim needs measurement.
 
 ## Output
 
-Use [output.md](output.md) for review findings, change summaries, and installation results. Keep authored skills in their canonical folders. Save substantial reviews under `<workspace>/.octocode/octocode-skills/` unless the user names another path; [output.md](output.md) says when and how. Save and render substantial results as a local HTML page, and list earlier reports as JSON for agents, with [render-report.mjs](scripts/render-report.mjs); it is the canonical copy that [report-viewer-sync.mjs](scripts/report-viewer-sync.mjs) copies into every skill.
+Follow [output.md](output.md).

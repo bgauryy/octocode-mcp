@@ -4,13 +4,13 @@ mod output;
 
 pub(crate) use output::Output;
 
-use crate::providers::RequestBudget;
 use crate::providers::artifact::{
     ArtifactCache, ArtifactError, ArtifactProviderContext, ArtifactProviderPage, ReleaseTags,
     SystemArtifactHttp, execute_artifact, github_repository, github_slug,
 };
 use crate::tools::id::ToolId;
 use crate::tools::result::Continuation;
+use octocode_github::RequestBudget;
 use serde_json::{Value, json};
 use std::time::Instant;
 use tokio_util::sync::CancellationToken;
@@ -191,10 +191,12 @@ fn shape_rows(query: &ArtifactSearchQuery, artifacts: &mut [ArtifactItem]) {
     }
 }
 
-/// A discovery page's facts: whether more exist and the registry's total
-/// (a stats extra), and the next page, which carries the whole query. When
-/// the contract rejects the next page (past its page maximum), the rest is
-/// unreachable by paging: the returned reason states that terminal limit.
+/// A discovery page's facts, from the shared page facts: the page, its size,
+/// whether more exist and the registry's total when it counts one (a
+/// registry total is no page count: deep pages can be unreachable), and the
+/// next page, which carries the whole query. When the contract rejects the
+/// next page (past its page maximum), the rest is unreachable by paging: the
+/// returned reason states that terminal limit.
 fn discovery_page(
     query: &ArtifactSearchQuery,
     data: &mut Value,
@@ -202,10 +204,16 @@ fn discovery_page(
     total: Option<u64>,
 ) -> Option<String> {
     let current = query.page();
-    data["pagination"] = json!({"hasMore": more, "totalItems": total});
-    if current > 1 {
-        data["pagination"]["currentPage"] = json!(current);
-    }
+    let facts = crate::response::pages::PageFacts::open(
+        usize::try_from(current).unwrap_or(usize::MAX),
+        Some(query.page_size()),
+        more,
+    );
+    let facts = match total.and_then(|total| usize::try_from(total).ok()) {
+        Some(total) => facts.with_items(total),
+        None => facts,
+    };
+    data["pagination"] = facts.to_value();
     if !more {
         return None;
     }
@@ -446,6 +454,43 @@ mod anchor_tests {
             (&json!("nov"), &json!("json-jwt"))
         );
         assert!(row.get("homepage").is_none(), "{data}");
+    }
+
+    /// A registry that counts no total (rubygems) states none: the page is
+    /// built from the shared page facts, so `totalItems` is absent rather
+    /// than `null`, and the row passes the output contract.
+    #[test]
+    fn a_discovery_without_a_registry_total_omits_total_items() {
+        let query = typed(&json!({"ecosystem":"rubygems","keywords":["jwt"],"pageSize":1}));
+        let gem = ArtifactItem::new(
+            ArtifactType::Rubygems,
+            "jwt".into(),
+            "https://rubygems.org/gems/jwt".into(),
+        );
+        let data = respond(
+            &query,
+            ArtifactProviderPage {
+                artifacts: vec![gem],
+                next_state: Some(crate::providers::artifact::ArtifactProviderState {
+                    offset: Some(1),
+                    ..Default::default()
+                }),
+                total: None,
+                terminal_limit: None,
+                registry: None,
+            },
+        )
+        .expect("rows");
+        assert_eq!(
+            data["pagination"],
+            json!({"currentPage": 1, "pageSize": 1, "hasMore": true}),
+            "{data}"
+        );
+        crate::contracts::validate_output(
+            ToolId::ArtifactSearch.as_str(),
+            &json!({"results": [{"index": 0, "data": data}]}),
+        )
+        .expect("contract-valid discovery page");
     }
 
     /// An empty discovery states no advice: its one lead re-runs the
@@ -889,10 +934,10 @@ mod npm_auth_tests {
         );
     }
 
-    /// A discovery page states only what the rows do not: whether more
-    /// exist and the registry's total.
+    /// A discovery page states the shared page facts: the page, its size,
+    /// the registry's total (no page count) and whether more exist.
     #[tokio::test]
-    async fn discovery_pagination_states_more_and_the_total_only() {
+    async fn discovery_pagination_states_the_shared_page_facts() {
         let server = wiremock::MockServer::builder().start().await;
         wiremock::Mock::given(wiremock::matchers::method("GET"))
             .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(json!({
@@ -914,7 +959,7 @@ mod npm_auth_tests {
             .expect("discovery succeeds");
         assert_eq!(
             data["pagination"],
-            json!({"hasMore": true, "totalItems": 9}),
+            json!({"currentPage": 1, "pageSize": 2, "totalItems": 9, "hasMore": true}),
             "{data}"
         );
         assert_eq!(

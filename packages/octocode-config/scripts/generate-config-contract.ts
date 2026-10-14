@@ -15,7 +15,7 @@ const documentationPath = fileURLToPath(
 
 type JsonObject = Record<string, unknown>;
 type EnvBinding = {
-  priority: number;
+  name: string;
   dotenv?: 'all' | 'home' | 'never';
   normalize?: 'trim' | 'lower';
   invalid?: 'skip' | 'default';
@@ -25,7 +25,7 @@ type Field = {
   type: 'boolean' | 'number' | 'string' | 'url' | 'path' | 'stringArray' | 'enum' | 'schemaVersion';
   description: string;
   notes?: string;
-  env?: Record<string, EnvBinding>;
+  env?: EnvBinding;
   default?: unknown;
   credential?: boolean;
   displayDefault?: string;
@@ -326,9 +326,7 @@ function renderTsValue(
 
 function orderedEnvironment(fields: FlatField[], contract: Contract) {
   const fieldBindings = fields.flatMap(field =>
-    Object.entries(field.env ?? {})
-      .sort(([, left], [, right]) => left.priority - right.priority)
-      .map(([name, binding]) => ({ name, field: field.path, ...binding }))
+    field.env ? [{ field: field.path, ...field.env }] : []
   );
   const protectedNames: string[] = [];
   const homeTrusted: string[] = [];
@@ -394,9 +392,7 @@ function render(contract: Contract): string {
     credential: field.credential ?? false,
     description: field.description,
     notes: field.notes,
-    env: Object.entries(field.env ?? {})
-      .sort(([, left], [, right]) => left.priority - right.priority)
-      .map(([name, binding]) => ({ name, ...binding })),
+    env: field.env,
     defaultValue: ownDefault(field, contract.config.schemaVersion),
     minimum: field.minimum,
     maximum: field.minimum !== undefined ? field.minimum + field.span! : undefined,
@@ -413,7 +409,6 @@ ${renderInterfaces(contract)}
 export type ConfigFieldKind = 'boolean' | 'number' | 'string' | 'url' | 'path' | 'stringArray' | 'enum' | 'schemaVersion';
 export interface ConfigEnvBinding {
   name: string;
-  priority: number;
   dotenv?: 'all' | 'home' | 'never';
   normalize?: 'trim' | 'lower';
   invalid?: 'skip' | 'default';
@@ -429,7 +424,8 @@ export interface ConfigFieldSpec {
   credential: boolean;
   description: string;
   notes?: string;
-  env: readonly ConfigEnvBinding[];
+  /** The one variable that sets this field, if any. */
+  env?: ConfigEnvBinding;
   defaultValue: unknown;
   minimum?: number;
   maximum?: number;
@@ -497,19 +493,13 @@ function renderDocumentation(contract: Contract): string {
     setPath(example, field.path, structuredClone(value));
   }
   const rows = fields.map(field => {
-    const environment = Object.entries(field.env ?? {})
-      .sort(([, left], [, right]) => left.priority - right.priority)
-      .map(([name]) => `\`${name}\``)
-      .join('<br>') || '—';
+    const environment = field.env ? `\`${field.env.name}\`` : '—';
     const filePath = field.file ? `\`${field.path}\`` : '—';
-    const protection = Object.entries(field.env ?? {})
-      .map(([name, binding]) => binding.dotenv === 'never'
-        ? `${name}: shell/MCP only`
-        : binding.dotenv === 'home'
-          ? `${name}: shell or trusted home .env`
-          : '')
-      .filter(Boolean)
-      .join('; ');
+    const protection = field.env?.dotenv === 'never'
+      ? `${field.env.name}: shell/MCP only`
+      : field.env?.dotenv === 'home'
+        ? `${field.env.name}: shell or trusted home .env`
+        : '';
     const notes = [field.description, field.notes, protection, field.credential ? 'Credential-only; excluded from ResolvedConfig.' : '']
       .filter(Boolean)
       .join(' ')
@@ -542,7 +532,7 @@ ${JSON.stringify(example, null, 2)}
 
 ## Settings
 
-Environment values take precedence over \`.octocoderc\`. Aliases are listed in priority order.
+Environment values take precedence over \`.octocoderc\`. Each setting has at most one environment variable.
 
 | \`.octocoderc\` path | Environment | Default | Type / constraint | Description |
 |---|---|---|---|---|
@@ -550,7 +540,7 @@ ${rows.join('\n')}
 
 ## GitHub token priority
 
-Tokens first choose the highest-priority source: process environment → workspace \`.octocode/.env\` → global Octocode \`.env\`. CLI and MCP load both files. Missing or blank file values fall back; credential alias priority below breaks ties only within the winning source. A workspace alias overrides a global canonical key. Explicitly blank process \`OCTOCODE_CLASSIFICATION_API\` disables classification. See [configuration precedence](../CONFIGURATION.md#how-settings-override-each-other).
+Tokens first choose the highest-priority source: process environment → workspace \`.octocode/.env\` → global Octocode \`.env\`. CLI and MCP load both files. Missing or blank file values fall back; the token priority below breaks ties only within the winning source, so a workspace token overrides a global one of higher priority. Explicitly blank process \`OCTOCODE_CLASSIFICATION_API\` disables classification. See [configuration precedence](../CONFIGURATION.md#how-settings-override-each-other).
 
 | Environment variable | Priority | Description |
 |---|---:|---|

@@ -2,17 +2,20 @@ import type { AgentToolResult, ToolAnnotations as PiToolAnnotations, ToolDefinit
 import { toLlmContent, type CallToolResult, type Tool } from '@earendil-works/pi-mcp';
 import type { TSchema } from 'typebox';
 import { clip, queryTarget, resultBlock, resultText, timedTool, timingOf, toolHeader } from '../shared/render.js';
-import { sanitizeTerminalText } from '../shared/sanitize.js';
+import { visibleControls } from '../shared/sanitize.js';
 import { boundImagePart, capOutputToFile } from '../shared/spill.js';
 import { isRecord } from '../shared/util.js';
+import { imageLimits, type ImageLimits } from '../shared/vision.js';
 
 /** What the extension registers a server's tool as. */
-export interface ToolBinding {
+interface ToolBinding {
   /** Pi's tool name prefix for the server, `mcp__octocode__`. */
   prefix: string;
   /** The tools' namespace: the server's name and its instructions. */
   namespace: NonNullable<ToolDefinition['namespace']>;
   call(name: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<CallToolResult>;
+  /** The text the turn's results have put in the context so far; every result of one assistant message shares it. */
+  budget?: TurnBudget;
 }
 
 /** Hints the server gave about the tool, as Pi's annotations (booleans only: nothing else is a hint). */
@@ -26,25 +29,68 @@ function annotations(tool: Tool): PiToolAnnotations | undefined {
   return Object.keys(picked).length > 0 ? picked : undefined;
 }
 
-/** Text one result part may put in the context whole: about 50,000 tokens. */
-const TEXT_MAX_BYTES = 200_000;
-const TEXT_MAX_LINES = 10_000;
+/**
+ * The most bytes of one MCP text part that stay in the context whole: 60,000, the 50,000-character page Octocode's
+ * server cuts its own output to (`responseLength`, with `next.*` continuations) plus its header and headroom for
+ * non-ASCII text. Claude Code persists any result over 50,000 characters. Of 345 MCP text parts in this repository's
+ * Pi sessions (p50 5.7 KB, p99 97 KB, max 101 KB) the server's own pages were at most 50,052 bytes, so a cap of exactly
+ * 50,000 would spill the server's largest normal page; only the 9 parts over 60,000 (older servers added a JSON text
+ * part of up to 101 KB) spill. A longer part is saved whole to the session's `output/` folder and replaced by its
+ * head and tail (the tail keeps `next`) and the file's path, so the cap loses no evidence.
+ */
+export const TEXT_MAX_BYTES = 60_000;
+/** Lines for the same part: a 50,000-character page measured at most 1,155 lines, so this never decides before the bytes do. */
+const TEXT_MAX_LINES = 3_000;
+/** Characters of tool results one assistant message may put in the context whole (Claude Code's per-message budget). */
+export const TURN_MAX_CHARS = 200_000;
+/** The preview a result keeps once its turn is over budget: the head and tail of a result about 1,000 tokens long. */
+const OVER_BUDGET_BYTES = 4_000;
+
+/**
+ * What the MCP results of one assistant message have put in the context. Pi runs a turn's parallel tool calls
+ * together, so each gets whole text only while the turn is under `TURN_MAX_CHARS`: a result that would pass it is cut
+ * to what is left (at least `OVER_BUDGET_BYTES`) and the later ones to that preview. Every cut result is saved
+ * whole to a file the preview names, so the budget bounds the context, not the evidence. `reset` at `turn_start`.
+ */
+export class TurnBudget {
+  private used = 0;
+
+  /** Bytes the next text part may keep: `TEXT_MAX_BYTES` while the turn is far from its budget, then what is left. */
+  limit(): number {
+    return Math.min(TEXT_MAX_BYTES, Math.max(TURN_MAX_CHARS - this.used, OVER_BUDGET_BYTES));
+  }
+
+  /** Counts `chars` characters the model now reads. */
+  charge(chars: number): void {
+    this.used += chars;
+  }
+
+  reset(): void {
+    this.used = 0;
+  }
+}
 
 /**
  * A tool result for Pi. Text and images pass through, embedded text resources become text and other blocks a short
  * placeholder (`toLlmContent`). A server bounds and pages its own output and a cut can hide the continuation inside
- * it, so text is left whole up to `TEXT_MAX_BYTES`; a longer part is saved whole to the session's `output/` folder and
- * replaced by its head and tail plus the file's path. An oversized image is saved and resized by Pi; the model sees
- * the fitted image and its original path (only the path if resizing fails). Repository, GitHub and registry text is untrusted: terminal control
- * sequences, bidi overrides and invisible characters (Unicode tags among them) are stripped from every string before
- * the model reads it or the terminal draws it. `structuredContent` is the server's, kept for tools that declare an
+ * it, so text is left whole up to `TEXT_MAX_BYTES` (less once the turn's `budget` is nearly used); a longer part is
+ * saved whole to the session's `output/` folder and replaced by its head and tail plus the file's path. An oversized
+ * image is saved and resized by Pi to `limits` (the active model's image limit, `imageLimits(ctx.model)`); the model sees the fitted image, its original path and the
+ * dimension mapping (only the path if resizing fails). Repository, GitHub and registry text is untrusted: terminal control
+ * characters, bidi overrides and invisible characters (Unicode tags among them) are shown as visible escapes
+ * (`\u{200d}`, `\r`) in every string before the model reads it or the terminal draws it, so nothing the server
+ * returned disappears and nothing raw reaches the terminal. `structuredContent` is the server's, kept for tools that declare an
  * `outputSchema`. An error result is the server's text as an error.
  */
-export async function toToolResult(tool: string, result: CallToolResult, declaresOutput: boolean): Promise<AgentToolResult<{ tool: string }>> {
+export async function toToolResult(tool: string, result: CallToolResult, declaresOutput: boolean, limits?: ImageLimits, budget?: TurnBudget): Promise<AgentToolResult<{ tool: string }>> {
   const content: AgentToolResult['content'] = [];
   for (const part of sanitizeJson(toLlmContent(result)) as ReturnType<typeof toLlmContent>) {
-    if (part.type === 'text') content.push({ ...part, text: capOutputToFile(part.text, { label: `mcp ${tool}`, maxBytes: TEXT_MAX_BYTES, maxLines: TEXT_MAX_LINES }) });
-    else if (part.type === 'image') content.push(...await boundImagePart(part, `mcp ${tool} image`));
+    if (part.type === 'text') {
+      const text = capOutputToFile(part.text, { label: `mcp ${tool}`, maxBytes: budget?.limit() ?? TEXT_MAX_BYTES, maxLines: TEXT_MAX_LINES });
+      budget?.charge(text.length);
+      content.push({ ...part, text });
+    }
+    else if (part.type === 'image') content.push(...await boundImagePart(part, `mcp ${tool} image`, limits ? { limits } : {}));
     else content.push(part);
   }
   if (result.isError && content.length === 0) content.push({ type: 'text', text: `${tool} failed without a message.` });
@@ -56,9 +102,9 @@ export async function toToolResult(tool: string, result: CallToolResult, declare
   };
 }
 
-/** Every string in a JSON value, sanitized; the same object when nothing changed. */
+/** Every string in a JSON value with its control and invisible characters made visible; the same object when nothing changed. */
 export function sanitizeJson(value: unknown): unknown {
-  if (typeof value === 'string') return sanitizeTerminalText(value);
+  if (typeof value === 'string') return visibleControls(value);
   if (Array.isArray(value)) {
     const next = value.map(sanitizeJson);
     return next.some((item, i) => item !== value[i]) ? next : value;
@@ -109,8 +155,8 @@ export function octocodeToolDefinition(tool: Tool, binding: ToolBinding): ToolDe
       const failed = context.isError === true;
       return resultBlock(theme, context, { summary: failed ? text : '', body: failed ? text.split('\n').slice(1).join('\n') : text, ...timingOf(result.details) });
     },
-    async execute(_toolCallId, params, signal) {
-      return toToolResult(tool.name, await binding.call(tool.name, isRecord(params) ? params : {}, signal), declaresOutput);
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+      return toToolResult(tool.name, await binding.call(tool.name, isRecord(params) ? params : {}, signal), declaresOutput, imageLimits(ctx.model), binding.budget);
     },
   });
 }

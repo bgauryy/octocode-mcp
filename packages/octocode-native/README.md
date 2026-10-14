@@ -38,7 +38,9 @@ delegates both to it.
 brew install bgauryy/octocode/octocode
 ```
 
-The formula installs the platform binary; Linux uses the glibc builds (glibc 2.30 or newer).
+The formula installs the platform binary; Linux uses the glibc builds (glibc 2.30 or newer). Homebrew on Alpine or other musl systems has no formula build; use the npm package there.
+
+If an npm global `octocode` is installed, run `npm rm -g octocode` first: otherwise it shadows the brew binary on `PATH` and brew prints a shadow warning.
 
 ### Via npm (recommended — pre-built binary, no compilation)
 

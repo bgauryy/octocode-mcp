@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { setCurrentSession } from '../src/shared/home.js';
 import { IMAGE_MAX_CHARS, boundImagePart, capOutputToFile, saveFullOutput, saveImageFile, spillLabel } from '../src/shared/spill.js';
-import { tmp } from './helpers.js';
+import { noisyPng, pixelSize, tmp } from './helpers.js';
 
 let home: string;
 let saved: string | undefined;
@@ -57,6 +57,8 @@ describe('capOutputToFile', () => {
     const out = capOutputToFile(text, { label: 'one' });
     expect(out.startsWith('START')).toBe(true);
     expect(out).toContain('END\n\n[Output trimmed');
+    // The head and the tail are parts of the one line: the note never says it shows more lines than there are.
+    expect(out).toMatch(/showing 1 of 1 lines \(/);
     expect(Buffer.byteLength(out)).toBeLessThan(52_000);
     expect(fs.readFileSync(savedPath(out)!, 'utf8')).toBe(text);
   });
@@ -100,6 +102,35 @@ describe('image bounds', () => {
     expect(file).toBeDefined();
     expect(fs.readFileSync(file!)).toEqual(original);
     expect(image!.mimeType).toBe('image/jpeg');
+  }, 20_000);
+
+  it('resizes an oversized image to the limits it is given and says how coordinates map back', async () => {
+    const original = noisyPng(512);
+    const data = original.toString('base64');
+    const parts = await boundImagePart({ type: 'image', data, mimeType: 'image/png' }, 'limited', { limits: { maxWidth: 200, maxHeight: 100 } });
+    const image = parts.find((part) => part.type === 'image')!;
+    expect(pixelSize(image.data)).toEqual({ width: 100, height: 100 });
+    const note = parts.find((part) => part.type === 'text')!.text;
+    expect(note).toContain('original 512x512, displayed at 100x100');
+    expect(note).toContain('Multiply coordinates by 5.12');
+    expect(fs.readFileSync(/Original saved to (.+?)\.(?: |\])/.exec(note)![1]!)).toEqual(original);
+  }, 20_000);
+
+  it('uses an original the caller saved instead of saving it again, and a model byte limit below the default budget', async () => {
+    const original = noisyPng(128);
+    const data = original.toString('base64');
+    expect(data.length).toBeLessThan(IMAGE_MAX_CHARS);
+    expect(data.length).toBeGreaterThan(20_000);
+    const kept = { type: 'image' as const, data, mimeType: 'image/png' };
+    const outputDir = path.join(home, 'agent', 'pi', 'sessions', `_pid-${process.pid}`, 'output');
+    expect((await boundImagePart(kept, 'fits'))[0]).toBe(kept);
+    const outputFiles = () => fs.existsSync(outputDir) ? fs.readdirSync(outputDir).length : 0;
+    const before = outputFiles();
+    const parts = await boundImagePart(kept, 'fits', { limits: { maxWidth: 1568, maxHeight: 1568, maxBytes: 20_000 }, savedAs: '/tmp/already-saved.png' });
+    const image = parts.find((part) => part.type === 'image')!;
+    expect(image.data.length).toBeLessThanOrEqual(20_000);
+    expect(parts.find((part) => part.type === 'text')!.text).toContain('Original saved to /tmp/already-saved.png.');
+    expect(outputFiles()).toBe(before);
   }, 20_000);
 
   it('saves an image owner-only under the session output folder with an extension for its type', () => {

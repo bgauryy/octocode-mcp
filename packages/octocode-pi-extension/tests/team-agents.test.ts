@@ -73,18 +73,19 @@ describe('agent identity on the team', () => {
     expect((resolveTarget(members, 'main-aaaaaa', 'salty-squid') as Member[]).map((m) => m.id)).toEqual(['salty-squid']);
   });
 
-  it('refuses a coordinate join whose note is not a crisp goal', async () => {
+  it('refuses a blank coordinate join goal and accepts a long one whole', async () => {
     const fake = fakePi();
     const team = new Team(fake.pi, { OCTOCODE_AGENT_DB: path.join(tmp(), 'team.sqlite') });
-    registerCollab(fake.pi, team);
+    registerCollab(fake.pi, team, { stopAgent: () => undefined });
     const ctx = fakeCtx({ cwd: dir() });
     await fake.emit('session_start', {}, ctx);
     const coordinate = fake.tools.get('coordinate');
-    await expect(coordinate.execute('c', { action: 'join', note: 'refactor the whole auth module today please' }, undefined, undefined, ctx)).rejects.toThrow(/at most 5 words/);
+    await expect(coordinate.execute('c', { action: 'join', goal: '   ' }, undefined, undefined, ctx)).rejects.toThrow(/goal is required/);
     expect(team.id).toBeUndefined();
-    await coordinate.execute('c', { action: 'join', note: 'refactor auth module' }, undefined, undefined, ctx);
-    expect(team.members()[0]).toMatchObject({ role: 'main', goal: 'refactor auth module' });
-    expect(coordinate.parameters.properties.note.description).toMatch(/goal.*5 words/);
+    await coordinate.execute('c', { action: 'join', goal: 'refactor the whole auth module today please' }, undefined, undefined, ctx);
+    expect(team.members()[0]).toMatchObject({ role: 'main', goal: 'refactor the whole auth module today please' });
+    expect(coordinate.parameters.properties.goal.description).toMatch(/goal.*48 characters fit/);
+    expect(coordinate.parameters.properties.goal).not.toHaveProperty('maxLength');
     await fake.emit('session_shutdown', {}, ctx);
   });
 });
@@ -126,13 +127,13 @@ describe('what the team shows about an agent', () => {
 
   it('names the sender\'s role and goal in the header of a message', () => {
     const base = { id: 12, to: 'salty-squid', text: 'found it', at: 0, replyRequired: true };
-    const peer = messageText({ ...base, from: 'inky-kraken', sender: { role: 'reviewer', goal: 'audit auth token refresh' } }, undefined);
+    const peer = messageText({ ...base, from: 'inky-kraken', sender: { role: 'reviewer', goal: 'audit auth token refresh' } });
     expect(peer).toContain('Message #12 from agent inky-kraken (reviewer: audit auth token refresh) at ');
-    expect(messageText({ ...base, from: 'inky-kraken', sender: { role: 'reviewer', goal: 'audit auth token refresh' } }, 'inky-kraken')).toContain('from your parent agent inky-kraken (reviewer: audit auth token refresh) at ');
-    expect(messageText({ ...base, from: 'inky-kraken', sender: { role: 'reviewer' } }, undefined)).toContain('from agent inky-kraken (reviewer) at ');
+    expect(messageText({ ...base, from: 'inky-kraken', sender: { role: 'reviewer', goal: 'audit auth token refresh' } }, { parentId: 'inky-kraken' })).toContain('from your parent agent inky-kraken (reviewer: audit auth token refresh) at ');
+    expect(messageText({ ...base, from: 'inky-kraken', sender: { role: 'reviewer' } })).toContain('from agent inky-kraken (reviewer) at ');
     // The sender already left: only its name remains.
-    expect(messageText({ ...base, from: 'inky-kraken' }, undefined)).toContain('from agent inky-kraken at ');
-    expect(messageText({ ...base, from: 'user' }, undefined)).toContain('from the user at ');
+    expect(messageText({ ...base, from: 'inky-kraken' })).toContain('from agent inky-kraken at ');
+    expect(messageText({ ...base, from: 'user' }, { fromUser: true })).toContain('from the user at ');
   });
 
   it('reads the sender\'s role and goal from the team database when a message is delivered', () => {

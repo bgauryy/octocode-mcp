@@ -37,6 +37,11 @@ pub enum ErrorKind {
     NotFound,
     /// The path the operation starts from cannot be read.
     PermissionDenied,
+    /// A caller-supplied glob does not compile (see `search::glob`).
+    InvalidGlob,
+    /// The caller's stop function ended the operation (see
+    /// `search::walk::Stop`).
+    Cancelled,
 }
 
 /// A JSON-RPC `ResponseError` (`{code, message, data?}`) returned by a peer.
@@ -212,6 +217,11 @@ impl Error {
             reason: reason.into(),
             kind: ErrorKind::ResourceExhausted,
         }
+    }
+
+    /// The walk was stopped by its caller.
+    pub fn cancelled() -> Self {
+        Self::with_kind(ErrorKind::Cancelled, "cancelled")
     }
 
     pub fn kind(&self) -> &ErrorKind {

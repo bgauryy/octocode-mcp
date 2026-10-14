@@ -1,5 +1,6 @@
 import { McpClient, McpConnectionClosedError, StdioTransport, type CallToolResult, type Tool } from '@earendil-works/pi-mcp';
-import { errorMessage } from '../shared/util.js';
+import { sanitizeTerminalText } from '../shared/sanitize.js';
+import { cutText, errorMessage } from '../shared/util.js';
 
 /** How the server process starts. */
 export interface Launch {
@@ -22,7 +23,7 @@ export interface ServerStatus {
   cwd?: string;
 }
 
-export interface ServerOptions {
+interface ServerOptions {
   launch: (cwd: string) => Launch;
   /** Client name and version sent in `initialize`. */
   clientInfo: { name: string; version: string };
@@ -245,7 +246,8 @@ export class OctocodeServer {
   }
 
   private describe(message: string, transport: StdioTransport): string {
-    const tail = transport.stderr.trim().slice(-STDERR_TAIL_CHARS);
+    // The server's stderr is untrusted text that reaches the terminal and the model: no escape sequences.
+    const tail = cutText(sanitizeTerminalText(transport.stderr).trim(), STDERR_TAIL_CHARS, { chars: true, tail: true });
     return tail && !message.includes(tail) ? `${message}\n${tail}` : message;
   }
 }

@@ -1209,3 +1209,29 @@ fn history_b_match_string_rows_count_the_hits_they_show() {
     assert!(first < 3, "the first window is cut: {first}");
     assert_eq!(total, 3);
 }
+
+/// A page whose patches all fit lists them alone, even when more file
+/// pages follow: a summary would only repeat `files[]`.
+#[test]
+fn a_page_whose_patches_fit_has_no_summary_beside_later_pages() {
+    let files = vec![
+        json!({"filename":"src/a.rs","status":"modified","additions":1,"deletions":1,"sha":"1",
+               "patch":"@@ -1 +1 @@\n-x\n+y"}),
+        json!({"filename":"src/b.rs","status":"modified","additions":1,"deletions":1,"sha":"2",
+               "patch":"@@ -1 +1 @@\n-p\n+q"}),
+    ];
+    let mut row = json!({});
+    let mut pagination = Map::new();
+    shape_pr_files(
+        &mut row,
+        &mut pagination,
+        files,
+        WindowState::COMPLETE,
+        &patch_request(json!({"pageSize":1})),
+        "all",
+        None,
+    );
+    assert_eq!(pagination["files"]["hasMore"], true, "{pagination:?}");
+    assert!(row.get("fileSummary").is_none(), "{row}");
+    assert_eq!(row["files"][0]["path"], "src/a.rs", "{row}");
+}

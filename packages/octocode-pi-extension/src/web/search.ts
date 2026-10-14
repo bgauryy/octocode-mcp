@@ -1,5 +1,6 @@
 import { errorMessage, isRecord } from '../shared/util.js';
-import { USER_AGENT, combineSignals, language } from './fetch.js';
+import { USER_AGENT, combineSignals, language, readCapped } from './fetch.js';
+import { publicFetch, type PublicFetchInit } from './guard.js';
 import { decodeEntities, htmlToText } from './html.js';
 
 interface SearchHit {
@@ -87,6 +88,12 @@ function unwrapDuckDuckGo(href: string): string | undefined {
   }
 }
 
+/** An API answer as JSON; a body cut at the size cap does not parse, so it is reported as too large. */
+function parseJson({ text, truncated }: { text: string; truncated: boolean }, url: string): unknown {
+  if (truncated) throw new Error(`the answer from ${new URL(url).host} is over the size limit`);
+  return JSON.parse(text);
+}
+
 interface SearchOutcome {
   provider: string;
   hits: SearchHit[];
@@ -101,16 +108,20 @@ interface SearchOutcome {
  * every provider failed.
  */
 export async function search(query: string, max: number, env: NodeJS.ProcessEnv, signal?: AbortSignal): Promise<SearchOutcome> {
+  // Every provider call goes through the guarded request: public addresses only, pinned connection, no redirect for a
+  // keyed API (it carries a secret), and a body read to at most the shared cap.
+  const send = (url: string, init: PublicFetchInit) => publicFetch(url, { ...init, signal: combineSignals(signal) });
+  const read = async (response: Response): Promise<{ text: string; truncated: boolean }> => readCapped(response, response.headers.get('content-type') ?? '');
   const post = async (url: string, headers: Record<string, string>, body: unknown) => {
-    const response = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body), signal: combineSignals(signal) });
+    const response = await send(url, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body), redirect: 'error' });
     if (!response.ok) throw new Error(`HTTP ${response.status} from ${new URL(url).host}`);
-    return (await response.json()) as Record<string, unknown>;
+    return parseJson(await read(response), url) as Record<string, unknown>;
   };
-  const page = async (url: string, headers: Record<string, string> = {}) => {
-    const response = await fetch(url, { headers: { 'user-agent': USER_AGENT, 'accept-language': language(env), ...headers }, signal: combineSignals(signal) });
+  const page = async (url: string, headers: Record<string, string> = {}, redirect: 'follow' | 'error' = 'follow') => {
+    const response = await send(url, { headers: { 'user-agent': USER_AGENT, 'accept-language': language(), ...headers }, redirect });
     // Search pages answer rate limits with a non-200 challenge page; report it instead of "No results".
     if (response.status !== 200) throw new Error(`HTTP ${response.status} from ${new URL(url).host}${response.status === 202 || response.status === 429 ? ' (rate limited)' : ''}`);
-    return response.text();
+    return read(response);
   };
   const q = encodeURIComponent(query);
   // API results are untrusted like scraped ones: only http(s) links become hits.
@@ -127,7 +138,7 @@ export async function search(query: string, max: number, env: NodeJS.ProcessEnv,
       key: 'BRAVE_API_KEY',
       name: 'brave',
       run: async (key: string) => {
-        const data = JSON.parse(await page(`https://api.search.brave.com/res/v1/web/search?q=${q}&count=${max}`, { accept: 'application/json', 'x-subscription-token': key })) as Record<string, unknown>;
+        const data = parseJson(await page(`https://api.search.brave.com/res/v1/web/search?q=${q}&count=${max}`, { accept: 'application/json', 'x-subscription-token': key }, 'error'), 'https://api.search.brave.com') as Record<string, unknown>;
         return hits(isRecord(data['web']) ? data['web']['results'] : undefined, 'url', 'description', htmlToText);
       },
     },
@@ -136,9 +147,9 @@ export async function search(query: string, max: number, env: NodeJS.ProcessEnv,
     return value ? [{ name, run: () => run(value) }] : [];
   });
   const keyless = [
-    { name: 'duckduckgo', run: async () => parseDuckDuckGo(await page(`https://html.duckduckgo.com/html/?q=${q}`), max) },
-    { name: 'bing', run: async () => parseBing(await page(`https://www.bing.com/search?q=${q}&count=${max}`), max) },
-    { name: 'duckduckgo-lite', run: async () => parseDuckDuckGoLite(await page(`https://lite.duckduckgo.com/lite/?q=${q}`), max) },
+    { name: 'duckduckgo', run: async () => parseDuckDuckGo((await page(`https://html.duckduckgo.com/html/?q=${q}`)).text, max) },
+    { name: 'bing', run: async () => parseBing((await page(`https://www.bing.com/search?q=${q}&count=${max}`)).text, max) },
+    { name: 'duckduckgo-lite', run: async () => parseDuckDuckGoLite((await page(`https://lite.duckduckgo.com/lite/?q=${q}`)).text, max) },
   ];
   const failures: string[] = [];
   const empty: string[] = [];

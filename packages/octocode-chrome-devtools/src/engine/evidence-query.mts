@@ -168,7 +168,7 @@ try {
     JSON.stringify({ version: 7, file, sha256, format, path, filters, select })
   );
   const indexDir = resolve(
-      '.octocode/tmp/chrome-devtools/evidence-index',
+      '.octocode/octocode-chrome-devtools/tmp/evidence-index',
       identity
     ),
     manifestFile = join(indexDir, 'index.json');

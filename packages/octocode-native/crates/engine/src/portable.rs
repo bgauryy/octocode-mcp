@@ -3,8 +3,8 @@
 use crate::error::{Error, Result};
 use crate::security::types::SanitizationResult;
 use crate::types::{
-    FileSystemQueryOptions, FileSystemQueryResult, GrammarCapability, GraphFactsScanOptions,
-    TextSearchOptions, TextSearchResult, YamlConversionConfig,
+    FileSystemQueryOptions, FileSystemQueryResult, GrammarCapability, TextSearchOptions,
+    TextSearchResult, YamlConversionConfig,
 };
 
 pub use crate::search::text_pattern::{
@@ -47,39 +47,18 @@ fn transform_on_deep_stack(
         .unwrap_or_else(|| shared.to_string())
 }
 
-/// Apply caller policy before inspecting or counting each descendant. Denied
-/// directories are pruned; callback errors abort traversal (e.g. cancellation).
-pub fn query_file_system_filtered(
+pub use crate::search::fs_query::EntryFilter;
+
+/// Walk a directory in name order under caller policy: `admit` decides each
+/// descendant before it is inspected or counted (a denied directory is not
+/// entered); `stop` cancels the walk (`ErrorKind::Cancelled`).
+pub fn query_file_system(
     options: FileSystemQueryOptions,
-    allow_path: &dyn Fn(&std::path::Path) -> std::result::Result<bool, String>,
+    admit: &EntryFilter<'_>,
+    stop: &crate::search::walk::Stop<'_>,
 ) -> Result<FileSystemQueryResult> {
     guard_panic("filesystem query", || {
-        crate::search::fs_query::query_file_system_filtered_inner(options, allow_path)
-    })
-}
-
-/// A walk's policy callback: the path and its directory-entry type (`None`
-/// for the root or when the platform did not report it).
-pub type FileSystemEntryFilter<'a> =
-    dyn Fn(&std::path::Path, Option<std::fs::FileType>) -> std::result::Result<bool, String> + 'a;
-
-/// [`query_file_system_filtered`] whose callback also gets each descendant's
-/// directory-entry type, so the policy check need not stat the path itself.
-pub fn query_file_system_typed(
-    options: FileSystemQueryOptions,
-    allow_path: &FileSystemEntryFilter<'_>,
-) -> Result<FileSystemQueryResult> {
-    guard_panic("filesystem query", || {
-        crate::search::fs_query::query_file_system_typed_inner(options, allow_path)
-    })
-}
-
-pub fn scan_typed_graph_facts_filtered(
-    options: GraphFactsScanOptions,
-    allow_path: &(dyn Fn(&std::path::Path) -> std::result::Result<bool, String> + Sync),
-) -> Result<crate::graph::GraphFactsTypedScanResult> {
-    guard_panic("graph-facts scan", || {
-        crate::graph::scan_graph_facts_typed_filtered(options, allow_path).map_err(Error::new)
+        crate::search::fs_query::query_file_system(options, admit, stop)
     })
 }
 
@@ -123,8 +102,15 @@ pub fn extract_signatures(content: &str, file_path: &str) -> Option<String> {
     })
 }
 
+/// The grammar inventory, built once.
 #[must_use]
-pub fn grammar_capabilities() -> Vec<GrammarCapability> {
+pub fn grammar_capabilities() -> &'static [GrammarCapability] {
+    static CAPABILITIES: std::sync::LazyLock<Vec<GrammarCapability>> =
+        std::sync::LazyLock::new(build_grammar_capabilities);
+    &CAPABILITIES
+}
+
+fn build_grammar_capabilities() -> Vec<GrammarCapability> {
     crate::signatures::languages::all_entries()
         .iter()
         .map(|entry| GrammarCapability {
@@ -147,47 +133,24 @@ pub fn grammar_capabilities() -> Vec<GrammarCapability> {
         .collect()
 }
 
+/// Structural search of one source. `extension` selects the grammar (an
+/// explicit parser for an ambiguous path); `None` takes the path's own
+/// extension. The real path stays in match IDs, diagnostics and locations.
 pub fn structural_search_detailed(
     content: &str,
     file_path: &str,
+    extension: Option<&str>,
     pattern: Option<&str>,
     rule: Option<&str>,
 ) -> Result<crate::structural::StructuralSearchDetailedResult> {
-    let extension = crate::text::file_extension::extension_of(file_path, true, "txt");
-    structural_search_detailed_with_extension(content, file_path, &extension, pattern, rule)
-}
-
-/// Parse with an explicitly selected grammar while retaining the real source path
-/// in match IDs, diagnostics, and returned locations.
-pub fn structural_search_detailed_with_extension(
-    content: &str,
-    file_path: &str,
-    extension: &str,
-    pattern: Option<&str>,
-    rule: Option<&str>,
-) -> Result<crate::structural::StructuralSearchDetailedResult> {
+    let extension = extension.map_or_else(
+        || crate::text::file_extension::extension_of(file_path, true, "txt"),
+        str::to_owned,
+    );
     std::panic::catch_unwind(|| {
-        crate::structural::search_detailed(content, file_path, extension, pattern, rule)
+        crate::structural::search_detailed(content, file_path, &extension, pattern, rule)
     })
     .map_err(|_| Error::new("structural detailed search failed on pathological input"))
-}
-
-pub fn structural_search_files_detailed_filtered_with_extension(
-    options: crate::structural::StructuralSearchFilesOptions,
-    allow_path: &(dyn Fn(&std::path::Path) -> std::result::Result<bool, String> + Sync),
-    select_extension: &(dyn Fn(&std::path::Path) -> String + Sync),
-) -> Result<crate::structural::StructuralSearchFilesDetailedResult> {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        crate::structural::search_files_detailed_filtered_with_extension(
-            options,
-            allow_path,
-            select_extension,
-        )
-    }))
-    .unwrap_or_else(|_| {
-        Err("structural detailed file search failed on pathological input".to_owned())
-    })
-    .map_err(Error::new)
 }
 
 pub fn inspect_syntax_tree_with_extension(

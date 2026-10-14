@@ -13,6 +13,16 @@ const CI_EXCLUDE = ['--exclude', '@octocodeai/octocode-benchmark', '--exclude', 
 const script = (name, ...args) => ['node', [path.join(HERE, name), ...args]];
 const health = (...args) => script('workspace-health.mjs', ...args);
 const yarn = (...args) => ['yarn', args];
+// Skills are not workspaces: lint the collection, check the shared report viewer, and run each skill's script tests.
+const skill = (rel, ...args) => ['node', [path.join(ROOT, 'skills', rel), ...args]];
+const SKILL_CHECKS = [
+  skill('octocode-skills/scripts/skill-review.mjs', path.join(ROOT, 'skills')),
+  skill('octocode-skills/scripts/skill-review.mjs', '--self-test'),
+  skill('octocode-skills/scripts/skill-sync.mjs', '--self-test'),
+  skill('octocode-skills/scripts/render-report.mjs', '--self-test'),
+  skill('octocode-skills/scripts/report-viewer-sync.mjs', '--check'),
+  ['node', ['--test', 'skills/octocode-brainstorming/scripts/tests/*.test.mjs', 'skills/octocode-scraping/scripts/tests/*.test.mjs']],
+];
 
 /** task → [description, steps]; extra CLI args go to the last step. */
 const TASKS = {
@@ -21,9 +31,13 @@ const TASKS = {
   'build:ci': ['Resolution check, then release build without benchmark or native', [script('prepublish.mjs'), health('run', 'build', '--parallel', ...CI_EXCLUDE)]],
   'build:publish': ['Resolution check, 6-platform native build, MCP publish build', [script('prepublish.mjs'), yarn('build:native:all'), yarn('workspace', 'octocode-mcp', 'build')]],
   test: ['Run every workspace test script', [health('run', 'test')]],
-  'test:ci': ['Tests without benchmark or native', [health('run', 'test', ...CI_EXCLUDE)]],
-  // Not in test:ci: it drives the built native binary and addon, which CI never builds.
-  'test:tools': ['End-to-end health of every tool via CLI and MCP, hermetic (needs build:dev; [tool,...])', [['node', [path.join(ROOT, 'octocode-local-testing/harness/tool-health.mjs')]]]],
+  'test:ci': ['Skill checks, then tests without benchmark or native', [...SKILL_CHECKS, health('run', 'test', ...CI_EXCLUDE)]],
+  'skills:check': ['Skill lint, shared report viewer, and skill script tests', SKILL_CHECKS],
+  // Not in test:ci: it drives the built native binary and addon, so CI runs it in its own `e2e` job after build:dev.
+  'test:tools': ['End-to-end health of every tool via CLI and MCP, hermetic: driver self-test, then every lead explored (needs build:dev; [tool,...] [--deep])', [
+    ['node', ['--test', path.join(ROOT, 'octocode-local-testing/harness/tool-health/driver.test.mjs')]],
+    ['node', [path.join(ROOT, 'octocode-local-testing/harness/tool-health.mjs')]],
+  ]],
   lint: ['Run every workspace lint script', [health('run', 'lint')]],
   'lint:ci': ['Lint without benchmark or native', [health('run', 'lint', ...CI_EXCLUDE)]],
   typecheck: ['Run every workspace typecheck script', [health('run', 'typecheck')]],
@@ -31,7 +45,7 @@ const TASKS = {
   verify: ['Full repo contract: dedupe, docs, per-package verify', [health('verify')]],
   'health:check': ['Required workspace scripts exist', [health('check')]],
   'health:report': ['Workspace script matrix', [health('report')]],
-  'check-outputs': ['Build outputs exist after a build', [health('check-outputs')]],
+  'check-outputs': ['Build outputs exist and staged native artifacts match the current version and contract', [health('check-outputs')]],
   clean: ['Remove every workspace build output (dist/, out/, native target/ + staged binaries)', [yarn('workspaces', 'foreach', '-A', 'run', 'clean')]],
   'clean:cache': ['Drop stale native build copies; compiled dependencies stay warm', [yarn('workspace', '@octocodeai/octocode-native', 'clean:cache')]],
   'docs:verify': ['Docs links, catalog, config keys, publishing contracts', [script('docs-verify.mjs')]],

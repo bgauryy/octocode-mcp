@@ -501,7 +501,10 @@ async function main(argv) {
       { BROWSER_PLAN: serialized },
       true
     );
-  const directory = join(process.cwd(), '.octocode/tmp/chrome-devtools/plans');
+  const directory = join(
+    process.cwd(),
+    '.octocode/octocode-chrome-devtools/tmp/plans'
+  );
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   const file = join(directory, `plan-${randomUUID()}.json`);
   writeFileSync(file, serialized, { mode: 0o600, flag: 'wx' });

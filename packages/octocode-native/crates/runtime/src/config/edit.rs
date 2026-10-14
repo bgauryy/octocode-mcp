@@ -1,8 +1,8 @@
 //! Private configuration files share bounded reads, revision checks, and atomic writes.
 use super::dotenv::dotenv_may_set;
 use super::parse_env;
-use crate::private_file::{open_no_follow, read_limited, write_atomic};
-use sha2::{Digest, Sha256};
+use crate::private_file::{open_no_follow, read_limited};
+use octocode_io::atomic::write_atomic;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -36,7 +36,7 @@ pub fn read_private_config(path: &Path) -> io::Result<Option<String>> {
 pub fn config_revision(text: Option<&str>) -> String {
     match text {
         None => "missing".into(),
-        Some(text) => format!("sha256:{}", hex::encode(Sha256::digest(text.as_bytes()))),
+        Some(text) => format!("sha256:{}", crate::digest::sha256(text.as_bytes())),
     }
 }
 /// The one rolling backup of a file Octocode does not own: `.{name}.bak`.
@@ -82,16 +82,18 @@ pub fn replace_private_config(
         )),
         true,
     )?;
-    let deadline = std::time::Instant::now() + LOCK_WAIT;
-    while lock.try_lock().is_err() {
-        if std::time::Instant::now() >= deadline {
-            return Err(io::Error::new(
-                io::ErrorKind::WouldBlock,
-                "Configuration is being edited; retry.",
-            ));
-        }
-        std::thread::sleep(std::time::Duration::from_millis(20));
-    }
+    let _lock =
+        match octocode_io::lock::lock_within(lock, LOCK_WAIT, std::time::Duration::from_millis(20))
+        {
+            Ok(lock) => lock,
+            Err(octocode_io::lock::LockError::Busy) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::WouldBlock,
+                    "Configuration is being edited; retry.",
+                ));
+            }
+            Err(octocode_io::lock::LockError::Io(error)) => return Err(error),
+        };
     let original = read_private_config(path)?;
     if config_revision(original.as_deref()) != expected_revision {
         return Err(changed());

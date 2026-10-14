@@ -15,11 +15,11 @@ export interface ModelRef {
  * parent runs a frontier model). Each resolves among the user's own models, so no profile hard-codes a vendor.
  */
 export const MODEL_TIERS = ['small', 'medium'] as const;
-export type ModelTier = (typeof MODEL_TIERS)[number];
+type ModelTier = (typeof MODEL_TIERS)[number];
 export const isModelTier = (value: string): value is ModelTier => (MODEL_TIERS as readonly string[]).includes(value);
 
 /** A subagent starts fresh but reads files and tool output: a model with a smaller window is not a candidate. */
-export const MIN_SUBAGENT_CONTEXT = 100_000;
+const MIN_SUBAGENT_CONTEXT = 100_000;
 
 interface Facts {
   ref: ModelRef;
@@ -37,10 +37,10 @@ interface Facts {
  * `medium` is the next tier down: between these shares of the parent's price (Sonnet is half of Opus; Haiku, a
  * twentieth, is the small tier, not a coder for an Opus or Sonnet parent).
  */
-export const MEDIUM_MAX_SHARE = 0.8;
-export const MEDIUM_MIN_SHARE = 0.15;
+const MEDIUM_MAX_SHARE = 0.8;
+const MEDIUM_MIN_SHARE = 0.15;
 /** Candidates released this long before the parent are an older generation, used only when nothing newer qualifies. */
-export const STALE_AFTER_MS = 548 * 24 * 60 * 60_000;
+const STALE_AFTER_MS = 548 * 24 * 60 * 60_000;
 
 /** Pi's metadata, with what it lacks from models.dev. Price: three input tokens to one output, as agent turns spend. */
 function facts(ref: ModelRef, catalog: Catalog | undefined): Facts {

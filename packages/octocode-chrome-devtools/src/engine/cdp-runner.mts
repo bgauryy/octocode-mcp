@@ -16,7 +16,7 @@ propagateOctocodeEnv({ cwd: process.cwd(), trusted: true });
 
 function octocodeOutputBase() {
   const workspace = resolve(process.cwd(), '.octocode');
-  // Under the sandbox the folder exists and its root is not writable (only tmp/chrome-devtools below it is).
+  // Under the sandbox the folder exists and its root is not writable (only octocode-chrome-devtools/tmp below it is).
   if (!existsSync(workspace))
     mkdirSync(workspace, { recursive: true, mode: 0o700 });
   return workspace;
@@ -187,8 +187,8 @@ async function main() {
     : (() => {
         const dir = join(
           OCTOCODE_OUTPUT_BASE,
+          'octocode-chrome-devtools',
           'tmp',
-          'chrome-devtools',
           'session-meta',
           `port-${PORT}`
         );
@@ -428,7 +428,11 @@ async function main() {
     ? ENV_OUTPUT_DIR
     : (() => {
         const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-        const runs = join(OCTOCODE_OUTPUT_BASE, 'tmp', 'chrome-devtools');
+        const runs = join(
+          OCTOCODE_OUTPUT_BASE,
+          'octocode-chrome-devtools',
+          'tmp'
+        );
         mkdirSync(runs, { recursive: true });
         for (let n = 1; ; n++) {
           const dir = join(runs, n === 1 ? ts : `${ts}-${n}`);

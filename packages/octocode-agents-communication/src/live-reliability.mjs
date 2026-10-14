@@ -164,7 +164,7 @@ export async function liveReliability(options) {
   }));
   const summary = {
     vendor, model: options.model, version: invoke(vendor, ['--version']).trim(), runs, flows,
-    skillSha256: hash(readFileSync(join(root, 'OPERATING.md'))), harnessSha256: hash(readFileSync(fileURLToPath(import.meta.url))),
+    skillSha256: hash(readFileSync(join(resolve(options.skill || root), 'OPERATING.md'))), harnessSha256: hash(readFileSync(fileURLToPath(import.meta.url))),
     byFlow: Object.fromEntries(flows.map(flow => {
       const rows = results.filter(row => row.flow === flow);
       return [flow, { passed: rows.filter(row => row.passed).length, total: rows.length, completeErrors: rows.reduce((n, row) => n + row.tools.completeErrors, 0), toolErrors: rows.reduce((n, row) => n + row.tools.errors, 0), medianMs: rows.map(row => row.durationMs).sort((a, b) => a - b)[Math.floor(rows.length / 2)] }];

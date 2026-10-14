@@ -3,6 +3,7 @@ import { say, wordCompletions, type Subcommand } from '../shared/commands.js';
 import { errorMessage } from '../shared/util.js';
 import { describeMembers } from '../team/routing.js';
 import { USER_SENDER, type Team } from '../team/session.js';
+import { USER_STOP } from './process.js';
 import { mergeAgent, pendingRefs } from './worktree.js';
 
 /** Running subagents by id (background, or foreground for `/agents kill`). `stoppedBy`: who stopped it (`user`, or the id of the agent that started it). */
@@ -29,7 +30,8 @@ export function stopBackground(background: Background, id: string, by: string, k
     return `${id ? `No ${kind} "${id}".` : `Name the ${kind} to stop.`} ${ids.length ? `Running: ${ids.join(', ')}` : 'None is running.'}`;
   }
   entry.stoppedBy ??= by;
-  entry.controller.abort();
+  // The user's stop gets the short grace: the row frees at once.
+  entry.controller.abort(by === USER_SENDER ? USER_STOP : undefined);
   return undefined;
 }
 

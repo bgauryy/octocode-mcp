@@ -569,34 +569,15 @@ pub(super) fn entrypoints(
             }
         }
     } else {
-        if let Some(text) = read(&b.root.join("package.json"))
-            && let Ok(v) = serde_json::from_str::<Value>(&text)
-        {
-            let mut leaves = Vec::new();
-            for k in ["main", "exports", "bin"] {
-                leaves_json(&v[k], &mut leaves)
-            }
-            if let Some(s) = v["scripts"].as_object() {
-                for value in s.values().filter_map(Value::as_str) {
-                    for token in value.split_whitespace() {
-                        let t = token
-                            .split('=')
-                            .next_back()
-                            .unwrap_or(token)
-                            .trim_matches(['\"', '\'']);
-                        if [".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".mts", ".cts"]
-                            .iter()
-                            .any(|x| t.ends_with(x))
-                        {
-                            leaves.push(t.into())
-                        }
-                    }
-                }
-            }
-            for leaf in leaves {
-                if let Some(x) =
-                    source_equivalent(&normalize(leaf.trim_start_matches("./")), &b.nodes)
-                {
+        for dir in package_dirs(b) {
+            let Some(v) = read(&b.root.join(&dir).join("package.json"))
+                .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+            else {
+                continue;
+            };
+            for leaf in package_leaves(&v) {
+                let leaf = normalize(leaf.trim_start_matches("./"));
+                if let Some(x) = source_equivalent(&dir, &leaf, &b.nodes) {
                     push_unique(&mut roots, &mut seen_roots, x);
                 }
             }
@@ -607,7 +588,7 @@ pub(super) fn entrypoints(
         infer_rust_roots(b, read, &mut roots, &mut seen_roots);
         infer_go_roots(b, &mut roots, &mut seen_roots);
         if roots.is_empty() {
-            warnings.push("no entrypoints resolved for the detected languages — expected package.json main/bin/exports, a Cargo.toml target or src/main.rs|src/lib.rs|src/bin/*.rs, or a Go `func main`. Pass `entrypoints` explicitly; without a root every export reads as unreachable, so the dead-code verdict is suppressed.".into());
+            warnings.push("no entrypoints resolved for the detected languages — expected package.json main/module/types/exports/bin, a Cargo.toml target or src/main.rs|src/lib.rs|src/bin/*.rs, or a Go `func main`. Pass `entrypoints` explicitly; without a root every export reads as unreachable, so the dead-code verdict is suppressed.".into());
             low = true
         }
     }
@@ -623,6 +604,51 @@ pub(super) fn entrypoints(
     }
     (roots, warnings, low)
 }
+/// Every scanned directory that can hold a `package.json` (`.` and each
+/// ancestor directory of a scanned file), so a multi-package root resolves
+/// each package's entrypoints, not only its own.
+fn package_dirs(b: &BuiltGraph) -> BTreeSet<String> {
+    let mut dirs = BTreeSet::from([".".to_owned()]);
+    for key in b.nodes.keys() {
+        let mut dir = key.as_str();
+        while let Some((parent, _)) = dir.rsplit_once('/') {
+            if !dirs.insert(parent.to_owned()) {
+                break;
+            }
+            dir = parent;
+        }
+    }
+    dirs
+}
+
+/// Package-relative entry files a `package.json` publishes or runs:
+/// `main`, `module`, `types`/`typings`, `exports`, `bin`, and the source
+/// files its `scripts` invoke.
+fn package_leaves(v: &Value) -> Vec<String> {
+    let mut leaves = Vec::new();
+    for k in ["main", "module", "types", "typings", "exports", "bin"] {
+        leaves_json(&v[k], &mut leaves)
+    }
+    if let Some(s) = v["scripts"].as_object() {
+        for value in s.values().filter_map(Value::as_str) {
+            for token in value.split_whitespace() {
+                let t = token
+                    .split('=')
+                    .next_back()
+                    .unwrap_or(token)
+                    .trim_matches(['\"', '\'']);
+                if [".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".mts", ".cts"]
+                    .iter()
+                    .any(|x| t.ends_with(x))
+                {
+                    leaves.push(t.into())
+                }
+            }
+        }
+    }
+    leaves
+}
+
 pub(super) fn push_unique(roots: &mut Vec<String>, seen: &mut BTreeSet<String>, file: String) {
     if seen.insert(file.clone()) {
         roots.push(file);
@@ -731,11 +757,22 @@ pub(super) fn leaves_json(v: &Value, out: &mut Vec<String>) {
         _ => {}
     }
 }
-pub(super) fn source_equivalent(p: &str, nodes: &BTreeMap<String, Node>) -> Option<String> {
-    if nodes.contains_key(p) {
-        return Some(p.into());
-    }
-    let mut c = Vec::new();
+/// The scanned source file for `p`, a path relative to the package
+/// directory `dir` (`.` for the scan root): `p` itself, its TypeScript
+/// twin, or the `src/` file a `dist/`/`build/`/`out/` output is built from.
+pub(super) fn source_equivalent(
+    dir: &str,
+    p: &str,
+    nodes: &BTreeMap<String, Node>,
+) -> Option<String> {
+    let within = |relative: &str| {
+        if dir == "." {
+            relative.to_owned()
+        } else {
+            normalize(&format!("{dir}/{relative}"))
+        }
+    };
+    let mut c = vec![p.to_owned()];
     for (a, b) in [
         (".js", ".ts"),
         (".jsx", ".tsx"),
@@ -759,10 +796,10 @@ pub(super) fn source_equivalent(p: &str, nodes: &BTreeMap<String, Node>) -> Opti
                     c.push(format!("src/{s}{b}"));
                 }
             }
-            if nodes.contains_key("src/index.ts") {
-                c.push("src/index.ts".into())
-            }
+            c.push("src/index.ts".into());
         }
     }
-    c.into_iter().find(|x| nodes.contains_key(x))
+    c.into_iter()
+        .map(|x| within(&x))
+        .find(|x| nodes.contains_key(x))
 }

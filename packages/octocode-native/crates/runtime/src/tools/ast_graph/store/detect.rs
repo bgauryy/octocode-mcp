@@ -1755,9 +1755,15 @@ fn scan_mentions(
             files.pop_last();
         }
     };
-    let walker =
-        crate::tools::pruned_walk(root, crate::tools::syntax_prune(MENTION_EXTRA_SKIP_DIRS))
-            .build_parallel();
+    let walker = crate::tools::pruned_walk(
+        root,
+        crate::tools::syntax_prune(
+            MENTION_EXTRA_SKIP_DIRS
+                .iter()
+                .map(|name| (*name).to_owned()),
+        ),
+    )
+    .build_parallel();
     walker.run(|| {
         let found = &found;
         let spent = &spent;

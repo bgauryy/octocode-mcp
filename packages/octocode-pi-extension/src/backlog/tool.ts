@@ -6,7 +6,7 @@ import { sanitizeTerminalText } from '../shared/sanitize.js';
 import { textResult } from '../shared/util.js';
 import { openBacklog, type Backlog, type BacklogOptions } from './context.js';
 import { itemDetail, itemLine } from './format.js';
-import { BODY_MAX, GOAL_MAX, NOTE_MAX, PRIORITIES, refuseSecrets, STATES, TAGS_MAX, TITLE_MAX, type Item, type State } from './store.js';
+import { PRIORITIES, refuseSecrets, STATES, type Item, type State } from './store.js';
 
 const DEFAULT_LIST_LIMIT = 20;
 const DEFAULT_LIST_STATES: State[] = ['ongoing', 'todo'];
@@ -48,10 +48,10 @@ function backlogPrompt(subagent: boolean): { description: string; ops: string; p
     ops,
     promptSnippet: subagent ? 'Record progress on claimed items; propose follow-ups' : 'Propose, claim and close repository tasks',
     promptGuidelines: subagent
-      ? ['Use backlog to note progress on the item your parent gave you and to propose follow-ups you find (from: that item, with a goal) instead of doing them; mark it done only after verifying its goal, noting what changed and how.']
+      ? ['Use backlog to note progress on the item your parent gave you and to propose follow-ups you find (from: that item, with a goal) instead of doing them; mark it done only after verifying its goal.']
       : [
           'Use backlog for work beyond this turn, not current-task steps. Propose follow-ups with a goal and from their source item; claim an item when starting it.',
-          'Close only after verifying the goal; note what changed and how you verified it.',
+          'Close only after verifying the goal.',
         ],
   };
 }
@@ -69,18 +69,22 @@ export function registerBacklogTool(pi: ExtensionAPI, options: BacklogOptions & 
     parameters: Type.Object({
       op: StringEnum(subagent ? ['list', 'get', 'add', 'update'] as const : ['list', 'get', 'add', 'update', 'remove'] as const, { description: ops }),
       id: Type.Optional(Type.String({ description: `${subagent ? 'get/update' : 'get/update/remove'}: item id, e.g. "B12"` })),
-      title: Type.Optional(Type.String({ maxLength: TITLE_MAX, description: `${subagent ? 'add' : 'add/update'}: one-line summary` })),
-      goal: Type.Optional(Type.String({ maxLength: GOAL_MAX, description: `${subagent ? 'add' : 'add/update'}: checkable done criterion, e.g. "board shows each item's goal; tests pass"` })),
-      body: Type.Optional(Type.String({ maxLength: BODY_MAX, description: `${subagent ? 'add' : 'add/update'}: why it matters, evidence (paths, measurements), plan` })),
+      title: Type.Optional(Type.String({ description: `${subagent ? 'add' : 'add/update'}: one-line summary` })),
+      goal: Type.Optional(Type.String({ description: subagent ? 'add: checkable done criterion' : 'add/update: checkable done criterion; add needs it' })),
+      paths: Type.Optional(Type.Array(Type.String(), { description: `files, dirs or components affected` })),
+      why: Type.Optional(Type.String({ description: `why it matters` })),
+      evidence: Type.Optional(Type.Array(Type.String(), { description: `observations: paths, measurements, links` })),
+      plan: Type.Optional(Type.String({ description: `approach and steps` })),
+      body: Type.Optional(Type.String({ description: `anything else; update replaces the whole text` })),
       state: Type.Optional(subagent ? StringEnum(SUBAGENT_STATES, { description: 'update: ongoing or done' }) : StringEnum(STATES, { description: 'add: initial state (default backlog); update: new state' })),
       priority: Type.Optional(StringEnum(PRIORITIES, { description: `${subagent ? 'add' : 'add/update'}: p0 urgent … p3 someday (default p2)` })),
-      tags: Type.Optional(Type.Array(Type.String(), { maxItems: TAGS_MAX, description: `${subagent ? 'add' : 'add/update'}: short labels, e.g. ["docs"]` })),
+      tags: Type.Optional(Type.Array(Type.String(), { description: `${subagent ? 'add' : 'add/update'}: short labels, e.g. ["docs"]` })),
       from: Type.Optional(Type.String({ description: `${subagent ? 'add' : 'add/update'}: the item this came from (split, follow-up, finding), e.g. "B12"${subagent ? '' : '; update "" clears'}; list: items derived from it` })),
-      note: Type.Optional(Type.String({ maxLength: NOTE_MAX, description: `${subagent ? 'update' : 'update, or add with state ongoing/done'}: appended to the item log: why, or what you found` })),
-      query: Type.Optional(Type.String({ description: 'list: text in titles, goals and bodies, or a whole tag' })),
+      note: Type.Optional(Type.String({ description: `${subagent ? 'update' : 'update, or add with state ongoing/done'}: appended to the item log: why, or what you found` })),
+      query: Type.Optional(Type.String({ description: 'list: text in any field, or a whole tag' })),
       states: Type.Optional(Type.Array(StringEnum(STATES), { description: 'list: states to show (default ongoing, todo)' })),
-      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 50, description: `list/get: page size (items default ${DEFAULT_LIST_LIMIT}, notes default 10)` })),
-      offset: Type.Optional(Type.Integer({ minimum: 0, description: 'list/get: items or newest notes to skip; copy from Next (default 0)' })),
+      limit: Type.Optional(Type.Integer({ description: `list/get: page size (items default ${DEFAULT_LIST_LIMIT}, notes default 10)` })),
+      offset: Type.Optional(Type.Integer({ description: 'list/get: items or newest notes to skip; copy from Next (default 0)' })),
     }),
     async execute(_id, params, signal, _onUpdate, ctx) {
       signal?.throwIfAborted();
@@ -104,14 +108,23 @@ export function registerBacklogTool(pi: ExtensionAPI, options: BacklogOptions & 
     },
   }, { exclusive: true }));
 
-  type Params = { op: 'list' | 'get' | 'add' | 'update' | 'remove'; id?: string; title?: string; goal?: string; body?: string; state?: State; priority?: string; tags?: string[]; from?: string; note?: string; query?: string; states?: State[]; limit?: number; offset?: number };
+  type Params = { op: 'list' | 'get' | 'add' | 'update' | 'remove'; id?: string; title?: string; goal?: string; body?: string; paths?: string[]; why?: string; evidence?: string[]; plan?: string; state?: State; priority?: string; tags?: string[]; from?: string; note?: string; query?: string; states?: State[]; limit?: number; offset?: number };
+
+  /** The descriptive fields a call sets, only those it names. */
+  const text = ({ body, paths, why, evidence, plan }: Params) => ({
+    ...(body !== undefined ? { body } : {}),
+    ...(paths !== undefined ? { paths } : {}),
+    ...(why !== undefined ? { why } : {}),
+    ...(evidence !== undefined ? { evidence } : {}),
+    ...(plan !== undefined ? { plan } : {}),
+  });
 
   function run({ store, actor, session }: Backlog, params: Params) {
     const priority = params.priority === undefined ? undefined : PRIORITIES.indexOf(params.priority as (typeof PRIORITIES)[number]);
     if (params.op === 'list') {
       const states = params.states?.length ? params.states : DEFAULT_LIST_STATES;
-      const limit = params.limit ?? DEFAULT_LIST_LIMIT;
-      const offset = params.offset ?? 0;
+      const limit = Math.max(1, Math.floor(params.limit ?? DEFAULT_LIST_LIMIT));
+      const offset = Math.max(0, Math.floor(params.offset ?? 0));
       const filters = { ...(params.query ? { query: params.query } : {}), ...(params.from ? { from: params.from } : {}) };
       const { items, total } = store.list({ states, ...filters, limit, offset });
       const lines = items.map((item) => itemLine(item, actor.id, actor.owners));
@@ -123,6 +136,7 @@ export function registerBacklogTool(pi: ExtensionAPI, options: BacklogOptions & 
     }
     if (params.op === 'add') {
       if (!params.title?.trim()) throw new Error('add needs a title.');
+      if (!params.goal?.trim()) throw new Error('add needs a goal: the done criterion, a check someone else can run.');
       // A subagent proposes; the user or the parent accepts.
       const wanted = subagent ? 'backlog' : (params.state ?? 'backlog');
       // The note is stored by a second step: every refusal comes first, so a retry never leaves a duplicate behind.
@@ -138,7 +152,7 @@ export function registerBacklogTool(pi: ExtensionAPI, options: BacklogOptions & 
       let item = store.add({
         title: params.title,
         ...(params.goal !== undefined ? { goal: params.goal } : {}),
-        ...(params.body !== undefined ? { body: params.body } : {}),
+        ...text(params),
         state: wanted === 'ongoing' || wanted === 'done' ? 'todo' : wanted,
         ...(priority !== undefined ? { priority } : {}),
         ...(params.tags ? { tags: params.tags } : {}),
@@ -155,8 +169,8 @@ export function registerBacklogTool(pi: ExtensionAPI, options: BacklogOptions & 
     if (params.op === 'get') {
       const item = store.get(params.id);
       if (!item) throw new Error(`No backlog item ${sanitizeTerminalText(params.id)}.`);
-      const offset = params.offset ?? 0;
-      const limit = params.limit ?? 10;
+      const offset = Math.max(0, Math.floor(params.offset ?? 0));
+      const limit = Math.max(1, Math.floor(params.limit ?? 10));
       const notes = store.notes(item, limit, offset);
       const total = store.noteCount(item);
       const origin = item.from === undefined ? undefined : store.get(item.from);
@@ -175,11 +189,11 @@ export function registerBacklogTool(pi: ExtensionAPI, options: BacklogOptions & 
       const item = store.remove(params.id, undefined, actor);
       return textResult(`Removed ${item.ref} "${sanitizeTerminalText(item.title)}" and its notes.`, { removed: item.ref } as BacklogToolDetails);
     }
-    const fields = { title: params.title, goal: params.goal, body: params.body, priority, tags: params.tags, from: params.from };
+    const fields = { title: params.title, goal: params.goal, ...text(params), priority, tags: params.tags, from: params.from };
     if (subagent && Object.values(fields).some((value) => value !== undefined)) throw new Error('A subagent changes only the state and notes of an item; report other changes to your parent.');
     // Moving an item back to todo or backlog would release the parent's claim behind its back.
     if (subagent && (params.state === 'todo' || params.state === 'backlog')) throw new Error(`A subagent sets only ongoing or done; ask your parent to move an item to ${params.state}.`);
-    if (params.state === undefined && params.note === undefined && Object.values(fields).every((value) => value === undefined)) throw new Error('update needs something to change: state, note, title, goal, body, priority, tags or from.');
+    if (params.state === undefined && params.note === undefined && Object.values(fields).every((value) => value === undefined)) throw new Error('update needs something to change: state, note, title, goal, paths, why, evidence, plan, body, priority, tags or from.');
     const current = store.get(params.id);
     if (params.state === 'done' && current?.state !== 'done' && !params.note?.trim()) throw new Error(DONE_NOTE);
     const item = store.update(
@@ -187,7 +201,7 @@ export function registerBacklogTool(pi: ExtensionAPI, options: BacklogOptions & 
       {
         ...(params.title !== undefined ? { title: params.title } : {}),
         ...(params.goal !== undefined ? { goal: params.goal } : {}),
-        ...(params.body !== undefined ? { body: params.body } : {}),
+        ...text(params),
         ...(params.state !== undefined ? { state: params.state } : {}),
         ...(priority !== undefined ? { priority } : {}),
         ...(params.tags !== undefined ? { tags: params.tags } : {}),

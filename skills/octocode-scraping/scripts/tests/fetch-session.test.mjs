@@ -39,7 +39,7 @@ test('reusing a populated --session without --append is refused; --append contin
 
   const clobber = run(mockArgs('https://ex.test/b', ['--session', 'sess1']));
   assert.equal(clobber.status, 2);
-  assert.equal(clobber.parsed.code, 'SESSION_EXISTS');
+  assert.equal(clobber.parsed.error.code, 'sessionExists');
 
   const append = run(mockArgs('https://ex.test/b', ['--session', 'sess1', '--append']));
   assert.equal(append.status, 0, append.stderr);
@@ -51,16 +51,16 @@ test('reusing a populated --session without --append is refused; --append contin
 });
 
 test('default output climbs out of a .octocode tree instead of nesting sessions', () => {
-  const drift = join(root, '.octocode', 'tmp', 'scrape', 'old-session');
+  const drift = join(root, '.octocode', 'octocode-scraping', 'tmp', 'old-session');
   mkdirSync(drift, { recursive: true });
   const res = run(mockArgs('https://ex.test/a'), drift);
   assert.equal(res.status, 0, res.stderr);
-  assert.ok(res.parsed.sessionDir.startsWith(join(realpathSync(root), '.octocode', 'tmp', 'scrape')), res.parsed.sessionDir);
+  assert.ok(res.parsed.sessionDir.startsWith(join(realpathSync(root), '.octocode', 'octocode-scraping', 'tmp')), res.parsed.sessionDir);
   assert.ok(!res.parsed.sessionDir.includes('old-session'), `nested session: ${res.parsed.sessionDir}`);
 });
 
 test('workspaceRootFor anchors above the first .octocode segment', () => {
-  assert.equal(workspaceRootFor('/a/b/.octocode/tmp/scrape/x'), '/a/b');
+  assert.equal(workspaceRootFor('/a/b/.octocode/octocode-scraping/tmp/x'), '/a/b');
   assert.equal(workspaceRootFor('/a/b'), '/a/b');
   assert.equal(workspaceRootFor('/a/.octocode/x/.octocode/y'), '/a');
 });
@@ -83,10 +83,55 @@ test('thin application shell recommends one Chrome escalation without launching 
 
 test('crawl treats fragment and trailing-slash variants as one page and skips non-http links', () => {
   writeFileSync(join(root, 'body.html'), '<html><body><h1>Doc</h1><p>one</p><p>two</p><a href="#top">t</a><a href="/a/">a</a><a href="/b">b</a><a href="/b#s">bs</a><a href="mailto:x@ex.test">m</a></body></html>');
-  const res = run(mockArgs('https://ex.test/a', ['--crawl', '--same-domain', '--max-pages', '10', '--delay-ms', '0']));
+  const res = run(mockArgs('https://ex.test/a', ['--crawl', '--max-pages', '10', '--delay-ms', '0']));
   assert.equal(res.status, 0, res.stderr);
   const rows = readFileSync(join(res.parsed.sessionDir, 'sources.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
   assert.deepEqual(rows.map((r) => r.url), ['https://ex.test/a', 'https://ex.test/b']);
   const text = readFileSync(join(res.parsed.sessionDir, 'text', 'page-001.clean.part-001.md'), 'utf8');
   assert.match(text, /^# Doc\n\none\n\ntwo/, 'HTML text keeps block structure as lines');
+});
+
+test('--append --crawl resumes from the saved link frontier and reports when nothing is new', () => {
+  const links = ['a', 'b', 'c'].map((p) => `<a href="https://ex.test/${p}">${p}</a>`).join(' ');
+  const linked = join(root, 'linked.html');
+  writeFileSync(linked, `<html><head><title>Root</title></head><body><h1>Root</h1><p>${links}</p></body></html>`);
+  const crawl = (extra) => run(['--url', 'https://ex.test/', '--provider', 'direct', '--mock-status', '200', '--mock-body-file', linked,
+    '--mock-content-type', 'text/html', '--crawl', '--delay-ms', '0', '--session', 'crawl1', ...extra]);
+
+  const first = crawl(['--max-pages', '1']);
+  assert.equal(first.status, 0, first.stderr);
+  assert.equal(first.parsed.pages, 1);
+
+  const resumed = crawl(['--append', '--max-pages', '2']);
+  assert.equal(resumed.status, 0, resumed.stderr || resumed.stdout);
+  assert.equal(resumed.parsed.newPages, 2);
+  assert.equal(resumed.parsed.pages, 3);
+
+  const rest = crawl(['--append', '--max-pages', '5']);
+  assert.equal(rest.status, 0, rest.stderr || rest.stdout);
+  assert.equal(rest.parsed.newPages, 1);
+
+  const exhausted = crawl(['--append', '--max-pages', '5']);
+  assert.equal(exhausted.status, 1, 'an append that fetches nothing must not report success');
+  assert.equal(exhausted.parsed.newPages, 0);
+  assert.ok(exhausted.parsed.warnings.some((w) => /no new pages/.test(w.warning)));
+});
+
+test('an unknown or retired flag is rejected instead of silently ignored', () => {
+  for (const flag of ['--extract-links', '--max-page', '--same-domain']) {
+    const res = run(mockArgs('https://ex.test/a', [flag, ...(flag === '--max-page' ? ['3'] : [])]));
+    assert.equal(res.status, 2, `${flag}: ${res.stdout}`);
+    assert.match(res.parsed.error.message, new RegExp(`Unknown option: ${flag}`));
+  }
+});
+
+test('a crawl stays on the --url host unless --span-hosts is passed', () => {
+  writeFileSync(join(root, 'body.html'), '<html><body><a href="https://ex.test/b">b</a><a href="https://other.test/c">c</a></body></html>');
+  const urls = (extra) => {
+    const res = run(mockArgs('https://ex.test/a', ['--crawl', '--max-pages', '5', '--delay-ms', '0', ...extra]));
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    return readFileSync(join(res.parsed.sessionDir, 'sources.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l).url);
+  };
+  assert.deepEqual(urls(['--session', 'host-only']), ['https://ex.test/a', 'https://ex.test/b']);
+  assert.deepEqual(urls(['--session', 'span', '--span-hosts']), ['https://ex.test/a', 'https://ex.test/b', 'https://other.test/c']);
 });

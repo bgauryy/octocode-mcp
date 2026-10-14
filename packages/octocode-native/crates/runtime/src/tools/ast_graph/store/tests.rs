@@ -103,7 +103,7 @@ fn ids(out: &GraphOutput) -> Vec<String> {
 fn format_round_trips_deterministically_and_rejects_corruption() {
     let dir = fixture();
     let out = ingest_fixture(dir.path(), None);
-    assert_eq!(out.exit, 0, "{}", out.value);
+    assert_eq!(out.class, ExitClass::Success, "{}", out.value);
     let graph_dir = PathBuf::from(out.value["dir"].as_str().expect("dir"));
     let bytes = std::fs::read(graph_dir.join(GRAPH_FILE)).expect("graph.bin");
     let (tables, digest) = format::decode(&bytes).expect("decode");
@@ -136,7 +136,7 @@ fn format_round_trips_deterministically_and_rejects_corruption() {
 fn ingest_publishes_a_snapshot_under_the_workspace() {
     let dir = fixture();
     let out = ingest_fixture(dir.path(), None);
-    assert_eq!(out.exit, 0, "{}", out.value);
+    assert_eq!(out.class, ExitClass::Success, "{}", out.value);
     let id = out.value["id"].as_str().expect("id");
     assert!(id.ends_with("-app"), "{id}");
     let home = dir.path().join(".octocode").join("graph");
@@ -163,7 +163,7 @@ fn ingest_publishes_a_snapshot_under_the_workspace() {
 #[test]
 fn queries_answer_imports_calls_cycles_and_packages() {
     let dir = fixture();
-    assert_eq!(ingest_fixture(dir.path(), None).exit, 0);
+    assert_eq!(ingest_fixture(dir.path(), None).class, ExitClass::Success);
     let root = dir.path();
 
     let deps = ask(root, "deps", Some("src/main.ts"), |_| {});
@@ -236,28 +236,36 @@ fn queries_answer_imports_calls_cycles_and_packages() {
 #[test]
 fn references_report_ambiguity_and_absence_with_exit_codes() {
     let dir = fixture();
-    assert_eq!(ingest_fixture(dir.path(), None).exit, 0);
+    assert_eq!(ingest_fixture(dir.path(), None).class, ExitClass::Success);
     let missing = ask(dir.path(), "node", Some("nope"), |_| {});
-    assert_eq!(missing.exit, 3);
-    assert_eq!(missing.value["errorCode"], "graph.nodeNotFound");
+    assert_eq!(
+        missing.class,
+        ExitClass::Failed(crate::runtime::FailureKind::NotFound)
+    );
+    assert_eq!(missing.value["errorCode"], "notFound");
 
     let bad = ask(dir.path(), "explode", None, |_| {});
-    assert_eq!(bad.exit, 2);
+    assert_eq!(bad.class, ExitClass::InvalidInput);
 
     let none = ask(dir.path(), "stats", None, |o| {
         o.graph = Some("no-such-graph".into())
     });
-    assert_eq!(none.exit, 3, "{}", none.value);
+    assert_eq!(
+        none.class,
+        ExitClass::Failed(crate::runtime::FailureKind::NotFound),
+        "{}",
+        none.value
+    );
 }
 
 #[test]
 fn list_operations_page_with_a_runnable_next_command() {
     let dir = fixture();
-    assert_eq!(ingest_fixture(dir.path(), None).exit, 0);
+    assert_eq!(ingest_fixture(dir.path(), None).class, ExitClass::Success);
     let first = ask(dir.path(), "symbols", Some("src/lib.ts"), |o| {
         o.limit = Some(2)
     });
-    assert_eq!(first.exit, 0, "paging is success");
+    assert_eq!(first.class, ExitClass::Success, "paging is success");
     assert_eq!(first.value["truncated"], true);
     let next = first.value["next"].as_str().expect("next");
     assert!(
@@ -274,11 +282,11 @@ fn list_operations_page_with_a_runnable_next_command() {
 #[test]
 fn stale_detects_edits_and_prune_keeps_the_newest_snapshots() {
     let dir = fixture();
-    assert_eq!(ingest_fixture(dir.path(), None).exit, 0);
+    assert_eq!(ingest_fixture(dir.path(), None).class, ExitClass::Success);
     let fresh = ask(dir.path(), "stale", None, |_| {});
     assert_eq!(
-        (fresh.exit, &fresh.value["fresh"]),
-        (0, &json!(true)),
+        (fresh.class, &fresh.value["fresh"]),
+        (ExitClass::Success, &json!(true)),
         "{}",
         fresh.value
     );
@@ -291,7 +299,10 @@ fn stale_detects_edits_and_prune_keeps_the_newest_snapshots() {
     );
 
     for _ in 0..2 {
-        assert_eq!(ingest_fixture(dir.path(), Some(1)).exit, 0);
+        assert_eq!(
+            ingest_fixture(dir.path(), Some(1)).class,
+            ExitClass::Success
+        );
     }
     let home = dir.path().join(".octocode").join("graph");
     assert_eq!(list_snapshots(&home).len(), 1);
@@ -340,7 +351,7 @@ fn findings(out: &GraphOutput, detector: &str) -> Vec<String> {
 #[test]
 fn ingest_classifies_roles_entries_and_declared_dependencies() {
     let dir = issues_fixture();
-    assert_eq!(ingest_fixture(dir.path(), None).exit, 0);
+    assert_eq!(ingest_fixture(dir.path(), None).class, ExitClass::Success);
     let root = dir.path();
     let stats = ask(root, "issues", None, |o| o.limit = Some(200));
     let roles = &stats.value["summary"]["fileRoles"];
@@ -378,10 +389,10 @@ fn ingest_classifies_roles_entries_and_declared_dependencies() {
 #[test]
 fn issues_rank_hypotheses_with_evidence_and_controls() {
     let dir = issues_fixture();
-    assert_eq!(ingest_fixture(dir.path(), None).exit, 0);
+    assert_eq!(ingest_fixture(dir.path(), None).class, ExitClass::Success);
     let root = dir.path();
     let out = ask(root, "issues", None, |o| o.limit = Some(200));
-    assert_eq!(out.exit, 0, "{}", out.value);
+    assert_eq!(out.class, ExitClass::Success, "{}", out.value);
 
     assert_eq!(findings(&out, "cycle"), vec!["src/a.ts"], "{}", out.value);
     let cycle = out.value["results"]
@@ -437,7 +448,7 @@ fn issues_rank_hypotheses_with_evidence_and_controls() {
     let only = ask(root, "issues", None, |o| o.detectors = vec!["cycle".into()]);
     assert_eq!(only.value["total"], 1);
     let bad = ask(root, "issues", None, |o| o.detectors = vec!["nope".into()]);
-    assert_eq!(bad.exit, 2);
+    assert_eq!(bad.class, ExitClass::InvalidInput);
 }
 
 /// Finding evidence lists every member, export and site it counts: a list
@@ -465,7 +476,7 @@ fn issue_evidence_lists_every_item_it_counts() {
         "import './many';\nimport './ring0';\n",
     )
     .expect("entry");
-    assert_eq!(ingest_fixture(dir.path(), None).exit, 0);
+    assert_eq!(ingest_fixture(dir.path(), None).class, ExitClass::Success);
     let out = ask(dir.path(), "issues", None, |o| o.limit = Some(500));
     let rows = out.value["results"].as_array().cloned().unwrap_or_default();
     let finding = |detector: &str, subject: &str| {
@@ -514,7 +525,7 @@ fn issues_baseline_reports_new_and_resolved_findings() {
     )
     .expect("orphan");
     std::thread::sleep(std::time::Duration::from_millis(1100));
-    assert_eq!(ingest_fixture(dir.path(), None).exit, 0);
+    assert_eq!(ingest_fixture(dir.path(), None).class, ExitClass::Success);
     let out = ask(dir.path(), "issues", None, |o| {
         o.baseline = Some(base.clone());
         o.limit = Some(200);
@@ -556,7 +567,7 @@ fn heritage_and_jsx_become_inherits_and_renders_edges() {
         "import { Crate } from './shapes';\nexport function Card() { return null; }\nexport function Page() {\n  return <Card />;\n}\n",
     )
     .expect("view");
-    assert_eq!(ingest_fixture(dir.path(), None).exit, 0);
+    assert_eq!(ingest_fixture(dir.path(), None).class, ExitClass::Success);
     let bases = ask(dir.path(), "deps", Some("Crate"), |o| {
         o.edges = vec!["inherits".into()]
     });
@@ -606,7 +617,7 @@ fn impacted(out: &GraphOutput) -> Vec<(String, u64)> {
 #[test]
 fn impact_is_symbol_precise_for_symbols_and_transitive_for_files() {
     let dir = issues_fixture();
-    assert_eq!(ingest_fixture(dir.path(), None).exit, 0);
+    assert_eq!(ingest_fixture(dir.path(), None).class, ExitClass::Success);
     let root = dir.path();
 
     let symbol = ask(root, "impact", Some("src/lib.ts#shout"), |_| {});
@@ -683,7 +694,7 @@ fn impact_since_reads_git_and_widens_on_config_changes() {
         "-qm",
         "base"
     ]));
-    assert_eq!(ingest_fixture(dir.path(), None).exit, 0);
+    assert_eq!(ingest_fixture(dir.path(), None).class, ExitClass::Success);
     std::fs::write(
         app.join("src/fmt.ts"),
         "export const fmt = (s: string) => s;\n",
@@ -740,7 +751,7 @@ fn impact_since_does_not_run_repository_fsmonitor_hooks() {
     let identity = ["-c", "user.email=t@t", "-c", "user.name=t"];
     assert!(git(&[&identity[..], &["add", "-A"]].concat()));
     assert!(git(&[&identity[..], &["commit", "-qm", "base"]].concat()));
-    assert_eq!(ingest_fixture(dir.path(), None).exit, 0);
+    assert_eq!(ingest_fixture(dir.path(), None).class, ExitClass::Success);
     let marker = dir.path().join("hook-ran");
     let hook = dir.path().join("fsmonitor.sh");
     std::fs::write(&hook, format!("#!/bin/sh\ntouch '{}'\n", marker.display())).expect("hook");
@@ -782,10 +793,10 @@ fn oversized_and_minified_files_stay_visible_without_noise() {
     )
     .expect("importer");
     let ingest = ingest_fixture(dir.path(), None);
-    assert_eq!(ingest.exit, 0, "{}", ingest.value);
+    assert_eq!(ingest.class, ExitClass::Success, "{}", ingest.value);
 
     let huge = ask(dir.path(), "node", Some("src/huge.min.js"), |_| {});
-    assert_eq!(huge.exit, 0, "{}", huge.value);
+    assert_eq!(huge.class, ExitClass::Success, "{}", huge.value);
     let deps = ask(dir.path(), "deps", Some("src/uses.ts"), |_| {});
     let rows = deps.value["results"].as_array().expect("rows");
     assert!(
@@ -838,7 +849,7 @@ fn impact_lists_inline_rust_test_functions() {
         "pub fn add(a: u8, b: u8) -> u8 {\n    a + b\n}\n\npub fn twice(a: u8) -> u8 {\n    add(a, a)\n}\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n\n    #[test]\n    fn adds() {\n        let _ = add(1, 2);\n    }\n\n    #[test]\n    fn doubles() {\n        let _ = twice(2);\n    }\n}\n",
     )
     .expect("lib");
-    assert_eq!(ingest_fixture(dir.path(), None).exit, 0);
+    assert_eq!(ingest_fixture(dir.path(), None).class, ExitClass::Success);
     let node = ask(dir.path(), "node", Some("src/lib.rs#tests.adds"), |_| {});
     assert_eq!(node.value["node"]["test"], true, "{}", node.value);
     let out = ask(dir.path(), "impact", Some("src/lib.rs#add"), |_| {});
@@ -880,7 +891,7 @@ fn plan_1_call_answers_report_coverage() {
             "import { Box } from './lib';\nfunction make(): any { return null; }\nexport function run() {\n  const b = make();\n  b.open();\n  return new Box();\n}\n",
         )],
     );
-    assert_eq!(ingest_fixture(dir.path(), None).exit, 0);
+    assert_eq!(ingest_fixture(dir.path(), None).class, ExitClass::Success);
     let out = ask(dir.path(), "callers", Some("src/lib.ts#Box.open"), |_| {});
     let coverage = &out.value["coverage"];
     let recall = coverage["callInternalRecall"].as_f64().expect("recall");
@@ -917,7 +928,7 @@ fn plan_2_string_referenced_files_are_low_tier_and_hidden_by_default() {
             ),
         ],
     );
-    assert_eq!(ingest_fixture(dir.path(), None).exit, 0);
+    assert_eq!(ingest_fixture(dir.path(), None).class, ExitClass::Success);
     let default = ask(dir.path(), "issues", None, |o| o.limit = Some(500));
     let shown = findings(&default, "unreachable-file");
     assert!(
@@ -1002,7 +1013,7 @@ fn plan_3_type_qualified_calls_and_scoped_disambiguation_link() {
             "package com.other;\npublic class Helper {\n  public static void assist() {}\n}\n",
         ),
     ]);
-    assert_eq!(ingest_fixture(dir.path(), None).exit, 0);
+    assert_eq!(ingest_fixture(dir.path(), None).class, ExitClass::Success);
     let callees = ask(
         dir.path(),
         "callees",
@@ -1059,7 +1070,7 @@ fn plan_5_impact_defaults_to_depth_three_and_passes_through_barrels() {
             "import { c3 } from './c3';\nexport const c4 = () => c3();\n",
         ),
     ]);
-    assert_eq!(ingest_fixture(dir.path(), None).exit, 0);
+    assert_eq!(ingest_fixture(dir.path(), None).class, ExitClass::Success);
     let out = ask(dir.path(), "impact", Some("src/a.ts"), |_| {});
     let files = impacted(&out);
     assert!(files.iter().any(|(f, _)| f == "src/useA.ts"), "{files:?}");
@@ -1091,7 +1102,7 @@ fn plan_5_impact_defaults_to_depth_three_and_passes_through_barrels() {
 fn plan_9_unchanged_tree_reuses_the_latest_snapshot() {
     let dir = fixture();
     let first = ingest_fixture(dir.path(), None);
-    assert_eq!(first.exit, 0);
+    assert_eq!(first.class, ExitClass::Success);
     let second = ingest_fixture(dir.path(), None);
     assert_eq!(second.value["reused"], true, "{}", second.value);
     assert_eq!(second.value["id"], first.value["id"]);
@@ -1121,7 +1132,7 @@ fn settled_sources_reuse_by_stamp_and_a_same_size_edit_still_rebuilds() {
     let dir = fixture();
     std::thread::sleep(SourceStamp::SETTLE + std::time::Duration::from_millis(200));
     let first = ingest_fixture(dir.path(), None);
-    assert_eq!(first.exit, 0, "{}", first.value);
+    assert_eq!(first.class, ExitClass::Success, "{}", first.value);
     let graph_dir = PathBuf::from(first.value["dir"].as_str().expect("dir"));
     let bytes = std::fs::read(graph_dir.join(GRAPH_FILE)).expect("graph.bin");
     let (tables, _) = format::decode(&bytes).expect("decode");
@@ -1167,7 +1178,7 @@ fn settled_sources_reuse_by_stamp_and_a_same_size_edit_still_rebuilds() {
     std::fs::write(&a, after).expect("edit");
     assert_eq!(source_matches(&a, digest, Some(stamp)), Some(false));
     let third = ingest_fixture(dir.path(), None);
-    assert_eq!(third.exit, 0, "{}", third.value);
+    assert_eq!(third.class, ExitClass::Success, "{}", third.value);
     assert_ne!(third.value["reused"], true, "{}", third.value);
     let stale = ask(dir.path(), "stale", None, |_| {});
     assert_eq!(stale.value["fresh"], true, "{}", stale.value);
@@ -1198,7 +1209,7 @@ fn plan_4_receiver_typed_member_calls_link() {
             "import { Cart } from './store';\nexport function go() {\n  const c = new Cart();\n  c.save();\n}\n",
         ),
     ]);
-    assert_eq!(ingest_fixture(dir.path(), None).exit, 0);
+    assert_eq!(ingest_fixture(dir.path(), None).class, ExitClass::Success);
     let rust = ask(dir.path(), "callees", Some("src/service.rs#run"), |_| {});
     let rows = rust.value["results"].as_array().expect("rows");
     assert!(
@@ -1240,7 +1251,7 @@ fn plan_4_typed_this_field_calls_are_member_calls_not_local_matches() {
             ),
         ],
     );
-    assert_eq!(ingest_fixture(dir.path(), None).exit, 0);
+    assert_eq!(ingest_fixture(dir.path(), None).class, ExitClass::Success);
     let out = ask(dir.path(), "callees", Some("src/svc.ts#Svc.run"), |_| {});
     let got = ids(&out);
     assert!(
@@ -1268,7 +1279,7 @@ fn plan_3_rust_module_path_calls_link() {
             "pub fn handle() -> u8 {\n    crate::portable::sanitize(1)\n}\npub fn nested() -> u8 {\n    super::portable::sanitize(2)\n}\n",
         ),
     ]);
-    assert_eq!(ingest_fixture(dir.path(), None).exit, 0);
+    assert_eq!(ingest_fixture(dir.path(), None).class, ExitClass::Success);
     for caller in ["src/api.rs#handle", "src/api.rs#nested"] {
         let out = ask(dir.path(), "callees", Some(caller), |_| {});
         let rows = out.value["results"].as_array().expect("rows");
@@ -1320,7 +1331,7 @@ fn topology_files(out: &Value) -> std::collections::BTreeSet<String> {
 }
 
 fn assert_parity(dir: &Path, from: &str, to: &str) {
-    assert_eq!(ingest_fixture(dir, None).exit, 0);
+    assert_eq!(ingest_fixture(dir, None).class, ExitClass::Success);
     for (op, analysis, file) in [
         ("deps", "dependencies", from),
         ("dependents", "dependents", to),
@@ -1383,4 +1394,30 @@ fn graph_query_and_ast_topology_agree_on_rust_files() {
         ),
     ]);
     assert_parity(dir.path(), "src/api.rs", "src/a.rs");
+}
+
+/// Every error the graph store reports carries a declared camelCase code,
+/// so the CLI exits by the same `errorCodes` class as every tool.
+#[test]
+fn every_store_error_code_is_declared() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/tools/ast_graph/store");
+    let mut codes = Vec::new();
+    for file in ["mod.rs", "query.rs"] {
+        let text = std::fs::read_to_string(dir.join(file)).expect("source");
+        for opener in ["GraphOutput::error(", "fail("] {
+            for (start, _) in text.match_indices(opener) {
+                let rest = text[start + opener.len()..].trim_start();
+                if let Some(literal) = rest.strip_prefix('"') {
+                    codes.push(literal.split('"').next().unwrap_or_default().to_owned());
+                }
+            }
+        }
+    }
+    assert!(codes.len() > 10, "{codes:?}");
+    for code in codes {
+        assert!(
+            crate::tools::id::error_codes::class(&code).is_some(),
+            "graph store code {code:?} is not declared in errorCodes"
+        );
+    }
 }

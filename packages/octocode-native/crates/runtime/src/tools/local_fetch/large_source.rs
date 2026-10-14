@@ -389,7 +389,29 @@ fn stream_window(
         chunked,
         more.then_some(requested_last),
     );
-    (result, Some((streamed.first, held_last)))
+    // The lines the page returned, which the window's page budget may have
+    // cut short of the window it held.
+    let served = result
+        .source_line_ranges
+        .first()
+        .map(|range| range.start)
+        .zip(result.source_line_ranges.last().map(|range| range.end))
+        .or(result.start_line.zip(result.end_line))
+        .unwrap_or((streamed.first, held_last));
+    // A line chunk pages the file: its pagination is in file lines, as a
+    // whole-file read's is.
+    if chunked && let Some(page) = result.pagination.as_mut() {
+        let (start, end) = served;
+        page.unit = WindowUnit::Lines;
+        page.offset = start - 1;
+        page.length = end + 1 - start;
+        page.total_lines = total;
+        page.total_bytes = usize::try_from(len).unwrap_or(usize::MAX);
+        page.has_more = end < total;
+        page.next_offset = page.has_more.then_some(end);
+        page.resume_line = None;
+    }
+    (result, Some(served))
 }
 
 /// Several `ranges`: each (overlaps and neighbours merged, in line order) is

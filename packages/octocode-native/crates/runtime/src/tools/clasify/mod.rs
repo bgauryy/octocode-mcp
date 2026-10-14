@@ -458,7 +458,15 @@ pub(crate) fn preflight(query: &ClasifyQuery) -> Result<Vec<Value>, Classificati
             .resources
             .iter()
             .filter(|resource| !locate_capable(resource))
-            .filter_map(resource_id)
+            .filter_map(|resource| {
+                let id = resource_id(resource)?;
+                Some(match resource {
+                    Resource::Variant1 { tool, .. } => {
+                        format!("{id} ({})", read_tool(*tool).as_str())
+                    }
+                    Resource::Variant0 { .. } => id.to_owned(),
+                })
+            })
             .collect::<Vec<_>>();
         if !blocked.is_empty() {
             return Err(locate_unsupported(&format!(
@@ -472,15 +480,12 @@ pub(crate) fn preflight(query: &ClasifyQuery) -> Result<Vec<Value>, Classificati
 
 /// `classificationLocateUnsupported`, raised before capture (a resource that
 /// cannot supply source lines) or per page (a captured page that does not):
-/// one message stem and one repair, whichever stage found it.
+/// one message stem, whichever stage found it. It states the per-call facts
+/// (what cannot supply lines); which resources can is the contract's rule.
 pub(crate) fn locate_unsupported(reason: &str) -> ClassificationError {
     ClassificationError {
         code: "classificationLocateUnsupported".into(),
         message: format!("locate needs contiguous original source lines; {reason}."),
-        hints: vec![
-            "Locate needs localFetch/ghGetFileContent without minify, or localSearch/ghSearchCode candidateEvidence:\"fileChunks\".".into(),
-            "To screen search, structure, AST, LSP, history or package results, ask yesno/choice/score/relevant in a separate matrix.".into(),
-        ],
         ..Default::default()
     }
 }
@@ -821,6 +826,15 @@ mod tests {
                 .expect_err("locate needs source lines");
             assert_eq!(error.code, "classificationLocateUnsupported", "{context}");
             assert!(error.message.contains("resource-1"));
+            // Per-call facts only: the blocked resource and its tool; the
+            // routing rule is the contract's, not a hint on every failure.
+            let tool = context["tool"].as_str().unwrap_or_default();
+            assert!(
+                error.message.contains(&format!("({tool})")),
+                "{}",
+                error.message
+            );
+            assert!(error.hints.is_empty(), "{:?}", error.hints);
             assert!(admitted(&semantic_query(context, question())).is_ok());
         }
     }

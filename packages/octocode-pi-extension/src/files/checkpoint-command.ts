@@ -28,6 +28,7 @@ function parentSessionFile(event: { reason?: string; previousSessionFile?: strin
 function describe(result: RewindResult, cwd: string, turns: number): string {
   const show = (files: string[]) => files.map((file) => path.relative(cwd, file) || file).join(', ');
   const lines = [`Rewound ${turns} turn${turns === 1 ? '' : 's'}: restored ${result.restored.length} file${result.restored.length === 1 ? '' : 's'}${result.restored.length ? ` (${show(result.restored)})` : ''}.`];
+  if (result.partly.length) lines.push(`Partly restored, an older change could not be undone (its checkpoint is kept, rewind again to retry): ${show(result.partly)}.`);
   if (result.skipped.length) lines.push(`Left alone, changed since the agent's edit: ${show(result.skipped)}.`);
   return lines.join('\n');
 }
@@ -88,8 +89,8 @@ export function registerCheckpoints(pi: ExtensionAPI, checkpoints: Checkpoints, 
     const anchors = checkpoints.list().filter((entry) => turns.includes(entry.turn) && entry.anchor !== undefined).map((entry) => entry.anchor!);
     const result = await checkpoints.rewind(turns);
     relabel(ctx, anchors);
-    for (const file of result.restored) forget(file);
-    say(ctx, describe(result, ctx.cwd, turns.length), result.skipped.length ? 'warning' : 'info');
+    for (const file of [...result.restored, ...result.partly]) forget(file);
+    say(ctx, describe(result, ctx.cwd, turns.length), result.skipped.length || result.partly.length ? 'warning' : 'info');
     return result;
   };
 
@@ -108,7 +109,7 @@ export function registerCheckpoints(pi: ExtensionAPI, checkpoints: Checkpoints, 
       }
       const result = await apply(turns, ctx);
       // The model still believes its edits are in place: tell it on its next turn (never triggers one itself).
-      if (result.restored.length > 0) {
+      if (result.restored.length + result.partly.length > 0) {
         pi.sendMessage(
           { customType: 'octocode-rewind', content: `The user ran /octocode rewind. ${describe(result, ctx.cwd, turns.length)} Those files are back to their earlier content: read them again before editing.`, display: false },
           { triggerTurn: false },

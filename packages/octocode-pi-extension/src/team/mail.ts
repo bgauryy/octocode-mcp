@@ -13,8 +13,15 @@ export class Mail {
   private holding = new AbortController();
   /** Notices already handed to Pi whose database acknowledgement still needs retrying. */
   private notified: DeadLetter[] = [];
+  /** Ids of the messages this process created for the user: the only ones labelled "the user" (the sender column is shared and forgeable). */
+  private readonly forUser = new Set<number>();
 
   constructor(private readonly pi: Pick<ExtensionAPI, 'sendMessage'>) {}
+
+  /** Records that this process created message `id` for the user (`/agents tell`): its text is read as the user's. */
+  createdForUser(id: number): void {
+    this.forUser.add(id);
+  }
 
   /** A team notice for this agent, read at its next step; never starts a turn. False when the session cannot take it. */
   notice(text: string): boolean {
@@ -47,7 +54,7 @@ export class Mail {
   }
 
   private send(batch: Message[], parentId: string | undefined, stopped: boolean): boolean {
-    const content = batch.map((message) => messageText(message, parentId, stopped)).join('\n\n');
+    const content = batch.map((message) => messageText(message, { parentId, stopped, fromUser: this.forUser.has(message.id) })).join('\n\n');
     return this.inject(content, { messages: batch }, { triggerTurn: batch.some(wakes), deliverAs: 'steer' });
   }
 
@@ -65,6 +72,7 @@ export class Mail {
   /** Forgets held mail (the agent left): never started, it stays undelivered. */
   reset(): void {
     this.notified = [];
+    this.forUser.clear();
     this.releaseInterrupt();
   }
 

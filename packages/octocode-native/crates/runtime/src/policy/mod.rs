@@ -1,5 +1,4 @@
 pub mod discovery;
-pub mod gitignore;
 pub mod include;
 pub mod path;
 pub mod prune;

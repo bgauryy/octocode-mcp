@@ -1,10 +1,10 @@
 //! The response for one page: rows, pagination, leads, warnings and the
 //! partial state.
 use super::{HistoryOperation, HistorySearch, leads, rows};
-use crate::providers::github::HistoryPage;
 use crate::tools::gh_shared::{SEARCH_RESULT_CAP, SearchReach, pick_rows};
 use crate::tools::paging::push_warnings;
 use crate::tools::result::remove_null_fields;
+use octocode_github::HistoryPage;
 use serde_json::{Value, json};
 
 /// Where a page sits in the result.
@@ -108,6 +108,11 @@ pub(super) fn shape(
     let HistoryPage {
         items, warnings, ..
     } = result;
+    let narrow = if paging.capped {
+        leads::narrow_capped(query, &items)
+    } else {
+        None
+    };
     let mut value = match query.operation() {
         HistoryOperation::PullRequest => pull_requests(query, &items, paging, terms),
         HistoryOperation::Issue => issues(query, &items, paging, terms),
@@ -128,14 +133,6 @@ pub(super) fn shape(
     }
     if !warnings.is_empty() {
         value["warnings"] = json!(warnings);
-    }
-    // A REST list has no total (a search has): say why the first page of a
-    // longer list shows none, so a caller pages on instead of waiting for one.
-    if paging.listed && paging.more && paging.current == 1 {
-        push_warnings(
-            &mut value,
-            ["GitHub's commit list gives no total, so pagination has no totalItems: page until hasMore is false.".to_owned()],
-        );
     }
     if query.operation() == HistoryOperation::Issue
         && !paging.more
@@ -169,7 +166,7 @@ pub(super) fn shape(
     {
         value["next"]["broadenSearch"] = lead;
     }
-    mark_partial(&mut value, paging);
+    mark_partial(&mut value, paging, narrow);
     value
 }
 
@@ -299,9 +296,9 @@ pub(super) fn mark_empty(value: &mut Value, more: bool) {
     }
 }
 
-/// A capped or incomplete search is partial; the cap gets a partition tip
-/// (success rows keep warnings; hints are reserved for empty/error rows).
-fn mark_partial(value: &mut Value, paging: &Paging) {
+/// A capped or incomplete search is partial; the cap states GitHub's match
+/// count and gets its narrowing lead (`narrowScope`).
+fn mark_partial(value: &mut Value, paging: &Paging, narrow: Option<Value>) {
     if !paging.incomplete && !paging.capped {
         return;
     }
@@ -324,5 +321,8 @@ fn mark_partial(value: &mut Value, paging: &Paging) {
                 paging.matched
             )],
         );
+        if let Some(lead) = narrow {
+            value["next"]["narrowScope"] = lead;
+        }
     }
 }

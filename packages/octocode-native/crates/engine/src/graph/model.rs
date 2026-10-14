@@ -240,22 +240,6 @@ pub struct GraphFactsTypedEntry {
     pub reference_counts: Vec<crate::types::GraphReferenceCount>,
 }
 
-#[derive(Clone, Debug)]
-pub struct GraphFactsTypedScanResult {
-    pub schema_version: u32,
-    pub entries: Vec<GraphFactsTypedEntry>,
-    pub skipped: Vec<crate::types::GraphFactsScanDiagnostic>,
-    pub files_skipped: u32,
-    pub truncated: bool,
-    /// Where a truncated scan resumes: the walk-order index of the first
-    /// unread file (pass it back as `skip_files`). `None` when the scan is
-    /// complete, or was cut by an explicit `max_files`.
-    pub scan_resume: Option<u32>,
-    /// Root-relative paths of the directories `exclude_dir` pruned, in walk
-    /// order: what an outline of the scope did not cover.
-    pub pruned_dirs: Vec<String>,
-}
-
 #[derive(Clone, Debug, Default, Deserialize, Serialize, Eq, PartialEq, Ord, PartialOrd)]
 #[serde(transparent)]
 pub struct NodeId(pub String);
@@ -297,6 +281,21 @@ pub enum EdgeKind {
     Reexports,
     DynamicImport,
     Syntactic(String),
+}
+
+impl EdgeKind {
+    /// The kind's plain public name: the serialized variant name, or the
+    /// extractor's relation (`calls`, `contains`) for a syntactic edge.
+    #[must_use]
+    pub fn label(&self) -> &str {
+        match self {
+            Self::Declares => "declares",
+            Self::Imports => "imports",
+            Self::Reexports => "reexports",
+            Self::DynamicImport => "dynamicImport",
+            Self::Syntactic(relation) => relation,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]

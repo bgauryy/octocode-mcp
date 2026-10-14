@@ -5,7 +5,7 @@
 //! (`next.retry`, the provider's delay, the SSO authorization URL) and how
 //! the batch exits.
 
-use crate::support::{Workspace, call, row_data};
+use crate::support::{Run as _, Workspace, call, row_data};
 use octocode_native::runtime::{ExitClass, FailureKind};
 use serde_json::json;
 use wiremock::matchers::{method, path, query_param_contains};
@@ -43,7 +43,7 @@ async fn a_rate_limited_row_offers_a_retry_and_the_batch_exits_rate_limited() {
     let workspace = Workspace::new();
     let runtime = workspace.runtime(&[("GITHUB_API_URL", format!("{}/api/v3", server.uri()))]);
     let outcome = runtime
-        .execute(
+        .run(
             "t".into(),
             "ghSearchRepo".into(),
             crate::support::envelope(json!({"queries":[

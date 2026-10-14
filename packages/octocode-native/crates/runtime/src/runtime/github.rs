@@ -7,7 +7,7 @@ use super::{
 use crate::{
     config::ConfigOutput,
     policy::path::PathPolicy,
-    providers::github::*,
+    providers::github::{AuthMode, Authentication},
     security::ContentSecurity,
     tools::{
         gh_clone_repo::{self, CloneConfig, CloneContext, CloneFailure, SystemGit},
@@ -20,6 +20,7 @@ use crate::{
         result::{Continuation, ToolData},
     },
 };
+use octocode_github::*;
 use serde_json::{Value, json};
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
@@ -243,7 +244,7 @@ impl GitHubServices {
             .credential_host()
             .to_owned();
         let mut budget =
-            crate::providers::RequestBudget::with_timeout(self.timeout, 16 * 1024 * 1024);
+            octocode_github::RequestBudget::with_timeout(self.timeout, 16 * 1024 * 1024);
         budget.deadline = context.deadline.min(budget.deadline);
         // Rate-limit waits run on the call's own time, not the request's.
         budget.wait_until = context.deadline;
@@ -285,7 +286,7 @@ impl GitHubServices {
         // the validated row as-is.
         macro_rules! typed {
             ($type:ty) => {
-                match super::dispatch::parse_query::<$type>(query.clone()) {
+                match super::dispatch::parse_query::<$type>(query) {
                     Ok(query) => query,
                     Err(row) => return Ok(*row),
                 }
@@ -449,7 +450,7 @@ impl GitHubServices {
         security: &ContentSecurity,
     ) -> Result<DomainResult, ExecutionError> {
         context.check()?;
-        let query = match super::dispatch::parse_query(query.clone()) {
+        let query = match super::dispatch::parse_query(query) {
             Ok(query) => query,
             Err(row) => return Ok(*row),
         };
@@ -459,7 +460,7 @@ impl GitHubServices {
         context.check()?;
         Ok(match result {
             Ok(data) => super::dispatch::value_result(data),
-            Err(failure) => history_error(failure.error, true, failure.next),
+            Err(failure) => history_error(*failure.error, true, failure.next),
         })
     }
 }
@@ -473,8 +474,12 @@ fn tool_row(result: Result<ToolData, GhFailure>) -> DomainResult {
             ..DomainResult::payload(output.data, output.status)
         },
         Err(failure) => {
-            let mut row =
-                provider_row(&failure.error, failure.message, failure.hints, failure.next);
+            let mut row = provider_row(
+                &failure.error,
+                failure.message,
+                failure.hints,
+                failure.next.map(|next| *next),
+            );
             for (field, value) in failure.fields {
                 row.data[field] = value;
             }

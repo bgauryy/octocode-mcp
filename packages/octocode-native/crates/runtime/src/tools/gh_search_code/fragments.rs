@@ -1,10 +1,8 @@
 //! Preserve text-match anchors through the shared native sanitizer. Snippets
 //! are already small, so they stay raw (no minify): lines, spacing, and
 //! comments are the evidence, and each match keeps its own line offset.
-use crate::{
-    providers::github::{ProviderError, TextMatch},
-    security::scan::{ContentScan, sanitize_provider_text},
-};
+use crate::security::scan::{ContentScan, sanitize_provider_text};
+use octocode_github::{ProviderError, TextMatch};
 use serde_json::{Value, json};
 use std::path::Path;
 

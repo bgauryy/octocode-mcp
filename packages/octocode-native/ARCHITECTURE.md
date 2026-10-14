@@ -59,6 +59,10 @@ Nested context supports the available read tools; recursive semantic assessment,
 | `tools/ast_graph/store` | CLI-only persisted code graph (`npx octocode graph ingest` / `graph query`): immutable snapshots under `<workspace>/.octocode/graph/` | A public tool contract or MCP surface |
 | `crates/runtime-napi` | Host conversion and native runtime lifecycle | An alternate execution path |
 | `crates/cli` | Arguments, human output, and shell exits | Node, N-API, or duplicated tools |
+| `crates/cli/src/cli/serve.rs` | Warm-server socket daemon: the same runtime behind a same-uid Unix socket (0600 in a 0700 directory), with bounded request lines and a connection cap | Tool behavior |
+| `crates/cli/src/cli/mcp_install.rs`, `mcp_manage.rs`, `mcp_clients.rs` | MCP client configuration writers and the client path catalogue | Tool execution |
+| `crates/cli/src/cli/lsp_provision/` | Verified language-server downloads: allowlisted hosts, SHA-256 pinned assets, bounded time and size, streamed through an owner-only spool file under a per-target `flock` | Engine LSP discovery |
+| `crates/io` | File and process primitives every crate shares: atomic and streamed owner-only writes, private directories, bounded `flock` waits, the HTTP client policy, lossy environment reads | Tool, provider, or contract logic |
 
 `crates/runtime` is a pure `rlib`. `crates/github` owns GitHub protocol and
 transport services, plus the shared retry timing (`retry.rs`: `header_u64`,
@@ -74,6 +78,8 @@ unpublished Cargo packages.
 The engine's `scan_budget` holds the time and walk budget of an unbounded scan (no caller `maxFiles`): it stops at a chunk boundary past the budget and returns the walk-order index to resume from, and `lsp/module_path` anchors bundled language-server lookup at the loaded module (the N-API addon or the CLI binary), not at `current_exe()`, which is `node` under MCP.
 
 `crates/engine` is consumed as a Rust library with its default grammar set. PCRE2 and embedded ast-grep rewrite are unconditional; only `tree-sitter-cuda` is outside the default build. It exposes reusable algorithms, not public policy, and has no N-API surface; `crates/runtime-napi` does not depend on it. Engine errors carry a `reason` and an `ErrorKind`.
+
+Tension: the engine is described as algorithms, not policy, yet it owns the language-server pool and its process IO (`lsp/pool.rs`, `lsp/client.rs`). Those stay in the engine so the CLI daemon and the N-API addon share one pool; moving them out is a design decision, not a cleanup.
 
 AST declaration extraction indexes local export aliases by symbol name in the engine
 and polls cancellation during outline construction. Runtime owns a bounded cache of
@@ -134,6 +140,17 @@ Config remains the shared home/dotenv policy owner; core contracts are unchanged
 
 Generic text search, reads, minification, file recognition, GitHub/history operations, artifact registries, and trusted custom LSP configuration do not consult the grammar allowlist. Syntax graph relations remain candidate evidence; callers use explicit LSP operations for semantic proof.
 
+## Local walk policy
+
+Every local tool walks under one policy owned by `engine::search::walk` and one glob dialect owned by `engine::search::glob`:
+
+- Ignore rules are standard gitignore semantics as the `ignore` crate implements them: `.gitignore` (inside a git repository only), `.ignore`, the global gitignore, `.git/info/exclude`, and the ignore files above the walked root. `IgnorePolicy { include_ignored, include_hidden }` comes from the request's `includeIgnored`/`includeHidden`; `includeIgnored:true` lifts every source at once. `walk_builder` applies it inside a walk; `IgnoreRules` decides one path the same way and names the deciding rule (`why`), for empty-result hints.
+- Globs (`include`, `exclude`, `names`, `languageGlobs`) are gitignore globs: `*` never crosses `/`, a glob without `/` matches a name at any depth, one with `/` the path below the root. An invalid glob is always an `invalidGlob` error.
+- A walk is cancelled by one `stop` function (`ErrorKind::Cancelled`); directory names are pruned by one `Prune` set.
+- `engine::text::read_source` is the one bounded read (non-blocking open, size from the opened handle, capped read) and `engine::text::sniff` the one binary definition (a NUL, or dense C0 controls, in the first 8 KiB).
+
+`fs_query` (structureSearch, graph scans) keeps its own name-ordered recursion: its policy callback prunes subtrees and probes refuse oversized directories before listing them, which the `ignore` walker's `'static` entry filter cannot express. It applies the same `IgnoreRules`, `Prune`, and globs.
+
 ## Safety and lifecycle invariants
 
 - Native runtime absence fails closed at every Node interface.
@@ -146,6 +163,7 @@ Generic text search, reads, minification, file recognition, GitHub/history opera
 - `localFetch` and `ghGetFileContent` share extraction: literal and regex matches use original byte coordinates and include every source line touched by a multiline match. Case-insensitive Unicode normalization never supplies offsets for slicing original content. `regex:"rust"` is the Rust regex engine `localSearch` also runs, so one pattern has one verdict and reason in both tools at any file size; backreferences and lookaround need `regex:"pcre2"`.
 - Structural rewrite uses embedded engine primitives while the tool layer retains locks, hashes, path policy, selection, postconditions, transactions, and recovery.
 - Public rewrite paths (rows, patch headers, `expectedHashes` keys) are workspace-relative like every local tool's rows; guarded apply resolves relative keys against the workspace root and also accepts absolute keys. Match ids stay keyed on the scanned-directory path, and the snapshot carries a contract version, so a preview from an older path form fails closed with `staleSnapshot` and `next.restart`.
+- A poisoned lock is recovered with `PoisonError::into_inner`, never skipped: a skip silently drops work, and on coordination state it strands waiters. `crates/runtime/tests/lock_poison_policy.rs` enforces this across the crates, with a reason for each allowed exception.
 - No external search, AST, rewrite, or provider executable is used. Intentional subprocesses are limited to system Git cloning, configured language servers, and supported credential discovery.
 
 ## Contract generation
@@ -176,3 +194,7 @@ host artifacts.
 Rust crate extraction does not create new npm packages. Build commands use the
 committed lockfile; release preparation synchronizes versions before compilation,
 and prepublish checks versions without rewriting manifests or resolving dependencies.
+
+Build notes:
+- `crates/runtime/build.rs` resolves `packages/octocode-config` from the manifest directory, so the crate builds only inside this monorepo. That is fine while `publish = false`.
+- The optional dependencies in `crates/runtime/Cargo.toml` exist to unify feature sets for development builds; `node skills-dev/octocode-dev/scripts/dev.mjs check:dev-unify` verifies that they still do.

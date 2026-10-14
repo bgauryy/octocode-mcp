@@ -1,11 +1,12 @@
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { kindOption } from '../permission/ask.js';
+import { oneLine } from '../permission/effect.js';
 import { sanitizeTerminalText } from '../shared/sanitize.js';
 import { clipText } from '../shared/util.js';
 
 /**
  * The review of a `file` batch: the `file.workspace` permission dialog. In `manual` mode every batch shows each
- * change with the model's reasoning, and the user applies all, rejects all, or decides change by change.
+ * change with the system's reason lines and the model's reasoning (labelled unverified, last), and the user applies all, rejects all, or decides change by change.
  */
 
 interface ChangeQuery {
@@ -24,18 +25,18 @@ function snippet(text: string, sign: '-' | '+', maxLines = 3): string[] {
   return [...lines.slice(0, maxLines).map((line) => `${sign} ${clipLine(line)}`), ...(lines.length > maxLines ? [`${sign} … ${lines.length - maxLines} more line(s)`] : [])];
 }
 
-/** What a change does, for the review dialog: what, why, and a bounded preview of the text involved. */
+/** What a change does, for the review dialog: what, a bounded preview of the text involved, then what the agent says about it (unverified, last). */
 export function describeChange(query: ChangeQuery): string[] {
   const head = `${query.type} ${sanitizeTerminalText(query.path)}`;
-  const why = `  why: ${sanitizeTerminalText(query.reasoning)}`;
-  if (query.type === 'delete') return [head, why, '  removes the file'];
-  if (query.type === 'write') return [head, why, ...snippet(query.content ?? '', '+', 5).map((line) => `  ${line}`)];
+  const says = `  agent says (unverified): ${clipLine(oneLine(query.reasoning), 160)}`;
+  if (query.type === 'delete') return [head, '  removes the file', says];
+  if (query.type === 'write') return [head, ...snippet(query.content ?? '', '+', 5).map((line) => `  ${line}`), says];
   const edits = query.edits ?? [];
   return [
     `${head} · ${edits.length} edit${edits.length === 1 ? '' : 's'}`,
-    why,
     ...edits.slice(0, 3).flatMap((edit) => [...snippet(edit.oldText, '-', 2), ...snippet(edit.newText, '+', 2)].map((line) => `  ${line}`)),
     ...(edits.length > 3 ? [`  … ${edits.length - 3} more edit(s)`] : []),
+    says,
   ];
 }
 
@@ -54,11 +55,13 @@ const REJECT_NOTE = 'Reject and tell the agent why…';
  * dismissed or interrupted (no verdict). Nothing is applied before this returns. `Permission.check` runs it, inside
  * its one-dialog-at-a-time lock.
  */
-export async function askReview(ctx: Pick<ExtensionContext, 'ui'>, queries: ChangeQuery[], signal?: AbortSignal): Promise<Map<number, string | undefined> | 'cancelled' | 'session'> {
+export async function askReview(ctx: Pick<ExtensionContext, 'ui'>, queries: ChangeQuery[], signal?: AbortSignal, reasonLines: readonly string[] = []): Promise<Map<number, string | undefined> | 'cancelled' | 'session'> {
   const all = (note?: string) => new Map(queries.map((_, index) => [index, note]));
   const options = signal ? { signal } : undefined;
-  const list = queries.map((query, index) => sanitizeTerminalText(`${index + 1}. ${query.type} ${query.path} — ${query.reasoning}`)).join('\n');
-  const choice = await ctx.ui.select(`Apply ${queries.length} file change${queries.length === 1 ? '' : 's'}?\n${list}`, [APPLY_ALL, APPLY_SESSION, ...(queries.length > 1 ? [ONE_BY_ONE] : []), REJECT_ALL, REJECT_ALL_NOTE], options);
+  // What changes first, then the system's reason lines (the same card every prompt leads with), then what the agent says.
+  const list = queries.map((query, index) => sanitizeTerminalText(`${index + 1}. ${query.type} ${query.path}`)).join('\n');
+  const says = queries.map((query, index) => `  ${index + 1}. agent says (unverified): ${clipLine(oneLine(query.reasoning), 160)}`).join('\n');
+  const choice = await ctx.ui.select(`Apply ${queries.length} file change${queries.length === 1 ? '' : 's'}?\n${[list, ...reasonLines, says].join('\n')}`, [APPLY_ALL, APPLY_SESSION, ...(queries.length > 1 ? [ONE_BY_ONE] : []), REJECT_ALL, REJECT_ALL_NOTE], options);
   if (choice === undefined || signal?.aborted) return 'cancelled';
   if (choice === APPLY_ALL) return new Map();
   if (choice === APPLY_SESSION) return 'session';
@@ -70,7 +73,7 @@ export async function askReview(ctx: Pick<ExtensionContext, 'ui'>, queries: Chan
   if (choice !== ONE_BY_ONE) return 'cancelled';
   const rejected = new Map<number, string | undefined>();
   for (const [index, query] of queries.entries()) {
-    const decision = await ctx.ui.select(`Change ${index + 1} of ${queries.length}\n${describeChange(query).join('\n')}`, [APPLY, REJECT, REJECT_NOTE], options);
+    const decision = await ctx.ui.select(`Change ${index + 1} of ${queries.length}\n${[describeChange(query)[0], ...reasonLines, ...describeChange(query).slice(1)].join('\n')}`, [APPLY, REJECT, REJECT_NOTE], options);
     if (decision === undefined || signal?.aborted) return 'cancelled';
     if (decision === APPLY) continue;
     if (decision === REJECT) rejected.set(index, undefined);

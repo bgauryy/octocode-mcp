@@ -149,8 +149,6 @@ pub(crate) fn assemble_file(
                     byte_offset,
                     value,
                     count: None,
-                    kind: None,
-                    score_hint: None,
                     rank: Some(rank),
                     original_chars: (chars > max_snippet)
                         .then(|| u32::try_from(chars).unwrap_or(u32::MAX)),
@@ -236,8 +234,6 @@ pub(crate) fn assemble_file(
                 byte_offset: utf16_to_byte_offset(&m.line_text, m.column),
                 value,
                 count: None,
-                kind: None,
-                score_hint: None,
                 rank: Some(line_rank_at(&m.line_text, m.column)),
                 original_chars,
             }

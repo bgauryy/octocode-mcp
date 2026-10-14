@@ -1,4 +1,4 @@
-use crate::providers::github::{CredentialSource, ResolvedCredential};
+use octocode_github::{CredentialSource, ResolvedCredential};
 use secrecy::SecretString;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -19,12 +19,18 @@ pub struct RuntimeLimits {
     pub timeout: Duration,
 }
 
+/// The per-request execution budget of every runtime surface (CLI, warm
+/// server, MCP): above the worst configured cold start plus one logical
+/// request (initialize, language-server readiness, retries and delays).
+/// `HostOptions::timeout_secs` overrides it for an embedder.
+pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(300);
+
 impl Default for RuntimeLimits {
     fn default() -> Self {
         Self {
             concurrency: 4,
             pending: 64,
-            timeout: Duration::from_secs(60),
+            timeout: DEFAULT_TIMEOUT,
         }
     }
 }
@@ -41,6 +47,37 @@ pub enum ExecutionError {
     /// A tool reached a dispatcher that has no route for it.
     UnroutedTool,
     WorkerFailed,
+}
+
+impl ExecutionError {
+    /// The declared `errorCodes` entry this failure reports.
+    #[must_use]
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::Closed => "closed",
+            Self::Busy => "busy",
+            Self::DuplicateRequest => "duplicateRequest",
+            Self::Cancelled => "cancelled",
+            Self::Timeout => "timeout",
+            Self::UnroutedTool => "unroutedTool",
+            Self::InvalidLimits | Self::WorkerFailed => "executionFailed",
+        }
+    }
+}
+
+impl std::fmt::Display for ExecutionError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Closed => "The runtime is shutting down.",
+            Self::Busy => "Too many requests are pending; retry shortly.",
+            Self::DuplicateRequest => "A request with this id is already running.",
+            Self::InvalidLimits => "The runtime limits are invalid.",
+            Self::Cancelled => "The request was cancelled.",
+            Self::Timeout => "Tool call timed out.",
+            Self::UnroutedTool => "No route executes this tool.",
+            Self::WorkerFailed => "The tool worker failed.",
+        })
+    }
 }
 
 #[derive(Clone, Debug)]

@@ -1,21 +1,24 @@
 use super::*;
+use std::path::Path;
 
 fn key(resource: &str, credential: &str) -> CacheKey {
     CacheKey {
         namespace: "test".into(),
+        scope: format!("https://api.github.com#{credential}"),
         resource: resource.into(),
-        partition: StorePartition {
-            endpoint: "https://api.github.com".into(),
-            credential_fingerprint: credential.into(),
-        },
     }
 }
 
-fn config(fresh: u64, ttl: u64) -> CacheConfig {
-    CacheConfig {
-        fresh: Duration::from_secs(fresh),
-        ttl: Duration::from_secs(ttl),
-        ..CacheConfig::default()
+/// A listing fresh for `seconds`, and a search page living as long.
+fn revalidate(seconds: u64) -> CacheClass {
+    CacheClass::Revalidate {
+        fresh: Duration::from_secs(seconds),
+    }
+}
+
+fn volatile(seconds: u64) -> CacheClass {
+    CacheClass::Volatile {
+        ttl: Duration::from_secs(seconds),
     }
 }
 
@@ -40,10 +43,10 @@ fn age_disk_entries(dir: &Path, seconds: u64) {
 
 #[test]
 fn classes_age_differently_in_memory() {
-    let store = Store::<u32>::new(config(0, 0), None);
+    let store = Store::<u32>::new(CacheConfig::default(), None);
     store.put(key("pinned", "x"), 1, 4, CacheClass::Immutable);
-    store.put(key("listing", "x"), 2, 4, CacheClass::Revalidate);
-    store.put(key("search", "x"), 3, 4, CacheClass::Volatile);
+    store.put(key("listing", "x"), 2, 4, revalidate(0));
+    store.put(key("search", "x"), 3, 4, volatile(0));
     let pinned = store
         .get(&key("pinned", "x"))
         .expect("immutable never expires");
@@ -60,9 +63,9 @@ fn classes_age_differently_in_memory() {
 
 #[test]
 fn revalidate_entries_are_fresh_inside_the_window() {
-    let store = Store::<u32>::new(config(60, 60), None);
-    store.put(key("listing", "x"), 2, 4, CacheClass::Revalidate);
-    store.put(key("search", "x"), 3, 4, CacheClass::Volatile);
+    let store = Store::<u32>::new(CacheConfig::default(), None);
+    store.put(key("listing", "x"), 2, 4, revalidate(60));
+    store.put(key("search", "x"), 3, 4, volatile(60));
     assert!(store.get(&key("listing", "x")).unwrap().fresh);
     assert!(store.get(&key("search", "x")).unwrap().fresh);
 }
@@ -73,7 +76,7 @@ fn memory_is_a_byte_and_entry_bounded_lru() {
         CacheConfig {
             max_entries: 2,
             max_bytes: 5,
-            ..config(60, 60)
+            ..CacheConfig::default()
         },
         None,
     );
@@ -123,18 +126,13 @@ fn partitions_never_share_entries() {
 #[test]
 fn disk_tier_keeps_immutable_entries_and_expires_volatile_ones() {
     let dir = tempfile::tempdir().unwrap();
-    let writer = Store::<String>::new(config(60, 60), Some(dir.path().into()));
+    let writer = Store::<String>::new(CacheConfig::default(), Some(dir.path().into()));
     writer.put(key("pinned", "x"), "body".into(), 4, CacheClass::Immutable);
-    writer.put(
-        key("listing", "x"),
-        "list".into(),
-        4,
-        CacheClass::Revalidate,
-    );
-    writer.put(key("search", "x"), "page".into(), 4, CacheClass::Volatile);
+    writer.put(key("listing", "x"), "list".into(), 4, revalidate(60));
+    writer.put(key("search", "x"), "page".into(), 4, volatile(60));
     // A day later, in a new process.
     age_disk_entries(dir.path(), 86_400);
-    let reader = Store::<String>::new(config(60, 60), Some(dir.path().into()));
+    let reader = Store::<String>::new(CacheConfig::default(), Some(dir.path().into()));
     let pinned = reader.get(&key("pinned", "x")).expect("immutable survives");
     assert!(pinned.fresh);
     assert_eq!(*pinned.value, "body");
@@ -176,6 +174,31 @@ fn disk_tier_is_byte_bounded_least_recently_used_first() {
     assert!(json_files(dir.path()).is_empty());
 }
 
+/// A crash between the temp write and the rename leaves `.tmp` files; prune
+/// sweeps old ones and never touches a write that may still be in flight.
+#[test]
+fn prune_sweeps_orphaned_temporary_files_but_not_fresh_ones() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::<u32>::new(CacheConfig::default(), Some(dir.path().into()));
+    let orphan = dir.path().join(".abc.json-0011.tmp");
+    let fresh = dir.path().join(".def.json-0022.tmp");
+    fs::write(&orphan, b"partial").unwrap();
+    fs::write(&fresh, b"in flight").unwrap();
+    let old = std::time::SystemTime::now() - std::time::Duration::from_secs(3_600);
+    fs::File::options()
+        .write(true)
+        .open(&orphan)
+        .unwrap()
+        .set_modified(old)
+        .unwrap();
+    store.disk.as_ref().unwrap().prune(u64::MAX);
+    assert!(
+        !orphan.exists(),
+        "an hour-old temp file is a crash leftover"
+    );
+    assert!(fresh.exists(), "a fresh temp file may be a write in flight");
+}
+
 #[test]
 fn clear_removes_both_tiers_and_corrupt_files_are_dropped() {
     let dir = tempfile::tempdir().unwrap();
@@ -190,6 +213,34 @@ fn clear_removes_both_tiers_and_corrupt_files_are_dropped() {
     let reader = Store::<u32>::new(CacheConfig::default(), Some(dir.path().into()));
     assert!(reader.get(&key("b", "x")).is_none());
     assert!(json_files(dir.path()).is_empty());
+}
+
+/// A read that fails for an environmental reason (no permission, too many
+/// open files) is a miss, not a reason to delete a healthy entry.
+#[cfg(unix)]
+#[test]
+fn a_transient_read_failure_keeps_the_entry() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::<u32>::new(CacheConfig::default(), Some(dir.path().into()));
+    store.put(key("b", "x"), 2, 4, CacheClass::Immutable);
+    let file = json_files(dir.path()).pop().unwrap();
+    fs::set_permissions(&file, fs::Permissions::from_mode(0o000)).unwrap();
+    let reader = Store::<u32>::new(CacheConfig::default(), Some(dir.path().into()));
+    assert!(
+        reader.get(&key("b", "x")).is_none(),
+        "an unreadable entry is a miss"
+    );
+    assert!(
+        file.exists(),
+        "a healthy entry survives a transient failure"
+    );
+    fs::set_permissions(&file, fs::Permissions::from_mode(0o600)).unwrap();
+    let healed = Store::<u32>::new(CacheConfig::default(), Some(dir.path().into()));
+    assert!(
+        healed.get(&key("b", "x")).is_some(),
+        "the entry serves again once readable"
+    );
 }
 
 #[cfg(unix)]

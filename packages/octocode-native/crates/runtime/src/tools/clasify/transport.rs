@@ -45,17 +45,17 @@ fn shared_client(endpoint: &Url) -> Result<reqwest::Client, ClassificationError>
     // discovery for it; remote providers still honor the user's proxy setup.
     let bypass_proxy = is_loopback_endpoint(endpoint);
     CLIENTS.get(bypass_proxy, || {
-        let builder = reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .retry(reqwest::retry::never())
-            .connect_timeout(CONNECT_TIMEOUT)
-            .user_agent(concat!("octocode-native/", env!("CARGO_PKG_VERSION")));
-        let builder = if bypass_proxy {
-            builder.no_proxy()
-        } else {
-            builder
+        let policy = octocode_io::http::ClientPolicy {
+            connect_timeout: Some(CONNECT_TIMEOUT),
+            user_agent: Some(concat!("octocode-native/", env!("CARGO_PKG_VERSION"))),
+            proxy: if bypass_proxy {
+                octocode_io::http::Proxy::Direct
+            } else {
+                octocode_io::http::Proxy::System
+            },
+            ..octocode_io::http::ClientPolicy::default()
         };
-        builder.build().map_err(|_| transport_error())
+        octocode_io::http::client(&policy).map_err(|_| transport_error())
     })
 }
 

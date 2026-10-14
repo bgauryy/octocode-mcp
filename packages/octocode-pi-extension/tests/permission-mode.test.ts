@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { modeSummary } from '../src/permission/ask.js';
-import { ACTION_CLASSES, ASK_REASONS, decide, parseGrants, reasonAsks, startMode, type ActionClass, type AskReason, type PermissionMode } from '../src/permission/mode.js';
+import { ACTION_CLASSES, actionWhy, ASK_REASONS, declaredPermissions, decide, kindOf, parseGrants, reasonAsks, SPAWN_GRANTABLE, startMode, UNGRANTABLE, type ActionClass, type AskReason, type PermissionMode } from '../src/permission/mode.js';
 import { PERMISSION_ENV, PERMISSION_GRANTS_ENV } from '../src/shared/env.js';
 
 /** Plan §2.4, one row per action class: manual, workspace, full. */
@@ -9,20 +9,22 @@ const MATRIX: Record<ActionClass, [string, string, string]> = {
   'file.workspace': ['ask', 'allow', 'allow'],
   'file.outside': ['ask', 'ask', 'allow'],
   shell: ['ask', 'allow', 'allow'],
+  'shell.destructive': ['ask', 'ask', 'allow'],
   web: ['ask', 'allow', 'allow'],
   browser: ['ask', 'allow', 'allow'],
+  'browser.control': ['ask', 'ask', 'allow'],
   'net.private': ['ask', 'ask', 'allow'],
   'upload.outside': ['ask', 'ask', 'allow'],
   'mcp.write': ['ask', 'allow', 'allow'],
   'mcp.destructive': ['ask', 'ask', 'allow'],
-  'memory.shared': ['ask', 'ask', 'allow'],
   'agent.spawn': ['ask', 'allow', 'allow'],
 };
 
 /** Reasons tighten an action. They are not action classes: manual, workspace, full. */
 const REASONS: Record<AskReason, [string, string, string]> = {
-  'hook.ask': ['ask', 'ask', 'ask'],
+  'hook.ask': ['ask', 'ask', 'allow'],
   provenance: ['ask', 'ask', 'allow'],
+  'profile.permissions': ['ask', 'ask', 'allow'],
 };
 
 describe('permission modes', () => {
@@ -52,15 +54,32 @@ describe('permission modes', () => {
     expect(startMode({ [PERMISSION_ENV]: 'yolo' })).toMatchObject({ mode: 'manual', warning: expect.stringContaining('yolo') });
   });
 
-  it('says full keeps hook asks and runs provenance hits', () => {
-    expect(modeSummary('full')).toBe('no routine asks; hard refusals and hook asks remain.');
-    expect(modeSummary('workspace')).toContain('hook asks and provenance asks always ask');
-    expect(modeSummary('manual')).toContain('hook asks and provenance asks always ask');
+  it('says what each mode does', () => {
+    expect(modeSummary('full')).toMatch(/destructive commands.*private web fetches.*hook's ask.*run without a prompt/);
+    expect(modeSummary('full')).toMatch(/⚠ counter.*audit log.*no UI has only the log/);
+    expect(modeSummary('workspace')).toContain('shell.destructive');
+    expect(modeSummary('workspace')).toContain('browser.control');
+    expect(modeSummary('manual')).toContain('hook asks, provenance hits and profile permissions also ask');
+  });
+
+  it('gives every class a reason line and a noun, and never a session kind to the per-call classes', () => {
+    for (const action of ACTION_CLASSES) expect(actionWhy(action), action).toMatch(/\S/);
+    expect([...UNGRANTABLE].sort()).toEqual(['browser.control', 'mcp.destructive', 'shell.destructive']);
+    for (const action of ['browser.control', 'shell.destructive', 'mcp.destructive'] as const) expect(kindOf(action)).toBeUndefined();
+  });
+
+  it('reads a profile\'s permissions: the declarable classes only, in any list shape', () => {
+    expect(declaredPermissions(['browser.control', 'net.private', 'upload.outside'])).toEqual({ declared: ['browser.control', 'net.private', 'upload.outside'], ignored: [] });
+    expect(declaredPermissions('browser.control, shell, browser.control')).toEqual({ declared: ['browser.control'], ignored: ['shell'] });
+    expect(declaredPermissions('net.private')).toEqual({ declared: ['net.private'], ignored: [] });
+    expect(declaredPermissions(['shell.destructive', 7])).toEqual({ declared: [], ignored: ['shell.destructive', '7'] });
+    expect(declaredPermissions(undefined)).toEqual({ declared: [], ignored: [] });
   });
 
   it('carries every grantable kind in a child grant, never a tripwire', () => {
     expect([...parseGrants({ [PERMISSION_GRANTS_ENV]: 'file.workspace, shell' })].sort()).toEqual(['file.workspace', 'shell']);
-    expect([...parseGrants({ [PERMISSION_GRANTS_ENV]: 'file.outside,net.private,provenance,hook.ask,shell' })].sort()).toEqual(['file.outside', 'net.private', 'shell']);
+    expect([...parseGrants({ [PERMISSION_GRANTS_ENV]: 'file.outside,net.private,provenance,hook.ask,shell,shell.destructive,browser.control,profile.permissions' })].sort()).toEqual(['browser.control', 'file.outside', 'net.private', 'shell']);
+    expect(SPAWN_GRANTABLE.has('shell.destructive')).toBe(false);
     expect(parseGrants({}).size).toBe(0);
   });
 });

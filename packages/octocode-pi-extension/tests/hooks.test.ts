@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { commandsFor, hookCalls, hookFiles, loadHooks, matches, parseHooks, toolAliases } from '../src/hooks/config.js';
@@ -117,11 +118,21 @@ describe('hook runner', () => {
     expect(run.stdout).toBe('');
   });
 
-  it('caps context at 16 KB', () => {
-    const capped = capContext('é'.repeat(20_000));
+  it('keeps context within 16 KB by saving the whole of a longer one to a file it names', () => {
+    const text = Array.from({ length: 2_000 }, (_, i) => `line ${i} ${'é'.repeat(10)}`).join('\n');
+    const capped = capContext(text);
     expect(Buffer.byteLength(capped)).toBeLessThanOrEqual(HOOK_CONTEXT_MAX_BYTES);
-    expect(capped).toMatch(/truncated\]$/);
+    expect(capped).toMatch(/^line 0 /);
+    expect(capped).toMatch(/line 1999 é+\n\n\[Output trimmed: showing \d+ of 2000 lines .*Full output: \S+hook-\S+\.txt;/);
+    const shown = /Full output: (\S+);/.exec(capped)![1]!;
+    expect(fs.readFileSync(shown.startsWith('~') ? path.join(os.homedir(), shown.slice(2)) : shown, 'utf8')).toBe(text);
     expect(capContext('short')).toBe('short');
+  });
+
+  it('says how much output past the read limit was not kept', () => {
+    const run = { code: 0, stdout: 'hello', stderr: '', timedOut: false, dropped: { stdout: 2048, stderr: 0 } };
+    expect(interpret('SessionStart', run).context).toBe('hello\n[… 2.0KB more output not kept: a hook\'s output is read up to 64.0KB]');
+    expect(interpret('PreToolUse', { ...run, code: 2, stderr: 'no', dropped: { stdout: 0, stderr: 10 } }).block).toMatch(/^no\n\[… 10B more output not kept/);
   });
 });
 
@@ -326,6 +337,19 @@ describe('Stop, Notification and hook timing', () => {
     expect(next.continue).toBe(true);
     expect(next.entries[0]).toEqual(earlier);
     expect(next.entries).toHaveLength(2);
+  }, 10_000);
+
+  it('shows the running Stop hooks in the footer status (Pi has removed its working line), then clears it', async () => {
+    const cwd = project({ Stop: [{ matcher: '', hooks: [{ type: 'command', command: 'node -e "setTimeout(Boolean,1300)" #ghp_abcdefghijklmnopqrstuvwxyz0123456789' }, { type: 'command', command: 'true' }] }] });
+    const { pi, fire } = fakePi();
+    registerHooks(pi, { OCTOCODE_HOOKS: '1' }, tmp());
+    const statuses: Array<string | undefined> = [];
+    const ctx = { ...context(cwd), hasUI: true, mode: 'tui', ui: { setStatus: (_key: string, text: string | undefined) => statuses.push(text), notify: () => undefined } };
+    await fire('session_start', { reason: 'startup' }, ctx);
+    expect(await fire('agent_before_settle', settle(), ctx)).toBeUndefined();
+    expect(statuses[0]).toMatch(/^Stop hook: node -e .*\[redacted\] \+1$/);
+    expect(statuses.some((text) => / · 1(\.\d)?s$/.test(text ?? ''))).toBe(true);
+    expect(statuses.at(-1)).toBeUndefined();
   }, 10_000);
 
   it('draws Stop feedback as a sanitized, collapsible block under a ⚑ header, even with hooks off', () => {

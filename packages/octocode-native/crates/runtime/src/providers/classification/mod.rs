@@ -93,7 +93,40 @@ pub trait ClassificationProvider: Send + Sync {
 /// fall back to the default vendor (`jev`); config validation constrains the
 /// resolved value to the declared enum, so the fallback only guards misuse.
 #[must_use]
-pub fn provider_for(_vendor: &str) -> &'static dyn ClassificationProvider {
+pub fn provider_for(vendor: &str) -> Option<&'static dyn ClassificationProvider> {
     // Only `jev` is registered today; add a `match` arm per vendor id here.
-    &jev::JEV
+    match vendor {
+        "jev" => Some(&jev::JEV),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::provider_for;
+
+    #[test]
+    fn every_vendor_the_config_contract_allows_has_a_provider() {
+        // A vendor added to the contract without an arm here would make
+        // `ToolRuntime::new` refuse that configuration; fail here instead.
+        let field = crate::config::CONFIG_FIELDS
+            .iter()
+            .find(|field| field.path == "classification.type")
+            .expect("classification.type is a config field");
+        assert!(!field.values.is_empty());
+        for vendor in field.values {
+            assert!(
+                provider_for(vendor).is_some(),
+                "{vendor} has no provider arm"
+            );
+        }
+    }
+
+    #[test]
+    fn provider_for_resolves_only_registered_vendors() {
+        assert!(provider_for("jev").is_some());
+        assert!(provider_for("myvendor").is_none());
+        assert!(provider_for("").is_none());
+        assert!(provider_for("JEV").is_none());
+    }
 }

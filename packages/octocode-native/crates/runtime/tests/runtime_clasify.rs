@@ -1,10 +1,11 @@
 #![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 
-use crate::support;
+use crate::support::{self, Run as _};
 
 use serde_json::json;
 use std::time::{Duration, Instant};
-use support::{LocateTopPassage, MOCK_PROVIDER_TIMEOUT_MS, Workspace, provider_runtime};
+use support::mock_http::Delayed;
+use support::{Judge, MOCK_PROVIDER_TIMEOUT_MS, Strategy, Workspace, provider_runtime};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
 
@@ -31,25 +32,16 @@ fn lead_row(query: &serde_json::Value) -> serde_json::Value {
     query.pointer("/queries/0").unwrap_or(query).clone()
 }
 
-#[derive(Clone)]
-struct DelayedJevResponse {
-    arrivals: std::sync::Arc<std::sync::Mutex<Vec<Instant>>>,
-}
-
-impl Respond for DelayedJevResponse {
-    fn respond(&self, _: &Request) -> ResponseTemplate {
-        self.arrivals
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .push(Instant::now());
-        ResponseTemplate::new(200)
-            .set_delay(Duration::from_millis(200))
-            .set_body_json(json!({
-                "model":"resolved",
-                "answers":{"answer":{"type":"noul","noul":0.8}},
-                "usage":{"input_tokens":2,"output_tokens":1}
-            }))
-    }
+/// A provider that answers one `noul` 200 ms after each request arrives.
+fn delayed_noul() -> Delayed {
+    Delayed::new(
+        Duration::from_millis(200),
+        ResponseTemplate::new(200).set_body_json(json!({
+            "model":"resolved",
+            "answers":{"answer":{"type":"noul","noul":0.8}},
+            "usage":{"input_tokens":2,"output_tokens":1}
+        })),
+    )
 }
 
 /// Aperiodic ASCII letters: byte pages of it differ, so identical-page
@@ -73,33 +65,9 @@ fn range_start(query: &serde_json::Value) -> u64 {
 }
 
 /// The extras of the full per-page receipt: every page and runner-up
-/// (`details`) and provider usage (`stats`).
+/// (`details`) and provider usage (`stats`); these tests inspect page internals
+/// (scopes, sources, runner-up matches) the default output compacts.
 const VERBOSE: [&str; 2] = ["details", "stats"];
-
-/// The call input for one matrix (`{queries:[matrix]}`); an input that is
-/// already a call passes through.
-fn call(matrix: serde_json::Value) -> serde_json::Value {
-    if matrix.get("queries").is_some() {
-        matrix
-    } else {
-        json!({"queries":[matrix]})
-    }
-}
-
-/// The full per-page receipt (`extras: details, stats`): these tests inspect page
-/// internals (scopes, sources, runner-up matches) the default output compacts.
-fn verbose(input: serde_json::Value) -> serde_json::Value {
-    let mut input = call(input);
-    if let Some(queries) = input
-        .get_mut("queries")
-        .and_then(serde_json::Value::as_array_mut)
-    {
-        queries
-            .iter_mut()
-            .for_each(|query| query["extras"] = json!(VERBOSE));
-    }
-    input
-}
 
 /// A default-output answer: on the resource when it has one plain page,
 /// else on its first page.
@@ -249,12 +217,12 @@ async fn replay_every_continuation(
             .to_owned();
         kinds.insert(format!("{kind}:{tool}"));
         let input = if tool == "clasify" {
-            call(query.clone())
+            support::queries(query.clone())
         } else {
             json!({"queries":[query.clone()]})
         };
         let outcome = runtime
-            .execute(format!("replay{at}"), tool.clone(), input)
+            .run(format!("replay{at}"), tool.clone(), input)
             .await
             .unwrap_or_else(|error| panic!("{at} does not run verbatim: {error:?}: {text}"));
         let content = outcome.structured_content.to_string();
@@ -293,10 +261,10 @@ async fn clasify_sends_optional_briefs_on_the_provider_state() {
     input["reasoning"] = json!("The next read depends on whether the file states the fact.");
     input["mainGoal"] = json!("Files that state whether the evidence is present.");
     let outcome = runtime
-        .execute(
+        .run(
             "semantic-reasoning".into(),
             "clasify".into(),
-            verbose(input.clone()),
+            support::with_extras(input.clone(), &VERBOSE),
         )
         .await
         .expect("required briefs reach the provider");
@@ -329,7 +297,7 @@ async fn clasify_sends_optional_briefs_on_the_provider_state() {
         let mut blank = input.clone();
         blank[field] = value;
         runtime
-            .execute("semantic-reasoning".into(), "clasify".into(), call(blank))
+            .run("semantic-reasoning".into(), "clasify".into(), support::queries(blank))
             .await
             .expect("a blank brief is dropped");
     }
@@ -337,13 +305,13 @@ async fn clasify_sends_optional_briefs_on_the_provider_state() {
         let mut missing = input.clone();
         missing.as_object_mut().unwrap().remove(field);
         runtime
-            .execute("semantic-reasoning".into(), "clasify".into(), call(missing))
+            .run("semantic-reasoning".into(), "clasify".into(), support::queries(missing))
             .await
             .expect("a missing brief is accepted");
         let mut invalid = input.clone();
         invalid[field] = serde_json::Value::Null;
         let error = runtime
-            .execute("semantic-reasoning".into(), "clasify".into(), call(invalid))
+            .run("semantic-reasoning".into(), "clasify".into(), support::queries(invalid))
             .await
             .expect_err("a null brief is rejected");
         assert_eq!(error.code, "invalidInput");
@@ -384,10 +352,10 @@ async fn provider_byte_limit_forwards_reasoning_and_isolates_oversized_questions
             .collect::<serde_json::Map<_, _>>()
     );
     let outcome = runtime
-        .execute(
+        .run(
             "provider-byte-limit".into(),
             "clasify".into(),
-            verbose(json!({"queries":[trace, oversized, ordinary]})),
+            support::with_extras(json!({"queries":[trace, oversized, ordinary]}), &VERBOSE),
         )
         .await
         .expect("one oversized provider request must not fail the matrix batch");
@@ -450,7 +418,7 @@ async fn public_identity_is_a_hard_cutover_and_missing_key_is_actionable() {
     );
 
     let error = runtime
-        .execute("missing-key".into(), "clasify".into(), call(query()))
+        .run("missing-key".into(), "clasify".into(), support::queries(query()))
         .await
         .unwrap_err();
     assert_eq!(error.code, "missingConfiguration");
@@ -491,7 +459,7 @@ async fn public_clasify_requires_beta_and_a_nonblank_key_independently() {
             "missingConfiguration"
         );
         let error = runtime
-            .execute("missing-gate".into(), "clasify".into(), call(query()))
+            .run("missing-gate".into(), "clasify".into(), support::queries(query()))
             .await
             .expect_err("an unmet prerequisite blocks public clasify");
         assert_eq!(error.code, "missingConfiguration");
@@ -544,10 +512,10 @@ async fn provider_rejection_then_recovery_keeps_clasify_available_in_one_runtime
     let mut request = query();
     request["questions"] = json!([{"id":"relevant","type":"yesno","ask":"Is it relevant?"}]);
     let failed = runtime
-        .execute(
+        .run(
             "provider-down".into(),
             "clasify".into(),
-            call(request.clone()),
+            support::queries(request.clone()),
         )
         .await
         .expect("provider failure is a typed tool result");
@@ -562,7 +530,7 @@ async fn provider_rejection_then_recovery_keeps_clasify_available_in_one_runtime
     assert!(runtime.is_available("clasify"));
     assert_eq!(clasify_catalog_entry(&runtime)["available"], true);
     let recovered = runtime
-        .execute("provider-recovered".into(), "clasify".into(), call(request))
+        .run("provider-recovered".into(), "clasify".into(), support::queries(request))
         .await
         .expect("the same runtime can use the recovered provider");
     assert_eq!(
@@ -622,7 +590,7 @@ async fn matrix_is_resource_major_without_agent_telemetry_or_duplicate_text() {
     let workspace = Workspace::new();
     let runtime = provider_runtime(&workspace, &server);
     let outcome = runtime
-        .execute("matrix".into(), "clasify".into(), call(query()))
+        .run("matrix".into(), "clasify".into(), support::queries(query()))
         .await
         .unwrap();
     octocode_native::contracts::validate_output("clasify", &outcome.structured_content)
@@ -684,7 +652,7 @@ async fn stats_usage_is_declared_on_the_compact_output() {
     let mut matrix = query();
     matrix["extras"] = json!(["stats"]);
     let outcome = runtime
-        .execute("stats".into(), "clasify".into(), call(matrix))
+        .run("stats".into(), "clasify".into(), support::queries(matrix))
         .await
         .unwrap();
     octocode_native::contracts::validate_output("clasify", &outcome.structured_content)
@@ -698,12 +666,11 @@ async fn stats_usage_is_declared_on_the_compact_output() {
 #[tokio::test]
 async fn independent_resource_assessments_are_dispatched_concurrently() {
     let server = MockServer::builder().start().await;
-    let arrivals = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let provider = delayed_noul();
+    let arrivals = provider.arrivals.clone();
     Mock::given(method("POST"))
         .and(path("/v1/systemone"))
-        .respond_with(DelayedJevResponse {
-            arrivals: arrivals.clone(),
-        })
+        .respond_with(provider)
         .expect(4)
         .mount(&server)
         .await;
@@ -720,13 +687,11 @@ async fn independent_resource_assessments_are_dispatched_concurrently() {
     });
 
     let outcome = runtime
-        .execute("concurrent-resources".into(), "clasify".into(), call(input))
+        .run("concurrent-resources".into(), "clasify".into(), support::queries(input))
         .await
         .unwrap();
     {
-        let arrivals = arrivals
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let arrivals = arrivals.times();
         assert_eq!(arrivals.len(), 4);
         assert!(
             arrivals.last().unwrap().duration_since(arrivals[0]) < Duration::from_millis(150),
@@ -750,12 +715,11 @@ async fn independent_resource_assessments_are_dispatched_concurrently() {
 #[tokio::test]
 async fn classification_max_concurrency_bounds_provider_requests_in_flight() {
     let server = MockServer::builder().start().await;
-    let arrivals = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let provider = delayed_noul();
+    let arrivals = provider.arrivals.clone();
     Mock::given(method("POST"))
         .and(path("/v1/systemone"))
-        .respond_with(DelayedJevResponse {
-            arrivals: arrivals.clone(),
-        })
+        .respond_with(provider)
         .expect(8)
         .mount(&server)
         .await;
@@ -778,13 +742,10 @@ async fn classification_max_concurrency_bounds_provider_requests_in_flight() {
         "questions":[{"id":"relevant","type":"yesno","ask":"Relevant?"}]
     });
     let outcome = runtime
-        .execute("bounded-resources".into(), "clasify".into(), call(input))
+        .run("bounded-resources".into(), "clasify".into(), support::queries(input))
         .await
         .unwrap();
-    let arrivals = arrivals
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .clone();
+    let arrivals = arrivals.times();
     assert_eq!(arrivals.len(), 8);
     // Each response takes 200ms and a permit is reused only after its
     // response, so arrivals closer than 200ms were in flight together.
@@ -820,12 +781,11 @@ async fn classification_max_concurrency_bounds_provider_requests_in_flight() {
 #[tokio::test]
 async fn independent_query_matrices_are_dispatched_concurrently() {
     let server = MockServer::builder().start().await;
-    let arrivals = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let provider = delayed_noul();
+    let arrivals = provider.arrivals.clone();
     Mock::given(method("POST"))
         .and(path("/v1/systemone"))
-        .respond_with(DelayedJevResponse {
-            arrivals: arrivals.clone(),
-        })
+        .respond_with(provider)
         .expect(4)
         .mount(&server)
         .await;
@@ -843,7 +803,7 @@ async fn independent_query_matrices_are_dispatched_concurrently() {
         .collect::<Vec<_>>();
 
     let outcome = runtime
-        .execute(
+        .run(
             "concurrent-matrices".into(),
             "clasify".into(),
             json!({"queries":queries}),
@@ -851,9 +811,7 @@ async fn independent_query_matrices_are_dispatched_concurrently() {
         .await
         .unwrap();
     {
-        let arrivals = arrivals
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let arrivals = arrivals.times();
         assert_eq!(arrivals.len(), 4);
         assert!(
             arrivals.last().unwrap().duration_since(arrivals[0]) < Duration::from_millis(150),
@@ -892,7 +850,7 @@ async fn oversized_first_page_is_not_classified_or_given_a_looping_continuation(
         "questions":[{"id":"relevant","type":"yesno","ask":"Relevant?"}]
     });
     let outcome = runtime
-        .execute("bounded".into(), "clasify".into(), verbose(input))
+        .run("bounded".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
         .await
         .unwrap();
     let query = &outcome.structured_content["queries"][0];
@@ -935,10 +893,10 @@ async fn max_chars_budgets_sanitized_resource_payload_not_serialized_envelope() 
         "questions":[{"id":"relevant","type":"yesno","ask":"Relevant?"}]
     });
     let outcome = runtime
-        .execute(
+        .run(
             "recover-full-content".into(),
             "clasify".into(),
-            verbose(input),
+            support::with_extras(input, &VERBOSE),
         )
         .await
         .unwrap();
@@ -988,7 +946,7 @@ async fn scout_expands_explicit_question_type_and_preserves_source_identity() {
         "questions":[{"id":"new","type":"adds","ask":"Shutdown timing", "known":["onClose runs after requests finish"]}]
     });
     let result = runtime
-        .execute("preset".into(), "clasify".into(), verbose(input))
+        .run("preset".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
         .await
         .unwrap();
     let output = &result.structured_content["queries"][0];
@@ -1008,7 +966,12 @@ async fn scout_expands_explicit_question_type_and_preserves_source_identity() {
     );
     let requests = server.received_requests().await.unwrap();
     let sent: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
-    assert!(sent["state"].to_string().contains("preClose runs"));
+    assert!(
+        sent["state"]["content"]
+            .as_str()
+            .is_some_and(|content| content.contains("preClose runs")),
+        "{sent}"
+    );
     assert_eq!(sent["questions"]["answer"]["type"], "noul");
     assert_eq!(
         sent["questions"]["answer"]["instructions"]["knownEvidence"],
@@ -1022,7 +985,7 @@ async fn scout_expands_explicit_question_type_and_preserves_source_identity() {
 async fn search_rejects_removed_semantic_addon_without_calling_provider() {
     let workspace = Workspace::new();
     let runtime = workspace.runtime(&[]);
-    let error = runtime.execute("search".into(), "localSearch".into(), json!({"queries":[{
+    let error = runtime.run("search".into(), "localSearch".into(), json!({"queries":[{
         "path":workspace.workspace, "matchString":"hooks", "mainGoal": "test", "reasoning":"Discover candidates.",
         "semanticRerank":{"questions":[{"id":"q","question":"Relevant?"}]}
     }]})).await.expect_err("semantic checks require clasify");
@@ -1058,7 +1021,7 @@ async fn page_budget_continuation_round_trips_through_the_public_contract() {
         "questions":[{"id":"relevant","type":"relevant","ask":"line content"}]
     });
     let outcome = runtime
-        .execute("paged".into(), "clasify".into(), verbose(input))
+        .run("paged".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
         .await
         .unwrap();
     let assess = outcome.structured_content["queries"][0]["next"]["clasify"]["queries"][0].clone();
@@ -1081,7 +1044,7 @@ async fn page_budget_continuation_round_trips_through_the_public_contract() {
         std::collections::BTreeSet::from(["id", "maxChars", "query", "tool"]),
         "{assess}"
     );
-    octocode_native::contracts::prepare_many_and_validate("clasify", call(assess.clone()))
+    octocode_native::contracts::prepare_many_and_validate("clasify", support::queries(assess.clone()))
         .expect("next.clasify must execute unchanged");
     octocode_native::contracts::validate_output("clasify", &outcome.structured_content)
         .expect("nested query-cell-page output");
@@ -1099,7 +1062,7 @@ async fn page_budget_continuation_round_trips_through_the_public_contract() {
             break;
         };
         let page = runtime
-            .execute("continue-preset".into(), "clasify".into(), call(query))
+            .run("continue-preset".into(), "clasify".into(), support::queries(query))
             .await
             .unwrap();
         let row = &page.structured_content["queries"][0];
@@ -1140,15 +1103,15 @@ async fn payload_over_max_chars_returns_an_executable_clasify_continuation() {
         "questions":[{"id":"relevant","type":"yesno","ask":"Relevant?"}]
     });
     let first = runtime
-        .execute("over-budget-first".into(), "clasify".into(), verbose(input))
+        .run("over-budget-first".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
         .await
         .unwrap();
     let assess = first.structured_content["queries"][0]["next"]["clasify"]["queries"][0].clone();
-    octocode_native::contracts::prepare_many_and_validate("clasify", call(assess.clone()))
+    octocode_native::contracts::prepare_many_and_validate("clasify", support::queries(assess.clone()))
         .expect("next.clasify must satisfy the public input contract");
 
     let resumed = runtime
-        .execute("over-budget-resume".into(), "clasify".into(), call(assess))
+        .run("over-budget-resume".into(), "clasify".into(), support::queries(assess))
         .await
         .expect("next.clasify must execute unchanged");
     let resumed_query = &resumed.structured_content["queries"][0];
@@ -1181,7 +1144,7 @@ async fn invalid_inner_query_is_rejected_with_the_exact_contract_field() {
         }]
     });
     let error = runtime
-        .execute("bad-inner-query".into(), "clasify".into(), call(input))
+        .run("bad-inner-query".into(), "clasify".into(), support::queries(input))
         .await
         .expect_err("invalid delegated path must fail contract validation");
     assert_eq!(error.code, "invalidInput");
@@ -1224,7 +1187,7 @@ async fn search_resource_fans_out_candidates_from_only_the_requested_page() {
         "questions":[{"id":"relevant","type":"yesno","ask":"Relevant?"}]
     });
     let outcome = runtime
-        .execute("search-page".into(), "clasify".into(), verbose(input))
+        .run("search-page".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
         .await
         .unwrap();
     let query = &outcome.structured_content["queries"][0];
@@ -1258,7 +1221,17 @@ async fn search_resource_fans_out_candidates_from_only_the_requested_page() {
         .iter()
         .map(|request| {
             let sent: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
-            assert!(sent["state"].to_string().contains("needle"), "{sent}");
+            assert!(
+                sent["state"]["data"]["files"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .flat_map(|file| file["matches"].as_array().into_iter().flatten())
+                    .any(|row| row["value"]
+                        .as_str()
+                        .is_some_and(|value| value.contains("needle"))),
+                "{sent}"
+            );
             assert!(
                 sent["state"]["data"].get("next").is_none(),
                 "continuations stay out of provider state: {sent}"
@@ -1308,7 +1281,7 @@ async fn emitted_next_clasify_is_schema_valid_input_and_replays() {
         "questions":[{"id":"relevant","type":"yesno","ask":"Relevant?"}]
     });
     let first = runtime
-        .execute("walk-1".into(), "clasify".into(), verbose(input))
+        .run("walk-1".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
         .await
         .unwrap();
     octocode_native::contracts::validate_output("clasify", &first.structured_content)
@@ -1317,12 +1290,12 @@ async fn emitted_next_clasify_is_schema_valid_input_and_replays() {
     assert_eq!(next["mainGoal"], "Decide the next read.", "{next}");
     assert_eq!(next["questions"][0]["id"], "relevant", "{next}");
     assert_eq!(next["resources"][0]["query"]["page"], 2, "{next}");
-    serde_json::from_value::<octocode_native::contracts::tool_types::ClasifyInput>(call(
+    serde_json::from_value::<octocode_native::contracts::tool_types::ClasifyInput>(support::queries(
         next.clone(),
     ))
     .unwrap_or_else(|error| panic!("generated ClasifyInput: {error}: {next}"));
     let prepared =
-        octocode_native::contracts::prepare_many_and_validate("clasify", call(next.clone()))
+        octocode_native::contracts::prepare_many_and_validate("clasify", support::queries(next.clone()))
             .unwrap_or_else(|error| {
                 panic!(
                     "clasify input contract: {:?}: {next}",
@@ -1340,7 +1313,7 @@ async fn emitted_next_clasify_is_schema_valid_input_and_replays() {
         .map(|page| page["source"]["path"].clone())
         .collect::<Vec<_>>();
     let replay = runtime
-        .execute("walk-2".into(), "clasify".into(), call(next))
+        .run("walk-2".into(), "clasify".into(), support::queries(next))
         .await
         .expect("replayed next.clasify");
     octocode_native::contracts::validate_output("clasify", &replay.structured_content)
@@ -1402,7 +1375,7 @@ async fn file_chunk_scout_judges_every_hit_cluster_of_a_clipped_file() {
         "questions":[{"id":"decides","type":"yesno","ask":"Does this source decide the answer?"}]
     });
     let outcome = runtime
-        .execute("clusters".into(), "clasify".into(), verbose(input))
+        .run("clusters".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
         .await
         .expect("cluster scout");
     let pages = outcome.structured_content["queries"][0]["resources"][0]["pages"]
@@ -1486,7 +1459,7 @@ async fn file_chunk_scout_judges_near_clusters_of_one_file_in_one_call() {
             "questions":[{"id":"decides","type":"yesno","ask":"Does this source decide the answer?"}]
         });
         let outcome = runtime
-            .execute("near".into(), "clasify".into(), verbose(input))
+            .run("near".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
             .await
             .expect("near scout");
         let pages = outcome.structured_content["queries"][0]["resources"][0]["pages"]
@@ -1565,7 +1538,7 @@ async fn file_chunk_scout_hydrates_the_candidate_cap_and_returns_exact_reads() {
         }]
     });
     let outcome = runtime
-        .execute("hydrated-search".into(), "clasify".into(), verbose(input))
+        .run("hydrated-search".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
         .await
         .expect("hydrated scout");
     let query = &outcome.structured_content["queries"][0];
@@ -1593,7 +1566,7 @@ async fn file_chunk_scout_hydrates_the_candidate_cap_and_returns_exact_reads() {
     }
     let read = &pages[0]["hints"]["read"];
     let fetched = runtime
-        .execute(
+        .run(
             "hydrated-read".into(),
             "localFetch".into(),
             json!({"queries":[read["query"]]}),
@@ -1701,7 +1674,7 @@ async fn file_chunks_reach_hit_lines_the_search_page_only_counted() {
     let runtime = provider_runtime(&workspace, &server);
     let search = json!({"path":root,"matchString":"needle"});
     let listed = runtime
-        .execute(
+        .run(
             "unlisted-search".into(),
             "localSearch".into(),
             json!({"queries":[{"path":root,"matchString":"needle","pageSize":5}]}),
@@ -1722,7 +1695,7 @@ async fn file_chunks_reach_hit_lines_the_search_page_only_counted() {
         "questions":[{"id":"decides","type":"yesno","ask":"Does this source decide the answer?"}]
     });
     let outcome = runtime
-        .execute("unlisted".into(), "clasify".into(), verbose(input))
+        .run("unlisted".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
         .await
         .expect("clasify");
     let query = &outcome.structured_content["queries"][0];
@@ -1781,10 +1754,10 @@ async fn hydrated_search_skips_inner_match_replays_and_reaches_later_files() {
         "questions":[{"id":"relevant","type":"yesno","ask":"Is there a needle?"}]
     });
     let first = runtime
-        .execute(
+        .run(
             "hydrated-axis-first".into(),
             "clasify".into(),
-            verbose(input),
+            support::with_extras(input, &VERBOSE),
         )
         .await
         .expect("first page");
@@ -1804,7 +1777,7 @@ async fn hydrated_search_skips_inner_match_replays_and_reaches_later_files() {
         1
     );
     let second = runtime
-        .execute(
+        .run(
             "hydrated-axis-second".into(),
             "clasify".into(),
             json!({"queries":[next]}),
@@ -1866,7 +1839,7 @@ async fn unjudged_hit_windows_state_their_error_once_and_batch_per_file() {
         "questions":[{"id":"a","type":"yesno","ask":"Does this source decide the answer?"}]
     });
     let outcome = runtime
-        .execute("spent".into(), "clasify".into(), call(input))
+        .run("spent".into(), "clasify".into(), support::queries(input))
         .await
         .expect("clasify");
     let query = &outcome.structured_content["queries"][0];
@@ -1976,13 +1949,13 @@ async fn wide_search_pages_share_the_page_budget_and_resume() {
         .collect::<Vec<_>>();
     let runtime = provider_runtime(&workspace, &server);
     let outcome = runtime
-        .execute(
+        .run(
             "wide-pages".into(),
             "clasify".into(),
-            verbose(json!({
+            support::with_extras(json!({
                 "id":"wide-pages","reasoning":"Exercise the page budget.","mainGoal":"Decide the next read.",
                 "resources":[resource("a","a"),resource("b","b")],"questions":questions
-            })),
+            }), &VERBOSE),
         )
         .await
         .expect("bounded wide pages");
@@ -2025,7 +1998,7 @@ async fn empty_file_is_reported_without_a_provider_call() {
         "questions":[{"id":"q","type":"yesno","ask":"Relevant?"}]
     });
     let outcome = runtime
-        .execute("empty".into(), "clasify".into(), verbose(input))
+        .run("empty".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
         .await
         .unwrap();
     let resource = &outcome.structured_content["queries"][0]["resources"][0];
@@ -2067,7 +2040,7 @@ async fn empty_search_page_is_not_sent_to_the_provider() {
         "questions":[{"id":"q","type":"yesno","ask":"Does this page show a match?"}]
     });
     let outcome = runtime
-        .execute("empty-search".into(), "clasify".into(), verbose(input))
+        .run("empty-search".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
         .await
         .unwrap();
     let resource = &outcome.structured_content["queries"][0]["resources"][0];
@@ -2116,7 +2089,7 @@ async fn disjoint_file_match_windows_return_real_ranges_without_a_focus() {
         "questions":[{"id":"q","type":"yesno","ask":"Does this content show MARKER?"}]
     });
     let outcome = runtime
-        .execute("disjoint".into(), "clasify".into(), verbose(input))
+        .run("disjoint".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
         .await
         .unwrap();
     let page = &outcome.structured_content["queries"][0]["resources"][0]["pages"][0];
@@ -2164,7 +2137,7 @@ async fn long_positive_scout_sends_only_authored_questions_and_preserves_probabi
         ]
     });
     let outcome = runtime
-        .execute("pure-scout".into(), "clasify".into(), verbose(input))
+        .run("pure-scout".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
         .await
         .unwrap();
     let page = &outcome.structured_content["queries"][0]["resources"][0]["pages"][0];
@@ -2222,7 +2195,12 @@ async fn long_positive_scout_sends_only_authored_questions_and_preserves_probabi
             "criteria":{"yes":"Has guidance","no":"No guidance"}
         })
     );
-    assert!(sent["state"].to_string().contains("line 200"));
+    assert!(
+        sent["state"]["content"]
+            .as_str()
+            .is_some_and(|content| content.contains("line 200")),
+        "{sent}"
+    );
     assert!(sent.get("windows").is_none());
     octocode_native::contracts::validate_output("clasify", &outcome.structured_content)
         .expect("pure scout output contract");
@@ -2263,10 +2241,10 @@ async fn snippet_continuations_visit_every_file_and_match_page_before_completing
     let mut coverages = Vec::new();
     for call in 0..10 {
         let outcome = runtime
-            .execute(
+            .run(
                 format!("page-{call}"),
                 "clasify".into(),
-                verbose(input.clone()),
+                support::with_extras(input.clone(), &VERBOSE),
             )
             .await
             .unwrap();
@@ -2326,7 +2304,7 @@ async fn clasify_locate_preflight_returns_a_typed_error_without_capture_or_provi
         ]
     });
     let outcome = runtime
-        .execute("preflight".into(), "clasify".into(), verbose(input))
+        .run("preflight".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
         .await
         .expect("typed rejection rather than WorkerFailed");
     let resources = outcome.structured_content["queries"][0]["resources"]
@@ -2366,11 +2344,11 @@ async fn a_repeated_matrix_replays_its_judgment_without_a_second_provider_reques
     input["resources"] = json!([{"id":"source","tool":"localFetch","query":{"path":file}}]);
     input["questions"] = json!([{"id":"floor","type":"yesno","ask":"Is the retry floor stated?"}]);
     let first = runtime
-        .execute("replay-1".into(), "clasify".into(), call(input.clone()))
+        .run("replay-1".into(), "clasify".into(), support::queries(input.clone()))
         .await
         .expect("first judgment");
     let second = runtime
-        .execute("replay-2".into(), "clasify".into(), call(input))
+        .run("replay-2".into(), "clasify".into(), support::queries(input))
         .await
         .expect("replayed judgment");
     let answer = |outcome: &octocode_native::runtime::ToolOutcome| {
@@ -2403,7 +2381,7 @@ async fn identical_pages_in_one_call_share_a_single_provider_request() {
         })
     };
     let outcome = runtime
-        .execute(
+        .run(
             "dedupe".into(),
             "clasify".into(),
             json!({"queries":[matrix("m1"), matrix("m2")]}),
@@ -2451,10 +2429,10 @@ async fn judgment_cache_ignores_correlation_ids_but_not_question_text() {
         ("changed", "q", "Is sentinel 7720 stated?"),
     ] {
         let outcome = runtime
-            .execute(
+            .run(
                 label.into(),
                 "clasify".into(),
-                call(input(question_id, ask)),
+                support::queries(input(question_id, ask)),
             )
             .await
             .unwrap();
@@ -2497,15 +2475,15 @@ async fn prefilter_window_is_centered_on_the_hit_not_aligned_to_a_bucket() {
     let file = workspace.write("huge.js", source);
     let runtime = provider_runtime(&workspace, &server);
     let outcome = runtime
-        .execute(
+        .run(
             "prefilter".into(),
             "clasify".into(),
-            verbose(json!({
+            support::with_extras(json!({
                 "id":"pf","reasoning":"Judge only the hit window.","mainGoal":"Find the retry floor.",
                 "resources":[{"id":"f","prefilter":["RETRY_FLOOR_MS"],
                     "tool":"localFetch","query":{"path":file}}],
                 "questions":[{"id":"q","type":"yesno","ask":"Is the retry floor defined?"}]
-            })),
+            }), &VERBOSE),
         )
         .await
         .unwrap();
@@ -2583,7 +2561,7 @@ async fn prefilter_hits_beyond_three_windows_resume_through_next_clasify() {
     };
 
     let first = runtime
-        .execute("walk-1".into(), "clasify".into(), verbose(input(None)))
+        .run("walk-1".into(), "clasify".into(), support::with_extras(input(None), &VERBOSE))
         .await
         .unwrap();
     let pages = judged(&first.structured_content);
@@ -2603,7 +2581,7 @@ async fn prefilter_hits_beyond_three_windows_resume_through_next_clasify() {
         "dropped hits need a continuation: {query}"
     );
     let resumed = runtime
-        .execute("walk-2".into(), "clasify".into(), call(resume))
+        .run("walk-2".into(), "clasify".into(), support::queries(resume))
         .await
         .expect("next.clasify must execute unchanged");
     let pages = judged(&resumed.structured_content);
@@ -2618,10 +2596,10 @@ async fn prefilter_hits_beyond_three_windows_resume_through_next_clasify() {
     // One maxChars budget spans every window: the second window waits for
     // the next call instead of each window getting its own full budget.
     let tight = runtime
-        .execute(
+        .run(
             "walk-tight".into(),
             "clasify".into(),
-            verbose(input(Some(20_000))),
+            support::with_extras(input(Some(20_000)), &VERBOSE),
         )
         .await
         .unwrap();
@@ -2689,7 +2667,7 @@ async fn partial_provider_answers_are_not_cached_and_a_failed_read_is_isolated()
         ]
     });
     let first = runtime
-        .execute("partial-1".into(), "clasify".into(), verbose(input.clone()))
+        .run("partial-1".into(), "clasify".into(), support::with_extras(input.clone(), &VERBOSE))
         .await
         .unwrap();
     let resources = &first.structured_content["queries"][0]["resources"];
@@ -2702,7 +2680,7 @@ async fn partial_provider_answers_are_not_cached_and_a_failed_read_is_isolated()
     );
     assert!(resources[1]["pages"][0]["answers"]["b"]["error"].is_object());
     let second = runtime
-        .execute("partial-2".into(), "clasify".into(), verbose(input))
+        .run("partial-2".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
         .await
         .unwrap();
     let page = &second.structured_content["queries"][0]["resources"][1]["pages"][0];
@@ -2766,7 +2744,7 @@ async fn gh_search_code_resource_is_judged_without_a_context_contract_violation(
         "questions":[{"id":"relevant","type":"yesno","ask":"Does this acquire the semaphore?"}]
     });
     let outcome = runtime
-        .execute("gh-code".into(), "clasify".into(), verbose(input))
+        .run("gh-code".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
         .await
         .expect("clasify");
     let rendered = outcome.structured_content.to_string();
@@ -2786,9 +2764,11 @@ async fn a_lone_strong_locate_window_in_best_carries_an_exact_github_read() {
     let server = MockServer::builder().start().await;
     Mock::given(method("POST"))
         .and(path("/v1/systemone"))
-        .respond_with(LocateTopPassage {
-            top: 0.9,
-            exists: 0.9,
+        .respond_with(Judge {
+            strategy: Strategy::TopPassage {
+                top: 0.9,
+                exists: 0.9,
+            },
         })
         .mount(&server)
         .await;
@@ -2834,7 +2814,7 @@ async fn a_lone_strong_locate_window_in_best_carries_an_exact_github_read() {
         "questions":[{"id":"t","type":"locate","ask":"The function that returns one."}]
     });
     let outcome = runtime
-        .execute("locate-gh".into(), "clasify".into(), verbose(input))
+        .run("locate-gh".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
         .await
         .expect("clasify");
     let output = &outcome.structured_content;
@@ -2877,9 +2857,11 @@ async fn identifier_locate_target_emits_an_executable_local_search() {
     let server = MockServer::builder().start().await;
     Mock::given(method("POST"))
         .and(path("/v1/systemone"))
-        .respond_with(LocateTopPassage {
-            top: 0.9,
-            exists: 0.9,
+        .respond_with(Judge {
+            strategy: Strategy::TopPassage {
+                top: 0.9,
+                exists: 0.9,
+            },
         })
         .mount(&server)
         .await;
@@ -2902,7 +2884,7 @@ async fn identifier_locate_target_emits_an_executable_local_search() {
         ]
     });
     let outcome = runtime
-        .execute("locate-literal".into(), "clasify".into(), verbose(input))
+        .run("locate-literal".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
         .await
         .expect("clasify");
     let output = &outcome.structured_content;
@@ -2936,7 +2918,7 @@ async fn identifier_locate_target_emits_an_executable_local_search() {
     );
     assert_eq!(search["query"]["queries"][0]["regex"], "rust", "{search}");
     let found = runtime
-        .execute(
+        .run(
             "literal-search".into(),
             "localSearch".into(),
             search["query"].clone(),
@@ -2989,10 +2971,10 @@ async fn symbols_scout_judges_each_file_once_across_outline_pages() {
     let mut judged: Vec<(String, usize)> = Vec::new();
     for call in 0..6 {
         let outcome = runtime
-            .execute(
+            .run(
                 format!("outline-{call}"),
                 "clasify".into(),
-                verbose(input.clone()),
+                support::with_extras(input.clone(), &VERBOSE),
             )
             .await
             .expect("clasify");
@@ -3057,7 +3039,7 @@ async fn a_matrix_compacts_by_default_and_extras_return_the_full_receipt() {
         ]
     });
     let compact = runtime
-        .execute("unified".into(), "clasify".into(), call(unified.clone()))
+        .run("unified".into(), "clasify".into(), support::queries(unified.clone()))
         .await
         .expect("the matrix is valid");
     assert_eq!(server.received_requests().await.unwrap().len(), 1);
@@ -3091,7 +3073,7 @@ async fn a_matrix_compacts_by_default_and_extras_return_the_full_receipt() {
     unified["extras"] = json!(VERBOSE);
     unified["questions"][0]["ask"] = json!("the fact, judged again");
     let full = runtime
-        .execute("extras".into(), "clasify".into(), call(unified))
+        .run("extras".into(), "clasify".into(), support::queries(unified))
         .await
         .expect("extras are accepted");
     let query = &full.structured_content["queries"][0];
@@ -3128,7 +3110,7 @@ async fn search_candidates_above_max_chars_never_reach_the_provider() {
         "questions":[{"id":"relevant","type":"yesno","ask":"Relevant?"}]
     });
     let outcome = runtime
-        .execute("capped".into(), "clasify".into(), verbose(input))
+        .run("capped".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
         .await
         .unwrap();
     let query = &outcome.structured_content["queries"][0];
@@ -3177,10 +3159,10 @@ async fn search_candidates_past_the_remaining_budget_resume_without_skips() {
         calls += 1;
         assert!(calls <= 5, "the walk must terminate");
         let outcome = runtime
-            .execute(
+            .run(
                 format!("budget-{calls}"),
                 "clasify".into(),
-                verbose(input.clone()),
+                support::with_extras(input.clone(), &VERBOSE),
             )
             .await
             .unwrap();
@@ -3194,7 +3176,7 @@ async fn search_candidates_past_the_remaining_budget_resume_without_skips() {
             Some(next) => {
                 octocode_native::contracts::prepare_many_and_validate(
                     "clasify",
-                    call(next.clone()),
+                    support::queries(next.clone()),
                 )
                 .expect("next.clasify replays unchanged");
                 input = next.clone();
@@ -3239,7 +3221,7 @@ async fn list_items_above_max_chars_never_reach_the_provider() {
         "questions":[{"id":"rel","type":"yesno","ask":"Relevant?"}]
     });
     let outcome = runtime
-        .execute("outline".into(), "clasify".into(), verbose(input))
+        .run("outline".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
         .await
         .unwrap();
     let cell = &outcome.structured_content["queries"][0]["resources"][0];
@@ -3289,7 +3271,7 @@ async fn hydrated_candidates_share_one_max_chars_budget() {
         "questions":[{"id":"relevant","type":"yesno","ask":"Relevant?"}]
     });
     runtime
-        .execute("hydrated".into(), "clasify".into(), verbose(input))
+        .run("hydrated".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
         .await
         .unwrap();
     fn content_chars(value: &serde_json::Value) -> usize {
@@ -3346,7 +3328,7 @@ async fn a_hydrated_window_cut_by_its_budget_still_contains_its_hit() {
         "questions":[{"id":"relevant","type":"yesno","ask":"Relevant?"}]
     });
     let outcome = runtime
-        .execute("cut".into(), "clasify".into(), verbose(input))
+        .run("cut".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
         .await
         .unwrap();
     let states = sent_states(&server).await;
@@ -3393,7 +3375,7 @@ async fn sufficient_unread_file_evidence_returns_a_bounded_verification_read() {
         "questions":[{"id":"sufficient","type":"sufficient","ask":"How many files trigger the handoff?"}]
     });
     let outcome = runtime
-        .execute("threshold".into(), "clasify".into(), call(input))
+        .run("threshold".into(), "clasify".into(), support::queries(input))
         .await
         .unwrap();
     let resource = &outcome.structured_content["queries"][0]["resources"][0];
@@ -3417,7 +3399,7 @@ async fn sufficient_unread_file_evidence_returns_a_bounded_verification_read() {
         "questions":[{"id":"sufficient","type":"sufficient","ask":"How many files trigger the handoff?"}]
     });
     let outcome = runtime
-        .execute("held".into(), "clasify".into(), call(held))
+        .run("held".into(), "clasify".into(), support::queries(held))
         .await
         .unwrap();
     assert!(
@@ -3444,7 +3426,7 @@ async fn confident_negative_file_pages_add_no_read() {
         "questions":[{"id":"sufficient","type":"sufficient","ask":"How many files trigger the handoff?"}]
     });
     let outcome = runtime
-        .execute("negative".into(), "clasify".into(), call(input))
+        .run("negative".into(), "clasify".into(), support::queries(input))
         .await
         .unwrap();
     assert!(
@@ -3479,10 +3461,10 @@ async fn an_oversized_next_page_shrinks_and_the_replay_advances() {
         calls += 1;
         assert!(calls <= 10, "the walk must terminate");
         let outcome = runtime
-            .execute(
+            .run(
                 format!("walk-{calls}"),
                 "clasify".into(),
-                call(input.clone()),
+                support::queries(input.clone()),
             )
             .await
             .unwrap();
@@ -3543,10 +3525,10 @@ async fn an_oversized_ranges_read_is_judged_in_fitting_windows() {
         calls += 1;
         assert!(calls <= 12, "the walk must terminate");
         let outcome = runtime
-            .execute(
+            .run(
                 format!("ranges-{calls}"),
                 "clasify".into(),
-                call(input.clone()),
+                support::queries(input.clone()),
             )
             .await
             .unwrap();
@@ -3598,10 +3580,10 @@ async fn an_oversized_whole_file_read_shrinks_into_line_chunks() {
         calls += 1;
         assert!(calls <= 10, "the walk must terminate");
         let outcome = runtime
-            .execute(
+            .run(
                 format!("whole-{calls}"),
                 "clasify".into(),
-                call(input.clone()),
+                support::queries(input.clone()),
             )
             .await
             .unwrap();
@@ -3655,7 +3637,7 @@ async fn a_line_larger_than_the_whole_budget_is_terminal_not_a_repeating_continu
         "questions":[{"id":"q","type":"yesno","ask":"Is the marker stated?"}]
     });
     let outcome = runtime
-        .execute("wide".into(), "clasify".into(), verbose(input))
+        .run("wide".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
         .await
         .unwrap();
     let query = &outcome.structured_content["queries"][0];
@@ -3691,7 +3673,7 @@ async fn a_changed_source_is_rejected_on_replay_instead_of_mixing_versions() {
         "questions":[{"id":"q","type":"yesno","ask":"Is the marker stated?"}]
     });
     let first = runtime
-        .execute("versions-1".into(), "clasify".into(), call(input))
+        .run("versions-1".into(), "clasify".into(), support::queries(input))
         .await
         .unwrap();
     let next = first.structured_content["queries"][0]["next"]["clasify"]["queries"][0].clone();
@@ -3699,7 +3681,7 @@ async fn a_changed_source_is_rejected_on_replay_instead_of_mixing_versions() {
     let before = server.received_requests().await.unwrap().len();
     workspace.write("doc.txt", format!("changed\n{}", uneven_lines()));
     let replay = runtime
-        .execute("versions-2".into(), "clasify".into(), verbose(next))
+        .run("versions-2".into(), "clasify".into(), support::with_extras(next, &VERBOSE))
         .await
         .unwrap();
     let query = &replay.structured_content["queries"][0];
@@ -3724,9 +3706,11 @@ async fn every_clasify_continuation_kind_replays_verbatim() {
     let server = MockServer::builder().start().await;
     Mock::given(method("POST"))
         .and(path("/v1/systemone"))
-        .respond_with(LocateTopPassage {
-            top: 0.99,
-            exists: 0.95,
+        .respond_with(Judge {
+            strategy: Strategy::TopPassage {
+                top: 0.99,
+                exists: 0.95,
+            },
         })
         .mount(&server)
         .await;
@@ -3759,10 +3743,10 @@ async fn every_clasify_continuation_kind_replays_verbatim() {
             calls += 1;
             assert!(calls <= 12, "the walk must terminate");
             let outcome = runtime
-                .execute(
+                .run(
                     format!("walk-{calls}"),
                     "clasify".into(),
-                    call(input.clone()),
+                    support::queries(input.clone()),
                 )
                 .await
                 .unwrap();
@@ -3808,7 +3792,7 @@ async fn every_clasify_continuation_kind_replays_verbatim() {
             input["reasoning"] = json!("Read the deciding line.");
         }
         let outcome = runtime
-            .execute("literal".into(), "clasify".into(), call(input))
+            .run("literal".into(), "clasify".into(), support::queries(input))
             .await
             .unwrap();
         let output = &outcome.structured_content;
@@ -3843,10 +3827,10 @@ async fn every_clasify_continuation_kind_replays_verbatim() {
         calls += 1;
         assert!(calls <= 10, "the walk must terminate");
         let outcome = chunk_runtime
-            .execute(
+            .run(
                 format!("chunk-{calls}"),
                 "clasify".into(),
-                call(input.clone()),
+                support::queries(input.clone()),
             )
             .await
             .unwrap();
@@ -3911,7 +3895,7 @@ async fn exhausted_provider_quota_fails_once_per_resource_and_is_remembered() {
         ]
     });
     let out = runtime
-        .execute("quota".into(), "clasify".into(), call(input))
+        .run("quota".into(), "clasify".into(), support::queries(input))
         .await
         .unwrap();
     let resources = out.structured_content["queries"][0]["resources"]
@@ -3944,7 +3928,7 @@ async fn exhausted_provider_quota_fails_once_per_resource_and_is_remembered() {
         "questions":[{"id":"relevant","type":"relevant","ask":"line content"}]
     });
     let out = runtime
-        .execute("quota-walk".into(), "clasify".into(), call(walk))
+        .run("quota-walk".into(), "clasify".into(), support::queries(walk))
         .await
         .unwrap();
     let row = &out.structured_content["queries"][0];
@@ -3977,7 +3961,7 @@ async fn exhausted_provider_quota_fails_once_per_resource_and_is_remembered() {
         "questions":[{"id":"where","type":"locate","ask":"the line that names line 7"}]
     });
     let out = runtime
-        .execute("quota-minified".into(), "clasify".into(), call(minified))
+        .run("quota-minified".into(), "clasify".into(), support::queries(minified))
         .await
         .unwrap();
     let row = &out.structured_content["queries"][0];
@@ -3998,7 +3982,7 @@ async fn exhausted_provider_quota_fails_once_per_resource_and_is_remembered() {
         "questions":[{"id":"h","type":"locate","ask":"Where is serverCron defined?"}]
     });
     let out = runtime
-        .execute("quota-named".into(), "clasify".into(), call(named.clone()))
+        .run("quota-named".into(), "clasify".into(), support::queries(named.clone()))
         .await
         .unwrap();
     let row = &out.structured_content["queries"][0];
@@ -4013,7 +3997,7 @@ async fn exhausted_provider_quota_fails_once_per_resource_and_is_remembered() {
     assert_eq!(row["hints"]["findText"]["tool"], "localSearch", "{row}");
     // MCP sees the same routes.
     let out = runtime
-        .execute_mcp("quota-named-mcp".into(), "clasify".into(), call(named))
+        .run_mcp("quota-named-mcp".into(), "clasify".into(), support::queries(named))
         .await
         .unwrap();
     let row = &out["structuredContent"]["queries"][0];
@@ -4073,7 +4057,7 @@ async fn provider_refusal_is_stated_once_and_keeps_every_captured_read() {
         ]
     });
     let out = runtime
-        .execute("refused".into(), "clasify".into(), call(input))
+        .run("refused".into(), "clasify".into(), support::queries(input))
         .await
         .unwrap();
     let row = &out.structured_content["queries"][0];
@@ -4201,7 +4185,7 @@ async fn a_list_walk_rejudges_budget_deferred_candidates() {
         ));
         assert!(calls <= 20, "walk did not finish");
         let outcome = runtime
-            .execute(format!("list-{calls}"), "clasify".into(), verbose(input))
+            .run(format!("list-{calls}"), "clasify".into(), support::with_extras(input, &VERBOSE))
             .await
             .expect("clasify");
         let row = &outcome.structured_content["queries"][0];
@@ -4298,10 +4282,10 @@ async fn an_oversized_github_ranges_read_is_judged_in_fitting_windows() {
         calls += 1;
         assert!(calls <= 12, "the walk must terminate");
         let outcome = runtime
-            .execute(
+            .run(
                 format!("ghranges-{calls}"),
                 "clasify".into(),
-                call(input.clone()),
+                support::queries(input.clone()),
             )
             .await
             .unwrap();
@@ -4352,7 +4336,7 @@ async fn an_unsplittable_line_in_a_ranges_read_keeps_its_read_and_the_rest() {
         "questions":[{"id":"q","type":"yesno","ask":"Is the marker stated?"}]
     });
     let outcome = runtime
-        .execute("wide-range".into(), "clasify".into(), verbose(input))
+        .run("wide-range".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
         .await
         .unwrap();
     let query = &outcome.structured_content["queries"][0];
@@ -4419,10 +4403,10 @@ async fn whole_list_questions_over_a_path_list_hint_toward_choice() {
     };
     for kind in ["relevant", "sufficient"] {
         let outcome = runtime
-            .execute(
+            .run(
                 format!("list-{kind}"),
                 "clasify".into(),
-                call(matrix(
+                support::queries(matrix(
                     kind,
                     json!({"id":"q","type":kind,"ask":"Which file defines bravo?"}),
                 )),
@@ -4440,10 +4424,10 @@ async fn whole_list_questions_over_a_path_list_hint_toward_choice() {
             .expect("output contract");
     }
     let outcome = runtime
-        .execute(
+        .run(
             "list-choice".into(),
             "clasify".into(),
-            call(matrix(
+            support::queries(matrix(
                 "choice",
                 json!({"id":"q","type":"choice","ask":"Does this list name the bravo file?",
                     "labels":{"yes":"Names it","no":"Does not"}}),
@@ -4479,7 +4463,7 @@ async fn every_page_read_of_a_paged_file_pins_the_captured_snapshot() {
         "questions":[{"id":"s","type":"sufficient","ask":"Is the marker stated?"}]
     });
     let outcome = runtime
-        .execute("pinned".into(), "clasify".into(), call(input))
+        .run("pinned".into(), "clasify".into(), support::queries(input))
         .await
         .unwrap();
     let resource = &outcome.structured_content["queries"][0]["resources"][0];
@@ -4502,51 +4486,6 @@ async fn every_page_read_of_a_paged_file_pins_the_captured_snapshot() {
     octocode_native::contracts::validate_output("clasify", &outcome.structured_content)
         .expect("output contract");
     runtime.close().await;
-}
-
-/// SCOUT stub: a page's file names its scores (`SCORES rel suf`); every
-/// provider question of the request answers in question order.
-#[derive(Clone)]
-struct ScoredFiles;
-
-impl Respond for ScoredFiles {
-    fn respond(&self, request: &Request) -> ResponseTemplate {
-        let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
-        let text = body["state"].to_string();
-        let scores = text
-            .split("SCORES ")
-            .nth(1)
-            .map(|rest| {
-                rest.split_whitespace()
-                    .take(2)
-                    .filter_map(|n| {
-                        n.trim_matches(|c: char| !c.is_ascii_digit() && c != '.')
-                            .parse::<f64>()
-                            .ok()
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-        let mut keys = body["questions"]
-            .as_object()
-            .into_iter()
-            .flatten()
-            .map(|(key, _)| key.clone())
-            .collect::<Vec<_>>();
-        keys.sort();
-        let answers = keys
-            .iter()
-            .enumerate()
-            .map(|(index, key)| {
-                let noul = scores.get(index).copied().unwrap_or(0.5);
-                (key.clone(), json!({"type":"noul","noul":noul}))
-            })
-            .collect::<serde_json::Map<_, _>>();
-        ResponseTemplate::new(200).set_body_json(json!({
-            "model":"resolved","answers":answers,
-            "usage":{"input_tokens":5,"output_tokens":2}
-        }))
-    }
 }
 
 /// Five small files, each judged whole: (relevant, sufficient).
@@ -4630,17 +4569,19 @@ fn leads(value: &serde_json::Value, at: &str, out: &mut Vec<(String, serde_json:
 async fn scout_sample_output_bytes() {
     let server = MockServer::builder().start().await;
     Mock::given(method("POST"))
-        .respond_with(ScoredFiles)
+        .respond_with(Judge {
+            strategy: Strategy::Scores,
+        })
         .mount(&server)
         .await;
     let workspace = Workspace::new();
     let root = write_scout_sample(&workspace);
     let runtime = provider_runtime(&workspace, &server);
     let outcome = runtime
-        .execute(
+        .run(
             "scout-sample".into(),
             "clasify".into(),
-            call(scout_sample_input(&root)),
+            support::queries(scout_sample_input(&root)),
         )
         .await
         .unwrap();
@@ -4679,9 +4620,11 @@ async fn scout_sample_output_bytes() {
 async fn locate_sample_output_bytes() {
     let server = MockServer::builder().start().await;
     Mock::given(method("POST"))
-        .respond_with(LocateTopPassage {
-            top: 0.8,
-            exists: 0.9,
+        .respond_with(Judge {
+            strategy: Strategy::TopPassage {
+                top: 0.8,
+                exists: 0.9,
+            },
         })
         .mount(&server)
         .await;
@@ -4700,10 +4643,10 @@ async fn locate_sample_output_bytes() {
         ]
     });
     let outcome = runtime
-        .execute(
+        .run(
             "locate-sample".into(),
             "clasify".into(),
-            call(input.clone()),
+            support::queries(input.clone()),
         )
         .await
         .unwrap();
@@ -4729,7 +4672,7 @@ async fn locate_sample_output_bytes() {
     assert_eq!(read_row["path"], "src/steps.rs");
     assert!(read_row["snapshot"].is_string(), "{text}");
     let replay = || {
-        runtime.execute(
+        runtime.run(
             "locate-read".into(),
             "localFetch".into(),
             read["query"].clone(),
@@ -4759,7 +4702,9 @@ async fn locate_sample_output_bytes() {
 async fn the_search_handoff_carries_only_the_sent_brief() {
     let server = MockServer::builder().start().await;
     Mock::given(method("POST"))
-        .respond_with(ScoredFiles)
+        .respond_with(Judge {
+            strategy: Strategy::Scores,
+        })
         .mount(&server)
         .await;
     let workspace = Workspace::new();
@@ -4781,7 +4726,7 @@ async fn the_search_handoff_carries_only_the_sent_brief() {
         "path":root, "matchString":"retry delay", "extras":["stats"]
     });
     let outcome = runtime
-        .execute(
+        .run(
             "handoff".into(),
             "localSearch".into(),
             json!({"queries":[search.clone()]}),
@@ -4791,7 +4736,13 @@ async fn the_search_handoff_carries_only_the_sent_brief() {
     let data = &outcome.structured_content["results"][0]["data"];
     let lead = &data["hints"]["clasify"];
     let matrix = &lead["query"]["queries"][0];
-    assert_eq!(matrix["mainGoal"], search["mainGoal"], "{data}");
+    // The goal is the one question's ask; the matrix does not repeat it.
+    assert_eq!(
+        matrix["questions"],
+        json!([{"id":"relevant","type":"relevant","ask":search["mainGoal"]}]),
+        "{data}"
+    );
+    assert!(matrix.get("mainGoal").is_none(), "{data}");
     assert_eq!(matrix["reasoning"], search["reasoning"], "{data}");
     let resource = &matrix["resources"][0]["query"];
     for field in ["mainGoal", "reasoning", "extras"] {
@@ -4807,7 +4758,7 @@ async fn the_search_handoff_carries_only_the_sent_brief() {
         );
     }
     let screened = runtime
-        .execute("screen".into(), "clasify".into(), lead["query"].clone())
+        .run("screen".into(), "clasify".into(), lead["query"].clone())
         .await
         .unwrap();
     octocode_native::contracts::validate_output("clasify", &screened.structured_content)
@@ -4857,7 +4808,7 @@ async fn failed_read_keeps_the_read_tools_recovery_lead() {
         "questions":[{"id":"q","type":"yesno","ask":"Does this page show a match?"}]
     });
     let outcome = runtime
-        .execute("failed-read".into(), "clasify".into(), verbose(input))
+        .run("failed-read".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
         .await
         .unwrap();
     let resource = &outcome.structured_content["queries"][0]["resources"][0];

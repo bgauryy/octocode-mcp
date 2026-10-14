@@ -1084,7 +1084,14 @@ fn importer_recovery_names_gitignored_files_it_skipped() {
         ))
         .expect("row");
     assert_contract_valid(&row);
-    assert!(row.to_string().contains("f001.ts"), "{row}");
+    assert!(
+        row["files"]
+            .as_array()
+            .is_some_and(|files| files.iter().any(|file| file["path"]
+                .as_str()
+                .is_some_and(|path| path.ends_with("f001.ts")))),
+        "{row}"
+    );
     assert!(!row.to_string().contains("g000.ts\",\"matches"), "{row}");
     assert_eq!(row["isPartial"], true, "{row}");
     assert!(
@@ -1243,7 +1250,14 @@ fn a_capped_run_of_silent_windows_is_a_page_of_a_continuing_scan() {
         // One counter: sites are paged by `pagination`, the scan is told in
         // candidates, never as a second "page" count.
         assert!(!said.contains("importer page"), "{operation}: {capped}");
-        assert!(pages[2].row.to_string().contains("z000.ts"), "{operation}");
+        assert!(
+            pages[2].row["files"]
+                .as_array()
+                .is_some_and(|files| files.iter().any(|file| file["path"]
+                    .as_str()
+                    .is_some_and(|path| path.ends_with("z000.ts")))),
+            "{operation}"
+        );
         remove_importer_fixture(&root);
     }
 }

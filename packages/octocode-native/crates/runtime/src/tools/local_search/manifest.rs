@@ -306,8 +306,6 @@ mod tests {
                     byte_offset: 0,
                     value: value.into(),
                     count: None,
-                    kind: None,
-                    score_hint: None,
                     rank: None,
                     original_chars: None,
                 }],

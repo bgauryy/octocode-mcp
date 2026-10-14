@@ -34,6 +34,26 @@ fn files(root: &std::path::Path, count: usize) {
     }
 }
 
+/// A `languageGlobs` refusal keeps its declared code in astSearch, as in
+/// astTopology: both read the engine's typed scan error.
+#[test]
+fn a_bad_language_glob_is_refused_with_its_declared_code() {
+    let root = Fixture::new();
+    files(&root.0, 1);
+    let (paths, _) = simple_policy(&root.0);
+    let canonical = &root.0.canonicalize().expect("root");
+    for (globs, code) in [
+        (json!({"cpp": ["["]}), "invalidGlob"),
+        (json!({"no-such-grammar": ["*.x"]}), "languageUnsupported"),
+    ] {
+        let q = query(&root.0, json!({"languageGlobs": globs}));
+        let Err(error) = outline_directory(&q, canonical.as_path(), &paths, &NeverCancel) else {
+            panic!("{code}: the scan must be refused");
+        };
+        assert_eq!(error.code, code, "{}", error.message);
+    }
+}
+
 /// Only declarations whose name can match `symbolName` leave the scan; every
 /// parsed file is still counted as scanned.
 #[test]
@@ -116,6 +136,16 @@ fn run_lead(root: &std::path::Path, lead: serde_json::Value) -> serde_json::Valu
     super::execute_ast(&query, &paths, &security, &NeverCancel, None).expect("the lead runs")
 }
 
+/// Whether an outline lists a declaration named `name`.
+fn declares(out: &serde_json::Value, name: &str) -> bool {
+    out["files"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|file| file["symbols"].as_array().into_iter().flatten())
+        .any(|symbol| symbol["symbolName"] == name)
+}
+
 fn found_files(out: &serde_json::Value) -> Vec<String> {
     out["files"]
         .as_array()
@@ -142,7 +172,12 @@ fn the_hidden_lead_keeps_the_exclude_anchored_to_the_scan_root() {
         json!({"symbolName":"dup","exclude":[".cfg/skip/**"]}),
     );
     assert_eq!(out["status"], "empty", "{out}");
-    assert!(out["hints"].to_string().contains("1 file(s)"), "{out}");
+    assert!(
+        out["hints"].as_array().is_some_and(|hints| hints
+            .iter()
+            .any(|hint| hint.as_str().is_some_and(|h| h.contains("1 file(s)")))),
+        "{out}"
+    );
     let lead = skipped_lead(&out);
     assert_eq!(lead["exclude"], json!([".cfg/skip/**"]), "{lead}");
     assert_eq!(lead["includeHidden"], json!(true), "{lead}");
@@ -176,7 +211,7 @@ fn the_hidden_lead_keeps_the_language_globs_anchored_to_the_scan_root() {
     );
     let ran = run_lead(&root.0, lead);
     assert_eq!(found_files(&ran).len(), 1, "{ran}");
-    assert!(ran["files"].to_string().contains("Widget"), "{ran}");
+    assert!(declares(&ran, "Widget"), "{ran}");
 }
 
 /// A file only `languageGlobs` map to a grammar (an extension no outlined
@@ -201,7 +236,7 @@ fn a_language_globs_file_behind_an_ignore_rule_gets_a_lead() {
     let lead = skipped_lead(&out);
     assert_eq!(lead["includeIgnored"], json!(true), "{lead}");
     let ran = run_lead(&root.0, lead);
-    assert!(ran.to_string().contains("zzMapped"), "{ran}");
+    assert!(declares(&ran, "zzMapped"), "{ran}");
 }
 
 /// A hidden *file* is reached the same way: the lead keeps the scope and its
@@ -226,7 +261,7 @@ fn the_hidden_file_lead_keeps_the_scope_and_its_filters() {
     assert_eq!(lead["includeHidden"], json!(true), "{lead}");
     let ran = run_lead(&root.0, lead);
     assert!(ran.get("errorCode").is_none(), "{ran}");
-    assert!(ran["files"].to_string().contains("hf"), "{ran}");
+    assert!(declares(&ran, "hf"), "{ran}");
 }
 
 /// The fixture of a lead-replay defect: the name sits in a
@@ -268,7 +303,7 @@ fn an_ignored_symbol_leads_to_its_own_scope_with_the_ignore_flags_lifted() {
     assert!(lead.get("includeHidden").is_none(), "{out}");
     let found = run_lead(&root.0, lead);
     assert_eq!(found_files(&found).len(), 1, "{found}");
-    assert!(found.to_string().contains("ignoredSym"), "{found}");
+    assert!(declares(&found, "ignoredSym"), "{found}");
 }
 
 /// A name only a hidden directory holds lifts `includeHidden` alone.
@@ -282,7 +317,7 @@ fn a_hidden_symbol_lead_lifts_only_the_hidden_flag() {
     assert!(lead.get("includeIgnored").is_none(), "{lead}");
     assert!(lead.get("defaultExcludes").is_none(), "{lead}");
     let found = run_lead(&root.0, lead);
-    assert!(found.to_string().contains("hiddenSym"), "{found}");
+    assert!(declares(&found, "hiddenSym"), "{found}");
 }
 
 /// A name held both by a hidden directory and by an ignored one: one lead
@@ -326,7 +361,8 @@ fn a_symbol_lead_never_repeats_a_flag_the_request_already_set() {
     let lead = skipped_lead(&out);
     assert_eq!(lead["includeIgnored"], json!(true), "{lead}");
     assert_eq!(lead["includeHidden"], json!(true), "{lead}");
-    assert!(run_lead(&root.0, lead).to_string().contains("hiddenSym"));
+    let found = run_lead(&root.0, lead);
+    assert!(declares(&found, "hiddenSym"), "{found}");
 }
 
 /// Several hidden directories holding the name are all reached by the one
@@ -429,10 +465,10 @@ fn an_outline_leaves_out_gitignored_files_and_leads_to_them() {
     assert_eq!(lead["path"], json!(root.0.to_string_lossy()), "{out}");
     let found = run_lead(&root.0, lead);
     assert_eq!(found_files(&found).len(), 1, "{found}");
-    assert!(found.to_string().contains("zzGenerated"), "{found}");
+    assert!(declares(&found, "zzGenerated"), "{found}");
     let direct = empty_outline(
         &root.0,
         json!({"symbolName":"zzGenerated","includeIgnored":true}),
     );
-    assert!(direct.to_string().contains("zzGenerated"), "{direct}");
+    assert!(declares(&direct, "zzGenerated"), "{direct}");
 }

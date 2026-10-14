@@ -12,7 +12,7 @@ import { isRecord } from '../shared/util.js';
  * folder, and used stale or not at all when offline: every decision also works from Pi's metadata alone.
  */
 
-export const CATALOG_URL = 'https://models.dev/api.json';
+const CATALOG_URL = 'https://models.dev/api.json';
 /** How long a fetched index is fresh. */
 export const CATALOG_TTL_MS = 24 * 60 * 60_000;
 const FETCH_TIMEOUT_MS = 10_000;

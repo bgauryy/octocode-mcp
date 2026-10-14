@@ -469,8 +469,9 @@ impl GitAttributes {
         if let Some(rules) = self
             .dirs
             .lock()
-            .ok()
-            .and_then(|dirs| dirs.get(dir).cloned())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(dir)
+            .cloned()
         {
             return rules;
         }
@@ -479,7 +480,11 @@ impl GitAttributes {
                 .map(|text| parse_attributes(dir, &text))
                 .unwrap_or_default(),
         );
-        if let Ok(mut dirs) = self.dirs.lock() {
+        {
+            let mut dirs = self
+                .dirs
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             dirs.insert(dir.to_path_buf(), std::sync::Arc::clone(&rules));
         }
         rules

@@ -37,7 +37,7 @@ Load when choosing what to capture or do. Why: Match the capture to the task. Us
 
 ```bash
 node "$CDP" cookies --i-understand-secrets --from-port 9333 --to-port 9222 --urls "https://app.example.com"
-node "$CDP" cookies --i-understand-secrets --from-port 9333 --export-storage-state .octocode/tmp/auth.json --dry-run
+node "$CDP" cookies --i-understand-secrets --from-port 9333 --export-storage-state .octocode/octocode-chrome-devtools/tmp/auth.json --dry-run
 ```
 This skill cannot attach to an ordinary open Chrome without relaunching it. After injecting, run the smallest check on `--to-port` with `--keep-tab`.
 

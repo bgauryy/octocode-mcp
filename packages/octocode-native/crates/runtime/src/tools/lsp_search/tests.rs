@@ -73,6 +73,8 @@ fn counted_page(items: &[Value], page: u32, size: u32) -> (Vec<Value>, Value) {
             page_size: Some(size),
             budget: TEST_BUDGET,
             sizes: &plain_sizes(items),
+            snapshot: "lsp-v3:test",
+            resume: None,
         },
     )
 }
@@ -820,7 +822,8 @@ fn pages_past_the_end_are_empty_and_flagged_out_of_range() {
 
 #[test]
 fn group_by_file_summarizes_per_file_with_workspace_relative_paths() {
-    let root = std::env::temp_dir().join(format!("octocode-lsp-group-{}", std::process::id()));
+    let root_dir = crate::tools::test_support::Fixture::new();
+    let root = root_dir.0.clone();
     let root_str = root.to_string_lossy().into_owned();
     let uri = |name: &str| {
         octocode_engine::lsp::uri::path_to_uri(&root.join(name).to_string_lossy()).expect("uri")
@@ -864,7 +867,8 @@ fn group_by_file_summarizes_per_file_with_workspace_relative_paths() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn grouped_references_replace_locations_with_file_summaries() {
-    let root = std::env::temp_dir().join(format!("octocode-lsp-grouped-{}", std::process::id()));
+    let root_dir = crate::tools::test_support::Fixture::new();
+    let root = root_dir.0.clone();
     std::fs::create_dir_all(&root).expect("root");
     let root = root.canonicalize().expect("canonical root");
     std::fs::write(root.join("a.ts"), "foo\nfoo\n").expect("a.ts");
@@ -966,7 +970,8 @@ async fn walk_reference_pages(
 
 #[tokio::test(flavor = "current_thread")]
 async fn reference_pages_fill_the_budget_and_reach_every_location_once() {
-    let root = std::env::temp_dir().join(format!("octocode-lsp-budget-{}", std::process::id()));
+    let root_dir = crate::tools::test_support::Fixture::new();
+    let root = root_dir.0.clone();
     std::fs::create_dir_all(&root).expect("root");
     let root = root.canonicalize().expect("canonical root");
     let source = "foo\n".repeat(641);
@@ -2193,6 +2198,12 @@ fn empty_diagnostics_carry_no_read_recovery_and_symbol_reads_are_matched() {
     );
     assert_eq!(row["category"], "noDiagnostics");
     assert!(row.get("next").is_none(), "{row}");
+    // The row states the per-call fact; no static advice repeats on it.
+    assert_eq!(
+        row["reason"],
+        "The language server reported no diagnostics for this document."
+    );
+    assert!(row.get("hints").is_none(), "{row}");
 
     let q = query(serde_json::json!({
         "operation": "definition", "mainGoal": "test", "reasoning": "test",
@@ -3507,4 +3518,306 @@ fn callers_of_a_class_are_labelled_as_uses() {
         class_uses_warning("subtypes", std::slice::from_ref(&class)),
         None
     );
+}
+
+/// Names of a page's rows, whichever key the kind lists them under.
+fn page_names(row: &serde_json::Value) -> Vec<String> {
+    ["matches", "symbols"]
+        .iter()
+        .filter_map(|key| row[*key].as_array())
+        .flatten()
+        .filter_map(|item| {
+            item.get("name")
+                .or_else(|| item.get("symbolName"))
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        })
+        .collect()
+}
+
+/// Walk a result set copying each `next.nextPage` unchanged, under a
+/// different response budget on every page (a continuation run in another
+/// batch or window): the walk reaches every row exactly once, in order.
+fn walk_across_budgets(
+    first: &LspSearchQuery,
+    budgets: &[usize],
+    page: impl Fn(&LspSearchQuery, usize) -> serde_json::Value,
+) -> Vec<String> {
+    let mut q = first.clone();
+    let mut seen = Vec::new();
+    for call in 0.. {
+        assert!(call < 1_000, "the walk must end");
+        let row = with_next(&q, page(&q, budgets[call % budgets.len()]));
+        assert!(row.get("errorCode").is_none(), "page {call}: {row}");
+        assert_ne!(row["pagination"]["outOfRange"], true, "page {call}: {row}");
+        let names = page_names(&row);
+        assert!(!names.is_empty(), "page {call} moved: {row}");
+        seen.extend(names);
+        let Some(next) = row.pointer("/next/nextPage/query/queries/0") else {
+            break;
+        };
+        q = serde_json::from_value(next.clone()).expect("executable continuation");
+    }
+    seen
+}
+
+#[test]
+fn a_copied_continuation_resumes_at_the_next_row_under_any_budget() {
+    // Rows of uneven size, so different budgets cut at different rows.
+    let items = (0..60)
+        .map(|index| {
+            serde_json::json!({"name": format!("s{index:02}"), "detail": "x".repeat(index % 7 * 40)})
+        })
+        .collect::<Vec<_>>();
+    let expected = items
+        .iter()
+        .map(|item| item["name"].as_str().expect("name").to_owned())
+        .collect::<Vec<_>>();
+    let q = query(serde_json::json!({
+        "operation": "workspaceSymbol", "path": "file:///repo", "symbolName": "s"
+    }));
+    for budgets in [[600, 2_400, 900], [2_400, 600, 1_300]] {
+        let seen = walk_across_budgets(&q, &budgets, |q, budget| {
+            items_payload(q, "symbols", serde_json::json!(items), budget)
+        });
+        assert_eq!(seen, expected, "budgets {budgets:?}");
+    }
+
+    // documentSymbols pages top-level rows the same way.
+    let range = |line: u64| serde_json::json!({"start": {"line": line, "character": 0}, "end": {"line": line, "character": 1}});
+    let symbols = (0..60)
+        .map(|index| {
+            serde_json::json!({"name": format!("s{index:02}{}", "_".repeat(index as usize % 7 * 30)),
+                "kind": 12, "range": range(index), "selectionRange": range(index)})
+        })
+        .collect::<Vec<_>>();
+    let expected = symbols
+        .iter()
+        .map(|item| item["name"].as_str().expect("name").to_owned())
+        .collect::<Vec<_>>();
+    let q = query(serde_json::json!({
+        "operation": "documentSymbols", "path": "file:///repo/src/lib.rs"
+    }));
+    for budgets in [[600, 2_400, 900], [2_400, 600, 1_300]] {
+        let seen = walk_across_budgets(&q, &budgets, |q, budget| {
+            items_payload(q, "documentSymbols", serde_json::json!(symbols), budget)
+        });
+        assert_eq!(seen, expected, "budgets {budgets:?}");
+    }
+}
+
+#[test]
+fn a_cursor_past_the_end_or_of_another_answer_never_skips_rows() {
+    let items = (0..30)
+        .map(|index| serde_json::json!({"name": format!("s{index:02}"), "detail": "x".repeat(80)}))
+        .collect::<Vec<_>>();
+    let q = query(serde_json::json!({
+        "operation": "workspaceSymbol", "path": "file:///repo", "symbolName": "s"
+    }));
+    let first = with_next(
+        &q,
+        items_payload(&q, "symbols", serde_json::json!(items), 600),
+    );
+    let next: LspSearchQuery =
+        serde_json::from_value(first["next"]["nextPage"]["query"]["queries"][0].clone())
+            .expect("continuation");
+    // The answer changed: the digest no longer matches, whatever the cursor.
+    let mut changed = items.clone();
+    changed.pop();
+    let stale = items_payload(&next, "symbols", serde_json::json!(changed), 600);
+    assert_eq!(stale["errorCode"], "staleSnapshot", "{stale}");
+    // A cursor at the end of the set is out of range, not a clamped repeat.
+    let pinned = next.snapshot().expect("snapshot");
+    let digest = pinned.split('@').next().expect("digest");
+    let past = requery(
+        &next,
+        serde_json::json!({"snapshot": row_cursor(digest, 30, 2)}),
+    );
+    let row = items_payload(&past, "symbols", serde_json::json!(items), 600);
+    assert_eq!(row["pagination"]["outOfRange"], true, "{row}");
+    assert_eq!(row["matches"], serde_json::json!([]), "{row}");
+}
+
+/// A character-cut cursor binds its row and its page to the digest: an
+/// edited row, or the cursor another page carries, is a stale snapshot
+/// with the restart lead, never a page that silently skips or repeats rows.
+#[test]
+fn a_forged_or_misplaced_cursor_is_a_stale_snapshot() {
+    let items = (0..30)
+        .map(|index| serde_json::json!({"name": format!("s{index:02}"), "detail": "x".repeat(80)}))
+        .collect::<Vec<_>>();
+    let q = query(serde_json::json!({
+        "operation": "workspaceSymbol", "path": "file:///repo", "symbolName": "s"
+    }));
+    let continuation = |row: &serde_json::Value| -> LspSearchQuery {
+        serde_json::from_value(row["next"]["nextPage"]["query"]["queries"][0].clone())
+            .expect("continuation")
+    };
+    let second = continuation(&with_next(
+        &q,
+        items_payload(&q, "symbols", serde_json::json!(items), 600),
+    ));
+    assert_eq!(second.page(), Some(2));
+    let second_row = with_next(
+        &second,
+        items_payload(&second, "symbols", serde_json::json!(items), 600),
+    );
+    assert!(second_row.get("errorCode").is_none(), "{second_row}");
+    let third = continuation(&second_row);
+    assert_eq!(third.page(), Some(3));
+    let stale = |pinned: &str| {
+        let forged = requery(&second, serde_json::json!({"snapshot": pinned}));
+        let row = items_payload(&forged, "symbols", serde_json::json!(items), 600);
+        assert_eq!(row["errorCode"], "staleSnapshot", "{pinned}: {row}");
+        let restart = &row["next"]["restart"]["query"]["queries"][0];
+        assert_eq!(restart["page"], 1, "{row}");
+        assert!(restart.get("snapshot").is_none(), "{row}");
+        assert!(row.get("matches").is_none(), "{row}");
+    };
+    // The row edited, the rest of the cursor kept.
+    let pinned = second.snapshot().expect("snapshot");
+    let (digest, rest) = pinned.rsplit_once('@').expect("row cursor");
+    let digits = rest.chars().take_while(char::is_ascii_digit).count();
+    let row: usize = rest[..digits].parse().expect("row");
+    stale(&format!("{digest}@{}{}", row + 1, &rest[digits..]));
+    stale(&format!("{digest}@{}{}", row - 1, &rest[digits..]));
+    // Page 3's cursor named on page 2.
+    stale(third.snapshot().expect("snapshot"));
+}
+
+/// A callers page is cut on the compact call rows it prints, so it fills
+/// the budget instead of a third of it, and still reaches every edge once.
+#[test]
+fn caller_pages_fill_the_budget_with_compact_rows() {
+    let items = (0..240)
+        .map(|n| {
+            serde_json::json!({
+                "from": {"symbolName": format!("caller{n}"), "kind": "function",
+                    "path": format!("/repo/src/module_{}/file.rs", n / 4),
+                    "displayRange": {"startLine": n + 10, "startCharacter": 8, "endLine": n + 30, "endCharacter": 1}},
+                "fromRanges": [{"startLine": n + 12, "startCharacter": 5, "endLine": n + 12, "endCharacter": 9}],
+                "level": 1
+            })
+        })
+        .collect::<Vec<_>>();
+    let q = query(serde_json::json!({
+        "operation": "callers", "path": "file:///repo/a.rs", "symbolName": "foo", "line": 1
+    }));
+    let budget = 4_000;
+    let paths = repo_policy();
+    let mut q = q;
+    let mut seen = Vec::new();
+    let mut fills = Vec::new();
+    for call in 0.. {
+        assert!(call < 100, "the walk must end");
+        let row = with_next(&q, call_items_payload(&q, &items, None, budget, &paths));
+        let chars = crate::tools::stream_page::json_chars(&row["files"]);
+        assert!(chars <= budget, "page {call} is {chars} chars");
+        fills.push(chars);
+        seen.extend(
+            row["files"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .flat_map(|file| file["matches"].as_array().into_iter().flatten())
+                .map(|call| call["symbolName"].as_str().expect("name").to_owned()),
+        );
+        let Some(next) = row.pointer("/next/nextPage/query/queries/0") else {
+            break;
+        };
+        q = serde_json::from_value(next.clone()).expect("continuation");
+    }
+    let expected = (0..240).map(|n| format!("caller{n}")).collect::<Vec<_>>();
+    assert_eq!(seen, expected);
+    // Every page but the last is at least 80% full.
+    for fill in &fills[..fills.len() - 1] {
+        assert!(*fill * 5 >= budget * 4, "{fills:?}");
+    }
+}
+
+/// A directory named where a file anchors the request is `notAFile`, with
+/// a lead into the directory: a text search for a named symbol, else its
+/// file listing.
+#[test]
+fn a_directory_anchor_is_not_a_file_and_leads_into_it() {
+    let root = tempfile::tempdir().expect("root");
+    let root = root.path().canonicalize().expect("canonical root");
+    std::fs::create_dir_all(root.join("src/tools")).expect("dir");
+    let paths = crate::tools::test_support::workspace_policy(&root);
+    let named = query(serde_json::json!({
+        "operation": "references", "path": "src/tools", "symbolName": "run", "line": 1
+    }));
+    let row = directory_anchor(&named, &paths).expect("a directory row");
+    assert_eq!(row["status"], "error", "{row}");
+    assert_eq!(row["errorCode"], "notAFile", "{row}");
+    assert_eq!(
+        row["error"], "src/tools is a directory, not a file.",
+        "{row}"
+    );
+    assert!(row.get("hints").is_none(), "{row}");
+    let lead = &row["next"]["findText"];
+    assert_eq!(lead["tool"], "localSearch", "{row}");
+    assert_eq!(
+        lead["query"]["queries"][0],
+        serde_json::json!({"path": "src/tools", "matchString": "run", "regex": "literal",
+            "wholeWord": true, "caseMode": "sensitive"}),
+        "{row}"
+    );
+    crate::contracts::validate_output("lspSearch", &public_row(&row))
+        .expect("directory row satisfies the output contract");
+
+    let unnamed = query(serde_json::json!({"operation": "documentSymbols", "path": "src/tools"}));
+    let row = directory_anchor(&unnamed, &paths).expect("a directory row");
+    let lead = &row["next"]["list"];
+    assert_eq!(lead["tool"], "structureSearch", "{row}");
+    assert_eq!(
+        lead["query"]["queries"][0],
+        serde_json::json!({"operation": "files", "path": "src/tools"}),
+        "{row}"
+    );
+    // A file, or a path that does not exist, is not this failure.
+    std::fs::write(root.join("src/a.rs"), "fn run() {}\n").expect("file");
+    let file = query(serde_json::json!({"operation": "documentSymbols", "path": "src/a.rs"}));
+    assert!(directory_anchor(&file, &paths).is_none());
+    let missing = query(serde_json::json!({"operation": "documentSymbols", "path": "src/nope"}));
+    assert!(directory_anchor(&missing, &paths).is_none());
+    // A missing path names its error and the nearest listing, no prose.
+    let failure = paths
+        .validate_read(root.join("src/nope"))
+        .map_err(LspFailure::path_denied)
+        .expect_err("missing");
+    let row = path_failure(&missing, &paths, failure).expect("a missing-path row");
+    assert_eq!(row["errorCode"], crate::policy::PATH_NOT_FOUND, "{row}");
+    assert!(row.get("hints").is_none(), "{row}");
+    assert_eq!(row["next"]["viewTree"]["tool"], "structureSearch", "{row}");
+    crate::contracts::validate_output("lspSearch", &public_row(&row))
+        .expect("missing-path row satisfies the output contract");
+}
+
+/// The language server's root is spelled like every other row path:
+/// relative to the workspace, `.` for the workspace itself.
+#[test]
+fn server_roots_are_workspace_relative() {
+    let root = tempfile::tempdir().expect("root");
+    let root = root.path().canonicalize().expect("canonical root");
+    std::fs::create_dir_all(root.join("crates/runtime")).expect("dir");
+    let paths = crate::tools::test_support::workspace_policy(&root);
+    let member = root.join("crates/runtime").to_string_lossy().into_owned();
+    let mut row = serde_json::json!({
+        "workspaceRoot": member,
+        "lsp": {"receipt": {"workspaceRoot": member}}
+    });
+    relative_server_roots(&mut row, &paths);
+    assert_eq!(row["workspaceRoot"], "crates/runtime", "{row}");
+    assert_eq!(
+        row["lsp"]["receipt"]["workspaceRoot"], "crates/runtime",
+        "{row}"
+    );
+    let mut whole = serde_json::json!({"workspaceRoot": root.to_string_lossy()});
+    relative_server_roots(&mut whole, &paths);
+    assert_eq!(whole["workspaceRoot"], ".", "{whole}");
+    // A root outside the workspace keeps its absolute spelling.
+    let mut outside = serde_json::json!({"workspaceRoot": "/elsewhere/project"});
+    relative_server_roots(&mut outside, &paths);
+    assert_eq!(outside["workspaceRoot"], "/elsewhere/project", "{outside}");
 }

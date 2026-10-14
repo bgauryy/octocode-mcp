@@ -25,13 +25,31 @@ function requireTypify(): void {
   }
 }
 
+type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
+
+/**
+ * The bundle as native needs it: every definition except the per-tool
+ * `*Output` roots. Native checks outputs against the JSON schema, so the
+ * types typify would expand from those roots (most of the file) are dead
+ * code; core-named shared definitions (`Ranking`, `ArtifactType`, …) stay
+ * because native builds output fields from them. TypeScript keeps the whole
+ * bundle (it is a published API).
+ */
+export function rustBundle(bundle: { [key: string]: Json }): { [key: string]: Json } {
+  const defs = (bundle.$defs ?? {}) as { [key: string]: Json };
+  return {
+    ...bundle,
+    $defs: Object.fromEntries(Object.entries(defs).filter(([name]) => !name.endsWith('Output'))),
+  };
+}
+
 export function renderRust(header: string, bundleJson: string): string {
   requireTypify();
   const scratch = mkdtempSync(join(tmpdir(), 'octocode-tool-types-'));
   try {
     const input = join(scratch, 'tool-types.schema.json');
     const output = join(scratch, 'tool_types.rs');
-    writeFileSync(input, bundleJson);
+    writeFileSync(input, JSON.stringify(rustBundle(JSON.parse(bundleJson))));
     execFileSync(
       'cargo',
       [

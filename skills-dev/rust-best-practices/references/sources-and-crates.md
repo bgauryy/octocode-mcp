@@ -12,6 +12,7 @@ Load when an idiom or API claim needs an authoritative anchor, or when you choos
 | `unsafe`, aliasing, UB, sound raw-pointer abstractions | **The Rustonomicon** | https://doc.rust-lang.org/nomicon/ |
 | Profiles, features, workspaces, publishing | **The Cargo Book** | https://doc.rust-lang.org/cargo/ |
 | A lint, diagnostic, or codegen knob | **The rustc Book** + lint index | https://doc.rust-lang.org/rustc/ |
+| Clippy groups, `clippy.toml`, false positives | **Clippy** | https://doc.rust-lang.org/clippy/ |
 | Edition migration (2015→2018→2021→2024) | **The Edition Guide** | https://doc.rust-lang.org/edition-guide/ |
 | Toolchain, channels, targets, MSRV | **The rustup Book** | https://rust-lang.github.io/rustup/ |
 | `cargo doc`, doctests, intra-doc links | **The rustdoc Book** | https://doc.rust-lang.org/rustdoc/ |
@@ -42,7 +43,7 @@ These are candidates when the repository has no established choice. Reuse the ex
 | Web server | `axum` | On tokio/tower/hyper |
 | Regex | `regex` / `regex-automata` | Linear-time, no catastrophic backtracking |
 | Date/time | `jiff` (recommended) or `time`/`chrono` | |
-| Small/stack collections | `smallvec`, `arrayvec` | |
+| Small/stack collections | `arrayvec`, `smallvec` | Benchmark `smallvec`. Rules in `references/performance-and-memory.md` |
 | Concurrent map | `dashmap` | Sharded |
 | Non-crypto hashing | `ahash` / `rustc-hash` (`FxHashMap`) | Not for security |
 | Iterator tools | `itertools` | `chunk_by`, `dedup`, `cartesian_product` |

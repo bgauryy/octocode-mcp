@@ -5,72 +5,9 @@
 //! every tool output these tests produce.
 #![allow(clippy::panic, clippy::unwrap_used)]
 
-use crate::support::Workspace;
+use crate::support::{self, Run as _, Workspace};
 use octocode_native::runtime::{ToolOutcome, ToolRuntime};
 use serde_json::{Value, json};
-
-/// Run one row (default view unless it names `extras`) through the full runtime (validation, response
-/// stages, path shaping), as an agent sees it.
-async fn run(runtime: &ToolRuntime, tool: &str, mut row: Value) -> ToolOutcome {
-    row["mainGoal"] = json!("cutover shapes.");
-    let outcome = runtime
-        .execute(format!("d1-{tool}"), tool.into(), json!({"queries":[row]}))
-        .await
-        .unwrap_or_else(|error| panic!("{tool}: {error:?}"));
-    assert_no_retired_names(tool, &outcome.structured_content);
-    outcome
-}
-
-fn data(outcome: &ToolOutcome) -> &Value {
-    &outcome.structured_content["results"][0]["data"]
-}
-
-/// The deny-list entries `tool`'s output must not carry: scope `field` (an
-/// output key), `lead` (a `next`/`hints` key), or `code` (an `errorCode`
-/// value), limited to the entry's `tools` when it lists them.
-fn retired(tool: &str) -> Vec<(String, String)> {
-    crate::support::retired_names(&["field", "lead", "code"], Some(tool))
-        .into_iter()
-        .map(|entry| {
-            (
-                entry["name"].as_str().expect("name").to_owned(),
-                entry["scope"].as_str().expect("scope").to_owned(),
-            )
-        })
-        .collect()
-}
-
-/// No retired field or lead name appears as a key anywhere in `value`.
-fn assert_no_retired_names(tool: &str, value: &Value) {
-    let names = retired(tool);
-    let mut stack = vec![value];
-    while let Some(node) = stack.pop() {
-        match node {
-            Value::Object(map) => {
-                for (key, child) in map {
-                    if let Some((name, scope)) = names
-                        .iter()
-                        .find(|(name, scope)| scope != "code" && name == key)
-                    {
-                        panic!("{tool}: retired {scope} name `{name}` in output: {value}");
-                    }
-                    // A retired code is an `errorCode` value, not a key.
-                    if key == "errorCode"
-                        && let Some(code) = child.as_str()
-                        && names
-                            .iter()
-                            .any(|(name, scope)| scope == "code" && name == code)
-                    {
-                        panic!("{tool}: retired errorCode `{code}` in output: {value}");
-                    }
-                    stack.push(child);
-                }
-            }
-            Value::Array(items) => stack.extend(items),
-            _ => {}
-        }
-    }
-}
 
 fn beta_runtime(workspace: &Workspace) -> ToolRuntime {
     workspace.runtime(&[("OCTOCODE_BETA", "true".into())])
@@ -83,10 +20,11 @@ async fn ast_search_error_rows_name_workspace_relative_paths() {
     let workspace = Workspace::new();
     workspace.write("sub/dir/Cargo.toml", "[package]\nname = \"x\"\n");
     let runtime = workspace.runtime(&[]);
-    let outcome = run(
+    let outcome = support::run(
         &runtime,
         "astSearch",
         json!({"operation":"symbols","path":"sub/dir/Cargo.toml"}),
+        &[],
     )
     .await;
     let row = &outcome.structured_content["results"][0];
@@ -102,13 +40,14 @@ async fn ast_search_scan_diagnostics_name_workspace_relative_paths() {
     workspace.write("sub/dir/a.rs", "fn a() { old(1); }\n");
     workspace.write("sub/dir/b.rs", "fn b() { old(2); }\n");
     let runtime = workspace.runtime(&[]);
-    let outcome = run(
+    let outcome = support::run(
         &runtime,
         "astSearch",
         json!({"operation":"match","path":"sub/dir","language":"rust","pattern":"old($A)","maxFiles":1}),
+        &[],
     )
     .await;
-    let data = data(&outcome);
+    let data = outcome.data();
     let diagnostics = data["diagnostics"].as_array().expect("diagnostics");
     let truncated = diagnostics
         .iter()
@@ -127,14 +66,15 @@ async fn ast_rewrite_paths_and_expected_hashes_are_workspace_relative() {
     let workspace = Workspace::new();
     let file = workspace.write("src/sub/a.ts", "export const f = (x) => old(x);\n");
     let runtime = beta_runtime(&workspace);
-    let preview = run(
+    let preview = support::run(
         &runtime,
         "astRewrite",
         json!({"path":"src/sub","language":"typescript","pattern":"old($A)","rewrite":"neu($A)"}),
+        &[],
     )
     .await;
     let body = &preview.structured_content;
-    let shown = data(&preview);
+    let shown = preview.data();
     assert_eq!(shown["files"][0]["path"], "src/sub/a.ts", "{body}");
     assert_eq!(shown["matches"][0]["path"], "src/sub/a.ts", "{body}");
     let patch = shown["files"][0]["patch"].as_str().expect("patch");
@@ -160,11 +100,11 @@ async fn ast_rewrite_paths_and_expected_hashes_are_workspace_relative() {
     );
     // The lead runs verbatim and writes the previewed file.
     let applied = runtime
-        .execute("d1-apply".into(), "astRewrite".into(), apply)
+        .run("d1-apply".into(), "astRewrite".into(), apply)
         .await
         .expect("apply");
-    assert_no_retired_names("astRewrite", &applied.structured_content);
-    let applied_data = data(&applied);
+    support::assert_no_retired_names("astRewrite", &applied.structured_content);
+    let applied_data = support::row_data(&applied);
     assert_eq!(
         applied_data["transaction"]["committed"], true,
         "{}",
@@ -183,18 +123,19 @@ async fn boundary_relative_keys_from_old_preview_fail_closed_with_rerun_hint() {
     let workspace = Workspace::new();
     let file = workspace.write("src/sub/a.ts", "export const f = (x) => old(x);\n");
     let runtime = beta_runtime(&workspace);
-    let preview = run(
+    let preview = support::run(
         &runtime,
         "astRewrite",
         json!({"path":"src/sub","language":"typescript","pattern":"old($A)","rewrite":"neu($A)"}),
+        &[],
     )
     .await;
-    let mut apply = data(&preview)["hints"]["apply"]["query"].clone();
+    let mut apply = preview.data()["hints"]["apply"]["query"].clone();
     let row = &mut apply["queries"][0];
     let hash = row["expectedHashes"]["src/sub/a.ts"].clone();
     // An older preview keyed its hashes relative to the scanned directory.
     row["expectedHashes"] = json!({"a.ts": hash});
-    let rejected = run(&runtime, "astRewrite", row.clone()).await;
+    let rejected = support::run(&runtime, "astRewrite", row.clone(), &[]).await;
     let result = &rejected.structured_content["results"][0];
     assert_eq!(result["status"], "error", "{result}");
     let code = result["data"]["errorCode"].as_str().unwrap_or_default();
@@ -206,9 +147,9 @@ async fn boundary_relative_keys_from_old_preview_fail_closed_with_rerun_hint() {
     // Absolute keys are still accepted.
     let absolute = workspace.workspace.join("src/sub/a.ts");
     row["expectedHashes"] = json!({absolute.to_string_lossy(): hash});
-    let applied = run(&runtime, "astRewrite", row.clone()).await;
+    let applied = support::run(&runtime, "astRewrite", row.clone(), &[]).await;
     assert_eq!(
-        data(&applied)["transaction"]["committed"],
+        applied.data()["transaction"]["committed"],
         true,
         "{}",
         applied.structured_content
@@ -230,10 +171,11 @@ async fn artifact_search_takes_ecosystem_and_registry_url() {
     let workspace = Workspace::new();
     let runtime = workspace.runtime(&[("OCTOCODE_ALLOW_PRIVATE_REGISTRY", "true".into())]);
     // The new names reach the registry the row names.
-    let outcome = run(
+    let outcome = support::run(
         &runtime,
         "artifactSearch",
         json!({"ecosystem":"npm","packageName":"zzqq-missing","registryUrl":server.uri()}),
+        &[],
     )
     .await;
     let requests = server.received_requests().await.expect("recorded");
@@ -249,7 +191,7 @@ async fn artifact_search_takes_ecosystem_and_registry_url() {
         let mut row = row;
         row["mainGoal"] = json!("cutover shapes.");
         let error = runtime
-            .execute(
+            .run(
                 "d1-artifact-retired".into(),
                 "artifactSearch".into(),
                 json!({"queries":[row]}),
@@ -311,13 +253,14 @@ async fn history_reviews_and_issue_comments_name_author_and_commit_sha() {
         .await;
     let workspace = Workspace::new();
     let runtime = workspace.runtime(&[("GITHUB_API_URL", format!("{}/api/v3", server.uri()))]);
-    let reviews = run(
+    let reviews = support::run(
         &runtime,
         "ghGetHistoryItem",
         json!({"operation":"pullRequest","owner":"a","repo":"b","number":7,"sections":["body","reviews"]}),
+        &[],
     )
     .await;
-    let review = &data(&reviews)["pullRequests"][0]["reviews"][0];
+    let review = &reviews.data()["pullRequests"][0]["reviews"][0];
     let seen = server
         .received_requests()
         .await
@@ -331,13 +274,14 @@ async fn history_reviews_and_issue_comments_name_author_and_commit_sha() {
         reviews.structured_content
     );
     assert_eq!(review["commitSha"], HEAD, "{}", reviews.structured_content);
-    let comments = run(
+    let comments = support::run(
         &runtime,
         "ghGetHistoryItem",
         json!({"operation":"issue","owner":"a","repo":"b","number":9,"sections":["comments"]}),
+        &[],
     )
     .await;
-    let comment = &data(&comments)["issues"][0]["comments"][0];
+    let comment = &comments.data()["issues"][0]["comments"][0];
     assert_eq!(comment["author"], "bob", "{}", comments.structured_content);
     runtime.close().await;
 }
@@ -351,16 +295,17 @@ async fn local_search_counts_are_match_line_and_file_counts() {
         workspace.write(name, "needle\nx\nneedle\n");
     }
     let runtime = workspace.runtime(&[]);
-    let paged = run(
+    let paged = support::run(
         &runtime,
         "localSearch",
         // The page counters are a stats extra.
-        json!({"path":".","matchString":"needle","pageSize":1,"extras":["stats"]}),
+        json!({"path":".","matchString":"needle","pageSize":1}),
+        &["stats"],
     )
     .await;
     // The totals are flat on the row (no `stats` object, no `fileCount`: the
     // file count is `pagination.totalItems`).
-    let totals = data(&paged);
+    let totals = paged.data();
     assert_eq!(totals["matchCount"], 6, "{}", paged.structured_content);
     assert_eq!(
         totals["matchedLineCount"], 6,
@@ -374,19 +319,20 @@ async fn local_search_counts_are_match_line_and_file_counts() {
     );
     // `pagination.totalItems` counts the paged unit: files.
     assert_eq!(
-        data(&paged)["pagination"]["totalItems"],
+        paged.data()["pagination"]["totalItems"],
         3,
         "{}",
         paged.structured_content
     );
     // A merged context window lists its matched lines as `matchedLines`.
-    let merged = run(
+    let merged = support::run(
         &runtime,
         "localSearch",
         json!({"path":"a.txt","matchString":"needle","contextLines":2}),
+        &[],
     )
     .await;
-    let row = &data(&merged)["files"][0]["matches"][0];
+    let row = &merged.data()["files"][0]["matches"][0];
     assert_eq!(
         row["matchedLines"],
         json!([1, 3]),
@@ -401,27 +347,29 @@ async fn ast_tools_count_matches_as_match_count() {
     let workspace = Workspace::new();
     workspace.write("src/a.ts", "export const f = (x) => old(x) + old(1);\n");
     let runtime = beta_runtime(&workspace);
-    let search = run(
+    let search = support::run(
         &runtime,
         "astSearch",
         // A complete page drops its stats; the stats extra keeps them.
-        json!({"operation":"match","path":"src","language":"typescript","pattern":"old($A)","extras":["stats"]}),
+        json!({"operation":"match","path":"src","language":"typescript","pattern":"old($A)"}),
+        &["stats"],
     )
     .await;
     assert_eq!(
-        data(&search)["matchCount"],
+        search.data()["matchCount"],
         2,
         "{}",
         search.structured_content
     );
-    let rewrite = run(
+    let rewrite = support::run(
         &runtime,
         "astRewrite",
         json!({"path":"src","language":"typescript","pattern":"old($A)","rewrite":"neu($A)"}),
+        &[],
     )
     .await;
     assert_eq!(
-        data(&rewrite)["matchCount"],
+        rewrite.data()["matchCount"],
         2,
         "{}",
         rewrite.structured_content
@@ -439,44 +387,48 @@ async fn every_column_is_one_based() {
     // "a()" starts at the 4th character of line 1 and the 10th of line 2.
     workspace.write("x.rs", "fn a() {}\nfn b() { a(); }\n");
     let runtime = beta_runtime(&workspace);
-    let spans = run(
+    let spans = support::run(
         &runtime,
         "localSearch",
-        json!({"path":"x.rs","matchString":"a()","resultView":"matchOnly","extras":["details"]}),
+        json!({"path":"x.rs","matchString":"a()","resultView":"matchOnly"}),
+        &["details"],
     )
     .await;
-    let rows = &data(&spans)["files"][0]["matches"];
+    let rows = &spans.data()["files"][0]["matches"];
     assert_eq!(rows[0]["column"], 4, "{}", spans.structured_content);
     assert_eq!(rows[1]["column"], 10, "{}", spans.structured_content);
-    let matched = run(
+    let matched = support::run(
         &runtime,
         "astSearch",
-        json!({"operation":"match","path":"x.rs","pattern":"a()","captureText":true,"extras":["details"]}),
+        json!({"operation":"match","path":"x.rs","pattern":"a()","captureText":true}),
+        &["details"],
     )
     .await;
-    let row = &data(&matched)["files"][0]["matches"][0];
+    let row = &matched.data()["files"][0]["matches"][0];
     assert_eq!(row["line"], 2, "{}", matched.structured_content);
     assert_eq!(row["column"], 10, "{}", matched.structured_content);
-    let tree = run(
+    let tree = support::run(
         &runtime,
         "astSearch",
         json!({"operation":"syntaxTree","path":"x.rs","pageSize":2}),
+        &[],
     )
     .await;
     // `function_item` spans line 1 from character 1 to the end (exclusive 10).
     assert_eq!(
-        data(&tree)["nodes"][1],
+        tree.data()["nodes"][1],
         "1 function_item 1:1-1:10 ^0",
         "{}",
         tree.structured_content
     );
-    let rewrite = run(
+    let rewrite = support::run(
         &runtime,
         "astRewrite",
-        json!({"path":"x.rs","pattern":"a()","rewrite":"z()","extras":["details"]}),
+        json!({"path":"x.rs","pattern":"a()","rewrite":"z()"}),
+        &["details"],
     )
     .await;
-    let range = &data(&rewrite)["matches"][0]["range"];
+    let range = &rewrite.data()["matches"][0]["range"];
     assert_eq!(
         range["start"]["column"], 10,
         "{}",
@@ -503,7 +455,7 @@ async fn lsp_position_and_call_hierarchy_inputs_fail_closed() {
         let mut row = row;
         row["mainGoal"] = json!("cutover shapes.");
         let error = runtime
-            .execute(
+            .run(
                 "d1-lsp-retired".into(),
                 "lspSearch".into(),
                 json!({"queries":[row]}),
@@ -531,13 +483,14 @@ async fn location_rows_are_objects_named_like_tool_inputs() {
     let runtime = workspace.runtime(&[]);
     // The enclosing declaration is an object an lspSearch/localFetch
     // call takes as is.
-    let hits = run(
+    let hits = support::run(
         &runtime,
         "localSearch",
         json!({"path":"pkg","matchString":"let"}),
+        &[],
     )
     .await;
-    let first = &data(&hits)["files"][0]["matches"][0];
+    let first = &hits.data()["files"][0]["matches"][0];
     assert_eq!(
         first["enclosing"],
         json!({"symbolName":"run","kind":"function","line":1,"endLine":4}),
@@ -546,52 +499,55 @@ async fn location_rows_are_objects_named_like_tool_inputs() {
     );
     assert!(first.get("in").is_none(), "{first}");
     // A declaration without members is an object too.
-    let outline = run(
+    let outline = support::run(
         &runtime,
         "astSearch",
         json!({"operation":"symbols","path":"pkg"}),
+        &[],
     )
     .await;
     assert_eq!(
-        data(&outline)["files"][0]["symbols"][0],
+        outline.data()["files"][0]["symbols"][0],
         json!({"symbolName":"run","kind":"function","line":1,"endLine":4,"exported":true}),
         "{}",
         outline.structured_content
     );
     // Match rows are objects; the 1-based column is a detail.
-    let matched = run(
+    let matched = support::run(
         &runtime,
         "astSearch",
         json!({"operation":"match","path":"pkg","language":"rust","pattern":"let $A = $B;"}),
+        &[],
     )
     .await;
     assert_eq!(
-        data(&matched)["files"][0]["matches"][0],
+        matched.data()["files"][0]["matches"][0],
         json!({"line":2,"value":"let a = 1;"}),
         "{}",
         matched.structured_content
     );
     // One listing shape, workspace-relative groups, key `files`.
-    let tree = run(&runtime, "structureSearch", json!({"path":"pkg"})).await;
+    let tree = support::run(&runtime, "structureSearch", json!({"path":"pkg"}), &[]).await;
     assert!(
-        data(&tree).get("entries").is_none(),
+        tree.data().get("entries").is_none(),
         "{}",
         tree.structured_content
     );
     assert_eq!(
-        data(&tree)["files"],
+        tree.data()["files"],
         json!([{"dir":"pkg","files":["a.txt (2)","src/"]}]),
         "{}",
         tree.structured_content
     );
-    let files = run(
+    let files = support::run(
         &runtime,
         "structureSearch",
         json!({"path":"pkg","operation":"files"}),
+        &[],
     )
     .await;
     assert_eq!(
-        data(&files)["files"],
+        files.data()["files"],
         json!([{"dir":"pkg","files":["a.txt (2)"]},{"dir":"pkg/src","files":["lib.rs (51)"]}]),
         "{}",
         files.structured_content
@@ -615,16 +571,17 @@ async fn a_case_sensitive_miss_leads_to_a_runnable_ignore_case_read() {
     let workspace = Workspace::new();
     workspace.write("pkg/a.txt", "alpha\nHello World\n");
     let runtime = workspace.runtime(&[]);
-    let miss = run(
+    let miss = support::run(
         &runtime,
         "localFetch",
         json!({"path":"pkg/a.txt","matchString":"hello World"}),
+        &[],
     )
     .await;
-    let hint = data(&miss)["hints"]
+    let hint = miss.data()["hints"]
         .as_array()
         .and_then(|hints| hints.iter().find_map(Value::as_str))
-        .or_else(|| data(&miss)["hints"]["text"][0].as_str())
+        .or_else(|| miss.data()["hints"]["text"][0].as_str())
         .unwrap_or_default()
         .to_owned();
     assert!(!hint.contains("caseMode"), "{hint}");
@@ -632,24 +589,25 @@ async fn a_case_sensitive_miss_leads_to_a_runnable_ignore_case_read() {
     assert_eq!(ignore["tool"], "localFetch", "{ignore}");
     let row = ignore["query"]["queries"][0].clone();
     assert_eq!(row["caseMode"], "insensitive", "{row}");
-    let hit = run(&runtime, "localFetch", row).await;
+    let hit = support::run(&runtime, "localFetch", row, &[]).await;
     assert!(
-        data(&hit)["content"]
+        hit.data()["content"]
             .as_str()
             .is_some_and(|text| text.contains("Hello World")),
         "{}",
         hit.structured_content
     );
     // A miss that already ignored case offers no ignoreCase lead.
-    let insensitive = run(
+    let insensitive = support::run(
         &runtime,
         "localFetch",
         json!({"path":"pkg/a.txt","matchString":"absent","caseMode":"insensitive"}),
+        &[],
     )
     .await;
     assert!(
-        data(&insensitive)["next"].get("ignoreCase").is_none()
-            && data(&insensitive)["hints"].get("ignoreCase").is_none(),
+        insensitive.data()["next"].get("ignoreCase").is_none()
+            && insensitive.data()["hints"].get("ignoreCase").is_none(),
         "{}",
         insensitive.structured_content
     );
@@ -661,7 +619,7 @@ async fn a_missing_file_leads_to_find_file() {
     let workspace = Workspace::new();
     workspace.write("pkg/server.rs", "fn main() {}\n");
     let runtime = workspace.runtime(&[]);
-    let missing = run(&runtime, "localFetch", json!({"path":"pkg/server.ts"})).await;
+    let missing = support::run(&runtime, "localFetch", json!({"path":"pkg/server.ts"}), &[]).await;
     let find = lead(&missing, "findFile");
     assert_eq!(find["tool"], "structureSearch", "{find}");
     runtime.close().await;
@@ -674,20 +632,21 @@ async fn error_codes_are_declared_camel_case_names() {
     let workspace = Workspace::new();
     workspace.write("pkg/a.rs", "fn a() {}\n");
     let runtime = workspace.runtime(&[]);
-    let unsupported = run(
+    let unsupported = support::run(
         &runtime,
         "astSearch",
         json!({"operation":"match","path":"pkg/a.rs","language":"cobol","pattern":"fn $A() {}"}),
+        &[],
     )
     .await;
     assert_eq!(
-        data(&unsupported)["errorCode"],
+        unsupported.data()["errorCode"],
         "languageUnsupported",
         "{}",
         unsupported.structured_content
     );
-    let missing = run(&runtime, "localFetch", json!({"path":"pkg/none.rs"})).await;
-    assert_eq!(data(&missing)["errorCode"], "pathNotFound");
+    let missing = support::run(&runtime, "localFetch", json!({"path":"pkg/none.rs"}), &[]).await;
+    assert_eq!(missing.data()["errorCode"], "pathNotFound");
     for outcome in [&unsupported, &missing] {
         let code = data(outcome)["errorCode"].as_str().expect("code");
         assert!(

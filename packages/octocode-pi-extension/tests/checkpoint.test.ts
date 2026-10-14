@@ -5,6 +5,7 @@ import { Checkpoints } from '../src/files/checkpoint.js';
 import { registerCheckpoints } from '../src/files/checkpoint-command.js';
 import { inheritCheckpoints, sessionIdOf } from '../src/files/checkpoint-store.js';
 import { FileGuard, registerFileTool } from '../src/files/tool.js';
+import { sha256 } from '../src/shared/atomic.js';
 import { tmp } from './helpers.js';
 import { Subcommands } from '../src/shared/commands.js';
 import { fakePermission } from './fake-pi.js';
@@ -37,12 +38,82 @@ describe('checkpoints', () => {
     const reopened = new Checkpoints();
     reopened.open(store);
     expect(reopened.turns()).toEqual([2, 1]);
-    expect(await reopened.rewind([2])).toEqual({ restored: [file], skipped: [] });
+    expect(await reopened.rewind([2])).toEqual({ restored: [file], partly: [], skipped: [] });
     expect(fs.readFileSync(file, 'utf8')).toBe('v1b');
-    expect(await reopened.rewind(reopened.turns().slice(0, 1))).toEqual({ restored: [file], skipped: [] });
+    expect(await reopened.rewind(reopened.turns().slice(0, 1))).toEqual({ restored: [file], partly: [], skipped: [] });
     expect(fs.readFileSync(file, 'utf8')).toBe('v0');
     expect(reopened.turns()).toEqual([]);
     expect(fs.readdirSync(path.join(store, 'blobs'))).toEqual([]);
+  });
+
+  /** A file changed once in each of `versions.length - 1` turns: v0 (on disk before), then each next version. */
+  async function chain(versions: string[]) {
+    const file = path.join(tmp(), 'a.txt');
+    fs.writeFileSync(file, versions[0]!);
+    const store = path.join(tmp(), 'cp');
+    const checkpoints = new Checkpoints();
+    checkpoints.open(store);
+    for (const version of versions.slice(1)) {
+      checkpoints.beginTurn();
+      await change(checkpoints, file, () => fs.writeFileSync(file, version));
+    }
+    return { file, store, checkpoints };
+  }
+
+  it('reaches the first state through a three-turn chain, newest change first', async () => {
+    const { file, store, checkpoints } = await chain(['v0', 'v1', 'v2', 'v3']);
+    expect(await checkpoints.rewind(checkpoints.turns())).toEqual({ restored: [file], partly: [], skipped: [] });
+    expect(fs.readFileSync(file, 'utf8')).toBe('v0');
+    expect(checkpoints.list()).toEqual([]);
+    expect(fs.readdirSync(path.join(store, 'blobs'))).toEqual([]);
+  });
+
+  it('keeps the checkpoint of a restore that failed, and every older one for the path, so a second rewind can retry', async () => {
+    const { file, store, checkpoints } = await chain(['v0', 'v1', 'v2', 'v3']);
+    const blob = path.join(store, 'blobs', sha256('v1'));
+    fs.writeFileSync(blob, 'evil');
+    // Turn 3 restores (v2); turn 2's blob is corrupt, so it and turn 1's stay and the path stops there.
+    expect(await checkpoints.rewind([3, 2, 1])).toEqual({ restored: [], partly: [file], skipped: [] });
+    expect(fs.readFileSync(file, 'utf8')).toBe('v2');
+    expect(checkpoints.turns()).toEqual([2, 1]);
+    expect(fs.readdirSync(path.join(store, 'blobs')).sort()).toEqual([sha256('v0'), sha256('v1')].sort());
+    const reopened = new Checkpoints();
+    reopened.open(store);
+    expect(reopened.turns()).toEqual([2, 1]);
+    // The blob is repaired: the retry carries the file the rest of the way, still newest first.
+    fs.writeFileSync(blob, 'v1');
+    expect(await reopened.rewind(reopened.turns())).toEqual({ restored: [file], partly: [], skipped: [] });
+    expect(fs.readFileSync(file, 'utf8')).toBe('v0');
+    expect(reopened.turns()).toEqual([]);
+  });
+
+  it('keeps every chosen checkpoint of a file changed since, and restores it once it is as the agent left it', async () => {
+    const { file, store, checkpoints } = await chain(['v0', 'v1', 'v2']);
+    fs.writeFileSync(file, 'user');
+    expect(await checkpoints.rewind([2, 1])).toEqual({ restored: [], partly: [], skipped: [file] });
+    expect(fs.readFileSync(file, 'utf8')).toBe('user');
+    expect(checkpoints.turns()).toEqual([2, 1]);
+    expect(fs.readdirSync(path.join(store, 'blobs')).sort()).toEqual([sha256('v0'), sha256('v1')].sort());
+    fs.writeFileSync(file, 'v2');
+    expect(await checkpoints.rewind([2, 1])).toEqual({ restored: [file], partly: [], skipped: [] });
+    expect(fs.readFileSync(file, 'utf8')).toBe('v0');
+  });
+
+  it('rewinds a path that restored cleanly while another one stays', async () => {
+    const cwd = tmp();
+    const [good, bad] = [path.join(cwd, 'good.txt'), path.join(cwd, 'bad.txt')] as [string, string];
+    fs.writeFileSync(good, 'g0');
+    fs.writeFileSync(bad, 'b0');
+    const checkpoints = new Checkpoints();
+    const store = path.join(tmp(), 'cp');
+    checkpoints.open(store);
+    checkpoints.beginTurn();
+    await change(checkpoints, good, () => fs.writeFileSync(good, 'g1'));
+    await change(checkpoints, bad, () => fs.writeFileSync(bad, 'b1'));
+    fs.writeFileSync(bad, 'user');
+    expect(await checkpoints.rewind([1])).toEqual({ restored: [good], partly: [], skipped: [bad] });
+    expect(checkpoints.list().map((entry) => entry.path)).toEqual([bad]);
+    expect(fs.readdirSync(path.join(store, 'blobs'))).toEqual([sha256('b0')]);
   });
 
   it('never collects a blob or temp file that a capture in flight is storing', async () => {
@@ -103,7 +174,7 @@ describe('checkpoints', () => {
       return rename(from, to);
     });
     try {
-      expect(await checkpoints.rewind([1])).toEqual({ restored: [], skipped: [created] });
+      expect(await checkpoints.rewind([1])).toEqual({ restored: [], partly: [], skipped: [created] });
     } finally {
       spy.mockRestore();
     }
@@ -184,7 +255,7 @@ describe('checkpoints', () => {
     const again = new Checkpoints();
     again.open(store);
     expect(again.turns()).toEqual([2, 1]);
-    expect(await again.rewind([2, 1])).toEqual({ restored: [file], skipped: [] });
+    expect(await again.rewind([2, 1])).toEqual({ restored: [file], partly: [], skipped: [] });
     expect(fs.readFileSync(file, 'utf8')).toBe('v0');
   });
 
@@ -216,7 +287,7 @@ describe('checkpoints', () => {
     expect(fs.readFileSync(path.join(store, 'blobs', digest), 'utf8')).toBe('original content');
     expect(fs.readdirSync(path.join(store, 'blobs'))).toEqual([digest]);
     expect(fs.readdirSync(store).sort()).toEqual(['blobs', 'journal.jsonl']);
-    expect(await checkpoints.rewind([1])).toEqual({ restored: [file], skipped: [] });
+    expect(await checkpoints.rewind([1])).toEqual({ restored: [file], partly: [], skipped: [] });
     expect(fs.readFileSync(file, 'utf8')).toBe('original content');
   });
 
@@ -247,7 +318,7 @@ describe('checkpoints', () => {
     fs.writeFileSync(b, 'B');
     await checkpoints.settle(b, { fresh: false }, true);
     fs.writeFileSync(path.join(store, 'blobs', blob!), 'evil');
-    expect(await checkpoints.rewind([1])).toEqual({ restored: [], skipped: [b, a] });
+    expect(await checkpoints.rewind([1])).toEqual({ restored: [], partly: [], skipped: [b, a] });
   });
 
   it('finds the turns at or after a fork point on the session branch', async () => {
@@ -287,10 +358,26 @@ describe('checkpoints', () => {
     const child = new Checkpoints();
     child.open(path.join(root, 'child'));
     expect(child.turns()).toEqual([2]);
-    expect(await child.rewind([2])).toEqual({ restored: [file], skipped: [] });
+    expect(await child.rewind([2])).toEqual({ restored: [file], partly: [], skipped: [] });
     expect(fs.readFileSync(file, 'utf8')).toBe('v1');
     // The parent keeps its own link to the blob.
     expect(fs.readdirSync(path.join(root, 'parent', 'blobs'))).toHaveLength(2);
+  });
+
+  it('does not inherit entries whose digests are not 64 hex characters', async () => {
+    const root = tmp();
+    const from = path.join(root, 'parent');
+    fs.mkdirSync(path.join(from, 'blobs'), { recursive: true });
+    const digest = sha256('v0');
+    fs.writeFileSync(path.join(from, 'blobs', digest), 'v0');
+    fs.writeFileSync(path.join(root, 'secret'), 'not a blob');
+    const entry = (turn: number, before: unknown, after: unknown = digest) => ({ turn, anchor: 'u1', path: `/w/f${turn}`, before, after, bytes: 2 });
+    const lines = [entry(1, digest), entry(2, '../../secret'), entry(3, `${digest}/..`), entry(4, digest.toUpperCase()), entry(5, 'abc'), entry(6, null), entry(7, digest, '../x'), entry(8, 42)];
+    fs.writeFileSync(path.join(from, 'journal.jsonl'), lines.map((line) => `${JSON.stringify(line)}\n`).join(''));
+    const to = path.join(root, 'child');
+    expect(await inheritCheckpoints(from, to, ['u1'])).toBe(2);
+    expect(fs.readdirSync(path.join(to, 'blobs'))).toEqual([digest]);
+    expect(journalLines(to).map((line) => (JSON.parse(line) as { turn: number }).turn)).toEqual([1, 6]);
   });
 
   it('reads the session id from a Pi session file header', async () => {
@@ -393,6 +480,37 @@ describe('/rewind and the fork offer', () => {
     expect(sent).toHaveLength(1);
   });
 
+  it('reports a file restored only part of the way, tells the model, and keeps the rest to retry', async () => {
+    process.env['OCTOCODE_HOME'] = tmp();
+    const cwd = tmp();
+    const file = path.join(cwd, 'a.txt');
+    fs.writeFileSync(file, 'one');
+    const { handlers, commands, forgotten, branch, notices, sent, ctx, edit } = host(cwd);
+    await handlers.get('session_start')!({}, ctx);
+    const turn = async (from: string, to: string, id: number) => {
+      branch.push({ id: `a${id}`, type: 'message', message: { role: 'assistant' } }, { id: `u${id}`, type: 'message', message: { role: 'user' } });
+      await handlers.get('input')!({ source: 'interactive', text: 'next' }, ctx);
+      await handlers.get('agent_start')!({}, ctx);
+      await edit(from, to);
+    };
+    await handlers.get('agent_start')!({}, ctx);
+    await edit('one', 'two');
+    await turn('two', 'three', 2);
+    await turn('three', 'four', 3);
+    const blobs = path.join(process.env['OCTOCODE_HOME'], 'agent', 'pi', 'sessions', 'session_1', 'checkpoints', 'blobs');
+    fs.writeFileSync(path.join(blobs, sha256('two')), 'evil');
+    await commands.get('rewind')!.handler('3', ctx as never);
+    expect(fs.readFileSync(file, 'utf8')).toBe('three');
+    expect(notices.pop()).toMatch(/restored 0 files\.\nPartly restored[^\n]*: a\.txt\./);
+    expect(forgotten).toEqual([file]);
+    expect(sent).toHaveLength(1);
+    // The older checkpoints stayed: once the blob is sound, rewinding again finishes the job.
+    fs.writeFileSync(path.join(blobs, sha256('two')), 'two');
+    await commands.get('rewind')!.handler('3', ctx as never);
+    expect(fs.readFileSync(file, 'utf8')).toBe('one');
+    expect(notices.pop()).toMatch(/restored 1 file \(a\.txt\)/);
+  });
+
   it('rewinds only turns on the current branch after a /tree move', async () => {
     process.env['OCTOCODE_HOME'] = tmp();
     const cwd = tmp();
@@ -412,8 +530,10 @@ describe('/rewind and the fork offer', () => {
     expect(notices.pop()).toMatch(/Rewound 1 turn/);
     // Turn 1 (u1) was rewound; turn 2's change from another branch is left: the file had moved on, so it is skipped.
     expect(fs.readFileSync(file, 'utf8')).toBe('three');
+    // The skipped checkpoint stays, so a second rewind retries it (the file is still not as the agent left it).
     await commands.get('rewind')!.handler('', ctx as never);
-    expect(notices.pop()).toBe('No file changes to rewind on this branch.');
+    expect(notices.pop()).toMatch(/Left alone[\s\S]*a\.txt/);
+    expect(fs.readFileSync(file, 'utf8')).toBe('three');
   });
 
   it('labels the user message of each turn that changed files, keeps user labels, and clears on rewind', async () => {

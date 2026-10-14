@@ -1,11 +1,11 @@
 #![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 
-use crate::support;
+use crate::support::{self, Run as _};
 
 use octocode_native::runtime::FailureKind;
 use octocode_native::{config::RuntimeSurface, runtime::ToolRuntime};
 use serde_json::{Value, json};
-use support::{LocateTopPassage, Workspace, provider_runtime};
+use support::{Judge, Strategy, Workspace, provider_runtime};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -19,9 +19,11 @@ async fn provider(expected_calls: u64) -> MockServer {
     let server = MockServer::builder().start().await;
     Mock::given(method("POST"))
         .and(path("/v1/systemone"))
-        .respond_with(LocateTopPassage {
-            top: 0.9,
-            exists: 0.9,
+        .respond_with(Judge {
+            strategy: Strategy::TopPassage {
+                top: 0.9,
+                exists: 0.9,
+            },
         })
         .expect(expected_calls)
         .mount(&server)
@@ -63,7 +65,7 @@ async fn literal_locate_targets_route_to_local_search_without_provider_work() {
             "questions":[{"id":"def","type":"locate","ask":ask}]
         }]});
         let outcome = runtime
-            .execute("locate-bare".into(), "clasify".into(), input)
+            .run("locate-bare".into(), "clasify".into(), input)
             .await
             .expect("clasify");
         let output = &outcome.structured_content;
@@ -91,7 +93,7 @@ async fn literal_locate_targets_route_to_local_search_without_provider_work() {
             "{query}"
         );
         let found = runtime
-            .execute(
+            .run(
                 "literal-search".into(),
                 "localSearch".into(),
                 search["query"].clone(),
@@ -128,7 +130,7 @@ async fn several_literal_targets_route_to_one_search_that_reaches_each() {
         ]
     }]});
     let outcome = runtime
-        .execute("locate-literals".into(), "clasify".into(), input)
+        .run("locate-literals".into(), "clasify".into(), input)
         .await
         .expect("clasify");
     let output = &outcome.structured_content;
@@ -146,7 +148,7 @@ async fn several_literal_targets_route_to_one_search_that_reaches_each() {
         "{query}"
     );
     let found = runtime
-        .execute(
+        .run(
             "literal-search".into(),
             "localSearch".into(),
             search["query"].clone(),
@@ -178,7 +180,7 @@ async fn a_described_target_that_names_an_identifier_is_still_located() {
         "questions":[{"id":"def","type":"locate","ask":"Where does step_17 return its value?"}]
     }]});
     let outcome = runtime
-        .execute("locate-described".into(), "clasify".into(), input)
+        .run("locate-described".into(), "clasify".into(), input)
         .await
         .expect("clasify");
     let query = &outcome.structured_content["queries"][0];
@@ -198,9 +200,11 @@ async fn an_open_walk_says_its_best_ranks_only_the_pages_judged_so_far() {
     let server = MockServer::builder().start().await;
     Mock::given(method("POST"))
         .and(path("/v1/systemone"))
-        .respond_with(LocateTopPassage {
-            top: 0.9,
-            exists: 0.9,
+        .respond_with(Judge {
+            strategy: Strategy::TopPassage {
+                top: 0.9,
+                exists: 0.9,
+            },
         })
         .mount(&server)
         .await;
@@ -227,7 +231,7 @@ async fn an_open_walk_says_its_best_ranks_only_the_pages_judged_so_far() {
         calls += 1;
         assert!(calls <= 10, "the walk terminates");
         let outcome = runtime
-            .execute("locate-walk".into(), "clasify".into(), input)
+            .run("locate-walk".into(), "clasify".into(), input)
             .await
             .expect("clasify");
         let output = &outcome.structured_content;
@@ -280,7 +284,7 @@ async fn a_page_read_never_repeats_a_best_row_read() {
         "questions":[{"id":"t","type":"locate","ask":"The step function that returns one."}]
     }]});
     let outcome = runtime
-        .execute("locate-dedup".into(), "clasify".into(), input)
+        .run("locate-dedup".into(), "clasify".into(), input)
         .await
         .expect("clasify");
     let output = &outcome.structured_content;
@@ -338,7 +342,7 @@ async fn a_missing_file_resource_is_not_found_like_its_read() {
         .into_owned();
     let runtime = provider_runtime(&workspace, &server);
     let direct = runtime
-        .execute(
+        .run(
             "read-missing".into(),
             "localFetch".into(),
             json!({"queries":[{"mainGoal":"g","reasoning":"r","path":missing}]}),
@@ -355,7 +359,7 @@ async fn a_missing_file_resource_is_not_found_like_its_read() {
     };
     let resource = |id: &str, path: &str| json!({"id":id,"tool":"localFetch","query":{"path":path,"fullContent":true}});
     let all_missing = runtime
-        .execute(
+        .run(
             "clasify-missing".into(),
             "clasify".into(),
             matrix(json!([resource("x", &missing)])),
@@ -370,7 +374,7 @@ async fn a_missing_file_resource_is_not_found_like_its_read() {
         all_missing.structured_content
     );
     let mixed = runtime
-        .execute(
+        .run(
             "clasify-mixed".into(),
             "clasify".into(),
             matrix(json!([resource("ok", &file), resource("x", &missing)])),
@@ -404,7 +408,7 @@ async fn a_disabled_context_tool_is_rejected_at_validation_naming_its_gate() {
         "questions":[{"id":"t","type":"yesno","ask":"Is this relevant?"}]
     }]});
     let error = runtime
-        .execute("disabled-context".into(), "clasify".into(), input)
+        .run("disabled-context".into(), "clasify".into(), input)
         .await
         .expect_err("a disabled context tool fails validation");
     assert_eq!(error.code, "invalidInput", "{error:?}");
@@ -436,7 +440,7 @@ async fn mcp_cli_only_context_names_its_surface_without_suggesting_beta() {
     input.runtime_surface = RuntimeSurface::Mcp;
     let runtime = ToolRuntime::new(input).expect("MCP runtime");
     let result = runtime
-        .execute_mcp(
+        .run_mcp(
             "cli-only-context".into(),
             "clasify".into(),
             json!({"queries":[{

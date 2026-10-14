@@ -18,7 +18,7 @@ mod js_oxc_receiver;
 mod js_oxc_references;
 mod js_oxc_shared;
 
-pub(crate) const GRAPH_FACTS_SCHEMA_VERSION: u32 = 1;
+pub const GRAPH_FACTS_SCHEMA_VERSION: u32 = 1;
 
 /// An empty native syntax facts document for `file`, parsed as `language`.
 fn native_graph_facts(language: String, file: &str) -> crate::graph::GraphFactsDocument {

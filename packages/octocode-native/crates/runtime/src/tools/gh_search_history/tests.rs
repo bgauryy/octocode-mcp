@@ -7,32 +7,12 @@ use super::rows::{
 };
 use super::shape::mark_empty;
 use super::*;
-use crate::providers::github::{GitHubTransport, ProviderError};
 use crate::tools::gh_shared::pick_fields;
-use crate::tools::gh_shared::test_support::mount_json;
+use crate::tools::gh_shared::test_support::{default_context, mount_json, one_shot_provider};
+use octocode_github::{GitHubTransport, ProviderError};
 use serde_json::{Value, json};
 
 use crate::security::scan::Passthrough;
-
-fn transport(server: &wiremock::MockServer) -> GitHubTransport {
-    use crate::providers::github::{GitHubEndpoint, RetryPolicy};
-    GitHubTransport::new(
-        GitHubEndpoint::new(url::Url::parse(&format!("{}/api/v3", server.uri())).expect("url"))
-            .expect("endpoint"),
-        RetryPolicy {
-            max_attempts: 1,
-            ..Default::default()
-        },
-    )
-    .expect("transport")
-}
-
-fn context() -> RequestContext {
-    crate::tools::gh_shared::test_support::fixture_context(
-        std::time::Duration::from_secs(5),
-        1 << 20,
-    )
-}
 
 fn search(q: &GhSearchHistoryQuery) -> Result<HistorySearch, ProviderError> {
     HistorySearch::new(q.clone())
@@ -55,7 +35,7 @@ async fn execute(
 ) -> Result<Value, ProviderError> {
     super::execute(transport, query.clone(), context, security)
         .await
-        .map_err(|failure| failure.error)
+        .map_err(|failure| *failure.error)
 }
 
 #[test]
@@ -500,10 +480,10 @@ async fn cap_is_terminal_only_after_the_last_reachable_page() {
         }),
     )
     .await;
-    let transport = transport(&server);
+    let transport = one_shot_provider(&server).transport;
     for page in [1, 1000] {
         let query = serde_json::from_value(json!({"operation":"pullRequest","mainGoal": "test", "reasoning":"test","keywords":["fix"],"pageSize":1,"page":page})).expect("query");
-        let data = execute(&transport, &query, &context(), &Passthrough)
+        let data = execute(&transport, &query, &default_context(), &Passthrough)
             .await
             .expect("history search");
         assert_eq!(data["isPartial"], true, "{data}");
@@ -519,7 +499,12 @@ async fn cap_is_terminal_only_after_the_last_reachable_page() {
         );
         assert_eq!(data["next"]["nextPage"].is_object(), page < 1000, "{data}");
         // A capped page states GitHub's full match count.
-        assert!(data["warnings"].to_string().contains("1001"), "{data}");
+        assert!(
+            data["warnings"].as_array().is_some_and(|warnings| warnings
+                .iter()
+                .any(|warning| warning.as_str().is_some_and(|w| w.contains("1001")))),
+            "{data}"
+        );
         // A search beyond one repository names each row's owner and repo
         // (the read's own inputs), and the read targets it.
         assert_eq!(
@@ -557,13 +542,13 @@ async fn search_of_a_missing_repository_is_not_found() {
     for route in ["/api/v3/search/issues", "/api/v3/search/commits"] {
         mount_json(&server, route, 422, unsearchable.clone()).await;
     }
-    let transport = transport(&server);
+    let transport = one_shot_provider(&server).transport;
     for row in [
         json!({"operation":"pullRequest","owner":"o","repo":"missing","keywords":["fix"]}),
         json!({"operation":"commit","owner":"o","repo":"missing","keywords":["fix"]}),
     ] {
         let query = serde_json::from_value(row.clone()).expect("query");
-        let error = execute(&transport, &query, &context(), &Passthrough)
+        let error = execute(&transport, &query, &default_context(), &Passthrough)
             .await
             .expect_err("missing repository");
         assert_eq!(error.kind, ProviderErrorKind::NotFound, "{row}: {error:?}");
@@ -576,7 +561,7 @@ async fn search_of_a_missing_repository_is_not_found() {
 /// person qualifiers as the way on; a repository 422 stays a repository.
 #[tokio::test]
 async fn search_naming_a_missing_user_is_not_a_missing_repository() {
-    use crate::providers::github::ProviderErrorReason;
+    use octocode_github::ProviderErrorReason;
     use wiremock::MockServer;
 
     let server = MockServer::builder().start().await;
@@ -591,13 +576,13 @@ async fn search_naming_a_missing_user_is_not_a_missing_repository() {
         }),
     )
     .await;
-    let transport = transport(&server);
+    let transport = one_shot_provider(&server).transport;
     let query: GhSearchHistoryQuery = serde_json::from_value(json!({
         "operation":"pullRequest","owner":"o","repo":"r",
         "qualifiers":"author:ghost -reviewed-by:bot label:bug"
     }))
     .expect("query");
-    let failure = super::execute(&transport, query, &context(), &Passthrough)
+    let failure = super::execute(&transport, query, &default_context(), &Passthrough)
         .await
         .expect_err("missing user");
     assert_eq!(failure.error.kind, ProviderErrorKind::NotFound);
@@ -614,11 +599,8 @@ async fn search_naming_a_missing_user_is_not_a_missing_repository() {
         message.contains("cannot be searched"),
         "GitHub's words stay: {message}"
     );
-    let hint = hint.expect("a hint");
-    assert!(
-        hint.contains("author") && hint.contains("spelling"),
-        "{hint}"
-    );
+    // The `withoutUsers` lead is the repair; no hint restates the message.
+    assert_eq!(hint, None);
     let lead = failure
         .next
         .expect("a lead")
@@ -636,7 +618,7 @@ async fn search_naming_a_missing_user_is_not_a_missing_repository() {
         "operation":"pullRequest","owner":"o","repo":"r","qualifiers":"author:ghost"
     }))
     .expect("query");
-    let failure = super::execute(&transport, only, &context(), &Passthrough)
+    let failure = super::execute(&transport, only, &default_context(), &Passthrough)
         .await
         .expect_err("missing user");
     let lead = failure.next.expect("a lead");
@@ -654,7 +636,7 @@ async fn search_naming_a_missing_user_is_not_a_missing_repository() {
 /// list with rows never pays for the lookup.
 #[tokio::test]
 async fn an_empty_commit_list_naming_a_missing_author_is_the_missing_user_failure() {
-    use crate::providers::github::ProviderErrorReason;
+    use octocode_github::ProviderErrorReason;
     use wiremock::matchers::{method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -686,14 +668,14 @@ async fn an_empty_commit_list_naming_a_missing_author_is_the_missing_user_failur
         }])))
         .mount(&server)
         .await;
-    let transport = transport(&server);
+    let transport = one_shot_provider(&server).transport;
     let list = |login: &str| -> GhSearchHistoryQuery {
         serde_json::from_value(json!({
             "operation":"commit","owner":"o","repo":"r","qualifiers": format!("author:{login}")
         }))
         .expect("query")
     };
-    let failure = super::execute(&transport, list("ghost"), &context(), &Passthrough)
+    let failure = super::execute(&transport, list("ghost"), &default_context(), &Passthrough)
         .await
         .expect_err("missing user");
     assert_eq!(
@@ -712,7 +694,7 @@ async fn an_empty_commit_list_naming_a_missing_author_is_the_missing_user_failur
         failure.next
     );
     assert!(
-        super::execute(&transport, list("dev"), &context(), &Passthrough)
+        super::execute(&transport, list("dev"), &default_context(), &Passthrough)
             .await
             .is_ok(),
         "a list with rows"
@@ -726,7 +708,7 @@ async fn an_empty_commit_list_naming_a_missing_author_is_the_missing_user_failur
 /// search return, and the search never runs.
 #[tokio::test]
 async fn commit_search_naming_a_missing_user_fails_before_the_search() {
-    use crate::providers::github::ProviderErrorReason;
+    use octocode_github::ProviderErrorReason;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -752,7 +734,7 @@ async fn commit_search_naming_a_missing_user_fails_before_the_search() {
         .expect(0)
         .mount(&server)
         .await;
-    let transport = transport(&server);
+    let transport = one_shot_provider(&server).transport;
     // The missing login may be the author or the committer, next to a real one.
     for qualifiers in ["author:ghost", "author:dev committer:ghost"] {
         let query: GhSearchHistoryQuery = serde_json::from_value(json!({
@@ -760,7 +742,7 @@ async fn commit_search_naming_a_missing_user_fails_before_the_search() {
             "qualifiers": qualifiers
         }))
         .expect("query");
-        let failure = super::execute(&transport, query, &context(), &Passthrough)
+        let failure = super::execute(&transport, query, &default_context(), &Passthrough)
             .await
             .expect_err("missing user");
         assert_eq!(
@@ -780,7 +762,7 @@ async fn commit_search_naming_a_missing_user_fails_before_the_search() {
                 && !message.contains("Repository"),
             "{message}"
         );
-        assert!(hint.expect("a hint").contains("spelling"));
+        assert_eq!(hint, None, "{qualifiers}");
         let lead = failure
             .next
             .expect("a lead")
@@ -819,7 +801,7 @@ async fn commit_search_confirms_each_named_login_once_and_only_then() {
         json!({"total_count": 0, "incomplete_results": false, "items": []}),
     )
     .await;
-    let transport = transport(&server);
+    let transport = one_shot_provider(&server).transport;
     let run = |qualifiers: Option<&str>| {
         let mut row = json!({"operation":"commit","owner":"o","repo":"r","keywords":["fix"]});
         if let Some(qualifiers) = qualifiers {
@@ -828,7 +810,7 @@ async fn commit_search_confirms_each_named_login_once_and_only_then() {
         let query: GhSearchHistoryQuery = serde_json::from_value(row).expect("query");
         let transport = &transport;
         async move {
-            super::execute(transport, query, &context(), &Passthrough)
+            super::execute(transport, query, &default_context(), &Passthrough)
                 .await
                 .expect("search runs")
         }
@@ -864,13 +846,13 @@ async fn commit_search_read_targets_the_first_sha_without_a_candidate_list() {
         }),
     )
     .await;
-    let transport = transport(&server);
+    let transport = one_shot_provider(&server).transport;
     let query = serde_json::from_value(
         json!({"operation":"commit","mainGoal":"test","reasoning":"test",
         "owner":"o","repo":"r","keywords":["cache"]}),
     )
     .expect("query");
-    let data = execute(&transport, &query, &context(), &Passthrough)
+    let data = execute(&transport, &query, &default_context(), &Passthrough)
         .await
         .expect("history search");
     let read = &data["next"]["readCommit"];
@@ -905,14 +887,14 @@ async fn commit_listing_rows_are_typed_commits() {
         }]),
     )
     .await;
-    let transport = transport(&server);
+    let transport = one_shot_provider(&server).transport;
     for scope in [json!("src/lib.rs"), json!("src/"), Value::Null] {
         let mut query = json!({"operation":"commit","owner":"o","repo":"r"});
         if !scope.is_null() {
             query["path"] = scope.clone();
         }
         let query = serde_json::from_value(query).expect("query");
-        let data = execute(&transport, &query, &context(), &Passthrough)
+        let data = execute(&transport, &query, &default_context(), &Passthrough)
             .await
             .expect("commit listing");
         assert!(data.get("type").is_none(), "{scope}: {data}");
@@ -964,14 +946,14 @@ async fn plain_issue_listing_pages_issue_search_without_pr_gaps() {
         })))
         .mount(&server)
         .await;
-    let transport = transport(&server);
+    let transport = one_shot_provider(&server).transport;
     let run = |query: Value| {
         let transport = &transport;
         async move {
             execute(
                 transport,
                 &serde_json::from_value(query).expect("query"),
-                &context(),
+                &default_context(),
                 &Passthrough,
             )
             .await
@@ -1108,9 +1090,14 @@ async fn rename_lookup_runs_only_when_the_search_finds_nothing() {
         json!({"operation":"pullRequest","owner":"o","repo":"r","keywords":["fix"]}),
     )
     .expect("query");
-    let data = execute(&transport(&found), &query, &context(), &Passthrough)
-        .await
-        .expect("search");
+    let data = execute(
+        &one_shot_provider(&found).transport,
+        &query,
+        &default_context(),
+        &Passthrough,
+    )
+    .await
+    .expect("search");
     assert_eq!(data["pullRequests"][0]["number"], 7, "{data}");
 
     let renamed = MockServer::builder().start().await;
@@ -1138,9 +1125,14 @@ async fn rename_lookup_runs_only_when_the_search_finds_nothing() {
         json!({"operation":"pullRequest","owner":"old","repo":"r","keywords":["fix"]}),
     )
     .expect("query");
-    let data = execute(&transport(&renamed), &query, &context(), &Passthrough)
-        .await
-        .expect("renamed search");
+    let data = execute(
+        &one_shot_provider(&renamed).transport,
+        &query,
+        &default_context(),
+        &Passthrough,
+    )
+    .await
+    .expect("renamed search");
     assert_eq!(data["pullRequests"][0]["number"], 7, "{data}");
     assert_eq!(
         data["warnings"][0],
@@ -1389,12 +1381,12 @@ async fn commit_listing_leads_to_the_squash_pull_request() {
             "items": [{"number": 3, "title": "Bug", "state": "open", "comments": 4}]}),
     )
     .await;
-    let transport = transport(&server);
+    let transport = one_shot_provider(&server).transport;
     let query = serde_json::from_value(
         json!({"operation":"commit","owner":"o","repo":"r","path":"src/lib.rs"}),
     )
     .expect("query");
-    let data = execute(&transport, &query, &context(), &Passthrough)
+    let data = execute(&transport, &query, &default_context(), &Passthrough)
         .await
         .expect("commit listing");
     assert!(data["commits"][1].get("prNumber").is_none(), "{data}");
@@ -1410,7 +1402,7 @@ async fn commit_listing_leads_to_the_squash_pull_request() {
         json!({"operation":"issue","owner":"o","repo":"r","keywords":["bug"]}),
     )
     .expect("query");
-    let data = execute(&transport, &query, &context(), &Passthrough)
+    let data = execute(&transport, &query, &default_context(), &Passthrough)
         .await
         .expect("issue search");
     assert!(
@@ -1419,46 +1411,6 @@ async fn commit_listing_leads_to_the_squash_pull_request() {
     );
     assert_eq!(data["issues"][0]["commentsCount"], 4, "{data}");
     assert!(data["pagination"].get("totalPages").is_none(), "{data}");
-}
-
-/// GitHub's commit list reports no total, so a page with more behind it
-/// says why `pagination.totalItems` is absent; a counted search keeps its total.
-#[tokio::test]
-async fn a_commit_list_page_with_more_says_why_it_has_no_total() {
-    use wiremock::matchers::{method, path};
-    use wiremock::{Mock, MockServer, ResponseTemplate};
-
-    let server = MockServer::builder().start().await;
-    let commit = |sha: &str| {
-        json!({"sha": sha, "commit": {"message": "Fix cache",
-            "author": {"name": "Dev", "date": "2026-01-01T00:00:00Z"}}, "author": {"login": "dev"}})
-    };
-    let next = format!(
-        "{}/api/v3/repos/o/r/commits?per_page=1&page=2",
-        server.uri()
-    );
-    Mock::given(method("GET"))
-        .and(path("/api/v3/repos/o/r/commits"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("link", format!("<{next}>; rel=\"next\"").as_str())
-                .set_body_json(json!([commit("aaa")])),
-        )
-        .mount(&server)
-        .await;
-    let query =
-        serde_json::from_value(json!({"operation":"commit","owner":"o","repo":"r","pageSize":1}))
-            .expect("query");
-    let data = execute(&transport(&server), &query, &context(), &Passthrough)
-        .await
-        .expect("commit listing");
-    assert_eq!(data["pagination"]["hasMore"], true, "{data}");
-    assert!(data["pagination"].get("totalItems").is_none(), "{data}");
-    let warning = data["warnings"][0].as_str().expect("a warning");
-    assert!(
-        warning.contains("no total") && warning.contains("hasMore"),
-        "{data}"
-    );
 }
 
 /// A resolved window is one range value: both bounds `a..b`, one bound
@@ -1567,9 +1519,14 @@ async fn fields_project_listed_commits_end_to_end() {
         json!({"operation":"commit","owner":"o","repo":"r","fields":["commitSha"]}),
     )
     .expect("query");
-    let data = execute(&transport(&server), &query, &context(), &Passthrough)
-        .await
-        .expect("commit listing");
+    let data = execute(
+        &one_shot_provider(&server).transport,
+        &query,
+        &default_context(),
+        &Passthrough,
+    )
+    .await
+    .expect("commit listing");
     // The pick keeps the commit's id (commitSha) beside the picked keys.
     assert_eq!(data["commits"][0], json!({"commitSha": "aaa"}), "{data}");
 }
@@ -1634,9 +1591,14 @@ async fn an_absent_picked_key_is_named_once() {
         json!({"operation":"commit","owner":"o","repo":"r","fields":["messageHedline"]}),
     )
     .expect("query");
-    let data = execute(&transport(&server), &query, &context(), &Passthrough)
-        .await
-        .expect("commit listing");
+    let data = execute(
+        &one_shot_provider(&server).transport,
+        &query,
+        &default_context(),
+        &Passthrough,
+    )
+    .await
+    .expect("commit listing");
     assert_eq!(data["commits"][0], json!({"commitSha": "aaa"}), "{data}");
     assert_eq!(
         data["warnings"],
@@ -1670,9 +1632,14 @@ async fn picked_keys_survive_the_implied_drop() {
         "state":"merged","fields":["state","createdAt"]
     }))
     .expect("query");
-    let data = execute(&transport(&server), &query, &context(), &Passthrough)
-        .await
-        .expect("pull request search");
+    let data = execute(
+        &one_shot_provider(&server).transport,
+        &query,
+        &default_context(),
+        &Passthrough,
+    )
+    .await
+    .expect("pull request search");
     assert_eq!(
         data["pullRequests"][0],
         json!({"number": 7, "state": "merged", "createdAt": "2026-09-19T10:00:00Z"}),
@@ -1727,7 +1694,7 @@ async fn since_until_reach_the_request_of_every_operation() {
         .expect(1)
         .mount(&server)
         .await;
-    let transport = transport(&server);
+    let transport = one_shot_provider(&server).transport;
     for row in [
         json!({"operation":"pullRequest","owner":"o","repo":"r"}),
         json!({"operation":"issue","owner":"o","repo":"r"}),
@@ -1738,7 +1705,7 @@ async fn since_until_reach_the_request_of_every_operation() {
         row["since"] = json!("2026-10-01");
         row["until"] = json!("2026-10-03");
         let query = serde_json::from_value(row.clone()).expect("query");
-        let data = execute(&transport, &query, &context(), &Passthrough)
+        let data = execute(&transport, &query, &default_context(), &Passthrough)
             .await
             .unwrap_or_else(|error| panic!("{row}: the window missed the request: {error:?}"));
         assert_eq!(data["status"], "empty", "{row}: {data}");
@@ -1803,12 +1770,12 @@ async fn happy_path_rows_carry_the_next_hop_anchors() {
         ]}),
     )
     .await;
-    let transport = transport(&server);
+    let transport = one_shot_provider(&server).transport;
     let run = |row: Value| {
         let transport = &transport;
         async move {
             let query = serde_json::from_value(row.clone()).expect("query");
-            execute(transport, &query, &context(), &Passthrough)
+            execute(transport, &query, &default_context(), &Passthrough)
                 .await
                 .unwrap_or_else(|error| panic!("{row}: {error:?}"))
         }
@@ -1902,12 +1869,12 @@ async fn commit_listing_page_two_is_the_providers_next_page() {
             .mount(&server)
             .await;
     }
-    let transport = transport(&server);
+    let transport = one_shot_provider(&server).transport;
     let first: GhSearchHistoryQuery = serde_json::from_value(json!({
         "operation":"commit","owner":"o","repo":"r","path":"src","pageSize":2,"since":"2026-01-01"
     }))
     .expect("query");
-    let one = execute(&transport, &first, &context(), &Passthrough)
+    let one = execute(&transport, &first, &default_context(), &Passthrough)
         .await
         .expect("page 1");
     let next = one["next"]["nextPage"]["query"]["queries"][0].clone();
@@ -1922,7 +1889,7 @@ async fn commit_listing_page_two_is_the_providers_next_page() {
     let two = execute(
         &transport,
         &serde_json::from_value(next).expect("next query"),
-        &context(),
+        &default_context(),
         &Passthrough,
     )
     .await
@@ -1975,11 +1942,11 @@ async fn a_missing_listing_scope_names_its_repair() {
         json!({"message": "Not Found"}),
     )
     .await;
-    let transport = transport(&server);
+    let transport = one_shot_provider(&server).transport;
     let at_ref: GhSearchHistoryQuery =
         serde_json::from_value(json!({"operation":"commit","owner":"o","repo":"r","ref":"nope"}))
             .expect("query");
-    let failure = super::execute(&transport, at_ref, &context(), &Passthrough)
+    let failure = super::execute(&transport, at_ref, &default_context(), &Passthrough)
         .await
         .expect_err("missing ref");
     assert!(failure.error.message.contains("\"nope\""), "{failure:?}");
@@ -1993,7 +1960,7 @@ async fn a_missing_listing_scope_names_its_repair() {
     let plain: GhSearchHistoryQuery =
         serde_json::from_value(json!({"operation":"commit","owner":"o","repo":"r"}))
             .expect("query");
-    let failure = super::execute(&transport, plain, &context(), &Passthrough)
+    let failure = super::execute(&transport, plain, &default_context(), &Passthrough)
         .await
         .expect_err("missing repository");
     assert!(failure.next.is_none(), "{failure:?}");
@@ -2034,9 +2001,14 @@ async fn a_page_past_the_end_is_out_of_range_not_an_empty_search() {
         ),
     ] {
         let query = serde_json::from_value(row).expect("query");
-        let data = execute(&transport(&server), &query, &context(), &Passthrough)
-            .await
-            .expect("page past the end");
+        let data = execute(
+            &one_shot_provider(&server).transport,
+            &query,
+            &default_context(),
+            &Passthrough,
+        )
+        .await
+        .expect("page past the end");
         assert_eq!(data["pagination"]["outOfRange"], true, "{data}");
         assert_eq!(data["status"], "empty", "{data}");
         assert_eq!(data[rows_key], json!([]), "{data}");
@@ -2067,12 +2039,12 @@ async fn total_pages_appear_only_beside_an_exact_total() {
             json!({"total_count": total_count, "incomplete_results": false, "items": items}),
         )
         .await;
-        let transport = transport(&server);
+        let transport = one_shot_provider(&server).transport;
         let query =
             serde_json::from_value(json!({"operation":"pullRequest","owner":"o","repo":"r",
             "keywords":["x"],"pageSize":10}))
             .expect("query");
-        let data = execute(&transport, &query, &context(), &Passthrough)
+        let data = execute(&transport, &query, &default_context(), &Passthrough)
             .await
             .expect("pull request search");
         assert_eq!(
@@ -2089,4 +2061,297 @@ async fn total_pages_appear_only_beside_an_exact_total() {
             );
         }
     }
+}
+
+/// Closed-but-unmerged pull requests are a GitHub search filter
+/// (`is:unmerged`, or `-is:merged`): both run on the search route as
+/// `is:unmerged`, beside a `state`; issues have no merge state.
+#[test]
+fn unmerged_pull_requests_are_a_search_filter() {
+    let typed = |operation: &str, state: Option<&str>, qualifiers: &str| {
+        let mut row = json!({"operation":operation,"owner":"o","repo":"r","qualifiers":qualifiers});
+        if let Some(state) = state {
+            row["state"] = json!(state);
+        }
+        let prepared = crate::contracts::validate_query("ghSearchHistory", row).expect(qualifiers);
+        serde_json::from_value::<GhSearchHistoryQuery>(prepared).expect("typed")
+    };
+    for (state, qualifiers) in [(Some("closed"), "is:unmerged"), (None, "-is:merged")] {
+        let query = typed("pullRequest", state, qualifiers);
+        let filters = Filters::parse(&query).expect(qualifiers);
+        assert_eq!(filters.unmerged, Some(true), "{qualifiers}");
+        let terms = build_query(&query).expect(qualifiers);
+        assert!(terms.contains("is:unmerged"), "{qualifiers}: {terms}");
+        assert_eq!(
+            terms.contains("is:closed"),
+            state.is_some(),
+            "{qualifiers}: {terms}"
+        );
+        assert!(!terms.contains("-is:merged"), "{qualifiers}: {terms}");
+        assert!(should_use_search_for_prs(&query), "{qualifiers}");
+    }
+    let issue = Filters::parse(&typed("issue", None, "is:unmerged")).expect_err("issues");
+    assert!(issue.message.contains("is not supported"), "{issue:?}");
+}
+
+/// A REST list page states no total and says nothing more about it: the
+/// missing `totalItems` beside `hasMore` is the per-call fact.
+#[tokio::test]
+async fn a_rest_list_page_with_more_carries_no_static_total_warning() {
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::builder().start().await;
+    let link = |route: &str| {
+        format!(
+            "<{}/api/v3/repos/o/r/{route}?per_page=1&page=2>; rel=\"next\"",
+            server.uri()
+        )
+    };
+    Mock::given(method("GET"))
+        .and(path("/api/v3/repos/o/r/commits"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("link", link("commits").as_str())
+                .set_body_json(json!([{"sha": "aaa", "commit": {"message": "Fix",
+                    "author": {"name": "Dev", "date": "2026-01-01T00:00:00Z"}}}])),
+        )
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/repos/o/r/pulls"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("link", link("pulls").as_str())
+                .set_body_json(json!([{"number": 4, "title": "Fix", "state": "open",
+                    "user": {"login": "dev"}, "created_at": "2026-01-01T00:00:00Z"}])),
+        )
+        .mount(&server)
+        .await;
+    for row in [
+        json!({"operation":"commit","owner":"o","repo":"r","pageSize":1}),
+        json!({"operation":"pullRequest","owner":"o","repo":"r","pageSize":1}),
+    ] {
+        let query = serde_json::from_value(row.clone()).expect("query");
+        let data = execute(
+            &one_shot_provider(&server).transport,
+            &query,
+            &default_context(),
+            &Passthrough,
+        )
+        .await
+        .expect("listing");
+        assert_eq!(data["pagination"]["hasMore"], true, "{data}");
+        assert!(data["pagination"].get("totalItems").is_none(), "{data}");
+        assert!(data.get("warnings").is_none(), "{row}: {data}");
+    }
+}
+
+/// A page past GitHub's 1,000-result window leads to the last reachable
+/// page (`repair`), so the row never falls back to a generic hint.
+#[tokio::test]
+async fn a_page_past_the_search_window_leads_to_the_last_reachable_page() {
+    use octocode_github::ProviderErrorReason;
+    let server = wiremock::MockServer::builder().start().await;
+    let query: GhSearchHistoryQuery = serde_json::from_value(json!({
+        "operation":"pullRequest","owner":"o","repo":"r","keywords":["fix"],
+        "page":11,"pageSize":100
+    }))
+    .expect("query");
+    let failure = super::execute(
+        &one_shot_provider(&server).transport,
+        query,
+        &default_context(),
+        &Passthrough,
+    )
+    .await
+    .expect_err("past the window");
+    assert_eq!(
+        failure.error.reason,
+        Some(ProviderErrorReason::SearchWindowExceeded)
+    );
+    let next = failure.next.expect("a repair lead");
+    let repair = &next["repair"];
+    assert_eq!(repair["tool"], "ghSearchHistory", "{next}");
+    let row = &repair["query"]["queries"][0];
+    assert_eq!(row["page"], 10, "{next}");
+    assert_eq!(row["keywords"], json!(["fix"]), "{next}");
+}
+
+/// A capped search names one narrowing lead per call: a newest-first
+/// result continues past the window from its last row's date (`until`);
+/// any other order is first re-sorted newest-first, which that keyset
+/// continuation then follows.
+#[tokio::test]
+async fn a_capped_search_names_one_narrowing_lead() {
+    use wiremock::MockServer;
+
+    let server = MockServer::builder().start().await;
+    mount_json(
+        &server,
+        "/api/v3/search/issues",
+        200,
+        json!({"total_count": 4000, "incomplete_results": false, "items": [
+            {"number": 9, "title": "a", "state": "open", "user": {"login": "dev"},
+                "created_at": "2026-03-02T10:00:00Z"},
+            {"number": 8, "title": "b", "state": "open", "user": {"login": "dev"},
+                "created_at": "2026-03-01T09:30:00+02:00"}
+        ]}),
+    )
+    .await;
+    mount_json(
+        &server,
+        "/api/v3/search/commits",
+        200,
+        json!({"total_count": 4000, "incomplete_results": false, "items": [
+            {"sha": "c1", "commit": {"message": "fix a",
+                "committer": {"date": "2026-02-02T00:00:00Z"}}},
+            {"sha": "c2", "commit": {"message": "fix b",
+                "committer": {"date": "2026-02-01T12:00:00Z"}}}
+        ]}),
+    )
+    .await;
+    let transport = one_shot_provider(&server).transport;
+    let lead = |row: Value| {
+        let transport = &transport;
+        async move {
+            let query: GhSearchHistoryQuery = serde_json::from_value(row).expect("query");
+            let data = execute(transport, &query, &default_context(), &Passthrough)
+                .await
+                .expect("capped search");
+            assert_eq!(
+                data["partialReasons"],
+                json!(["providerResultCap"]),
+                "{data}"
+            );
+            let lead = data["next"]["narrowScope"].clone();
+            assert_eq!(lead["tool"], "ghSearchHistory", "{data}");
+            let rows = lead["query"]["queries"].as_array().expect("rows").clone();
+            assert_eq!(rows.len(), 1, "{lead}");
+            crate::contracts::validate("ghSearchHistory", json!({"queries": rows.clone()}))
+                .expect("the lead is a valid call");
+            rows[0].clone()
+        }
+    };
+    // Newest first: the window continues before the page's last row.
+    let row = lead(json!({"operation":"pullRequest","owner":"o","repo":"r",
+        "keywords":["fix"],"sort":"created:desc","since":"2025-01-01","pageSize":2,"page":3}))
+    .await;
+    assert_eq!(row["until"], "2026-03-01T07:30:00Z", "{row}");
+    assert_eq!(row["since"], "2025-01-01", "{row}");
+    assert!(row.get("page").is_none(), "{row}");
+    let row = lead(json!({"operation":"commit","owner":"o","repo":"r",
+        "keywords":["fix"],"pageSize":2}))
+    .await;
+    assert_eq!(row["until"], "2026-02-01T12:00:00Z", "{row}");
+    // Best match: re-sort newest first.
+    let row = lead(json!({"operation":"issue","owner":"o","repo":"r",
+        "keywords":["fix"],"pageSize":2}))
+    .await;
+    assert_eq!(row["sort"], "created:desc", "{row}");
+    assert!(row.get("until").is_none(), "{row}");
+}
+
+/// Without its person qualifiers a search may name nothing else: no lead
+/// then, never an all-of-GitHub search.
+#[test]
+fn without_users_never_leads_to_an_unscoped_search() {
+    let unscoped: GhSearchHistoryQuery = serde_json::from_value(json!({
+        "operation":"pullRequest","qualifiers":"author:ghost","pageSize":2
+    }))
+    .expect("query");
+    assert!(super::leads::without_users(&unscoped).is_none());
+    let scoped: GhSearchHistoryQuery = serde_json::from_value(json!({
+        "operation":"pullRequest","owner":"o","qualifiers":"author:ghost"
+    }))
+    .expect("query");
+    let lead = super::leads::without_users(&scoped).expect("an owner-scoped lead");
+    assert_eq!(lead["query"]["queries"][0]["owner"], "o", "{lead}");
+}
+
+/// A missing login's failure states GitHub's words and the `withoutUsers`
+/// repair; no hint restates that the login does not resolve.
+#[test]
+fn a_missing_login_has_no_restating_hint() {
+    use octocode_github::ProviderErrorReason;
+    let error = ProviderError::new(ProviderErrorKind::NotFound, "no user named \"ghost\"")
+        .with_reason(ProviderErrorReason::UserNotFound);
+    let (message, hint) = history_failure(&error, true);
+    assert!(message.contains("ghost"), "{message}");
+    assert_eq!(hint, None);
+}
+
+/// A commit listing of a renamed repository (GitHub answers the old name
+/// with a redirect) warns once and continues under the canonical name, as
+/// the pull-request search does.
+#[tokio::test]
+async fn a_commit_listing_of_a_renamed_repository_names_the_canonical_repository() {
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::builder().start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/repos/old/r/commits"))
+        .respond_with(ResponseTemplate::new(301).insert_header(
+            "location",
+            format!(
+                "{}/api/v3/repositories/1/commits?per_page=1&page=1",
+                server.uri()
+            ),
+        ))
+        .mount(&server)
+        .await;
+    let next = format!(
+        "{}/api/v3/repositories/1/commits?per_page=1&page=2",
+        server.uri()
+    );
+    Mock::given(method("GET"))
+        .and(path("/api/v3/repositories/1/commits"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("link", format!("<{next}>; rel=\"next\"").as_str())
+                .set_body_json(json!([{"sha": "aaa", "commit": {"message": "Fix",
+                    "committer": {"date": "2026-01-01T00:00:00Z"}}}])),
+        )
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/repos/old/r"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({"default_branch": "main", "full_name": "new/r"})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    let query: GhSearchHistoryQuery = serde_json::from_value(json!({
+        "operation":"commit","owner":"old","repo":"r","pageSize":1
+    }))
+    .expect("query");
+    let data = execute(
+        &one_shot_provider(&server).transport,
+        &query,
+        &default_context(),
+        &Passthrough,
+    )
+    .await
+    .expect("renamed listing");
+    assert_eq!(data["commits"][0]["commitSha"], "aaa", "{data}");
+    assert_eq!(
+        data["warnings"],
+        json!([crate::tools::gh_shared::renamed_warning(
+            "old",
+            "r",
+            &("new".into(), "r".into())
+        )]),
+        "{data}"
+    );
+    let next = &data["next"]["nextPage"]["query"]["queries"][0];
+    assert_eq!(
+        (&next["owner"], &next["repo"]),
+        (&json!("new"), &json!("r")),
+        "{data}"
+    );
+    let read = &data["next"]["readCommit"]["query"]["queries"][0];
+    assert_eq!(read["owner"], "new", "{data}");
 }

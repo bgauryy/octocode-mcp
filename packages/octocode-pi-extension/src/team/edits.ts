@@ -15,7 +15,9 @@ export interface Change {
   count: number;
 }
 
-const EDIT_RETENTION_MS = 24 * 3_600_000;
+/** How long a change is kept; a longer `coordinate changes` window cannot be answered. */
+export const EDIT_RETENTION_MINUTES = 24 * 60;
+const EDIT_RETENTION_MS = EDIT_RETENTION_MINUTES * 60_000;
 
 export class EditLog {
   constructor(

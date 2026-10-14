@@ -5,7 +5,7 @@
 //! explicit window does split a page, no continuation an agent can follow
 //! skips the rows of a later part.
 
-use crate::support;
+use crate::support::{self, Run as _};
 
 use octocode_native::runtime::ToolRuntime;
 use serde_json::{Value, json};
@@ -57,14 +57,14 @@ fn search(root: &str, goal: &str) -> Value {
 async fn call(runtime: &ToolRuntime, mcp: bool, id: usize, tool: &str, input: Value) -> Value {
     if mcp {
         let result = runtime
-            .execute_mcp(format!("walk-{id}"), tool.into(), input)
+            .run_mcp(format!("walk-{id}"), tool.into(), input)
             .await
             .expect("mcp call");
         assert_ne!(result["isError"], true, "{result}");
         result["structuredContent"].clone()
     } else {
         runtime
-            .execute(format!("walk-{id}"), tool.into(), input)
+            .run(format!("walk-{id}"), tool.into(), input)
             .await
             .expect("cli call")
             .structured_content
@@ -272,13 +272,11 @@ async fn a_default_structure_listing_walk_fits_the_window_and_lists_every_file_o
     let root = root.unwrap().to_string_lossy().into_owned();
     let runtime = workspace.runtime(&[("OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH", WINDOW.to_string())]);
     for (mcp, detail) in [(false, "basic"), (true, "basic"), (false, "details")] {
-        let extras = if detail == "details" {
-            vec!["details"]
-        } else {
-            vec![]
-        };
-        let first = json!({"operation": "files", "path": root, "include": ["**/*.rs"],
-            "extras": extras, "mainGoal": "List every file.", "reasoning": "Walk the listing."});
+        let mut first = json!({"operation": "files", "path": root, "include": ["**/*.rs"],
+            "mainGoal": "List every file.", "reasoning": "Walk the listing."});
+        if detail == "details" {
+            first["extras"] = json!(["details"]);
+        }
         let (seen, calls) = walk_row_continuations(
             &runtime,
             mcp,

@@ -60,22 +60,34 @@ export function cleanForAgent(text) {
   let lines = original.replace(/\r\n/g, '\n').split('\n').map((line) => line.replace(/[ \t]+$/g, ''));
   const h1AfterOnThisPage = lines.findIndex((line, i) => i > 0 && /^#\s+\S/.test(line) && lines.slice(Math.max(0, i - 8), i).some((prev) => /^On this page\s*$/.test(prev)));
   const firstH1 = lines.findIndex((line) => /^#\s+\S/.test(line));
-  const start = h1AfterOnThisPage >= 0 ? h1AfterOnThisPage : firstH1 >= 0 ? firstH1 : 0;
+  let start = h1AfterOnThisPage >= 0 ? h1AfterOnThisPage : firstH1 >= 0 ? firstH1 : 0;
+  // Drop only navigation before the heading; a prose line there is content.
+  if (start > 0 && lines.slice(0, start).some((line) => line.trim().length >= 100)) start = 0;
   lines = lines.slice(start);
-  const end = lines.findIndex((line) => /^\[Previous/.test(line) || /^©\s+\d{4}\b/.test(line) || /^####\s+Product\s*$/.test(line));
+  // Cut a footer only in the last fifth of the page, so a mid-document "© 2024" or "[Previous" line keeps what follows.
+  const total = lines.reduce((n, line) => n + line.length + 1, 0);
+  let offset = 0;
+  let end = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (i > 0 && offset >= total * 0.8 && (/^\[Previous/.test(lines[i]) || /^©\s+\d{4}\b/.test(lines[i]) || /^####\s+Product\s*$/.test(lines[i]))) { end = i; break; }
+    offset += lines[i].length + 1;
+  }
   if (end > 0) lines = lines.slice(0, end);
   lines = lines.filter((line) => !/^(Skip to main content|Search`Ctrl``K`|Version:\s*v\d+|On this page)\s*$/.test(line));
   return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim() || original.trim();
 }
 
 export function detectTargetError({ status, providerStatus, text, json }) {
-  const value = (text || json?.markdown || json?.text || json?.detail || '').slice(0, 5000);
-  const firstMeaningful = value.split(/\r?\n/).map((line) => line.trim()).find(Boolean) || '';
+  const full = String(text || json?.markdown || json?.text || json?.detail || '');
+  const lines = full.slice(0, 5000).split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const firstMeaningful = lines[0] || '';
   const detail = json?.detail ? `: ${String(json.detail).slice(0, 160)}` : '';
   if (status >= 400) return `provider HTTP ${status}${detail}`;
   if (Number.isFinite(providerStatus) && providerStatus >= 400) return `target HTTP ${providerStatus}`;
   if (/^#?\s*(404|403|401|410|429|500|502|503|504)\b/i.test(firstMeaningful)) return `target likely returned ${firstMeaningful.slice(0, 80)}`;
-  if (/\b(404\s+not\s+found|access\s+denied|forbidden|rate\s+limit|temporarily\s+unavailable)\b/i.test(value)) return 'target likely returned an error page';
+  // Error phrases count only near the top of a short page; a docs page that explains errors is not one.
+  const shortPage = full.replace(/\s+/g, ' ').trim().length < 1500;
+  if (shortPage && /\b(404\s+not\s+found|access\s+denied|forbidden|rate\s+limit|temporarily\s+unavailable)\b/i.test(lines.slice(0, 3).join('\n'))) return 'target likely returned an error page';
   return null;
 }
 
@@ -84,7 +96,13 @@ export function detectBrowserNeed({ status, contentType, body, cleanText, target
   if (targetLikelyError || status < 200 || status >= 300 || !/html/i.test(contentType || '')) return null;
   const visible = String(cleanText || '').replace(/\s+/g, ' ').trim();
   const html = String(body || '');
-  const appShell = /<script\b[^>]*(?:src=|type=["']module)|\b(?:__NEXT_DATA__|__NUXT__|data-reactroot|id=["'](?:root|app)["'])/i.test(html);
+  // One analytics <script src> on a static page is not an app shell; require a framework mount, a module
+  // bundle, a "needs JavaScript" notice, or several external scripts.
+  const frameworkMount = /\b(?:__NEXT_DATA__|__NUXT__|data-reactroot|ng-version|data-server-rendered)\b|id=["'](?:root|app|__next|__nuxt)["']/i.test(html);
+  const moduleBundle = /<script\b[^>]*type=["']module["']/i.test(html);
+  const needsJs = /<noscript\b[^>]*>[\s\S]{0,400}?\b(?:enable|requires?|turn on)\b[\s\S]{0,40}?javascript/i.test(html);
+  const externalScripts = (html.match(/<script\b[^>]*\bsrc=/gi) || []).length;
+  const appShell = frameworkMount || moduleBundle || needsJs || externalScripts >= 3;
   if (visible.length < 300 && appShell) return `direct HTML contains only ${visible.length} visible characters plus an application shell; render once in Chrome`;
   return null;
 }

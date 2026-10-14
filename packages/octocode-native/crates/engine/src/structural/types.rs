@@ -75,12 +75,8 @@ pub struct StructuralSearchFilesOptions {
     /// Mirrors local-search `exclude`.
     pub exclude: Option<Vec<String>>,
     pub exclude_dir: Option<Vec<String>>,
-    /// Include hidden (dot) files. `None` preserves the default walker behavior
-    /// (hidden ignored); `Some(true)` forces them in.
-    pub hidden: Option<bool>,
-    /// Bypass `.gitignore`/`.ignore` rules. `None` preserves defaults; `Some(true)`
-    /// searches files normally hidden by ignore files (mirrors local-search `noIgnore`).
-    pub no_ignore: Option<bool>,
+    /// Which ignore rules and dot entries the walk leaves out.
+    pub ignore: crate::search::walk::IgnorePolicy,
     /// Maximum path depth below a directory root (1 = direct files; 0 = no descent). `None` = unbounded.
     pub max_depth: Option<u32>,
     pub max_files: Option<u32>,
@@ -100,8 +96,8 @@ pub struct StructuralRewriteFilesOptions {
     pub include: Option<Vec<String>>,
     pub exclude: Option<Vec<String>>,
     pub exclude_dir: Option<Vec<String>>,
-    pub hidden: Option<bool>,
-    pub no_ignore: Option<bool>,
+    /// Which ignore rules and dot entries the walk leaves out.
+    pub ignore: crate::search::walk::IgnorePolicy,
     pub max_depth: Option<u32>,
     pub max_files: Option<u32>,
     pub max_file_bytes: Option<u32>,

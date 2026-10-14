@@ -53,6 +53,9 @@ const ui = fakeCtx({ cwd: root }).ui;
 
 async function run(prompt: string, replies: Reply[]): Promise<Turn[]> {
   const start = turns.length;
+  // A turn the previous test left running (a delivered team message or a background report wakes one, and a reload
+  // can start another) makes `prompt` throw "Agent is already processing": the test starts once the session is idle.
+  await vi.waitFor(() => expect(session.isStreaming).toBe(false), { timeout: 10_000 });
   faux.setResponses(replies.map((reply) => (context: TranscriptContext) => (turns.push(snapshot(context)), reply())));
   await session.prompt(prompt);
   return turns.slice(start);
@@ -179,18 +182,19 @@ describe(`Octocode features through Pi (${path.relative(path.join(HERE, '..'), E
     expect(session.systemPrompt).toBe(prompt);
   });
 
-  it('guards bash: dangerous commands and hook-blocked commands are refused, hooks annotate results', async () => {
+  it('guards bash: a destructive command asks, a hook-blocked command is refused, hooks annotate results', async () => {
+    ui.selects.push('Deny');
     const [, second] = await run('bash', [calls(fauxToolCall('bash', { command: 'rm -rf /' }), fauxToolCall('bash', { command: 'echo forbidden' }), fauxToolCall('bash', { command: 'echo fine' })), say('done')]);
     const [danger, blocked, fine] = second!.results;
     expect(danger).toMatchObject({ isError: true });
-    expect(danger!.text).toMatch(/refused|Refused|blocked/i);
+    expect(danger!.text).toMatch(/The user denied the destructive shell command: rm -rf \//);
     expect(blocked).toMatchObject({ isError: true });
     expect(blocked!.text).toMatch(/PreToolUse hook: no forbidden words/);
     expect(fine!.text).toMatch(/fine[\s\S]*\[PostToolUse hook\] post hook saw Bash/);
   });
 
   it('replaces Pi bash: a deadline in its schema, and a background job wakes the session with its result', async () => {
-    expect(JSON.stringify(session.getAllTools().find((tool) => tool.name === 'bash')?.parameters)).toContain('foreground at most 900s');
+    expect(JSON.stringify(session.getAllTools().find((tool) => tool.name === 'bash')?.parameters)).toContain('foreground default 900s');
     const start = turns.length;
     await run('bash in the background', [calls(fauxToolCall('bash', { command: 'echo bg-output', background: true })), say('started'), say('saw it')]);
     const deadline = Date.now() + 5_000;
@@ -200,10 +204,11 @@ describe(`Octocode features through Pi (${path.relative(path.join(HERE, '..'), E
     expect(woken!.context).toMatch(/Background bash bash-\d+ finished after \d+s: echo bg-output[\s\S]*bg-output/);
   });
 
-  it('refuses loopback URLs in web', async () => {
+  it('asks before web fetches a loopback URL, and fetches nothing when denied', async () => {
+    ui.selects.push('Deny');
     const [, second] = await run('web', [calls(fauxToolCall('web', { url: 'http://127.0.0.1:9/secret' })), say('done')]);
     expect(second!.results[0]).toMatchObject({ toolName: 'web', isError: true });
-    expect(second!.results[0]!.text).toMatch(/private|loopback|refus/i);
+    expect(second!.results[0]!.text).toMatch(/The user denied opening a private or local address: http:\/\/127\.0\.0\.1:9\/secret/);
   });
 
   it('rejects ambiguous web requests through Pi instead of choosing one operation', async () => {
@@ -234,7 +239,7 @@ describe(`Octocode features through Pi (${path.relative(path.join(HERE, '..'), E
     peer.join('peer reviewer');
     expect(peer.lock(['held.txt'], 'review').ok).toBe(true);
     const replies = [
-      calls(fauxToolCall('coordinate', { action: 'join', note: 'main' })),
+      calls(fauxToolCall('coordinate', { action: 'join', goal: 'main' })),
       calls(fauxToolCall('coordinate', { action: 'lock', paths: ['held.txt', 'mine.txt'] })),
       calls(fauxToolCall('file', { queries: [{ reasoning: 'try', type: 'write', path: 'held.txt', content: 'x' }] })),
       calls(fauxToolCall('coordinate', { action: 'list' })),
@@ -251,7 +256,8 @@ describe(`Octocode features through Pi (${path.relative(path.join(HERE, '..'), E
     await vi.waitFor(() => expect(JSON.stringify(peerPi.sent)).toContain('please release held.txt'), { timeout: 5_000 });
     const requests = turns.length;
     await session.prompt(`/agents tell ${peer.id} ${'q'.repeat(9_000)}`);
-    expect(note(/Message exceeds 8000 characters/)).toContain('Nothing was sent.');
+    // Over the limit it is delivered, not refused: the head and the path of a file holding all 9,000 characters.
+    await vi.waitFor(() => expect(JSON.stringify(peerPi.sent)).toContain('[Full message (9000 characters): '), { timeout: 5_000 });
     expect(turns).toHaveLength(requests);
     peer.leave();
   });
@@ -294,7 +300,7 @@ describe(`Octocode features through Pi (${path.relative(path.join(HERE, '..'), E
 
   it('tracks backlog items and memories with the tools, refuses secrets, and recalls memories in later prompts', async () => {
     const t = await run('track work', [
-      calls(fauxToolCall('backlog', { op: 'add', title: 'Raise the answer to 43', body: 'app.ts holds it', priority: 'p1' })),
+      calls(fauxToolCall('backlog', { op: 'add', title: 'Raise the answer to 43', goal: 'The answer constant is 43; tests pass.', body: 'app.ts holds it', priority: 'p1' })),
       calls(fauxToolCall('backlog', { op: 'list', states: ['backlog'] })),
       calls(fauxToolCall('backlog', { op: 'update', id: 'B1', state: 'ongoing' })),
       calls(fauxToolCall('backlog', { op: 'update', id: 'B1', state: 'done' })),

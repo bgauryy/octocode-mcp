@@ -23,7 +23,7 @@ fn max_walk() -> u32 {
 
 use crate::policy::prune::PruneMode;
 use crate::tools::display_name;
-use crate::tools::empty_walk::{Cause, Hits, Verdict, Walk, diagnose, lift};
+use crate::tools::empty_walk::{Cause, Hits, Verdict, Walk, diagnose_shown, lift};
 use crate::tools::result::ToolError;
 use serde_json::{Value, json};
 
@@ -150,6 +150,7 @@ fn walk_error(
         }
         ErrorKind::PermissionDenied => "permissionDenied",
         ErrorKind::InvalidPattern => "invalidPattern",
+        ErrorKind::InvalidGlob => "invalidGlob",
         // A malformed filter value (`size`, ...) is rejected before the
         // walk: caller input, like the typed time-filter checks.
         ErrorKind::InvalidInput => "invalidInput",
@@ -158,15 +159,11 @@ fn walk_error(
     ToolError::new(code, error.to_string())
 }
 
-fn allow_discovery(
-    path: &std::path::Path,
-    file_type: Option<std::fs::FileType>,
-    discovery: &crate::policy::path::DiscoveryWalk<'_>,
-    cancel: &dyn crate::tools::cancel::CancellationCheck,
-) -> Result<bool, String> {
-    // A cancelled call stops the walk; `walk_error` reports it.
-    cancel.check()?;
-    Ok(discovery.permits_entry(path, file_type))
+/// Whether a withheld entry is worth a warning: the repository's own `.git`
+/// is withheld from every walk of a repository, so naming it says nothing
+/// about this call.
+fn reports_withheld(path: &std::path::Path) -> bool {
+    display_name(path) != ".git"
 }
 
 /// A continuation page whose walk no longer hashes to its `snapshot`: the
@@ -246,10 +243,91 @@ impl Uncovered {
     fn saw_skips(&self) -> bool {
         self.ignored > 0 || self.hidden > 0 || !self.pruned.is_empty()
     }
+
+    /// The causes of `walk` this walk skipped entries by, in [`Cause`] order.
+    fn skipped(&self, walk: Walk) -> Vec<Cause> {
+        walk.skipping()
+            .into_iter()
+            .filter(|cause| match cause {
+                Cause::Ignored => self.ignored > 0,
+                Cause::Hidden => self.hidden > 0,
+                Cause::DefaultExcluded => !self.pruned.is_empty(),
+            })
+            .collect()
+    }
+
+    /// `causes` as a hint names them: the pruned directories by name, the
+    /// rest by label.
+    fn named(&self, causes: &[Cause]) -> String {
+        causes
+            .iter()
+            .map(|cause| match (cause, self.pruned_names()) {
+                (Cause::DefaultExcluded, Some(names)) => names
+                    .iter()
+                    .map(|name| format!("{name}/"))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                _ => cause.label().to_owned(),
+            })
+            .collect::<Vec<_>>()
+            .join("; ")
+    }
 }
 
-/// What a relaxed listing probe found: the walked entries.
-fn found_entries(entries: impl Iterator<Item = std::path::PathBuf>) -> Hits {
+/// How long an empty listing's probes may walk what it skipped, all of
+/// them together: an empty listing costs about what a listing does, never a
+/// walk of every dependency and build directory. Past it, absence behind the
+/// skipped paths is unproven: the lead lists them all the same.
+const PROBE_BUDGET: std::time::Duration = std::time::Duration::from_millis(300);
+
+/// Entries one probe lists before it stops: enough to name the skip
+/// reasons and to tell "some" from "none".
+const PROBE_HITS: usize = crate::tools::empty_walk::SAMPLE_FILES + 1;
+
+/// Size of a directory's own listing (its entry table) past which a probe
+/// leaves it unread: one such directory (`target/debug/deps`, ~255k
+/// entries, ~8 MB) takes seconds to list, past any budget.
+const PROBE_MAX_DIR_BYTES: u64 = 1024 * 1024;
+
+/// The bound of an empty listing's relaxed probe walks: past `deadline`
+/// they admit nothing more, and a directory too large to list in time is
+/// left unread. Either makes the probe's finding a lower bound (`cut`).
+struct ProbeBound {
+    deadline: std::time::Instant,
+    cut: std::sync::atomic::AtomicBool,
+}
+
+impl ProbeBound {
+    fn new(budget: std::time::Duration) -> Self {
+        Self {
+            deadline: std::time::Instant::now() + budget,
+            cut: std::sync::atomic::AtomicBool::new(false),
+        }
+    }
+
+    /// Whether a probe walk may admit `path`: not once its deadline passed,
+    /// nor a directory whose listing is too large to read in time.
+    fn admits(&self, path: &std::path::Path, file_type: Option<std::fs::FileType>) -> bool {
+        use std::sync::atomic::Ordering::Relaxed;
+        let refused = std::time::Instant::now() >= self.deadline
+            || (file_type.is_some_and(|kind| kind.is_dir())
+                && std::fs::symlink_metadata(path)
+                    .is_ok_and(|meta| meta.len() > PROBE_MAX_DIR_BYTES));
+        if refused {
+            self.cut.store(true, Relaxed);
+        }
+        !refused
+    }
+
+    /// Whether the probe left something unread.
+    fn cut(&self) -> bool {
+        self.cut.load(std::sync::atomic::Ordering::Relaxed)
+    }
+}
+
+/// What a relaxed listing probe found: the walked entries, `cut` when the
+/// probe stopped at its hit cap or deadline (there may be more, or some).
+fn found_entries(entries: impl Iterator<Item = std::path::PathBuf>, cut: bool) -> Hits {
     let mut count = 0;
     let mut sample = Vec::new();
     for entry in entries {
@@ -258,21 +336,19 @@ fn found_entries(entries: impl Iterator<Item = std::path::PathBuf>) -> Hits {
             sample.push(entry);
         }
     }
-    Hits {
-        count,
-        sample,
-        cut: false,
-    }
+    Hits { count, sample, cut }
 }
 
 /// An empty listing cannot prove absence in what its walk skipped: when the
 /// same listing over some of it (`probe` re-walks with the given flags)
 /// finds entries, name the rule, entry or directory in a hint and lead to
-/// the listing with exactly those causes lifted.
+/// the listing with exactly those causes lifted. A probe cut before it found
+/// anything proves nothing: the lead lifts every cause the walk skipped by
+/// and the hint says absence there is unproven.
 fn note_empty(
     out: &mut Value,
     query: &impl serde::Serialize,
-    root: &std::path::Path,
+    (root, paths): (&std::path::Path, &crate::policy::path::PathPolicy),
     seen: &Uncovered,
     walk: Walk,
     probe: impl FnMut(Walk) -> Result<Hits, ToolError>,
@@ -280,17 +356,48 @@ fn note_empty(
     if out["status"] != "empty" || !seen.saw_skips() {
         return Ok(());
     }
-    let Verdict::Skipped(diagnosis) = diagnose(root, PruneMode::SyntaxVisible, walk, probe)? else {
-        return Ok(());
+    // Rules and entries are named like the rows: workspace-relative.
+    let shown = |path: &std::path::Path| {
+        paths
+            .workspace_relative(path)
+            .unwrap_or_else(|| path.to_string_lossy().into_owned())
+    };
+    let (causes, hint) = match diagnose_shown(root, PruneMode::SyntaxVisible, walk, &shown, probe)?
+    {
+        Verdict::Skipped(diagnosis) => {
+            let found = diagnosis.found();
+            let hint = format!(
+                "{}{} {} behind skipped paths ({}); the lead lists them.",
+                if found.cut { "At least " } else { "" },
+                found.count,
+                if found.count == 1 {
+                    "entry sits"
+                } else {
+                    "entries sit"
+                },
+                diagnosis.because()
+            );
+            (diagnosis.causes().to_vec(), hint)
+        }
+        // The probe was cut before it found anything: it proved nothing
+        // about what the walk skipped, so the lead lists the paths this
+        // walk did skip and the hint says absence there is unproven.
+        Verdict::Unproven => {
+            let causes = seen.skipped(walk);
+            if causes.is_empty() {
+                return Ok(());
+            }
+            let hint = format!(
+                "Skipped paths ({}) were not checked in time; absence there is unproven: the lead lists them.",
+                seen.named(&causes)
+            );
+            (causes, hint)
+        }
+        Verdict::Absent => return Ok(()),
     };
     let mut retry = json!({"page": 1, "snapshot": null});
-    lift(&mut retry, diagnosis.causes());
+    lift(&mut retry, &causes);
     out["next"]["includeSkipped"] = continuation(query, retry);
-    let hint = format!(
-        "{} entries sit behind skipped paths ({}); the lead lists them.",
-        diagnosis.found().count,
-        diagnosis.because()
-    );
     match out["hints"].as_array_mut() {
         Some(hints) => hints.push(json!(hint)),
         None => out["hints"] = json!([hint]),

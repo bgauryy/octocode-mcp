@@ -4,14 +4,14 @@ Every tool's fields, defaults, limits, results, and continuations, on MCP and th
 
 ## How every tool call works
 
-The CLI and MCP expose the same contracts. Every tool, `clasify` included, takes a `queries[]` envelope and returns one row per input position. MCP requires `queries`; the CLI runs one bare query object as one query; a bare array is rejected. A failed row or `clasify` page does not erase successful siblings.
+The CLI and MCP expose the same contracts. Every tool, `clasify` included, takes a `queries[]` envelope and returns one row per input position. MCP requires `queries`; the CLI runs one bare query object as one query; a bare array is rejected. A failed row, `clasify` rows included, does not erase successful siblings.
 
 ### Base call envelope
 
 | Field | Scope | Meaning |
 | --- | --- | --- |
 | `queries` | Required, outer | 1–5 queries for the same tool. Rows keep their zero-based input `index` and run concurrently, except `ghCloneRepo` and `astRewrite` rows (in order); `clasify` schedules its own provider work. Batching creates no dependencies between rows. |
-| `mainGoal`, `reasoning` | Optional, per query, ≤500 chars each | The research question, and why this row advances it. Only for multi-call research on an unknown; a top-level value is not inherited, and a blank one is dropped. Not a ranking instruction or proof; no secrets, hidden chain-of-thought, or required runtime data. Carry-over rules: [TOOL_DATA_CONTRACT.md](TOOL_DATA_CONTRACT.md#executable-continuations). `clasify` sends them in each page's evidence state and `mainGoal` with every question. |
+| `mainGoal`, `reasoning` | Optional, per query, ≤500 chars each | The research question, and why this row advances it. Only for multi-call research on an unknown; a top-level value is not inherited, and a blank one is dropped. Not a ranking instruction or proof; no secrets, hidden chain-of-thought, or required runtime data. Carry-over rules: [TOOL_DATA_CONTRACT.md](TOOL_DATA_CONTRACT.md#executable-continuations). They never reach the classification provider. |
 | `extras` | Optional, per query | Opt-in output kinds: `hints` (lead calls on a successful row), `details` (secondary details), `stats` (scan stats, counters), `receipts` (provenance), `echo` (request echoes and default values), `diagnostics` (`meta`, HTTP ids). Default rows are minimal; each kind adds its fields back ([minimal by default](TOOL_DATA_CONTRACT.md#minimal-by-default)). Continuations inherit it. Paging snapshots stay in `next`. |
 | `responseLength` | Optional, outer | Whole-response text window, 1–50,000 chars; it does not replace a tool's own pagination. Omitted: a response over `output.pagination.defaultCharLength` (default 50,000) pages automatically through `responsePagination.next`, and a page with rows left opens with an `incomplete — …` warning. |
 | `responseOffset`, `responseSnapshot`, `responseScope` | Optional, outer | Copy the first two from `responsePagination.next`. `responseScope` is what an explicit window pages: `text` (default), `structured` (serialized envelope), or `rows` (whole rows). |
@@ -57,7 +57,7 @@ Availability:
 - `ghCloneRepo` is CLI-only (MCP never registers it) and needs persistent storage.
 - `astRewrite` and `astTopology` are CLI-only and need `OCTOCODE_BETA=true` (or `local.beta: true`), their only gate (for `astRewrite` it covers preview and apply). Without it, `schema` and root help omit them, and `schema <name>` reports `availability.enabled:false` with `envVar:"OCTOCODE_BETA"`. MCP never registers them, and no MCP instruction, description, or lead names them.
 - LSP needs a compatible server for the file language.
-- Public `clasify` needs beta and a nonblank classification API credential; goals on four read tools need that credential and ranking enabled, independently of beta. See the [availability table](OCTOCODE_CLASIFY.md#availability).
+- Public `clasify` needs beta and a nonblank classification API credential; `classifiers` on four read tools need that credential and ranking enabled, independently of beta. See the [availability table](OCTOCODE_CLASIFY.md#availability).
 
 ## Text, AST, graph, and LSP: choose the evidence you need
 
@@ -190,7 +190,7 @@ Reader rules (here and in `localFetch`):
 - A non-regex `matchString` miss that contains a literal `|` gets its own tip: `|` is not alternation; pass a `matchString` list or a regex.
 - `minify:"symbols"` returns a paged outline; read its gutter, then `ranges` with `minify:"none"`. `standard` (the `ghGetFileContent` default; `localFetch` defaults to `none`) drops comments and indentation, with no JS/TS optimization or type-declaration removal, and keeps source line numbers in the gutter; `contentView` is omitted when the view is the tool's default. Cite either view by line number; use `none` for quotes and comment-sensitive evidence ([minification coverage](../packages/octocode-native/docs/engine/SUPPORTED_LANGUAGES_AND_FEATURES.md#minification--file-reads-and-search-fragments)).
 - Run `next.continueWindow` unchanged; offsets are exact. `next` and `hints` queries omit default view fields (`fullContent`, the tool's default `minify`) and keep a chosen `minify`.
-- A match window that stops inside a declaration offers `hints.readBlock` (with `extras:["hints"]`); a small file the window mostly covers returns whole instead.
+- A match window that stops inside a declaration emits no reread lead: ask for `block:true` or a `ranges` read when you need the rest; a small file the window mostly covers returns whole instead.
 
 GitHub specifics:
 
@@ -358,7 +358,7 @@ Paging and errors: follow `next.nextPage`; unknown totals stay unknown, and an e
 
 Lexical search. Outlines and metadata: `structureSearch`; syntax: `astSearch`; file graphs: `astTopology`.
 
-`goals` optionally asks for semantic relevance ordering of matched files. It does not retrieve files outside the lexical scope. See [goal-based relevance ranking](#goal-based-relevance-ranking).
+`classifiers` optionally asks for semantic relevance ordering of matched files. It does not retrieve files outside the lexical scope. See [classifier relevance ranking](#classifier-relevance-ranking).
 
 | Field | Values and meaning |
 |---|---|
@@ -407,14 +407,13 @@ Rows: `path` is relative to `root` (the queried directory, or a queried file's p
 |---|---|
 | `next.nextPage`, `next.nextMatchPage` | Without `pageSize`/`matchPageSize`, `nextPage` walks the rest in about 24 KB pages. With either set, `nextMatchPage` finishes the shown files' remaining rows first (later match pages list only files with rows left), then `nextPage` advances to the next files and resets the match page. This gives one executable route without repeated file pages. A terminal match-cursor limit still allows advancing to later files. |
 | `next.restart` | Stale snapshot: rerun from page 1. |
-| `next.expandValues` | A clipped value. On a `pageSize`/`matchPageSize` page: the same page with a wider `matchContentLength`. On a default page: one `localFetch` of the clipped lines per file (`expandValues2`, …), or for a multiline match the file searched alone with a wider `matchContentLength`. |
+| `next.expandValues` | A clipped value. On a `pageSize`/`matchPageSize` page: the same page with a wider `matchContentLength`. On a default page: one `localFetch` batch of the clipped lines, one row per file (whole-file values are not offered), or for a multiline match the file searched alone with a wider `matchContentLength`. |
 | `hints.read` | With `extras:["hints"]`, `localFetch` on the first page of a complete result: a shown declaration of the searched symbol, whole; else ±6 lines around the top file's hits (a `matchString` read past 10 ranges). |
 | `hints.findCallers`, `hints.findReferences` | With `extras:["hints"]`, `lspSearch` when the search names one symbol (an identifier, or one after `fn`/`def`/`class`…) and a shown hit declares it: `callers` for a function or method, else `references`. Omitted without a language server for the file. |
 | `hints.includeSkipped` | An empty result where ignored, hidden, or default-excluded paths hold matches: the same search with exactly the flags whose relaxation found them (`includeIgnored`, `includeHidden`, `defaultExcludes:false`), each verified by a probe. The hint names why (up to three): the deciding ignore rule (`gen/.gitignore:2 '*'`), `hidden .notes/`, or the pruned directory. Default-excluded directories that could not be probed are named, with `defaultExcludes:false`. |
 | `hints.findSimilar` | An empty first page for a compound identifier whose other case styles match (`parseConfig` → `parse_config`, `ParseConfig`, `PARSE_CONFIG`, `parse-config`): the same search for those spellings, with the file count. |
 | `hints.viewFileCount` | A line view with 1,000 or more matches: the same search as `countMatches`, ranked by hits per file. |
 | `hints.repair` | Invalid regex: the same search with the broken pattern escaped; when PCRE2 compiles the pattern (backreferences, lookaround), the same search with `regex:"pcre2"`. |
-| `hints.clasify` | An explicit target and remaining candidate or source work, while `clasify` is available ([handoff conditions](OCTOCODE_CLASIFY.md#let-the-tools-hand-off-goal-first)). A default lead: it comes without `extras:["hints"]`. |
 
 ### `astSearch`
 
@@ -511,28 +510,22 @@ Rows are `{dir, files}` groups with a workspace-relative `dir` (`dir + "/" + nam
 - A filtered `tree` that skipped dot entries offers `hints.includeHidden`. An empty listing whose skipped entries (`.gitignore`, dot entries, the default prune) hold matches offers `next.includeSkipped` with only the flags that find them, and a warning naming the rule, entry or directory; `files` lists `.gitignore`d entries once `defaultExcludes:false`, so that one flag is its lead for a pruned directory.
 - A missing `path`: `pathNotFound` with `hints.viewTree` (nearest existing parent). A file as `path`: `notADirectory` with `next.read`, its `minify:"symbols"` outline.
 
-### Goal-based relevance ranking
+### Classifier relevance ranking
 
-Only `localFetch`, `localSearch`, `ghGetFileContent`, and `ghSearchCode` accept `goals`, a list of 1–5 nonblank strings (up to 1,000 characters each). Other tools have no optional ranking controls and keep their ordinary research behavior. MCP and CLI schemas expose goals on those four tools only with [ranking enabled](CONFIGURATION.md#read-tool-relevance-ranking) and a configured nonblank classification credential; otherwise they omit it and its ranking continuation field. Eligible operations judge sanitized evidence against each goal and put the highest-scoring candidates first; protected and incomplete operations report a zero-call skip. The [per-tool scope table](OCTOCODE_CLASIFY.md#how-goals-rerank-source) owns the details. Search scores sanitized match evidence without hydrating unseen file bodies and orders files; fetch orders contiguous text windows while preserving source line numbers. The best score across the goals determines order; ties keep the original order. `mainGoal` remains optional workflow metadata.
+Only `localFetch`, `localSearch`, `ghGetFileContent`, and `ghSearchCode` accept `classifiers`: 1–5 nonblank, self-contained evidence questions (up to 1,000 characters each). Other tools reject the field. MCP and CLI schemas expose `classifiers` on those four tools only with [ranking enabled](CONFIGURATION.md#read-tool-relevance-ranking) and a configured nonblank classification credential; otherwise they omit it and its ranking continuation field. Each string compiles through one core template into a JEV Score question; eligible operations judge sanitized evidence and put the highest-scoring candidates first; protected and incomplete operations report a zero-call skip. Search scores sanitized match evidence and orders files; fetch orders complete raw line windows while preserving source line numbers. The best score across classifiers determines order; ties keep the original order. `mainGoal` remains optional workflow metadata. The [classifier guide](OCTOCODE_CLASIFY.md#classifiers-on-search-and-fetch) owns the per-tool scope and routing.
 
 Both CLI and MCP schema discovery use configured availability without contacting the provider. A failed semantic request keeps the fields available so a later request can succeed after provider recovery.
 
-For the choice between exact reads, ranked content, and a `clasify` matrix, see [routing, prompts, and measured savings](OCTOCODE_CLASIFY.md#ranked-content-or-a-clasify-matrix). `goals` promotes evidence matching **any** goal; it does not certify that all requested conditions hold. Explicit `goals` inside a `clasify` resource requests two semantic stages, with provider work for each.
-
-For a ranked search used as a `clasify` resource, candidates deferred by the matrix's evidence budget remain explicit unjudged entries with executable `hints.read` calls. The matrix preserves the search's original page continuation instead of resizing that page and changing its ranking plan. Read those entries directly or classify them with a suitable evidence budget.
-
-A ranked fetch window can shrink to fit a classification budget only while retaining its existing ranking plan. If a terminal page has no recoverable plan, or shrinking would change selected source ranges, the oversized evidence remains explicitly unjudged with its read lead. Verification reads use original source locations without ranking controls.
-
 <!-- tool: localFetch -->
 ```json
-{"path":"docs/guide.md","goals":["Explain how cancelling a queued request releases its resources"]}
+{"path":"docs/guide.md","classifiers":["How does cancelling a queued request release its reserved capacity?"]}
 ```
 
-Provider budgets limit the classified scope. The visible `ranking` receipt gives `status`, `scope` (`selectedView` or `providerPage`), `rankedItems`, `totalItems`, and a reason when needed. Unranked candidates remain in their original order after ranked candidates. A `partial` ranking is not a whole-corpus relevance judgment. A `fallback` preserves ordinary ordering after a provider error or timeout. `skipped` explains a disabled gate, unsupported view, or a single candidate whose order cannot change. Calls without goals follow their usual behavior.
+Provider budgets limit the classified scope. The visible `ranking` receipt gives `status`, `scope` (`selectedView` or `providerPage`), `rankedItems`, `totalItems`, and a reason when needed. Unranked candidates remain in their original order after ranked candidates. A `partial` ranking is not a whole-corpus relevance judgment. A `fallback` preserves ordinary ordering after a provider error or timeout. `skipped` explains a disabled gate, unsupported view, or a single candidate whose order cannot change. Calls without classifiers make no classification request.
 
-Copy the `ranking` token from `next.*` unchanged. It fixes the order for the same candidate set across CLI processes and MCP calls without repeating classification. A new provider page uses a new page-local decision, never the previous page’s permutation. Source, goals, selection, or relevant configuration changes invalidate the plan and return `staleSnapshot` with `next.restart`. A fetch offset addresses the ranked view; use its source gutters and `sourceLineRanges` for original locations.
+Copy the `ranking` token from `next.*` unchanged. It fixes the order for the same candidate set across CLI processes and MCP calls without repeating classification. A new provider page uses a new page-local decision, never the previous page’s permutation. Source, classifiers, selection, or relevant configuration changes invalidate the plan and return `staleSnapshot` with `next.restart`. A fetch offset addresses the ranked view; use its source gutters and `sourceLineRanges` for original locations. Results carry no automatic verification reread lead; a follow-up read is a new ordinary read without ranking controls.
 
-Explicit non-relevance search sorts and reverse ordering remain authoritative. Search views that return only paths or counts lack match evidence and skip ranking. Fetch ranking applies to raw line views, using complete lines in windows of about 2,048 characters. Oversized lines and an unterminated final window remain unranked. Byte windows, `fullContent`, minified views, and files above the 10 MiB streaming threshold retain their requested representation and report skipped ranking. Follow every continuation needed by the question: ranking never authorizes treating omitted pages as absent evidence. It can reduce caller input when the answer appears sooner, while adding classification cost and latency. With statistics enabled, provider calls and reported tokens contribute to the existing classification counters.
+Explicit non-relevance search sorts and reverse ordering remain authoritative. Search views that return only paths or counts lack match evidence and skip ranking. Fetch ranking applies to raw line views, using complete lines in windows of about 2,048 characters. Oversized lines and an unterminated final window remain unranked. Byte windows, `fullContent`, minified views, and files above the 10 MiB streaming threshold retain their requested representation and report skipped ranking. Follow every continuation needed by the question: ranking never authorizes treating omitted pages as absent evidence. With statistics enabled, provider calls and reported tokens contribute to the existing classification counters.
 
 ### `localFetch`
 
@@ -551,7 +544,7 @@ Reads a known local path; a path-only read returns exact source after redaction.
 
 - Paging: a source over 10 MiB is read in line windows without loading it whole (several `ranges` in one read with not-requested markers; `unit:"lines"` continues to the end through `next.continueWindow`). Line pages keep whole lines within 16384 bytes. An offset at or past the end returns empty content with an offset-zero `next.restart` (`extras:["echo"]` adds `pagination.outOfRange:true`). Continuations stop at the selected range or matched view.
 - Fields: `sourceBytes`, `returnedBytes`, `returnedLines`, and `returnedChars` (UTF-16 units) come with `extras:["stats"]`. Content and the `symbols` outline are numbered `cat -n` style ([numbered source content](TOOL_DATA_CONTRACT.md#numbered-source-content)).
-- A context window that stops inside its declaration (not with `block` or `contextLines:0`) shows the rest inline when that costs no more than a lead (about 200 bytes); otherwise `hints.readBlock` (with `extras:["hints"]`) reads the rest of the top hit's declaration (also for a `ranges` read that stops inside one).
+- A context window that stops inside its declaration (not with `block` or `contextLines:0`) shows the rest inline when that costs about 200 bytes or less; otherwise ask for `block:true` or a `ranges` read of the rest. No automatic reread lead is emitted.
 - A regex `matchString` scan stops after 100,000 matches: the read selects that prefix, sets `partialReasons:["regex-match-limit"]` with a warning naming the stop line, and offers `findText` (a `localSearch` of the file) to page every match.
 - A `matchString` that selects no line: an empty row with one tip and leads `findText` (a `localSearch` of the file's directory) and, after a case-sensitive match, `ignoreCase` (`caseMode:"insensitive"`). A missing file: `pathNotFound` (exit 3).
 - Redaction: private-key blocks are redacted across the whole file before selection, so a key split by a page or range boundary never leaks. A line page is scanned with 8 KiB of surrounding lines, so a multi-line secret at the edge still matches whole (one page scan per call). A byte page is scanned on its whole lines plus at least 8 KiB of surrounding whole lines (single-line secrets always whole); a redacted line cut by the page end is returned whole, so `next.continueWindow` never splits a secret. Byte offsets stay in unredacted coordinates. `fullContent` is scanned whole; above the scanner's 10,000,000-byte limit, `contentSecurityLimit` offers a smaller source range when possible, else a terminal limit. A full-content view over 50,000 bytes supplies bounded executable recovery. Totals unavailable due to access or resource limits are reported as unavailable.
@@ -759,9 +752,9 @@ An `lsp-servers.json` entry adds an extension or replaces a built-in server (ano
 
 ## Semantic assessment reference
 
-`clasify` accepts matrices in `queries[]`, each with `resources` (unread `{tool,query}` or held `{value}`) and typed `questions`. Results are keyed by query, resource, and question IDs. Read `npx octocode schema clasify --view query` for current fields, and copy needed `next.clasify` continuations unchanged.
+`clasify` takes `queries[]` rows of keyed JEV `questions` (`noul`, `choice`, `score`, with `instructions` and `criteria`) over exactly one of literal `state` or a `source` reference: a `localFetch` or `ghGetFileContent` row with explicit `ranges` or `fullContent:true`, or an HTTPS `url`. Each row returns the provider's typed `answers`, the `model` that answered and its `usage`, plus a `hints.read` lead to exactly what was judged for a source row; never a body. A failed or oversized row returns an `error`. Read `npx octocode schema clasify --view query` for current fields.
 
-Use [goals](#goal-based-relevance-ranking) for reordered source, or a matrix for locations and judgments first. The [goals and clasify guide](OCTOCODE_CLASIFY.md) owns flows, question types, output, limits, availability, prompts, and measured tradeoffs. Scores guide inspection; verify deciding source and keep unread evidence reachable.
+Use [classifiers](#classifier-relevance-ranking) to choose evidence to read, and `clasify` only for a typed judgment that changes your next action. The [classifier and clasify guide](OCTOCODE_CLASIFY.md) owns primitives, sources, output, limits and availability. Answers guide inspection; verify deciding source.
 
 ## Clone and local tools workflow
 

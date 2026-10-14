@@ -19,7 +19,7 @@ use super::window::{
 };
 use super::{HistoryItemRequest, fetch, validation};
 use crate::contracts::tool_types::ExtraKind;
-use crate::providers::github::{GitHubTransport, ProviderError, ProviderErrorKind, RequestContext};
+use octocode_github::{GitHubTransport, ProviderError, ProviderErrorKind, RequestContext};
 use serde_json::{Map, Value, json};
 
 /// The content sections a pull-request query asks for.
@@ -376,7 +376,11 @@ fn merge_comments(
 pub(super) struct FileOutcome {
     review: Vec<String>,
     pub(super) unsearched: Vec<String>,
-    pub(super) first_unsearched: Option<String>,
+    /// The first unsearched path and the commit holding its text (the
+    /// base for a removed file, else the head).
+    pub(super) first_unsearched: Option<(String, Option<String>)>,
+    /// `(dropped, listed)` changed files of the `matchString` filter.
+    pub(super) match_dropped: Option<(usize, usize)>,
     pub(super) scope_unmatched: bool,
     pub(super) merge_read: Option<Value>,
     /// `readAtCommit`/`readParent`: the top file at the head (when no merge
@@ -461,7 +465,12 @@ fn shape_files_section(
     FileOutcome {
         review: shaped.review,
         unsearched: shaped.unsearched,
-        first_unsearched: shaped.first_unsearched,
+        first_unsearched: shaped.first_unsearched.map(|(path, removed)| {
+            let side = if removed { "/base/sha" } else { "/head/sha" };
+            let sha = str_at(raw, side).filter(|sha| !sha.is_empty());
+            (path, sha.map(str::to_owned))
+        }),
+        match_dropped: shaped.match_dropped,
         scope_unmatched,
         merge_read,
         side_reads,

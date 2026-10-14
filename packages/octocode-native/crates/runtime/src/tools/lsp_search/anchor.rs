@@ -5,16 +5,18 @@
 use super::LspSearchQuery;
 use octocode_engine::lsp::resolver::resolve_position_in_file_content;
 use octocode_engine::lsp::types::{JsFuzzyPosition, JsResolvedSymbol};
+use octocode_io::memo::{Memo, MemoLimits};
 use serde_json::{Value, json};
-use std::collections::HashMap;
-use std::sync::{LazyLock, Mutex};
 
 /// Symbol anchors resolved per `(path, name, line, orderHint, source
 /// text)`: resolution is a pure function of them (a parse past its budget
-/// is an error, never stored), and a warm repeat skips the parse.
-static RESOLVED: LazyLock<Mutex<HashMap<String, JsResolvedSymbol>>> = LazyLock::new(Mutex::default);
-/// Stored anchors per process; past it the store starts over.
-const RESOLVED_MAX: usize = 256;
+/// is an error, never stored), and a warm repeat skips the parse. The 256
+/// most recently used are kept.
+static RESOLVED: Memo<[u8; 32], JsResolvedSymbol> = Memo::new(MemoLimits {
+    max_entries: 256,
+    max_weight: 256,
+    keep_newest: false,
+});
 
 /// A resolved anchor: zero-based LSP `line`/`character` for the server, and
 /// the public receipt (one-based) when the operation is anchored.
@@ -95,23 +97,26 @@ fn resolve_symbol(
     line_hint: Option<u32>,
     order_hint: Option<u32>,
 ) -> Result<JsResolvedSymbol, String> {
-    let key = crate::digest::sha256(
-        format!("{path}\u{0}{name}\u{0}{line_hint:?}\u{0}{order_hint:?}\u{0}{source}").as_bytes(),
-    );
-    if let Some(hit) = RESOLVED
-        .lock()
-        .ok()
-        .and_then(|resolved| resolved.get(&key).cloned())
-    {
-        return Ok(hit);
+    let key: [u8; 32] = {
+        use sha2::{Digest, Sha256};
+        let mut digest = Sha256::new();
+        // The source is hashed in place, never copied into the key.
+        for part in [
+            path,
+            name,
+            &format!("{line_hint:?}\u{0}{order_hint:?}"),
+            source,
+        ] {
+            digest.update((part.len() as u64).to_le_bytes());
+            digest.update(part.as_bytes());
+        }
+        digest.finalize().into()
+    };
+    if let Some(hit) = RESOLVED.get(&key) {
+        return Ok(hit.value.as_ref().clone());
     }
     let resolved = resolve_symbol_in(path, source, name, line_hint, order_hint)?;
-    if let Ok(mut stored) = RESOLVED.lock() {
-        if stored.len() >= RESOLVED_MAX {
-            stored.clear();
-        }
-        stored.insert(key, resolved.clone());
-    }
+    RESOLVED.insert(key, resolved.clone(), 1, None);
     Ok(resolved)
 }
 
