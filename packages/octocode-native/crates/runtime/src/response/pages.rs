@@ -7,16 +7,18 @@
 //! stands and what continues. The one exception is a split row whose pages
 //! moved to the response pager, which a part names once in `warnings`
 //! (`7 more changed files (next.nextFilePage on the row's last part)`) because its own `next`
-//! no longer carries them. The counts come from the row's pagination facts,
-//! noted as data ([`Remaining`]) before extras pruning ([`note_remaining`]);
-//! the stage takes them off the rows ([`take_remaining_notes`]) and the
-//! pager words the moved ones ([`redisclose`]). `partialReasons` say why a
-//! row is partial, never how much is left.
+//! no longer carries them. The counts come from the tool's own typed notes
+//! ([`crate::tools::result::ToolData::remaining`], for counts only the tool
+//! knows) or else the row's public pagination facts, noted as data
+//! ([`Remaining`]) before extras pruning ([`note_remaining`]); the stage
+//! takes them off the rows ([`take_remaining_notes`]) and the pager words
+//! the moved ones ([`redisclose`]). `partialReasons` say why a row is
+//! partial, never how much is left.
 
 use serde_json::{Map, Value, json};
 
-use super::channels::PAGES_KEY;
 use crate::tools::id::ToolId;
+use crate::tools::id::continuation_channels::PAGES_KEY;
 
 const WARNINGS: &str = "warnings";
 
@@ -33,13 +35,11 @@ pub struct Remaining {
 }
 
 /// Notes on `row` every page of its data that `tool` leaves remaining with
-/// a counted rest. Runs before extras pruning, while the pagination facts
-/// are still on the row.
-pub(crate) fn note_remaining(row: &mut Value, tool: ToolId) {
-    let notes = remaining_notes(row, tool);
-    if let Some(data) = row.get_mut("data") {
-        strip_working_counts(data);
-    }
+/// a counted rest: the tool's `typed` note of a page (a count only the tool
+/// knows), else the count the page's public pagination facts state. Runs
+/// before extras pruning, while the pagination facts are still on the row.
+pub(crate) fn note_remaining(row: &mut Value, tool: ToolId, typed: Vec<Remaining>) {
+    let notes = remaining_notes(row, tool, typed);
     if !notes.is_empty()
         && let Some(object) = row.as_object_mut()
     {
@@ -50,66 +50,40 @@ pub(crate) fn note_remaining(row: &mut Value, tool: ToolId) {
     }
 }
 
-/// Counts a tool keeps on a `pagination`/`contentPagination` entry only for
-/// the notes above: the contract's strict windows do not declare them.
-const WORKING_COUNTS: [&str; 4] = [
-    "remainingChars",
-    "remainingItems",
-    "nextPageSize",
-    "unfinishedFiles",
-];
-
-/// Drops [`WORKING_COUNTS`] from every pagination entry of `value`, once the
-/// notes have read them.
-fn strip_working_counts(value: &mut Value) {
-    match value {
-        Value::Object(map) => {
-            for (key, child) in map.iter_mut() {
-                match (key.as_str(), child) {
-                    ("pagination", Value::Object(entry)) => {
-                        WORKING_COUNTS.iter().for_each(|name| {
-                            entry.remove(*name);
-                        });
-                    }
-                    ("contentPagination", Value::Object(axes)) => {
-                        for entry in axes.values_mut().filter_map(Value::as_object_mut) {
-                            WORKING_COUNTS.iter().for_each(|name| {
-                                entry.remove(*name);
-                            });
-                        }
-                    }
-                    (_, child) => strip_working_counts(child),
-                }
-            }
-        }
-        Value::Array(items) => items.iter_mut().for_each(strip_working_counts),
-        _ => {}
-    }
-}
-
-fn remaining_notes(row: &Value, tool: ToolId) -> Vec<Remaining> {
+fn remaining_notes(row: &Value, tool: ToolId, typed: Vec<Remaining>) -> Vec<Remaining> {
     match row.get("data").and_then(Value::as_object) {
-        Some(data) if !is_complete(&row["data"]) => {
-            remaining_pages(data, |name| crate::tools::id::is_remaining(tool, name))
-        }
+        Some(data) if !is_complete(&row["data"]) => remaining_pages(data, typed, |name| {
+            crate::tools::id::is_remaining(tool, name)
+        }),
         _ => Vec::new(),
     }
 }
 
-/// Every page of `data` that `remains` and counts its rest.
-fn remaining_pages(data: &Map<String, Value>, remains: impl Fn(&str) -> bool) -> Vec<Remaining> {
+/// Every page of `data` that `remains` and counts its rest, in `next`
+/// order: a `typed` note stands for its page; a typed note of a page the
+/// row does not offer is dropped.
+fn remaining_pages(
+    data: &Map<String, Value>,
+    mut typed: Vec<Remaining>,
+    remains: impl Fn(&str) -> bool,
+) -> Vec<Remaining> {
     let Some(Value::Object(pages)) = data.get(PAGES_KEY) else {
         return Vec::new();
     };
     pages
         .iter()
         .filter(|(name, _)| remains(name))
-        .filter_map(|(name, call)| match remaining(data, name, call) {
-            Left::Counted(left) => Some(Remaining {
-                page: name.clone(),
-                left,
-            }),
-            Left::Done | Left::Unknown => None,
+        .filter_map(|(name, call)| {
+            if let Some(at) = typed.iter().position(|note| note.page == *name) {
+                return Some(typed.swap_remove(at));
+            }
+            match remaining(data, name, call) {
+                Left::Counted(left) => Some(Remaining {
+                    page: name.clone(),
+                    left,
+                }),
+                Left::Done | Left::Unknown => None,
+            }
         })
         .collect()
 }
@@ -172,25 +146,6 @@ pub(crate) fn redisclose(data: &mut Map<String, Value>, notes: &[Remaining], mov
     }
 }
 
-/// The content axis (`contentPagination.<axis>` of an item read) a page
-/// continues. On an item read `nextFilePage` pages the changed files. The
-/// contract classifies page names into channels only and declares the
-/// `contentPagination` axes as output fields with no link to the page that
-/// continues them, so this is the one table of that link.
-fn content_axis(page: &str, data: &Map<String, Value>) -> Option<&'static str> {
-    Some(match page {
-        "continueBody" => "body",
-        "continueReviewBody" => "reviewBody",
-        "continueCommentBody" => "commentBody",
-        "continuePatch" => "patches",
-        "nextFilePage" if content_entry(data, "files").is_some() => "files",
-        "nextCommentPage" => "comments",
-        "nextReviewPage" => "reviews",
-        "nextCommitPage" => "commits",
-        _ => return None,
-    })
-}
-
 /// What a page has left to show.
 enum Left {
     /// Its pagination counts what is left.
@@ -212,33 +167,13 @@ impl Left {
 }
 
 /// What page `name` (continuation `call`) has left to show, from the row's
-/// pagination facts.
+/// public pagination facts.
 fn remaining(data: &Map<String, Value>, name: &str, call: &Value) -> Left {
-    if let Some(axis) = content_axis(name, data) {
-        let Some(entry) = content_entry(data, axis) else {
-            return Left::Unknown;
-        };
-        if !has_more(entry) {
-            return Left::Done;
-        }
-        let count = if axis == "patches" {
-            patches_left(entry)
-        } else {
-            axis_left(axis, entry)
-        };
-        return Left::of(entry, count);
-    }
     match name {
-        // A commit or comparison pages its changed files apart from its
-        // commit `pagination`.
-        "nextFilePage" if data.contains_key("filePagination") => {
-            let entry = &data["filePagination"];
-            Left::of(entry, axis_left("files", entry))
-        }
         "nextMatchPage" => matches_left(data).map_or(Left::Unknown, |left| {
             Left::Counted(more(left, "match", "matches"))
         }),
-        "nextPage" | "nextFilePage" | "continueWindow" => {
+        "nextPage" | "continueWindow" => {
             let Some(pagination) = data.get("pagination") else {
                 return Left::Unknown;
             };
@@ -261,20 +196,6 @@ fn matches_left(data: &Map<String, Value>) -> Option<u64> {
         .filter_map(items_left)
         .sum();
     (left > 0).then_some(left)
-}
-
-/// `contentPagination.<axis>` of the row, or of the first item that carries
-/// one (a read returns its item in a one-element list).
-fn content_entry<'a>(data: &'a Map<String, Value>, axis: &str) -> Option<&'a Value> {
-    let entry = |value: &'a Value| value.get("contentPagination")?.get(axis);
-    data.get("contentPagination")
-        .and_then(|pages| pages.get(axis))
-        .or_else(|| {
-            data.values()
-                .filter_map(Value::as_array)
-                .flatten()
-                .find_map(entry)
-        })
 }
 
 fn has_more(entry: &Value) -> bool {
@@ -310,66 +231,14 @@ pub(crate) fn more(count: u64, singular: &str, plural: &str) -> String {
     )
 }
 
-/// Items left after the current page: the page's own `remainingItems`
-/// (a page that does not tile `currentPage × pageSize`), else
+/// Items left after the current page of a count-cut `entry`:
 /// `totalItems - currentPage * pageSize`.
-fn items_left(entry: &Value) -> Option<u64> {
-    if let Some((left, _)) = number(entry, &["remainingItems"]) {
-        return (left > 0).then_some(left);
-    }
+pub(crate) fn items_left(entry: &Value) -> Option<u64> {
     let (total, _) = number(entry, &["totalItems"])?;
     let (per, _) = number(entry, &["pageSize"])?;
     let (current, _) = number(entry, &["currentPage"])?;
     let left = total.checked_sub(current.checked_mul(per)?)?;
     (left > 0).then_some(left)
-}
-
-/// Chars left after the shown window: the entry's own `remainingChars`
-/// (one window over several bodies), else `total - nextOffset`.
-fn chars_left(entry: &Value) -> Option<u64> {
-    if let Some((left, _)) = number(entry, &["remainingChars"]) {
-        return (left > 0).then_some(left);
-    }
-    let (total, _) = number(entry, &["total"])?;
-    let (offset, _) = number(entry, &["nextOffset"])?;
-    total.checked_sub(offset).filter(|left| *left > 0)
-}
-
-/// A pull request's unfinished patches: `continuePatch` reads every
-/// unfinished file of the page (the cut one first), so it counts them all.
-fn patches_left(entry: &Value) -> Option<String> {
-    if !has_more(entry) {
-        return None;
-    }
-    match number(entry, &["unfinishedFiles"]).filter(|(n, _)| *n > 0) {
-        Some((files, _)) => Some(counted(files, "unfinished patch", "unfinished patches")),
-        None => chars_left(entry).map(|left| format!("{left} more patch chars")),
-    }
-}
-
-fn axis_left(axis: &str, entry: &Value) -> Option<String> {
-    if !has_more(entry) {
-        return None;
-    }
-    match axis {
-        "body" | "reviewBody" | "commentBody" => {
-            let label = match axis {
-                "body" => "body",
-                "reviewBody" => "review body",
-                _ => "comment body",
-            };
-            chars_left(entry).map(|left| format!("{left} more {label} chars"))
-        }
-        _ => {
-            let (singular, plural) = match axis {
-                "files" => ("changed file", "changed files"),
-                "comments" => ("comment", "comments"),
-                "reviews" => ("review", "reviews"),
-                _ => ("commit", "commits"),
-            };
-            items_left(entry).map(|left| more(left, singular, plural))
-        }
-    }
 }
 
 /// A row `pagination` with the facts a tool left only in its page call
@@ -955,7 +824,7 @@ mod tests {
     /// `<left> (next.<page>)`, so the counting rules stay asserted.
     fn disclosed(data: Value) -> Value {
         let mut row = json!({"index": 0, "data": data});
-        note_remaining(&mut row, ToolId::LocalSearch);
+        note_remaining(&mut row, ToolId::LocalSearch, Vec::new());
         let before = row["data"].clone();
         let mut structured = json!({"results": [row]});
         let notes = take_remaining_notes(&mut structured);
@@ -976,42 +845,44 @@ mod tests {
         data
     }
 
+    /// A tool's typed note stands for its page, in `next` order beside the
+    /// pages the public facts count; a typed note of a page the row does not
+    /// offer, or of a complete row, is dropped.
     #[test]
-    fn a_pull_request_page_counts_every_remaining_page() {
-        let data = disclosed(json!({
-            "pullRequests": [{"number": 1, "contentPagination": {
-                "patches": {"hasMore": true, "unfinishedFiles": 12},
-                "files": {"currentPage": 1, "pageSize": 30, "totalItems": 37,
-                    "hasMore": true, "nextPage": 2}
-            }}],
-            "isPartial": true,
+    fn typed_notes_stand_for_their_pages_in_next_order() {
+        let note = |page: &str, left: &str| Remaining {
+            page: page.into(),
+            left: left.into(),
+        };
+        let data = json!({
+            "pullRequests": [{"number": 1}],
+            "pagination": {"currentPage": 1, "pageSize": 10, "totalItems": 25, "hasMore": true},
             "next": {
                 "continuePatch": page("ghGetHistoryItem"),
+                "nextPage": page("ghSearchHistory"),
                 "nextFilePage": page("ghGetHistoryItem")
             }
-        }));
+        });
+        let typed = vec![
+            note("nextFilePage", "7 more changed files"),
+            note("continuePatch", "12 unfinished patches"),
+            note("nextCommentPage", "3 more comments"),
+        ];
+        let mut row = json!({"index": 0, "data": data});
+        note_remaining(&mut row, ToolId::GhGetHistoryItem, typed.clone());
+        let mut structured = json!({"results": [row]});
         assert_eq!(
-            data["warnings"],
-            json!([
-                "12 unfinished patches (next.continuePatch); 7 more changed files (next.nextFilePage)"
-            ]),
-            "{data}"
+            take_remaining_notes(&mut structured),
+            vec![vec![
+                note("continuePatch", "12 unfinished patches"),
+                note("nextPage", "15 more pull requests"),
+                note("nextFilePage", "7 more changed files"),
+            ]]
         );
-        assert!(
-            data["next"]["continuePatch"].is_object(),
-            "pages stay: {data}"
-        );
-    }
-
-    #[test]
-    fn one_patch_page_counts_every_unfinished_file() {
-        let warnings = disclosed(json!({
-            "pullRequests": [{"number": 1, "contentPagination": {
-                "patches": {"hasMore": true, "unfinishedFiles": 1}}}],
-            "next": {"continuePatch": page("ghGetHistoryItem")}
-        }))["warnings"]
-            .clone();
-        assert_eq!(warnings, json!(["1 unfinished patch (next.continuePatch)"]));
+        let mut complete = json!({"index": 0, "data": {"coverage": {"state": "complete"},
+            "next": {"nextFilePage": page("ghGetHistoryItem")}}});
+        note_remaining(&mut complete, ToolId::GhGetHistoryItem, typed);
+        assert!(complete.get(super::REMAINING).is_none(), "{complete}");
     }
 
     #[test]
@@ -1099,28 +970,6 @@ mod tests {
             bytes["warnings"],
             json!(["150 more bytes (next.continueWindow)"])
         );
-        let issue = disclosed(json!({
-            "issues": [{"number": 3, "contentPagination": {"body": {"offset": 0,
-                "unit": "chars", "length": 12000, "total": 14366, "hasMore": true,
-                "nextOffset": 12000}}}],
-            "next": {"continueBody": page("ghGetHistoryItem")}
-        }));
-        assert_eq!(
-            issue["warnings"],
-            json!(["2366 more body chars (next.continueBody)"])
-        );
-        // One offset continues every cut comment of the page; the
-        // count is all of their remaining chars.
-        let comments = disclosed(json!({
-            "pullRequests": [{"number": 3, "contentPagination": {"commentBody": {"offset": 0,
-                "unit": "chars", "length": 12000, "total": 26574, "hasMore": true,
-                "nextOffset": 12000, "remainingChars": 101000}}}],
-            "next": {"continueCommentBody": page("ghGetHistoryItem")}
-        }));
-        assert_eq!(
-            comments["warnings"],
-            json!(["101000 more comment body chars (next.continueCommentBody)"])
-        );
     }
 
     #[test]
@@ -1198,7 +1047,7 @@ mod tests {
     fn a_default_page_size_comes_from_the_contract() {
         let repos = disclosed(json!({
             "repositories": [{"repo": "a"}],
-            "pagination": {"totalItems": 38, "hasMore": true},
+            "pagination": {"totalItems": 68, "hasMore": true},
             "next": {"nextPage": {"tool": "ghSearchRepo",
                 "query": {"queries": [{"keywords": ["mcp"], "page": 2}]}}}
         }));
@@ -1327,17 +1176,6 @@ mod tests {
             read["warnings"],
             json!(["1780 more lines (next.continueWindow)"])
         );
-        let patches = disclosed(json!({
-            "pullRequests": [{"number": 1, "contentPagination": {
-                "patches": {"hasMore": true, "unfinishedFiles": 3}}}],
-            "isPartial": true,
-            "partialReasons": ["contentPagination"],
-            "next": {"continuePatch": page("ghGetHistoryItem")}
-        }));
-        assert_eq!(
-            patches["warnings"],
-            json!(["3 unfinished patches (next.continuePatch)"])
-        );
     }
 
     /// A stale snapshot names both causes: the source or the query.
@@ -1350,10 +1188,10 @@ mod tests {
     }
 
     /// A restart the tool did not build is the one restart owner's: page 1
-    /// of the same query without any cursor or saved ranking, a replay.
+    /// of the same query without any cursor or saved selection, a replay.
     #[test]
-    fn a_runtime_restart_drops_cursors_and_the_saved_ranking() {
-        let query = json!({"path":"a.rs","offset":90,"snapshot":"s","ranking":"plan"});
+    fn a_runtime_restart_drops_cursors_and_the_saved_selection() {
+        let query = json!({"path":"a.rs","offset":90,"snapshot":"s","selection":"plan"});
         let mut data = json!({"errorCode":"staleSnapshot","isPartial":true});
         super::restart_stale(ToolId::LocalFetch, &query, &mut data);
         assert_eq!(

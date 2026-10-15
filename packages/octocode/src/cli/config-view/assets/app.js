@@ -5,7 +5,7 @@ let agents = [];
 let tab = 'settings';
 let busy = false;
 let ended = false;
-const numeric = setting => ['number', 'schemaVersion'].includes(setting.type);
+const numeric = setting => setting.type === 'number';
 const $ = id => document.getElementById(id);
 const scope = () => $('scope').value;
 function node(tag, text, className) {

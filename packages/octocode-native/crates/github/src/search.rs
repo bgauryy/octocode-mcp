@@ -121,6 +121,9 @@ pub struct TreeEntry {
     pub path: String,
     #[serde(rename = "type")]
     pub kind: String,
+    /// The git file mode: a `blob` of mode `120000` is a symlink.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
     pub size: Option<u64>,
     pub sha: Option<String>,
     pub url: Option<String>,

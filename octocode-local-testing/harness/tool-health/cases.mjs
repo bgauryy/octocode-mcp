@@ -11,9 +11,7 @@
 //             its rows equals the unpaged rows (`unpaged` query, else happy) or
 //             `expect(ctx)`
 //   walks     further page walks `{label, query, lead, rows?, unpaged?, expect?,
-//             check?(rows), minPages?, chainKey?}`; `chainKey` marks a lead
-//             outside the contract page kinds that still resumes a walk
-//             (next.clasify)
+//             check?(rows), minPages?}`
 //   channels  row ids per page channel key, for the driver's exactly-once check
 //   explore   more seeds `{label, query, class?, check?(data, report)}`
 //   workspace `(ctx) => dir`: the tool's cwd (CLI and its MCP server) instead of
@@ -27,6 +25,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { declarations, lspLocations, structureFiles, sourceView, inventoryRows } from '../mcp-client.mjs';
 import { leadsIn } from './driver.mjs';
+import { checkMaterialization } from '../github-materialize.mjs';
 
 const files = data => (data?.files ?? []).flatMap(file => (file.matches ?? []).map(m => `${file.path}:${m.line}`));
 const lines = text => Array.from({ length: text.split('\n').length - (text.endsWith('\n') ? 1 : 0) }, (_, i) => i + 1);
@@ -87,9 +86,38 @@ function localFollowUps(report, localPath) {
   ];
 }
 
-/** Located windows of a clasify locate walk: `path:line-endLine` per judged page. */
-const locateRows = data => (data?.resources ?? []).flatMap(r => (r.pages ?? []).map(p => `${r.path}:${p.line}-${p.endLine}`));
-const LOCATE_LINES = 6000, LOCATE_EVERY = 400;
+// clasify: one noul, one choice and one score question over a state row and
+// a source row (lines 1-4 of src/greeter.ts: the Greeting interface).
+const GREETING_STATE = { declaration: 'Greeting', kind: 'interface', fields: { text: 'string' } };
+const GREETING_SOURCE = { tool: 'localFetch', query: { path: 'src/greeter.ts', ranges: ['1-4'] } };
+const CLASIFY_QUESTIONS = {
+  named: { type: 'noul', instructions: 'Does the state declare a field named text?' },
+  kind: { type: 'choice', instructions: 'Which declaration kind holds the text field?', criteria: { interface: 'an interface', class: 'a class', unclear: 'the state does not decide' } },
+  typed: { type: 'score', instructions: 'How completely does the state type the text field?', criteria: ['untyped', 'loosely typed', 'exactly typed'] },
+};
+/** One row id per answer: `rowId:questionKey`. */
+const answerRows = data => Object.keys(data?.answers ?? {}).map(key => `${data.id}:${key}`);
+/** Why the answers do not match their questions' types (null when they all do). */
+function answerShapes(data) {
+  const answers = data?.answers ?? {};
+  const keys = Object.keys(answers).sort().join(',');
+  if (keys !== Object.keys(CLASIFY_QUESTIONS).sort().join(',')) return `answer keys ${keys}`;
+  const p = x => typeof x === 'number' && x >= 0 && x <= 1;
+  const { named, kind, typed } = answers;
+  if (!p(named.noul)) return `noul ${JSON.stringify(named)}`;
+  const labels = Object.keys(CLASIFY_QUESTIONS.kind.criteria);
+  if (!labels.includes(kind.choice) || !p(kind.confidence) || Object.keys(kind.probabilities ?? {}).sort().join() !== [...labels].sort().join()) return `choice ${JSON.stringify(kind)}`;
+  const levels = CLASIFY_QUESTIONS.typed.criteria.length;
+  if (typeof typed.score !== 'number' || typed.score < 0 || typed.score > levels - 1 || !p(typed.confidence) || Object.keys(typed.legend ?? {}).length !== levels) return `score ${JSON.stringify(typed)}`;
+  return null;
+}
+/** Why a source row's read lead does not re-read exactly the judged selection (null when it does). */
+function readLeadProblem(data) {
+  const read = data?.hints?.read;
+  const row = read?.query?.queries?.[0];
+  return read?.tool === 'localFetch' && String(row?.path).endsWith(GREETING_SOURCE.query.path) && JSON.stringify(row.ranges) === JSON.stringify(GREETING_SOURCE.query.ranges) && /^[a-f0-9]{64}$/.test(row.snapshot ?? '') && row.minify === 'none'
+    ? null : `hints.read ${JSON.stringify(read)}`;
+}
 
 export const CASES = {
   localSearch: {
@@ -111,6 +139,21 @@ export const CASES = {
     page: { query: { path: '.', operation: 'files', pageSize: 2 }, lead: 'nextPage' },
     empty: { query: { path: '.', operation: 'files', include: ['zzzNoSuchName*'] } },
     invalid: { query: { operation: 'files' } },
+    extra: async ({ callOn, surfaces }) => {
+      const checks = [];
+      for (const surface of surfaces) {
+        const first = await callOn(surface)('structureSearch', { queries: [{ path: '.', operation: 'files', maxEntries: 1, pageSize: 1 }] });
+        const lead = first.json?.results?.[0]?.data?.next?.expandScan;
+        const query = lead?.query?.queries?.[0];
+        const valid = !first.isError && lead?.tool === 'structureSearch' && query?.maxEntries > 1 && query?.scanOffset === undefined;
+        checks.push([`minimumScan.${surface}`, valid, valid ? '' : JSON.stringify(first.json)]);
+        if (valid) {
+          const resumed = await callOn(surface)(lead.tool, lead.query);
+          checks.push([`minimumScan.resume.${surface}`, !resumed.isError, resumed.isError ? JSON.stringify(resumed.json) : '']);
+        }
+      }
+      return checks;
+    },
     explore: [
       { label: 'tree', query: { path: '.', operation: 'tree' } },
       { label: 'ts', query: { path: 'src', operation: 'files', extensions: ['ts'], pageSize: 1 }, deep: true },
@@ -134,6 +177,26 @@ export const CASES = {
     page: { query: { path: 'src/greeter.ts', unit: 'lines', offset: 0, length: 5 }, lead: 'continueWindow' },
     empty: { query: { path: 'src/greeter.ts', matchString: 'zzzNoSuchText' } },
     invalid: { query: { path: 'src/greeter.ts', ranges: 'not-an-array' } },
+    // Raw-input parity (review R05): a call the canonical input schema rejects is
+    // rejected by both surfaces as invalidInput, never repaired into a success.
+    extra: async ({ callOn, surfaces, validateInput }) => {
+      const out = [];
+      for (const [label, row] of [
+        ['stringBoolean', { path: 'src/greeter.ts', fullContent: 'true' }],
+        ['enumCase', { path: 'src/greeter.ts', fullContent: true, minify: 'NONE' }],
+        ['stringNumber', { path: 'src/greeter.ts', unit: 'lines', offset: '0', length: 5 }],
+      ]) {
+        const input = { queries: [{ mainGoal: 'Raw input parity.', ...row }] };
+        const schemaError = validateInput('localFetch', input);
+        out.push([`rawInput.${label}.schema`, !!schemaError, schemaError ? '' : `the canonical input schema accepts ${JSON.stringify(row)}`]);
+        for (const surface of surfaces) {
+          const res = await callOn(surface)('localFetch', input);
+          const code = res.raw?.errorCode ?? res.json?.errorCode;
+          out.push([`rawInput.${label}.${surface}`, res.isError && code === 'invalidInput', res.isError && code === 'invalidInput' ? '' : `${surface} accepted a schema-invalid call ${JSON.stringify(row)}: isError ${res.isError}, errorCode ${code}, status ${res.raw?.results?.[0]?.status ?? '-'}`]);
+        }
+      }
+      return out;
+    },
     explore: [
       { label: 'match', query: { path: 'src/greeter.ts', matchString: 'greet', contextLines: 1 } },
       { label: 'outline', query: { path: 'src/greeter.ts', minify: 'symbols' }, deep: true },
@@ -156,8 +219,35 @@ export const CASES = {
   },
   astTopology: {
     budgetMs: LOCAL,
-    // Four unreachable modules plus util.ts greetLoudly: five dead exports from src/app.ts.
-    workspace: ctx => workspace(ctx, 'astTopology', Object.fromEntries([1, 2, 3, 4].map(i => [`src/dead/unused${i}.ts`, `export function unused${i}(): number {\n  return ${i};\n}\n`]))),
+    // Four unreachable modules plus util.ts greetLoudly: five dead exports from
+    // src/app.ts. Outside src, a hub in a cycle: cyc/a.ts imports b.ts and c.ts,
+    // and both import it back, so its two edges share one file.
+    workspace: ctx => workspace(ctx, 'astTopology', {
+      ...Object.fromEntries([1, 2, 3, 4].map(i => [`src/dead/unused${i}.ts`, `export function unused${i}(): number {\n  return ${i};\n}\n`])),
+      'cyc/a.ts': "import { b } from './b';\nimport { c } from './c';\nexport const a = (): number => b() + c();\n",
+      'cyc/b.ts': "import { a } from './a';\nexport const b = (): number => 1 + (0 && a());\n",
+      'cyc/c.ts': "import { a } from './a';\nexport const c = (): number => 2 + (0 && a());\n",
+    }),
+    // Wire validity under shared-field compaction (review R04): two edges that
+    // share their hub file are validated exactly as emitted, with the
+    // response's `shared` block left in place (no restoration).
+    extra: async ({ callOn, surfaces, validateOutput }) => {
+      const out = [];
+      for (const [label, row] of [
+        ['dependencies', { path: 'src', operation: 'dependencies', source: 'src/app.ts' }],
+        ['dependents', { path: 'cyc', operation: 'dependents', source: 'cyc/a.ts' }],
+      ]) {
+        for (const surface of surfaces) {
+          const res = await callOn(surface)('astTopology', { queries: [{ ...row, extras: ['details'] }] });
+          const nodes = res.json?.results?.[0]?.data?.nodes ?? [];
+          // Two edges through one file: the hub (`via`) is hoisted into `shared`.
+          out.push([`wire.${label}.${surface}.compacted`, nodes.length >= 2 && !!res.raw?.shared?.via, `${nodes.length} rows, shared ${JSON.stringify(res.raw?.shared)}: ${JSON.stringify(res.raw ?? res.text).slice(0, 160)}`]);
+          const error = validateOutput('astTopology', res.raw);
+          out.push([`wire.${label}.${surface}.contract`, !error, error ? `${error} (shared ${JSON.stringify(res.raw?.shared)})` : '']);
+        }
+      }
+      return out;
+    },
     walks: [
       { label: 'deadCode', query: { path: 'src', operation: 'deadCode', entrypoints: ['src/app.ts'], pageSize: 1 }, lead: 'nextPage', rows: data => (data.nodes ?? []).map(n => `${n.file}:${n.name}:${n.line}`), unpaged: { path: 'src', operation: 'deadCode', entrypoints: ['src/app.ts'] }, minPages: 3 },
     ],
@@ -229,6 +319,7 @@ export const CASES = {
   },
   ghStructure: {
     budgetMs: REMOTE,
+    extra: checkMaterialization,
     happy: { query: { owner: 'octo', repo: 'demo', maxDepth: 3 }, fields: ['files', 'summary', 'commitSha'], rows: treeRows, min: 7 },
     page: { query: { owner: 'octo', repo: 'demo', maxDepth: 3, pageSize: 2 }, lead: 'nextPage', unpaged: { owner: 'octo', repo: 'demo', maxDepth: 3 } },
     empty: { query: { owner: 'octo', repo: 'demo', include: ['**/zzzNoSuchName*'] } },
@@ -314,32 +405,31 @@ export const CASES = {
   },
   clasify: {
     budgetMs: REMOTE,
-    workspace: ctx => workspace(ctx, 'clasify', { 'docs/big.txt': Array.from({ length: LOCATE_LINES }, (_, i) => `line ${i + 1} ${i % LOCATE_EVERY === 0 ? 'needleLocate marker' : 'filler text'}`).join('\n') + '\n' }),
+    // A state row judges held data; its answers are the whole outcome.
     happy: {
-      query: { resources: [{ value: 'alpha' }, { value: 'beta' }], questions: [{ type: 'yesno', ask: 'Is it the first Greek letter?' }, { type: 'choice', ask: 'Which letter?', labels: { a: 'alpha', b: 'beta' } }] },
-      fields: ['resources'], rows: data => (data.resources ?? []).flatMap(r => Object.keys(r.answers ?? {}).map(q => `${r.id}:${q}`)), min: 4,
+      query: { id: 'state', state: GREETING_STATE, questions: CLASIFY_QUESTIONS },
+      fields: ['answers', 'model', 'usage'], rows: answerRows, min: 3,
+      check: data => answerShapes(data) ?? (data.hints || data.source ? `a state row carries no source or read lead: ${JSON.stringify({ hints: data.hints, source: data.source })}` : null),
     },
-    page: { na: 'a judged matrix has no page channel; its locate walk resumes through next.clasify (walks.locate)' },
-    // A prefiltered locate judges at most three windows per call; next.clasify resumes the walk.
-    walks: [
-      {
-        label: 'locate', lead: 'clasify', chainKey: true, rows: locateRows, minPages: 3,
-        query: { resources: [{ tool: 'localFetch', query: { path: 'docs/big.txt' }, prefilter: ['needleLocate'] }], questions: [{ type: 'locate', ask: 'Where is the needleLocate marker?' }] },
-        // Every marker line lies in exactly one judged window.
-        check: rows => {
-          const windows = rows.map(r => r.split(':').pop().split('-').map(Number));
-          const missed = Array.from({ length: Math.ceil(LOCATE_LINES / LOCATE_EVERY) }, (_, k) => k * LOCATE_EVERY + 1).filter(l => windows.filter(([a, b]) => a <= l && l <= b).length !== 1);
-          return missed.length ? `marker lines not in exactly one judged window: ${missed.slice(0, 5).join(', ')}` : null;
-        },
-      },
+    page: { na: 'a judged row has no page channel' },
+    empty: { na: 'a judged row answers every question (no empty outcome)' },
+    explore: [
+      // A source row: native captures exactly the selection and leads back to it.
+      { label: 'source', query: { id: 'source', source: GREETING_SOURCE, questions: CLASIFY_QUESTIONS }, check: data => answerShapes(data) ?? readLeadProblem(data) },
     ],
-    empty: { na: 'a judged matrix always answers every cell (no empty outcome)' },
-    invalid: { query: { resources: [{ value: 'alpha' }], questions: [] } },
-    // Disabled path: without a provider key the CLI refuses with a typed error.
-    extra: async ({ cliCall, q }) => {
-      const res = await cliCall('clasify', q({ resources: [{ value: 'alpha' }], questions: [{ type: 'yesno', ask: 'Is it alpha?' }] }), { env: { ['OCTOCODE_CLASSIFICATION_' + 'API']: '' } });
-      const code = res.json?.errorCode ?? res.json?.queries?.[0]?.resources?.[0]?.error?.errorCode;
-      return [['disabled.typed', res.status !== 0 && typeof code === 'string', `exit ${res.status}, errorCode ${code} ${res.stdout.slice(0, 120)}`]];
+    invalid: { query: { state: GREETING_STATE, questions: {} } },
+    extra: async ({ cliCall, q, mock }) => {
+      // The provider saw the selected lines and nothing past them.
+      const sent = mock.classificationRequests.map(request => JSON.stringify(request));
+      const selected = sent.some(text => text.includes('Tool-health fixture') && text.includes('export interface Greeting'));
+      const beyond = sent.some(text => text.includes('healthMarker greeter-1'));
+      // Disabled path: without a provider key the CLI refuses with a typed error.
+      const res = await cliCall('clasify', q({ state: GREETING_STATE, questions: { named: CLASIFY_QUESTIONS.named } }), { env: { ['OCTOCODE_CLASSIFICATION_' + 'API']: '' } });
+      const code = res.json?.errorCode ?? res.json?.queries?.[0]?.error?.errorCode;
+      return [
+        ['source.selection', selected && !beyond, `${sent.length} provider requests; selection sent ${selected}, lines past the range sent ${beyond}`],
+        ['disabled.typed', res.status !== 0 && typeof code === 'string', `exit ${res.status}, errorCode ${code} ${res.stdout.slice(0, 120)}`],
+      ];
     },
   },
 };

@@ -165,7 +165,8 @@ export const CASES = {
     pub: null,
     naReason: 'the published release has no classifier tool; local clasify is rated by the held-out workflow evaluation (needs a provider key)',
     checks: [
-      { kind: 'invalid', loc: { resources: [{ value: 'alpha' }], questions: [] } },
+      // state and source are mutually exclusive forms.
+      { kind: 'invalid', loc: { state: 'alpha', source: { url: 'https://example.org/' }, questions: { q: { type: 'noul', instructions: 'Is alpha stated?' } } } },
     ],
   },
 };

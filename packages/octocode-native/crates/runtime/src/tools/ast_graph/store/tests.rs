@@ -2,22 +2,20 @@ use super::*;
 
 #[test]
 fn oversized_snapshot_is_rejected_before_allocation() {
-    let dir = tempfile::tempdir().expect("root");
-    let file = dir.path().join(GRAPH_FILE);
+    let dir = Fixture::new();
+    let file = dir.0.as_path().join(GRAPH_FILE);
     std::fs::File::create(&file)
         .expect("file")
         .set_len(MAX_GRAPH_BYTES as u64 + 1)
         .expect("sparse fixture");
     assert!(read_graph_file(&file).is_err());
 }
-use crate::tools::ast_graph::test_support::write_files;
+use crate::tools::ast_graph::test_support::{Fixture, write_under};
 use crate::tools::cancel::NeverCancel;
 
-fn fixture() -> tempfile::TempDir {
-    let dir = tempfile::tempdir().expect("fixture");
-    let src = dir.path().join("app").join("src");
-    std::fs::create_dir_all(&src).expect("src");
-    std::fs::create_dir_all(dir.path().join(".git")).expect("git marker");
+fn fixture() -> Fixture {
+    let dir = Fixture::new();
+    std::fs::create_dir_all(dir.0.as_path().join(".git")).expect("git marker");
     let files = [
         (
             "main.ts",
@@ -36,9 +34,7 @@ fn fixture() -> tempfile::TempDir {
             "import { a } from './a';\nexport const b = () => a();\n",
         ),
     ];
-    for (name, text) in files {
-        std::fs::write(src.join(name), text).expect("fixture file");
-    }
+    write_under(&dir, "app/src", &files);
     dir
 }
 
@@ -49,10 +45,10 @@ fn policy(root: &Path) -> PathPolicy {
 #[test]
 fn default_workspace_stops_at_the_allowed_roots() {
     let dir = fixture();
-    let sub = dir.path().join("app");
+    let sub = dir.0.as_path().join("app");
     assert_eq!(
-        default_workspace(sub.clone(), &policy(dir.path())),
-        dir.path()
+        default_workspace(sub.clone(), &policy(dir.0.as_path())),
+        dir.0.as_path()
     );
     // A repository root above the allowed root would be denied: use cwd.
     assert_eq!(default_workspace(sub.clone(), &policy(&sub)), sub);
@@ -102,7 +98,7 @@ fn ids(out: &GraphOutput) -> Vec<String> {
 #[test]
 fn format_round_trips_deterministically_and_rejects_corruption() {
     let dir = fixture();
-    let out = ingest_fixture(dir.path(), None);
+    let out = ingest_fixture(dir.0.as_path(), None);
     assert_eq!(out.class, ExitClass::Success, "{}", out.value);
     let graph_dir = PathBuf::from(out.value["dir"].as_str().expect("dir"));
     let bytes = std::fs::read(graph_dir.join(GRAPH_FILE)).expect("graph.bin");
@@ -135,11 +131,11 @@ fn format_round_trips_deterministically_and_rejects_corruption() {
 #[test]
 fn ingest_publishes_a_snapshot_under_the_workspace() {
     let dir = fixture();
-    let out = ingest_fixture(dir.path(), None);
+    let out = ingest_fixture(dir.0.as_path(), None);
     assert_eq!(out.class, ExitClass::Success, "{}", out.value);
     let id = out.value["id"].as_str().expect("id");
     assert!(id.ends_with("-app"), "{id}");
-    let home = dir.path().join(".octocode").join("graph");
+    let home = dir.0.as_path().join(".octocode").join("graph");
     assert_eq!(
         std::fs::read_to_string(home.join("latest")).expect("latest"),
         id
@@ -163,8 +159,11 @@ fn ingest_publishes_a_snapshot_under_the_workspace() {
 #[test]
 fn queries_answer_imports_calls_cycles_and_packages() {
     let dir = fixture();
-    assert_eq!(ingest_fixture(dir.path(), None).class, ExitClass::Success);
-    let root = dir.path();
+    assert_eq!(
+        ingest_fixture(dir.0.as_path(), None).class,
+        ExitClass::Success
+    );
+    let root = dir.0.as_path();
 
     let deps = ask(root, "deps", Some("src/main.ts"), |_| {});
     assert_eq!(
@@ -236,18 +235,21 @@ fn queries_answer_imports_calls_cycles_and_packages() {
 #[test]
 fn references_report_ambiguity_and_absence_with_exit_codes() {
     let dir = fixture();
-    assert_eq!(ingest_fixture(dir.path(), None).class, ExitClass::Success);
-    let missing = ask(dir.path(), "node", Some("nope"), |_| {});
+    assert_eq!(
+        ingest_fixture(dir.0.as_path(), None).class,
+        ExitClass::Success
+    );
+    let missing = ask(dir.0.as_path(), "node", Some("nope"), |_| {});
     assert_eq!(
         missing.class,
         ExitClass::Failed(crate::runtime::FailureKind::NotFound)
     );
     assert_eq!(missing.value["errorCode"], "notFound");
 
-    let bad = ask(dir.path(), "explode", None, |_| {});
+    let bad = ask(dir.0.as_path(), "explode", None, |_| {});
     assert_eq!(bad.class, ExitClass::InvalidInput);
 
-    let none = ask(dir.path(), "stats", None, |o| {
+    let none = ask(dir.0.as_path(), "stats", None, |o| {
         o.graph = Some("no-such-graph".into())
     });
     assert_eq!(
@@ -261,8 +263,11 @@ fn references_report_ambiguity_and_absence_with_exit_codes() {
 #[test]
 fn list_operations_page_with_a_runnable_next_command() {
     let dir = fixture();
-    assert_eq!(ingest_fixture(dir.path(), None).class, ExitClass::Success);
-    let first = ask(dir.path(), "symbols", Some("src/lib.ts"), |o| {
+    assert_eq!(
+        ingest_fixture(dir.0.as_path(), None).class,
+        ExitClass::Success
+    );
+    let first = ask(dir.0.as_path(), "symbols", Some("src/lib.ts"), |o| {
         o.limit = Some(2)
     });
     assert_eq!(first.class, ExitClass::Success, "paging is success");
@@ -272,7 +277,7 @@ fn list_operations_page_with_a_runnable_next_command() {
         next.contains("--offset 2") && next.contains("--limit 2"),
         "{next}"
     );
-    let second = ask(dir.path(), "symbols", Some("src/lib.ts"), |o| {
+    let second = ask(dir.0.as_path(), "symbols", Some("src/lib.ts"), |o| {
         o.limit = Some(2);
         o.offset = Some(2);
     });
@@ -282,8 +287,11 @@ fn list_operations_page_with_a_runnable_next_command() {
 #[test]
 fn stale_detects_edits_and_prune_keeps_the_newest_snapshots() {
     let dir = fixture();
-    assert_eq!(ingest_fixture(dir.path(), None).class, ExitClass::Success);
-    let fresh = ask(dir.path(), "stale", None, |_| {});
+    assert_eq!(
+        ingest_fixture(dir.0.as_path(), None).class,
+        ExitClass::Success
+    );
+    let fresh = ask(dir.0.as_path(), "stale", None, |_| {});
     assert_eq!(
         (fresh.class, &fresh.value["fresh"]),
         (ExitClass::Success, &json!(true)),
@@ -291,8 +299,8 @@ fn stale_detects_edits_and_prune_keeps_the_newest_snapshots() {
         fresh.value
     );
 
-    std::fs::write(dir.path().join("app/src/a.ts"), "export const a = 2;\n").expect("edit");
-    let stale = ask(dir.path(), "stale", None, |_| {});
+    dir.write("app/src/a.ts", "export const a = 2;\n");
+    let stale = ask(dir.0.as_path(), "stale", None, |_| {});
     assert_eq!(
         stale.value["results"],
         json!([{"file": "src/a.ts", "status": "changed"}])
@@ -300,19 +308,19 @@ fn stale_detects_edits_and_prune_keeps_the_newest_snapshots() {
 
     for _ in 0..2 {
         assert_eq!(
-            ingest_fixture(dir.path(), Some(1)).class,
+            ingest_fixture(dir.0.as_path(), Some(1)).class,
             ExitClass::Success
         );
     }
-    let home = dir.path().join(".octocode").join("graph");
+    let home = dir.0.as_path().join(".octocode").join("graph");
     assert_eq!(list_snapshots(&home).len(), 1);
 }
 
 /// `fixture()` plus a manifest, an undeclared import, an orphan, a
 /// generated file, and a test.
-fn issues_fixture() -> tempfile::TempDir {
+fn issues_fixture() -> Fixture {
     let dir = fixture();
-    let app = dir.path().join("app");
+    let app = dir.0.as_path().join("app");
     std::fs::write(
         app.join("package.json"),
         r#"{"name":"app","main":"dist/main.js","dependencies":{"react":"18"},"devDependencies":{"vitest":"1"}}"#,
@@ -351,8 +359,11 @@ fn findings(out: &GraphOutput, detector: &str) -> Vec<String> {
 #[test]
 fn ingest_classifies_roles_entries_and_declared_dependencies() {
     let dir = issues_fixture();
-    assert_eq!(ingest_fixture(dir.path(), None).class, ExitClass::Success);
-    let root = dir.path();
+    assert_eq!(
+        ingest_fixture(dir.0.as_path(), None).class,
+        ExitClass::Success
+    );
+    let root = dir.0.as_path();
     let stats = ask(root, "issues", None, |o| o.limit = Some(200));
     let roles = &stats.value["summary"]["fileRoles"];
     assert_eq!(roles["generated"], 1, "{}", stats.value["summary"]);
@@ -389,8 +400,11 @@ fn ingest_classifies_roles_entries_and_declared_dependencies() {
 #[test]
 fn issues_rank_hypotheses_with_evidence_and_controls() {
     let dir = issues_fixture();
-    assert_eq!(ingest_fixture(dir.path(), None).class, ExitClass::Success);
-    let root = dir.path();
+    assert_eq!(
+        ingest_fixture(dir.0.as_path(), None).class,
+        ExitClass::Success
+    );
+    let root = dir.0.as_path();
     let out = ask(root, "issues", None, |o| o.limit = Some(200));
     assert_eq!(out.class, ExitClass::Success, "{}", out.value);
 
@@ -456,7 +470,7 @@ fn issues_rank_hypotheses_with_evidence_and_controls() {
 #[test]
 fn issue_evidence_lists_every_item_it_counts() {
     let dir = issues_fixture();
-    let src = dir.path().join("app/src");
+    let src = dir.0.as_path().join("app/src");
     for n in 0..25 {
         std::fs::write(
             src.join(format!("ring{n}.ts")),
@@ -476,8 +490,11 @@ fn issue_evidence_lists_every_item_it_counts() {
         "import './many';\nimport './ring0';\n",
     )
     .expect("entry");
-    assert_eq!(ingest_fixture(dir.path(), None).class, ExitClass::Success);
-    let out = ask(dir.path(), "issues", None, |o| o.limit = Some(500));
+    assert_eq!(
+        ingest_fixture(dir.0.as_path(), None).class,
+        ExitClass::Success
+    );
+    let out = ask(dir.0.as_path(), "issues", None, |o| o.limit = Some(500));
     let rows = out.value["results"].as_array().cloned().unwrap_or_default();
     let finding = |detector: &str, subject: &str| {
         rows.iter()
@@ -512,21 +529,16 @@ fn issue_evidence_lists_every_item_it_counts() {
 #[test]
 fn issues_baseline_reports_new_and_resolved_findings() {
     let dir = issues_fixture();
-    let first = ingest_fixture(dir.path(), None);
+    let first = ingest_fixture(dir.0.as_path(), None);
     let base = first.value["id"].as_str().expect("id").to_owned();
-    std::fs::write(
-        dir.path().join("app/src/b.ts"),
-        "export const b = () => 1;\n",
-    )
-    .expect("break cycle");
-    std::fs::write(
-        dir.path().join("app/src/orphan2.ts"),
-        "export const x = 1;\n",
-    )
-    .expect("orphan");
+    dir.write("app/src/b.ts", "export const b = () => 1;\n");
+    dir.write("app/src/orphan2.ts", "export const x = 1;\n");
     std::thread::sleep(std::time::Duration::from_millis(1100));
-    assert_eq!(ingest_fixture(dir.path(), None).class, ExitClass::Success);
-    let out = ask(dir.path(), "issues", None, |o| {
+    assert_eq!(
+        ingest_fixture(dir.0.as_path(), None).class,
+        ExitClass::Success
+    );
+    let out = ask(dir.0.as_path(), "issues", None, |o| {
         o.baseline = Some(base.clone());
         o.limit = Some(200);
     });
@@ -556,7 +568,7 @@ fn issues_baseline_reports_new_and_resolved_findings() {
 #[test]
 fn heritage_and_jsx_become_inherits_and_renders_edges() {
     let dir = fixture();
-    let src = dir.path().join("app/src");
+    let src = dir.0.as_path().join("app/src");
     std::fs::write(
         src.join("shapes.ts"),
         "import { Box } from './lib';\nexport interface Shape { area(): number }\nexport class Crate extends Box implements Shape {\n  area() { return 1; }\n}\n",
@@ -567,8 +579,11 @@ fn heritage_and_jsx_become_inherits_and_renders_edges() {
         "import { Crate } from './shapes';\nexport function Card() { return null; }\nexport function Page() {\n  return <Card />;\n}\n",
     )
     .expect("view");
-    assert_eq!(ingest_fixture(dir.path(), None).class, ExitClass::Success);
-    let bases = ask(dir.path(), "deps", Some("Crate"), |o| {
+    assert_eq!(
+        ingest_fixture(dir.0.as_path(), None).class,
+        ExitClass::Success
+    );
+    let bases = ask(dir.0.as_path(), "deps", Some("Crate"), |o| {
         o.edges = vec!["inherits".into()]
     });
     let rows = bases.value["results"].as_array().expect("rows");
@@ -590,7 +605,12 @@ fn heritage_and_jsx_become_inherits_and_renders_edges() {
         "{got:?}"
     );
 
-    let renders = ask(dir.path(), "callers", Some("src/view.tsx#Card"), |_| {});
+    let renders = ask(
+        dir.0.as_path(),
+        "callers",
+        Some("src/view.tsx#Card"),
+        |_| {},
+    );
     assert_eq!(
         ids(&renders),
         vec!["src/view.tsx#Page"],
@@ -617,8 +637,11 @@ fn impacted(out: &GraphOutput) -> Vec<(String, u64)> {
 #[test]
 fn impact_is_symbol_precise_for_symbols_and_transitive_for_files() {
     let dir = issues_fixture();
-    assert_eq!(ingest_fixture(dir.path(), None).class, ExitClass::Success);
-    let root = dir.path();
+    assert_eq!(
+        ingest_fixture(dir.0.as_path(), None).class,
+        ExitClass::Success
+    );
+    let root = dir.0.as_path();
 
     let symbol = ask(root, "impact", Some("src/lib.ts#shout"), |_| {});
     assert_eq!(
@@ -664,7 +687,7 @@ fn impact_is_symbol_precise_for_symbols_and_transitive_for_files() {
 #[test]
 fn impact_since_reads_git_and_widens_on_config_changes() {
     let dir = issues_fixture();
-    let app = dir.path().join("app");
+    let app = dir.0.as_path().join("app");
     let git = |args: &[&str]| {
         std::process::Command::new("git")
             .arg("-C")
@@ -694,13 +717,16 @@ fn impact_since_reads_git_and_widens_on_config_changes() {
         "-qm",
         "base"
     ]));
-    assert_eq!(ingest_fixture(dir.path(), None).class, ExitClass::Success);
+    assert_eq!(
+        ingest_fixture(dir.0.as_path(), None).class,
+        ExitClass::Success
+    );
     std::fs::write(
         app.join("src/fmt.ts"),
         "export const fmt = (s: string) => s;\n",
     )
     .expect("edit");
-    let out = ask(dir.path(), "impact", None, |o| {
+    let out = ask(dir.0.as_path(), "impact", None, |o| {
         o.since = Some("HEAD".into())
     });
     let files = impacted(&out);
@@ -713,7 +739,7 @@ fn impact_since_reads_git_and_widens_on_config_changes() {
         r#"{"name":"app","main":"dist/main.js"}"#,
     )
     .expect("manifest");
-    let widened = ask(dir.path(), "impact", None, |o| {
+    let widened = ask(dir.0.as_path(), "impact", None, |o| {
         o.since = Some("HEAD".into())
     });
     assert!(
@@ -735,7 +761,7 @@ fn impact_since_reads_git_and_widens_on_config_changes() {
 fn impact_since_does_not_run_repository_fsmonitor_hooks() {
     use std::os::unix::fs::PermissionsExt;
     let dir = issues_fixture();
-    let app = dir.path().join("app");
+    let app = dir.0.as_path().join("app");
     let git = |args: &[&str]| {
         std::process::Command::new("git")
             .arg("-C")
@@ -751,9 +777,12 @@ fn impact_since_does_not_run_repository_fsmonitor_hooks() {
     let identity = ["-c", "user.email=t@t", "-c", "user.name=t"];
     assert!(git(&[&identity[..], &["add", "-A"]].concat()));
     assert!(git(&[&identity[..], &["commit", "-qm", "base"]].concat()));
-    assert_eq!(ingest_fixture(dir.path(), None).class, ExitClass::Success);
-    let marker = dir.path().join("hook-ran");
-    let hook = dir.path().join("fsmonitor.sh");
+    assert_eq!(
+        ingest_fixture(dir.0.as_path(), None).class,
+        ExitClass::Success
+    );
+    let marker = dir.0.as_path().join("hook-ran");
+    let hook = dir.0.as_path().join("fsmonitor.sh");
     std::fs::write(&hook, format!("#!/bin/sh\ntouch '{}'\n", marker.display())).expect("hook");
     std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).expect("chmod");
     assert!(git(&[
@@ -766,7 +795,7 @@ fn impact_since_does_not_run_repository_fsmonitor_hooks() {
         "export const fmt = (s: string) => s;\n",
     )
     .expect("edit");
-    let out = ask(dir.path(), "impact", None, |o| {
+    let out = ask(dir.0.as_path(), "impact", None, |o| {
         o.since = Some("HEAD".into())
     });
     assert!(
@@ -780,7 +809,7 @@ fn impact_since_does_not_run_repository_fsmonitor_hooks() {
 #[test]
 fn oversized_and_minified_files_stay_visible_without_noise() {
     let dir = fixture();
-    let src = dir.path().join("app/src");
+    let src = dir.0.as_path().join("app/src");
     // Over the 1 MB parse bound: kept as an `unparsed` file node.
     let big = format!("!function(){{{}}}();\n", "var a=1;".repeat(160_000));
     std::fs::write(src.join("huge.min.js"), &big).expect("huge");
@@ -792,12 +821,12 @@ fn oversized_and_minified_files_stay_visible_without_noise() {
         "import './huge.min.js';\nimport './small.min.js';\nexport const x = 1;\n",
     )
     .expect("importer");
-    let ingest = ingest_fixture(dir.path(), None);
+    let ingest = ingest_fixture(dir.0.as_path(), None);
     assert_eq!(ingest.class, ExitClass::Success, "{}", ingest.value);
 
-    let huge = ask(dir.path(), "node", Some("src/huge.min.js"), |_| {});
+    let huge = ask(dir.0.as_path(), "node", Some("src/huge.min.js"), |_| {});
     assert_eq!(huge.class, ExitClass::Success, "{}", huge.value);
-    let deps = ask(dir.path(), "deps", Some("src/uses.ts"), |_| {});
+    let deps = ask(dir.0.as_path(), "deps", Some("src/uses.ts"), |_| {});
     let rows = deps.value["results"].as_array().expect("rows");
     assert!(
         rows.iter()
@@ -805,14 +834,14 @@ fn oversized_and_minified_files_stay_visible_without_noise() {
         "{}",
         deps.value
     );
-    let outline = ask(dir.path(), "symbols", Some("src/small.min.js"), |_| {});
+    let outline = ask(dir.0.as_path(), "symbols", Some("src/small.min.js"), |_| {});
     assert_eq!(
         outline.value["total"], 0,
         "minified symbols are dropped: {}",
         outline.value
     );
 
-    let issues = ask(dir.path(), "issues", None, |o| o.limit = Some(500));
+    let issues = ask(dir.0.as_path(), "issues", None, |o| o.limit = Some(500));
     let subjects = issues.value["results"]
         .as_array()
         .expect("rows")
@@ -835,9 +864,9 @@ fn oversized_and_minified_files_stay_visible_without_noise() {
 
 #[test]
 fn impact_lists_inline_rust_test_functions() {
-    let dir = tempfile::tempdir().expect("dir");
-    std::fs::create_dir_all(dir.path().join(".git")).expect("git");
-    let krate = dir.path().join("app");
+    let dir = Fixture::new();
+    std::fs::create_dir_all(dir.0.as_path().join(".git")).expect("git");
+    let krate = dir.0.as_path().join("app");
     std::fs::create_dir_all(krate.join("src")).expect("src");
     std::fs::write(
         krate.join("Cargo.toml"),
@@ -849,10 +878,18 @@ fn impact_lists_inline_rust_test_functions() {
         "pub fn add(a: u8, b: u8) -> u8 {\n    a + b\n}\n\npub fn twice(a: u8) -> u8 {\n    add(a, a)\n}\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n\n    #[test]\n    fn adds() {\n        let _ = add(1, 2);\n    }\n\n    #[test]\n    fn doubles() {\n        let _ = twice(2);\n    }\n}\n",
     )
     .expect("lib");
-    assert_eq!(ingest_fixture(dir.path(), None).class, ExitClass::Success);
-    let node = ask(dir.path(), "node", Some("src/lib.rs#tests.adds"), |_| {});
+    assert_eq!(
+        ingest_fixture(dir.0.as_path(), None).class,
+        ExitClass::Success
+    );
+    let node = ask(
+        dir.0.as_path(),
+        "node",
+        Some("src/lib.rs#tests.adds"),
+        |_| {},
+    );
     assert_eq!(node.value["node"]["test"], true, "{}", node.value);
-    let out = ask(dir.path(), "impact", Some("src/lib.rs#add"), |_| {});
+    let out = ask(dir.0.as_path(), "impact", Some("src/lib.rs#add"), |_| {});
     let tests = &out.value["summary"]["testFunctions"];
     assert!(
         tests
@@ -874,25 +911,34 @@ fn impact_lists_inline_rust_test_functions() {
 // ── Graph quality acceptance tests (docs/engine/CODE_GRAPH.md § Validation) ─
 
 /// A repository root (a `.git` marker) holding `files` under `app/`.
-fn git_app(files: &[(&str, &str)]) -> tempfile::TempDir {
-    let dir = tempfile::tempdir().expect("dir");
-    std::fs::create_dir_all(dir.path().join(".git")).expect("git");
-    write_files(&dir.path().join("app"), files);
+fn git_app(files: &[(&str, &str)]) -> Fixture {
+    let dir = Fixture::new();
+    std::fs::create_dir_all(dir.0.as_path().join(".git")).expect("git");
+    write_under(&dir, "app", files);
     dir
 }
 
 #[test]
 fn plan_1_call_answers_report_coverage() {
     let dir = fixture();
-    write_files(
-        &dir.path().join("app/src"),
+    write_under(
+        &dir,
+        "app/src",
         &[(
             "opener.ts",
             "import { Box } from './lib';\nfunction make(): any { return null; }\nexport function run() {\n  const b = make();\n  b.open();\n  return new Box();\n}\n",
         )],
     );
-    assert_eq!(ingest_fixture(dir.path(), None).class, ExitClass::Success);
-    let out = ask(dir.path(), "callers", Some("src/lib.ts#Box.open"), |_| {});
+    assert_eq!(
+        ingest_fixture(dir.0.as_path(), None).class,
+        ExitClass::Success
+    );
+    let out = ask(
+        dir.0.as_path(),
+        "callers",
+        Some("src/lib.ts#Box.open"),
+        |_| {},
+    );
     let coverage = &out.value["coverage"];
     let recall = coverage["callInternalRecall"].as_f64().expect("recall");
     assert!(recall < 1.0, "{}", out.value);
@@ -901,7 +947,12 @@ fn plan_1_call_answers_report_coverage() {
         "{}",
         out.value
     );
-    let impact = ask(dir.path(), "impact", Some("src/lib.ts#Box.open"), |_| {});
+    let impact = ask(
+        dir.0.as_path(),
+        "impact",
+        Some("src/lib.ts#Box.open"),
+        |_| {},
+    );
     assert!(
         impact.value["coverage"]["callInternalRecall"].is_number(),
         "{}",
@@ -912,8 +963,9 @@ fn plan_1_call_answers_report_coverage() {
 #[test]
 fn plan_2_string_referenced_files_are_low_tier_and_hidden_by_default() {
     let dir = issues_fixture();
-    write_files(
-        &dir.path().join("app"),
+    write_under(
+        &dir,
+        "app",
         &[
             ("src/worker.ts", "export const work = () => 1;\n"),
             (
@@ -928,8 +980,11 @@ fn plan_2_string_referenced_files_are_low_tier_and_hidden_by_default() {
             ),
         ],
     );
-    assert_eq!(ingest_fixture(dir.path(), None).class, ExitClass::Success);
-    let default = ask(dir.path(), "issues", None, |o| o.limit = Some(500));
+    assert_eq!(
+        ingest_fixture(dir.0.as_path(), None).class,
+        ExitClass::Success
+    );
+    let default = ask(dir.0.as_path(), "issues", None, |o| o.limit = Some(500));
     let shown = findings(&default, "unreachable-file");
     assert!(
         !shown.contains(&"src/worker.ts".to_owned()),
@@ -951,7 +1006,7 @@ fn plan_2_string_referenced_files_are_low_tier_and_hidden_by_default() {
         .expect("orphan");
     assert!(orphan["tier"].as_u64().unwrap_or(0) >= 90, "{orphan}");
 
-    let all = ask(dir.path(), "issues", None, |o| {
+    let all = ask(dir.0.as_path(), "issues", None, |o| {
         o.limit = Some(500);
         o.min_tier = Some(0);
     });
@@ -1013,9 +1068,12 @@ fn plan_3_type_qualified_calls_and_scoped_disambiguation_link() {
             "package com.other;\npublic class Helper {\n  public static void assist() {}\n}\n",
         ),
     ]);
-    assert_eq!(ingest_fixture(dir.path(), None).class, ExitClass::Success);
+    assert_eq!(
+        ingest_fixture(dir.0.as_path(), None).class,
+        ExitClass::Success
+    );
     let callees = ask(
-        dir.path(),
+        dir.0.as_path(),
         "callees",
         Some("com/shop/Checkout.java#Checkout.run"),
         |_| {},
@@ -1070,8 +1128,11 @@ fn plan_5_impact_defaults_to_depth_three_and_passes_through_barrels() {
             "import { c3 } from './c3';\nexport const c4 = () => c3();\n",
         ),
     ]);
-    assert_eq!(ingest_fixture(dir.path(), None).class, ExitClass::Success);
-    let out = ask(dir.path(), "impact", Some("src/a.ts"), |_| {});
+    assert_eq!(
+        ingest_fixture(dir.0.as_path(), None).class,
+        ExitClass::Success
+    );
+    let out = ask(dir.0.as_path(), "impact", Some("src/a.ts"), |_| {});
     let files = impacted(&out);
     assert!(files.iter().any(|(f, _)| f == "src/useA.ts"), "{files:?}");
     assert!(
@@ -1092,7 +1153,7 @@ fn plan_5_impact_defaults_to_depth_three_and_passes_through_barrels() {
         "{}",
         out.value["summary"]
     );
-    let deep = ask(dir.path(), "impact", Some("src/a.ts"), |o| {
+    let deep = ask(dir.0.as_path(), "impact", Some("src/a.ts"), |o| {
         o.depth = Some(10)
     });
     assert!(impacted(&deep).iter().any(|(f, _)| f == "src/c4.ts"));
@@ -1101,22 +1162,22 @@ fn plan_5_impact_defaults_to_depth_three_and_passes_through_barrels() {
 #[test]
 fn plan_9_unchanged_tree_reuses_the_latest_snapshot() {
     let dir = fixture();
-    let first = ingest_fixture(dir.path(), None);
+    let first = ingest_fixture(dir.0.as_path(), None);
     assert_eq!(first.class, ExitClass::Success);
-    let second = ingest_fixture(dir.path(), None);
+    let second = ingest_fixture(dir.0.as_path(), None);
     assert_eq!(second.value["reused"], true, "{}", second.value);
     assert_eq!(second.value["id"], first.value["id"]);
-    std::fs::write(dir.path().join("app/src/a.ts"), "export const a = 5;\n").expect("edit");
-    let third = ingest_fixture(dir.path(), None);
+    dir.write("app/src/a.ts", "export const a = 5;\n");
+    let third = ingest_fixture(dir.0.as_path(), None);
     assert_ne!(third.value["reused"], true, "{}", third.value);
     let forced = ingest(
         &IngestOptions {
-            path: dir.path().join("app"),
-            workspace: Some(dir.path().to_path_buf()),
+            path: dir.0.as_path().join("app"),
+            workspace: Some(dir.0.as_path().to_path_buf()),
             force: true,
             ..Default::default()
         },
-        &policy(dir.path()),
+        &policy(dir.0.as_path()),
         &ContentSecurity::new(),
         &NeverCancel,
         None,
@@ -1131,7 +1192,7 @@ fn settled_sources_reuse_by_stamp_and_a_same_size_edit_still_rebuilds() {
     use octocode_engine::graph::SourceStamp;
     let dir = fixture();
     std::thread::sleep(SourceStamp::SETTLE + std::time::Duration::from_millis(200));
-    let first = ingest_fixture(dir.path(), None);
+    let first = ingest_fixture(dir.0.as_path(), None);
     assert_eq!(first.class, ExitClass::Success, "{}", first.value);
     let graph_dir = PathBuf::from(first.value["dir"].as_str().expect("dir"));
     let bytes = std::fs::read(graph_dir.join(GRAPH_FILE)).expect("graph.bin");
@@ -1151,7 +1212,7 @@ fn settled_sources_reuse_by_stamp_and_a_same_size_edit_still_rebuilds() {
         .iter()
         .find(|(node, _)| tables.str(tables.nodes[*node as usize].key) == "src/a.ts")
         .expect("a.ts stamp");
-    let a = dir.path().join("app/src/a.ts");
+    let a = dir.0.as_path().join("app/src/a.ts");
     // An equal stamp is trusted without reading: even a wrong digest passes.
     assert_eq!(
         source_matches(&a, "not-the-digest", Some(stamp)),
@@ -1165,11 +1226,11 @@ fn settled_sources_reuse_by_stamp_and_a_same_size_edit_still_rebuilds() {
         .expect("a.ts digest");
     assert_eq!(source_matches(&a, digest, None), Some(true));
     assert_eq!(
-        source_matches(&dir.path().join("gone.ts"), digest, Some(stamp)),
+        source_matches(&dir.0.as_path().join("gone.ts"), digest, Some(stamp)),
         None
     );
 
-    let second = ingest_fixture(dir.path(), None);
+    let second = ingest_fixture(dir.0.as_path(), None);
     assert_eq!(second.value["reused"], true, "{}", second.value);
     // Same length, new content: the stamp moves, so the hash decides.
     let before = std::fs::read_to_string(&a).expect("a.ts");
@@ -1177,10 +1238,10 @@ fn settled_sources_reuse_by_stamp_and_a_same_size_edit_still_rebuilds() {
     assert_eq!(before.len(), after.len());
     std::fs::write(&a, after).expect("edit");
     assert_eq!(source_matches(&a, digest, Some(stamp)), Some(false));
-    let third = ingest_fixture(dir.path(), None);
+    let third = ingest_fixture(dir.0.as_path(), None);
     assert_eq!(third.class, ExitClass::Success, "{}", third.value);
     assert_ne!(third.value["reused"], true, "{}", third.value);
-    let stale = ask(dir.path(), "stale", None, |_| {});
+    let stale = ask(dir.0.as_path(), "stale", None, |_| {});
     assert_eq!(stale.value["fresh"], true, "{}", stale.value);
 }
 
@@ -1209,8 +1270,16 @@ fn plan_4_receiver_typed_member_calls_link() {
             "import { Cart } from './store';\nexport function go() {\n  const c = new Cart();\n  c.save();\n}\n",
         ),
     ]);
-    assert_eq!(ingest_fixture(dir.path(), None).class, ExitClass::Success);
-    let rust = ask(dir.path(), "callees", Some("src/service.rs#run"), |_| {});
+    assert_eq!(
+        ingest_fixture(dir.0.as_path(), None).class,
+        ExitClass::Success
+    );
+    let rust = ask(
+        dir.0.as_path(),
+        "callees",
+        Some("src/service.rs#run"),
+        |_| {},
+    );
     let rows = rust.value["results"].as_array().expect("rows");
     assert!(
         rows.iter()
@@ -1219,13 +1288,18 @@ fn plan_4_receiver_typed_member_calls_link() {
         rust.value
     );
     assert!(!ids(&rust).contains(&"src/store.rs#Other.save".to_owned()));
-    let typed = ask(dir.path(), "callees", Some("src/service.rs#typed"), |_| {});
+    let typed = ask(
+        dir.0.as_path(),
+        "callees",
+        Some("src/service.rs#typed"),
+        |_| {},
+    );
     assert!(
         ids(&typed).contains(&"src/store.rs#Store.save".to_owned()),
         "{}",
         typed.value
     );
-    let ts = ask(dir.path(), "callees", Some("web/app.ts#go"), |_| {});
+    let ts = ask(dir.0.as_path(), "callees", Some("web/app.ts#go"), |_| {});
     assert!(
         ids(&ts).contains(&"web/store.ts#Cart.save".to_owned()),
         "{}",
@@ -1236,10 +1310,11 @@ fn plan_4_receiver_typed_member_calls_link() {
 
 #[test]
 fn plan_4_typed_this_field_calls_are_member_calls_not_local_matches() {
-    let dir = tempfile::tempdir().expect("dir");
-    std::fs::create_dir_all(dir.path().join(".git")).expect("git");
-    write_files(
-        &dir.path().join("app/src"),
+    let dir = Fixture::new();
+    std::fs::create_dir_all(dir.0.as_path().join(".git")).expect("git");
+    write_under(
+        &dir,
+        "app/src",
         &[
             (
                 "repo.ts",
@@ -1251,8 +1326,16 @@ fn plan_4_typed_this_field_calls_are_member_calls_not_local_matches() {
             ),
         ],
     );
-    assert_eq!(ingest_fixture(dir.path(), None).class, ExitClass::Success);
-    let out = ask(dir.path(), "callees", Some("src/svc.ts#Svc.run"), |_| {});
+    assert_eq!(
+        ingest_fixture(dir.0.as_path(), None).class,
+        ExitClass::Success
+    );
+    let out = ask(
+        dir.0.as_path(),
+        "callees",
+        Some("src/svc.ts#Svc.run"),
+        |_| {},
+    );
     let got = ids(&out);
     assert!(
         got.contains(&"src/repo.ts#Repo.load".to_owned()),
@@ -1279,9 +1362,12 @@ fn plan_3_rust_module_path_calls_link() {
             "pub fn handle() -> u8 {\n    crate::portable::sanitize(1)\n}\npub fn nested() -> u8 {\n    super::portable::sanitize(2)\n}\n",
         ),
     ]);
-    assert_eq!(ingest_fixture(dir.path(), None).class, ExitClass::Success);
+    assert_eq!(
+        ingest_fixture(dir.0.as_path(), None).class,
+        ExitClass::Success
+    );
     for caller in ["src/api.rs#handle", "src/api.rs#nested"] {
-        let out = ask(dir.path(), "callees", Some(caller), |_| {});
+        let out = ask(dir.0.as_path(), "callees", Some(caller), |_| {});
         let rows = out.value["results"].as_array().expect("rows");
         assert!(
             rows.iter()
@@ -1375,7 +1461,7 @@ fn assert_parity(dir: &Path, from: &str, to: &str) {
 #[test]
 fn graph_query_and_ast_topology_agree_on_typescript_files() {
     let dir = fixture();
-    assert_parity(dir.path(), "src/main.ts", "src/lib.ts");
+    assert_parity(dir.0.as_path(), "src/main.ts", "src/lib.ts");
 }
 
 #[test]
@@ -1393,7 +1479,7 @@ fn graph_query_and_ast_topology_agree_on_rust_files() {
             "use crate::a::ay;\npub fn handle() { ay() }\n",
         ),
     ]);
-    assert_parity(dir.path(), "src/api.rs", "src/a.rs");
+    assert_parity(dir.0.as_path(), "src/api.rs", "src/a.rs");
 }
 
 /// Every error the graph store reports carries a declared camelCase code,
@@ -1418,6 +1504,34 @@ fn every_store_error_code_is_declared() {
         assert!(
             crate::tools::id::error_codes::class(&code).is_some(),
             "graph store code {code:?} is not declared in errorCodes"
+        );
+    }
+}
+
+/// A stored file's language is the engine registry's selector for its
+/// grammar (the TSX grammar keeps `tsx`); an extension no grammar claims
+/// keeps the parser's own label.
+#[test]
+fn stored_languages_are_the_registry_selectors() {
+    for (file, raw, label) in [
+        ("a.ts", "ts", "typescript"),
+        ("a.mts", "", "typescript"),
+        ("a.tsx", "tsx", "tsx"),
+        ("a.jsx", "jsx", "javascript"),
+        ("a.cjs", "", "javascript"),
+        ("a.pyi", "", "python"),
+        ("a.h", "", "c"),
+        ("a.hh", "", "cpp"),
+        ("a.s", "", "asm"),
+        ("a.sbt", "", "scala"),
+        ("a.cs", "", "csharp"),
+        ("a.kt", "kotlin", "kotlin"),
+        ("a.unknown", "raw", "raw"),
+    ] {
+        assert_eq!(
+            super::tables::canonical_language(file, raw),
+            label,
+            "{file}"
         );
     }
 }

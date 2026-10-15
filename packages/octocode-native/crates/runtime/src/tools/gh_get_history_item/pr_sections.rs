@@ -2,6 +2,7 @@
 //! each, with per-item body windows.
 use super::patch::page::shape_files;
 use super::patch_hop::{DiffCursors, attach_diff_continuations, take_reshaped_paths};
+use super::rest::BodyWindows;
 use super::text::{body_matches, delivered_earlier, needle, window_body};
 use super::util::{array, str_at, string};
 use super::window::{WindowState, paginate_window};
@@ -125,31 +126,49 @@ fn comment_code_reads(query: &HistoryItemRequest, comments: &[Value]) -> Vec<Val
         .collect()
 }
 
-/// Shape one page of PR comments.
+/// A pull request's comment section: its discussion (`comments`) or its
+/// inline review comments (`reviewComments`), each its own page axis.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum CommentSection {
+    Discussion,
+    ReviewInline,
+}
+
+impl CommentSection {
+    /// The row key and `contentPagination` axis of the section.
+    pub(super) fn key(self) -> &'static str {
+        match self {
+            Self::Discussion => "comments",
+            Self::ReviewInline => "reviewComments",
+        }
+    }
+}
+
+/// Shape one page of a PR comment `section`; every comment body window of
+/// the page joins `windows` (one shared `offset` continues them all).
 pub(super) fn shape_pr_comments(
     row: &mut Value,
     pagination: &mut Map<String, Value>,
+    section: CommentSection,
     comments: Vec<Value>,
     state: WindowState,
     query: &HistoryItemRequest,
+    windows: &mut BodyWindows,
 ) -> CommentShape {
     let needle = needle(query);
-    let mut comments = comments
+    let comments = comments
         .into_iter()
         .filter(|v| body_matches(v, needle.as_deref()))
         .collect::<Vec<_>>();
-    // Inline review comments first; a row's `path` marks one.
-    comments.sort_by_key(|v| if v.get("path").is_some() { 0 } else { 1 });
     let (slice, page) = state.paginate(comments, query.page(), Some(query.collection_page_size()));
     let mut shaped = Vec::new();
-    let mut first_body_page = None;
     let mut dropped = false;
     for comment in slice {
         let (body, body_page) = window_body(
             &string(comment.get("body")),
             query.char_offset(),
             query,
-            &mut first_body_page,
+            windows,
             &mut dropped,
         );
         // A body continuation lists only the bodies it continues: a whole
@@ -172,17 +191,14 @@ pub(super) fn shape_pr_comments(
         remove_nulls(&mut item);
         shaped.push(item);
     }
+    let code_reads = match section {
+        CommentSection::ReviewInline => comment_code_reads(query, &shaped),
+        CommentSection::Discussion => Vec::new(),
+    };
     if !shaped.is_empty() {
-        row["comments"] = Value::Array(shaped);
+        row[section.key()] = Value::Array(shaped);
     }
-    pagination.insert("comments".into(), page);
-    if let Some(page) = first_body_page {
-        pagination.insert("commentBody".into(), page);
-    }
-    let code_reads = row["comments"]
-        .as_array()
-        .map(|comments| comment_code_reads(query, comments))
-        .unwrap_or_default();
+    pagination.insert(section.key().into(), page);
     CommentShape {
         dropped,
         code_reads,
@@ -190,13 +206,14 @@ pub(super) fn shape_pr_comments(
 }
 
 /// Shape one page of PR reviews; true when a minified body view dropped
-/// text from any of them.
+/// text from any of them. Their cut bodies join `windows`.
 pub(super) fn shape_pr_reviews(
     row: &mut Value,
     pagination: &mut Map<String, Value>,
     reviews: Vec<Value>,
     state: WindowState,
     query: &HistoryItemRequest,
+    windows: &mut BodyWindows,
 ) -> bool {
     let needle = needle(query);
     let reviews = reviews
@@ -205,17 +222,11 @@ pub(super) fn shape_pr_reviews(
         .collect::<Vec<_>>();
     let (slice, page) = state.paginate(reviews, query.page(), Some(query.collection_page_size()));
     let mut shaped = Vec::new();
-    let mut first_body_page = None;
     let mut dropped = false;
     for review in slice {
         let raw_body = string(review.get("body"));
-        let (body, body_page) = window_body(
-            &raw_body,
-            query.char_offset(),
-            query,
-            &mut first_body_page,
-            &mut dropped,
-        );
+        let (body, body_page) =
+            window_body(&raw_body, query.char_offset(), query, windows, &mut dropped);
         if delivered_earlier(query.char_offset(), &body_page) {
             continue;
         }
@@ -237,9 +248,6 @@ pub(super) fn shape_pr_reviews(
     }
     row["reviews"] = Value::Array(shaped);
     pagination.insert("reviews".into(), page);
-    if let Some(page) = first_body_page {
-        pagination.insert("reviewBody".into(), page);
-    }
     dropped
 }
 
@@ -333,22 +341,43 @@ mod tests {
     use super::super::util::map_comments;
     use super::*;
 
-    fn shaped(raw: Vec<Value>) -> Vec<Value> {
-        let query = HistoryItemRequest::from_row(json!({
+    fn review_comments() -> HistoryItemRequest {
+        HistoryItemRequest::from_row(json!({
             "operation":"pullRequest","owner":"o","repo":"r","number":1,
             "sections":["reviewComments"]
         }))
-        .expect("pull request row");
+        .expect("pull request row")
+    }
+
+    /// One page of `section` shaped from `raw` provider comments: the row
+    /// and the page's code reads.
+    fn shape(
+        query: &HistoryItemRequest,
+        section: CommentSection,
+        raw: Vec<Value>,
+        pagination: &mut Map<String, Value>,
+    ) -> (Value, CommentShape) {
         let mut row = json!({});
-        let mut pagination = Map::new();
-        shape_pr_comments(
+        let shape = shape_pr_comments(
             &mut row,
-            &mut pagination,
+            pagination,
+            section,
             map_comments(raw),
             WindowState::COMPLETE,
-            &query,
+            query,
+            &mut BodyWindows::default(),
         );
-        array(row["comments"].clone())
+        (row, shape)
+    }
+
+    fn shaped(raw: Vec<Value>) -> Vec<Value> {
+        let (row, _) = shape(
+            &review_comments(),
+            CommentSection::ReviewInline,
+            raw,
+            &mut Map::new(),
+        );
+        array(row["reviewComments"].clone())
     }
 
     fn raw(fields: Value) -> Value {
@@ -397,22 +426,14 @@ mod tests {
     /// commit the lines belong to; an old-side comment does not.
     #[test]
     fn review_comments_lead_to_the_code_they_discuss() {
-        let query = HistoryItemRequest::from_row(json!({
-            "operation":"pullRequest","owner":"o","repo":"r","number":1,
-            "sections":["reviewComments"]
-        }))
-        .expect("pull request row");
-        let mut row = json!({});
-        let comments = map_comments(vec![
-            raw(json!({"id":1,"line":5,"start_line":null,"commit_id":"c0","side":"LEFT"})),
-            raw(json!({"id":2,"line":2776,"start_line":2773,"commit_id":"head1"})),
-        ]);
-        let shape = shape_pr_comments(
-            &mut row,
+        let (_, shape) = shape(
+            &review_comments(),
+            CommentSection::ReviewInline,
+            vec![
+                raw(json!({"id":1,"line":5,"start_line":null,"commit_id":"c0","side":"LEFT"})),
+                raw(json!({"id":2,"line":2776,"start_line":2773,"commit_id":"head1"})),
+            ],
             &mut Map::new(),
-            comments,
-            WindowState::COMPLETE,
-            &query,
         );
         let [read] = shape.code_reads.as_slice() else {
             panic!("one code read: {:?}", shape.code_reads);
@@ -428,25 +449,17 @@ mod tests {
     /// anchor's file and commit; another file or commit stays out.
     #[test]
     fn review_comment_read_covers_every_anchor_on_its_file() {
-        let query = HistoryItemRequest::from_row(json!({
-            "operation":"pullRequest","owner":"o","repo":"r","number":1,
-            "sections":["reviewComments"]
-        }))
-        .expect("pull request row");
-        let mut row = json!({});
-        let comments = map_comments(vec![
-            raw(json!({"id":1,"line":40,"start_line":null,"commit_id":"h"})),
-            raw(json!({"id":2,"line":2,"start_line":null,"commit_id":"h"})),
-            raw(json!({"id":3,"line":45,"start_line":43,"commit_id":"h"})),
-            raw(json!({"id":4,"line":9,"commit_id":"h","path":"src/b.ts"})),
-            raw(json!({"id":5,"line":90,"commit_id":"other"})),
-        ]);
-        let shape = shape_pr_comments(
-            &mut row,
+        let (row, shape) = shape(
+            &review_comments(),
+            CommentSection::ReviewInline,
+            vec![
+                raw(json!({"id":1,"line":40,"start_line":null,"commit_id":"h"})),
+                raw(json!({"id":2,"line":2,"start_line":null,"commit_id":"h"})),
+                raw(json!({"id":3,"line":45,"start_line":43,"commit_id":"h"})),
+                raw(json!({"id":4,"line":9,"commit_id":"h","path":"src/b.ts"})),
+                raw(json!({"id":5,"line":90,"commit_id":"other"})),
+            ],
             &mut Map::new(),
-            comments,
-            WindowState::COMPLETE,
-            &query,
         );
         let [read] = shape.code_reads.as_slice() else {
             panic!("one code read: {:?}", shape.code_reads);
@@ -455,10 +468,52 @@ mod tests {
         assert_eq!(q["path"], "src/a.ts", "{read}");
         assert_eq!(q["ref"], "h", "{read}");
         assert_eq!(q["ranges"], json!(["1-5", "37-48"]), "{read}");
-        // Rows carry the evidence: no summary restates their counts, and an
-        // inline comment is the one with a `path`.
-        assert!(row.get("reviewSummary").is_none(), "{row}");
-        assert!(row["comments"][0].get("commentType").is_none(), "{row}");
+        // Rows carry the evidence: no summary restates their counts.
+        assert_eq!(row.get("reviewSummary"), None, "{row}");
+        assert_eq!(row.pointer("/reviewComments/0/commentType"), None, "{row}");
+    }
+
+    /// Inline review comments are their own section: their rows and page
+    /// stand under `reviewComments`, beside the discussion's `comments`,
+    /// never merged into it; only review comments lead to code.
+    #[test]
+    fn review_comments_and_the_discussion_are_separate_sections() {
+        let query = HistoryItemRequest::from_row(json!({
+            "operation":"pullRequest","owner":"o","repo":"r","number":1,
+            "sections":["comments","reviewComments"]
+        }))
+        .expect("pull request row");
+        let mut pagination = Map::new();
+        let (inline, inline_shape) = shape(
+            &query,
+            CommentSection::ReviewInline,
+            vec![raw(json!({"id":1,"line":4,"commit_id":"h"}))],
+            &mut pagination,
+        );
+        let mut discussion = vec![raw(json!({"id":2}))];
+        discussion[0]
+            .as_object_mut()
+            .map(|comment| comment.remove("path"));
+        let (talk, talk_shape) = shape(
+            &query,
+            CommentSection::Discussion,
+            discussion,
+            &mut pagination,
+        );
+        assert_eq!(
+            inline.pointer("/reviewComments/0/id"),
+            Some(&json!("1")),
+            "{inline}"
+        );
+        assert_eq!(inline.get("comments"), None, "{inline}");
+        assert_eq!(talk.pointer("/comments/0/id"), Some(&json!("2")), "{talk}");
+        assert_eq!(talk.get("reviewComments"), None, "{talk}");
+        assert_eq!(inline_shape.code_reads.len(), 1);
+        assert!(talk_shape.code_reads.is_empty());
+        assert_eq!(
+            pagination.keys().collect::<Vec<_>>(),
+            ["reviewComments", "comments"]
+        );
     }
 
     /// A body continuation (`offset` > 0) re-reads the comment page
@@ -473,6 +528,7 @@ mod tests {
         .expect("pull request row");
         let mut row = json!({});
         let mut pagination = Map::new();
+        let mut windows = BodyWindows::default();
         let comments = map_comments(vec![
             raw(json!({"id":1,"body":"short"})),
             raw(json!({"id":2,"body":"x".repeat(25)})),
@@ -483,16 +539,27 @@ mod tests {
         shape_pr_comments(
             &mut row,
             &mut pagination,
+            CommentSection::Discussion,
             comments,
             WindowState::COMPLETE,
             &query,
+            &mut windows,
         );
         let listed = array(row["comments"].clone());
         assert_eq!(listed.len(), 1, "{row}");
         assert_eq!(listed[0]["id"], "2", "{row}");
         assert_eq!(listed[0]["body"], "x".repeat(10), "{row}");
+        let mut rest = super::super::rest::Rest::default();
+        rest.bodies("commentBody", windows, &mut pagination);
         assert_eq!(
-            pagination["commentBody"]["remainingChars"], 5,
+            rest.note(
+                "continueCommentBody",
+                "commentBody",
+                &pagination["commentBody"]
+            )
+            .map(|note| note.left)
+            .as_deref(),
+            Some("5 more comment body chars"),
             "{pagination:?}"
         );
     }

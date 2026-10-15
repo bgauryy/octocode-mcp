@@ -316,9 +316,9 @@ const RUST_VISIBLE_ITEMS: &[&str] = &[
 struct Scope {
     canonical: std::path::PathBuf,
     is_file: bool,
-    /// `language`, else the grammar inferred for a directory.
+    /// An explicit parser selector; otherwise each file selects its grammar.
     language: Option<String>,
-    /// Set when `language` was inferred; continuations pin it.
+    /// The grammar observed when the discovery window holds only one.
     inferred: Option<String>,
     extensions: Option<std::collections::BTreeSet<String>>,
 }
@@ -345,6 +345,10 @@ struct Scan {
     skipped_by_prefilter: u32,
     /// Every file the scan evaluated (absolute), for the memo's stamps.
     sources: Vec<std::path::PathBuf>,
+    /// Canonical digest of complete source bytes already read by this scan.
+    source_digest: String,
+    /// Directory and ignore-file metadata observed during discovery, not source reads.
+    discovery_sources: Vec<std::path::PathBuf>,
     /// Candidate entries the security path policy withheld from the walk.
     withheld: crate::policy::discovery::Withheld,
 }
@@ -391,9 +395,11 @@ fn scan_bytes(scan: &Scan) -> usize {
         })
         .sum::<usize>()
         + scan.diagnostics.iter().map(diagnostic).sum::<usize>()
+        + scan.source_digest.len()
         + scan
             .sources
             .iter()
+            .chain(&scan.discovery_sources)
             .map(|path| 64 + path.as_os_str().len())
             .sum::<usize>()
 }
@@ -465,7 +471,17 @@ fn execute_match_inner(
     let stored = q
         .snapshot()
         .filter(|_| continues)
-        .and_then(|snapshot| SCANS.get(&snapshot, &key));
+        .and_then(|snapshot| SCANS.get(&snapshot, &key))
+        .filter(|scan| {
+            if memo_source_unchanged(&scope, scan) {
+                true
+            } else {
+                if let Some(snapshot) = q.snapshot() {
+                    SCANS.evict(&snapshot);
+                }
+                false
+            }
+        });
     let fresh = stored.is_none();
     let started = std::time::SystemTime::now();
     let scan = match stored {
@@ -474,14 +490,14 @@ fn execute_match_inner(
             let mut scan = if scope.is_file {
                 scan_file(q, &scope, security)?
             } else {
-                scan_directory(q, &scope, paths, security, cancel)?
+                scan_directory(q, &scope, paths, cancel)?
             };
             cancel.check().map_err(ToolError::cancelled)?;
             sort_files(q, &mut scan.files);
             std::sync::Arc::new(scan)
         }
     };
-    let snapshot = match_snapshot(q, &scope, &scan.files);
+    let snapshot = match_snapshot(q, &scope, &scan);
     // A page number without a snapshot asks for that page of a fresh scan;
     // only a snapshot that no longer matches is stale.
     if continues && q.snapshot().is_some_and(|given| given != snapshot) {
@@ -496,21 +512,35 @@ fn execute_match_inner(
         if let Some(error) = interrupted_rescan(q, &scan) {
             return Err(error);
         }
-        return Ok(crate::tools::result::stale_snapshot(continuation_with(
-            q,
-            json!({"page":1,"matchPage":1,"snapshot":null}),
-            &snapshot,
-        )));
+        return Ok(crate::tools::result::stale_snapshot(
+            crate::tools::result::restart_query(ToolId::AstSearch, &q.to_value()),
+        ));
     }
     let budget = crate::tools::page_windows::page_budget(response_window, &q.to_value());
     let grouped = group_files(q, &scan.files, budget);
+    if !scope.is_file && scope.language.is_none() && !scan.truncated && q.scan_offset() == 0 {
+        // Validate even files the literal prefilter left unparsed. Only an
+        // initial whole-scope scan can reject the query for the selected set.
+        let extensions = scan
+            .sources
+            .iter()
+            .filter_map(|path| crate::tools::ast_rule::file_grammar(path))
+            .flat_map(|(_, extensions)| extensions)
+            .collect::<std::collections::BTreeSet<_>>();
+        if !extensions.is_empty() {
+            compile_check(&extensions, q.pattern().as_deref(), q.rule().as_deref())
+                .map_err(|error| ToolError::new(error.code, error.message))?;
+        }
+    }
     if grouped.total_matches == 0
         && grouped.parsed_files == 0
         && grouped.compile_failed_files > 0
+        && !scan.truncated
+        && q.scan_offset() == 0
         && let Some(error) = grouped.compile_error
     {
-        // The query compiled in no candidate file: an empty result would read
-        // as proof of absence, so surface the compile failure instead.
+        // Only a whole-scope scan proves there is no compatible candidate.
+        // A capped incompatible window must retain coverage and scan onward.
         return Err(error);
     }
     let empty_scope = if scope.is_file || grouped.total_matches > 0 {
@@ -530,10 +560,16 @@ fn execute_match_inner(
             .as_object()
             .is_some_and(|next| next.contains_key("nextPage") || next.contains_key("nextMatchPage"))
     {
+        let watched = scan
+            .sources
+            .iter()
+            .chain(&scan.discovery_sources)
+            .cloned()
+            .collect::<Vec<_>>();
         SCANS.put(
             (snapshot, key),
             &scope.canonical,
-            &scan.sources,
+            &watched,
             started,
             std::sync::Arc::clone(&scan),
             scan_bytes(&scan),
@@ -542,9 +578,8 @@ fn execute_match_inner(
     Ok(out)
 }
 
-/// Validates the path and picks the grammar: `language`, else for a
-/// directory the one grammar that both occurs in the scope and parses the
-/// query.
+/// Validate the selector and query without narrowing an inferred directory
+/// scan to the grammars visible before its file limit.
 fn resolve_scope(
     q: MatchQuery<'_>,
     paths: &PathPolicy,
@@ -565,25 +600,38 @@ fn resolve_scope(
     let p = paths.validate(q.path()).map_err(super::policy_error)?;
     let meta =
         std::fs::metadata(&p.canonical).map_err(|error| super::io_error(&q.path(), error))?;
-    let inferred = if meta.is_dir() && q.language().is_none() {
-        Some(infer_directory_language(q, &p.canonical, paths, cancel)?)
-    } else {
-        None
-    };
-    let language = q.language().or_else(|| inferred.clone());
-    let extensions = match (requested, &language) {
-        (None, Some(language)) => language_extensions(language),
-        (extensions, _) => extensions,
-    };
-    // The literal prefilter skips files without the pattern's anchor
-    // unparsed, so an unparseable pattern (`foo(`) would otherwise report
-    // `complete` and empty wherever the anchor is absent.
+    let extensions = requested.or_else(|| {
+        meta.is_dir().then(|| {
+            octocode_engine::portable::grammar_capabilities()
+                .iter()
+                .filter(|grammar| grammar.structural_search)
+                .flat_map(|grammar| grammar.extensions.iter().cloned())
+                .collect()
+        })
+    });
+    // Validate against grammar capabilities, not the capped discovery prefix.
+    // The literal prefilter may otherwise hide even a globally invalid query.
     if meta.is_dir()
         && let Some(extensions) = &extensions
     {
         compile_check(extensions, q.pattern().as_deref(), q.rule().as_deref())
             .map_err(|error| ToolError::new(error.code, error.message))?;
     }
+    let inferred = if meta.is_dir() && q.language().is_none() {
+        match directory_choice(q, &p.canonical, paths, cancel)? {
+            GrammarChoice::One(language) => Some(language),
+            GrammarChoice::Several(_) | GrammarChoice::Invalid(_) => None,
+            GrammarChoice::Absent => {
+                return Err(ToolError::new(
+                    "languageRequired",
+                    "No source file of a supported structural grammar was found under path; set language.",
+                ));
+            }
+        }
+    } else {
+        None
+    };
+    let language = q.language();
     Ok(Scope {
         canonical: p.canonical,
         is_file: meta.is_file(),
@@ -659,6 +707,7 @@ fn scan_file(
             r.status,
         )],
         sources: vec![canonical.clone()],
+        source_digest: octocode_engine::digest::sha256(&bytes),
         ..Scan::default()
     })
 }
@@ -692,10 +741,10 @@ fn scan_directory(
     q: MatchQuery<'_>,
     scope: &Scope,
     paths: &PathPolicy,
-    security: &ContentSecurity,
     cancel: &dyn CancellationCheck,
 ) -> Result<Scan, ToolError> {
     let extensions = scope.extensions.as_ref();
+    let observed = std::sync::Mutex::new(std::collections::BTreeSet::new());
     let withheld = std::sync::Mutex::new(crate::policy::discovery::Withheld::default());
     let discovery = paths.discovery_walk();
     let r = octocode_engine::structural::search_files(
@@ -727,6 +776,18 @@ fn scan_directory(
             // A dot entry out of view (no `hidden`) is neither walked nor
             // disclosed, as structureSearch tree does.
             let is_dir = path.is_dir();
+            if allowed && is_dir {
+                let mut watched = observed.lock().unwrap_or_else(|error| error.into_inner());
+                watched.insert(path.to_path_buf());
+                if q.include_ignored() != Some(true) {
+                    for name in [".gitignore", ".ignore"] {
+                        let ignore = path.join(name);
+                        if discovery.permits(&ignore) && ignore.is_file() {
+                            watched.insert(ignore);
+                        }
+                    }
+                }
+            }
             if !allowed
                 && (q.include_hidden() == Some(true) || !super::is_dot_entry(path))
                 && (is_dir
@@ -763,17 +824,27 @@ fn scan_directory(
         .iter()
         .map(|f| std::path::PathBuf::from(&f.path))
         .collect();
+    // Preserve source identity before the row projection drops internal metadata.
+    let source_digest = directory_source_digest(
+        r.files
+            .iter()
+            .map(|file| (file.path.as_str(), file.source_sha256.as_deref())),
+    );
     // Preserve the scan-level coverage signals the group projection drops.
     Ok(Scan {
         sources,
+        source_digest,
+        discovery_sources: observed
+            .into_inner()
+            .unwrap_or_else(|error| error.into_inner())
+            .into_iter()
+            .collect(),
         files: r
             .files
             .into_iter()
             .map(|f| {
                 (
-                    security
-                        .sanitize_text(&match_display_path(&scope.canonical, &f.path), None)
-                        .content,
+                    match_display_path(&scope.canonical, &f.path),
                     f.matches,
                     f.diagnostics,
                     f.status,
@@ -789,6 +860,44 @@ fn scan_directory(
             .into_inner()
             .unwrap_or_else(|error| error.into_inner()),
     })
+}
+
+fn directory_source_digest<'a>(files: impl Iterator<Item = (&'a str, Option<&'a str>)>) -> String {
+    let identities = files.collect::<std::collections::BTreeMap<_, _>>();
+    crate::digest::json_sha256(&json!(identities))
+}
+
+#[cfg(unix)]
+fn memo_source_unchanged(_: &Scope, _: &Scan) -> bool {
+    // StampSet already checked change time and inode as well as size and mtime.
+    true
+}
+
+#[cfg(not(unix))]
+fn memo_source_unchanged(scope: &Scope, scan: &Scan) -> bool {
+    // Without Unix change time, restored mtime cannot prove source identity.
+    // Reuse parsing only after bounded reads prove the saved source digest.
+    let digests = scan
+        .sources
+        .iter()
+        .map(|path| {
+            let digest = super::read_parse_source(path)
+                .ok()
+                .flatten()
+                .map(|bytes| octocode_engine::digest::sha256(&bytes));
+            (path.to_string_lossy().into_owned(), digest)
+        })
+        .collect::<Vec<_>>();
+    if scope.is_file {
+        digests.first().and_then(|(_, digest)| digest.as_deref())
+            == Some(scan.source_digest.as_str())
+    } else {
+        directory_source_digest(
+            digests
+                .iter()
+                .map(|(path, digest)| (path.as_str(), digest.as_deref())),
+        ) == scan.source_digest
+    }
 }
 
 fn sort_files(q: MatchQuery<'_>, files: &mut [ScannedFile]) {
@@ -837,13 +946,14 @@ fn interrupted_rescan(q: MatchQuery<'_>, scan: &Scan) -> Option<ToolError> {
 /// The match-row shape a snapshot was cut under; bumped by every row rename.
 const MATCH_ROWS_VERSION: u32 = 4;
 
-/// Fingerprint over the query shape plus the ordered result set (each file
-/// and its match count). Continuation cursors (page>1 or matchPage>1) that
+/// Fingerprint over the query shape, ordered result set and scanned source bytes.
+/// Continuation cursors (page>1 or matchPage>1) that
 /// carry a stale snapshot are rejected with `staleSnapshot`. Fields the
 /// continuation normalizes to a default are digested by their effective
 /// value so a fresh page matches.
-fn match_snapshot(q: MatchQuery<'_>, scope: &Scope, files: &[ScannedFile]) -> String {
-    let ordered = files
+fn match_snapshot(q: MatchQuery<'_>, scope: &Scope, scan: &Scan) -> String {
+    let ordered = scan
+        .files
         .iter()
         .map(|f| (f.0.clone(), f.1.len()))
         .collect::<Vec<_>>();
@@ -866,6 +976,7 @@ fn match_snapshot(q: MatchQuery<'_>, scope: &Scope, files: &[ScannedFile]) -> St
         q.result_view().as_deref().unwrap_or_default(),
         q.max_files(),
         q.scan_offset(),
+        &scan.source_digest,
         ordered
     ]))
 }
@@ -1078,143 +1189,59 @@ fn render_match_page(
     empty_scope: EmptyScope,
     budget: usize,
 ) -> Value {
-    let (skips, truncated) = (scan.skips, scan.truncated);
-    let mut diagnostics = grouped.diagnostics;
-    // The scan repeats the diagnostics of the files it cut short; each file
-    // keeps one.
-    for diagnostic in scan_diagnostics(q, scope, scan) {
-        if !diagnostics.iter().any(|known| {
-            known["code"] == diagnostic["code"]
-                && known["path"] == diagnostic["path"]
-                && known["message"] == diagnostic["message"]
-        }) {
-            diagnostics.push(diagnostic);
-        }
-    }
-    let parsed = grouped.parsed_files;
-    let scanned = grouped.scanned_files;
+    let truncated = scan.truncated;
+    let diagnostics = merge_diagnostics(grouped.diagnostics, scan_diagnostics(q, scope, scan));
     let groups = grouped.groups;
-    let paging = crate::tools::page_windows::Paging::of(
-        q.page_size()
-            .map(|size| (size as usize).clamp(1, limits::PAGE_SIZE_MAXIMUM)),
-        budget,
-    );
-    let page = q.page().max(1) as usize;
-    let group_sizes = groups.iter().map(|group| group.chars).collect::<Vec<_>>();
-    let windows = paging.windows(&group_sizes);
-    let page_groups = crate::tools::page_windows::nth_page(&windows, page)
-        .map_or(&groups[groups.len()..], |window| &groups[window.clone()]);
-    let more = page < windows.len();
+    let page = file_page(q, &groups, budget);
+    let page_groups = &groups[page.window.clone()];
+    let more = page.more;
     let mut out =
         json!({"searchEngine":"structural","snapshot":snapshot,"matchCount":grouped.total_matches});
     if let Some(inferred) = &scope.inferred {
         out["inferredLanguage"] = json!(inferred);
     }
     if !groups.is_empty() {
-        // A later match page lists only the files it still has matches for:
-        // a file whose matches ended on an earlier match page adds no row.
-        let listed = page_groups
-            .iter()
-            .filter(|group| !group.out_of_range)
-            .collect::<Vec<_>>();
-        let rows = if listed.is_empty() {
-            page_groups.iter().collect()
-        } else {
-            listed
-        };
-        out["files"] = Value::Array(rows.into_iter().map(|group| group.row.clone()).collect());
-        let facts = match paging {
-            crate::tools::page_windows::Paging::Count(size) => {
-                crate::response::pages::PageFacts::counted(page, size, groups.len())
-            }
-            crate::tools::page_windows::Paging::Chars(_) => {
-                crate::response::pages::PageFacts::sized(page, windows.len(), groups.len(), more)
-            }
-        };
-        out["pagination"] = facts.out_of_range(page > windows.len()).to_value();
+        out["files"] = Value::Array(listed_rows(page_groups));
+        out["pagination"] = page.pagination;
     }
     if !diagnostics.is_empty() {
         out["diagnostics"] = json!(diagnostics)
     }
     // Withheld entries are disclosed once, like localSearch's walk.
     let withheld = scan.withheld.notice();
-    if let Some(notice) = &withheld {
-        out["warnings"] = json!([notice]);
+    crate::tools::paging::push_warnings(&mut out, withheld.clone());
+    if groups.is_empty() {
+        explain_empty(
+            q,
+            scope,
+            &mut out,
+            EmptyFacts {
+                parsed: grouped.parsed_files,
+                scanned: grouped.scanned_files,
+                diagnosed: !diagnostics.is_empty(),
+            },
+            empty_scope,
+        );
     }
-    // No file in scope parsed in the requested language: nothing was
-    // matched against, so the pattern is not the cause.
-    if groups.is_empty() && parsed == 0 && diagnostics.is_empty() {
-        let language = q
-            .language()
-            .map_or_else(String::new, |language| format!(" {language}"));
-        let mut hint = format!("No{language} file under this path was parsed.");
-        if let Some(skipped) = empty_scope.skipped {
-            let subject = match language.trim_start() {
-                "" => "Files".to_owned(),
-                language => format!("{language} files"),
-            };
-            hint.push_str(&format!(
-                " {subject} were skipped as {} ({}); the lead includes them.",
-                skipped.labels, skipped.because
-            ));
-            out["next"]["includeSkipped"] = skipped.lead;
-        }
-        out["hints"] = json!([hint]);
-        // The grammars the scope does hold, each a query that runs.
-        if let Some(repair) = empty_scope.repair {
-            out["next"]["repair"] = repair;
-        }
-    } else if groups.is_empty() && scanned > 0 {
-        // What the empty answer covered: the files read, in which grammar.
-        let language = scope.language.clone().or_else(|| {
-            crate::tools::ast_rule::file_grammar(&scope.canonical).map(|(grammar, _)| grammar)
-        });
-        out["filesScanned"] = json!(scanned);
-        let mut hints = vec![crate::tools::ast_rule::empty_match_hint(
-            scanned,
-            language.as_deref(),
-        )];
-        if let Some(skipped) = empty_scope.skipped {
-            let subject = language.as_deref().map_or_else(
-                || "Files".to_owned(),
-                |language| format!("{language} files"),
-            );
-            hints.push(format!(
-                "{subject} were skipped as {} ({}); the lead includes them.",
-                skipped.labels, skipped.because
-            ));
-            out["next"]["includeSkipped"] = skipped.lead;
-        }
-        out["hints"] = json!(hints);
-    }
+    let skips = scan.skips;
     let skipped = skips.0 + skips.1 + skips.2 > 0 || grouped.skipped_files > 0;
     let incomplete =
         truncated || skipped || grouped.compile_failed_files > 0 || grouped.unevaluated_files > 0;
-    let partial_reasons = [
-        (
-            truncated,
-            if q.max_files().is_some() {
-                "maxFiles"
-            } else {
-                "scanBudget"
-            },
-        ),
+    let more_matches = page_groups.iter().any(|group| group.more_matches);
+    // Each coverage cut names itself, so a partial final page (no `next`)
+    // still says why it is partial.
+    for (cut, reason) in [
+        (truncated, super::scan_window::cut_reason(q.max_files())),
         (skipped, "filesSkipped"),
         (grouped.compile_failed_files > 0, "compileFailed"),
         (grouped.unevaluated_files > 0, "filesUnevaluated"),
         // A file's later match pages (`next.nextMatchPage`): the row's own
         // file pagination does not state them.
-        (
-            page_groups.iter().any(|group| group.more_matches),
-            "matchPages",
-        ),
-    ]
-    .into_iter()
-    .filter_map(|(cut, reason)| cut.then_some(reason))
-    .collect::<Vec<_>>();
-    if !partial_reasons.is_empty() {
-        out["isPartial"] = json!(true);
-        out["partialReasons"] = json!(partial_reasons);
+        (more_matches, "matchPages"),
+    ] {
+        if cut {
+            crate::tools::paging::mark_partial(&mut out, reason, &[]);
+        }
     }
     let empty = groups.is_empty() && !more && !incomplete;
     if empty {
@@ -1222,12 +1249,7 @@ fn render_match_page(
     }
     // Every file and match is listed and the scan saw its whole scope: the
     // row's expansions and reads are drill-downs, not unread rest.
-    if !groups.is_empty()
-        && !more
-        && !incomplete
-        && withheld.is_none()
-        && !page_groups.iter().any(|group| group.more_matches)
-    {
+    if !groups.is_empty() && !more && !incomplete && withheld.is_none() && !more_matches {
         out["complete"] = json!(true);
     }
     attach_match_continuations(
@@ -1264,6 +1286,140 @@ fn render_match_page(
         out["next"]["viewTree"] = tree_lead(q, scope, &file);
     }
     out
+}
+
+/// The files' diagnostics plus the scan's: the scan repeats the diagnostics
+/// of the files it cut short, and each file keeps one.
+fn merge_diagnostics(mut diagnostics: Vec<Value>, scan: Vec<Value>) -> Vec<Value> {
+    for diagnostic in scan {
+        if !diagnostics.iter().any(|known| {
+            known["code"] == diagnostic["code"]
+                && known["path"] == diagnostic["path"]
+                && known["message"] == diagnostic["message"]
+        }) {
+            diagnostics.push(diagnostic);
+        }
+    }
+    diagnostics
+}
+
+/// The file page a query asks for.
+struct FilePage {
+    /// Its groups, as a range of every file's groups.
+    window: std::ops::Range<usize>,
+    /// Files are left after it.
+    more: bool,
+    /// Its pagination block.
+    pagination: Value,
+}
+
+/// Cuts `groups` into pages (by `pageSize`, else by the response window)
+/// and picks page `q.page()`; a page past the end is empty.
+fn file_page(q: MatchQuery<'_>, groups: &[Group], budget: usize) -> FilePage {
+    use crate::response::pages::PageFacts;
+    use crate::tools::page_windows::Paging;
+    let paging = Paging::of(
+        q.page_size()
+            .map(|size| (size as usize).clamp(1, limits::PAGE_SIZE_MAXIMUM)),
+        budget,
+    );
+    let page = q.page().max(1) as usize;
+    let sizes = groups.iter().map(|group| group.chars).collect::<Vec<_>>();
+    let windows = paging.windows(&sizes);
+    let window = crate::tools::page_windows::nth_page(&windows, page)
+        .cloned()
+        .unwrap_or(groups.len()..groups.len());
+    let more = page < windows.len();
+    let facts = match paging {
+        Paging::Count(size) => PageFacts::counted(page, size, groups.len()),
+        Paging::Chars(_) => PageFacts::sized(page, windows.len(), groups.len(), more),
+    };
+    FilePage {
+        window,
+        more,
+        pagination: facts.out_of_range(page > windows.len()).to_value(),
+    }
+}
+
+/// The file rows of a page. A later match page lists only the files it
+/// still has matches for: a file whose matches ended on an earlier match
+/// page adds no row (unless no file has any left).
+fn listed_rows(page_groups: &[Group]) -> Vec<Value> {
+    let listed = page_groups
+        .iter()
+        .filter(|group| !group.out_of_range)
+        .collect::<Vec<_>>();
+    let rows = if listed.is_empty() {
+        page_groups.iter().collect()
+    } else {
+        listed
+    };
+    rows.into_iter().map(|group| group.row.clone()).collect()
+}
+
+/// What an empty match page read: the files that parsed and the files read
+/// (parsed, or skipped by the anchor prefilter), and whether any diagnostic
+/// already explains it.
+struct EmptyFacts {
+    parsed: u32,
+    scanned: u32,
+    diagnosed: bool,
+}
+
+/// The hints and leads of a page without files: no file of the requested
+/// grammar parsed (the pattern is not the cause), or the files read hold no
+/// match.
+fn explain_empty(
+    q: MatchQuery<'_>,
+    scope: &Scope,
+    out: &mut Value,
+    facts: EmptyFacts,
+    empty_scope: EmptyScope,
+) {
+    if facts.parsed == 0 && !facts.diagnosed {
+        let language = q
+            .language()
+            .map_or_else(String::new, |language| format!(" {language}"));
+        let mut hint = format!("No{language} file under this path was parsed.");
+        if let Some(skipped) = empty_scope.skipped {
+            let subject = match language.trim_start() {
+                "" => "Files".to_owned(),
+                language => format!("{language} files"),
+            };
+            hint.push_str(&format!(
+                " {subject} were skipped as {} ({}); the lead includes them.",
+                skipped.labels, skipped.because
+            ));
+            out["next"]["includeSkipped"] = skipped.lead;
+        }
+        out["hints"] = json!([hint]);
+        // The grammars the scope does hold, each a query that runs.
+        if let Some(repair) = empty_scope.repair {
+            out["next"]["repair"] = repair;
+        }
+    } else if facts.scanned > 0 {
+        // What the empty answer covered: the files read, in which grammar.
+        let language = scope.language.clone().or_else(|| {
+            crate::tools::ast_rule::file_grammar(&scope.canonical).map(|(grammar, _)| grammar)
+        });
+        out["filesScanned"] = json!(facts.scanned);
+        let mut hints = vec![crate::tools::ast_rule::empty_match_hint(
+            facts.scanned,
+            language.as_deref(),
+        )];
+        if let Some(skipped) = empty_scope.skipped {
+            let subject = language.as_deref().map_or_else(
+                || "Files".to_owned(),
+                |language| format!("{language} files"),
+            );
+            hints.push(format!(
+                "{subject} were skipped as {} ({}); the lead includes them.",
+                skipped.labels, skipped.because
+            ));
+            out["next"]["includeSkipped"] = skipped.lead;
+        }
+        out["hints"] = json!(hints);
+    }
 }
 
 /// `next` pages, the scan and value expansions, and the read of the top
@@ -1308,26 +1464,24 @@ fn attach_match_continuations(
         expand
     });
     if truncated && !more && expand_scan.is_none() {
-        out["terminalLimit"] = json!(true);
+        crate::tools::paging::terminal_limit(
+            out,
+            super::scan_window::cut_reason(q.max_files()),
+            &[],
+        );
     }
     let cursor = |out: &mut Value, field: &str, next: usize| {
         crate::tools::paging::next_cursor(out, ToolId::AstSearch, Some("match"), field, next)
     };
-    let next_page = more.then(|| cursor(out, "page", page + 1)).flatten();
+    // Finish each file page's matches before advancing the file/scan axis.
+    // Otherwise every match page reissues the same next file or scan window.
+    let next_page = (more && !has_more_matches)
+        .then(|| cursor(out, "page", page + 1))
+        .flatten();
     let next_match_page = has_more_matches
         .then(|| cursor(out, "matchPage", match_page + 1))
         .flatten();
-    let pinned = scope
-        .inferred
-        .as_ref()
-        .map_or_else(|| json!({}), |language| json!({"language":language}));
-    let with = |changes: Value| {
-        let mut merged = pinned.clone();
-        if let (Some(target), Some(changes)) = (merged.as_object_mut(), changes.as_object()) {
-            target.extend(changes.clone());
-        }
-        continuation_with(q, merged, snapshot)
-    };
+    let with = |changes: Value| continuation_with(q, changes, snapshot);
     if let Some(next_page) = next_page {
         // A new file page restarts per-file match pagination.
         out["next"] = json!({"nextPage":with(json!({"page":next_page,"matchPage":1}))})
@@ -1335,7 +1489,7 @@ fn attach_match_continuations(
     if let Some(next_match_page) = next_match_page {
         out["next"]["nextMatchPage"] = with(json!({"matchPage":next_match_page}));
     }
-    if let Some(expand) = expand_scan.filter(|_| !more) {
+    if let Some(expand) = expand_scan.filter(|_| !more && !has_more_matches) {
         out["next"]["expandScan"] = with(expand);
     }
     // A clipped value is display clipping of a listed match, not a coverage
@@ -1352,55 +1506,58 @@ fn attach_match_continuations(
         out["next"]["expandCaptures"] = with(expand);
     }
     if !expand_captures || cut_chars.is_some_and(|chars| chars > max_content_length) {
-        // One lead whose rows read each file's clipped lines, within
-        // localFetch's batch limit; a warning names every range left out.
-        let limit = crate::tools::result::rows_per_call(ToolId::LocalFetch);
-        let (mut rows, mut left) = (Vec::new(), Vec::new());
-        for group in page_groups {
-            let Some(reads) = read_clipped_values(scope, group) else {
-                continue;
-            };
-            let shown = group.row["path"].as_str().unwrap_or_default();
-            for row in reads.rows {
-                if rows.len() < limit {
-                    rows.push(row);
-                } else {
-                    left.push(format!("{shown} {}", ranges_text(&row["ranges"])));
-                }
-            }
-            if !reads.long.is_empty() {
-                let long = reads
-                    .long
-                    .iter()
-                    .map(|(start, end)| format!("{start}-{end}"))
-                    .collect::<Vec<_>>();
-                left.push(format!("{shown} {}", long.join(", ")));
-            }
-        }
-        if !left.is_empty() {
-            let warning = format!(
-                "Clipped values past this page's read batch (read them with localFetch): {}.",
-                left.join("; ")
-            );
-            match out["warnings"].as_array_mut() {
-                Some(warnings) => warnings.push(json!(warning)),
-                None => out["warnings"] = json!([warning]),
-            }
-        }
-        if !rows.is_empty() {
-            out["next"]["expandValues"] = crate::tools::result::Continuation::input(
-                ToolId::LocalFetch,
-                json!({ "queries": rows }),
-            )
-            .confidence("high")
-            .build();
-        }
+        read_clipped_lines(scope, out, page_groups);
     }
     if let Some(read) = page_groups
         .first()
         .and_then(|top| read_top_hits(scope, &top.row))
     {
         out["next"]["read"] = read;
+    }
+}
+
+/// One `expandValues` lead whose rows read each file's clipped lines, within
+/// localFetch's batch limit; a warning names every range left out.
+fn read_clipped_lines(scope: &Scope, out: &mut Value, page_groups: &[Group]) {
+    let limit = crate::tools::result::rows_per_call(ToolId::LocalFetch);
+    let (mut rows, mut left) = (Vec::new(), Vec::new());
+    for group in page_groups {
+        let Some(reads) = read_clipped_values(scope, group) else {
+            continue;
+        };
+        let shown = group.row["path"].as_str().unwrap_or_default();
+        for row in reads.rows {
+            if rows.len() < limit {
+                rows.push(row);
+            } else {
+                left.push(format!("{shown} {}", ranges_text(&row["ranges"])));
+            }
+        }
+        if !reads.long.is_empty() {
+            let long = reads
+                .long
+                .iter()
+                .map(|(start, end)| format!("{start}-{end}"))
+                .collect::<Vec<_>>();
+            left.push(format!("{shown} {}", long.join(", ")));
+        }
+    }
+    if !left.is_empty() {
+        crate::tools::paging::push_warnings(
+            out,
+            [format!(
+                "Clipped values past this page's read batch (read them with localFetch): {}.",
+                left.join("; ")
+            )],
+        );
+    }
+    if !rows.is_empty() {
+        out["next"]["expandValues"] = crate::tools::result::Continuation::input(
+            ToolId::LocalFetch,
+            json!({ "queries": rows }),
+        )
+        .confidence("high")
+        .build();
     }
 }
 
@@ -1506,7 +1663,7 @@ fn read_top_hits(scope: &Scope, row: &Value) -> Option<Value> {
 }
 
 /// One match row, an object: `line`, `column` (1-based), `endLine` for a
-/// multi-line match, and `value` (whitespace-normalized text). With
+/// multi-line match, and `value` (source text or a marked, bounded prefix). With
 /// `captureText` the row also carries `endColumn` for a multi-line span, and each capture once in `metavarRanges` (text plus
 /// 1-based position; the engine `metavars` map is a fallback for a capture
 /// without a range).
@@ -1527,21 +1684,15 @@ struct MatchRow {
 
 fn match_value(m: &StructuralDetailedMatch, capture_text: bool, content_length: usize) -> MatchRow {
     let lines = (u64::from(m.start_line), u64::from(m.end_line));
-    let whole_chars = normalized_chars(&m.text);
+    let whole_chars = m.text.chars().count();
     let cut = (whole_chars > content_length).then_some(whole_chars);
     let header = m.header.as_deref().filter(|_| !capture_text);
     let (text, shown_cut) = match header {
-        Some(header) => {
-            let (text, shown_cut) = compact_match(header, content_length.saturating_sub(2).max(1));
-            (format!("{text} …"), shown_cut)
-        }
-        None => compact_match(&m.text, content_length),
+        Some(header) => bounded_match(&format!("{header} …"), content_length),
+        None => bounded_match(&m.text, content_length),
     };
     if !capture_text {
-        let hidden = |capture: &str| {
-            let capture = capture.split_whitespace().collect::<Vec<_>>().join(" ");
-            !capture.is_empty() && !text.contains(&capture)
-        };
+        let hidden = |capture: &str| !capture.is_empty() && !text.contains(capture);
         let withheld = header.is_some()
             || m.metavar_ranges
                 .values()
@@ -1558,6 +1709,9 @@ fn match_value(m: &StructuralDetailedMatch, capture_text: bool, content_length: 
             value["endLine"] = json!(m.end_line);
         }
         value["value"] = json!(text);
+        if header.is_some() || shown_cut {
+            value["clipped"] = json!(true);
+        }
         return MatchRow {
             value,
             withheld,
@@ -1621,54 +1775,20 @@ fn match_value(m: &StructuralDetailedMatch, capture_text: bool, content_length: 
     }
 }
 
-/// Whitespace-normalized match text bounded to `limit` characters
+/// Exact source text bounded to `limit` Unicode scalars
 /// (`matchContentLength`), including the trailing ellipsis when cut, and
 /// whether it was cut.
-fn compact_match(text: &str, limit: usize) -> (String, bool) {
-    let normalized = normalize_match(text);
-    if normalized.chars().count() > limit {
-        let mut output = normalized
+fn bounded_match(text: &str, limit: usize) -> (String, bool) {
+    if text.chars().count() > limit {
+        let mut output = text
             .chars()
             .take(limit.saturating_sub(1))
             .collect::<String>();
         output.push('…');
         (output, true)
     } else {
-        (normalized, false)
+        (text.to_owned(), false)
     }
-}
-
-/// Match text on one line: whitespace runs become one space, except that a
-/// line holding a line comment (`//`, `#`) keeps its line break, so the
-/// comment cannot swallow the code after it (`{ // note\n return x }`).
-fn normalize_match(text: &str) -> String {
-    let mut output = String::with_capacity(text.len());
-    let mut lines = text.lines().peekable();
-    while let Some(line) = lines.next() {
-        let mut words = line.split_whitespace().peekable();
-        if words.peek().is_none() {
-            continue;
-        }
-        if !output.is_empty() && !output.ends_with('\n') {
-            output.push(' ');
-        }
-        for (index, word) in words.enumerate() {
-            if index > 0 {
-                output.push(' ');
-            }
-            output.push_str(word);
-        }
-        if lines.peek().is_some() && (line.contains("//") || line.contains('#')) {
-            output.push('\n');
-        }
-    }
-    output.truncate(output.trim_end().len());
-    output
-}
-
-/// Characters of `text` once normalized, as [`compact_match`] measures it.
-fn normalized_chars(text: &str) -> usize {
-    normalize_match(text).chars().count()
 }
 
 fn match_display_path(root: &std::path::Path, path: &str) -> String {
@@ -1800,10 +1920,6 @@ fn skipped_walk(
             fields.remove(field);
         }
     }
-    if let Some(language) = &scope.inferred {
-        // The lifted walk may reach other grammars: keep the one searched.
-        lead["language"] = json!(language);
-    }
     Some(SkippedWalk {
         labels: diagnosis.labels(),
         because: diagnosis.because(),
@@ -1894,38 +2010,6 @@ fn other_language_repair(
     (!languages.is_empty()).then(|| language_repair(q, &languages))
 }
 
-/// The single grammar for a directory `match` without language: present in
-/// the scope and able to compile the query. Several candidates (or none
-/// present) fail with `ast.language.required`, naming what was found.
-fn infer_directory_language(
-    q: MatchQuery<'_>,
-    root: &std::path::Path,
-    paths: &PathPolicy,
-    cancel: &dyn CancellationCheck,
-) -> Result<String, ToolError> {
-    match directory_choice(q, root, paths, cancel)? {
-        GrammarChoice::One(language) => Ok(language),
-        GrammarChoice::Invalid(error) => Err(ToolError::new(error.code, error.message)),
-        GrammarChoice::Absent => Err(ToolError::new(
-            "languageRequired",
-            "No source file of a supported structural grammar was found under path; set language.",
-        )),
-        GrammarChoice::Several(several) => {
-            let mut error = ToolError::new(
-                "languageRequired",
-                format!(
-                    "Several grammars in this directory parse the query ({}); set language to one of them.",
-                    several.join(", ")
-                ),
-            );
-            let mut leads = serde_json::Map::new();
-            leads.insert("repair".into(), language_repair(q, &several));
-            error.next = Some(Box::new(Value::Object(leads)));
-            Err(error)
-        }
-    }
-}
-
 fn diag(d: &StructuralDiagnostic) -> Value {
     json!({"code":d.code,"severity":d.severity,"stage":d.stage,"message":d.message,"path":d.path,"recovery":crate::tools::ast_rule::diagnostic_recovery(&d.code,d.recovery.as_deref())})
 }
@@ -1990,28 +2074,22 @@ mod language_glob_tests {
 }
 
 #[cfg(test)]
-mod normalize_tests {
-    use super::{compact_match, normalize_match, normalized_chars};
+mod bounded_text_tests {
+    use super::bounded_match;
 
     #[test]
-    fn a_line_comment_keeps_its_line_break_so_later_code_stays_visible() {
+    fn exact_source_keeps_comments_line_breaks_and_indentation() {
         let go = "if err != nil { // The only error can be a bad pattern.\n\treturn fmt.Errorf(\"x\")\n}";
         assert_eq!(
-            normalize_match(go),
-            "if err != nil { // The only error can be a bad pattern.\nreturn fmt.Errorf(\"x\") }"
+            bounded_match(go, go.chars().count()),
+            (go.to_owned(), false)
         );
         let rust = "builder\n    .worker_threads(1) // no timer!\n    .build()\n    .unwrap()";
         assert_eq!(
-            normalize_match(rust),
-            "builder .worker_threads(1) // no timer!\n.build() .unwrap()"
+            bounded_match(rust, rust.chars().count()),
+            (rust.to_owned(), false)
         );
-        // Without comments the match stays on one line.
-        assert_eq!(normalize_match("a\n   .b()\n\n  .c()"), "a .b() .c()");
-        assert_eq!(
-            normalized_chars(rust),
-            normalize_match(rust).chars().count()
-        );
-        assert_eq!(compact_match(rust, 12).0.chars().count(), 12);
+        assert_eq!(bounded_match(rust, 12).0.chars().count(), 12);
     }
 }
 
@@ -2058,9 +2136,14 @@ mod memo_tests {
             SCANS.holds(&snapshot),
             "a multi-page scan is stored: {first}"
         );
-        for name in ["nextPage", "nextMatchPage"] {
-            let query = next_query(&first, name);
-            assert!(query.is_object(), "{name}: {first}");
+        let mut offering = first.clone();
+        let mut file_page_query = Value::Null;
+        for name in ["nextMatchPage", "nextPage"] {
+            let query = next_query(&offering, name);
+            assert!(query.is_object(), "{name}: {offering}");
+            if name == "nextPage" {
+                file_page_query = query.clone();
+            }
             let stored = run(&query, &paths, &security);
             SCANS.evict(&snapshot);
             let fresh = run(&query, &paths, &security);
@@ -2071,10 +2154,11 @@ mod memo_tests {
             );
             // The rescan stores the scan again for the pages after it.
             assert!(SCANS.holds(&snapshot));
+            offering = fresh;
         }
         // An edit drops the stored scan: the page restarts from page 1.
         std::fs::write(root.0.join("c.ts"), "console.log(9);\n").expect("edit");
-        let page = run(&next_query(&first, "nextPage"), &paths, &security);
+        let page = run(&file_page_query, &paths, &security);
         assert_eq!(page["errorCode"], "staleSnapshot", "{page}");
         assert!(!SCANS.holds(&snapshot));
     }
@@ -2121,5 +2205,197 @@ mod interrupted_rescan_tests {
             ..Scan::default()
         };
         assert!(interrupted_rescan(q, &changed).is_none());
+    }
+}
+
+#[cfg(test)]
+mod source_freshness_tests {
+    use super::*;
+    use crate::tools::cancel::NeverCancel;
+    use crate::tools::test_support::{Fixture, simple_policy};
+
+    fn run(query: &Value, paths: &PathPolicy, security: &ContentSecurity) -> Value {
+        let query: super::super::AstSearchQuery =
+            serde_json::from_value(query.clone()).expect("typed astSearch row");
+        super::super::execute_ast(&query, paths, security, &NeverCancel, None).expect("astSearch")
+    }
+
+    fn query(path: &std::path::Path, rule: bool) -> Value {
+        let mut query =
+            json!({"operation":"match", "path":path, "captureText":true, "matchPageSize":1});
+        if rule {
+            query["rule"] = json!({"kind":"call_expression"});
+        } else {
+            query["pattern"] = json!("target($A)");
+        }
+        query
+    }
+
+    #[test]
+    fn copied_match_pages_reject_same_count_source_edits() {
+        let original = "target(\"v0\");\ntarget(\"v1\");\ntarget(\"v2\");\n";
+        for rule in [false, true] {
+            for directory in [false, true] {
+                for (edited, restore_mtime) in [
+                    (original.replace("v1", "changed"), false),
+                    (original.replace("v1", "w1"), true),
+                    (format!("// new header\n{original}"), false),
+                    (
+                        format!("{original}// changed outside matched nodes\n"),
+                        false,
+                    ),
+                ] {
+                    let root = Fixture::new();
+                    let file = root.0.join("source.ts");
+                    std::fs::write(&file, original).expect("source");
+                    let (paths, security) = simple_policy(&root.0);
+                    let scope = if directory {
+                        root.0.as_path()
+                    } else {
+                        file.as_path()
+                    };
+                    let first = run(&query(scope, rule), &paths, &security);
+                    let next = first["next"]["nextMatchPage"]["query"]["queries"][0].clone();
+                    assert!(next.is_object(), "{first}");
+                    let copied = run(&next, &paths, &security);
+                    assert_eq!(copied["files"][0]["matches"][0]["value"], "target(\"v1\")");
+                    SCANS.evict(first["snapshot"].as_str().expect("snapshot"));
+                    let modified = std::fs::metadata(&file)
+                        .expect("metadata")
+                        .modified()
+                        .expect("mtime");
+                    std::fs::write(&file, edited).expect("edit");
+                    if restore_mtime {
+                        std::fs::OpenOptions::new()
+                            .write(true)
+                            .open(&file)
+                            .expect("open")
+                            .set_times(std::fs::FileTimes::new().set_modified(modified))
+                            .expect("restore mtime");
+                    }
+                    let changed = run(&next, &paths, &security);
+                    assert_eq!(
+                        changed["errorCode"], "staleSnapshot",
+                        "rule={rule}, directory={directory}: {changed}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn same_runtime_match_memo_rejects_restored_mtime_edits() {
+        for rule in [false, true] {
+            for directory in [false, true] {
+                let root = Fixture::new();
+                let file = root.0.join("source.ts");
+                std::fs::write(&file, "target(\"v0\");\ntarget(\"v1\");\n").expect("source");
+                let (paths, security) = simple_policy(&root.0);
+                std::thread::sleep(
+                    octocode_engine::graph::SourceStamp::SETTLE
+                        + std::time::Duration::from_millis(200),
+                );
+                let scope = if directory {
+                    root.0.as_path()
+                } else {
+                    file.as_path()
+                };
+                let first = run(&query(scope, rule), &paths, &security);
+                let snapshot = first["snapshot"].as_str().expect("snapshot");
+                if cfg!(unix) {
+                    assert!(SCANS.holds(snapshot), "settled scan must exercise the memo");
+                }
+                let next = first["next"]["nextMatchPage"]["query"]["queries"][0].clone();
+                let copied = run(&next, &paths, &security);
+                assert_eq!(copied["files"][0]["matches"][0]["value"], "target(\"v1\")");
+                let modified = std::fs::metadata(&file)
+                    .expect("metadata")
+                    .modified()
+                    .expect("mtime");
+                std::fs::write(&file, "target(\"v0\");\ntarget(\"w1\");\n")
+                    .expect("same size edit");
+                std::fs::OpenOptions::new()
+                    .write(true)
+                    .open(&file)
+                    .expect("open")
+                    .set_times(std::fs::FileTimes::new().set_modified(modified))
+                    .expect("restore mtime");
+                let changed = run(&next, &paths, &security);
+                assert_eq!(
+                    changed["errorCode"], "staleSnapshot",
+                    "rule={rule}, directory={directory}: {changed}"
+                );
+                assert!(!SCANS.holds(snapshot), "changed scan must be evicted");
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod discovery_freshness_tests {
+    use super::*;
+    use crate::tools::cancel::NeverCancel;
+    use crate::tools::test_support::{Fixture, simple_policy};
+
+    fn run(query: &Value, paths: &PathPolicy, security: &ContentSecurity) -> Value {
+        let query: super::super::AstSearchQuery =
+            serde_json::from_value(query.clone()).expect("typed astSearch row");
+        super::super::execute_ast(&query, paths, security, &NeverCancel, None).expect("astSearch")
+    }
+
+    #[test]
+    fn settled_match_memo_observes_empty_directories_and_ignore_edits() {
+        for ignore_name in [None, Some(".ignore"), Some(".gitignore")] {
+            let root = Fixture::new();
+            let nested = root.0.join("nested");
+            std::fs::create_dir(&nested).expect("nested directory");
+            std::fs::write(root.0.join("a.ts"), "target(\"one\");\ntarget(\"two\");\n")
+                .expect("source");
+            if let Some(name) = ignore_name {
+                std::fs::create_dir(root.0.join(".git")).expect("git marker");
+                std::fs::write(root.0.join(name), "nested/\n").expect("ignore rules");
+                std::fs::write(nested.join("b.ts"), "target(\"new\");\n").expect("ignored source");
+            }
+            let (paths, security) = simple_policy(&root.0);
+            std::thread::sleep(
+                octocode_engine::graph::SourceStamp::SETTLE + std::time::Duration::from_millis(200),
+            );
+            let first = run(
+                &json!({"operation":"match", "path":root.0, "pattern":"target($A)", "captureText":true, "matchPageSize":1}),
+                &paths,
+                &security,
+            );
+            assert_eq!(first["matchCount"], 2, "ignore={ignore_name:?}: {first}");
+            let snapshot = first["snapshot"].as_str().expect("snapshot");
+            assert!(
+                SCANS.holds(snapshot),
+                "settled memo must be reusable: {ignore_name:?}"
+            );
+            let next = first["next"]["nextMatchPage"]["query"]["queries"][0].clone();
+            let unchanged = run(&next, &paths, &security);
+            assert_eq!(
+                unchanged["files"][0]["matches"][0]["value"],
+                "target(\"two\")"
+            );
+            assert!(
+                SCANS.holds(snapshot),
+                "unchanged discovery retains the memo"
+            );
+            if let Some(name) = ignore_name {
+                std::fs::write(root.0.join(name), "").expect("unignore existing source");
+            } else {
+                std::fs::write(nested.join("b.ts"), "target(\"new\");\n")
+                    .expect("new nested source");
+            }
+            let changed = run(&next, &paths, &security);
+            assert_eq!(
+                changed["errorCode"], "staleSnapshot",
+                "ignore={ignore_name:?}: {changed}"
+            );
+            assert!(
+                !SCANS.holds(snapshot),
+                "changed discovery evicts the old scan"
+            );
+        }
     }
 }

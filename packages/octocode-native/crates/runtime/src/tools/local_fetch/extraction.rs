@@ -22,15 +22,15 @@ pub struct Extraction {
     pub match_limited: bool,
 }
 
-fn follow_up(query: LocalFetchQuery) -> Option<super::types::Continuation> {
-    Some(super::types::Continuation { query })
+fn follow_up(query: LocalFetchQuery) -> Option<super::types::FetchCall> {
+    Some(super::types::FetchCall { query })
 }
 /// A matched line longer than this (minified or bundled source) is read in
 /// byte windows unless the caller chose a context.
 const LONG_LINE_BYTES: usize = 2_000;
 const LONG_LINE_CONTEXT_BYTES: usize = 200;
-/// The rest of a declaration a match window cut is shown inline up to the
-/// size of the `readBlock` lead it replaces (tool, path, line span).
+/// The rest of a declaration a match window cut is shown inline up to this
+/// size (about one lead's worth: tool, path, line span).
 const INLINE_REST_BYTES: usize = 200;
 /// The `<line>\t` gutter each inlined line adds to the response.
 const INLINE_GUTTER_BYTES: usize = 5;
@@ -122,37 +122,10 @@ fn ranges_extract(
     }
     let windows = merge_ranges(kept);
     let (text, selected) = windows_text(lines, &windows);
-    // A plain read that stops inside a declaration offers the one it cut
-    // that it shows most of (the first on a tie). Lines between the read's
-    // own windows were skipped on purpose.
-    let cut = if q.block() {
-        Vec::new()
-    } else {
-        let edges: Vec<usize> = windows.iter().flat_map(|w| [w.start, w.end]).collect();
-        super::block::enclosing(content, q.path(), &edges).unwrap_or_default()
-    };
-    let span = (
-        windows.first().map_or(0, |w| w.start),
-        windows.last().map_or(0, |w| w.end),
-    );
-    let shown = |block: &LineRange| {
-        windows
-            .iter()
-            .map(|w| (w.end.min(block.end) + 1).saturating_sub(w.start.max(block.start)))
-            .sum::<usize>()
-    };
-    let read_block = cut
-        .into_iter()
-        .filter(|block| block.start < span.0 || block.end > span.1)
-        .fold(None::<LineRange>, |best, block| match best {
-            Some(best) if shown(&best) >= shown(&block) => Some(best),
-            _ => Some(block),
-        })
-        .and_then(|block| line_read(q, &block_lead(block, &windows, span)))
-        .and_then(follow_up);
+    // A plain read that stops inside a declaration offers no reread: the
+    // caller chose these lines, and `block` or `ranges` reads the rest.
     let next = NextCalls {
         continue_block: line_read(q, &uncovered(&merge_ranges(rest), &windows)).and_then(follow_up),
-        read_block,
         ..NextCalls::default()
     };
     Ok(Extraction {
@@ -178,23 +151,6 @@ fn first_unseen(blocks: Vec<LineRange>, shown: &[LineRange]) -> Vec<LineRange> {
         .map(|block| uncovered(&[block], shown))
         .find(|rest| !rest.is_empty())
         .unwrap_or_default()
-}
-
-/// The read that completes `block`, which a read spanning lines
-/// `first..=last` and showing `shown` cuts: only its unseen lines when the
-/// block extends past both ends of that span, else the whole declaration.
-/// Either read spans the declaration, so it cuts nothing further: a walk of
-/// these leads ends after one hop.
-fn block_lead(
-    block: LineRange,
-    shown: &[LineRange],
-    (first, last): (usize, usize),
-) -> Vec<LineRange> {
-    if block.start < first && block.end > last {
-        uncovered(&[block], shown)
-    } else {
-        vec![block]
-    }
 }
 
 /// Sorted ranges with overlapping or adjacent ones merged.
@@ -331,7 +287,10 @@ fn pcre2_ranges(
 /// just its start. A match ending at the next line's start does not touch it.
 /// Each requested range clamped to the file, with its byte span in
 /// `lines`' source: where a region grep counts hits.
-fn region_bytes(lines: &[&str], ranges: &[LineRange]) -> Vec<(LineRange, (usize, usize))> {
+/// A requested line range and the byte span it covers.
+type Region = (LineRange, (usize, usize));
+
+fn region_bytes(lines: &[&str], ranges: &[LineRange]) -> Vec<Region> {
     let mut starts = Vec::with_capacity(lines.len() + 1);
     let mut offset = 0;
     for line in lines {
@@ -378,18 +337,34 @@ fn hit_lines(lines: &[&str], spans: &[(usize, usize)]) -> Vec<usize> {
     hits
 }
 
-/// A context window that stops inside its enclosing declaration shows the
-/// declaration's unseen lines inline when they cost no more than a lead,
-/// else leads to the rest of the top hit's declaration.
-fn finish_cut_declarations(
-    q: &LocalFetchQuery,
+/// A match window that stops inside its declaration shows the rest inline
+/// when that costs no more than [`INLINE_REST_BYTES`]; a larger rest stays
+/// unshown, with no reread lead (`block` or `ranges` reads it).
+fn inline_cut_declarations(
     content: &str,
+    q: &LocalFetchQuery,
     lines: &[&str],
     hits: &[usize],
     ranges: &mut Vec<LineRange>,
-) -> Option<super::types::Continuation> {
-    let blocks = super::block::enclosing(content, q.path(), hits)?;
-    let rest = uncovered(&merge_ranges(blocks.clone()), ranges);
+) {
+    let Some(blocks) = super::block::enclosing(content, q.path(), hits) else {
+        return;
+    };
+    let mut rest = uncovered(&merge_ranges(blocks), ranges);
+    let requested = q.line_ranges();
+    if !requested.is_empty() {
+        rest = merge_ranges(
+            rest.into_iter()
+                .flat_map(|range| {
+                    requested.iter().filter_map(move |requested| {
+                        let start = range.start.max(requested.start);
+                        let end = range.end.min(requested.end);
+                        (start <= end).then_some(LineRange { start, end })
+                    })
+                })
+                .collect(),
+        );
+    }
     let rest_bytes: usize = rest
         .iter()
         .flat_map(|range| &lines[range.start - 1..range.end])
@@ -397,43 +372,8 @@ fn finish_cut_declarations(
         .sum();
     if rest_bytes <= INLINE_REST_BYTES {
         *ranges = merge_ranges(std::mem::take(ranges).into_iter().chain(rest).collect());
-        return None;
     }
-    // Every cut declaration's read, in hit order: one lead covers them all.
-    let reads: Vec<Vec<LineRange>> = blocks
-        .into_iter()
-        .filter_map(|block| {
-            let inside = ranges
-                .iter()
-                .filter(|seen| seen.start <= block.end && seen.end >= block.start);
-            let first = inside.clone().map(|seen| seen.start).min()?;
-            let last = inside.map(|seen| seen.end).max()?;
-            let cut = !uncovered(std::slice::from_ref(&block), ranges).is_empty();
-            cut.then(|| block_lead(block, ranges, (first, last)))
-        })
-        .collect();
-    let bytes = |read: &[LineRange]| -> usize {
-        read.iter()
-            .flat_map(|range| &lines[range.start - 1..range.end.min(lines.len())])
-            .map(|line| line.len())
-            .sum()
-    };
-    let all = merge_ranges(reads.iter().flatten().cloned().collect());
-    // A lead past the cap (a minified bundle's IIFE) would page for many
-    // calls: fall back to the top hit's declaration alone, or offer none.
-    let read = if bytes(&all) <= READ_BLOCK_MAX_BYTES {
-        all
-    } else {
-        reads
-            .into_iter()
-            .next()
-            .filter(|top| bytes(top) <= READ_BLOCK_MAX_BYTES)?
-    };
-    line_read(q, &read).and_then(follow_up)
 }
-
-/// Largest read a cut-declaration lead points at.
-const READ_BLOCK_MAX_BYTES: usize = 32 * 1024;
 
 /// Most bytes of whole lines a default match window (no `contextLines`)
 /// shows around each hit: long-line sources get fewer
@@ -470,7 +410,7 @@ fn byte_bounded_window(lines: &[&str], hit: usize, context: usize) -> (LineRange
 }
 
 /// The same read with the full default window around each hit.
-fn expand_context_lead(q: &LocalFetchQuery) -> Option<super::types::Continuation> {
+fn expand_context_lead(q: &LocalFetchQuery) -> Option<super::types::FetchCall> {
     let mut wide = q.clone();
     wide.context_lines = Some(DEFAULT_MATCH_CONTEXT_LINES as i64);
     wide.offset = None;
@@ -481,7 +421,7 @@ fn expand_context_lead(q: &LocalFetchQuery) -> Option<super::types::Continuation
 }
 
 /// The whole matched lines a long-line match showed only byte windows of.
-fn whole_lines_lead(q: &LocalFetchQuery) -> Option<super::types::Continuation> {
+fn whole_lines_lead(q: &LocalFetchQuery) -> Option<super::types::FetchCall> {
     let mut whole = q.clone();
     whole.context_lines = Some(0);
     whole.offset = None;
@@ -495,19 +435,14 @@ fn whole_lines_lead(q: &LocalFetchQuery) -> Option<super::types::Continuation> {
 /// contract `limits.defaultReadContextLines`.
 pub(crate) const DEFAULT_MATCH_CONTEXT_LINES: usize = crate::tools::id::DEFAULT_READ_CONTEXT_LINES;
 
-fn match_extract(
+/// The requested ranges' byte spans, with `spans` kept to the hits inside
+/// them: with `ranges`, only those hits count, and their windows stay inside
+/// the range that holds them. A range past the file end is invalid input.
+fn ranged_spans(
     q: &LocalFetchQuery,
-    content: &str,
     lines: &[&str],
-    patterns: &[&str],
-    regex: &impl RegexMatch,
-) -> Result<Extraction, ExtractionError> {
-    let RegexSpans {
-        mut spans,
-        truncated,
-    } = match_spans(q, content, patterns, regex)?;
-    // With `ranges`, only hits inside them count, and their windows stay
-    // inside the range that holds them.
+    spans: &mut Vec<(usize, usize)>,
+) -> Result<Vec<Region>, ExtractionError> {
     let regions = region_bytes(lines, &q.line_ranges());
     if q.has_ranges() {
         if regions.is_empty() {
@@ -519,19 +454,70 @@ fn match_extract(
                 ),
             ));
         }
-        spans.retain(|(start, _)| {
+        spans.retain(|(start, end)| {
             regions
                 .iter()
-                .any(|(_, (from, to))| (*from..*to).contains(start))
+                .any(|(_, (from, to))| (*from..*to).contains(start) && end <= to)
         });
     }
+    Ok(regions)
+}
+
+/// Each hit's context window, kept inside the requested range that holds
+/// it, and whether a byte bound narrowed any: an unset context sizes each
+/// window by bytes as well as lines, so a long-line (minified) source does
+/// not return kilobytes per hit.
+fn context_windows(
+    q: &LocalFetchQuery,
+    lines: &[&str],
+    hits: &[usize],
+    regions: &[Region],
+) -> (Vec<LineRange>, bool) {
+    let context = q.context_lines().unwrap_or(DEFAULT_MATCH_CONTEXT_LINES);
+    let default_window = q.context_lines().is_none();
+    let mut narrowed = false;
+    let windows = hits
+        .iter()
+        .map(|&line| {
+            let window = if default_window {
+                let (window, cut) = byte_bounded_window(lines, line, context);
+                narrowed |= cut;
+                window
+            } else {
+                LineRange {
+                    start: line.saturating_sub(context).max(1),
+                    end: (line + context).min(lines.len()),
+                }
+            };
+            let region = regions
+                .iter()
+                .map(|(range, _)| range)
+                .find(|range| (range.start..=range.end).contains(&line));
+            match region {
+                Some(region) => LineRange {
+                    start: window.start.max(region.start),
+                    end: window.end.min(region.end),
+                },
+                None => window,
+            }
+        })
+        .collect();
+    (windows, narrowed)
+}
+
+fn match_extract(
+    q: &LocalFetchQuery,
+    content: &str,
+    lines: &[&str],
+    patterns: &[&str],
+    regex: &impl RegexMatch,
+) -> Result<Extraction, ExtractionError> {
+    let RegexSpans {
+        mut spans,
+        truncated,
+    } = match_spans(q, content, patterns, regex)?;
+    let regions = ranged_spans(q, lines, &mut spans)?;
     let hits = hit_lines(lines, &spans);
-    let region_of = |line: usize| {
-        regions
-            .iter()
-            .map(|(range, _)| range)
-            .find(|range| (range.start..=range.end).contains(&line))
-    };
     // The last line the capped scan reached: matches after it went unseen.
     let limit_line = truncated.then(|| hits.last().copied()).flatten();
     if hits.is_empty() {
@@ -551,32 +537,7 @@ fn match_extract(
     }
     let context = q.context_lines().unwrap_or(DEFAULT_MATCH_CONTEXT_LINES);
     let mut warnings = vec![];
-    // An unset context sizes each window by bytes as well as lines, so a
-    // long-line (minified) source does not return kilobytes per hit.
-    let default_window = q.context_lines().is_none();
-    let mut narrowed = false;
-    let windows: Vec<LineRange> = hits
-        .iter()
-        .map(|&line| {
-            let window = if default_window {
-                let (window, cut) = byte_bounded_window(lines, line, context);
-                narrowed |= cut;
-                window
-            } else {
-                LineRange {
-                    start: line.saturating_sub(context).max(1),
-                    end: (line + context).min(lines.len()),
-                }
-            };
-            match region_of(line) {
-                Some(region) => LineRange {
-                    start: window.start.max(region.start),
-                    end: window.end.min(region.end),
-                },
-                None => window,
-            }
-        })
-        .collect();
+    let (windows, narrowed) = context_windows(q, lines, &hits, &regions);
     let mut oversized = vec![];
     let mut blocks = vec![];
     let windows = if q.block() {
@@ -593,8 +554,10 @@ fn match_extract(
         windows
     };
     let mut ranges = merge_ranges(windows);
+    // A requested declaration too large to show whole is unread evidence of
+    // this read: its rest is a page.
     let mut next = NextCalls {
-        read_block: line_read(q, &first_unseen(oversized, &ranges)).and_then(follow_up),
+        continue_block: line_read(q, &first_unseen(oversized, &ranges)).and_then(follow_up),
         ..NextCalls::default()
     };
     if !q.block()
@@ -603,7 +566,7 @@ fn match_extract(
             .iter()
             .any(|line| lines[line - 1].len() > LONG_LINE_BYTES)
     {
-        next.read_block = finish_cut_declarations(q, content, lines, &hits, &mut ranges);
+        inline_cut_declarations(content, q, lines, &hits, &mut ranges);
     }
     // `selected` maps each emitted view line to its source line; omission
     // markers between non-adjacent windows map to OMISSION_LINE.
@@ -642,8 +605,31 @@ fn match_extract(
         next.text_search = match_limit_lead(q, patterns);
     }
     if long_lines {
-        (text, selected) = byte_windows(content, spans, LONG_LINE_CONTEXT_BYTES);
-        ranges = super::executor::compress_ranges(&selected);
+        let context_bytes = if regions.is_empty() {
+            LONG_LINE_CONTEXT_BYTES
+        } else {
+            spans = spans
+                .into_iter()
+                .filter_map(|(start, end)| {
+                    let (_, (from, to)) = regions
+                        .iter()
+                        .find(|(_, (from, to))| (*from..*to).contains(&start))?;
+                    Some((
+                        start.saturating_sub(LONG_LINE_CONTEXT_BYTES).max(*from),
+                        end.saturating_add(LONG_LINE_CONTEXT_BYTES).min(*to),
+                    ))
+                })
+                .collect();
+            0
+        };
+        (text, selected) = byte_windows(content, spans, context_bytes);
+        let mut source_lines = selected
+            .iter()
+            .copied()
+            .filter(|line| *line != OMISSION_LINE)
+            .collect::<Vec<_>>();
+        source_lines.dedup();
+        ranges = super::executor::compress_ranges(&source_lines);
     }
     Ok(Extraction {
         text,
@@ -764,17 +750,23 @@ pub(super) fn byte_windows(
                 text.push('\n')
             }
             text.push_str(&format!("... [{} bytes omitted] ...\n", a - last_end));
+            selected.push(OMISSION_LINE);
         } else if text.is_empty() {
             // The first window starting mid-line says what precedes it.
             let line_start = content[..a].rfind('\n').map_or(0, |at| at + 1);
             if a > line_start {
                 text.push_str(&format!("... [{} bytes omitted] ...\n", a - line_start));
+                selected.push(OMISSION_LINE);
             }
         }
-        text.push_str(&content[a..b]);
-        let first_line = octocode_engine::text::line_at(&starts, a);
-        let last_line = octocode_engine::text::line_at(&starts, b.saturating_sub(1));
-        selected.extend(first_line..=last_line.max(first_line));
+        let mut source_line = octocode_engine::text::line_at(&starts, a);
+        for record in content[a..b].split_inclusive('\n') {
+            if text.is_empty() || text.ends_with('\n') {
+                selected.push(source_line);
+            }
+            text.push_str(record);
+            source_line += usize::from(record.ends_with('\n'));
+        }
         last_end = b
     }
     // The last window ending mid-line says what follows it.
@@ -789,9 +781,8 @@ pub(super) fn byte_windows(
             "... [{} bytes omitted] ...\n",
             line_end - last_end
         ));
+        selected.push(OMISSION_LINE);
     }
-    selected.sort_unstable();
-    selected.dedup();
     (text, selected)
 }
 

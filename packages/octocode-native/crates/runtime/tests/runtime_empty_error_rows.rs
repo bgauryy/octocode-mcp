@@ -8,7 +8,7 @@
 #![allow(clippy::panic, clippy::unwrap_used)]
 
 use crate::support::{self, MOCK_PROVIDER_TIMEOUT_MS, Workspace};
-use octocode_native::runtime::{ExitClass, ToolOutcome, ToolRuntime};
+use octocode_native::runtime::{ExitClass, ToolOutcome};
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path, path_regex};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -208,16 +208,6 @@ async fn every_tool_empty_and_error_row_meets_the_row_contract() {
             "empty",
             json!({"operation":"dependencies","path":"src","source":"a.rs"}),
         ),
-        probe(
-            "astRewrite",
-            "empty",
-            json!({"path":"src","language":"rust","pattern":format!("{NEVER}($A)"),"rewrite":"x($A)"}),
-        ),
-        probe(
-            "astRewrite",
-            "error",
-            json!({"path":"missing","language":"rust","pattern":"f($A)","rewrite":"g($A)"}),
-        ),
         probe("ghSearchRepo", "empty", json!({"keywords":[NEVER]})),
         probe(
             "ghSearchCode",
@@ -233,7 +223,7 @@ async fn every_tool_empty_and_error_row_meets_the_row_contract() {
         probe(
             "ghSearchHistory",
             "empty",
-            with(&gh, json!({"operation":"pullRequests","keywords":[NEVER]})),
+            with(&gh, json!({"operation":"pullRequest","keywords":[NEVER]})),
         ),
         probe(
             "ghGetHistoryItem",
@@ -251,8 +241,8 @@ async fn every_tool_empty_and_error_row_meets_the_row_contract() {
         probe(
             "clasify",
             "error",
-            json!({"resources":[{"id":"r","tool":"localFetch","query":{"path":"missing.rs"}}],
-                "questions":[{"id":"q","type":"yesno","ask":"Is it there?"}]}),
+            json!({"source":{"tool":"localFetch","query":{"path":"missing.rs","fullContent":true}},
+                "questions":{"q":{"type":"noul","instructions":"Is it there?"}}}),
         ),
     ];
     let mut failures = Vec::new();

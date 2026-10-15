@@ -83,7 +83,10 @@ describe('runCLI native boundary', () => {
   it('delegates tool execution, schema, and every help to the binary', async () => {
     const { runCLI } = await import('../../src/cli/index.js');
     for (const argv of [
-      ['clasify', '{"resources":[],"questions":[]}'],
+      [
+        'clasify',
+        '{"queries":[{"state":"fixture","questions":{"fixture":{"type":"noul","instructions":"Is this a fixture?"}}}]}',
+      ],
       ['schema', 'clasify', '--view', 'query'],
       ['schema', '--help'],
       ['help', 'schema'],

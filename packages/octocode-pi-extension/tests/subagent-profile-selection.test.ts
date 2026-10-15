@@ -3,9 +3,10 @@ import path from 'node:path';
 import { createAgentSession, DefaultResourceLoader, parseArgs, SessionManager, SettingsManager } from '@earendil-works/pi-coding-agent';
 import { describe, expect, it, vi } from 'vitest';
 import octocode from '../src/index.js';
+import { Permission, sessionOption } from '../src/permission/ask.js';
 import { buildAgentArgs } from '../src/subagents/process.js';
 import { askSpawn, parseProfile, profileReach, type AgentProfile } from '../src/subagents/profiles.js';
-import { fakeCtx, fakePermission } from './fake-pi.js';
+import { fakeCtx, fakePermission, fakePi } from './fake-pi.js';
 import { tmp } from './helpers.js';
 
 describe('profile selectors against native Pi tool exposure', () => {
@@ -63,5 +64,30 @@ describe('profile selectors against native Pi tool exposure', () => {
     const check = vi.spyOn(permission, 'check');
     await expect(askSpawn(permission, fakeCtx({ cwd: tmp() }), { name: 'invalid', description: '', prompt: '', tools }, 'task')).rejects.toThrow(nativeError);
     expect(check).not.toHaveBeenCalled();
+  });
+});
+
+describe('the spawn grant for a session', () => {
+  const text = (body: string, front = '') => `---\nname: worker\ndescription: Works\n${front}---\n${body}`;
+
+  it('is keyed by the profile\'s content: an edit under the same name asks again, the same content does not', async () => {
+    const permission = new Permission({ pi: fakePi().pi, env: { OCTOCODE_PERMISSION: 'manual' }, isSubagent: false });
+    const ctx = fakeCtx({ cwd: tmp() });
+    permission.start(ctx);
+    const grant = sessionOption('worker subagents');
+    const asked: string[] = [];
+    const replies = [grant, 'Deny', 'Deny', 'Deny', 'Deny'];
+    ctx.ui.select = (async (title: string) => (asked.push(title), replies.shift())) as never;
+    const profile = parseProfile('worker', text('Fix it.'));
+    await askSpawn(permission, ctx, profile, 'one');
+    expect(asked).toHaveLength(1);
+    // Allowed for the session: the same content passes without a dialog.
+    await askSpawn(permission, ctx, parseProfile('worker', text('Fix it.')), 'two');
+    expect(asked).toHaveLength(1);
+    // Any edit under the same name (prompt, model, tools, flags) is a new question; here each is refused.
+    for (const edited of [text('Fix it, then deploy.'), text('Fix it.', 'model: small\n'), text('Fix it.', 'tools: read,bash\n'), text('Fix it.', 'hooks: true\n')]) {
+      await expect(askSpawn(permission, ctx, parseProfile('worker', edited), 'three')).rejects.toThrow(/denied starting a subagent/);
+    }
+    expect(asked).toHaveLength(5);
   });
 });

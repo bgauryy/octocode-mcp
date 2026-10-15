@@ -25,6 +25,7 @@ const checks = [
   'unit/capture.test.mjs',
   'unit/package.test.mjs',
   'unit/sandbox-layout.test.mjs',
+  'unit/stealth-identity.test.mjs',
   'sandbox-env-self-test.mjs',
   'portability-self-test.mjs',
   'artifact-self-test.mjs',

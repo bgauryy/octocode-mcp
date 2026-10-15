@@ -1165,12 +1165,15 @@ export function checkReport(full, meta, body, workspace) {
   if (rel.length > 2 && !PRIMARY.includes(rel[rel.length - 1].toLowerCase()) && !fs.readdirSync(path.dirname(full)).some((f) => PRIMARY.includes(f.toLowerCase())))
     warnings.push(`a single report is one file, .octocode/${skill}/<YYYY-MM-DD>-<slug>.md; a folder needs README.md (or RFC.md) as its entry point`);
   const dated = (rel[1].match(/^(\d{4}-\d{2}-\d{2})-/) || [])[1];
+  const stat = fs.statSync(full);
+  // Editing a report does not change its original date or stable links. Some
+  // filesystems provide no creation timestamp; there it cannot be checked.
+  const written = meta.date || (stat.birthtimeMs > 0 ? localDate(stat.birthtime) : null);
   if (!dated) warnings.push(`name the report <YYYY-MM-DD>-<slug> using today's date (date +%F)`);
-  else if (dated !== localDate(fs.statSync(full).mtime)) {
-    const written = localDate(fs.statSync(full).mtime);
+  else if (written && dated !== written) {
     const from = path.join(workspace, '.octocode', skill, rel[1]);
     const to = path.join(workspace, '.octocode', skill, written + rel[1].slice(dated.length));
-    warnings.push(`the name says ${dated} but the file was written ${written}; dates come from \`date +%F\`, not memory. Fix: mv "${from}" "${to}" and render again`);
+    warnings.push(`the name says ${dated} but the file was first written ${written}; dates come from \`date +%F\`, not memory. Fix: mv "${from}" "${to}" and render again`);
   }
   if (!meta.status) warnings.push('the header has no status');
   if (!meta.question) warnings.push('the header has no question');
@@ -1413,6 +1416,10 @@ function selfTest() {
     const own = contractFor('octocode-roast');
     if (own) {
       check('report check passes a contract-shaped report', warn(`${today}-good.md`) === '');
+      const maintained = path.join(roastDir, `${today}-good.md`);
+      const edited = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+      fs.utimesSync(maintained, edited, edited);
+      check('editing a report preserves its original date and links', warn(`${today}-good.md`) === '');
       check('report check flags date and missing header', /written/.test(warn('2000-01-01-old.md')) && /no status/.test(warn('2000-01-01-old.md')) && /no question/.test(warn('2000-01-01-old.md')));
       check('report check flags folder, status word, and section', ((w) => /single report is one file/.test(w) && /"Confirmed" is not one of/.test(w) && /## Findings/.test(w))(warn(`${today}-folder/notes.md`)));
     }

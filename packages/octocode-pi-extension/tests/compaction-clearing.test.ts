@@ -207,6 +207,30 @@ describe('clearing old tool results once the prompt cache is cold', () => {
     expect(kept.sort()).toEqual(['f10.ts', 'f11.ts', 'f7.ts', 'f8.ts', 'f9.ts']);
   });
 
+  it('counts a refresh by Pi\'s cache warmer as cache use: no clearing while the warmed entry lives', async () => {
+    const warmedAt = T0 + 100 + HOUR - 60_000;
+    const warm = { type: 'usage', id: 'w1', timestamp: new Date(warmedAt).toISOString(), kind: 'cache_warm', provider: 'p', model: 'm', usage: {} };
+    const s = setup(idleMessages(reads(12)), { priorEntries: [warm] });
+    await s.start(T0 + 100 + HOUR + 1_000);
+    expect(s.entries).toEqual([]);
+    // Once the warmed entry has expired too, clearing goes ahead.
+    await s.start(warmedAt + HOUR + 1_000);
+    expect(s.entries).toHaveLength(1);
+  });
+
+  it('gives a repeated-read note the placeholder of the result it points at, and never keeps a note among the newest five', async () => {
+    const items = reads(12);
+    const notes = items.slice(0, 2).map((item, index) => exchange('read', { path: `f${index}.ts` }, [{ type: 'text', text: `[Unchanged since your earlier read of f${index}.ts (same range); that result is above in your context.]` }], { details: { unchangedOf: item.id } }));
+    const s = setup(idleMessages([...items, ...notes]));
+    await s.start(T0 + 100 + HOUR + 1_000);
+    const out = resultTexts(await s.context());
+    // The newest five real results stay whole; the notes do not take their places.
+    expect(out.slice(7, 12).every((text) => text.length === BIG)).toBe(true);
+    // Each note now names the saved file of the cleared original instead of pointing "above".
+    expect(out.slice(12)).toEqual([out[0], out[1]]);
+    expect(out.slice(12).every(cleared)).toBe(true);
+  });
+
   it('makes the file guard ask for a fresh read of a file whose read was cleared', async () => {
     const guard = { restore: vi.fn(), forget: vi.fn() };
     const s = setup(idleMessages(reads(12)), { guard });

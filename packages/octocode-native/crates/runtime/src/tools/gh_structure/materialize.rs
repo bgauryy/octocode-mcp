@@ -2,6 +2,11 @@
 use super::*;
 use std::path::{Path, PathBuf};
 
+mod snapshot;
+use snapshot::{FileIdentity, Store};
+#[cfg(test)]
+mod tests;
+
 /// Write this page's files under `location.localPath` (the listed
 /// directory) and return where a continuation resumes, if anywhere.
 #[allow(clippy::too_many_arguments)]
@@ -65,12 +70,9 @@ pub(super) async fn materialize_page<C: octocode_github::ConditionalCache>(
     location["coverage"] = json!({"state": if finished { "complete" } else { "partial" }});
     value["location"] = location;
     if !unwritten.is_empty() {
-        value["isPartial"] = json!(true);
-        push_partial_reason(value, "materializeDepth");
+        crate::tools::paging::mark_partial(value, "materializeDepth", &[]);
     }
-    if !warnings.is_empty() {
-        value["warnings"] = json!(warnings);
-    }
+    crate::tools::paging::push_warnings(value, warnings);
     Ok(resume)
 }
 
@@ -116,20 +118,6 @@ pub(super) fn expand_depth(
     Ok(continuation(next, "exact"))
 }
 
-pub(super) fn push_partial_reason(value: &mut Value, reason: &str) {
-    let reasons = value.as_object_mut().and_then(|object| {
-        object
-            .entry("partialReasons")
-            .or_insert_with(|| json!([]))
-            .as_array_mut()
-    });
-    if let Some(reasons) = reasons
-        && !reasons.iter().any(|known| known == reason)
-    {
-        reasons.push(json!(reason));
-    }
-}
-
 #[derive(Clone, Copy)]
 pub(super) struct MaterializeResume {
     pub(super) page: usize,
@@ -142,8 +130,7 @@ pub(super) fn mark_materialize_partial(value: &mut Value) {
     if value.get("location").is_none() {
         return;
     }
-    value["isPartial"] = json!(true);
-    push_partial_reason(value, "materializeIncomplete");
+    crate::tools::paging::mark_partial(value, "materializeIncomplete", &[]);
 }
 
 pub(super) const MATERIALIZE_FILE_CAP: usize = 50;
@@ -174,7 +161,7 @@ pub(super) const MATERIALIZE_CONCURRENCY: usize = 8;
 /// Where materialized checkouts live under the Octocode home. The layout is
 /// versioned and apart from `tmp/tree`, which octocode-mcp 19.x directory
 /// fetches rewrite: a shared path let one writer replace the other's files.
-pub(super) const MATERIALIZE_LAYOUT: [&str; 3] = ["tmp", "materialize", "v2"];
+pub(super) const MATERIALIZE_LAYOUT: [&str; 3] = ["tmp", "materialize", "v3"];
 
 /// Root of every materialized checkout under the cache home; local tools may
 /// read it.
@@ -184,109 +171,11 @@ pub(crate) fn materialize_root(home: &Path) -> PathBuf {
         .fold(home.to_path_buf(), |path, segment| path.join(segment))
 }
 
-/// The manifest beside a checkout directory (`<commit>.manifest.json`), so the
-/// checkout holds only repository files. It names the files this layout
-/// wrote completely, with their sizes.
-#[derive(Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(super) struct Manifest {
-    format: String,
-    owner: String,
-    repo: String,
-    commit: String,
-    files: std::collections::BTreeMap<String, u64>,
-}
-
-const MANIFEST_FORMAT: &str = "octocode-materialize/v2";
-
-impl Manifest {
-    fn new(snapshot: &Snapshot<'_>) -> Self {
-        Self {
-            format: MANIFEST_FORMAT.to_owned(),
-            owner: snapshot.owner.to_owned(),
-            repo: snapshot.repo.to_owned(),
-            commit: snapshot.commit.to_owned(),
-            files: std::collections::BTreeMap::new(),
-        }
-    }
-
-    /// The manifest at `path` when it describes this snapshot; a foreign,
-    /// unreadable, or other-commit manifest is no manifest.
-    async fn load(path: &Path, snapshot: &Snapshot<'_>) -> Option<Self> {
-        let bytes = tokio::fs::read(path).await.ok()?;
-        let manifest: Self = serde_json::from_slice(&bytes).ok()?;
-        (manifest.format == MANIFEST_FORMAT
-            && manifest.owner == snapshot.owner
-            && manifest.repo == snapshot.repo
-            && manifest.commit == snapshot.commit)
-            .then_some(manifest)
-    }
-
-    /// Replace the manifest atomically (temp file + rename), so a reader never
-    /// sees a half-written one.
-    async fn save(&self, path: &Path) -> Result<(), ProviderError> {
-        let bytes = serde_json::to_vec(self)
-            .map_err(|error| ProviderError::new(ProviderErrorKind::Decode, error.to_string()))?;
-        let temp = path.with_extension(format!("json.{}.tmp", std::process::id()));
-        tokio::fs::write(&temp, bytes)
-            .await
-            .map_err(|error| write_error("write materialize manifest", &error))?;
-        tokio::fs::rename(&temp, path)
-            .await
-            .map_err(|error| write_error("write materialize manifest", &error))
-    }
-}
-
-/// A checkout directory this layout owns: `<home>/tmp/materialize/v2/
-/// <owner>/<repo>/<commit>/` and the manifest beside it. A directory without
-/// this snapshot's manifest (another writer's, or one left before its
-/// manifest was written) is never trusted: it is removed and rewritten.
-pub(super) async fn checkout_root(
-    snapshot: &Snapshot<'_>,
-) -> Result<(PathBuf, PathBuf, Manifest), ProviderError> {
-    for segment in [snapshot.owner, snapshot.repo, snapshot.commit] {
-        if segment.is_empty() || segment == "." || segment == ".." || segment.contains(['/', '\\'])
-        {
-            return Err(ProviderError::new(
-                ProviderErrorKind::Validation,
-                format!("cannot materialize under the path segment \"{segment}\""),
-            ));
-        }
-    }
-    let parent = MATERIALIZE_LAYOUT
-        .iter()
-        .chain([&snapshot.owner, &snapshot.repo])
-        .fold(snapshot.root.to_path_buf(), |path, segment| {
-            path.join(segment)
-        });
-    let root = parent.join(snapshot.commit);
-    let manifest_path = parent.join(format!("{}.manifest.json", snapshot.commit));
-    if let Some(manifest) = Manifest::load(&manifest_path, snapshot).await
-        && tokio::fs::metadata(&root)
-            .await
-            .is_ok_and(|meta| meta.is_dir())
-    {
-        return Ok((root, manifest_path, manifest));
-    }
-    match tokio::fs::symlink_metadata(&root).await {
-        Ok(meta) if meta.is_dir() => tokio::fs::remove_dir_all(&root).await,
-        Ok(_) => tokio::fs::remove_file(&root).await,
-        Err(_) => Ok(()),
-    }
-    .map_err(|error| write_error("clear an untrusted materialize directory", &error))?;
-    tokio::fs::create_dir_all(&root)
-        .await
-        .map_err(|error| write_error("create materialize directory", &error))?;
-    let manifest = Manifest::new(snapshot);
-    manifest.save(&manifest_path).await?;
-    Ok((root, manifest_path, manifest))
-}
-
-/// Write `entries[offset..]` under the checkout root ([`checkout_root`]),
+/// Write `entries[offset..]` under the locked, content-verified snapshot,
 /// reading up to [`MATERIALIZE_CONCURRENCY`] files at once and writing them
 /// in listing order, so the write caps stop at the same entry as a serial
-/// walk. A file the manifest records at its listed size and that is still on
-/// disk at that size is reused, not fetched again. `location.localPath` is the
-/// listed directory.
+/// walk. A cached file is reused only when its actual bytes match the recorded
+/// identity. `location.localPath` is the listed directory.
 pub(super) async fn materialize_tree<C: octocode_github::ConditionalCache>(
     provider: &GitHubProvider<C>,
     snapshot: &Snapshot<'_>,
@@ -298,9 +187,11 @@ pub(super) async fn materialize_tree<C: octocode_github::ConditionalCache>(
     if offset >= entries.len() {
         return Ok(None);
     }
-    let (root, manifest_path, mut manifest) = checkout_root(snapshot).await?;
+    let mut store = Store::open(snapshot, context).await?;
+    let root = store.root.clone();
     let mut writer = MaterializeWriter {
         root: &root,
+        home: snapshot.root,
         written: 0,
         total_bytes: 0,
         cursor: offset,
@@ -310,8 +201,7 @@ pub(super) async fn materialize_tree<C: octocode_github::ConditionalCache>(
     'chunks: while writer.cursor < entries.len() {
         let chunk =
             &entries[writer.cursor..entries.len().min(writer.cursor + MATERIALIZE_CONCURRENCY)];
-        let manifest = &manifest;
-        let root = &root;
+        let store = &store;
         let reads = futures_util::future::join_all(chunk.iter().map(|entry| async move {
             if entry.kind != EntryKind::File {
                 return Acquired::NotAFile;
@@ -322,7 +212,7 @@ pub(super) async fn materialize_tree<C: octocode_github::ConditionalCache>(
             {
                 return Acquired::Oversized;
             }
-            if reusable(manifest, root, entry).await {
+            if store.reusable(entry).await {
                 return Acquired::Reused;
             }
             Acquired::Read(
@@ -348,15 +238,7 @@ pub(super) async fn materialize_tree<C: octocode_github::ConditionalCache>(
             }
         }
     }
-    if !writer.recorded.is_empty() {
-        // Merge with what another writer recorded meanwhile; an entry lost to
-        // a race only costs a later re-fetch, never a trusted wrong file.
-        if let Some(current) = Manifest::load(&manifest_path, snapshot).await {
-            manifest.files.extend(current.files);
-        }
-        manifest.files.extend(std::mem::take(&mut writer.recorded));
-        manifest.save(&manifest_path).await?;
-    }
+    store.record(std::mem::take(&mut writer.recorded)).await?;
     let has_more = writer.cursor < entries.len();
     let local = if listed.is_empty() {
         root.clone()
@@ -382,19 +264,6 @@ pub(super) async fn materialize_tree<C: octocode_github::ConditionalCache>(
     }))
 }
 
-/// A listed file the manifest recorded at the listed size, still on disk at
-/// that size.
-async fn reusable(manifest: &Manifest, root: &Path, entry: &TreeEntry) -> bool {
-    let Some(size) = entry.size else {
-        return false;
-    };
-    manifest.files.get(&entry.path) == Some(&size)
-        && crate::tools::gh_shared::is_repo_relative(&entry.path)
-        && tokio::fs::symlink_metadata(root.join(&entry.path))
-            .await
-            .is_ok_and(|meta| meta.is_file() && meta.len() == size)
-}
-
 /// What a materialize page has for one listed entry.
 pub(super) enum Acquired {
     NotAFile,
@@ -408,12 +277,13 @@ pub(super) enum Acquired {
 /// The ordered write side of a materialize page and its caps.
 pub(super) struct MaterializeWriter<'a> {
     pub(super) root: &'a Path,
+    pub(super) home: &'a Path,
     pub(super) written: usize,
     pub(super) total_bytes: usize,
     pub(super) cursor: usize,
     pub(super) skips: MaterializeSkips,
     /// Files this page wrote completely, for the manifest.
-    pub(super) recorded: Vec<(String, u64)>,
+    pub(super) recorded: Vec<(String, FileIdentity)>,
 }
 
 impl MaterializeWriter<'_> {
@@ -469,26 +339,18 @@ impl MaterializeWriter<'_> {
             ));
             return Ok(true);
         }
-        let dest = self.root.join(&entry.path);
-        if let Some(parent) = dest.parent() {
-            tokio::fs::create_dir_all(parent)
-                .await
-                .map_err(|error| write_error("create materialize path", &error))?;
-        }
-        tokio::fs::write(&dest, &acquired.bytes)
-            .await
-            .map_err(|error| write_error("write materialized file", &error))?;
+        snapshot::write_file(self.home, self.root, &entry.path, &acquired.bytes).await?;
         self.total_bytes += acquired.bytes.len();
         self.written += 1;
         self.recorded
-            .push((entry.path.clone(), acquired.bytes.len() as u64));
+            .push((entry.path.clone(), FileIdentity::of(&acquired.bytes)));
         Ok(true)
     }
 }
 
 pub(super) fn write_error(action: &str, error: &std::io::Error) -> ProviderError {
     ProviderError::new(
-        ProviderErrorKind::Validation,
+        ProviderErrorKind::Configuration,
         format!("failed to {action}: {error}"),
     )
 }

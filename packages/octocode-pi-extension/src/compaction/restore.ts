@@ -17,17 +17,17 @@ import { cutText, isRecord } from '../shared/util.js';
  * ends, so the guard records them when a model call first carries it, not when it is sent).
  */
 
-/** At most this many files come back... */
+/** At most this many files come back (the few the work centered on; more would refill the context the summary freed)... */
 export const RESTORE_MAX_FILES = 5;
-/** ...each up to this many characters (longer ones show whole lines from the last range worked on, with a note)... */
+/** ...each up to this many characters (about 5k tokens: a working file's relevant part; longer ones show whole lines from the last range worked on, with a note)... */
 export const RESTORE_FILE_CHARS = 20_000;
-/** ...and all of them together up to this many (about 12k tokens)... */
+/** ...and all of them together up to this many (about 12k tokens: well under the room a compaction frees on any common window)... */
 export const RESTORE_TOTAL_CHARS = 50_000;
-/** ...and at most this share of the window left after Pi's reserve. */
+/** ...and at most this share of the window left after Pi's reserve (so a small model is not refilled to its threshold). */
 export const RESTORE_SHARE = 0.1;
 /** A file that would get fewer characters than this is not read back: a stub counted as read helps no one. */
 export const RESTORE_MIN_FILE_CHARS = 2_000;
-/** Files larger than this are never read back (a generated or data file is no working context). */
+/** Files larger than this are never read back (a generated or data file is no working context, and reading it costs time). */
 const RESTORE_MAX_BYTES = 2_000_000;
 
 type Preparation = Pick<SessionBeforeCompactEvent['preparation'], 'messagesToSummarize' | 'turnPrefixMessages'>;

@@ -1,5 +1,5 @@
-//! Coverage signals for servers whose incoming-direction answers are
-//! structurally incomplete even inside a configured project.
+//! Coverage signals where the protocol or server cannot establish
+//! project-wide completeness.
 //!
 //! A Python server resolves a call only through a receiver whose type it
 //! infers, so calls through untyped or dynamic receivers are missing:
@@ -52,6 +52,30 @@ pub(super) fn annotate(
         Some("python") => flag_partial(row, query, DYNAMIC_REASON, Some(PYTHON_WARNING), scope),
         Some("rust") => annotate_rust(row, query, scope),
         _ => {}
+    }
+}
+
+/// Workspace-symbol arrays have no total, cursor, or completeness marker.
+/// Native pagination covers the returned array; it cannot establish that
+/// the provider returned every matching declaration in its project.
+pub(super) fn workspace_symbols(row: &mut Value, anchor: Option<&str>) {
+    if row.get("status").and_then(Value::as_str) == Some("error") {
+        return;
+    }
+    crate::tools::paging::mark_partial(
+        row,
+        "workspaceSymbolCoverageUnknown",
+        &["workspace/symbol supplies no completeness marker or provider continuation; native pages cover only returned symbols. Empty is not workspace absence. documentSymbols inspects one file with different matching semantics.".to_owned()],
+    );
+    if let Some(path) = anchor {
+        // This is an optional lead, moved to hints by continuation shaping;
+        // it is not a page that recovers an exhaustive workspace result.
+        row["next"]["inspectDocumentSymbols"] = crate::tools::result::Continuation::new(
+            ToolId::LspSearch,
+            json!({"operation": "documentSymbols", "path": path}),
+        )
+        .confidence("medium")
+        .build();
     }
 }
 
@@ -228,6 +252,23 @@ fn mentions_word(text: &str, name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn workspace_coverage_preserves_errors_and_avoids_a_directory_document_hint() {
+        let mut stale = json!({"status":"error","errorCode":"staleSnapshot"});
+        let before = stale.clone();
+        workspace_symbols(&mut stale, Some("/w/a.ts"));
+        assert_eq!(stale, before);
+        let mut empty = json!({"kind":"empty"});
+        workspace_symbols(&mut empty, None);
+        assert_eq!(empty["isPartial"], true);
+        assert_eq!(
+            empty["partialReasons"],
+            json!(["workspaceSymbolCoverageUnknown"])
+        );
+        assert!(empty.get("next").is_none(), "a directory is not a document");
+        assert!(empty.get("terminalLimit").is_none());
+    }
 
     #[test]
     fn gate_scan_reports_unvisited_files_after_its_cap() {

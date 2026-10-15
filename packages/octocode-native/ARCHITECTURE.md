@@ -14,9 +14,24 @@ Node MCP → N-API adapter ─────┘       ├── generated octocode
 
 The CLI never loads N-API or JavaScript. The MCP addon and native CLI call the same Rust runtime. JavaScript interfaces own protocol framing, registration, interactive selection, and process startup only.
 
+GitHub materialization separates acquisition from persistence. `tools/gh_structure/materialize`
+owns listing order, provider reads, limits, and continuations; its `snapshot` module owns
+the v3 snapshot manifest, SHA-256 verification, and a kernel file lock held through
+publication. The lock coordinates batch rows and native processes; its asynchronous wait
+uses the request deadline and cancellation budget. The shared `private_file::BeneathDir`
+capability creates descendants and atomically replaces files through held directory
+descriptors on Unix, refusing ancestor links and replacing a leaf link itself.
+Windows retains the checked directory chain, rejects reparse points, and compares
+volume/file identities when checking the held directory. Child opens and creates use
+`NtCreateFile` relative to the held parent; renames and removals operate on those handles
+through `NtSetInformationFile`. Directory sharing restrictions also prevent renames;
+confinement does not depend on those restrictions blocking attribute-only changes.
+Other non-Unix targets retain the checked-path fallback. Old materialization layouts
+are left untouched and are not reused.
+
 ## Public catalog
 
-The runtime executes all sixteen tools:
+The runtime owns all sixteen catalog entries:
 
 - `ghSearchRepo`
 - `ghSearchCode`
@@ -35,13 +50,13 @@ The runtime executes all sixteen tools:
 - `lspSearch`
 - `clasify`
 
-Availability is resolved natively from configuration without a provider startup request. GitHub and artifact tools are enabled by default; local tools honor local policy. `ghCloneRepo` is available only through the CLI and requires persistent storage; MCP cannot execute it. `astRewrite` and `astTopology` are gated solely by `OCTOCODE_BETA` (env or `local.beta`) and default off; for `astRewrite`, the gate permits both preview and hash-guarded apply. Public `clasify` requires both beta and a nonblank resolved classification API credential (`OCTOCODE_CLASSIFICATION_API` or `classification.api`). Optional relevance `goals` belong only to `localFetch`, `localSearch`, `ghGetFileContent`, and `ghSearchCode` when that credential and `ranking.enabled` are present, independently of beta and public `clasify` visibility. Other read tools keep their ordinary contracts without ranking controls. The [availability guide](../../docs/OCTOCODE_CLASIFY.md#availability) owns the gate combinations. Ordinary contract preparation accepts direct, array, and `{ "queries": [...] }` forms. Semantic assessment accepts one complete `SemanticQuery` directly or a batch of complete queries, validates the full resource-question matrices, and preserves isolated page failures.
+Availability is resolved once per runtime from configuration and surface, without a provider startup request (`runtime/availability.rs`). Each tool is `Available` or carries one reason: `Disabled` (the contract parks it on every surface; `astRewrite` today), `ToolList` (`tools.enabled` / `tools.disabled`), `CliOnly`, or `MissingConfiguration` with the unset settings in order. The catalog, admission, clasify context errors, and CLI help and schema all project that one value. GitHub and artifact tools are enabled by default; local tools honor local policy. `ghCloneRepo` is available only through the CLI and requires persistent storage; MCP cannot execute it. `astTopology` is gated by `OCTOCODE_BETA` (env or `local.beta`) and defaults off. Public `clasify` requires both beta and a nonblank resolved classification API credential (`OCTOCODE_CLASSIFICATION_API` or `classification.api`). Optional `clasifyContext` belongs only to `localFetch`, `localSearch`, `ghGetFileContent`, and `ghSearchCode` when that credential is present, independently of beta and public `clasify` visibility. Other read tools keep their ordinary contracts. The [availability guide](../../docs/OCTOCODE_CLASIFY.md#availability) owns the gate combinations. Public tool input accepts a bare query object or `{ "queries": [...] }`; a bare array is rejected.
 
-`clasify` applies every `questions[]` entry to every `resources[]` entry. Native contract preparation validates IDs, the 25-cell per-query cap, and the 50-cell batch cap, then expands resource-major work with query, resource, and question `id`s. The IDs are correlation metadata and never provider evidence. Explicit research presets expand once per matrix from core-owned templates into one Noul each; custom questions remain unchanged. Provider questions are Noul, Choice, or Score primitives: instructions are non-null/non-empty structured values; Choice and Noul descriptions may be null at their documented boundaries; Score levels may not. Configuration selects the classification provider model. `runtime/domain_dispatch` is the shared execution path for ordinary tools and hidden context; `tools/clasify/context` validates the nested canonical query, enforces availability and security, sanitizes the ordinary result and checks its output contract before inference. It never re-enters public request admission. Independent read-only rows in one ordinary batch—including GitHub API searches and local searches—execute concurrently while output rows retain input order. Mutating clone/rewrite rows remain ordered, and `clasify` uses its dedicated scheduler.
+`clasify` is a thin interface to the provider primitives: each `queries[]` row holds keyed `noul`/`choice`/`score` questions over exactly one literal `state` or one `source`. `tools/source_capture` captures a source completely through the same authorized readers a direct call runs (contract validation, input security, the reader's path policy and redaction, output sanitization), following every content page pinned to the first page's file snapshot or commit; a selection over the state limit (`clasify.semanticPolicy.maxStateChars`) fails its row instead of being judged in part. A URL source is fetched over HTTPS under the address policy and saved as a capture file that a `localFetch` lead reads back. The row returns the provider's validated answers unchanged, the model that answered, its usage, and for a source one `hints.read` of exactly what was judged; never a body. `mainGoal` and `reasoning` never reach the provider. A failed row keeps its own error; siblings keep their answers.
 
-The provider receives the supplied non-empty inline value, or the sanitized ordinary result's row data with the shared path `base`; the response envelope and the `next`, `diagnostics`, and `hints` control fields are withheld and excluded from the `maxChars` budget. `tools/clasify/run` captures each logical resource once and reuses it across its questions; `tools/clasify/run/provider` owns provider grouping under byte headroom, the single-flight judgment cache, and public answer projection; `tools/clasify/run/budget` owns the evidence-character definition and the `maxChars` rules every capture path applies (candidate order, deferral, oversized-page shrink, search resume). Delegated reads are limited to four per tool call across its matrices and sixteen per process. `tools/clasify/transport` alone maps a public question onto the provider shape and projects each provider answer to a public verdict; `tools/clasify` (`judge`) and `tools/clasify/batch` make singleton or bounded grouped calls. Independent matrices and resource pages execute concurrently through a process-wide endpoint gate configured by `classification.maxConcurrency`, under one deadline/cancellation budget; grouping still coalesces same-state questions into single requests. Answers and matrices retain input order with isolated errors. Only document reads (`localFetch`, `ghGetFileContent`, `ghGetHistoryItem`) follow same-resource continuations automatically; search and discovery resources capture the requested page and return the rest through `next.clasify`. Pull-request content menus select new evidence and are not continuations of the requested scope. Worthwhile history pages return `next.read` with the selected query and `confidence: "high"` because history can change between reads. Pages are emitted as ordered `pages[]` entries and are never silently averaged or reduced; a followed page's receipt drops its consumed continuation. Provider answers retain model and usage metadata internally; the compact public projection returns judgments, source windows, coverage and continuations. Session accounting aggregates provider usage separately. Public judgment payloads do not expose a complete per-call cost receipt; missing usage is not zero consumption.
+`tools/judgment` is the one evaluator behind retrieval `classifiers` and `clasify`: prepared state, provider questions, optional captured image assets and capability options in; validated answers, model and usage out. It owns the provider client, request batching (all questions over one state in one request when the serialized group fits the headroom, else one request per question), response validation (`providers/classification/jev.rs`), retries (`octocode_github::Backoff`, `classify_status`, `read_bounded`), the process-wide endpoint gate (`providers/classification/gate.rs`, bounds from the `classification.maxConcurrency` contract field, idle gates dropped past 64), and accounting. Its judgment cache is runtime-owned: a `cache::Store` (memory always; `<home>/tmp/judgment` on disk only under persistent storage; 256 entries, 8 MiB, 30-minute TTL) keyed by the credential `Partition`, model, state, questions, image bytes and capability options, with one `KeyedFlight` so identical concurrent evaluations make one request. Only complete validated evaluations are cached; a replay reports `replayed: true` and the original usage. The same authenticated transport exposes the provider model catalog. Image source capture reuses local access policy, GitHub content by resolved commit, HTTPS address checks, and the existing capture store; it sends bytes internally and returns only provenance and a saved inspection path. Retrieval compiles each atomic question through the contract's `classifierTemplate` into a Score question (`tools/judgment/select.rs`). `tools/selection` applies the core selection policy and partitions candidates into selected, excluded and unknown. It saves decisions in the `selection` plan, binds source identity, template, context and optional brief, and replays without new provider calls. Code search selects its sanitized provider page at the response boundary (`ToolOutput::selects_provider_page`); local search and both fetch tools select before their own pagination. Default output contains only selected evidence in source order, with a partition receipt and optional `next.unfiltered` recovery.
 
-Nested context supports the available read tools; recursive semantic assessment, astRewrite, ghCloneRepo, and ghStructure materialization are rejected. Ordinary budgets remain active and each serialized provider request is capped at 4 MiB. This cap applies after resource/question projection, not to the aggregate matrix or tracing metadata. Grouping uses conservative byte headroom and falls back to individual questions when the full group does not fit; those byte budgets are not token estimates. If work remains beyond the current bounded response, the query returns executable `next.clasify`; callers run it unchanged and append its pages. Complete successful public judgment sets use a process-local cache (30 minutes, 256 entries, 8 MiB of serialized answers) keyed by endpoint, account, model, exact evidence including explicit nulls, and questions. Identical in-flight calls share provider work, but each waiter keeps its own deadline and cancellation; a provider failure is shared only within that flight. Fresh goals do not use the judgment cache, while ranked continuations reuse their account-bound ordering plan. Classification transport alone retries POSTs within the configured retry, deadline, and cancellation bounds; reqwest's implicit retries are disabled, and the endpoint gate only admits or delays attempts. Attempted sends are counted separately from provider-reported token usage. Missing usage after a failed attempt is unknown, not zero.
+Search and fetch never hand off to `clasify`, and emit no automatic reread lead of evidence they already returned.
 
 ## Ownership
 
@@ -49,13 +64,13 @@ Nested context supports the available read tools; recursive semantic assessment,
 |---|---|---|
 | `config` | Native configuration acquisition and diagnostics | Tool behavior |
 | `contracts` | Generated schemas/rules, defaults, validation, and canonical contract fingerprint | Provider or tool execution |
-| `runtime` | Admission, dispatch, request context, cancellation, ordered bulk orchestration, and exit classification (execution codes include `responseTooLarge` and `unroutedTool`) | CLI presentation or MCP SDK types |
+| `runtime` | Admission, dispatch, request context, cancellation, ordered bulk orchestration, and exit classification (execution codes include `responseTooLarge` and `unroutedTool`). `runtime/error.rs` is the one projection of a rejected call: `tool_error_result` builds the `{error, details?, errorCode}` envelope and its one-line text for CLI JSON, the terminal, the warm server and MCP | CLI presentation or MCP SDK types |
 | `policy` / `security` | Path, content, command, and secret policy; the one error scrubber (`scrub_error_text` / `scrub_error_payload`) shared by the CLI and N-API | Interface-specific behavior |
 | `providers` / `cache` | Remote DTOs (GitHub, artifact registries, classification and its Jev wire validator), HTTP, retries, credentials, endpoint caches | CLI or MCP framing |
 | `tools` | Public operations composed from shared runtime services and engine primitives | Independent config, auth, or response systems |
 | `response` | Contract-checked rows, compression, pagination, continuations, and sanitized rendering | Tool execution |
 | `tools/lsp_search` + `runtime/domain_dispatch` | Runtime composition around the engine language-server pool (pool owned by the runtime engine, dispatched and prewarmed through `domain_dispatch`) | A second lifecycle implementation |
-| `tools/<shared>` (the list and each module's purpose live in `tools/module_boundaries.rs` `SHARED_MODULES`) | Logic two or more tools use: for example `empty_walk` (why an empty local walk is empty and the minimal flags that lift it), `leads` (follow-up queries one tool offers into another), `page_windows` (byte-budget page sizing), `declarations_cache`, `gh_shared` | Tool-specific behavior. A tool never imports another tool's module; the guard test fails on a new edge, and its `ALLOWED_EDGES` names the one exception (`gh_get_file_content` → `local_fetch`, one view engine) |
+| `tools/<shared>` (the list and each module's purpose live in `tools/module_boundaries.rs` `SHARED_MODULES`) | Logic two or more tools use: for example `empty_walk` (why an empty local walk is empty and the minimal flags that lift it), `leads` (follow-up queries one tool offers into another), `page_windows` (byte-budget page sizing), `declarations_cache`, `gh_shared` | Tool-specific behavior. The guard rejects new tool-to-tool and shared-to-tool edges; `ALLOWED_EDGES` and `SHARED_TO_TOOL_PENDING` own the explicit exceptions and their reasons, and stale exceptions fail the guard. |
 | `tools/ast_graph/store` | CLI-only persisted code graph (`npx octocode graph ingest` / `graph query`): immutable snapshots under `<workspace>/.octocode/graph/` | A public tool contract or MCP surface |
 | `crates/runtime-napi` | Host conversion and native runtime lifecycle | An alternate execution path |
 | `crates/cli` | Arguments, human output, and shell exits | Node, N-API, or duplicated tools |
@@ -64,16 +79,34 @@ Nested context supports the available read tools; recursive semantic assessment,
 | `crates/cli/src/cli/lsp_provision/` | Verified language-server downloads: allowlisted hosts, SHA-256 pinned assets, bounded time and size, streamed through an owner-only spool file under a per-target `flock` | Engine LSP discovery |
 | `crates/io` | File and process primitives every crate shares: atomic and streamed owner-only writes, private directories, bounded `flock` waits, the HTTP client policy, lossy environment reads | Tool, provider, or contract logic |
 
-`crates/runtime` is a pure `rlib`. `crates/github` owns GitHub protocol and
-transport services, plus the shared retry timing (`retry.rs`: `header_u64`,
-`retry_after_delay`, `full_jitter`) and `credential_host` that artifact HTTP and
-clasify transport reuse; runtime keeps configuration, credential selection, cache policy,
-and generated tool contracts. The artifact registry cache is runtime-owned: each
-`ToolRuntime` builds one under `<home>/tmp/response` only when storage is
-persistent, and there is no process-global cache. `crates/cli` owns the `octocode`
-binary; `crates/runtime-napi` owns the runtime `cdylib` and its
-Node conversions. All five crates inherit one workspace version and remain
+Six crates, and these Cargo edges only: `engine` and `io` are leaves;
+`github` → `io`; `runtime` → `io`, `engine`, `github`; `cli` → `io`, `runtime`,
+`engine`, `github`; `runtime-napi` → `runtime`. `crates/runtime` is a pure `rlib`.
+`crates/io` owns the primitives every crate shares, including `memo` (the one
+in-process LRU memo: entry and weight caps, per-entry lifetime, poison-safe lock).
+`crates/github` owns GitHub protocol and transport services, plus the shared retry
+owner (`retry.rs`: `Backoff`, `classify_status`, `is_retryable_send`,
+`read_bounded`, `retry_after_delay`), `KeyedFlight` (keyed single flight, composed
+around a memo `get`-then-`insert`), `Partition` (an origin scoped by a digest of
+the exact credential; every cache, limiter and rejection set derives from it) and
+`credential_host`, which artifact HTTP and the classification transport reuse.
+GitHub content reads take one flight per `(partition, commit, path)`, and a cached
+body at a resolved commit is served without revalidation; a movable ref stays
+fresh through its own memoized resolution. Runtime keeps configuration,
+credential selection, cache policy, and generated tool contracts. `crates/cli`
+owns the `octocode` binary; `crates/runtime-napi` owns the runtime `cdylib` and
+its Node conversions. All six crates inherit one workspace version and remain
 unpublished Cargo packages.
+
+Runtime caches are per `ToolRuntime` (no process-global cache) and live under
+`<home>/tmp/` only when storage is persistent: `response` (page replays),
+`artifact` (registry responses), `judgment` (classification answers),
+`ratelimit` (cross-process GitHub limiter facts), `capture/url` (URL source
+captures), and `clone` / `clone-tmp` (`ghCloneRepo`). The response, artifact
+and judgment stores evict by entry class and byte budget themselves;
+`runtime/maintenance.rs` sweeps the rest by age once a day (rate-limit facts,
+URL captures at their published retention). Clone entries are evicted only
+through `ghCloneRepo`, which checks their locks and local edits.
 
 The engine's `scan_budget` holds the time and walk budget of an unbounded scan (no caller `maxFiles`): it stops at a chunk boundary past the budget and returns the walk-order index to resume from, and `lsp/module_path` anchors bundled language-server lookup at the loaded module (the N-API addon or the CLI binary), not at `current_exe()`, which is `node` under MCP.
 
@@ -159,7 +192,7 @@ Every local tool walks under one policy owned by `engine::search::walk` and one 
 - Credentials are pinned per request and never copied into public responses.
 - Every completed row is checked against its generated tool output contract.
 - Pagination and continuations retain the query identity needed to resume safely.
-- Search classification handoffs preserve the search brief and scope, screen snippets for relevance and sufficiency, and keep remaining candidates reachable through `next.clasify`.
+- Retrieval context selection withholds excluded and unknown bodies by default, preserves successful sibling decisions after failures, and keeps the complete original view reachable through `next.unfiltered`. Local recovery is snapshot-bound; GitHub file recovery is commit-pinned. GitHub search recovery reruns the live provider page and can drift.
 - `localFetch` and `ghGetFileContent` share extraction: literal and regex matches use original byte coordinates and include every source line touched by a multiline match. Case-insensitive Unicode normalization never supplies offsets for slicing original content. `regex:"rust"` is the Rust regex engine `localSearch` also runs, so one pattern has one verdict and reason in both tools at any file size; backreferences and lookaround need `regex:"pcre2"`.
 - Structural rewrite uses embedded engine primitives while the tool layer retains locks, hashes, path policy, selection, postconditions, transactions, and recovery.
 - Public rewrite paths (rows, patch headers, `expectedHashes` keys) are workspace-relative like every local tool's rows; guarded apply resolves relative keys against the workspace root and also accepts absolute keys. Match ids stay keyed on the scanned-directory path, and the snapshot carries a contract version, so a preview from an older path form fails closed with `staleSnapshot` and `next.restart`.

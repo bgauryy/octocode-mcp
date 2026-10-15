@@ -152,10 +152,12 @@ mod tests {
         fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).expect("chmod");
         let result = validate_lsp_server_path(path.to_string_lossy().into_owned());
         let _ = fs::remove_file(&path);
+        // The command that runs is the given absolute path itself.
+        let accepted = result.expect("an executable file is accepted");
+        assert!(std::path::Path::new(&accepted).is_absolute(), "{accepted}");
         assert!(
-            result.is_ok(),
-            "executable file must be accepted: {:?}",
-            result
+            accepted.ends_with(&*path.file_name().expect("name").to_string_lossy()),
+            "{accepted}"
         );
     }
 

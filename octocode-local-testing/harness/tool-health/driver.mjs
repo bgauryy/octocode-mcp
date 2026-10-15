@@ -46,11 +46,11 @@ export function statusClass(json) {
   if (json.errorCode || json.error) return json.errorCode === 'invalidInput' ? 'invalid' : `error:${json.errorCode}`;
   const rows = rowsOf(json);
   if (!rows.length) return 'broken';
-  if (rows.some(r => r.status === 'error' || r.error || (r.resources ?? []).some(x => x.error))) return 'error';
+  if (rows.some(r => r.status === 'error' || r.error)) return 'error';
   if (rows.every(r => r.status === 'empty')) return 'empty';
   return 'ok';
 }
-const errorCodes = json => [json?.errorCode, ...rowsOf(json).flatMap(r => [dataOf(r)?.errorCode, r?.error?.errorCode, ...(r?.resources ?? []).map(x => x?.error?.errorCode)])].filter(Boolean);
+const errorCodes = json => [json?.errorCode, ...rowsOf(json).flatMap(r => [dataOf(r)?.errorCode, r?.error?.errorCode])].filter(Boolean);
 
 /**
  * Every lead of a response with its row index: `{tool, query}` under `next.*`
@@ -104,16 +104,15 @@ export function factSentences(json) {
  * field description and instruction string either surface publishes;
  * `tools` the contract's tool names, `cliOnly` its CLI-only tools; `propsOf(tool)` its query fields.
  */
-export function createDriver({ validate, staticText, tools, cliOnly, propsOf = () => new Set() }) {
+export function createDriver({ validate, staticText, tools, cliOnly, propsOf = () => new Set(), defaultsOf = () => ({}) }) {
   /**
    * Explore `tool` from `seed` (one query row) on one surface.
    * `call(tool, input)` → { raw, json, sc, text, isError, ms } (`json`/`sc` with shared defaults expanded); `rows(tool, key)`
    * → (data, json) => ids for a page channel, or undefined (then the `fresh`
-   * predicate alone guards it); `chainKeys` extra lead keys that advance a
-   * walk (e.g. `clasify`); `allow` lead keys to execute even when they write;
+   * predicate alone guards it); `allow` lead keys to execute even when they write;
    * `root` the workspace relative paths resolve in.
    */
-  async function explore(tool, seed, { surface, call, maxCalls = 8, maxPages = 12, rows = () => undefined, chainKeys = [], allow = [], root }) {
+  async function explore(tool, seed, { surface, call, maxCalls = 8, maxPages = 12, rows = () => undefined, allow = [], root }) {
     const seen = new Map();
     const report = { tool, surface, seed, calls: [], failures: [], skipped: [], graph: new Set(), chains: [], budgetCut: 0, converged: 0, facts: [] };
     const fail = (check, detail, at) => report.failures.push({ check, detail: short(detail, 400), at });
@@ -124,7 +123,7 @@ export function createDriver({ validate, staticText, tools, cliOnly, propsOf = (
     seen.set(id(tool, input), 'seed');
     const pages = [], others = [root0];
     let nonPage = 0;
-    const advances = key => ADVANCING.test(key) || chainKeys.includes(key);
+    const advances = key => ADVANCING.test(key);
 
     while (pages.length || others.length) {
       const item = pages.length ? pages.shift() : others.shift();
@@ -142,7 +141,7 @@ export function createDriver({ validate, staticText, tools, cliOnly, propsOf = (
         const invalid = cls === 'invalid' || errorCodes(json).some(c => /^invalid/.test(c));
         if (invalid) fail('lead.accepted', `${item.lead.container}.${item.lead.key} -> ${item.tool} rejected: ${errorCodes(json).join(',')} ${short(json?.error ?? '', 160)}`, item.label);
         const shown = item.shown ?? new Set();
-        for (const r of judgeLead(item.lead, item.source, entry, shown, { walked: !!item.walked, root, propsOf })) {
+        for (const r of judgeLead(item.lead, item.source, entry, shown, { walked: !!item.walked, root, propsOf, defaultsOf })) {
           if (!r.ok && r.assertion !== 'valid') fail(`lead.${r.assertion}`, `${item.lead.container}.${item.lead.key} -> ${item.tool}: ${r.detail}`, item.label);
         }
       }

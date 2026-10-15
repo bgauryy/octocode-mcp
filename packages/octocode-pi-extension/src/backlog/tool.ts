@@ -2,7 +2,7 @@ import { StringEnum } from '@earendil-works/pi-ai';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import { clip, timingOf, plural, resultBlock, timedTool, toolHeader } from '../shared/render.js';
-import { sanitizeTerminalText } from '../shared/sanitize.js';
+import { storedText, visibleControls } from '../shared/sanitize.js';
 import { textResult } from '../shared/util.js';
 import { openBacklog, type Backlog, type BacklogOptions } from './context.js';
 import { itemDetail, itemLine } from './format.js';
@@ -128,7 +128,7 @@ export function registerBacklogTool(pi: ExtensionAPI, options: BacklogOptions & 
       const filters = { ...(params.query ? { query: params.query } : {}), ...(params.from ? { from: params.from } : {}) };
       const { items, total } = store.list({ states, ...filters, limit, offset });
       const lines = items.map((item) => itemLine(item, actor.id, actor.owners));
-      if (lines.length === 0) lines.push(`No ${states.join('/')} items${params.query ? ` matching "${sanitizeTerminalText(params.query)}"` : ''}${params.from ? ` from ${sanitizeTerminalText(params.from)}` : ''}.`);
+      if (lines.length === 0) lines.push(`No ${states.join('/')} items${params.query ? ` matching "${visibleControls(params.query)}"` : ''}${params.from ? ` from ${visibleControls(params.from)}` : ''}.`);
       if (total > offset + items.length) lines.push(`Next: backlog ${JSON.stringify({ op: 'list', states, ...filters, limit, offset: offset + items.length })}`);
       const triage = states.includes('backlog') ? 0 : store.counts().backlog;
       if (triage > 0) lines.push(`${triage} proposed item(s) await triage (list with states: ["backlog"]).`);
@@ -136,7 +136,6 @@ export function registerBacklogTool(pi: ExtensionAPI, options: BacklogOptions & 
     }
     if (params.op === 'add') {
       if (!params.title?.trim()) throw new Error('add needs a title.');
-      if (!params.goal?.trim()) throw new Error('add needs a goal: the done criterion, a check someone else can run.');
       // A subagent proposes; the user or the parent accepts.
       const wanted = subagent ? 'backlog' : (params.state ?? 'backlog');
       // The note is stored by a second step: every refusal comes first, so a retry never leaves a duplicate behind.
@@ -168,7 +167,7 @@ export function registerBacklogTool(pi: ExtensionAPI, options: BacklogOptions & 
     if (!params.id?.trim()) throw new Error(`${params.op} needs an id, e.g. "B12".`);
     if (params.op === 'get') {
       const item = store.get(params.id);
-      if (!item) throw new Error(`No backlog item ${sanitizeTerminalText(params.id)}.`);
+      if (!item) throw new Error(`No backlog item ${visibleControls(params.id)}.`);
       const offset = Math.max(0, Math.floor(params.offset ?? 0));
       const limit = Math.max(1, Math.floor(params.limit ?? 10));
       const notes = store.notes(item, limit, offset);
@@ -187,13 +186,15 @@ export function registerBacklogTool(pi: ExtensionAPI, options: BacklogOptions & 
     if (params.op === 'remove') {
       if (subagent) throw new Error('A subagent cannot remove backlog items; report it to your parent.');
       const item = store.remove(params.id, undefined, actor);
-      return textResult(`Removed ${item.ref} "${sanitizeTerminalText(item.title)}" and its notes.`, { removed: item.ref } as BacklogToolDetails);
+      return textResult(`Removed ${item.ref} "${visibleControls(item.title)}" and its notes.`, { removed: item.ref } as BacklogToolDetails);
     }
     const fields = { title: params.title, goal: params.goal, ...text(params), priority, tags: params.tags, from: params.from };
     if (subagent && Object.values(fields).some((value) => value !== undefined)) throw new Error('A subagent changes only the state and notes of an item; report other changes to your parent.');
     // Moving an item back to todo or backlog would release the parent's claim behind its back.
     if (subagent && (params.state === 'todo' || params.state === 'backlog')) throw new Error(`A subagent sets only ongoing or done; ask your parent to move an item to ${params.state}.`);
     if (params.state === undefined && params.note === undefined && Object.values(fields).every((value) => value === undefined)) throw new Error('update needs something to change: state, note, title, goal, paths, why, evidence, plan, body, priority, tags or from.');
+    // The goal is the done criterion an agent's items always have (`store.add`): an update may change it, not blank it.
+    if (params.goal !== undefined && !storedText(params.goal)) throw new Error('update cannot clear the goal: give the new done criterion, a check someone else can run.');
     const current = store.get(params.id);
     if (params.state === 'done' && current?.state !== 'done' && !params.note?.trim()) throw new Error(DONE_NOTE);
     const item = store.update(

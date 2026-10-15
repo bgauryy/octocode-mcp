@@ -107,6 +107,10 @@ pub fn execute_topology(
 }
 
 #[cfg(test)]
+mod dead_code_root_tests;
+#[cfg(test)]
+mod drift_tests;
+#[cfg(test)]
 mod test_support;
 #[cfg(test)]
 mod tests;

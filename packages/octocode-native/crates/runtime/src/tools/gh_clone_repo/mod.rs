@@ -79,11 +79,7 @@ impl CloneConfig {
     /// A persistent clone cache under `cache_home` with the config
     /// contract's `storage.cloneCache.*` and `network.timeout` defaults.
     pub fn persistent(cache_home: impl Into<PathBuf>) -> Self {
-        let defaults: serde_json::Value =
-            serde_json::from_str(crate::config::DEFAULT_RESOLVED_CONFIG_JSON).unwrap_or_default();
-        let limits =
-            serde_json::from_value(defaults["storage"]["cloneCache"].clone()).unwrap_or_default();
-        let timeout = defaults["network"]["timeout"].as_f64().unwrap_or_default();
+        let defaults = crate::config::ResolvedConfig::default();
         Self {
             cache_home: cache_home.into(),
             persistent: true,
@@ -93,8 +89,8 @@ impl CloneConfig {
             lock_wait: Duration::from_secs(5 * 60),
             network_timeout: Duration::ZERO,
         }
-        .with_limits(&limits)
-        .with_network_timeout(Duration::from_secs_f64(timeout.max(0.0) / 1000.0))
+        .with_limits(&defaults.storage.clone_cache)
+        .with_network_timeout(Duration::from_millis(u64::from(defaults.network.timeout)))
     }
 
     /// Apply the resolved `network.timeout`.
@@ -108,8 +104,8 @@ impl CloneConfig {
     /// already validated and clamped them (all minimums are positive).
     #[must_use]
     pub fn with_limits(mut self, limits: &crate::config::CloneCacheConfig) -> Self {
-        self.cache_ttl = Duration::from_millis(limits.ttl as u64);
-        self.max_cache_size_bytes = limits.max_size as u64;
+        self.cache_ttl = Duration::from_millis(u64::from(limits.ttl));
+        self.max_cache_size_bytes = limits.max_size;
         self.max_clone_count = limits.max_clones as usize;
         self
     }
@@ -327,6 +323,105 @@ fn policy_denied(error: PolicyError) -> CloneError {
     )
 }
 
+/// One clone request's resolved inputs: what its cache entries are named
+/// by, checked out from, and recorded as.
+struct Plan<'a> {
+    query: &'a GhCloneRepoQuery,
+    context: &'a CloneContext<'a>,
+    repository_url: String,
+    sparse: Option<Sparse>,
+    sparse_key: Option<String>,
+    depth: u64,
+}
+
+impl Plan<'_> {
+    /// The cache entry of `branch`, once the path policy admits it.
+    fn target(&self, branch: &str) -> Result<PathBuf, CloneError> {
+        let clone_dir = cache::clone_dir(
+            &self.context.config.cache_home,
+            &self.query.owner,
+            &self.query.repo,
+            branch,
+            self.sparse_key.as_deref(),
+            self.depth,
+            &self.repository_url,
+        );
+        self.context
+            .path_policy
+            .validate_output(&clone_dir)
+            .map_err(policy_denied)?;
+        Ok(clone_dir)
+    }
+
+    /// The identity a checkout of `branch` records and a hit must match.
+    fn identity<'b>(&'b self, branch: &'b str) -> cache::Identity<'b> {
+        cache::Identity {
+            owner: &self.query.owner,
+            repo: &self.query.repo,
+            branch,
+            sparse_key: self.sparse_key.as_deref(),
+            depth: self.depth,
+        }
+    }
+
+    fn force_refresh(&self) -> bool {
+        self.query.force_refresh.unwrap_or(false)
+    }
+
+    /// The row of a checkout of `branch` at `clone_dir`: a served cache hit
+    /// (`cached`); a fresh checkout clears the flag.
+    fn result(&self, branch: &str, clone_dir: &Path, hit: CacheHit) -> CloneResult {
+        let bytes = hit
+            .size
+            .unwrap_or_else(|| cache::checked_out_size(clone_dir));
+        let (cloned_at, expires_at) = hit.age.map_or((None, None), |age| {
+            (Some(age.cloned_at), Some(age.expires_at))
+        });
+        let paths = self.sparse.as_ref().map(Sparse::paths);
+        CloneResult {
+            bytes,
+            next: explore_next(clone_dir, paths),
+            location: CloneLocation {
+                kind: if paths.is_some() { "tree" } else { "repo" },
+                local_path: clone_dir.to_string_lossy().into_owned(),
+                cached: true,
+                commit_sha: hit.commit_sha,
+                verified: hit.verified,
+                resolved_ref: branch.to_owned(),
+                requested_paths: paths.map(<[String]>::to_vec),
+                history_depth: (self.depth > 1).then_some(self.depth),
+                cloned_at,
+                expires_at,
+            },
+        }
+    }
+
+    /// The branch a hit can be served for without a GitHub API call: the
+    /// requested ref, else the caller's default branch, else the alias a
+    /// default-branch clone recorded.
+    fn known_branch(&self) -> Option<String> {
+        let context = self.context;
+        self.query
+            .ref_
+            .as_ref()
+            .map(ToString::to_string)
+            .or_else(|| context.resolved_default_branch.map(str::to_owned))
+            .or_else(|| {
+                (!self.force_refresh())
+                    .then(|| {
+                        cache::default_branch_alias(
+                            &context.config.cache_home,
+                            &self.query.owner,
+                            &self.query.repo,
+                            &self.repository_url,
+                            context.config.cache_ttl,
+                        )
+                    })
+                    .flatten()
+            })
+    }
+}
+
 fn execute_clone(
     query: &GhCloneRepoQuery,
     context: &CloneContext<'_>,
@@ -340,88 +435,33 @@ fn execute_clone(
     }
     validate_query(query)?;
     let sparse = Sparse::of(query);
-    let sparse_key = sparse.as_ref().map(Sparse::key);
-    let depth = history_depth(query);
-    let force_refresh = query.force_refresh.unwrap_or(false);
-    let repository_url = repository_url(context.endpoint, &query.owner, &query.repo)?;
-    authorize_home(context)?;
-    let target = |branch: &str| -> Result<PathBuf, CloneError> {
-        let clone_dir = cache::clone_dir(
-            &context.config.cache_home,
-            &query.owner,
-            &query.repo,
-            branch,
-            sparse_key.as_deref(),
-            depth,
-            &repository_url,
-        );
-        context
-            .path_policy
-            .validate_output(&clone_dir)
-            .map_err(policy_denied)?;
-        Ok(clone_dir)
+    let plan = Plan {
+        query,
+        context,
+        repository_url: repository_url(context.endpoint, &query.owner, &query.repo)?,
+        sparse_key: sparse.as_ref().map(Sparse::key),
+        sparse,
+        depth: history_depth(query),
     };
-    // The default branch comes from the caller, else from the alias a
-    // default-branch clone recorded: a hit needs no GitHub API call.
-    let known_branch = query
-        .ref_
-        .as_ref()
-        .map(ToString::to_string)
-        .or_else(|| context.resolved_default_branch.map(str::to_owned))
-        .or_else(|| {
-            (!force_refresh)
-                .then(|| {
-                    cache::default_branch_alias(
-                        &context.config.cache_home,
-                        &query.owner,
-                        &query.repo,
-                        &repository_url,
-                        context.config.cache_ttl,
-                    )
-                })
-                .flatten()
-        });
-    if let Some(branch) = known_branch.as_deref() {
-        let clone_dir = target(branch)?;
+    authorize_home(context)?;
+    if let Some(branch) = plan.known_branch().as_deref() {
+        let clone_dir = plan.target(branch)?;
         let _lock = cache::CloneLock::acquire(&clone_dir, context)?;
-        let identity = cache::Identity {
-            owner: &query.owner,
-            repo: &query.repo,
-            branch,
-            sparse_key: sparse_key.as_deref(),
-            depth,
-        };
-        if !force_refresh && let Some(hit) = cache_hit(context, &clone_dir, &identity)? {
-            return result(sparse.as_ref(), depth, branch, &clone_dir, hit);
+        if !plan.force_refresh()
+            && let Some(hit) = cache_hit(context, &clone_dir, &plan.identity(branch))?
+        {
+            return Ok(plan.result(branch, &clone_dir, hit));
         }
         if query.ref_.is_some() || context.resolved_default_branch.is_some() {
-            return fresh_clone(
-                query,
-                context,
-                &repository_url,
-                sparse.as_ref(),
-                depth,
-                Some(branch),
-                &target,
-                Some(clone_dir.as_path()),
-            );
+            return fresh_clone(&plan, Some(branch), Some(clone_dir.as_path()));
         }
     }
     // Unknown (or stale-aliased) default branch: let git resolve the remote
     // HEAD. One lock serializes concurrent default-branch clones; "HEAD" is
     // never a branch name, so it cannot collide with a branch cache entry.
-    let pending = target("HEAD")?;
+    let pending = plan.target("HEAD")?;
     let _lock = cache::CloneLock::acquire(&pending, context)?;
-    fresh_clone(
-        query,
-        context,
-        &repository_url,
-        sparse.as_ref(),
-        depth,
-        None,
-        &target,
-        None,
-    )
+    fresh_clone(&plan, None, None)
 }
 
 /// The clones root under the cache home passes the path policy, then exists.
@@ -514,16 +554,13 @@ enum Published {
 /// Check out into a stage, verify it, and publish it. `branch` is `None` for
 /// a default-branch clone: git resolves the remote HEAD and the branch it
 /// checked out names the cache entry (and the default-branch alias).
+/// `locked_dir` is the entry the caller already holds the lock of.
 fn fresh_clone(
-    query: &GhCloneRepoQuery,
-    context: &CloneContext<'_>,
-    repository_url: &str,
-    sparse: Option<&Sparse>,
-    depth: u64,
+    plan: &Plan<'_>,
     branch: Option<&str>,
-    target: &dyn Fn(&str) -> Result<PathBuf, CloneError>,
     locked_dir: Option<&Path>,
 ) -> Result<CloneResult, CloneError> {
+    let context = plan.context;
     // Only a fresh clone probes git: a cache hit's failing `rev-parse`
     // already falls through to here.
     context.git.assert_available(&control(context))?;
@@ -531,100 +568,28 @@ fn fresh_clone(
     cache::evict(context, None);
     let stage_key = match locked_dir {
         Some(dir) => dir.to_path_buf(),
-        None => target("HEAD")?,
+        None => plan.target("HEAD")?,
     };
     let stage = cache::stage_dir(&context.config.cache_home, &stage_key)?;
-    let sparse_paths = sparse.map(Sparse::paths);
-    let checkout = checkout_stage(
-        query,
-        context,
-        repository_url,
-        sparse_paths,
-        depth,
-        branch,
-        &stage,
-    );
-    let (resolved, commit_sha) = match checkout {
-        Ok(value) => value,
-        Err(error) => {
-            discard_stage(context, &stage);
-            return Err(error);
-        }
-    };
-    // A default-branch clone records which branch the default resolved to.
-    let write_alias = || {
-        if branch.is_none() {
-            cache::write_default_branch_alias(
-                &context.config.cache_home,
-                &query.owner,
-                &query.repo,
-                repository_url,
-                &resolved,
-            );
-        }
-    };
-    let publish = (|| {
-        let clone_dir = match locked_dir {
-            Some(dir) => dir.to_path_buf(),
-            None => target(&resolved)?,
-        };
-        // A default-branch clone learns its entry only now; take that
-        // entry's lock before replacing it.
-        let _lock = match locked_dir {
-            Some(_) => None,
-            None => Some(cache::CloneLock::acquire(&clone_dir, context)?),
-        };
-        // That entry may already hold a valid checkout (an explicit-ref
-        // clone of the same branch): keep it rather than replace it.
-        if locked_dir.is_none() && !query.force_refresh.unwrap_or(false) {
-            let sparse_key = sparse.map(Sparse::key);
-            let identity = cache::Identity {
-                owner: &query.owner,
-                repo: &query.repo,
-                branch: &resolved,
-                sparse_key: sparse_key.as_deref(),
-                depth,
-            };
-            if let Some(hit) = cache_hit(context, &clone_dir, &identity)? {
-                write_alias();
-                return Ok((clone_dir, Published::Cached(hit)));
+    let (resolved, commit_sha) =
+        checkout_stage(plan, branch, &stage).inspect_err(|_| discard_stage(context, &stage))?;
+    let (clone_dir, meta) =
+        match publish_stage(plan, &stage, branch, &resolved, &commit_sha, locked_dir) {
+            Ok((clone_dir, Published::Fresh(meta))) => (clone_dir, meta),
+            Ok((clone_dir, Published::Cached(hit))) => {
+                discard_stage(context, &stage);
+                return Ok(plan.result(&resolved, &clone_dir, hit));
             }
-        }
-        let meta = write_stage_meta(
-            query,
-            sparse,
-            depth,
-            (&resolved, &commit_sha),
-            &stage,
-            context.config.cache_ttl,
-        )?;
-        // The target lock also covers this final check. forceRefresh bypasses
-        // cache_hit, and user writes may arrive while the stage is fetched.
-        if clone_dir.exists() && !git::checkout_status(context, &clone_dir)?.safe_to_replace {
-            return Err(dirty_checkout(&clone_dir));
-        }
-        cache::promote(&context.config.cache_home, &stage, &clone_dir)?;
-        write_alias();
-        Ok::<_, CloneError>((clone_dir, Published::Fresh(meta)))
-    })();
-    let (clone_dir, meta) = match publish {
-        Ok((clone_dir, Published::Fresh(meta))) => (clone_dir, meta),
-        Ok((clone_dir, Published::Cached(hit))) => {
-            discard_stage(context, &stage);
-            return result(sparse, depth, &resolved, &clone_dir, hit);
-        }
-        Err(error) => {
-            discard_stage(context, &stage);
-            return Err(error);
-        }
-    };
+            Err(error) => {
+                discard_stage(context, &stage);
+                return Err(error);
+            }
+        };
     context
         .path_policy
         .validate(&clone_dir)
         .map_err(policy_denied)?;
-    let result = result(
-        sparse,
-        depth,
+    let mut result = plan.result(
         &resolved,
         &clone_dir,
         CacheHit {
@@ -633,28 +598,83 @@ fn fresh_clone(
             age: cache::CacheAge::of(&meta, context.config.cache_ttl),
             size: meta.checkout_bytes,
         },
-    )
-    .map(|mut result| {
-        result.location.cached = false;
-        result
-    })?;
+    );
+    result.location.cached = false;
     cache::evict(context, Some(&clone_dir));
     Ok(result)
+}
+
+/// Publish a verified stage as the cache entry of `resolved`, under that
+/// entry's lock. The entry may already hold a valid checkout (an
+/// explicit-ref clone of the same branch): it is kept and the stage is not
+/// published. A default-branch clone records which branch the default
+/// resolved to.
+fn publish_stage(
+    plan: &Plan<'_>,
+    stage: &Path,
+    branch: Option<&str>,
+    resolved: &str,
+    commit_sha: &str,
+    locked_dir: Option<&Path>,
+) -> Result<(PathBuf, Published), CloneError> {
+    let context = plan.context;
+    let write_alias = || {
+        if branch.is_none() {
+            cache::write_default_branch_alias(
+                &context.config.cache_home,
+                &plan.query.owner,
+                &plan.query.repo,
+                &plan.repository_url,
+                resolved,
+            );
+        }
+    };
+    let clone_dir = match locked_dir {
+        Some(dir) => dir.to_path_buf(),
+        None => plan.target(resolved)?,
+    };
+    // A default-branch clone learns its entry only now; take that entry's
+    // lock before replacing it.
+    let _lock = match locked_dir {
+        Some(_) => None,
+        None => Some(cache::CloneLock::acquire(&clone_dir, context)?),
+    };
+    if locked_dir.is_none()
+        && !plan.force_refresh()
+        && let Some(hit) = cache_hit(context, &clone_dir, &plan.identity(resolved))?
+    {
+        write_alias();
+        return Ok((clone_dir, Published::Cached(hit)));
+    }
+    let meta = write_stage_meta(plan, resolved, commit_sha, stage)?;
+    // The target lock also covers this final check. forceRefresh bypasses
+    // cache_hit, and user writes may arrive while the stage is fetched.
+    if clone_dir.exists() && !git::checkout_status(context, &clone_dir)?.safe_to_replace {
+        return Err(dirty_checkout(&clone_dir));
+    }
+    cache::promote(&context.config.cache_home, stage, &clone_dir)?;
+    write_alias();
+    Ok((clone_dir, Published::Fresh(meta)))
 }
 
 /// Check out into `stage` and verify it: every sparse path exists, and a
 /// requested commit is the checked-out HEAD. Returns the resolved branch
 /// and commit.
 fn checkout_stage(
-    query: &GhCloneRepoQuery,
-    context: &CloneContext<'_>,
-    repository_url: &str,
-    sparse_paths: Option<&[String]>,
-    depth: u64,
+    plan: &Plan<'_>,
     branch: Option<&str>,
     stage: &Path,
 ) -> Result<(String, String), CloneError> {
-    git::checkout(context, repository_url, branch, sparse_paths, depth, stage)?;
+    let context = plan.context;
+    let sparse_paths = plan.sparse.as_ref().map(Sparse::paths);
+    git::checkout(
+        context,
+        &plan.repository_url,
+        branch,
+        sparse_paths,
+        plan.depth,
+        stage,
+    )?;
     if let Some(paths) = sparse_paths {
         let missing = paths
             .iter()
@@ -662,7 +682,7 @@ fn checkout_stage(
             .map(String::as_str)
             .collect::<Vec<_>>();
         if !missing.is_empty() {
-            return Err(sparse_not_found(query, branch, &missing));
+            return Err(sparse_not_found(plan.query, branch, &missing));
         }
     }
     let resolved = match branch {
@@ -682,23 +702,15 @@ fn checkout_stage(
 /// Record the checkout's identity, commit and size in its stage. Repository
 /// evidence is never overwritten by this bookkeeping.
 fn write_stage_meta(
-    query: &GhCloneRepoQuery,
-    sparse: Option<&Sparse>,
-    depth: u64,
-    (resolved, commit_sha): (&str, &str),
+    plan: &Plan<'_>,
+    resolved: &str,
+    commit_sha: &str,
     stage: &Path,
-    ttl: Duration,
 ) -> Result<cache::CacheMeta, CloneError> {
     let mut meta = cache::CacheMeta::new(
-        &cache::Identity {
-            owner: &query.owner,
-            repo: &query.repo,
-            branch: resolved,
-            sparse_key: sparse.map(Sparse::key).as_deref(),
-            depth,
-        },
+        &plan.identity(resolved),
         commit_sha,
-        ttl,
+        plan.context.config.cache_ttl,
     );
     // Repository evidence must never be overwritten by our bookkeeping.
     // This also rejects a directory or symlink at the reserved filename.
@@ -765,40 +777,6 @@ fn sparse_not_found(
             ),
         )
     }
-}
-
-/// One clone row: a fresh checkout or a served cache hit (`cached`).
-fn result(
-    sparse: Option<&Sparse>,
-    depth: u64,
-    branch: &str,
-    clone_dir: &Path,
-    hit: CacheHit,
-) -> Result<CloneResult, CloneError> {
-    let local_path = clone_dir.to_string_lossy().into_owned();
-    let bytes = hit
-        .size
-        .unwrap_or_else(|| cache::checked_out_size(clone_dir));
-    let (cloned_at, expires_at) = hit.age.map_or((None, None), |age| {
-        (Some(age.cloned_at), Some(age.expires_at))
-    });
-    let paths = sparse.map(Sparse::paths);
-    Ok(CloneResult {
-        bytes,
-        next: explore_next(clone_dir, paths),
-        location: CloneLocation {
-            kind: if sparse.is_some() { "tree" } else { "repo" },
-            local_path,
-            cached: true,
-            commit_sha: hit.commit_sha,
-            verified: hit.verified,
-            resolved_ref: branch.to_owned(),
-            requested_paths: paths.map(<[String]>::to_vec),
-            history_depth: (depth > 1).then_some(depth),
-            cloned_at,
-            expires_at,
-        },
-    })
 }
 
 /// `next.exploreClone`: list the checkout (the sparse subtree when one was

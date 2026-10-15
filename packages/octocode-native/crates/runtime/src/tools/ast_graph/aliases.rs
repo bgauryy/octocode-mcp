@@ -74,14 +74,6 @@ const FLAVOR_DIRS: &[&str] = &[
 ];
 const JS_EXTENSIONS: &[&str] = &[".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts"];
 const DECLARATION_EXTENSIONS: &[&str] = &[".d.ts", ".d.mts", ".d.cts"];
-/// Built extension → the extensions TypeScript tries for it, in order: the
-/// source of the same module, then its declaration file.
-const JS_SOURCE_SWAPS: &[(&str, &[&str])] = &[
-    (".js", &[".ts", ".tsx", ".d.ts"]),
-    (".jsx", &[".tsx", ".d.ts"]),
-    (".mjs", &[".mts", ".d.mts"]),
-    (".cjs", &[".cts", ".d.cts"]),
-];
 
 /// Pattern keys (`./sub/*`, `#internal/*`, `@app/*`) with ordered targets.
 type PatternTargets = Vec<(String, Vec<String>)>;
@@ -865,12 +857,11 @@ pub(crate) fn probe_js(stem: &str, known: &BTreeSet<String>) -> Option<String> {
         }
         // TypeScript resolves `./x.js` to the source or declaration that
         // `x.js` is built from, in this order.
-        return JS_SOURCE_SWAPS.iter().find_map(|(from, to)| {
-            let base = stem.strip_suffix(from)?;
-            to.iter()
-                .map(|ext| format!("{base}{ext}"))
-                .find(|candidate| known.contains(candidate))
-        });
+        let (base, extension) = stem.rsplit_once('.')?;
+        return octocode_engine::signatures::languages::js_source_swaps(extension)
+            .iter()
+            .map(|swap| format!("{base}.{swap}"))
+            .find(|candidate| known.contains(candidate));
     }
     // `./x` is `x.ts` … or `x.d.ts`, then the directory's `index`.
     let probed = |name: String| {
@@ -1268,32 +1259,27 @@ fn enclosing_python_package(root: &Path) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tools::ast_graph::test_support::{known, write_file};
+    use crate::tools::ast_graph::test_support::{Fixture, known};
 
     #[test]
     fn indexing_keeps_python_and_include_roots_after_the_sixty_fourth() {
-        let root = tempfile::tempdir().expect("root");
+        let root = Fixture::new();
         let mut files = BTreeSet::new();
         for i in 0..70 {
             let dir = format!("project{i:02}");
-            write_file(
-                root.path(),
-                &format!("{dir}/pyproject.toml"),
-                "[project]\nname='x'\n",
-            );
-            write_file(root.path(), &format!("{dir}/main.py"), "x = 1\n");
+            root.write(&format!("{dir}/pyproject.toml"), "[project]\nname='x'\n");
+            root.write(&format!("{dir}/main.py"), "x = 1\n");
             files.insert(format!("{dir}/main.py"));
         }
         let commands = (0..70)
-            .map(|i| serde_json::json!({"directory":root.path(),"arguments":["cc",format!("-Iinc{i:02}")]}))
+            .map(|i| serde_json::json!({"directory":root.0.as_path(),"arguments":["cc",format!("-Iinc{i:02}")]}))
             .collect::<Vec<_>>();
-        write_file(
-            root.path(),
+        root.write(
             "compile_commands.json",
-            &serde_json::to_string(&commands).unwrap(),
+            serde_json::to_string(&commands).unwrap(),
         );
         files.insert("main.c".into());
-        let context = load(root.path(), &files);
+        let context = load(root.0.as_path(), &files);
         assert!(context.python_roots.contains(&"project69".to_owned()));
         assert!(context.system_include_dirs.contains(&"inc69".to_owned()));
     }
@@ -1305,30 +1291,34 @@ mod tests {
 
     #[test]
     fn config_reads_stay_inside_the_policy_and_the_size_bound() {
-        let root = tempfile::tempdir().unwrap();
-        let outside = tempfile::tempdir().unwrap();
-        let policy = crate::tools::test_support::workspace_policy(root.path());
+        let root = Fixture::new();
+        let outside = Fixture::new();
+        let policy = crate::tools::test_support::workspace_policy(root.0.as_path());
         let security = ContentSecurity::new();
-        write_file(root.path(), "package.json", r#"{"name":"inside"}"#);
-        write_file(outside.path(), "package.json", r#"{"name":"outside"}"#);
+        root.write("package.json", r#"{"name":"inside"}"#);
+        outside.write("package.json", r#"{"name":"outside"}"#);
         assert_eq!(
-            read_config_text(&policy, &security, &root.path().join("package.json")).as_deref(),
+            read_config_text(&policy, &security, &root.0.as_path().join("package.json")).as_deref(),
             Some(r#"{"name":"inside"}"#)
         );
         assert_eq!(
-            read_config_text(&policy, &security, &outside.path().join("package.json")),
+            read_config_text(
+                &policy,
+                &security,
+                &outside.0.as_path().join("package.json")
+            ),
             None
         );
-        write_file(root.path(), "big.json", &" ".repeat(MAX_CONFIG_BYTES + 1));
+        root.write("big.json", " ".repeat(MAX_CONFIG_BYTES + 1));
         assert_eq!(
-            read_config_text(&policy, &security, &root.path().join("big.json")),
+            read_config_text(&policy, &security, &root.0.as_path().join("big.json")),
             None
         );
     }
 
     #[test]
     fn c_includes_fall_back_to_a_unique_path_suffix() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = Fixture::new();
         let files = [
             "deps/jemalloc/include/jemalloc/internal/stats.h",
             "deps/jemalloc/src/stats.c",
@@ -1340,7 +1330,7 @@ mod tests {
         .into_iter()
         .map(str::to_owned)
         .collect::<BTreeSet<_>>();
-        let context = load(dir.path(), &files);
+        let context = load(dir.0.as_path(), &files);
         assert_eq!(
             context
                 .header_by_suffix("jemalloc/internal/stats.h", "deps/jemalloc/src/stats.c")
@@ -1369,20 +1359,14 @@ mod tests {
 
     #[test]
     fn tsconfig_paths_resolve_through_relative_extends_chains() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().canonicalize().unwrap();
-        write_file(
-            &root,
-            "tsconfig.base.json",
-            "{\n  // shared\n  \"compilerOptions\": {\n    \"baseUrl\": \".\",\n    \"paths\": {\n      \"@lib/*\": [\"missing/*\", \"packages/lib/src/*\"],\n      \"@lib\": [\"packages/lib/src/index.ts\"],\n      \"@/*\": [\"packages/app/src/*\"],\n    },\n  },\n}\n",
-        );
-        write_file(
-            &root,
+        let dir = Fixture::new();
+        let root = dir.0.as_path().canonicalize().unwrap();
+        dir.write("tsconfig.base.json", "{\n  // shared\n  \"compilerOptions\": {\n    \"baseUrl\": \".\",\n    \"paths\": {\n      \"@lib/*\": [\"missing/*\", \"packages/lib/src/*\"],\n      \"@lib\": [\"packages/lib/src/index.ts\"],\n      \"@/*\": [\"packages/app/src/*\"],\n    },\n  },\n}\n");
+        dir.write(
             "packages/app/tsconfig.json",
             "{ \"extends\": \"../../tsconfig.base\", \"compilerOptions\": {} }",
         );
-        write_file(
-            &root,
+        dir.write(
             "packages/other/tsconfig.json",
             "{ \"compilerOptions\": { \"paths\": { \"~x/*\": [\"./src/x/*\"] } } }",
         );
@@ -1431,15 +1415,13 @@ mod tests {
 
     #[test]
     fn base_url_resolves_non_relative_modules_and_references_are_followed() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().canonicalize().unwrap();
-        write_file(
-            &root,
+        let dir = Fixture::new();
+        let root = dir.0.as_path().canonicalize().unwrap();
+        dir.write(
             "tsconfig.json",
             "{ \"files\": [], \"references\": [{ \"path\": \"./tsconfig.app.json\" }] }",
         );
-        write_file(
-            &root,
+        dir.write(
             "tsconfig.app.json",
             "{ \"compilerOptions\": { \"baseUrl\": \"src\", \"paths\": { \"@/*\": [\"./*\"] } } }",
         );
@@ -1461,12 +1443,9 @@ mod tests {
 
     #[test]
     fn workspace_packages_prefer_sources_over_build_output() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().canonicalize().unwrap();
-        write_file(
-            &root,
-            "packages/core/package.json",
-            r##"{
+        let dir = Fixture::new();
+        let root = dir.0.as_path().canonicalize().unwrap();
+        dir.write("packages/core/package.json", r##"{
               "name": "@acme/core",
               "main": "./dist/cjs/index.js",
               "exports": {
@@ -1476,10 +1455,8 @@ mod tests {
                 "./package.json": "./package.json"
               },
               "imports": { "#internal/*": { "source": "./src/internal/*.ts", "default": "./dist/internal/*.js" } }
-            }"##,
-        );
-        write_file(
-            &root,
+            }"##);
+        dir.write(
             "packages/legacy/package.json",
             r#"{ "name": "legacy", "module": "lib/index.js", "types": "lib/index.d.ts" }"#,
         );
@@ -1529,14 +1506,10 @@ mod tests {
 
     #[test]
     fn python_roots_include_src_layout_project_roots() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().canonicalize().unwrap();
-        write_file(
-            &root,
-            "libs/tool/pyproject.toml",
-            "[project]\nname='tool'\n",
-        );
-        write_file(&root, "libs/tool/src/tool/__init__.py", "");
+        let dir = Fixture::new();
+        let root = dir.0.as_path().canonicalize().unwrap();
+        dir.write("libs/tool/pyproject.toml", "[project]\nname='tool'\n");
+        dir.write("libs/tool/src/tool/__init__.py", "");
         let files = known(&["libs/tool/src/tool/__init__.py", "app/main.py"]);
         let context = load(&root, &files);
         assert_eq!(
@@ -1551,14 +1524,13 @@ mod tests {
 
     #[test]
     fn subtree_scans_use_the_package_tsconfig_above_the_root() {
-        let dir = tempfile::tempdir().unwrap();
-        let workspace = dir.path().canonicalize().unwrap();
-        write_file(
-            &workspace,
+        let dir = Fixture::new();
+        let workspace = dir.0.as_path().canonicalize().unwrap();
+        dir.write(
             "app/tsconfig.json",
             "{ \"compilerOptions\": { \"paths\": { \"@ui/*\": [\"./src/ui/*\"] } } }",
         );
-        write_file(&workspace, "app/package.json", "{}");
+        dir.write("app/package.json", "{}");
         let root = workspace.join("app/src");
         let files = known(&["main.ts", "ui/button.ts"]);
         let policy = crate::tools::test_support::workspace_policy(&workspace);
@@ -1573,14 +1545,14 @@ mod tests {
 
     #[test]
     fn compile_commands_include_dirs_are_rebased_to_the_root() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().canonicalize().unwrap();
+        let dir = Fixture::new();
+        let root = dir.0.as_path().canonicalize().unwrap();
         let commands = serde_json::json!([
             {"directory": root.join("build"), "command": "c++ -I../third/include -I /outside -iquote ../quoted -c ../src/a.cpp", "file": "../src/a.cpp"},
             {"directory": root, "arguments": ["cc", "-I", "gen", "-c", "b.c"], "file": "b.c"}
         ]);
-        write_file(&root, "compile_commands.json", &commands.to_string());
-        write_file(&root, "src/a.cpp", "");
+        dir.write("compile_commands.json", commands.to_string());
+        dir.write("src/a.cpp", "");
         let files = known(&["src/a.cpp"]);
         let context = load(&root, &files);
         assert_eq!(

@@ -60,6 +60,47 @@ jobs:
         run: cargo deny --locked check
       - name: Unused dependencies
         run: cargo machete
+      # Contract freshness: regenerate the whole generated Rust types file with
+      # the pinned cargo-typify and byte-compare it, then the config contract.
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - run: corepack enable
+      - run: yarn install --immutable --mode=skip-build
+        working-directory: .
+      - uses: actions/cache@v4
+        id: typify
+        with:
+          path: ~/.cargo/bin/cargo-typify
+          key: cargo-typify-0.8.0-${{ runner.os }}
+      - name: Install cargo-typify
+        if: steps.typify.outputs.cache-hit != 'true'
+        run: cargo install cargo-typify --version 0.8.0 --locked
+      - name: Tool contract freshness
+        run: yarn workspace @octocodeai/config check:tool-contract
+        working-directory: .
+      - name: Config contract freshness
+        run: yarn workspace @octocodeai/config check:config-contract
+        working-directory: .
+
+  # The native package's script tests (platform map, build/publication,
+  # lint floor, audit-native): plain Node, no Rust build.
+  native-scripts:
+    name: Native scripts (Node)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - run: corepack enable
+      - run: yarn install --immutable --mode=skip-build
+      - name: Script tests
+        run: yarn workspace @octocodeai/octocode-native test:scripts
+      - name: audit-native tests
+        run: node --test packages/octocode-native/tests/audit-native.test.mjs
 
   # End-to-end tool health (dev.mjs test:tools): every tool through the built CLI
   # and MCP server against hermetic fixtures and a loopback mock. It needs the
@@ -82,5 +123,8 @@ jobs:
       - run: yarn install --immutable --mode=skip-build
       - name: Build (dev)
         run: node skills-dev/octocode-dev/scripts/dev.mjs build:dev
+      # Addon ABI, exports, platform resolution and staging, against the build above.
+      - name: Native Node tests
+        run: yarn workspace @octocodeai/octocode-native test:node
       - name: Tool health
         run: node skills-dev/octocode-dev/scripts/dev.mjs test:tools

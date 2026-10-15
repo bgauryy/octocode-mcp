@@ -132,131 +132,223 @@ pub(super) fn scan(
     if needles.is_empty() {
         return FileHits::Unmatched;
     }
-    let key_blocks = crate::security::private_key_block_line_ranges(&text);
-    let mut line_count = 0;
-    let lowered: Vec<String> = text.lines().map(str::to_lowercase).collect();
-    let terms = goal_terms(goal, &needles);
-    // Every keyword line: (index, byte of its first keyword, holds every keyword).
-    let mut hits = Vec::new();
-    let mut scores = Vec::new();
-    for (index, lower) in lowered.iter().enumerate() {
-        line_count = index + 1;
-        let Some((at, needle)) = needles
-            .iter()
-            .filter_map(|needle| lower.find(needle.as_str()).map(|at| (at, needle)))
-            .min()
-        else {
-            continue;
-        };
-        scores.push(hit_score(&lowered, index, at + needle.len(), &terms));
-        let every = needles.iter().all(|needle| lower.contains(needle.as_str()));
-        hits.push((index, at, every));
-    }
-    let total = hits.len();
-    let raw: Vec<&str> = text.lines().collect();
-    // The read anchors where the listing does: on lines holding every
-    // keyword when any exist; else on the smallest window holding every
-    // keyword (one opened by a declaration first); else on any keyword line.
-    let any_every = hits.iter().any(|hit| hit.2);
-    let window = (!any_every && needles.len() > 1)
-        .then(|| {
-            covering_window(&hits, &lowered, &needles, |hit| {
-                let (index, at, _) = hits[hit];
-                declared_head(raw[index], &lowered, index, at, path, security).is_some()
-            })
-        })
-        .flatten();
-    let (mut first, mut last, mut best) = (0, 0, (0, (0, 0)));
-    if let Some((start, end)) = window {
-        let number = |hit: usize| u32::try_from(hits[hit].0 + 1).unwrap_or(u32::MAX);
-        (first, last, best) = (number(start), number(end), (number(start), scores[start]));
-    }
-    for (&(index, _, every), &score) in hits.iter().zip(&scores) {
-        if window.is_some() || (any_every && !every) {
-            continue;
-        }
-        let number = u32::try_from(index + 1).unwrap_or(u32::MAX);
-        if first == 0 || score > best.1 {
-            best = (number, score);
-        }
-        if first == 0 {
-            first = number;
-        }
-        last = number;
-    }
-    // Listed: the lines holding every keyword; without one, each keyword's
-    // first line and the anchoring window's first and last lines. The rest stay counted for
-    // the whole-file read.
-    let mut uncovered: Vec<&String> = if any_every {
-        Vec::new()
-    } else {
-        needles.iter().collect()
+    let blob = Blob {
+        raw: text.lines().collect(),
+        lowered: text.lines().map(str::to_lowercase).collect(),
+        key_blocks: crate::security::private_key_block_line_ranges(&text),
+        path,
     };
-    let in_window = |hit: usize| window.is_some_and(|(start, end)| hit == start || hit == end);
-    let mut lines = Vec::new();
-    let mut clipped = false;
-    let mut shown_hits = 0;
-    let mut prefix = true;
-    let mut last_shown = 0;
-    for (hit, &(index, at, every)) in hits.iter().enumerate() {
-        if lines.len() >= MAX_LINES_PER_FILE {
-            break;
-        }
-        let lower = &lowered[index];
-        let before = uncovered.len();
-        uncovered.retain(|needle| !lower.contains(needle.as_str()));
-        if !every && uncovered.len() == before && !in_window(hit) {
-            continue;
-        }
-        let number = u32::try_from(index + 1).unwrap_or(u32::MAX);
-        prefix &= hit == shown_hits;
-        shown_hits += 1;
-        last_shown = number;
-        let line = raw[index];
-        let in_key_block = key_blocks
-            .iter()
-            .any(|&(start, end)| (start..=end).contains(&number));
-        let shown = if in_key_block {
-            crate::security::key_fragment_placeholder()
-        } else {
-            clipped |= line.chars().count() > MAX_LINE_CHARS;
-            let window = clip(line, lower_to_char_index(line, lower, at));
-            security
-                .sanitize(&window, Path::new(path))
-                .map(|(clean, _)| clean)
-                .unwrap_or_else(|_| "[REDACTED]".to_owned())
-        };
-        lines.push(format!(
-            "{number}{}{shown}",
-            crate::tools::numbered::SEPARATOR
-        ));
-    }
-    if total == 0 {
+    let hits = blob.hits(&needles, goal);
+    if hits.is_empty() {
         return FileHits::Unmatched;
     }
-    let declaration = hits
-        .iter()
-        .find(|hit| u32::try_from(hit.0 + 1).ok() == Some(best.0))
-        .and_then(|&(index, at, _)| {
-            let number = u32::try_from(index + 1).ok()?;
-            if key_blocks
-                .iter()
-                .any(|&(start, end)| (start..=end).contains(&number))
-            {
-                return None;
-            }
-            declared_head(raw[index], &lowered, index, at, path, security)
-        });
+    let anchor = blob.anchor(&hits, &needles, security);
+    let listing = blob.listing(&hits, &needles, anchor.window, security);
     FileHits::Lines {
-        lines,
-        clipped,
-        first,
-        last,
-        best: best.0,
-        total,
-        line_count,
-        declaration,
-        resume_after: (prefix && !clipped && last_shown > 0).then_some(last_shown),
+        declaration: blob.declaration(&hits, anchor.best, security),
+        lines: listing.lines,
+        clipped: listing.clipped,
+        first: anchor.first,
+        last: anchor.last,
+        best: anchor.best,
+        total: hits.len(),
+        line_count: blob.lowered.len(),
+        resume_after: listing.resume_after,
+    }
+}
+
+/// One line holding a keyword.
+struct Hit {
+    /// Its 0-based line index.
+    index: usize,
+    /// The byte of its first keyword in the lowercase line.
+    at: usize,
+    /// It holds every keyword.
+    every: bool,
+    /// How well it fits the goal ([`hit_score`]).
+    score: (usize, usize),
+}
+
+impl Hit {
+    /// Its 1-based line number.
+    fn number(&self) -> u32 {
+        u32::try_from(self.index + 1).unwrap_or(u32::MAX)
+    }
+}
+
+/// Where a read anchors: the first and last anchoring lines and the best
+/// hit, as line numbers (0: none), and the covering window (hit indexes)
+/// when no line holds every keyword.
+struct Anchor {
+    window: Option<(usize, usize)>,
+    first: u32,
+    last: u32,
+    best: u32,
+}
+
+/// The listed hit lines of a file.
+struct Listing {
+    lines: Vec<String>,
+    clipped: bool,
+    resume_after: Option<u32>,
+}
+
+/// One scanned blob: its lines, as read and lowercased, and the private-key
+/// blocks no listed line may show.
+struct Blob<'a> {
+    raw: Vec<&'a str>,
+    lowered: Vec<String>,
+    key_blocks: Vec<(u32, u32)>,
+    path: &'a str,
+}
+
+impl Blob<'_> {
+    /// Every keyword line, in file order.
+    fn hits(&self, needles: &[String], goal: &str) -> Vec<Hit> {
+        let terms = goal_terms(goal, needles);
+        self.lowered
+            .iter()
+            .enumerate()
+            .filter_map(|(index, lower)| {
+                let (at, needle) = needles
+                    .iter()
+                    .filter_map(|needle| lower.find(needle.as_str()).map(|at| (at, needle)))
+                    .min()?;
+                Some(Hit {
+                    index,
+                    at,
+                    every: needles.iter().all(|needle| lower.contains(needle.as_str())),
+                    score: hit_score(&self.lowered, index, at + needle.len(), &terms),
+                })
+            })
+            .collect()
+    }
+
+    fn in_key_block(&self, number: u32) -> bool {
+        self.key_blocks
+            .iter()
+            .any(|&(start, end)| (start..=end).contains(&number))
+    }
+
+    /// The read anchors where the listing does: on lines holding every
+    /// keyword when any exist; else on the smallest window holding every
+    /// keyword (one opened by a declaration first); else on any keyword line.
+    fn anchor(&self, hits: &[Hit], needles: &[String], security: &impl ContentScan) -> Anchor {
+        let any_every = hits.iter().any(|hit| hit.every);
+        let window = (!any_every && needles.len() > 1)
+            .then(|| {
+                covering_window(hits, &self.lowered, needles, |start| {
+                    let hit = &hits[start];
+                    declared_head(
+                        self.raw[hit.index],
+                        &self.lowered,
+                        hit.index,
+                        hit.at,
+                        self.path,
+                        security,
+                    )
+                    .is_some()
+                })
+            })
+            .flatten();
+        if let Some((start, end)) = window {
+            let first = hits[start].number();
+            return Anchor {
+                window,
+                first,
+                last: hits[end].number(),
+                best: first,
+            };
+        }
+        let (mut first, mut last, mut best) = (0, 0, (0, (0, 0)));
+        for hit in hits.iter().filter(|hit| !any_every || hit.every) {
+            let number = hit.number();
+            if first == 0 || hit.score > best.1 {
+                best = (number, hit.score);
+            }
+            if first == 0 {
+                first = number;
+            }
+            last = number;
+        }
+        Anchor {
+            window,
+            first,
+            last,
+            best: best.0,
+        }
+    }
+
+    /// Listed: the lines holding every keyword; without one, each keyword's
+    /// first line and the anchoring window's first and last lines. The rest
+    /// stay counted for the whole-file read.
+    fn listing(
+        &self,
+        hits: &[Hit],
+        needles: &[String],
+        window: Option<(usize, usize)>,
+        security: &impl ContentScan,
+    ) -> Listing {
+        let mut uncovered: Vec<&String> = if hits.iter().any(|hit| hit.every) {
+            Vec::new()
+        } else {
+            needles.iter().collect()
+        };
+        let in_window = |hit: usize| window.is_some_and(|(start, end)| hit == start || hit == end);
+        let mut listing = Listing {
+            lines: Vec::new(),
+            clipped: false,
+            resume_after: None,
+        };
+        let (mut shown_hits, mut prefix, mut last_shown) = (0, true, 0);
+        for (position, hit) in hits.iter().enumerate() {
+            if listing.lines.len() >= MAX_LINES_PER_FILE {
+                break;
+            }
+            let lower = &self.lowered[hit.index];
+            let before = uncovered.len();
+            uncovered.retain(|needle| !lower.contains(needle.as_str()));
+            if !hit.every && uncovered.len() == before && !in_window(position) {
+                continue;
+            }
+            let number = hit.number();
+            prefix &= position == shown_hits;
+            shown_hits += 1;
+            last_shown = number;
+            let line = self.raw[hit.index];
+            let shown = if self.in_key_block(number) {
+                crate::security::key_fragment_placeholder()
+            } else {
+                listing.clipped |= line.chars().count() > MAX_LINE_CHARS;
+                let window = clip(line, lower_to_char_index(line, lower, hit.at));
+                security
+                    .sanitize(&window, Path::new(self.path))
+                    .map(|(clean, _)| clean)
+                    .unwrap_or_else(|_| "[REDACTED]".to_owned())
+            };
+            listing.lines.push(format!(
+                "{number}{}{shown}",
+                crate::tools::numbered::SEPARATOR
+            ));
+        }
+        listing.resume_after = (prefix && !listing.clipped && last_shown > 0).then_some(last_shown);
+        listing
+    }
+
+    /// The best hit's declaration line, unless it sits in a private-key block.
+    fn declaration(&self, hits: &[Hit], best: u32, security: &impl ContentScan) -> Option<String> {
+        let hit = hits.iter().find(|hit| hit.number() == best)?;
+        if self.in_key_block(best) {
+            return None;
+        }
+        declared_head(
+            self.raw[hit.index],
+            &self.lowered,
+            hit.index,
+            hit.at,
+            self.path,
+            security,
+        )
     }
 }
 
@@ -268,7 +360,7 @@ const MAX_WINDOW_LINES: usize = 60;
 /// opened by a declaration (`declares`), then the narrowest, then the
 /// earliest. `None` when no such window exists.
 fn covering_window(
-    hits: &[(usize, usize, bool)],
+    hits: &[Hit],
     lowered: &[String],
     needles: &[String],
     declares: impl Fn(usize) -> bool,
@@ -279,11 +371,11 @@ fn covering_window(
     for start in 0..hits.len() {
         let mut missing: Vec<&String> = needles.iter().collect();
         for end in start..hits.len() {
-            let span = hits[end].0 - hits[start].0;
+            let span = hits[end].index - hits[start].index;
             if span > MAX_WINDOW_LINES {
                 break;
             }
-            missing.retain(|needle| !lowered[hits[end].0].contains(needle.as_str()));
+            missing.retain(|needle| !lowered[hits[end].index].contains(needle.as_str()));
             if missing.is_empty() {
                 let rank = (!declares(start), span, start);
                 if chosen.as_ref().is_none_or(|(best, _)| rank < *best) {

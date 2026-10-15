@@ -21,7 +21,7 @@ import json, os, sys
 from pathlib import Path
 readers = {'localSearch','localFetch','structureSearch','astSearch','lspSearch','ghSearchRepo',
            'ghSearchCode','ghStructure','ghGetFileContent','ghSearchHistory','ghGetHistoryItem','artifactSearch'}
-goals = {'localSearch','localFetch','ghGetFileContent','ghSearchCode'}
+classifier_readers = {'localSearch','localFetch','ghGetFileContent','ghSearchCode'}
 selected = os.getenv('TOOLS_TO_RUN', '')
 names = set(selected.split(',')) if selected else set(readers) | {'clasify'}
 ready = os.getenv('OCTOCODE_BETA') == 'true' and bool(os.getenv('OCTOCODE_CLASSIFICATION_API'))
@@ -35,12 +35,12 @@ for line in sys.stdin:
     method = request['method']
     if method == 'initialize': result = {'instructions': 'fixture'}
     elif method == 'tools/list':
-        result = {'tools': [{'name': name, 'inputSchema': {'properties': {'goals': {}} if ranked and name in goals else {}}}
+        result = {'tools': [{'name': name, 'inputSchema': {'properties': {'classifiers': {}} if ranked and name in classifier_readers else {}}}
                             for name in sorted(names)]}
     elif method == 'tools/call':
         args = request['params']['arguments']
-        remote = request['params']['name'] == 'clasify' and args['queries'][0]['resources'][0]['tool'] == 'ghSearchRepo'
-        result = {'content': [{'type': 'text', 'text': 'ghSearchRepo is not available' if remote else 'outsideAllowedRoots'}]}
+        remote = request['params']['name'] == 'clasify' and args['queries'][0]['source']['tool'] == 'ghGetFileContent'
+        result = {'content': [{'type': 'text', 'text': 'ghGetFileContent is disabled in this runtime' if remote else 'outsideAllowedRoots'}]}
     else: raise RuntimeError(method)
     print(json.dumps({'jsonrpc':'2.0','id':request['id'],'result':result}), flush=True)
 '''

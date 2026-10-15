@@ -37,7 +37,7 @@ const HERMETIC = {
   'deps-flows': script('deps-flows'),
   'large-files': script('large-files'),
   'local-ranking': script('local-ranking'),
-  'read-tool-ranking': script('read-tool-ranking'),
+  'read-tool-selection': script('read-tool-selection'),
   'classification-retry': script('classification-retry'),
   'tool-health': script('tool-health'),
 };

@@ -4,29 +4,9 @@ use super::dotenv::{
 use super::loader::load_config;
 use super::types::*;
 use super::validation::{config_issues, get_path, is_http_url, is_local_path};
-use serde_json::{Number, Value, json};
+use serde_json::{Value, json};
 use std::collections::BTreeMap;
-
-fn set_path(root: &mut Value, field_path: &str, value: Value) -> Result<(), String> {
-    let parts = field_path.split('.').collect::<Vec<_>>();
-    let mut current = root;
-    for part in &parts[..parts.len().saturating_sub(1)] {
-        let parent = current
-            .as_object_mut()
-            .ok_or_else(|| format!("generated default parent for {field_path} is not an object"))?;
-        current = parent
-            .get_mut(*part)
-            .ok_or_else(|| format!("generated default is missing section {part}"))?;
-    }
-    let key = parts
-        .last()
-        .ok_or_else(|| "generated field path is empty".to_owned())?;
-    current
-        .as_object_mut()
-        .ok_or_else(|| format!("generated default parent for {field_path} is not an object"))?
-        .insert((*key).to_owned(), value);
-    Ok(())
-}
+use std::path::{Path, PathBuf};
 
 fn normalize_string(value: &str, normalize: Option<ConfigNormalize>) -> String {
     let trimmed = value.trim();
@@ -36,29 +16,45 @@ fn normalize_string(value: &str, normalize: Option<ConfigNormalize>) -> String {
     }
 }
 
-/// The integer a number setting was given, before its range applies.
-fn given_number(raw: &Value, from_environment: bool) -> Option<f64> {
-    if from_environment {
+/// The integer a number setting was given, before its range applies. A
+/// fraction, a non-number, or (for a non-negative setting) a negative value is
+/// not a member of the setting's type, from a file or the environment alike.
+fn given_number(field: &ConfigFieldSpec, raw: &Value, from_environment: bool) -> Option<f64> {
+    let value = if from_environment {
         parse_int_env(raw.as_str()).map(|value| value as f64)
     } else {
-        // Config number fields are integers: a file's `maxRetries: 2.5`
-        // resolves to 2.
-        raw.as_f64().map(f64::trunc)
-    }
+        raw.as_f64().filter(|value| value.fract() == 0.0)
+    }?;
+    (value >= 0.0 || field.minimum.is_some_and(|minimum| minimum < 0.0)).then_some(value)
 }
 
 /// A number setting a value outside its range clamps to: the value as given
 /// and the bound it was raised or lowered to.
-fn clamp_of(field: &ConfigFieldSpec, raw: &Value, from_environment: bool) -> Option<(f64, f64)> {
+pub(super) fn clamp_of(
+    field: &ConfigFieldSpec,
+    raw: &Value,
+    from_environment: bool,
+) -> Option<(f64, f64)> {
     if field.kind != ConfigFieldKind::Number {
         return None;
     }
-    let given = given_number(raw, from_environment)?;
+    let given = given_number(field, raw, from_environment)?;
     let (minimum, maximum) = (field.minimum?, field.maximum?);
     let used = given.max(minimum).min(maximum);
     (used != given).then_some((given, used))
 }
 
+/// The integer JSON value of a number in range.
+fn integer_value(value: f64) -> Value {
+    if value < 0.0 {
+        Value::from(value as i64)
+    } else {
+        Value::from(value as u64)
+    }
+}
+
+/// A setting's value from one raw source, or `None` when the source does not
+/// hold a valid value for it (`null` included: it means "use the next source").
 pub(super) fn parse_candidate(
     field: &ConfigFieldSpec,
     raw: &Value,
@@ -66,10 +62,6 @@ pub(super) fn parse_candidate(
     normalize: Option<ConfigNormalize>,
 ) -> Option<Value> {
     match field.kind {
-        ConfigFieldKind::SchemaVersion => raw
-            .as_i64()
-            .or_else(|| raw.as_u64().and_then(|value| i64::try_from(value).ok()))
-            .map(Value::from),
         ConfigFieldKind::Boolean => {
             let value = if from_environment {
                 parse_boolean_env(raw.as_str())
@@ -79,18 +71,16 @@ pub(super) fn parse_candidate(
             Some(Value::Bool(value))
         }
         ConfigFieldKind::Number => {
-            let value = given_number(raw, from_environment)?;
-            let clamped = value.max(field.minimum?).min(field.maximum?);
-            Number::from_f64(clamped).map(Value::Number)
+            let value = given_number(field, raw, from_environment)?;
+            Some(integer_value(value.max(field.minimum?).min(field.maximum?)))
         }
         ConfigFieldKind::StringArray => {
             let value = if from_environment {
                 parse_string_array_env(raw.as_str())
                     .map(|values| Value::Array(values.into_iter().map(Value::String).collect()))
-            } else if raw.is_null()
-                || raw
-                    .as_array()
-                    .is_some_and(|values| values.iter().all(Value::is_string))
+            } else if raw
+                .as_array()
+                .is_some_and(|values| values.iter().all(Value::is_string))
             {
                 Some(raw.clone())
             } else {
@@ -131,6 +121,41 @@ pub(super) fn parse_candidate(
         }
     }
 }
+
+/// `~` and `~/rest` (or `~\rest`) against the OS home; other paths unchanged.
+fn expand_home_path(path: &str, os_home: &Path) -> String {
+    let rest = if path == "~" {
+        Some("")
+    } else {
+        path.strip_prefix("~/").or_else(|| path.strip_prefix("~\\"))
+    };
+    match rest {
+        Some("") => os_home.to_string_lossy().into_owned(),
+        Some(rest) => os_home.join(rest).to_string_lossy().into_owned(),
+        None => path.to_owned(),
+    }
+}
+
+/// Path settings expand `~` once, here, with the home the path policy uses;
+/// no reader sees a home-relative path.
+fn expand_home(field: &ConfigFieldSpec, value: Value, os_home: &Path) -> Value {
+    match (field.kind, value) {
+        (ConfigFieldKind::Path, Value::String(path)) => {
+            Value::String(expand_home_path(&path, os_home))
+        }
+        (ConfigFieldKind::StringArray, Value::Array(items)) if field.item_path => Value::Array(
+            items
+                .into_iter()
+                .map(|item| match item {
+                    Value::String(path) => Value::String(expand_home_path(&path, os_home)),
+                    other => other,
+                })
+                .collect(),
+        ),
+        (_, value) => value,
+    }
+}
+
 /// Resolve every contract field. `files` are `.octocoderc` layers in priority
 /// order (workspace before global); for each field the environment wins, then
 /// the first layer holding a valid value, then the generated default.
@@ -139,27 +164,40 @@ pub(crate) fn resolve_sections(
     files: &[&Value],
     environment: &BTreeMap<String, String>,
 ) -> Result<ResolvedConfig, String> {
-    resolve_fields(files, environment, &mut |_, _| {}, &mut |_, _, _, _| {})
+    let mut errors = vec![];
+    let (resolved, _) = resolve_fields(
+        files,
+        environment,
+        Path::new("/synthetic-home"),
+        &mut |_, _| {},
+        &mut |_, _, _, _| {},
+        &mut |error| errors.push(error),
+    );
+    if errors.is_empty() {
+        Ok(resolved)
+    } else {
+        Err(errors.join("; "))
+    }
 }
 
 /// `on_invalid_env(field, variable)` fires for a nonblank environment value
-/// that the field rejects; the value is skipped (or reset to the default when
-/// the binding says so), never fatal. `on_clamped(field, name, given, used)`
-/// fires when the environment value that wins is outside the field's range
-/// and is clamped to `used` (a file value out of range is rejected by layer
-/// validation, not clamped).
+/// that the field rejects; the value is skipped, never fatal.
+/// `on_clamped(field, name, given, used)` fires when the environment value that
+/// wins is outside the field's range and is clamped to `used` (a file value out
+/// of range is rejected by layer validation, not clamped). `on_type_error`
+/// reports a selected value the generated type rejects: that field keeps its
+/// contract default and every other field resolves as usual.
 fn resolve_fields(
     files: &[&Value],
     environment: &BTreeMap<String, String>,
+    os_home: &Path,
     on_invalid_env: &mut dyn FnMut(&ConfigFieldSpec, &str),
     on_clamped: &mut dyn FnMut(&ConfigFieldSpec, &str, f64, f64),
-) -> Result<ResolvedConfig, String> {
-    let mut resolved: Value = serde_json::from_str(DEFAULT_RESOLVED_CONFIG_JSON)
-        .map_err(|error| format!("generated config defaults are invalid: {error}"))?;
-
+    on_type_error: &mut dyn FnMut(String),
+) -> (ResolvedConfig, BTreeMap<&'static str, Pick>) {
+    let mut resolved = ResolvedConfig::default();
+    let mut picks = BTreeMap::new();
     for field in CONFIG_FIELDS.iter().filter(|field| field.resolved) {
-        let default: Value = serde_json::from_str(field.default_json)
-            .map_err(|error| format!("generated default for {} is invalid: {error}", field.path))?;
         let mut selected = None;
         if let Some(binding) = field.env
             && let Some(raw) = environment.get(binding.name)
@@ -169,29 +207,38 @@ fn resolve_fields(
                 if let Some((given, used)) = clamp_of(field, &raw, true) {
                     on_clamped(field, binding.name, given, used);
                 }
-                selected = Some(value);
-            } else {
-                if raw.as_str().is_some_and(|raw| !raw.trim().is_empty()) {
-                    on_invalid_env(field, binding.name);
-                }
-                if binding.invalid == ConfigInvalidEnv::Default {
-                    selected = Some(default.clone());
-                }
+                selected = Some((value, Pick::Env));
+            } else if raw.as_str().is_some_and(|raw| !raw.trim().is_empty()) {
+                on_invalid_env(field, binding.name);
             }
         }
 
         if selected.is_none() && field.file {
-            selected = files
-                .iter()
-                .filter_map(|config| get_path(config, field.path))
-                .find_map(|raw| parse_candidate(field, raw, false, None));
+            selected = files.iter().enumerate().find_map(|(index, config)| {
+                get_path(config, field.path)
+                    .and_then(|raw| parse_candidate(field, raw, false, None))
+                    .map(|value| (value, Pick::File(index)))
+            });
         }
 
-        set_path(&mut resolved, field.path, selected.unwrap_or(default))?;
+        if let Some((value, pick)) = selected {
+            match resolved.set_json(field.path, expand_home(field, value, os_home)) {
+                Ok(()) => {
+                    picks.insert(field.path, pick);
+                }
+                Err(error) => on_type_error(error),
+            }
+        }
     }
+    (resolved, picks)
+}
 
-    serde_json::from_value(resolved)
-        .map_err(|error| format!("resolved config does not match generated types: {error}"))
+/// Where `resolve_fields` took a setting from: its variable, or the file
+/// layer at this index.
+#[derive(Clone, Copy)]
+enum Pick {
+    Env,
+    File(usize),
 }
 pub fn resolve_env_token(e: &BTreeMap<String, String>) -> Option<PrivateTokenSelection> {
     for k in ENV_TOKEN_VARS.iter().copied() {
@@ -212,7 +259,11 @@ fn effective_disables_classification(effective: &BTreeMap<String, String>, key: 
             .is_some_and(|value| value.trim().is_empty())
 }
 
-fn apply_credential_file_fallbacks(files: &[&Value], effective: &mut BTreeMap<String, String>) {
+fn apply_credential_file_fallbacks(
+    layers: &[(&Value, &PathBuf, ConfigScope)],
+    effective: &mut BTreeMap<String, String>,
+    origins: &mut BTreeMap<String, EnvOrigin>,
+) {
     for field in CONFIG_FIELDS.iter().filter(|field| field.credential) {
         let Some(binding) = field.env else {
             continue;
@@ -224,13 +275,21 @@ fn apply_credential_file_fallbacks(files: &[&Value], effective: &mut BTreeMap<St
         {
             continue;
         }
-        if let Some(value) = files.iter().find_map(|file| {
+        if let Some((value, path, scope)) = layers.iter().find_map(|(file, path, scope)| {
             get_path(file, field.path)
                 .and_then(Value::as_str)
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
+                .map(|value| (value, *path, *scope))
         }) {
             effective.insert(binding.name.to_owned(), value.to_owned());
+            origins.insert(
+                binding.name.to_owned(),
+                EnvOrigin {
+                    scope,
+                    path: path.clone(),
+                },
+            );
         }
     }
 }
@@ -289,7 +348,11 @@ enum LayerState {
 fn expected_kind(field: &ConfigFieldSpec) -> String {
     match field.kind {
         ConfigFieldKind::Boolean => "boolean (true/false/1/0)".into(),
-        ConfigFieldKind::Number => "integer".into(),
+        ConfigFieldKind::Number => format!(
+            "integer ({:.0}–{:.0})",
+            field.minimum.unwrap_or_default(),
+            field.maximum.unwrap_or_default()
+        ),
         ConfigFieldKind::String => "nonblank string".into(),
         ConfigFieldKind::Url => "http(s) URL".into(),
         ConfigFieldKind::Path => "absolute or ~ path without ..".into(),
@@ -298,7 +361,6 @@ fn expected_kind(field: &ConfigFieldSpec) -> String {
         }
         ConfigFieldKind::StringArray => "comma-separated list".into(),
         ConfigFieldKind::Enum => format!("value ({})", field.values.join(", ")),
-        ConfigFieldKind::SchemaVersion => "schema version".into(),
     }
 }
 
@@ -343,6 +405,16 @@ fn load_layer(
         return (None, LayerState::Invalid);
     }
     let mut value = load.config.unwrap_or_else(|| json!({}));
+    for (path, reason) in REMOVED_SETTINGS {
+        if remove_path(&mut value, path) {
+            diagnostics.push(warning(
+                REMOVED_SETTING_CODE,
+                Some(path),
+                format!("{path} was removed and is ignored: {reason}"),
+                &load.path,
+            ));
+        }
+    }
     let (issues, warnings) = config_issues(&value);
     for m in warnings {
         diagnostics.push(warning(UNKNOWN_CONFIG_CODE, None, m, &load.path));
@@ -377,30 +449,235 @@ fn load_layer(
     (Some(value), LayerState::Valid)
 }
 
-pub fn resolve_config(input: &ConfigInput) -> ConfigOutput {
-    let gt = match &input.global_env {
-        FileInput::Read { text, .. } => Some(text.as_str()),
-        _ => None,
+/// Every numeric setting is a cap (time, retries, size, spend): a workspace
+/// file may lower the value the home file sets (else the generated default),
+/// never raise it. A raise is dropped with a warning, so the home value
+/// stands.
+fn drop_workspace_raises(
+    project: &mut Value,
+    home: Option<&Value>,
+    source_path: &std::path::Path,
+    diagnostics: &mut Vec<ConfigDiagnostic>,
+) {
+    let number = |field: &ConfigFieldSpec, file: &Value| {
+        get_path(file, field.path)
+            .and_then(|raw| parse_candidate(field, raw, false, None))
+            .and_then(|value| value.as_f64())
     };
-    let pt = match &input.project_env {
-        FileInput::Read { text, .. } => Some(text.as_str()),
-        _ => None,
-    };
-    // Workspace dotenv is configuration, independent of permission to execute
-    // project-local language-server definitions (trusted_project).
-    let (map, sources) = merged_env(gt, pt, true);
-    let mut effective = input.env.clone();
-    let dotenv = apply_env(&map, sources, &mut effective);
-    let mut diagnostics = vec![];
-    let (project_file, project_state) =
-        load_layer(&input.project_config_file, true, &mut diagnostics);
-    let (global_file, global_state) = load_layer(&input.config_file, false, &mut diagnostics);
-    let files: Vec<&Value> = project_file.iter().chain(global_file.iter()).collect();
-    let has_env = CONFIG_SOURCE_ENV_KEYS
+    for field in CONFIG_FIELDS
         .iter()
-        .any(|key| effective.contains_key(*key));
-    let states = [project_state, global_state];
-    let source = if states.contains(&LayerState::Invalid) {
+        .filter(|field| field.file && field.kind == ConfigFieldKind::Number)
+    {
+        let Some(workspace) = number(field, project) else {
+            continue;
+        };
+        let Some(limit) = home.and_then(|home| number(field, home)).or_else(|| {
+            serde_json::from_str::<Value>(field.default_json)
+                .ok()
+                .and_then(|value| value.as_f64())
+        }) else {
+            continue;
+        };
+        if workspace > limit && remove_path(project, field.path) {
+            diagnostics.push(warning(
+                WORKSPACE_RAISES_LIMIT_CODE,
+                Some(field.path),
+                format!(
+                    "{} in a workspace config file may only lower the home value ({limit}); the raise to {workspace} is ignored",
+                    field.path
+                ),
+                source_path,
+            ));
+        }
+    }
+}
+
+/// Edit distance between two names, case-insensitively.
+fn name_distance(left: &str, right: &str) -> usize {
+    let left: Vec<char> = left.to_ascii_lowercase().chars().collect();
+    let right: Vec<char> = right.to_ascii_lowercase().chars().collect();
+    let mut previous: Vec<usize> = (0..=right.len()).collect();
+    for (i, l) in left.iter().enumerate() {
+        let mut current = vec![i + 1];
+        for (j, r) in right.iter().enumerate() {
+            let substitution = previous[j] + usize::from(l != r);
+            current.push(substitution.min(previous[j + 1] + 1).min(current[j] + 1));
+        }
+        previous = current;
+    }
+    previous[right.len()]
+}
+
+/// The tool name `name` most likely meant, when one is close.
+fn nearest_tool_name(name: &str) -> Option<&'static str> {
+    crate::tools::id::ToolId::ALL
+        .into_iter()
+        .map(|id| (name_distance(name, id.as_str()), id.as_str()))
+        .filter(|(distance, candidate)| *distance <= 3 && *distance * 3 <= candidate.len())
+        .min_by_key(|(distance, _)| *distance)
+        .map(|(_, candidate)| candidate)
+}
+
+/// The tool-list settings: each names tools by their wire name.
+const TOOL_LIST_FIELDS: [&ConfigFieldSpec; 3] = [
+    field::TOOLS_ENABLED,
+    field::TOOLS_DISABLED,
+    field::MCP_DEFERRED,
+];
+
+/// A warning per tool-list setting that names a tool no tool has. Non-fatal:
+/// the name is ignored, but a typo in an allowlist would otherwise leave no
+/// tools without a word.
+fn unknown_tool_names(
+    resolved: &ResolvedConfig,
+    source_of: &dyn Fn(&ConfigFieldSpec) -> Option<PathBuf>,
+) -> Vec<ConfigDiagnostic> {
+    TOOL_LIST_FIELDS
+        .iter()
+        .filter_map(|field| {
+            let names = get_config_value(resolved, field.path)?;
+            let unknown: Vec<String> = names
+                .as_array()?
+                .iter()
+                .filter_map(Value::as_str)
+                .filter(|name| crate::tools::id::ToolId::from_name(name).is_none())
+                .map(|name| match nearest_tool_name(name) {
+                    Some(nearest) => format!("\"{name}\" (did you mean \"{nearest}\"?)"),
+                    None => format!("\"{name}\""),
+                })
+                .collect();
+            (!unknown.is_empty()).then(|| ConfigDiagnostic {
+                severity: Severity::Warning,
+                code: UNKNOWN_TOOL_NAME_CODE.into(),
+                field_path: Some(field.path.into()),
+                message: format!(
+                    "{} names no tool: {}; the name is ignored",
+                    field.display_name(),
+                    unknown.join(", ")
+                ),
+                source_path: source_of(field),
+            })
+        })
+        .collect()
+}
+
+/// The `.env` file that set each applied variable; `None` is the process
+/// environment.
+struct EnvFiles<'a> {
+    dotenv: &'a EnvApplyReport,
+    input: &'a ConfigInput,
+}
+
+impl EnvFiles<'_> {
+    fn source(&self, name: &str) -> Option<PathBuf> {
+        if !self.dotenv.applied.iter().any(|key| key == name) {
+            return None;
+        }
+        match self.dotenv.sources.get(name).map(String::as_str) {
+            Some("project") => Some(self.input.project_env.path().clone()),
+            _ => Some(self.input.global_env.path().clone()),
+        }
+    }
+
+    fn origins(&self) -> BTreeMap<String, EnvOrigin> {
+        self.dotenv
+            .applied
+            .iter()
+            .map(|key| {
+                let origin = match self.dotenv.sources.get(key).map(String::as_str) {
+                    Some("project") => EnvOrigin {
+                        scope: ConfigScope::Workspace,
+                        path: self.input.project_env.path().clone(),
+                    },
+                    _ => EnvOrigin {
+                        scope: ConfigScope::Home,
+                        path: self.input.global_env.path().clone(),
+                    },
+                };
+                (key.clone(), origin)
+            })
+            .collect()
+    }
+
+    fn invalid(&self, field: &ConfigFieldSpec, name: &str) -> ConfigDiagnostic {
+        let source_path = self.source(name);
+        ConfigDiagnostic {
+            severity: Severity::Warning,
+            code: "invalid_env_value".into(),
+            field_path: Some(field.path.into()),
+            message: format!(
+                "{name}{} is not a valid {} for {}; value ignored",
+                if source_path.is_none() {
+                    " (process environment)"
+                } else {
+                    ""
+                },
+                expected_kind(field),
+                field.path
+            ),
+            source_path,
+        }
+    }
+
+    fn clamped(
+        &self,
+        field: &ConfigFieldSpec,
+        name: &str,
+        given: f64,
+        used: f64,
+    ) -> ConfigDiagnostic {
+        let bound = if given < used { "minimum" } else { "maximum" };
+        ConfigDiagnostic {
+            severity: Severity::Warning,
+            code: "value_clamped".into(),
+            field_path: Some(field.path.into()),
+            message: format!(
+                "{name} {given:.0} is {} the {bound} {used:.0}; using {used:.0}",
+                if given < used { "below" } else { "above" },
+            ),
+            source_path: self.source(name),
+        }
+    }
+
+    /// Where each resolved setting came from.
+    fn setting_sources(
+        &self,
+        picks: BTreeMap<&'static str, Pick>,
+        layers: &[(&Value, &PathBuf, ConfigScope)],
+    ) -> BTreeMap<&'static str, SettingSource> {
+        picks
+            .into_iter()
+            .map(|(path, pick)| {
+                let source = match pick {
+                    Pick::Env => {
+                        let name = CONFIG_FIELDS
+                            .iter()
+                            .find(|field| field.path == path)
+                            .and_then(ConfigFieldSpec::env_name)
+                            .unwrap_or_default();
+                        match self.source(name) {
+                            None => SettingSource::Process,
+                            Some(file) if &file == self.input.project_env.path() => {
+                                SettingSource::WorkspaceEnv
+                            }
+                            Some(_) => SettingSource::HomeEnv,
+                        }
+                    }
+                    Pick::File(index) => match layers[index].2 {
+                        ConfigScope::Workspace => SettingSource::WorkspaceFile,
+                        ConfigScope::Home => SettingSource::HomeFile,
+                    },
+                };
+                (path, source)
+            })
+            .collect()
+    }
+}
+
+/// The overall source: an invalid file, else files and/or environment, else
+/// the generated defaults.
+fn config_source(states: [LayerState; 2], has_env: bool) -> ConfigSource {
+    if states.contains(&LayerState::Invalid) {
         ConfigSource::Invalid
     } else if states.contains(&LayerState::Valid) {
         if has_env {
@@ -412,70 +689,134 @@ pub fn resolve_config(input: &ConfigInput) -> ConfigOutput {
         ConfigSource::Env
     } else {
         ConfigSource::Defaults
-    };
-    apply_credential_file_fallbacks(&files, &mut effective);
-    // Which file supplied an environment value; None = the process env.
-    let env_source = |name: &str| -> Option<std::path::PathBuf> {
-        if !dotenv.applied.iter().any(|key| key == name) {
-            return None;
+    }
+}
+
+/// Credential-bound settings are forwarded through the environment, not
+/// resolved; their environment values are still validated here, so an
+/// invalid one is reported and skipped (a file value may then apply).
+fn drop_invalid_credential_env(
+    files: &EnvFiles<'_>,
+    effective: &mut BTreeMap<String, String>,
+    env_origins: &mut BTreeMap<String, EnvOrigin>,
+    diagnostics: &mut Vec<ConfigDiagnostic>,
+) {
+    for field in CONFIG_FIELDS.iter().filter(|field| field.credential) {
+        let Some(binding) = field.env else { continue };
+        let Some(raw) = effective
+            .get(binding.name)
+            .filter(|value| !value.trim().is_empty())
+        else {
+            continue;
+        };
+        if parse_candidate(field, &Value::String(raw.clone()), true, binding.normalize).is_none() {
+            diagnostics.push(files.invalid(field, binding.name));
+            effective.remove(binding.name);
+            env_origins.remove(binding.name);
         }
-        match dotenv.sources.get(name).map(String::as_str) {
-            Some("project") => Some(input.project_env.path().clone()),
-            _ => Some(input.global_env.path().clone()),
+    }
+}
+
+pub fn resolve_config(input: &ConfigInput) -> ConfigOutput {
+    fn text(file: &FileInput) -> Option<&str> {
+        match file {
+            FileInput::Read { text, .. } => Some(text),
+            _ => None,
         }
+    }
+    let merged = merged_env(text(&input.global_env), text(&input.project_env));
+    let mut effective = input.env.clone();
+    let dotenv = apply_env(merged, &mut effective);
+    let mut diagnostics = vec![];
+    let (mut project_file, project_state) =
+        load_layer(&input.project_config_file, true, &mut diagnostics);
+    let (global_file, global_state) = load_layer(&input.config_file, false, &mut diagnostics);
+    if let Some(project) = project_file.as_mut() {
+        drop_workspace_raises(
+            project,
+            global_file.as_ref(),
+            input.project_config_file.path(),
+            &mut diagnostics,
+        );
+    }
+    let layers: Vec<(&Value, &PathBuf, ConfigScope)> = project_file
+        .iter()
+        .map(|file| {
+            (
+                file,
+                input.project_config_file.path(),
+                ConfigScope::Workspace,
+            )
+        })
+        .chain(
+            global_file
+                .iter()
+                .map(|file| (file, input.config_file.path(), ConfigScope::Home)),
+        )
+        .collect();
+    let files: Vec<&Value> = layers.iter().map(|(file, _, _)| *file).collect();
+    let env_files = EnvFiles {
+        dotenv: &dotenv,
+        input,
     };
+    let mut env_origins = env_files.origins();
+    let has_env = CONFIG_SOURCE_ENV_KEYS
+        .iter()
+        .any(|key| effective.contains_key(*key));
+    let source = config_source([project_state, global_state], has_env);
+    for (name, reason) in REMOVED_ENV_KEYS {
+        if effective.contains_key(*name) {
+            diagnostics.push(ConfigDiagnostic {
+                severity: Severity::Warning,
+                code: REMOVED_SETTING_CODE.into(),
+                field_path: None,
+                message: format!("{name} was removed and is ignored: {reason}"),
+                source_path: env_files.source(name),
+            });
+        }
+    }
+    drop_invalid_credential_env(
+        &env_files,
+        &mut effective,
+        &mut env_origins,
+        &mut diagnostics,
+    );
+    apply_credential_file_fallbacks(&layers, &mut effective, &mut env_origins);
     let mut env_warnings = vec![];
     let mut clamp_warnings = vec![];
-    let resolved = match resolve_fields(
+    let mut type_errors = vec![];
+    let (resolved, picks) = resolve_fields(
         &files,
         &effective,
-        &mut |field, name| {
-            let source_path = env_source(name);
-            env_warnings.push(ConfigDiagnostic {
-                severity: Severity::Warning,
-                code: "invalid_env_value".into(),
-                field_path: Some(field.path.into()),
-                message: format!(
-                    "{name}{} is not a valid {} for {}; value ignored",
-                    if source_path.is_none() {
-                        " (process environment)"
-                    } else {
-                        ""
-                    },
-                    expected_kind(field),
-                    field.path
-                ),
-                source_path,
-            })
-        },
+        &input.os_home,
+        &mut |field, name| env_warnings.push(env_files.invalid(field, name)),
         &mut |field, name, given, used| {
-            let bound = if given < used { "minimum" } else { "maximum" };
-            clamp_warnings.push(ConfigDiagnostic {
-                severity: Severity::Warning,
-                code: "value_clamped".into(),
-                field_path: Some(field.path.into()),
-                message: format!(
-                    "{name} {given:.0} is {} the {bound} {used:.0}; using {used:.0}",
-                    if given < used { "below" } else { "above" },
-                ),
-                source_path: env_source(name),
-            });
+            clamp_warnings.push(env_files.clamped(field, name, given, used));
         },
-    ) {
-        Ok(config) => config,
-        Err(message) => {
-            diagnostics.push(ConfigDiagnostic {
+        &mut |message| {
+            type_errors.push(ConfigDiagnostic {
                 severity: Severity::Error,
                 code: "generated_config_contract_error".into(),
                 field_path: None,
                 message,
-                source_path: Some(input.config_file.path().clone()),
+                source_path: None,
             });
-            ResolvedConfig::default()
-        }
-    };
+        },
+    );
+    diagnostics.extend(type_errors);
     diagnostics.extend(env_warnings);
     diagnostics.extend(clamp_warnings);
+    let setting_sources = env_files.setting_sources(picks, &layers);
+    let source_path = |field: &ConfigFieldSpec| -> Option<PathBuf> {
+        match setting_sources.get(field.path)? {
+            SettingSource::Process | SettingSource::Default => None,
+            SettingSource::HomeEnv => Some(input.global_env.path().clone()),
+            SettingSource::WorkspaceEnv => Some(input.project_env.path().clone()),
+            SettingSource::HomeFile => Some(input.config_file.path().clone()),
+            SettingSource::WorkspaceFile => Some(input.project_config_file.path().clone()),
+        }
+    };
+    diagnostics.extend(unknown_tool_names(&resolved, &source_path));
     let token = resolve_env_token(&effective);
     let config_path =
         (global_state != LayerState::Absent).then(|| input.config_file.path().clone());
@@ -485,6 +826,8 @@ pub fn resolve_config(input: &ConfigInput) -> ConfigOutput {
         home: super::octocode_home(&input.env, &input.cwd, &input.os_home),
         resolved,
         effective_env: effective,
+        env_origins,
+        setting_sources,
         dotenv,
         diagnostics,
         token,
@@ -500,10 +843,10 @@ pub fn get_config_value(resolved: &ResolvedConfig, path: &str) -> Option<Value> 
     get_path(&serde_json::to_value(resolved).ok()?, path).cloned()
 }
 pub fn is_stats_enabled(resolved: &ResolvedConfig) -> bool {
-    resolved.storage.mode == "persistent" && resolved.storage.stats
+    is_persistent_storage_enabled(resolved) && resolved.storage.stats
 }
 pub fn is_persistent_storage_enabled(resolved: &ResolvedConfig) -> bool {
-    resolved.storage.mode == "persistent"
+    resolved.storage.mode == StorageMode::Persistent
 }
 pub fn inspector_data(input: &ConfigInput, output: &ConfigOutput) -> ConfigInspectorData {
     let home = output.home.clone();
@@ -526,12 +869,23 @@ pub fn inspector_data(input: &ConfigInput, output: &ConfigOutput) -> ConfigInspe
         home,
         global_env_path: input.global_env.path().clone(),
         project_env_path: input.project_env.path().clone(),
+        project_env_exists: !matches!(input.project_env, FileInput::Missing { .. }),
         loaded_keys: output.dotenv.keys.clone(),
         skipped_protected: output
             .dotenv
             .skipped_protected
             .iter()
             .map(skip_source)
+            .chain(
+                output
+                    .dotenv
+                    .skipped_workspace_protected
+                    .iter()
+                    .map(|key| EnvSkip {
+                        key: key.clone(),
+                        source_path: input.project_env.path().clone(),
+                    }),
+            )
             .collect(),
         skipped_existing: output
             .dotenv
@@ -551,7 +905,7 @@ pub fn inspector_data(input: &ConfigInput, output: &ConfigOutput) -> ConfigInspe
             .values()
             .filter(|s| s.as_str() == "project")
             .count(),
-        storage_mode: output.resolved.storage.mode.clone(),
+        storage_mode: output.resolved.storage.mode.as_str().to_owned(),
         config_keys: top_level_keys(&input.config_file),
         source: output.source.clone(),
         config_path: output.config_path.clone(),
@@ -582,7 +936,6 @@ mod tests {
             env,
             cwd: "/synthetic/cwd".into(),
             os_home: "/synthetic".into(),
-            trusted_project: false,
             global_env: FileInput::Read {
                 path: home.join(".env"),
                 text: "OCTOCODE_CLASSIFICATION_API=from-home-env".into(),

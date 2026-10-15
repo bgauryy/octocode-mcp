@@ -1,6 +1,9 @@
 import { VERSION, type ExtensionAPI, type ExtensionContext, type ToolCallEvent } from '@earendil-works/pi-coding-agent';
 import { minimumPiVersion, versionBelow } from './shared/package.js';
 import { registerApi } from './api/register.js';
+import { registerExternal } from './external/register.js';
+import type { ExternalAgents } from './external/manager.js';
+import type { MessageEnvelope } from './shared/messages.js';
 import { registerAskUser } from './ask/tool.js';
 import { registerCompaction } from './compaction/register.js';
 import { registerReadDedupe } from './files/dedupe.js';
@@ -13,6 +16,7 @@ import { FileGuard, registerFileTool } from './files/tool.js';
 import { registerMcpCommand } from './mcp/command.js';
 import { registerOctocodeMcp } from './mcp/octocode.js';
 import { envFlag, SUBAGENT_ENV } from './shared/env.js';
+import { redactSecrets, visibleControls } from './shared/sanitize.js';
 import { Permission } from './permission/ask.js';
 import { registerPermissionCommand } from './permission/command.js';
 import { permissionGate, type GateVerdict } from './permission/gate.js';
@@ -36,7 +40,7 @@ import { registerModelsCommand } from './subagents/models-command.js';
 import { loadProfiles, type AgentProfile } from './subagents/profiles.js';
 import { maxSubagents } from './subagents/claim.js';
 import { registerAgentTool, type AgentControl } from './subagents/tool.js';
-import { EXTERNAL_SENDER, MESSAGE_MAX_CHARS, Team } from './team/session.js';
+import { EXTERNAL_SENDER, spilledMessage, Team } from './team/session.js';
 import { registerCollab } from './team/tools.js';
 import { registerTurnSetup } from './turn.js';
 import { registerActivity } from './ui/activity.js';
@@ -104,11 +108,12 @@ export default function octocode(pi: ExtensionAPI): void {
   // Pi's bash with a foreground deadline and background jobs.
   const jobs = registerBashTool(pi, commands);
   let agents: AgentControl | undefined;
+  let external: ExternalAgents | undefined;
   // /new, /resume and /fork end this runtime, and with it its bash jobs and background subagents: ask before leaving
   // them. Registered before the checkpoint handlers, so a fork is confirmed before its file-restore offer.
   const confirmLeave = async (ctx: ExtensionContext, action: string) => {
     if (!interactive(ctx, isSubagent)) return undefined;
-    const running = [jobs.jobs.size && plural(jobs.jobs.size, 'bash job'), agents?.background() && plural(agents.background(), 'background subagent')].filter(Boolean);
+    const running = [jobs.jobs.size && plural(jobs.jobs.size, 'bash job'), agents?.background() && plural(agents.background(), 'background subagent'), external?.running && plural(external.running, 'external prompt')].filter(Boolean);
     if (running.length === 0) return undefined;
     const leave = await withDialog(() => ctx.ui.confirm('Running work', `Stop ${running.join(' and ')} and ${action}?`));
     return leave ? undefined : { cancel: true };
@@ -139,6 +144,50 @@ export default function octocode(pi: ExtensionAPI): void {
   permission.onAction((event) => activity.consequential(event.action, event.what, event.warn));
   const turn = registerTurnSetup(pi, { isSubagent, profiles: () => profiles, octocode: octocodeMcp });
   const hooks = registerHooks(pi, process.env, undefined, (what, note, allowed) => permission.noted(what, note, { allowed, via: 'hook' }));
+  const beforeMessage = async (message: MessageEnvelope, ctx: ExtensionContext, signal?: AbortSignal) => {
+    const verdict = await hooks.messageSend(message, signal ? { ...ctx, signal } : ctx);
+    if (verdict?.block) {
+      permission.refused([`${message.from} → ${message.to}`], verdict.block, 'message');
+      throw new Error(verdict.block);
+    }
+    if (verdict?.ask) {
+      const checked = await permission.check(ctx, { title: 'Send this message?', what: [`${message.from} → ${message.to}`, message.text], reasons: ['hook.ask'], reason: verdict.ask, ...(signal ? { signal } : {}) });
+      if (!checked.allowed) throw new Error(checked.message);
+    }
+    signal?.throwIfAborted();
+  };
+  team.setMessageHook(beforeMessage);
+  if (!isSubagent) {
+    external = registerExternal(pi, commands, {
+      sender: (ctx) => team.id ?? ctx.sessionManager.getSessionId(),
+      beforeSend: beforeMessage,
+      afterReceive: (message, ctx) => hooks.messageReceive(message, ctx),
+      authorize: async (input, ctx, signal) => {
+        const checked = await permission.check(ctx, {
+          action: 'agent.spawn', title: input.action === 'connect' ? 'Connect this external agent?' : 'Send this external prompt?',
+          what: [JSON.stringify(input)], cwd: input.cwd ?? ctx.cwd, signal,
+          effect: 'The external agent uses its own credentials, tools and permission policy.',
+        });
+        if (!checked.allowed) throw new Error(checked.message);
+      },
+      permission: (ctx) => async (request, signal) => {
+        const cancelled = { outcome: { outcome: 'cancelled' as const } };
+        if (!interactive(ctx, false) || signal.aborted) return cancelled;
+        const options = request.options.filter((option) => option.kind === 'allow_once' || option.kind === 'reject_once');
+        if (options.length === 0) return cancelled;
+        return withDialog(async () => {
+          if (signal.aborted) return cancelled;
+          const labels = options.map((option, index) => `${index + 1}. ${visibleControls(option.name)}`);
+          const title = `External agent permission\n${visibleControls(redactSecrets(JSON.stringify(request.toolCall, null, 2)))}`;
+          const selected = await ctx.ui.select(title, labels, { signal });
+          if (signal.aborted) return cancelled;
+          const index = selected ? labels.indexOf(selected) : -1;
+          return index < 0 ? cancelled : { outcome: { outcome: 'selected' as const, optionId: options[index]!.optionId } };
+        }, signal);
+      },
+    });
+    permission.onRevoke(() => { void external?.reset(); });
+  }
   // After the hooks (handlers run in registration order): a PreCompact hook runs before Octocode adds its `file` tool's
   // paths to the file lists Pi carries into its summary. Pi writes the summary itself.
   registerCompaction(pi, guard, isSubagent);
@@ -150,11 +199,15 @@ export default function octocode(pi: ExtensionAPI): void {
   for (const name of SHORTCUTS) if (commands.has(name)) commands.alias(pi, name);
   const api = isSubagent
     ? undefined
-    : registerApi(pi, commands, { list: () => team.members(), tell: (to, text) => team.send(to, text, { from: EXTERNAL_SENDER }), maxChars: MESSAGE_MAX_CHARS }, packageVersion);
+    : registerApi(pi, commands, { list: () => team.members(), tell: (to, text) => team.send(to, text, { from: EXTERNAL_SENDER }), deliverable: spilledMessage }, packageVersion, {
+      messageSend: beforeMessage,
+      externalCall: (input, ctx) => external!.call(input, ctx),
+    });
 
   pi.on('session_start', async (_event, ctx) => {
     // Per-session state first: a later step that throws (API port in use) must not carry the old session's over.
     turn.reset();
+    await external?.reset();
     // Reads in a resumed, reloaded or forked session's context still count; a new session starts empty.
     guard.restore(contextReads(ctx));
     const skipped: string[] = [];
@@ -200,13 +253,22 @@ export default function octocode(pi: ExtensionAPI): void {
   });
   pi.on('tool_execution_end', async (event) => forgetCheck(event.toolCallId));
 
-  // The user's own `!cmd`: typing it is consent, so it runs and is recorded. In manual and workspace a destructive command
-  // or one a PreToolUse hook flags still asks, through the same permission check (audited, with its reason lines); in
-  // full it runs. With no UI to ask in, the matrix decides.
+  // The user's own `!cmd`: typing it is consent, so it runs and is recorded. A PreToolUse hook that blocks it still
+  // refuses it, in every mode (audited, naming the hook), as it does an agent's call. In manual and workspace a
+  // destructive command or one a hook asks about still asks, through the same permission check (audited, with its
+  // reason lines); in full it runs. With no UI to ask in, the matrix decides. Pi runs a `!cmd` in its bash shell on every
+  // platform (`executeBash` → `getShellConfig`: Git Bash on Windows, never PowerShell; that is the `powershell` tool's), so
+  // the bash rules classify it.
   pi.on('user_bash', async (event, ctx) => {
     const call = { type: 'tool_call', toolCallId: 'user-bash', toolName: 'bash', input: { command: event.command } } as ToolCallEvent;
+    const refusal = (message: string) => ({ result: { output: `Refused: ${visibleControls(message)}`, exitCode: undefined, cancelled: true, truncated: false } });
     const verdict = await hooks.preToolUse(call, ctx);
-    const hook = verdict?.reason ?? verdict?.ask;
+    if (verdict?.block) {
+      const reason = verdict.reason ?? 'Blocked by a PreToolUse hook.';
+      permission.refused([`bash ${JSON.stringify(call.input)}`], reason, 'bash');
+      return refusal(reason);
+    }
+    const hook = verdict?.ask;
     const destructive = catastrophicCommand(event.command, ctx.cwd) !== undefined;
     if (!destructive && !hook) {
       permission.typed(event.command, ctx.cwd);
@@ -221,7 +283,7 @@ export default function octocode(pi: ExtensionAPI): void {
       ...(hook ? { reasons: ['hook.ask' as const], reason: hook } : {}),
       ...(ctx.signal ? { signal: ctx.signal } : {}),
     });
-    return checked.allowed ? undefined : { result: { output: `Refused: ${checked.message}`, exitCode: undefined, cancelled: true, truncated: false } };
+    return checked.allowed ? undefined : refusal(checked.message);
   });
 
   // Headless runs (print, JSON, subagents) end with the agent's run, which would lose background work before it reports:
@@ -248,6 +310,7 @@ export default function octocode(pi: ExtensionAPI): void {
     // Rows of the old session that were still running would otherwise tick every second for the life of the process.
     stopRowTimers();
     await api?.stop();
+    await external?.reset();
     if (event?.reason === 'quit') closeSharedAgentDb();
     // After the subagents and bash jobs (their own shutdown handlers ran first): the helper that holds their Windows job objects can end.
     await windowsTree.stopAll();

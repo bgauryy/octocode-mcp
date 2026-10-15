@@ -115,17 +115,23 @@ mod tests {
             let (_stream, _) = listener.accept().expect("accept");
             std::thread::sleep(Duration::from_secs(5));
         });
-        let started = Instant::now();
-        let failed = runtime().block_on(async {
+        let (result, elapsed) = runtime().block_on(async {
             let policy = ClientPolicy {
                 read_timeout: Some(Duration::from_millis(200)),
                 ..ClientPolicy::default()
             };
             let client = client(&policy).expect("client");
-            client.get(format!("http://{addr}/")).send().await.is_err()
+            // Platform client setup is separate from a request's read timeout.
+            let started = Instant::now();
+            let result = client.get(format!("http://{addr}/")).send().await;
+            (result, started.elapsed())
         });
-        assert!(failed, "a stalled peer must not hang the request");
-        assert!(started.elapsed() < Duration::from_secs(4));
+        let error = result.expect_err("a stalled peer must not hang the request");
+        assert!(
+            error.is_timeout(),
+            "the stalled read must time out: {error}"
+        );
+        assert!(elapsed < Duration::from_secs(4), "request took {elapsed:?}");
     }
 
     #[test]

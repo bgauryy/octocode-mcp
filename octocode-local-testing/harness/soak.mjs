@@ -72,7 +72,7 @@ const GITHUB = [
   { tool: 'artifactSearch', args: { ecosystem: 'pypi', packageName: 'requests', version: '2.31.0' } },
 ];
 const CLASIFY = [
-  { tool: 'clasify', args: { mainGoal: 'Zero worker threads check', reasoning: 'soak', resources: [{ id: 'f', tool: 'localFetch', query: { path: `${T}/rust/tokio/src/runtime/builder.rs` }, prefilter: ['worker_threads'] }], questions: [{ id: 't', type: 'locate', ask: 'Where the runtime Builder rejects a worker thread count of zero' }] } },
+  { tool: 'clasify', args: { id: 't', source: { tool: 'localFetch', query: { path: `${T}/rust/tokio/src/runtime/builder.rs`, ranges: ['560-600'] } }, questions: { t: { type: 'noul', instructions: 'Does the selection reject a worker thread count of zero?' } } } },
 ];
 const INJECTED = { tool: 'localSearch', label: 'inject-slow', args: { matchString: 'budget', path: `${T}/rust/tokio/src`, caseMode: 'insensitive' } };
 

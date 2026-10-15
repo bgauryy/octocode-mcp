@@ -23,7 +23,9 @@ pub(crate) use output::Output;
 
 use journal::{commit_transaction, recover_transactions};
 use lock::RootLock;
-use output::{attach_receipts, continuation_query, portable_relative, success_value};
+use output::{
+    attach_receipts, continuation_query, portable_relative, selection_query, success_value,
+};
 mod patch;
 mod preview_memo;
 mod raw;
@@ -245,6 +247,9 @@ fn recovery_hint(code: &str) -> Option<&'static str> {
         "postconditionFailed" => {
             "remainingMatches counts only the files this apply rewrites; adjust equals or the selection, then preview again."
         }
+        "matchLimit" => {
+            "Narrow the pattern, path, or include filters; raise maxMatches only to preview the full intended scope."
+        }
         _ => return None,
     })
 }
@@ -409,17 +414,8 @@ fn preview_memo_key(
     boundary: &Path,
     options: &AstRewriteRuntimeOptions,
 ) -> String {
-    // Key order differs between a caller's row and its continuation.
-    let shape = match continuation_query(query, root) {
-        Value::Object(fields) => fields
-            .into_iter()
-            .filter(|(key, _)| !["page", "pageSize", "snapshot"].contains(&key.as_str()))
-            .collect::<BTreeMap<_, _>>(),
-        _ => BTreeMap::new(),
-    };
     json_sha256(&json!([
-        shape,
-        query.default_excludes(),
+        selection_query(query, root),
         boundary,
         options.max_patch_bytes
     ]))
@@ -1659,33 +1655,15 @@ fn snapshot(
         .iter()
         .map(|file| json!([file.absolute, file.before_hash, file.after_hash]))
         .collect::<Vec<_>>();
-    let rule_spec = if query.pattern().is_some() {
-        json!({
-            "ruleKind":"pattern",
-            "pattern":query.pattern(),
-            "rewrite":query.rewrite()
-        })
-    } else {
-        let mut spec = query.rule_config_fields();
-        spec.insert("ruleKind".to_owned(), json!("rule"));
-        spec.entry("rule").or_insert(Value::Null);
-        Value::Object(spec)
-    };
     json_sha256(&json!({
-        "contract":4,
+        "contract":5,
         "executable":{
             "path":executable.path,
             "version":executable.version,
             "sha256":executable.sha256,
             "capabilityDigest":executable.capability_digest
         },
-        "root":root,
-        "language":query.lang(),
-        "ruleSpec":rule_spec,
-        "include":query.include().as_deref().unwrap_or(&[]),
-        "exclude":query.exclude().as_deref().unwrap_or(&[]),
-        "maxFiles":query.max_files(),
-        "maxMatches":query.max_matches(),
+        "selection":selection_query(query, root),
         "files":file_hashes,
         "matchIds":ids
     }))

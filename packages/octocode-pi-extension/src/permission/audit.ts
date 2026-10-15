@@ -1,3 +1,4 @@
+import { sameSecret } from '../shared/env.js';
 import { isRecord } from '../shared/util.js';
 import { auditLine } from './effect.js';
 import { ACTION_CLASSES, ASK_REASONS, PERMISSION_MODES, type ActionClass, type ActionCount, type AskReason, type PermissionMode } from './mode.js';
@@ -30,7 +31,7 @@ export interface AuditEntry {
   /** Which agent issued it. */
   agent: string;
   allowed: boolean;
-  via: string;
+  via: AuditVia;
   note?: string;
   /** The snapshot ref taken before a destructive shell call. */
   snapshot?: string;
@@ -40,14 +41,31 @@ export interface AuditEntry {
 
 const isCall = (entry: AuditEntry): boolean => entry.action !== 'mode' && entry.action !== 'rollup' && entry.via !== RELAY_VIA;
 
+/**
+ * An allowed, ordinary call: no ⚠ action, nobody was asked. Past a count limit these are only counted; everything else
+ * (a denial, an `invariant` refusal, a mode change, a ⚠ action, a call a person answered, a rollup) is always written.
+ */
+export const isRoutine = (entry: AuditEntry): boolean => isCall(entry) && entry.allowed && !WARN_ACTIONS.has(entry.action) && entry.via !== 'user';
+
 const ENTRY_ACTIONS: readonly string[] = [...ACTION_CLASSES, 'call', 'mode', 'invariant', 'rollup'];
+/** Every `via` an entry has: a verdict's route (`mode`, `grant`, `user`, `headless`, `cancelled`), a hook, a typed command, a refusal, a report or a relayed answer. */
+const ENTRY_VIAS = ['mode', 'grant', 'user', 'headless', 'cancelled', 'invariant', 'hook', 'reported', 'typed', RELAY_VIA] as const;
+export type AuditVia = (typeof ENTRY_VIAS)[number];
+
+/** Routine entries the parent records one by one for one subagent; later routine ones are counted by action in the parent's log, every other entry is still recorded (`ChildRelay`). */
+export const CHILD_AUDIT_CAP = 1000;
+
+/** The `notify` message a subagent sends for one of its audit entries: the entry and the child's nonce (`PERMISSION_NONCE_FILE_ENV`). */
+export const childAuditMessage = (entry: AuditEntry, nonce: string): string => `${AUDIT_NOTIFY_PREFIX}${JSON.stringify({ ...entry, nonce })}`;
 
 /**
- * A subagent's audit entry from its `notify` message, as the parent records it: every field validated and cut to the
- * bounds of an entry of its own, and `agent` always the child's name from the process the message arrived on (never the
- * child's claim). Undefined when the message is not an entry.
+ * A subagent's audit entry from its `notify` message, as the parent records it, or undefined when the message is not a
+ * valid one. It must carry `nonce` (the secret the parent gave that child); every field must be a known class, mode,
+ * reason or `via` and the right type (an unknown value rejects the entry, nothing is repaired); text is cut to the bounds
+ * of an entry of the parent's own; and `agent` is always the child's name from the process the message arrived on (never
+ * the child's claim).
  */
-export function childAuditEntry(message: string, agent: string): AuditEntry | undefined {
+export function childAuditEntry(message: string, agent: string, nonce: string): AuditEntry | undefined {
   if (!message.startsWith(AUDIT_NOTIFY_PREFIX)) return undefined;
   let raw: unknown;
   try {
@@ -55,30 +73,43 @@ export function childAuditEntry(message: string, agent: string): AuditEntry | un
   } catch {
     return undefined;
   }
-  if (!isRecord(raw) || typeof raw['action'] !== 'string' || !ENTRY_ACTIONS.includes(raw['action'])) return undefined;
+  if (!isRecord(raw) || !sameSecret(nonce, raw['nonce'])) return undefined;
   const mode = PERMISSION_MODES.find((each) => each === raw['mode']);
-  if (!mode || typeof raw['allowed'] !== 'boolean' || typeof raw['via'] !== 'string' || !Array.isArray(raw['what'])) return undefined;
+  const { action, via, what } = raw;
+  if (typeof action !== 'string' || !ENTRY_ACTIONS.includes(action) || !mode || typeof raw['allowed'] !== 'boolean') return undefined;
+  const knownVia = ENTRY_VIAS.find((each) => each === via);
+  if (!knownVia || !Array.isArray(what) || what.length > 6 || !what.every((line) => typeof line === 'string')) return undefined;
+  const reasons = known(raw['reasons'], ASK_REASONS);
+  const suppressed = raw['suppressed'] === undefined ? undefined : counts(raw['suppressed']);
+  const text = (value: unknown): string | undefined | null => (value === undefined ? undefined : typeof value === 'string' ? auditLine(value) : null);
+  const [purpose, note, snapshot] = [text(raw['purpose']), text(raw['note']), text(raw['snapshot'])];
+  if (reasons === null || suppressed === null || purpose === null || note === null || snapshot === null) return undefined;
   const at = typeof raw['at'] === 'number' && Number.isFinite(raw['at']) ? raw['at'] : Date.now();
-  const text = (value: unknown): string | undefined => (typeof value === 'string' ? auditLine(value) : undefined);
-  const reasons = Array.isArray(raw['reasons']) ? ASK_REASONS.filter((reason) => (raw['reasons'] as unknown[]).includes(reason)) : [];
-  const suppressed = isRecord(raw['suppressed'])
-    ? Object.fromEntries(Object.entries(raw['suppressed']).filter((pair): pair is [string, number] => typeof pair[1] === 'number').slice(0, ACTION_CLASSES.length + 4))
-    : undefined;
-  const purpose = text(raw['purpose']);
-  const note = text(raw['note']);
-  const snapshot = text(raw['snapshot']);
   return {
-    at, mode, action: raw['action'] as AuditEntry['action'],
-    ...(reasons.length > 0 ? { reasons } : {}),
-    what: raw['what'].filter((line): line is string => typeof line === 'string').slice(0, 6).map(auditLine),
+    at, mode, action: action as AuditEntry['action'],
+    ...(reasons && reasons.length > 0 ? { reasons } : {}),
+    what: what.map(auditLine),
     ...(purpose ? { purpose } : {}),
     agent: auditLine(agent),
     allowed: raw['allowed'],
-    via: auditLine(raw['via']).slice(0, 40),
+    via: knownVia,
     ...(note ? { note } : {}),
     ...(snapshot ? { snapshot } : {}),
     ...(suppressed ? { suppressed } : {}),
   };
+}
+
+/** `value` as a list of members of `allowed`; undefined when absent, null when it is anything else. */
+function known<T extends string>(value: unknown, allowed: readonly T[]): T[] | undefined | null {
+  if (value === undefined) return undefined;
+  return Array.isArray(value) && value.every((item): item is T => typeof item === 'string' && (allowed as readonly string[]).includes(item)) ? value : null;
+}
+
+/** A rollup's counts: known action names to non-negative integers; null when anything else. */
+function counts(value: unknown): Record<string, number> | null {
+  if (!isRecord(value)) return null;
+  const pairs = Object.entries(value);
+  return pairs.every(([key, count]) => ENTRY_ACTIONS.includes(key) && typeof count === 'number' && Number.isSafeInteger(count) && count >= 0) ? (value as Record<string, number>) : null;
 }
 
 /**
@@ -128,8 +159,7 @@ export class AuditLog {
       }
       if (entry.snapshot) this.#snapshots.push(entry.snapshot);
     }
-    const routine = isCall(entry) && entry.allowed && !warn;
-    if (routine && this.#written >= this.ceiling) {
+    if (isRoutine(entry) && this.#written >= this.ceiling) {
       this.#suppressed.set(entry.action, (this.#suppressed.get(entry.action) ?? 0) + 1);
       this.#sinceRollup += 1;
       if (this.#sinceRollup >= ROLLUP_EVERY) this.flush(entry.at, entry.mode, entry.agent);

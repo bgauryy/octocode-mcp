@@ -2,9 +2,8 @@
 //! per row, chosen from the provider error and the missing-path walk.
 use super::GhGetFileContentQuery;
 use crate::tools::gh_shared::{
-    GITHUB_AUTH_RECOVERY_HINT, GhFailure, PathRecovery, REPOSITORY_ACCESS_HINT, RepoPath,
-    parent_dir, provider_message, repository_not_found, tree_recovery, validation_message,
-    with_ref_recovery,
+    GITHUB_AUTH_RECOVERY_HINT, GhFailure, PathRecovery, RepoPath, parent_dir, provider_message,
+    repository_not_found, repository_search, tree_recovery, validation_message, with_ref_recovery,
 };
 use crate::tools::id::ToolId;
 use crate::tools::result::{Continuation, query_row};
@@ -64,7 +63,6 @@ pub(crate) fn failure(
         ProviderErrorKind::Validation => validation_message(&error, "Invalid request parameters"),
         _ => provider_message(&error),
     };
-    let max_depth = None;
     let (hint, next): (Option<&str>, Option<Value>) = if error.reason
         == Some(ProviderErrorReason::BinaryFile)
     {
@@ -82,11 +80,16 @@ pub(crate) fn failure(
         // exact, and the lead is the whole repair.
         (
             None,
-            Some(json!({ "viewTree": tree_recovery(&at, max_depth, "exact") })),
+            Some(json!({ "viewTree": tree_recovery(&at, None, "exact") })),
         )
     } else if repository_not_found(&error) {
-        // Listing a tree of the same repository cannot recover.
-        (Some(REPOSITORY_ACCESS_HINT), None)
+        // Listing a tree of the same repository cannot recover; a search
+        // for its name names the owner that holds it (as on the search
+        // tools).
+        (
+            None,
+            Some(json!({ "findRepository": repository_search(repo) })),
+        )
     } else if error.kind == ProviderErrorKind::NotFound {
         path_recovery(query, &at, found)
     } else if error.kind == ProviderErrorKind::Authentication {

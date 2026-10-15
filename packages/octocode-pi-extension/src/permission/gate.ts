@@ -1,6 +1,6 @@
 import path from 'node:path';
 import type { ExtensionContext, ToolAnnotations, ToolCallEvent, ToolCallEventResult } from '@earendil-works/pi-coding-agent';
-import { canonicalPath, isWithin, octocodeHome, repoKey, resolveToolPath } from '../shared/home.js';
+import { canonicalPath, isWithin, octocodeHome, resolveToolPath, workspaceRoot } from '../shared/home.js';
 import type { Permission } from './ask.js';
 import type { PermissionRequest } from './request.js';
 import type { AskReason } from './mode.js';
@@ -83,7 +83,8 @@ export function classify(event: ToolCallEvent, ctx: Pick<ExtensionContext, 'cwd'
 function classOf(tool: string, input: Record<string, unknown>, cwd: string, annotations: (toolName: string) => ToolAnnotations | undefined, forceDestructive: boolean): PermissionRequest | undefined {
   const inRepo = (raw: string) => {
     const file = canonicalPath(resolveToolPath(cwd, raw));
-    return { file, inside: isWithin(file, repoKey(cwd).root) };
+    const root = workspaceRoot(cwd);
+    return { file, root, inside: root !== undefined && isWithin(file, root) };
   };
   if (SHELL_TOOLS.has(tool)) {
     const command = text(input['command']) ?? '';
@@ -93,8 +94,8 @@ function classOf(tool: string, input: Record<string, unknown>, cwd: string, anno
     return { action: 'shell', title: 'Run this command?', what: [command, `cwd: ${cwd}`], ...(grant ? { grant } : {}) };
   }
   if (CHANGE_TOOLS.has(tool) && text(input['path'])) {
-    const { file, inside } = inRepo(text(input['path'])!);
-    if (inside && runsLater(file, repoKey(cwd).root)) {
+    const { file, root, inside } = inRepo(text(input['path'])!);
+    if (inside && runsLater(file, root!)) {
       return { action: 'file.outside', title: 'Change a file that runs in later sessions?', what: [`${tool} ${file}`], reason: 'it loads code, hooks or instructions in later sessions', grant: dirGrant(file, 'file changes') };
     }
     return inside

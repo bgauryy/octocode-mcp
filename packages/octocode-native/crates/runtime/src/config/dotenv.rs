@@ -53,14 +53,26 @@ pub fn parse_env(text: Option<&str>) -> BTreeMap<String, String> {
     out
 }
 
-pub fn apply_env(
-    map: &BTreeMap<String, String>,
-    sources: BTreeMap<String, String>,
-    target: &mut BTreeMap<String, String>,
-) -> EnvApplyReport {
+/// The home and workspace `.env` files merged: the workspace wins per key.
+pub struct MergedEnv {
+    pub map: BTreeMap<String, String>,
+    /// Which file each key in `map` came from: `global` or `project`.
+    pub sources: BTreeMap<String, String>,
+    /// Workspace keys dropped because the key is protected and the home file
+    /// sets it: the home value stands and the workspace value is reported.
+    pub workspace_protected: Vec<String>,
+}
+
+pub fn apply_env(merged: MergedEnv, target: &mut BTreeMap<String, String>) -> EnvApplyReport {
+    let MergedEnv {
+        map,
+        sources,
+        workspace_protected,
+    } = merged;
     let mut report = EnvApplyReport {
         sources,
         keys: map.keys().cloned().collect(),
+        skipped_workspace_protected: workspace_protected,
         ..Default::default()
     };
     // Capture source decisions before mutating target: the GitHub token
@@ -80,7 +92,7 @@ pub fn apply_env(
         .copied()
         .filter(|key| process_selected || (workspace_selected && !from_project(key)))
         .collect();
-    for (key, value) in map {
+    for (key, value) in &map {
         let workspace = report.sources.get(key).map(String::as_str) == Some("project");
         if !dotenv_may_set(key, value, workspace) {
             report.skipped_protected.push(key.clone());
@@ -120,35 +132,33 @@ fn is_protected_key(key: &str) -> bool {
                 .any(|protected| protected.eq_ignore_ascii_case(key)))
 }
 
-pub fn merged_env(
-    global: Option<&str>,
-    project: Option<&str>,
-    trusted: bool,
-) -> (BTreeMap<String, String>, BTreeMap<String, String>) {
-    let mut map = BTreeMap::new();
-    let mut sources = BTreeMap::new();
+pub fn merged_env(global: Option<&str>, project: Option<&str>) -> MergedEnv {
+    let mut merged = MergedEnv {
+        map: BTreeMap::new(),
+        sources: BTreeMap::new(),
+        workspace_protected: vec![],
+    };
     for (k, v) in parse_env(global)
         .into_iter()
         .filter(|(_, v)| !v.trim().is_empty())
     {
-        sources.insert(k.clone(), "global".into());
-        map.insert(k, v);
+        merged.sources.insert(k.clone(), "global".into());
+        merged.map.insert(k, v);
     }
-    if trusted {
-        for (k, v) in parse_env(project)
-            .into_iter()
-            .filter(|(_, v)| !v.trim().is_empty())
-        {
-            // A workspace value for a protected key is dropped later; it must
-            // not also evict the trusted home value for that key.
-            if map.contains_key(&k) && !dotenv_may_set(&k, &v, true) {
-                continue;
-            }
-            sources.insert(k.clone(), "project".into());
-            map.insert(k, v);
+    for (k, v) in parse_env(project)
+        .into_iter()
+        .filter(|(_, v)| !v.trim().is_empty())
+    {
+        // A workspace value for a protected key must not evict the trusted
+        // home value for that key; it is dropped and reported.
+        if merged.map.contains_key(&k) && !dotenv_may_set(&k, &v, true) {
+            merged.workspace_protected.push(k);
+            continue;
         }
+        merged.sources.insert(k.clone(), "project".into());
+        merged.map.insert(k, v);
     }
-    (map, sources)
+    merged
 }
 
 pub fn parse_boolean_env(value: Option<&str>) -> Option<bool> {
@@ -185,14 +195,14 @@ mod tests {
 
     #[test]
     fn workspace_protected_key_keeps_the_home_value() {
-        let (map, sources) = merged_env(
+        let merged = merged_env(
             Some("GITHUB_API_URL=https://ghe.example/api/v3\nREQUEST_TIMEOUT=9000"),
             Some("GITHUB_API_URL=http://127.0.0.1:1\nREQUEST_TIMEOUT=7000"),
-            true,
         );
-        assert_eq!(map["GITHUB_API_URL"], "https://ghe.example/api/v3");
-        assert_eq!(sources["GITHUB_API_URL"], "global");
-        assert_eq!(map["REQUEST_TIMEOUT"], "7000");
-        assert_eq!(sources["REQUEST_TIMEOUT"], "project");
+        assert_eq!(merged.map["GITHUB_API_URL"], "https://ghe.example/api/v3");
+        assert_eq!(merged.sources["GITHUB_API_URL"], "global");
+        assert_eq!(merged.map["REQUEST_TIMEOUT"], "7000");
+        assert_eq!(merged.sources["REQUEST_TIMEOUT"], "project");
+        assert_eq!(merged.workspace_protected, vec!["GITHUB_API_URL"]);
     }
 }

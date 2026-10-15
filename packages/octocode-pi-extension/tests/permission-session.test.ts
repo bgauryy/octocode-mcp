@@ -25,9 +25,9 @@ describe('allow a whole kind of action for the session', () => {
     const { permission, ctx, asked } = manual(['Allow all shell commands for this session']);
     expect(permission.mode).toBe('manual');
     // A compound command has no exact grant: before, only Allow once / Deny were offered, so every call asked again.
-    expect(await permission.check(ctx, shell('cd repo && git status --short | head'))).toEqual({ allowed: true, via: 'user' });
+    expect(await permission.check(ctx, shell('cd repo && git status --short | head'))).toEqual({ allowed: true, via: 'user', lasts: 'session' });
     expect(asked[0]!.choices).toContain('Allow all shell commands for this session');
-    expect(await permission.check(ctx, shell('find . -type f | grep -v node_modules'))).toEqual({ allowed: true, via: 'grant' });
+    expect(await permission.check(ctx, shell('find . -type f | grep -v node_modules'))).toEqual({ allowed: true, via: 'grant', lasts: 'session' });
     expect(asked).toHaveLength(1);
     expect(permission.grants()).toEqual(['shell: all shell commands']);
     // Only that kind: a web request still asks.
@@ -60,7 +60,7 @@ describe('allow a whole kind of action for the session', () => {
     expect([...parseGrants({ [PERMISSION_GRANTS_ENV]: 'shell,web,file.outside,provenance,hook.ask,shell.destructive,bogus' })].sort()).toEqual(['file.outside', 'shell', 'web']);
     const child = new Permission({ pi: fakePi().pi, env: { OCTOCODE_PERMISSION: 'manual', [PERMISSION_GRANTS_ENV]: 'shell,web' }, isSubagent: true });
     child.start(Object.assign(fakeCtx({ cwd: tmp(), hasUI: false }), { isProjectTrusted: () => false }) as never);
-    expect(await child.check(fakeCtx({ cwd: tmp(), hasUI: false }), shell('x | y'))).toEqual({ allowed: true, via: 'grant' });
+    expect(await child.check(fakeCtx({ cwd: tmp(), hasUI: false }), shell('x | y'))).toEqual({ allowed: true, via: 'grant', lasts: 'session' });
   });
 
   it('lets the file review stop reviewing for the rest of the session', async () => {
@@ -69,5 +69,21 @@ describe('allow a whole kind of action for the session', () => {
     const changes = [{ type: 'write', path: 'a.ts', reasoning: 'r', content: 'x' }];
     expect(await askReview(ctx, changes)).toBe('session');
     expect(asked[0]).toContain('Allow all file changes in the repository for this session');
+  });
+});
+
+describe('how far an allowed verdict reaches', () => {
+  it('lasts for the call when the mode or "Allow once" allowed it, and for the session when a grant or a session answer did', async () => {
+    const full = new Permission({ pi: fakePi().pi, env: { OCTOCODE_PERMISSION: 'full' }, isSubagent: false });
+    const fullCtx = Object.assign(fakeCtx({ cwd: tmp() }), { isProjectTrusted: () => true });
+    full.start(fullCtx as never);
+    expect(await full.check(fullCtx as never, shell('ls'))).toMatchObject({ allowed: true, via: 'mode', lasts: 'call' });
+
+    const once = manual(['Allow once']);
+    expect(await once.permission.check(once.ctx, shell('ls'))).toMatchObject({ allowed: true, via: 'user', lasts: 'call' });
+
+    const session = manual(['Allow all shell commands for this session']);
+    expect(await session.permission.check(session.ctx, shell('cd a && ls | head'))).toMatchObject({ allowed: true, via: 'user', lasts: 'session' });
+    expect(await session.permission.check(session.ctx, shell('pwd'))).toMatchObject({ allowed: true, via: 'grant', lasts: 'session' });
   });
 });

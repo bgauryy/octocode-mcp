@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { formatSize } from '@earendil-works/pi-coding-agent';
 import { KILL_GRACE_MS, killTree } from '../shared/process.js';
-import { sanitizeTerminalText } from '../shared/sanitize.js';
+import { visibleControls } from '../shared/sanitize.js';
 import { capOutputToFile } from '../shared/spill.js';
 import { firstLine, isRecord, parseJson } from '../shared/util.js';
 import type { HookCommand, HookEvent } from './config.js';
@@ -89,12 +89,12 @@ export interface HookVerdict {
 export function interpret(event: HookEvent, run: HookRun): HookVerdict {
   // Hook output is untrusted text: it reaches the model and Pi's tool errors without escape sequences.
   const { block, context, ask } = verdictOf(event, run);
-  return { ...(block ? { block: sanitizeTerminalText(block) } : {}), ...(context ? { context: sanitizeTerminalText(context) } : {}), ...(ask ? { ask: sanitizeTerminalText(ask) } : {}) };
+  return { ...(block ? { block: visibleControls(block) } : {}), ...(context ? { context: visibleControls(context) } : {}), ...(ask ? { ask: visibleControls(ask) } : {}) };
 }
 
 function verdictOf(event: HookEvent, run: HookRun): HookVerdict {
   // Notification hooks are side effects only: they cannot block or add context.
-  if (run.timedOut || event === 'Notification') return {};
+  if (run.timedOut || event === 'Notification' || event === 'PostMessageReceive') return {};
   // Output past the kept bytes is counted, never dropped silently.
   const notKept = (bytes = 0) => (bytes > 0 ? `\n[… ${formatSize(bytes)} more output not kept: a hook's output is read up to ${formatSize(OUTPUT_MAX_BYTES)}]` : '');
   if (run.code === 2) return { block: run.stderr.trim() ? `${run.stderr.trim()}${notKept(run.dropped?.stderr)}` : 'Blocked by a hook.' };
@@ -107,8 +107,8 @@ function verdictOf(event: HookEvent, run: HookRun): HookVerdict {
   const context = typeof specific.additionalContext === 'string' && specific.additionalContext.trim() ? specific.additionalContext.trim() : undefined;
   // For Stop, `continue: false` means "stop for good", the opposite of blocking (which keeps the agent going).
   const blocked = json.decision === 'block' || (event !== 'Stop' && (json.continue === false || specific.permissionDecision === 'deny'));
-  const asks = !blocked && event === 'PreToolUse' && specific.permissionDecision === 'ask';
-  return { ...(blocked ? { block: reason ?? 'Blocked by a hook.' } : {}), ...(asks ? { ask: reason ?? 'A PreToolUse hook asks you to confirm this call.' } : {}), ...(context ? { context } : {}) };
+  const asks = !blocked && (event === 'PreToolUse' || event === 'PreMessageSend') && specific.permissionDecision === 'ask';
+  return { ...(blocked ? { block: reason ?? 'Blocked by a hook.' } : {}), ...(asks ? { ask: reason ?? `A ${event} hook asks you to confirm this call.` } : {}), ...(context && event !== 'PreMessageSend' ? { context } : {}) };
 }
 
 /**

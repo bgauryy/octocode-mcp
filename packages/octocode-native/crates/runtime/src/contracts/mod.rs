@@ -226,15 +226,6 @@ pub fn prepare_many_and_validate(
     }
 }
 
-/// Contract tool-set names joined the way core phrases them (`a or b`).
-pub(crate) fn policy_names(tools: &[crate::tools::id::ToolId]) -> String {
-    tools
-        .iter()
-        .map(|tool| tool.as_str())
-        .collect::<Vec<_>>()
-        .join(" or ")
-}
-
 fn prepare_validation_error(error: ContractInputError) -> ContractValidationError {
     ContractValidationError {
         issues: vec![ValidationIssue {
@@ -286,38 +277,27 @@ mod contract_owner_tests {
         contract_json, contract_provenance_json, isolate_row_violations, normalize_input,
         prepare_and_validate, prepare_many_and_validate, validate_output,
     };
-    use serde_json::{Value, json};
+    use serde_json::json;
 
-    /// Questions are flat objects: an optional correlation `id` beside the
-    /// question's own fields.
-    fn with_id(id: impl Into<String>, question: &Value) -> Value {
-        let mut question = question.clone();
-        question["id"] = Value::String(id.into());
-        question
-    }
-
+    /// Normalization only wraps a bare row as a one-row `queries`; it never
+    /// repairs a value (an encoded `queries` string, a string number), which
+    /// validation then rejects.
     #[test]
-    fn normalization_repairs_only_the_queries_envelope_without_validating() {
-        let row = json!({"mainGoal":"g","reasoning":"r","path":"/tmp","matchString":"x","include":"[\"*.ts\"]"});
-        let expected = json!({"queries":[{"mainGoal":"g","reasoning":"r","path":"/tmp","matchString":"x","include":["*.ts"]}]});
-        let encoded = serde_json::to_string(&json!([row])).expect("encode");
-        let envelope = normalize_input(
-            "localSearch",
-            json!({"queries": encoded, "responseLength": "100"}),
-        );
-        assert_eq!(envelope["queries"], expected["queries"]);
-        assert_eq!(envelope["responseLength"], 100);
-        // A bare row runs as a one-row `queries`, repaired like any row; the
-        // envelope fields it carries stay on the envelope.
+    fn normalization_only_wraps_a_bare_row() {
+        let row = json!({"mainGoal":"g","reasoning":"r","path":"/tmp","matchString":"x","include":["*.ts"]});
+        let expected = json!({"queries":[row.clone()]});
         let mut bare = row.clone();
-        bare["responseLength"] = json!("100");
+        bare["responseLength"] = json!(100);
         let wrapped = normalize_input("localSearch", bare);
         assert_eq!(wrapped["queries"], expected["queries"]);
         assert_eq!(wrapped["responseLength"], 100);
         let prepared = prepare_many_and_validate("localSearch", wrapped)
             .expect("a bare row validates as one row");
         assert_eq!(prepared.len(), 1);
-        assert_eq!(prepared[0]["include"], json!(["*.ts"]));
+        let encoded = serde_json::to_string(&json!([row])).expect("encode");
+        let envelope = json!({"queries": encoded, "responseLength": "100"});
+        assert_eq!(normalize_input("localSearch", envelope.clone()), envelope);
+        assert!(prepare_many_and_validate("localSearch", envelope).is_err());
         // An array, or an object with only envelope fields, is not a row.
         assert_eq!(
             normalize_input("localSearch", json!([row.clone()])),
@@ -417,30 +397,28 @@ mod contract_owner_tests {
     }
 
     #[test]
-    fn semantic_matrix_stays_one_query_for_resource_major_runtime_execution() {
-        let question = json!({"type":"yesno","ask":"Is it relevant?"});
+    fn a_clasify_row_keeps_its_keyed_questions_and_trims_its_brief() {
         let queries = prepare_many_and_validate(
             "clasify",
             json!({"queries":[{
-                "id":"matrix",
-                "reasoning":"  Classify every resource.  ","mainGoal":"Decide the next read.",
-                "resources":[
-                    {"id":"r1","value":{"text":"one"}},
-                    {"id":"r2","value":{"text":"two"}}
-                ],
-                "questions":[
-                    with_id("q1", &question),
-                    {"id":"q2","type":"score","ask":"Rate risk","labels":["low","high"]}
-                ]
+                "id":"row",
+                "reasoning":"  Classify the state.  ","mainGoal":"Decide the next read.",
+                "state":{"text":"one"},
+                "questions":{
+                    "q1":{"type":"noul","instructions":"Is it relevant?"},
+                    "q2":{"type":"score","instructions":"Rate risk","criteria":["low","high"]}
+                }
             }]}),
         )
-        .expect("valid semantic matrix");
+        .expect("valid clasify row");
         assert_eq!(queries.len(), 1);
-        assert_eq!(queries[0]["resources"][0]["id"], "r1");
-        assert_eq!(queries[0]["resources"][1]["id"], "r2");
-        assert_eq!(queries[0]["questions"][0]["id"], "q1");
-        assert_eq!(queries[0]["questions"][1]["id"], "q2");
-        assert_eq!(queries[0]["reasoning"], "Classify every resource.");
+        assert_eq!(queries[0]["state"], json!({"text":"one"}));
+        assert_eq!(queries[0]["questions"]["q1"]["type"], "noul");
+        assert_eq!(
+            queries[0]["questions"]["q2"]["criteria"],
+            json!(["low", "high"])
+        );
+        assert_eq!(queries[0]["reasoning"], "Classify the state.");
     }
 
     #[test]
@@ -664,7 +642,10 @@ mod contract_owner_tests {
                 {"commitSha":"def456","date":"2026-01-01T00:00:00Z","message":"second"}
             ]}),
         );
-        let output = crate::response::rows::envelope(vec![json!({"index":0,"data":data})]);
+        let output = crate::response::rows::envelope(
+            crate::tools::id::ToolId::GhSearchHistory,
+            vec![json!({"index":0,"data":data})],
+        );
         assert!(
             output["shared"].is_object(),
             "test must exercise real compaction"

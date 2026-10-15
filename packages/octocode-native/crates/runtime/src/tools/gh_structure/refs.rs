@@ -7,7 +7,7 @@ use octocode_github::MAX_PER_PAGE;
 use octocode_github::{NamedRef, RefKind, RefMatch};
 
 /// Refs per page when `pageSize` is omitted (a tree page is 300 entries).
-const DEFAULT_REFS_PER_PAGE: usize = 30;
+const DEFAULT_REFS_PER_PAGE: usize = MAX_PER_PAGE;
 
 /// Run a non-tree operation; `None` for the tree listing.
 pub(super) async fn execute_operation<C: octocode_github::ConditionalCache>(
@@ -49,11 +49,13 @@ async fn refs<C: octocode_github::ConditionalCache>(
                 .reference_kind(owner, repo, reference, &sha, context)
                 .await?
         };
-        return Ok(ToolData::from(
-            json!({ "commitSha": sha, "refKind": kind.as_str() }),
-        ));
+        let mut value = json!({ "commitSha": sha, "refKind": kind.as_str() });
+        if let Some((warning, _)) = super::canonical(provider, query, context).await? {
+            push_warning_front(&mut value, warning);
+        }
+        return Ok(ToolData::from(value));
     }
-    let page = crate::tools::num::usize_of(query.page);
+    let page = query.page.map_or(1, crate::tools::num::usize_of);
     let requested = query.page_size.map_or(DEFAULT_REFS_PER_PAGE, |size| {
         crate::tools::num::usize_of(size.get())
     });
@@ -81,6 +83,12 @@ async fn refs<C: octocode_github::ConditionalCache>(
         "commitSha": head,
         "tags": tags.refs.iter().map(|named| named.name.as_str()).collect::<Vec<_>>(),
     });
+    // The default-branch read named the canonical repository: leads use it.
+    let (renamed_warning, canonical) = super::canonical(provider, query, context).await?.unzip();
+    let query = canonical.as_ref().unwrap_or(query);
+    if let Some(warning) = renamed_warning {
+        push_warning_front(&mut value, warning);
+    }
     if requested > per_page {
         push_warnings(
             &mut value,
@@ -90,9 +98,12 @@ async fn refs<C: octocode_github::ConditionalCache>(
         );
     }
     if !with_branches {
-        // Branches are read only when asked: the lead asks for them.
+        // Branches are read only when asked: the lead adds the extra that
+        // asks for them to the caller's own.
         let mut listed = query_row(query, &[]);
-        listed["extras"] = json!([ExtraKind::Details.to_string()]);
+        let mut extras = query.extras.clone();
+        extras.push(ExtraKind::Details);
+        listed["extras"] = json!(extras);
         value["next"]["viewRefs"] = continuation(listed, "exact");
     }
     if let Some(branches) = &branches {

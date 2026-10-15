@@ -1,16 +1,17 @@
 import { spawn } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Usage } from '@earendil-works/pi-ai';
-import { BROWSER_VISIBLE_ENV, CACHE_RETENTION_ENV, childCacheRetention, HOOKS_ENV, MCP_ENV, PARENT_SESSION_ENV, PERMISSION_ENV, PERMISSION_GRANTS_ENV, PERMISSION_RELAY_ENV, SUBAGENT_ENV, TRUST_ROOT_ENV } from '../shared/env.js';
+import { BROWSER_VISIBLE_ENV, CACHE_RETENTION_ENV, childCacheRetention, HOOKS_ENV, MCP_ENV, PARENT_SESSION_ENV, PERMISSION_ENV, PERMISSION_GRANTS_ENV, PERMISSION_NONCE_FILE_ENV, PERMISSION_RELAY_ENV, SUBAGENT_ENV, TRUST_ROOT_ENV } from '../shared/env.js';
 import type { ActionClass, PermissionMode } from '../permission/mode.js';
 import { NEEDS_APPROVAL } from '../permission/ask.js';
 import { atomicWriteFileSync, sha256 } from '../shared/atomic.js';
 import { formatDuration } from '../shared/format.js';
-import { privateDir, sessionOutputDir } from '../shared/home.js';
+import { PRIVATE_FILE_MODE, privateDir, sessionOutputDir } from '../shared/home.js';
 import { adoptTree, groupAlive, groupStartTimes, prepareTree, processStartTime, sameProcess, stopTree } from '../shared/process.js';
-import { redactSecrets, sanitizeTerminalText } from '../shared/sanitize.js';
+import { redactSecrets, visibleControls } from '../shared/sanitize.js';
 import { addUsage, capChars, contentText, cutText, emptyUsage, isRecord, settleWithin, toolHint } from '../shared/util.js';
 import { AGENT_COLLABORATE_ENV, AGENT_ID_ENV, AGENT_GOAL_ENV, AGENT_ROLE_ENV, AGENT_SCRATCH_ENV, PARENT_ID_ENV, PARENT_PID_ENV, TEAM_WORKSPACE_ENV } from '../team/store.js';
 import { profileExcludes, type AgentProfile } from './profiles.js';
@@ -42,16 +43,16 @@ export interface Identity {
 }
 
 /**
- * Child environment. A `visibleBrowser` profile (webLive) gets a visible Chrome on the persistent profile. The user's
+ * Child environment. `nonceFile` is the owner-only file holding the child's own secret (`PERMISSION_NONCE_FILE_ENV`; the secret itself never goes in an environment). A `visibleBrowser` profile (webLive) gets a visible Chrome on the persistent profile. The user's
  * command hooks stay off in children unless the profile sets `hooks: true`: a hook meant for the main session (a
  * Stop hook that runs the tests, a notifier) would otherwise fire once per subagent.
  */
-export function subagentProcessEnv(profile: AgentProfile | undefined, base: NodeJS.ProcessEnv = process.env, identity?: Identity): NodeJS.ProcessEnv {
+export function subagentProcessEnv(profile: AgentProfile | undefined, base: NodeJS.ProcessEnv = process.env, identity?: Identity, nonceFile?: string): NodeJS.ProcessEnv {
   const hooks = base[HOOKS_ENV];
   const inherited = { ...base };
   // User settings survive; run identity, trust delegation, permissions and browser mode belong to this child.
   const owned = [
-    ...[HOOKS_ENV, TRUST_ROOT_ENV, BROWSER_VISIBLE_ENV, PERMISSION_ENV, PERMISSION_GRANTS_ENV, PERMISSION_RELAY_ENV, CACHE_RETENTION_ENV],
+    ...[HOOKS_ENV, TRUST_ROOT_ENV, BROWSER_VISIBLE_ENV, PERMISSION_ENV, PERMISSION_GRANTS_ENV, PERMISSION_NONCE_FILE_ENV, PERMISSION_RELAY_ENV, CACHE_RETENTION_ENV],
     ...[AGENT_ID_ENV, AGENT_ROLE_ENV, PARENT_ID_ENV, AGENT_GOAL_ENV, AGENT_COLLABORATE_ENV, AGENT_SCRATCH_ENV, PARENT_SESSION_ENV, PARENT_PID_ENV],
   ];
   for (const key of owned) delete inherited[key];
@@ -74,6 +75,7 @@ export function subagentProcessEnv(profile: AgentProfile | undefined, base: Node
     ...(identity?.parentSession ? { [PARENT_SESSION_ENV]: identity.parentSession } : {}),
     // The pid and its start time name this process, so a child never mistakes a later process with the pid for its parent.
     ...(identity ? { [PARENT_PID_ENV]: [process.pid, processStartTime(process.pid)].filter(Boolean).join(' ') } : {}),
+    ...(nonceFile ? { [PERMISSION_NONCE_FILE_ENV]: nonceFile } : {}),
     ...(identity?.relay ? { [PERMISSION_RELAY_ENV]: '1' } : {}),
     ...(identity?.permission ? { [PERMISSION_ENV]: identity.permission.mode } : {}),
     ...(identity?.permission?.grants.length ? { [PERMISSION_GRANTS_ENV]: identity.permission.grants.join(',') } : {}),
@@ -110,6 +112,21 @@ function promptFile(prompt: string, dir: string): string {
   const file = path.join(dir, `system-prompt-${sha256(prompt).slice(0, 16)}.md`);
   atomicWriteFileSync(file, prompt, { mode: 0o600 });
   return file;
+}
+
+/**
+ * Writes `nonce` to a new owner-only file in this session's private folder and returns its path, or undefined when it
+ * cannot be written (the child then runs without a secret: its headers and audit entries are not accepted, and it logs that).
+ * The child reads the file once and unlinks it (`takeNonce`); `runSubagent` removes it at the end of the run otherwise.
+ */
+export function writeNonceFile(nonce: string, id: string): string | undefined {
+  try {
+    const file = path.join(sessionOutputDir('output'), `nonce-${id.replace(/[^\w.-]/g, '_')}-${randomBytes(8).toString('hex')}`);
+    fs.writeFileSync(file, nonce, { flag: 'wx', mode: PRIVATE_FILE_MODE });
+    return file;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -239,9 +256,15 @@ export async function runSubagent(
   // Windows: the helper that owns the child's job runs before the child, so no grandchild escapes the job.
   await prepareTree();
   if (signal?.aborted) throw new Error('Subagent cancelled');
-  return new Promise((resolve, reject) => {
+  // The team signs the user's messages to this child with the nonce for as long as the child runs.
+  // The secret reaches the child through an owner-only file, never its environment or arguments (`PERMISSION_NONCE_FILE_ENV`).
+  const nonce = randomBytes(16).toString('hex');
+  const nonceFile = writeNonceFile(nonce, identity.id);
+  const vouched = nonceFile ? host?.vouch?.(identity.id, nonce) : undefined;
+  if (!nonceFile) host?.permission.relayNote(identity.id, 'no secret file could be written for this subagent: its audit entries and permission headers are not accepted, and the user\'s messages to it are not signed');
+  return new Promise<SubagentOutcome>((resolve, reject) => {
     // Detached on POSIX so the child leads a process group: cancelling kills its whole tree (MCP servers, Chrome, bash).
-    const child = spawn(command, [...prefix, ...args], { cwd, env: subagentProcessEnv(profile, process.env, identity), stdio: ['pipe', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
+    const child = spawn(command, [...prefix, ...args], { cwd, env: subagentProcessEnv(profile, process.env, identity, nonceFile), stdio: ['pipe', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
     adoptTree(child.pid);
     const usage = emptyUsage();
     const report = new ReportTracker(identity.scratch ?? reportDir(identity.id));
@@ -297,6 +320,8 @@ export async function runSubagent(
     // While the child waits for the user's answer it is not hung, however long the user takes.
     let waitingSince = 0;
     const relay = new ChildRelay(identity, host, {
+      // Without a file the child holds no secret: nothing it sends can carry one.
+      nonce: nonceFile ? nonce : '',
       send: (response) => void send({ type: 'extension_ui_response', ...response }),
       onWaiting: (waiting) => {
         const now = Date.now();
@@ -460,21 +485,22 @@ export async function runSubagent(
     const conclude = (code: number | null, exitSignal: NodeJS.Signals | null) => {
       for (const stream of [child.stdout, child.stderr]) stream.destroy();
       if (buffer.trim()) handleLine(buffer);
+      relay.end();
       const { text: finalText, body: progress, pointer, error, answered } = report.result();
       if (streamFailure) reject(streamFailure);
       // A child stopped while settling after its answer still delivers that answer.
       else if (stalled && !answered) reject(stalled);
       else if (signal?.aborted && !answered) reject(new Error('Subagent cancelled'));
-      // The child's report and stderr are untrusted text headed for the model and the terminal. A crash before any
+      // The child's report (already shown with visible escapes by `Report`) and stderr are untrusted text headed for the model and the terminal. A crash before any
       // final answer is a failure even when the child narrated progress first: narration is not a report.
       else if (code !== 0 && !answered) {
         // The progress text is cut to 500 characters (the cut is stated); the pointer to the saved report is always kept.
-        const last = finalText ? `\nLast progress: ${capChars(sanitizeTerminalText(progress).trim(), 500)}${pointer ? `\n${sanitizeTerminalText(pointer)}` : ''}` : '';
-        reject(new Error(`Subagent ${exitReason(code, exitSignal)}: ${sanitizeTerminalText(stderr).trim() || 'no output'}${last}`));
+        const last = finalText ? `\nLast progress: ${capChars(progress.trim(), 500)}${pointer ? `\n${visibleControls(pointer)}` : ''}` : '';
+        reject(new Error(`Subagent ${exitReason(code, exitSignal)}: ${visibleControls(stderr).trim() || 'no output'}${last}`));
       }
       else {
         const failure = cancelled ? 'Subagent cancelled before its run settled' : error;
-        resolve({ text: sanitizeTerminalText(finalText), usage, ...(failure ? { error: sanitizeTerminalText(failure) } : {}) });
+        resolve({ text: finalText, usage, ...(failure ? { error: failure } : {}) });
       }
     };
     // Install cleanup before invoking a callback that can fail (for example, recording worktree ownership).
@@ -485,6 +511,10 @@ export async function runSubagent(
       abort();
     }
     if (!streamFailure) send({ type: 'prompt', message: task });
+  }).finally(() => {
+    vouched?.();
+    // A child that never started its permission module (it failed first) leaves the file: it is removed with the run.
+    if (nonceFile) fs.rmSync(nonceFile, { force: true });
   });
 }
 

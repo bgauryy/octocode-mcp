@@ -1,14 +1,13 @@
 //! astSearch's answers to the shared response stages.
 
-use super::AstSearchQuery;
-use crate::tools::clasify::{items, resource::ResourceSource};
 use crate::tools::output::{PathAnchor, TextShape, ToolOutput};
 use serde_json::Value;
 
 pub(crate) struct Output;
 impl ToolOutput for Output {
-    fn reports_scan_totals(&self) -> bool {
-        true
+    /// A row carries scan totals only beside `matchCount`.
+    fn reports_scan_totals(&self, data: &serde_json::Map<String, Value>) -> bool {
+        data.contains_key("matchCount")
     }
     fn fallback_hint(&self, query: &Value) -> &'static str {
         // A pattern must parse as one complete node of the target grammar.
@@ -54,57 +53,6 @@ impl ToolOutput for Output {
     fn text_shape(&self) -> TextShape {
         TextShape::Outline
     }
-    fn clasify_items(&self, source: &ResourceSource, state: &Value) -> Option<Vec<items::Item>> {
-        let ResourceSource::AstSearch(query) = source else {
-            return None;
-        };
-        let data = items::page_data(state)?;
-        let base = items::page_root(state);
-        match &**query {
-            AstSearchQuery::MatchPattern(_) | AstSearchQuery::MatchRule(_) => {
-                items::file_items(state, data, base, "matches")
-            }
-            AstSearchQuery::Symbols(_) if data.get("files").is_some() => {
-                items::file_items(state, data, base, "symbols")
-            }
-            AstSearchQuery::Symbols(symbols) => {
-                clasify_declarations(state, data, base, symbols.path.as_str())
-            }
-            AstSearchQuery::SyntaxTree(_) => None,
-        }
-    }
-}
-
-/// A single-file outline: one candidate per file its declarations name
-/// (rows without a path belong to the outlined file).
-fn clasify_declarations(
-    state: &Value,
-    data: &Value,
-    base: Option<&str>,
-    query_path: &str,
-) -> Option<Vec<items::Item>> {
-    let rows = data.get("symbols")?.as_array()?;
-    let fallback = data
-        .get("path")
-        .and_then(Value::as_str)
-        .unwrap_or(query_path);
-    let found = items::grouped(rows, Some(fallback))
-        .into_iter()
-        .map(|(path, group)| {
-            let path = items::absolute(base, path);
-            let lines = group
-                .iter()
-                .filter_map(|row| items::line(row, "line"))
-                .collect();
-            items::Item {
-                state: items::narrowed(state, "/results/0/data/symbols", group),
-                read: Some(items::local_read(&path, lines)),
-                path: Some(path),
-                item: None,
-            }
-        })
-        .collect();
-    Some(found)
 }
 
 #[cfg(test)]

@@ -79,6 +79,7 @@ Peer discovery, messages, documents, and shared records use repository coordinat
 Leases, Git activity, and native receiver checks use the actual worktree.
 Context discovery shares matching relative-path notes and preserves each note’s worktree and branch origin.
 Session IDs route cooperating same-user processes; they are not credentials or filesystem isolation.
+`peers`, message senders and lease owners show exact IDs, and a CLI caller supplies its own `--session`, so any process that holds a peer's ID acts as that peer. A per-session secret would sit beside the ID: the database file, `db export` and process arguments are readable by the same OS user, so it would add no boundary and would need every host, hook and the Pi lease reader to carry it. The boundaries that hold are pinned by `tests/identity-trust.test.mjs`: no tool input names the acting session (bound MCP and Pi tools fix it at launch), an ID acts only in its own workspace and only while live, and native receipt and write checks compare the host session. Isolation between mutually distrusting agents needs separate OS users or databases.
 Leases use canonical paths and frozen Unicode case folding. They are advisory; guards cover only reported operations.
 
 The runtime rejects unknown schema fingerprints.
@@ -99,6 +100,8 @@ Migration does not recreate identity snapshots from current state.
 Edit canonical sources. The package manifest owns build, syntax, link, regression, smoke, and packing commands.
 `src/pack-runtime.mjs` verifies the extracted archive; `src/release-smoke.mjs` exercises actual CLI/MCP replies, leases, and recovery.
 Checks prove their named paths and platform. They do not certify arbitrary vendor versions or OS isolation.
+
+Repeated crash tests exercise real transaction and process boundaries. The optional `src/live-concurrency.mjs` runner keeps actual Pi/Claude/Codex sessions across request waves and heartbeat intervals; it requires explicit account-backed opt-in. Stored completion, host submission and uncertain attempts remain distinct even when a delivery owner crashes. See [operations and recovery](scripts/docs/OPERATIONS.md) for the evidence to inspect before reconnecting or retrying.
 
 ## npm interfaces
 

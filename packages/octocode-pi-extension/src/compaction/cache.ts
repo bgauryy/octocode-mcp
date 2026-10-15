@@ -9,7 +9,7 @@ import { isRecord } from '../shared/util.js';
  * but whose replies show caching: Anthropic's cache TTLs, 5 minutes for short retention and 1 hour for long.
  */
 export const INFERRED_CACHE_TTL_SECONDS = { short: 300, long: 3600 } as const;
-/** Idle gaps needed before this session's own history is trusted over Pi's constant continuation estimate. */
+/** Idle gaps needed before this session's own history is trusted over Pi's constant continuation estimate (fewer gaps are noise). */
 const MIN_IDLE_SAMPLES = 5;
 
 type PromptCache = NonNullable<Model<Api>['promptCache']>;
@@ -133,6 +133,22 @@ export function idleContinuation(gaps: readonly number[], idleMs: number, ttlMs:
   const survivors = gaps.filter((gap) => gap > idleMs);
   if (survivors.length < MIN_IDLE_SAMPLES) return undefined;
   return survivors.filter((gap) => gap > idleMs + ttlMs / 10 && gap <= idleMs + ttlMs).length / survivors.length;
+}
+
+/**
+ * When the session's prompt cache entry was last used: its last reply, or a later refresh by Pi's warmer (a `usage`
+ * entry of kind `cache_warm`, which reads the same prefix and so restarts its lifetime). Undefined without a reply.
+ */
+export function lastCacheUseAt(branch: readonly unknown[]): number | undefined {
+  const reply = lastReplyAt(branch);
+  if (reply === undefined) return undefined;
+  let latest = reply;
+  for (const entry of branch) {
+    const { type, kind, timestamp } = entry as { type?: string; kind?: string; timestamp?: string };
+    const at = type === 'usage' && kind === 'cache_warm' && typeof timestamp === 'string' ? Date.parse(timestamp) : Number.NaN;
+    if (at > latest) latest = at;
+  }
+  return latest;
 }
 
 /** When the session's last reply was requested (its idle start), or undefined without one. */

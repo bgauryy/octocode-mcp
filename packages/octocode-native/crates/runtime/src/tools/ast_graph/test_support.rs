@@ -1,5 +1,6 @@
 //! Fixtures the astTopology test modules share.
 use super::*;
+pub(super) use crate::tools::test_support::Fixture;
 use serde_json::Value;
 use std::path::Path;
 
@@ -26,18 +27,16 @@ pub(super) fn topology(root: &Path, mut query: Value) -> Value {
     run(query, root).expect("topology result")
 }
 
-/// Write each `(path, text)` under `root`, creating parent directories.
-pub(super) fn write_files(root: &Path, files: &[(&str, &str)]) {
+/// Write each `(path, text)` under `dir` of `root` (`""`: the root itself).
+pub(super) fn write_under(root: &Fixture, dir: &str, files: &[(&str, &str)]) {
     for (path, text) in files {
-        let path = root.join(path);
-        std::fs::create_dir_all(path.parent().expect("parent")).expect("dirs");
-        std::fs::write(path, text).expect("write");
+        let relative = if dir.is_empty() {
+            (*path).to_owned()
+        } else {
+            format!("{dir}/{path}")
+        };
+        root.write(&relative, text);
     }
-}
-
-/// Write `text` to `file` under `root`, creating parent directories.
-pub(super) fn write_file(root: &Path, file: &str, text: &str) {
-    write_files(root, &[(file, text)]);
 }
 
 /// The scanned-file set of a fixture.
@@ -46,9 +45,9 @@ pub(super) fn known(files: &[&str]) -> std::collections::BTreeSet<String> {
 }
 
 /// A temporary directory holding `files`.
-pub(super) fn fixture(files: &[(&str, &str)]) -> tempfile::TempDir {
-    let temp = tempfile::TempDir::new().expect("temp");
-    write_files(temp.path(), files);
+pub(super) fn fixture(files: &[(&str, &str)]) -> Fixture {
+    let temp = Fixture::new();
+    write_under(&temp, "", files);
     temp
 }
 

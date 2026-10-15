@@ -12,37 +12,32 @@
     "clasify": {
       "evidence": [
         "src/tools/clasify/mod.rs",
-        "src/tools/clasify/transport.rs",
-        "src/tools/clasify/context.rs",
-        "src/tools/clasify/run/mod.rs",
-        "src/tools/clasify/run/provider.rs",
-        "src/tools/clasify/locate.rs",
+        "src/tools/judgment/batch.rs",
+        "src/tools/judgment/cache.rs",
+        "src/tools/judgment/transport.rs",
         "tests/runtime_clasify.rs",
-        "src/tools/clasify/compact.rs"
+        "src/tools/source_capture/assets.rs",
+        "tests/runtime_clasify_media.rs"
       ],
       "variants": [
-        "clasify"
+        "evaluate",
+        "models"
       ],
       "discriminators": {
-        "questions[].type": [
+        "questions{}.type": [
+          "box",
           "choice",
-          "score",
-          "locate",
-          "sufficient",
-          "relevant",
-          "supports",
-          "adds",
-          "yesno"
+          "noul",
+          "score"
         ],
-        "resources[].candidateEvidence": [
-          "fileChunks",
-          "search"
+        "operation": [
+          "models"
+        ],
+        "assets{}.type": [
+          "image"
         ]
       },
       "fields": {
-        "carry": [
-          "consumed"
-        ],
         "extras": [
           "output-control",
           "continuation"
@@ -51,81 +46,124 @@
           "consumed"
         ],
         "mainGoal": [
+          "workflow-metadata"
+        ],
+        "model": [
           "consumed",
-          "forwarded",
-          "continuation"
+          "forwarded"
         ],
         "questions": [
           "consumed"
         ],
-        "questions[].ask": [
-          "consumed"
+        "questions{}.criteria": [
+          "forwarded"
         ],
-        "questions[].id": [
-          "consumed"
+        "questions{}.criteria.false": [
+          "forwarded"
         ],
-        "questions[].known": [
-          "consumed"
+        "questions{}.criteria.true": [
+          "forwarded"
         ],
-        "questions[].labels": [
-          "consumed"
+        "questions{}.instructions": [
+          "forwarded"
         ],
-        "questions[].labels.false": [
-          "consumed"
-        ],
-        "questions[].labels.true": [
-          "consumed"
-        ],
-        "questions[].type": [
-          "consumed"
+        "questions{}.type": [
+          "consumed",
+          "forwarded"
         ],
         "reasoning": [
+          "workflow-metadata"
+        ],
+        "source": [
+          "consumed"
+        ],
+        "source.query": [
+          "consumed"
+        ],
+        "source.query.fullContent": [
           "consumed",
+          "forwarded"
+        ],
+        "source.query.minify": [
+          "consumed"
+        ],
+        "source.query.owner": [
+          "forwarded"
+        ],
+        "source.query.path": [
+          "forwarded",
+          "security-policy"
+        ],
+        "source.query.ranges": [
+          "consumed",
+          "forwarded"
+        ],
+        "source.query.ref": [
+          "consumed",
+          "forwarded"
+        ],
+        "source.query.repo": [
+          "forwarded"
+        ],
+        "source.query.snapshot": [
           "forwarded",
           "continuation"
         ],
-        "resources": [
+        "source.tool": [
           "consumed"
         ],
-        "resources[].candidateEvidence": [
+        "source.url": [
           "consumed"
         ],
-        "resources[].id": [
-          "consumed"
-        ],
-        "resources[].maxChars": [
-          "consumed"
-        ],
-        "resources[].prefilter": [
-          "consumed"
-        ],
-        "resources[].query": [
-          "consumed"
-        ],
-        "resources[].query.owner": [
+        "state": [
           "forwarded"
         ],
-        "resources[].query.path": [
-          "forwarded"
-        ],
-        "resources[].query.reasoning": [
-          "forwarded"
-        ],
-        "resources[].query.ref": [
+        "operation": [
           "consumed"
         ],
-        "resources[].query.repo": [
-          "forwarded"
-        ],
-        "resources[].resumePageSize": [
+        "longContext": [
           "consumed",
-          "continuation"
+          "forwarded"
         ],
-        "resources[].tool": [
+        "assets": [
           "consumed"
         ],
-        "resources[].value": [
+        "assets{}.type": [
+          "consumed",
+          "forwarded"
+        ],
+        "assets{}.source": [
           "consumed"
+        ],
+        "assets{}.source.query": [
+          "consumed"
+        ],
+        "assets{}.source.query.owner": [
+          "consumed",
+          "forwarded"
+        ],
+        "assets{}.source.query.repo": [
+          "consumed",
+          "forwarded"
+        ],
+        "assets{}.source.query.path": [
+          "consumed",
+          "security-policy"
+        ],
+        "assets{}.source.query.ref": [
+          "consumed",
+          "forwarded"
+        ],
+        "assets{}.source.query.snapshot": [
+          "consumed",
+          "forwarded"
+        ],
+        "assets{}.source.tool": [
+          "consumed"
+        ],
+        "assets{}.source.url": [
+          "consumed",
+          "security-policy"
         ]
       }
     },
@@ -207,7 +245,8 @@
       "evidence": [
         "src/tools/gh_search_code/query.rs",
         "tests/runtime_github.rs",
-        "src/tools/ranking.rs"
+        "src/tools/selection.rs",
+        "src/tools/judgment/select.rs"
       ],
       "variants": [
         "ghSearchCode"
@@ -232,7 +271,9 @@
           "forwarded"
         ],
         "mainGoal": [
-          "workflow-metadata"
+          "workflow-metadata",
+          "consumed",
+          "continuation"
         ],
         "matchIn": [
           "forwarded"
@@ -254,7 +295,9 @@
           "security-policy"
         ],
         "reasoning": [
-          "workflow-metadata"
+          "workflow-metadata",
+          "consumed",
+          "continuation"
         ],
         "ref": [
           "consumed"
@@ -262,12 +305,20 @@
         "repo": [
           "forwarded"
         ],
-        "goals": [
+        "clasifyContext": [
           "consumed",
           "continuation"
         ],
-        "ranking": [
+        "selection": [
           "consumed",
+          "continuation"
+        ],
+        "clasifyContext.classifiers": [
+          "consumed",
+          "continuation"
+        ],
+        "clasifyContext.longContext": [
+          "forwarded",
           "continuation"
         ]
       }
@@ -275,6 +326,7 @@
     "ghStructure": {
       "evidence": [
         "src/tools/gh_structure/mod.rs",
+        "src/tools/gh_structure/materialize/tests.rs",
         "tests/runtime_github.rs",
         "tests/runtime_gh_structure.rs"
       ],
@@ -344,10 +396,12 @@
     "ghGetFileContent": {
       "evidence": [
         "src/tools/gh_get_file_content/mod.rs",
-        "src/tools/local_fetch/tests.rs",
+        "src/tools/local_fetch/tests/matches.rs",
+        "src/tools/local_fetch/tests/blocks_and_paths.rs",
         "src/tools/local_fetch/block.rs",
         "tests/runtime_github.rs",
-        "src/tools/ranking.rs"
+        "src/tools/selection.rs",
+        "src/tools/judgment/select.rs"
       ],
       "variants": [
         "ghGetFileContent"
@@ -387,7 +441,9 @@
           "output-control"
         ],
         "mainGoal": [
-          "workflow-metadata"
+          "workflow-metadata",
+          "consumed",
+          "continuation"
         ],
         "matchString": [
           "forwarded"
@@ -413,7 +469,9 @@
           "output-control"
         ],
         "reasoning": [
-          "workflow-metadata"
+          "workflow-metadata",
+          "consumed",
+          "continuation"
         ],
         "ref": [
           "forwarded"
@@ -431,20 +489,29 @@
         "wholeWord": [
           "forwarded"
         ],
-        "goals": [
+        "clasifyContext": [
           "consumed",
           "continuation"
         ],
-        "ranking": [
+        "selection": [
           "consumed",
+          "continuation"
+        ],
+        "clasifyContext.classifiers": [
+          "consumed",
+          "continuation"
+        ],
+        "clasifyContext.longContext": [
+          "forwarded",
           "continuation"
         ]
       }
     },
     "ghSearchHistory": {
       "evidence": [
-        "src/tools/gh_search_history/tests.rs",
-        "tests/runtime_github.rs"
+        "src/tools/gh_search_history/tests/terms.rs",
+        "src/tools/gh_search_history/tests/provider.rs",
+        "tests/runtime_github_history.rs"
       ],
       "variants": [
         "commit",
@@ -521,7 +588,8 @@
     "ghGetHistoryItem": {
       "evidence": [
         "src/tools/gh_get_history_item/mod.rs",
-        "tests/runtime_github.rs"
+        "tests/runtime_github_history.rs",
+        "tests/runtime_github_compare.rs"
       ],
       "variants": [
         "commit",
@@ -620,7 +688,8 @@
       "evidence": [
         "src/providers/artifact/mod.rs",
         "src/providers/artifact/registries.rs",
-        "src/tools/artifact_search/mod.rs"
+        "src/tools/artifact_search/mod.rs",
+        "tests/runtime_artifact_search.rs"
       ],
       "variants": [
         "npm:discovery",
@@ -721,9 +790,13 @@
     },
     "localSearch": {
       "evidence": [
-        "src/tools/local_search/tests.rs",
-        "src/tools/ranking.rs",
-        "tests/runtime_local.rs"
+        "src/tools/local_search/tests/pages.rs",
+        "src/tools/local_search/tests/secrets.rs",
+        "src/tools/local_search/tests/binaries.rs",
+        "src/tools/local_search/tests/scope.rs",
+        "src/tools/selection.rs",
+        "tests/runtime_local.rs",
+        "src/tools/judgment/select.rs"
       ],
       "variants": [
         "localSearch"
@@ -759,10 +832,6 @@
         "fileLacks": [
           "consumed"
         ],
-        "goals": [
-          "consumed",
-          "continuation"
-        ],
         "include": [
           "consumed"
         ],
@@ -779,7 +848,9 @@
           "consumed"
         ],
         "mainGoal": [
-          "workflow-metadata"
+          "workflow-metadata",
+          "consumed",
+          "continuation"
         ],
         "matchContentLength": [
           "consumed",
@@ -811,16 +882,14 @@
           "consumed",
           "output-control"
         ],
-        "ranking": [
-          "consumed",
-          "continuation"
-        ],
         "path": [
           "consumed",
           "security-policy"
         ],
         "reasoning": [
-          "workflow-metadata"
+          "workflow-metadata",
+          "consumed",
+          "continuation"
         ],
         "regex": [
           "consumed"
@@ -845,12 +914,32 @@
         ],
         "wholeWord": [
           "consumed"
+        ],
+        "clasifyContext": [
+          "consumed",
+          "continuation"
+        ],
+        "selection": [
+          "consumed",
+          "continuation"
+        ],
+        "clasifyContext.classifiers": [
+          "consumed",
+          "continuation"
+        ],
+        "clasifyContext.longContext": [
+          "forwarded",
+          "continuation"
         ]
       }
     },
     "structureSearch": {
       "evidence": [
-        "src/tools/structure_search/tests.rs",
+        "src/tools/structure_search/tests/mod.rs",
+        "src/tools/structure_search/tests/budget.rs",
+        "src/tools/structure_search/tests/ignore.rs",
+        "src/tools/structure_search/tests/listing.rs",
+        "src/tools/structure_search/tests/scans.rs",
         "tests/runtime_local.rs"
       ],
       "variants": [
@@ -1319,12 +1408,14 @@
     },
     "localFetch": {
       "evidence": [
-        "src/tools/local_fetch/tests.rs",
+        "src/tools/local_fetch/tests/matches.rs",
+        "src/tools/local_fetch/tests/blocks_and_paths.rs",
         "src/tools/local_fetch/executor.rs",
-        "src/tools/local_fetch/ranking.rs",
-        "src/tools/ranking.rs",
+        "src/tools/local_fetch/selection.rs",
+        "src/tools/selection.rs",
         "src/tools/numbered.rs",
-        "tests/runtime_local.rs"
+        "tests/runtime_local.rs",
+        "src/tools/judgment/select.rs"
       ],
       "variants": [
         "localFetch"
@@ -1356,16 +1447,14 @@
           "consumed",
           "output-control"
         ],
-        "goals": [
-          "consumed",
-          "continuation"
-        ],
         "length": [
           "consumed",
           "output-control"
         ],
         "mainGoal": [
-          "workflow-metadata"
+          "workflow-metadata",
+          "consumed",
+          "continuation"
         ],
         "matchString": [
           "consumed"
@@ -1387,12 +1476,10 @@
           "consumed",
           "output-control"
         ],
-        "ranking": [
+        "reasoning": [
+          "workflow-metadata",
           "consumed",
           "continuation"
-        ],
-        "reasoning": [
-          "workflow-metadata"
         ],
         "regex": [
           "consumed"
@@ -1408,12 +1495,31 @@
         ],
         "wholeWord": [
           "consumed"
+        ],
+        "clasifyContext": [
+          "consumed",
+          "continuation"
+        ],
+        "selection": [
+          "consumed",
+          "continuation"
+        ],
+        "clasifyContext.classifiers": [
+          "consumed",
+          "continuation"
+        ],
+        "clasifyContext.longContext": [
+          "forwarded",
+          "continuation"
         ]
       }
     },
     "lspSearch": {
       "evidence": [
-        "src/tools/lsp_search/tests.rs",
+        "src/tools/lsp_search/tests/mod.rs",
+        "src/tools/lsp_search/tests/hierarchy.rs",
+        "src/tools/lsp_search/tests/rows.rs",
+        "src/tools/lsp_search/tests/sources.rs",
         "tests/runtime_local.rs"
       ],
       "variants": [

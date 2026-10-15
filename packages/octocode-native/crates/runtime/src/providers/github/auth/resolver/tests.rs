@@ -13,7 +13,6 @@ fn authentication(token: Option<&str>) -> Authentication {
         env,
         cwd: "/synthetic".into(),
         os_home: "/synthetic".into(),
-        trusted_project: false,
         global_env: missing(),
         project_env: missing(),
         config_file: missing(),

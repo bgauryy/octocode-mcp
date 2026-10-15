@@ -134,6 +134,10 @@ class LeaseMixin:
                 rows = self.overlapping(self.db, target, at, '', 1)
                 if rows:
                     return self.lock_conflict(session, input, targets, rows[0], reasoning, duration, at)
+            # A queued wait is next in line for its paths: a newcomer queues behind it.
+            reserved = self.reserving_waits(targets, self.scope_workspaces_json(), at, session)
+            if reserved:
+                return self.lock_conflict(session, input, targets, reserved[0], reasoning, duration, at)
             leases = self.insert_leases(self.workspace, session, targets, reasoning, at, at + duration)
             self.drop_satisfied_wait(session, targets)
             if multiple:
@@ -157,7 +161,7 @@ class LeaseMixin:
     def lock_conflict(self, session, input, targets, row, reasoning, duration, at):
         owner, path = row['owner'], self.relative(row['path'])
         held = [r['id'] for r in query(self.db, 'SELECT id FROM leases WHERE owner=? AND workspace=? AND expiresAt>? ORDER BY id', (session, self.workspace, at))]
-        conflict = {k: row[k] for k in ('id', 'kind', 'acquiredAt', 'refreshedAt', 'expiresAt', 'reasoning')}
+        conflict = {k: row[k] for k in ('id', 'waitId', 'kind', 'acquiredAt', 'refreshedAt', 'expiresAt', 'reasoning') if k in row}
         conflict['path'] = path
         result = dict(ok=False, conflict=conflict, owner=dict(id=owner, name=row['ownerName'], vendor=row['ownerVendor'], expiresAt=row['ownerExpiresAt']), retryAfterMs=max(0, min(row['expiresAt'], row['ownerExpiresAt'])-at), heldLeaseIds=held)
         if owner == session:
@@ -173,7 +177,9 @@ class LeaseMixin:
             # A retried wait keeps its place and notifies nobody twice.
             result.update(queued=True, wait=dict(id=same[0]['id'], expiresAt=same[0]['expiresAt']), guidance=QUEUED)
             return result
-        blockers = self.blocking_owners(targets, self.scope_workspaces_json(), at, session)
+        workspaces = self.scope_workspaces_json()
+        holders = self.blocking_owners(targets, workspaces, at, session)
+        blockers = holders | {row['owner'] for row in self.reserving_waits(targets, workspaces, at, session)}
         if self.waits_on(blockers, session, at):
             result['guidance'] = 'Not queued: waiting would deadlock, because an owner you wait for is waiting for a lease you hold. Release your held leases, then queue.'
             return result
@@ -181,13 +187,29 @@ class LeaseMixin:
         wait = self.db.execute('INSERT INTO lease_waits(workspace,owner,targets,reasoning,leaseTtlMs,createdAt,expiresAt) VALUES(?,?,?,?,?,?,?)', (self.workspace, session, queued, reasoning, duration, at, at + WAIT_TTL)).lastrowid
         paths = ', '.join(self.relative(t.path) for t in targets)
         name = query(self.db, 'SELECT name FROM sessions WHERE id=?', (session,))[0]['name']
-        for blocker in sorted(blockers):
+        for blocker in sorted(holders):
             notice(self.db, session, blocker, '{} is queued for {} ({}). The runtime hands the lease over when you unlock it; no reply needed.'.format(name, paths, reasoning), 'lease-wait:{}:{}'.format(wait, blocker), 'passive', at)
         result.update(queued=True, wait=dict(id=wait, expiresAt=at + WAIT_TTL), guidance=QUEUED)
         return result
 
     def blocking_owners(self, targets, workspaces, at, exclude):
+        """Owners of live leases that overlap targets."""
         return {row['owner'] for target in targets for row in self.overlapping(self.db, target, at, exclude, 100, workspaces=workspaces)}
+
+    def reserving_waits(self, targets, workspaces, at, exclude, before=None):
+        """Live waits of other owners, older than `before` (all when None), whose paths overlap targets.
+        A wait holds no lease but is next in line for its paths, so nothing may jump ahead of it."""
+        scope, ahead = set(json.loads(workspaces)), []
+        for wait in query(self.db, 'SELECT * FROM lease_waits WHERE owner<>? AND expiresAt>? AND id<? ORDER BY id', (exclude, at, before or 2**62)):
+            if wait['workspace'] not in scope:
+                continue
+            for want in json.loads(wait['targets']):
+                theirs = Target(want['path'], want['kind'])
+                if any(keys_overlap(theirs.key, theirs.kind, mine.key, mine.kind) for mine in targets):
+                    owner = query(self.db, 'SELECT name,vendor,expiresAt FROM sessions WHERE id=?', (wait['owner'],))[0]
+                    ahead.append(dict(waitId=wait['id'], path=theirs.path, kind=theirs.kind, owner=wait['owner'], acquiredAt=wait['createdAt'], refreshedAt=wait['createdAt'], expiresAt=wait['expiresAt'], reasoning=wait['reasoning'], ownerName=owner['name'], ownerVendor=owner['vendor'], ownerExpiresAt=owner['expiresAt']))
+                    break
+        return ahead
 
     def waits_on(self, owners, session, at):
         """True when some owner transitively waits for a lease that session holds."""
@@ -199,17 +221,20 @@ class LeaseMixin:
             if owner in seen:
                 continue
             seen.add(owner)
-            for wait in query(self.db, 'SELECT workspace,targets FROM lease_waits WHERE owner=? AND expiresAt>?', (owner, at)):
+            for wait in query(self.db, 'SELECT id,workspace,targets FROM lease_waits WHERE owner=? AND expiresAt>?', (owner, at)):
                 targets = [Target(t['path'], t['kind']) for t in json.loads(wait['targets'])]
-                frontier.extend(self.blocking_owners(targets, self.scope_workspaces_json(wait['workspace']), at, owner))
+                workspaces = self.scope_workspaces_json(wait['workspace'])
+                frontier.extend(self.blocking_owners(targets, workspaces, at, owner))
+                frontier.extend(row['owner'] for row in self.reserving_waits(targets, workspaces, at, owner, wait['id']))
         return False
 
     def grant_waits(self, at):
-        """Grant each live wait, oldest first, whose every target is free now; wake its owner."""
+        """Grant each live wait, oldest first, whose every target is free now and not reserved by an older wait; wake its owner."""
         execute(self.db, 'DELETE FROM lease_waits WHERE expiresAt<=? OR owner IN (SELECT id FROM sessions WHERE expiresAt<=?)', (at, at))
         for wait in query(self.db, 'SELECT * FROM lease_waits ORDER BY id'):
             targets = [Target(t['path'], t['kind']) for t in json.loads(wait['targets'])]
-            if self.blocking_owners(targets, self.scope_workspaces_json(wait['workspace']), at, wait['owner']):
+            workspaces = self.scope_workspaces_json(wait['workspace'])
+            if self.blocking_owners(targets, workspaces, at, wait['owner']) or self.reserving_waits(targets, workspaces, at, wait['owner'], wait['id']):
                 continue
             execute(self.db, 'DELETE FROM lease_waits WHERE id=?', (wait['id'],))
             leases = self.insert_leases(wait['workspace'], wait['owner'], targets, wait['reasoning'], at, at + wait['leaseTtlMs'])

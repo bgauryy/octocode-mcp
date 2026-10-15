@@ -2,6 +2,7 @@ use super::extraction::line_count;
 use super::types::*;
 use crate::security::scan::ContentScan;
 use octocode_engine::security::REDACTION_PREFIX;
+use octocode_engine::text::{line_at, line_starts};
 pub struct Page {
     pub text: String,
     pub pagination: Pagination,
@@ -20,13 +21,18 @@ pub(crate) const LINE_PAGE_BYTES: usize = 16_384;
 /// stops instead: that line's end, and the 0-based line line paging resumes
 /// at. `None` when the line fits a line page, the page ends inside it, or
 /// it is the last line.
-fn oversized_line_end(content: &str, offset: usize, end: usize) -> Option<(usize, usize)> {
-    let line_start = content[..offset].rfind('\n').map_or(0, |at| at + 1);
-    let line_end = content[offset..]
-        .find('\n')
-        .map_or(content.len(), |at| offset + at + 1);
-    (line_end - line_start > LINE_PAGE_BYTES && end >= line_end && line_end < content.len())
-        .then(|| (line_end, content[..line_end].matches('\n').count()))
+fn oversized_line_end(
+    starts: &[usize],
+    len: usize,
+    offset: usize,
+    end: usize,
+) -> Option<(usize, usize)> {
+    // The 1-based line at `offset` is also the 0-based index of the next.
+    let line = line_at(starts, offset);
+    let line_start = starts[line - 1];
+    let line_end = starts.get(line).copied().unwrap_or(len);
+    (line_end - line_start > LINE_PAGE_BYTES && end >= line_end && line_end < len)
+        .then_some((line_end, line))
 }
 
 pub fn page(content: &str, q: &LocalFetchQuery) -> Result<Page, String> {
@@ -163,14 +169,15 @@ fn view_page(content: &str, q: &LocalFetchQuery, line_page_bytes: usize) -> Resu
             while end < content.len() && !content.is_char_boundary(end) {
                 end += 1
             }
+            let starts = line_starts(content);
             let resume = (q.full_content != Some(true))
-                .then(|| oversized_line_end(content, offset, end))
+                .then(|| oversized_line_end(&starts, content.len(), offset, end))
                 .flatten();
             if let Some((line_end, _)) = resume {
                 end = line_end;
             }
             let text = content[offset..end].to_owned();
-            let first = content[..offset].bytes().filter(|b| *b == b'\n').count() + 1;
+            let first = line_at(&starts, offset);
             let last = first + line_count(&text).saturating_sub(1);
             Ok(Page {
                 text,
@@ -193,19 +200,7 @@ fn view_page(content: &str, q: &LocalFetchQuery, line_page_bytes: usize) -> Resu
             let lines = content.split_inclusive('\n').collect::<Vec<_>>();
             let out_of_range = offset > 0 && offset >= lines.len();
             let offset = offset.min(lines.len());
-            let selected = q.match_string.is_some()
-                || q.has_ranges()
-                || (q.start_line().is_some() && q.end_line().is_some());
-            let requested_limit = q.window_length().unwrap_or(if selected {
-                // A selected view pages whole, up to the contract's
-                // `length` maximum; the byte budget still bounds the page.
-                lines.len().clamp(
-                    1,
-                    crate::tools::id::query_limits::local_fetch::LENGTH_MAXIMUM,
-                )
-            } else {
-                DEFAULT_LINE_CHUNK
-            });
+            let requested_limit = q.window_length().unwrap_or(DEFAULT_LINE_CHUNK);
             let mut end = (offset + requested_limit).min(lines.len());
             let mut bytes: usize = lines[offset..end].iter().map(|s| s.len()).sum();
             while bytes > line_page_bytes && end > offset {
@@ -467,7 +462,7 @@ pub fn continuation(q: &LocalFetchQuery, p: &Pagination) -> Option<NextCalls> {
             };
         }
         NextCalls {
-            continue_window: Some(Continuation { query }),
+            continue_window: Some(FetchCall { query }),
             read_bounded_lines: None,
             restart: None,
             ..NextCalls::default()
@@ -496,5 +491,48 @@ mod long_redacted_line_tests {
         let raw_c = raw.find("cccc").expect("c");
         assert_eq!(&clean[clean_offset(raw, clean, raw_c)..], "cccc");
         assert_eq!(clean_offset(raw, clean, raw.len()), clean.len());
+    }
+}
+
+#[cfg(test)]
+mod adaptive_line_tests {
+    use super::*;
+
+    #[test]
+    fn default_line_pages_fill_the_byte_window_and_preserve_explicit_counts() {
+        let source = "x\n".repeat(12_000);
+        let mut query: LocalFetchQuery = serde_json::from_value(serde_json::json!({
+            "path":"short.txt", "unit":"lines", "fullContent":true
+        }))
+        .expect("query");
+        let first = page(&source, &query).expect("first page");
+        assert_eq!(first.pagination.length, LINE_PAGE_BYTES / 2);
+        assert_eq!(first.text, source[..LINE_PAGE_BYTES]);
+        query.offset = first.pagination.next_offset.map(wire_count);
+        let last = page(&source, &query).expect("last page");
+        assert_eq!(first.text + &last.text, source);
+        assert!(!last.pagination.has_more);
+        query.offset = None;
+        query.length = wire_positive(7);
+        let explicit = page(&source, &query).expect("explicit page");
+        assert_eq!(explicit.pagination.length, 7);
+        assert_eq!(explicit.pagination.next_offset, Some(7));
+    }
+
+    #[test]
+    fn default_raw_line_windows_keep_source_coordinates_after_transformations() {
+        let source = SourceLines {
+            lines: (1..=5_000).filter(|line| line % 2 == 0).collect(),
+            total: 5_000,
+        };
+        let content = "x\n".repeat(source.lines.len());
+        let query: LocalFetchQuery = serde_json::from_value(serde_json::json!({
+            "path":"compact.txt", "unit":"lines"
+        }))
+        .expect("query");
+        let result = page_within(&content, &query, LINE_PAGE_BYTES, Some(&source)).expect("page");
+        assert_eq!(result.text, content);
+        assert_eq!(result.pagination.length, source.total);
+        assert!(!result.pagination.has_more);
     }
 }

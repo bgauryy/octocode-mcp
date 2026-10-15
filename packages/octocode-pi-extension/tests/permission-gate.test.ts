@@ -256,6 +256,30 @@ describe('permission gate', () => {
     expect(String(refused?.reason)).not.toContain(`${PERMISSION_ENV}=workspace`);
   });
 
+  it('never treats the home folder as the workspace: a session started in ~ asks for changes and reads there, and full still allows', async () => {
+    const home = tmp();
+    vi.stubEnv('HOME', home);
+    fs.mkdirSync(path.join(home, 'proj'));
+    const of = (event: ToolCallEvent, cwd = home) => classify(event, { cwd }, annotations)?.action;
+    expect(of(call('write', { path: 'notes.txt', content: 'x' }))).toBe('file.outside');
+    expect(of(call('edit', { path: path.join(home, '.zshrc'), edits: [] }))).toBe('file.outside');
+    expect(of(call('read', { path: path.join(home, '.ssh', 'id_rsa') }))).toBe('read.outside');
+    expect(of(call('grep', { pattern: 'x' }))).toBe('read.outside');
+    // A project folder under home is still its own workspace.
+    expect(of(call('write', { path: 'a.txt', content: 'x' }), path.join(home, 'proj'))).toBe('file.workspace');
+
+    const run = async (mode: 'workspace' | 'full') => {
+      const fake = fakePi();
+      const permission = new Permission({ pi: fake.pi, env: { [PERMISSION_ENV]: mode }, isSubagent: false });
+      const ctx = fakeCtx({ cwd: home, hasUI: false });
+      permission.start(ctx);
+      const gate = permissionGate({ permission, provenance: { check: () => undefined }, annotations, powershell: async () => false });
+      return gate(call('write', { path: 'notes.txt', content: 'x' }), ctx);
+    };
+    expect(await run('workspace')).toMatchObject({ block: true });
+    expect(await run('full')).toBeUndefined();
+  });
+
   it('does not let a read-only hint override a destructive MCP hint', () => {
     expect(classify(call('mcp__db__drop', {}), { cwd: tmp() }, () => ({ readOnlyHint: true, destructiveHint: true }))?.action).toBe('mcp.destructive');
   });

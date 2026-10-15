@@ -28,18 +28,48 @@ function requireTypify(): void {
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 
 /**
- * The bundle as native needs it: every definition except the per-tool
- * `*Output` roots. Native checks outputs against the JSON schema, so the
- * types typify would expand from those roots (most of the file) are dead
- * code; core-named shared definitions (`Ranking`, `ArtifactType`, …) stay
- * because native builds output fields from them. TypeScript keeps the whole
- * bundle (it is a published API).
+ * The bundle as native needs it. Two representation changes, applied here
+ * and never to the published bundle:
+ * - the per-tool `*Output` roots are dropped: native checks outputs against
+ *   the JSON schema, so the types typify would expand from them (most of the
+ *   file) are dead code; core-named shared definitions (`Selection`,
+ *   `ArtifactType`, …) stay because native builds output fields from them;
+ * - an `anyOf` over closed objects becomes `oneOf`, which typify emits as an
+ *   enum (it flattens `anyOf` into a struct of optional subtypes). serde
+ *   decodes such an enum by trying variants in order, so an input matching
+ *   two branches still decodes; full validation stays with the JSON schema.
  */
 export function rustBundle(bundle: { [key: string]: Json }): { [key: string]: Json } {
   const defs = (bundle.$defs ?? {}) as { [key: string]: Json };
+  const closed = (branch: Json, seen = new Set<string>()): boolean => {
+    if (branch === null || typeof branch !== 'object' || Array.isArray(branch)) return false;
+    const ref = branch.$ref;
+    if (typeof ref === 'string' && ref.startsWith('#/$defs/')) {
+      const name = ref.slice('#/$defs/'.length);
+      if (seen.has(name)) return false;
+      seen.add(name);
+      return closed(defs[name] ?? null, seen);
+    }
+    return branch.type === 'object' && branch.additionalProperties === false;
+  };
+  const enumUnions = (value: Json): Json => {
+    if (Array.isArray(value)) return value.map(enumUnions);
+    if (value === null || typeof value !== 'object') return value;
+    const walked = Object.fromEntries(Object.entries(value).map(([key, child]) => [key, enumUnions(child)]));
+    const branches = walked.anyOf;
+    if (Array.isArray(branches) && branches.length > 1 && branches.every((branch) => closed(branch))) {
+      const { anyOf: _anyOf, ...rest } = walked;
+      return { ...rest, oneOf: branches };
+    }
+    return walked;
+  };
   return {
     ...bundle,
-    $defs: Object.fromEntries(Object.entries(defs).filter(([name]) => !name.endsWith('Output'))),
+    $defs: Object.fromEntries(
+      Object.entries(defs)
+        .filter(([name]) => !name.endsWith('Output'))
+        .map(([name, schema]) => [name, enumUnions(schema)])
+    ),
   };
 }
 

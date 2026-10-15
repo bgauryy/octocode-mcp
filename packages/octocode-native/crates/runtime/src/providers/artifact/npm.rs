@@ -6,7 +6,7 @@ use super::util::{
 use super::versions::{VersionSpec, nearest, npm_resolve};
 use super::{
     ArtifactError, ArtifactItem, ArtifactProviderPage, ArtifactProviderState, ArtifactSearchQuery,
-    ArtifactType, ResolvedNpmRegistry,
+    ArtifactType, ResolvedNpmRegistry, TerminalLimit,
 };
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -40,18 +40,10 @@ fn validate_registry(
         || base.query().is_some()
         || base.fragment().is_some()
     {
-        return Err(ArtifactError::new(
-            "invalidInput",
-            "Invalid npm registry URL: use HTTP(S) without credentials, query or fragment.",
-        ));
+        return Err(invalid_registry_url());
     }
     if let Some(requested) = query.registry_url() {
-        let requested = Url::parse(requested).map_err(|_| {
-            ArtifactError::new(
-                "invalidInput",
-                "Invalid npm registry URL: use HTTP(S) without credentials, query or fragment.",
-            )
-        })?;
+        let requested = Url::parse(requested).map_err(|_| invalid_registry_url())?;
         if trim_registry(&requested) != trim_registry(base) {
             return Err(ArtifactError::new(
                 "invalidInput",
@@ -69,11 +61,19 @@ fn trim_registry(url: &Url) -> String {
     url.as_str().trim_end_matches('/').to_owned()
 }
 
+/// A `registryUrl` that is not a plain HTTP(S) registry base.
+pub(crate) fn invalid_registry_url() -> ArtifactError {
+    ArtifactError::new(
+        "invalidInput",
+        "registryUrl must be an HTTP(S) URL without credentials, query or fragment.",
+    )
+}
+
 fn registry_target_error() -> ArtifactError {
     ArtifactError::new(
         "invalidInput",
-        "Invalid npm registry URL: loopback, link-local, and private hosts are not allowed \
-         (set network.allowPrivateRegistry / OCTOCODE_ALLOW_PRIVATE_REGISTRY to permit).",
+        "registryUrl names a loopback, link-local or private host; network.allowPrivateRegistry \
+         (OCTOCODE_ALLOW_PRIVATE_REGISTRY) permits it.",
     )
 }
 
@@ -197,26 +197,10 @@ async fn exact(
     } else {
         encode_component(name)
     };
-    // Exact versions and tags are one manifest request; a range resolves
-    // against the abbreviated packument first, as `npm install` would.
-    let spec = match version.map(VersionSpec::parse) {
-        None => "latest".to_owned(),
-        Some(VersionSpec::Exact(version) | VersionSpec::Tag(version)) => version,
-        Some(VersionSpec::Range(range)) => {
-            let Some(packument) = packument(&encoded, registry, client, dns_pin.clone()).await?
-            else {
-                return Ok(not_found_page(registry));
-            };
-            let (versions, latest) = published_versions(&packument);
-            match npm_resolve(
-                &range,
-                versions.iter().map(String::as_str),
-                latest.as_deref(),
-            ) {
-                Some(resolved) => resolved,
-                None => return Err(version_not_found(name, &range, &versions)),
-            }
-        }
+    let Some(spec) =
+        manifest_spec(name, &encoded, version, registry, client, dns_pin.clone()).await?
+    else {
+        return Ok(not_found_page(registry));
     };
     // Percent-encode the version/spec as its own path segment so ranges or
     // tags cannot alter the request path.
@@ -246,6 +230,64 @@ async fn exact(
         return Ok(not_found_page(registry));
     };
     let row = object_for(&response, ArtifactType::Npm)?;
+    let (mut artifact, version) = manifest_row(name, row, registry)?;
+    if let Some(attested) =
+        attested_commit(&artifact, &version, row, registry, client, dns_pin).await
+    {
+        artifact.source_ref = Some(attested);
+        artifact.source_attested = true;
+    } else if let (Some(repository), Some(head)) =
+        (artifact.repository.clone(), artifact.source_ref.clone())
+        && super::release_ref::github_ref_missing(&repository, &head, client).await
+    {
+        // A `gitHead` GitHub does not have pins no lead: the default branch
+        // is read instead, and the response names the dead ref.
+        artifact.source_ref = None;
+        artifact.missing_ref = Some(head);
+    }
+    artifact.version = Some(version);
+    Ok(ArtifactProviderPage {
+        registry: Some(trim_registry(&registry.base)),
+        ..ArtifactProviderPage::single(artifact)
+    })
+}
+
+/// The manifest to read for `version`: `latest` when none, an exact
+/// version or tag as given, and a range resolved against the abbreviated
+/// packument, as `npm install` would. `None` when the package does not exist.
+async fn manifest_spec(
+    name: &str,
+    encoded: &str,
+    version: Option<&str>,
+    registry: &ResolvedNpmRegistry,
+    client: &RegistryClient<'_>,
+    dns_pin: Option<DnsPin>,
+) -> Result<Option<String>, ArtifactError> {
+    Ok(Some(match version.map(VersionSpec::parse) {
+        None => "latest".to_owned(),
+        Some(VersionSpec::Exact(version) | VersionSpec::Tag(version)) => version,
+        Some(VersionSpec::Range(range)) => {
+            let Some(packument) = packument(encoded, registry, client, dns_pin).await? else {
+                return Ok(None);
+            };
+            let (versions, latest) = published_versions(&packument);
+            npm_resolve(
+                &range,
+                versions.iter().map(String::as_str),
+                latest.as_deref(),
+            )
+            .ok_or_else(|| version_not_found(name, &range, &versions))?
+        }
+    }))
+}
+
+/// A version manifest's row and its version, before the release ref is
+/// checked: the manifest must name the requested package.
+fn manifest_row(
+    name: &str,
+    row: &serde_json::Map<String, Value>,
+    registry: &ResolvedNpmRegistry,
+) -> Result<(ArtifactItem, String), ArtifactError> {
     let returned = required(row.get("name"), ArtifactType::Npm)?;
     if returned != name {
         return Err(ArtifactError::new(
@@ -287,25 +329,7 @@ async fn exact(
         _ => {}
     }
     release_facts(&mut artifact, row);
-    if let Some(attested) =
-        attested_commit(&artifact, &version, row, registry, client, dns_pin).await
-    {
-        artifact.source_ref = Some(attested);
-        artifact.source_attested = true;
-    } else if let (Some(repository), Some(head)) =
-        (artifact.repository.clone(), artifact.source_ref.clone())
-        && super::release_ref::github_ref_missing(&repository, &head, client).await
-    {
-        // A `gitHead` GitHub does not have pins no lead: the default branch
-        // is read instead, and the response names the dead ref.
-        artifact.source_ref = None;
-        artifact.missing_ref = Some(head);
-    }
-    artifact.version = Some(version);
-    Ok(ArtifactProviderPage {
-        registry: Some(trim_registry(&registry.base)),
-        ..ArtifactProviderPage::single(artifact)
-    })
+    Ok((artifact, version))
 }
 
 fn not_found_page(registry: &ResolvedNpmRegistry) -> ArtifactProviderPage {
@@ -363,12 +387,16 @@ pub(crate) fn version_not_found(name: &str, requested: &str, versions: &[String]
 
 /// Release facts the version manifest already carries.
 fn release_facts(artifact: &mut ArtifactItem, row: &serde_json::Map<String, Value>) {
-    // A manifest without `dependencies` declares none.
+    // A manifest without `dependencies` declares none. npm also lists each
+    // `optionalDependencies` entry under `dependencies`: those are not
+    // required, so they are left out.
+    let optional = row.get("optionalDependencies").and_then(Value::as_object);
     let declared = |field: &str| -> Vec<String> {
         row.get(field)
             .and_then(Value::as_object)
             .into_iter()
             .flatten()
+            .filter(|(name, _)| optional.is_none_or(|optional| !optional.contains_key(*name)))
             .map(|(name, range)| match range.as_str() {
                 Some(range) => format!("{name}@{range}"),
                 None => name.clone(),
@@ -621,15 +649,14 @@ async fn search_window(
 
 /// The terminal limit of a page npm does not serve: the rows before it are
 /// the most this search reaches.
-fn unreachable_rows(offset: u64, total: u64) -> String {
-    format!(
-        "npm serves no rows past the first {offset} for this search: at most {offset} of {total} are reachable; narrow the keywords."
-    )
+fn unreachable_rows(offset: u64, total: u64) -> TerminalLimit {
+    TerminalLimit::result_cap(format!(
+        "npm serves no rows past the first {offset} for this search: at most {offset} of {total} are reachable."
+    ))
 }
 
 fn registry_url(base: &Url, path: &str) -> Result<Url, ArtifactError> {
-    Url::parse(&format!("{}/{}", trim_registry(base), path))
-        .map_err(|_| ArtifactError::new("invalidInput", "Invalid npm registry URL."))
+    Url::parse(&format!("{}/{}", trim_registry(base), path)).map_err(|_| invalid_registry_url())
 }
 
 #[cfg(test)]
@@ -693,51 +720,10 @@ mod tests {
         assert!(validate_resolved_addresses(&[addresses[0]]).is_ok());
     }
 
-    use super::super::http::{
-        ArtifactHttp, ArtifactHttpFuture, ArtifactHttpRequest, ArtifactHttpResponse, RegistryClient,
-    };
+    use super::super::http::RegistryClient;
+    use super::super::test_http::RouteHttp;
     use base64::Engine as _;
-    use octocode_github::RequestBudget;
     use serde_json::{Value, json};
-
-    /// Answers by URL path and Accept type; anything else is a 404.
-    struct RouteHttp {
-        routes: Vec<(&'static str, &'static str, Value)>,
-        seen: std::sync::Mutex<Vec<String>>,
-        requests: std::sync::Mutex<Vec<(String, bool)>>,
-    }
-
-    impl ArtifactHttp for RouteHttp {
-        fn get<'a>(
-            &'a self,
-            req: ArtifactHttpRequest,
-            _budget: &'a RequestBudget,
-        ) -> ArtifactHttpFuture<'a> {
-            self.requests
-                .lock()
-                .expect("requests")
-                .push((req.url.to_string(), req.authorization.is_some()));
-            let path = req.url.path().to_owned();
-            self.seen
-                .lock()
-                .expect("seen")
-                .push(format!("{} {path}", req.accept));
-            let found = self
-                .routes
-                .iter()
-                .find(|(route, accept, _)| *route == path && *accept == req.accept)
-                .map(|(_, _, body)| serde_json::to_vec(body).expect("body"));
-            Box::pin(async move {
-                Ok(match found {
-                    Some(body) => ArtifactHttpResponse { status: 200, body },
-                    None => ArtifactHttpResponse {
-                        status: 404,
-                        body: b"{}".to_vec(),
-                    },
-                })
-            })
-        }
-    }
 
     const JSON: &str = "application/json";
     const INSTALL: &str = super::NPM_INSTALL_JSON;
@@ -831,11 +817,19 @@ mod tests {
             ("/zod/3.22.0", JSON, manifest("3.22.0", false)),
         ];
         routes.extend(extra);
-        RouteHttp {
-            routes,
-            seen: std::sync::Mutex::new(vec![]),
-            requests: std::sync::Mutex::new(vec![]),
-        }
+        routes
+            .into_iter()
+            .fold(RouteHttp::new(), |http, (path, accept, body)| {
+                http.json_for(path, accept, body)
+            })
+    }
+
+    /// Each request's URL and whether it carried credentials.
+    fn requests(http: &RouteHttp) -> Vec<(String, bool)> {
+        http.seen()
+            .iter()
+            .map(|seen| (seen.url.to_string(), seen.authorized))
+            .collect()
     }
 
     #[tokio::test]
@@ -893,11 +887,32 @@ mod tests {
             .expect_err("beyond every release");
         assert_eq!(beyond.code, "versionNotFound");
         assert_eq!(beyond.nearest, ["4.6.5", "3.25.76", "3.22.0"], "{beyond:?}");
-        let seen = http.seen.lock().expect("seen").clone();
+        let seen = http
+            .seen()
+            .iter()
+            .map(|seen| format!("{} {}", seen.accept, seen.url.path()))
+            .collect::<Vec<_>>();
         assert_eq!(
             seen[..2],
             [format!("{INSTALL} /zod"), format!("{JSON} /zod/3.25.76")],
             "a range reads the abbreviated packument, then one manifest"
+        );
+    }
+
+    /// `dependencies` lists the required ones as `name@range`: npm repeats
+    /// each optional dependency under `dependencies`, and those are left out.
+    #[tokio::test]
+    async fn npm_dependencies_are_the_required_ones_only() {
+        let mut row = manifest("3.22.0", false);
+        row["dependencies"] = json!({"a": "^1.0.0", "@next/swc-darwin-arm64": "15.0.0"});
+        row["optionalDependencies"] = json!({"@next/swc-darwin-arm64": "15.0.0"});
+        let http = routes(vec![]).json_for("/zod/3.22.0", JSON, row);
+        let page = lookup(&http, json!({"packageName": "zod", "version": "3.22.0"}))
+            .await
+            .expect("exact");
+        assert_eq!(
+            page.artifacts[0].dependencies,
+            Some(vec!["a@^1.0.0".to_owned()])
         );
     }
 
@@ -989,7 +1004,7 @@ mod tests {
                 None,
             )
             .await;
-            let requests = http.requests.lock().expect("requests");
+            let requests = requests(&http);
             if allowed {
                 assert_eq!(commit.as_deref(), Some(COMMIT));
                 assert_eq!(requests.len(), 1);
@@ -1055,7 +1070,7 @@ mod tests {
                 "anonymous optional attestations remain usable"
             );
             assert_eq!(
-                *http.requests.lock().expect("requests"),
+                requests(&http),
                 [(url, authenticated)],
                 "credential scope {scope}, target {target}"
             );
@@ -1090,7 +1105,7 @@ mod tests {
         super::search(&query, &Default::default(), &registry, &client, None)
             .await
             .expect("discovery");
-        let requests = http.requests.lock().expect("requests");
+        let requests = requests(&http);
         assert_eq!(requests.len(), 3);
         assert!(
             requests

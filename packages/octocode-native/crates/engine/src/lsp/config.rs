@@ -874,11 +874,7 @@ fn server_command_resolves(config: &JsLanguageServerConfig) -> bool {
     if is_rust_analyzer_command(&command) || is_rust_analyzer_command(&config.command) {
         let rustup_home = std::env::var_os("RUSTUP_HOME")
             .map(PathBuf::from)
-            .or_else(|| {
-                std::env::var_os("HOME")
-                    .or_else(|| std::env::var_os("USERPROFILE"))
-                    .map(|home| PathBuf::from(home).join(".rustup"))
-            });
+            .or_else(|| std::env::home_dir().map(|home| home.join(".rustup")));
         return rustup_proxy_component_installed(&program, rustup_home.as_deref());
     }
     true
@@ -1141,10 +1137,7 @@ fn workspace_is_invocation_root(workspace_root: &str, current_dir: Option<&Path>
     if cwd.parent().is_none() {
         return false;
     }
-    let home = std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
-        .map(|home| std::fs::canonicalize(&home).unwrap_or(home));
+    let home = std::env::home_dir().map(|home| std::fs::canonicalize(&home).unwrap_or(home));
     if home.as_deref() == Some(cwd.as_path()) {
         return false;
     }
@@ -1273,8 +1266,7 @@ fn is_node_executable(path: &Path) -> bool {
 }
 
 fn find_python_user_script(script_name: &str) -> Option<String> {
-    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))?;
-    let home = PathBuf::from(home);
+    let home = std::env::home_dir()?;
     let candidate = home.join(".local/bin").join(script_name);
     if candidate.exists() {
         return Some(candidate.to_string_lossy().into_owned());

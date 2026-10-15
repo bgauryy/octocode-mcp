@@ -38,3 +38,9 @@ Config comes from `@octocodeai/config`: build copies its compiled standalone mod
 The adapter is bundled once into `dist/runtime.js`; `dist/cli.js` and `dist/mcp.js` expose it without a duplicate bundle. Source and generated outputs are checked with `check:build`. All production sources are TypeScript (`.ts` / ESM `.mts`). `typecheck` checks all engines, then checks the adapter, command inputs, invocation, capture, registry, transport and scraping bridge with strict mode. Inherited dynamic CDP engines retain inferred checking; their protocol payloads stay open. Archives contain generated runtime/engines, the bin and operating docs. Source, tests and build tooling stay in the repository.
 
 Within-server requests serialize. Engine deadlines and server shutdown share termination ownership: SIGTERM, then SIGKILL after five seconds if the engine remains alive. Completion clears both timers. MCP cancellation propagates to queued and active requests; partial captures survive and in-flight mutation outcomes remain uncertain. Separate servers must coordinate shared tabs. Captures are complete; pages carry executable continuations. A structural protocol inventory distinguishes advertised methods from methods actually exercised by fixtures.
+
+## Known limits
+
+- Popups (`window.open`, `target=_blank`) and service workers start with the native user agent under `--stealth`; covering them needs browser-level auto-attach (see `docs/launch-stealth.md`).
+- A plan stops at its first failed step. A continue-on-error option is a change to the shared core contract (`octocode-mcp-host`), not to this package.
+- One `cdp` call starts four Node processes (about 390 ms). Merging the engine CLI and the sandbox is the known saving (about 60–100 ms per call), deferred.

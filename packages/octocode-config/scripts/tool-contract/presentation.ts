@@ -8,7 +8,7 @@
 // the `--select` or `--view full` call that shows their schemas.
 import { buildCliInstructions } from '@octocodeai/octocode-core/mcp';
 import {
-  CLASIFY_SCOUT_TOOL_NAMES,
+  CLASIFY_SOURCE_TOOL_NAMES,
   DIRECT_TOOL_DEFINITIONS,
   getPublicToolCatalog,
   getDirectToolDefinitionsWithAddons,
@@ -33,37 +33,72 @@ const CATALOG_FIELDS_PER_FORM = 6;
 function exampleJson(example: Json): string {
   const line = JSON.stringify(example);
   if (line.length <= EXAMPLE_WIDTH) return line;
-  const fields = Object.entries(example).map(([key, value]) => `    ${JSON.stringify(key)}: ${JSON.stringify(value)}`);
+  const fields = Object.entries(example).map(
+    ([key, value]) => `    ${JSON.stringify(key)}: ${JSON.stringify(value)}`
+  );
   return `{\n${fields.join(',\n')}\n  }`;
 }
 
-const shellQuote = (text: string): string => `'${text.replaceAll("'", `'\\''`)}'`;
+const shellQuote = (text: string): string =>
+  `'${text.replaceAll("'", `'\\''`)}'`;
 
 /** What follows clap's help for `<tool> --help`: required fields and one runnable example (workspace-relative, from the variant's Zod `examples` meta). */
-export function toolHelpSection(name: string, availableTools?: readonly string[]): string {
+export function toolHelpSection(
+  name: string,
+  availableTools?: readonly string[]
+): string {
   const variants = getToolSchemaVariants(name);
   const lines = ['Input: one query object, or {"queries":[…]} to batch.'];
   if (variants.length === 1) {
-    lines.push('', `Required: ${variants[0]!.requires.join(', ') || 'none; every field is optional.'}`);
+    lines.push(
+      '',
+      `Required: ${variants[0]!.requires.join(', ') || 'none; every field is optional.'}`
+    );
   } else if (variants.length > 1) {
     lines.push('', 'Required fields, by operation:');
     const width = Math.max(...variants.map(variant => variant.name.length));
-    for (const variant of variants) lines.push(`  ${variant.name.padEnd(width)}  ${variant.requires.join(', ')}`.trimEnd());
+    for (const variant of variants)
+      lines.push(
+        `  ${variant.name.padEnd(width)}  ${variant.requires.join(', ')}`.trimEnd()
+      );
   }
-  const example = variants.map(variant => variant.example).find(candidate =>
-    candidate !== undefined && (!availableTools || exampleUsesAvailableTools(candidate, availableTools))
-  );
+  const example = variants
+    .map(variant => variant.example)
+    .find(
+      candidate =>
+        candidate !== undefined &&
+        (!availableTools ||
+          exampleUsesAvailableTools(candidate, availableTools))
+    );
   if (example)
-    lines.push('', 'Example:', `  octocode ${name} ${shellQuote(exampleJson(example))}`);
+    lines.push(
+      '',
+      'Example:',
+      `  octocode ${name} ${shellQuote(exampleJson(example))}`
+    );
   lines.push('', `All fields: octocode schema ${name}`);
   return lines.join('\n');
 }
 
-function exampleUsesAvailableTools(example: Json, availableTools: readonly string[]): boolean {
-  const resources = example.resources;
-  return !Array.isArray(resources) || resources.every(resource =>
-    typeof resource !== 'object' || resource === null || !('tool' in resource) ||
-    (typeof resource.tool === 'string' && availableTools.includes(resource.tool))
+/** A clasify example's source names an exposed reader (a URL reads back through localFetch). */
+function exampleUsesAvailableTools(
+  example: Json,
+  availableTools: readonly string[]
+): boolean {
+  const source = example.source as Json | undefined;
+  if (!source) return true;
+  const reader = typeof source.tool === 'string' ? source.tool : 'localFetch';
+  return availableTools.includes(reader);
+}
+
+/** Every subset of clasify's source readers, as the key the CLI selects by. */
+function sourceSubsets(): string[][] {
+  return CLASIFY_SOURCE_TOOL_NAMES.reduce<string[][]>(
+    (subsets, tool) => [
+      ...subsets,
+      ...subsets.map(subset => [...subset, tool]),
+    ],
+    [[]]
   );
 }
 
@@ -75,13 +110,20 @@ function exampleUsesAvailableTools(example: Json, availableTools: readonly strin
  */
 export function compactFields(definition: Definition): string {
   const forms = publishedFormFields(definition.inputSchema);
-  const list = (fields: readonly { name: string; required: boolean }[], max: number): string => {
-    const shown = fields.slice(0, max).map(field => `${field.name}${field.required ? '*' : '?'}`);
+  const list = (
+    fields: readonly { name: string; required: boolean }[],
+    max: number
+  ): string => {
+    const shown = fields
+      .slice(0, max)
+      .map(field => `${field.name}${field.required ? '*' : '?'}`);
     if (fields.length > max) shown.push('…');
     return `[${shown.join(', ')}]`;
   };
   if (forms.length === 1) return list(forms[0]!, CATALOG_FIELDS_SINGLE);
-  const names = getToolSchemaVariants(definition.name).map(variant => variant.name);
+  const names = getToolSchemaVariants(definition.name).map(
+    variant => variant.name
+  );
   return forms
     .map(
       (fields, index) =>
@@ -94,14 +136,19 @@ export function compactFields(definition: Definition): string {
 }
 
 /** One `schema` view: the tool's description beside one emitted row schema. */
-const view = (definition: Definition, querySchema: Json, extra: Json = {}): Json => ({
+const view = (
+  definition: Definition,
+  querySchema: Json,
+  extra: Json = {}
+): Json => ({
   name: definition.name,
   description: definition.description,
   querySchema,
   ...extra,
 });
 
-const fieldNames = (schema: Json): string[] => Object.keys((schema.properties as Json | undefined) ?? {});
+const fieldNames = (schema: Json): string[] =>
+  Object.keys((schema.properties as Json | undefined) ?? {});
 
 /**
  * The accepted fields the `query` view's row leaves out beyond its
@@ -109,15 +156,29 @@ const fieldNames = (schema: Json): string[] => Object.keys((schema.properties as
  * with the `--select` call that shows them, or for a one-form tool with the
  * `--view full` call. Empty when the row shows every field.
  */
-function hiddenFields(definition: Definition, row: Json, continuation: Json, canonical: Json): Json {
+function hiddenFields(
+  definition: Definition,
+  row: Json,
+  continuation: Json,
+  canonical: Json
+): Json {
   const { name, inputSchema } = definition;
-  const shown = new Set([...fieldNames(row), ...Object.keys(continuation), 'mainGoal', 'reasoning']);
-  const hidden = (schema: Json): string[] => fieldNames(schema).filter(field => !shown.has(field));
+  const shown = new Set([
+    ...fieldNames(row),
+    ...Object.keys(continuation),
+    'mainGoal',
+    'reasoning',
+  ]);
+  const hidden = (schema: Json): string[] =>
+    fieldNames(schema).filter(field => !shown.has(field));
   const operations = Object.entries(operationSchemas(inputSchema));
   if (operations.length > 0) {
     const byOperation = Object.fromEntries(
       operations
-        .map(([operation, schema]) => [operation, hidden(publishedJson(schema))] as const)
+        .map(
+          ([operation, schema]) =>
+            [operation, hidden(publishedJson(schema))] as const
+        )
         .filter(([, fields]) => fields.length > 0)
     );
     return Object.keys(byOperation).length === 0
@@ -130,11 +191,17 @@ function hiddenFields(definition: Definition, row: Json, continuation: Json, can
   const more = hidden(canonical);
   return more.length === 0
     ? {}
-    : { moreFields: more, full: `octocode schema ${name} --view full shows every field` };
+    : {
+        moreFields: more,
+        full: `octocode schema ${name} --view full shows every field`,
+      };
 }
 
 /** A tool's `schema` views and `--select operation=X` views. */
-function rendered(definition: Definition, querySchema: Json): { views: Json; selections: Json } {
+function rendered(
+  definition: Definition,
+  querySchema: Json
+): { views: Json; selections: Json } {
   const { name, inputSchema } = definition;
   const variants = getToolSchemaVariants(name);
   // Core's presentation catalog owns any availability-dependent row changes.
@@ -148,14 +215,18 @@ function rendered(definition: Definition, querySchema: Json): { views: Json; sel
         continuationFields: continuation,
         ...hiddenFields(definition, row, continuation, canonical),
       }),
-      full: view(definition, canonical, { usage: [`octocode ${name} '{"queries":[ … ]}'`] }),
+      full: view(definition, canonical, {
+        usage: [`octocode ${name} '{"queries":[ … ]}'`],
+      }),
       variants: { name, description: definition.description, variants },
     },
     selections: Object.fromEntries(
-      Object.entries(operationSchemas(inputSchema)).map(([operation, schema]) => [
-        `operation=${operation}`,
-        view(definition, publishedJson(schema)),
-      ])
+      Object.entries(operationSchemas(inputSchema)).map(
+        ([operation, schema]) => [
+          `operation=${operation}`,
+          view(definition, publishedJson(schema)),
+        ]
+      )
     ),
   };
 }
@@ -163,21 +234,37 @@ function rendered(definition: Definition, querySchema: Json): { views: Json; sel
 /** The `cli-presentation.json` the native binary embeds beside the enforcement contract. */
 export function buildCliPresentation(): Json {
   const availableTools = DIRECT_TOOL_DEFINITIONS.map(tool => tool.name);
-  const valueOnlyDefinitions = getDirectToolDefinitionsWithAddons({ availableTools: [] });
-  const valueOnlyCatalog = getPublicToolCatalogWithAddons({ availableTools: [] });
   const definitions = getDirectToolDefinitionsWithAddons({ availableTools });
-  const rankedDefinitions = getDirectToolDefinitionsWithAddons({ availableTools, ranking: true });
+  const rankedDefinitions = getDirectToolDefinitionsWithAddons({
+    availableTools,
+    selection: true,
+  });
   const catalog = getPublicToolCatalogWithAddons({ availableTools });
-  const rankedCatalog = getPublicToolCatalogWithAddons({ availableTools, ranking: true });
+  const rankedCatalog = getPublicToolCatalogWithAddons({
+    availableTools,
+    selection: true,
+  });
   return {
     fingerprint: getPublicToolCatalog().fingerprint,
-    instructions: buildCliInstructions(),
-    clasifyContextTools: [...CLASIFY_SCOUT_TOOL_NAMES],
+    instructions: {
+      ordinary: buildCliInstructions(),
+      selection: buildCliInstructions({ selection: true }),
+      clasify: buildCliInstructions({ availableTools: ['clasify'] }),
+      both: buildCliInstructions({
+        availableTools: ['clasify'],
+        selection: true,
+      }),
+    },
+    clasifySourceTools: [...CLASIFY_SOURCE_TOOL_NAMES],
     tools: definitions.map(definition => {
       const { name } = definition;
-      const querySchema = catalog.tools.find(tool => tool.name === name)!.querySchema as Json;
-      const rankedSchema = rankedCatalog.tools.find(tool => tool.name === name)!.querySchema as Json;
-      const rankedDefinition = rankedDefinitions.find(tool => tool.name === name)!;
+      const querySchema = catalog.tools.find(tool => tool.name === name)!
+        .querySchema as Json;
+      const rankedSchema = rankedCatalog.tools.find(tool => tool.name === name)!
+        .querySchema as Json;
+      const rankedDefinition = rankedDefinitions.find(
+        tool => tool.name === name
+      )!;
       return {
         name,
         shortDescription: definition.shortDescription,
@@ -185,15 +272,26 @@ export function buildCliPresentation(): Json {
         fields: compactFields(definition),
         help: toolHelpSection(name, name === 'clasify' ? [] : undefined),
         ...rendered(definition, querySchema),
+        // clasify's views for each exposed set of source readers, keyed by
+        // the exposed readers in CLASIFY_SOURCE_TOOL_NAMES order.
         ...(name === 'clasify' && {
-          valueOnly: rendered(
-            valueOnlyDefinitions.find(tool => tool.name === name)!,
-            valueOnlyCatalog.tools.find(tool => tool.name === name)!.querySchema as Json,
+          sourceViews: Object.fromEntries(
+            sourceSubsets().map(subset => [
+              subset.join(','),
+              rendered(
+                getDirectToolDefinitionsWithAddons({
+                  availableTools: subset,
+                }).find(tool => tool.name === name)!,
+                getPublicToolCatalogWithAddons({
+                  availableTools: subset,
+                }).tools.find(tool => tool.name === name)!.querySchema as Json
+              ),
+            ])
           ),
         }),
         // Emit only changed views; Rust selects them using native runtime truth.
         ...(JSON.stringify(querySchema) !== JSON.stringify(rankedSchema) && {
-          ranking: {
+          selection: {
             fields: compactFields(rankedDefinition),
             ...rendered(rankedDefinition, rankedSchema),
           },

@@ -12,7 +12,7 @@ if (args.includes('--help')) {
     'Usage: node skills-dev/octocode-dev/scripts/check-research-guidance.mjs [--json] [--self-test] [--examples]',
     'Checks documented JSON tool examples in skills/octocode-research against live query schemas. No tool execution or writes.',
     '--examples  validate examples (the default; combine with --self-test to run both)',
-    '            against the live query schema from `octocode schema <tool>`.',
+    '            against the complete live query schema from `octocode schema <tool> --view full`.',
     '            CLI lookup: $OCTOCODE_CLI (a .js file or binary), the monorepo build, then `octocode` on PATH.',
     '            A failing selected CLI is reported without switching to a different installed version.',
     '            An unavailable CLI is reported as an incomplete check and exits nonzero.',
@@ -120,8 +120,11 @@ function resolveCli() {
   const [cmd, pre] = cli.endsWith('.js') ? [process.execPath, [cli]] : [cli, []];
   try {
     execFileSync(cmd, [...pre, 'schema'], { stdio: 'pipe', timeout: 20000 });
-    return (tool) => JSON.parse(execFileSync(cmd, [...pre, 'schema', tool, '--view', 'query'], {
-      stdio: 'pipe', timeout: 20000, env: { ...process.env, OCTOCODE_BETA: '1' },
+    return (tool) => JSON.parse(execFileSync(cmd, [...pre, 'schema', tool, '--view', 'full'], {
+      // Schema discovery performs no provider work; expose conditional fields
+      // without requiring or using a developer's classification credential.
+      stdio: 'pipe', timeout: 20000,
+      env: { ...process.env, OCTOCODE_BETA: '1', OCTOCODE_CLASSIFICATION_API: 'schema-validation-only' },
     }).toString()).querySchema;
   } catch (error) {
     // A failing selected build must not be replaced by another version on PATH.

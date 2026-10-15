@@ -13,32 +13,25 @@ pub(super) fn paginate(items: Vec<Value>, q: &AstTopologyQuery) -> (Vec<Value>, 
     (page, facts.to_value())
 }
 
-/// Mark a replayed page whose graph snapshot no longer matches; the runtime
-/// writes the shared `error` text (`response::pages::restart_stale`).
-pub(super) fn insert_snapshot_changed(base: &mut Map<String, Value>) {
-    base.insert("status".into(), json!("error"));
-    base.insert("errorCode".into(), json!("staleSnapshot"));
-}
-
-/// Restart both result and diagnostic pagination from the current graph.
-pub(super) fn restart_continuation(q: &AstTopologyQuery) -> Value {
-    let mut query = clean_query(q);
-    query["page"] = json!(1);
-    if let Some(query) = query.as_object_mut() {
-        query.remove("diagnosticSnapshot");
-        query.remove("diagnosticPage");
+/// Mark a replayed page whose graph snapshot no longer matches: the shared
+/// stale-snapshot row, whose `next.restart` reruns the query from its first
+/// result and diagnostic page (the runtime writes the `error` text).
+pub(super) fn mark_stale(base: &mut Map<String, Value>, q: &AstTopologyQuery) {
+    let restart = crate::tools::result::restart_query(ToolId::AstTopology, &clean_query(q));
+    if let Value::Object(row) = crate::tools::result::stale_snapshot(restart) {
+        base.extend(row);
     }
-    Continuation::new(ToolId::AstTopology, query)
-        .confidence("exact")
-        .build()
 }
 
 /// Coverage outcome of one response: whether the caller's diagnostic snapshot
-/// is stale, and the snapshot id of diagnostic rows withheld by the
-/// counts-only default (rows stay reachable through `next.readDiagnostics`).
+/// is stale, the snapshot id of diagnostic rows withheld by the
+/// counts-only default (rows stay reachable through `next.readDiagnostics`),
+/// and the snapshot id the next result page binds to.
+#[derive(Default)]
 pub(super) struct CoverageState {
     pub(super) changed: bool,
     pub(super) withheld: Option<String>,
+    pub(super) result_id: Option<String>,
 }
 
 /// Attach coverage and diagnostics. The snapshot id binds both the diagnostic
@@ -83,22 +76,21 @@ pub(super) fn add_coverage(
         coverage["diagnosticCounts"] = json!(counts);
     }
     if q.diagnostic_snapshot().as_ref().is_some_and(|x| x != &id) {
-        insert_snapshot_changed(base);
+        mark_stale(base, q);
         base.insert("nodes".into(), json!([]));
         base.insert("coverage".into(), coverage);
         return CoverageState {
             changed: true,
-            withheld: None,
+            ..CoverageState::default()
         };
     }
-    if base["pagination"]["hasMore"] == true {
-        base["pagination"]["resultId"] = json!(id);
-    }
+    let result_id = (base["pagination"]["hasMore"] == true).then(|| id.clone());
     if !q.diagnostic_rows_requested() {
         base.insert("coverage".into(), coverage);
         return CoverageState {
             changed: false,
             withheld: (!b.diagnostics.is_empty()).then_some(id),
+            result_id,
         };
     }
     let groups = group_diagnostics(&b.diagnostics);
@@ -107,13 +99,15 @@ pub(super) fn add_coverage(
         .clamp(1, super::topology_max("diagnosticPageSize")) as usize;
     let total = groups.len();
     let pages = usize::max(1, total.div_ceil(size));
-    let current = (q.diagnostic_page().max(1) as usize).min(pages);
+    // A page past the end is empty, never moved back to the last page (the
+    // shared out-of-range rule): `restartDiagnostics` rereads from the first.
+    let current = q.diagnostic_page().max(1) as usize;
+    let past_end = current > pages;
     let ds = groups
         .into_iter()
         .skip((current - 1) * size)
         .take(size)
         .collect::<Vec<_>>();
-    let past_end = q.diagnostic_page() as usize > pages;
     let mut diagnostics_pagination =
         crate::response::pages::PageFacts::counted(current, size, total)
             .out_of_range(past_end)
@@ -121,11 +115,9 @@ pub(super) fn add_coverage(
     diagnostics_pagination["resultId"] = json!(id);
     if past_end {
         let warning = format!(
-            "diagnosticPage:{} is out of range; returned diagnostic page {}.",
-            q.diagnostic_page(),
-            current
+            "diagnosticPage:{current} is past the last diagnostic page (page {current} of {pages})."
         );
-        push_warning(base, warning);
+        crate::tools::paging::push_warnings(&mut *base, [warning]);
     }
     if !ds.is_empty() {
         coverage["diagnostics"] = json!(ds);
@@ -139,6 +131,7 @@ pub(super) fn add_coverage(
     CoverageState {
         changed: false,
         withheld: None,
+        result_id,
     }
 }
 
@@ -233,10 +226,10 @@ impl ScanCuts {
     pub(super) fn warnings(self, q: &AstTopologyQuery) -> Vec<String> {
         let mut warnings = Vec::new();
         if self.max_files {
-            let at_maximum = q.max_files().unwrap_or(20_000) >= super::topology_max("maxFiles");
+            let at_maximum = q.scan_files() >= super::topology_max("maxFiles");
             warnings.push(format!(
                 "scan stopped at maxFiles ({}) — graph results are partial{}",
-                q.max_files().unwrap_or(20_000),
+                q.scan_files(),
                 if at_maximum {
                     "; maxFiles is at its maximum, so this limit is terminal: narrow path or add exclude"
                 } else {
@@ -257,7 +250,7 @@ impl ScanCuts {
     pub(super) fn terminal(self, q: &AstTopologyQuery) -> bool {
         self.files_skipped
             || self.edge_cap
-            || self.max_files && q.max_files().unwrap_or(20_000) >= super::topology_max("maxFiles")
+            || self.max_files && q.scan_files() >= super::topology_max("maxFiles")
     }
 }
 
@@ -286,7 +279,7 @@ pub(super) fn insert_supersedes(
 /// scan's rows (`supersedes`); `None` at the `maxFiles` maximum.
 pub(super) fn expand_scan(q: &AstTopologyQuery) -> Option<Value> {
     let max_files = super::topology_max("maxFiles");
-    let cur = q.max_files().unwrap_or(20_000);
+    let cur = q.scan_files();
     if cur >= max_files {
         return None;
     }
@@ -310,7 +303,7 @@ pub(super) fn add_next(
     q: &AstTopologyQuery,
     root: &Path,
     widenable: bool,
-    withheld_diagnostics: Option<&str>,
+    coverage: &CoverageState,
 ) {
     let mut next = Map::new();
     let more_results = base
@@ -323,7 +316,7 @@ pub(super) fn add_next(
     if more_results && let Some(next_page) = admitted("page", q.page()) {
         // Bind the next result page to this graph snapshot; result pages
         // never re-send diagnostic rows.
-        let snapshot = base["pagination"].get("resultId").cloned();
+        let snapshot = coverage.result_id.as_ref().map(|id| json!(id));
         let mut page = continuation(q, Some(next_page), None, snapshot);
         if let Some(row) = page
             .pointer_mut("/query/queries/0")
@@ -333,7 +326,7 @@ pub(super) fn add_next(
         }
         next.insert("nextPage".into(), page);
     }
-    if let Some(snapshot) = withheld_diagnostics {
+    if let Some(snapshot) = coverage.withheld.as_deref() {
         let mut value = clean_query(q);
         value["diagnosticPage"] = json!(1);
         value["diagnosticPageSize"] = json!(q.diagnostic_page_size());

@@ -43,9 +43,26 @@ fn search_rows(output: &Value) -> Vec<String> {
         .collect()
 }
 
-/// Every `path` a page lists (structureSearch files).
+/// `dir/name` of every file a structureSearch page lists (`{dir, files:
+/// ["name (size, ...)"]}` groups).
 fn listed_rows(output: &Value) -> Vec<String> {
-    support::checks::paths_in(&data(output))
+    data(output)["files"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|group| {
+            let dir = group["dir"].as_str().expect("group dir").to_owned();
+            group["files"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(move |entry| {
+                    let entry = entry.as_str().expect("file entry");
+                    let name = entry.split(" (").next().expect("file name");
+                    format!("{dir}/{name}")
+                })
+        })
+        .collect()
 }
 
 #[tokio::test]
@@ -53,7 +70,8 @@ async fn local_page_channels_walk_exactly_once() {
     let workspace = Workspace::new();
     fixture(&workspace);
     let runtime = workspace.runtime(&[]);
-    let cases: [(&str, Value, fn(&Value) -> Vec<String>); 2] = [
+    type Rows = fn(&Value) -> Vec<String>;
+    let cases: [(&str, Value, Rows); 2] = [
         (
             "localSearch",
             json!({"path":"src","matchString":"helper","pageSize":1}),
@@ -71,7 +89,7 @@ async fn local_page_channels_walk_exactly_once() {
         let whole = support::run(&runtime, tool, unpaged, &ALL_EXTRAS).await;
         let mut expected = rows(&whole.structured_content);
         expected.sort();
-        assert!(expected.len() >= 6, "{tool}: {}", &whole.structured_content);
+        assert!(expected.len() >= 6, "{tool}: {}", whole.structured_content);
         let walk = support::walk(&runtime, tool, support::envelope(seed), rows).await;
         assert!(walk.queries.len() >= 3, "{tool} pages: {:?}", walk.queries);
         let mut walked = walk.rows;

@@ -21,26 +21,17 @@ fn max_walk() -> u32 {
     structure_max("maxEntries")
 }
 
+/// Wall time one listing walk may spend: the budget every unbounded local
+/// scan shares. A filter that matches little makes the walk visit the whole
+/// tree, which no entry count bounds; past this budget the walk stops at its
+/// next entry and the page says where ([`Cut::time_cut`]).
+const WALK_BUDGET: std::time::Duration = octocode_engine::scan_budget::SCAN_TIME_BUDGET;
+
 use crate::policy::prune::PruneMode;
 use crate::tools::display_name;
 use crate::tools::empty_walk::{Cause, Hits, Verdict, Walk, diagnose_shown, lift};
 use crate::tools::result::ToolError;
 use serde_json::{Value, json};
-
-/// Continuations a listing row copies its query into: `next.nextPage` and
-/// `next.expandScan`.
-const ROW_QUERY_COPIES: usize = 2;
-
-/// Chars one default page's rows may take, so the page with the row around
-/// it fits the response window. Measured on the query's snapshot identity:
-/// a continuation that keeps its snapshot gets the same budget, so every
-/// page of one snapshot cuts at the same rows.
-fn page_budget(response_window: Option<usize>, identity: &Value) -> usize {
-    crate::tools::stream_page::page_chars(
-        response_window,
-        crate::tools::stream_page::reserve_chars(identity, ROW_QUERY_COPIES),
-    )
-}
 
 /// Serialized chars one row adds to a page: `entry` always, plus `header`
 /// when the row opens a group: it starts the page, or `continues` is false
@@ -167,8 +158,9 @@ fn reports_withheld(path: &std::path::Path) -> bool {
 }
 
 /// A continuation page whose walk no longer hashes to its `snapshot`: the
-/// stale stored walk is dropped and the listing restarts from page 1. A
-/// page without a snapshot pins nothing: it pages the current walk.
+/// stale stored walk is dropped and the listing restarts from its first
+/// page and window. A page without a snapshot pins nothing: it pages the
+/// current walk.
 fn restart_if_stale(
     query: &impl serde::Serialize,
     page: usize,
@@ -177,10 +169,10 @@ fn restart_if_stale(
 ) -> Option<Value> {
     let stale = snapshot.filter(|snapshot| page > 1 && *snapshot != current)?;
     memo::evict(stale);
-    Some(crate::tools::result::stale_snapshot(continuation(
-        query,
-        json!({"page":1,"snapshot":null}),
-    )))
+    let row = serde_json::to_value(query).unwrap_or_else(|_| json!({}));
+    Some(crate::tools::result::stale_snapshot(
+        crate::tools::result::restart_query(crate::tools::id::ToolId::StructureSearch, &row),
+    ))
 }
 
 /// Copy the query with `changes` applied as a `structureSearch` continuation;
@@ -325,6 +317,30 @@ impl ProbeBound {
     }
 }
 
+/// What bounds a walk: a listing walk by time ([`WALK_BUDGET`]), a probe
+/// walk by its own entry cap and deadline.
+#[derive(Clone, Copy)]
+enum Walking<'a> {
+    Listing(std::time::Duration),
+    Probe(&'a ProbeBound),
+}
+
+impl<'a> Walking<'a> {
+    fn probe(self) -> Option<&'a ProbeBound> {
+        match self {
+            Self::Probe(bound) => Some(bound),
+            Self::Listing(_) => None,
+        }
+    }
+
+    fn budget(self) -> Option<std::time::Duration> {
+        match self {
+            Self::Listing(budget) => Some(budget),
+            Self::Probe(_) => None,
+        }
+    }
+}
+
 /// What a relaxed listing probe found: the walked entries, `cut` when the
 /// probe stopped at its hit cap or deadline (there may be more, or some).
 fn found_entries(entries: impl Iterator<Item = std::path::PathBuf>, cut: bool) -> Hits {
@@ -430,6 +446,9 @@ struct Cut {
     available: usize,
     limit_cut: bool,
     scan_cut: bool,
+    /// The walk ran out of time before this root-relative entry: it and
+    /// everything after it in walk order is unscanned.
+    time_cut: Option<String>,
     /// The walk stopped at the first match past the limit, so only a lower
     /// bound of the total is known.
     early_exit: bool,
@@ -446,8 +465,10 @@ impl Cut {
     fn has_more(&self) -> bool {
         self.page < self.total_pages
     }
+    /// A time cut resumes nowhere: a wider walk starts over and stops at the
+    /// same entry.
     fn can_expand(&self) -> bool {
-        self.limit_cut && self.requested < max_walk() as usize
+        self.limit_cut && self.time_cut.is_none() && self.requested < max_walk() as usize
     }
     /// More pages exist, but the next page number is past the contract's
     /// `page` maximum.
@@ -470,7 +491,7 @@ impl Cut {
         (self.limit_cut || self.scan_cut) && !self.can_expand()
     }
     fn terminal(&self) -> bool {
-        self.page_ceiling() || self.walk_ceiling()
+        self.page_ceiling() || self.walk_ceiling() || self.time_cut.is_some()
     }
     fn out_of_range(&self) -> bool {
         self.total > 0 && self.page > self.total_pages
@@ -491,6 +512,10 @@ impl Cut {
                 format!(
                     "page {} is the last page a continuation may request; later rows of this listing",
                     self.page
+                )
+            } else if let Some(at) = &self.time_cut {
+                format!(
+                    "the walk stopped at its time budget before `{at}`; entries from there on in walk order (name-sorted, depth-first)"
                 )
             } else if self.early_exit {
                 format!(
@@ -517,19 +542,33 @@ impl Cut {
                 .min(max_walk() as usize);
             out["next"]["expandScan"] = continuation(
                 query,
-                json!({"maxEntries": wider, "scanOffset": self.covered, "page": 1, "snapshot": null}),
+                json!({"maxEntries": wider, "scanOffset": (self.covered > 0).then_some(self.covered), "page": 1, "snapshot": null}),
             );
         }
-        if self.terminal() {
-            out["terminalLimit"] = json!(true);
+        for (cut, reason) in [
+            (self.limit_cut, "maxEntries"),
+            (self.scan_cut, "walkLimit"),
+            (self.time_cut.is_some(), "walkDeadline"),
+        ] {
+            if cut {
+                crate::tools::paging::mark_partial(out, reason, &[]);
+            }
+        }
+        if self.page_ceiling() {
+            crate::tools::paging::terminal_limit(out, crate::tools::paging::CURSOR_MAXIMUM, &[]);
+        } else if self.time_cut.is_some() {
+            crate::tools::paging::terminal_limit(out, "walkDeadline", &[]);
+        } else if self.walk_ceiling() {
+            // The walk's own cut reason is already listed above.
+            let reason = if self.limit_cut {
+                "maxEntries"
+            } else {
+                "walkLimit"
+            };
+            crate::tools::paging::terminal_limit(out, reason, &[]);
         }
         if self.limit_cut || self.scan_cut {
-            let reasons = [(self.limit_cut, "maxEntries"), (self.scan_cut, "walkLimit")]
-                .into_iter()
-                .filter_map(|(cut, reason)| cut.then_some(reason))
-                .collect::<Vec<_>>();
             out["clipped"] = json!(true);
-            out["partialReasons"] = json!(reasons);
             if self.early_exit {
                 out["atLeast"] = json!(self.scan_offset + self.total + 1);
             } else {
@@ -655,74 +694,58 @@ fn walked<T: std::any::Any + Send + Sync>(
 
 /// Whether a filtered listing could have listed `path` had the policy
 /// admitted it: a directory may hold matches; a file must pass the name
-/// filters (include globs, extensions, basename regex).
+/// filters (include globs, extensions, basename regex) as the walk applies
+/// them, in the walk's one glob dialect.
 struct FilterProbe {
-    root: std::path::PathBuf,
-    names: Option<globset::GlobSet>,
-    paths: Option<globset::GlobSet>,
+    names: Option<ignore::gitignore::Gitignore>,
     extensions: Vec<String>,
     regex: Option<regex::Regex>,
 }
 
 impl FilterProbe {
+    /// The probe of a walk rooted at `root`. A glob or regex that does not
+    /// compile fails the call (`invalidGlob`, `invalidPattern`), as the
+    /// walk itself does: a filter is never silently dropped.
     fn new(
         root: &std::path::Path,
         include: &[String],
         extensions: &[String],
         name_regex: Option<&str>,
-    ) -> Self {
-        let set = |globs: Vec<&String>| {
-            if globs.is_empty() {
-                return None;
-            }
-            let mut builder = globset::GlobSetBuilder::new();
-            for glob in globs {
-                // An uncompilable glob matches nothing in the walk either.
-                if let Ok(glob) = globset::Glob::new(glob) {
-                    builder.add(glob);
-                }
-            }
-            builder.build().ok()
-        };
-        let (with_slash, bare): (Vec<_>, Vec<_>) = include.iter().partition(|g| g.contains('/'));
-        Self {
-            root: root.to_path_buf(),
-            names: set(bare),
-            paths: set(with_slash),
+    ) -> Result<Self, ToolError> {
+        use octocode_engine::search::glob;
+        let names = glob::set(root, include.iter().map(String::as_str), "names")
+            .map_err(|error| ToolError::new("invalidGlob", error.to_string()))?;
+        let regex = name_regex
+            .map(regex::Regex::new)
+            .transpose()
+            .map_err(|error| {
+                ToolError::new(
+                    "invalidPattern",
+                    format!("Invalid regex for local filesystem query: {error}"),
+                )
+            })?;
+        Ok(Self {
+            names,
             extensions: extensions
                 .iter()
-                .map(|ext| ext.trim_start_matches('.').to_ascii_lowercase())
+                .map(|ext| ext.trim().trim_start_matches('.').to_lowercase())
+                .filter(|ext| !ext.is_empty())
                 .collect(),
-            regex: name_regex.and_then(|pattern| regex::Regex::new(pattern).ok()),
-        }
+            regex,
+        })
     }
 
     fn could_list(&self, path: &std::path::Path) -> bool {
         if std::fs::symlink_metadata(path).is_ok_and(|meta| meta.is_dir()) {
             return true;
         }
-        let name = path
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_default();
-        let relative = path
-            .strip_prefix(&self.root)
-            .unwrap_or(path)
-            .to_string_lossy()
-            .replace('\\', "/");
-        let included = match (&self.names, &self.paths) {
-            (None, None) => true,
-            (names, paths) => {
-                names.as_ref().is_some_and(|set| set.is_match(&name))
-                    || paths.as_ref().is_some_and(|set| set.is_match(&relative))
-            }
-        };
-        let extension = name
-            .rsplit_once('.')
-            .map(|(_, ext)| ext.to_ascii_lowercase())
-            .unwrap_or_default();
-        included
-            && (self.extensions.is_empty() || self.extensions.contains(&extension))
+        let name = crate::tools::display_name(path);
+        let extension = octocode_engine::text::extension_of(&name, true, "");
+        self.names
+            .as_ref()
+            .is_none_or(|names| octocode_engine::search::glob::matches(names, path, false))
+            && (self.extensions.is_empty()
+                || (!extension.is_empty() && self.extensions.contains(&extension)))
             && self
                 .regex
                 .as_ref()
@@ -739,12 +762,41 @@ pub fn execute_structure(
     cancellation: &dyn crate::tools::cancel::CancellationCheck,
     response_window: Option<usize>,
 ) -> StructureResult {
+    execute_structure_within(
+        query,
+        paths,
+        security,
+        cancellation,
+        response_window,
+        WALK_BUDGET,
+    )
+}
+
+/// [`execute_structure`] with the listing walk's time budget named.
+fn execute_structure_within(
+    query: &StructureSearchQuery,
+    paths: &crate::policy::path::PathPolicy,
+    security: &crate::security::ContentSecurity,
+    cancellation: &dyn crate::tools::cancel::CancellationCheck,
+    response_window: Option<usize>,
+    budget: std::time::Duration,
+) -> StructureResult {
     match query {
-        StructureSearchQuery::Tree(query) => {
-            tree::execute_tree(query, paths, security, cancellation, response_window)
-        }
-        StructureSearchQuery::Files(query) => {
-            files::execute_files(query, paths, security, cancellation, response_window)
-        }
+        StructureSearchQuery::Tree(query) => tree::execute_tree(
+            query,
+            paths,
+            security,
+            cancellation,
+            response_window,
+            budget,
+        ),
+        StructureSearchQuery::Files(query) => files::execute_files(
+            query,
+            paths,
+            security,
+            cancellation,
+            response_window,
+            budget,
+        ),
     }
 }

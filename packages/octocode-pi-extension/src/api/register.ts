@@ -1,11 +1,11 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
-import { OctocodeApi, optionsFromEnv, type AgentDirectory } from './bridge.js';
+import { OctocodeApi, optionsFromEnv, type AgentDirectory, type ApiOperations } from './bridge.js';
 import { say, wordCompletions, type Subcommands } from '../shared/commands.js';
 import { errorMessage } from '../shared/util.js';
 
 /** Wire the external API into Pi: event publishing, lifecycle and `/octocode api`. Subagents never expose one. */
-export function registerApi(pi: ExtensionAPI, commands: Subcommands, agents: AgentDirectory, version: () => string | undefined): { api: OctocodeApi; start: (ctx: Parameters<OctocodeApi['start']>[0]) => Promise<void>; stop: () => Promise<void> } {
-  const api = new OctocodeApi(pi, agents, version);
+export function registerApi(pi: ExtensionAPI, commands: Subcommands, agents: AgentDirectory, version: () => string | undefined, operations?: ApiOperations): { api: OctocodeApi; start: (ctx: Parameters<OctocodeApi['start']>[0]) => Promise<void>; stop: () => Promise<void> } {
+  const api = new OctocodeApi(pi, agents, version, process.env, operations);
   api.observe();
 
   commands.add('api', {

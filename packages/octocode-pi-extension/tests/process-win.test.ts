@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const spawn = vi.fn();
 vi.mock('node:child_process', () => ({ spawn: (...args: unknown[]) => spawn(...args) }));
@@ -7,13 +7,19 @@ vi.mock('../src/shared/winhelper.js', () => ({ windowsTree: { owns: (pid: unknow
 const { adoptTree, killTree, prepareTree, signalTree, stopTree } = await import('../src/shared/process.js');
 
 const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+beforeEach(() => {
+  vi.stubEnv('SystemRoot', 'C:\\Windows');
+});
 afterEach(() => {
+  vi.unstubAllEnvs();
   Object.defineProperty(process, 'platform', platform);
   spawn.mockReset();
   for (const mock of Object.values(tree)) mock.mockReset();
 });
 
 const win32 = (): void => void Object.defineProperty(process, 'platform', { value: 'win32' });
+/** taskkill by absolute path: a bare name would run a `taskkill.exe` in the current folder first. */
+const TASKKILL = 'C:\\Windows\\System32\\taskkill.exe';
 /** A pid no process has. */
 const GONE = 2 ** 30;
 
@@ -32,12 +38,24 @@ describe('signalTree', () => {
     const on = vi.fn();
     spawn.mockReturnValue({ on });
     signalTree(1234, 'SIGTERM');
-    expect(spawn).toHaveBeenCalledWith('taskkill', ['/pid', '1234', '/T', '/F'], { stdio: 'ignore', windowsHide: true });
+    expect(spawn).toHaveBeenCalledWith(TASKKILL, ['/pid', '1234', '/T', '/F'], { stdio: 'ignore', windowsHide: true });
     expect(on).toHaveBeenCalledWith('error', expect.any(Function));
     spawn.mockImplementation(() => {
       throw new Error('ENOENT');
     });
     expect(() => signalTree(1234, 'SIGKILL')).not.toThrow();
+  });
+});
+
+describe('taskkill', () => {
+  it('is spawned by its absolute System32 path, whatever the current folder holds, and follows %windir%', () => {
+    win32();
+    spawn.mockReturnValue({ on: vi.fn() });
+    vi.stubEnv('SystemRoot', '');
+    vi.stubEnv('windir', 'D:\\WinNT');
+    signalTree(1234, 'SIGTERM');
+    expect(spawn.mock.calls[0]![0]).toBe('D:\\WinNT\\System32\\taskkill.exe');
+    expect(spawn.mock.calls[0]![0]).not.toBe('taskkill');
   });
 });
 
@@ -58,7 +76,7 @@ describe('Windows trees', () => {
     tree.owns.mockReturnValue(true);
     tree.kill.mockResolvedValue(false);
     signalTree(GONE, 'SIGKILL');
-    await vi.waitFor(() => expect(spawn).toHaveBeenCalledWith('taskkill', ['/pid', String(GONE), '/T', '/F'], { stdio: 'ignore', windowsHide: true }));
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalledWith(TASKKILL, ['/pid', String(GONE), '/T', '/F'], { stdio: 'ignore', windowsHide: true }));
   });
 
   it('stopTree ends the job and resolves, also when the root already exited', async () => {

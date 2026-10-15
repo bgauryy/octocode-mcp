@@ -190,15 +190,32 @@ describe('interrupt', () => {
     expect(child.abort).not.toHaveBeenCalled();
   });
 
+  it('stops a manual /compact and delivers the held interrupt once the session is idle, with no agent_settled', async () => {
+    const cwd = repo();
+    const db = path.join(tmp(), 'team.sqlite');
+    const parent = agent(db, cwd);
+    const parentId = parent.team.join().id;
+    // Busy only with a compaction: Pi's isIdle is false, and no agent run ends when abort() cancels it.
+    const child = agent(db, cwd, { OCTOCODE_AGENT_ID: 'general-compact', OCTOCODE_PARENT_ID: parentId }, { idle: false });
+    child.team.join();
+    await parent.team.send(child.team.id!, 'drop the compaction, do this', { replyRequired: false, interrupt: true });
+    await vi.waitFor(() => expect(child.abort).toHaveBeenCalledTimes(1), { timeout: 3_000 });
+    expect(mail(child.sent)).toHaveLength(0);
+    vi.spyOn(child.ctx, 'isIdle').mockReturnValue(true);
+    await vi.waitFor(() => expect(mail(child.sent)).toHaveLength(1), { timeout: 3_000 });
+    expect(mail(child.sent)[0]!.message.content).toContain('your current step was stopped');
+    expect(mail(child.sent)[0]!.options).toEqual({ triggerTurn: true, deliverAs: 'steer' });
+  });
+
   it('is offered by the sendMessage tool and /agents interrupt', async () => {
     const { parent, child } = family(false);
     const send = parent.tools.get('sendMessage');
     expect(Object.keys(send.parameters.properties)).toContain('interrupt');
     const result = await send.execute('c', { to: child.team.id, message: 'stop', interrupt: true }, undefined, undefined, parent.ctx);
-    expect(result.content[0].text).toMatch(/^Interrupting general-777777 with message #\d+\.$/);
+    expect(result.content[0].text).toMatch(/^Interrupt queued for general-777777 as message #\d+:.*older extension build/);
     const command = agentsCommand(parent.team, new Map());
     await command.handler(`interrupt ${child.team.id} switch to the docs task`, parent.ctx);
-    expect(parent.ctx.ui.notes.at(-1)).toEqual({ message: 'Interrupting general-777777', type: 'info' });
+    expect(parent.ctx.ui.notes.at(-1)).toEqual({ message: 'Interrupt queued for general-777777', type: 'info' });
     await command.handler('interrupt', parent.ctx);
     expect(parent.ctx.ui.notes.at(-1)).toEqual({ message: 'Usage: /agents interrupt <id> <message>', type: 'warning' });
     expect(command.complete!('int')).toEqual([expect.objectContaining({ value: 'interrupt ' })]);

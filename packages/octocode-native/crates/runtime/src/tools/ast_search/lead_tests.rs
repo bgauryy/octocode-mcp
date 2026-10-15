@@ -60,8 +60,8 @@ fn follow(root: &std::path::Path, row: Value, depth: usize) -> usize {
 #[test]
 fn empty_language_lead_runs() {
     let root = Fixture::new();
-    std::fs::write(root.0.join("a.rs"), "fn a() { hit(1); }\n").expect("a");
-    std::fs::write(root.0.join("b.ts"), "hit(2);\n").expect("b");
+    root.write("a.rs", "fn a() { hit(1); }\n");
+    root.write("b.ts", "hit(2);\n");
     let ran = follow(
         &root.0,
         json!({"operation":"match","path":root.0,"language":"python","pattern":"hit($A)"}),
@@ -70,10 +70,9 @@ fn empty_language_lead_runs() {
     assert!(ran >= 1);
 }
 
-/// More candidate grammars than a batch may hold still give a repair that
-/// validates and runs, and the message names every candidate.
+/// Per-file inference covers more grammars than a repair batch could hold.
 #[test]
-fn language_repair_stays_within_the_batch_limit() {
+fn per_file_inference_covers_more_grammars_than_a_repair_batch() {
     let root = Fixture::new();
     for (name, source) in [
         ("a.rs", "fn a() { hit(1); }\n"),
@@ -91,14 +90,11 @@ fn language_repair_stays_within_the_batch_limit() {
     let query: AstSearchQuery =
         serde_json::from_value(json!({"operation":"match","path":root.0,"pattern":"hit($A)"}))
             .expect("row");
-    let error = execute_ast(&query, &paths, &security, &NeverCancel, None).expect_err("several");
-    assert_eq!(error.code, "languageRequired", "{error:?}");
-    let repair = leads(error.next.as_deref());
-    assert_eq!(repair.len(), 1, "{error:?}");
-    let rows = repair[0].1["queries"].as_array().expect("rows").len();
-    assert!(rows >= 1, "{error:?}");
-    crate::contracts::validate("astSearch", repair[0].1.clone()).expect("repair validates");
-    follow(&root.0, repair[0].1["queries"][0].clone(), 1);
+    let out =
+        execute_ast(&query, &paths, &security, &NeverCancel, None).expect("per-file inference");
+    assert_eq!(out["matchCount"], 8, "{out}");
+    assert_eq!(out["files"].as_array().map(Vec::len), Some(8), "{out}");
+    assert!(out["next"].get("repair").is_none(), "{out}");
 }
 
 /// A battery of real astSearch calls: every lead any of them hands out (page,
@@ -111,11 +107,10 @@ fn every_lead_of_a_battery_of_calls_validates_and_runs() {
         let calls = (0..4)
             .map(|call| format!("hit({index}{call});\n"))
             .collect::<String>();
-        std::fs::write(
-            root.0.join(format!("f{index}.ts")),
+        root.write(
+            &format!("f{index}.ts"),
             format!("export class C{index} extends Base {{ run() {{ {calls} }} }}\n{calls}"),
-        )
-        .expect("source");
+        );
     }
     let dir = root.0.to_string_lossy().into_owned();
     let file = root.0.join("f0.ts").to_string_lossy().into_owned();
@@ -141,7 +136,7 @@ fn every_lead_of_a_battery_of_calls_validates_and_runs() {
 fn leads_over_skipped_files_validate_and_find_them() {
     let root = Fixture::new();
     std::fs::create_dir_all(root.0.join(".git")).expect("git dir");
-    std::fs::write(root.0.join(".gitignore"), "gen/\n").expect("gitignore");
+    root.write(".gitignore", "gen/\n");
     for dir in ["gen", ".cfg", "node_modules/pkg"] {
         std::fs::create_dir_all(root.0.join(dir)).expect("dir");
         std::fs::write(
@@ -173,8 +168,8 @@ fn skipped_hint_respects_the_query_include() {
         std::fs::write(root.0.join(dir).join("a.py"), "class E(Exception): pass\n")
             .expect("source");
     }
-    std::fs::write(root.0.join("lib.cpp"), "void f() {}\n").expect("cpp");
-    std::fs::write(root.0.join("app.js"), "function f() {}\n").expect("js");
+    root.write("lib.cpp", "void f() {}\n");
+    root.write("app.js", "function f() {}\n");
     let out = run(
         &root.0,
         json!({"operation":"match","path":root.0,"include":[".github/**"],"language":"python",
@@ -196,8 +191,8 @@ fn skipped_files_outside_the_include_are_not_named() {
     let root = Fixture::new();
     std::fs::create_dir_all(root.0.join(".spin")).expect("dir");
     std::fs::create_dir_all(root.0.join("src")).expect("dir");
-    std::fs::write(root.0.join(".spin/a.py"), "def a(): pass\n").expect("source");
-    std::fs::write(root.0.join("src/b.js"), "function b() {}\n").expect("source");
+    root.write(".spin/a.py", "def a(): pass\n");
+    root.write("src/b.js", "function b() {}\n");
     let out = run(
         &root.0,
         json!({"operation":"match","path":root.0,"include":["src/**"],"language":"python","pattern":"def $N(): pass"}),

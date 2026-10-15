@@ -129,27 +129,6 @@ fn rust_enum_variant(value: &str) -> Result<String, Box<dyn Error>> {
     Ok(to_pascal(value))
 }
 
-fn set_path(root: &mut Value, path: &str, value: Value) -> Result<(), Box<dyn Error>> {
-    let mut current = root;
-    let parts = path.split('.').collect::<Vec<_>>();
-    for part in &parts[..parts.len().saturating_sub(1)] {
-        let map = current
-            .as_object_mut()
-            .ok_or_else(|| invalid(format!("default parent for {path} must be an object")))?;
-        current = map
-            .entry((*part).to_owned())
-            .or_insert_with(|| Value::Object(Map::new()));
-    }
-    let key = parts
-        .last()
-        .ok_or_else(|| invalid("field path must not be empty"))?;
-    current
-        .as_object_mut()
-        .ok_or_else(|| invalid(format!("default parent for {path} must be an object")))?
-        .insert((*key).to_owned(), value);
-    Ok(())
-}
-
 fn config_path(manifest_dir: &Path, name: &str) -> PathBuf {
     manifest_dir.join(format!("../../../../packages/octocode-config/{name}"))
 }

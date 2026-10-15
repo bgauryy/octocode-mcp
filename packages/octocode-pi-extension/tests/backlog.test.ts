@@ -5,8 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { closeSharedAgentDb, openAgentDb, sharedAgentDb, type AgentDb } from '../src/agentdb/db.js';
 import { boardRows, showBoard } from '../src/backlog/board.js';
 import { registerBacklog } from '../src/backlog/index.js';
-import { countsText } from '../src/backlog/format.js';
-import { BacklogError, BacklogStore, parseRef } from '../src/backlog/store.js';
+import { countsText, itemDetail, itemLine } from '../src/backlog/format.js';
+import { BacklogError, BacklogStore, parseRef, USER_AUTHOR, type Item } from '../src/backlog/store.js';
 import { Subcommands } from '../src/shared/commands.js';
 import { PARENT_SESSION_ENV } from '../src/shared/env.js';
 import { fakeCtx, fakePi, rendered, theme } from './fake-pi.js';
@@ -71,11 +71,20 @@ describe('backlog store', () => {
     expect(parseRef('x')).toBeUndefined();
   });
 
+  it('needs a goal for anything an agent adds, and lets a person add a bare title', () => {
+    const store = storeFor('goal');
+    expect(() => store.add({ title: 'no goal', createdBy: 'agent' })).toThrow(/add needs a goal/);
+    expect(() => store.add({ title: 'blank goal', goal: ' \n ', createdBy: 'agent:sub-1' })).toThrow(/add needs a goal/);
+    expect(store.list().items).toEqual([]);
+    expect(store.add({ title: 'with goal', goal: 'tests pass', createdBy: 'agent' }).goal).toBe('tests pass');
+    expect(store.add({ title: 'typed by the user', createdBy: USER_AUTHOR }).goal).toBe('');
+  });
+
   it('defaults to the backlog state and sorts ongoing, then priority, then recent', () => {
     const store = storeFor('r');
     const low = store.add({ title: 'low', state: 'todo', priority: 3, createdBy: 'user' });
     store.add({ title: 'high', state: 'todo', priority: 0, createdBy: 'user' });
-    expect(store.add({ title: 'idea', createdBy: 'agent' }).state).toBe('backlog');
+    expect(store.add({ title: 'idea', createdBy: 'agent', goal: 'g' }).state).toBe('backlog');
     store.update(low.ref, { state: 'ongoing' }, { id: 's1' });
     expect(store.list({ states: ['todo', 'ongoing'] }).items.map((item) => item.title)).toEqual(['low', 'high']);
     expect(store.counts()).toEqual({ backlog: 1, todo: 1, ongoing: 1, done: 0 });
@@ -156,16 +165,16 @@ describe('backlog store', () => {
   it('links an item to the one it came from, lists those derived from it, and refuses unknown, self and loop links', () => {
     const store = storeFor('r');
     const root = store.add({ title: 'root', state: 'todo', createdBy: 'user' });
-    const split = store.add({ title: 'split', from: 'b1', createdBy: 'agent' });
-    const followUp = store.add({ title: 'follow-up', from: 'B1', state: 'todo', createdBy: 'agent' });
-    const grandchild = store.add({ title: 'grandchild', from: split.ref, createdBy: 'agent' });
+    const split = store.add({ title: 'split', from: 'b1', createdBy: 'agent', goal: 'g' });
+    const followUp = store.add({ title: 'follow-up', from: 'B1', state: 'todo', createdBy: 'agent', goal: 'g' });
+    const grandchild = store.add({ title: 'grandchild', from: split.ref, createdBy: 'agent', goal: 'g' });
     expect(split.from).toBe(1);
     expect(store.notes(split)).toMatchObject([{ author: 'agent', kind: 'change', text: 'created from B1' }]);
     expect(store.derived(root).map((item) => item.ref)).toEqual([followUp.ref, split.ref]);
     expect(store.list({ from: 'B1' }).items.map((item) => item.ref)).toEqual([followUp.ref, split.ref]);
     expect(store.list({ from: 'B1', states: ['todo'] })).toMatchObject({ total: 1, items: [{ ref: followUp.ref }] });
-    expect(() => store.add({ title: 'orphan', from: 'B99', createdBy: 'agent' })).toThrow(/No backlog item B99 to link from/);
-    expect(() => storeFor('other-repo').add({ title: 'x', from: 'B1', createdBy: 'agent' })).toThrow(/No backlog item B1/);
+    expect(() => store.add({ title: 'orphan', from: 'B99', createdBy: 'agent', goal: 'g' })).toThrow(/No backlog item B99 to link from/);
+    expect(() => storeFor('other-repo').add({ title: 'x', from: 'B1', createdBy: 'agent', goal: 'g' })).toThrow(/No backlog item B1/);
     expect(() => store.update(root.ref, { from: root.ref }, { id: 'me' })).toThrow(/cannot come from itself/);
     expect(() => store.update(root.ref, { from: grandchild.ref }, { id: 'me' })).toThrow(/B4 already comes from B1: the link would make a loop/);
     expect(store.update(grandchild.ref, { from: root.ref }, { id: 'me' }).from).toBe(1);
@@ -176,7 +185,7 @@ describe('backlog store', () => {
   it('clears the link on derived items when their origin is removed, and logs it on each', () => {
     const store = storeFor('r');
     const root = store.add({ title: 'root', createdBy: 'user' });
-    const child = store.add({ title: 'child', from: root.ref, createdBy: 'agent' });
+    const child = store.add({ title: 'child', from: root.ref, createdBy: 'agent', goal: 'g' });
     store.remove(root.ref);
     const after = store.get(child.ref)!;
     expect(after.from).toBeUndefined();
@@ -412,6 +421,24 @@ describe('backlog status', () => {
 });
 
 describe('/octocode backlog', () => {
+  it('shows controls in a query, a ref and an id the model sent as visible escapes in its answers', async () => {
+    const t = setup();
+    expect(await t.text({ op: 'list', query: 'zz\u001b[2J\u202e' })).toContain('matching "zz\\u{1b}[2J\\u{202e}"');
+    await expect(t.call({ op: 'get', id: 'B9\u001b]0;x\u0007' })).rejects.toThrow('No backlog item B9\\u{1b}]0;x\\u{7}.');
+    expect(() => storeFor('repo').add({ title: 'x', from: 'B9\u200b', createdBy: 'agent', goal: 'g' })).toThrow(/No backlog item B9\\u\{200b\} to link from/);
+  });
+
+  it('formats an item with controls (a row written by another build) as visible escapes', () => {
+    const item = { rowId: 1, seq: 1, ref: 'B1', title: 'fix\u001b[2Jit', goal: 'g\u202e', body: 'a\u0000b', paths: ['p\u200bq'], why: '', evidence: ['e\u0007'], plan: '', state: 'ongoing', priority: 1, tags: [], assignee: 'who\u009d', createdBy: 'me\u001b', createdAt: 0, updatedAt: 0, startedAt: 0, version: 1 } as unknown as Item;
+    expect(itemLine(item)).toBe('B1 [ongoing p1] fix\\u{1b}[2Jit (@who\\u{9d})');
+    const detail = itemDetail(item, [], 0, 0);
+    expect(detail).toContain('Goal: g\\u{202e}');
+    expect(detail).toContain('Where: p\\u{200b}q');
+    expect(detail).toContain('- e\\u{7}');
+    expect(detail).toContain('a\\u{0}b');
+    expect(detail).not.toMatch(/[\u0000-\u0008\u001b\u009d\u200b\u202e]/u);
+  });
+
   it('works headless: add, list, move, detail, export', async () => {
     const t = setup();
     const ctx = fakeCtx({ cwd: t.cwd, hasUI: false });
@@ -476,10 +503,35 @@ describe('/octocode backlog', () => {
     expect(t.sent.at(-1)!.message).toContain("in the subagent's task");
     expect(t.sent.at(-1)!.message).toContain('Mark it done only after verifying its goal');
     expect(store.get('B1')!.state).toBe('ongoing');
-    const edits = fakeCtx({ cwd: t.cwd, mode: 'rpc', ui: { selects: ['Edit'] } });
-    Object.assign(edits.ui, { editor: async () => 'renamed\n\nnew body' });
-    await t.command.handler('B1', edits);
-    expect(store.get('B1')).toMatchObject({ title: 'renamed', body: 'new body' });
+    // Every text field is editable, one editor per field; the editor shows the saved text and the change log records the edit.
+    const edit = async (field: string | undefined, text: string | undefined): Promise<{ shown?: string; title?: string }> => {
+      const seen: { shown?: string; title?: string } = {};
+      const edits = fakeCtx({ cwd: t.cwd, mode: 'rpc', ui: { selects: ['Edit', field] } });
+      Object.assign(edits.ui, { editor: async (title: string, shown: string) => Object.assign(seen, { title, shown }) && text });
+      await t.command.handler('B1', edits);
+      return seen;
+    };
+    expect((await edit('Title', '  renamed\n title  ')).shown).toBe('first');
+    expect(store.get('B1')!.title).toBe('renamed title');
+    expect((await edit('Goal', 'The goal reads true.')).shown).toBe('The selected action changes the item and repaints the board.');
+    expect(store.get('B1')!.goal).toBe('The goal reads true.');
+    await edit('Body', 'new body');
+    await edit('Paths', 'src/a.ts\n\nsrc/b.ts\nsrc/a.ts');
+    await edit('Why', 'because');
+    expect((await edit('Evidence', 'src/a.ts:1 — shows it')).title).toBe('Edit the evidence of B1 (one per line)');
+    await edit('Plan', 'step one');
+    expect(store.get('B1')).toMatchObject({ body: 'new body', paths: ['src/a.ts', 'src/b.ts'], why: 'because', evidence: ['src/a.ts:1 — shows it'], plan: 'step one' });
+    expect((await edit('Paths', undefined)).shown).toBe('src/a.ts\nsrc/b.ts');
+    expect(store.get('B1')!.paths).toEqual(['src/a.ts', 'src/b.ts']);
+    await edit('Plan', '');
+    expect(store.get('B1')!.plan).toBe('');
+    const log = store.notes(store.get('B1')!, 50).map((note) => note.text).join('\n');
+    for (const part of ['title was "first"', 'goal was "The selected action', 'body added', 'paths none → src/a.ts, src/b.ts', 'why added', 'evidence added', 'plan added', 'plan replaced; it was:\nstep one']) expect(log).toContain(part);
+    // An empty title is refused and an unknown choice changes nothing.
+    const before = store.get('B1')!;
+    await edit('Title', '   ');
+    await edit(undefined, 'ignored');
+    expect(store.get('B1')).toEqual(before);
     await t.command.handler('B1', rpc(['Delete'], [false]));
     expect(store.get('B1')).toBeDefined();
     await t.command.handler('B1', rpc(['Delete'], [true]));
@@ -635,6 +687,15 @@ describe('backlog fields: where, why, evidence, plan', () => {
     expect(storeFor(fs.realpathSync(t.cwd)).list({ states: ['backlog'] }).total).toBe(0);
     await t.command.handler('add by the user', fakeCtx({ cwd: t.cwd, hasUI: false }));
     expect(storeFor(fs.realpathSync(t.cwd)).get('B1')).toMatchObject({ title: 'by the user', goal: '' });
+  });
+
+  it('does not let an agent clear a goal by update, and still lets it change one', async () => {
+    const t = setup();
+    await t.text({ op: 'add', title: 'Item', goal: 'Tests pass.' });
+    for (const goal of ['', ' \n ']) await expect(t.call({ op: 'update', id: 'B1', goal })).rejects.toThrow(/update cannot clear the goal/);
+    expect(storeFor(fs.realpathSync(t.cwd)).get('B1')).toMatchObject({ goal: 'Tests pass.' });
+    await t.text({ op: 'update', id: 'B1', goal: 'Tests and lint pass.' });
+    expect(storeFor(fs.realpathSync(t.cwd)).get('B1')).toMatchObject({ goal: 'Tests and lint pass.' });
   });
 
   it('describes each field by its decision rule, and says an update replaces the whole body', () => {

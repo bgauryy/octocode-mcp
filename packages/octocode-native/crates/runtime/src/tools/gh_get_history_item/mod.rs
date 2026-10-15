@@ -13,7 +13,7 @@
 //! `patch_hop` and `promotion` every `next.*`, and `graphql` the PR fast path.
 use crate::security::scan::{ContentScan, sanitize_provider_text};
 use crate::tools::num::usize_of;
-use crate::tools::result::remove_nulls;
+use crate::tools::result::{ToolData, remove_nulls};
 use octocode_github::{
     GitHubTransport, ProviderError, ProviderErrorKind, ProviderErrorReason, RequestContext,
 };
@@ -28,6 +28,8 @@ mod anchor_tests;
 mod commit_compare;
 mod filter;
 mod graphql;
+#[cfg(test)]
+mod graphql_tests;
 mod inventory;
 mod issue;
 mod output;
@@ -39,6 +41,7 @@ mod pr_sections;
 mod promotion;
 mod pull_request;
 mod recovery;
+mod rest;
 mod text;
 mod util;
 mod window;
@@ -406,15 +409,17 @@ impl GhGetHistoryItemQuery {
     }
 }
 
+/// Read one history item: its row (`data`, sanitized and within the
+/// response budget) and the notes of what its pages leave to read.
 pub async fn execute(
     transport: &GitHubTransport,
     query: &HistoryItemRequest,
     context: &RequestContext,
     security: &impl ContentScan,
-) -> Result<Value, ProviderError> {
+) -> Result<ToolData, ProviderError> {
     let result = execute_inner(transport, query, context).await;
-    let mut value = match result {
-        Ok(value) => value,
+    let mut output = match result {
+        Ok(output) => output,
         Err(mut error) => {
             match error.kind {
                 // A commit read of a SHA GitHub does not have (the transport
@@ -459,10 +464,10 @@ pub async fn execute(
             return Err(error);
         }
     };
-    sanitize_all_strings(&mut value, security)?;
-    remove_nulls(&mut value);
-    enforce_response_limit(&value, context.budget.max_body_bytes)?;
-    Ok(value)
+    sanitize_all_strings(&mut output.data, security)?;
+    remove_nulls(&mut output.data);
+    enforce_response_limit(&output.data, context.budget.max_body_bytes)?;
+    Ok(output)
 }
 
 /// The message of a not-found item read: the repository, number, or refs
@@ -513,7 +518,7 @@ async fn execute_inner(
     transport: &GitHubTransport,
     query: &HistoryItemRequest,
     context: &RequestContext,
-) -> Result<Value, ProviderError> {
+) -> Result<ToolData, ProviderError> {
     validate(query)?;
     context.check()?;
     match query.operation() {

@@ -256,18 +256,18 @@ export async function createNativeMcp({
   );
   const server = new McpServer(implementation, {
     capabilities: { tools: { listChanged: false } },
-    // One core prompt for every surface; it states in plain words which
-    // tools need a key or the CLI. The native catalog carries none. Hosts
-    // truncate instructions near 2 KB, so the grammar inventory stays with
-    // `octocode schema`.
-    instructions: buildMcpInstructions(),
+    // Core owns the prose; native supplies the same capabilities used by schemas.
+    instructions: buildMcpInstructions({
+      availableTools: availableNames,
+      selection: presentation.selection === true,
+    }),
   });
   const registerTool = server.registerTool.bind(server) as RegisterTool;
 
   const definitions = new Map(
     getDirectToolDefinitionsWithAddons({
       availableTools: availableNames,
-      ranking: presentation.ranking === true,
+      selection: presentation.selection === true,
       ...(catalog.lspServers && { lspServers: catalog.lspServers }),
     }).map(definition => [definition.name, definition])
   );
@@ -278,7 +278,7 @@ export async function createNativeMcp({
     context: ToolCallContext
   ): Promise<unknown> => {
     const signal = context.mcpReq?.signal;
-    const requestId = String(context.mcpReq?.id ?? randomUUID());
+    const requestId = randomUUID();
     signal?.throwIfAborted();
     const cancel = () => runtime.cancel(requestId);
     signal?.addEventListener('abort', cancel, { once: true });

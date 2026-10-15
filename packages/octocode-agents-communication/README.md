@@ -264,6 +264,8 @@ The dashboard reads an existing database, uses a loopback URL token, and stops w
 It shows full paginated history and operational views. Participant-scoped `fetch` exposes only permitted records.
 [Operations and recovery](scripts/docs/OPERATIONS.md) explains uncertain offers, expiry, snapshots, and retention.
 
+The same guide documents [concurrency, crash recovery and the optional live-worker verification](scripts/docs/OPERATIONS.md#verify-concurrent-native-workers). Its persistent-session check exercises simultaneous requests and presence renewal on native Pi, Claude and Codex; deterministic process-kill tests cover storage and delivery recovery separately.
+
 `db export` writes a verified snapshot to a new absolute path; back up document files separately. Retention, compaction, `prune`, migration, and WAL interpreter errors are covered in operations.
 
 Only a successful `lock`/`lock_many` grants an advisory reservation.

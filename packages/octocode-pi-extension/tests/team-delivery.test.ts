@@ -502,3 +502,102 @@ describe('panel sanitizing', () => {
     expect(traffic).toContain('hi');
   });
 });
+
+describe('delivery edge cases', () => {
+  const mailOf = (sent: Array<{ message: any }>) => sent.filter((entry) => entry.message.customType === MESSAGE_TYPE && entry.message.details?.messages?.some((m: { id?: number }) => typeof m.id === 'number'));
+
+  it('leaves the team before ending a subagent whose parent is gone, so its row does not wait for a sweep', () => {
+    vi.useFakeTimers();
+    const kill = vi.spyOn(process, 'kill').mockImplementation((pid) => {
+      if (pid === process.pid) return true;
+      throw Object.assign(new Error('no such process'), { code: 'ESRCH' });
+    });
+    try {
+      const db = path.join(tmp(), 'team.sqlite');
+      const cwd = repo();
+      const child = agent(db, cwd, { OCTOCODE_AGENT_ID: 'child-000003', OCTOCODE_PARENT_PID: String(2 ** 22 + 54321) }, false);
+      expect(child.team.id).toBe('child-000003');
+      vi.advanceTimersByTime(1_500);
+      expect(kill).toHaveBeenCalledWith(process.pid, 'SIGTERM');
+      expect(child.team.id).toBeUndefined();
+      expect(open(cwd, db).list().map((member) => member.id)).not.toContain('child-000003');
+    } finally {
+      kill.mockRestore();
+    }
+  });
+
+  it('compares a parent\'s start time only when asked, so a poll does not run ps every second', () => {
+    const ppid = vi.spyOn(process, 'ppid', 'get').mockReturnValue(1);
+    try {
+      expect(parentProcessGone(`${process.pid} Thu Jan  1 00:00:00 1970`, false)).toBe(false);
+    } finally {
+      ppid.mockRestore();
+    }
+  });
+
+  it('tells the user once when an idle agent was handed a waking message and Pi started no turn', async () => {
+    const cwd = repo();
+    const db = path.join(tmp(), 'team.sqlite');
+    const sender = agent(db, cwd);
+    sender.team.join();
+    const idle = agent(db, cwd);
+    idle.team.join();
+    await sender.team.send(idle.team.id!, 'are you there?', { replyRequired: true });
+    await vi.waitFor(() => expect(mailOf(idle.sent)).toHaveLength(1), { timeout: 3_000 });
+    expect(idle.ctx.ui.notes).toEqual([]);
+    // Ten seconds pass and the model was never called with it (no model, or no sign-in).
+    const later = Date.now() + 11_000;
+    const now = vi.spyOn(Date, 'now').mockImplementation(() => later);
+    try {
+      await vi.waitFor(() => expect(idle.ctx.ui.notes).toHaveLength(1), { timeout: 3_000 });
+      expect(idle.ctx.ui.notes[0]).toMatchObject({ type: 'warning', message: expect.stringContaining('did not run one') });
+      await new Promise((resolve) => setTimeout(resolve, 1_300));
+      expect(idle.ctx.ui.notes).toHaveLength(1);
+    } finally {
+      now.mockRestore();
+    }
+  }, 15_000);
+
+  it('does not warn when the model was called with the message', async () => {
+    const cwd = repo();
+    const db = path.join(tmp(), 'team.sqlite');
+    const sender = agent(db, cwd);
+    sender.team.join();
+    const idle = agent(db, cwd);
+    idle.team.join();
+    await sender.team.send(idle.team.id!, 'are you there?', { replyRequired: true });
+    await vi.waitFor(() => expect(mailOf(idle.sent)).toHaveLength(1), { timeout: 3_000 });
+    await idle.emit('context', { messages: [{ role: 'custom', customType: MESSAGE_TYPE, details: mailOf(idle.sent)[0]!.message.details }] }, idle.ctx);
+    const later = Date.now() + 11_000;
+    const shifted = vi.spyOn(Date, 'now').mockImplementation(() => later);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 1_300));
+      expect(idle.ctx.ui.notes).toEqual([]);
+    } finally {
+      shifted.mockRestore();
+    }
+  }, 15_000);
+
+  it('hands over new messages after the team database was emptied under a live session', async () => {
+    const cwd = repo();
+    const db = path.join(tmp(), 'team.sqlite');
+    const sender = agent(db, cwd);
+    sender.team.join();
+    const receiver = agent(db, cwd);
+    receiver.team.join();
+    for (const text of ['one', 'two']) {
+      await sender.team.send(receiver.team.id!, text, { replyRequired: false });
+    }
+    await vi.waitFor(() => expect(mailOf(receiver.sent)).toHaveLength(1), { timeout: 3_000 });
+    await receiver.emit('context', { messages: [{ role: 'custom', customType: MESSAGE_TYPE, details: mailOf(receiver.sent)[0]!.message.details }] }, receiver.ctx);
+    // The messages are wiped and their numbers start again, as in a replaced database.
+    const { DatabaseSync } = await import('node:sqlite');
+    const raw = new DatabaseSync(db);
+    raw.exec("DELETE FROM messages; DELETE FROM sqlite_sequence WHERE name = 'messages'");
+    raw.close();
+    const id = ((await sender.team.send(receiver.team.id!, 'after the reset', { replyRequired: false })) as { id: number }).id;
+    expect(id).toBe(1);
+    await vi.waitFor(() => expect(mailOf(receiver.sent)).toHaveLength(2), { timeout: 3_000 });
+    expect(mailOf(receiver.sent)[1]!.message.content).toContain('after the reset');
+  }, 15_000);
+});

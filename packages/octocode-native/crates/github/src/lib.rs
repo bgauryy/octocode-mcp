@@ -44,7 +44,7 @@ pub use refs::{NamedRef, RefKind, RefMatch, RefPage};
 pub use request_budget::{BudgetStop, RequestBudget};
 pub use retry::{
     Backoff, BodyError, StatusClass, civil_from_days, classify_status, days_from_civil,
-    full_jitter, is_retryable_send, read_bounded, retry_after_delay,
+    is_retryable_send, read_bounded, retry_after_delay,
 };
 pub use search::{
     CodeSearchItem, CodeSearchPage, CodeSearchRequest, RepositoryMetadata, RepositorySearchItem,

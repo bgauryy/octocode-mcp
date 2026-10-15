@@ -64,37 +64,6 @@ impl ToolId {
             ToolId::GhCloneRepo | ToolId::AstRewrite | ToolId::Clasify
         )
     }
-
-    /// Config prerequisites for this tool. Family and beta come from the
-    /// contract; clone and clasify add their runtime prerequisites. A tool
-    /// may need more than one setting (clasify needs beta and a credential).
-    pub(crate) fn availability_config_paths(self) -> impl Iterator<Item = &'static str> {
-        [
-            self.is_local().then_some("local.enabled"),
-            self.is_beta().then_some("local.beta"),
-            match self {
-                ToolId::GhCloneRepo => Some("storage.mode"),
-                ToolId::Clasify => Some("classification.api"),
-                _ => None,
-            },
-        ]
-        .into_iter()
-        .flatten()
-    }
-
-    /// Env vars bound to every prerequisite, in config-contract order.
-    #[must_use]
-    pub fn availability_env_vars(self) -> Vec<&'static str> {
-        self.availability_config_paths()
-            .flat_map(|path| {
-                crate::config::CONFIG_FIELDS
-                    .iter()
-                    .find(|field| field.path == path)
-                    .into_iter()
-                    .flat_map(|field| field.env.iter().map(|binding| binding.name))
-            })
-            .collect()
-    }
 }
 
 impl FromStr for ToolId {
@@ -231,24 +200,5 @@ mod tests {
                 "{id}"
             );
         }
-    }
-
-    #[test]
-    fn every_gated_tool_resolves_env_vars_from_the_config_contract() {
-        for id in ToolId::ALL {
-            let vars = id.availability_env_vars();
-            assert_eq!(
-                vars.is_empty(),
-                id.availability_config_paths().next().is_none(),
-                "{id}: {vars:?}"
-            );
-            if id.is_beta() {
-                assert!(vars.contains(&"OCTOCODE_BETA"), "{id}: {vars:?}");
-            }
-        }
-        assert_eq!(
-            ToolId::Clasify.availability_env_vars(),
-            ["OCTOCODE_BETA", "OCTOCODE_CLASSIFICATION_API"]
-        );
     }
 }

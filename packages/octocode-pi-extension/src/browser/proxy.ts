@@ -12,8 +12,10 @@ import { classifyHost, defaultLookup, type HostLookup } from '../web/guard.js';
  *
  * Each target is resolved here, classified like the `web` tool's (`classifyHost`), and the connection goes to the first
  * address that passed, so a later DNS answer cannot swap it. A private or non-public target is refused with 403 unless
- * the session allowed that host and port (`allow`): the agent chose it through `navigate`, `open` or `tab` and the
- * permission matrix approved it. Anything the page chooses stays refused.
+ * the agent's approval of that host and port is in force (`approved`): the agent chose it through `navigate`, `open` or
+ * `tab` and the permission matrix approved it, for the session or for a tab. The proxy cannot tell which tab a connection
+ * comes from, so a host approved for one tab only is open to every tab's connections (a WebSocket; the page requests
+ * themselves are checked per tab) while that approval lasts. Anything the page chooses stays refused.
  */
 
 /** A refused connection, for the audit trail: `host` is `hostname:port` as requested. */
@@ -28,6 +30,8 @@ export interface FilteringProxyOptions {
   onBlocked?: (blocked: BlockedConnection) => void;
   /** Resolves host names; the `web` tool's resolver by default. */
   lookup?: HostLookup;
+  /** Whether the agent's approval of `hostname:port` is in force now (the browser's `PagePolicy.approves`); nothing private is approved by default. */
+  approved?: (hostname: string, port: number) => boolean;
   /** Where `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` are read (`process.env` by default): the proxy chains to them. */
   env?: NodeJS.ProcessEnv;
   /** Opens the connection to a vetted address; a seam for tests. */
@@ -38,8 +42,6 @@ export interface FilteringProxy {
   readonly port: number;
   /** The value for Chrome's `--proxy-server`. */
   readonly url: string;
-  /** Lets `url`'s host and port reach private addresses, once the agent's navigation to it was approved. */
-  allow(url: URL): void;
   close(): Promise<void>;
 }
 
@@ -183,7 +185,7 @@ export async function startFilteringProxy(options: FilteringProxyOptions = {}): 
   const connect = options.connect ?? ((address, port) => net.connect({ host: address, port }));
   const httpUpstream = upstreamFromEnv(env, ['HTTP_PROXY']);
   const connectUpstream = upstreamFromEnv(env, ['HTTPS_PROXY', 'HTTP_PROXY']);
-  const allowed = new Set<string>();
+  const approved = options.approved ?? (() => false);
   const sockets = new Set<Duplex>();
 
   type Verdict = { ok: true; addresses: string[]; local: boolean } | { ok: false; reason: BlockedConnection['reason'] };
@@ -197,9 +199,9 @@ export async function startFilteringProxy(options: FilteringProxyOptions = {}): 
       return records;
     });
     if (host.kind === 'public') return { ok: true, addresses: host.addresses, local: false };
-    if (host.kind === 'private') return allowed.has(hostKey(hostname, port)) ? { ok: true, addresses: net.isIP(hostname) ? [hostname] : resolved, local: true } : { ok: false, reason: 'private' };
+    if (host.kind === 'private') return approved(hostname, port) ? { ok: true, addresses: net.isIP(hostname) ? [hostname] : resolved, local: true } : { ok: false, reason: 'private' };
     // Not resolvable here. Only an upstream proxy may know it, and only for a host the agent opened.
-    return allowed.has(hostKey(hostname, port)) && connectUpstream ? { ok: true, addresses: [], local: false } : { ok: false, reason: 'unresolved' };
+    return approved(hostname, port) && connectUpstream ? { ok: true, addresses: [], local: false } : { ok: false, reason: 'unresolved' };
   }
 
   function blocked(target: Target, reason: BlockedConnection['reason']): void {
@@ -300,10 +302,6 @@ export async function startFilteringProxy(options: FilteringProxyOptions = {}): 
   return {
     port,
     url: `http://127.0.0.1:${port}`,
-    allow(url) {
-      const { hostname, port: allowedPort } = targetOf(url);
-      allowed.add(hostKey(hostname, allowedPort));
-    },
     close() {
       return new Promise<void>((resolve) => {
         server.close(() => resolve());

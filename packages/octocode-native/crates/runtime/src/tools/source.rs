@@ -6,7 +6,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use crate::security::ContentSecurity;
 use octocode_engine::graph::SourceStamp;
 pub(crate) use octocode_engine::text::ReadError;
 
@@ -85,20 +84,6 @@ pub(crate) fn read_bounded(path: &Path, max_bytes: usize) -> Result<Vec<u8>, Rea
         .map(|source| source.bytes)
 }
 
-/// [`read_bounded`] decoded by the content policy; `None` when the file is
-/// larger, unreadable or binary.
-pub(crate) fn read_text(
-    path: &Path,
-    max_bytes: usize,
-    security: &ContentSecurity,
-) -> Option<String> {
-    let bytes = read_bounded(path, max_bytes).ok()?;
-    security
-        .decode_source_bytes(&bytes, max_bytes)
-        .ok()
-        .map(std::borrow::Cow::into_owned)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -143,16 +128,11 @@ mod tests {
             read_bounded(&path, 64),
             Err(ReadError::TooLarge(65))
         ));
-        assert_eq!(read_text(&path, 64, &ContentSecurity), None);
-        assert_eq!(read_text(&path, 65, &ContentSecurity), Some("x".repeat(65)));
     }
 
     #[test]
-    fn binary_and_non_regular_sources_yield_no_text() {
+    fn a_directory_is_no_source() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("bin.rs");
-        std::fs::write(&path, b"fn a() {}\0").expect("write");
-        assert_eq!(read_text(&path, 1024, &ContentSecurity), None);
         assert!(read_bounded(dir.path(), 1024).is_err());
     }
 }

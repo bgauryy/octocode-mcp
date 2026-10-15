@@ -69,7 +69,6 @@ fn help_lists_only_the_minimal_command_surface() {
         "localSearch",
         "localFetch",
         "astSearch",
-        "astRewrite",
         "lspSearch",
         "ghSearchRepo",
         "ghSearchCode",
@@ -92,6 +91,8 @@ fn help_lists_only_the_minimal_command_surface() {
         );
     }
     // Retired wrappers and hidden maintenance commands stay out of the surface.
+    // astRewrite is parked: disabled on every surface, beta included.
+    assert!(!text.contains("\n  astRewrite"), "{text}");
     for removed in [
         "\n  search",
         "\n  read",
@@ -129,8 +130,8 @@ fn clasify_missing_key_is_actionable() {
     let query = serde_json::json!({"queries":[{
         "id":"decision",
         "mainGoal": "test", "reasoning":"Choose the next inspection.",
-        "resources":[{"id":"observed","value":{"fact":"present"}}],
-        "questions":[{"id":"relevant","type":"yesno","ask":"Is it relevant?"}]
+        "state":{"fact":"present"},
+        "questions":{"relevant":{"type":"noul","instructions":"Is it relevant?"}}
     }]});
     let output = workspace
         .cli()
@@ -165,8 +166,8 @@ fn clasify_with_every_resource_failed_exits_by_failure_class() {
     let run = |question: serde_json::Value| {
         let query = serde_json::json!({"queries":[{
             "mainGoal": "test", "reasoning":"Exercise failure exit codes.",
-            "resources":[{"id":"observed","value":{"fact":"present"}}],
-            "questions":[question]
+            "state":{"fact":"present"},
+            "questions":{"q":question}
         }]});
         workspace
             .cli()
@@ -178,16 +179,11 @@ fn clasify_with_every_resource_failed_exits_by_failure_class() {
             .expect("clasify execution")
     };
     // A provider that cannot be reached is an execution failure, not bad input.
-    let unreachable = run(serde_json::json!({"type":"yesno","ask":"Is it relevant?"}));
+    let unreachable = run(serde_json::json!({"type":"noul","instructions":"Is it relevant?"}));
     assert_eq!(exit_code(&unreachable), Some(5), "{}", stdout(&unreachable));
-    // locate over supplied state rejects the caller's request.
-    let unsupported = run(serde_json::json!({"type":"locate","ask":"fact"}));
-    assert_eq!(exit_code(&unsupported), Some(2), "{}", stdout(&unsupported));
-    assert!(
-        stdout(&unsupported).contains("classificationLocateUnsupported"),
-        "{}",
-        stdout(&unsupported)
-    );
+    // A removed question type rejects the caller's request.
+    let removed = run(serde_json::json!({"type":"locate","instructions":"fact"}));
+    assert_eq!(exit_code(&removed), Some(2), "{}", stdout(&removed));
 }
 
 #[test]
@@ -196,8 +192,8 @@ fn tool_output_is_compact_json_on_a_pipe() {
     let query = serde_json::json!({"queries":[{
         "id":"decision",
         "mainGoal": "test", "reasoning":"Exercise output formatting.",
-        "resources":[{"id":"observed","value":{"fact":"present"}}],
-        "questions":[{"id":"relevant","type":"yesno","ask":"Is it relevant?"}]
+        "state":{"fact":"present"},
+        "questions":{"relevant":{"type":"noul","instructions":"Is it relevant?"}}
     }]})
     .to_string();
     let compact = workspace.cli().args(["clasify", &query]).output().unwrap();
@@ -238,8 +234,8 @@ fn blank_classification_key_disables_clasify_despite_home_and_vendor_keys() {
     let query = serde_json::json!({"queries":[{
         "id":"decision",
         "mainGoal": "test", "reasoning":"Exercise the opt-out.",
-        "resources":[{"id":"observed","value":{"fact":"present"}}],
-        "questions":[{"id":"relevant","type":"yesno","ask":"Is it relevant?"}]
+        "state":{"fact":"present"},
+        "questions":{"relevant":{"type":"noul","instructions":"Is it relevant?"}}
     }]})
     .to_string();
     let output = workspace
@@ -286,6 +282,8 @@ fn tool_help_uses_canonical_core_short_descriptions() {
         .as_array()
         .expect("contract tools")
         .iter()
+        // A parked (contract `disabled`) tool is no command.
+        .filter(|tool| tool["disabled"] != true)
         .filter_map(|tool| tool["name"].as_str())
         .collect::<Vec<_>>();
     listed_tools.sort_unstable();
@@ -295,7 +293,12 @@ fn tool_help_uses_canonical_core_short_descriptions() {
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ");
-    for tool in contract["tools"].as_array().expect("contract tools") {
+    for tool in contract["tools"]
+        .as_array()
+        .expect("contract tools")
+        .iter()
+        .filter(|tool| tool["disabled"] != true)
+    {
         let name = tool["name"].as_str().expect("tool name");
         let description = tool["shortDescription"]
             .as_str()
@@ -966,8 +969,10 @@ fn tool_accepts_bulk_queries() {
 }
 
 /// Host spellings of line ranges read the same lines as the canonical form.
+/// Admission accepts only the canonical `start-end` range spelling; a host
+/// spelling is the caller's input to fix (exit 2), never repaired.
 #[test]
-fn localfetch_accepts_host_line_range_spellings() {
+fn localfetch_rejects_host_line_range_spellings() {
     let workspace = Workspace::new();
     let lines: String = (1..=10).map(|n| format!("line {n}\n")).collect();
     let path = workspace.write("ranges.txt", &lines);
@@ -979,7 +984,7 @@ fn localfetch_accepts_host_line_range_spellings() {
     ] {
         let query = serde_json::json!({"queries":[{
             "path": path, "ranges": ranges,
-            "mainGoal": "test", "reasoning": "Verify tolerant line ranges."
+            "mainGoal": "test", "reasoning": "Verify strict line ranges."
         }]})
         .to_string();
         let output = workspace
@@ -987,15 +992,12 @@ fn localfetch_accepts_host_line_range_spellings() {
             .args(["localFetch", &query])
             .output()
             .expect("ranges query");
-        assert!(output.status.success(), "{ranges}: {}", stderr(&output));
+        assert_eq!(exit_code(&output), Some(2), "{ranges}: {}", stdout(&output));
         let value: serde_json::Value = serde_json::from_slice(&output.stdout).expect("tool JSON");
-        let content = value["results"][0]["data"]["content"]
-            .as_str()
-            .unwrap_or_default();
-        for line in ["line 2", "line 3", "line 4"] {
-            assert!(content.contains(line), "{ranges}: {value}");
-        }
-        assert!(!content.contains("line 5"), "{ranges}: {value}");
+        assert!(
+            value.to_string().contains("ranges"),
+            "{ranges}: the error names the field: {value}"
+        );
     }
 }
 
@@ -1024,54 +1026,36 @@ fn localsearch_emits_structured_results() {
     assert_eq!(data["files"][0]["matches"][0]["value"], "needle", "{data}");
 }
 
+/// astRewrite is parked: the contract disables it on every surface, so even
+/// with beta a call is refused and writes nothing.
 #[test]
-fn astrewrite_previews_then_applies_with_hash_guards() {
+fn parked_astrewrite_is_refused_even_with_beta() {
     let workspace = Workspace::new();
     let path = workspace.write("rewrite.rs", "pub const VALUE: u32 = 2;\n");
     let query = serde_json::json!({"queries":[{
         "path": path,
         "language": "rust",
         "pattern": "pub const $NAME: u32 = $VALUE;",
-        "rewrite": "pub const $NAME: u64 = $VALUE;",
-        "mainGoal": "test", "reasoning": "Verify guarded native rewrite application."
+        "rewrite": "pub const $NAME: u64 = $VALUE;"
     }]});
-    let preview = workspace
-        .cli()
-        .env("OCTOCODE_BETA", "true")
-        .args(["astRewrite", &query.to_string()])
-        .output()
-        .expect("astRewrite preview");
-    assert!(
-        preview.status.success(),
-        "{}{}",
-        stdout(&preview),
-        stderr(&preview)
-    );
-    let value: serde_json::Value = serde_json::from_str(stdout(&preview)).expect("preview JSON");
-    let data = &value["results"][0]["data"];
-    assert_eq!(data["mode"], "preview", "{data}");
-    // Apply replays the preview's hints.apply verbatim: it binds the snapshot
-    // and the expected before-hashes.
-    let query = data["hints"]["apply"]["query"].clone();
-    let apply = &query["queries"][0];
-    assert_eq!(apply["apply"], true, "{data}");
-    assert!(apply["snapshot"].is_string(), "{data}");
-    assert!(apply["expectedHashes"].is_object(), "{data}");
     let output = workspace
         .cli()
         .env("OCTOCODE_BETA", "true")
         .args(["astRewrite", &query.to_string()])
         .output()
-        .expect("astRewrite apply");
-    assert!(
-        output.status.success(),
-        "{}{}",
-        stdout(&output),
-        stderr(&output)
+        .expect("astRewrite call");
+    assert_eq!(exit_code(&output), Some(5), "{}", stdout(&output));
+    let error: serde_json::Value = serde_json::from_slice(&output.stdout).expect("envelope");
+    assert_eq!(
+        error,
+        serde_json::json!({
+            "error": "Tool astRewrite is not available in this native runtime: it is disabled in this build.",
+            "errorCode": "toolUnavailable"
+        })
     );
     assert_eq!(
-        std::fs::read_to_string(path).expect("rewritten source"),
-        "pub const VALUE: u64 = 2;\n"
+        std::fs::read_to_string(path).expect("source"),
+        "pub const VALUE: u32 = 2;\n"
     );
 }
 
@@ -1307,4 +1291,48 @@ fn disabled_tools_are_refused_and_absent_from_help_and_schema() {
             "{error}"
         );
     }
+}
+
+#[test]
+fn argument_parse_errors_redact_secrets_in_json_and_text() {
+    let workspace = Workspace::new();
+    let token = format!("ghp_{}", "a".repeat(37));
+    let json_output = workspace
+        .cli()
+        .args(["localFetch", "{}", token.as_str(), "--json"])
+        .output()
+        .expect("JSON argument error");
+    assert_eq!(exit_code(&json_output), Some(2));
+    assert!(stderr(&json_output).is_empty(), "{}", stderr(&json_output));
+    assert!(!stdout(&json_output).contains(&token));
+    let error: serde_json::Value = serde_json::from_str(stdout(&json_output)).expect("error JSON");
+    assert_bare_error(&error);
+    assert_eq!(error["errorCode"], "invalidInput");
+    let message = error["error"].as_str().expect("error message");
+    assert!(message.starts_with("unexpected argument '"), "{message}");
+    assert!(message.contains("[REDACTED-"), "{message}");
+    assert!(message.ends_with("' found"), "{message}");
+
+    let text_output = workspace
+        .cli()
+        .args(["config", token.as_str()])
+        .output()
+        .expect("text argument error");
+    assert_eq!(exit_code(&text_output), Some(2));
+    assert!(stdout(&text_output).is_empty(), "{}", stdout(&text_output));
+    let text = stderr(&text_output);
+    assert!(!text.contains(&token));
+    assert!(
+        text.starts_with("error: unrecognized subcommand '"),
+        "{text}"
+    );
+    assert!(text.contains("[REDACTED-"), "{text}");
+    assert!(
+        text.contains("\n\nUsage: octocode config [OPTIONS]\n"),
+        "{text}"
+    );
+    assert!(
+        text.ends_with("For more information, try '--help'.\n"),
+        "{text}"
+    );
 }

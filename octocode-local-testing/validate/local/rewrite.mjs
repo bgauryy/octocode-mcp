@@ -1,9 +1,16 @@
-// astRewrite (preview → next.apply replayed verbatim) vs ast-grep --rewrite (preview → -U) vs sed.
+// astRewrite (preview → hints.apply replayed verbatim) vs ast-grep --rewrite (preview → -U) vs sed.
+// astRewrite is parked (disabled on every surface): its arm records the one
+// disabled refusal and leaves its copy untouched until the tool returns.
 // Every run works on fresh copies under fixtures/rewrite/<id>/{oc,sg,sed}; product repos are never touched.
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { HERE, REPOS, sh, oc, ocAll, ocRaw, saveRaw } from './lib.mjs';
+import { HERE, REPOS, sh, ocAll, ocRaw, saveRaw } from './lib.mjs';
+
+const DISABLED = {
+  error: 'Tool astRewrite is not available in this native runtime: it is disabled in this build.',
+  errorCode: 'toolUnavailable',
+};
 
 const FX = path.join(HERE, 'fixtures/rewrite');
 const cp = (src, dst) => { fs.rmSync(dst, { recursive: true, force: true }); fs.mkdirSync(path.dirname(dst), { recursive: true }); spawnSync('cp', ['-R', src, dst]); };
@@ -35,24 +42,36 @@ for (const t of TASKS) {
   const sgApply = sh(`ast-grep run -p '${t.pattern}' -r '${t.rewrite}' -l ${t.lang} -U ${dSG}`, { cwd: HERE, reps: 1 });
   // ---- sed: no preview possible; single blind pass
   const sedRun = sh(t.sed.replace('DIR', dSED), { cwd: HERE, reps: 1 });
-  // ---- octocode: preview then replay next.apply verbatim
-  const q = { goal: `codemod ${t.pattern} -> ${t.rewrite}`, reasoning: 'intended structural edit', path: dOC, langType: t.lang, ruleKind: 'pattern', pattern: t.pattern, rewrite: t.rewrite };
-  q.pageSize = 1000; // expert: fewest preview pages
-  const prevAll = ocAll('astRewrite', [q], { cwd: HERE, reps: 1 });
-  const prev = { chars: prevAll.chars, ms: prevAll.ms, calls: prevAll.calls, stdout: prevAll.steps.map(x => x.stdout).join('\n') };
-  const datas = prevAll.parts.map(p => p?.results?.[0]?.data || {});
-  const d = { ...datas[0], ...datas[datas.length - 1], matchCount: datas[0].matchCount, next: datas.map(x => x.next).filter(Boolean).find(n => n.apply) || datas[datas.length - 1].next };
-  let apply = null, applyData = null;
-  if (d.hints?.apply?.query) { apply = ocRaw('astRewrite', { queries: [d.hints.apply.query] }, { cwd: HERE, reps: 1 }); applyData = apply.parsed?.results?.[0]?.data; }
+  // ---- octocode: preview then replay hints.apply verbatim (refused while parked)
+  const q = { path: dOC, language: t.lang, pattern: t.pattern, rewrite: t.rewrite, pageSize: 1000 };
+  const probe = ocRaw('astRewrite', { queries: [q] }, { cwd: HERE, reps: 1 });
+  const parked = JSON.stringify(probe.parsed) === JSON.stringify(DISABLED);
+  const octocode = parked
+    ? { query: q, parked: probe.parsed, changedLines: changedLines(orig, dOC) }
+    : measureOctocode(q, dOC, orig, dSG, t.lang);
   const rec = { id: t.id, lang: t.lang, task: `Rewrite ${t.pattern} → ${t.rewrite} in a copy of ${t.src}`,
     shell: { cmd: `ast-grep run -p … -r … (preview)  ;  ast-grep … -U`, calls: 2, chars: sgPrev.chars + sgApply.chars, ms: sgPrev.ms + sgApply.ms, changedLines: changedLines(orig, dSG), parseErrorsAfter: errNodes(dSG, t.lang) },
     sed: { cmd: t.sed, calls: 1, chars: sedRun.chars, ms: sedRun.ms, changedLines: changedLines(orig, dSED), parseErrorsAfter: errNodes(dSED, t.lang), vsAstGrep: diffStat(dSG, dSED) },
-    octocode: { query: q, calls: prev.calls + (apply ? 1 : 0), previewCalls: prev.calls, chars: prev.chars + (apply?.chars || 0), ms: prev.ms + (apply?.ms || 0),
-      previewMatches: d.matchCount, previewComplete: d.complete, affectedFiles: d.affectedFiles, previewError: d.error || null,
-      applyResult: applyData ? Object.fromEntries(Object.entries(applyData).filter(([k]) => !['files', 'matches'].includes(k))) : null,
-      changedLines: changedLines(orig, dOC), parseErrorsAfter: errNodes(dOC, t.lang), vsAstGrep: diffStat(dSG, dOC), previewStdout: prev.stdout.slice(0, 4000), applyStdout: apply?.stdout.slice(0, 3000) },
+    octocode,
     parseErrorsBefore: errNodes(orig, t.lang) };
   out.push(rec);
-  console.log(`${t.id.padEnd(15)} sg 2x ${rec.shell.chars}c ${rec.shell.ms}ms Δ${rec.shell.changedLines} err${rec.parseErrorsBefore}->${rec.shell.parseErrorsAfter} | sed 1x ${rec.sed.chars}c Δ${rec.sed.changedLines} err->${rec.sed.parseErrorsAfter} vsSG ${rec.sed.vsAstGrep.files}f/${rec.sed.vsAstGrep.hunks}h | oc ${rec.octocode.calls}x ${rec.octocode.chars}c ${rec.octocode.ms}ms matches=${rec.octocode.previewMatches} complete=${rec.octocode.previewComplete} Δ${rec.octocode.changedLines} err->${rec.octocode.parseErrorsAfter} vsSG ${rec.octocode.vsAstGrep.files}f/${rec.octocode.vsAstGrep.hunks}h ${rec.octocode.previewError || ''}`);
+  const ocLine = parked
+    ? `oc parked (${probe.parsed.errorCode}) Δ${octocode.changedLines}`
+    : `oc ${octocode.calls}x ${octocode.chars}c ${octocode.ms}ms matches=${octocode.previewMatches} complete=${octocode.previewComplete} Δ${octocode.changedLines} err->${octocode.parseErrorsAfter} vsSG ${octocode.vsAstGrep.files}f/${octocode.vsAstGrep.hunks}h ${octocode.previewError || ''}`;
+  console.log(`${t.id.padEnd(15)} sg 2x ${rec.shell.chars}c ${rec.shell.ms}ms Δ${rec.shell.changedLines} err${rec.parseErrorsBefore}->${rec.shell.parseErrorsAfter} | sed 1x ${rec.sed.chars}c Δ${rec.sed.changedLines} err->${rec.sed.parseErrorsAfter} vsSG ${rec.sed.vsAstGrep.files}f/${rec.sed.vsAstGrep.hunks}h | ${ocLine}`);
+}
+
+/** The octocode arm when astRewrite runs: paged preview, then hints.apply replayed verbatim. */
+function measureOctocode(q, dOC, orig, dSG, lang) {
+  const prevAll = ocAll('astRewrite', [q], { cwd: HERE, reps: 1 });
+  const prev = { chars: prevAll.chars, ms: prevAll.ms, calls: prevAll.calls, stdout: prevAll.steps.map(x => x.stdout).join('\n') };
+  const datas = prevAll.parts.map(p => p?.results?.[0]?.data || {});
+  const d = { ...datas[0], ...datas[datas.length - 1], matchCount: datas[0].matchCount };
+  let apply = null, applyData = null;
+  if (d.hints?.apply?.query) { apply = ocRaw('astRewrite', d.hints.apply.query, { cwd: HERE, reps: 1 }); applyData = apply.parsed?.results?.[0]?.data; }
+  return { query: q, calls: prev.calls + (apply ? 1 : 0), previewCalls: prev.calls, chars: prev.chars + (apply?.chars || 0), ms: prev.ms + (apply?.ms || 0),
+    previewMatches: d.matchCount, previewComplete: d.complete, affectedFiles: d.affectedFiles, previewError: d.error || null,
+    applyResult: applyData ? Object.fromEntries(Object.entries(applyData).filter(([k]) => !['files', 'matches'].includes(k))) : null,
+    changedLines: changedLines(orig, dOC), parseErrorsAfter: errNodes(dOC, lang), vsAstGrep: diffStat(dSG, dOC), previewStdout: prev.stdout.slice(0, 4000), applyStdout: apply?.stdout.slice(0, 3000) };
 }
 saveRaw('rewrite', out);

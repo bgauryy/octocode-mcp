@@ -12,7 +12,7 @@ Statuses are `available`, `busy`, `blocked`, and `unknown`.
 After switching branches, use `heartbeat {"branch":"new-name"}`; use `{"branch":null}` to clear it.
 Use `lease.id` (`lock`) or each `leases[].id` (`lock_many`) as `leaseId` for renewal and release. A send receipt's `id` is its message ID.
 File leases cover exact files. Tree leases cover a subtree in that worktree.
-A conflict returns `next` with the same input plus `wait:true`. Running it queues you (one wait per identity, 10 minutes) and notifies the owners. When every path frees, the runtime grants the lease and sends you an action-wake `Lease granted: <path> (lease N)` message. Keep the request that needs the lease pending meanwhile.
+A conflict returns `next` with the same input plus `wait:true`. Running it queues you (one wait per identity, 10 minutes) and notifies the owners. A queued wait holds no lease but reserves its paths in first-come order: a direct `lock` or a later wait on an overlapping path conflicts with it and queues behind it, so a third agent cannot take a path as it frees. When every path frees, the runtime grants the lease and sends you an action-wake `Lease granted: <path> (lease N)` message. Keep the request that needs the lease pending meanwhile. `check_paths` reports leases only, not queued reservations.
 `check_paths` reads overlap candidates without acquiring ownership.
 `check_write` verifies concrete create/edit/delete paths and both sides of a rename.
 
@@ -31,9 +31,9 @@ Use a maintained binding for longer waits.
 
 ## Request, progress, and final answer
 
-Direct messages default to `wake:"action",replyRequired:true`.
-For information only, use `replyRequired:false`. `wake:"passive"` waits for a natural turn.
+`send_message` is an FYI by default (`replyRequired:false`, `wake:"passive"`). A request (a question or task you need answered) sets `replyRequired:true`, which wakes the recipient (`wake:"action"`) and needs an answer through `complete`. Final answers from `complete` wake the asker. A recipient cannot reply to an FYI: if you need an answer, ask again with `replyRequired:true`. A topic request wakes every subscriber, each owing an answer.
 Action schedules handling within the recipient's authorized task; it grants no new objective or permissions.
+A request (`replyRequired:true` or `wake:"action"`) that expires unacknowledged stops being offered for delivery. Submitted context may already have reached the recipient, and work may still be in progress; a late `complete` can acknowledge it and return the final answer. On your next `heartbeat` you receive an action-wake notice `Request N expired before <names> acknowledged it` (once per message, naming the unacknowledged recipients). Inspect `health` and the recipient before deciding whether to send a new request with a new key.
 
 `Receive → retrieve full body → perform requested work → complete with outcome and reply → sender acknowledges answer`.
 

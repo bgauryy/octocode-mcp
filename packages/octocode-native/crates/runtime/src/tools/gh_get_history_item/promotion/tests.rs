@@ -1,3 +1,4 @@
+use super::super::rest::Rest;
 use super::*;
 
 /// A commit's `continuePatch` copies the page-stream cursor named on
@@ -47,7 +48,7 @@ fn history_b_patch_walk_hops_carry_no_response_page_knobs() {
         let mut out = json!({"pullRequests":[{"contentPagination":{
             "patches":{"hasMore":true,"nextOffset":900}
         }}]});
-        promote_pr_continuations(&mut out, &query);
+        promote_pr_continuations(&mut out, &query, &Rest::default());
         out["next"]["continuePatch"]["query"].clone()
     };
     for hop in [
@@ -96,7 +97,7 @@ fn history_b_patch_walk_hops_carry_no_response_page_knobs() {
         let mut out = json!({"pullRequests":[{"contentPagination":{
             "files":{"hasMore":true,"nextPage":2}
         }}]});
-        promote_pr_continuations(&mut out, &query);
+        promote_pr_continuations(&mut out, &query, &Rest::default());
         out["next"]["nextFilePage"]["query"].clone()
     };
     let walk = file_page(json!(["patches"]), Some(31_000));
@@ -164,7 +165,7 @@ fn a_cut_comment_body_continues_with_offset_on_its_comment_page() {
     let mut out = json!({"pullRequests":[{"contentPagination":{
         "commentBody":{"hasMore":true,"nextOffset":500}
     }}]});
-    promote_pr_continuations(&mut out, &query);
+    promote_pr_continuations(&mut out, &query, &Rest::default());
     let next = &out["next"]["continueCommentBody"]["query"]["queries"][0];
     assert_eq!(next["offset"], 500, "{out}");
     assert_eq!(next["page"], 2, "{out}");
@@ -252,7 +253,7 @@ fn many_narrowed_files_read_full_patches_without_a_narrower_view() {
         Some(6),
         "{out}"
     );
-    assert!(!out.to_string().contains("fullPatchChars"), "{out}");
+    crate::tools::test_support::checks::assert_absent(&out, "fullPatchChars");
 }
 
 /// The row already shows a merged PR's `mergeCommitSha`, so the menu
@@ -553,7 +554,7 @@ fn menus_hold_at_most_two_entries_and_inventory_reviews_many_files() {
         .map(|m| m.keys().cloned().collect::<Vec<_>>())
         .unwrap_or_default();
     assert_eq!(keys, ["readFiles", "readDiscussion"], "{menu}");
-    assert!(!menu.to_string().contains("<literal"), "{menu}");
+    crate::tools::test_support::checks::assert_absent(&menu, "<literal");
     let review = vec!["src/a.rs".to_owned(), "src/b.rs".to_owned()];
     let inventory = json!({"changed_files":30,"additions":900,"deletions":10});
     let content = json!({"files":true});
@@ -600,9 +601,11 @@ fn patch_hops_are_the_same_file_page_at_the_stream_cursor() {
     }))
     .expect("query");
     let mut out = json!({"pullRequests":[{"contentPagination":{
-        "patches":{"hasMore":true,"nextOffset":900,"unfinishedFiles":2}
+        "patches":{"hasMore":true,"nextOffset":900}
     }}]});
-    promote_pr_continuations(&mut out, &query);
+    let mut rest = Rest::default();
+    rest.unfinished_patches(2);
+    let notes = promote_pr_continuations(&mut out, &query, &rest);
     let hop = &out["next"]["continuePatch"]["query"]["queries"][0];
     assert!(hop.get("queries").is_none(), "{hop}");
     assert!(hop.get("content").is_none(), "{hop}");
@@ -614,8 +617,11 @@ fn patch_hops_are_the_same_file_page_at_the_stream_cursor() {
     assert_eq!(hop["page"], 2, "{hop}");
     assert_eq!(hop["offset"], 900, "{hop}");
     assert_eq!(
-        out["pullRequests"][0]["contentPagination"]["patches"]["unfinishedFiles"],
-        2
+        notes,
+        [crate::response::pages::Remaining {
+            page: "continuePatch".into(),
+            left: "2 unfinished patches".into()
+        }]
     );
     crate::contracts::validate_query("ghGetHistoryItem", hop.clone())
         .expect("continuePatch is a valid ghGetHistoryItem query");
@@ -631,10 +637,10 @@ fn the_next_file_page_follows_the_last_patch_window() {
     }))
     .expect("query");
     let mut open = json!({"pullRequests":[{"contentPagination":{
-        "patches":{"hasMore":true,"nextOffset":900,"unfinishedFiles":2},
+        "patches":{"hasMore":true,"nextOffset":900},
         "files":{"hasMore":true,"nextPage":2}
     }}]});
-    promote_pr_continuations(&mut open, &query);
+    promote_pr_continuations(&mut open, &query, &Rest::default());
     let names = open["next"]
         .as_object()
         .map(|next| next.keys().cloned().collect::<Vec<_>>());
@@ -648,7 +654,7 @@ fn the_next_file_page_follows_the_last_patch_window() {
     let mut last = json!({"pullRequests":[{"contentPagination":{
         "files":{"hasMore":true,"nextPage":2}
     }}]});
-    promote_pr_continuations(&mut last, &hop);
+    promote_pr_continuations(&mut last, &hop, &Rest::default());
     let names = last["next"]
         .as_object()
         .map(|next| next.keys().cloned().collect::<Vec<_>>());
@@ -740,7 +746,7 @@ fn char_offset_continuations_narrow_content_to_their_own_surface() {
         "patches":{"hasMore":true,"nextOffset":900},
         "comments":{"hasMore":true,"nextPage":2}
     }}]});
-    promote_pr_continuations(&mut out, &query);
+    promote_pr_continuations(&mut out, &query, &Rest::default());
     let next = &out["next"];
     assert_eq!(
         next["continueBody"]["query"]["queries"][0]["sections"],
@@ -777,7 +783,7 @@ fn issue_pages_use_the_published_include_spelling() {
         "body":{"hasMore":true,"nextOffset":12000},
         "comments":{"hasMore":true,"nextPage":2}
     }}]});
-    promote_issue_continuations(&mut out, &query);
+    promote_issue_continuations(&mut out, &query, &Rest::default());
     let body = &out["next"]["continueBody"]["query"]["queries"][0];
     assert_eq!(body["sections"], json!(["body"]), "{out}");
     assert!(body.get("content").is_none(), "{out}");

@@ -21,9 +21,6 @@ use octocode_github::{
 
 pub use crate::contracts::tool_types::GhGetFileContentQuery;
 
-/// Bytes the first page of a match or range read holds.
-const FIRST_PAGE_BYTES: usize = 6 * 1024;
-
 /// One read's result. The wire row is flat: the read file's fields beside
 /// `owner`/`repo`, with no `files` wrapper (a query reads one path).
 #[derive(Clone, Debug)]
@@ -82,12 +79,12 @@ pub struct FileRead {
 /// Owned dependencies for shaping a ranked GitHub body off the async
 /// acquisition worker. The scanner keeps the same shared sanitized-view memo.
 #[derive(Clone)]
-pub(crate) struct RankedShape {
+pub(crate) struct SelectedShape {
     pub security: crate::security::ContentSecurity,
     pub memo: Arc<crate::security::scan::SanitizedViewMemo>,
     pub context: crate::runtime::ExecutionContext,
     pub regex: crate::tools::local_fetch::LocalFetchRegex,
-    pub ranking: crate::tools::ranking::Runtime,
+    pub selection: crate::tools::selection::Runtime,
 }
 
 /// Run one ghGetFileContent row: the read, or the failure with its one
@@ -101,7 +98,7 @@ pub async fn run<C>(
     security: &impl ContentScan,
     cancel: &impl CancellationCheck,
     regex: &impl RegexMatch,
-    ranked_shape: Option<RankedShape>,
+    selected_shape: Option<SelectedShape>,
 ) -> Result<FileRead, GhFailure>
 where
     C: ConditionalCache,
@@ -115,7 +112,7 @@ where
         security,
         cancel,
         regex,
-        ranked_shape,
+        selected_shape,
     )
     .await
     {
@@ -228,7 +225,7 @@ pub async fn execute<C>(
     security: &impl ContentScan,
     cancel: &impl CancellationCheck,
     regex: &impl RegexMatch,
-    ranked_shape: Option<RankedShape>,
+    selected_shape: Option<SelectedShape>,
 ) -> Result<GhGetFileContentResult, ProviderError>
 where
     C: ConditionalCache,
@@ -298,10 +295,10 @@ where
         last_modified,
         last_modified_by,
     };
-    if query.goals.is_empty() && query.ranking.is_none() {
+    if query.clasify_context.is_none() && query.selection.is_none() {
         shape(query, acquired, fetched, security, cancel, regex, None)
     } else {
-        let owned = ranked_shape.ok_or_else(|| {
+        let owned = selected_shape.ok_or_else(|| {
             ProviderError::new(
                 octocode_github::ProviderErrorKind::Configuration,
                 "ranked content context unavailable",
@@ -317,7 +314,7 @@ where
                 &scanner,
                 &owned.context,
                 &owned.regex,
-                Some(&owned.ranking),
+                Some(&owned.selection),
             )
         })
         .await
@@ -348,7 +345,7 @@ fn shape(
     security: &impl ContentScan,
     cancel: &impl CancellationCheck,
     regex: &impl RegexMatch,
-    ranking: Option<&crate::tools::ranking::Runtime>,
+    selection: Option<&crate::tools::selection::Runtime>,
 ) -> Result<GhGetFileContentResult, ProviderError> {
     let Fetched {
         window,
@@ -357,15 +354,14 @@ fn shape(
         last_modified_by,
     } = fetched;
     let local = local_query(query)?;
-    // The configured response window bounds a whole-file view; a selected
-    // view's first page is a preview (its hits often answer), and
-    // `next.continueWindow` pages the rest losslessly.
+    // Selected and whole-file views use the configured response budget;
+    // bare reads retain the shared source-head preview policy.
     let facts = crate::tools::local_fetch::SourceFacts {
         modified: None,
         window,
-        first_page_bytes: Some(FIRST_PAGE_BYTES),
+        first_page_bytes: None,
     };
-    let mut content = if local.goals.is_empty() && local.ranking.is_none() {
+    let mut content = if local.clasify_context.is_none() && local.selection.is_none() {
         process_fetched_content(
             &local,
             &acquired.bytes,
@@ -380,7 +376,7 @@ fn shape(
             "{}/{}/{}/{}",
             query.owner, query.repo, acquired.resolved_ref, query.path
         );
-        crate::tools::local_fetch::process_fetched_content_ranked(
+        crate::tools::local_fetch::process_fetched_content_selected(
             &local,
             &acquired.bytes,
             Path::new(&rank_path),
@@ -389,9 +385,42 @@ fn shape(
             security,
             cancel,
             regex,
-            ranking,
+            selection,
         )
     };
+    let match_not_found = settle_status(&mut content, query, &acquired.bytes)?;
+    if let Some(warning) = renamed_warning {
+        content.warnings.insert(0, warning);
+    }
+    let next = read_leads(&mut content, query, &local, match_not_found, &acquired);
+    // The contract's default view is no news; another view is echoed.
+    if content.content_view == Some(default_minify()) {
+        content.content_view = None;
+    }
+    Ok(GhGetFileContentResult {
+        owner: query.owner.to_string(),
+        repo: query.repo.to_string(),
+        files: vec![GhGetFileContentFile {
+            content,
+            commit_sha: acquired.resolved_ref,
+            file_type: file_type(&query.path),
+            match_not_found: match_not_found.then_some(true),
+            from_cache: acquired.from_cache,
+            next,
+            last_modified,
+            last_modified_by,
+        }],
+    })
+}
+
+/// The read's status: a missed selection is an empty read that says why
+/// ([`no_match`]), a read with text a success, anything else empty. Returns
+/// whether the selection missed; an offset inside a code point fails.
+fn settle_status(
+    content: &mut crate::tools::local_fetch::LocalFetchResult,
+    query: &GhGetFileContentQuery,
+    bytes: &[u8],
+) -> Result<bool, ProviderError> {
     if content.error_code.as_deref() == Some("invalidPagination") {
         return Err(ProviderError::new(
             octocode_github::ProviderErrorKind::Decode,
@@ -400,7 +429,7 @@ fn shape(
     }
     let match_not_found = content.selected_match_count == Some(0);
     if match_not_found {
-        no_match(&mut content, query, &acquired.bytes);
+        no_match(content, query, bytes);
     }
     if content.returned_bytes == Some(0) {
         content.source_line_ranges.clear();
@@ -422,15 +451,21 @@ fn shape(
     if content.path.is_empty() {
         content.path = query.path.to_string();
     }
-    if let Some(warning) = renamed_warning {
-        content.warnings.insert(0, warning);
-    }
-    let mut next = rewrite_continuations(
-        &mut content,
-        query,
-        local.minify_mode(),
-        &acquired.resolved_ref,
-    );
+    Ok(match_not_found)
+}
+
+/// The read's leads: its own pages as GitHub reads at the read commit, a
+/// missed match's search of the repository (unless the file itself can
+/// still answer), and the last-window repair of ranges past the file end.
+fn read_leads(
+    content: &mut crate::tools::local_fetch::LocalFetchResult,
+    query: &GhGetFileContentQuery,
+    local: &LocalFetchQuery,
+    match_not_found: bool,
+    acquired: &octocode_github::ContentResponse,
+) -> Option<Value> {
+    let mut next =
+        rewrite_continuations(content, query, local.minify_mode(), &acquired.resolved_ref);
     // A miss this file can still answer (hits outside the ranges, or
     // ignoring case) leads to that read, not back to a repository search.
     let answered_here = next
@@ -438,12 +473,7 @@ fn shape(
         .is_some_and(|calls| calls.get("read").is_some() || calls.get("ignoreCase").is_some());
     if match_not_found
         && !answered_here
-        && let Some((name, lead)) = empty_match_lead(
-            query,
-            &local,
-            content.total_lines.unwrap_or(0),
-            &acquired.resolved_ref,
-        )
+        && let Some((name, lead)) = empty_match_lead(query, local)
         && let Some(calls) = next.get_or_insert_with(|| json!({})).as_object_mut()
     {
         calls.insert(name.into(), lead);
@@ -451,7 +481,7 @@ fn shape(
     if content.error.is_some()
         && let Some(lead) = last_window_repair(
             query,
-            &local,
+            local,
             String::from_utf8_lossy(&acquired.bytes).lines().count(),
             &acquired.resolved_ref,
         )
@@ -459,24 +489,7 @@ fn shape(
     {
         calls.insert("repair".into(), lead);
     }
-    // The contract's default view is no news; another view is echoed.
-    if content.content_view == Some(default_minify()) {
-        content.content_view = None;
-    }
-    Ok(GhGetFileContentResult {
-        owner: query.owner.to_string(),
-        repo: query.repo.to_string(),
-        files: vec![GhGetFileContentFile {
-            content,
-            commit_sha: acquired.resolved_ref,
-            file_type: file_type(&query.path),
-            match_not_found: match_not_found.then_some(true),
-            from_cache: acquired.from_cache,
-            next,
-            last_modified,
-            last_modified_by,
-        }],
-    })
+    next
 }
 
 /// A selection with no hit in the file is an empty read that says why: the
@@ -625,8 +638,8 @@ fn local_query(query: &GhGetFileContentQuery) -> Result<LocalFetchQuery, Provide
         path,
         ranges,
         reasoning,
-        goals,
-        ranking,
+        clasify_context,
+        selection,
         ref_: _,
         regex,
         repo: _,
@@ -647,7 +660,13 @@ fn local_query(query: &GhGetFileContentQuery) -> Result<LocalFetchQuery, Provide
             .transpose()
             .map_err(decode_display)?,
         match_string: match_string.clone(),
-        minify: Some(*minify),
+        minify: Some(minify.unwrap_or_else(|| {
+            if clasify_context.is_some() {
+                MinifyMode::None
+            } else {
+                default_minify()
+            }
+        })),
         offset: *offset,
         path: path.as_str().parse().map_err(decode_display)?,
         ranges: ranges
@@ -662,12 +681,12 @@ fn local_query(query: &GhGetFileContentQuery) -> Result<LocalFetchQuery, Provide
             .map_err(decode_display)?,
         regex: *regex,
         snapshot: None,
-        goals: goals
-            .iter()
-            .map(|goal| goal.as_str().parse())
-            .collect::<Result<Vec<_>, _>>()
+        clasify_context: clasify_context
+            .as_ref()
+            .map(|context| serde_json::to_value(context).and_then(serde_json::from_value))
+            .transpose()
             .map_err(decode_display)?,
-        ranking: ranking
+        selection: selection
             .as_ref()
             .map(|plan| plan.as_str().parse())
             .transpose()
@@ -679,7 +698,10 @@ fn local_query(query: &GhGetFileContentQuery) -> Result<LocalFetchQuery, Provide
     // the default (standard) view drops comment and blank lines, so a
     // `ranges` or whole-file read would return fewer lines than asked, or
     // none. A view the caller named other than the default is kept.
-    if requested_lines && *minify == default_minify() {
+    if requested_lines
+        && clasify_context.is_none()
+        && minify.unwrap_or_else(default_minify) == default_minify()
+    {
         local.minify = Some(MinifyMode::None);
     }
     let paged = !requested_lines && local.match_string.is_none();
@@ -785,15 +807,15 @@ mod tests {
 
     struct TimedJudge(std::sync::Arc<std::sync::atomic::AtomicUsize>);
 
-    impl crate::tools::ranking::RankJudge for TimedJudge {
+    impl crate::tools::selection::SelectionJudge for TimedJudge {
         fn identity(&self) -> Value {
             json!({"model":"timed-test"})
         }
 
-        fn score(
+        fn select(
             &self,
-            call: crate::tools::ranking::JudgeCall<'_>,
-        ) -> Result<Vec<(usize, f64)>, String> {
+            call: crate::tools::selection::JudgeCall<'_>,
+        ) -> Result<Vec<(usize, crate::tools::selection::Decision)>, String> {
             self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             call.handle.block_on(async {
                 tokio::time::sleep(Duration::from_millis(5)).await;
@@ -801,12 +823,12 @@ mod tests {
             Ok(call
                 .admitted
                 .iter()
-                .map(|&index| (index, index as f64))
+                .map(|&index| (index, crate::tools::selection::Decision::Selected))
                 .collect())
         }
     }
 
-    async fn ranked_body_is_shaped_off_the_acquisition_worker() {
+    async fn selected_body_is_shaped_off_the_acquisition_worker() {
         let server = MockServer::builder().start().await;
         let sha = "0123456789abcdef0123456789abcdef01234567";
         mount_json(&server, "/api/v3/repos/a/b/contents/large.txt", 200, json!({
@@ -815,7 +837,7 @@ mod tests {
         let provider = mock_provider(&server, RetryPolicy::default());
         let query: GhGetFileContentQuery = serde_json::from_value(json!({
             "owner":"a", "repo":"b", "path":"large.txt", "ref":sha,
-            "unit":"lines", "length":100, "minify":"none", "goals":["find useful evidence"]
+            "unit":"lines", "length":100, "minify":"none", "clasifyContext":{"classifiers":["find useful evidence"]}
         }))
         .expect("ranked query");
         let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -826,9 +848,8 @@ mod tests {
             response_window: None,
             github_credential: None,
         };
-        let ranking = crate::tools::ranking::Runtime {
-            limits: crate::tools::ranking::Limits {
-                enabled: true,
+        let selection = crate::tools::selection::Runtime {
+            limits: crate::tools::selection::Limits {
                 max_candidates: 64,
                 max_chars: 131_072,
                 timeout: Duration::from_secs(5),
@@ -837,15 +858,13 @@ mod tests {
             judge: std::sync::Arc::new(TimedJudge(calls.clone())),
             handle: tokio::runtime::Handle::current(),
             context: context.clone(),
-            home: std::path::PathBuf::new(),
-            stats_enabled: false,
         };
-        let owned = RankedShape {
+        let owned = SelectedShape {
             security: crate::security::ContentSecurity,
             memo: Arc::new(SanitizedViewMemo::new()),
             context,
             regex: crate::tools::local_fetch::LocalFetchRegex,
-            ranking,
+            selection,
         };
         let result = tokio::time::timeout(
             Duration::from_secs(10),
@@ -864,17 +883,20 @@ mod tests {
         .expect("ranked read must not block the reactor")
         .expect("ranked read");
         assert_eq!(
-            result.files[0].content.ranking.as_ref().map(|r| &r.status),
-            Some(&crate::contracts::tool_types::RankingStatus::Ranked)
+            result.files[0]
+                .content
+                .selection
+                .as_ref()
+                .map(|r| &r.status),
+            Some(&crate::contracts::tool_types::SelectionStatus::Complete)
         );
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
 
-    /// A read whose goals cannot rank its view (the default view is not
-    /// verbatim) pages exactly like the same read without goals: the same
-    /// first page and continuation, never the whole view at once.
+    /// Explicit compact views cannot supply raw classification evidence. They
+    /// fail clearly and offer unfiltered recovery pinned to the fetched commit.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn a_skipped_ranking_pages_like_the_plain_read() {
+    async fn explicit_minification_refuses_selection_and_offers_pinned_recovery() {
         let server = MockServer::builder().start().await;
         let sha = "0123456789abcdef0123456789abcdef01234567";
         let body: String = (1..=1050)
@@ -902,14 +924,13 @@ mod tests {
             github_credential: None,
         };
         let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let owned = RankedShape {
+        let owned = SelectedShape {
             security: crate::security::ContentSecurity,
             memo: Arc::new(SanitizedViewMemo::new()),
             context: context.clone(),
             regex: crate::tools::local_fetch::LocalFetchRegex,
-            ranking: crate::tools::ranking::Runtime {
-                limits: crate::tools::ranking::Limits {
-                    enabled: true,
+            selection: crate::tools::selection::Runtime {
+                limits: crate::tools::selection::Limits {
                     max_candidates: 64,
                     max_chars: 131_072,
                     timeout: Duration::from_secs(5),
@@ -918,20 +939,18 @@ mod tests {
                 judge: std::sync::Arc::new(TimedJudge(calls)),
                 handle: tokio::runtime::Handle::current(),
                 context,
-                home: std::path::PathBuf::new(),
-                stats_enabled: false,
             },
         };
         let mut pages = Vec::new();
-        for goals in [
+        for classifiers in [
             None,
             Some(serde_json::json!(["where is value 500 computed"])),
         ] {
             let mut row = serde_json::json!({
-                "owner":"a","repo":"b","path":"lib/r.js","ref":sha,"mainGoal":"test","reasoning":"test"
+                "owner":"a","repo":"b","path":"lib/r.js","ref":sha,"minify":"standard","mainGoal":"test","reasoning":"test"
             });
-            if let Some(goals) = goals {
-                row["goals"] = goals;
+            if let Some(classifiers) = classifiers {
+                row["clasifyContext"] = json!({"classifiers":classifiers});
             }
             let query: GhGetFileContentQuery = serde_json::from_value(row).expect("query");
             let result = execute(
@@ -946,27 +965,34 @@ mod tests {
             )
             .await
             .expect("read");
-            pages.push(result.files[0].content.clone());
+            pages.push(result.files[0].clone());
         }
-        let (plain, goals) = (&pages[0], &pages[1]);
-        assert!(plain.pagination.is_some(), "{plain:?}");
-        assert_eq!(goals.pagination, plain.pagination, "{goals:?}");
-        assert_eq!(goals.content, plain.content);
+        let (plain, classifiers) = (&pages[0], &pages[1]);
+        assert!(plain.content.pagination.is_some(), "{plain:?}");
+        assert_eq!(
+            classifiers.content.error_code.as_deref(),
+            Some("invalidInput")
+        );
+        assert!(classifiers.content.content.is_none());
+        let recovery =
+            &classifiers.next.as_ref().expect("recovery")["unfiltered"]["query"]["queries"][0];
+        assert_eq!(recovery["ref"], sha);
+        assert!(recovery.get("clasifyContext").is_none());
     }
 
     #[test]
-    fn ranked_gh_body_runs_on_current_and_multithread_runtimes() {
+    fn selected_gh_body_runs_on_current_and_multithread_runtimes() {
         let current = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .expect("current runtime");
-        current.block_on(ranked_body_is_shaped_off_the_acquisition_worker());
+        current.block_on(selected_body_is_shaped_off_the_acquisition_worker());
         let multi = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
             .enable_all()
             .build()
             .expect("multithread runtime");
-        multi.block_on(ranked_body_is_shaped_off_the_acquisition_worker());
+        multi.block_on(selected_body_is_shaped_off_the_acquisition_worker());
     }
 
     #[derive(Default)]
@@ -1350,10 +1376,7 @@ mod tests {
             file.content.warnings
         );
         assert!(
-            file.content
-                .warnings
-                .iter()
-                .any(|warning| warning.contains("read without an anchor")),
+            file.content.warnings.is_empty(),
             "{:?}",
             file.content.warnings
         );
@@ -1797,10 +1820,11 @@ mod tests {
         assert!(matched.contains("matchString"), "{matched}");
     }
 
-    /// FIX §0 #4: a literal missed in a large file leads to a clasify locate
-    /// of that file at the read's commit.
+    /// A literal that a large file does not contain leads to a repository
+    /// code search for it (it may live in another file), never to a
+    /// semantic locate of the same file.
     #[tokio::test]
-    async fn no_match_in_a_large_file_leads_to_clasify() {
+    async fn no_match_in_a_large_file_leads_to_a_repository_search() {
         let server = MockServer::builder().start().await;
         let sha = "0123456789abcdef0123456789abcdef01234567";
         let text = (0..1200).map(|n| format!("line {n}\n")).collect::<String>();
@@ -1819,12 +1843,14 @@ mod tests {
         .await
         .expect("read");
         let data = &read.output.data;
-        let lead = &data["next"]["clasify"];
-        assert_eq!(lead["tool"], "clasify", "{data}");
-        let matrix = &lead["query"]["queries"][0];
-        assert_eq!(matrix["resources"][0]["query"]["ref"], sha, "{data}");
-        assert_eq!(matrix["resources"][0]["query"]["path"], "big.txt", "{data}");
-        assert_eq!(matrix["questions"][0]["type"], "locate", "{data}");
+        assert!(data["next"].get("clasify").is_none(), "{data}");
+        let lead = &data["next"]["findCode"];
+        assert_eq!(lead["tool"], "ghSearchCode", "{data}");
+        assert_eq!(
+            lead["query"]["queries"][0]["keywords"],
+            serde_json::json!(["absent"]),
+            "{data}"
+        );
     }
 
     /// The happy-path anchors of a block read: `path`, the resolved

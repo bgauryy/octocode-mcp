@@ -232,7 +232,7 @@
     },
     {
       "name": "send_message",
-      "description": "Send to one recipient or topic. Direct: action, reply required. Fanout: passive, no reply. Replies use complete.",
+      "description": "Send to one recipient or topic. FYI by default. Set replyRequired:true for a question or request you need answered: it wakes the recipient, who answers with complete.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -270,7 +270,7 @@
           },
           "replyRequired": {
             "type": "boolean",
-            "description": "Require a durable reply before completion."
+            "description": "true: a request; the recipient answers with complete {message, reply}. false (default): an FYI; no answer, no reply."
           }
         },
         "required": [
@@ -330,7 +330,7 @@
           },
           "replyRequired": {
             "type": "boolean",
-            "description": "Require a durable reply before completion."
+            "description": "true: a request; the recipient answers with complete {message, reply}. false (default): an FYI; no answer, no reply."
           }
         },
         "required": [
@@ -962,7 +962,7 @@
     },
     {
       "name": "retry_delivery",
-      "description": "Reoffer one of your unacknowledged messages after inspecting its prior attempt; may duplicate an uncertain write. reason is audited.",
+      "description": "Reoffer one of your unacknowledged messages after inspecting its staged or uncertain attempt; may duplicate an uncertain write. A submitted attempt was accepted by the host and is refused. reason is audited.",
       "usage": "retry_delivery [json] --session <id>",
       "inputSchema": {
         "type": "object",
@@ -2223,7 +2223,7 @@
         "action",
         "passive"
       ],
-      "description": "action wakes a worker; passive supplies context without a new turn."
+      "description": "action wakes the recipient now; passive waits for its next turn. Default: action if replyRequired, else passive."
     },
     "conversationId": {
       "type": "string",
@@ -2551,7 +2551,7 @@
           },
           "replyRequired": {
             "type": "boolean",
-            "description": "Answer required; direct default true, fanout false."
+            "description": "Answer required; default false (FYI). Set true for a question or request."
           },
           "messageId": {
             "type": "integer",

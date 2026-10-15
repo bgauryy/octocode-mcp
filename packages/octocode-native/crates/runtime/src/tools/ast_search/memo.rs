@@ -4,15 +4,16 @@
 //! scope again.
 //!
 //! A scan is stored only when every file it evaluated, every directory
-//! holding one, and the root were last written at least
+//! holding one, observed discovery directories and ignore files, and the root
+//! were last written at least
 //! [`SETTLE`] before the scan started, so no write can race the
 //! reads it was built from. A stored scan is served only while each of those
 //! stamps (size, change times, inode) is unchanged: an edit, or an entry
 //! created, removed or renamed beside a scanned file, drops it and the page
 //! rescans. The executor recomputes the snapshot from the submitted query and
-//! the stored files before serving a page. An entry created in a directory
-//! that held no scanned file, or an edit of an ignore file, is not seen until
-//! the scan expires.
+//! the stored files before serving a page. Discovery callers include admitted
+//! empty directories and their existing ignore files in watched metadata, so new
+//! candidates and filter edits invalidate the memo without another walk.
 //!
 //! [`SETTLE`]: octocode_engine::graph::SourceStamp::SETTLE
 use super::super::page_memo::PageMemo;
@@ -64,8 +65,8 @@ impl<T> ScanMemo<T> {
     }
 
     /// Keep `scan` of `root` for the pages after the first, stamped by the
-    /// `sources` it evaluated and their directories. Not stored when it is
-    /// over budget, or when any entry was written within the settle window
+    /// source and discovery paths it observed, and their directories. Not stored
+    /// when it is over budget, or when any entry was written within the settle window
     /// before `started` (or is gone).
     pub(super) fn put(
         &self,
@@ -82,7 +83,9 @@ impl<T> ScanMemo<T> {
         let mut paths = std::collections::BTreeSet::new();
         paths.insert(root.to_path_buf());
         for source in sources {
-            if let Some(parent) = source.parent() {
+            if let Some(parent) = source.parent()
+                && parent.starts_with(root)
+            {
                 paths.insert(parent.to_path_buf());
             }
             paths.insert(source.clone());
@@ -112,6 +115,28 @@ impl<T> ScanMemo<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn discovery_root_does_not_watch_entries_outside_the_scope() {
+        let outside = tempfile::tempdir().expect("outside");
+        let root = outside.path().join("scope");
+        std::fs::create_dir(&root).expect("scope");
+        let memo = ScanMemo::<u32>::new();
+        let later = SystemTime::now() + SourceStamp::SETTLE + Duration::from_secs(1);
+        memo.put(
+            ("s".into(), "k".into()),
+            &root,
+            std::slice::from_ref(&root),
+            later,
+            Arc::new(1),
+            1,
+        );
+        assert_eq!(memo.get("s", "k").as_deref(), Some(&1));
+        std::fs::write(outside.path().join("unrelated.ts"), "unrelated();").expect("outside edit");
+        assert_eq!(memo.get("s", "k").as_deref(), Some(&1));
+        std::fs::write(root.join("new.ts"), "target();").expect("inside edit");
+        assert!(memo.get("s", "k").is_none());
+    }
 
     #[test]
     fn a_stored_scan_is_served_until_a_stamped_entry_changes() {

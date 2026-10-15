@@ -193,29 +193,6 @@ pub(crate) fn test_budget() -> octocode_github::RequestBudget {
     octocode_github::RequestBudget::with_timeout(std::time::Duration::from_secs(10), 10_000_000)
 }
 
-/// Answers every request with status 200 and one fixed body.
-#[cfg(test)]
-pub(crate) struct StaticHttp(pub(crate) Vec<u8>);
-
-#[cfg(test)]
-impl StaticHttp {
-    pub(crate) fn json(body: serde_json::Value) -> Self {
-        Self(serde_json::to_vec(&body).expect("test body serializes"))
-    }
-}
-
-#[cfg(test)]
-impl super::http::ArtifactHttp for StaticHttp {
-    fn get<'a>(
-        &'a self,
-        _req: super::http::ArtifactHttpRequest,
-        _budget: &'a octocode_github::RequestBudget,
-    ) -> super::http::ArtifactHttpFuture<'a> {
-        let body = self.0.clone();
-        Box::pin(async move { Ok(super::http::ArtifactHttpResponse { status: 200, body }) })
-    }
-}
-
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ArtifactItem {
@@ -335,12 +312,38 @@ pub struct ArtifactProviderState {
     pub token: Option<String>,
 }
 
+/// Where a registry stops serving a discovery: the machine-readable
+/// `partialReasons` code and the warning stating this call's numbers.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TerminalLimit {
+    pub reason: &'static str,
+    pub warning: String,
+}
+
+impl TerminalLimit {
+    /// The registry serves no result past a fixed depth.
+    pub(crate) fn result_cap(warning: String) -> Self {
+        Self {
+            reason: "providerResultCap",
+            warning,
+        }
+    }
+
+    /// The registry answered an empty page before its own reported total.
+    pub(crate) fn short_page(registry: &str) -> Self {
+        Self {
+            reason: "providerIncompleteResults",
+            warning: format!("{registry} returned an empty page before its reported total."),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ArtifactProviderPage {
     pub artifacts: Vec<ArtifactItem>,
     pub next_state: Option<ArtifactProviderState>,
     pub total: Option<u64>,
-    pub terminal_limit: Option<String>,
+    pub terminal_limit: Option<TerminalLimit>,
     pub(crate) registry: Option<String>,
 }
 

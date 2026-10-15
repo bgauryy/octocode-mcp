@@ -24,7 +24,7 @@ function setup(env: Record<string, string> = {}) {
   for (const [name, value] of Object.entries(env)) vi.stubEnv(name, value);
   const { pi } = fakePi();
   const commands = new Subcommands();
-  const wired = registerApi(pi, commands, { list: () => [], tell: () => ({ sent: [] }) }, () => '1.2.3');
+  const wired = registerApi(pi, commands, { list: () => [], tell: () => ({ sent: [] }), deliverable: (text) => text }, () => '1.2.3');
   stops.push(wired.stop);
   const ctx = fakeCtx({ cwd: tmp() });
   const run = (args: string) => commands.get('api')!.handler(args, ctx);

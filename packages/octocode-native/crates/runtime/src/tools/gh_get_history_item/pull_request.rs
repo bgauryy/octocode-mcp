@@ -10,15 +10,17 @@ use super::inventory::{file_page_size, shape_pr_files};
 use super::patch::hunks::{HeadSources, head_text_needed, match_context};
 use super::pr_finish::{finish_pr, pr_metadata, slim_row};
 use super::pr_menu::{INVENTORY_ALL_PATCHES_FILES, pr_next_menu};
-use super::pr_sections::{shape_pr_comments, shape_pr_commits, shape_pr_reviews};
+use super::pr_sections::{CommentSection, shape_pr_comments, shape_pr_commits, shape_pr_reviews};
+use super::rest::{BodyWindows, Rest};
 use super::text::{body_matches, history_body_view, needle, paginate_text, view_dropped_text};
 use super::util::{content_flag, map_comments, str_at};
 use super::window::{
     Loaded, MAX_COLLECTION_BATCHES, MAX_FILE_BATCHES, MAX_PR_COMMIT_BATCHES, WindowSpec,
-    WindowState, load_window, reconcile_file_totals,
+    load_window, reconcile_collection_total, reconcile_file_totals,
 };
 use super::{HistoryItemRequest, fetch, validation};
 use crate::contracts::tool_types::ExtraKind;
+use crate::tools::result::ToolData;
 use octocode_github::{GitHubTransport, ProviderError, ProviderErrorKind, RequestContext};
 use serde_json::{Map, Value, json};
 
@@ -85,7 +87,7 @@ pub(super) async fn pull_request(
     transport: &GitHubTransport,
     query: &HistoryItemRequest,
     context: &RequestContext,
-) -> Result<Value, ProviderError> {
+) -> Result<ToolData, ProviderError> {
     let wants = content_wants(query);
     let (graphql, graphql_fallback) = fast_path(transport, query, context, &wants).await?;
     let plan = PrPlan::new(query)?;
@@ -352,25 +354,6 @@ async fn load_pr(
     })
 }
 
-/// Inline review comments sort before discussion; the combined list is
-/// complete only when both sources are.
-fn merge_comments(
-    inline: Option<Loaded>,
-    discussion: Option<Loaded>,
-) -> (Vec<Value>, Option<WindowState>) {
-    let mut comments = Vec::new();
-    let mut state: Option<WindowState> = None;
-    for loaded in [inline, discussion] {
-        let Some(loaded) = loaded else { continue };
-        state = Some(match state {
-            None => loaded.state,
-            Some(previous) => previous.merge(loaded.state),
-        });
-        comments.extend(map_comments(loaded.items));
-    }
-    (comments, state)
-}
-
 /// What the changed-file section of a read found.
 #[derive(Default)]
 pub(super) struct FileOutcome {
@@ -388,6 +371,8 @@ pub(super) struct FileOutcome {
     pub(super) side_reads: Vec<(&'static str, Value)>,
     /// Files whose `matchString` context the hunks cut short.
     pub(super) clipped: Vec<(String, Vec<String>)>,
+    /// Files of the patch window not fully delivered.
+    unfinished_patches: usize,
 }
 
 fn shape_files_section(
@@ -475,6 +460,7 @@ fn shape_files_section(
         merge_read,
         side_reads,
         clipped: shaped.clipped,
+        unfinished_patches: shaped.unfinished_patches,
     }
 }
 
@@ -589,6 +575,8 @@ pub(super) struct ShapedPr {
     pub(super) menu: Option<Value>,
     /// The code the page's anchored review comments discuss, ten ranges a read.
     pub(super) comment_reads: Vec<Value>,
+    /// What the row's pages leave to read beside its public pages.
+    pub(super) rest: Rest,
 }
 
 async fn shape_pr(
@@ -608,23 +596,16 @@ async fn shape_pr(
         commits,
     } = loads;
     let patch_mode = wants.patch_mode.as_str();
-    let (comments, comments_state) = merge_comments(inline, discussion);
     let slim = (query.later_page() || query.has_sections()) && !query.wants(ExtraKind::Details);
     let mut row = pr_metadata(&raw, query);
     if slim {
         slim_row(&mut row, query);
     }
     let mut pagination = Map::new();
+    let mut rest = Rest::default();
     let mut minified = Vec::new();
-    if wants.body {
-        let raw_body = raw.get("body").and_then(Value::as_str).unwrap_or("");
-        let body = history_body_view(raw_body, query);
-        if view_dropped_text(raw_body, &body) {
-            minified.push("body");
-        }
-        let (text, page) = paginate_text(&body, query.char_offset(), query.char_length());
-        row["body"] = json!(text);
-        pagination.insert("body".into(), page);
+    if wants.body && shape_body(&mut row, &mut pagination, &raw, query) {
+        minified.push("body");
     }
     let widened;
     let query = match &files {
@@ -645,23 +626,38 @@ async fn shape_pr(
     let file_outcome = files.map_or_else(FileOutcome::default, |loaded| {
         shape_files_section(&mut row, &mut pagination, loaded, &raw, query, wants, plan)
     });
-    let mut comment_reads = Vec::new();
-    if let Some(state) = comments_state {
-        let shape = shape_pr_comments(&mut row, &mut pagination, comments, state, query);
-        if shape.dropped {
-            minified.push("comments");
-        }
-        comment_reads = shape.code_reads;
+    rest.unfinished_patches(file_outcome.unfinished_patches);
+    let (comment_reads, comments_dropped) = shape_comment_sections(
+        &mut row,
+        &mut pagination,
+        &mut rest,
+        inline,
+        discussion,
+        query,
+    );
+    if comments_dropped {
+        minified.push("comments");
     }
+    let mut review_bodies = BodyWindows::default();
     if let Some(loaded) = reviews
-        && shape_pr_reviews(&mut row, &mut pagination, loaded.items, loaded.state, query)
+        && shape_pr_reviews(
+            &mut row,
+            &mut pagination,
+            loaded.items,
+            loaded.state,
+            query,
+            &mut review_bodies,
+        )
     {
         minified.push("reviews");
     }
+    rest.bodies("reviewBody", review_bodies, &mut pagination);
     if !minified.is_empty() {
         row["bodyView"] = json!("minified");
     }
     if let Some(loaded) = commits {
+        let listed = loaded.state.skipped.saturating_add(loaded.items.len());
+        let state = loaded.state;
         shape_pr_commits(
             transport,
             &mut row,
@@ -672,6 +668,17 @@ async fn shape_pr(
             context,
         )
         .await?;
+        let total = raw
+            .get("commits")
+            .and_then(Value::as_u64)
+            .and_then(|total| usize::try_from(total).ok());
+        if let Some(page) = pagination.get_mut("commits")
+            && reconcile_collection_total(page, state, listed, total, "providerCommitListLimit")
+        {
+            // The slim section header must keep the authoritative denominator
+            // when the provider's returned collection cannot reach it.
+            row["commitsCount"] = raw["commits"].clone();
+        }
     }
     let menu = read_menu(
         query,
@@ -682,21 +689,8 @@ async fn shape_pr(
         slim,
         wants.files,
     );
-    // Patch rows are the evidence of a patch read: it re-proves only number,
-    // state, and the head it read. The metadata read names the PR (title,
-    // author, createdAt); a read without patch rows keeps them.
-    let patch_rows = row["files"]
-        .as_array()
-        .is_some_and(|files| !files.is_empty() && files.iter().all(Value::is_object));
-    if slim
-        && patch_mode != "none"
-        && patch_rows
-        && row.get("headSha").is_some()
-        && let Some(fields) = row.as_object_mut()
-    {
-        for key in ["title", "author", "createdAt"] {
-            fields.remove(key);
-        }
+    if slim && patch_mode != "none" {
+        drop_named_header(&mut row);
     }
     if !pagination.is_empty() {
         row["contentPagination"] = Value::Object(pagination);
@@ -707,5 +701,75 @@ async fn shape_pr(
         minified,
         menu,
         comment_reads,
+        rest,
     })
+}
+
+/// The body's text window on `row` and its page; true when the minified
+/// view dropped text.
+fn shape_body(
+    row: &mut Value,
+    pagination: &mut Map<String, Value>,
+    raw: &Value,
+    query: &HistoryItemRequest,
+) -> bool {
+    let raw_body = raw.get("body").and_then(Value::as_str).unwrap_or("");
+    let body = history_body_view(raw_body, query);
+    let (text, page) = paginate_text(&body, query.char_offset(), query.char_length());
+    row["body"] = json!(text);
+    pagination.insert("body".into(), page);
+    view_dropped_text(raw_body, &body)
+}
+
+/// Patch rows are the evidence of a section patch read: it re-proves only
+/// number, state, and the head it read. The metadata read names the PR
+/// (title, author, createdAt); a read without patch rows keeps them.
+fn drop_named_header(row: &mut Value) {
+    let patch_rows = row["files"]
+        .as_array()
+        .is_some_and(|files| !files.is_empty() && files.iter().all(Value::is_object));
+    if patch_rows
+        && row.get("headSha").is_some()
+        && let Some(fields) = row.as_object_mut()
+    {
+        for key in ["title", "author", "createdAt"] {
+            fields.remove(key);
+        }
+    }
+}
+
+/// The inline review comments (`reviewComments`) and the discussion
+/// (`comments`), each one page of its own axis; their cut bodies share the
+/// one `commentBody` window. Returns the review comments' code reads and
+/// whether a minified view dropped text from any comment.
+fn shape_comment_sections(
+    row: &mut Value,
+    pagination: &mut Map<String, Value>,
+    rest: &mut Rest,
+    inline: Option<Loaded>,
+    discussion: Option<Loaded>,
+    query: &HistoryItemRequest,
+) -> (Vec<Value>, bool) {
+    let mut bodies = BodyWindows::default();
+    let mut reads = Vec::new();
+    let mut dropped = false;
+    for (section, loaded) in [
+        (CommentSection::ReviewInline, inline),
+        (CommentSection::Discussion, discussion),
+    ] {
+        let Some(loaded) = loaded else { continue };
+        let shape = shape_pr_comments(
+            row,
+            pagination,
+            section,
+            map_comments(loaded.items),
+            loaded.state,
+            query,
+            &mut bodies,
+        );
+        dropped |= shape.dropped;
+        reads.extend(shape.code_reads);
+    }
+    rest.bodies("commentBody", bodies, pagination);
+    (reads, dropped)
 }

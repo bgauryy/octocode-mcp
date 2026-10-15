@@ -1,15 +1,19 @@
 // GitHub tools, data fidelity: every returned byte, range, file list, diff
 // stat, and filter is proven against the local clone pinned to the same SHA
 // (`git` is the ground truth, never the tool), plus cross-tool agreement
-// (search → read, commit ↔ PR ↔ compare) and clasify over GitHub resources.
+// (search → read, commit ↔ PR ↔ compare), ranked `classifiers` reads and
+// searches, and clasify over GitHub sources.
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { REPOS, checks, clasifyUnavailable, collect, inventoryRows, nextHints, patchNumbersIssue, rawPatch, rowData, sourceView, startServer, writeResults } from './mcp-client.mjs';
 
 const { check, skip, summary } = checks('github');
-const client = await startServer();
+// Ranking is a home-only switch; the process environment enables it for section E.
+const client = await startServer({ env: { OCTOCODE_RANKING_ENABLED: 'true' } });
 const noClasify = clasifyUnavailable(client);
+const noClassifiers = client.tools.find(tool => tool.name === 'ghGetFileContent')?.inputSchema?.properties?.queries?.items?.properties?.classifiers
+  ? null : 'classifiers are not advertised (ranking disabled or no provider key)';
 const { call, raw } = client;
 
 const git = (dir, ...args) => execFileSync('git', ['-C', path.join(REPOS, dir), ...args], { encoding: 'utf8', maxBuffer: 256 << 20 });
@@ -403,8 +407,13 @@ for (const r of Object.values(pinned)) {
 
 // Large PRs (>100 files, REST oracle): review-large.mjs.
 
-// ── E. clasify over GitHub resources (ground truth from the pinned clone) ──
-if (noClasify) skip('clasify GitHub: locate, absent and scout checks', noClasify);
+// ── E. classifiers and clasify over GitHub sources (ground truth from the pinned clone) ──
+/** ghGetFileContent content as `[lineNumber, text]` pairs (`N<TAB>text` per line). */
+const numberedLines = content => String(content ?? '').split('\n').flatMap(line => {
+  const match = /^(\d+)\t(.*)$/.exec(line);
+  return match ? [[Number(match[1]), match[2]]] : [];
+});
+if (noClassifiers) skip('classifiers GitHub: ranked reads and search', noClassifiers);
 else {
   const LOCATE = [
     { dir: 'rust', file: 'tokio/src/sync/mpsc/bounded.rs', re: /^pub fn channel</, target: 'The public function that creates a bounded multi-producer channel with a given buffer capacity.' },
@@ -416,53 +425,46 @@ else {
   for (const t of LOCATE) {
     const r = pinned[t.dir];
     const lines = localLines(r.dir, t.file);
+    const truth = lines.findIndex(l => t.re.test(l)) + 1;
     const bytes = Buffer.byteLength(local(r.dir, t.file));
-    let request = { queries: [{
-      mainGoal: 'Locate a declaration in an unread GitHub file',
-      reasoning: 'Locate in an unread GitHub file.',
-      resources: [{ id: 'gh', tool: 'ghGetFileContent', query: { reasoning: 'unread', owner: r.owner, repo: r.repo, path: t.file, ref: r.sha, fullContent: true } }],
-      questions: [{ id: 't', type: 'locate', ask: t.target }],
-    }] };
-    const windows = [];
-    let host = 0, calls = 0, refs = new Set(), paths = new Set(), sources = [];
-    while (request && calls < 20) {
-      calls += 1;
-      const out = await raw('clasify', request);
-      host += out.bytes;
-      const q = out.sc?.queries?.[0];
-      // A resource whose pages share one source states `path` and `ref` once.
-      for (const res of q?.resources ?? []) for (const page of res.pages ?? []) {
-        const source = page.source ?? (res.path || res.ref ? { path: res.path, ref: res.ref } : null);
-        if (source?.ref) refs.add(source.ref);
-        if (source?.path) { paths.add(source.path); sources.push(source); }
-      }
-      // Best rows: `{line, endLine, exists, probability}`, ranked server-side.
-      for (const b of q?.best?.t ?? []) windows.push({ startLine: b.line, endLine: b.endLine, exists: b.exists, probability: b.probability });
-      request = q?.next?.clasify;
-    }
-    windows.sort((a, b) => b.exists - a.exists || b.probability - a.probability);
-    const top = windows[0];
-    const strict = !!top && lines.slice(top.startLine - 1, top.endLine).some(l => t.re.test(l));
-    const verify = top ? await call('ghGetFileContent', { owner: r.owner, repo: r.repo, ref: r.sha, path: t.file, ranges: [`${top.startLine}-${top.endLine}`] }) : null;
-    host += verify?.bytes ?? 0;
-    const verified = !!verify && sourceView(fileRow(verify)).text.split('\n').some(l => t.re.test(l));
-    rows.push({ file: `${r.repo}/${path.basename(t.file)}`, KB: Math.round(bytes / 1024), calls, window: top ? `${top.startLine}-${top.endLine}` : '-', exists: top?.exists, strict, verified, hostKB: (host / 1024).toFixed(1), saving: `${Math.round(100 - 100 * host / bytes)}%` });
-    check(`clasify GitHub ${r.repo}/${path.basename(t.file)}: rank-1 window shows the declaration, verified by a remote read`, strict && verified, `top=${JSON.stringify(top)}`);
-    check(`clasify GitHub ${r.repo}/${path.basename(t.file)}: receipts carry owner/repo/path and the pinned ref`, sources.length > 0 && sources.every(s => s.path === `${r.owner}/${r.repo}/${t.file}` && s.ref === r.sha), `paths=${[...paths]} refs=${[...refs].map(x => x.slice(0, 8))}`);
+    // A raw line window at the pinned commit: the ranked route (minified views skip ranking).
+    const out = await call('ghGetFileContent', { owner: r.owner, repo: r.repo, path: t.file, ref: r.sha, unit: 'lines', length: 120, minify: 'none', classifiers: [t.target] });
+    const data = fileRow(out) ?? {};
+    const delivered = numberedLines(data.content);
+    // Every delivered line is the pinned clone's line (the read is at r.sha).
+    const faithful = delivered.length > 0 && delivered.every(([n, text]) => lines[n - 1] === text);
+    const strict = delivered.some(([n]) => n === truth);
+    const next = data.next?.continueWindow?.query?.queries?.[0];
+    rows.push({ file: `${r.repo}/${path.basename(t.file)}`, KB: Math.round(bytes / 1024), truth, ranking: data.ranking?.status ?? '-', strict, faithful, hostKB: (out.bytes / 1024).toFixed(1), saving: `${Math.round(100 - 100 * out.bytes / bytes)}%` });
+    check(`classifiers GitHub ${r.repo}/${path.basename(t.file)}: the first ranked page delivers the declaration, byte-equal to the clone`, data.ranking?.status === 'ranked' && strict && faithful, `ranking=${JSON.stringify(data.ranking)} first=${delivered[0]?.[0]} truth=${truth}`);
+    check(`classifiers GitHub ${r.repo}/${path.basename(t.file)}: the read and its continuation stay on the pinned commit`, (data.commitSha ?? r.sha) === r.sha && (!next || next.ref === r.sha), JSON.stringify({ commitSha: data.commitSha, nextRef: next?.ref }));
   }
   console.table(rows);
-  // Absent target on a remote file stays low everywhere.
+  // Code search: an mpsc receiver file ranks first among the provider page's hits.
   const r = pinned.rust;
-  const absent = await raw('clasify', { queries: [{ mainGoal: 'Absent target stays low', reasoning: 'absent', resources: [{ tool: 'ghGetFileContent', query: { reasoning: 'x', owner: r.owner, repo: r.repo, path: 'tokio/src/sync/oneshot.rs', ref: r.sha, fullContent: true } }], questions: [{ id: 'a', type: 'locate', ask: 'The function that parses a YAML configuration file into nested dictionaries.' }] }] });
-  // Compact pages answer a locate question with the bare exists value.
-  const ex = (absent.sc?.queries?.[0]?.resources ?? []).flatMap(res => [res, ...(res.pages ?? [])]).map(p => p.answers?.a).filter(v => typeof v === 'number');
-  check('clasify GitHub absent target: every page exists < 0.5', ex.length > 0 && Math.max(...ex) < 0.5, `max=${Math.max(...ex)}`);
-  // Scout over a code search: each page is one returned file with its own source.path.
-  const scout = await raw('clasify', { queries: [{ mainGoal: 'Rank code-search files', reasoning: 'scout', resources: [{ tool: 'ghSearchCode', query: { reasoning: 'x', owner: r.owner, repo: r.repo, keywords: ['try_recv'], pageSize: 5 } }], questions: [{ id: 's', type: 'yesno', ask: 'Does this file define the public try_recv method of an mpsc receiver (not a test)?' }] }] });
-  // Compact scout pages: the bare P(yes) per file, with the file's path.
-  const spages = collect(scout.sc, o => typeof o.answers?.s === 'number' && (o.path ?? o.source?.path)).map(p => ({ path: p.path ?? p.source.path, p: p.answers.s }));
-  const topPage = spages.sort((a, b) => b.p - a.p)[0];
-  check('clasify GitHub scout: an mpsc receiver file ranks first', !!topPage && /mpsc\/(bounded|unbounded|chan)\.rs$/.test(topPage.path), JSON.stringify(spages.slice(0, 4)));
+  const found = await search({ operation: 'code', owner: r.owner, repo: r.repo, keywords: ['try_recv'], pageSize: 5, classifiers: ['The public try_recv method of an mpsc receiver (not a test).'] });
+  const files = (fileRow(found)?.files ?? []).map(f => f.path ?? '');
+  check('classifiers GitHub search: an mpsc receiver file ranks first', fileRow(found)?.ranking?.status === 'ranked' && /mpsc\/(bounded|unbounded|chan)\.rs$/.test(files[0] ?? ''), JSON.stringify({ ranking: fileRow(found)?.ranking, files }).slice(0, 220));
+}
+if (noClasify) skip('clasify GitHub: typed questions over a pinned source', noClasify);
+else {
+  // A pinned GitHub range: a present target answers yes, an absent one no, and
+  // the read lead re-reads exactly that range at the same commit.
+  const r = pinned.rust;
+  const file = 'tokio/src/sync/mpsc/bounded.rs';
+  const truth = localLines(r.dir, file).findIndex(l => /^pub fn channel</.test(l)) + 1;
+  const range = `${truth}-${truth + 40}`;
+  const out = await raw('clasify', { queries: [{ id: 'gh', source: { tool: 'ghGetFileContent', query: { owner: r.owner, repo: r.repo, path: file, ref: r.sha, ranges: [range] } }, questions: {
+    channel: { type: 'noul', instructions: 'Does the selection define the public function that creates a bounded mpsc channel?' },
+    yaml: { type: 'noul', instructions: 'Does the selection parse a YAML configuration file into nested dictionaries?' },
+  } }] });
+  const row = out.sc?.queries?.[0] ?? {};
+  check('clasify GitHub source: a present target answers yes and an absent one no', row.answers?.channel?.noul >= 0.5 && row.answers?.yaml?.noul < 0.5, JSON.stringify(row.answers ?? row.error));
+  const lead = row.hints?.read;
+  const read = lead && await client.follow(lead);
+  const lines = numberedLines(read && fileRow(read)?.content);
+  check('clasify GitHub source: hints.read re-reads the captured range at the pinned commit', lead?.tool === 'ghGetFileContent' && lead.query?.queries?.[0]?.ref === r.sha
+    && lines[0]?.[0] === truth && lines.at(-1)?.[0] === truth + 40, JSON.stringify(lead).slice(0, 220));
 }
 
 console.log('data compared:', stats, 'rate-limit waits:', rateLimitWaits);

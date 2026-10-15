@@ -22,6 +22,7 @@ path = "tests/main.rs"
 octocode-io = { path = "../io" }
 octocode-native = { path = "../runtime" }
 octocode-engine = { path = "../engine" }
+octocode-github = { path = "../github" }
 clap = { version = "4", features = ["derive"] }
 serde_json = { workspace = true }
 toml = { workspace = true }

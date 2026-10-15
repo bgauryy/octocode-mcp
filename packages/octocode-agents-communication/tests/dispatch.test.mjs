@@ -64,6 +64,21 @@ test('concurrent hooks offer once; a crashed stage requires explicit retry', asy
   assert.equal(f.call('hook', { format: 'json' }, f.b.id).items[0].id, message.id);
   assert.equal(f.call('retry_delivery', { message: message.id, reason: 'wrong recipient' }, f.a.id).ready, false);
 });
+test('retry_delivery never resends a message the host already accepted', t => {
+  const f = fixture(t);
+  f.call('attach', { transport: 'raw' }, f.b.id);
+  const sent = f.call('send_message', { to: f.b.id, body: 'deliver exactly once' }, f.a.id);
+  assert.equal(f.call('hook', { format: 'json' }, f.b.id).items[0].id, sent.id);
+  const db = new DatabaseSync(f.database); t.after(() => db.close());
+  const state = () => db.prepare('SELECT state FROM dispatches WHERE message=?').get(sent.id).state;
+  assert.equal(state(), 'submitted');
+  assert.throws(() => f.call('retry_delivery', { message: sent.id, reason: 'Operator retry after accepted submission' }, f.b.id), /already (submitted|accepted)/);
+  assert.equal(state(), 'submitted', 'a refused retry leaves the receipt untouched');
+  assert.deepEqual(f.call('hook', { format: 'json' }, f.b.id).items, [], 'nothing is offered a second time');
+  db.prepare("UPDATE dispatches SET state='uncertain',error='write failed' WHERE message=?").run(sent.id);
+  assert.equal(f.call('retry_delivery', { message: sent.id, reason: 'Host confirmed the write never landed' }, f.b.id).ready, true, 'an uncertain attempt remains retryable after inspection');
+  assert.equal(f.call('hook', { format: 'json' }, f.b.id).items[0].id, sent.id);
+});
 test('broadcast snapshots reach raw hooks independently and usage keys are idempotent', t => {
   const f = fixture(t), c = f.call('join', { name: 'third', vendor: 'unrecognized' });
   for (const agent of [f.b, c]) f.call('attach', { transport: 'raw' }, agent.id);
@@ -121,7 +136,7 @@ test('Claude native dispatch reads only committed DB messages and never acknowle
   t.after(() => server.close());
   f.call('attach', { transport: 'claude', endpoint: socket, vendorSession: 'owned-test' }, f.b.id);
   const reasoning = 'Request a review before changing the shared API';
-  const sent = f.call('send_message', { to: f.b.id, body: 'DB first', reasoning }, f.a.id);
+  const sent = f.call('send_message', { to: f.b.id, body: 'DB first', reasoning, replyRequired: true }, f.a.id);
   assert.equal(f.call('dispatch', {}, f.b.id).submitted, 1);
   await waitFor(() => frames.length >= 1);
   assert.equal(frames.length, 1);
@@ -134,7 +149,7 @@ test('Claude native dispatch reads only committed DB messages and never acknowle
 test('unreachable Claude attempts stay visible and are not silently retried', t => {
   const f = fixture(t);
   f.call('attach', { transport: 'claude', endpoint: '/tmp/communication-absent-fixture.sock', vendorSession: 'absent' }, f.b.id);
-  const sent = f.call('send_message', { to: f.b.id, body: 'retain me' }, f.a.id);
+  const sent = f.call('send_message', { to: f.b.id, body: 'retain me', replyRequired: true }, f.a.id);
   assert.throws(() => f.call('dispatch', {}, f.b.id));
   const db = new DatabaseSync(f.database); t.after(() => db.close());
   assert.equal(db.prepare('SELECT state FROM dispatches WHERE message=?').get(sent.id).state, 'uncertain');

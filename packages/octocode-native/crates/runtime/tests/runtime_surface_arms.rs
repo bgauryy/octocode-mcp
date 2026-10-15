@@ -26,10 +26,10 @@ async fn default_family_keeps_every_family() {
     for name in ["localSearch", "ghSearchCode", "artifactSearch"] {
         assert!(runtime.is_available(name), "{name}");
     }
-    let catalog = runtime.catalog().expect("catalog");
+    let catalog = runtime.catalog();
     assert_eq!(
         catalog["presentation"],
-        json!({"deferred":[], "ranking":false})
+        json!({"deferred":[], "selection":false})
     );
     runtime.close().await;
 }
@@ -44,7 +44,7 @@ async fn tool_lists_select_tools_and_name_the_reason() {
     // The retired family preset no longer narrows anything.
     let retired = workspace.runtime(&[("OCTOCODE_TOOL_FAMILY", "local".into())]);
     assert!(retired.is_available("ghSearchCode"));
-    let catalog = runtime.catalog().expect("catalog");
+    let catalog = runtime.catalog();
     assert_eq!(
         tool(&catalog, "localFetch")["unavailableReason"],
         "toolsList"
@@ -65,10 +65,10 @@ async fn presentation_switches_reach_the_catalog() {
         ),
         ("DISABLE_TOOLS", "localSearch".into()),
     ]);
-    let catalog = runtime.catalog().expect("catalog");
+    let catalog = runtime.catalog();
     assert_eq!(
         catalog["presentation"],
-        json!({"deferred":["ghSearchRepo","ghStructure"], "ranking":false})
+        json!({"deferred":["ghSearchRepo","ghStructure"], "selection":false})
     );
     assert!(
         runtime.is_available("ghSearchRepo"),

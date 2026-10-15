@@ -19,6 +19,17 @@ const DEFAULT_CHANGES_LIMIT = 20;
 
 type StopAgent = (id: string, by: string) => string | undefined;
 
+/** Every field the `coordinate` schema accepts: a subagent's schema has no `id` or `goal` (`stop` and `join` are refused there before they are read). */
+interface CoordinateParams {
+  action: 'list' | 'join' | 'leave' | 'lock' | 'unlock' | 'stop' | 'changes';
+  id?: string;
+  goal?: string;
+  paths?: string[];
+  withinMinutes?: number;
+  limit?: number;
+  reason?: string;
+}
+
 /**
  * Registers the team tools and events; returns the reservation gate for the tool-call pipeline (`index.ts`).
  * `stopAgent` stops a background subagent this session started (wired by `index.ts` from the subagents domain); unset
@@ -93,10 +104,12 @@ function registerCoordinateTool(pi: ExtensionAPI, team: Team, stopAgent: StopAge
       limit: Type.Optional(Type.Integer({ description: 'changes: most files to list (default 20)' })),
       reason: Type.Optional(Type.String({ description: 'lock: what you will change there' })),
     }),
-    async execute(_id, params, signal, _onUpdate, ctx) {
+    async execute(_id, input, signal, _onUpdate, ctx) {
+      // The schema's optional `id` and `goal` depend on the agent, so Pi infers them as unknown: this is the one place that names them.
+      const params = input as CoordinateParams;
       signal?.throwIfAborted();
       const now = Date.now();
-      if (params.action === 'join') team.join((params as { goal?: string }).goal ? checkGoal((params as { goal: string }).goal) : undefined);
+      if (params.action === 'join') team.join(params.goal ? checkGoal(params.goal) : undefined);
       else if (params.action === 'leave') {
         team.leave();
         return textResult('Left the team.');
@@ -111,7 +124,7 @@ function registerCoordinateTool(pi: ExtensionAPI, team: Team, stopAgent: StopAge
         return textResult(`Released ${released} reservation(s).`, { summary: `Released ${plural(released, 'reservation')}` });
       } else if (params.action === 'stop') {
         if (!stopAgent) throw new Error('Only the agent that started a subagent can stop it, and you have started none.');
-        const id = (params as { id?: string }).id;
+        const id = params.id;
         const refused = stopAgent(id?.trim() ?? '', team.id ?? 'the parent agent');
         if (refused) throw new Error(refused);
         return textResult(`Stopping ${id}: its process tree is killed and its report arrives as a message.`);
@@ -133,7 +146,7 @@ function registerCoordinateTool(pi: ExtensionAPI, team: Team, stopAgent: StopAge
     renderCall(args, theme, context) {
       const paths = Array.isArray(args.paths) ? args.paths.map(String) : [];
       const target = paths.length > 1 ? plural(paths.length, 'path') : (paths[0] ?? '');
-      const id = (args as { id?: unknown }).id;
+      const id = (args as Partial<CoordinateParams>).id;
       const summary = [String(args.action ?? ''), id === undefined ? '' : String(id), target, args.goal ? `"${String(args.goal)}"` : ''].filter(Boolean).join(' ');
       return toolHeader(theme, context, 'Coordinate', summary);
     },
@@ -159,7 +172,7 @@ function registerSendMessageTool(pi: ExtensionAPI, team: Team): void {
     parameters: Type.Object({
       to: Type.Optional(Type.String({ description: 'Agent id, role, "parent" or "all" (your session tree). Omit it when replyTo is set: the message goes to the sender of that message' })),
       message: Type.String({ description: 'Self-contained text; for long results send a file path' }),
-      replyRequired: Type.Optional(Type.Boolean({ description: 'true: a question that wakes an idle recipient and asks for an answer; false (the default): an FYI read at its next turn' })),
+      replyRequired: Type.Optional(Type.Boolean({ description: 'true: a request (a question or task you need answered); wakes an idle recipient. false (the default): an FYI, no reply needed' })),
       replyTo: Type.Optional(Type.Integer({ description: 'Number of the message you answer (send to its sender); answering a question wakes the asker' })),
       interrupt: Type.Optional(Type.Boolean({ description: 'true: stop the current step of one subagent you started (its running tool is cancelled) and continue it with this message, for a changed plan or wrong direction. Default false: read at its next step' })),
     }),
@@ -174,9 +187,13 @@ function registerSendMessageTool(pi: ExtensionAPI, team: Team): void {
       });
       if ('error' in result) throw new Error(result.error);
       if (result.resumed) return textResult(result.resumed, { to: result.sent });
-      if (params.interrupt) return textResult(`Interrupting ${result.sent.join(', ')} with message #${result.id}.`, { to: result.sent, id: result.id });
+      if (params.interrupt) return textResult(`Interrupt queued for ${result.sent.join(', ')} as message #${result.id}: a busy subagent stops its current step within a second; one on an older extension build reads it as a plain message.`, { to: result.sent, id: result.id });
       const departed = result.departed?.length ? ` Not sent to ${result.departed.join(', ')} (left the team).` : '';
-      return textResult(`Queued message #${result.id} for ${result.sent.join(', ')}.${departed}`, { to: result.sent, id: result.id, ...(result.departed?.length ? { departed: result.departed } : {}) });
+      const recipients = result.sent.join(', ');
+      const mode = params.replyRequired === true
+        ? `as a request: ${recipients} ${result.sent.length > 1 ? 'are' : 'is'} woken and must answer with replyTo ${result.id}`
+        : 'as an FYI (no reply requested)';
+      return textResult(`Queued message #${result.id} for ${recipients} ${mode}.${departed}`, { to: result.sent, id: result.id, ...(result.departed?.length ? { departed: result.departed } : {}) });
     },
     renderCall(args, theme, context) {
       const to = args.to === undefined ? '' : `→ ${String(args.to)}`;

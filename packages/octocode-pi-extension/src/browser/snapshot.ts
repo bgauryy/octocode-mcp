@@ -1,7 +1,7 @@
 import { dialogNotice } from './actions.js';
 import type { BrowserSession } from './cdp.js';
 import { shortPath } from '../shared/format.js';
-import { sanitizeTerminalText } from '../shared/sanitize.js';
+import { visibleControls } from '../shared/sanitize.js';
 import { saveFullOutput } from '../shared/spill.js';
 import { capChars } from '../shared/util.js';
 
@@ -86,7 +86,8 @@ const SNAPSHOT_SCRIPT = `(() => {
   const pageText = ((document.body ? document.body.innerText : '') + (extra.length ? '\\n\\n' + extra.join('\\n\\n') : '')).replace(/\\n{3,}/g, '\\n\\n');
   const text = cut(pageText, ${PAGE_TEXT_MAX_CHARS});
   const textTotal = pageText.length;
-  // Which locale the page rendered for: sites localize prices by IP and browser language, so say what was shown.
+  // What the page showed for its locale: page language, the browser's language and time zone (the system's, as Chrome
+  // starts with them), and the currency symbols in the text, so the reader knows whose prices and dates these are.
   const counts = {};
   for (const match of text.matchAll(/[$€£₪¥₹₩₽₺₴₫฿]|\\b(?:USD|EUR|GBP|ILS|JPY|INR|AUD|CAD|CHF|CNY|BRL|MXN|NIS)\\b/g)) counts[match[0]] = (counts[match[0]] || 0) + 1;
   const currencies = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([symbol, count]) => symbol + ' (' + count + ')').join(', ');
@@ -111,8 +112,8 @@ export async function snapshot(session: BrowserSession, signal?: AbortSignal, op
   const full = formatSnapshot(data);
   // A cut snapshot is saved whole, so the rest of the elements and text are a file read away.
   if (!full.includes('more characters cut') && !full.includes('more elements;')) return full;
-  // Page text is untrusted and the model reads the file with `read`: sanitized like the snapshot itself.
-  const file = saveFullOutput(sanitizeTerminalText(formatSnapshot(data, Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER)), 'browser-snapshot');
+  // Page text is untrusted and the model reads the file with `read`: control and invisible characters stay as visible escapes, never dropped.
+  const file = saveFullOutput(visibleControls(formatSnapshot(data, Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER)), 'browser-snapshot');
   return `${full}\n${file ? `[Full snapshot (every element and all text): ${shortPath(file)}; read it by line range or search it.]` : '[The full snapshot could not be saved; the elements and text cut above are not reachable from this result.]'}`;
 }
 

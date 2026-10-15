@@ -129,6 +129,36 @@ pub(super) struct GitHubServices {
 }
 
 impl GitHubServices {
+    pub(crate) fn capture_content(
+        &self,
+        query: &Value,
+        context: &ExecutionContext,
+        handle: &tokio::runtime::Handle,
+        max_bytes: usize,
+    ) -> Result<ContentResponse, ProviderError> {
+        let mut request_context = self.request_context(context, handle)?;
+        // GitHub's JSON content envelope includes base64 and metadata. The
+        // decoded bytes are checked separately, including cache hits.
+        request_context.budget.max_body_bytes = max_bytes.saturating_mul(2);
+        let request = ContentRequest {
+            owner: query["owner"].as_str().unwrap_or_default().into(),
+            repo: query["repo"].as_str().unwrap_or_default().into(),
+            path: query["path"].as_str().unwrap_or_default().into(),
+            reference: query["ref"].as_str().map(str::to_owned),
+            force_refresh: false,
+            session_id: None,
+        };
+        let result = handle.block_on(self.provider.get_file_bytes(&request, &request_context));
+        if result
+            .as_ref()
+            .is_err_and(|error| error.kind == ProviderErrorKind::Authentication)
+            && context.github_credential.is_none()
+        {
+            self.reject_credential(Some(&request_context));
+        }
+        result
+    }
+
     pub fn new(
         config: Arc<ConfigOutput>,
         home: PathBuf,
@@ -142,9 +172,9 @@ impl GitHubServices {
             endpoint,
             RetryPolicy {
                 max_attempts: (config.resolved.network.max_retries as u8).saturating_add(1),
-                max_rate_limit_wait: Duration::from_secs_f64(
-                    config.resolved.network.max_rate_limit_wait / 1000.0,
-                ),
+                max_rate_limit_wait: Duration::from_millis(u64::from(
+                    config.resolved.network.max_rate_limit_wait,
+                )),
                 ..Default::default()
             },
         )?;
@@ -156,7 +186,7 @@ impl GitHubServices {
             crate::config::is_persistent_storage_enabled(&config.resolved)
                 .then(|| home.join("tmp").join("ratelimit")),
         );
-        let timeout = Duration::from_secs_f64(config.resolved.network.timeout / 1000.0);
+        let timeout = Duration::from_millis(u64::from(config.resolved.network.timeout));
         let clone_limits = config.resolved.storage.clone_cache.clone();
         let auto_page_chars = config.resolved.output.pagination.default_char_length as usize;
         let git = SystemGit::with_env(&config.credential_env());
@@ -182,7 +212,7 @@ impl GitHubServices {
         regex: &LocalFetchRegex,
         handle: &tokio::runtime::Handle,
         paths: &PathPolicy,
-        ranking: &crate::tools::ranking::Runtime,
+        selection: &crate::tools::selection::Runtime,
     ) -> Result<DomainResult, ExecutionError> {
         let Some(github_tool) = tool.github() else {
             return Err(ExecutionError::WorkerFailed);
@@ -198,7 +228,7 @@ impl GitHubServices {
             security,
             regex,
             paths,
-            ranking,
+            selection,
         ))?;
         if result.failure == Some(FailureKind::Authentication) {
             if context.github_credential.is_some() {
@@ -207,13 +237,7 @@ impl GitHubServices {
                 result.data["hints"] = json!([REQUEST_TOKEN_AUTH_HINT]);
             } else {
                 // GitHub rejected the credential: the next row selects again without it.
-                self.credentials.reject(
-                    self.provider.transport.endpoint().credential_host(),
-                    request_context
-                        .as_ref()
-                        .ok()
-                        .and_then(RequestContext::resolved_credential),
-                );
+                self.reject_credential(request_context.as_ref().ok());
             }
         }
         let anonymous = request_context
@@ -230,6 +254,13 @@ impl GitHubServices {
         handle: &tokio::runtime::Handle,
     ) -> Result<RequestContext, ProviderError> {
         handle.block_on(self.resolve_request(context))
+    }
+
+    fn reject_credential(&self, request: Option<&RequestContext>) {
+        self.credentials.reject(
+            self.provider.transport.endpoint().credential_host(),
+            request.and_then(RequestContext::resolved_credential),
+        );
     }
 
     /// The request budget and resolved credential for one row.
@@ -279,7 +310,7 @@ impl GitHubServices {
         security: &ContentSecurity,
         regex: &LocalFetchRegex,
         paths: &PathPolicy,
-        ranking: &crate::tools::ranking::Runtime,
+        selection: &crate::tools::selection::Runtime,
     ) -> Result<DomainResult, ExecutionError> {
         context.check()?;
         // Generated query types carry the meta fields, so every tool parses
@@ -308,16 +339,15 @@ impl GitHubServices {
             }
             GitHubTool::GhGetFileContent => {
                 let query = typed!(gh_get_file_content::GhGetFileContentQuery);
-                let ranked_shape =
-                    (!query.goals.is_empty() || query.ranking.is_some()).then(|| {
-                        gh_get_file_content::RankedShape {
-                            security: security.clone(),
-                            memo: self.sanitized_views.clone(),
-                            context: context.clone(),
-                            regex: *regex,
-                            ranking: ranking.clone(),
-                        }
-                    });
+                let selected_shape = (!query.clasify_context.is_none()
+                    || query.selection.is_some())
+                .then(|| gh_get_file_content::SelectedShape {
+                    security: security.clone(),
+                    memo: self.sanitized_views.clone(),
+                    context: context.clone(),
+                    regex: *regex,
+                    selection: selection.clone(),
+                });
                 let security =
                     crate::security::scan::MemoizedScan::new(security, &self.sanitized_views);
                 match gh_get_file_content::run(
@@ -328,7 +358,7 @@ impl GitHubServices {
                     &security,
                     context,
                     regex,
-                    ranked_shape,
+                    selected_shape,
                 )
                 .await
                 {
@@ -434,7 +464,10 @@ impl GitHubServices {
         .await;
         context.check()?;
         Ok(match result {
-            Ok(data) => super::dispatch::value_result(data),
+            Ok(output) => DomainResult {
+                remaining: output.remaining,
+                ..super::dispatch::value_result(output.data)
+            },
             Err(error) => {
                 let next = gh_get_history_item::recovery(error.kind, error.reason, raw_query);
                 history_error(error, false, next)
@@ -471,6 +504,7 @@ fn tool_row(result: Result<ToolData, GhFailure>) -> DomainResult {
     match result {
         Ok(output) => DomainResult {
             diagnostics: output.diagnostics,
+            remaining: output.remaining,
             ..DomainResult::payload(output.data, output.status)
         },
         Err(failure) => {
@@ -1019,7 +1053,7 @@ mod tests {
 
     /// A ghSearchHistory 422 names the search query, with no extra field.
     /// (ghGetHistoryItem's bogus-SHA 422 is mapped inside the tool and
-    /// covered end to end in tests/runtime_github.rs.)
+    /// covered end to end in tests/runtime_github_history.rs.)
     #[test]
     fn history_search_422_names_the_query() {
         let error = ProviderError {

@@ -38,6 +38,20 @@ pub(crate) fn admitted_indices(admitted: usize, rejected: &[usize]) -> Vec<usize
         .collect()
 }
 
+/// Each input position's admitted query, `None` at a rejected position.
+pub(crate) fn by_position<'a>(queries: &'a [Value], rejected: &[usize]) -> Vec<Option<&'a Value>> {
+    let mut admitted = queries.iter();
+    (0..queries.len() + rejected.len())
+        .map(|position| {
+            if rejected.contains(&position) {
+                None
+            } else {
+                admitted.next()
+            }
+        })
+        .collect()
+}
+
 /// The mark a snapshot carries when the admitted rows are not `0..n`.
 pub(crate) fn mark(indices: &[usize]) -> Option<String> {
     let shifted = indices

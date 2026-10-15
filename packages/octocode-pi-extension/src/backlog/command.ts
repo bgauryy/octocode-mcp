@@ -9,7 +9,18 @@ import { workspacePaths } from '../shared/home.js';
 import { openBacklog, type Backlog, type BacklogOptions } from './context.js';
 import { showBoard } from './board.js';
 import { boardText, exportMarkdown, isState, itemDetail, itemFields, itemLine } from './format.js';
-import { parseRef, PRIORITIES, STATES, type Item } from './store.js';
+import { parseRef, PRIORITIES, STATES, USER_AUTHOR, type Item, type UpdateInput } from './store.js';
+
+/** The fields `Edit` changes, one per editor: the text shown for an item, and the store update for the text saved (a list has one entry per line). */
+const EDITABLE: Record<string, { text(item: Item): string; patch(text: string): UpdateInput }> = {
+  Title: { text: (item) => item.title, patch: (text) => ({ title: text.split(/\s+/).filter(Boolean).join(' ') }) },
+  Goal: { text: (item) => item.goal, patch: (text) => ({ goal: text }) },
+  Body: { text: (item) => item.body, patch: (text) => ({ body: text }) },
+  Paths: { text: (item) => item.paths.join('\n'), patch: (text) => ({ paths: text.split('\n') }) },
+  Why: { text: (item) => item.why, patch: (text) => ({ why: text }) },
+  Evidence: { text: (item) => item.evidence.join('\n'), patch: (text) => ({ evidence: text.split('\n') }) },
+  Plan: { text: (item) => item.plan, patch: (text) => ({ plan: text }) },
+};
 
 /** Preserve the saved goal, location, reasons, evidence and plan in both direct and delegated handoffs. */
 const brief = (item: Item) => {
@@ -103,7 +114,7 @@ export function backlogCommand(pi: ExtensionAPI, deps: CommandDeps): Subcommand 
     if (!title) return say(ctx, 'Usage: /backlog add <title>', given || !ctx.hasUI ? 'warning' : 'info');
     let item: Item;
     try {
-      item = backlog.store.add({ title, state: 'todo', createdBy: 'user', sourceSession: backlog.session });
+      item = backlog.store.add({ title, state: 'todo', createdBy: USER_AUTHOR, sourceSession: backlog.session });
     } catch (error) {
       return say(ctx, `Not added: ${errorMessage(error)}`, 'warning');
     }
@@ -112,13 +123,15 @@ export function backlogCommand(pi: ExtensionAPI, deps: CommandDeps): Subcommand 
   };
 
   const edit = async (ctx: ExtensionCommandContext, backlog: Backlog, item: Item): Promise<void> => {
-    const text = await ctx.ui.editor(`Edit ${item.ref} — first line is the title`, `${item.title}\n\n${item.body}`);
+    const name = await ctx.ui.select(`Edit which field of ${item.ref}?`, Object.keys(EDITABLE));
+    const field = name === undefined ? undefined : EDITABLE[name];
+    if (!name || !field) return;
+    const hint = name === 'Paths' || name === 'Evidence' ? ' (one per line)' : '';
+    const text = await ctx.ui.editor(`Edit the ${name.toLowerCase()} of ${item.ref}${hint}`, field.text(item));
     if (text === undefined) return;
-    const [first = '', ...rest] = text.split('\n');
-    const title = first.trim();
-    const body = rest.join('\n').trim();
-    if (!title) return say(ctx, 'Not saved: the first line (the title) is empty.', 'warning');
-    applyAndSay(ctx, () => backlog.store.update(item.ref, { title, body, version: item.version, force: true }, backlog.actor));
+    const patch = field.patch(text.trim());
+    if (name === 'Title' && !patch.title) return say(ctx, 'Not saved: the title is empty.', 'warning');
+    applyAndSay(ctx, () => backlog.store.update(item.ref, { ...patch, version: item.version, force: true }, backlog.actor));
   };
 
   /** The action menu for one item; returns true when the item went to the agent (the board then closes). */

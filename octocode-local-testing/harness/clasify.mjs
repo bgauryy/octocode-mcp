@@ -1,21 +1,27 @@
-// clasify navigation: locate answers inside large unread files (ground truth
-// from rg, never from the model), negative targets, multi-target matrices,
-// Scout over search results, Judge on held state, and error handling.
-// Measures host-visible bytes (clasify output + verification read) against a
-// direct read of the file. Scout flows (every scoutTools list/fetch resource:
-// candidate mapping, next.clasify, hints.read, errors) run in `scoutFlows`;
-// OCTOCODE_CLASIFY_ONLY=scout runs only them.
+// Classification against the real provider (live suite, paid calls).
+//
+// Retrieval `classifiers`: localFetch over large unread files must deliver the
+// target declaration in its first ranked page (ground truth from the source
+// bytes, never from the model), localSearch must rank the implementing file
+// first, two classifiers over one file must both land in the first page, and a
+// ranked continuation walk must deliver every line exactly once.
+//
+// Public `clasify`: typed noul/choice/score answers over held `state`, over a
+// localFetch `source` (with an executable `hints.read`), over a URL capture,
+// and an unreadable source failing its row instead of answering.
+//
+// Measures host-visible bytes (first ranked page) against a direct full read.
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
-import { REPOS, checks, collect, nextHints, rowData, startServer, writeResults } from './mcp-client.mjs';
+import { FIXTURES, REPOS, checks, collect, rowData, startServer, writeResults } from './mcp-client.mjs';
 
 const { check, skip, summary } = checks('clasify');
-const client = await startServer();
+// Ranking is a home-only switch; the process environment enables it for this suite.
+const client = await startServer({ env: { OCTOCODE_RANKING_ENABLED: 'true', OCTOCODE_BETA: 'true' } });
 const { raw, call, follow } = client;
-const MAX_CALLS = 45;
-// Required on every clasify matrix; sent with each question and the evidence state.
-const GOAL = 'Find the source that answers the harness target so the host reads only that range.';
+const queryFields = name => client.tools.find(tool => tool.name === name)?.inputSchema?.properties?.queries?.items?.properties ?? {};
+const noClassifiers = queryFields('localFetch').classifiers ? null : 'classifiers are not advertised (ranking disabled or no provider key)';
+const noClasify = client.tools.some(tool => tool.name === 'clasify') ? null : 'clasify is not registered (no provider key or beta off)';
 
 /** The first line of `dir/file` matching `regex` (ground truth never comes from the model). */
 function groundTruth(dir, file, regex) {
@@ -26,42 +32,11 @@ function groundTruth(dir, file, regex) {
   return index < 0 ? null : { file: full, line: index + 1 };
 }
 
-/** A locate row with its window as `startLine`/`endLine` (the row carries `line`/`endLine`). */
-const row = r => r && (r.line ? { ...r, startLine: r.line } : r);
-/** Ranked locate rows of one question in a query result (server order). */
-const bestRows = (q, id) => (q?.best?.[id] ?? []).map(row);
-/** A page's answer to question `id`: compact bare value or the debug object. */
-const pageExists = (p, id) => (typeof p.answers?.[id] === 'number' ? p.answers[id] : p.answers?.[id]?.exists ?? 0);
-/** Resource-level or single-page answer of a judged supplied value. */
-const answerOf = (resource, id) => {
-  const answer = resource?.answers?.[id] ?? resource?.pages?.[0]?.answers?.[id];
-  return typeof answer === 'object' && answer !== null ? answer.yesno ?? answer : answer;
-};
-/** The server's ranking: exists first, then window probability. */
-const rankOrder = rows => [...rows].sort((a, b) => b.exists - a.exists || b.probability - a.probability);
-
-/** Run a matrix, following next.clasify; returns every page and total bytes. */
-async function locateAll(matrix, stopWhen) {
-  let request = { queries: [matrix] };
-  const pages = [];
-  const bests = [];
-  let bytes = 0;
-  let calls = 0;
-  let last, final;
-  while (request && calls < MAX_CALLS) {
-    calls += 1;
-    last = await raw('clasify', request);
-    bytes += last.bytes;
-    const q = last.sc?.queries?.[0] ?? last.sc?.results?.[0]?.data?.queries?.[0];
-    for (const resource of q?.resources ?? []) for (const page of resource.pages ?? []) pages.push({ resource: resource.id, path: page.path ?? page.source?.path ?? resource.path, ...page });
-    if (q?.best) bests.push(q.best);
-    final = q;
-    if (last.isError || !q) break;
-    if (stopWhen?.(pages)) break;
-    request = q.next?.clasify;
-  }
-  return { pages, bests, bytes, calls, last, final };
-}
+/** localFetch content as `[lineNumber, text]` pairs (`N<TAB>text` per line). */
+const numbered = content => String(content ?? '').split('\n').flatMap(line => {
+  const match = /^(\d+)\t(.*)$/.exec(line);
+  return match ? [[Number(match[1]), match[2]]] : [];
+});
 
 const LOCATE = [
   { name: 'redis serverCron', dir: 'c', glob: 'src/server.c', regex: '^int serverCron\\(', target: 'The periodic timer function that runs background housekeeping tasks many times per second.' },
@@ -83,444 +58,183 @@ const LOCATE = [
   { name: 'elasticsearch InternalEngine.index', dir: 'huge-java', glob: 'server/src/main/java/org/elasticsearch/index/engine/InternalEngine.java', regex: 'public IndexResult index\\(Index index\\)', target: 'The engine method that indexes one document operation.' },
   { name: 'pytorch autograd Engine::execute', dir: 'huge-cpp', glob: 'torch/csrc/autograd/engine.cpp', regex: '^auto Engine::execute\\(', target: 'The autograd engine method that executes the backward graph from given root edges.' },
 ];
-
-/** One Scout page's candidate identity: file path or list item. */
-const pageId = (resource, page) => page.path ?? page.source?.item ?? page.source?.path ?? resource.path ?? '';
-/** A compact answer as one probability (number), or null for choice/error answers. */
-const prob = answer => (typeof answer === 'number' ? answer : null);
-/** Local Scout tools whose pages may leave their own-span read implied. */
-const LOCAL_SCOUT = new Set(['localSearch', 'astSearch', 'lspSearch', 'structureSearch', 'localFetch']);
-/**
- * The read a Scout page leads to: its `hints.read`, else (local tools only) the
- * implied localFetch of its own path and span. The span is `line`/`endLine`
- * (plus optional `totalLines`), or `scope` as lines, disjoint `lineRanges`, or bytes.
- */
-function pageRead(tool, resource, page) {
-  if (page.hints?.read) return { lead: page.hints.read, implied: false };
-  const file = page.path ?? resource.path;
-  if (!LOCAL_SCOUT.has(tool) || !file) return null;
-  const s = page.scope ?? {};
-  const ranges = page.line && page.endLine ? [`${page.line}-${page.endLine}`]
-    : s.startLine && s.endLine ? [`${s.startLine}-${s.endLine}`]
-      : s.lineRanges ? s.lineRanges.map(r => `${r.startLine}-${r.endLine}`) : null;
-  const query = ranges ? { path: file, ranges }
-    : typeof s.byteOffset === 'number' ? { path: file, unit: 'bytes', offset: s.byteOffset, length: s.byteEnd - s.byteOffset } : null;
-  return query && { lead: { tool: 'localFetch', query: { queries: [query] } }, implied: true };
-}
-/** A clasify call's first matrix and first resource. */
-const firstResource = out => out.sc?.queries?.[0]?.resources?.[0];
-
-/**
- * Scout flows over every scoutTools resource: a list's candidates each become
- * exactly one page (no drop, no repeat across next.clasify), ranks follow the
- * answers, ranks 1–3 lead with a read (explicit or implied own span), every
- * emitted read runs verbatim on its candidate, path lists stay one page for a
- * choice, fetches judge with `sufficient`, and each misuse fails with a clear
- * errorCode plus the read tool's own recovery.
- */
-async function scoutFlows() {
-  const tokio = path.join(REPOS, 'rust/tokio');
-  if (!fs.existsSync(tokio)) { skip('scout flows', `missing ${tokio}`); return; }
-  const listed = name => client.tools.some(tool => tool.name === name);
-  const github = listed('ghSearchRepo') && process.env.OCTOCODE_TEST_SCOUT_GITHUB !== '0';
-  const ask = 'Where an idle blocking-pool thread exits after its keep-alive timeout';
-  const screen = [{ id: 'rel', type: 'relevant', ask }, { id: 'suf', type: 'sufficient', ask }];
-  const scout = (tool, query, questions = screen, extra = {}) => raw('clasify', { queries: [{ mainGoal: GOAL, resources: [{ id: 'r', tool, query, ...extra }], questions }] });
-  // Candidate identities of a direct list page, as Scout names them.
-  const LISTS = [
-    { tool: 'localSearch', query: { path: path.join(tokio, 'src'), matchString: 'keep_alive', pageSize: 5 }, ids: d => d.files?.map(f => f.path) },
-    { tool: 'astSearch', query: { path: path.join(tokio, 'src/runtime'), operation: 'match', pattern: 'Duration::from_secs($A)', language: 'rust', pageSize: 10 }, ids: d => d.files?.map(f => f.path) },
-    { tool: 'astSearch', query: { path: path.join(tokio, 'src/runtime/blocking'), operation: 'symbols' }, ids: d => d.files?.map(f => f.path) },
-    { tool: 'lspSearch', query: { path: path.join(tokio, 'src/runtime/blocking/pool.rs'), operation: 'references', symbolName: 'spawn_blocking', line: 238 }, ids: d => d.files?.map(f => f.path) },
-    ...(github ? [
-      { tool: 'ghSearchCode', query: { owner: 'tokio-rs', repo: 'tokio', keywords: ['keep_alive', 'blocking'], pageSize: 5 }, ids: d => d.files?.map(f => f.path) },
-      { tool: 'ghSearchRepo', query: { keywords: ['tokio', 'runtime'], pageSize: 5 }, ids: d => d.repositories?.map(r => `${r.owner}/${r.repo}`), questions: [{ id: 'is', type: 'yesno', ask: 'This repository is the tokio async runtime itself' }] },
-      { tool: 'ghSearchHistory', query: { operation: 'pullRequest', owner: 'tokio-rs', repo: 'tokio', keywords: ['blocking', 'keep_alive'], pageSize: 5 }, ids: d => d.pullRequests?.map(p => `#${p.number}`) },
-      { tool: 'artifactSearch', query: { ecosystem: 'npm', keywords: ['json', 'schema', 'validator'], pageSize: 5 }, ids: d => d.artifacts?.map(a => `:${a.name}`) },
-    ] : []),
-  ];
-  for (const t of LISTS) {
-    const label = `scout ${t.tool}${t.query.operation ? ` ${t.query.operation}` : ''}`;
-    // A cold language server answers `timeout` with next.retry: follow it as an agent would.
-    let direct = await call(t.tool, t.query);
-    for (let tries = 0; tries < 4 && rowData(direct)?.errorCode === 'timeout' && rowData(direct)?.next?.retry; tries += 1) {
-      direct = await follow(rowData(direct).next.retry);
-    }
-    const want = t.ids(rowData(direct) ?? {}) ?? [];
-    if (!check(`${label}: direct list has candidates`, !direct.isError && want.length > 0, direct.text.slice(0, 160))) continue;
-    const first = await scout(t.tool, t.query, t.questions);
-    const resource = firstResource(first);
-    const pages = resource?.pages ?? [];
-    const got = pages.map(p => pageId(resource, p));
-    // Ranking: with 2+ judged pages each carries a 1-based rank ordered by
-    // P(relevant), else the first yes/no question, then P(sufficient).
-    const questions = t.questions ?? screen;
-    const primaryId = (questions.find(q => q.type === 'relevant') ?? questions.find(q => q.type === 'yesno'))?.id;
-    const sufId = questions.find(q => q.type === 'sufficient')?.id;
-    const judged = pages.filter(p => Object.values(p.answers ?? {}).some(a => prob(a) !== null));
-    const keyOf = p => [prob(p.answers?.[primaryId]) ?? -1, prob(p.answers?.[sufId]) ?? -1];
-    const byRank = [...judged].sort((a, b) => a.rank - b.rank);
-    const ranksOk = judged.length < 2 || (byRank.every((p, i) => p.rank === i + 1) && byRank.every((p, i) => {
-      if (i === 0) return true;
-      const [a1, a2] = keyOf(byRank[i - 1]);
-      const [b1, b2] = keyOf(p);
-      return a1 > b1 || (a1 === b1 && a2 >= b2);
-    }));
-    check(`${label}: ranks are 1-based and follow the answers`, !first.isError && ranksOk, JSON.stringify(byRank.map(p => [p.rank, ...keyOf(p)])).slice(0, 200));
-    // Reads: ranks 1–3, sufficient ≥ 0.7, a lone judged page, and unjudged
-    // pages each have a read (explicit, or an implied own-span read); no
-    // other judged page carries hints.read.
-    const leads = p => !judged.includes(p) || judged.length < 2 || p.rank <= 3 || (prob(p.answers?.[sufId]) ?? 0) >= 0.7;
-    const wrongRead = pages.filter(p => (leads(p) ? !pageRead(t.tool, resource, p) : !!p.hints?.read));
-    check(`${label}: executes with answers; ranks 1–3, sufficient ≥ 0.7 and unjudged pages each have a read`, !first.isError && pages.length > 0 && pages.every(p => p.answers) && wrongRead.length === 0,
-      wrongRead.length ? JSON.stringify(wrongRead.map(p => ({ id: pageId(resource, p), rank: p.rank, read: !!p.hints?.read }))).slice(0, 200) : first.text.slice(0, 200));
-    const mapped = want.map(id => got.filter(g => g.endsWith(id)).length);
-    // Search resources judge files: a large file may be judged in several hit
-    // windows, so each candidate has at least one page and no page is foreign.
-    const fileChunks = t.tool === 'localSearch' || t.tool === 'ghSearchCode';
-    const covered = fileChunks
-      ? mapped.every(n => n >= 1) && got.every(g => want.some(id => g.endsWith(id)))
-      : mapped.every(n => n === 1) && got.length === want.length;
-    check(`${label}: each direct candidate is judged, with no foreign page`, covered, JSON.stringify({ want, got }).slice(0, 220));
-    // Continuations reach new candidates only: none of call 1 repeats.
-    const next = first.sc?.queries?.[0]?.next?.clasify;
-    if (next && t.tool !== 'localSearch') {
-      const second = await raw('clasify', next);
-      const again = (firstResource(second)?.pages ?? []).map(p => pageId(firstResource(second), p)).filter(id => got.includes(id));
-      check(`${label}: next.clasify judges no candidate twice`, !second.isError && again.length === 0, JSON.stringify(again).slice(0, 200));
-    }
-    // Every emitted hints.read, plus the implied own-span read of each page
-    // that must lead, runs unchanged on that page's own candidate.
-    const toRead = pages.filter(p => p.hints?.read || leads(p)).map(p => [p, pageRead(t.tool, resource, p)]).filter(([, r]) => r);
-    const misses = [];
-    for (const [p, { lead, implied }] of toRead) {
-      const read = await raw(lead.tool, lead.query);
-      const id = pageId(resource, p).split(/[/#@:]/).pop();
-      // Lean reads need not echo their target (ghStructure lists entries
-      // only): a repository read is on its candidate when it names it.
-      const target = lead.query?.queries?.[0] ?? lead.query ?? {};
-      const named = target.owner && target.repo && `${target.owner}/${target.repo}` === pageId(resource, p);
-      if (read.isError || read.rowErrors || !(read.text.includes(id) || named)) misses.push({ id, rank: p.rank, implied, error: read.text.slice(0, 80) });
-    }
-    check(`${label}: every emitted read runs on its own candidate`, toRead.length > 0 && misses.length === 0, `${toRead.length - misses.length}/${toRead.length} ${JSON.stringify(misses).slice(0, 160)}`);
-  }
-  // Path lists stay one page and suit a choice over the listed paths.
-  const pick = [{ id: 'pick', type: 'choice', ask: 'Which listed file implements the blocking thread pool?', labels: { pool: 'pool.rs', other: 'another listed file', insufficient: 'not listed' } }];
-  const PATHS = [
-    ['structureSearch', { path: path.join(tokio, 'src/runtime/blocking'), operation: 'files' }],
-    ...(github ? [['ghStructure', { owner: 'tokio-rs', repo: 'tokio', path: 'tokio/src/runtime/blocking' }]] : []),
-  ];
-  for (const [tool, query] of PATHS) {
-    const out = await scout(tool, query, pick);
-    const resource = firstResource(out);
-    const choice = resource?.answers?.pick ?? resource?.pages?.[0]?.answers?.pick;
-    check(`scout ${tool}: a path list is one page judged by choice`, !out.isError && (resource?.pages?.length ?? 1) === 1 && (choice === 'pool' || choice?.choice === 'pool'), out.text.slice(0, 200));
-  }
-  // Fetch resources: `sufficient` before a large fetch, each page with its bounded read.
-  const FETCHES = [
-    ['localFetch', { path: path.join(tokio, 'src/runtime/blocking/pool.rs') }],
-    ...(github ? [
-      ['ghGetFileContent', { owner: 'tokio-rs', repo: 'tokio', path: 'tokio/src/runtime/blocking/pool.rs' }],
-      ['ghGetHistoryItem', { owner: 'tokio-rs', repo: 'tokio', operation: 'pullRequest', number: 2809 }],
-    ] : []),
-  ];
-  for (const [tool, query] of FETCHES) {
-    const out = await scout(tool, query);
-    const pages = firstResource(out)?.pages ?? [];
-    const top = pages.reduce((best, p) => ((p.answers?.suf ?? 0) > (best?.answers?.suf ?? -1) ? p : best), null);
-    const read = top?.hints?.read && await raw(top.hints.read.tool, top.hints.read.query);
-    check(`scout ${tool}: fetch judged with sufficient; its best page's hints.read runs`, !out.isError && pages.length > 0 && read && !read.isError, out.text.slice(0, 200));
-  }
-  // Misuse: each fails with a clear errorCode and the read tool's recovery.
-  const errorOf = out => firstResource(out)?.error ?? {};
-  const unsupported = await scout('ghCloneRepo', { owner: 'tokio-rs', repo: 'tokio' });
-  check('scout error: a non-scout tool is rejected with the allowed list', unsupported.isError && /allowed/.test(unsupported.text) && /localSearch/.test(unsupported.text), unsupported.text.slice(0, 200));
-  const locate = await scout('astSearch', LISTS[2].query, [{ id: 'l', type: 'locate', ask }]);
-  check('scout error: locate over a list is classificationLocateUnsupported with a repair', errorOf(locate).errorCode === 'classificationLocateUnsupported' && errorOf(locate).hints?.text?.length > 0, locate.text.slice(0, 200));
-  const empty = await scout('localSearch', { path: path.join(tokio, 'src'), matchString: 'zzz_no_such_token_octocode' });
-  check('scout error: an empty list is classificationContextEmpty with the tool\'s own hint', errorOf(empty).errorCode === 'classificationContextEmpty' && !(errorOf(empty).hints?.text ?? []).some(h => h.startsWith('Run the ordinary context tool')), JSON.stringify(errorOf(empty)).slice(0, 220));
-  const failed = await scout('localSearch', { path: path.join(tokio, 'no-such-dir'), matchString: 'x' });
-  check('scout error: a failed read keeps its errorCode and executable recovery lead', errorOf(failed).errorCode === 'pathNotFound' && errorOf(failed).hints?.viewTree?.tool === 'structureSearch' && typeof errorOf(failed).hints.viewTree.query?.queries?.[0]?.path === 'string', JSON.stringify(errorOf(failed)).slice(0, 220));
-}
-
-if (process.env.OCTOCODE_CLASIFY_ONLY === 'scout') {
-  await scoutFlows();
-  const result = summary();
-  writeResults('clasify-scout', result);
-  client.close();
-  process.exit(result.failed.length ? 1 : 0);
-}
+// A raw line window: the ranked route (minified, byte and fullContent views skip ranking).
+const PAGE = { unit: 'lines', length: 120, minify: 'none' };
 
 const table = [];
-for (const t of LOCATE) {
-  const truth = groundTruth(t.dir, t.glob, t.regex);
-  if (!check(`${t.name}: ground truth found`, truth, `${t.dir}/${t.glob}`)) continue;
-  const size = fs.statSync(truth.file).size;
-  const started = Date.now();
-  const run = await locateAll({
-    mainGoal: GOAL, reasoning: 'Locate one implementation before reading a large file.',
-    resources: [{ id: 'file', tool: 'localFetch', query: { path: truth.file } }],
-    questions: [{ id: 't', type: 'locate', ask: t.target }],
-  });
-  // The final call's best is the file-wide ranking (carry merges every call).
-  const ranked = bestRows(run.final, 't').map(r => ({ answer: { exists: r.exists, matches: [r] } }));
-  const best = ranked[0];
-  const window = best?.answer.matches[0];
-  // Strict: the rank-1 window itself shows a declaration line (overloads count).
-  const declRe = new RegExp(t.regex);
-  const fileLines = fs.readFileSync(truth.file, 'utf8').split('\n');
-  const strict = !!window && fileLines.slice(window.startLine - 1, window.endLine).some(line => declRe.test(line));
-  const runnerUps = run.pages.filter(p => (p.answers?.t?.matches ?? []).length > 1).length || '-';
-  const truthText = fs.readFileSync(truth.file, 'utf8').split('\n')[truth.line - 1].trim().slice(0, 40);
-  // The skill's read step: batch the top windows (≤5 ranges); here the top 3.
-  let verifyBytes = 0;
-  let verifiedRank = -1;
-  let viaDoc = false;
-  const srcLines = fs.readFileSync(truth.file, 'utf8').split('\n');
-  let docStart = truth.line;
-  while (docStart > 1 && /^\s*(\/\*\*?|\*|\/\/|#|;|@)/.test(srcLines[docStart - 2])) docStart -= 1;
-  for (const [rank, candidate] of ranked.slice(0, 3).entries()) {
-    const m = candidate.answer.matches[0];
-    const read = await call('localFetch', { path: truth.file, ranges: [`${Math.max(1, m.startLine - 2)}-${m.endLine + 2}`] });
-    verifyBytes += read.bytes;
-    // A window inside the target's own leading doc block is the right place;
-    // the agent widens to the declaration below it (counted, labelled "doc").
-    const hasDecl = (rowData(read)?.content ?? '').includes(truthText);
-    const inDoc = !hasDecl && m.endLine >= docStart && m.startLine < truth.line;
-    if (verifiedRank < 0 && (hasDecl || inDoc)) { verifiedRank = rank; viaDoc = inDoc; }
+if (noClassifiers) skip('classifiers: localFetch, localSearch and walk checks', noClassifiers);
+else {
+  for (const t of LOCATE) {
+    const truth = groundTruth(t.dir, t.glob, t.regex);
+    if (!check(`${t.name}: ground truth found`, truth, `${t.dir}/${t.glob}`)) continue;
+    const size = fs.statSync(truth.file).size;
+    const started = Date.now();
+    const first = await call('localFetch', { path: truth.file, classifiers: [t.target], ...PAGE });
+    const data = rowData(first) ?? {};
+    const lines = numbered(data.content);
+    const declRe = new RegExp(t.regex);
+    // Strict: the first ranked page delivers the declaration line itself.
+    const strict = lines.some(([n, text]) => n === truth.line && declRe.test(text));
+    table.push({
+      target: t.name, fileKB: Math.round(size / 1024), truth: truth.line, ranking: data.ranking?.status ?? '-', reason: data.ranking?.reason ?? '',
+      firstLine: lines[0]?.[0] ?? '-', strict, hostKB: (first.bytes / 1024).toFixed(1), saving: `${Math.round(100 - (100 * first.bytes) / size)}%`, s: ((Date.now() - started) / 1000).toFixed(0),
+    });
+    check(`${t.name}: the first ranked page delivers the declaration (line ${truth.line})`, !first.isError && strict, `ranking=${JSON.stringify(data.ranking)} first=${lines[0]?.[0]}`);
+    // Small files are read directly; only assert leverage at ≥64KB.
+    if (size >= 64 * 1024) check(`${t.name}: first-page host bytes < 10% of a full read`, first.bytes < size * 0.1, `${first.bytes}B vs ${size}B`);
   }
-  const truthRank = verifiedRank;
-  const top1 = verifiedRank === 0;
-  const hostBytes = run.bytes + verifyBytes;
-  table.push({
-    target: t.name, fileKB: Math.round(size / 1024), calls: run.calls, pages: run.pages.length,
-    truth: truth.line, best: window ? `${window.startLine}-${window.endLine}` : '-', exists: best?.answer.exists, rank: (verifiedRank + 1 || 'miss') + (viaDoc ? ' doc' : ''), top1, strict, runnerUps,
-    hostKB: (hostBytes / 1024).toFixed(1), saving: `${Math.round(100 - (100 * hostBytes) / size)}%`, s: ((Date.now() - started) / 1000).toFixed(0),
-  });
-  check(`${t.name}: the declaration is in the top-3 windows read (rank ${verifiedRank + 1})`, verifiedRank >= 0, `best=${window?.startLine}-${window?.endLine} exists=${best?.answer.exists} truth=${truth.line}`);
-  // Admission: small files are read directly (skill); only assert leverage ≥64KB.
-  if (size >= 64 * 1024) check(`${t.name}: host bytes < 10% of a full read`, hostBytes < size * 0.1, `${hostBytes}B vs ${size}B`);
-}
-console.table(table);
-const top1 = table.filter(r => r.top1).length;
-console.log(`locate top-1 exact: ${top1}/${table.length}`);
-console.log(`locate strict (declaration line inside the rank-1 window): ${table.filter(r => r.strict).length}/${table.length}`);
+  console.table(table);
+  console.log(`classifiers first-page declaration: ${table.filter(r => r.strict).length}/${table.length}`);
 
-// Server-side prefilter: keep first-page quality visible, then follow the
-// bounded partial-result contract until the ranked answer can be verified.
-let prefilterQuality;
-{
-  const truth = groundTruth('typescript', 'tsc/testdata/fixtures/compiler/checker.ts', 'function isTypeAssignableTo\\(');
-  const matrix = {
-    mainGoal: GOAL, reasoning: 'prefilter', resources: [{ id: 'f', prefilter: ['assignable'], tool: 'localFetch', query: { path: truth.file } }],
-    questions: [{ id: 't', type: 'locate', ask: 'The function that checks whether a source type is assignable to a target type.' }],
-  };
-  const out = await raw('clasify', { queries: [matrix] });
-  const q = out.sc?.queries?.[0];
-  const top = bestRows(q, 't')[0];
-  const lines = fs.readFileSync(truth.file, 'utf8').split('\n');
-  const strict = !!top && lines.slice(top.startLine - 1, top.endLine).some(l => /function isTypeAssignableTo\(/.test(l));
-  prefilterQuality = { firstPageRankOneDeclaration: strict, firstPageComplete: !q?.next, firstPageBytes: out.bytes };
-  let current = q, last = out, calls = 1, workflowBytes = out.bytes;
-  const rankedDeclaration = q => bestRows(q, 't')[0];
-  const containsDeclaration = row => {
-    const window = rankedDeclaration(row);
-    return !!window && lines.slice(window.startLine - 1, window.endLine).some(l => /function isTypeAssignableTo\(/.test(l));
-  };
-  while (!containsDeclaration(current) && current?.next?.clasify && calls < MAX_CALLS && !last.isError) {
-    last = await raw('clasify', current.next.clasify);
-    workflowBytes += last.bytes; calls += 1;
-    current = last.sc?.queries?.[0];
+  // Search: the implementing file ranks first among the hits.
+  const scheduler = path.join(REPOS, 'huge-go/pkg/scheduler');
+  if (!fs.existsSync(scheduler)) skip('classifiers localSearch: schedule_one.go ranks first', `missing ${scheduler}`);
+  else {
+    const out = await call('localSearch', {
+      path: scheduler, matchString: 'func (sched *Scheduler)', resultView: 'files', pageSize: 3,
+      classifiers: ['The implementation of scheduling one pod: the main per-pod scheduling cycle.'],
+    });
+    const data = rowData(out) ?? {};
+    const files = (data.files ?? []).map(f => f.path ?? '');
+    check('classifiers localSearch: schedule_one.go ranks first among search hits', data.ranking?.status === 'ranked' && files[0]?.endsWith('schedule_one.go'), JSON.stringify({ ranking: data.ranking, files }).slice(0, 200));
   }
-  // hints.read is the exact read of the top best window.
-  const read = current?.hints?.read ?? current?.best?.t?.[0]?.hints?.read;
-  let verified = false;
-  if (containsDeclaration(current) && read?.tool === 'localFetch') {
-    const verification = await raw(read.tool, read.query);
-    workflowBytes += verification.bytes;
-    verified = !verification.isError && collect(verification.sc, o => typeof o.content === 'string').some(o => /function isTypeAssignableTo\(/.test(o.content));
-  }
-  Object.assign(prefilterQuality, { calls, workflowBytes, verified, terminal: !current?.next });
-  check('prefilter: bounded continuations reach the rank-1 declaration and its exact read verifies it', containsDeclaration(current) && verified && !last.isError, JSON.stringify(prefilterQuality));
-  check('prefilter: first-page host bytes under 0.5% of the file', out.bytes < fs.statSync(truth.file).size * 0.005, `${out.bytes}B; full workflow ${workflowBytes}B`);
-}
 
-// Carried best: across a multi-call walk, the final call's best is file-wide.
-{
-  const truth = groundTruth('c', 'src/server.c', '^int serverCron\\(');
-  let request = { queries: [{ mainGoal: GOAL, reasoning: 'carry', resources: [{ id: 'f', tool: 'localFetch', maxChars: 60_000, query: { reasoning: 'unread', path: truth.file, fullContent: true } }],
-    questions: [{ id: 't', type: 'locate', ask: 'The periodic timer function that runs background housekeeping tasks many times per second.' }] }] };
-  // maxChars keeps the walk multi-call; the default budget fits this file in one.
-  let last, calls = 0;
-  while (request && calls < 20) { calls++; const out = await raw('clasify', request); last = out.sc?.queries?.[0]; request = last?.next?.clasify; }
-  const top = bestRows(last, 't')[0];
-  check('carry: the final call\'s best[0] is the file-wide answer', calls > 1 && !!top && top.startLine <= truth.line && truth.line <= top.endLine, `calls=${calls} top=${JSON.stringify(top)} truth=${truth.line}`);
-}
-
-// Server-side ranking and routing hints.
-{
-  const truth = groundTruth('c', 'src/server.c', '^int serverCron\\(');
-  const run = await locateAll({
-    mainGoal: GOAL, reasoning: 'server ranking',
-    resources: [{ id: 'file', tool: 'localFetch', query: { path: truth.file } }],
-    questions: [{ id: 't', type: 'locate', ask: 'The periodic timer function that runs background housekeeping tasks many times per second.' }],
-  }, pages => pages.length >= 4);
-  const rows = run.bests.flatMap(b => b.t ?? []);
-  const ordered = rows.length >= 2 && run.bests.every(b => {
-    const shown = (b.t ?? []).map(row);
-    return JSON.stringify(rankOrder(shown)) === JSON.stringify(shown);
-  });
-  check('best: multi-page calls rank windows by exists, then probability', ordered, JSON.stringify(run.bests[0]?.t?.slice(0, 3)));
-  const hinted = await raw('clasify', { queries: [{ mainGoal: GOAL, reasoning: 'hint', resources: [{ tool: 'localFetch', query: { reasoning: 'x', path: truth.file, ranges: ['1-40'] } }], questions: [{ id: 'h', type: 'locate', ask: 'Where is serverCron defined?' }] }] });
-  const q = hinted.sc?.queries?.[0];
-  // A literal target skips the provider: a per-call text line plus an
-  // executable hints.findText localSearch lead that finds the identifier.
-  const lead = q?.hints?.findText;
-  const leadRun = lead?.tool === 'localSearch' && await raw(lead.tool, lead.query);
-  check('hint: an identifier target suggests localSearch', (q?.hints?.text ?? []).some(h => h.includes('serverCron')) && JSON.stringify(lead?.query ?? {}).includes('serverCron')
-    && !(q?.resources ?? []).some(r => r.pages?.length) && leadRun && !leadRun.isError && /int serverCron\(/.test(leadRun.text), JSON.stringify(q?.hints).slice(0, 200));
-  const plain = await raw('clasify', { queries: [{ mainGoal: GOAL, reasoning: 'hint', resources: [{ tool: 'localFetch', query: { reasoning: 'x', path: truth.file, ranges: ['1-40'] } }], questions: [{ id: 'h', type: 'locate', ask: 'The license header of this file.' }] }] });
-  check('hint: a described target gets no routing hint', !plain.sc?.queries?.[0]?.hints?.text && !plain.sc?.queries?.[0]?.hints?.findText && !plain.isError, JSON.stringify(plain.sc?.queries?.[0]?.hints ?? plain.isError));
-}
-
-// Huge single file (3MB, 54k lines): narrow first, as the skill prescribes.
-// A cheap text search yields line anchors; the three densest 600-line clusters
-// become bounded resources in one matrix; the top windows are then read.
-{
-  const truth = groundTruth('typescript', 'tsc/testdata/fixtures/compiler/checker.ts', 'function isTypeAssignableTo\\(');
-  const search = await call('localSearch', { path: truth.file, matchString: 'assignable', caseMode: 'insensitive', matchPageSize: 100, matchContentLength: 20 });
-  const lines = collect(rowData(search), o => typeof o.line === 'number' && typeof o.value === 'string').map(m => m.line);
-  const buckets = new Map();
-  for (const line of lines) buckets.set(Math.floor(line / 600), (buckets.get(Math.floor(line / 600)) ?? 0) + 1);
-  const clusters = [...buckets].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([b]) => ({ ranges: [`${b * 600 + 1}-${b * 600 + 600}`] }));
-  const run = await locateAll({
-    mainGoal: GOAL, reasoning: 'Locate within the densest candidate regions of a huge file.',
-    resources: clusters.map((c, i) => ({ id: `r${i}`, tool: 'localFetch', query: { path: truth.file, ...c } })),
-    questions: [{ id: 't', type: 'locate', ask: 'The function that checks whether a source type is assignable to a target type.' }],
-  });
-  const ranked = bestRows(run.final, 't');
-  const found = ranked.slice(0, 3).findIndex(w => truth.line >= w.startLine - 3 && truth.line <= w.endLine + 3);
-  const hostBytes = search.bytes + run.bytes;
-  check(`huge file (3MB checker.ts): search → bounded clusters → locate finds line ${truth.line} (rank ${found + 1})`, found >= 0, `clusters=${JSON.stringify(clusters)} top=${JSON.stringify(ranked[0])}`);
-  check('huge file: narrowed flow stays under 1% of a full read', hostBytes < fs.statSync(truth.file).size * 0.01, `${hostBytes}B`);
-}
-
-// Negative: a target absent from the file must not be reported as present.
-{
-  const truth = groundTruth('c', 'src/server.c', '^int serverCron\\(');
-  const run = await locateAll({
-    mainGoal: GOAL, reasoning: 'Absent target stays unresolved.',
-    resources: [{ id: 'file', tool: 'localFetch', query: { path: truth.file } }],
-    questions: [{ id: 't', type: 'locate', ask: 'The function that parses a YAML configuration file into nested dictionaries.' }],
-  });
-  const maxExists = Math.max(...run.pages.map(p => pageExists(p, 't')));
-  check('absent target: every page exists < 0.5', maxExists < 0.5, `max exists=${maxExists} over ${run.pages.length} pages`);
-}
-
-// Matrix: two targets, one capture.
-{
-  const cron = groundTruth('c', 'src/server.c', '^int serverCron\\(');
-  const proc = groundTruth('c', 'src/server.c', '^int processCommand\\(');
-  const run = await locateAll({
-    mainGoal: GOAL, reasoning: 'Two independent facts from one capture.',
-    resources: [{ id: 'file', tool: 'localFetch', query: { path: cron.file } }],
-    questions: [
-      { id: 'cron', type: 'locate', ask: 'The periodic timer function that runs background housekeeping tasks many times per second.' },
-      { id: 'proc', type: 'locate', ask: 'The function that validates a client command and decides whether to execute or queue it.' },
-    ],
-  });
-  const bestFor = id => bestRows(run.final, id)[0];
-  // A window counts when it lies within the target function (declaration to
-  // its closing brace): the answer passage may be inside the body.
-  const lines = fs.readFileSync(cron.file, 'utf8').split('\n');
-  const spanEnd = start => start + lines.slice(start).findIndex(l => /^}/.test(l));
-  const inWindow = (w, line) => w && w.endLine >= line - 3 && w.startLine <= spanEnd(line);
-  check('matrix: both targets located from one capture', inWindow(bestFor('cron'), cron.line) && inWindow(bestFor('proc'), proc.line), JSON.stringify({ cron: bestFor('cron'), cronLine: cron.line, proc: bestFor('proc'), procLine: proc.line }));
-}
-
-// Scout over search results: rank the implementing file first.
-{
-  const root = path.join(REPOS, 'huge-go/pkg/scheduler');
-  if (fs.existsSync(root)) {
-    const out = await raw('clasify', { queries: [{
-      mainGoal: GOAL, reasoning: 'Choose the file to read among search hits.',
-      resources: [{ id: 'hits', tool: 'localSearch', query: { path: root, matchString: 'func (sched *Scheduler)', regex: 'literal', resultView: 'files', pageSize: 20 } }],
-      questions: [{ id: 'core', type: 'yesno', ask: 'Is this file the implementation of scheduling one pod (the main per-pod scheduling cycle)?' }],
-    }] });
-    const q = out.sc?.queries?.[0];
-    const hits = q?.resources?.[0];
-    const ranked = (hits?.pages ?? []).map(p => ({ path: p.path ?? p.source?.path ?? hits?.path ?? '', p: p.answers?.core?.yesno ?? p.answers?.core })).sort((a, b) => b.p - a.p);
-    check('scout: schedule_one.go ranks first among search hits', ranked[0]?.path.endsWith('schedule_one.go'), ranked.slice(0, 3).map(r => `${path.basename(r.path)}=${r.p}`).join(', '));
-  }
-}
-
-await scoutFlows();
-
-// Judge: held snippets with known answers.
-{
-  const cases = [
-    { value: 'func sum(n int) int { total := 0; for i := 0; i < n; i++ { total += i }; return total }', q: 'Does this code contain a loop?', yes: true },
-    { value: 'def area(r):\n    return 3.14159 * r * r', q: 'Does this function perform any I/O (files, network, or printing)?', yes: false },
-    { value: 'fn push(v: &mut Vec<i32>, x: i32) { v.push(x); }', q: 'Does this function mutate one of its arguments?', yes: true },
-    { value: 'const add = (a, b) => a + b;', q: 'Does this code catch or handle exceptions?', yes: false },
-  ];
-  const out = await raw('clasify', { queries: [{
-    mainGoal: GOAL, reasoning: 'Held-state calibration.',
-    resources: cases.map((c, i) => ({ id: `c${i}`, value: c.value })),
-    questions: cases.map((c, i) => ({ id: `q${i}`, type: 'yesno', ask: c.q })),
-  }] });
-  const resources = out.sc?.queries?.[0]?.resources ?? [];
-  let correct = 0;
-  cases.forEach((c, i) => {
-    const p = answerOf(resources.find(r => r.id === `c${i}`), `q${i}`);
-    if (typeof p === 'number' && (c.yes ? p >= 0.8 : p <= 0.2)) correct += 1;
-  });
-  check(`judge: ${correct}/${cases.length} held snippets answered decisively and correctly`, correct === cases.length, out.text.slice(0, 200));
-}
-
-// Walk coverage (was clasify-locate.mjs): a small maxChars budget splits one
-// generated 429-line file into pages; the next.clasify walk must cover every
-// line exactly once, in order, and terminate, and a hints.read must show the
-// one deciding line.
-{
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'octocode-clasify-walk-'));
-  const file = path.join(dir, 'retry-guide.md');
-  try {
-    const lines = Array.from({ length: 429 }, (_, i) => `Line ${i + 1}: operational documentation filler explaining ordinary housekeeping and source ownership.`);
-    lines[172] = 'Retry only after a transient upstream timeout; stop retrying after three attempts.';
-    fs.writeFileSync(file, lines.join('\n') + '\n');
-    const pages = [];
-    const reads = [];
-    let e = await raw('clasify', { queries: [{ mainGoal: 'Locate the rule that limits retry attempts.', reasoning: 'Read deciding source after the semantic scout identifies it.',
-      resources: [{ id: 'guide', tool: 'localFetch', query: { path: file, fullContent: true }, maxChars: 10000 }],
-      questions: [{ id: 'stop', type: 'locate', ask: 'When must a retry stop?' }], extras: ['details', 'stats'] }] });
-    const selfContinuation = entry => nextHints(entry.sc).find(h => h.tool === 'clasify' && h.path.endsWith('.clasify'));
-    for (let i = 0; i < 10; i++) {
-      pages.push(e);
-      for (const h of nextHints(e.sc).filter(x => x.path.endsWith('.hints.read'))) reads.push(await follow(h));
-      const h = selfContinuation(e);
-      if (!h) break;
-      e = await follow(h);
+  // Huge single file (3MB checker.ts): match evidence is ranked before delivery.
+  {
+    const truth = groundTruth('typescript', 'tsc/testdata/fixtures/compiler/checker.ts', 'function isTypeAssignableTo\\(');
+    if (!truth) skip('huge file: ranked matches', 'missing checker.ts');
+    else {
+      const out = await call('localSearch', {
+        path: truth.file, matchString: 'assignable', caseMode: 'insensitive', matchPageSize: 20,
+        classifiers: ['The function that checks whether a source type is assignable to a target type.'],
+      });
+      const matches = collect(rowData(out), o => typeof o.line === 'number' && typeof o.value === 'string').map(m => m.line);
+      check(`huge file (3MB checker.ts): the first ranked match page holds line ${truth.line}`, !out.isError && matches.includes(truth.line), JSON.stringify({ ranking: rowData(out)?.ranking, lines: matches.slice(0, 10) }));
+      check('huge file: first ranked page stays under 1% of a full read', out.bytes < fs.statSync(truth.file).size * 0.01, `${out.bytes}B`);
     }
-    const scopes = pages.flatMap(p => (p.sc?.queries ?? []).flatMap(q => (q.resources ?? []).flatMap(r => (r.pages ?? []).map(pg => pg.scope).filter(Boolean))));
-    const gapFree = scopes.length > 1 && scopes[0].startLine === 1 && scopes.at(-1).endLine === 429 && scopes.every((s, i) => s.totalLines === 429 && (!i || s.startLine === scopes[i - 1].endLine + 1));
-    check('walk: every page and read succeeds', pages.every(x => !x.isError && !x.rowErrors) && reads.every(x => !x.isError && !x.rowErrors), pages.concat(reads).filter(x => x.isError || x.rowErrors).map(x => x.text.slice(0, 80)).join(' | '));
-    check('walk: next.clasify terminates', !selfContinuation(pages.at(-1)), `${pages.length} calls`);
-    check('walk: page scopes cover lines 1-429 in order without gaps', gapFree, JSON.stringify(scopes.map(s => [s.startLine, s.endLine])));
-    check('walk: a hints.read shows the deciding line', reads.some(x => x.text.includes('stop retrying after three attempts')), `${reads.length} reads`);
-  } finally {
-    fs.unlinkSync(file);
-    fs.rmdirSync(dir);
+  }
+
+  // Two classifiers over one file: each one's best unit is in the first page.
+  {
+    const cron = groundTruth('c', 'src/server.c', '^int serverCron\\(');
+    const proc = groundTruth('c', 'src/server.c', '^int processCommand\\(');
+    if (!cron || !proc) skip('two classifiers: both declarations', 'missing redis server.c');
+    else {
+      const out = await call('localFetch', {
+        path: cron.file, ...PAGE,
+        classifiers: [
+          'The periodic timer function that runs background housekeeping tasks many times per second.',
+          'The function that validates a client command and decides whether to execute or queue it.',
+        ],
+      });
+      const delivered = new Set(numbered(rowData(out)?.content).map(([n]) => n));
+      check('two classifiers: both declarations are in the first ranked page', delivered.has(cron.line) && delivered.has(proc.line), JSON.stringify({ ranking: rowData(out)?.ranking, cron: cron.line, proc: proc.line }));
+    }
+  }
+
+  // Lossless replay: a ranked continuation walk delivers every line exactly once,
+  // its first page holds the deciding line, and it terminates.
+  {
+    // Under the workspace (the server's allowed root): the OS temp dir is outside it.
+    const scratch = path.join(FIXTURES, 'scratch');
+    fs.mkdirSync(scratch, { recursive: true });
+    const dir = fs.mkdtempSync(path.join(scratch, 'clasify-walk-'));
+    const file = path.join(dir, 'retry-guide.md');
+    try {
+      const lines = Array.from({ length: 429 }, (_, i) => `Line ${i + 1}: operational documentation filler explaining ordinary housekeeping and source ownership.`);
+      lines[172] = 'Retry only after a transient upstream timeout; stop retrying after three attempts.';
+      fs.writeFileSync(file, lines.join('\n') + '\n');
+      const pages = [await call('localFetch', { path: file, classifiers: ['When must a retry stop?'], unit: 'lines', length: 100, minify: 'none' })];
+      for (let lead = rowData(pages[0])?.next?.continueWindow; lead && pages.length < 20; lead = rowData(pages.at(-1))?.next?.continueWindow) pages.push(await follow(lead));
+      const seen = pages.flatMap(p => numbered(rowData(p)?.content).map(([n]) => n));
+      const once = seen.length === 429 && new Set(seen).size === 429 && seen.every(n => n >= 1 && n <= 429);
+      check('walk: every ranked page succeeds', pages.every(p => !p.isError && !p.rowErrors), pages.filter(p => p.isError || p.rowErrors).map(p => p.text.slice(0, 80)).join(' | '));
+      check('walk: the first ranked page holds the deciding line', numbered(rowData(pages[0])?.content).some(([n]) => n === 173), JSON.stringify(rowData(pages[0])?.ranking));
+      check('walk: continuation terminates and delivers lines 1-429 exactly once', once && !rowData(pages.at(-1))?.next?.continueWindow, `${pages.length} pages, ${seen.length} lines, ${new Set(seen).size} distinct`);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   }
 }
 
-// Errors: missing and binary files stay unresolved, never "no".
-{
-  const missing = await raw('clasify', { queries: [{ mainGoal: GOAL, reasoning: 'missing', resources: [{ tool: 'localFetch', query: { reasoning: 'x', path: path.join(REPOS, 'c/nope.c'), fullContent: true } }], questions: [{ id: 't', type: 'locate', ask: 'anything' }] }] });
-  check('error: missing file is reported, not judged', /error|not found|File not found/i.test(missing.text) && !/"exists":0\./.test(missing.text), missing.text.slice(0, 160));
+/** One clasify row: its answers, or its error. */
+const clasifyRow = out => out.sc?.queries?.[0] ?? {};
+if (noClasify) skip('clasify: state, source, URL and error checks', noClasify);
+else {
+  // Held state: one row per snippet, each a noul with a known answer.
+  {
+    const cases = [
+      { value: 'func sum(n int) int { total := 0; for i := 0; i < n; i++ { total += i }; return total }', q: 'Does this code contain a loop?', yes: true },
+      { value: 'def area(r):\n    return 3.14159 * r * r', q: 'Does this function perform any I/O (files, network, or printing)?', yes: false },
+      { value: 'fn push(v: &mut Vec<i32>, x: i32) { v.push(x); }', q: 'Does this function mutate one of its arguments?', yes: true },
+      { value: 'const add = (a, b) => a + b;', q: 'Does this code catch or handle exceptions?', yes: false },
+    ];
+    const out = await raw('clasify', { queries: cases.map((c, i) => ({ id: `c${i}`, state: c.value, questions: { q: { type: 'noul', instructions: c.q } } })) });
+    const rows = out.sc?.queries ?? [];
+    const correct = cases.filter((c, i) => {
+      const p = rows.find(r => r.id === `c${i}`)?.answers?.q?.noul;
+      return typeof p === 'number' && (c.yes ? p >= 0.8 : p <= 0.2);
+    }).length;
+    check(`state: ${correct}/${cases.length} held snippets answered decisively and correctly`, correct === cases.length, out.text.slice(0, 200));
+    // A literal state carries model and usage, and no source-read lead.
+    check('state: rows carry model and usage, and no hints.read', rows.length === cases.length && rows.every(r => typeof r.model === 'string' && typeof r.usage?.input_tokens === 'number' && !r.hints), JSON.stringify(rows[0]).slice(0, 200));
+  }
+
+  // All three primitives over one state, provider fields preserved.
+  {
+    const out = await raw('clasify', { queries: [{ id: 'p', state: 'The fixture explicitly states that alpha is enabled.', questions: {
+      stated: { type: 'noul', instructions: 'Does the fixture state that alpha is enabled?' },
+      state: { type: 'choice', instructions: 'Which state does the fixture assign to alpha?', criteria: { enabled: 'alpha is enabled', disabled: 'alpha is disabled', unclear: 'the fixture does not say' } },
+      explicit: { type: 'score', instructions: 'How explicit is the fixture about alpha being enabled?', criteria: ['not stated', 'implied', 'explicitly stated'] },
+    } }] });
+    const a = clasifyRow(out).answers ?? {};
+    check('primitives: noul, choice (with probabilities) and score (with legend) answer as typed', a.stated?.type === 'noul' && a.stated.noul >= 0.8
+      && a.state?.type === 'choice' && a.state.choice === 'enabled' && typeof a.state.probabilities?.enabled === 'number'
+      && a.explicit?.type === 'score' && a.explicit.score >= 1.5 && a.explicit.legend?.['2'] === 'explicitly stated', JSON.stringify(a).slice(0, 220));
+  }
+
+  // localFetch source: positive and negative questions over one captured range,
+  // no body returned, and the read lead returns exactly the captured lines.
+  {
+    const cron = groundTruth('c', 'src/server.c', '^int serverCron\\(');
+    if (!cron) skip('source: localFetch range', 'missing redis server.c');
+    else {
+      const range = `${cron.line}-${cron.line + 60}`;
+      const out = await raw('clasify', { queries: [{ id: 'cron', source: { tool: 'localFetch', query: { path: cron.file, ranges: [range] } }, questions: {
+        timer: { type: 'noul', instructions: 'Does the selection define the periodic server timer function serverCron?' },
+        yaml: { type: 'noul', instructions: 'Does the selection parse a YAML configuration file into nested dictionaries?' },
+      } }] });
+      const row = clasifyRow(out);
+      check('source: a present target answers yes and an absent one no', row.answers?.timer?.noul >= 0.5 && row.answers?.yaml?.noul < 0.5, JSON.stringify(row.answers ?? row.error));
+      check('source: no source body is returned', !out.text.includes('serverCron(struct aeEventLoop'), out.text.slice(0, 160));
+      const lead = row.hints?.read;
+      const read = lead && await follow(lead);
+      const lines = numbered(read && rowData(read)?.content);
+      check('source: hints.read is a pinned localFetch of the captured range', lead?.tool === 'localFetch' && typeof lead.query?.queries?.[0]?.snapshot === 'string'
+        && lines[0]?.[0] === cron.line && lines.at(-1)?.[0] === cron.line + 60, JSON.stringify(lead).slice(0, 200));
+    }
+  }
+
+  // URL source: captured, judged, and readable back through the saved capture.
+  {
+    const out = await raw('clasify', { queries: [{ id: 'url', source: { url: 'https://www.rfc-editor.org/rfc/rfc2606.txt' }, questions: {
+      reserved: { type: 'noul', instructions: 'Does the document reserve example.com for documentation use?' },
+    } }] });
+    const row = clasifyRow(out);
+    check('url: the page is judged and its provenance carries snapshot and expiresAt', row.answers?.reserved?.noul >= 0.5 && typeof row.source?.snapshot === 'string' && typeof row.source?.expiresAt === 'string', JSON.stringify(row).slice(0, 220));
+    const read = row.hints?.read && await follow(row.hints.read);
+    check('url: hints.read returns the captured text through localFetch', !!read && !read.isError && /example\.com/.test(rowData(read)?.content ?? ''), read?.text.slice(0, 160) ?? 'no hints.read');
+  }
+
+  // Errors: an unreadable source fails its row, never answers "no".
+  {
+    const out = await raw('clasify', { queries: [{ id: 'missing', source: { tool: 'localFetch', query: { path: path.join(REPOS, 'c/nope.c'), fullContent: true } }, questions: { t: { type: 'noul', instructions: 'Anything?' } } }] });
+    const row = clasifyRow(out);
+    check('error: a missing source fails its row with an errorCode and no answers', typeof row.error?.errorCode === 'string' && !row.answers, JSON.stringify(row).slice(0, 200));
+  }
 }
 
 const result = summary();
-writeResults('clasify', { table, prefilterQuality, ...result });
+writeResults('clasify', { table, ...result });
 client.close();
 process.exitCode = result.failed.length ? 1 : 0;

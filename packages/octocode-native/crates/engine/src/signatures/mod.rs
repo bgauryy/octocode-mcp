@@ -627,8 +627,8 @@ export function useEffect(
         assert!(extract(&src, "big.ts").is_none());
     }
 
-    /// Rust declaration extents (0-based lines) that block reads and
-    /// readBlock leads widen to: whole fns, impl blocks, and their methods.
+    /// Rust declaration extents (0-based lines) that block reads
+    /// widen to: whole fns, impl blocks, and their methods.
     #[test]
     fn rust_declaration_ranges_cover_whole_items() {
         let source = "pub fn first(value: usize) -> usize {\n    let mut total = 0;\n    for step in 0..value {\n        total += step;\n    }\n    total\n}\n\npub struct Point;\n\nimpl Point {\n    pub fn origin() -> Self {\n        Point\n    }\n}\n";

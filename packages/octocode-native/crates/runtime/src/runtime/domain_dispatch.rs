@@ -3,7 +3,6 @@ use super::{ExecutionContext, ExecutionError, dispatch, github, github_cache::Gi
 use crate::{
     config::ConfigOutput,
     policy::path::PathPolicy,
-    providers::github::ProviderError,
     security::ContentSecurity,
     tools::{
         ast_rewrite::AstRewriteRuntimeOptions,
@@ -12,6 +11,7 @@ use crate::{
         lsp_search::{LspExecutionConfig, prewarm},
     },
 };
+use octocode_github::ProviderError;
 use serde_json::Value;
 use std::{
     path::PathBuf,
@@ -33,31 +33,72 @@ pub(crate) struct DomainDispatcher {
     pub availability: Arc<super::availability::ToolAvailability>,
     /// Provider readiness and an enabled goals surface, independent of the
     /// public clasify tool's availability.
-    pub ranking_available: bool,
-    pub clasify: crate::tools::clasify::ClasifySettings,
+    pub selection_available: bool,
+    pub evaluator: crate::tools::judgment::Evaluator,
     /// Registry answers for artifactSearch; `None` under memory storage.
     pub artifact_cache: Option<Arc<crate::providers::artifact::ArtifactCache>>,
 }
 
 impl DomainDispatcher {
-    pub(super) fn ranking_runtime(
+    /// Acquire binary evidence through the same GitHub credential, commit
+    /// resolution, byte cache and request budget as a file read.
+    pub(crate) fn capture_github_asset(
+        &self,
+        query: &Value,
+        context: &ExecutionContext,
+        max_bytes: usize,
+    ) -> Result<octocode_github::ContentResponse, crate::tools::judgment::ClassificationError> {
+        let acquired = self
+            .github_services
+            .get_or_init(|| {
+                github::GitHubServices::new(
+                    self.config.clone(),
+                    self.home.clone(),
+                    self.github_cache.clone(),
+                )
+            })
+            .as_ref()
+            .map_err(Clone::clone)
+            .and_then(|services| services.capture_content(query, context, &self.handle, max_bytes));
+        acquired.map_err(|error| {
+            let row = github::provider_error(error);
+            crate::tools::judgment::ClassificationError {
+                code: row.data["errorCode"]
+                    .as_str()
+                    .unwrap_or("classificationContextFailed")
+                    .into(),
+                message: row.data["error"]
+                    .as_str()
+                    .unwrap_or("The GitHub image could not be acquired.")
+                    .into(),
+                failure: row.failure,
+                hints: row.data["hints"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .map(str::to_owned)
+                    .collect(),
+                ..Default::default()
+            }
+        })
+    }
+
+    pub(super) fn selection_runtime(
         &self,
         context: &ExecutionContext,
-    ) -> crate::tools::ranking::Runtime {
-        let settings = &self.config.resolved.ranking;
-        crate::tools::ranking::Runtime {
-            limits: crate::tools::ranking::Limits {
-                enabled: settings.enabled,
+    ) -> crate::tools::selection::Runtime {
+        let settings = &self.config.resolved.classification;
+        crate::tools::selection::Runtime {
+            limits: crate::tools::selection::Limits {
                 max_candidates: settings.max_candidates as usize,
                 max_chars: settings.max_chars as usize,
                 timeout: std::time::Duration::from_millis(settings.timeout_ms as u64),
             },
-            available: self.ranking_available,
-            judge: Arc::new(self.clasify.clone()),
+            available: self.selection_available,
+            judge: Arc::new(self.evaluator.clone()),
             handle: self.handle.clone(),
             context: context.clone(),
-            home: self.home.clone(),
-            stats_enabled: crate::config::is_stats_enabled(&self.config.resolved),
         }
     }
 
@@ -88,7 +129,7 @@ impl DomainDispatcher {
         query: &Value,
         context: &ExecutionContext,
     ) -> Result<dispatch::DomainResult, ExecutionError> {
-        let ranking = self.ranking_runtime(context);
+        let selection = self.selection_runtime(context);
         match self.github_services.get_or_init(|| {
             github::GitHubServices::new(
                 self.config.clone(),
@@ -104,7 +145,7 @@ impl DomainDispatcher {
                 &self.regex,
                 &self.handle,
                 &self.paths,
-                &ranking,
+                &selection,
             ),
             Err(error) => Ok(github::provider_error(error.clone())),
         }
@@ -140,7 +181,7 @@ impl DomainDispatcher {
             cancellation: context.cancellation.clone(),
             allow_private_registry: network.allow_private_registry,
             cache: self.artifact_cache.as_deref(),
-            timeout: std::time::Duration::from_secs_f64(network.timeout / 1000.0),
+            timeout: std::time::Duration::from_millis(u64::from(network.timeout)),
             max_retries: network.max_retries as u8,
             tags: tags
                 .as_ref()
@@ -257,11 +298,11 @@ impl DomainDispatcher {
             .config
             .env_value(crate::config::environment::OCTOCODE_CARGO)
             .map(str::to_owned);
-        let ranking = self.ranking_runtime(&context);
+        let selection = self.selection_runtime(&context);
         // `lsp.prewarm`: `targeted` warms the server an offered lspSearch
         // call names; `all` also warms the file a read or search names.
-        let prewarm_mode = self.config.resolved.lsp.prewarm.clone();
-        let prewarm_query = (prewarm_mode == "all").then(|| query.clone());
+        let prewarm_mode = self.config.resolved.lsp.prewarm;
+        let prewarm_query = (prewarm_mode == crate::config::LspPrewarm::All).then(|| query.clone());
         let lsp = self.lsp_execution_config.clone();
         let result = self.handle.block_on(async {
             tokio::task::spawn_blocking(move || {
@@ -281,7 +322,7 @@ impl DomainDispatcher {
                             &views,
                             &rewrite,
                             cargo.as_deref(),
-                            Some(&ranking),
+                            Some(&selection),
                         )
                     },
                 )
@@ -292,7 +333,7 @@ impl DomainDispatcher {
         // Start a language server in the background so a following
         // lspSearch finds a warm pooled client: for the file an offered
         // lspSearch call names, or (opt-in) the file a read or search names.
-        let lead = (prewarm_mode != "off")
+        let lead = (prewarm_mode != crate::config::LspPrewarm::Off)
             .then(|| prewarm::lead_file(&result.data))
             .flatten();
         if let Some(file) = lead

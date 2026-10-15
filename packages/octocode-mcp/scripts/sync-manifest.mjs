@@ -10,13 +10,13 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { configFieldEnvNames } from '@octocodeai/config';
+import { configFieldEnvName } from '@octocodeai/config';
 import { getPublicToolCatalog, TOOL_NAMES } from '@octocodeai/config/schema';
 
 const check = process.argv.includes('--check');
 
 function gateEnv(fieldPath) {
-  const [name] = configFieldEnvNames(fieldPath);
+  const name = configFieldEnvName(fieldPath);
   if (!name) throw new Error(`config field ${fieldPath} has no env binding`);
   return name;
 }

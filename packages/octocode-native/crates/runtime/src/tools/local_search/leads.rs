@@ -5,15 +5,18 @@
 use super::executor::*;
 use super::layout::*;
 use super::types::*;
+use crate::contracts::tool_types::{
+    LocalSearchSkippedPath, LocalSearchSkippedPathCause, LocalSearchSkippedPaths,
+};
 use crate::policy::path::PathPolicy;
 use crate::policy::prune::DefaultsFlag;
 use crate::policy::prune::PruneMode;
 use crate::security::ContentSecurity;
 use crate::tools::cancel::CancellationCheck;
-use crate::tools::empty_walk::{Cause, Hits, SAMPLE_FILES, Verdict, Walk, diagnose, lift};
+use crate::tools::empty_walk::{Cause, Globs, Hits, Tagged, Verdict, Walk, diagnose, lift};
 use crate::tools::id::ToolId;
 use crate::tools::id::query_limits::local_fetch::RANGES_MAX_ITEMS;
-use crate::tools::result::Continuation;
+use crate::tools::result::{Continuation, ToolError};
 use octocode_engine::{portable::search_text_cancellable, types::TextSearchOptions};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -209,7 +212,8 @@ pub(super) struct Found<'a> {
 impl Found<'_> {
     /// Leads in the tool's own rank: a read of the top hit, the symbol's
     /// lspSearch lead, then reads of clipped values, the skipped binaries
-    /// and the literal search. Returns whether skipped paths hold a match.
+    /// and the literal search. Returns whether skipped paths hold a match
+    /// and the first page's observed skipped-path disclosure.
     pub(super) fn add_leads(
         &self,
         stats: &mut SearchStats,
@@ -218,8 +222,14 @@ impl Found<'_> {
         warnings: &mut Vec<String>,
         search_options: &TextSearchOptions,
         cancel: &impl CancellationCheck,
-    ) -> bool {
+    ) -> Result<(bool, Option<LocalSearchSkippedPaths>), ToolError> {
         let query = self.query;
+        let first_disclosure = self.first_page() && query.match_page().max(1) == 1;
+        let mut skipped_paths = if first_disclosure {
+            self.excluded_paths()?
+        } else {
+            None
+        };
         let mut add = |name: String, lead: Value| {
             if let Some(map) = next.get_or_insert_with(|| json!({})).as_object_mut() {
                 map.insert(name, lead);
@@ -241,29 +251,8 @@ impl Found<'_> {
                 Continuation::new(ToolId::LspSearch, row).build(),
             );
         }
-        // Every clipped value on the page stays reachable whole.
-        let expansions = expand_values(
-            query,
-            self.paths,
-            self.output_root,
-            self.files,
-            self.layout.context_lines,
-            query.multiline != LocalSearchQueryMultiline::Off,
-            // A caller-sized (grid) page keeps its rows whatever the value
-            // width; a streamed page is cut by serialized size.
-            (!self.layout.streamed).then_some(GridPage {
-                value_cap: self.layout.budget_cap.unwrap_or(RESPONSE_VALUE_CHAR_BUDGET),
-            }),
-        );
-        if let Some((lead, left)) = one_call(&expansions) {
+        if let Some(lead) = self.expand_values_lead(warnings) {
             add("expandValues".into(), lead);
-            if left > 0 {
-                warnings.push(format!(
-                    "expandValues reads {} of {} clipped-value windows; {left} more are on this page.",
-                    expansions.len() - left,
-                    expansions.len()
-                ));
-            }
         }
         // Binaries were never text to search: a row with hits states their
         // count in `stats`, an empty row says it in `warnings`, where the
@@ -279,14 +268,12 @@ impl Found<'_> {
         // What the walk left out is disclosed once, on the first page: the
         // security policy's withheld entries (nothing lifts them), and the
         // default excludes with the same search over them.
-        if self.first_page() {
+        if first_disclosure {
             warnings.extend(self.skipped.withheld.notice());
             if !self.empty
-                && let Some(names) = excluded_names(self.scanned, self.skipped)
+                && let Some(counts) = excluded_counts(self.scanned, self.skipped)
             {
-                warnings.push(format!(
-                    "Default excludes skipped {names}; the same search with defaultExcludes:false covers them."
-                ));
+                warnings.push(format!("Default excludes skipped {counts}."));
                 add(
                     "includeSkipped".into(),
                     lifting_lead(query, &[Cause::DefaultExcluded]),
@@ -322,18 +309,100 @@ impl Found<'_> {
         if self.empty && self.walk_complete && self.first_page() {
             disclose_variants(query, self.paths, search_options, next, hints, cancel);
         }
-        self.empty
-            && self.walk_complete
-            && !self.root.is_file()
-            && disclose_unsearched(
-                query,
-                self.paths,
-                search_options,
-                excluded_names(self.scanned, self.skipped),
-                next,
-                hints,
-                cancel,
-            )
+        let skipped_match =
+            if self.empty && self.walk_complete && first_disclosure && !self.root.is_file() {
+                let (matched, observed) = disclose_unsearched(
+                    query,
+                    self.paths,
+                    search_options,
+                    excluded_counts(self.scanned, self.skipped),
+                    next,
+                    hints,
+                    cancel,
+                )?;
+                if let Some(observed) = observed {
+                    let disclosure = skipped_paths.get_or_insert_with(|| LocalSearchSkippedPaths {
+                        entries: Vec::new(),
+                        sampled: false,
+                    });
+                    disclosure.sampled |= observed.sampled;
+                    for entry in observed.entries {
+                        if let Some(existing) = disclosure.entries.iter_mut().find(|known| {
+                            known.path == entry.path
+                                && known.cause == entry.cause
+                                && (known.reason == entry.reason
+                                    || known.reason.is_none()
+                                    || entry.reason.is_none())
+                        }) {
+                            if existing.reason.is_none() {
+                                existing.reason = entry.reason;
+                            }
+                        } else {
+                            disclosure.entries.push(entry);
+                        }
+                    }
+                }
+                matched
+            } else {
+                false
+            };
+        Ok((skipped_match, skipped_paths))
+    }
+
+    fn excluded_paths(&self) -> Result<Option<LocalSearchSkippedPaths>, ToolError> {
+        let entries = self
+            .scanned
+            .pruned_dirs
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .chain(self.skipped.generated.iter())
+            .map(|path| {
+                Ok(LocalSearchSkippedPath {
+                    path: self
+                        .root
+                        .join(path)
+                        .to_string_lossy()
+                        .into_owned()
+                        .try_into()
+                        .map_err(skipped_path_error)?,
+                    cause: LocalSearchSkippedPathCause::DefaultExcluded,
+                    reason: None,
+                })
+            })
+            .collect::<Result<Vec<_>, ToolError>>()?;
+        Ok((!entries.is_empty()).then_some(LocalSearchSkippedPaths {
+            entries,
+            sampled: !self.walk_complete,
+        }))
+    }
+
+    /// The one call that reads every clipped value on the page whole; a
+    /// warning counts the windows past what one call holds.
+    fn expand_values_lead(&self, warnings: &mut Vec<String>) -> Option<Value> {
+        let query = self.query;
+        let expansions = expand_values(
+            query,
+            self.paths,
+            self.output_root,
+            self.files,
+            self.layout.context_lines,
+            query.multiline != LocalSearchQueryMultiline::Off,
+            // A caller-sized (grid) page keeps its rows whatever the value
+            // width; a streamed page is cut by serialized size.
+            (!self.layout.streamed).then_some(GridPage {
+                value_cap: self.layout.budget_cap.unwrap_or(RESPONSE_VALUE_CHAR_BUDGET),
+            }),
+        );
+        let (lead, left) = one_call(&expansions)?;
+        if left > 0 {
+            warnings.push(format!(
+                "expandValues reads {} of {} clipped-value windows; {left} more are on this page.",
+                expansions.len() - left,
+                expansions.len()
+            ));
+        }
+        Some(lead)
     }
 
     pub(super) fn first_page(&self) -> bool {
@@ -526,25 +595,29 @@ pub(super) fn disclose_unsearched(
     next: &mut Option<Value>,
     hints: &mut Vec<String>,
     cancel: &impl CancellationCheck,
-) -> bool {
+) -> Result<(bool, Option<LocalSearchSkippedPaths>), ToolError> {
     let walk = Walk {
         ignored: query.include_ignored == Some(true),
         hidden: query.include_hidden == Some(true),
         default_excludes: query.default_excludes.defaults(),
     };
     let root = std::path::PathBuf::from(&search_options.path);
-    let since = std::time::Instant::now();
+    let tagged = probe_lifted(
+        search_options,
+        walk.lifting(&walk.skipping()),
+        paths,
+        cancel,
+    );
     let verdict = diagnose(&root, PruneMode::SearchSafe, walk, |relaxed| {
-        Ok::<_, std::convert::Infallible>(probe_found(
-            search_options,
-            relaxed,
-            paths,
-            cancel,
-            since,
+        Ok::<_, std::convert::Infallible>(tagged.as_ref().map_or_else(
+            |()| Hits {
+                cut: true,
+                ..Hits::default()
+            },
+            |tagged| tagged.find(relaxed, None),
         ))
     });
-    // The action leads: the response stage clips long hints at the end.
-    let (found, causes, may_hold_matches) = match verdict {
+    let (found, causes, may_hold_matches, entries) = match verdict {
         Ok(Verdict::Skipped(diagnosis)) => {
             let at_least = if diagnosis.found().cut {
                 "at least "
@@ -555,36 +628,37 @@ pub(super) fn disclose_unsearched(
                 vec![format!(
                     "{at_least}{} file(s) match in skipped paths ({}).",
                     diagnosis.found().count,
-                    diagnosis.because()
+                    diagnosis.labels()
                 )],
                 diagnosis.causes().to_vec(),
                 true,
+                observed_paths(diagnosis.skips())?,
             )
         }
-        // The probe ran out of time before it found anything: it proved
-        // nothing about what the walk skipped, so the row names the skipped
-        // paths it can and the lead searches them.
         Ok(Verdict::Unproven) => {
             let ignored = unsearched_ignored(&root, walk);
             let mut found = vec![];
             let mut causes = vec![];
             let may_hold_matches = !ignored.is_empty();
             if !ignored.is_empty() {
-                found.push(unsearched_ignored_hint(&root, &ignored));
+                found.push(format!(
+                    "{} ignored directory(s) were not searched; the check of them timed out.",
+                    ignored.len()
+                ));
                 causes.push(Cause::Ignored);
             }
-            if let Some(names) = excluded.filter(|_| walk.default_excludes) {
+            if let Some(counts) = excluded.filter(|_| walk.default_excludes) {
                 found.push(format!(
-                    "Default-excluded paths were not searched ({names})."
+                    "Default-excluded paths were not searched ({counts})."
                 ));
                 causes.push(Cause::DefaultExcluded);
             }
             if causes.is_empty() {
-                return false;
+                return Ok((false, None));
             }
-            (found, causes, may_hold_matches)
+            (found, causes, may_hold_matches, observed_paths(&ignored)?)
         }
-        _ => return false,
+        _ => return Ok((false, None)),
     };
     for hint in found.into_iter().rev() {
         hints.insert(0, hint);
@@ -592,7 +666,42 @@ pub(super) fn disclose_unsearched(
     if let Some(map) = next.get_or_insert_with(|| json!({})).as_object_mut() {
         map.insert("includeSkipped".into(), lifting_lead(query, &causes));
     }
-    may_hold_matches
+    let observed = (!entries.is_empty()).then_some(LocalSearchSkippedPaths {
+        entries,
+        sampled: true,
+    });
+    Ok((may_hold_matches, observed))
+}
+
+fn observed_paths(
+    skipped: &[crate::tools::empty_walk::Skip],
+) -> Result<Vec<LocalSearchSkippedPath>, ToolError> {
+    skipped
+        .iter()
+        .map(|skip| {
+            Ok(LocalSearchSkippedPath {
+                path: skip
+                    .entry
+                    .to_string_lossy()
+                    .replace('\\', "/")
+                    .try_into()
+                    .map_err(skipped_path_error)?,
+                cause: match skip.cause {
+                    Cause::Ignored => LocalSearchSkippedPathCause::Ignored,
+                    Cause::Hidden => LocalSearchSkippedPathCause::Hidden,
+                    Cause::DefaultExcluded => LocalSearchSkippedPathCause::DefaultExcluded,
+                },
+                reason: Some(skip.reason.clone()),
+            })
+        })
+        .collect()
+}
+
+fn skipped_path_error(error: impl std::fmt::Display) -> ToolError {
+    ToolError::new(
+        "outputContractViolation",
+        format!("Invalid skipped-path evidence: {error}"),
+    )
 }
 
 /// The ignored directories a walk skipped, named, within [`NAMING_MS`] of
@@ -609,77 +718,23 @@ fn unsearched_ignored(root: &std::path::Path, walk: Walk) -> Vec<crate::tools::e
 /// Time to name the ignored directories after an unproven probe.
 const NAMING_MS: u64 = 400;
 
-/// How many skipped paths a hint names before it counts the rest.
-const NAMED_SKIPPED: usize = 3;
-
-/// The hint naming the ignored directories an unproven probe could not search
-/// and the rule that skips them.
-fn unsearched_ignored_hint(
-    root: &std::path::Path,
-    ignored: &[crate::tools::empty_walk::Skip],
-) -> String {
-    let names = crate::response::pages::first_named(
-        ignored.iter().map(|skip| {
-            let relative = skip.entry.strip_prefix(root).unwrap_or(&skip.entry);
-            format!("{}/", relative.to_string_lossy().replace('\\', "/"))
-        }),
-        NAMED_SKIPPED,
-    );
-    format!(
-        "Ignored paths were not searched ({names}; {}); the check of them timed out.",
-        ignored[0].reason
-    )
-}
-
-/// Distinct names of the pruned directories, each with how many were
-/// pruned when more than one: `node_modules ×3, build`.
-pub(super) fn pruned_names(pruned: &[String]) -> String {
-    let mut counts = std::collections::BTreeMap::<&str, usize>::new();
-    for dir in pruned {
-        let name = dir.rsplit('/').next().unwrap_or(dir);
-        *counts.entry(name).or_default() += 1;
-    }
-    counts
-        .into_iter()
-        .map(|(name, count)| {
-            if count > 1 {
-                format!("{name}/ ×{count}")
-            } else {
-                format!("{name}/")
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
-/// Default-excluded files named by path before the rest is a count.
-const EXCLUDED_FILES_NAMED: usize = 5;
-
-/// What the default excludes left out of the walk, as one clause: the
-/// pruned directories and the skipped generated files, each by name with
-/// its count (`2 dirs (target/, dist/) and 3 files (*.lock ×2, *.min.js)`).
-pub(super) fn excluded_names(
+/// Counts of the paths the original walk observed but default exclusions skipped.
+fn excluded_counts(
     scanned: &octocode_engine::types::TextSearchStats,
     skipped: &crate::policy::discovery::WalkSkips,
 ) -> Option<String> {
-    let pruned = scanned.pruned_dirs.as_deref().unwrap_or_default();
-    let mut parts = Vec::new();
-    if !pruned.is_empty() {
-        let noun = if pruned.len() == 1 { "dir" } else { "dirs" };
-        parts.push(format!(
-            "{} {noun} ({})",
-            pruned.len(),
-            pruned_names(pruned)
-        ));
-    }
+    let dirs = scanned.pruned_dirs.as_deref().unwrap_or_default().len();
     let files = skipped.generated.len();
+    let mut parts = Vec::new();
+    if dirs > 0 {
+        parts.push(crate::response::pages::counted(dirs as u64, "dir", "dirs"));
+    }
     if files > 0 {
-        let noun = if files == 1 { "file" } else { "files" };
-        let named = crate::response::pages::first_named(
-            skipped.generated.iter().cloned(),
-            EXCLUDED_FILES_NAMED,
-        );
-        parts.push(format!("{files} {noun} ({named})"));
+        parts.push(crate::response::pages::counted(
+            files as u64,
+            "file",
+            "files",
+        ));
     }
     (!parts.is_empty()).then(|| parts.join(" and "))
 }
@@ -1328,8 +1383,8 @@ pub(super) fn empty_hint(files_searched: u32) -> String {
     )
 }
 
-/// Wall-clock bound of one ignored/hidden/default-excluded re-walk behind an
-/// empty result.
+/// Wall-clock bound of the one ignored/hidden/default-excluded re-walk behind
+/// an empty result.
 pub(super) const IGNORED_PROBE_MS: u64 = 400;
 
 #[cfg(test)]
@@ -1355,19 +1410,16 @@ pub(super) fn with_probe_budget<T>(budget: std::time::Duration, body: impl FnOnc
     PROBE_BUDGET.with(|cell| cell.set(None));
     out
 }
-/// Wall-clock bound of all the re-walks of one diagnosis.
-const DIAGNOSIS_MS: u64 = 1200;
-
-/// The files `options`' search finds under the relaxed `walk` (files only):
-/// the probe [`diagnose`] asks about each set of lifted causes. A search that
-/// cannot run, or is cut by its deadline, reports a cut find.
-fn probe_found(
+/// The files `options`' search finds under the fully relaxed `walk` (files
+/// only), tagged with the causes that hide each ([`Tagged::found`]). A search
+/// that cannot run is `Err`; one cut by its deadline keeps what it found and
+/// answers every relaxed walk as cut.
+fn probe_lifted(
     options: &TextSearchOptions,
     walk: Walk,
     paths: &PathPolicy,
     cancel: &impl CancellationCheck,
-    diagnosing_since: std::time::Instant,
-) -> Hits {
+) -> Result<Tagged, ()> {
     let mut options = options.clone();
     options.ignore = octocode_engine::search::walk::IgnorePolicy {
         include_ignored: walk.ignored,
@@ -1387,44 +1439,35 @@ fn probe_found(
     options.sort = Some("path".into());
     options.digest_max_bytes = None;
     let root = std::path::PathBuf::from(&options.path);
+    let globs = Globs {
+        include: options.include.as_deref().unwrap_or_default(),
+        exclude: options.exclude.as_deref().unwrap_or_default(),
+    };
     let started = std::time::Instant::now();
-    let (probe, total) = (
-        probe_budget(),
-        std::time::Duration::from_millis(DIAGNOSIS_MS),
-    );
+    let probe = probe_budget();
     let searched = search_text_cancellable(
-        options,
+        options.clone(),
         Arc::new(crate::policy::discovery::SearchWalk::new(
             paths.clone(),
             root.clone(),
             walk.default_excludes,
         )),
-        &|| {
-            cancel.check().is_err()
-                || started.elapsed() > probe
-                || diagnosing_since.elapsed() > total
-        },
-    );
-    let Ok(searched) = searched else {
-        return Hits {
-            cut: true,
-            ..Hits::default()
-        };
-    };
-    Hits {
-        count: searched.files.len(),
-        sample: searched
-            .files
-            .iter()
-            .take(SAMPLE_FILES)
-            .map(|file| root.join(&file.path))
-            .collect(),
-        cut: searched
-            .stats
-            .cap_reason
-            .as_deref()
-            .is_some_and(|reason| !reason.is_empty()),
-    }
+        &|| cancel.check().is_err() || started.elapsed() > probe,
+    )
+    .map_err(|_| ())?;
+    let cut = searched
+        .stats
+        .cap_reason
+        .as_deref()
+        .is_some_and(|reason| !reason.is_empty());
+    Tagged::found(
+        &root,
+        PruneMode::SearchSafe,
+        globs,
+        searched.files.iter().map(|file| root.join(&file.path)),
+        cut,
+    )
+    .map_err(|_| ())
 }
 
 /// `binarySkipped` warning: how many files were skipped as binary from

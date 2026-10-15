@@ -5,7 +5,7 @@
 //! object/array/string/number/size checks. Per-tool rule logic lives in the
 //! parent module; union-branch selection lives in `super::union`.
 
-use super::{ContractValidationError, ValidationIssue, coerce, issue, schema_issue, union};
+use super::{ContractValidationError, ValidationIssue, issue, schema_issue, shape, union};
 use regex::Regex;
 use serde_json::Value;
 use url::Url;
@@ -15,6 +15,16 @@ pub(super) fn validate_schema(
     schema: &Value,
     value: &mut Value,
     path: &mut Vec<String>,
+) -> Result<(), ContractValidationError> {
+    validate_schema_with_ref_depth(root, schema, value, path, 0)
+}
+
+fn validate_schema_with_ref_depth(
+    root: &Value,
+    schema: &Value,
+    value: &mut Value,
+    path: &mut Vec<String>,
+    ref_depth: usize,
 ) -> Result<(), ContractValidationError> {
     if let Some(forbidden) = schema.get("not") {
         // Only acceptance matters here: probe speculatively, and an empty
@@ -40,29 +50,28 @@ pub(super) fn validate_schema(
             return Err(issue("schema.not", path.clone(), message));
         }
     }
-    if schema.get("$ref").is_some() {
-        let target = super::super::resolve_ref(schema, &root["$defs"]);
-        if let Some(reference) = target.get("$ref") {
-            return Err(issue(
-                "schema.unsupported-ref",
-                path.clone(),
-                format!("Unresolved schema reference: {reference}"),
-            ));
-        }
-        return validate_schema(root, target, value, path);
+    if let Some(reference) = schema.get("$ref") {
+        let target = reference
+            .as_str()
+            .and_then(|reference| reference.strip_prefix("#/$defs/"))
+            .and_then(|name| root["$defs"].get(name))
+            .filter(|_| ref_depth < 32)
+            .ok_or_else(|| {
+                issue(
+                    "schema.unsupported-ref",
+                    path.clone(),
+                    format!("Unresolved schema reference: {reference}"),
+                )
+            })?;
+        // Every reference in a chain can carry constraints of its own.
+        validate_schema_with_ref_depth(root, target, value, path, ref_depth + 1)?;
     }
-    let union = schema
-        .get("oneOf")
-        .and_then(Value::as_array)
-        .map(|branches| (branches, true))
-        .or_else(|| {
-            schema
-                .get("anyOf")
-                .and_then(Value::as_array)
-                .map(|branches| (branches, false))
-        });
-    if let Some((branches, exclusive)) = union {
-        return union::validate(root, branches, exclusive, value, path);
+    for (keyword, exclusive) in [("oneOf", true), ("anyOf", false)] {
+        if let Some(branches) = schema.get(keyword).and_then(Value::as_array) {
+            // A matching branch does not waive the enclosing object's fields,
+            // required properties, or any other sibling constraints.
+            union::validate(root, branches, exclusive, value, path)?;
+        }
     }
 
     if let Some(constant) = schema.get("const")
@@ -103,7 +112,44 @@ pub(super) fn validate_schema(
             value,
         ));
     }
-    match schema.get("type").and_then(Value::as_str) {
+    let kind = match schema.get("type") {
+        Some(Value::String(kind)) => Some(kind.as_str()),
+        Some(Value::Array(kinds)) if !kinds.is_empty() => {
+            for kind in kinds {
+                if !kind.as_str().is_some_and(known_type) {
+                    return Err(issue(
+                        "schema.unsupported-type",
+                        path.clone(),
+                        format!("Unsupported schema type: {kind}"),
+                    ));
+                }
+            }
+            let selected = kinds.iter().filter_map(Value::as_str).find(|kind| {
+                *kind == value_type(value)
+                    || (*kind == "integer"
+                        && value.as_f64().is_some_and(|number| number.fract() == 0.0))
+            });
+            Some(selected.ok_or_else(|| {
+                schema_issue(
+                    "schema.type",
+                    path.clone(),
+                    format!("Expected one of the declared types: {}", schema["type"]),
+                    schema,
+                    value,
+                )
+            })?)
+        }
+        Some(other) => {
+            return Err(issue(
+                "schema.unsupported-type",
+                path.clone(),
+                format!("Unsupported schema type: {other}"),
+            ));
+        }
+        // Keywords such as `required` and `minimum` also apply without `type`.
+        None => Some(value_type(value)),
+    };
+    match kind {
         Some("object") => validate_object(root, schema, value, path),
         Some("array") => validate_array(root, schema, value, path),
         Some("string") => validate_string(schema, value, path),
@@ -112,7 +158,12 @@ pub(super) fn validate_schema(
         Some("boolean") if !value.is_boolean() => Err(schema_issue(
             "schema.type",
             path.clone(),
-            "Expected boolean",
+            match value.as_str() {
+                Some(text @ ("true" | "false")) => {
+                    format!("Expected boolean; send {text}, not \"{text}\"")
+                }
+                _ => "Expected boolean".to_owned(),
+            },
             schema,
             value,
         )),
@@ -129,6 +180,24 @@ pub(super) fn validate_schema(
             path.clone(),
             format!("Unsupported schema type: {other}"),
         )),
+    }
+}
+
+fn known_type(kind: &str) -> bool {
+    matches!(
+        kind,
+        "object" | "array" | "string" | "integer" | "number" | "boolean" | "null"
+    )
+}
+
+fn value_type(value: &Value) -> &'static str {
+    match value {
+        Value::Object(_) => "object",
+        Value::Array(_) => "array",
+        Value::String(_) => "string",
+        Value::Number(_) => "number",
+        Value::Bool(_) => "boolean",
+        Value::Null => "null",
     }
 }
 
@@ -155,7 +224,12 @@ fn validate_object(
     // A speculative probe reads only pass/fail: it stops at the first issue.
     let speculative = union::speculative();
     let mut issues = Vec::new();
-    if let Err(error) = check_size(schema, object.len(), path) {
+    if let Err(error) = check_size(
+        schema,
+        ("minProperties", "maxProperties"),
+        object.len(),
+        path,
+    ) {
         issues.extend(error.issues);
     }
     if let Some(name_schema) = schema.get("propertyNames") {
@@ -279,15 +353,13 @@ fn validate_array(
     let array = match value {
         Value::Array(array) => array,
         received => {
-            // Lossless repair already turned JSON-encoded lists and scalars
-            // the items accept into arrays; name the fix for what is left,
-            // and never suggest wrapping an encoded list or an item the list
-            // rejects.
+            // Admission never repairs a value: name the fix, and never
+            // suggest wrapping an encoded list or an item the list rejects.
             let message = match &*received {
-                Value::String(text) if coerce::looks_like_json_array(text) => {
+                Value::String(text) if shape::looks_like_json_array(text) => {
                     "Expected array; send a JSON array, not a JSON-encoded string".to_owned()
                 }
-                Value::String(_) if coerce::items_accept(root, schema, received) => {
+                Value::String(_) if shape::items_accept(root, schema, received) => {
                     format!("Expected array; wrap the value: [{received}]")
                 }
                 _ => "Expected array".to_owned(),
@@ -302,7 +374,7 @@ fn validate_array(
         }
     };
     let mut issues = Vec::new();
-    if let Err(error) = check_size(schema, array.len(), path) {
+    if let Err(error) = check_size(schema, ("minItems", "maxItems"), array.len(), path) {
         issues.extend(error.issues);
     }
     if let Some(items) = schema.get("items") {
@@ -332,7 +404,7 @@ fn validate_string(
     path: &[String],
 ) -> Result<(), ContractValidationError> {
     let line_range =
-        schema.get("pattern").and_then(Value::as_str) == Some(coerce::LINE_RANGE_PATTERN);
+        schema.get("pattern").and_then(Value::as_str) == Some(shape::LINE_RANGE_PATTERN);
     let string = value.as_str().ok_or_else(|| {
         if line_range {
             return issue(
@@ -349,7 +421,12 @@ fn validate_string(
             value,
         )
     })?;
-    check_size(schema, string.chars().count(), path)?;
+    check_size(
+        schema,
+        ("minLength", "maxLength"),
+        string.chars().count(),
+        path,
+    )?;
     if let Some(pattern) = schema.get("pattern").and_then(Value::as_str) {
         let regex = compiled_pattern(pattern)
             .map_err(|error| issue("schema.unsupported-pattern", path.to_vec(), error))?;
@@ -478,13 +555,13 @@ fn validate_number(
     integer: bool,
 ) -> Result<(), ContractValidationError> {
     let number = value.as_f64().ok_or_else(|| {
-        schema_issue(
-            "schema.type",
-            path.to_vec(),
-            "Expected number",
-            schema,
-            value,
-        )
+        let message = match value.as_str() {
+            Some(text) if text.trim().parse::<f64>().is_ok() => {
+                format!("Expected number; send {}, not \"{text}\"", text.trim())
+            }
+            _ => "Expected number".to_owned(),
+        };
+        schema_issue("schema.type", path.to_vec(), message, schema, value)
     })?;
     if integer && number.fract() != 0.0 {
         return Err(issue("schema.integer", path.to_vec(), "Expected integer"));
@@ -520,19 +597,12 @@ fn validate_number(
 
 fn check_size(
     schema: &Value,
+    keys: (&str, &str),
     length: usize,
     path: &[String],
 ) -> Result<(), ContractValidationError> {
-    let minimum = schema
-        .get("minLength")
-        .or_else(|| schema.get("minItems"))
-        .or_else(|| schema.get("minProperties"))
-        .and_then(Value::as_u64);
-    let maximum = schema
-        .get("maxLength")
-        .or_else(|| schema.get("maxItems"))
-        .or_else(|| schema.get("maxProperties"))
-        .and_then(Value::as_u64);
+    let minimum = schema.get(keys.0).and_then(Value::as_u64);
+    let maximum = schema.get(keys.1).and_then(Value::as_u64);
     if let Some(bound) = minimum.filter(|bound| length < *bound as usize) {
         return Err(issue(
             "schema.size",
@@ -572,6 +642,147 @@ pub(super) fn boolean_enum_hint(values: &[Value], received: &Value) -> Option<St
 mod tests {
     use super::validate_schema;
     use serde_json::{Value, json};
+
+    #[test]
+    fn union_guards_preserve_enclosing_required_fields_and_property_validation() {
+        let schema = json!({
+            "type":"object", "additionalProperties":false,
+            "properties":{
+                "state":{"type":["string","object","array"]},
+                "source":{"type":"object"},
+                "questions":{"type":"array","minItems":1}
+            },
+            "required":["questions"],
+            "oneOf":[{"required":["state"]},{"required":["source"]}]
+        });
+        for mut value in [
+            json!({"state":"text","questions":[{}]}),
+            json!({"state":[],"questions":[{}]}),
+            json!({"state":{},"questions":[{}]}),
+            json!({"source":{},"questions":[{}]}),
+        ] {
+            assert!(
+                validate_schema(&schema, &schema, &mut value, &mut vec![]).is_ok(),
+                "{value}"
+            );
+        }
+        for mut value in [
+            json!({"state":"text"}),
+            json!({"state":"text","questions":[]}),
+            json!({"state":"text","questions":[{}],"unknown":true}),
+            json!({"state":"text","source":{},"questions":[{}]}),
+            json!({"questions":[{}]}),
+            json!({"state":1,"questions":[{}]}),
+            json!({"state":"text","questions":"encoded"}),
+        ] {
+            assert!(
+                validate_schema(&schema, &schema, &mut value, &mut vec![]).is_err(),
+                "{value}"
+            );
+        }
+    }
+
+    #[test]
+    fn successful_union_branch_defaults_reach_sibling_constraints() {
+        let schema = json!({
+            "type":"object", "required":["mode"],
+            "anyOf":[{"type":"object","properties":{"mode":{"type":"string","default":"read"}}}],
+            "properties":{"mode":{"const":"read"}}, "additionalProperties":false
+        });
+        let mut value = json!({});
+        validate_schema(&schema, &schema, &mut value, &mut vec![]).unwrap();
+        assert_eq!(value, json!({"mode":"read"}));
+        assert!(
+            validate_schema(&schema, &schema, &mut json!({"mode":"write"}), &mut vec![]).is_err()
+        );
+    }
+
+    #[test]
+    fn reference_chains_validate_sibling_constraints_at_every_level() {
+        let schema = json!({
+            "$defs":{
+                "base":{"type":"integer"},
+                "bounded":{"$ref":"#/$defs/base","minimum":2}
+            },
+            "$ref":"#/$defs/bounded", "maximum":3
+        });
+        for (mut value, valid) in [
+            (json!(1), false),
+            (json!(2), true),
+            (json!(3), true),
+            (json!(4), false),
+            (json!(2.5), false),
+            (json!("2"), false),
+        ] {
+            assert_eq!(
+                validate_schema(&schema, &schema, &mut value, &mut vec![]).is_ok(),
+                valid,
+                "{value}"
+            );
+        }
+        let cyclic =
+            json!({"$defs":{"a":{"$ref":"#/$defs/b"},"b":{"$ref":"#/$defs/a"}},"$ref":"#/$defs/a"});
+        assert_eq!(
+            validate_schema(&cyclic, &cyclic, &mut json!(1), &mut vec![])
+                .unwrap_err()
+                .issues[0]
+                .rule_id,
+            "schema.unsupported-ref"
+        );
+    }
+
+    #[test]
+    fn adjacent_unions_and_literal_constraints_all_apply() {
+        let schema =
+            json!({"oneOf":[{"const":"a"},{"const":"b"}],"anyOf":[{"const":"a"},{"const":"c"}]});
+        assert!(validate_schema(&schema, &schema, &mut json!("a"), &mut vec![]).is_ok());
+        for mut value in [json!("b"), json!("c")] {
+            assert!(validate_schema(&schema, &schema, &mut value, &mut vec![]).is_err());
+        }
+        let schema = json!({"anyOf":[{"type":"string"}],"const":"a"});
+        assert!(validate_schema(&schema, &schema, &mut json!("b"), &mut vec![]).is_err());
+    }
+
+    #[test]
+    fn type_arrays_enforce_members_and_only_applicable_bounds() {
+        let schema = json!({"type":["string","array","object","null"],"minLength":2,"maxItems":1,"minProperties":1});
+        for (mut value, valid) in [
+            (json!("ab"), true),
+            (json!("a"), false),
+            (json!([]), true),
+            (json!([1, 2]), false),
+            (json!({"a":1,"b":2}), true),
+            (json!({}), false),
+            (json!(null), true),
+            (json!(1), false),
+            (json!(false), false),
+        ] {
+            assert_eq!(
+                validate_schema(&schema, &schema, &mut value, &mut vec![]).is_ok(),
+                valid,
+                "{value}"
+            );
+        }
+        for (schema, mut value, valid) in [
+            (
+                json!({"type":["integer","null"],"minimum":1}),
+                json!(1),
+                true,
+            ),
+            (json!({"type":["integer","null"]}), json!(1.5), false),
+            (json!({"type":["integer","number"]}), json!(1.5), true),
+            (json!({"type":["boolean","null"]}), json!(false), true),
+            (json!({"type":["string","unsupported"]}), json!("a"), false),
+            (json!({"type":["string",1]}), json!("a"), false),
+            (json!({"type":[]}), json!("a"), false),
+        ] {
+            assert_eq!(
+                validate_schema(&schema, &schema, &mut value, &mut vec![]).is_ok(),
+                valid,
+                "{schema}: {value}"
+            );
+        }
+    }
 
     /// Every `pattern` the contract declares compiles with the engine the
     /// validator runs. One that does not (a look-around, say) rejects every
@@ -692,7 +903,7 @@ mod tests {
     /// once, whether it is the wrong text or not a string at all.
     #[test]
     fn rejected_line_ranges_quote_the_shape() {
-        let schema = json!({"type":"array","items":{"type":"string","pattern":super::coerce::LINE_RANGE_PATTERN}});
+        let schema = json!({"type":"array","items":{"type":"string","pattern":super::shape::LINE_RANGE_PATTERN}});
         let message = |mut value: Value| {
             let mut path = vec!["queries".to_owned(), "0".to_owned(), "ranges".to_owned()];
             validate_schema(&schema, &schema, &mut value, &mut path)

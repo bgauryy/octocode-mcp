@@ -4,8 +4,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createDriver, factSentences, leadsIn, statusClass, writes } from './driver.mjs';
 import { applyPatch } from './cases.mjs';
+import { createQueryDefaults } from '../query-defaults.mjs';
 
-const TOOLS = new Set(['t', 'u', 'clasify', 'ghCloneRepo', 'astRewrite']);
+const TOOLS = new Set(['t', 'u', 'clasify', 'ghCloneRepo', 'astRewrite', 'astSearch']);
 const lead = (tool, row) => ({ tool, query: { queries: [row] } });
 const ok = data => ({ results: [{ index: 0, data }] });
 const empty = data => ({ results: [{ index: 0, data, status: 'empty' }] });
@@ -21,8 +22,8 @@ function surface(script) {
   return { call, calls };
 }
 
-function driver({ validate = () => null, staticText = '' } = {}) {
-  return createDriver({ validate, staticText, tools: TOOLS, cliOnly: new Set(['ghCloneRepo', 'astRewrite']) });
+function driver({ validate = () => null, staticText = '', defaultsOf } = {}) {
+  return createDriver({ validate, staticText, tools: TOOLS, cliOnly: new Set(['ghCloneRepo', 'astRewrite']), defaultsOf });
 }
 const rows = () => data => data.items ?? [];
 
@@ -40,6 +41,83 @@ test('a page chain walks to its end with every row once', async () => {
   assert.deepEqual(r.failures, []);
   assert.equal(r.chains.length, 1);
   assert.deepEqual({ pages: r.chains[0].pages, rows: r.chains[0].rows, ended: r.chains[0].ended }, { pages: 3, rows: ['r1', 'r2', 'r3', 'r4', 'r5', 'r6'], ended: true });
+});
+
+test('a page may materialize an equivalent schema default without changing scope', async () => {
+  const script = (_tool, row) => row.page
+    ? ok({ items: ['second'] })
+    : ok({ items: ['first'], next: { nextPage: lead('t', { q: 'x', sort: 'path', apply: false, page: 2 }) } });
+  const r = await driver({ defaultsOf: () => ({ sort: 'path', apply: false }) })
+    .explore('t', { q: 'x' }, { surface: 'cli', call: surface(script).call, rows, root: '/' });
+  assert.deepEqual(r.failures, []);
+  assert.deepEqual(r.chains[0].rows, ['first', 'second']);
+});
+
+test('effective defaults never excuse changed or dropped supplied selection controls', async () => {
+  for (const [seed, next] of [
+    [{ q: 'x', sort: 'modified' }, { q: 'x', sort: 'path', page: 2 }],
+    [{ q: 'x', includeHidden: true }, { q: 'x', page: 2 }],
+    [{ q: 'x', defaultExcludes: false }, { q: 'x', page: 2 }],
+  ]) {
+    const script = (_tool, row) => row.page
+      ? ok({ items: ['second'] })
+      : ok({ items: ['first'], next: { nextPage: lead('t', next) } });
+    const r = await driver({ defaultsOf: () => ({ sort: 'path', includeHidden: false, defaultExcludes: true }) })
+      .explore('t', seed, { surface: 'cli', call: surface(script).call, rows, root: '/' });
+    assert.ok(r.failures.some(f => f.check === 'lead.keeps-scope'), JSON.stringify({ seed, next, failures: r.failures }));
+  }
+});
+
+test('whole-file pages preserve the effective exact view and reject changed non-default views', async () => {
+  for (const [seed, accepted] of [
+    [{ q: 'x', fullContent: true }, true],
+    [{ q: 'x' }, false],
+    [{ q: 'x', fullContent: true, minify: 'standard' }, true],
+    [{ q: 'x', fullContent: true, minify: 'none' }, true],
+    [{ q: 'x', fullContent: true, minify: 'symbols' }, false],
+  ]) {
+    const script = (_tool, row) => row.offset
+      ? ok({ items: ['second'] })
+      : ok({ items: ['first'], next: { continueWindow: lead('t', { q: 'x', unit: 'lines', offset: 1, minify: 'none' }) } });
+    const r = await driver({ defaultsOf: () => ({ minify: 'standard' }) })
+      .explore('t', seed, { surface: 'cli', call: surface(script).call, rows, root: '/' });
+    assert.equal(r.failures.some(f => f.check === 'lead.keeps-scope'), !accepted, JSON.stringify({ seed, failures: r.failures }));
+    assert.deepEqual(r.chains[0].rows, ['first', 'second']);
+  }
+});
+
+test('query defaults resolve references only in the matching operation variant', () => {
+  const schema = {
+    $defs: { Flag: { type: 'boolean', default: false }, Bound: { type: 'integer', default: 7 } },
+    properties: { queries: { items: { anyOf: [
+      { type: 'object', required: ['path', 'operation'], properties: { path: { type: 'string' }, operation: { const: 'files' }, includeHidden: { $ref: '#/$defs/Flag' }, maxFiles: { $ref: '#/$defs/Bound' }, sort: { type: 'string', default: 'path' } } },
+      { type: 'object', required: ['path', 'operation'], properties: { path: { type: 'string' }, operation: { const: 'tree' }, maxDepth: { type: 'integer', default: 3 } } },
+    ] } } },
+  };
+  const defaultsOf = createQueryDefaults([{ name: 't', inputSchema: schema }]);
+  assert.deepEqual(defaultsOf('t', { path: '.', operation: 'files' }), { includeHidden: false, maxFiles: 7, sort: 'path' });
+  assert.deepEqual(defaultsOf('t', { path: '.', operation: 'tree' }), { maxDepth: 3 });
+  assert.deepEqual(defaultsOf('t', { path: '.', operation: 'unknown' }), {});
+  assert.deepEqual(defaultsOf('unregistered', {}), {});
+});
+
+test('ambiguous schema branches do not invent a conflicting default', () => {
+  const schema = { properties: { queries: { items: { anyOf: [
+    { type: 'object', properties: { enabled: { type: 'boolean', default: true }, pageSize: { type: 'integer', default: 10 } } },
+    { type: 'object', properties: { enabled: { type: 'boolean', default: false }, pageSize: { type: 'integer', default: 10 } } },
+  ] } } } };
+  const defaultsOf = createQueryDefaults([{ name: 't', inputSchema: schema }]);
+  assert.deepEqual(defaultsOf('t', {}), { pageSize: 10 });
+});
+
+test('viewTree permits AST syntax inspection and rejects other AST operations', async () => {
+  for (const operation of ['syntaxTree', 'symbols', 'match']) {
+    const script = (_tool, row) => row.operation
+      ? ok({ items: ['node'] })
+      : empty({ hints: { viewTree: lead('astSearch', { path: '/source.ts', operation }) } });
+    const r = await driver().explore('astSearch', { path: '/source.ts' }, { surface: 'cli', call: surface(script).call, root: '/' });
+    assert.equal(r.failures.some(f => f.check === 'lead.key-tool'), operation !== 'syntaxTree', JSON.stringify(r.failures));
+  }
 });
 
 test('a page repeating a row fails exactly-once', async () => {

@@ -56,6 +56,7 @@
       "description": "GitHub Actions token"
     },
     "OCTOCODE_GITHUB_CLIENT_ID": {
+      "dotenv": "home",
       "configSource": true,
       "description": "GitHub OAuth client override"
     },
@@ -75,17 +76,21 @@
       "description": "Override the cargo executable used for Rust dependency-graph analysis."
     }
   },
+  "removed": {
+    "settings": {
+      "version": "The configuration file no longer declares a schema version; delete the key.",
+      "classification.type": "The classification provider is built in; delete the key."
+    },
+    "environment": {
+      "OCTOCODE_CLASSIFICATION_TYPE": "The classification provider is built in; unset the variable."
+    }
+  },
   "sections": {
     "": {
       "title": "Configuration",
       "file": true,
       "resolved": true,
-      "fields": {
-        "version": {
-          "type": "schemaVersion",
-          "description": "Configuration schema version."
-        }
-      }
+      "fields": {}
     },
     "github": {
       "title": "GitHub API",
@@ -100,8 +105,7 @@
           "env": {
             "name": "GITHUB_API_URL",
             "dotenv": "home",
-            "normalize": "trim",
-            "invalid": "skip"
+            "normalize": "trim"
           }
         },
         "graphqlEnabled": {
@@ -124,7 +128,9 @@
           "default": true,
           "description": "Enable local filesystem tools on every runtime surface.",
           "env": {
-            "name": "OCTOCODE_ENABLE_LOCAL"
+            "name": "OCTOCODE_ENABLE_LOCAL",
+            "dotenv": "home",
+            "workspaceNarrowsTo": "false"
           }
         },
         "beta": {
@@ -205,8 +211,6 @@
       "fields": {
         "timeout": {
           "type": "number",
-          "constantName": "NETWORK_TIMEOUT",
-          "boundsName": "TIMEOUT",
           "minimum": 5000,
           "span": 295000,
           "defaultOffset": 25000,
@@ -217,8 +221,6 @@
         },
         "maxRetries": {
           "type": "number",
-          "constantName": "NETWORK_MAX_RETRIES",
-          "boundsName": "RETRIES",
           "minimum": 0,
           "span": 10,
           "defaultOffset": 3,
@@ -256,7 +258,7 @@
       "resolved": true,
       "fields": {
         "configPath": {
-          "type": "string",
+          "type": "path",
           "default": null,
           "description": "Optional path to a custom lsp-servers.json.",
           "env": {
@@ -276,8 +278,7 @@
           "env": {
             "name": "OCTOCODE_LSP_AUTO_INSTALL",
             "dotenv": "home",
-            "normalize": "lower",
-            "invalid": "skip"
+            "normalize": "lower"
           }
         },
         "cacheDir": {
@@ -291,13 +292,15 @@
           }
         },
         "maxMemoryMb": {
-          "type": "string",
+          "type": "number",
+          "minimum": 0,
+          "span": 4294967295,
           "default": null,
-          "description": "Resident-memory cap per language server process tree, in MiB (a non-negative integer). Unset: 25% of host RAM, between 4096 and 8192. 0 disables the cap. A server over the cap is stopped and lspSearch reports serverCrashed (not retryable).",
+          "displayDefault": "25% of host RAM, between 4096 and 8192",
+          "description": "Resident-memory cap per language server process tree, in MiB. Unset: 25% of host RAM, between 4096 and 8192. 0 disables the cap. A server over the cap is stopped and lspSearch reports serverCrashed (not retryable).",
           "env": {
             "name": "OCTOCODE_LSP_MAX_MEMORY_MB",
-            "dotenv": "home",
-            "normalize": "trim"
+            "dotenv": "home"
           }
         },
         "trustProjectConfig": {
@@ -319,8 +322,7 @@
           "description": "Language-server prewarm: targeted starts the server an offered lspSearch call names; all also warms the file a read or search names; off disables it.",
           "env": {
             "name": "OCTOCODE_LSP_PREWARM",
-            "normalize": "lower",
-            "invalid": "skip"
+            "normalize": "lower"
           }
         }
       }
@@ -333,8 +335,6 @@
         "format": {
           "type": "enum",
           "typeName": "OutputFormat",
-          "constantName": "OUTPUT_FORMAT",
-          "valuesConstant": "OUTPUT_FORMATS",
           "values": [
             "yaml",
             "json"
@@ -342,8 +342,7 @@
           "description": "Encoding of rendered text content (the MCP text channel): yaml or json. Structured content and CLI stdout are always JSON.",
           "env": {
             "name": "OCTOCODE_OUTPUT_FORMAT",
-            "normalize": "lower",
-            "invalid": "default"
+            "normalize": "lower"
           }
         },
         "redactEmails": {
@@ -351,7 +350,9 @@
           "default": false,
           "description": "Mask email addresses such as GitHub commit authors.",
           "env": {
-            "name": "OCTOCODE_REDACT_EMAILS"
+            "name": "OCTOCODE_REDACT_EMAILS",
+            "dotenv": "home",
+            "workspaceNarrowsTo": "true"
           }
         }
       }
@@ -364,8 +365,6 @@
       "fields": {
         "defaultCharLength": {
           "type": "number",
-          "constantName": "OUTPUT_DEFAULT_CHAR_LENGTH",
-          "boundsName": "OUTPUT_DEFAULT_CHAR_LENGTH",
           "minimum": 1000,
           "span": 49000,
           "defaultOffset": 49000,
@@ -384,8 +383,6 @@
         "mode": {
           "type": "enum",
           "typeName": "StorageMode",
-          "constantName": "STORAGE_MODE",
-          "valuesConstant": "STORAGE_MODES",
           "enumStyle": "quotedOr",
           "values": [
             "persistent",
@@ -396,7 +393,6 @@
             "name": "OCTOCODE_STORAGE_MODE",
             "dotenv": "home",
             "normalize": "lower",
-            "invalid": "skip",
             "workspaceNarrowsTo": "memory"
           }
         },
@@ -418,7 +414,6 @@
       "fields": {
         "ttl": {
           "type": "number",
-          "constantName": "CLONE_CACHE_TTL",
           "minimum": 60000,
           "span": 2591940000,
           "defaultOffset": 86340000,
@@ -429,7 +424,6 @@
         },
         "maxSize": {
           "type": "number",
-          "constantName": "CLONE_CACHE_MAX_SIZE",
           "minimum": 1048576,
           "span": 1099510579200,
           "defaultOffset": 2146435072,
@@ -440,7 +434,6 @@
         },
         "maxClones": {
           "type": "number",
-          "constantName": "CLONE_CACHE_MAX_CLONES",
           "minimum": 1,
           "span": 999,
           "defaultOffset": 49,
@@ -451,80 +444,16 @@
         }
       }
     },
-    "ranking": {
-      "title": "Read-tool relevance ranking",
-      "file": true,
-      "resolved": true,
-      "fields": {
-        "enabled": {
-          "type": "boolean",
-          "default": false,
-          "description": "Enable goal-based ordering on supported reads. Requires the classification API credential, independently of the public clasify tool.",
-          "env": {
-            "name": "OCTOCODE_RANKING_ENABLED",
-            "dotenv": "home",
-            "workspaceNarrowsTo": "false"
-          }
-        },
-        "maxCandidates": {
-          "type": "number",
-          "minimum": 1,
-          "span": 255,
-          "defaultOffset": 63,
-          "description": "Maximum complete evidence units classified per ranking operation; other units keep their original order.",
-          "env": {
-            "name": "OCTOCODE_RANKING_MAX_CANDIDATES"
-          }
-        },
-        "maxChars": {
-          "type": "number",
-          "minimum": 1024,
-          "span": 1047552,
-          "defaultOffset": 130048,
-          "description": "Maximum evidence characters sent for one ranking operation.",
-          "env": {
-            "name": "OCTOCODE_RANKING_MAX_CHARS"
-          }
-        },
-        "timeoutMs": {
-          "type": "number",
-          "minimum": 100,
-          "span": 59900,
-          "defaultOffset": 9900,
-          "description": "Total ranking deadline in milliseconds, bounded by the enclosing request deadline.",
-          "env": {
-            "name": "OCTOCODE_RANKING_TIMEOUT_MS"
-          }
-        }
-      }
-    },
     "classification": {
       "title": "Classification provider",
       "file": true,
       "resolved": true,
       "fields": {
-        "type": {
-          "type": "enum",
-          "typeName": "ClassificationVendor",
-          "enumStyle": "quotedOr",
-          "valuesConstant": "CLASSIFICATION_VENDORS",
-          "values": [
-            "jev"
-          ],
-          "description": "Classification vendor. Per-vendor defaults (host, model, endpoint) are built in.",
-          "env": {
-            "name": "OCTOCODE_CLASSIFICATION_TYPE",
-            "dotenv": "all",
-            "normalize": "trim",
-            "invalid": "skip"
-          },
-          "displayDefault": "jev"
-        },
         "api": {
           "type": "string",
           "default": null,
           "credential": true,
-          "description": "Classification provider API key, required for goals ranking and the beta clasify tool.",
+          "description": "Classification provider API key, required for read-tool classifiers and the beta clasify tool.",
           "env": {
             "name": "OCTOCODE_CLASSIFICATION_API",
             "dotenv": "all",
@@ -537,25 +466,65 @@
           "type": "url",
           "default": null,
           "credential": true,
-          "description": "Optional override of the selected vendor's default API root.",
+          "description": "Optional override of the classification provider's default API root.",
           "env": {
             "name": "OCTOCODE_CLASSIFICATION_API_HOST",
             "dotenv": "home",
             "normalize": "trim"
           },
-          "displayDefault": "vendor default (jev: https://api.typesafe.ai)",
+          "displayDefault": "built-in provider default (https://api.typesafe.ai)",
           "notes": "Requires HTTP or HTTPS at config validation; provider policy may require HTTPS except loopback."
+        },
+        "model": {
+          "type": "string",
+          "default": null,
+          "description": "Classification model for read-tool classifiers and clasify; a clasify row's model overrides it.",
+          "env": {
+            "name": "OCTOCODE_CLASSIFICATION_MODEL",
+            "dotenv": "all",
+            "normalize": "trim"
+          },
+          "displayDefault": "built-in provider default (jev-latest)",
+          "notes": "Pin an exact model (for example jev-1.13.0) for reproducible results; an alias can change behind cached answers until they expire."
         },
         "maxConcurrency": {
           "type": "number",
-          "constantName": "CLASSIFICATION_MAX_CONCURRENCY",
-          "boundsName": "CLASSIFICATION_CONCURRENCY",
           "minimum": 1,
           "span": 63,
           "defaultOffset": 9,
           "description": "Process-wide maximum in-flight classification provider requests per provider endpoint.",
           "env": {
             "name": "OCTOCODE_CLASSIFICATION_CONCURRENCY"
+          }
+        },
+        "maxCandidates": {
+          "type": "number",
+          "minimum": 1,
+          "span": 255,
+          "defaultOffset": 63,
+          "description": "Maximum complete evidence units assessed per context selection operation; unassessed units remain unknown and recoverable.",
+          "env": {
+            "name": "OCTOCODE_CLASSIFICATION_MAX_CANDIDATES"
+          }
+        },
+        "maxChars": {
+          "type": "number",
+          "minimum": 1024,
+          "span": 1047552,
+          "defaultOffset": 130048,
+          "description": "Maximum total characters in serialized sanitized candidate states per context selection operation, including source metadata; excludes question instructions and request envelopes.",
+          "env": {
+            "name": "OCTOCODE_CLASSIFICATION_MAX_CHARS"
+          }
+        },
+        "timeoutMs": {
+          "type": "number",
+          "minimum": 100,
+          "span": 59900,
+          "defaultOffset": 9900,
+          "description": "Context selection deadline in milliseconds, bounded by the enclosing request deadline.",
+          "env": {
+            "name": "OCTOCODE_CLASSIFICATION_TIMEOUT_MS"
           }
         }
       }

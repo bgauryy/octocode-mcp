@@ -15,7 +15,7 @@ function fixture(t) {
   const other = cli('join', { name: 'other', vendor: 'raw' }).id;
   const send = (input, session = receiver) => cli('send_message', input, session);
   const complete = (input, session = receiver) => cli('complete', input, session);
-  const request = cli('send_message', { to: receiver, body: 'Review the change', reasoning: 'Need review before release', key: 'request' }, sender);
+  const request = cli('send_message', { to: receiver, body: 'Review the change', reasoning: 'Need review before release', key: 'request', replyRequired: true }, sender);
   const db = new DatabaseSync(database);
   t.after(() => db.close());
   const stamp = () => db.prepare('SELECT acknowledgedAt FROM deliveries WHERE message=? AND recipient=?').get(request.id, receiver).acknowledgedAt;
@@ -167,15 +167,17 @@ test('answers and notices cannot start reply loops; new work requires a new root
   assert.throws(()=>f.send({replyTo:notice.id,body:'Unasked answer',reasoning:'Loop'}));
   assert.throws(()=>f.complete({message:notice.id,reply:'Unasked answer'}));
   assert.deepEqual(f.complete({message:notice.id}),{completed:true,count:1});
-  const next=f.cli('send_message',{to:f.receiver,body:'Please investigate a new issue',reasoning:'New work'},f.sender);
+  const next=f.cli('send_message',{to:f.receiver,body:'Please investigate a new issue',reasoning:'New work',replyRequired:true},f.sender);
   assert.equal(f.complete({message:next.id,reply:'Investigated'}).completed,true);
 });
 
 test('reply policy is immutable across keyed retries and replies cannot demand another answer',t=>{
-  const f=fixture(t),input={to:f.receiver,body:'Required review',reasoning:'Need evidence',key:'policy'};
+  const f=fixture(t),input={to:f.receiver,body:'Required review',reasoning:'Need evidence',key:'policy',replyRequired:true};
   const first=f.cli('send_message',input,f.sender);
-  assert.equal(f.cli('send_message',{...input,replyRequired:true},f.sender).id,first.id);
+  assert.equal(f.cli('send_message',{...input},f.sender).id,first.id);
   assert.throws(()=>f.cli('send_message',{...input,replyRequired:false},f.sender));
+  const {replyRequired:_omitted,...unmarked}=input;
+  assert.throws(()=>f.cli('send_message',unmarked,f.sender),/Message key reused with different content/,'an omitted flag means FYI, not the request already stored');
   const notice={...input,body:'FYI',key:'notice',replyRequired:false};
   assert.equal(f.cli('send_message',notice,f.sender).id,f.cli('send_message',notice,f.sender).id);
   assert.throws(()=>f.cli('send_message',{...notice,replyRequired:true},f.sender));
@@ -185,7 +187,7 @@ test('reply policy is immutable across keyed retries and replies cannot demand a
   assert.equal(f.cli('inbox',{message:partial.id},f.sender).items[0].replyRequired,false);
 });
 
-test('reply policy is explicit boolean in inbox, hooks and entity reads with route-specific defaults',t=>{
+test('reply policy is explicit boolean in inbox, hooks and entity reads; only an explicit request requires an answer',t=>{
   const f=fixture(t);
   f.cli('subscribe',{topics:['facts']},f.receiver);
   const topic=f.cli('send_message',{topic:'facts',body:'Topic fact',reasoning:'Inform subscribers'},f.sender);

@@ -1,18 +1,23 @@
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
-import { envFlag, PERMISSION_ENV, PERMISSION_RELAY_ENV } from '../shared/env.js';
+import { envFlag, PERMISSION_ENV, PERMISSION_RELAY_ENV, takeNonce } from '../shared/env.js';
 import { interactive } from '../shared/interactive.js';
 import { withDialog } from '../shared/locks.js';
 import { statusColor } from '../shared/render.js';
-import { redactSecrets, sanitizeTerminalText } from '../shared/sanitize.js';
+import { redactSecrets, visibleControls } from '../shared/sanitize.js';
 import { takeSnapshot, type Snapshot } from '../shared/snapshot.js';
 import { clipText } from '../shared/util.js';
 import type { PermissionRequest } from './request.js';
-import { AUDIT_NOTIFY_PREFIX, AuditLog, RELAY_VIA, WARN_ACTIONS, type AuditEntry } from './audit.js';
+import { AuditLog, childAuditMessage, RELAY_VIA, WARN_ACTIONS, type AuditEntry } from './audit.js';
 import { permissionHeader } from './header.js';
 import { auditLine, auditLines, cardLines, oneLine, computeCard, NO_REASON, transcriptPurpose } from './effect.js';
 import { ACTION_CLASSES, actionNoun, asksIn, chipText, CHIPS, decide, kindOf, modeAllowing, modeAllowingReasons, parseGrants, PERMISSION_ID, reasonAsks, startMode, UNGRANTABLE, type ActionClass, type ActionCount, type AskReason, type PermissionMode } from './mode.js';
 
-type Verdict = { allowed: true; via: 'mode' | 'grant' | 'user' } | { allowed: false; via: 'user' | 'headless' | 'cancelled'; message: string };
+/**
+ * What a check decided. `lasts` on an allow says how far it reaches: `call` for this call only (the mode allowed it, or the
+ * user answered "Allow once"), `session` when it rests on a grant that outlives the call (a session or kind grant, a
+ * spawn grant, or the user's answer that made one just now).
+ */
+type Verdict = { allowed: true; via: 'mode' | 'grant' | 'user'; lasts: 'call' | 'session' } | { allowed: false; via: 'user' | 'headless' | 'cancelled'; message: string };
 
 /** A call a check let through: what the activity line says about it. */
 interface ActionEvent {
@@ -48,7 +53,7 @@ const DISMISSED = 'Not run: the approval dialog was dismissed.';
 /** Starts every denial for lack of anyone to ask: a parent counts its subagent's refused actions by it. */
 export const NEEDS_APPROVAL = 'Not run, needs approval:';
 
-const shown = (text: string, max = 200): string => clipText(sanitizeTerminalText(text), max);
+const shown = (text: string, max = 200): string => clipText(visibleControls(text), max);
 /** Each independent reason keeps its own budget, so a long source label cannot hide a hook's reason. */
 const shownReasons = (why: string): string => why.split('\n').map((reason) => shown(reason, 400)).join('\n');
 
@@ -69,6 +74,8 @@ export class Permission {
   readonly #isSubagent: boolean;
   /** A subagent whose parent can ask a person: its dialogs are relayed to the parent (RPC) instead of denied. */
   readonly #relay: boolean;
+  /** The secret the parent gave this subagent: what marks a header or audit entry as this module's own. Empty when there is none. */
+  readonly #nonce: string;
   readonly #agent: () => string;
   readonly #stderr: (text: string) => void;
   readonly #snapshotMs: number | undefined;
@@ -84,6 +91,8 @@ export class Permission {
   readonly #listeners = new Set<(event: ActionEvent) => void>();
   #mode: PermissionMode = 'manual';
   #warned = false;
+  /** The no-secret note was written. */
+  #unforwarded = false;
   #paintCtx: Pick<ExtensionContext, 'hasUI' | 'ui' | 'mode'> | undefined;
   #policy = new AbortController();
   readonly #revoked = new Set<() => void>();
@@ -93,6 +102,9 @@ export class Permission {
     this.#env = options.env ?? process.env;
     this.#isSubagent = options.isSubagent;
     this.#relay = options.isSubagent && envFlag(this.#env, PERMISSION_RELAY_ENV);
+    // Read once from the parent's file (which is unlinked) and kept by the process (`ownNonce`), so the team can check a message the parent signed.
+    const nonce = takeNonce(this.#env);
+    this.#nonce = options.isSubagent ? (nonce ?? '') : '';
     this.#agent = () => options.agent?.() ?? (options.isSubagent ? 'subagent' : 'main');
     this.#stderr = options.stderr ?? ((text) => void process.stderr.write(text));
     this.#snapshotMs = options.snapshotMs;
@@ -109,13 +121,20 @@ export class Permission {
 
   /**
    * A subagent has no session file (`--no-session`), so each entry also goes to its parent as a fire-and-forget notify that
-   * the parent records under the child's name and never shows (`childAuditEntry`).
+   * the parent records under the child's name and never shows (`childAuditEntry`). With no nonce the parent would reject
+   * it, so none is sent; the child then says so once on stderr (the parent keeps the tail), because a child without a
+   * session file has no other record. Its entries still go to its own session when it has one.
    */
   #toParent(entry: AuditEntry): void {
     const ctx = this.#paintCtx;
     if (!this.#isSubagent || !ctx?.hasUI) return;
+    if (this.#nonce === '') {
+      if (!this.#unforwarded) this.#stderr('octocode: this subagent has no permission secret from its parent: its audit entries are not forwarded to the parent and stay in its own session only.\n');
+      this.#unforwarded = true;
+      return;
+    }
     try {
-      ctx.ui.notify(`${AUDIT_NOTIFY_PREFIX}${JSON.stringify(entry)}`, 'info');
+      ctx.ui.notify(childAuditMessage(entry, this.#nonce), 'info');
     } catch {
       // The RPC session is gone: the entry stays in the child's own log.
     }
@@ -191,7 +210,7 @@ export class Permission {
     return [...this.#kinds];
   }
 
-  /** Whether the user already allowed the profile `key` (name, content hash, declared classes) this session. */
+  /** Whether the user already allowed the profile `key` (name and content hash) this session. */
   profileSeen(key: string): boolean {
     return this.#seenProfiles.has(key);
   }
@@ -259,9 +278,9 @@ export class Permission {
     const automatic = (): Verdict | undefined => {
       if (signal.aborted) return decided({ allowed: false, via: 'cancelled', message: DISMISSED });
       if (forced()) return undefined;
-      if (classes.every((each) => decide(this.#mode, each) === 'allow')) return { allowed: true, via: 'mode' };
+      if (classes.every((each) => decide(this.#mode, each) === 'allow')) return { allowed: true, via: 'mode', lasts: 'call' };
       const covered = (each: ActionClass): boolean => decide(this.#mode, each) === 'allow' || this.#spawnGrants.has(each) || this.#kinds.has(each) || (each === action && grantKey !== undefined && this.#grants.has(grantKey));
-      return classes.every(covered) ? { allowed: true, via: 'grant' } : undefined;
+      return classes.every(covered) ? { allowed: true, via: 'grant', lasts: 'session' } : undefined;
     };
     const ready = automatic();
     if (ready) {
@@ -287,7 +306,7 @@ export class Permission {
         if (!action || forced() || classes.length > 1 || kindOf(action) === undefined) return decided({ allowed: false, via: 'cancelled', message: DISMISSED });
         this.#kinds.add(action);
       }
-      if (answer === 'once' || answer === 'session' || answer === 'kind') return decided({ allowed: true, via: 'user' });
+      if (answer === 'once' || answer === 'session' || answer === 'kind') return decided({ allowed: true, via: 'user', lasts: answer === 'once' ? 'call' : 'session' });
       const note = typeof answer === 'object' ? answer.deny : undefined;
       return decided({ allowed: false, via: 'user', message: this.#denied(request, note) }, note);
     }, signal);
@@ -332,8 +351,8 @@ export class Permission {
     const grant = forced ? undefined : request.grant;
     const choices = [ALLOW_ONCE, ...(grant ? [sessionOption(grant.label)] : []), ...(kind ? [kind] : []), DENY, DENY_NOTE];
     // A relayed child leads with the one-line header its parent reads to answer without a dialog (never shown).
-    const head = this.#relay && request.action
-      ? `${permissionHeader({ action: request.action, also: [...(request.also ?? [])], reasons: [...new Set(request.reasons ?? [])], options: choices, what: auditLines(request.what) })}\n`
+    const head = this.#relay && this.#nonce !== '' && request.action
+      ? `${permissionHeader({ action: request.action, also: [...(request.also ?? [])], reasons: [...new Set(request.reasons ?? [])], options: choices, what: auditLines(request.what), nonce: this.#nonce })}\n`
       : '';
     const choice = await ctx.ui.select(`${head}${this.#describe(request)}`, choices, options);
     if (choice === undefined) return undefined;
@@ -403,6 +422,11 @@ export class Permission {
   /** Records an audit entry a subagent sent (already validated by `childAuditEntry`): under its own name, in this session's log and tallies. */
   adopt(entry: AuditEntry): void {
     this.#write(entry);
+  }
+
+  /** Records, under `agent`'s name, what the parent did with that subagent's audit notifications instead of recording them (never counted as a call). */
+  relayNote(agent: string, note: string): void {
+    this.#write({ at: Date.now(), mode: this.#mode, action: 'call', what: [`audit entries of ${auditLine(agent)}`], agent: auditLine(agent), allowed: true, via: RELAY_VIA, note: auditLine(note) });
   }
 
   /** Records that this session's mode answered `agent`'s "Allow once" for `action` without a dialog (the child's own entry counts the call). */

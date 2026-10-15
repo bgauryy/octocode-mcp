@@ -27,6 +27,15 @@ pub(super) struct Anchor {
     pub(super) resolved_symbol: Option<Value>,
 }
 
+/// A zero-based LSP position in `path`: where a request, or one of its
+/// recovery steps, asks the server.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct Position<'a> {
+    pub(super) path: &'a str,
+    pub(super) line: u32,
+    pub(super) character: u32,
+}
+
 pub(super) fn is_anchored(operation: &str) -> bool {
     !matches!(
         operation,

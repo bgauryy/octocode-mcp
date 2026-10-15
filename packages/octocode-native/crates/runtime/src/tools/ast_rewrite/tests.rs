@@ -4,6 +4,9 @@ use super::*;
 use crate::tools::cancel::NeverCancel;
 use crate::tools::test_support::{Fixture, assert_row_contract};
 
+#[path = "scope_tests.rs"]
+mod scope_tests;
+
 /// Tests speak JSON rows; the runtime owns the typed parse.
 fn rewrite_row(
     query: Value,

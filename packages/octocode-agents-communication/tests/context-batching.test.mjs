@@ -14,7 +14,7 @@ function fixture(t) {
   call('attach', { transport: 'raw' }, receiver);
   const db = new DatabaseSync(database, { readOnly: true });
   t.after(() => { db.close(); rmSync(workspace, { recursive: true, force: true }); });
-  const send = (body, to = receiver) => call('send_message', { to, body, replyRequired:false, reasoning: 'Coordinate a pending decision', conversationId: 'shared-decision' }, sender).id;
+  const send = (body, to = receiver) => call('send_message', { to, body, replyRequired:false, wake:'action', reasoning: 'Coordinate a pending decision', conversationId: 'shared-decision' }, sender).id;
   const pending = () => db.prepare('SELECT message FROM deliveries WHERE recipient=? AND acknowledgedAt IS NULL ORDER BY message').all(receiver).map(x => x.message);
   const audits = () => db.prepare("SELECT count(*) AS n FROM records WHERE type='delivery.acknowledged'").get().n;
   return { call, sender, receiver, send, db, pending, audits };
@@ -84,7 +84,7 @@ test('larger row cap preserves byte bound and oversized-first-item progress', t 
 // Reproduces the mixed batch where an agent handled requests but overlooked an answer.
 test('mixed delivered batches enumerate request and notice obligations without completing either', t => {
  const f=fixture(t);
- const request=f.call('send_message',{to:f.receiver,body:'Please review',reasoning:'Mixed batch regression'},f.sender).id;
+ const request=f.call('send_message',{to:f.receiver,body:'Please review',replyRequired:true,reasoning:'Mixed batch regression'},f.sender).id;
  const answer=f.send('A received answer is still a notice to complete');
  const batch=f.call('hook',{format:'json'},f.receiver);
  assert.ok(batch.context.split('\n')[0].includes(`Requests: [${request}]. Notices/answers: [${answer}].`));

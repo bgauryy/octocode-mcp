@@ -289,8 +289,8 @@ impl FileScan<'_> {
             .anchors
             .as_ref()
             .map(|anchors| anchors.check(file_path, self.max_file_bytes));
-        if matches!(prefiltered, Some(Anchored::Miss)) {
-            return Ok(Some((Tally::PreFilter, skipped_file(
+        if let Some(Anchored::Miss(source_sha256)) = &prefiltered {
+            let mut file = skipped_file(
                 path_string,
                 "skippedByPreFilter",
                 "preFilter",
@@ -301,7 +301,9 @@ impl FileScan<'_> {
                     "File excluded by the text pre-filter (it does not contain the pattern's anchor literal), so AST parsing was skipped.",
                 )
                 .with_recovery("Remove the literal prefilter by using a rule with no safe anchor if every file must be parsed."),
-            ))));
+            );
+            file.source_sha256 = source_sha256.clone();
+            return Ok(Some((Tally::PreFilter, file)));
         }
 
         let ext = (self.select_extension)(file_path);
@@ -318,7 +320,7 @@ impl FileScan<'_> {
         };
 
         let content = match prefiltered {
-            None | Some(Anchored::Miss) => read_source(file_path, self.max_file_bytes),
+            None | Some(Anchored::Miss(_)) => read_source(file_path, self.max_file_bytes),
             Some(Anchored::Hit(bytes)) => source_text(bytes),
             Some(Anchored::Large(len)) => Err(SourceSkip::Large(len)),
         };
@@ -332,12 +334,9 @@ impl FileScan<'_> {
                 )));
             }
         };
-        Ok(Some(self.match_source(
-            path_string,
-            &ext,
-            entry.language_id,
-            &content,
-        )))
+        let (tally, mut file) = self.match_source(path_string, &ext, entry.language_id, &content);
+        file.source_sha256 = Some(crate::digest::sha256(content.as_bytes()));
+        Ok(Some((tally, file)))
     }
 
     fn match_source(
@@ -406,6 +405,7 @@ impl FileScan<'_> {
             Tally::Parsed(matches.len() as u32),
             StructuralSearchDetailedFileResult {
                 path: path_string,
+                source_sha256: None,
                 status: "ok".to_owned(),
                 language_id: language_id.map(str::to_owned),
                 skipped_reason: None,
@@ -610,8 +610,8 @@ struct AnchorFilter {
 
 /// What the prefilter learned about one candidate.
 enum Anchored {
-    /// No anchor in the file, or the file could not be read.
-    Miss,
+    /// No anchor, with a digest when the source was read whole.
+    Miss(Option<String>),
     /// An anchor is present; the bytes read for the check, kept for the parse.
     Hit(Vec<u8>),
     /// An anchor is present in a file over the parse cap (its length).
@@ -655,17 +655,17 @@ impl AnchorFilter {
                 return if hit {
                     Anchored::Large(len)
                 } else {
-                    Anchored::Miss
+                    Anchored::Miss(None)
                 };
             }
-            Err(_) => return Anchored::Miss,
+            Err(_) => return Anchored::Miss(None),
         };
         if self
             .automaton
             .as_ref()
             .is_some_and(|automaton| !automaton.is_match(&bytes))
         {
-            return Anchored::Miss;
+            return Anchored::Miss(Some(crate::digest::sha256(&bytes)));
         }
         Anchored::Hit(bytes)
     }
@@ -745,6 +745,12 @@ fn collect_files(
             return Err(Error::cancelled());
         }
         let Ok(entry) = result else { continue };
+        if entry.file_type().is_some_and(|ft| ft.is_dir()) {
+            // Let callers retain discovery metadata, including empty directories,
+            // without counting them as source-file candidates.
+            let _ = admit(entry.path());
+            continue;
+        }
         if !entry.file_type().is_some_and(|ft| ft.is_file()) || !admit(entry.path()) {
             continue;
         }
@@ -769,6 +775,7 @@ fn skipped_file(
 ) -> StructuralSearchDetailedFileResult {
     StructuralSearchDetailedFileResult {
         path,
+        source_sha256: None,
         status: status.to_owned(),
         language_id: None,
         skipped_reason: Some(skipped_reason.to_owned()),
@@ -951,7 +958,6 @@ pub fn rewrite_files(
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used)]
 mod rewrite_coverage_tests {
     use super::*;
 

@@ -52,11 +52,7 @@ pub(crate) fn drift(
         .is_some_and(|expected| expected != snapshot)
     {
         base_map.insert("nodes".into(), json!([]));
-        insert_snapshot_changed(&mut base_map);
-        base_map.insert(
-            "next".into(),
-            json!({"restartDiagnostics": restart_continuation(q)}),
-        );
+        mark_stale(&mut base_map, q);
         return Ok(Value::Object(base_map));
     }
     let answer_empty = super::analysis::answer_is_empty(&items);
@@ -79,8 +75,20 @@ pub(crate) fn drift(
         super::analysis::mark_empty(&mut base_map);
     }
 
-    // A diff of two cut graphs is never complete: a file-scan cut offers
-    // the widened rebuild; any other cut is a terminal limit.
+    close_drift_page(&mut base_map, q, cuts, has_more, &snapshot);
+    Ok(Value::Object(base_map))
+}
+
+/// The cuts, coverage state and continuations of one drift page. A diff
+/// of two cut graphs is never complete: a file-scan cut offers the widened
+/// rebuild; any other cut is a terminal limit.
+fn close_drift_page(
+    base_map: &mut Map<String, Value>,
+    q: &AstTopologyQuery,
+    cuts: ScanCuts,
+    has_more: bool,
+    snapshot: &str,
+) {
     let page_limit = has_more
         && crate::tools::paging::admitted(
             crate::tools::id::ToolId::AstTopology,
@@ -90,20 +98,12 @@ pub(crate) fn drift(
         )
         .is_none();
     let mut reasons = cuts.reasons();
+    let mut ceiling = Vec::new();
     if page_limit {
         reasons.push("pageLimit");
-        super::analysis::push_warning(
-            &mut base_map,
-            super::page::page_ceiling_warning("result", PAGE_MAXIMUM),
-        );
+        ceiling.push(super::page::page_ceiling_warning("result", PAGE_MAXIMUM));
     }
-    if !reasons.is_empty() {
-        base_map.insert("isPartial".into(), json!(true));
-        base_map.insert("partialReasons".into(), json!(reasons));
-    }
-    if page_limit || cuts.terminal(q) {
-        base_map.insert("terminalLimit".into(), json!(true));
-    }
+    super::analysis::mark_cuts(base_map, &reasons, ceiling, page_limit || cuts.terminal(q));
     // Skipped files mark the graph (`files-skipped`); only a cut graph can
     // hide rows from a fully paged answer.
     let results_state = if page_limit {
@@ -122,14 +122,13 @@ pub(crate) fn drift(
             completeness.insert(key.into(), json!(state));
         }
     }
-    super::analysis::state_coverage(&mut base_map, completeness);
+    super::analysis::state_coverage(base_map, completeness);
     let mut next = Map::new();
     if has_more && !page_limit {
         next.insert(
             "nextPage".into(),
             continuation(q, Some(q.page() + 1), None, Some(json!(snapshot))),
         );
-        base_map["pagination"]["resultId"] = json!(snapshot);
     } else if cuts.widenable()
         && let Some(widen) = expand_scan(q)
     {
@@ -138,7 +137,6 @@ pub(crate) fn drift(
     if !next.is_empty() {
         base_map.insert("next".into(), Value::Object(next));
     }
-    Ok(Value::Object(base_map))
 }
 
 /// One row per drift change, file-level first: files, cycles, static/dynamic

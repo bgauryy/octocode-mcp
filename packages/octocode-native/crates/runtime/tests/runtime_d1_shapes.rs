@@ -61,98 +61,26 @@ async fn ast_search_scan_diagnostics_name_workspace_relative_paths() {
     runtime.close().await;
 }
 
+/// astRewrite is parked: the contract disables it on every surface, beta
+/// included, and a call fails before any work.
 #[tokio::test]
-async fn ast_rewrite_paths_and_expected_hashes_are_workspace_relative() {
+async fn parked_ast_rewrite_is_unavailable_even_with_beta() {
     let workspace = Workspace::new();
-    let file = workspace.write("src/sub/a.ts", "export const f = (x) => old(x);\n");
+    workspace.write("src/sub/a.ts", "export const f = (x) => old(x);\n");
     let runtime = beta_runtime(&workspace);
-    let preview = support::run(
-        &runtime,
-        "astRewrite",
-        json!({"path":"src/sub","language":"typescript","pattern":"old($A)","rewrite":"neu($A)"}),
-        &[],
-    )
-    .await;
-    let body = &preview.structured_content;
-    let shown = preview.data();
-    assert_eq!(shown["files"][0]["path"], "src/sub/a.ts", "{body}");
-    assert_eq!(shown["matches"][0]["path"], "src/sub/a.ts", "{body}");
-    let patch = shown["files"][0]["patch"].as_str().expect("patch");
-    assert!(
-        patch.starts_with("--- a/src/sub/a.ts\n+++ b/src/sub/a.ts\n"),
-        "{patch}"
-    );
-    // The envelope `root` names the workspace; no second, absolute root.
-    assert!(shown.get("root").is_none(), "{body}");
-    assert_eq!(
-        body["root"],
-        workspace.workspace.to_string_lossy().as_ref(),
-        "{body}"
-    );
-    let apply = shown["hints"]["apply"]["query"].clone();
-    let row = &apply["queries"][0];
-    assert_eq!(row["path"], "src/sub", "{apply}");
-    let hashes = row["expectedHashes"].as_object().expect("expectedHashes");
-    assert_eq!(
-        hashes.keys().collect::<Vec<_>>(),
-        ["src/sub/a.ts"],
-        "{apply}"
-    );
-    // The lead runs verbatim and writes the previewed file.
-    let applied = runtime
-        .run("d1-apply".into(), "astRewrite".into(), apply)
+    assert!(!runtime.is_available("astRewrite"));
+    let error = runtime
+        .run(
+            "parked".into(),
+            "astRewrite".into(),
+            json!({"queries":[{"path":"src/sub","language":"typescript","pattern":"old($A)","rewrite":"neu($A)"}]}),
+        )
         .await
-        .expect("apply");
-    support::assert_no_retired_names("astRewrite", &applied.structured_content);
-    let applied_data = support::row_data(&applied);
+        .expect_err("parked tool");
+    assert_eq!(error.code, "toolUnavailable", "{error:?}");
     assert_eq!(
-        applied_data["transaction"]["committed"], true,
-        "{}",
-        applied.structured_content
-    );
-    assert_eq!(applied_data["files"][0]["path"], "src/sub/a.ts");
-    assert_eq!(
-        std::fs::read_to_string(file).expect("rewritten"),
-        "export const f = (x) => neu(x);\n"
-    );
-    runtime.close().await;
-}
-
-#[tokio::test]
-async fn boundary_relative_keys_from_old_preview_fail_closed_with_rerun_hint() {
-    let workspace = Workspace::new();
-    let file = workspace.write("src/sub/a.ts", "export const f = (x) => old(x);\n");
-    let runtime = beta_runtime(&workspace);
-    let preview = support::run(
-        &runtime,
-        "astRewrite",
-        json!({"path":"src/sub","language":"typescript","pattern":"old($A)","rewrite":"neu($A)"}),
-        &[],
-    )
-    .await;
-    let mut apply = preview.data()["hints"]["apply"]["query"].clone();
-    let row = &mut apply["queries"][0];
-    let hash = row["expectedHashes"]["src/sub/a.ts"].clone();
-    // An older preview keyed its hashes relative to the scanned directory.
-    row["expectedHashes"] = json!({"a.ts": hash});
-    let rejected = support::run(&runtime, "astRewrite", row.clone(), &[]).await;
-    let result = &rejected.structured_content["results"][0];
-    assert_eq!(result["status"], "error", "{result}");
-    let code = result["data"]["errorCode"].as_str().unwrap_or_default();
-    assert!(code.starts_with("expectedHash"), "{result}");
-    assert_eq!(
-        std::fs::read_to_string(&file).expect("unchanged"),
-        "export const f = (x) => old(x);\n"
-    );
-    // Absolute keys are still accepted.
-    let absolute = workspace.workspace.join("src/sub/a.ts");
-    row["expectedHashes"] = json!({absolute.to_string_lossy(): hash});
-    let applied = support::run(&runtime, "astRewrite", row.clone(), &[]).await;
-    assert_eq!(
-        applied.data()["transaction"]["committed"],
-        true,
-        "{}",
-        applied.structured_content
+        error.message,
+        "Tool astRewrite is not available in this native runtime: it is disabled in this build."
     );
     runtime.close().await;
 }
@@ -361,19 +289,6 @@ async fn ast_tools_count_matches_as_match_count() {
         "{}",
         search.structured_content
     );
-    let rewrite = support::run(
-        &runtime,
-        "astRewrite",
-        json!({"path":"src","language":"typescript","pattern":"old($A)","rewrite":"neu($A)"}),
-        &[],
-    )
-    .await;
-    assert_eq!(
-        rewrite.data()["matchCount"],
-        2,
-        "{}",
-        rewrite.structured_content
-    );
     runtime.close().await;
 }
 
@@ -420,19 +335,6 @@ async fn every_column_is_one_based() {
         "1 function_item 1:1-1:10 ^0",
         "{}",
         tree.structured_content
-    );
-    let rewrite = support::run(
-        &runtime,
-        "astRewrite",
-        json!({"path":"x.rs","pattern":"a()","rewrite":"z()"}),
-        &["details"],
-    )
-    .await;
-    let range = &rewrite.data()["matches"][0]["range"];
-    assert_eq!(
-        range["start"]["column"], 10,
-        "{}",
-        rewrite.structured_content
     );
     runtime.close().await;
 }
@@ -559,7 +461,7 @@ async fn location_rows_are_objects_named_like_tool_inputs() {
 
 /// The lead `name` under `next` or `hints`, whichever channel holds it.
 fn lead<'a>(outcome: &'a ToolOutcome, name: &str) -> &'a Value {
-    let data = data(outcome);
+    let data = support::row_data(outcome);
     [&data["next"][name], &data["hints"][name]]
         .into_iter()
         .find(|lead| lead.is_object())
@@ -648,7 +550,9 @@ async fn error_codes_are_declared_camel_case_names() {
     let missing = support::run(&runtime, "localFetch", json!({"path":"pkg/none.rs"}), &[]).await;
     assert_eq!(missing.data()["errorCode"], "pathNotFound");
     for outcome in [&unsupported, &missing] {
-        let code = data(outcome)["errorCode"].as_str().expect("code");
+        let code = support::row_data(outcome)["errorCode"]
+            .as_str()
+            .expect("code");
         assert!(
             code.chars().all(|c| c.is_ascii_alphanumeric()),
             "{code} is not camelCase"

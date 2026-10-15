@@ -60,8 +60,8 @@ fn github(workspace: &Workspace, server: &MockServer) -> octocode_native::runtim
 }
 
 /// octocode-mcp 19.x rewrites `tmp/tree/<owner>/<repo>/<sha>/`; a
-/// materialize never shares it, and a directory in its own layout that has
-/// no manifest (foreign or partial) is cleared, not trusted.
+/// materialize never shares it or the size-only v2 layout. Neither old cache
+/// is treated as a content-verified snapshot or modified.
 #[tokio::test]
 async fn materialize_never_trusts_a_foreign_directory() {
     let server = tree_server(1).await;
@@ -69,10 +69,11 @@ async fn materialize_never_trusts_a_foreign_directory() {
     let legacy = workspace.home.join("tmp/tree/a/b").join(SHA);
     std::fs::create_dir_all(&legacy).expect("legacy dir");
     std::fs::write(legacy.join("one.rs"), "prod 19.x content").expect("legacy file");
-    let own = workspace.home.join("tmp/materialize/v2/a/b").join(SHA);
-    std::fs::create_dir_all(own.join("stale")).expect("foreign dir");
-    std::fs::write(own.join("one.rs"), "// foreign").expect("foreign file");
-    std::fs::write(own.join("stale/ghost.rs"), "not at this commit").expect("foreign extra");
+    let old = workspace.home.join("tmp/materialize/v2/a/b").join(SHA);
+    let own = workspace.home.join("tmp/materialize/v3/a/b").join(SHA);
+    std::fs::create_dir_all(old.join("stale")).expect("foreign dir");
+    std::fs::write(old.join("one.rs"), "// foreign").expect("foreign file");
+    std::fs::write(old.join("stale/ghost.rs"), "not at this commit").expect("foreign extra");
 
     let runtime = github(&workspace, &server);
     let outcome = call(
@@ -103,6 +104,10 @@ async fn materialize_never_trusts_a_foreign_directory() {
     );
     assert!(!local.join("stale").exists(), "a foreign file survived");
     assert_eq!(
+        std::fs::read_to_string(old.join("stale/ghost.rs")).unwrap(),
+        "not at this commit"
+    );
+    assert_eq!(
         std::fs::read_to_string(legacy.join("one.rs")).expect("legacy kept"),
         "prod 19.x content",
         "another writer's cache is not touched"
@@ -113,17 +118,24 @@ async fn materialize_never_trusts_a_foreign_directory() {
     let recorded: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&manifest).expect("manifest")).expect("json");
     assert_eq!(
-        recorded["files"],
-        json!({"one.rs": 10, "two.rs": 10}),
-        "{recorded}"
+        recorded["files"].as_object().map(serde_json::Map::len),
+        Some(2)
     );
+    for name in ["one.rs", "two.rs"] {
+        use sha2::{Digest, Sha256};
+        let expected = std::fs::read(local.join(name)).expect("snapshot file");
+        assert_eq!(recorded["files"][name]["bytes"], json!(expected.len()));
+        assert_eq!(
+            recorded["files"][name]["sha256"],
+            json!(hex::encode(Sha256::digest(expected)))
+        );
+    }
     runtime.close().await;
 }
 
-/// A file the manifest recorded at its listed size is reused; one changed on
-/// disk is written again.
+/// Matching content is reused; a same-size edit on disk is written again.
 #[tokio::test]
-async fn materialize_reuses_only_recorded_files_at_their_size() {
+async fn materialize_reuses_only_recorded_content_identity() {
     let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .and(path("/api/v3/repos/a/b"))
@@ -170,7 +182,7 @@ async fn materialize_reuses_only_recorded_files_at_their_size() {
             .as_str()
             .expect("localPath"),
     );
-    std::fs::write(local.join("two.rs"), "tampered").expect("tamper");
+    std::fs::write(local.join("two.rs"), "modified!!").expect("same-size tamper");
     // An old mtime on the reusable file shows whether it was rewritten.
     let old = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000);
     std::fs::File::options()
@@ -199,7 +211,7 @@ async fn materialize_reuses_only_recorded_files_at_their_size() {
             .and_then(|meta| meta.modified())
             .expect("mtime"),
         old,
-        "a recorded file at its size is reused, not rewritten"
+        "a file matching its recorded identity is reused, not rewritten"
     );
     assert_eq!(
         std::fs::read_to_string(local.join("two.rs")).expect("two"),
@@ -304,10 +316,10 @@ async fn refs_list_every_branch_and_tag_once_with_the_default_branch() {
     runtime.close().await;
 }
 
-/// Refs page 30 by default (a tree page is 300 entries), and the
+/// Refs page 100 by default (a tree page is 300 entries), and the
 /// continuation does not restate the default.
 #[tokio::test]
-async fn refs_default_page_is_thirty() {
+async fn refs_default_page_is_one_hundred() {
     let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .and(path("/api/v3/repos/a/b"))
@@ -322,7 +334,7 @@ async fn refs_default_page_is_thirty() {
     for kind in ["branches", "tags"] {
         Mock::given(method("GET"))
             .and(path(format!("/api/v3/repos/a/b/{kind}")))
-            .and(query_param("per_page", "30"))
+            .and(query_param("per_page", "100"))
             .and(query_param("page", "1"))
             .respond_with(
                 ResponseTemplate::new(200)
@@ -330,7 +342,7 @@ async fn refs_default_page_is_thirty() {
                     .insert_header(
                         "link",
                         format!(
-                            "<{}/api/v3/repos/a/b/{kind}?per_page=30&page=2>; rel=\"next\"",
+                            "<{}/api/v3/repos/a/b/{kind}?per_page=100&page=2>; rel=\"next\"",
                             server.uri()
                         ),
                     ),
@@ -1139,7 +1151,7 @@ async fn refs_without_branches_lead_to_the_branch_listing() {
     assert_eq!(lead["tool"], "ghStructure", "{}", hinted.structured_content);
     assert_eq!(
         lead["query"]["queries"][0]["extras"],
-        json!(["details"]),
+        json!(["hints", "details"]),
         "{}",
         hinted.structured_content
     );

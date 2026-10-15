@@ -9,10 +9,10 @@
 //! input.
 
 use super::LspSearchQuery;
-use super::failure::{continuation, empty};
+use super::failure::empty;
 use super::render::{
     PageCut, as_array, document_symbol_rows, flatten_document_symbol, page_window, paginate,
-    plain_sizes, split_snapshot, symbol_kind_name, uri_to_path,
+    plain_sizes, read_row_cursor, symbol_kind_name, uri_to_path,
 };
 use super::source::SourceCache;
 use crate::tools::id::ToolId;
@@ -72,8 +72,19 @@ pub(super) async fn locations(
     provider: &str,
     snippets: Vec<impl serde::Serialize>,
     budget: usize,
+    response_window: Option<usize>,
 ) -> Value {
-    salted_locations(query, sources, kind, provider, snippets, None, budget).await
+    salted_locations(
+        query,
+        sources,
+        kind,
+        provider,
+        snippets,
+        None,
+        budget,
+        response_window,
+    )
+    .await
 }
 
 /// [`locations`] whose snapshot also covers `salt` (the importer candidate
@@ -86,6 +97,7 @@ pub(super) async fn salted_locations(
     snippets: Vec<impl serde::Serialize>,
     salt: Option<&str>,
     budget: usize,
+    response_window: Option<usize>,
 ) -> Value {
     // Defense in depth: the engine already refused unauthorized snippet
     // reads; any location still naming an unauthorized path is dropped.
@@ -137,6 +149,45 @@ pub(super) async fn salted_locations(
         locations.clone()
     };
     let sizes = location_sizes(&entries, grouped, compact, query.context_lines());
+    let mut budget = budget;
+    // Only context-free compact references are already held in their public
+    // form. Detailed extras and source-context reads keep the conservative cut.
+    if compact
+        && query.page_size().is_none()
+        && query
+            .to_row()
+            .get("extras")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+    {
+        let full_budget = sizes
+            .iter()
+            .fold(0usize, |sum, size| sum.saturating_add(*size));
+        // Avoid materializing an oversized candidate just to measure it.
+        if full_budget > budget && response_window.is_some_and(|window| full_budget <= window) {
+            let (_, pagination) = page_window(
+                1,
+                &PageCut {
+                    page_size: None,
+                    budget: full_budget,
+                    sizes: &sizes,
+                    snapshot: &snapshot,
+                    resume: None,
+                },
+            );
+            let full = location_payload(
+                kind,
+                provider,
+                "files",
+                json!(compact_rows_by_file(&entries)),
+                &locations,
+                pagination,
+            );
+            if crate::tools::page_windows::terminal_row_fits(response_window, &full) {
+                budget = budget.max(full_budget);
+            }
+        }
+    }
     let (page, pagination) = paginate(
         &entries,
         query.page().unwrap_or(1),
@@ -149,10 +200,10 @@ pub(super) async fn salted_locations(
         },
     );
     let mut declaration_reads: Vec<Value> = Vec::new();
-    let mut row = if grouped {
-        json!({ "kind": kind, "files": page })
+    let (key, rows) = if grouped {
+        ("files", json!(page))
     } else if compact {
-        json!({ "kind": kind, "files": compact_rows_by_file(&page) })
+        ("files", json!(compact_rows_by_file(&page)))
     } else {
         // Context lines are read for this page only, not the whole set.
         let mut page = page;
@@ -167,13 +218,9 @@ pub(super) async fn salted_locations(
                 .collect();
         }
         let page = page.into_iter().map(public_location).collect::<Vec<_>>();
-        json!({ "kind": kind, "matches": page })
+        ("matches", json!(page))
     };
-    if kind == "references" {
-        reference_totals(&mut row, &locations);
-    }
-    row["lsp"] = json!({ "serverAvailable": true, "provider": provider });
-    row["pagination"] = pagination;
+    let mut row = location_payload(kind, provider, key, rows, &locations, pagination);
     // One read per capped body: `readDeclaration`, `readDeclaration2`, ….
     for (index, read) in declaration_reads.into_iter().enumerate() {
         let key = match index {
@@ -185,8 +232,24 @@ pub(super) async fn salted_locations(
     row
 }
 
-/// A references payload states its totals: references, files, and the
-/// references recovered through aliases.
+fn location_payload(
+    kind: &str,
+    provider: &str,
+    key: &str,
+    rows: Value,
+    locations: &[Value],
+    pagination: Value,
+) -> Value {
+    let mut row = json!({"kind":kind});
+    row[key] = rows;
+    if kind == "references" {
+        reference_totals(&mut row, locations);
+    }
+    row["lsp"] = json!({"serverAvailable":true,"provider":provider});
+    row["pagination"] = pagination;
+    row
+}
+
 /// Characters each location costs a page in the form it prints: a compact
 /// `line:col text` row (its file's path once per run of rows), a file
 /// summary, or the full row, plus the lines `contextLines` adds around it.
@@ -627,7 +690,7 @@ pub(super) fn snapshot_mismatch(query: &LspSearchQuery, actual: &str) -> bool {
     let page = query.page().unwrap_or(1) as usize;
     page > 1
         && query.snapshot().is_some_and(|pinned| {
-            split_snapshot(pinned, page).is_none_or(|(digest, _)| digest != actual)
+            read_row_cursor(pinned, page).is_none_or(|(digest, _)| digest != actual)
         })
 }
 
@@ -637,19 +700,16 @@ fn resume_at(query: &LspSearchQuery) -> Option<usize> {
     query
         .snapshot()
         .filter(|_| page > 1)
-        .and_then(|pinned| split_snapshot(pinned, page)?.1)
+        .and_then(|pinned| read_row_cursor(pinned, page)?.1)
 }
 
 /// The stale-snapshot row; its restart walks from the first location page
 /// of the first importer window.
 pub(super) fn snapshot_changed(query: &LspSearchQuery) -> Value {
-    let mut restart = serde_json::to_value(query).unwrap_or_else(|_| json!({}));
-    if let Some(object) = restart.as_object_mut() {
-        object.remove("snapshot");
-        object.remove("importerPage");
-        object.insert("page".into(), json!(1));
-    }
-    crate::tools::result::stale_snapshot(continuation(restart))
+    crate::tools::result::stale_snapshot(crate::tools::result::restart_query(
+        ToolId::LspSearch,
+        &super::failure::query_value(query),
+    ))
 }
 
 pub(super) fn items_payload(

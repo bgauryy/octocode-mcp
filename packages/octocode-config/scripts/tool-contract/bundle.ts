@@ -89,33 +89,26 @@ class Definitions {
 }
 
 /**
- * Rewrites for typify, which drops a string `const` (emitting a free
- * `String`) and flattens `anyOf` into a struct of optional subtypes:
- * - a string `const` becomes a one-value `enum`, which it enforces;
- * - `anyOf` over closed objects admits exactly one branch, so it becomes
- *   `oneOf`, which it emits as an enum.
+ * typify drops a string `const` (emitting a free `String`); a one-value
+ * `enum` means the same and is enforced. Union keywords are left as authored:
+ * closed objects can overlap, so `anyOf` is not `oneOf` (see `rustBundle`).
  */
-function exclusiveUnions(value: Json): Json {
-  if (Array.isArray(value)) return value.map(exclusiveUnions);
+function stringConstsAsEnums(value: Json): Json {
+  if (Array.isArray(value)) return value.map(stringConstsAsEnums);
   if (!isObject(value)) return value;
   const walked = Object.fromEntries(
-    Object.entries(value).map(([key, child]) => [key, exclusiveUnions(child)])
+    Object.entries(value).map(([key, child]) => [key, stringConstsAsEnums(child)])
   );
   if (typeof walked.const === 'string' && walked.enum === undefined) {
     const { const: constant, ...rest } = walked;
     return { ...rest, enum: [constant] };
   }
-  const branches = walked.anyOf;
-  if (
-    Array.isArray(branches) &&
-    branches.length > 1 &&
-    branches.every((branch) => isObject(branch) && branch.type === 'object' && branch.additionalProperties === false)
-  ) {
-    const { anyOf: _anyOf, ...rest } = walked;
-    return { ...rest, oneOf: branches };
-  }
   return walked;
 }
+
+/** The union keyword a schema branches on, as authored. */
+const unionKey = (schema: JsonObject): 'oneOf' | 'anyOf' | undefined =>
+  Array.isArray(schema.oneOf) ? 'oneOf' : Array.isArray(schema.anyOf) ? 'anyOf' : undefined;
 
 const singleValue = (schema: Json | undefined): string | undefined =>
   isObject(schema) && Array.isArray(schema.enum) && schema.enum.length === 1 && typeof schema.enum[0] === 'string'
@@ -131,8 +124,9 @@ const singleValue = (schema: Json | undefined): string | undefined =>
  * has when values repeat (`AstSearchQueryMatchPattern` / `…MatchRule`).
  */
 function nameUntaggableVariants(schema: JsonObject, owner: string): JsonObject {
-  const branches = schema.oneOf;
-  if (!Array.isArray(branches) || !branches.every((branch) => isObject(branch) && branch.title === undefined)) {
+  const key = unionKey(schema);
+  const branches = key ? schema[key] : undefined;
+  if (!key || !Array.isArray(branches) || !branches.every((branch) => isObject(branch) && branch.title === undefined)) {
     return schema;
   }
   const objects = branches as JsonObject[];
@@ -156,7 +150,7 @@ function nameUntaggableVariants(schema: JsonObject, owner: string): JsonObject {
     return schema;
   }
   const [discriminator] = discriminators;
-  if (!discriminator) return nameByOwnField(objects, owner, required, schema);
+  if (!discriminator) return nameByOwnField(objects, owner, required, schema, key);
   const values = valuesOf(discriminator);
   const titled = objects.map((branch, index) => {
     const value = values[index] as string;
@@ -165,7 +159,7 @@ function nameUntaggableVariants(schema: JsonObject, owner: string): JsonObject {
     const suffix = peers.length === 0 ? '' : own ? typeName(own) : String(index);
     return { ...branch, title: `${owner}${typeName(value)}${suffix}` };
   });
-  return { ...schema, oneOf: titled };
+  return { ...schema, [key]: titled };
 }
 
 /**
@@ -177,7 +171,8 @@ function nameByOwnField(
   objects: JsonObject[],
   owner: string,
   required: (branch: JsonObject) => string[],
-  schema: JsonObject
+  schema: JsonObject,
+  key: 'oneOf' | 'anyOf'
 ): JsonObject {
   const names = objects.map((branch, index) => {
     const peers = objects.filter((_, other) => other !== index);
@@ -186,7 +181,7 @@ function nameByOwnField(
   });
   const titles = names.filter((name): name is string => name !== undefined);
   if (titles.length !== objects.length || new Set(titles).size !== titles.length) return schema;
-  return { ...schema, oneOf: objects.map((branch, index) => ({ ...branch, title: titles[index] as string })) };
+  return { ...schema, [key]: objects.map((branch, index) => ({ ...branch, title: titles[index] as string })) };
 }
 
 export function buildToolTypesBundle(ir: EnforcementContractIr = buildEnforcementContractIr()): {
@@ -197,7 +192,7 @@ export function buildToolTypesBundle(ir: EnforcementContractIr = buildEnforcemen
   const register = (name: string, source: JsonObject): void => {
     const { $schema: _schema, $defs: inner = {}, title: _title, ...body } = source;
     const normalize = (schema: Json, owner?: string): Json => {
-      const exclusive = exclusiveUnions(schema);
+      const exclusive = stringConstsAsEnums(schema);
       return definitions.hoistTitles(owner && isObject(exclusive) ? nameUntaggableVariants(exclusive, owner) : exclusive);
     };
     for (const [local, schema] of Object.entries(inner as JsonObject)) {

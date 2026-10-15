@@ -1,10 +1,11 @@
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-//! Replays localFetch rows agents sent verbatim that the schema once rejected
-//! (`fixtures/benchmark-localfetch-ranges.json`, each with the rejection it
-//! got). Every row must now run: host spellings of line ranges normalize
-//! losslessly before validation. Each row is replayed bare, as the agents
-//! sent it: native runs a bare row as a one-row `queries`, on MCP and the CLI.
+//! Replays localFetch rows agents sent verbatim that the canonical schema
+//! rejects (`fixtures/benchmark-localfetch-ranges.json`, each with the
+//! rejection it got). Admission accepts exactly the canonical language, so
+//! every row is still rejected, on MCP and the CLI alike, with the repair
+//! that names the canonical spelling (`start-end` items in a JSON array). Each row is replayed bare,
+//! as the agents sent it: native runs a bare row as a one-row `queries`.
 
 use crate::support::{self, Run as _};
 
@@ -13,13 +14,8 @@ use support::Workspace;
 
 const FIXTURE: &str = include_str!("fixtures/benchmark-localfetch-ranges.json");
 
-/// Enough numbered lines to cover every requested range.
-fn source() -> String {
-    (1..=2_200).map(|line| format!("line {line}\n")).collect()
-}
-
 #[tokio::test]
-async fn rejected_benchmark_range_spellings_now_read() {
+async fn benchmark_range_spellings_are_rejected_with_the_canonical_repair() {
     let rows: Vec<Value> = serde_json::from_str(FIXTURE).unwrap();
     assert_eq!(rows.len(), 14);
     let workspace = Workspace::new();
@@ -27,7 +23,7 @@ async fn rejected_benchmark_range_spellings_now_read() {
     for (index, row) in rows.iter().enumerate() {
         let mut input = row["input"].clone();
         let relative = input["path"].as_str().unwrap().to_owned();
-        let file = workspace.write(&relative, source());
+        let file = workspace.write(&relative, "line 1\n");
         input["path"] = json!(file.to_string_lossy());
         let output = runtime
             .run_mcp(
@@ -36,7 +32,17 @@ async fn rejected_benchmark_range_spellings_now_read() {
                 input.clone(),
             )
             .await
-            .expect("executes");
+            .expect("MCP answers the rejection in-band");
+        assert_eq!(output["isError"], true, "row {index} {input} -> {output}");
+        assert_eq!(
+            output["structuredContent"]["errorCode"], "invalidInput",
+            "row {index}: {output}"
+        );
+        let text = output.to_string();
+        assert!(
+            text.contains("start-end") || text.contains("send a JSON array"),
+            "row {index} names the canonical spelling: {output}"
+        );
         let cli = runtime
             .run(
                 format!("replay-cli-{index}"),
@@ -44,27 +50,8 @@ async fn rejected_benchmark_range_spellings_now_read() {
                 input.clone(),
             )
             .await
-            .expect("a bare row runs on the CLI path");
-        assert_eq!(
-            cli.structured_content["results"][0]["data"]["content"],
-            output["structuredContent"]["results"][0]["data"]["content"],
-            "row {index}: CLI and MCP read the same lines"
-        );
-        assert_eq!(
-            output["isError"], false,
-            "row {index} {input} (was: {}) -> {output}",
-            row["rejectedWith"]
-        );
-        let first = input["ranges"]
-            .to_string()
-            .split(|c: char| !c.is_ascii_digit())
-            .find(|part| !part.is_empty())
-            .unwrap()
-            .to_owned();
-        assert!(
-            output.to_string().contains(&format!("line {first}")),
-            "row {index} reads its first range: {output}"
-        );
+            .expect_err("the CLI path rejects the same row");
+        assert_eq!(cli.code, "invalidInput", "row {index}");
     }
     runtime.close().await;
 }

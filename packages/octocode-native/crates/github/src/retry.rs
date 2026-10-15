@@ -205,7 +205,7 @@ fn parse_http_date(value: &str) -> Option<SystemTime> {
 
 /// Full-jitter exponential backoff: uniform in `[0, base * 2^attempt]`,
 /// bounded by `cap`.
-pub fn full_jitter(base: Duration, attempt: u32, cap: Duration) -> Duration {
+fn full_jitter(base: Duration, attempt: u32, cap: Duration) -> Duration {
     let ceiling = base
         .saturating_mul(1_u32 << attempt.min(16))
         .min(cap)

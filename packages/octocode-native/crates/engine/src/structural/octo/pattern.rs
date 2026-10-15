@@ -540,7 +540,10 @@ impl CompiledPattern {
     /// `remaining_pattern`, shortest capture first. A trailing `$$$` takes
     /// every remaining candidate. Up to `trim` anonymous tokens at the end
     /// of a taken run stay out of the capture.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the recursive matcher threads its state flat on purpose (see clippy.toml)"
+    )]
     fn match_multi_split(
         &self,
         name: Option<&str>,

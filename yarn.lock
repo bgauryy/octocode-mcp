@@ -5,6 +5,15 @@ __metadata:
   version: 8
   cacheKey: 10c0
 
+"@agentclientprotocol/sdk@npm:^1.8.0":
+  version: 1.8.0
+  resolution: "@agentclientprotocol/sdk@npm:1.8.0"
+  peerDependencies:
+    zod: ^3.25.0 || ^4.0.0
+  checksum: 10c0/7bef654b19a8c1b18c094341f5a3ee7a5268df9b2752dcc8a5b9ad73e3d3fb48bafc880c37aa45832903c462ca48eaa245626cd5e300835c38078c1cb04dc6bd
+  languageName: node
+  linkType: hard
+
 "@anthropic-ai/sdk@npm:0.129.0":
   version: 0.129.0
   resolution: "@anthropic-ai/sdk@npm:0.129.0"
@@ -1289,10 +1298,10 @@ __metadata:
 
 "@octocodeai/octocode-core@file:///Users/bgaryy/code/octocode-mcp-host/packages/octocode-core::locator=octocode-monorepo%40workspace%3A.":
   version: 21.0.0
-  resolution: "@octocodeai/octocode-core@file:///Users/bgaryy/code/octocode-mcp-host/packages/octocode-core#///Users/bgaryy/code/octocode-mcp-host/packages/octocode-core::hash=bc6826&locator=octocode-monorepo%40workspace%3A."
+  resolution: "@octocodeai/octocode-core@file:///Users/bgaryy/code/octocode-mcp-host/packages/octocode-core#///Users/bgaryy/code/octocode-mcp-host/packages/octocode-core::hash=f349a3&locator=octocode-monorepo%40workspace%3A."
   dependencies:
     zod: "npm:^4.6.2"
-  checksum: 10c0/a8f199456d0457387027efee94f6ea608e1b4aa38c31385212715030612200c21c3ac7917b2648b8075116d27b3c5135b1f779641fba50dd81c0acfbf5241200
+  checksum: 10c0/f394acd3898224f7bdca8f54a04c7228b950f3ca259535d0edaf8645aefad0e0b5c3f51206c8c08dacf5062f76c47b3391ca3d9b12624ba634956c49dd97fe28
   languageName: node
   linkType: hard
 
@@ -1382,6 +1391,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@octocodeai/pi-extension@workspace:packages/octocode-pi-extension"
   dependencies:
+    "@agentclientprotocol/sdk": "npm:^1.8.0"
     "@earendil-works/pi-ai": "npm:^1.2.0"
     "@earendil-works/pi-coding-agent": "npm:^1.2.0"
     "@earendil-works/pi-mcp": "npm:^1.2.0"

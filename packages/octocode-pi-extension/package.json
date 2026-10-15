@@ -43,6 +43,7 @@
     "node": "^24.15.0"
   },
   "dependencies": {
+    "@agentclientprotocol/sdk": "^1.8.0",
     "@earendil-works/pi-mcp": "^1.2.0",
     "chrome-launcher": "^1.2.2",
     "octocode-mcp": "^20.2.0"
@@ -64,6 +65,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json && node scripts/bundle-pi.mjs",
+    "casefold:generate": "node scripts/generate-casefold.mjs",
     "clean": "rm -rf dist",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "node ../../node_modules/eslint/bin/eslint.js . --config eslint.config.mjs --no-warn-ignored && tsc --noEmit -p tsconfig.json",

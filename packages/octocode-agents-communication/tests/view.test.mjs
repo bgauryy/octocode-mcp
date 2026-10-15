@@ -32,7 +32,7 @@ async function fixture(t){
 test('view exposes live workspace entities read-only, with bounded complete pagination',async t=>{
  const f=await fixture(t),db=new DatabaseSync(f.database);t.after(()=>db.close());
  for(let i=0;i<115;i++)f.call('send_message',{to:f.b,replyRequired:false,body:`message ${i} <script>not executable</script>`,conversationId:i<60?'older-thread':'recent-thread',reasoning:'Exercise observer pagination'},f.a);
- const request=f.call('send_message',{to:f.a,body:'Please review',reasoning:'Verify request and completion visibility'},f.b);
+ const request=f.call('send_message',{to:f.a,body:'Please review',replyRequired:true,reasoning:'Verify request and completion visibility'},f.b);
  const answer=f.call('complete',{message:request.id,reply:'Reviewed'},f.a);
  f.call('lock',{path:'active.rs',reasoning:'Owned edit',ttlMs:600000},f.a);
  const old=f.call('lock',{path:'expired.rs',reasoning:'Old edit',ttlMs:1000},f.b);

@@ -9,7 +9,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { propagateOctocodeEnv } from '@octocodeai/config';
 import { hermeticEnv } from '../../../../test-utils/hermetic-env.ts';
-import { invoke, mergeRanges } from './jev_question_poc.mjs';
+import { invoke } from './jev_question_poc.mjs';
 
 const ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
 const CLI = path.join(ROOT, 'packages/octocode/out/octocode.js');
@@ -20,7 +20,9 @@ const TOOLS = ['localSearch', 'localFetch', 'ghSearchCode', 'ghGetFileContent'];
 const isSearch = tool => tool === 'localSearch' || tool === 'ghSearchCode';
 const isLocal = tool => tool.startsWith('local');
 const readTool = tool => isLocal(tool) ? 'localFetch' : 'ghGetFileContent';
-const armsFor = tool => isSearch(tool) ? ['ordinary', 'goals', 'locate', 'direct'] : ['ordinary', 'goals', 'locate', 'direct', 'full'];
+// The pre-RFC Locate arm (public clasify locate matrices) was removed with that API; its
+// recorded runs stay historical evidence.
+const armsFor = tool => isSearch(tool) ? ['ordinary', 'classifiers', 'direct'] : ['ordinary', 'classifiers', 'direct', 'full'];
 
 export const CASES = [
   { id: 'cache-expiry', directory: 'django/core/cache/backends', file: 'locmem.py', keyword: 'timeout',
@@ -56,36 +58,9 @@ export function evidenceCoverage(responses, item, sources, fixture) {
   return { facts, complete: facts.every(Boolean) && !corrupt, corrupt, distinctLines: seen.size, duplicates };
 }
 
-export function chosenWindows(matrix, questionIds, fallbackPath, surrounding = 8) {
-  const grouped = new Map();
-  for (const id of questionIds) {
-    const best = matrix.best?.[id]?.[0];
-    if (!best || typeof best.exists !== 'number' || best.exists < 0.8) continue;
-    const name = best.path ?? fallbackPath;
-    if (!name) throw new Error('Location has no source identity');
-    const ranges = grouped.get(name) ?? [];
-    ranges.push([Math.max(1, best.line - surrounding), best.endLine + surrounding]);
-    grouped.set(name, ranges);
-  }
-  return [...grouped].map(([name, ranges]) => ({ path: name, ranges: mergeRanges(ranges).map(range => range.join('-')) }));
-}
-
-export function githubSourceGuard(matrices, expectedRef) {
-  const refs = new Set();
-  for (const matrix of matrices) {
-    for (const resource of matrix.resources ?? []) {
-      if (resource.ref) refs.add(resource.ref);
-      for (const page of resource.pages ?? []) if (page.source?.ref) refs.add(page.source.ref);
-    }
-    for (const lead of Object.values(matrix.hints ?? {})) for (const query of lead.query?.queries ?? []) if (query.ref) refs.add(query.ref);
-  }
-  return { expected: expectedRef, observed: [...refs], pass: refs.size > 0 && [...refs].every(ref => ref === expectedRef) };
-}
-
 function ensure(response) {
   if (response.code !== 0 || !response.json || response.killed) throw new Error(`CLI ${response.tool} failed (${response.code})`);
   if (response.json.results?.some(row => row.status === 'error' || row.error)) throw new Error('Tool row error');
-  if (response.json.queries?.some(row => row.error || row.resources?.some(resource => resource.error))) throw new Error('Classification row error');
 }
 
 async function main() {
@@ -115,16 +90,16 @@ async function main() {
   const { resolveNativeBinaryPath } = createRequire(CLI)('@octocodeai/octocode-native/bin/resolve-binary.cjs');
   const native = resolveNativeBinaryPath();
   const suite = smoke ? CASES.slice(1) : CASES;
-  const run = { version: 2, split: 'development-transfer', smoke, model: 'jev-1.13.0', tools: TOOLS, suite,
+  const run = { version: 3, split: 'development-transfer', smoke, model: 'jev-1.13.0', tools: TOOLS, suite,
     question: 'Which fixed retrieval route returns all required implementation evidence with the least full CLI exchange context on each of four tools?',
     primary: 'All required source facts, then paired complete exchange tokens. Target >=15% saving with no quality regression. Two public cases cannot establish population or host-agent benefit.',
-    policy: { arms: Object.fromEntries(TOOLS.map(tool => [tool, armsFor(tool)])), search: 'First provider/files page of 10, read first two distinct files completely; goals changes only their ordering. Other hits and match continuations remain explicitly unread.',
-      read: 'First two pages of 25 lines; full control traverses all pages.', locate: 'One top window per atomic question when exists >=0.8, add eight surrounding lines, merge exact overlapping ranges, verify returned source. Follow every next.clasify, never use gold to stop.',
+    policy: { arms: Object.fromEntries(TOOLS.map(tool => [tool, armsFor(tool)])), search: 'First provider/files page of 10, read first two distinct files completely; classifiers change only their ordering. Other hits and match continuations remain explicitly unread.',
+      read: 'First two pages of 25 lines; full control traverses all pages.',
       direct: 'Separate known-anchor stratum: filename and literal method anchors supplied in advance, then complete containing blocks.',
-      order: 'Case-major, tool order rotates by case; arm order rotates by case/tool.', repeats: 1, threshold: 0.8, surroundingLines: 8,
+      order: 'Case-major, tool order rotates by case; arm order rotates by case/tool.', repeats: 1,
       tokenizer: 'tiktoken 0.14.0, o200k_base primary and cl100k_base sensitivity; complete exact stdout plus arguments, no host framing/history/reasoning/final answers.',
       githubIndex: 'Live default-branch candidate index, source lines re-read at immutable ref. Not a revision-pinned discovery index.',
-      exposure: 'Questions authored from source before any new JEV result. Eight-line policy transferred unchanged from earlier local development. No sealed holdout or autonomous agent.' },
+      exposure: 'Questions authored from source before any new JEV result. No sealed holdout or autonomous agent.' },
     budget: { requests: smoke ? 80 : 220, inputTokens: smoke ? 150000 : 450000, wallMs: 900000, requestMs: 20000, retries: 0 },
     provenance: { repository: 'https://github.com/django/django', ref: REF, sourceHashes: Object.fromEntries(Object.entries(sources).map(([name, content]) => [name, hash(content)])), native, nativeHash: hash(await fs.readFile(native)), cliHash: hash(await fs.readFile(CLI)), harnessHash: hash(await fs.readFile(fileURLToPath(import.meta.url))), helperHash: hash(await fs.readFile(new URL('./jev_question_poc.mjs', import.meta.url))) },
     rows: [], ledger: [], errors: [], preflight: [] };
@@ -198,36 +173,9 @@ async function main() {
               ? isLocal(tool) ? { path: path.join(fixture, item.directory), matchString: item.keyword, pageSize: 10, matchPageSize: 5 }
                 : { ...gh, path: item.directory, keywords: [item.keyword], pageSize: 10 }
               : { ...baseRead(name), unit: 'lines', length: 25 };
-            if (arm === 'goals') query.goals = item.atoms.map(atom => atom.ask);
+            if (arm === 'classifiers') query.classifiers = item.atoms.map(atom => atom.ask);
             if (arm === 'direct' && isSearch(tool)) query = { ...query, ...(isLocal(tool) ? { include: [item.file] } : { filename: item.file }) };
-            if (arm === 'locate') {
-              if (!isSearch(tool)) query = baseRead(name);
-              const questions = item.atoms.map((atom, i) => ({ id: `fact${i + 1}`, type: 'locate', ask: atom.ask }));
-              let input = { queries: [{ resources: [{ id: 'source', tool, query, ...(isSearch(tool) ? { candidateEvidence: 'fileChunks' } : {}) }], questions }] };
-              const seen = new Set(); let matrix;
-              for (let page = 0; input && page < 25; page++) {
-                if (seen.has(hash(input))) throw new Error('Repeated classification continuation'); seen.add(hash(input));
-                matrix = (await call('clasify', input, current.responses)).queries[0];
-                input = matrix.next?.clasify?.query;
-              }
-              if (input) throw new Error('Classification page ceiling');
-              current.classificationPartial = current.responses.some(response => response.json.queries?.some(row => row.resources?.some(resource => resource.coverage?.state === 'partial')));
-              if (!isLocal(tool)) {
-                current.revisionGuard = githubSourceGuard(current.responses.flatMap(response => response.json.queries ?? []), REF);
-                if (!current.revisionGuard.pass) throw new Error('Classifier source revision differs from requested revision');
-              }
-              const windows = chosenWindows(matrix, questions.map(q => q.id), isSearch(tool) ? undefined : name);
-              // best.path is qualified as owner/repo/path for GitHub candidate matrices.
-              if (!isLocal(tool)) for (const window of windows) if (window.path.startsWith(`${gh.owner}/${gh.repo}/`)) window.path = window.path.slice(`${gh.owner}/${gh.repo}/`.length);
-              current.windows = windows; current.unresolved = questions.filter(q => !matrix.best?.[q.id]?.[0] || matrix.best[q.id][0].exists < 0.8).map(q => q.id);
-              const leads = Object.values(matrix.hints ?? {}).flatMap(lead => lead.query?.queries ?? []);
-              current.missingSnapshot = [];
-              for (const window of windows) {
-                const lead = leads.find(lead => path.resolve(fixture, lead.path ?? '') === path.resolve(fixture, window.path));
-                if (isLocal(tool) && !lead?.snapshot) current.missingSnapshot.push(window.path);
-                await walkRead(readTool(tool), { ...baseRead(window.path), ...(lead?.snapshot ? { snapshot: lead.snapshot } : {}), ranges: window.ranges }, current.responses);
-              }
-            } else if (isSearch(tool)) {
+            if (isSearch(tool)) {
               const json = await call(tool, { queries: [query] }, current.responses), data = json.results[0].data;
               current.searchCandidates = (data.files ?? []).map(file => file.path);
               current.unreadSearchContinuations = data.next ?? null;

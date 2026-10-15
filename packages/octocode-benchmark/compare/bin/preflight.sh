@@ -35,7 +35,7 @@ with tempfile.TemporaryDirectory(prefix='octocode-preflight-') as td:
     if not enabled: env['OCTOCODE_CLASSIFICATION_API']=''
     s={'command':cmd[0],'args':cmd[1:],'env':env}
     r=probe(s,enabled,enabled,cwd=lab,forbidden=sentinel)
-    print(json.dumps({k:r[k] for k in ('ok','problems','toolNames','goalsTools','catalogChars','catalogSha256')}))
+    print(json.dumps({k:r[k] for k in ('ok','problems','toolNames','classifiersTools','catalogChars','catalogSha256')}))
     raise SystemExit(0 if r['ok'] else 2)
 PY
       then ok "$arm catalog, feature gates and root denial"; else bad "$arm MCP preflight"; fi ;;

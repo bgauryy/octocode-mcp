@@ -10,11 +10,12 @@ mod ranking;
 
 use crate::security::scan::ContentScan;
 use crate::tools::gh_shared::{
-    GhFailure, SearchReach, add_next, apply_partial, field_names, pick_rows, push_warning_front,
-    reject_window, search_failure, with_ref_recovery, with_search_repair,
+    GhFailure, SearchCompleteness, SearchReach, add_next, apply_partial, field_names, pick_rows,
+    push_warning_front, reject_window, search_failure, with_ref_recovery, with_search_repair,
 };
 use crate::tools::id::ToolId;
 use crate::tools::num::usize_of;
+use crate::tools::paging::{mark_partial, push_warnings};
 use crate::tools::result::{Continuation, ToolData, query_row};
 use octocode_github::{
     CodeSearchRequest, ConditionalCache, GitHubProvider, ProviderError, ProviderErrorKind,
@@ -96,10 +97,7 @@ pub async fn run<C: ConditionalCache>(
                 == Some(octocode_github::ProviderErrorReason::UserNotFound) =>
             {
                 GhFailure {
-                    message: format!(
-                        "Owner \"{}\" not found: no GitHub user or organization has this login",
-                        query.owner
-                    ),
+                    message: crate::tools::gh_shared::owner_not_found_message(&query.owner),
                     hints: vec![
                         "Check the owner spelling: a user or organization login.".to_owned(),
                     ],
@@ -140,8 +138,8 @@ pub(crate) async fn execute<C: ConditionalCache>(
     // GitHub code search does not follow renames: an empty scoped search
     // reruns once against the canonical name, as ghSearchHistory does.
     // A page past the last holds no files of a search that has results.
-    let past_end = data.items.is_empty() && data.total > 0 && current > data.pages;
-    if data.items.is_empty()
+    let past_end = data.fetched == 0 && data.total > 0 && current > data.pages;
+    if data.fetched == 0
         && !past_end
         && let Some((renamed, warnings)) = renamed_scope(provider, query, context).await?
     {
@@ -171,9 +169,7 @@ pub(crate) async fn execute<C: ConditionalCache>(
     code_output::merge_identical(&mut items);
     code_output::hoist_shared(&mut value, &mut items);
     let fields = field_names(&query.fields);
-    if !items.is_empty() {
-        value["files"] = json!(items);
-    }
+    value["files"] = json!(items);
     pick_rows(&mut value, "files", CODE_ROW_ID, &fields);
     if data.pages > 1 || past_end {
         value["pagination"] = crate::response::pages::PageFacts::open(current, Some(per), more)
@@ -182,48 +178,14 @@ pub(crate) async fn execute<C: ConditionalCache>(
             .to_value();
     }
     add_next(&mut value, ToolId::GhSearchCode, query, current, more);
-    if let Some(read) = reads.top {
-        value["next"]["read"] = read;
-    }
     // A file lists at most a few of its hit lines; `readHits` reads the rest.
     let hits_unlisted = !reads.hits.is_empty();
-    // `readHits`, `readHits2`, …: one per capped or cut file.
-    for (position, read) in reads.hits.into_iter().enumerate() {
-        let key = match position {
-            0 => "readHits".to_owned(),
-            n => format!("readHits{}", n + 1),
-        };
-        value["next"][key] = read;
-    }
+    add_reads(&mut value, reads);
     // The index scope is stated once, on the first page of a ref search.
     if !items.is_empty() && current == 1 {
         code_output::disclose_index_ref(provider, &mut value, query, resolved_sha, context).await?;
     }
-    // Provider-index completeness is reported on every page, apart from
-    // whether another page exists.
-    apply_partial(
-        &mut value,
-        ToolId::GhSearchCode,
-        query,
-        data.incomplete,
-        // Past the cap the page states GitHub's match count.
-        if data.capped { data.matched } else { 0 },
-        current,
-        more,
-        "code",
-    );
-    // A page with another page behind it states its remainder through
-    // `pagination`; a complete one has no other way to say why it is partial.
-    if hits_unlisted && !more {
-        value["isPartial"] = json!(true);
-        let reasons = value["partialReasons"].take();
-        let mut reasons = reasons.as_array().cloned().unwrap_or_default();
-        reasons.push(json!("hitLinesNotListed"));
-        value["partialReasons"] = json!(reasons);
-    }
-    if let Some(warning) = octocode_github::sso_partial_warning(&data.sso_partial) {
-        push_warning_front(&mut value, warning);
-    }
+    disclose_completeness(&mut value, query, &data, current, hits_unlisted);
     let mut output = ToolData::from(value);
     if data.incomplete {
         output.diagnostics.add(
@@ -232,16 +194,69 @@ pub(crate) async fn execute<C: ConditionalCache>(
             true,
         );
     }
-    if data.items.is_empty() {
+    if data.fetched == 0 {
         output.status = Some("empty");
     }
-    if data.items.is_empty() && data.incomplete && query.repo.is_none() {
+    if data.fetched == 0 && data.incomplete && query.repo.is_none() {
         code_output::owner_exists(&query.owner, &provider.transport, context).await?;
     }
-    if data.items.is_empty() && !past_end {
+    if data.fetched == 0 && !past_end {
         empty_page(provider, query, context, &mut output).await?;
     }
     Ok(output)
+}
+
+/// The page's reads: `read` (the top hit) and `readHits`, `readHits2`, …,
+/// one per file whose hit lines were capped or cut.
+fn add_reads(value: &mut serde_json::Value, reads: code_output::PageReads) {
+    if let Some(read) = reads.top {
+        value["next"]["read"] = read;
+    }
+    for (position, read) in reads.hits.into_iter().enumerate() {
+        let key = match position {
+            0 => "readHits".to_owned(),
+            n => format!("readHits{}", n + 1),
+        };
+        value["next"][key] = read;
+    }
+}
+
+/// What the page says about its own completeness: provider-index
+/// completeness on every page, apart from whether another page exists; a
+/// last page with unlisted hit lines (it has no other way to say why it is
+/// partial: an earlier page states its remainder through `pagination`); the
+/// estimate and repeat facts of a paged search; and SAML-withheld
+/// organizations.
+fn disclose_completeness(
+    value: &mut serde_json::Value,
+    query: &GhSearchCodeQuery,
+    data: &SearchPage,
+    current: usize,
+    hits_unlisted: bool,
+) {
+    let more = current < data.pages;
+    apply_partial(
+        value,
+        query,
+        &SearchCompleteness {
+            tool: ToolId::GhSearchCode,
+            // Past the cap the page states GitHub's match count.
+            matched: if data.capped { data.matched } else { 0 },
+            incomplete: data.incomplete,
+            page: current,
+            has_more: more,
+            subject: "code",
+        },
+    );
+    if hits_unlisted && !more {
+        mark_partial(value, "hitLinesNotListed", &[]);
+    }
+    if data.pages > 1 {
+        push_warnings(value, data.paging_warnings());
+    }
+    if let Some(warning) = octocode_github::sso_partial_warning(&data.sso_partial) {
+        push_warning_front(value, warning);
+    }
 }
 
 /// One provider page, merged across `extensions`: GitHub ANDs repeated
@@ -250,7 +265,16 @@ pub(crate) async fn execute<C: ConditionalCache>(
 /// `ceil(pageSize / k)`), so a merged page holds about `pageSize` files and
 /// page N of every search is page N of the merge: lossless.
 struct SearchPage {
+    /// The files this page lists: GitHub's, less those an earlier page of
+    /// the same search already listed.
     items: Vec<octocode_github::CodeSearchItem>,
+    /// Files GitHub returned for the page, before repeats were dropped.
+    fetched: usize,
+    /// Repeats dropped: files an earlier page (or this one) already listed.
+    dropped: usize,
+    /// Earlier page searches the repeat check could read, of those it needed.
+    earlier_checked: usize,
+    earlier_total: usize,
     /// Reachable results (each search caps at 1,000).
     total: usize,
     pages: usize,
@@ -281,6 +305,10 @@ async fn search_page<C: ConditionalCache>(
     let per_search = per.div_ceil(scopes.len()).max(1);
     let mut page = SearchPage {
         items: Vec::new(),
+        fetched: 0,
+        dropped: 0,
+        earlier_checked: 0,
+        earlier_total: 0,
         total: 0,
         pages: 0,
         capped: false,
@@ -313,6 +341,27 @@ async fn search_page<C: ConditionalCache>(
     if let Some(refusal) = provider.transport.code_search_batch_refusal(sends, context) {
         return Err(refusal);
     }
+    // GitHub's index moves between page reads, so a file can come back on a
+    // later page. The earlier pages of this search that are still cached
+    // (no request) say which files the walk already delivered.
+    let mut seen = std::collections::HashSet::new();
+    for request in &requests {
+        for earlier in 1..current {
+            page.earlier_total += 1;
+            let request = CodeSearchRequest {
+                page: earlier,
+                ..request.clone()
+            };
+            if let Ok(Some(listed)) = provider
+                .transport
+                .cached_code_search(&request, context)
+                .await
+            {
+                page.earlier_checked += 1;
+                seen.extend(listed.items.iter().map(repeat_key));
+            }
+        }
+    }
     for (request, cached) in requests.iter().zip(cached) {
         let data = match cached {
             Some(data) => data,
@@ -329,9 +378,49 @@ async fn search_page<C: ConditionalCache>(
                 page.sso_partial.push(organization);
             }
         }
-        page.items.extend(data.items);
+        page.fetched += data.items.len();
+        for item in data.items {
+            if seen.insert(repeat_key(&item)) {
+                page.items.push(item);
+            } else {
+                page.dropped += 1;
+            }
+        }
     }
     Ok(page)
+}
+
+/// A file's identity across pages: its repository and path (its blob `sha`
+/// changes with the index state, so it is not part of it).
+fn repeat_key(item: &octocode_github::CodeSearchItem) -> (String, String) {
+    (item.repository.full_name.to_lowercase(), item.path.clone())
+}
+
+impl SearchPage {
+    /// What a paged page says about overlap: the repeats this page dropped,
+    /// with how many earlier pages the check could read. That GitHub's
+    /// totals are estimates is static and lives in the tool description.
+    fn paging_warnings(&self) -> Vec<String> {
+        let mut warnings = Vec::new();
+        if self.dropped > 0 {
+            let files = if self.dropped == 1 { "file" } else { "files" };
+            warnings.push(format!(
+                "Dropped {} {files} GitHub listed again (already on an earlier page or this one).",
+                self.dropped,
+            ));
+        }
+        // Said when a repeat was found, or when a page could not be read:
+        // otherwise every page would restate a clean check.
+        if self.dropped > 0 || self.earlier_checked < self.earlier_total {
+            warnings.push(format!(
+                "Repeat check read {} of {} earlier page{}; pages no longer cached were not compared.",
+                self.earlier_checked,
+                self.earlier_total,
+                if self.earlier_total == 1 { "" } else { "s" },
+            ));
+        }
+        warnings
+    }
 }
 
 /// The query re-scoped to a renamed repository's canonical name, with the
@@ -421,6 +510,10 @@ async fn empty_page<C: ConditionalCache>(
 /// This tool's output facts for the shared response stages.
 pub(crate) struct Output;
 impl crate::tools::output::ToolOutput for Output {
+    fn selects_provider_page(&self) -> bool {
+        true
+    }
+
     fn fallback_hint(&self, query: &serde_json::Value) -> &'static str {
         use crate::tools::output::has_value;
         if query["matchIn"] == "path" {
@@ -432,8 +525,10 @@ impl crate::tools::output::ToolOutput for Output {
             "Drop extensions/filename/path or use fewer keywords; only the default branch is indexed."
         } else if query["keywords"].as_array().is_some_and(|k| k.len() > 1) {
             "An empty index result is unproven absence: use fewer keywords, or ghGetFileContent a likely file to verify."
-        } else {
+        } else if has_value(query, "repo") {
             "An empty index result is unproven absence: ghStructure the repository, then ghGetFileContent likely files to verify."
+        } else {
+            "An empty index result is unproven absence: ghSearchRepo the owner's repositories, then ghStructure one to verify."
         }
     }
     fn evidence_kind(&self, _query: &serde_json::Value, _data: &serde_json::Value) -> &'static str {

@@ -13,7 +13,10 @@ pub(crate) const CONTENT_SIZE_LIMIT_PLACEHOLDER: &str = "[CONTENT-REDACTED-SIZE-
 // ---------------------------------------------------------------------------
 
 // Built-in patterns are compile-time constants; an invalid one is a build bug.
-#[allow(clippy::panic)]
+#[expect(
+    clippy::panic,
+    reason = "built-in patterns are compile-time constants; an invalid one is a build bug"
+)]
 static FILE_CONTEXT_REGEXES: LazyLock<Vec<Option<regex::Regex>>> = LazyLock::new(|| {
     PATTERNS
         .iter()

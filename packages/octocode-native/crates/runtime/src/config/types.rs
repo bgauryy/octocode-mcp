@@ -13,17 +13,11 @@ pub enum ConfigFieldKind {
     Path,
     StringArray,
     Enum,
-    SchemaVersion,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ConfigNormalize {
     Trim,
     Lower,
-}
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ConfigInvalidEnv {
-    Skip,
-    Default,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ConfigEnumStyle {
@@ -34,7 +28,6 @@ pub enum ConfigEnumStyle {
 pub struct ConfigEnvBinding {
     pub name: &'static str,
     pub normalize: Option<ConfigNormalize>,
-    pub invalid: ConfigInvalidEnv,
 }
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ConfigFieldSpec {
@@ -96,7 +89,6 @@ pub struct ConfigInput {
     pub env: BTreeMap<String, String>,
     pub cwd: PathBuf,
     pub os_home: PathBuf,
-    pub trusted_project: bool,
     pub global_env: FileInput,
     pub project_env: FileInput,
     /// Global `<octocode-home>/.octocoderc`.
@@ -124,6 +116,13 @@ pub enum Severity {
 }
 /// Diagnostic code of a configuration key no setting reads.
 pub const UNKNOWN_CONFIG_CODE: &str = "unknown_or_future_config";
+/// Diagnostic code of a setting or variable the contract removed.
+pub const REMOVED_SETTING_CODE: &str = "removed_setting";
+/// Diagnostic code of a tool-list entry no tool has.
+pub const UNKNOWN_TOOL_NAME_CODE: &str = "unknown_tool_name";
+/// Diagnostic code of a workspace file value above the home cap it may only
+/// lower.
+pub const WORKSPACE_RAISES_LIMIT_CODE: &str = "workspace_config_raises_limit";
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ConfigDiagnostic {
@@ -152,6 +151,9 @@ pub struct EnvApplyReport {
     pub applied: Vec<String>,
     pub skipped_protected: Vec<String>,
     pub skipped_existing: Vec<String>,
+    /// Workspace `.env` keys dropped because they are protected and the home
+    /// `.env` sets them (the home value stands).
+    pub skipped_workspace_protected: Vec<String>,
     pub sources: BTreeMap<String, String>,
     pub keys: Vec<String>,
 }
@@ -180,11 +182,82 @@ impl fmt::Debug for PrivateTokenSelection {
     }
 }
 
+/// Which configuration scope a file belongs to.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ConfigScope {
+    Home,
+    Workspace,
+}
+impl ConfigScope {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Home => "home",
+            Self::Workspace => "workspace",
+        }
+    }
+}
+
+/// The file an effective environment value came from: a `.env` file, or a
+/// `.octocoderc` credential setting.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct EnvOrigin {
+    pub scope: ConfigScope,
+    pub path: PathBuf,
+}
+
+/// Whether a variable holds a secret: a GitHub token, a credential setting's
+/// variable, or a name with a credential word as one of its parts
+/// (`SERVICE_API_KEY`, `DB_PASSWORD`). Secret values are never printed.
+#[must_use]
+pub fn is_secret_key(key: &str) -> bool {
+    const CREDENTIAL_WORDS: &[&str] = &[
+        "secret",
+        "secrets",
+        "password",
+        "passwd",
+        "passphrase",
+        "key",
+        "keys",
+        "token",
+        "tokens",
+        "credential",
+        "credentials",
+    ];
+    ENV_TOKEN_VARS.contains(&key)
+        || CONFIG_FIELDS
+            .iter()
+            .any(|field| field.credential && field.env_name() == Some(key))
+        || key
+            .split(['_', '.', '-'])
+            .any(|part| CREDENTIAL_WORDS.contains(&part.to_ascii_lowercase().as_str()))
+}
+
+/// The layer a resolved setting came from; a setting no layer sets is
+/// `Default`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SettingSource {
+    Process,
+    WorkspaceEnv,
+    HomeEnv,
+    WorkspaceFile,
+    HomeFile,
+    Default,
+}
+
 #[derive(Clone)]
 pub struct ConfigOutput {
     pub home: PathBuf,
     pub resolved: ResolvedConfig,
     pub(crate) effective_env: BTreeMap<String, String>,
+    /// The file each effective variable a file supplied came from; a
+    /// variable not listed came from the process environment.
+    pub env_origins: BTreeMap<String, EnvOrigin>,
+    /// The layer each resolved setting came from, by contract path; absent
+    /// means the generated default.
+    pub setting_sources: BTreeMap<&'static str, SettingSource>,
     pub dotenv: EnvApplyReport,
     pub diagnostics: Vec<ConfigDiagnostic>,
     pub token: Option<PrivateTokenSelection>,
@@ -202,6 +275,14 @@ impl ConfigOutput {
     }
     pub fn env_value(&self, key: &str) -> Option<&str> {
         self.effective_env.get(key).map(String::as_str)
+    }
+    /// The layer the resolved setting at `path` came from.
+    #[must_use]
+    pub fn setting_source(&self, path: &str) -> SettingSource {
+        self.setting_sources
+            .get(path)
+            .copied()
+            .unwrap_or(SettingSource::Default)
     }
     /// A digest of what this configuration makes a runtime do: its home, the
     /// resolved settings, the selected credential (by digest), and the
@@ -273,6 +354,9 @@ pub struct ConfigInspectorData {
     pub home: PathBuf,
     pub global_env_path: PathBuf,
     pub project_env_path: PathBuf,
+    /// Whether a workspace `.env` exists as its own layer: false when it is
+    /// missing or is the home `.env` itself (cwd = the OS home).
+    pub project_env_exists: bool,
     pub loaded_keys: Vec<String>,
     pub skipped_protected: Vec<EnvSkip>,
     pub skipped_existing: Vec<EnvSkip>,

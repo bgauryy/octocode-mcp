@@ -259,7 +259,7 @@ fn package_name(specifier: &str, language: &str) -> Option<String> {
                 spec.to_owned()
             }
         }
-        "java" | "kotlin" | "scala" => match spec.rsplit_once('.') {
+        "java" | "scala" => match spec.rsplit_once('.') {
             Some((package, _)) => package.to_owned(),
             None => spec.to_owned(),
         },
@@ -319,37 +319,28 @@ fn unparsed_target<'a>(
 }
 
 /// One label per language regardless of which parser produced the facts
-/// (oxc reports the extension, tree-sitter a language id).
+/// (oxc reports the extension, tree-sitter a language id): the selector of
+/// the file's grammar in the engine registry
+/// ([`octocode_engine::signatures::languages::label`]), except that the TSX
+/// grammar keeps its name (`tsx`); `raw` for an extension no grammar claims.
 pub(crate) fn canonical_language(file: &str, raw: &str) -> String {
-    let ext = octocode_engine::text::extension_of(file, true, "");
-    let known = match ext.as_str() {
-        "ts" | "mts" | "cts" => "typescript",
-        "tsx" => "tsx",
-        "js" | "mjs" | "cjs" | "jsx" => "javascript",
-        "py" | "pyi" => "python",
-        "go" => "go",
-        "rs" => "rust",
-        "java" => "java",
-        "kt" | "kts" => "kotlin",
-        "c" | "h" => "c",
-        "cpp" | "hpp" | "cc" | "cxx" | "hh" | "hxx" => "cpp",
-        "cu" | "cuh" => "cuda",
-        "scala" | "sc" | "sbt" => "scala",
-        "cs" => "csharp",
-        "asm" | "s" | "assembly" => "asm",
-        _ => return raw.to_owned(),
-    };
-    known.to_owned()
+    use octocode_engine::signatures::languages;
+    let extension = octocode_engine::text::extension_of(file, true, "");
+    match languages::find_entry(&extension) {
+        Some(entry) if entry.name == "TSX" => "tsx".to_owned(),
+        Some(entry) => languages::label(entry),
+        None => raw.to_owned(),
+    }
 }
 
 fn ecosystem(language: &str) -> &'static str {
     match language {
-        "javascript" | "typescript" | "tsx" | "jsx" => "npm",
+        "javascript" | "typescript" | "tsx" => "npm",
         "csharp" => "nuget",
         "python" => "pypi",
         "rust" => "cargo",
         "go" => "go",
-        "java" | "kotlin" | "scala" => "maven",
+        "java" | "scala" => "maven",
         "c" | "cpp" | "cuda" => "system",
         _ => "other",
     }

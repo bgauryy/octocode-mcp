@@ -7,7 +7,9 @@ import type { TeamStore } from './store.js';
  * each. A message is recorded delivered only when the model is called with it in the conversation (`seen`, from Pi's
  * `context` event); one still queued when the agent is killed or leaves stays undelivered, so it becomes a dead letter
  * its sender hears about. Each tick first counts this recipient's undelivered messages past the hand-off point (an
- * index read): the inbox is read only when something new waits.
+ * index read): the inbox is read only when something new waits. A message that waits at or before the hand-off point
+ * without this inbox having handed it over means the database was emptied or replaced under a live session (its message
+ * numbers start again): the point is reset, so the new messages are not skipped.
  */
 export class Inbox {
   /** The newest message handed to Pi: later ticks hand over only newer ones, so none is injected twice. */
@@ -37,6 +39,10 @@ export class Inbox {
   /** Records what the model saw, then hands the next batch to `send`; a refused batch is offered again next tick. */
   deliver(db: TeamStore, id: string, send: (batch: Message[]) => boolean): void {
     this.record(db, id);
+    if (this.handed > 0 && db.waitingThrough(id, this.handed).some((message) => !this.unseen.has(message))) {
+      this.handed = 0;
+      this.unseen.clear();
+    }
     if (db.waiting(id, this.handed) === 0) return;
     const batch = db.pending(id, this.handed);
     if (batch.length === 0) return; // Another process can remove the recipient between the two reads.

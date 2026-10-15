@@ -35,10 +35,12 @@ def semantic_calls(calls: list[dict]) -> dict:
         for query in payload.get("queries", []) if isinstance(payload, dict) else []:
             if not isinstance(query, dict):
                 continue
-            goals += bool(query.get("goals"))
+            # `classifiers`; historical transcripts recorded the pre-RFC `goals`.
+            requested = bool(query.get("classifiers") or query.get("goals"))
+            goals += requested
             replay += bool(query.get("ranking"))
-            initial_goals += bool(query.get("goals")) and not query.get("ranking")
-            goal_tools[name] += bool(query.get("goals"))
+            initial_goals += requested and not query.get("ranking")
+            goal_tools[name] += requested
             replay_tools[name] += bool(query.get("ranking"))
     return {"tool_calls": dict(tools), "tool_failed_calls": dict(failed),
             "tool_chars": {name: sum(values) if all(v is not None for v in values) else None

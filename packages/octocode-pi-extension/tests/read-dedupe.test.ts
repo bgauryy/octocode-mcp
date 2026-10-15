@@ -103,8 +103,8 @@ describe('a repeated read of an unchanged file', () => {
   it('does not stay silent about partial content: the stub keeps the read\'s own details, so the guard still sees a whole or a partial read', () => {
     const first = exchange('read', { path: 'a.ts' }, CONTENT);
     const stub = exchange('read', { path: 'a.ts' }, '[Unchanged since your earlier read of a.ts (same range); it is above.]', { details: { unchangedOf: first.id } });
-    const seen = seenFiles(stub.messages.map((message, index) => ({ id: `e${index}`, message })), '/repo');
-    expect([...seen.values()]).toMatchObject([{ file: '/repo/a.ts' }]);
+    const seen = seenFiles([...first.messages, ...stub.messages].map((message, index) => ({ id: `e${index}`, message })), '/repo');
+    expect([...seen.values()]).toMatchObject([{ file: '/repo/a.ts', id: 'e3' }]);
     expect([...seen.values()][0]!.partial).toBeUndefined();
   });
 
@@ -114,5 +114,12 @@ describe('a repeated read of an unchanged file', () => {
     const messages = [...first.messages, ...stub.messages].map((message, index) => ({ id: `e${index}`, message }));
     expect(seenFiles(messages, '/repo', new Set([first.id])).size).toBe(0);
     expect(seenFiles(messages, '/repo').size).toBe(1);
+  });
+
+  it('stops counting a stub as a read once a compaction cut the result it points to out of the context', () => {
+    const first = exchange('read', { path: 'a.ts' }, CONTENT);
+    const stub = exchange('read', { path: 'a.ts' }, 'note', { details: { unchangedOf: first.id } });
+    // The kept tail starts between the two: only the stub is left, and it shows nothing.
+    expect(seenFiles(stub.messages.map((message, index) => ({ id: `e${index}`, message })), '/repo').size).toBe(0);
   });
 });

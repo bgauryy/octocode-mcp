@@ -1,3 +1,4 @@
+import Ajv2020 from 'ajv/dist/2020.js';
 import { rustBundle } from '../scripts/tool-contract/rust.ts';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -84,20 +85,39 @@ describe('generated tool types', () => {
     expect(Object.keys(defs).filter((name) => /^Shared|__schema/.test(name))).toEqual([]);
   });
 
-  it('turns closed anyOf unions into oneOf and enforces string consts', () => {
-    const defs = buildToolTypesBundle().bundle.$defs as Record<string, Record<string, unknown>>;
-    const ast = defs.AstSearchQuery as { oneOf: Array<{ $ref: string }> };
-    expect(ast.oneOf.map((branch) => branch.$ref)).toEqual([
+  it('keeps union semantics in the published bundle and enforces string consts', () => {
+    const { bundle } = buildToolTypesBundle();
+    const defs = bundle.$defs as Record<string, Record<string, unknown>>;
+    const refs = [
       '#/$defs/AstSearchQueryMatchPattern',
       '#/$defs/AstSearchQueryMatchRule',
       '#/$defs/AstSearchQuerySyntaxTree',
       '#/$defs/AstSearchQuerySymbols',
-    ]);
+    ];
+    // Closed objects can overlap, so the canonical union stays `anyOf`
+    // (at least one branch); only the Rust representation becomes `oneOf`.
+    const ast = defs.AstSearchQuery as { anyOf: Array<{ $ref: string }> };
+    expect(ast.anyOf.map((branch) => branch.$ref)).toEqual(refs);
+    const rust = (rustBundle(bundle).$defs as Record<string, { oneOf?: Array<{ $ref: string }> }>).AstSearchQuery;
+    expect(rust?.oneOf?.map((branch) => branch.$ref)).toEqual(refs);
     const symbols = defs.AstSearchQuerySymbols as { properties: Record<string, unknown> };
     expect(symbols.properties.operation).toEqual({ type: 'string', enum: ['symbols'] });
     // typify drops a string const (emits a free String); a one-value enum is
     // enforced. Boolean consts stay a contract-validator check.
     expect(JSON.stringify(defs)).not.toMatch(/"const":"/);
+  });
+
+  it('accepts a query that matches more than one closed branch, as the canonical schema does', () => {
+    const { bundle } = buildToolTypesBundle();
+    const ajv = new Ajv2020({ strict: false, allErrors: true });
+    const validate = ajv.compile({ ...bundle, $ref: '#/$defs/LspSearchQuery' });
+    const overlapping = {
+      operation: 'workspaceSymbol',
+      symbolName: 'thing',
+      path: '/tmp/project/a.ts',
+      workspaceRoot: '/tmp/project',
+    };
+    expect(validate(overlapping), JSON.stringify(validate.errors)).toBe(true);
   });
 
   it('rejects an unnamed recursive schema instead of inventing a name', () => {

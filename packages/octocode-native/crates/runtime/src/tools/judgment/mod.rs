@@ -1,0 +1,279 @@
+//! The one classification evaluator: a captured state plus JEV questions in,
+//! validated typed answers, the answering model and usage out. Retrieval
+//! `clasifyContext` (through [`select`]) and public `clasify` both use
+//! [`Evaluator`]; neither keeps its own provider client, cache,
+//! retry loop or accounting.
+//!
+//! Identical prepared input (account partition, model, state, questions,
+//! media bytes and capability options)
+//! reuses one validated answer set from either entry point. Only complete
+//! successful evaluations are stored; concurrent identical evaluations share
+//! one provider request, and a provider failure is shared only with the
+//! requests already waiting on it.
+pub(crate) mod batch;
+mod cache;
+pub(crate) mod select;
+pub(crate) mod stats;
+pub(crate) mod transport;
+
+#[cfg(test)]
+mod tests;
+
+pub(crate) use transport::ClassificationError;
+
+use crate::providers::classification::{ClassificationProvider, gate::GateLease};
+use octocode_github::{Partition, RequestBudget};
+use secrecy::SecretString;
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+/// Source capture resolves assets before evaluation; this view never owns or
+/// renders source bytes. The same evaluator handles ordinary text calls.
+#[derive(Clone, Copy)]
+pub(crate) struct EvaluationInput<'a> {
+    pub state: &'a Value,
+    pub questions: &'a [Value],
+    pub assets: Option<&'a Value>,
+    pub long_context: bool,
+}
+
+impl EvaluationInput<'_> {
+    pub(super) fn images(&self) -> bool {
+        self.assets.is_some()
+            || self
+                .questions
+                .iter()
+                .any(|question| question["type"] == "box")
+    }
+}
+
+/// A validated evaluation: one provider answer per question, in question
+/// order, exactly as the provider returned it (`type` included).
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub(crate) struct Judged {
+    pub answers: Vec<Value>,
+    /// The model that answered (the provider's response), not the alias asked.
+    pub model: String,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    /// Provider requests this call made; zero for a replay.
+    #[serde(skip)]
+    pub provider_calls: u64,
+    #[serde(skip)]
+    pub known_usage_calls: u64,
+    /// Answers saved from an identical earlier evaluation; the tokens are
+    /// that evaluation's, not new spend.
+    #[serde(skip)]
+    pub replayed: bool,
+}
+
+/// Provider connection and policy shared by every evaluation of a runtime.
+#[derive(Clone)]
+pub(crate) struct Evaluator {
+    pub(crate) key: Option<SecretString>,
+    pub(crate) base_url: String,
+    pub(crate) endpoint_path: String,
+    /// The configured default model (`classification.model`, else the
+    /// provider's default).
+    pub(crate) model: String,
+    pub(crate) provider: &'static dyn ClassificationProvider,
+    pub(crate) timeout: Duration,
+    pub(crate) retries: u32,
+    pub(crate) max_concurrency: usize,
+    judgments: Arc<cache::Judgments>,
+    /// `<home>` when session statistics are recorded.
+    stats_home: Option<PathBuf>,
+}
+
+impl Evaluator {
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new(
+        key: Option<SecretString>,
+        base_url: String,
+        model: String,
+        provider: &'static dyn ClassificationProvider,
+        timeout: Duration,
+        retries: u32,
+        max_concurrency: usize,
+        cache_dir: Option<PathBuf>,
+        stats_home: Option<PathBuf>,
+    ) -> Self {
+        Self {
+            key,
+            base_url,
+            endpoint_path: provider.endpoint_path().to_owned(),
+            model,
+            provider,
+            timeout,
+            retries,
+            max_concurrency,
+            judgments: Arc::new(cache::Judgments::new(cache_dir)),
+            stats_home,
+        }
+    }
+
+    pub(crate) fn is_configured(&self) -> bool {
+        self.key.is_some()
+    }
+
+    /// The endpoint and credential this evaluator's answers belong to.
+    pub(crate) fn partition(&self) -> Partition {
+        let origin = transport::endpoint(&self.base_url, &self.endpoint_path).map_or_else(
+            |_| format!("{}|{}", self.base_url, self.endpoint_path),
+            |endpoint| crate::providers::classification::gate::endpoint_key(&endpoint),
+        );
+        Partition::new(origin, self.key.as_ref())
+    }
+
+    /// A request budget ending at `deadline` or the evaluator timeout,
+    /// whichever comes first.
+    pub(crate) fn budget(
+        &self,
+        deadline: Instant,
+        cancellation: tokio_util::sync::CancellationToken,
+    ) -> RequestBudget {
+        transport::budget(deadline.min(Instant::now() + self.timeout), cancellation)
+    }
+
+    /// One call's share of the process-wide endpoint gate.
+    pub(crate) fn gate(&self) -> GateLease {
+        crate::providers::classification::gate::lease(
+            self.partition().identity(),
+            self.max_concurrency,
+        )
+    }
+
+    pub(crate) async fn evaluate_prepared(
+        &self,
+        input: EvaluationInput<'_>,
+        model: Option<&str>,
+        budget: &RequestBudget,
+        gate: &GateLease,
+    ) -> Result<Judged, ClassificationError> {
+        let key = self.key.as_ref().ok_or_else(|| {
+            ClassificationError::new(
+                "missingConfiguration",
+                "No classification API credential is configured.",
+                "Set OCTOCODE_CLASSIFICATION_API.",
+            )
+        })?;
+        let model = model.unwrap_or(&self.model);
+        let partition = self.partition();
+        let entry = cache::Judgments::key(&partition, model, input);
+        let ticket = self.judgments.flight.join(entry.resource.clone());
+        let mut turn = transport::wait(budget, ticket.turn()).await?;
+        transport::check_budget(budget)?;
+        if let Some(failure) = turn.as_ref() {
+            // The flight leader already counted the request it sent; a
+            // waiter that shares its failure sent none.
+            return Err(ClassificationError {
+                provider_calls: 0,
+                reported_usage: None,
+                ..failure.clone()
+            });
+        }
+        if let Some(saved) = self.judgments.get(&entry) {
+            return Ok(Judged {
+                replayed: true,
+                provider_calls: 0,
+                known_usage_calls: 0,
+                ..saved
+            });
+        }
+        let connection = batch::Connection {
+            key,
+            base_url: &self.base_url,
+            endpoint_path: &self.endpoint_path,
+            provider: self.provider,
+            retries: self.retries,
+        };
+        match batch::answer(input, model, &connection, budget, gate).await {
+            Ok(judged) => {
+                self.judgments.put(entry, &judged);
+                Ok(judged)
+            }
+            Err(error) => {
+                // A caller's own deadline or cancellation is not the
+                // provider's answer; the next waiter tries for itself.
+                if !matches!(error.code.as_str(), "cancelled" | "timeout") {
+                    *turn = Some(error.clone());
+                }
+                Err(error)
+            }
+        }
+    }
+
+    /// Read current model names through the same authenticated transport and gate.
+    pub(crate) async fn models(
+        &self,
+        budget: &RequestBudget,
+        gate: &GateLease,
+    ) -> Result<Value, ClassificationError> {
+        let key = self.key.as_ref().ok_or_else(|| {
+            ClassificationError::new(
+                "missingConfiguration",
+                "No classification API credential is configured.",
+                "Set OCTOCODE_CLASSIFICATION_API.",
+            )
+        })?;
+        transport::check_key(key)?;
+        let result = transport::get(
+            key,
+            transport::endpoint(&self.base_url, self.provider.models_path())?,
+            budget,
+            self.retries,
+            gate,
+        )
+        .await;
+        let calls = match &result {
+            Ok((_, calls)) => *calls,
+            Err(error) => error.provider_calls,
+        };
+        let mut usage = stats::ClassificationUsage::default();
+        usage.add_record(&json!({"provider_calls":calls}));
+        self.record(usage);
+        let (response, calls) = result?;
+        self.provider
+            .validate_models(&response)
+            .map_err(|error| ClassificationError {
+                provider_calls: calls,
+                ..ClassificationError::invalid_response(error.message)
+            })?;
+        Ok(response)
+    }
+
+    /// Add one call's provider usage to the session statistics.
+    pub(crate) fn record(&self, usage: stats::ClassificationUsage) {
+        if let Some(home) = &self.stats_home {
+            stats::record_classification(home, true, usage);
+        }
+    }
+}
+
+impl stats::ClassificationUsage {
+    /// Fold one evaluation in: its provider requests and reported tokens.
+    pub(crate) fn add(&mut self, outcome: &Result<Judged, ClassificationError>) {
+        match outcome {
+            Ok(judged) if judged.provider_calls > 0 => self.add_record(&json!({
+                "provider_calls": judged.provider_calls,
+                "known_usage_calls": judged.known_usage_calls,
+                "input_tokens": judged.input_tokens,
+                "output_tokens": judged.output_tokens,
+            })),
+            Ok(_) => {}
+            Err(error) if error.provider_calls > 0 => {
+                let usage = error.usage();
+                self.add_record(&json!({
+                    "provider_calls": error.provider_calls,
+                    "known_usage_calls": usage.known_usage_calls,
+                    "input_tokens": usage.input_tokens,
+                    "output_tokens": usage.output_tokens,
+                }));
+            }
+            Err(_) => {}
+        }
+    }
+}

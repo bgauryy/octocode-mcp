@@ -111,11 +111,35 @@ pub struct GitHubProvider<C> {
     pub transport: GitHubTransport,
     pub cache: C,
 }
+#[derive(Clone, Copy)]
+enum ContentKind {
+    Text,
+    Bytes,
+}
 impl<C: ConditionalCache> GitHubProvider<C> {
     pub async fn get_file_content(
         &self,
         request: &ContentRequest,
         context: &RequestContext,
+    ) -> Result<ContentResponse, ProviderError> {
+        self.read_file(request, context, ContentKind::Text).await
+    }
+
+    /// Original bytes for callers that validate their own media format.
+    /// Shares text reads' authorization, commit identity, cache and single flight.
+    pub async fn get_file_bytes(
+        &self,
+        request: &ContentRequest,
+        context: &RequestContext,
+    ) -> Result<ContentResponse, ProviderError> {
+        self.read_file(request, context, ContentKind::Bytes).await
+    }
+
+    async fn read_file(
+        &self,
+        request: &ContentRequest,
+        context: &RequestContext,
+        kind: ContentKind,
     ) -> Result<ContentResponse, ProviderError> {
         validate_name(&request.owner)?;
         validate_name(&request.repo)?;
@@ -130,47 +154,31 @@ impl<C: ConditionalCache> GitHubProvider<C> {
             .transport
             .cache_partition(context, request.session_id.as_deref())?;
         let key = cache_key(request, &resolved_ref);
-        let cached = if request.force_refresh {
-            None
-        } else {
-            self.cache.get(&partition, &key).await
-        };
-        // A cached large-file entry has no ETag (it came from the blob fallback
-        // below). The cache key includes the resolved commit SHA, so that content
-        // is immutable — serve it directly instead of re-issuing a request that
-        // will 413 again and re-download the whole blob on every read.
-        if let Some(value) = cached.as_ref().filter(|value| value.etag.is_none()) {
+        // Single flight: identical concurrent reads wait for the first and
+        // then read what it cached.
+        let ticket = content_flights().join((partition.clone(), key.clone()));
+        let _turn = ticket.turn().await;
+        // The cache key holds the resolved commit SHA, so a cached body is
+        // immutable: it is served without asking GitHub again. A movable ref
+        // stays fresh through its own resolution, not through this entry.
+        if !request.force_refresh
+            && let Some(value) = self.cache.get(&partition, &key).await
+        {
+            kind.check(&value.bytes, None)?;
             return Ok(ContentResponse {
-                bytes: value.bytes.clone(),
-                resolved_ref: value.resolved_ref.clone(),
-                etag: None,
+                bytes: value.bytes,
+                resolved_ref: value.resolved_ref,
+                etag: value.etag,
                 from_cache: true,
                 raw_response_bytes: 0,
             });
         }
-        let url = self.transport.endpoint().rest(&[
-            "repos",
-            &request.owner,
-            &request.repo,
-            "contents",
-            &request.path,
-        ])?;
-        let mut url = url;
-        url.query_pairs_mut().append_pair("ref", &resolved_ref);
-        let mut spec = RequestSpec::get(url);
-        if let Some(etag) = cached.as_ref().and_then(|v| v.etag.as_ref()) {
-            spec.headers.insert(
-                IF_NONE_MATCH,
-                HeaderValue::from_str(etag).map_err(|_| {
-                    ProviderError::new(ProviderErrorKind::Validation, "invalid cached ETag")
-                })?,
-            );
-        }
+        let spec = self.contents_spec(request, &resolved_ref)?;
         let page = match self.transport.execute(spec, context).await {
             Ok(page) => page,
             Err(error) if error.status == Some(413) => {
                 let (bytes, raw_response_bytes) = self
-                    .fetch_via_directory_and_blob(request, &resolved_ref, context)
+                    .fetch_via_directory_and_blob(request, &resolved_ref, context, kind)
                     .await?;
                 let bytes = Bytes::from(bytes);
                 let stored = CachedContent {
@@ -191,40 +199,8 @@ impl<C: ConditionalCache> GitHubProvider<C> {
             }
             Err(error) => return Err(error),
         };
-        if page.status == 304 {
-            let value = cached.ok_or_else(|| {
-                ProviderError::new(
-                    ProviderErrorKind::Decode,
-                    "GitHub returned 304 without cached content",
-                )
-            })?;
-            return Ok(ContentResponse {
-                bytes: value.bytes,
-                resolved_ref: value.resolved_ref,
-                etag: value.etag,
-                from_cache: true,
-                raw_response_bytes: 0,
-            });
-        }
-        let mut raw_response_bytes = page.body.len();
-        let payload = parse_content_payload(&page.body, &request.path)?;
-        // Files between 1 MB and 100 MB come back 200 with `encoding:"none"`
-        // and an empty body; their bytes are only available as a git blob.
-        let needs_blob = payload.encoding.as_deref() == Some("none")
-            || (payload.content.as_deref().is_none_or(str::is_empty)
-                && payload.size.unwrap_or(0) > 0);
-        let bytes: Bytes = match payload.sha.as_deref().filter(|_| needs_blob) {
-            Some(sha) => {
-                let (bytes, blob_bytes) = self.fetch_blob(request, sha, context).await?;
-                raw_response_bytes = raw_response_bytes.saturating_add(blob_bytes);
-                bytes.into()
-            }
-            None => text_bytes(
-                decode_bytes(payload.encoding.as_deref(), payload.content)?,
-                payload.sha.as_deref(),
-            )?
-            .into(),
-        };
+        let (bytes, raw_response_bytes) =
+            self.page_bytes(request, &page.body, context, kind).await?;
         let etag = page
             .headers
             .get("etag")
@@ -245,6 +221,52 @@ impl<C: ConditionalCache> GitHubProvider<C> {
             from_cache: false,
             raw_response_bytes,
         })
+    }
+
+    /// The contents request for `request` at `resolved_ref`.
+    fn contents_spec(
+        &self,
+        request: &ContentRequest,
+        resolved_ref: &str,
+    ) -> Result<RequestSpec, ProviderError> {
+        let mut url = self.transport.endpoint().rest(&[
+            "repos",
+            &request.owner,
+            &request.repo,
+            "contents",
+            &request.path,
+        ])?;
+        url.query_pairs_mut().append_pair("ref", resolved_ref);
+        Ok(RequestSpec::get(url))
+    }
+
+    /// The file bytes a contents `body` carries, and the raw bytes read for
+    /// them. Files between 1 MB and 100 MB come back 200 with
+    /// `encoding:"none"` and an empty body; their bytes are only available as
+    /// a git blob.
+    async fn page_bytes(
+        &self,
+        request: &ContentRequest,
+        body: &[u8],
+        context: &RequestContext,
+        kind: ContentKind,
+    ) -> Result<(Bytes, usize), ProviderError> {
+        let raw_response_bytes = body.len();
+        let payload = parse_content_payload(body, &request.path)?;
+        let needs_blob = payload.encoding.as_deref() == Some("none")
+            || (payload.content.as_deref().is_none_or(str::is_empty)
+                && payload.size.unwrap_or(0) > 0);
+        match payload.sha.as_deref().filter(|_| needs_blob) {
+            Some(sha) => {
+                let (bytes, blob_bytes) = self.fetch_blob(request, sha, context, kind).await?;
+                Ok((bytes.into(), raw_response_bytes.saturating_add(blob_bytes)))
+            }
+            None => {
+                let bytes = decode_bytes(payload.encoding.as_deref(), payload.content)?;
+                kind.check(&bytes, payload.sha.as_deref())?;
+                Ok((bytes.into(), raw_response_bytes))
+            }
+        }
     }
 
     pub async fn repository_contents(
@@ -394,6 +416,7 @@ impl<C: ConditionalCache> GitHubProvider<C> {
         request: &ContentRequest,
         resolved_ref: &str,
         context: &RequestContext,
+        kind: ContentKind,
     ) -> Result<(Vec<u8>, usize), ProviderError> {
         let (parent, name) = request.path.rsplit_once('/').unwrap_or(("", &request.path));
         let mut directory_url = self.transport.endpoint().rest(&[
@@ -426,7 +449,7 @@ impl<C: ConditionalCache> GitHubProvider<C> {
                     "file was not present in its parent directory",
                 )
             })?;
-        let (bytes, blob_bytes) = self.fetch_blob(request, &entry.sha, context).await?;
+        let (bytes, blob_bytes) = self.fetch_blob(request, &entry.sha, context, kind).await?;
         Ok((bytes, directory.body.len().saturating_add(blob_bytes)))
     }
 
@@ -435,6 +458,7 @@ impl<C: ConditionalCache> GitHubProvider<C> {
         request: &ContentRequest,
         sha: &str,
         context: &RequestContext,
+        kind: ContentKind,
     ) -> Result<(Vec<u8>, usize), ProviderError> {
         let blob_url = self.transport.endpoint().rest(&[
             "repos",
@@ -451,13 +475,9 @@ impl<C: ConditionalCache> GitHubProvider<C> {
         let payload: BlobPayload = serde_json::from_slice(&blob.body).map_err(|_| {
             ProviderError::new(ProviderErrorKind::Decode, "invalid GitHub blob response")
         })?;
-        Ok((
-            text_bytes(
-                decode_bytes(Some(&payload.encoding), Some(payload.content))?,
-                Some(sha),
-            )?,
-            blob.body.len(),
-        ))
+        let bytes = decode_bytes(Some(&payload.encoding), Some(payload.content))?;
+        kind.check(&bytes, Some(sha))?;
+        Ok((bytes, blob.body.len()))
     }
 }
 
@@ -603,6 +623,11 @@ const REF_MEMO_TTL: Duration = Duration::from_secs(60);
 pub fn is_full_sha(value: &str) -> bool {
     value.len() == 40 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
+/// The process's in-flight content reads, one per `(credential, read)`.
+fn content_flights() -> &'static super::KeyedFlight<(Partition, String), ()> {
+    static FLIGHTS: super::KeyedFlight<(Partition, String), ()> = super::KeyedFlight::transient();
+    &FLIGHTS
+}
 /// The process's in-flight ref resolutions, one per `(credential, ref)`.
 fn ref_flights() -> &'static super::KeyedFlight<(Partition, String), ()> {
     static FLIGHTS: super::KeyedFlight<(Partition, String), ()> = super::KeyedFlight::transient();
@@ -679,18 +704,20 @@ fn decode_bytes(encoding: Option<&str>, content: Option<String>) -> Result<Vec<u
 }
 /// Text content only: a NUL byte marks binary content, reported with its size
 /// and blob SHA as a request the file read cannot serve (not a decode fault).
-fn text_bytes(bytes: Vec<u8>, blob_sha: Option<&str>) -> Result<Vec<u8>, ProviderError> {
-    if !bytes.contains(&0) {
-        return Ok(bytes);
+impl ContentKind {
+    fn check(self, bytes: &[u8], blob_sha: Option<&str>) -> Result<(), ProviderError> {
+        if matches!(self, Self::Bytes) || !bytes.contains(&0) {
+            return Ok(());
+        }
+        let blob = blob_sha
+            .map(|sha| format!(", blob {sha}"))
+            .unwrap_or_default();
+        Err(ProviderError::new(
+            ProviderErrorKind::Validation,
+            format!("Binary file ({} bytes{blob})", bytes.len()),
+        )
+        .with_reason(super::ProviderErrorReason::BinaryFile))
     }
-    let blob = blob_sha
-        .map(|sha| format!(", blob {sha}"))
-        .unwrap_or_default();
-    Err(ProviderError::new(
-        ProviderErrorKind::Validation,
-        format!("Binary file ({} bytes{blob})", bytes.len()),
-    )
-    .with_reason(super::ProviderErrorReason::BinaryFile))
 }
 fn validate_name(value: &str) -> Result<(), ProviderError> {
     if value.is_empty() || value == "." || value == ".." || value.contains('/') {

@@ -20,6 +20,11 @@ impl ArtifactCache {
     pub fn new(dir: Option<std::path::PathBuf>) -> Self {
         Self(Store::new(CacheConfig::default(), dir))
     }
+
+    /// Drop every cached registry answer, in memory and on disk.
+    pub fn clear(&self) {
+        self.0.clear();
+    }
 }
 
 /// A registry answer lives five minutes: a new release shows up soon.
@@ -231,16 +236,30 @@ impl ArtifactHttp for SystemArtifactHttp {
                     )
                     .with_status(status.as_u16()));
                 }
-                let body = octocode_github::read_bounded(response, budget, budget.max_body_bytes)
-                    .await
-                    .map_err(|error| match error {
-                        BodyError::Stopped(stop) => budget_error(stop),
-                        BodyError::TooLarge => ArtifactError::new(
-                            "providerError",
-                            "Artifact registry response exceeded the configured body limit.",
-                        ),
-                        BodyError::Transport => transport_error("body"),
-                    })?;
+                let body =
+                    match octocode_github::read_bounded(response, budget, budget.max_body_bytes)
+                        .await
+                    {
+                        Ok(body) => body,
+                        Err(BodyError::Stopped(stop)) => return Err(budget_error(stop)),
+                        Err(BodyError::TooLarge) => {
+                            return Err(ArtifactError::new(
+                                "providerError",
+                                "Artifact registry response exceeded the configured body limit.",
+                            ));
+                        }
+                        // A registry read is an idempotent GET: a body that
+                        // breaks off is retried like a failed connection.
+                        Err(BodyError::Transport) => {
+                            if attempt < self.retries
+                                && let Some(delay) = retry_delay(None, attempt, budget)
+                            {
+                                pause(delay, budget).await?;
+                                continue;
+                            }
+                            return Err(transport_error("body"));
+                        }
+                    };
                 return Ok(ArtifactHttpResponse {
                     status: status.as_u16(),
                     body: body.into(),
@@ -540,38 +559,10 @@ mod tests {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    struct NoHttp;
-
-    impl ArtifactHttp for NoHttp {
-        fn get<'a>(
-            &'a self,
-            _request: ArtifactHttpRequest,
-            _budget: &'a RequestBudget,
-        ) -> ArtifactHttpFuture<'a> {
-            Box::pin(async { panic!("status mapping tests never issue requests") })
-        }
-    }
-
+    use super::super::test_http::{NoHttp, SequenceHttp};
+    use crate::tools::test_support::Fixture;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
-
-    /// An `ArtifactHttp` impl that records every call and returns a fixed body.
-    struct CountingHttp {
-        calls: Arc<AtomicUsize>,
-        body: Vec<u8>,
-    }
-
-    impl ArtifactHttp for CountingHttp {
-        fn get<'a>(
-            &'a self,
-            _request: ArtifactHttpRequest,
-            _budget: &'a RequestBudget,
-        ) -> ArtifactHttpFuture<'a> {
-            self.calls.fetch_add(1, Ordering::Relaxed);
-            let body = self.body.clone();
-            Box::pin(async move { Ok(ArtifactHttpResponse { status: 200, body }) })
-        }
-    }
 
     fn classify(status: u16) -> Result<Option<Vec<u8>>, ArtifactError> {
         let budget = super::super::types::test_budget();
@@ -623,7 +614,10 @@ mod tests {
         assert_eq!(error.code, "invalidInput");
         assert!(error.message.contains(detail), "{}", error.message);
         let bare = classify(400).expect_err("400");
-        assert!(!bare.message.contains("Check the"), "{}", bare.message);
+        crate::tools::test_support::checks::assert_absent(
+            &serde_json::json!(bare.message),
+            "Check the",
+        );
     }
 
     #[test]
@@ -656,11 +650,7 @@ mod tests {
     /// the HTTP layer.
     #[tokio::test]
     async fn cache_disabled_skips_cache_for_reads_and_writes() {
-        let calls = Arc::new(AtomicUsize::new(0));
-        let http = CountingHttp {
-            calls: Arc::clone(&calls),
-            body: b"{\"name\":\"test\"}".to_vec(),
-        };
+        let http = SequenceHttp::new(vec![b"{\"name\":\"test\"}".to_vec()]);
         let budget = super::super::types::test_budget();
         let client = RegistryClient {
             http: &http,
@@ -673,27 +663,19 @@ mod tests {
         let _ = client
             .json(ArtifactType::Npm, url.clone(), false, None, None, JSON)
             .await;
-        assert_eq!(calls.load(Ordering::Relaxed), 1, "first call must hit HTTP");
+        assert_eq!(http.calls(), 1, "first call must hit HTTP");
         // Second call with the same URL — must hit HTTP again (nothing written to cache).
         let _ = client
             .json(ArtifactType::Npm, url, false, None, None, JSON)
             .await;
-        assert_eq!(
-            calls.load(Ordering::Relaxed),
-            2,
-            "second call must hit HTTP without a cache"
-        );
+        assert_eq!(http.calls(), 2, "second call must hit HTTP without a cache");
     }
 
     /// A token-authorized read is cached under that credential only: the
     /// same token reads it once, another token or no token reads again.
     #[tokio::test]
     async fn authorized_reads_are_cached_per_credential() {
-        let calls = Arc::new(AtomicUsize::new(0));
-        let http = CountingHttp {
-            calls: Arc::clone(&calls),
-            body: b"{\"name\":\"private\"}".to_vec(),
-        };
+        let http = SequenceHttp::new(vec![b"{\"name\":\"private\"}".to_vec()]);
         let cache = ArtifactCache::new(None);
         let budget = super::super::types::test_budget();
         let client = RegistryClient {
@@ -702,11 +684,7 @@ mod tests {
             cache: Some(&cache),
             tags: None,
         };
-        let url = Url::parse(&format!(
-            "https://authorized-cache-test.invalid/pkg-{}",
-            std::process::id()
-        ))
-        .expect("test URL");
+        let url = Url::parse("https://authorized-cache-test.invalid/pkg").expect("test URL");
         let token = |value: &str| Some(SecretString::from(format!("Bearer {value}")));
         for authorization in [token("a"), token("a"), token("b"), None, token("b")] {
             client
@@ -721,40 +699,14 @@ mod tests {
                 .await
                 .expect("read");
         }
-        assert_eq!(
-            calls.load(Ordering::Relaxed),
-            3,
-            "a, b and anonymous read once each"
-        );
-    }
-
-    /// An `ArtifactHttp` impl that answers each call with the next body.
-    struct SequenceHttp {
-        calls: Arc<AtomicUsize>,
-        bodies: Vec<&'static [u8]>,
-    }
-
-    impl ArtifactHttp for SequenceHttp {
-        fn get<'a>(
-            &'a self,
-            _request: ArtifactHttpRequest,
-            _budget: &'a RequestBudget,
-        ) -> ArtifactHttpFuture<'a> {
-            let call = self.calls.fetch_add(1, Ordering::Relaxed);
-            let body = self.bodies[call.min(self.bodies.len() - 1)].to_vec();
-            Box::pin(async move { Ok(ArtifactHttpResponse { status: 200, body }) })
-        }
+        assert_eq!(http.calls(), 3, "a, b and anonymous read once each");
     }
 
     /// A malformed registry body is never cached: the retry asks the
     /// registry again, succeeds, and the valid answer is what is cached.
     #[tokio::test]
     async fn a_malformed_body_is_not_cached_and_the_retry_reads_again() {
-        let calls = Arc::new(AtomicUsize::new(0));
-        let http = SequenceHttp {
-            calls: Arc::clone(&calls),
-            bodies: vec![b"{\"name\":", b"{\"name\":\"ok\"}"],
-        };
+        let http = SequenceHttp::new(vec![b"{\"name\":".to_vec(), b"{\"name\":\"ok\"}".to_vec()]);
         let cache = ArtifactCache::new(None);
         let budget = super::super::types::test_budget();
         let client = RegistryClient {
@@ -763,32 +715,20 @@ mod tests {
             cache: Some(&cache),
             tags: None,
         };
-        let url = Url::parse(&format!(
-            "https://malformed-cache-test.invalid/pkg-{}",
-            std::process::id()
-        ))
-        .expect("test URL");
+        let url = Url::parse("https://malformed-cache-test.invalid/pkg").expect("test URL");
         let read = || client.json(ArtifactType::Npm, url.clone(), false, None, None, JSON);
         assert_eq!(read().await.expect_err("malformed").code, "providerError");
         assert_eq!(read().await.expect("retry").expect("body")["name"], "ok");
         assert_eq!(read().await.expect("cached").expect("body")["name"], "ok");
-        assert_eq!(
-            calls.load(Ordering::Relaxed),
-            2,
-            "malformed, retry, then cache"
-        );
+        assert_eq!(http.calls(), 2, "malformed, retry, then cache");
     }
 
     /// An invalid entry already in the cache reads as a miss and is replaced.
     #[tokio::test]
     async fn an_invalid_cached_entry_is_a_miss_and_is_replaced() {
-        let calls = Arc::new(AtomicUsize::new(0));
-        let http = SequenceHttp {
-            calls: Arc::clone(&calls),
-            bodies: vec![b"{\"name\":\"fresh\"}"],
-        };
-        let dir = tempfile::tempdir().expect("cache dir");
-        ArtifactCache::new(Some(dir.path().into())).0.put(
+        let http = SequenceHttp::new(vec![b"{\"name\":\"fresh\"}".to_vec()]);
+        let dir = Fixture::new();
+        ArtifactCache::new(Some(dir.0.clone())).0.put(
             cache_key(
                 &Url::parse("https://poisoned-cache-test.invalid/pkg").expect("URL"),
                 JSON,
@@ -798,10 +738,10 @@ mod tests {
             16,
             REGISTRY_ANSWER,
         );
-        for file in crate::cache::tests::json_files(dir.path()) {
+        for file in crate::cache::tests::json_files(&dir.0) {
             std::fs::write(file, b"not json").expect("corrupt the entry");
         }
-        let cache = ArtifactCache::new(Some(dir.path().into()));
+        let cache = ArtifactCache::new(Some(dir.0.clone()));
         let budget = super::super::types::test_budget();
         let client = RegistryClient {
             http: &http,
@@ -818,27 +758,27 @@ mod tests {
                 .expect("body");
             assert_eq!(value["name"], "fresh");
         }
-        assert_eq!(calls.load(Ordering::Relaxed), 1);
+        assert_eq!(http.calls(), 1);
     }
 
     /// Immutable release facts are remembered by key while the cache is on.
     #[test]
     fn release_facts_are_remembered_only_with_the_cache_on() {
         let budget = super::super::types::test_budget();
-        let key = format!("crates:fact-test-{}@1.0.0", std::process::id());
+        let key = "crates:fact-test@1.0.0";
         let fact = serde_json::json!({"sha": "abc"});
         let off = RegistryClient::uncached(&NoHttp, &budget);
-        off.remember_fact(&key, &fact);
-        assert_eq!(off.fact(&key), None);
+        off.remember_fact(key, &fact);
+        assert_eq!(off.fact(key), None);
         let cache = ArtifactCache::new(None);
         let on = RegistryClient {
             cache: Some(&cache),
             tags: None,
             ..off
         };
-        assert_eq!(on.fact(&key), None);
-        on.remember_fact(&key, &fact);
-        assert_eq!(on.fact(&key), Some(fact));
+        assert_eq!(on.fact(key), None);
+        on.remember_fact(key, &fact);
+        assert_eq!(on.fact(key), Some(fact));
     }
 
     /// Each runtime owns its cache: a fact remembered under one home is not
@@ -847,10 +787,7 @@ mod tests {
     #[test]
     fn runtimes_with_different_homes_do_not_share_registry_answers() {
         let budget = super::super::types::test_budget();
-        let (first, second) = (
-            tempfile::tempdir().expect("home"),
-            tempfile::tempdir().expect("home"),
-        );
+        let (first, second) = (Fixture::new(), Fixture::new());
         let fact = serde_json::json!({"sha": "abc"});
         fn client<'a>(cache: &'a ArtifactCache, budget: &'a RequestBudget) -> RegistryClient<'a> {
             RegistryClient {
@@ -858,11 +795,11 @@ mod tests {
                 ..RegistryClient::uncached(&NoHttp, budget)
             }
         }
-        let one = ArtifactCache::new(Some(first.path().to_path_buf()));
+        let one = ArtifactCache::new(Some(first.0.clone()));
         client(&one, &budget).remember_fact("crates:isolated@1.0.0", &fact);
-        let other = ArtifactCache::new(Some(second.path().to_path_buf()));
+        let other = ArtifactCache::new(Some(second.0.clone()));
         assert_eq!(client(&other, &budget).fact("crates:isolated@1.0.0"), None);
-        let reopened = ArtifactCache::new(Some(first.path().to_path_buf()));
+        let reopened = ArtifactCache::new(Some(first.0.clone()));
         assert_eq!(
             client(&reopened, &budget).fact("crates:isolated@1.0.0"),
             Some(fact)
@@ -1038,6 +975,49 @@ mod tests {
                     if index > 0 {
                         let _ = stream.write_all(OK_JSON.as_bytes());
                     }
+                }
+            });
+            let request = ArtifactHttpRequest {
+                url: Url::parse(&format!("http://{address}/pkg")).expect("test URL"),
+                accept: "application/json",
+                authorization: None,
+                dns_pin: None,
+            };
+            let budget = RequestBudget::with_timeout(Duration::from_secs(60), 1024);
+            let response = SystemArtifactHttp::shared()
+                .expect("HTTP client")
+                .with_retries(retries)
+                .get(request, &budget)
+                .await;
+            assert_eq!(
+                response.ok().map(|response| response.status),
+                expected,
+                "retries {retries}"
+            );
+        }
+    }
+
+    /// Registry reads are idempotent GETs: a 2xx whose body breaks off is
+    /// retried like a failed connection; without a retry left it fails.
+    #[tokio::test]
+    async fn a_body_cut_short_is_retried() {
+        for (retries, expected) in [(1_u8, Some(200_u16)), (0, None)] {
+            use std::io::{Read, Write};
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+            let address = listener.local_addr().expect("address");
+            std::thread::spawn(move || {
+                for (index, stream) in listener.incoming().enumerate() {
+                    let Ok(mut stream) = stream else {
+                        return;
+                    };
+                    let mut head = [0_u8; 4096];
+                    let _ = stream.read(&mut head);
+                    let answer: &[u8] = if index == 0 {
+                        b"HTTP/1.1 200 OK\r\ncontent-length: 100\r\n\r\n{\"na"
+                    } else {
+                        OK_JSON.as_bytes()
+                    };
+                    let _ = stream.write_all(answer);
                 }
             });
             let request = ArtifactHttpRequest {

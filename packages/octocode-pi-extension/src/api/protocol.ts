@@ -89,3 +89,11 @@ export function numberParam(params: Record<string, unknown>, key: string, range:
   if (typeof value !== 'number' || !Number.isFinite(value) || value < range.min || value > range.max) throw new RpcError(ERR.invalidParams, `${key} must be a number from ${range.min} to ${range.max}`);
   return value;
 }
+
+/** A number the caller asked for, as a whole number brought into `range` instead of refused: a page size is a preference. A value that is not a finite number is still refused. */
+export function clampedParam(params: Record<string, unknown>, key: string, range: { min: number; max: number }): number | undefined {
+  const value = params[key];
+  if (value === undefined) return undefined;
+  if (typeof value !== 'number' || !Number.isFinite(value)) throw new RpcError(ERR.invalidParams, `${key} must be a number`);
+  return Math.min(Math.max(Math.floor(value), range.min), range.max);
+}

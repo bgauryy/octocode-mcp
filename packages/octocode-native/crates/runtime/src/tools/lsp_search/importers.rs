@@ -20,6 +20,7 @@
 //! verified in exactly one window and a changed list restarts the walk.
 
 use super::LspSearchQuery;
+use super::anchor::Position;
 use super::failure::{LspFailure, flag_partial, ignored_text_lead, query_value};
 use super::import_stop::{proven_missing, stays_on_import};
 use super::recovery::{get_locations, resolve_definition_chain, snippet_identity};
@@ -474,23 +475,38 @@ pub(super) const SCAN_COMPLETE: &str = "complete";
 pub(super) const SCAN_CAPPED: &str = "capped";
 pub(super) const SCAN_FAILED: &str = "failed";
 
-/// Verified importer anchors for `symbol` declared at the request anchor,
-/// from the importer window `request` names. `known_files` are files the
-/// server already reported; they are not candidates.
-#[allow(clippy::too_many_arguments)]
+/// What [`verified_anchors`] verifies: importers of `symbol`, declared at
+/// `declaration`, among `scope`'s candidates in the importer `window` the
+/// request names. `known_files` are files the server already reported; they
+/// are not candidates.
+pub(super) struct ImporterSearch<'a> {
+    pub(super) symbol: &'a str,
+    pub(super) scope: &'a Scope,
+    pub(super) declaration: Position<'a>,
+    pub(super) known_files: &'a HashSet<String>,
+    pub(super) window: WindowRequest<'a>,
+}
+
+/// Verified importer anchors of one [`ImporterSearch`].
 pub(super) async fn verified_anchors(
     client: &NativeLspClient,
     sources: &mut SourceCache<'_>,
     snippet_policy: &SnippetReadPolicy,
     cancel: &dyn CancellationCheck,
-    symbol: &str,
-    scope: &Scope,
-    anchor_path: &str,
-    line: u32,
-    character: u32,
-    known_files: &HashSet<String>,
-    request: WindowRequest<'_>,
+    search: ImporterSearch<'_>,
 ) -> Result<Importers, LspFailure> {
+    let ImporterSearch {
+        symbol,
+        scope,
+        declaration:
+            Position {
+                path: anchor_path,
+                line,
+                character,
+            },
+        known_files,
+        window: request,
+    } = search;
     if symbol.trim().is_empty() || scope.root.is_empty() {
         // No candidate list: a later window cannot be placed.
         return Ok(Importers {

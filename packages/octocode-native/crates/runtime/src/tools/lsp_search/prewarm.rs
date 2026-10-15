@@ -160,9 +160,10 @@ pub fn schedule(
     let state = execution.prewarm_state.clone();
     handle.spawn(async move {
         let success = warm(&pool, config, file).await;
-        if let Ok(mut state) = state.lock() {
-            state.finish(&key, success);
-        }
+        state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .finish(&key, success);
     });
     true
 }

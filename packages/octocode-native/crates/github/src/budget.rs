@@ -682,6 +682,44 @@ impl KeyState {
         }
     }
 
+    /// Nothing holds or throttles this key: no permit is out, no admission
+    /// queued, and no cooldown, circuit, exhausted bucket, spacing or
+    /// code-search window still constrains the next request. Dropping such a
+    /// key and recreating it later admits exactly what keeping it would.
+    fn is_idle(&self, config: &ExecutorConfig, now: u64) -> bool {
+        let permits_free = self.global.available_permits() == config.global_concurrency.max(1)
+            && self.git.available_permits() == config.git_concurrency.max(1)
+            && self.groups.values().all(|lane| {
+                lane.permit.available_permits() == 1
+                    && lane.queued.plain.load(Ordering::SeqCst) == 0
+                    && lane.queued.windowed.load(Ordering::SeqCst) == 0
+            });
+        if !permits_free {
+            return false;
+        }
+        let spacing = config
+            .search_spacing
+            .max(config.graphql_spacing)
+            .max(config.write_spacing)
+            .as_millis() as u64;
+        let facts = self.facts();
+        facts.cooldown_until_ms <= now
+            && facts.circuit_failures == 0
+            && facts.circuit_open_until_ms <= now
+            && facts
+                .buckets
+                .values()
+                .all(|bucket| bucket.remaining > 0 || config.reset_until_ms(bucket.reset) <= now)
+            && facts
+                .code_search_ms
+                .iter()
+                .all(|stamp| stamp.saturating_add(60_000) <= now)
+            && facts
+                .last_start_ms
+                .values()
+                .all(|start| start.saturating_add(spacing) <= now)
+    }
+
     fn facts(&self) -> std::sync::MutexGuard<'_, KeyFacts> {
         self.facts
             .lock()
@@ -809,7 +847,6 @@ impl KeyState {
 
     /// One admission pass; `None` when a block landed while it queued, after
     /// the reservation and permits were handed back.
-    #[allow(clippy::too_many_arguments)]
     async fn try_admit(
         self: &Arc<Self>,
         group: Option<Group>,
@@ -1112,6 +1149,9 @@ impl KeyState {
 }
 
 /// Process-wide registry of per-key executor state.
+/// Account keys kept before idle ones are dropped.
+pub(crate) const KEY_RETENTION: usize = 256;
+
 pub struct GitHubBudget {
     config: ExecutorConfig,
     keys: Mutex<HashMap<LimiterKey, Arc<KeyState>>>,
@@ -1189,13 +1229,23 @@ impl GitHubBudget {
     /// State for `key`; attaches (and loads) the on-disk mirror when a
     /// state directory is supplied.
     pub(crate) fn key_state(&self, key: &LimiterKey, state_dir: Option<&Path>) -> Arc<KeyState> {
-        let state = self
-            .keys
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .entry(key.clone())
-            .or_insert_with(|| Arc::new(KeyState::new(key.clone(), &self.config)))
-            .clone();
+        let state = {
+            let mut keys = self
+                .keys
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if keys.len() >= KEY_RETENTION && !keys.contains_key(key) {
+                // Account churn must not grow the registry for the process
+                // lifetime; a held or still-throttled key keeps its state.
+                let now = now_ms();
+                keys.retain(|_, state| {
+                    Arc::strong_count(state) > 1 || !state.is_idle(&self.config, now)
+                });
+            }
+            keys.entry(key.clone())
+                .or_insert_with(|| Arc::new(KeyState::new(key.clone(), &self.config)))
+                .clone()
+        };
         if let Some(dir) = state_dir {
             state.attach_dir(dir);
             state.refresh_from_disk();
@@ -1206,6 +1256,33 @@ impl GitHubBudget {
 
 #[cfg(test)]
 mod tests {
+    /// Account-key churn (many short-lived tokens) does not grow the
+    /// registry for the process lifetime: idle keys past the retention cap
+    /// are dropped, while a key that is still throttled keeps its state.
+    #[test]
+    fn idle_keys_are_dropped_past_the_cap_but_throttled_ones_stay() {
+        let budget = super::GitHubBudget::with_config(super::ExecutorConfig::octokit());
+        let throttled = budget.key_state(&super::LimiterKey::new("github.com", Some("hot")), None);
+        throttled.cool_down(super::now_ms() + 60_000);
+        drop(throttled);
+        let held = budget.key_state(&super::LimiterKey::new("github.com", Some("held")), None);
+        for n in 0..(super::KEY_RETENTION * 3) {
+            budget.key_state(
+                &super::LimiterKey::new("github.com", Some(&format!("token-{n}"))),
+                None,
+            );
+        }
+        let keys = budget.keys.lock().unwrap();
+        assert!(
+            keys.len() <= super::KEY_RETENTION + 1,
+            "{} keys",
+            keys.len()
+        );
+        assert!(keys.contains_key(&super::LimiterKey::new("github.com", Some("hot"))));
+        assert!(keys.contains_key(&super::LimiterKey::new("github.com", Some("held"))));
+        drop(held);
+    }
+
     #[test]
     fn reset_wait_is_the_reset_plus_grace_from_now() {
         let config = super::ExecutorConfig::octokit();

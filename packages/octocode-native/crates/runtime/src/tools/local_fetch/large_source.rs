@@ -16,19 +16,14 @@ use super::types::*;
 use crate::security::scan::ContentScan;
 use crate::security::{BlockLine, KeyBlockState, LineShape, LineShapeScan, is_key_header_prefix};
 use crate::tools::cancel::CancellationCheck;
-use sha2::{Digest, Sha256};
-use std::io::Read;
 use std::path::Path;
 
 /// Largest source a window may be streamed from.
 pub(super) const MAX_STREAM_SOURCE_BYTES: u64 = 1024 * 1024 * 1024;
-/// Lines one streamed window holds; pages inside it stay 16 KB.
+/// Lines held by one streamed window; response pages are sized separately.
 const WINDOW_LINES: usize = 5_000;
-/// Lines a chunked read of a streamed source returns when it names no
-/// `length`. Deliberately not [`DEFAULT_LINE_CHUNK`]: a streamed source is
-/// one past the whole-file ceiling, and its chunks have always been this
-/// short; unifying the two would change how such files page.
-const STREAMED_CHUNK_LINES: usize = 100;
+/// Lines the first bare read previews before continuing through bounded windows.
+const STREAMED_HEAD_LINES: usize = 100;
 /// Bytes one streamed window holds; a longer window is cut at a line end or,
 /// for a single giant line, mid-line with a warning.
 const WINDOW_BYTES: usize = 4 * 1024 * 1024;
@@ -91,7 +86,7 @@ impl WindowLines {
     }
 
     /// Take one piece of `line` (up to and including its newline, if any).
-    fn push(&mut self, piece: &[u8], newline: bool, line: usize) {
+    fn push(&mut self, piece: &[u8], line: usize) {
         if self.head.len() < MARKER_PREFIX_BYTES {
             let take = (MARKER_PREFIX_BYTES - self.head.len()).min(piece.len());
             self.head.extend_from_slice(&piece[..take]);
@@ -111,8 +106,10 @@ impl WindowLines {
         if self.line_start == 0 {
             // One line larger than the whole window: keep its head and say so.
             self.clipped_line = Some(line);
-            if !newline {
-                self.window.push(b'\n');
+            if let Err(error) = std::str::from_utf8(&self.window)
+                && error.error_len().is_none()
+            {
+                self.window.truncate(error.valid_up_to());
             }
         } else {
             // Drop the partial line; the window ends before it.
@@ -139,6 +136,9 @@ impl WindowLines {
                     .extend_from_slice(crate::security::key_fragment_placeholder().as_bytes());
                 self.window.push(b'\n');
                 self.key_lines += 1;
+                if self.clipped_line == Some(line) {
+                    self.clipped_line = None;
+                }
             }
             self.held_last = line;
         }
@@ -151,6 +151,43 @@ impl WindowLines {
     }
 }
 
+/// The streamed source as [`octocode_engine::digest::copy_hashed`] copies
+/// it: every piece is split at its newlines into [`WindowLines`], and a
+/// cancel ends the copy.
+struct LineSink<'a, C: CancellationCheck> {
+    lines: WindowLines,
+    /// The 1-based line the next byte belongs to.
+    line: usize,
+    /// Bytes seen on the current (unterminated) line.
+    pending: bool,
+    cancel: &'a C,
+}
+
+impl<C: CancellationCheck> std::io::Write for LineSink<'_, C> {
+    fn write(&mut self, chunk: &[u8]) -> std::io::Result<usize> {
+        self.cancel.check().map_err(std::io::Error::other)?;
+        let mut rest = chunk;
+        while !rest.is_empty() {
+            let (piece, newline) = match rest.iter().position(|byte| *byte == b'\n') {
+                Some(index) => (&rest[..=index], true),
+                None => (rest, false),
+            };
+            rest = &rest[piece.len()..];
+            self.pending = !newline;
+            self.lines.push(piece, self.line);
+            if newline {
+                self.lines.finish(self.line);
+                self.line += 1;
+            }
+        }
+        Ok(chunk.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
 /// Stream `path`: hash all bytes, count lines like `line_count`, and keep
 /// lines `first..=last` (1-based) of the requested window.
 fn stream(
@@ -159,41 +196,27 @@ fn stream(
     last: usize,
     cancel: &impl CancellationCheck,
 ) -> Result<Streamed, String> {
-    let mut file = std::fs::File::open(path).map_err(|error| error.to_string())?;
-    let mut hasher = Sha256::new();
-    let mut buffer = vec![0_u8; 1024 * 1024];
-    let mut lines = WindowLines::new(first, last);
-    let mut line = 1usize;
-    let mut pending = false; // bytes seen on the current (unterminated) line
-    loop {
-        cancel.check()?;
-        let read = file.read(&mut buffer).map_err(|error| error.to_string())?;
-        if read == 0 {
-            break;
-        }
-        let chunk = &buffer[..read];
-        hasher.update(chunk);
-        let mut rest = chunk;
-        while !rest.is_empty() {
-            let (piece, newline) = match rest.iter().position(|byte| *byte == b'\n') {
-                Some(index) => (&rest[..=index], true),
-                None => (rest, false),
-            };
-            rest = &rest[piece.len()..];
-            pending = !newline;
-            lines.push(piece, newline, line);
-            if newline {
-                lines.finish(line);
-                line += 1;
-            }
-        }
-    }
+    let file = std::fs::File::open(path).map_err(|error| error.to_string())?;
+    let mut sink = LineSink {
+        lines: WindowLines::new(first, last),
+        line: 1,
+        pending: false,
+        cancel,
+    };
+    let (_, digest) =
+        octocode_engine::digest::copy_hashed(file, &mut sink).map_err(|error| error.to_string())?;
+    let LineSink {
+        mut lines,
+        line,
+        pending,
+        ..
+    } = sink;
     if pending {
         lines.finish(line);
     }
     let total_lines = if pending { line } else { line - 1 };
     Ok(Streamed {
-        digest: hex::encode(hasher.finalize()),
+        digest,
         total_lines,
         window: lines.window,
         first,
@@ -239,10 +262,6 @@ fn line_chunk_query(q: &LocalFetchQuery, offset: usize) -> LocalFetchQuery {
     query
 }
 
-fn continuation(query: LocalFetchQuery) -> Continuation {
-    Continuation { query }
-}
-
 /// Serve `q` from a source larger than the whole-file ceiling.
 pub(super) fn fetch_window(
     q: &LocalFetchQuery,
@@ -258,13 +277,13 @@ pub(super) fn fetch_window(
     }
     if q.full_content == Some(true)
         || q.minify_mode() != MinifyMode::None
-        || q.unit == Some(WindowUnit::Bytes)
+        || (q.unit == Some(WindowUnit::Bytes) && q.start_line().is_none())
         || q.block()
     {
         return unsupported(
             q,
             len,
-            "fullContent, minify, block, and byte chunks need the whole file. Read line ranges or line windows.",
+            "fullContent, minify, block, and whole-source byte chunks need the whole file. Read line windows, or byte pages within one line range.",
             read_bounded(q),
         );
     }
@@ -307,7 +326,13 @@ fn stream_window(
             let offset = q.offset().unwrap_or(0);
             (
                 offset + 1,
-                offset + q.window_length().unwrap_or(STREAMED_CHUNK_LINES),
+                offset
+                    + q.window_length()
+                        .unwrap_or(if offset == 0 && q.snapshot.is_none() {
+                            STREAMED_HEAD_LINES
+                        } else {
+                            WINDOW_LINES
+                        }),
                 true,
             )
         }
@@ -325,14 +350,7 @@ fn stream_window(
     if let Some(expected) = q.snapshot.as_deref()
         && **expected != streamed.digest
     {
-        return (
-            restart_error(
-                q,
-                "staleSnapshot",
-                crate::response::pages::STALE_SNAPSHOT_ERROR.into(),
-            ),
-            None,
-        );
+        return (super::executor::stale_snapshot(q), None);
     }
     let total = streamed.total_lines;
     if first > total.max(1) || (total == 0 && first > 1) {
@@ -346,10 +364,10 @@ fn stream_window(
     }
     let held_last = streamed.last.max(streamed.first);
     let mut window_query = q.clone();
-    // The outer streamed fetch owns the source-wide skipped ranking receipt.
+    // The outer streamed fetch rejects selection and exposes an unfiltered recovery.
     // This internal bounded read addresses only a temporary window digest.
-    window_query.goals.clear();
-    window_query.ranking = None;
+    window_query.clasify_context = None;
+    window_query.selection = None;
     window_query.set_line_span(1, held_last + 1 - streamed.first);
     window_query.snapshot = None;
     if chunked {
@@ -400,7 +418,10 @@ fn stream_window(
         .unwrap_or((streamed.first, held_last));
     // A line chunk pages the file: its pagination is in file lines, as a
     // whole-file read's is.
-    if chunked && let Some(page) = result.pagination.as_mut() {
+    if chunked
+        && let Some(page) = result.pagination.as_mut()
+        && page.unit == WindowUnit::Lines
+    {
         let (start, end) = served;
         page.unit = WindowUnit::Lines;
         page.offset = start - 1;
@@ -428,19 +449,11 @@ fn fetch_ranges(
     cancel: &impl CancellationCheck,
     regex: &impl RegexMatch,
 ) -> LocalFetchResult {
-    let mut spans = q
-        .line_ranges()
-        .into_iter()
-        .map(|range| (range.start, range.end))
-        .collect::<Vec<_>>();
-    spans.sort_unstable();
-    let mut merged: Vec<(usize, usize)> = Vec::new();
-    for (start, end) in spans {
-        match merged.last_mut() {
-            Some(last) if start <= last.1 + 1 => last.1 = last.1.max(end),
-            _ => merged.push((start, end)),
-        }
-    }
+    let merged = crate::tools::line_spans::merge_spans(
+        q.line_ranges()
+            .into_iter()
+            .map(|range| (range.start, range.end)),
+    );
     let mut parts = Vec::with_capacity(merged.len());
     for &(start, end) in &merged {
         let mut one = q.clone();
@@ -457,7 +470,7 @@ fn fetch_ranges(
                     "lines {start}-{end} need more than one streamed window page, so these ranges cannot be served in one read. Read that span on its own (its pages continue it), and the other ranges in their own rows."
                 ),
                 NextCalls {
-                    read_bounded_lines: Some(continuation(one)),
+                    read_bounded_lines: Some(FetchCall { query: one }),
                     ..NextCalls::default()
                 },
             );
@@ -466,11 +479,7 @@ fn fetch_ranges(
     }
     let digest = parts.first().and_then(|part| part.source_sha256.clone());
     if parts.iter().any(|part| part.source_sha256 != digest) {
-        return restart_error(
-            q,
-            "staleSnapshot",
-            crate::response::pages::STALE_SNAPSHOT_ERROR.into(),
-        );
+        return super::executor::stale_snapshot(q);
     }
     let mut parts = parts.into_iter();
     let Some(mut result) = parts.next() else {
@@ -596,7 +605,9 @@ fn match_needs_whole_file(q: &LocalFetchQuery, len: u64) -> LocalFetchResult {
 /// Bounded line windows from the first line.
 fn read_bounded(q: &LocalFetchQuery) -> NextCalls {
     NextCalls {
-        read_bounded_lines: Some(continuation(line_chunk_query(q, 0))),
+        read_bounded_lines: Some(FetchCall {
+            query: line_chunk_query(q, 0),
+        }),
         ..NextCalls::default()
     }
 }
@@ -605,9 +616,9 @@ fn read_bounded(q: &LocalFetchQuery) -> NextCalls {
 fn restart_error(q: &LocalFetchQuery, code: &str, message: String) -> LocalFetchResult {
     let mut result = LocalFetchResult::error(q.path.to_string(), code, message);
     let mut restart = line_chunk_query(q, 0);
-    restart.ranking = None;
+    restart.selection = None;
     result.next = Some(NextCalls {
-        restart: Some(continuation(restart)),
+        restart: Some(FetchCall { query: restart }),
         ..NextCalls::default()
     });
     result
@@ -616,12 +627,12 @@ fn restart_error(q: &LocalFetchQuery, code: &str, message: String) -> LocalFetch
 /// Map a window's positions, totals and digest back to the whole file.
 fn map_to_file(result: &mut LocalFetchResult, streamed: &Streamed, len: u64) {
     let shift = streamed.first - 1;
-    result.start_line = result.start_line.map(|line| line + shift);
-    result.end_line = result.end_line.map(|line| line + shift);
     for range in &mut result.source_line_ranges {
         range.start += shift;
         range.end += shift;
     }
+    result.start_line = result.source_line_ranges.first().map(|range| range.start);
+    result.end_line = result.source_line_ranges.last().map(|range| range.end);
     let total = streamed.total_lines;
     result.total_lines = Some(total);
     result.source_bytes = usize::try_from(len).ok();
@@ -635,11 +646,11 @@ fn map_to_file(result: &mut LocalFetchResult, streamed: &Streamed, len: u64) {
     }
     if let Some(line) = streamed.clipped_line {
         result.warnings.push(format!(
-            "Line {line} is longer than {}MB; only its first {}MB was read.",
+            "Line {line} exceeds {}MB; only a prefix up to {}MB is retained. The suffix is beyond this read limit; split the line outside localFetch to read it.",
             WINDOW_BYTES / (1024 * 1024),
             WINDOW_BYTES / (1024 * 1024)
         ));
-        result.is_partial = Some(true);
+        result.terminal_limit(PartialReason::StreamedLineSizeLimit);
     }
 }
 
@@ -662,6 +673,17 @@ fn continue_window(
         .as_mut()
         .and_then(|next| next.continue_window.as_mut());
     if let Some(inner) = inner {
+        if inner.query.unit == Some(WindowUnit::Bytes) {
+            inner.query.path = q.path.clone();
+            inner.query.set_line_span(
+                streamed.first,
+                q.end_line()
+                    .unwrap_or(streamed.total_lines)
+                    .min(streamed.total_lines),
+            );
+            inner.query.snapshot = snapshot;
+            return;
+        }
         if chunked {
             // The page's window offset counts the window lines already served.
             let served = inner.query.offset().unwrap_or(0);
@@ -671,7 +693,10 @@ fn continue_window(
             return;
         }
         inner.query.path = q.path.clone();
-        inner.query.set_line_span(streamed.first, held_last);
+        inner.query.set_line_span(
+            streamed.first,
+            q.end_line().unwrap_or(held_last).min(streamed.total_lines),
+        );
         inner.query.unit = Some(WindowUnit::Lines);
         inner.query.snapshot = snapshot;
         return;
@@ -682,11 +707,14 @@ fn continue_window(
         } else {
             let mut query = q.clone();
             query.set_line_span(held_last + 1, requested_last);
+            query.unit = None;
+            query.offset = None;
+            query.length = None;
             query
         };
         query.snapshot = snapshot;
         NextCalls {
-            continue_window: Some(continuation(query)),
+            continue_window: Some(FetchCall { query }),
             ..NextCalls::default()
         }
     });
@@ -696,11 +724,63 @@ fn continue_window(
 mod tests {
     use super::*;
     use crate::tools::cancel::NeverCancel;
+    use sha2::{Digest, Sha256};
 
     fn temp(content: &[u8]) -> tempfile::NamedTempFile {
         let mut file = tempfile::NamedTempFile::new().expect("temp");
         std::io::Write::write_all(&mut file, content).expect("write");
         file
+    }
+
+    #[test]
+    fn a_copied_streamed_head_continuation_fills_its_bounded_window() {
+        let mut source = "x\n".repeat(1_200).into_bytes();
+        source.extend(std::iter::repeat_n(b'z', 11 * 1024 * 1024));
+        let file = temp(&source);
+        let query: LocalFetchQuery =
+            serde_json::from_value(serde_json::json!({"path":file.path()})).expect("query");
+        let read = |query: &LocalFetchQuery| {
+            fetch_window(
+                query,
+                file.path(),
+                source.len() as u64,
+                None,
+                &crate::security::ContentSecurity::new(),
+                &NeverCancel,
+                &LocalFetchRegex,
+            )
+        };
+        let first = read(&query);
+        assert_eq!(first.content.as_deref(), Some("x\n".repeat(100).as_str()));
+        let next = first
+            .next
+            .and_then(|next| next.continue_window)
+            .expect("head continuation");
+        crate::contracts::prepare_many_and_validate(
+            "localFetch",
+            serde_json::json!({"queries":[&next.query]}),
+        )
+        .expect("canonical continuation");
+        let second = read(&next.query);
+        assert_eq!(
+            second.content.as_deref(),
+            Some("x\n".repeat(1_100).as_str())
+        );
+        assert_eq!(second.start_line, Some(101));
+        assert_eq!(second.end_line, Some(1_200));
+        let rest = second
+            .next
+            .and_then(|next| next.continue_window)
+            .expect("unread last line");
+        assert_eq!(rest.query.offset(), Some(1_200));
+        crate::contracts::prepare_many_and_validate(
+            "localFetch",
+            serde_json::json!({"queries":[&rest.query]}),
+        )
+        .expect("canonical unread boundary");
+        let mut explicit = next.query;
+        explicit.length = wire_positive(7);
+        assert_eq!(read(&explicit).returned_lines, Some(7));
     }
 
     #[test]
@@ -711,6 +791,39 @@ mod tests {
         assert_eq!(streamed.window, b"b\nc\n");
         assert_eq!((streamed.first, streamed.last), (2, 3));
         assert_eq!(streamed.digest, hex::encode(Sha256::digest(b"a\nb\nc\nd")));
+    }
+
+    /// A cancel ends the hashing copy with the cancel's own reason.
+    #[test]
+    fn a_cancelled_stream_stops_with_the_cancel_reason() {
+        struct Cancelled;
+        impl CancellationCheck for Cancelled {
+            fn check(&self) -> Result<(), String> {
+                Err("deadline reached".into())
+            }
+        }
+        let file = temp(b"a\nb\n");
+        assert_eq!(
+            stream(file.path(), 1, 2, &Cancelled).err().as_deref(),
+            Some("deadline reached")
+        );
+    }
+
+    /// Lines split across copy blocks count once, and an unterminated last
+    /// line is a line: the totals agree with the whole-text line count.
+    #[test]
+    fn lines_across_copy_blocks_count_like_the_whole_text() {
+        let mut text = "x".repeat(70 * 1024);
+        text.push('\n');
+        text.push_str("tail without newline");
+        let file = temp(text.as_bytes());
+        let streamed = stream(file.path(), 2, 2, &NeverCancel).expect("stream");
+        assert_eq!(streamed.total_lines, 2);
+        assert_eq!(streamed.window, b"tail without newline");
+        assert_eq!(
+            streamed.digest,
+            hex::encode(Sha256::digest(text.as_bytes()))
+        );
     }
 
     #[test]
@@ -751,5 +864,16 @@ mod tests {
         assert_eq!(streamed.total_lines, 1);
         assert_eq!(streamed.clipped_line, Some(1));
         assert!(streamed.window.len() <= WINDOW_BYTES + 1);
+    }
+
+    #[test]
+    fn clipping_a_utf8_line_keeps_only_complete_source_characters() {
+        let text = format!("€{}", "🙂".repeat(WINDOW_BYTES / 4 + 1));
+        let file = temp(text.as_bytes());
+        let streamed = stream(file.path(), 1, 1, &NeverCancel).expect("stream");
+        let prefix = std::str::from_utf8(&streamed.window).expect("complete UTF-8");
+        assert!(text.starts_with(prefix));
+        assert_eq!(prefix.len(), WINDOW_BYTES - 1);
+        assert_eq!(streamed.clipped_line, Some(1));
     }
 }

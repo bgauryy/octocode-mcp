@@ -87,20 +87,19 @@ packages/octocode-native/target/release/octocode
 
 ## Architecture
 
-```text
-crates/cli ──────────┐
-                    ├──▶ crates/runtime ───▶ crates/github
-crates/runtime-napi ┘          │
-       │                       └───────────▶ crates/engine
-       └─ NativeRuntime addon
-```
+Six crates. The last column lists every Cargo dependency between them.
 
-The runtime library owns policy, credentials, contracts, cancellation, tool
-orchestration, and response shaping. The CLI crate owns both executables; the
-runtime N-API crate owns Node conversion and lifecycle. The GitHub crate owns
-protocol and transport services with explicit inputs, without runtime configuration
-or credential discovery. The engine retains reusable algorithms as a plain Rust
-library. All five Rust crates are internal (`publish = false`); one npm
+| Crate | Owns | Depends on |
+|---|---|---|
+| `crates/engine` | Reusable algorithms: search, AST, signatures, graph facts, minify, the language-server pool | none |
+| `crates/io` | Owner-only atomic writes, `flock` waits, the HTTP client policy, the in-process `memo` | none |
+| `crates/github` | GitHub protocol and transport, retries, request budgets, `Partition`, `KeyedFlight` | `io` |
+| `crates/runtime` (`octocode-native`) | `ToolRuntime`: config, credentials, contracts, availability, tools, responses | `io`, `engine`, `github` |
+| `crates/cli` | The `octocode` binary and its warm server | `io`, `runtime`, `engine`, `github` |
+| `crates/runtime-napi` | The N-API addon the MCP server loads | `runtime` |
+
+The GitHub crate takes explicit inputs and does no configuration or credential
+discovery. All six crates are internal (`publish = false`); one npm
 distribution ships three artifacts per platform.
 
 ### Language boundary
@@ -128,6 +127,7 @@ packages/octocode-native/
 ├─ crates/cli/                   ← CLI binary
 ├─ crates/runtime-napi/          ← runtime Node adapter
 ├─ crates/github/                ← GitHub protocol services
+├─ crates/io/                    ← file, lock, HTTP and memo primitives
 ├─ crates/engine/                ← reusable primitives (Rust library)
 ├─ js/                           ← runtime loader
 ├─ bin/                          ← platform-selecting CLI launchers

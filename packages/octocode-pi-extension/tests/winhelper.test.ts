@@ -2,7 +2,7 @@ import { spawn, spawnSync, type ChildProcess, type SpawnOptions } from 'node:chi
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WindowsHelper, classifyPowerShell, windowsTree, type HelperOptions } from '../src/shared/winhelper.js';
 import { WINDOWS_HELPER_SCRIPT } from '../src/shared/winhelper-script.js';
 import { tmp } from './helpers.js';
@@ -86,6 +86,18 @@ describe('WindowsHelper', () => {
     expect(shell).toBe('pwsh');
     expect(args.slice(0, 4)).toEqual(['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand']);
     expect(Buffer.from(args[4]!, 'base64').toString('utf16le')).toBe(WINDOWS_HELPER_SCRIPT);
+  });
+
+  it('starts the shells by absolute path, never by a bare name the current folder could answer', async () => {
+    vi.stubEnv('SystemRoot', 'C:\\Windows');
+    vi.stubEnv('PATH', '');
+    try {
+      const { helper, spawned } = rig('ok', { shells: undefined });
+      await helper.start();
+      expect(spawned.map(([shell]) => shell)).toEqual(['C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe']);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it('assigns, owns, and kills a job once', async () => {

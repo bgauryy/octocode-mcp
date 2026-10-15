@@ -49,7 +49,7 @@ test('npm archive runs through npx outside the repository with CLI and MCP commu
   try {
     const tools = await client.listTools();
     assert.equal(tools.tools.length, 18);
-    const sent = launch('send_message', '--to', receiver.id, '--body', 'CLI to packed MCP', '--reasoning', 'Verify installed interfaces', '--session', agent.id, ...flags);
+    const sent = launch('send_message', '--to', receiver.id, '--body', 'CLI to packed MCP', '--reasoning', 'Verify installed interfaces', '--reply-required', 'true', '--session', agent.id, ...flags);
     const inbox = await client.callTool({ name: 'inbox', arguments: {} });
     assert.notEqual(inbox.isError, true);
     assert.equal(JSON.parse(inbox.content[0].text).items[0].id, sent.id);

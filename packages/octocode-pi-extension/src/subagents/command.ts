@@ -47,7 +47,7 @@ export function agentsCommand(team: Team, background: Background, foreground: Ba
     if (!to || !text) return say(ctx, interrupt ? 'Usage: /agents interrupt <id> <message>' : 'Usage: /agents tell <agent|all> <message>', 'warning');
     try {
       const result = await team.send(to, text, { from: USER_SENDER, replyRequired: false, ...(interrupt ? { interrupt } : {}) });
-      const done = 'error' in result ? result.error : (result.resumed ?? `${interrupt ? 'Interrupting' : 'Queued for'} ${result.sent.join(', ')}`);
+      const done = 'error' in result ? result.error : (result.resumed ?? `${interrupt ? 'Interrupt queued for' : 'Queued for'} ${result.sent.join(', ')}`);
       say(ctx, done, 'error' in result ? 'warning' : 'info');
     } catch (error) {
       say(ctx, errorMessage(error), 'warning');

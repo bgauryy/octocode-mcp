@@ -21,6 +21,9 @@ pub(crate) struct DomainResult {
     pub status: Option<&'static str>,
     pub source_digest: Option<String>,
     pub failure: Option<FailureKind>,
+    /// The tool's typed notes of what its pages leave to read
+    /// ([`crate::tools::result::ToolData::remaining`]).
+    pub remaining: Vec<crate::response::pages::Remaining>,
 }
 
 impl DomainResult {
@@ -34,6 +37,7 @@ impl DomainResult {
             status,
             source_digest: None,
             failure: (status == Some("error")).then_some(FailureKind::Execution),
+            remaining: Vec::new(),
         }
     }
 
@@ -62,6 +66,7 @@ impl DomainResult {
             status: Some("error"),
             source_digest: None,
             failure: Some(kind),
+            remaining: Vec::new(),
         }
     }
 
@@ -143,7 +148,7 @@ pub(super) fn execute_local(
     views: &crate::security::scan::SanitizedViewMemo,
     rewrite: &AstRewriteRuntimeOptions,
     cargo: Option<&str>,
-    ranking: Option<&crate::tools::ranking::Runtime>,
+    selection: Option<&crate::tools::selection::Runtime>,
 ) -> Result<DomainResult, ExecutionError> {
     // Generated query types carry the meta fields, so every tool parses the
     // validated row as-is through `parse_query`.
@@ -159,15 +164,15 @@ pub(super) fn execute_local(
         ToolId::LocalFetch => {
             let request = parsed!(LocalFetchQuery);
             let scan = crate::security::scan::MemoizedScan::new(security, views);
-            let result = if let Some(ranking) = ranking {
-                crate::tools::local_fetch::execute_local_fetch_ranked(
+            let result = if let Some(selection) = selection {
+                crate::tools::local_fetch::execute_local_fetch_selected(
                     &request,
                     paths,
                     &scan,
                     context,
                     regex,
                     context.response_window,
-                    Some(ranking),
+                    Some(selection),
                 )
             } else {
                 execute_local_fetch(
@@ -196,15 +201,15 @@ pub(super) fn execute_local(
         }
         ToolId::LocalSearch => {
             let request = parsed!(LocalSearchQuery);
-            let result = if let Some(ranking) = ranking {
-                crate::tools::local_search::execute_local_search_ranked(
+            let result = if let Some(selection) = selection {
+                crate::tools::local_search::execute_local_search_selected(
                     &request,
                     paths,
                     security,
                     context,
                     context.walk_threads,
                     context.response_window,
-                    Some(ranking),
+                    Some(selection),
                 )
             } else {
                 execute_local_search(

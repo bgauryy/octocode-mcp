@@ -127,7 +127,7 @@ describe('team tools on a fake Pi', () => {
     await run(b.tools.get('coordinate'), { action: 'join' }, b.ctx);
     const send = a.tools.get('sendMessage');
     const sent = await run(send, { to: b.team.id, message: 'please review src/a.ts', replyRequired: false }, a.ctx);
-    expect(text(sent)).toMatch(new RegExp(`Queued message #\\d+ for ${b.team.id}\\.`));
+    expect(text(sent)).toMatch(new RegExp(`Queued message #\\d+ for ${b.team.id} as an FYI \\(no reply requested\\)\\.`));
     expect(sent.details).toMatchObject({ to: [b.team.id] });
     await vi.waitFor(() => expect(b.sent.some((entry) => entry.message.customType === MESSAGE_TYPE)).toBe(true), { timeout: 5_000 });
     const delivered = b.sent.find((entry) => entry.message.customType === MESSAGE_TYPE)!;
@@ -144,6 +144,8 @@ describe('team tools on a fake Pi', () => {
     await run(b.tools.get('coordinate'), { action: 'join' }, b.ctx);
     const send = a.tools.get('sendMessage');
     const sent = await run(send, { to: b.team.id, message: 'which file?' }, a.ctx);
+    // An unmarked message goes out as an FYI, and the sender is told so.
+    expect(text(sent)).toMatch(new RegExp(`Queued message #\\d+ for ${b.team.id} as an FYI \\(no reply requested\\)\\.`));
     const mail = (agent: typeof a) => agent.sent.filter((entry) => entry.message.customType === MESSAGE_TYPE).flatMap((entry) => entry.message.details.messages);
     await vi.waitFor(() => expect(mail(b)).toHaveLength(1), { timeout: 5_000 });
     expect(mail(b)[0]).toMatchObject({ from: a.team.id, text: 'which file?', replyRequired: false });
@@ -154,12 +156,19 @@ describe('team tools on a fake Pi', () => {
     await vi.waitFor(() => expect(mail(a)).toHaveLength(1), { timeout: 5_000 });
     expect(mail(a)[0]).toMatchObject({ from: b.team.id, text: 'src/a.ts', replyRequired: false });
 
+    // A request says who must answer and how.
+    const asked = await run(send, { to: b.team.id, message: 'which file now?', replyRequired: true }, a.ctx);
+    expect(text(asked)).toMatch(new RegExp(`Queued message #${asked.details.id} for ${b.team.id} as a request: ${b.team.id} is woken and must answer with replyTo ${asked.details.id}\\.`));
+    await vi.waitFor(() => expect(mail(b)).toHaveLength(2), { timeout: 5_000 });
+    expect(mail(b)[1]).toMatchObject({ text: 'which file now?', replyRequired: true });
+
     await expect(run(send, { message: 'to nobody' }, a.ctx)).rejects.toThrow(/Say who to send to: `to`.*or `replyTo`.*Nothing was sent/);
     await expect(run(send, { replyTo: 987654, message: 'x' }, a.ctx)).rejects.toThrow(/No message #987654/);
     expect(rendered(send.renderCall({ replyTo: 41, message: 'm' }, theme, {}))).toBe('○ Send(reply to #41)');
     const properties = send.parameters.properties;
     expect(send.parameters.required).toEqual(['message']);
     expect(properties.replyRequired.description).toContain('false (the default)');
+    expect(properties.replyRequired.description).toContain('a request (a question or task you need answered)');
     expect(send.description).toMatch(/lingers .*resumes with your message/);
     expect(send.description).not.toContain('cannot receive');
   });

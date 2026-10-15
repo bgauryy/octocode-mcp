@@ -28,9 +28,12 @@ def measured_rows(run):
 def summarize(run):
     rows = measured_rows(run)
     groups = collections.defaultdict(list)
-    for lane, arms in {'judgment': run['styles'], 'novelty': ['relevant', 'adds'],
-                       'selection': ['full-read', 'direct-search', 'source-prefix', 'goals-compound', 'goals-atomic',
-                                     'locate-compound', 'locate-atomic', 'locate-atomic-evidence']}.items():
+    # Version 3 runs use retrieval classifiers; earlier (historical) runs used goals and Locate.
+    selection = (['full-read', 'direct-search', 'source-prefix', 'classifiers-compound', 'classifiers-atomic']
+                 if run.get('version', 0) >= 3 else
+                 ['full-read', 'direct-search', 'source-prefix', 'goals-compound', 'goals-atomic',
+                  'locate-compound', 'locate-atomic', 'locate-atomic-evidence'])
+    for lane, arms in {'judgment': run['styles'], 'novelty': ['relevant', 'adds'], 'selection': selection}.items():
         for arm in arms:
             groups[(lane, arm)] = []
     for row in rows:

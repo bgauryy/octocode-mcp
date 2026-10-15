@@ -21,7 +21,7 @@ Octocode gives Cursor, Claude, VS Code, Codex, Pi, and any MCP client deep, cite
 - **Evidence, not guesses:** every answer cites exact files and lines.
 - **Research loop:** orient → search → read exact evidence → prove identity with LSP.
 - **Lean context:** reads return only the lines you need; 2–3.2× fewer characters than `gh` at equal correctness ([benchmarks](#benchmarks)).
-- **Prioritize evidence:** optional goals reorder supported read results; `clasify` asks an AI judge (Jev) which unread evidence to inspect, then the agent verifies the source.
+- **Prioritize evidence:** optional `classifiers` reorder supported search and read results before they return; `clasify` asks an AI judge (Jev) a typed question about held data or unread source, then the agent verifies the source.
 - **Next step built in:** every result carries the read or search to run next.
 - **Secure by default:** read-only research, secrets redacted, path guardrails.
 - **Free and open source** under the MIT license.
@@ -105,9 +105,9 @@ xychart-beta
 | `gh` + Headroom | **2.6× less** | 9.3 / 8.6 |
 | `gh` + RTK | **3.2× less** | 9.3 / 9.4 |
 
-Read tools can use optional `goals` to rank independent evidence within their disclosed scope; `clasify` returns locations or judgments before selected reads. In two source-verified development cases, goals reduced response context by 63–78% versus sequential reading. Tested exact queries were cheaper in both, though the Django query was selected after seeing results. Classification adds separate provider work, so these are conditional context savings, not net cost savings.
+Search and read tools can use optional `classifiers` to rank independent evidence within their disclosed scope; `clasify` returns typed judgments over held data or unread source without returning its body. In two source-verified development cases, the earlier goal ranking reduced response context by 63–78% versus sequential reading; tested exact queries were cheaper in both, and ordering an otherwise unchanged response added host tokens in a later comparison. Classification adds separate provider work, so these are conditional context savings, not net cost savings.
 
-Details: [benchmark summary](https://github.com/bgauryy/octocode/blob/main/packages/octocode-benchmark/results/SUMMARY.md) · [goals and clasify guide](docs/OCTOCODE_CLASIFY.md) · [selection checks and limitations](packages/octocode-benchmark/results/selective-semantics-2026-10-13.md).
+Details: [benchmark summary](https://github.com/bgauryy/octocode/blob/main/packages/octocode-benchmark/results/SUMMARY.md) · [classifiers and clasify guide](docs/OCTOCODE_CLASIFY.md) · [selection checks and limitations](packages/octocode-benchmark/results/selective-semantics-2026-10-13.md).
 
 ---
 

@@ -190,6 +190,92 @@ async fn owner_listing_counts_skipped_archived_repositories() {
     );
 }
 
+/// An owner listing never shows more rows than `pageSize`: a provider page
+/// that kept rows ends the call, and the next page resumes after it, so no
+/// kept row is cut or shown twice.
+#[tokio::test]
+async fn an_owner_listing_page_never_exceeds_its_page_size() {
+    let server = MockServer::builder().start().await;
+    let link = |page: usize| {
+        format!(
+            "<{}/api/v3/orgs/o/repos?page={page}&per_page=2>; rel=\"next\"",
+            server.uri()
+        )
+    };
+    for (page, rows) in [
+        (1, json!([repo_item("old", true), repo_item("a", false)])),
+        (2, json!([repo_item("b", false), repo_item("c", false)])),
+        (3, json!([repo_item("d", false)])),
+    ] {
+        let mut response = ResponseTemplate::new(200).set_body_json(rows);
+        if page < 3 {
+            response = response.insert_header("link", link(page + 1).as_str());
+        }
+        Mock::given(method("GET"))
+            .and(path("/api/v3/orgs/o/repos"))
+            .and(query_param("page", page.to_string()))
+            .respond_with(response)
+            .mount(&server)
+            .await;
+    }
+    let mut row = json!({"owner":"o","pageSize":2});
+    let mut listed = Vec::new();
+    for _ in 0..3 {
+        let out = run(&server, row.clone()).await;
+        let rows = out.data["repositories"].as_array().expect("rows");
+        assert!(rows.len() <= 2, "{}", out.data);
+        listed.extend(rows.iter().map(|row| row["repo"].clone()));
+        match out.data.pointer("/next/nextPage/query/queries/0") {
+            Some(next) => row = next.clone(),
+            None => break,
+        }
+    }
+    assert_eq!(json!(listed), json!(["a", "b", "c", "d"]));
+}
+
+/// Keywords are ANDed literals: a bare `OR`/`NOT` would be searched as a
+/// word and silently empty the search, so it is refused before any request
+/// and the message names the operator; a lowercase word is a plain term.
+#[tokio::test]
+async fn a_boolean_operator_in_keywords_is_refused() {
+    let server = MockServer::builder().start().await;
+    mount_json(
+        &server,
+        "/api/v3/search/repositories",
+        200,
+        page(vec![repo_item("r", false)]),
+    )
+    .await;
+    let provider = one_shot_provider(&server);
+    let context = default_context();
+    for (keywords, operator) in [
+        (json!(["parser OR lexer"]), "OR"),
+        (json!(["toml", "NOT"]), "NOT"),
+    ] {
+        let query: GhSearchRepoQuery =
+            serde_json::from_value(json!({"keywords": keywords})).expect("query");
+        let error = execute(&provider, &query, &context)
+            .await
+            .expect_err("refused");
+        assert_eq!(
+            error.kind,
+            octocode_github::ProviderErrorKind::Validation,
+            "{error:?}"
+        );
+        assert!(error.message.contains(operator), "{error:?}");
+    }
+    assert!(
+        server
+            .received_requests()
+            .await
+            .expect("requests")
+            .is_empty(),
+        "refused before any request"
+    );
+    let plain = run(&server, json!({"keywords":["error or warning"]})).await;
+    assert_eq!(plain.data["repositories"][0]["repo"], "r", "{}", plain.data);
+}
+
 /// The token's own login lists every repository it owns, private ones
 /// included; another user's listing is public. A user owner is recognized
 /// once per transport, not with a failed organization lookup on every page.
@@ -444,11 +530,7 @@ async fn capped_search_states_the_full_match_count() {
         json!({"owner":"o","sort":"stars:desc","pageSize":1,"page":2}),
     )
     .await;
-    assert!(
-        !second.data["warnings"].to_string().contains("4156"),
-        "{}",
-        second.data
-    );
+    crate::tools::test_support::checks::assert_absent(&second.data["warnings"], "4156");
 }
 
 /// owner+repo reads that one repository from the repository endpoint: one
@@ -622,26 +704,4 @@ async fn search_failures_lead_to_their_repair() {
         json!({"keywords":["missing"]}),
         "{next}"
     );
-}
-
-/// A page past the last of a search that has results is out of range, not an
-/// empty search: no "use fewer keywords" hint, and the shared response stage
-/// leads back to page 1.
-#[tokio::test]
-async fn a_page_past_the_end_is_out_of_range_not_an_empty_search() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("GET"))
-        .and(path("/api/v3/search/repositories"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(
-                json!({"total_count": 12, "incomplete_results": false, "items": []}),
-            ),
-        )
-        .mount(&server)
-        .await;
-    let out = run(&server, json!({"keywords":["x"],"pageSize":5,"page":9})).await;
-    assert_eq!(out.data["pagination"]["outOfRange"], true, "{}", out.data);
-    assert_eq!(out.data["pagination"]["totalItems"], 12, "{}", out.data);
-    assert!(out.data.get("hints").is_none(), "{}", out.data);
-    assert!(out.data.get("isPartial").is_none(), "{}", out.data);
 }

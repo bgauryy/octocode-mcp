@@ -66,8 +66,9 @@ next.* continuation or pagination.hasMore in the output."#;
 /// envelope tool errors use, on stdout in JSON mode, else the message on
 /// stderr. Every code is a declared `errorCodes` entry.
 fn emit_error(code: &str, message: &str, json_out: bool) {
+    let message = octocode_native::security::scrub_error_text(message);
     if json_out {
-        let mut envelope = octocode_native::contracts::tool_error(message, Vec::new());
+        let mut envelope = octocode_native::contracts::tool_error(&message, Vec::new());
         envelope["errorCode"] = json!(code);
         println!("{envelope}");
     } else {
@@ -134,8 +135,18 @@ where
             };
             let displays_text =
                 is_help(&error) || error.kind() == clap::error::ErrorKind::DisplayVersion;
-            if displays_text || !json_errors_for(&argv) {
+            if displays_text {
                 let _ = error.print();
+                return Err(error.exit_code() as u8);
+            }
+            if !json_errors_for(&argv) {
+                let rendered = error.render().to_string();
+                let sanitized = octocode_native::security::scrub_error_text(&rendered);
+                if sanitized == rendered {
+                    let _ = error.print();
+                } else {
+                    let _ = io::stderr().lock().write_all(sanitized.as_bytes());
+                }
                 return Err(error.exit_code() as u8);
             }
             // The error line and clap's `tip:` (the did-you-mean names).
@@ -172,7 +183,7 @@ fn hide_unavailable_tools(mut command: clap::Command) -> clap::Command {
         return command;
     };
     let surface = RuntimeSurface::Cli;
-    let input = acquire_config_input(octocode_io::env::vars_lossy(), cwd, home, false, surface);
+    let input = acquire_config_input(octocode_io::env::vars_lossy(), cwd, home, surface);
     let availability = ToolAvailability::resolve(&resolve_config(&input), surface);
     for tool in ToolId::ALL {
         if !availability.is_available(tool.as_str()) {
@@ -242,7 +253,7 @@ fn availability_entry(
 /// The machine catalog: runtime availability joined with the compact field
 /// lists the embedded CLI presentation precomputes from the core Zod rows.
 fn machine_catalog(runtime: &ToolRuntime) -> Result<Value, String> {
-    let catalog = runtime.catalog().map_err(|error| error.message)?;
+    let catalog = runtime.catalog();
     let presentation = octocode_native::contracts::cli_presentation()
         .map_err(|error| format!("Embedded CLI presentation is invalid: {error}"))?;
     let presentation_tools = presentation.get("tools").and_then(Value::as_array);
@@ -360,12 +371,18 @@ async fn dispatch(command: Command, runtime: &ToolRuntime, json_out: bool) -> u8
             }
             match command {
                 Some(ConfigCommand::Home) => config::home(runtime, json_out),
-                Some(ConfigCommand::Get { key }) => config::get(runtime, &key, json_out),
-                Some(ConfigCommand::Set { key, value, stdin }) => {
-                    config::set(runtime, &key, value, stdin, json_out)
+                Some(ConfigCommand::Get { key }) => {
+                    config::get(runtime, config::env_key(&key), json_out)
                 }
-                Some(ConfigCommand::Unset { key }) => config::unset(runtime, &key, json_out),
-                Some(ConfigCommand::Check { key }) => config::check(runtime, &key, json_out).await,
+                Some(ConfigCommand::Set { key, value, stdin }) => {
+                    config::set(runtime, config::env_key(&key), value, stdin, json_out)
+                }
+                Some(ConfigCommand::Unset { key }) => {
+                    config::unset(runtime, config::env_key(&key), json_out)
+                }
+                Some(ConfigCommand::Check { key }) => {
+                    config::check(runtime, config::env_key(&key), json_out).await
+                }
                 // `config view` returns from `run` before the runtime starts.
                 Some(ConfigCommand::View { .. }) | None => config::show(runtime, json_out),
             }
@@ -437,9 +454,7 @@ fn config_management_response(
     if !request.is_object() {
         return Err("Management request must be an object.".into());
     }
-    let catalog = runtime
-        .catalog()
-        .map_err(|_| "Cannot verify native contract.")?;
+    let catalog = runtime.catalog();
     if request.get("expectedFingerprint") != catalog.get("fingerprint") {
         return Err(
             "Configuration management contracts do not match. Rebuild or update Octocode.".into(),
@@ -610,11 +625,13 @@ impl Printed {
     }
 
     /// The warm server's reply line: `{exit, stderr, body}`.
+    #[cfg(unix)]
     fn to_json(&self) -> Value {
         json!({"exit": self.exit, "stderr": self.stream == Stream::Stderr, "body": self.body})
     }
 
     /// A reply line read back; `None` when it is not one.
+    #[cfg(unix)]
     fn from_json(mut reply: Value) -> Option<Self> {
         Some(Self {
             exit: u8::try_from(reply["exit"].as_u64()?).ok()?,

@@ -57,9 +57,9 @@ A catalog entry without a matching registration schema is a startup error. This
 prevents the advertised native catalog and the MCP surface from drifting.
 
 The published input schema is a compact superset for agent discovery, not the
-validator. Canonical core schemas remain strict: malformed encoded arrays and
-invalid list items are rejected. Valid JSON-encoded arrays and supported scalar
-strings are normalized by the same native path used by CLI. Mixed bulk calls
+validator. Canonical core schemas remain strict: encoded arrays, invalid list
+items, and strings supplied for number or boolean fields are rejected by the
+same native path used by CLI. Mixed bulk calls
 with valid rows preserve indexed invalid-row errors rather than dropping rows.
 
 Shared agent guidance is returned once in MCP `initialize.instructions`: one

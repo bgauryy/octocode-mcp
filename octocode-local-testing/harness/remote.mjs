@@ -81,13 +81,13 @@ if (noClasify) skip('clasify supplied-context judgment answers', noClasify);
 else {
   const judged = await raw('clasify', {
     queries: [{
-      mainGoal: 'Judge supplied code',
-      reasoning: 'held-state judgment smoke',
-      resources: [{ id: 'r1', value: 'export function add(a, b) { return a + b; }' }],
-      questions: [{ id: 'q1', type: 'yesno', ask: 'Does this code define a function named add?' }],
+      id: 'r1',
+      state: 'export function add(a, b) { return a + b; }',
+      questions: { q1: { type: 'noul', instructions: 'Does this code define a function named add?' } },
     }],
   });
-  check('clasify supplied-context judgment answers', !/Input validation error/.test(judged.text) && !judged.isError && !judged.rowErrors, judged.text.slice(0, 160).replace(/\s+/g, ' '));
+  const row = judged.sc?.queries?.[0];
+  check('clasify supplied-context judgment answers', !judged.isError && !row?.error && typeof row?.answers?.q1?.noul === 'number', judged.text.slice(0, 160).replace(/\s+/g, ' '));
 }
 
 const result = summary();

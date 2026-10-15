@@ -5,6 +5,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {
+  CONFIG_FIELDS,
   ENV_TOKEN_VARS,
   HOME_TRUSTED_ENV_KEYS,
   PROTECTED_KEY_NAMES,
@@ -59,6 +60,15 @@ export function parseEnv(
   return out;
 }
 
+function sameFile(left: string, right: string): boolean {
+  if (path.resolve(left) === path.resolve(right)) return true;
+  try {
+    return fs.realpathSync(left) === fs.realpathSync(right);
+  } catch {
+    return false;
+  }
+}
+
 function readTextIfExists(filePath: string): string {
   try {
     return fs.readFileSync(filePath, 'utf8');
@@ -100,10 +110,11 @@ export function loadOctocodeEnv({
       sources[k] = 'global';
     }
   }
-  if (cwd && trusted) {
-    for (const [k, v] of Object.entries(
-      parseEnv(readTextIfExists(path.join(cwd, '.octocode', '.env')))
-    )) {
+  const workspaceEnv = cwd ? path.join(cwd, '.octocode', '.env') : undefined;
+  // When cwd is the OS home, <cwd>/.octocode is the Octocode home: its .env is
+  // the home layer only, never read a second time as the workspace layer.
+  if (workspaceEnv && trusted && !(home && sameFile(workspaceEnv, path.join(home, '.env')))) {
+    for (const [k, v] of Object.entries(parseEnv(readTextIfExists(workspaceEnv)))) {
       if (!v.trim()) continue;
       // A workspace value for a protected key is dropped later; it must not
       // also evict the trusted home value for that key.
@@ -120,8 +131,14 @@ export interface ApplyOctocodeEnvOptions {
   sources?: Record<string, 'global' | 'project'>;
 }
 
-/** Present-but-blank in the process env disables every classification feature. */
-const CLASSIFICATION_KILL_SWITCH = 'OCTOCODE_CLASSIFICATION_API';
+/**
+ * The classification credential's variable (from the config contract):
+ * present-but-blank in the process env, it disables every classification
+ * feature and no file may refill it.
+ */
+const CLASSIFICATION_KILL_SWITCH = CONFIG_FIELDS.find(
+  field => field.path === 'classification.api'
+)?.env?.name;
 
 /**
  * Home-trusted switches a workspace `.env` may set only to their narrowing

@@ -25,12 +25,38 @@ impl ClassificationProvider for Jev {
         "v1/systemone"
     }
 
+    fn models_path(&self) -> &'static str {
+        "v1/models"
+    }
+
+    fn request_headers(&self, images: bool, long_context: bool) -> reqwest::header::HeaderMap {
+        let mut headers = reqwest::header::HeaderMap::new();
+        for (enabled, name) in [
+            (images, "typesafe-danger-zone-images"),
+            (long_context, "typesafe-danger-zone-long-context"),
+        ] {
+            if enabled {
+                headers.insert(name, reqwest::header::HeaderValue::from_static("true"));
+            }
+        }
+        headers
+    }
+
     fn docs_url(&self) -> &'static str {
         "https://docs.typesafe.ai/introduction"
     }
 
-    fn build_request(&self, state: &Value, question: &Value, model: &str) -> Value {
-        json!({"model": model, "state": state, "questions": {"answer": question}})
+    fn build_request(
+        &self,
+        state: &Value,
+        question: &Value,
+        model: &str,
+        assets: Option<&Value>,
+    ) -> Value {
+        with_assets(
+            json!({"model": model, "state": state, "questions": {"answer": question}}),
+            assets,
+        )
     }
 
     fn build_batch_request(
@@ -38,12 +64,16 @@ impl ClassificationProvider for Jev {
         state: &Value,
         questions: &[(usize, &Value)],
         model: &str,
+        assets: Option<&Value>,
     ) -> Value {
         let qs: Map<String, Value> = questions
             .iter()
             .map(|(i, q)| (format!("answer_{i}"), (*q).clone()))
             .collect();
-        json!({"model": model, "state": state, "questions": qs})
+        with_assets(
+            json!({"model": model, "state": state, "questions": qs}),
+            assets,
+        )
     }
 
     fn extract_answer<'a>(&self, response: &'a Value) -> Option<&'a Value> {
@@ -61,9 +91,36 @@ impl ClassificationProvider for Jev {
     ) -> Result<(), ProviderContractError> {
         validate_wire(request, response)
     }
+
+    fn validate_models(&self, response: &Value) -> Result<(), ProviderContractError> {
+        let models = response
+            .get("models")
+            .and_then(Value::as_array)
+            .ok_or_else(|| invalid_response("response.models must be an array"))?;
+        for model in models {
+            for field in ["name", "description", "release_date"] {
+                let value = model
+                    .get(field)
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| invalid_response(format!("model.{field} must be a string")))?;
+                if field == "name" && value.trim().is_empty() {
+                    return Err(invalid_response("model.name must be non-blank"));
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+fn with_assets(mut request: Value, assets: Option<&Value>) -> Value {
+    if let Some(assets) = assets {
+        request["assets"] = assets.clone();
+    }
+    request
 }
 
 const PROBABILITY_TOLERANCE: f64 = 0.02;
+const MAX_SCORE_ROUNDING_DEVIATION: f64 = 0.25;
 
 fn invalid_request(message: impl Into<String>) -> ProviderContractError {
     ProviderContractError {
@@ -249,9 +306,13 @@ fn validate_wire(request: &Value, response: &Value) -> Result<(), ProviderContra
                 // Compatibility allowance for the two-decimal values in provider examples:
                 // each rounded probability contributes at most index * 0.005 error,
                 // plus 0.005 for the rounded score. This rejects contradictions without
-                // imposing exact equality or replacing the provider's score.
+                // imposing exact equality or replacing the provider's score. Cap the
+                // allowance at a quarter rubric step: the API defines score as the
+                // expectation of the returned distribution, so a longer rubric must
+                // not turn rounding tolerance into permission for multi-level errors.
                 let index_sum = levels.len() * levels.len().saturating_sub(1) / 2;
-                let tolerance = 0.005 * (1 + index_sum) as f64 + 1e-9;
+                let tolerance =
+                    (0.005 * (1 + index_sum) as f64).min(MAX_SCORE_ROUNDING_DEVIATION) + 1e-9;
                 if (score - expected).abs() > tolerance {
                     return Err(invalid_response(format!(
                         "answers.{id}.score disagrees with its probabilities"
@@ -263,6 +324,39 @@ fn validate_wire(request: &Value, response: &Value) -> Result<(), ProviderContra
                     )));
                 }
             }
+            Some("box") => {
+                let coordinates =
+                    answer
+                        .get("box")
+                        .and_then(Value::as_object)
+                        .ok_or_else(|| {
+                            invalid_response(format!("answers.{id}.box must be an object"))
+                        })?;
+                let edge = |name: &str| {
+                    probability(
+                        coordinates.get(name).unwrap_or(&Value::Null),
+                        &format!("answers.{id}.box.{name}"),
+                    )
+                };
+                let (top, bottom, left, right) =
+                    (edge("top")?, edge("bottom")?, edge("left")?, edge("right")?);
+                if top > bottom || left > right {
+                    return Err(invalid_response(format!(
+                        "answers.{id}.box edges must be ordered top <= bottom and left <= right"
+                    )));
+                }
+                match answer.get("confidence") {
+                    Some(Value::Null) => {}
+                    Some(value) => {
+                        probability(value, &format!("answers.{id}.confidence"))?;
+                    }
+                    None => {
+                        return Err(invalid_response(format!(
+                            "answers.{id}.confidence must be present, using null when unavailable"
+                        )));
+                    }
+                }
+            }
             _ => return Err(invalid_request(format!("questions.{id}.type is invalid"))),
         }
     }
@@ -272,13 +366,15 @@ fn validate_wire(request: &Value, response: &Value) -> Result<(), ProviderContra
 #[cfg(test)]
 mod tests {
     use super::validate_wire;
+    use crate::providers::classification::ClassificationProvider;
     use serde_json::{Value, json};
 
     fn request() -> Value {
         json!({"model":"jev-test","state":null,"questions":{
             "truth":{"type":"noul","instructions":null},
             "pick":{"type":"choice","instructions":null,"criteria":{"a":null,"b":{"meaning":"other"}}},
-            "quality":{"type":"score","instructions":null,"criteria":[null,{"meaning":"good"}]}
+            "quality":{"type":"score","instructions":null,"criteria":["missing",{"meaning":"good"}]},
+            "region":{"type":"box"}
         }})
     }
 
@@ -286,7 +382,8 @@ mod tests {
         json!({"model":"jev-test","usage":{"input_tokens":12,"output_tokens":3},"answers":{
             "truth":{"type":"noul","noul":0.5},
             "pick":{"type":"choice","choice":"a","confidence":0.8,"probabilities":{"a":0.8,"b":0.2}},
-            "quality":{"type":"score","score":0.75,"confidence":0.7,"probabilities":{"0":0.25,"1":0.75},"legend":{"0":null,"1":{"meaning":"good"}}}
+            "quality":{"type":"score","score":0.75,"confidence":0.7,"probabilities":{"0":0.25,"1":0.75},"legend":{"0":"missing","1":{"meaning":"good"}}},
+            "region":{"type":"box","box":{"top":0.1,"bottom":0.9,"left":0.0,"right":1.0},"confidence":null}
         }})
     }
 
@@ -306,6 +403,10 @@ mod tests {
             (2, vec![0.25, 0.75], 0.77, false),
             (10, vec![0.10; 10], 4.725, true),
             (10, vec![0.10; 10], 4.74, false),
+            (100, vec![0.01; 100], 49.5, true),
+            (100, vec![0.01; 100], 49.74, true),
+            (100, vec![0.01; 100], 49.76, false),
+            (100, vec![0.01; 100], 74.0, false),
         ] {
             let criteria: Vec<_> = (0..levels).map(|i| json!(format!("Level {i}"))).collect();
             let legend: serde_json::Map<String, Value> = criteria
@@ -361,5 +462,81 @@ mod tests {
         missing_usage["usage"] = json!({});
         assert!(validate_wire(&request(), &missing_usage).is_err());
         assert!(validate_wire(&json!({}), &response()).is_err());
+    }
+
+    #[test]
+    fn box_requires_finite_normalized_ordered_edges_and_present_nullable_confidence() {
+        let request = json!({"questions":{"region":{"type":"box"}}});
+        let valid = json!({"model":"vision","usage":{"input_tokens":10,"output_tokens":4},
+            "answers":{"region":{"type":"box","box":{"top":0.1,"bottom":0.9,"left":0.2,"right":0.7},"confidence":null}}});
+        validate_wire(&request, &valid).unwrap();
+        let mut numeric_confidence = valid.clone();
+        numeric_confidence["answers"]["region"]["confidence"] = json!(0.7);
+        validate_wire(&request, &numeric_confidence).unwrap();
+        for (pointer, value) in [
+            ("/answers/region/box/top", json!(-0.1)),
+            ("/answers/region/box/bottom", json!(1.1)),
+            ("/answers/region/box/top", json!(0.95)),
+            ("/answers/region/box/right", json!(0.1)),
+            ("/answers/region/box/left", Value::Null),
+            ("/answers/region/box/left", json!("NaN")),
+            ("/answers/region/confidence", json!(1.1)),
+        ] {
+            let mut invalid = valid.clone();
+            *invalid.pointer_mut(pointer).unwrap() = value;
+            assert!(
+                validate_wire(&request, &invalid).is_err(),
+                "accepted {pointer}"
+            );
+        }
+        let mut missing = valid;
+        missing["answers"]["region"]
+            .as_object_mut()
+            .unwrap()
+            .remove("confidence");
+        assert!(validate_wire(&request, &missing).is_err());
+    }
+
+    #[test]
+    fn request_builder_preserves_structured_optional_and_null_question_fields() {
+        let questions = [
+            json!({"type":"noul"}),
+            json!({"type":"noul","instructions":null,"criteria":{"true":null}}),
+            json!({"type":"choice","criteria":{"only":null}}),
+            json!({"type":"score","instructions":{"task":["grade"]},"criteria":[{"level":"present"}]}),
+            json!({"type":"box","instructions":["locate","opaque"]}),
+        ];
+        let assets = json!({"opaque":{"type":"image","format":"png","data_base64":"bytes"}});
+        let request = super::JEV.build_batch_request(
+            &json!(["opaque"]),
+            &questions.iter().enumerate().collect::<Vec<_>>(),
+            "vision",
+            Some(&assets),
+        );
+        assert_eq!(request["assets"], assets);
+        for (index, question) in questions.iter().enumerate() {
+            assert_eq!(&request["questions"][format!("answer_{index}")], question);
+        }
+        let plain = super::JEV.build_request(&json!("text"), &questions[0], "m", None);
+        assert!(plain.get("assets").is_none());
+        assert!(super::JEV.request_headers(false, false).is_empty());
+        let headers = super::JEV.request_headers(true, true);
+        assert_eq!(headers["TypeSafe-Danger-Zone-Images"], "true");
+        assert_eq!(headers["TypeSafe-Danger-Zone-Long-Context"], "true");
+    }
+
+    #[test]
+    fn model_discovery_accepts_live_timestamp_strings_and_rejects_missing_fields() {
+        let response = json!({"models":[{"name":"jev-preview","description":"Preview","release_date":"2026-09-10T18:39:06.057655+00:00"}]});
+        super::JEV.validate_models(&response).unwrap();
+        super::JEV.validate_models(&json!({"models":[]})).unwrap();
+        for invalid in [
+            json!({}),
+            json!({"models":null}),
+            json!({"models":[{"name":""}]}),
+            json!({"models":[{"name":"m","description":"d","release_date":null}]}),
+        ] {
+            assert!(super::JEV.validate_models(&invalid).is_err());
+        }
     }
 }

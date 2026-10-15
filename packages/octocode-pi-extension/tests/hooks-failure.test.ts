@@ -51,6 +51,13 @@ describe('PreToolUse hook failures', () => {
     expect(failures).toHaveLength(2);
   }, 15_000);
 
+  it('shows controls in a failed hook\'s command as visible escapes in the reason the model reads', async () => {
+    const { call } = await run({ ...TIMEOUT, command: 'sleep 5 # \u001b[31m\u202e', failClosed: true });
+    const verdict = (await call()) as { reason: string };
+    expect(verdict.reason).toContain('failClosed: sleep 5 # \\u{1b}[31m\\u{202e}');
+    expect(verdict.reason).not.toMatch(/[\u001b\u202e]/u);
+  }, 15_000);
+
   it('denies the call when a failClosed hook times out, and says so', async () => {
     const { call, failures, notify } = await run({ ...TIMEOUT, failClosed: true });
     expect(await call()).toEqual({ block: true, reason: expect.stringMatching(/^Blocked by a PreToolUse hook: PreToolUse hook timed out after 0\.2s and is set to failClosed: sleep 5/) });

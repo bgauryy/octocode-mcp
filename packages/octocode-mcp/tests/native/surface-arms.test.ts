@@ -65,7 +65,11 @@ async function connect(
     env: {},
     binding: bindingFor({
       fingerprint: getNativeContractFingerprint(),
-      tools: available.map(name => ({ name, available: true })),
+      tools: available.map(name => ({
+        name,
+        shortDescription: `${name} description.`,
+        available: true,
+      })),
       ...(presentation && { presentation }),
     }),
   });
@@ -100,38 +104,47 @@ function queryRow(schema: { properties?: Record<string, unknown> }) {
   ).items;
 }
 
-describe('read-tool ranking schema', () => {
+describe('read-tool selection schema', () => {
   it.each([
-    { ranking: false, clasifyListed: true, shown: false },
-    { ranking: true, clasifyListed: false, shown: true },
-    { ranking: true, clasifyListed: true, shown: true },
+    { selection: false, clasifyListed: false, shown: false },
+    { selection: false, clasifyListed: true, shown: false },
+    { selection: true, clasifyListed: false, shown: true },
+    { selection: true, clasifyListed: true, shown: true },
   ])(
-    'uses native ranking=$ranking independently of public clasify=$clasifyListed',
-    async ({ ranking, clasifyListed, shown }) => {
+    'uses native selection=$selection independently of public clasify=$clasifyListed',
+    async ({ selection, clasifyListed, shown }) => {
       const server = await connect(
-        { ranking },
+        { selection },
         TOOLS.filter(name => clasifyListed || name !== TOOL_NAMES.CLASIFY)
       );
       try {
         expect(
           server.listed.some(tool => tool.name === TOOL_NAMES.CLASIFY)
         ).toBe(clasifyListed);
+        expect(server.instructions.includes('<clasify>')).toBe(
+          selection || clasifyListed
+        );
+        expect(server.instructions.includes('clasifyContext')).toBe(selection);
+        expect(server.instructions.includes('clasify screens unread')).toBe(
+          clasifyListed
+        );
         for (const name of TOOLS.filter(
           name => !['clasify', 'ghCloneRepo', 'astRewrite'].includes(name)
         )) {
           const schema = queryRow(
             server.listed.find(tool => tool.name === name)!.inputSchema
           );
-          const supportsRanking = [
+          const supportsSelection = [
             'localFetch',
             'localSearch',
             'ghGetFileContent',
             'ghSearchCode',
           ].includes(name);
-          expect(JSON.stringify(schema).includes('"goals"'), name).toBe(
-            shown && supportsRanking
-          );
-          expect(schema.required ?? []).not.toContain('goals');
+          expect(
+            JSON.stringify(schema).includes('"clasifyContext"'),
+            name
+          ).toBe(shown && supportsSelection);
+          expect(schema.required ?? []).not.toContain('clasifyContext');
         }
       } finally {
         await server.close();
@@ -139,9 +152,9 @@ describe('read-tool ranking schema', () => {
     }
   );
 
-  it('keeps goals exposed when available clasify is deferred', async () => {
+  it('keeps clasifyContext exposed when available clasify is deferred', async () => {
     const server = await connect({
-      ranking: true,
+      selection: true,
       deferred: [TOOL_NAMES.CLASIFY],
     });
     try {
@@ -149,7 +162,7 @@ describe('read-tool ranking schema', () => {
         queryRow(
           server.listed.find(tool => tool.name === 'localFetch')!.inputSchema
         ).properties
-      ).toHaveProperty('goals');
+      ).toHaveProperty('clasifyContext');
     } finally {
       await server.close();
     }

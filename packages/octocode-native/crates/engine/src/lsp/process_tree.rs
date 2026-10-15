@@ -246,15 +246,20 @@ mod pure_tests {
     use super::*;
     use std::path::PathBuf;
 
-    struct FakeProc(PathBuf);
+    /// A synthetic `/proc` root (`.0`), removed with its temporary
+    /// directory on drop.
+    struct FakeProc(
+        PathBuf,
+        #[expect(dead_code, reason = "held to remove the directory on drop")] tempfile::TempDir,
+    );
 
     impl FakeProc {
         fn new(name: &str) -> Self {
-            let dir = std::env::temp_dir()
-                .join(format!("octocode-fake-proc-{name}-{}", std::process::id()));
-            let _ = std::fs::remove_dir_all(&dir);
-            std::fs::create_dir_all(&dir).expect("fake proc dir");
-            Self(dir)
+            let dir = tempfile::Builder::new()
+                .prefix(&format!("octocode-fake-proc-{name}-"))
+                .tempdir()
+                .expect("fake proc dir");
+            Self(dir.path().to_path_buf(), dir)
         }
 
         /// A process whose `stat` is `pid (comm) S ppid …` and whose
@@ -279,12 +284,6 @@ mod pure_tests {
             let mut found = walk_descendants(root, children_from_table(read_proc_table(&self.0)));
             found.sort_unstable();
             found
-        }
-    }
-
-    impl Drop for FakeProc {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
         }
     }
 
@@ -439,9 +438,8 @@ mod tests {
         if !python_available() {
             return;
         }
-        let dir = std::env::temp_dir().join(format!("octocode-tree-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).expect("dir");
-        let pid_file = dir.join("grandchild.pid");
+        let dir = tempfile::tempdir().expect("dir");
+        let pid_file = dir.path().join("grandchild.pid");
         let script = "import os,sys,time\nif os.fork()==0:\n    os.setsid()\n    open(sys.argv[1],'w').write(str(os.getpid()))\n    time.sleep(60)\nelse:\n    time.sleep(60)\n";
         let mut child = {
             use std::os::unix::process::CommandExt;
@@ -461,6 +459,5 @@ mod tests {
             process_gone(grandchild),
             "the setsid grandchild must die with the tree"
         );
-        let _ = std::fs::remove_dir_all(dir);
     }
 }

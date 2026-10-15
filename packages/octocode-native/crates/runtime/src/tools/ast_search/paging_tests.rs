@@ -5,55 +5,70 @@
 use super::{AstSearchQuery, execute_ast};
 use crate::tools::cancel::NeverCancel;
 use crate::tools::stream_page::json_chars;
-use crate::tools::test_support::{Fixture, simple_policy};
+use crate::tools::test_support::{Fixture, checks, simple_policy};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
 
 const WINDOW: usize = 16_384;
 
-/// Runs `row` with a response window, then follows `next.nextPage` and
-/// `next.nextMatchPage` until neither is offered. Every distinct call runs
-/// once; returns the outputs in the order reached.
-fn walk(root: &std::path::Path, row: Value) -> Vec<Value> {
+/// Runs `row` with a response window and walks every page lead
+/// (`checks::walk`: each call once, every output and lead within the
+/// contract). `rows` names the items a page delivers, each exactly once
+/// across the walk. Returns the raw pages in the order reached.
+fn walk(root: &std::path::Path, row: Value, rows: fn(&Value) -> Vec<String>) -> Vec<Value> {
     let (paths, security) = simple_policy(root);
-    let mut pending = vec![row];
-    let mut seen = BTreeSet::new();
     let mut outputs = Vec::new();
-    while let Some(row) = pending.pop() {
-        assert!(seen.insert(row.to_string()), "a lead ran twice: {row}");
-        assert!(outputs.len() < 400, "a walk of {} calls", outputs.len());
-        crate::contracts::validate("astSearch", json!({"queries": [row.clone()]}))
-            .unwrap_or_else(|error| panic!("lead invalid {row}: {:?}", error.issues));
+    checks::walk("astSearch", json!({"queries": [row]}), |call| {
+        let row = &call["queries"][0];
         let query: AstSearchQuery = serde_json::from_value(row.clone()).expect("typed row");
         let out = execute_ast(&query, &paths, &security, &NeverCancel, Some(WINDOW))
             .unwrap_or_else(|error| panic!("{row} failed: {error:?}"));
-        assert_valid_output(&out);
-        for name in ["nextPage", "nextMatchPage"] {
-            if let Some(next) = out["next"].get(name) {
-                pending.push(next["query"]["queries"][0].clone());
-            }
+        // Every page states `pagination.hasMore`: the response layer and
+        // clasify read the raw page before any shaping.
+        if let Some(pagination) = out.get("pagination") {
+            assert!(pagination["hasMore"].is_boolean(), "{out}");
         }
+        let page = checks::Page {
+            output: crate::tools::test_support::published(
+                crate::tools::id::ToolId::AstSearch,
+                row,
+                &out,
+            ),
+            rows: rows(&out),
+        };
         outputs.push(out);
-    }
+        page
+    });
     outputs
 }
 
-/// Every page states `pagination.hasMore`: the response layer and clasify
-/// read the raw page before any shaping.
-fn assert_valid_output(out: &Value) {
-    if let Some(pagination) = out.get("pagination") {
-        assert!(pagination["hasMore"].is_boolean(), "{out}");
-    }
+/// Every node row of a syntax-tree page.
+fn node_rows(out: &Value) -> Vec<String> {
+    out["nodes"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(Value::to_string)
+        .collect()
+}
+
+/// Every match of a match page, as `path line:column`.
+fn match_rows(out: &Value) -> Vec<String> {
+    match_cells(out)
+        .into_iter()
+        .map(|(path, line, column)| format!("{path} {line}:{column}"))
+        .collect()
 }
 
 /// A single complete page carries a valid `pagination`.
 #[test]
 fn a_single_symbols_page_states_its_pagination() {
     let root = Fixture::new();
-    std::fs::write(root.0.join("a.ts"), numbered_functions(3)).expect("source");
+    root.write("a.ts", numbered_functions(3));
     let outputs = walk(
         &root.0,
         json!({"operation":"symbols","path":root.0.to_string_lossy()}),
+        symbol_rows,
     );
     assert_eq!(outputs.len(), 1);
     assert_eq!(outputs[0]["pagination"]["hasMore"], false, "{}", outputs[0]);
@@ -92,10 +107,11 @@ fn symbol_rows(out: &Value) -> Vec<String> {
 #[test]
 fn symbol_pages_fill_the_window_and_walk_every_symbol_once() {
     let root = Fixture::new();
-    std::fs::write(root.0.join("big.ts"), numbered_functions(1_500)).expect("source");
+    root.write("big.ts", numbered_functions(1_500));
     let outputs = walk(
         &root.0,
         json!({"operation":"symbols","path":root.0.join("big.ts")}),
+        symbol_rows,
     );
     let mut all = Vec::new();
     for (index, out) in outputs.iter().enumerate() {
@@ -125,10 +141,11 @@ fn symbol_pages_fill_the_window_and_walk_every_symbol_once() {
 #[test]
 fn an_explicit_symbol_page_size_is_exact() {
     let root = Fixture::new();
-    std::fs::write(root.0.join("big.ts"), numbered_functions(25)).expect("source");
+    root.write("big.ts", numbered_functions(25));
     let outputs = walk(
         &root.0,
         json!({"operation":"symbols","path":root.0.join("big.ts"),"pageSize":10}),
+        symbol_rows,
     );
     let sizes = outputs
         .iter()
@@ -167,10 +184,11 @@ fn a_file_of_three_thousand_matches_pages_by_bytes_and_reaches_each_once() {
     let source = (0..3_000)
         .map(|index| format!("hit({index});\n"))
         .collect::<String>();
-    std::fs::write(root.0.join("many.ts"), source).expect("source");
+    root.write("many.ts", source);
     let outputs = walk(
         &root.0,
         json!({"operation":"match","pattern":"hit($A)","path":root.0.join("many.ts"),"language":"typescript"}),
+        match_rows,
     );
     let mut cells = Vec::new();
     for (index, out) in outputs.iter().enumerate() {
@@ -199,15 +217,15 @@ fn a_file_of_three_thousand_matches_pages_by_bytes_and_reaches_each_once() {
 fn many_files_page_by_bytes_with_one_total() {
     let root = Fixture::new();
     for index in 0..300 {
-        std::fs::write(
-            root.0.join(format!("file{index:03}.ts")),
+        root.write(
+            &format!("file{index:03}.ts"),
             format!("export const value{index} = hit({index});\n"),
-        )
-        .expect("source");
+        );
     }
     let outputs = walk(
         &root.0,
         json!({"operation":"match","pattern":"hit($A)","path":root.0,"language":"typescript"}),
+        match_rows,
     );
     let mut cells = Vec::new();
     for (index, out) in outputs.iter().enumerate() {
@@ -229,15 +247,12 @@ fn many_files_page_by_bytes_with_one_total() {
 fn an_explicit_file_page_size_is_exact() {
     let root = Fixture::new();
     for index in 0..7 {
-        std::fs::write(
-            root.0.join(format!("f{index}.ts")),
-            format!("hit({index});\n"),
-        )
-        .expect("source");
+        root.write(&format!("f{index}.ts"), format!("hit({index});\n"));
     }
     let outputs = walk(
         &root.0,
         json!({"operation":"match","pattern":"hit($A)","path":root.0,"language":"typescript","pageSize":3}),
+        match_rows,
     );
     let sizes = outputs
         .iter()
@@ -249,10 +264,11 @@ fn an_explicit_file_page_size_is_exact() {
 #[test]
 fn a_syntax_tree_pages_by_bytes_and_reaches_every_node_once() {
     let root = Fixture::new();
-    std::fs::write(root.0.join("tree.ts"), numbered_functions(300)).expect("source");
+    root.write("tree.ts", numbered_functions(300));
     let outputs = walk(
         &root.0,
         json!({"operation":"syntaxTree","path":root.0.join("tree.ts")}),
+        node_rows,
     );
     let mut ids = Vec::new();
     for (index, out) in outputs.iter().enumerate() {

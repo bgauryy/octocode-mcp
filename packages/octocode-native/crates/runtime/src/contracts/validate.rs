@@ -1,12 +1,12 @@
 mod artifact;
 mod ast_rewrite;
-mod coerce;
 mod content;
 mod github_search;
 mod history;
 mod local_search;
 mod lsp;
 mod qualifiers;
+mod shape;
 pub(crate) use qualifiers::qualifier_terms;
 mod schema;
 mod topology;
@@ -463,12 +463,7 @@ pub fn validate(tool_name: &str, mut input: Value) -> Result<Value, ContractVali
         .pointer("/properties/queries/items")
         .unwrap_or(&tool["querySchema"]);
     if let Some(queries) = input.get_mut("queries").and_then(Value::as_array_mut) {
-        let typed = [
-            (&tool["querySchema"], &tool["querySchema"]),
-            (&tool["inputSchema"], item_schema),
-        ];
         for (index, query) in queries.iter_mut().enumerate() {
-            coerce::coerce_lossless(&typed, query);
             let mut path = vec!["queries".to_owned(), index.to_string()];
             let parsed =
                 validate_schema(&tool["querySchema"], &tool["querySchema"], query, &mut path)
@@ -522,44 +517,17 @@ fn apply_batch_rules(rules: &Value, input: &Value) -> Result<(), ContractValidat
     Ok(())
 }
 
-/// Lossless, schema-driven input repair shared by every host before
-/// validation: a JSON-encoded `queries` array, JSON-encoded or bare-scalar
-/// values in list-only fields, exact integer/boolean strings in
-/// integer/boolean-only fields, line-range spellings, near-miss members of
-/// closed string sets. Blank optional selectors are retained for validation. A
-/// bare query row runs as a one-row `queries` (see [`one_row_envelope`]); any
-/// other shape without `queries` is returned unchanged for validation to
-/// reject. Nothing is validated or defaulted, and an unknown tool is returned
-/// unchanged.
+/// The one input shape every host's call takes: a bare query row (an object
+/// without `queries`) runs as a one-row `queries` (see [`one_row_envelope`]).
+/// Nothing else changes: a value the canonical schema rejects is rejected by
+/// validation with a repair hint, never repaired here. An unknown tool is
+/// returned unchanged.
 #[must_use]
 pub fn normalize_input(tool_name: &str, input: Value) -> Value {
     let Some(Ok(tool)) = super::tool_contract_named(tool_name) else {
         return input;
     };
-    let item_schema = tool["inputSchema"]
-        .pointer("/properties/queries/items")
-        .unwrap_or(&tool["querySchema"]);
-    let typed = [
-        (&tool["querySchema"], &tool["querySchema"]),
-        (&tool["inputSchema"], item_schema),
-    ];
-    let mut input = one_row_envelope(&tool["inputSchema"], input);
-    if input.get("queries").is_none() {
-        return input;
-    }
-    coerce::coerce_lossless(&[(&tool["inputSchema"], &tool["inputSchema"])], &mut input);
-    let rows: Vec<&mut Value> = match &mut input {
-        Value::Object(object) => object
-            .get_mut("queries")
-            .and_then(Value::as_array_mut)
-            .map(|queries| queries.iter_mut().collect())
-            .unwrap_or_default(),
-        _ => Vec::new(),
-    };
-    for row in rows {
-        coerce::coerce_lossless(&typed, row);
-    }
-    input
+    one_row_envelope(&tool["inputSchema"], input)
 }
 
 /// A bare query row (an object without `queries`) as `{"queries":[row]}`: the
@@ -621,14 +589,14 @@ fn strip_queries_prefix(mut error: ContractValidationError) -> ContractValidatio
     error
 }
 
-/// Validates a completed structured response against the canonical generated
-/// output contract. Validation uses a clone because schema defaults, if ever
-/// introduced by the contract owner, must not mutate an already produced result.
+/// Validates a completed structured response, exactly as a client receives
+/// it, against the canonical generated output contract. Validation uses a
+/// clone because schema defaults, if ever introduced by the contract owner,
+/// must not mutate an already produced result.
 pub fn validate_output(tool_name: &str, output: &Value) -> Result<(), ContractValidationError> {
     let tool = contract_tool(tool_name)?;
     let schema = &tool["outputSchema"];
     let mut candidate = output.clone();
-    super::shared_fields::restore(&mut candidate);
     validate_schema(schema, schema, &mut candidate, &mut Vec::new())?;
     #[cfg(test)]
     undeclared_check(schema, &candidate)?;
@@ -662,17 +630,16 @@ fn undeclared_check(schema: &Value, output: &Value) -> Result<(), ContractValida
 }
 
 /// [`validate_output`] without the copy when validation cannot change the
-/// output: the envelope hoists no `shared` fields to restore and the tool's
-/// output schema declares no defaults to insert. Every other schema step only
-/// reads (`not` probes and union branches validate their own copies), so the
-/// response stays byte-identical and is walked once.
+/// output: the tool's output schema declares no defaults to insert. Every
+/// other schema step only reads (`not` probes and union branches validate
+/// their own copies), so the response stays byte-identical and is walked once.
 pub(crate) fn validate_output_in_place(
     tool_name: &str,
     output: &mut Value,
 ) -> Result<(), ContractValidationError> {
     let tool = contract_tool(tool_name)?;
     let schema = &tool["outputSchema"];
-    if output.get("shared").is_some() || declares_defaults(tool_name, schema) {
+    if declares_defaults(tool_name, schema) {
         return validate_output(tool_name, output);
     }
     validate_schema(schema, schema, output, &mut Vec::new())?;
@@ -884,10 +851,20 @@ fn internal(message: String) -> ContractValidationError {
     issue("contract.generated-json", vec![], message)
 }
 
+/// Fields renamed across releases: `(old, current)`. `lspSearch` took `uri`
+/// before it took `path`; an edit distance cannot connect the two.
+const RENAMED_FIELDS: &[(&str, &str)] = &[("uri", "path")];
+
 /// The field `known` most likely meant by `unknown`: a known field that
 /// prefixes it, or the nearest spelling. The edit budget scales with the
 /// name so a short guess (`depth`, `mode`) never lands on an unrelated field.
 fn suggest_field<'a>(unknown: &str, known: &[&'a str]) -> Option<&'a str> {
+    // A field renamed in an earlier release: the spelling an older caller sends.
+    if let Some((_, current)) = RENAMED_FIELDS.iter().find(|(old, _)| *old == unknown)
+        && let Some(found) = known.iter().copied().find(|k| k == current)
+    {
+        return Some(found);
+    }
     // `keywordsToSearch` → `keywords`: a known field that prefixes the guess.
     if let Some(prefix) = known
         .iter()
@@ -975,25 +952,25 @@ mod tests {
     }
 
     #[test]
-    fn pure_clasify_requires_correlation_and_preserves_provider_entries() {
-        let query = json!({"id":"decision","reasoning":"Decide the next evidence read.","mainGoal":"Files that decide the next read.","resources":[{"id":"source","value": {"observation": true}}], "questions":[{"id":"answer",
-            "type": "yesno", "ask": {"prompt":"Assess supplied state"}, "labels":{"true":null,"false":null}
-        }]});
+    fn pure_clasify_preserves_provider_entries_and_rejects_removed_fields() {
+        let query = json!({"id":"decision","reasoning":"Decide the next evidence read.","mainGoal":"Files that decide the next read.",
+            "state": {"observation": true},
+            "questions":{"answer":{"type": "noul", "instructions": {"prompt":"Assess supplied state"}, "criteria":{"true":null,"false":null}}}});
         let prepared = prepare_and_validate("clasify", query.clone())
-            .expect("pure semantic query needs no workflow fields");
+            .expect("a pure provider query needs no workflow fields");
         assert_eq!(prepared, query);
         let validated = validate("clasify", json!({"queries": [query.clone()]}))
-            .expect("pure semantic envelope");
+            .expect("pure provider envelope");
         assert_eq!(validated["queries"][0], query);
         let mut padded = query.clone();
         padded["reasoning"] = json!("  Decide the next evidence read.  ");
         assert_eq!(prepare_and_validate("clasify", padded).unwrap(), query);
-        for field in ["model", "debug", "route", "sources"] {
+        for field in ["debug", "route", "sources", "resources", "carry"] {
             let mut invalid = query.clone();
-            invalid[field] = json!("not part of the pure protocol");
+            invalid[field] = json!("not part of the provider protocol");
             assert!(prepare_and_validate("clasify", invalid).is_err(), "{field}");
         }
-        for field in ["resources", "questions"] {
+        for field in ["state", "questions"] {
             let mut invalid = query.clone();
             invalid.as_object_mut().expect("query object").remove(field);
             assert!(
@@ -1006,15 +983,6 @@ mod tests {
         let dropped =
             prepare_and_validate("clasify", blank_reasoning).expect("blank reasoning is dropped");
         assert!(dropped.get("reasoning").is_none());
-        let mut missing_goal = query.clone();
-        missing_goal
-            .as_object_mut()
-            .expect("query object")
-            .remove("mainGoal");
-        assert!(
-            prepare_and_validate("clasify", missing_goal).is_ok(),
-            "mainGoal is optional"
-        );
     }
 
     #[test]
@@ -1211,225 +1179,6 @@ mod tests {
     }
 
     #[test]
-    fn lossless_numeric_and_boolean_strings_coerce_only_for_typed_fields() {
-        let accepted = validate(
-            "localFetch",
-            json!({"queries":[
-                {"path":"/tmp/a","offset":"2","length":"10","mainGoal":"test","reasoning":"Coerce."},
-                {"path":"/tmp/a","fullContent":"false","mainGoal":"test","reasoning":"Coerce."}
-            ]}),
-        )
-        .expect("lossless strings coerce");
-        assert_eq!(accepted["queries"][0]["offset"], 2);
-        assert_eq!(accepted["queries"][0]["length"], 10);
-        assert_eq!(accepted["queries"][1]["fullContent"], false);
-        let search = validate(
-            "localSearch",
-            json!({"queries":[{"path":"/tmp","matchString":"10","pageSize":"5","mainGoal":"test","reasoning":"Coerce."}]}),
-        )
-        .expect("string fields keep their string");
-        assert_eq!(search["queries"][0]["matchString"], "10");
-        assert_eq!(search["queries"][0]["pageSize"], 5);
-        let union = validate(
-            "lspSearch",
-            json!({"queries":[
-                {"path":"/tmp/a.rs","operation":"documentSymbols","pageSize":"3","mainGoal":"test","reasoning":"Coerce."},
-                {"path":"/tmp/a.rs","symbolName":"main","line":"4","mainGoal":"test","reasoning":"Coerce."}
-            ]}),
-        )
-        .expect("union branches coerce their own typed fields");
-        assert_eq!(union["queries"][0]["pageSize"], 3);
-        assert_eq!(union["queries"][1]["line"], 4);
-        for bad in [
-            "02",
-            "2.0",
-            "1e3",
-            " 2",
-            "+2",
-            "-0",
-            "",
-            "9007199254740993",
-            "two",
-        ] {
-            assert!(
-                validate(
-                    "localFetch",
-                    json!({"queries":[{"path":"/tmp/a","offset":bad,"length":10,"mainGoal":"test","reasoning":"No coercion."}]}),
-                )
-                .is_err(),
-                "{bad:?} must not coerce"
-            );
-        }
-        for bad in ["TRUE", "True", "1", "yes", " true"] {
-            assert!(
-                validate(
-                    "localFetch",
-                    json!({"queries":[{"path":"/tmp/a","fullContent":bad,"mainGoal":"test","reasoning":"No coercion."}]}),
-                )
-                .is_err(),
-                "{bad:?} must not coerce"
-            );
-        }
-    }
-
-    #[test]
-    fn list_fields_sent_json_encoded_or_bare_are_repaired_before_validation() {
-        let brief = json!({"mainGoal":"test","reasoning":"Repair host encodings."});
-        let row = |extra: Value| {
-            let mut row = brief.clone();
-            row.as_object_mut()
-                .expect("row")
-                .extend(extra.as_object().expect("extra").clone());
-            row
-        };
-        let search = row(json!({"path":"/tmp","matchString":"x",
-            "include":"[\"*.go\"]","exclude":"[\"*_test.go\"]",
-            "contextLines":"2"}));
-        let normalized = normalize_input(
-            "localSearch",
-            json!({"queries": serde_json::to_string(&json!([search])).expect("encode")}),
-        );
-        let query = &normalized["queries"][0];
-        assert_eq!(query["include"], json!(["*.go"]));
-        assert_eq!(query["exclude"], json!(["*_test.go"]));
-        assert_eq!(query["contextLines"], 2);
-        validate("localSearch", normalized).expect("repaired input validates");
-
-        let structure = normalize_input(
-            "structureSearch",
-            json!({"queries":[row(json!({"path":"/tmp","extensions":"[\"go\"]"}))]}),
-        );
-        assert_eq!(structure["queries"][0]["extensions"], json!(["go"]));
-        let fetch = normalize_input(
-            "localFetch",
-            json!({"queries":[row(json!({"path":"/tmp/a.rs","ranges":r#"[\"749-775\"]"#}))]}),
-        );
-        assert_eq!(fetch["queries"][0]["ranges"], json!(["749-775"]));
-        validate("localFetch", fetch).expect("a double-encoded list validates");
-        let code = normalize_input(
-            "ghSearchCode",
-            json!({"queries":[row(json!({"owner":"o","keywords":"wrap_app_handling_exceptions"}))]}),
-        );
-        assert_eq!(
-            code["queries"][0]["keywords"],
-            json!(["wrap_app_handling_exceptions"])
-        );
-
-        // A field that also accepts a string keeps it; unknown tools pass through.
-        let lsp = normalize_input(
-            "lspSearch",
-            json!({"queries":[row(
-                json!({"path":"/tmp/a.rs","symbolName":"main","line":1,"rustContext":{"features":"all"}}),
-            )]}),
-        );
-        assert_eq!(lsp["queries"][0]["rustContext"]["features"], "all");
-        let untouched = json!({"queries":"[\"*.go\"]"});
-        assert_eq!(normalize_input("noSuchTool", untouched.clone()), untouched);
-    }
-
-    /// An HTML-escaped encoded list (the `queries` envelope, `ranges`,
-    /// `include`) repairs like any encoded list, on every tool and path.
-    #[test]
-    fn html_escaped_encoded_lists_validate_after_normalization() {
-        let fetch = normalize_input(
-            "localFetch",
-            json!({"queries":[{"path":"/tmp/a.rs","ranges":"[&quot;1-3&quot;]"}]}),
-        );
-        assert_eq!(fetch["queries"][0]["ranges"], json!(["1-3"]));
-        validate("localFetch", fetch).expect("decoded ranges validate");
-        let search = normalize_input(
-            "localSearch",
-            json!({"queries":[{"path":"/tmp","matchString":"x","include":"[&quot;*.md&quot;]"}]}),
-        );
-        assert_eq!(search["queries"][0]["include"], json!(["*.md"]));
-        validate("localSearch", search).expect("decoded include validates");
-        let envelope = normalize_input(
-            "localFetch",
-            json!({"queries":"[{&quot;path&quot;:&quot;/tmp/a.rs&quot;,&quot;ranges&quot;:[&quot;1-2&quot;]}]"}),
-        );
-        assert_eq!(envelope["queries"][0]["path"], "/tmp/a.rs");
-        assert_eq!(envelope["queries"][0]["ranges"], json!(["1-2"]));
-        validate("localFetch", envelope).expect("decoded envelope validates");
-    }
-
-    /// localFetch and ghGetFileContent accept host spellings of line ranges
-    /// on every path (CLI and MCP both normalize through here).
-    #[test]
-    fn line_range_spellings_validate_after_normalization() {
-        for (tool, extra) in [
-            ("localFetch", json!({"path":"/tmp/a.rs"})),
-            (
-                "ghGetFileContent",
-                json!({"owner":"o","repo":"r","path":"a.rs"}),
-            ),
-        ] {
-            for (ranges, expected) in [
-                (json!("70,130"), json!(["70-130"])),
-                (json!([" 140-150"]), json!(["140-150"])),
-                (json!(["248", "325"]), json!(["248-325"])),
-                (json!([248, 325]), json!(["248-325"])),
-            ] {
-                let mut row = json!({"mainGoal":"g","reasoning":"r","ranges":ranges});
-                row.as_object_mut()
-                    .expect("row")
-                    .extend(extra.as_object().expect("extra").clone());
-                let normalized = normalize_input(tool, json!({"queries":[row]}));
-                assert_eq!(normalized["queries"][0]["ranges"], expected, "{tool}");
-                validate(tool, normalized).expect("repaired ranges validate");
-            }
-        }
-    }
-
-    /// Near-miss enum members and line-number pairs repair against the real
-    /// tool contracts, so the row then validates.
-    #[test]
-    fn near_misses_and_pairs_validate_after_normalization() {
-        let brief = json!({"mainGoal":"g","reasoning":"r"});
-        let with = |extra: Value| {
-            let mut row = brief.clone();
-            row.as_object_mut()
-                .expect("row")
-                .extend(extra.as_object().expect("extra").clone());
-            json!({"queries":[row]})
-        };
-        for (tool, input, pointer, expected) in [
-            (
-                "ghSearchHistory",
-                with(json!({"operation":"pullRequests","keywords":["x"],"owner":"o","repo":"r"})),
-                "/queries/0/operation",
-                json!("pullRequest"),
-            ),
-            (
-                "lspSearch",
-                with(json!({"operation":"reference","path":"a.ts","symbolName":"a","line":1})),
-                "/queries/0/operation",
-                json!("references"),
-            ),
-            (
-                "ghGetHistoryItem",
-                with(
-                    json!({"operation":"pullRequest","owner":"o","repo":"r","number":1,"sections":["patch"]}),
-                ),
-                "/queries/0/sections",
-                json!(["patches"]),
-            ),
-            (
-                "localFetch",
-                with(json!({"path":"/tmp/a.rs","ranges":[["248","325"],[400,410]]})),
-                "/queries/0/ranges",
-                json!(["248-325", "400-410"]),
-            ),
-        ] {
-            let normalized = normalize_input(tool, input);
-            assert_eq!(normalized.pointer(pointer), Some(&expected), "{tool}");
-            validate(tool, normalized).unwrap_or_else(|error| panic!("{tool}: {error:?}"));
-        }
-        let required = normalize_input("localSearch", with(json!({"path":" ","matchString":"x"})));
-        assert_eq!(required["queries"][0]["path"], " ");
-        assert!(validate("localSearch", required).is_err());
-    }
-
-    #[test]
     fn blank_optional_source_selectors_survive_normalization_and_fail_validation() {
         let github = json!({"queries":[{
             "owner":"octocat","repo":"Hello-World","path":"README.md",
@@ -1611,6 +1360,89 @@ mod tests {
         }
     }
 
+    /// Admission accepts exactly the canonical input language: a value the
+    /// published schema rejects is rejected with a repair hint, never
+    /// repaired (no string-to-boolean/number, enum casing or plurals,
+    /// encoded or bare-scalar lists, or line-range spellings).
+    #[test]
+    fn admission_rejects_what_the_canonical_schema_rejects() {
+        let admit = |tool: &str, row: Value| {
+            crate::contracts::prepare_many_and_validate(
+                tool,
+                normalize_input(tool, json!({"queries":[row]})),
+            )
+        };
+        let rejected = [
+            (
+                "localFetch",
+                json!({"path":"a.rs","fullContent":"true"}),
+                "send true",
+            ),
+            (
+                "localFetch",
+                json!({"path":"a.rs","minify":"NONE"}),
+                "allowed:",
+            ),
+            (
+                "localFetch",
+                json!({"path":"a.rs","contextLines":"3"}),
+                "send 3",
+            ),
+            (
+                "localFetch",
+                json!({"path":"a.rs","ranges":[" 140-150"]}),
+                "ranges",
+            ),
+            (
+                "localFetch",
+                json!({"path":"a.rs","ranges":["190"]}),
+                "ranges",
+            ),
+            (
+                "localFetch",
+                json!({"path":"a.rs","ranges":[["248","325"]]}),
+                "ranges",
+            ),
+            (
+                "localFetch",
+                json!({"path":"a.rs","ranges":"[\"1-5\"]"}),
+                "JSON-encoded",
+            ),
+            (
+                "localSearch",
+                json!({"path":".","matchString":"x","include":"[\"*.go\"]"}),
+                "JSON-encoded",
+            ),
+            (
+                "localSearch",
+                json!({"path":".","matchString":"x","include":"*.go"}),
+                "wrap the value",
+            ),
+            (
+                "ghSearchHistory",
+                json!({"operation":"pullRequests","owner":"o","repo":"r"}),
+                "operation",
+            ),
+        ];
+        for (tool, row, hint) in rejected {
+            let error = admit(tool, row.clone()).expect_err(&format!("{tool} {row}"));
+            let formatted = format_input_error(tool, &error).to_string();
+            assert!(formatted.contains(hint), "{tool} {row}: {formatted}");
+        }
+        let accepted = [
+            ("localFetch", json!({"path":"a.rs","fullContent":true})),
+            ("localFetch", json!({"path":"a.rs","minify":"none"})),
+            ("localFetch", json!({"path":"a.rs","ranges":["140-150"]})),
+            (
+                "localSearch",
+                json!({"path":".","matchString":"x","include":["*.go"]}),
+            ),
+        ];
+        for (tool, row) in accepted {
+            admit(tool, row.clone()).unwrap_or_else(|error| panic!("{tool} {row}: {error:?}"));
+        }
+    }
+
     #[test]
     fn matches_generated_reference_corpus() {
         let fixtures: Value =
@@ -1672,6 +1504,26 @@ mod tests {
             Some("regex")
         );
         assert_eq!(super::suggest_field("filePattern", &local_search), None);
+    }
+
+    /// A field renamed in an earlier release points at its current name, but
+    /// only when this tool accepts that name.
+    #[test]
+    fn a_renamed_field_suggests_its_current_name() {
+        let lsp_search = ["operation", "path", "symbolName", "line", "graphDepth"];
+        assert_eq!(super::suggest_field("uri", &lsp_search), Some("path"));
+        assert_eq!(super::suggest_field("uri", &["operation", "line"]), None);
+    }
+
+    #[test]
+    fn a_misspelled_lsp_anchor_names_path() {
+        let error = validate(
+            "lspSearch",
+            json!({"queries":[{"operation":"hover","uri":"src/a.ts","symbolName":"a","line":1,"mainGoal":"g","reasoning":"r"}]}),
+        )
+        .expect_err("19.x field name");
+        let formatted = format_input_error("lspSearch", &error).to_string();
+        assert!(formatted.contains("did you mean 'path'?"), "{formatted}");
     }
 
     #[test]

@@ -59,15 +59,19 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("a.lock");
         let started = Instant::now();
-        assert!(
-            lock_within(
-                open(&path),
-                Duration::from_secs(5),
-                Duration::from_millis(10)
-            )
-            .is_ok()
-        );
+        let held = lock_within(
+            open(&path),
+            Duration::from_secs(5),
+            Duration::from_millis(10),
+        )
+        .expect("an uncontended lock");
         assert!(started.elapsed() < Duration::from_secs(1));
+        // The guard holds the lock: another holder is turned away.
+        assert!(matches!(
+            lock_within(open(&path), Duration::ZERO, Duration::from_millis(10)),
+            Err(LockError::Busy)
+        ));
+        drop(held);
     }
 
     #[test]
@@ -79,13 +83,21 @@ mod tests {
             std::thread::sleep(Duration::from_millis(150));
             drop(held);
         });
+        let started = Instant::now();
         let taken = lock_within(
             open(&path),
             Duration::from_secs(5),
             Duration::from_millis(10),
-        );
+        )
+        .expect("taken once the holder lets go");
         release.join().unwrap();
-        assert!(taken.is_ok());
+        // It waited for the holder rather than failing or skipping the lock.
+        assert!(started.elapsed() >= Duration::from_millis(100));
+        assert!(matches!(
+            lock_within(open(&path), Duration::ZERO, Duration::from_millis(10)),
+            Err(LockError::Busy)
+        ));
+        drop(taken);
     }
 
     #[test]
@@ -106,6 +118,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("a.lock");
         drop(lock_within(open(&path), Duration::ZERO, Duration::from_millis(10)).unwrap());
-        assert!(lock_within(open(&path), Duration::ZERO, Duration::from_millis(10)).is_ok());
+        let again = lock_within(open(&path), Duration::ZERO, Duration::from_millis(10))
+            .expect("released by the drop");
+        assert!(matches!(
+            lock_within(open(&path), Duration::ZERO, Duration::from_millis(10)),
+            Err(LockError::Busy)
+        ));
+        drop(again);
     }
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  configFieldEnvNames,
+  configFieldEnvName,
   contractDriftAllowed,
   contractDriftMessage,
   devOverridesAllowed,
@@ -55,15 +55,15 @@ describe('contractDriftMessage', () => {
   });
 });
 
-describe('configFieldEnvNames', () => {
+describe('configFieldEnvName', () => {
   it('names the one variable a field binds', () => {
-    expect(configFieldEnvNames('classification.api')).toEqual([
-      'OCTOCODE_CLASSIFICATION_API',
-    ]);
-    expect(configFieldEnvNames('local.beta')).toEqual(['OCTOCODE_BETA']);
+    expect(configFieldEnvName('classification.api')).toBe(
+      'OCTOCODE_CLASSIFICATION_API'
+    );
+    expect(configFieldEnvName('local.beta')).toBe('OCTOCODE_BETA');
   });
 
-  it('is empty for an unknown path', () => {
-    expect(configFieldEnvNames('nope.missing')).toEqual([]);
+  it('is undefined for an unknown path', () => {
+    expect(configFieldEnvName('nope.missing')).toBeUndefined();
   });
 });

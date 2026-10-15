@@ -763,7 +763,10 @@ mod tests {
         let deep = clone_dir(home, "o", "r", "main", None, 5, "https://example.test");
         assert_ne!(shallow, deep);
         assert!(deep.to_string_lossy().contains("__d5__host_"));
-        assert!(!shallow.to_string_lossy().contains("__d"));
+        crate::tools::test_support::checks::assert_absent(
+            &serde_json::json!(shallow.to_string_lossy()),
+            "__d",
+        );
     }
 
     #[test]

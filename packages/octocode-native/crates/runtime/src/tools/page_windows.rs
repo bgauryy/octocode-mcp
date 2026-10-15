@@ -1,6 +1,10 @@
 //! Page windows over a result set held whole: by a character budget (the
 //! default, so a page fills the response window like localSearch and
-//! structureSearch) or by a caller's explicit item count.
+//! structureSearch) or by a caller's explicit item count. The budget
+//! ([`page_budget`]) is the one page sizing owner: a default-layout page is
+//! cut so the whole response row fits the configured response window
+//! (`output.pagination.defaultCharLength`); otherwise the response pager
+//! splits the page into row parts and every page walk costs extra calls.
 //!
 //! The result set is the same on every page of a walk (a snapshot pins it),
 //! so the cut is a pure function of the item sizes and the budget: page `n`
@@ -81,15 +85,89 @@ pub(crate) fn count_pages(total: usize, size: usize) -> usize {
 /// Characters one page of a row may spend on its items: the response window
 /// less the row around them, which re-states the query in each continuation.
 pub(crate) fn page_budget(response_window: Option<usize>, query: &serde_json::Value) -> usize {
-    crate::tools::stream_page::page_chars(
-        response_window,
-        crate::tools::stream_page::reserve_chars(query, 2),
-    )
+    page_chars(response_window, reserve_chars(query, 2))
+}
+
+/// A complete held row needs no repeated-query reserve for its own next page.
+/// Keep the common envelope reserve; later response shaping still enforces the window.
+pub(crate) fn terminal_row_fits(response_window: Option<usize>, row: &serde_json::Value) -> bool {
+    response_window.is_some_and(|window| {
+        crate::tools::stream_page::json_chars(row).saturating_add(ROW_SKELETON_CHARS) <= window
+    })
+}
+
+/// Fallback when a caller has no configured response window. Runtime calls
+/// carry their window and reserve the surrounding row from that budget.
+const FALLBACK_PAGE_CHARS: usize = 24_000;
+
+/// Room for everything a response row holds besides its listed entries:
+/// the envelope, stats, pagination, warnings, and the fixed text of row
+/// continuations and handoffs.
+const ROW_SKELETON_CHARS: usize = 2_000;
+
+/// Room for the caller's `mainGoal` and `reasoning`, which row continuations
+/// copy. They are budgeted at a fixed size rather than measured, so a walk
+/// whose continuation rewords them still cuts every page at the same rows.
+const FREE_TEXT_CHARS: usize = 1_200;
+
+/// Instruction and cursor fields do not change source-page boundaries. The
+/// final response pager charges their serialized size, including context
+/// removed by an unfiltered recovery over the same captured source.
+const UNSIZED_QUERY_FIELDS: [&str; 7] = [
+    "mainGoal",
+    "reasoning",
+    "page",
+    "matchPage",
+    "snapshot",
+    "selection",
+    "clasifyContext",
+];
+
+/// Chars a streamed page's entries may take. With a response window, the
+/// page leaves room for the row around it ([`reserve_chars`]); a tiny window
+/// still gets half of itself, so a walk keeps moving (its pages then split
+/// into row parts). Without one, pages take [`FALLBACK_PAGE_CHARS`].
+fn page_chars(window: Option<usize>, reserve: usize) -> usize {
+    match window {
+        Some(window) => window.saturating_sub(reserve).max(window / 2).max(1),
+        None => FALLBACK_PAGE_CHARS,
+    }
+}
+
+/// What a response row needs besides its entries, for a row whose
+/// continuations copy `query` `copies` times. Only fields that select rows
+/// are measured, so every page of one walk gets the same budget.
+fn reserve_chars(query: &serde_json::Value, copies: usize) -> usize {
+    let measured = match query.as_object() {
+        Some(fields) => fields
+            .iter()
+            .filter(|(name, _)| !UNSIZED_QUERY_FIELDS.contains(&name.as_str()))
+            .map(|(name, value)| {
+                crate::tools::stream_page::json_text_chars(name)
+                    + crate::tools::stream_page::json_chars(value)
+                    + 4
+            })
+            .sum::<usize>(),
+        None => crate::tools::stream_page::json_chars(query),
+    };
+    ROW_SKELETON_CHARS + FREE_TEXT_CHARS + copies.saturating_mul(measured)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_terminal_row_uses_serialized_cost_and_keeps_the_envelope_reserve() {
+        let row = serde_json::json!({"files": [{"path": "日本語.rs", "matches": [
+            {"line": 7, "value": "quoted \"source\"\n😀"}
+        ]}]});
+        let needed = crate::tools::stream_page::json_chars(&row) + ROW_SKELETON_CHARS;
+        assert!(terminal_row_fits(Some(needed), &row));
+        assert!(!terminal_row_fits(Some(needed - 1), &row));
+        assert!(!terminal_row_fits(Some(0), &row));
+        assert!(!terminal_row_fits(None, &row));
+    }
 
     #[test]
     fn a_character_budget_fills_each_page_and_never_exceeds_it() {
@@ -217,9 +295,47 @@ mod tests {
         let query = serde_json::json!({"operation": "symbols", "path": "src"});
         let budget = page_budget(Some(20_000), &query);
         assert!((10_000..20_000).contains(&budget), "{budget}");
+        assert_eq!(page_budget(None, &query), FALLBACK_PAGE_CHARS);
+    }
+
+    #[test]
+    fn page_chars_leave_the_row_room_inside_the_window() {
+        assert_eq!(page_chars(None, 5_000), FALLBACK_PAGE_CHARS);
+        assert_eq!(page_chars(Some(50_000), 4_000), 46_000);
+        assert_eq!(page_chars(Some(20_000), 4_000), 16_000);
+        assert_eq!(page_chars(Some(1_000), 4_000), 500);
+    }
+
+    #[test]
+    fn configured_windows_reduce_hops_without_changing_explicit_counts() {
+        let query = serde_json::json!({"path":"src","operation":"symbols"});
+        let sizes = vec![500; 120];
+        let small = Paging::of(None, page_budget(Some(24_000), &query)).windows(&sizes);
+        let large = Paging::of(None, page_budget(Some(50_000), &query)).windows(&sizes);
+        assert!(large.len() < small.len());
         assert_eq!(
-            page_budget(None, &query),
-            crate::tools::stream_page::MAX_PAGE_CHARS
+            large.iter().map(|window| window.len()).sum::<usize>(),
+            sizes.len()
         );
+        for budget in [24_000, 50_000] {
+            let explicit = Paging::of(Some(17), page_budget(Some(budget), &query)).windows(&sizes);
+            assert!(
+                explicit
+                    .iter()
+                    .take(explicit.len() - 1)
+                    .all(|window| window.len() == 17)
+            );
+        }
+    }
+
+    #[test]
+    fn reserve_ignores_free_text_and_cursor_fields() {
+        let first = serde_json::json!({"mainGoal": "g", "reasoning": "r", "path": "src", "matchString": "x"});
+        let later = serde_json::json!({"mainGoal": "a much longer goal", "reasoning": "reworded",
+            "path": "src", "matchString": "x", "page": 7, "snapshot": "lexical-live-v2:abc",
+            "selection": "saved-order-added-after-the-first-page"});
+        assert_eq!(reserve_chars(&first, 2), reserve_chars(&later, 2));
+        let wider = serde_json::json!({"path": "src", "matchString": "a longer search"});
+        assert!(reserve_chars(&wider, 2) > reserve_chars(&first, 2));
     }
 }

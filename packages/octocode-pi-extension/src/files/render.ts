@@ -140,6 +140,8 @@ export interface QueryOutcome {
   ok: boolean;
   message: string;
   diff?: string;
+  /** An applied edit: the change in the file's line count. */
+  lineDelta?: number;
 }
 
 /** Diff lines shown per file before expanding. */

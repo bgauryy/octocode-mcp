@@ -4,7 +4,7 @@ import json, os, subprocess, sys, tempfile, unittest
 from pathlib import Path
 from codex_runner import command, DISABLED_FEATURES, semantic_gates, main as run_codex
 from transcript_to_log import parse_codex
-from mcp_probe import has_goals
+from mcp_probe import has_classifiers
 from render_question import prepare_question
 from unittest.mock import patch
 
@@ -49,9 +49,10 @@ class CodexRunnerTests(unittest.TestCase):
         self.assertTrue(any(x.startswith('mcp_servers=') for x in cmd))
         self.assertFalse(any('secret-value' in x for x in cmd))
     def test_recursive_schema_gate(self):
-        self.assertTrue(has_goals({'properties':{'queries':{'items':{'properties':{'goals':{'type':'array'}}}}}}))
-        self.assertFalse(has_goals({'description':'goals are optional'}))
-    def test_public_clasify_and_internal_goals_have_independent_gates(self):
+        self.assertTrue(has_classifiers({'properties':{'queries':{'items':{'properties':{'classifiers':{'type':'array'}}}}}}))
+        self.assertFalse(has_classifiers({'description':'classifiers are optional'}))
+        self.assertFalse(has_classifiers({'properties':{'queries':{'items':{'properties':{'goals':{'type':'array'}}}}}}))
+    def test_public_clasify_and_retrieval_classifiers_have_independent_gates(self):
         inherited = {'OCTOCODE_CLASSIFICATION_API': 'test-credential'}
         for beta, ranking, expected in [('false','false',(False,False)),
                 ('false','true',(False,True)), ('true','false',(True,False)),

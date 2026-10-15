@@ -4,7 +4,9 @@ import os from 'node:os';
  * Which PowerShell commands are destructive. The helper's parser (winhelper-script.ts) only reports the commands of a
  * script and their arguments; everything that decides (aliases, `-Command` and `-EncodedCommand` unwrapping, `cmd /c`,
  * which Remove-Item forms wipe data) lives here, so it runs and is tested on any platform. A flag of the same kind as
- * the POSIX one in permission/shell.ts: it flags common destructive commands, and is not a security boundary.
+ * the POSIX one in permission/shell.ts: it flags common destructive commands, and is not a security boundary. A command
+ * whose name is computed (`& $tool -Recurse C:\`) is not judged: its target is unknown, and flagging every `& $exe` would
+ * make the flag meaningless.
  */
 
 /** One argument of a parsed command: a `-Name[:value]` parameter, or a value (`value` set when it is a string constant). */
@@ -83,6 +85,38 @@ function elementText(element: ScriptElement): string {
   return element.text.replace(/^(['"])(.*)\1$/s, '$2');
 }
 
+/** Splits `text` at the commas outside quotes and parentheses: how PowerShell writes an array argument (`.\build, C:\Users\me`). */
+function splitList(text: string): string[] {
+  const parts: string[] = [];
+  let current = '';
+  let quote = '';
+  let depth = 0;
+  for (let at = 0; at < text.length; at++) {
+    const char = text[at]!;
+    if (char === '`') {
+      current += char + (text[at + 1] ?? '');
+      at++;
+      continue;
+    }
+    if (quote) quote = char === quote ? '' : quote;
+    else if (char === '"' || char === "'") quote = char;
+    else if (char === '(' || char === '{') depth++;
+    else if (char === ')' || char === '}') depth = Math.max(0, depth - 1);
+    else if (char === ',' && depth === 0) {
+      parts.push(current);
+      current = '';
+      continue;
+    }
+    current += char;
+  }
+  parts.push(current);
+  return parts.map((part) => part.trim()).filter(Boolean);
+}
+
+/** The paths an argument stands for: one string constant, or the elements of an array written as source (`'a', 'b'`), each without its quotes. */
+const textTargets = (text: string): string[] => splitList(text).map((part) => part.replace(/^(['"])(.*)\1$/s, '$2'));
+const elementTargets = (element: ScriptElement): string[] => (element.value !== undefined ? [element.value] : textTargets(element.text));
+
 /** `-Name:$false` / `-Name:0` turns a switch off. */
 const switchOff = (element: ScriptElement): boolean => element.arg !== undefined && /^\$?(?:false|0)$/i.test(element.arg.trim());
 
@@ -96,14 +130,33 @@ const VARIABLES: ReadonlyArray<readonly [RegExp, string]> = [
   [/^(?:\$env:systemdrive|%systemdrive%)(?=\\|$)/, 'c:'],
 ];
 
+/** `path` without `.` and `..` segments (`D:\work\..\..` is `D:`; above a root stays at the root; a relative path keeps leading `..`) and without a trailing separator; a path with a variable left in it is not touched. */
+function resolveDots(path: string): string {
+  if (path === '' || /[$%(@]/.test(path)) return path.length > 1 ? path.replace(/\\+$/, '') : path;
+  const drive = /^[a-z]:(?=\\|$)/.exec(path)?.[0];
+  const rooted = drive !== undefined || path.startsWith('\\');
+  const stack: string[] = [];
+  for (const part of (drive ? path.slice(2) : path).split('\\')) {
+    if (part === '' || part === '.') continue;
+    if (part !== '..') stack.push(part);
+    else if (stack.length > 0 && stack[stack.length - 1] !== '..') stack.pop();
+    else if (!rooted) stack.push('..');
+  }
+  const body = stack.join('\\');
+  if (drive) return body ? `${drive}\\${body}` : drive;
+  if (rooted) return body ? `\\${body}` : '\\';
+  return body || '.';
+}
+
 /** `target` in a comparable form: lower case, `\` separators, no quotes, known variables expanded, no trailing separator or wildcard tail. */
 function normalizedTarget(target: string): { path: string; wildcard: boolean } {
-  let path = target.trim().replace(/^(['"])(.*)\1$/s, '$2').toLowerCase().replace(/\//g, '\\').replace(/\\{2,}(?!$)/g, '\\');
+  // `\\?\C:\x` and `\\.\C:\x` are `C:\x` (the prefix would otherwise read as a `?` wildcard).
+  let path = target.trim().replace(/^(['"])(.*)\1$/s, '$2').toLowerCase().replace(/\//g, '\\').replace(/^\\\\[?.]\\(?=[a-z]:)/, '').replace(/\\{2,}(?!$)/g, '\\');
   for (const [pattern, value] of VARIABLES) path = path.replace(pattern, value);
   const wildcard = /[*?[]/.test(path);
   // `C:\x\*` and `C:\x\*.*` stand for the folder's content: judged as the folder.
   path = path.replace(/\\\*(?:\.\*)?$/, '');
-  return { path: path.length > 1 ? path.replace(/\\+$/, '') : path, wildcard };
+  return { path: resolveDots(path), wildcard };
 }
 
 /** Whether removing `path` (normalized) takes a drive, the users folder, a profile, a system folder or the current or parent folder with it. */
@@ -126,17 +179,28 @@ function protectedTarget(path: string): boolean {
 /** Whether `path` is computed at run time (`$dir`, `(Get-Location)`), so its value cannot be judged. */
 const computed = (path: string): boolean => /^[$(@%]/.test(path);
 
+/**
+ * The switches of a cmd.exe word that is only switches, lower case: `/s` is `['s']`, `/s/q` and `/S/Q` are `['s','q']`,
+ * `/A:H/S` is `['a','s']` (cmd reads them as one cluster). A path (`/tmp/s`) or anything else is undefined.
+ */
+function cmdSwitches(word: string): string[] | undefined {
+  if (!/^(?:\/[a-z?](?::[^/]*)?)+$/i.test(word)) return undefined;
+  return [...word.matchAll(/\/([a-z?])/gi)].map((match) => match[1]!.toLowerCase());
+}
+
+const hasSwitch = (word: string, letter: string): boolean => cmdSwitches(word)?.includes(letter) === true;
+
 /** What a `Remove-Item` (or alias) call with these arguments removes, when that is a lot. */
 function removalDanger(name: string, args: readonly ScriptElement[]): string | undefined {
   // `rd /s` and `del /s /q` are cmd.exe syntax; PowerShell reads `/s` as a path, so the intent is what is flagged.
-  if (CMD_REMOVERS.has(name) && args.some((arg) => arg.param === undefined && /^\/s$/i.test(elementText(arg)))) return `\`${name} /s\` (recursive delete)`;
+  if (CMD_REMOVERS.has(name) && args.some((arg) => arg.param === undefined && hasSwitch(elementText(arg), 's'))) return `\`${name} /s\` (recursive delete)`;
   let recurse = false;
   let force = false;
   const targets: string[] = [];
   for (let at = 0; at < args.length; at++) {
     const arg = args[at]!;
     if (arg.param === undefined) {
-      targets.push(elementText(arg));
+      targets.push(...elementTargets(arg));
       continue;
     }
     const param = resolveParam(arg.param, REMOVE_PARAMS);
@@ -145,9 +209,9 @@ function removalDanger(name: string, args: readonly ScriptElement[]): string | u
     else if (param === 'force') force = !switchOff(arg);
     else if (param && VALUE_PARAMS.has(param) && arg.arg === undefined) {
       const next = args[++at];
-      if (next && (param === 'path' || param === 'literalpath')) targets.push(elementText(next));
+      if (next && (param === 'path' || param === 'literalpath')) targets.push(...elementTargets(next));
     } else if (param === 'path' || param === 'literalpath') {
-      targets.push(arg.arg!.replace(/^(['"])(.*)\1$/s, '$2'));
+      targets.push(...textTargets(arg.arg!));
     }
   }
   if (!recurse && !force) return undefined;
@@ -161,7 +225,7 @@ function removalDanger(name: string, args: readonly ScriptElement[]): string | u
 
 /** `cmd /c <script>`: the script text, or undefined when the command is not cmd running one. */
 function cmdScript(args: readonly ScriptElement[]): string | undefined {
-  const at = args.findIndex((arg) => arg.param === undefined && /^\/[ck]$/i.test(elementText(arg)));
+  const at = args.findIndex((arg) => arg.param === undefined && (hasSwitch(elementText(arg), 'c') || hasSwitch(elementText(arg), 'k')));
   return at < 0 ? undefined : args.slice(at + 1).map(elementText).join(' ');
 }
 
@@ -172,17 +236,28 @@ function systemDanger(name: string, words: readonly string[]): string | undefine
   return drive === undefined ? undefined : `\`format ${drive}\``;
 }
 
-/** One simple cmd.exe command split into words: recursive `rd`/`del`, `format X:`, or a system command. */
+/** Words that introduce another command: `if exist X rd /s`, `else rd /s`, `for … do rd /s`. */
+const CMD_BLOCKS = new Set(['if', 'else', 'for', 'do']);
+
+/** One simple cmd.exe command split into words: recursive `rd`/`del`, `format X:`, or a system command; also behind `if`, `for`, `@` and a parenthesis. */
 function cmdDanger(words: readonly string[]): string | undefined {
-  const name = programName(words[0] ?? '');
-  const rest = words.slice(1);
-  if (CMD_REMOVERS.has(name) && rest.some((word) => /^\/s$/i.test(word))) return `\`${name} /s\` (recursive delete)`;
+  const tidy = words.map((word) => word.replace(/^[@(]+/, '').replace(/\)+$/, ''));
+  const name = programName(tidy[0] ?? '');
+  if (CMD_BLOCKS.has(name)) {
+    for (let at = 1; at < tidy.length; at++) {
+      const danger = cmdDanger(tidy.slice(at));
+      if (danger) return danger;
+    }
+    return undefined;
+  }
+  const rest = tidy.slice(1);
+  if (CMD_REMOVERS.has(name) && rest.some((word) => hasSwitch(word, 's'))) return `\`${name} /s\` (recursive delete)`;
   return systemDanger(name, rest);
 }
 
-/** Splits a cmd.exe line at `&`, `&&`, `|` and `||` and checks each command; words keep quoted spaces. */
+/** Splits a cmd.exe line at `&`, `&&`, `|` and `||` and checks each command; words keep quoted spaces, and `^` escapes the next character (`r^d`). */
 function cmdLineDanger(line: string): string | undefined {
-  for (const part of line.split(/&&|\|\||[&|]/)) {
+  for (const part of line.replace(/\^(.?)/gs, '$1').split(/&&|\|\||[&|]/)) {
     const words = [...part.matchAll(/"([^"]*)"|(\S+)/g)].map((match) => match[1] ?? match[2]!);
     const danger = cmdDanger(words);
     if (danger) return danger;
@@ -223,7 +298,7 @@ function inspect(command: ScriptCommand): { danger: string } | { script: string 
     return danger ? { danger } : undefined;
   }
   if (name === 'clear-content') {
-    const hit = words.map(normalizedTarget).find(({ path, wildcard }) => protectedTarget(path) || wildcard);
+    const hit = command.args.filter((arg) => arg.param === undefined).flatMap(elementTargets).map(normalizedTarget).find(({ path, wildcard }) => protectedTarget(path) || wildcard);
     return hit ? { danger: `Clear-Content on ${hit.path}` } : undefined;
   }
   if (name === 'invoke-expression') {

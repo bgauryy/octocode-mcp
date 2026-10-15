@@ -1,7 +1,7 @@
 import type { Usage } from '@earendil-works/pi-ai';
 import type { AgentToolResult, MessageRenderer, Theme, ToolRenderResultOptions } from '@earendil-works/pi-coding-agent';
 import { Box, type Component } from '@earendil-works/pi-tui';
-import { fencedBody } from '../shared/fence.js';
+import { fencedParts } from '../shared/fence.js';
 import { formatCost, formatDuration, formatTokenUsage, shortPath } from '../shared/format.js';
 import { clip, timingOf, plural, resultBlock, toolHeader, type RenderContext } from '../shared/render.js';
 import { sanitizeTerminalText } from '../shared/sanitize.js';
@@ -160,20 +160,17 @@ export function renderAgentResult(result: AgentToolResult<unknown>, { isPartial 
   return resultBlock(theme, context, { summary: doneSummary(details, context.durationMs), body, prefaceLabel: 'prompt', preface: promptPreface(theme, task, body.trim() ? 'Report' : undefined), ...timing });
 }
 
+/** A report's text for the screen: the child's words without their fence lines, then the parent's own footer. */
+function reportBody(text: string): string {
+  const fenced = fencedParts(text);
+  if (!fenced) return text;
+  return fenced.footer ? `${fenced.body}\n\n${fenced.footer}` : fenced.body;
+}
+
 /**
  * A background subagent's report, drawn like the tool row it came from: `● Agent(id)` then `⎿ Done (…)` and
  * the report; expanded, the full prompt comes first.
  */
-/** A report's text for the screen: the child's words without their fence lines, then the parent's own footer. */
-function reportBody(text: string): string {
-  const body = fencedBody(text);
-  if (body === text) return text;
-  const lines = text.split('\n');
-  const marker = /^<<<(\S+) /.exec(lines.find((line) => line.startsWith('<<<untrusted-')) ?? '')?.[1];
-  const footer = marker ? lines.slice(lines.lastIndexOf(`${marker}>>>`) + 1).join('\n').trim() : '';
-  return footer ? `${body}\n\n${footer}` : body;
-}
-
 export const renderAgentMessage: MessageRenderer = (message, { expanded, outputPad }, theme) => {
   const details = (message.details ?? {}) as Partial<ResultDetails>;
   const [head = '', ...rest] = contentText(message.content).split('\n');

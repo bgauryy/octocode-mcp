@@ -10,6 +10,7 @@ const USAGE = `octocode-pi-api — talk to running Octocode Pi sessions (start t
   octocode-pi-api send [--to <id>] [--from <name>] [--wait] [--mode steer|followUp] <text…>
   octocode-pi-api watch [--to <id>] [--types a,b] [--top-level]
   octocode-pi-api abort [--to <id>]
+  octocode-pi-api external [--to <id>] '<JSON>'
 
 --to defaults to the only running instance (or the one in the current directory).
 --top-level drops tool events of calls other tools made (those with parentId).`;
@@ -37,13 +38,20 @@ async function main(argv: string[]): Promise<void> {
     for (const entry of instances) console.log(`${entry.id}\tpid ${entry.pid}\t${entry.cwd}`);
     return;
   }
-  if (!command || !['status', 'send', 'watch', 'abort'].includes(command)) {
+  if (!command || !['status', 'send', 'watch', 'abort', 'external'].includes(command)) {
     console.log(USAGE);
     process.exitCode = command ? 1 : 0;
     return;
   }
   const client = new ApiClient(pick(instances, flags.get('to') as string | undefined));
   if (command === 'status') console.log(JSON.stringify(await client.call('status'), null, 2));
+  else if (command === 'external') {
+    const input: unknown = JSON.parse(words.join(' '));
+    if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('external requires one JSON object');
+    const timeout = (input as Record<string, unknown>)['timeoutMs'];
+    const timeoutMs = typeof timeout === 'number' ? timeout + 15_000 : 135_000;
+    console.log(JSON.stringify(await client.call('external.call', input as Record<string, unknown>, { timeoutMs }), null, 2));
+  }
   else if (command === 'abort') console.log(JSON.stringify(await client.call('turn.abort')));
   else if (command === 'send') {
     const result = await client.call<{ text?: string }>('message.send', {

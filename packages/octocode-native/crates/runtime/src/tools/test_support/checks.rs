@@ -3,6 +3,8 @@
 //! the integration tests include this file by path as `support::checks`. The
 //! including module brings `parsed_contract`, `validate` and `validate_output`
 //! (crate `contracts`) into scope.
+#![allow(clippy::panic, reason = "test assertions fail by panicking")]
+
 use super::{parsed_contract, validate, validate_output};
 use serde_json::Value;
 use std::collections::BTreeSet;

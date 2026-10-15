@@ -6,7 +6,7 @@ use super::util::{
 use super::versions::{VersionSpec, cargo_resolve, pypi_resolve};
 use super::{
     ArtifactError, ArtifactItem, ArtifactProviderPage, ArtifactProviderState, ArtifactSearchQuery,
-    ArtifactType,
+    ArtifactType, TerminalLimit,
 };
 use serde_json::Value;
 
@@ -86,7 +86,7 @@ pub(crate) async fn pypi(
         .into_iter()
         .flatten()
         .filter_map(Value::as_str)
-        .filter(|requirement| !requirement.contains("extra =="))
+        .filter(|requirement| !names_an_extra(requirement))
         .map(str::to_owned)
         .collect::<Vec<_>>()
         .into();
@@ -104,6 +104,22 @@ pub(crate) async fn pypi(
 /// else a one-line `license` field, else the last `License :: …`
 /// classifier's name. Many projects put the full license text in `license`
 /// (numpy: 46 KB); that is no license name and is never the row's license.
+/// Whether a PEP 508 requirement applies only with an extra
+/// (`PySocks; extra == "socks"`, `x ; python_version<"4" and extra=='y'`):
+/// an optional dependency, not a required one.
+fn names_an_extra(requirement: &str) -> bool {
+    let Some((_, marker)) = requirement.split_once(';') else {
+        return false;
+    };
+    marker.match_indices("extra").any(|(at, word)| {
+        let standalone = marker[..at]
+            .chars()
+            .next_back()
+            .is_none_or(|before| !(before.is_ascii_alphanumeric() || before == '_'));
+        standalone && marker[at + word.len()..].trim_start().starts_with("==")
+    })
+}
+
 fn pypi_license(info: &serde_json::Map<String, Value>) -> Option<String> {
     const SHORT: usize = 100;
     string(info.get("license_expression"))
@@ -515,13 +531,13 @@ const CRATES_RELEVANCE_LIMIT: u64 = 1000;
 
 /// The terminal limit of a crates.io keyword search, with its total when
 /// known.
-fn crates_limit(total: Option<u64>) -> String {
+fn crates_limit(total: Option<u64>) -> TerminalLimit {
     let of = total
         .map(|total| format!(" of {total}"))
         .unwrap_or_default();
-    format!(
-        "crates.io serves only the first {CRATES_RELEVANCE_LIMIT}{of} results of a keyword search; narrow the keywords to reach the rest."
-    )
+    TerminalLimit::result_cap(format!(
+        "crates.io serves only the first {CRATES_RELEVANCE_LIMIT}{of} results of a keyword search."
+    ))
 }
 
 /// An exact Go module or package lookup on pkg.go.dev, pinned to
@@ -634,8 +650,67 @@ async fn go_exact(
             }
         }
     }
+    artifact.dependencies = go_dependencies(&artifact, client).await;
     drop_restated_go_paths(&mut artifact);
     Ok(ArtifactProviderPage::single(artifact))
+}
+
+/// The module version's direct requirements from its `go.mod` on the
+/// module proxy. Best-effort: `None` (unknown) when the proxy has none.
+async fn go_dependencies(
+    artifact: &ArtifactItem,
+    client: &RegistryClient<'_>,
+) -> Option<Vec<String>> {
+    let (module, version) = (
+        artifact.module_path.as_deref()?,
+        artifact.version.as_deref()?,
+    );
+    let url = parse_url(&format!(
+        "https://proxy.golang.org/{}/@v/{}.mod",
+        go_proxy_escape(module),
+        super::util::encode_component(version)
+    ))
+    .ok()?;
+    let go_mod = client.text(ArtifactType::Go, url, true).await.ok()??;
+    Some(go_requirements(&go_mod))
+}
+
+/// `require` directives of a `go.mod` as `module version`, in file order:
+/// the module's own imports, so `// indirect` requirements are left out.
+fn go_requirements(go_mod: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    let mut in_block = false;
+    for line in go_mod.lines() {
+        let (code, comment) = line.split_once("//").unwrap_or((line, ""));
+        let code = code.trim();
+        let requirement = if in_block {
+            if code == ")" {
+                in_block = false;
+                continue;
+            }
+            code
+        } else {
+            let Some(rest) = code
+                .strip_prefix("require")
+                .filter(|rest| rest.starts_with([' ', '\t', '(']))
+            else {
+                continue;
+            };
+            let rest = rest.trim();
+            if rest == "(" {
+                in_block = true;
+                continue;
+            }
+            rest
+        };
+        let mut fields = requirement.split_whitespace();
+        if let (Some(module), Some(version), None) = (fields.next(), fields.next(), fields.next())
+            && !comment.trim_start().starts_with("indirect")
+        {
+            found.push(format!("{module} {version}"));
+        }
+    }
+    found
 }
 
 /// A Go module or package path equal to the row's name restates it; a
@@ -828,6 +903,27 @@ fn composer(row: &serde_json::Map<String, Value>) -> Result<ArtifactItem, Artifa
     Ok(artifact)
 }
 
+/// An exact Packagist release: its row, the day it was tagged (`time`), and
+/// its `require` entries as `name constraint` (platform ones such as `php`
+/// included, as declared). The p2 document's first entry is complete, so a
+/// missing `require` declares none.
+fn composer_release(row: &serde_json::Map<String, Value>) -> Result<ArtifactItem, ArtifactError> {
+    let mut artifact = composer(row)?;
+    artifact.published_at = date_prefix(row.get("time"));
+    artifact.dependencies = Some(
+        row.get("require")
+            .and_then(Value::as_object)
+            .into_iter()
+            .flatten()
+            .map(|(name, constraint)| match constraint.as_str() {
+                Some(constraint) => format!("{name} {constraint}"),
+                None => name.clone(),
+            })
+            .collect(),
+    );
+    Ok(artifact)
+}
+
 pub(crate) async fn packagist(
     query: &ArtifactSearchQuery,
     state: &ArtifactProviderState,
@@ -854,7 +950,7 @@ pub(crate) async fn packagist(
             entries = packagist_entries(response.as_ref(), &name)?;
         }
         return if let Some(first) = entries.first() {
-            Ok(ArtifactProviderPage::single(composer(object_for(
+            Ok(ArtifactProviderPage::single(composer_release(object_for(
                 first,
                 ArtifactType::Packagist,
             )?)?))
@@ -1050,14 +1146,11 @@ fn paged(
         .map(|count| page.saturating_mul(size as u64) < count)
         .unwrap_or(artifacts.len() == size);
     let terminal_limit = (more && artifacts.is_empty()).then(|| {
-        format!(
-            "{} returned an empty page before its reported total.",
-            if artifact_type == ArtifactType::Crates {
-                "crates.io"
-            } else {
-                artifact_type.as_str()
-            }
-        )
+        TerminalLimit::short_page(if artifact_type == ArtifactType::Crates {
+            "crates.io"
+        } else {
+            artifact_type.as_str()
+        })
     });
     Ok(ArtifactProviderPage {
         next_state: (more && !artifacts.is_empty()).then(|| ArtifactProviderState {
@@ -1073,94 +1166,11 @@ fn paged(
 
 #[cfg(test)]
 mod tests {
-    use super::super::types::{StaticHttp, artifact_query, test_budget};
+    use super::super::test_http::{KnownTags, RouteHttp};
+    use super::super::types::{artifact_query, test_budget};
     use super::*;
-    use crate::providers::artifact::http::{
-        ArtifactHttp, ArtifactHttpFuture, ArtifactHttpRequest, ArtifactHttpResponse,
-    };
     use octocode_github::RequestBudget;
     use serde_json::json;
-
-    /// Answers by URL path (exact match); anything else is a 404. Records
-    /// every requested path.
-    struct RouteHttp {
-        routes: Vec<(&'static str, serde_json::Value)>,
-        seen: std::sync::Mutex<Vec<String>>,
-    }
-
-    impl RouteHttp {
-        fn new(routes: Vec<(&'static str, serde_json::Value)>) -> Self {
-            Self {
-                routes,
-                seen: std::sync::Mutex::new(vec![]),
-            }
-        }
-        fn seen(&self) -> Vec<String> {
-            self.seen.lock().expect("seen").clone()
-        }
-    }
-
-    impl ArtifactHttp for RouteHttp {
-        fn get<'a>(
-            &'a self,
-            req: ArtifactHttpRequest,
-            _budget: &'a RequestBudget,
-        ) -> ArtifactHttpFuture<'a> {
-            let path = req.url.path().to_owned();
-            let full = match req.url.query() {
-                Some(query) => format!("{path}?{query}"),
-                None => path.clone(),
-            };
-            self.seen.lock().expect("seen").push(full.clone());
-            let found = self
-                .routes
-                .iter()
-                .find(|(route, _)| *route == full)
-                .or_else(|| self.routes.iter().find(|(route, _)| *route == path))
-                .map(|(_, body)| serde_json::to_vec(body).expect("body"));
-            Box::pin(async move {
-                Ok(match found {
-                    Some(body) => ArtifactHttpResponse { status: 200, body },
-                    None => ArtifactHttpResponse {
-                        status: 404,
-                        body: b"{}".to_vec(),
-                    },
-                })
-            })
-        }
-    }
-
-    /// Upstream tags that exist (`owner/repo@tag`); records every check.
-    struct FakeTags {
-        known: Vec<&'static str>,
-        seen: std::sync::Mutex<Vec<String>>,
-    }
-
-    impl FakeTags {
-        fn new(known: Vec<&'static str>) -> Self {
-            Self {
-                known,
-                seen: std::sync::Mutex::new(vec![]),
-            }
-        }
-        fn seen(&self) -> Vec<String> {
-            self.seen.lock().expect("seen").clone()
-        }
-    }
-
-    impl super::super::ReleaseTags for FakeTags {
-        fn exists<'a>(
-            &'a self,
-            owner: &'a str,
-            repo: &'a str,
-            tag: &'a str,
-        ) -> super::super::TagFuture<'a> {
-            let name = format!("{owner}/{repo}@{tag}");
-            let found = self.known.contains(&name.as_str());
-            self.seen.lock().expect("seen").push(name);
-            Box::pin(async move { Some(found) })
-        }
-    }
 
     fn versioned(artifact_type: ArtifactType, name: &str, version: &str) -> ArtifactSearchQuery {
         artifact_query(
@@ -1190,12 +1200,12 @@ mod tests {
 
     #[tokio::test]
     async fn pypi_version_lookups_pin_exact_specifier_and_coordinate_forms() {
-        let http = RouteHttp::new(vec![
+        let http = RouteHttp::routes(vec![
             ("/pypi/requests/json", pypi_project()),
             ("/pypi/requests/2.31.0/json", pypi_release("2.31.0")),
             ("/pypi/requests/2.32.3/json", pypi_release("2.32.3")),
         ]);
-        let tags = FakeTags::new(vec!["psf/requests@v2.31.0"]);
+        let tags = KnownTags::new(vec!["psf/requests@v2.31.0"]);
         let b = test_budget();
         let client = RegistryClient {
             http: &http,
@@ -1250,7 +1260,7 @@ mod tests {
             "{missing:?}"
         );
         let registry: Vec<String> = http
-            .seen()
+            .targets()
             .into_iter()
             .filter(|path| path.starts_with("/pypi/"))
             .collect();
@@ -1273,7 +1283,7 @@ mod tests {
     async fn pypi_pins_select_yanked_releases_and_ranges_name_them() {
         let mut yanked = pypi_release("2.32.0");
         yanked["info"]["yanked"] = json!(true);
-        let http = RouteHttp::new(vec![
+        let http = RouteHttp::routes(vec![
             ("/pypi/requests/json", pypi_project()),
             ("/pypi/requests/2.32.0/json", yanked),
         ]);
@@ -1333,7 +1343,7 @@ mod tests {
             for (key, value) in fields.as_object().expect("fields") {
                 release["info"][key] = value.clone();
             }
-            let http = RouteHttp::new(vec![("/pypi/requests/2.31.0/json", release)]);
+            let http = RouteHttp::routes(vec![("/pypi/requests/2.31.0/json", release)]);
             let b = test_budget();
             let client = RegistryClient::uncached(&http, &b);
             let page = pypi(
@@ -1360,27 +1370,6 @@ mod tests {
         })
     }
 
-    /// Serves one `.crate` archive by path; everything else goes to routes.
-    struct ArchiveHttp {
-        archive_path: &'static str,
-        archive: Vec<u8>,
-        routes: RouteHttp,
-    }
-
-    impl ArtifactHttp for ArchiveHttp {
-        fn get<'a>(
-            &'a self,
-            req: ArtifactHttpRequest,
-            budget: &'a RequestBudget,
-        ) -> ArtifactHttpFuture<'a> {
-            if req.url.path() == self.archive_path {
-                let body = self.archive.clone();
-                return Box::pin(async move { Ok(ArtifactHttpResponse { status: 200, body }) });
-            }
-            self.routes.get(req, budget)
-        }
-    }
-
     /// A crate version's source ref is the commit cargo packaged it from,
     /// with its directory in the repository; without VCS info it is the
     /// upstream release tag, when one exists.
@@ -1394,8 +1383,8 @@ mod tests {
         release["info"]["project_urls"] = json!({
             "Source": "https://github.com/pydantic/pydantic/tree/main/pydantic-core"
         });
-        let http = RouteHttp::new(vec![("/pypi/pydantic-core/2.50.1/json", release)]);
-        let tags = FakeTags::new(vec!["pydantic/pydantic@core-v2.50.1"]);
+        let http = RouteHttp::routes(vec![("/pypi/pydantic-core/2.50.1/json", release)]);
+        let tags = KnownTags::new(vec!["pydantic/pydantic@core-v2.50.1"]);
         let b = test_budget();
         let client = RegistryClient {
             http: &http,
@@ -1420,15 +1409,14 @@ mod tests {
     async fn crates_exact_versions_carry_the_packaging_commit_or_release_tag() {
         let info =
             br#"{"git":{"sha1":"b6a77c4413f902523646be0d7f5520631df53ff6"},"path_in_vcs":"serde"}"#;
-        let http = ArchiveHttp {
-            archive_path: "/crates/serde/serde-1.0.100.crate",
-            archive: super::super::release_ref::test_archive(&[
+        let http = RouteHttp::routes(vec![("/api/v1/crates/serde", serde_crate_document())]).bytes(
+            "/crates/serde/serde-1.0.100.crate",
+            super::super::release_ref::test_archive(&[
                 ("serde-1.0.100/Cargo.toml", b"[package]", b'0'),
                 ("serde-1.0.100/.cargo_vcs_info.json", info, b'0'),
             ]),
-            routes: RouteHttp::new(vec![("/api/v1/crates/serde", serde_crate_document())]),
-        };
-        let tags = FakeTags::new(vec!["serde-rs/serde@v1.0.228"]);
+        );
+        let tags = KnownTags::new(vec!["serde-rs/serde@v1.0.228"]);
         let b = test_budget();
         let client = RegistryClient {
             http: &http,
@@ -1477,7 +1465,7 @@ mod tests {
         let mut metadata = json!({"crate": document["crate"].clone(), "versions": null});
         metadata["crate"]["max_stable_version"] = Value::Null;
         let record = json!({"version": document["versions"][2].clone()});
-        let small = RouteHttp::new(vec![
+        let small = RouteHttp::routes(vec![
             ("/api/v1/crates/serde?include=", metadata),
             ("/api/v1/crates/serde/1.0.100", record),
             (
@@ -1485,7 +1473,7 @@ mod tests {
                 dependencies.clone(),
             ),
         ]);
-        let whole = RouteHttp::new(vec![
+        let whole = RouteHttp::routes(vec![
             ("/api/v1/crates/serde", document),
             ("/api/v1/crates/serde/1.0.228/dependencies", dependencies),
         ]);
@@ -1514,7 +1502,7 @@ mod tests {
 
     #[tokio::test]
     async fn crates_versions_resolve_from_the_crate_response() {
-        let http = RouteHttp::new(vec![("/api/v1/crates/serde", serde_crate_document())]);
+        let http = RouteHttp::routes(vec![("/api/v1/crates/serde", serde_crate_document())]);
         let b = test_budget();
         let client = RegistryClient::uncached(&http, &b);
         let state = ArtifactProviderState::default();
@@ -1542,7 +1530,7 @@ mod tests {
         // The crate document resolves every version; only the resolved
         // version's dependency count is a second read.
         assert!(
-            http.seen()
+            http.targets()
                 .iter()
                 .filter(|path| path.starts_with("/api/"))
                 .all(|path| path == "/api/v1/crates/serde" || path.ends_with("/dependencies"))
@@ -1568,7 +1556,7 @@ mod tests {
         let rows = (0..100)
             .map(|n| json!({"name": format!("c{n}"), "max_version": "1.0.0"}))
             .collect::<Vec<_>>();
-        let http = RouteHttp::new(vec![(
+        let http = RouteHttp::routes(vec![(
             "/api/v1/crates",
             json!({"crates": rows, "meta": {"total": 23391}}),
         )]);
@@ -1588,13 +1576,17 @@ mod tests {
         let last = crates(&query, &at(10), &client).await.expect("page 10");
         assert_eq!(last.artifacts.len(), 100);
         assert!(last.next_state.is_none());
-        let reason = last.terminal_limit.expect("terminal limit");
-        assert!(reason.contains("first 1000 of 23391"), "{reason}");
-        let requests = http.seen().len();
+        let limit = last.terminal_limit.expect("terminal limit");
+        assert_eq!(limit.reason, "providerResultCap");
+        assert!(limit.warning.contains("first 1000 of 23391"), "{limit:?}");
+        let requests = http.targets().len();
         let past = crates(&query, &at(11), &client).await.expect("page 11");
         assert!(past.artifacts.is_empty() && past.next_state.is_none());
-        assert!(past.terminal_limit.is_some());
-        assert_eq!(http.seen().len(), requests, "no request past the reach");
+        assert_eq!(
+            past.terminal_limit.map(|limit| limit.reason),
+            Some("providerResultCap")
+        );
+        assert_eq!(http.targets().len(), requests, "no request past the reach");
     }
 
     async fn crate_lookup(
@@ -1620,12 +1612,12 @@ mod tests {
         let mut metadata = json!({"crate": document["crate"].clone(), "versions": null});
         metadata["crate"]["max_stable_version"] = Value::Null;
         metadata["crate"]["max_version"] = json!("0.0.0");
-        let small = RouteHttp::new(vec![
+        let small = RouteHttp::routes(vec![
             ("/api/v1/crates/serde?include=", metadata),
             ("/api/v1/crates/serde/1.0.100", record("1.0.100")),
             ("/api/v1/crates/serde/1.0.200", record("1.0.200")),
         ]);
-        let whole = RouteHttp::new(vec![("/api/v1/crates/serde", document.clone())]);
+        let whole = RouteHttp::routes(vec![("/api/v1/crates/serde", document.clone())]);
         let b = test_budget();
         for (query, version) in [
             (
@@ -1661,7 +1653,7 @@ mod tests {
         // Registry reads only (dependency counts aside); the release-ref
         // reads are lead sources.
         let mut seen: Vec<String> = small
-            .seen()
+            .targets()
             .into_iter()
             .filter(|path| path.starts_with("/api/") && !path.ends_with("/dependencies"))
             .collect();
@@ -1737,6 +1729,26 @@ mod tests {
         assert_eq!(directory("go.example.com/x"), None);
     }
 
+    /// Only requirements an extra gates are optional; an environment
+    /// marker alone keeps a requirement required.
+    #[test]
+    fn pypi_requirements_gated_by_an_extra_are_optional() {
+        for optional in [
+            "PySocks!=1.5.7; extra == \"socks\"",
+            "x; extra=='y'",
+            "x ; python_version < \"4\" and extra == \"y\"",
+        ] {
+            assert!(names_an_extra(optional), "{optional}");
+        }
+        for required in [
+            "idna<4,>=2.5",
+            "tzdata; sys_platform == \"win32\"",
+            "x; my_extra == \"y\"",
+        ] {
+            assert!(!names_an_extra(required), "{required}");
+        }
+    }
+
     #[test]
     fn composer_source_reference_is_the_release_commit() {
         let row = json!({"name": "o/r", "version": "v1.0.0",
@@ -1768,7 +1780,7 @@ mod tests {
                     }
                 }),
                 "2.31.0",
-                "pypi.org",
+                "https://pypi.org/project/requests/",
             ),
             (
                 ArtifactType::Crates,
@@ -1784,7 +1796,7 @@ mod tests {
                     }
                 }),
                 "1.0.200",
-                "crates.io",
+                "https://crates.io/crates/serde",
             ),
             (
                 ArtifactType::Packagist,
@@ -1803,7 +1815,7 @@ mod tests {
                     }
                 }),
                 "10.0.0",
-                "packagist.org",
+                "https://packagist.org/packages/laravel/framework",
             ),
             (
                 ArtifactType::Rubygems,
@@ -1816,11 +1828,11 @@ mod tests {
                     "source_code_uri": "https://github.com/rails/rails"
                 }),
                 "7.0.6",
-                "rubygems.org",
+                "https://rubygems.org/gems/rails",
             ),
         ];
-        for (ecosystem, name, body, version, registry_host) in cases {
-            let http = StaticHttp::json(body);
+        for (ecosystem, name, body, version, registry_url) in cases {
+            let http = RouteHttp::always(body);
             let b = test_budget();
             let client = RegistryClient::uncached(&http, &b);
             let q = exact_query(ecosystem, name);
@@ -1837,25 +1849,33 @@ mod tests {
             let item = &page.artifacts[0];
             assert_eq!(item.name, name);
             assert_eq!(item.version.as_deref(), Some(version), "{name}");
-            assert!(
-                item.registry_url.contains(registry_host),
-                "{name}: {}",
-                item.registry_url
-            );
+            assert_eq!(item.registry_url, registry_url, "{name}");
         }
     }
 
+    /// An exact Go module row: its release day from the module record, and
+    /// its direct requirements from the version's `go.mod` on the module
+    /// proxy (`// indirect` ones left out); without that file the
+    /// dependencies are unknown, not none.
     #[tokio::test]
     async fn go_parses_exact_module_lookup() {
-        let http = StaticHttp::json(json!({
+        let module = json!({
             "path": "github.com/gin-gonic/gin",
             "version": "v1.9.1",
             "synopsis": "HTTP web framework for Go",
             "commitTime": "2023-06-12T08:50:28Z"
-        }));
+        });
+        let go_mod = "module github.com/gin-gonic/gin\n\ngo 1.20\n\nrequire github.com/bytedance/sonic v1.9.1\n\
+            require (\n\tgithub.com/gin-contrib/sse v0.1.0 // pinned\n\tgolang.org/x/net v0.10.0 // indirect\n)\n\
+            replace example.com/x => ../x\n";
         let b = test_budget();
-        let client = RegistryClient::uncached(&http, &b);
         let q = exact_query(ArtifactType::Go, "github.com/gin-gonic/gin");
+        let http = RouteHttp::routes(vec![(
+            "/v1/module/github.com/gin-gonic/gin",
+            module.clone(),
+        )])
+        .bytes("/github.com/gin-gonic/gin/@v/v1.9.1.mod", go_mod);
+        let client = RegistryClient::uncached(&http, &b);
         let page = go(&q, &ArtifactProviderState::default(), &client)
             .await
             .expect("go");
@@ -1863,13 +1883,57 @@ mod tests {
         let item = &page.artifacts[0];
         assert_eq!(item.name, "github.com/gin-gonic/gin");
         assert_eq!(item.version.as_deref(), Some("v1.9.1"));
-        // The release date comes from the same response (0 calls).
         assert_eq!(item.published_at.as_deref(), Some("2023-06-12"));
-        assert!(
-            item.registry_url.contains("pkg.go.dev"),
-            "{}",
-            item.registry_url
+        assert_eq!(
+            item.registry_url,
+            "https://pkg.go.dev/github.com/gin-gonic/gin"
         );
+        assert_eq!(
+            item.dependencies,
+            Some(vec![
+                "github.com/bytedance/sonic v1.9.1".to_owned(),
+                "github.com/gin-contrib/sse v0.1.0".to_owned(),
+            ])
+        );
+        let http = RouteHttp::routes(vec![("/v1/module/github.com/gin-gonic/gin", module)]);
+        let client = RegistryClient::uncached(&http, &b);
+        let page = go(&q, &ArtifactProviderState::default(), &client)
+            .await
+            .expect("go without go.mod");
+        assert_eq!(page.artifacts[0].dependencies, None);
+    }
+
+    /// An exact Packagist row states the release day (`time`) and the
+    /// version's `require` entries as declared; a version entry without
+    /// `require` declares none.
+    #[tokio::test]
+    async fn packagist_exact_rows_state_the_release_day_and_requirements() {
+        let entry = json!({"name": "monolog/monolog", "version": "3.12.1",
+            "time": "2026-09-29T19:21:12+00:00",
+            "require": {"php": ">=8.1", "psr/log": "^2.0 || ^3.0"},
+            "require-dev": {"phpunit/phpunit": "^10"}});
+        let http = RouteHttp::always(json!({"packages": {"monolog/monolog": [entry]}}));
+        let b = test_budget();
+        let client = RegistryClient::uncached(&http, &b);
+        let q = exact_query(ArtifactType::Packagist, "monolog/monolog");
+        let state = ArtifactProviderState::default();
+        let page = packagist(&q, &state, &client).await.expect("packagist");
+        let item = &page.artifacts[0];
+        assert_eq!(item.published_at.as_deref(), Some("2026-09-29"));
+        assert_eq!(
+            item.dependencies,
+            Some(vec![
+                "php >=8.1".to_owned(),
+                "psr/log ^2.0 || ^3.0".to_owned()
+            ])
+        );
+        let bare = RouteHttp::always(
+            json!({"packages": {"monolog/monolog": [{"name": "monolog/monolog", "version": "1.0.0"}]}}),
+        );
+        let client = RegistryClient::uncached(&bare, &b);
+        let page = packagist(&q, &state, &client).await.expect("packagist");
+        assert_eq!(page.artifacts[0].dependencies, Some(Vec::new()));
+        assert_eq!(page.artifacts[0].published_at, None);
     }
 
     /// A pinned Go module version is looked up as that version, so its
@@ -1878,7 +1942,7 @@ mod tests {
     #[tokio::test]
     async fn go_pinned_versions_resolve_the_pinned_release() {
         let module = "/v1/module/github.com/open-telemetry/opentelemetry-go";
-        let http = RouteHttp::new(vec![
+        let http = RouteHttp::routes(vec![
             (
                 "/v1/module/github.com/open-telemetry/opentelemetry-go?version=v0.71.0",
                 json!({"path":"github.com/open-telemetry/opentelemetry-go","version":"v0.71.0",
@@ -1934,7 +1998,7 @@ mod tests {
     /// tag: the release commit and directory come from the module proxy.
     #[tokio::test]
     async fn go_vanity_modules_take_the_release_commit_from_the_proxy() {
-        let http = RouteHttp::new(vec![
+        let http = RouteHttp::routes(vec![
             (
                 "/v1/module/go.opentelemetry.io/otel/sdk?version=v1.30.0",
                 json!({"path":"go.opentelemetry.io/otel/sdk","version":"v1.30.0",

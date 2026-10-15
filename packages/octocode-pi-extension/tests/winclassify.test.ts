@@ -95,6 +95,18 @@ describe('Remove-Item', () => {
     expect(await flagged('del /q old.txt')).toBeUndefined();
   });
 
+  it('reads a cluster of cmd switches glued together with slashes, in any case', async () => {
+    expect(await flagged('rd /s/q C:\\x')).toBe('`rd /s` (recursive delete)');
+    expect(await flagged('del /f/s/q build')).toBe('`del /s` (recursive delete)');
+    expect(await flagged('rmdir /Q/S old')).toBe('`rmdir /s` (recursive delete)');
+    expect(await flagged('del /A:H/S old')).toBe('`del /s` (recursive delete)');
+    expect(await flagged('erase /f /S/q old')).toBe('`erase /s` (recursive delete)');
+    // Not switches: a path, a cluster without /s.
+    expect(await flagged('rd /q/x old')).toBeUndefined();
+    expect(await flagged('del /tmp/s')).toBeUndefined();
+    expect(await flagged('del /f/q old.txt')).toBeUndefined();
+  });
+
   it('resolves aliases whatever their case and folder', async () => {
     expect(await flagged('RM -R -FO C:\\x')).toMatch(/^Remove-Item/);
     expect(await flagged('Microsoft.PowerShell.Management\\Remove-Item -Recurse C:\\x')).toMatch(/^Remove-Item/);
@@ -102,6 +114,67 @@ describe('Remove-Item', () => {
 
   it('does not judge a command whose name is computed', async () => {
     expect(await flagged('$tool -Recurse C:\\x')).toBeUndefined();
+  });
+});
+
+/** A script whose parse is fixed: what the helper reports for `Remove-Item -Recurse -Force <array>` is one element holding the whole array text. */
+const parsedAs = (name: string, args: ScriptElement[]) => classifyScript('script', async () => [{ name, args }]);
+const flag = (name: string): ScriptElement => ({ param: name, text: `-${name}` });
+
+describe('array targets', () => {
+  it.each([
+    ['.\\build, C:\\Users\\me', 'C:\\Users\\me'],
+    ['.\\build,C:\\', 'C:\\'],
+    ["'.\\build', 'C:\\Windows'", 'C:\\Windows'],
+    ['"C:\\a b\\c", "C:\\Program Files"', 'C:\\Program Files'],
+    ['.\\a,.\\b,..', '..'],
+    ['.\\a, $env:USERPROFILE', '$env:USERPROFILE'],
+  ])('checks every target of %s', async (text) => {
+    const result = await parsedAs('Remove-Item', [flag('Recurse'), flag('Force'), { text }]);
+    expect(result.destructive).toMatch(/^Remove-Item -Recurse -Force on /);
+  });
+
+  it('checks the targets given to -Path as an array, as the next word or glued to the parameter', async () => {
+    expect((await parsedAs('rm', [flag('Recurse'), { param: 'Path', text: '-Path' }, { text: "'C:\\a','C:\\'" }])).destructive).toBeDefined();
+    expect((await parsedAs('rm', [flag('Force'), { param: 'LiteralPath', arg: "'C:\\a','C:\\Users\\x'", text: "-LiteralPath:'C:\\a','C:\\Users\\x'" }])).destructive).toBeDefined();
+  });
+
+  it('keeps a comma inside quotes as part of one target', async () => {
+    for (const text of ["'C:\\work\\a,b'", '"C:\\work\\x, y"']) {
+      expect((await parsedAs('Remove-Item', [flag('Recurse'), { text }])).destructive).toBeUndefined();
+    }
+  });
+
+  it('leaves an array of project folders alone', async () => {
+    expect(await parsedAs('Remove-Item', [flag('Recurse'), flag('Force'), { text: '.\\build, .\\dist\\out, C:\\work\\p\\tmp' }])).toEqual({ parsed: true });
+  });
+
+  it('checks every Clear-Content target', async () => {
+    expect((await parsedAs('Clear-Content', [{ text: '.\\notes.txt, C:\\Windows\\x' }])).destructive).toBeDefined();
+    expect(await parsedAs('Clear-Content', [{ text: '.\\a.txt, .\\b.txt' }])).toEqual({ parsed: true });
+  });
+});
+
+describe('target normalisation', () => {
+  it.each([
+    ['rm -r D:\\work\\proj\\..\\..'],
+    ['rm -r C:\\temp\\..'],
+    ['rm -r C:\\work\\..\\Windows'],
+    ['rm -r C:\\a\\b\\..\\..\\..\\x'],
+    ['rm -r .\\build\\..'],
+    ['rm -r .\\a\\..\\..'],
+    ['rm -r ~\\..'],
+    ['rm -r C:\\.\\Users\\me'],
+    ['rm -r \\\\?\\C:\\'],
+    ['rm -r \\\\?\\C:\\Users\\me'],
+    ['rm -r \\\\.\\C:\\Windows'],
+    ['rm -r //?/C:/Windows'],
+  ])('flags %s', async (script) => {
+    expect(await flagged(script)).toMatch(/^Remove-Item/);
+  });
+
+  it.each([['rm -r C:\\work\\proj\\.\\dist'], ['rm -r C:\\work\\a\\..\\b\\dist'], ['rm -r .\\a\\..\\dist'], ['rm -r \\\\?\\C:\\work\\p\\dist'], ['rm -r ..\\sibling\\dist']])('leaves %s alone', async (script) => {
+    expect(await flagged(script)).toBeUndefined();
   });
 });
 
@@ -145,6 +218,25 @@ describe('unwrapping', () => {
     expect(await flagged('iex "Remove-Item -Recurse C:\\x"')).toMatch(/^Remove-Item/);
     expect(await flagged('Invoke-Expression "Get-Date"')).toBeUndefined();
     expect(await flagged('iex $payload')).toBe('Invoke-Expression of a script built at run time');
+  });
+
+  it('follows cmd /c with glued switches, before and after /c', async () => {
+    expect(await flagged('cmd /c "rd /s/q C:\\x"')).toBe('`rd /s` (recursive delete)');
+    expect(await flagged('cmd.exe /d/c "del /f/s/q C:\\x"')).toBe('`del /s` (recursive delete)');
+    expect(await flagged('cmd /S /C "rd /S /Q C:\\x"')).toBe('`rd /s` (recursive delete)');
+    expect(await flagged('cmd /c "echo a && rd /s/q x"')).toBe('`rd /s` (recursive delete)');
+    expect(await flagged('cmd /c "rd /q x"')).toBeUndefined();
+  });
+
+  it('sees a cmd remover behind if, for, a parenthesis, @ or ^', async () => {
+    expect(await flagged('cmd /c "if exist X rd /s /q X"')).toBe('`rd /s` (recursive delete)');
+    expect(await flagged('cmd /c "if not exist X (echo no) else rd /s/q X"')).toBe('`rd /s` (recursive delete)');
+    expect(await flagged('cmd /c "(rd /s /q x)"')).toBe('`rd /s` (recursive delete)');
+    expect(await flagged('cmd /c "@rd /s /q x"')).toBe('`rd /s` (recursive delete)');
+    expect(await flagged('cmd /c "for %i in (a b) do rd /s /q %i"')).toBe('`rd /s` (recursive delete)');
+    expect(await flagged('cmd /c "r^d /s /q x"')).toBe('`rd /s` (recursive delete)');
+    expect(await flagged('cmd /c "if exist X echo hi"')).toBeUndefined();
+    expect(await flagged('cmd /c "if exist X del x.txt"')).toBeUndefined();
   });
 
   it('follows cmd /c', async () => {

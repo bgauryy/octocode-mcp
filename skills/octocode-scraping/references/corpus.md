@@ -72,28 +72,26 @@ Load when reading script output, searching a session, mapping a site, or extract
 - `--chunk-bytes` and `--max-text-bytes` size clean-text parts; nothing is discarded.
 - `source-query.mjs` returns base64 byte pages: concatenate decoded bytes before decoding UTF-8.
 
-## Locate in unread text (clasify)
+## Find evidence in unread text (classifiers, clasify)
 
-- Admission and result rules: the `octocode-research` clasify gate.
+- Admission and result rules: the `octocode-research` classifiers/clasify gate.
 - Reuse the saved capture; narrow files by metadata, titles, URLs, and literal search; drop empty and duplicate captures.
 - Log, HAR, or minified JSON: extract records as text first, keeping the original (positions are not DOM coordinates); read small ones directly.
-- Save the request as `.octocode/octocode-scraping/tmp/clasify-request.json`: absolute paths, atomic questions; one shared matrix only when every question fits every file, ≤25 cells.
+- Which passages to read: `localSearch` over the capture directory with a literal and `classifiers` (one self-contained question each) when ranking is enabled; read the returned passages.
+- A typed judgment about one capture file: `clasify` with a `source` reference; save large requests as `.octocode/octocode-scraping/tmp/clasify-request.json`.
 
 ```json
 {"queries": [{
-  "mainGoal": "Find what Choice and Score return.",
-  "reasoning": "Locate before reading.",
-  "resources": [{"id": "artifact", "tool": "localFetch", "query": {
+  "source": {"tool": "localFetch", "query": {
     "path": "/abs/.octocode/octocode-scraping/tmp/<sessionId>/text/page.clean.md",
     "fullContent": true
-  }}],
-  "questions": [
-    {"id": "choice", "type": "locate", "ask": "Choice return value."},
-    {"id": "score", "type": "locate", "ask": "Score return value."}
-  ]
+  }},
+  "questions": {
+    "choice_return": {"type": "noul", "instructions": "Does the page state what a Choice question returns?"},
+    "score_return": {"type": "noul", "instructions": "Does the page state what a Score question returns?"}
+  }
 }]}
 ```
 
-- Run: `npx -y octocode clasify --input .octocode/octocode-scraping/tmp/clasify-request.json` (MCP `clasify` takes the same JSON but hides when its provider is down).
-- Group nearby `best` / `answers.*.matches` windows into ≤5 exact read ranges per call; read `source.path` with `localFetch` (MCP or `npx -y octocode localFetch`), widening only when a record crosses a boundary; verify the deciding source.
-- More coverage: follow `next.clasify` unchanged. A negative page judgment never proves whole-site absence.
+- Run: `npx -y octocode clasify --input .octocode/octocode-scraping/tmp/clasify-request.json` (MCP `clasify` takes the same JSON but hides when its provider is down). A capture over the state limit fails its row: select `ranges`.
+- Before citing, run the row's `hints.read` (the exact text judged) or read the deciding lines with `localFetch`; verify the deciding source. A low answer never proves whole-site absence.

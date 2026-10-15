@@ -14,7 +14,8 @@
 import { spawnSync } from 'node:child_process';
 import {
   applyOctocodeEnv,
-  configFieldEnvNames,
+  CONFIG_FIELDS,
+  configFieldEnvName,
   ENV_TOKEN_VARS,
   getOctocodeHome,
   loadOctocodeEnv,
@@ -75,18 +76,19 @@ const GITHUB_TOKEN_PARAMS: EnvParam[] = ENV_TOKEN_VARS.map((key, index) => ({
   link: 'https://github.com/settings/tokens',
 }));
 
-const CLASSIFICATION_KEY_PARAMS: EnvParam[] = configFieldEnvNames(
-  'classification.api'
-).map((key, index) => ({
-  key,
-  description:
-    index === 0
-      ? 'Optional semantic classification and evidence routing'
-      : 'Semantic assessment key (alternate name)',
-  required: 'optional',
-  group: 'classification-key',
-  link: 'https://console.typesafe.ai/keys',
-}));
+const CLASSIFICATION_KEY = configFieldEnvName('classification.api');
+
+const CLASSIFICATION_KEY_PARAMS: EnvParam[] = CLASSIFICATION_KEY
+  ? [
+      {
+        key: CLASSIFICATION_KEY,
+        description: 'Optional semantic classification and evidence routing',
+        required: 'optional',
+        group: 'classification-key',
+        link: 'https://console.typesafe.ai/keys',
+      },
+    ]
+  : [];
 
 /**
  * Credential readiness for skills. Optional runtime settings stay in their docs.
@@ -151,47 +153,87 @@ function isSetIn(env: EnvMap, key: string): boolean {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
-/** Check whether a single env var is set in the effective environment. */
-export function isEnvSet(key: string): boolean {
-  return isSetIn(effectiveEnv(), key);
+/**
+ * Credential variables the native resolver also fills from `.octocoderc`
+ * (`classification.api`, ...). The `.env` layers above do not include that
+ * fallback, so for these keys native is asked instead of re-implementing it.
+ */
+const FILE_BACKED_KEYS: ReadonlySet<string> = new Set(
+  CONFIG_FIELDS.flatMap(field =>
+    field.credential && field.file && field.env ? [field.env.name] : []
+  )
+);
+
+/** Whether `key` is set for Octocode: in the environment layers, or natively. */
+function isKeySet(env: EnvMap, key: string): boolean {
+  return (
+    isSetIn(env, key) ||
+    (FILE_BACKED_KEYS.has(key) && nativeConfigCheck(key)?.set === true)
+  );
 }
 
-const githubTokenSources = new Map<string, string | null>();
+/** Check whether a single env var is set in the effective environment. */
+export function isEnvSet(key: string): boolean {
+  return isKeySet(effectiveEnv(), key);
+}
+
+interface NativeConfigCheck {
+  set: boolean;
+  githubTokenSource: string | null;
+}
+
+const nativeChecks = new Map<string, NativeConfigCheck | null>();
 
 /**
- * The source of the GitHub token the native runtime would use (a stored
- * `octocode auth login`, a `gh` login, ...), from `octocode config check`
- * without verifying it; null when there is none or the runtime is
- * unavailable. Native owns credential discovery; one probe per binary.
+ * `octocode config check KEY --json` from the native runtime, which owns
+ * resolution (every layer, `.octocoderc` credential fallbacks, the stored or
+ * `gh` GitHub login); null when the runtime is unavailable. One probe per
+ * binary and key; values are never read.
  */
-function nativeGithubTokenSource(): string | null {
+function nativeConfigCheck(key: string): NativeConfigCheck | null {
   const resolved = resolveNativeBin();
   if ('error' in resolved) return null;
   const { bin } = resolved;
-  const cached = githubTokenSources.get(bin);
+  const cacheKey = `${bin}\0${key}`;
+  const cached = nativeChecks.get(cacheKey);
   if (cached !== undefined) return cached;
   const [command, args] = nativeCommand(bin, [
     'config',
     'check',
-    ENV_TOKEN_VARS[0]!,
+    key,
     '--json',
   ]);
   const result = spawnSync(command, args, {
     encoding: 'utf8',
     timeout: 10_000,
   });
-  let source: string | null = null;
+  let check: NativeConfigCheck | null;
   try {
     const parsed = JSON.parse(result.stdout ?? '') as {
+      set?: unknown;
       githubTokenSource?: unknown;
     };
-    if (typeof parsed.githubTokenSource === 'string')
-      source = parsed.githubTokenSource;
+    check = {
+      set: parsed.set === true,
+      githubTokenSource:
+        typeof parsed.githubTokenSource === 'string'
+          ? parsed.githubTokenSource
+          : null,
+    };
   } catch {
-    source = null;
+    check = null;
   }
-  githubTokenSources.set(bin, source);
-  return source;
+  nativeChecks.set(cacheKey, check);
+  return check;
+}
+
+/**
+ * The source of the GitHub token the native runtime would use (a stored
+ * `octocode auth login`, a `gh` login, ...) without verifying it; null when
+ * there is none or the runtime is unavailable.
+ */
+function nativeGithubTokenSource(): string | null {
+  return nativeConfigCheck(ENV_TOKEN_VARS[0]!)?.githubTokenSource ?? null;
 }
 
 /** A group a credential outside the environment satisfies: the GitHub token. */
@@ -210,7 +252,7 @@ export function getSkillEnvStatus(skillName: string): SkillEnvStatus {
   const env = effectiveEnv();
   const paramStatuses: EnvParamStatus[] = params.map(p => ({
     param: p,
-    status: isSetIn(env, p.key) ? 'set' : 'missing',
+    status: isKeySet(env, p.key) ? 'set' : 'missing',
   }));
 
   // Evaluate group satisfication
@@ -272,7 +314,7 @@ export function getSkillsEnvStatus(skillNames: string[]): SkillEnvStatus[] {
 export function groupLabel(group: string): string {
   const labels: Record<string, string> = {
     'github-token': `GitHub token (one of ${ENV_TOKEN_VARS.join(', ')})`,
-    'classification-key': `classification key (one of ${configFieldEnvNames('classification.api').join(', ')})`,
+    'classification-key': `classification key (${CLASSIFICATION_KEY})`,
   };
   return labels[group] ?? group;
 }

@@ -2,7 +2,7 @@
 use super::{ExecutableReceipt, PreparedFile, PreparedMatch, RewriteError, RewriteRequest};
 use crate::contracts::tool_types::ExtraKind;
 use crate::tools::id::ToolId;
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
 use std::path::Path;
 
 pub(super) fn success_value(
@@ -156,68 +156,82 @@ fn attach_leads(
             .confidence(confidence)
             .build();
     }
-    if apply && let Some(pattern) = query.pattern() {
-        value["next"]["verify"] = crate::tools::result::Continuation::new(
-            ToolId::AstSearch,
-            json!({"operation":"match","path":root,"language":query.lang(),"pattern":pattern}),
-        )
-        .confidence("high")
-        .build();
+    if apply && query.pattern().is_some() {
+        let mut verify = continuation_query(query, root);
+        if let Some(fields) = verify.as_object_mut() {
+            fields.retain(|key, _| {
+                [
+                    "path",
+                    "language",
+                    "pattern",
+                    "include",
+                    "exclude",
+                    "defaultExcludes",
+                    "includeHidden",
+                    "includeIgnored",
+                    "maxFiles",
+                ]
+                .contains(&key.as_str())
+            });
+        }
+        verify["operation"] = json!("match");
+        value["next"]["verify"] =
+            crate::tools::result::Continuation::new(ToolId::AstSearch, verify)
+                .confidence("high")
+                .build();
     }
 }
 
 pub(super) fn continuation_query(query: &RewriteRequest, canonical_root: &Path) -> Value {
-    let mut value = Map::new();
-    value.insert("path".to_owned(), json!(canonical_root));
-    value.insert("language".to_owned(), json!(query.lang()));
-    value.insert("apply".to_owned(), json!(query.apply()));
-    value.insert("maxFiles".to_owned(), json!(query.max_files()));
-    value.insert("maxMatches".to_owned(), json!(query.max_matches()));
-    value.insert("page".to_owned(), json!(query.page()));
-    value.insert("pageSize".to_owned(), json!(query.page_size()));
-    for (key, item) in [
-        (
-            "pattern",
-            query.pattern().as_ref().map(|value| json!(value)),
-        ),
-        (
-            "rewrite",
-            query.rewrite().as_ref().map(|value| json!(value)),
-        ),
-        (
-            "include",
-            query.include().as_ref().map(|value| json!(value)),
-        ),
-        (
-            "exclude",
-            query.exclude().as_ref().map(|value| json!(value)),
-        ),
-        (
-            "expectedHashes",
-            query.expected_hashes().as_ref().map(|value| json!(value)),
-        ),
-        (
-            "selectedMatchIds",
-            query
-                .selected_match_ids()
-                .as_ref()
-                .map(|value| json!(value)),
-        ),
-        (
-            "postconditions",
-            query.postconditions().as_ref().map(|value| json!(value)),
-        ),
-        (
+    let mut value = json!(&query.query);
+    if let Some(fields) = value.as_object_mut() {
+        for field in ["mainGoal", "reasoning"] {
+            fields.remove(field);
+        }
+        fields.extend(query.rule_config_fields());
+    }
+    value["path"] = json!(canonical_root);
+    value["language"] = json!(query.lang());
+    value["apply"] = json!(query.apply());
+    value["maxFiles"] = json!(query.max_files());
+    value["maxMatches"] = json!(query.max_matches());
+    value["page"] = json!(query.page());
+    value["pageSize"] = json!(query.page_size());
+    value
+}
+
+pub(super) fn selection_query(query: &RewriteRequest, canonical_root: &Path) -> Value {
+    let mut value = continuation_query(query, canonical_root);
+    if let Some(fields) = value.as_object_mut() {
+        for field in [
+            "apply",
+            "page",
+            "pageSize",
             "snapshot",
-            query.snapshot().as_ref().map(|value| json!(value)),
-        ),
-    ] {
-        if let Some(item) = item {
-            value.insert(key.to_owned(), item);
+            "expectedHashes",
+            "selectedMatchIds",
+            "postconditions",
+            "extras",
+        ] {
+            fields.remove(field);
         }
     }
-    value.extend(query.rule_config_fields());
-    Value::Object(value)
+    sort_keys_deep(&mut value);
+    value
+}
+
+/// Identity digests hash serialized JSON, and `serde_json` keeps insertion
+/// order: a caller's row and its copied continuation name the same fields in
+/// different orders, so the selection is keyed in one canonical order.
+fn sort_keys_deep(value: &mut Value) {
+    match value {
+        Value::Object(fields) => {
+            fields.sort_keys();
+            fields.values_mut().for_each(sort_keys_deep);
+        }
+        Value::Array(items) => items.iter_mut().for_each(sort_keys_deep),
+        _ => {}
+    }
 }
 
 /// Narrow a preview file's whole-file patch to the hunks of the page's

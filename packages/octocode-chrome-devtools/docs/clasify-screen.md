@@ -4,24 +4,22 @@ Load when a saved artifact is unread and a literal search or small read does not
 
 1. Capture once. `SNAPSHOT_STDOUT=summary` keeps snapshot refs on disk; if the default stdout refs already answer, stop.
 2. Narrow with metadata, URLs, and literal search. For HAR, huge logs, or minified JSON, first extract relevant records to readable text with `har-pager`/`measure-query`; keep the original for provenance.
-3. Save `.octocode/clasify-request.json` (all questions must apply to every resource; at most 25 cells):
+3. Which passages to read: `localSearch` over the run directory with a literal and `classifiers` (one self-contained question each) when ranking is enabled; read the returned passages.
+4. A typed judgment about one capture file: save `.octocode/clasify-request.json` with a `source` reference (native captures the whole selection and returns no body):
 
 ```json
 {"queries": [{
-  "mainGoal": "Find the page facts the next browser action depends on.",
-  "reasoning": "Locate facts in an unread retained artifact before loading it.",
-  "resources": [{"id": "artifact", "tool": "localFetch", "query": {
+  "source": {"tool": "localFetch", "query": {
     "path": "/abs/.octocode/octocode-chrome-devtools/tmp/<run>/page-snapshot.json", "fullContent": true
-  }}],
-  "questions": [
-    {"id": "search", "type": "locate", "ask": "The accessibility ref for the site search control."}
-  ]
+  }},
+  "questions": {
+    "search_ref": {"type": "noul", "instructions": "Does the snapshot contain an accessibility ref for a site search control?"}
+  }
 }]}
 ```
 
-4. Run `npx -y octocode clasify --input .octocode/clasify-request.json`. MCP `clasify` takes the same JSON.
-5. Merge nearby windows into at most five `localFetch` ranges and verify the deciding source. For snapshot JSON, read the whole ref object.
-6. Follow the `next.clasify` page unchanged. A negative page result is not site-wide absence.
+5. Run `npx -y octocode clasify --input .octocode/clasify-request.json`. MCP `clasify` takes the same JSON. A capture over the state limit fails its row: select `ranges`.
+6. Before acting, run the row's `hints.read` (the exact text judged) or read the deciding lines with `localFetch`. For snapshot JSON, read the whole ref object. A low answer is not site-wide absence.
 
 Hints point into the saved capture, not the live DOM: confirm a ref still exists in the current tab before acting.
 

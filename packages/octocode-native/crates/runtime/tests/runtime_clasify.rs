@@ -1,434 +1,129 @@
 #![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
+//! Public clasify end to end: JEV questions over a literal state or a source
+//! captured through the authorized readers, answered by a mock provider.
 
-use crate::support::{self, Run as _};
+use crate::support::{Run as _, Workspace, provider_runtime};
 
-use serde_json::json;
-use std::time::{Duration, Instant};
-use support::mock_http::Delayed;
-use support::{Judge, MOCK_PROVIDER_TIMEOUT_MS, Strategy, Workspace, provider_runtime};
-use wiremock::matchers::{method, path};
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD;
+use serde_json::{Value, json};
+use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
 
-/// No page and no lead: `next` is absent and `hints` holds at most prose.
-fn no_continuation(value: &serde_json::Value) -> bool {
-    value.get("next").is_none()
-        && value
-            .get("hints")
-            .and_then(serde_json::Value::as_object)
-            .is_none_or(|hints| hints.keys().all(|key| key == "text"))
-}
+/// Answers every question by its own type, as the provider does: Noul 0.9,
+/// Choice the first label, Score 1.5 over its levels with an echoed legend.
+#[derive(Clone)]
+struct Typed;
 
-/// The read lead of a clasify resource (`hints.read` or `next.read`), on the
-/// resource or its first page.
-fn resource_read(resource: &serde_json::Value) -> Option<serde_json::Value> {
-    ["", "/pages/0"]
-        .iter()
-        .flat_map(|at| [format!("{at}/hints/read"), format!("{at}/next/read")])
-        .find_map(|pointer| resource.pointer(&pointer).cloned())
-}
-
-/// The single row of a lead query (`{queries:[row]}` or a bare row).
-fn lead_row(query: &serde_json::Value) -> serde_json::Value {
-    query.pointer("/queries/0").unwrap_or(query).clone()
-}
-
-/// A provider that answers one `noul` 200 ms after each request arrives.
-fn delayed_noul() -> Delayed {
-    Delayed::new(
-        Duration::from_millis(200),
+impl Respond for Typed {
+    fn respond(&self, request: &Request) -> ResponseTemplate {
+        let body: Value = serde_json::from_slice(&request.body).expect("provider body");
+        let answers = body["questions"]
+            .as_object()
+            .expect("questions")
+            .iter()
+            .map(|(id, question)| {
+                let answer = match question["type"].as_str() {
+                    Some("choice") => {
+                        let labels = question["criteria"]
+                            .as_object()
+                            .expect("labels")
+                            .keys()
+                            .cloned()
+                            .collect::<Vec<_>>();
+                        let probabilities = labels
+                            .iter()
+                            .enumerate()
+                            .map(|(index, label)| {
+                                let share = if index == 0 { 1.0 } else { 0.0 };
+                                (label.clone(), json!(share))
+                            })
+                            .collect::<serde_json::Map<_, _>>();
+                        json!({"type":"choice","choice":labels[0],"confidence":1,"probabilities":probabilities})
+                    }
+                    Some("score") => {
+                        let levels = question["criteria"].as_array().expect("levels");
+                        let legend = levels
+                            .iter()
+                            .enumerate()
+                            .map(|(index, level)| (index.to_string(), level.clone()))
+                            .collect::<serde_json::Map<_, _>>();
+                        let mut probabilities = serde_json::Map::new();
+                        for index in 0..levels.len() {
+                            let share = match index {
+                                1 | 2 => 0.5,
+                                _ => 0.0,
+                            };
+                            probabilities.insert(index.to_string(), json!(share));
+                        }
+                        json!({"type":"score","score":1.5,"confidence":0.5,"probabilities":probabilities,"legend":legend})
+                    }
+                    _ => json!({"type":"noul","noul":0.9}),
+                };
+                (id.clone(), answer)
+            })
+            .collect::<serde_json::Map<_, _>>();
         ResponseTemplate::new(200).set_body_json(json!({
-            "model":"resolved",
-            "answers":{"answer":{"type":"noul","noul":0.8}},
-            "usage":{"input_tokens":2,"output_tokens":1}
-        })),
-    )
+            "model":"jev-1.13.0",
+            "answers":answers,
+            "usage":{"input_tokens":40,"output_tokens":7}
+        }))
+    }
 }
 
-/// Aperiodic ASCII letters: byte pages of it differ, so identical-page
-/// deduplication does not merge the pages a paging test counts.
-fn filler(len: usize) -> String {
-    let mut seed = 0x2545_f491_u32;
-    (0..len)
-        .map(|_| {
-            seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12_345);
-            char::from(b'a' + ((seed >> 16) % 26) as u8)
-        })
-        .collect()
+async fn provider(expected: u64) -> MockServer {
+    let server = MockServer::builder().start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/systemone"))
+        .respond_with(Typed)
+        .expect(expected)
+        .mount(&server)
+        .await;
+    server
 }
 
-/// First line of a read query's single `ranges` window ("a-b").
-fn range_start(query: &serde_json::Value) -> u64 {
-    let window = query["ranges"][0]
-        .as_str()
-        .unwrap_or_else(|| panic!("ranges: {query}"));
-    window.split_once('-').unwrap().0.parse().unwrap()
-}
-
-/// The extras of the full per-page receipt: every page and runner-up
-/// (`details`) and provider usage (`stats`); these tests inspect page internals
-/// (scopes, sources, runner-up matches) the default output compacts.
-const VERBOSE: [&str; 2] = ["details", "stats"];
-
-/// A default-output answer: on the resource when it has one plain page,
-/// else on its first page.
-fn compact_answer(resource: &serde_json::Value, id: &str) -> serde_json::Value {
-    resource["answers"]
-        .get(id)
-        .or_else(|| resource["pages"][0]["answers"].get(id))
-        .cloned()
-        .unwrap_or(serde_json::Value::Null)
-}
-
-fn query() -> serde_json::Value {
-    json!({
-        "id":"decision",
-        "reasoning":"Choose the next inspection.",
-        "mainGoal":"Decide the next read.",
-        "resources":[{"id":"observed","value":{"fact":"present"}}],
-        "questions":[
-            {"id":"relevant","type":"yesno","ask":"Is it relevant?"},
-            {"id":"risk","type":"score","ask":{"prompt":"Rate risk"},"labels":["low",{"label":"high"}]}
-        ]
-    })
-}
-
-fn noul_response(noul: f64) -> ResponseTemplate {
-    ResponseTemplate::new(200).set_body_json(json!({
-        "model":"resolved",
-        "answers":{"answer":{"type":"noul","noul":noul}},
-        "usage":{"input_tokens":2,"output_tokens":1}
-    }))
-}
-
-/// Provider request states, in arrival order.
-async fn sent_states(server: &MockServer) -> Vec<serde_json::Value> {
+/// Provider request bodies, in arrival order.
+async fn sent(server: &MockServer) -> Vec<Value> {
     server
         .received_requests()
         .await
         .unwrap()
         .iter()
-        .map(|request| {
-            serde_json::from_slice::<serde_json::Value>(&request.body).unwrap()["state"].clone()
-        })
+        .map(|request| serde_json::from_slice(&request.body).unwrap())
         .collect()
 }
 
-/// Three files of `matches` hit lines each, every line `width` characters and
-/// tagged with its file's marker.
-fn write_hit_files(workspace: &Workspace, matches: usize, width: usize) -> String {
-    let mut root = None;
-    for (index, marker) in ["ALPHA", "BRAVO", "CHARLIE"].iter().enumerate() {
-        let body = (0..matches)
-            .map(|line| {
-                let text = format!("needle {marker} {line} ");
-                format!("{text}{}\n", filler(width - text.len()))
-            })
-            .collect::<String>();
-        let path = workspace.write(&format!("hits/file{index}.txt"), body);
-        root = path
-            .parent()
-            .map(|parent| parent.to_string_lossy().into_owned());
-    }
-    root.unwrap()
+fn noul(instructions: &str) -> Value {
+    json!({"type":"noul","instructions":instructions})
 }
 
-/// Lines 1–8 are short, 9–16 long enough that their 8-line page exceeds the
-/// whole budget while half of it fits, then short lines resume.
-fn uneven_lines() -> String {
-    (1..=24)
-        .map(|line| {
-            if (9..=16).contains(&line) {
-                format!("L{line:02} {}\n", filler(86))
-            } else {
-                format!("L{line:02} short\n")
-            }
-        })
-        .collect()
+fn state_row() -> Value {
+    json!({
+        "id":"rotation",
+        "mainGoal":"Decide whether rotation needs a restart.",
+        "reasoning":"Metadata only.",
+        "state":{"document":{"text":"Update the configuration, then restart the service."}},
+        "questions":{"restart":noul("Does `document.text` require a restart?")}
+    })
 }
 
-/// Every continuation in a clasify output: `(where, tool, query)` for each
-/// `next.*` page and `hints.*` lead. Prose `hints.text` is not a call.
-fn clasify_continuations(
-    value: &serde_json::Value,
-    at: &str,
-    out: &mut Vec<(String, String, serde_json::Value)>,
-) {
-    match value {
-        serde_json::Value::Object(map) => {
-            for (key, child) in map {
-                let here = format!("{at}.{key}");
-                if key != "next" && key != "hints" {
-                    clasify_continuations(child, &here, out);
-                    continue;
-                }
-                for (name, entry) in child.as_object().into_iter().flatten() {
-                    let path = format!("{here}.{name}");
-                    if name == "text" {
-                        continue;
-                    }
-                    if let (Some(tool), Some(query)) = (entry["tool"].as_str(), entry.get("query"))
-                    {
-                        out.push((path, tool.to_owned(), query.clone()));
-                    } else if name == "clasify" {
-                        out.push((path, "clasify".to_owned(), entry.clone()));
-                    } else {
-                        panic!("{path} is neither a call nor a clasify walk: {entry}");
-                    }
-                }
-            }
-        }
-        serde_json::Value::Array(items) => {
-            for (index, item) in items.iter().enumerate() {
-                clasify_continuations(item, &format!("{at}[{index}]"), out);
-            }
-        }
-        _ => {}
-    }
-}
-
-/// Runs every continuation of `output` exactly as emitted and returns the
-/// next walk step, if any. A caller that sent no brief gets none back.
-async fn replay_every_continuation(
-    runtime: &octocode_native::runtime::ToolRuntime,
-    output: &serde_json::Value,
-    briefed: bool,
-    kinds: &mut std::collections::BTreeSet<String>,
-) -> Option<serde_json::Value> {
-    let mut found = Vec::new();
-    clasify_continuations(output, "", &mut found);
-    let mut walk = None;
-    for (at, tool, query) in found {
-        let text = query.to_string();
-        if !briefed {
-            assert!(
-                !text.contains("\"mainGoal\"") && !text.contains("\"reasoning\""),
-                "{at} carries a brief the caller did not send: {text}"
-            );
-        }
-        let kind = at
-            .rsplit_once('.')
-            .map_or(at.as_str(), |(scope, name)| {
-                if scope.contains("best") || scope.contains("pages") {
-                    "row-or-page"
-                } else {
-                    name
-                }
-            })
-            .to_owned();
-        kinds.insert(format!("{kind}:{tool}"));
-        let input = if tool == "clasify" {
-            support::queries(query.clone())
-        } else {
-            json!({"queries":[query.clone()]})
-        };
-        let outcome = runtime
-            .run(format!("replay{at}"), tool.clone(), input)
-            .await
-            .unwrap_or_else(|error| panic!("{at} does not run verbatim: {error:?}: {text}"));
-        let content = outcome.structured_content.to_string();
-        assert!(
-            outcome.failure.is_none() && !outcome.all_failed && !content.contains("\"errorCode\""),
-            "{at} failed on replay: {content}"
-        );
-        if at.ends_with("next.clasify") {
-            walk = Some(query);
-        }
-    }
-    walk
-}
-
-#[tokio::test]
-async fn clasify_sends_optional_briefs_on_the_provider_state() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/systemone"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "model":"resolved",
-            "answers":{"answer":{"type":"noul","noul":0.8}},
-            "usage":{"input_tokens":2,"output_tokens":1}
-        })))
-        // The first call, then one state without reasoning and one without
-        // mainGoal; repeats of a state replay the judgment cache.
-        .expect(3)
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    let file = workspace.write("trace.txt", "Evidence is present.\n");
-    let runtime = provider_runtime(&workspace, &server);
-    let mut input = query();
-    input["resources"] = json!([{"id":"source","tool":"localFetch","query":{"path":file}}]);
-    input["questions"] = json!([{"id":"relevant","type":"yesno","ask":"Is evidence present?"}]);
-    input["reasoning"] = json!("The next read depends on whether the file states the fact.");
-    input["mainGoal"] = json!("Files that state whether the evidence is present.");
-    let outcome = runtime
+async fn clasify(runtime: &octocode_native::runtime::ToolRuntime, rows: Vec<Value>) -> Value {
+    runtime
         .run(
-            "semantic-reasoning".into(),
+            "clasify-test".into(),
             "clasify".into(),
-            support::with_extras(input.clone(), &VERBOSE),
+            json!({"queries":rows}),
         )
         .await
-        .expect("required briefs reach the provider");
-    assert_eq!(
-        outcome.structured_content["queries"][0]["resources"][0]["pages"][0]["answers"]["relevant"]
-            ["yesno"],
-        0.8,
-        "{}",
-        outcome.structured_content
-    );
-    let requests = server.received_requests().await.unwrap();
-    assert_eq!(requests.len(), 1);
-    let body = String::from_utf8(requests[0].body.clone()).unwrap();
-    assert!(
-        body.contains("The next read depends on whether the file states the fact."),
-        "reasoning must reach the provider state: {body}"
-    );
-    assert!(
-        body.contains("Files that state whether the evidence is present."),
-        "goal must reach the provider state: {body}"
-    );
-    // A blank or missing brief is dropped, not rejected; a non-string one
-    // is still invalid.
-    for (field, value) in [
-        ("reasoning", json!("")),
-        ("reasoning", json!("   ")),
-        ("mainGoal", json!("")),
-        ("mainGoal", json!("   ")),
-    ] {
-        let mut blank = input.clone();
-        blank[field] = value;
-        runtime
-            .run("semantic-reasoning".into(), "clasify".into(), support::queries(blank))
-            .await
-            .expect("a blank brief is dropped");
-    }
-    for field in ["reasoning", "mainGoal"] {
-        let mut missing = input.clone();
-        missing.as_object_mut().unwrap().remove(field);
-        runtime
-            .run("semantic-reasoning".into(), "clasify".into(), support::queries(missing))
-            .await
-            .expect("a missing brief is accepted");
-        let mut invalid = input.clone();
-        invalid[field] = serde_json::Value::Null;
-        let error = runtime
-            .run("semantic-reasoning".into(), "clasify".into(), support::queries(invalid))
-            .await
-            .expect_err("a null brief is rejected");
-        assert_eq!(error.code, "invalidInput");
-    }
-    runtime.close().await;
-}
-
-#[tokio::test]
-async fn provider_byte_limit_forwards_reasoning_and_isolates_oversized_questions() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/systemone"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "model":"resolved",
-            "answers":{"answer":{"type":"noul","noul":0.8}},
-            "usage":{"input_tokens":2,"output_tokens":1}
-        })))
-        .expect(26)
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    let runtime = provider_runtime(&workspace, &server);
-    let mut ordinary = query();
-    ordinary["questions"] = json!([{"id":"relevant","type":"yesno","ask":"Is evidence present?"}]);
-    let mut trace = ordinary.clone();
-    trace["id"] = json!("trace");
-    trace["reasoning"] = json!("Bound each captured resource before the next read.");
-    // The matrix exceeds 4 MiB, but each independently captured resource and
-    // provider request is within its own budget.
-    trace["resources"] = json!((0..25)
-        .map(|index| json!({"id":format!("source-{index}"),"value":format!("{index}{}", "界".repeat(60_000))}))
-        .collect::<Vec<_>>());
-    let mut oversized = ordinary.clone();
-    oversized["id"] = json!("oversized");
-    oversized["questions"][0]["ask"] = json!(
-        (0..500)
-            .map(|index| (format!("section-{index}"), json!("evidence ".repeat(1000))))
-            .collect::<serde_json::Map<_, _>>()
-    );
-    let outcome = runtime
-        .run(
-            "provider-byte-limit".into(),
-            "clasify".into(),
-            support::with_extras(json!({"queries":[trace, oversized, ordinary]}), &VERBOSE),
-        )
-        .await
-        .expect("one oversized provider request must not fail the matrix batch");
-    let queries = &outcome.structured_content["queries"];
-    for index in [0, 2] {
-        assert_eq!(
-            queries[index]["resources"][0]["pages"][0]["answers"]["relevant"]["yesno"], 0.8,
-            "{}",
-            outcome.structured_content
-        );
-    }
-    let oversized_resource = &queries[1]["resources"][0];
-    assert_eq!(oversized_resource["coverage"]["state"], "error");
-    let error = &oversized_resource["pages"][0]["answers"]["relevant"]["error"];
-    assert_eq!(error["errorCode"], "invalidClassificationRequest");
-    assert!(error["error"].as_str().unwrap().contains("4 MiB"));
-    let requests = server.received_requests().await.unwrap();
-    assert_eq!(requests.len(), 26);
-    for request in requests {
-        let body = String::from_utf8(request.body).unwrap();
-        assert!(
-            body.contains("Bound each captured resource before the next read.")
-                || body.contains("Choose the next inspection."),
-            "reasoning must reach the provider state"
-        );
-        assert!(body.len() < 200_000);
-    }
-    runtime.close().await;
+        .expect("clasify result")
+        .structured_content
 }
 
 #[tokio::test]
 async fn retired_jev_vendor_key_does_not_enable_clasify() {
-    // OCTOCODE_CLASSIFICATION_API is the only classification credential.
     let workspace = Workspace::new();
     let runtime = workspace.runtime(&[("OCTOCODE_JEV_KEY", "jev-native-secret".into())]);
     assert!(!runtime.is_available("clasify"));
-    runtime.close().await;
-}
-
-#[tokio::test]
-async fn public_identity_is_a_hard_cutover_and_missing_key_is_actionable() {
-    let workspace = Workspace::new();
-    let runtime = workspace.runtime(&[]);
-    assert!(!runtime.is_available("clasify"));
-    assert!(!runtime.is_available("jev"));
-    let catalog = runtime.catalog().unwrap();
-    assert!(
-        catalog["tools"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|tool| { tool["name"] == "clasify" && tool["available"] == false })
-    );
-    assert!(
-        !catalog["tools"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|tool| tool["name"] == "jev")
-    );
-
-    let error = runtime
-        .run("missing-key".into(), "clasify".into(), support::queries(query()))
-        .await
-        .unwrap_err();
-    assert_eq!(error.code, "missingConfiguration");
-    assert!(error.message.contains("OCTOCODE_BETA"));
-    assert!(error.message.contains("OCTOCODE_CLASSIFICATION_API"));
-    assert!(
-        error
-            .message
-            .contains("https://docs.typesafe.ai/introduction")
-    );
     runtime.close().await;
 }
 
@@ -454,12 +149,12 @@ async fn public_clasify_requires_beta_and_a_nonblank_key_independently() {
     ] {
         let runtime = workspace.runtime(&env);
         assert!(!runtime.is_available("clasify"), "{env:?}");
-        assert_eq!(
-            clasify_catalog_entry(&runtime)["unavailableReason"],
-            "missingConfiguration"
-        );
         let error = runtime
-            .run("missing-gate".into(), "clasify".into(), support::queries(query()))
+            .run(
+                "missing-gate".into(),
+                "clasify".into(),
+                json!({"queries":[state_row()]}),
+            )
             .await
             .expect_err("an unmet prerequisite blocks public clasify");
         assert_eq!(error.code, "missingConfiguration");
@@ -468,4355 +163,527 @@ async fn public_clasify_requires_beta_and_a_nonblank_key_independently() {
     }
 }
 
-fn clasify_catalog_entry(runtime: &octocode_native::runtime::ToolRuntime) -> serde_json::Value {
-    runtime.catalog().unwrap()["tools"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|tool| tool["name"] == "clasify")
-        .cloned()
-        .unwrap()
-}
-
 #[tokio::test]
 async fn configured_clasify_is_available_without_contacting_the_provider() {
-    let server = MockServer::builder().start().await;
+    let server = provider(0).await;
     let workspace = Workspace::new();
     let runtime = provider_runtime(&workspace, &server);
     assert!(runtime.is_available("clasify"));
-    assert_eq!(clasify_catalog_entry(&runtime)["available"], true);
-    assert!(server.received_requests().await.unwrap().is_empty());
     runtime.close().await;
 }
 
 #[tokio::test]
-async fn provider_rejection_then_recovery_keeps_clasify_available_in_one_runtime() {
-    let server = MockServer::builder().start().await;
-    let attempts = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let responder_attempts = attempts.clone();
-    Mock::given(method("POST"))
-        .and(path("/v1/systemone"))
-        .respond_with(move |_: &wiremock::Request| {
-            if responder_attempts.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
-                ResponseTemplate::new(401)
-            } else {
-                noul_response(0.9)
-            }
-        })
-        .expect(2)
-        .mount(&server)
-        .await;
+async fn a_state_row_sends_the_questions_unchanged_and_returns_provider_answers() {
+    let server = provider(1).await;
     let workspace = Workspace::new();
     let runtime = provider_runtime(&workspace, &server);
-    assert!(server.received_requests().await.unwrap().is_empty());
-    let mut request = query();
-    request["questions"] = json!([{"id":"relevant","type":"yesno","ask":"Is it relevant?"}]);
-    let failed = runtime
-        .run(
-            "provider-down".into(),
-            "clasify".into(),
-            support::queries(request.clone()),
-        )
-        .await
-        .expect("provider failure is a typed tool result");
-    assert!(
-        failed
-            .structured_content
-            .to_string()
-            .contains("classificationProviderError"),
-        "{}",
-        failed.structured_content
-    );
-    assert!(runtime.is_available("clasify"));
-    assert_eq!(clasify_catalog_entry(&runtime)["available"], true);
-    let recovered = runtime
-        .run("provider-recovered".into(), "clasify".into(), support::queries(request))
-        .await
-        .expect("the same runtime can use the recovered provider");
-    assert_eq!(
-        recovered.structured_content["queries"][0]["resources"][0]["answers"]["relevant"],
-        json!(0.9)
-    );
-    assert_eq!(attempts.load(std::sync::atomic::Ordering::SeqCst), 2);
-    runtime.close().await;
-}
-
-#[tokio::test]
-async fn unreachable_provider_does_not_change_configured_availability() {
-    let workspace = Workspace::new();
-    // Bind then drop a listener: the port refuses connections.
-    let port = std::net::TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port();
-    let runtime = workspace.runtime(&[
-        ("OCTOCODE_BETA", "true".into()),
-        ("OCTOCODE_CLASSIFICATION_API", "secret".into()),
-        (
-            "OCTOCODE_CLASSIFICATION_API_HOST",
-            format!("http://127.0.0.1:{port}"),
-        ),
-    ]);
-    assert!(runtime.is_available("clasify"));
-    assert_eq!(clasify_catalog_entry(&runtime)["available"], true);
-    runtime.close().await;
-}
-
-#[tokio::test]
-async fn no_key_keeps_clasify_unavailable_without_provider_work() {
-    let workspace = Workspace::new();
-    let runtime = workspace.runtime(&[]);
-    assert!(!runtime.is_available("clasify"));
-    runtime.close().await;
-}
-
-#[tokio::test]
-async fn matrix_is_resource_major_without_agent_telemetry_or_duplicate_text() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/systemone"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "model":"provider-resolved",
-            "answers":{
-                "answer_0":{"type":"noul","noul":0.9},
-                "answer_1":{"type":"score","score":0.75,"confidence":0.8,"probabilities":{"0":0.25,"1":0.75},"legend":{"0":"low","1":{"label":"high"}}}
-            },
-            "usage":{"input_tokens":12,"output_tokens":3}
-        })))
-        .expect(1)
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    let runtime = provider_runtime(&workspace, &server);
-    let outcome = runtime
-        .run("matrix".into(), "clasify".into(), support::queries(query()))
-        .await
-        .unwrap();
-    octocode_native::contracts::validate_output("clasify", &outcome.structured_content)
-        .expect("nested output contract");
-    assert!(
-        outcome.content.is_empty(),
-        "clasify must not duplicate structured hints as text"
-    );
-    let queries = outcome.structured_content["queries"].as_array().unwrap();
-    assert_eq!(queries.len(), 1);
-    assert_eq!(queries[0]["id"], "decision");
-    assert!(queries[0].get("model").is_none());
-    assert!(queries[0].get("usage").is_none());
-    // Default output: a supplied value is one plain page, so its answers sit
-    // on the resource; complete coverage is implied.
-    assert_eq!(
-        queries[0]["resources"],
-        json!([{"id":"observed","answers":{
-            "relevant":0.9,
-            "risk":{"score":0.75,"confidence":0.8,"probabilities":{"0":0.25,"1":0.75}}
-        }}]),
-        "{}",
-        outcome.structured_content
-    );
-    let text = outcome.structured_content.to_string();
-    for redundant in [
-        "requestedModel",
-        "resolvedModel",
-        "resultHash",
-        "legend",
-        "\"type\"",
-    ] {
-        assert!(!text.contains(redundant), "{redundant} in {text}");
-    }
-    runtime.close().await;
-}
-
-/// `extras: ["stats"]` alone (the compact output) adds provider usage per
-/// query and per page, and every field it adds is declared by the output
-/// contract.
-#[tokio::test]
-async fn stats_usage_is_declared_on_the_compact_output() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/systemone"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "model":"provider-resolved",
-            "answers":{
-                "answer_0":{"type":"noul","noul":0.9},
-                "answer_1":{"type":"score","score":0.75,"confidence":0.8,"probabilities":{"0":0.25,"1":0.75},"legend":{"0":"low","1":{"label":"high"}}}
-            },
-            "usage":{"input_tokens":12,"output_tokens":3}
-        })))
-        .expect(1)
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    let runtime = provider_runtime(&workspace, &server);
-    let mut matrix = query();
-    matrix["extras"] = json!(["stats"]);
-    let outcome = runtime
-        .run("stats".into(), "clasify".into(), support::queries(matrix))
-        .await
-        .unwrap();
-    octocode_native::contracts::validate_output("clasify", &outcome.structured_content)
-        .expect("stats output contract");
-    let usage = &outcome.structured_content["queries"][0]["usage"];
-    assert_eq!(usage["calls"], 1, "{}", outcome.structured_content);
-    assert_eq!(usage["inputTokens"], 12, "{}", outcome.structured_content);
-    runtime.close().await;
-}
-
-#[tokio::test]
-async fn independent_resource_assessments_are_dispatched_concurrently() {
-    let server = MockServer::builder().start().await;
-    let provider = delayed_noul();
-    let arrivals = provider.arrivals.clone();
-    Mock::given(method("POST"))
-        .and(path("/v1/systemone"))
-        .respond_with(provider)
-        .expect(4)
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    let runtime = provider_runtime(&workspace, &server);
-    let input = json!({
-        "id":"concurrent-resources",
-        "reasoning":"Assess independent resources without serial provider latency.","mainGoal":"Decide the next read.",
-        "resources":(0..4).map(|index| json!({
-            "id":format!("resource-{index}"),
-            "value":{"index":index}
-        })).collect::<Vec<_>>(),
-        "questions":[{"id":"relevant","type":"yesno","ask":"Relevant?"}]
+    let mut row = state_row();
+    row["questions"] = json!({
+        "restart": {"type":"noul","instructions":{"question":"Requires `action`?","action":"restart"},
+            "criteria":{"true":{"meaning":"yes"},"false":["no"]}},
+        "route": {"type":"choice","instructions":"Which procedure?",
+            "criteria":{"restart":"Restart.","hot":["No restart."],"unknown":null}},
+        "support": {"type":"score","instructions":"How direct?",
+            "criteria":[{"meaning":"Unrelated."},["Mentions it."],"Steps."]}
     });
+    let out = clasify(&runtime, vec![row.clone()]).await;
+    let request = &sent(&server).await[0];
+    assert_eq!(request["state"], row["state"]);
+    assert_eq!(request["model"], "jev-latest", "the configured default");
+    // The questions reach the provider exactly as asked: no brief, preset or
+    // renaming. Correlation keys are internal.
+    let mut asked = request["questions"]
+        .as_object()
+        .unwrap()
+        .values()
+        .cloned()
+        .collect::<Vec<_>>();
+    asked.sort_by_key(Value::to_string);
+    let mut expected = row["questions"]
+        .as_object()
+        .unwrap()
+        .values()
+        .cloned()
+        .collect::<Vec<_>>();
+    expected.sort_by_key(Value::to_string);
+    assert_eq!(asked, expected);
+    assert!(!request.to_string().contains("Metadata only"));
+    assert!(!request.to_string().contains("Decide whether rotation"));
 
-    let outcome = runtime
-        .run("concurrent-resources".into(), "clasify".into(), support::queries(input))
-        .await
-        .unwrap();
-    {
-        let arrivals = arrivals.times();
-        assert_eq!(arrivals.len(), 4);
-        assert!(
-            arrivals.last().unwrap().duration_since(arrivals[0]) < Duration::from_millis(150),
-            "provider requests were dispatched serially: {arrivals:?}"
-        );
-    }
-    let results = outcome.structured_content["queries"][0]["resources"]
-        .as_array()
-        .unwrap();
-    assert_eq!(results.len(), 4);
-    // Default output: complete coverage is implied and a single page's
-    // answers sit on the resource.
-    for (index, result) in results.iter().enumerate() {
-        assert_eq!(result["id"], format!("resource-{index}"));
-        assert!(result.get("coverage").is_none(), "{result}");
-        assert!(result["answers"]["relevant"].is_number(), "{result}");
-    }
+    let result = &out["queries"][0];
+    assert_eq!(result["id"], "rotation");
+    assert_eq!(result["model"], "jev-1.13.0");
+    assert_eq!(
+        result["usage"],
+        json!({"input_tokens":40,"output_tokens":7})
+    );
+    assert_eq!(
+        result["answers"]["restart"],
+        json!({"type":"noul","noul":0.9})
+    );
+    assert_eq!(result["answers"]["route"]["type"], "choice");
+    assert_eq!(result["answers"]["route"]["choice"], "restart");
+    assert_eq!(
+        result["answers"]["route"]["probabilities"],
+        json!({"restart":1.0,"hot":0.0,"unknown":0.0})
+    );
+    assert_eq!(
+        result["answers"]["support"]["score"], 1.5,
+        "fractional, never rounded"
+    );
+    assert_eq!(
+        result["answers"]["support"]["legend"],
+        json!({"0":{"meaning":"Unrelated."},"1":["Mentions it."],"2":"Steps."})
+    );
+    assert!(
+        result.get("hints").is_none(),
+        "a state row has no source to read"
+    );
+    assert!(result.get("replayed").is_none());
     runtime.close().await;
 }
 
 #[tokio::test]
-async fn classification_max_concurrency_bounds_provider_requests_in_flight() {
-    let server = MockServer::builder().start().await;
-    let provider = delayed_noul();
-    let arrivals = provider.arrivals.clone();
-    Mock::given(method("POST"))
-        .and(path("/v1/systemone"))
-        .respond_with(provider)
-        .expect(8)
-        .mount(&server)
-        .await;
+async fn a_row_model_and_the_configured_model_reach_the_provider() {
+    let server = provider(2).await;
     let workspace = Workspace::new();
-    // Limit 4 → one call may hold at most 3 permits (fairness cap).
     let runtime = workspace.runtime(&[
         ("OCTOCODE_BETA", "true".into()),
         ("OCTOCODE_CLASSIFICATION_API", "secret".into()),
         ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
-        ("OCTOCODE_CLASSIFICATION_CONCURRENCY", "4".into()),
-        ("REQUEST_TIMEOUT", MOCK_PROVIDER_TIMEOUT_MS.into()),
+        ("OCTOCODE_CLASSIFICATION_MODEL", "jev-1.13.0".into()),
     ]);
-    let input = json!({
-        "id":"bounded-resources",
-        "reasoning":"Assess many resources without exceeding provider concurrency.","mainGoal":"Decide the next read.",
-        "resources":(0..8).map(|index| json!({
-            "id":format!("resource-{index}"),
-            "value":{"index":index}
-        })).collect::<Vec<_>>(),
-        "questions":[{"id":"relevant","type":"yesno","ask":"Relevant?"}]
-    });
-    let outcome = runtime
-        .run("bounded-resources".into(), "clasify".into(), support::queries(input))
+    let mut pinned = state_row();
+    pinned["id"] = json!("pinned");
+    pinned["model"] = json!("jev-1.14.0");
+    clasify(&runtime, vec![state_row(), pinned]).await;
+    let mut models = sent(&server)
         .await
-        .unwrap();
-    let arrivals = arrivals.times();
-    assert_eq!(arrivals.len(), 8);
-    // Each response takes 200ms and a permit is reused only after its
-    // response, so arrivals closer than 200ms were in flight together.
-    let overlapping = arrivals
         .iter()
-        .map(|start| {
-            arrivals
-                .iter()
-                .filter(|other| {
-                    *other >= start && other.duration_since(*start) < Duration::from_millis(180)
-                })
-                .count()
-        })
-        .max()
-        .unwrap();
-    assert!(
-        (2..=3).contains(&overlapping),
-        "expected 2..=3 concurrent provider requests, saw {overlapping}: {arrivals:?}"
-    );
-    let results = outcome.structured_content["queries"][0]["resources"]
-        .as_array()
-        .unwrap();
-    assert!(
-        results
-            .iter()
-            .all(|result| result.get("coverage").is_none()
-                && result["answers"]["relevant"].is_number()),
-        "{results:?}"
-    );
-    runtime.close().await;
-}
-
-#[tokio::test]
-async fn independent_query_matrices_are_dispatched_concurrently() {
-    let server = MockServer::builder().start().await;
-    let provider = delayed_noul();
-    let arrivals = provider.arrivals.clone();
-    Mock::given(method("POST"))
-        .and(path("/v1/systemone"))
-        .respond_with(provider)
-        .expect(4)
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    let runtime = provider_runtime(&workspace, &server);
-    let queries = (0..4)
-        .map(|index| {
-            json!({
-                "id":format!("query-{index}"),
-                "reasoning":"Assess an independent matrix without serial provider latency.","mainGoal":"Decide the next read.",
-                "resources":[{"id":"resource","value":{"index":index}}],
-                "questions":[{"id":"relevant","type":"yesno","ask":"Relevant?"}]
-            })
-        })
+        .map(|request| request["model"].as_str().unwrap().to_owned())
         .collect::<Vec<_>>();
+    models.sort();
+    assert_eq!(models, ["jev-1.13.0", "jev-1.14.0"]);
+    runtime.close().await;
+}
 
-    let outcome = runtime
-        .run(
-            "concurrent-matrices".into(),
-            "clasify".into(),
-            json!({"queries":queries}),
-        )
-        .await
-        .unwrap();
-    {
-        let arrivals = arrivals.times();
-        assert_eq!(arrivals.len(), 4);
-        assert!(
-            arrivals.last().unwrap().duration_since(arrivals[0]) < Duration::from_millis(150),
-            "independent matrices were dispatched serially: {arrivals:?}"
+#[tokio::test]
+async fn an_identical_evaluation_replays_without_a_provider_request() {
+    let server = provider(2).await;
+    let workspace = Workspace::new();
+    let runtime = provider_runtime(&workspace, &server);
+    let first = clasify(&runtime, vec![state_row()]).await;
+    let again = clasify(&runtime, vec![state_row()]).await;
+    assert!(first["queries"][0].get("replayed").is_none());
+    assert_eq!(again["queries"][0]["replayed"], true);
+    assert_eq!(
+        again["queries"][0]["answers"],
+        first["queries"][0]["answers"]
+    );
+    assert_eq!(again["queries"][0]["usage"], first["queries"][0]["usage"]);
+    // A different question is a different evaluation.
+    let mut other = state_row();
+    other["questions"] = json!({"restart":noul("Does `document.text` forbid a restart?")});
+    let changed = clasify(&runtime, vec![other]).await;
+    assert!(changed["queries"][0].get("replayed").is_none());
+    assert_eq!(sent(&server).await.len(), 2);
+    runtime.close().await;
+}
+
+#[tokio::test]
+async fn identical_rows_in_one_call_share_one_provider_request() {
+    let server = provider(1).await;
+    let workspace = Workspace::new();
+    let runtime = provider_runtime(&workspace, &server);
+    let mut second = state_row();
+    second["id"] = json!("again");
+    let out = clasify(&runtime, vec![state_row(), second]).await;
+    let rows = out["queries"].as_array().unwrap();
+    assert_eq!(rows[0]["answers"], rows[1]["answers"]);
+    assert_eq!(
+        rows.iter()
+            .filter(|row| row.get("replayed").is_some())
+            .count(),
+        1,
+        "{out}"
+    );
+    runtime.close().await;
+}
+
+#[tokio::test]
+async fn persistent_judgments_serve_a_fresh_runtime_and_memory_mode_does_not() {
+    let server = provider(3).await;
+    let workspace = Workspace::new();
+    let env = |mode: &str| {
+        vec![
+            ("OCTOCODE_BETA", "true".into()),
+            ("OCTOCODE_CLASSIFICATION_API", "secret".into()),
+            ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
+            ("OCTOCODE_STORAGE_MODE", mode.to_owned()),
+        ]
+    };
+    for (mode, replayed) in [
+        ("persistent", None),
+        ("persistent", Some(true)),
+        ("memory", None),
+        ("memory", None),
+    ] {
+        let runtime = workspace.runtime(&env(mode));
+        let mut row = state_row();
+        row["state"] = json!(format!(
+            "judged under {}",
+            if mode == "memory" { "memory" } else { "disk" }
+        ));
+        let out = clasify(&runtime, vec![row]).await;
+        assert_eq!(
+            out["queries"][0].get("replayed").cloned(),
+            replayed.map(Value::from),
+            "{mode}"
         );
-    }
-    let queries = outcome.structured_content["queries"].as_array().unwrap();
-    assert_eq!(queries.len(), 4);
-    for (index, query) in queries.iter().enumerate() {
-        assert_eq!(query["id"], format!("query-{index}"));
-        let resource = &query["resources"][0];
-        assert!(resource.get("coverage").is_none(), "{resource}");
-        assert!(resource["answers"]["relevant"].is_number(), "{resource}");
-    }
-    runtime.close().await;
-}
-
-#[tokio::test]
-async fn oversized_first_page_is_not_classified_or_given_a_looping_continuation() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "model":"resolved",
-            "answers":{"answer":{"type":"noul","noul":0.7}},
-            "usage":{"input_tokens":2,"output_tokens":1}
-        })))
-        .expect(0)
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    let runtime = provider_runtime(&workspace, &server);
-    let input = json!({
-        "id":"bounded",
-        "reasoning":"Bound the supplied resource.","mainGoal":"Decide the next read.",
-        "resources":[{"id":"large","value":{"text":"far too large ".repeat(6_000)}}],
-        "questions":[{"id":"relevant","type":"yesno","ask":"Relevant?"}]
-    });
-    let outcome = runtime
-        .run("bounded".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
-        .await
-        .unwrap();
-    let query = &outcome.structured_content["queries"][0];
-    assert_eq!(query["resources"][0]["coverage"]["state"], "error");
-    assert_eq!(
-        query["resources"][0]["pages"][0]["error"]["errorCode"],
-        "classificationContextTooLarge"
-    );
-    assert!(query["resources"][0]["pages"][0].get("answers").is_none());
-    assert!(no_continuation(query));
-    runtime.close().await;
-}
-
-#[tokio::test]
-async fn max_chars_budgets_sanitized_resource_payload_not_serialized_envelope() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/systemone"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "model":"resolved",
-            "answers":{"answer":{"type":"noul","noul":0.8}},
-            "usage":{"input_tokens":2,"output_tokens":1}
-        })))
-        .expect(5)
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    let marker = "FOURTH_PAGE_MARKER";
-    let file = workspace.write(
-        "large.txt",
-        format!("{}{}", filler(78_377 - marker.len()), marker),
-    );
-    let runtime = provider_runtime(&workspace, &server);
-    let input = json!({
-        "id":"recover-full-content",
-        "reasoning":"Recover the exact pages of an oversized whole-file request.","mainGoal":"Decide the next read.",
-        "resources":[{"id":"file","maxChars":80_000,"tool":"localFetch","query":{
-            "path":file,"mainGoal": "test", "reasoning":"Read the complete file.","fullContent":true
-        }}],
-        "questions":[{"id":"relevant","type":"yesno","ask":"Relevant?"}]
-    });
-    let outcome = runtime
-        .run(
-            "recover-full-content".into(),
-            "clasify".into(),
-            support::with_extras(input, &VERBOSE),
-        )
-        .await
-        .unwrap();
-    let query = &outcome.structured_content["queries"][0];
-    assert!(no_continuation(query), "{query}");
-    let cell = &query["resources"][0];
-    assert_eq!(cell["coverage"]["state"], "complete", "{cell}");
-    let pages = cell["pages"].as_array().unwrap();
-    // 16 KiB pages already exceed half the 24 KiB coalescing budget, so each
-    // stays its own scoped judgment; small line pages merge instead.
-    assert_eq!(pages.len(), 5, "{cell}");
-    for page in pages {
-        assert!(page.get("answers").is_some(), "{page}");
-        assert!(page.get("limitations").is_none(), "{page}");
-    }
-    let last = &pages[pages.len() - 1]["scope"];
-    assert_eq!(last["endLine"], last["totalLines"], "{cell}");
-    let requests = server.received_requests().await.unwrap();
-    assert!(
-        requests
-            .iter()
-            .any(|request| String::from_utf8_lossy(&request.body).contains(marker)),
-        "the terminal source marker must reach semantic assessment"
-    );
-    octocode_native::contracts::validate_output("clasify", &outcome.structured_content)
-        .expect("recovered semantic output contract");
-    runtime.close().await;
-}
-
-#[tokio::test]
-async fn scout_expands_explicit_question_type_and_preserves_source_identity() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "model":"resolved", "answers":{"answer":{"type":"noul","noul":0.82}},
-            "usage":{"input_tokens":2,"output_tokens":1}
-        })))
-        .expect(1)
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    let file = workspace.write("hooks.md", "preClose runs before active requests finish.\n");
-    let runtime = provider_runtime(&workspace, &server);
-    let input = json!({
-        "id":"novelty", "reasoning":"Decide whether this unread section adds evidence.","mainGoal":"Decide the next read.",
-        "resources":[{"id":"hooks","tool":"localFetch","query":{"path":file,"mainGoal": "test", "reasoning":"Screen the complete section."}}],
-        "questions":[{"id":"new","type":"adds","ask":"Shutdown timing", "known":["onClose runs after requests finish"]}]
-    });
-    let result = runtime
-        .run("preset".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
-        .await
-        .unwrap();
-    let output = &result.structured_content["queries"][0];
-    assert!(output.get("templateVersion").is_none());
-    let page = &output["resources"][0]["pages"][0];
-    assert_eq!(page["answers"]["new"]["yesno"], 0.82);
-    assert_eq!(
-        page["source"]["path"],
-        file.file_name().unwrap().to_str().unwrap()
-    );
-    assert_eq!(page["scope"]["startLine"], 1);
-    assert!(
-        !result
-            .structured_content
-            .to_string()
-            .contains("preClose runs")
-    );
-    let requests = server.received_requests().await.unwrap();
-    let sent: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
-    assert!(
-        sent["state"]["content"]
-            .as_str()
-            .is_some_and(|content| content.contains("preClose runs")),
-        "{sent}"
-    );
-    assert_eq!(sent["questions"]["answer"]["type"], "noul");
-    assert_eq!(
-        sent["questions"]["answer"]["instructions"]["knownEvidence"],
-        json!(["onClose runs after requests finish"])
-    );
-    assert_eq!(sent["questions"].as_object().unwrap().len(), 1);
-    runtime.close().await;
-}
-
-#[tokio::test]
-async fn search_rejects_removed_semantic_addon_without_calling_provider() {
-    let workspace = Workspace::new();
-    let runtime = workspace.runtime(&[]);
-    let error = runtime.run("search".into(), "localSearch".into(), json!({"queries":[{
-        "path":workspace.workspace, "matchString":"hooks", "mainGoal": "test", "reasoning":"Discover candidates.",
-        "semanticRerank":{"questions":[{"id":"q","question":"Relevant?"}]}
-    }]})).await.expect_err("semantic checks require clasify");
-    assert_eq!(error.code, "invalidInput");
-    runtime.close().await;
-}
-
-#[tokio::test]
-async fn page_budget_continuation_round_trips_through_the_public_contract() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "model":"resolved",
-            "answers":{"answer":{"type":"noul","noul":0.6}},
-            "usage":{"input_tokens":2,"output_tokens":1}
-        })))
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    let file = workspace.write(
-        "many-lines.txt",
-        (0..200)
-            .map(|index| format!("line {index}\n"))
-            .collect::<String>(),
-    );
-    let runtime = provider_runtime(&workspace, &server);
-    let input = json!({
-        "id":"paged",
-        "reasoning":"Assess bounded pages.","mainGoal":"Decide the next read.",
-        "resources":[{"id":"file","maxChars":5000,"tool":"localFetch","query":{
-            "path":file,"mainGoal": "test", "reasoning":"Read the next exact line.","length":1,"fullContent":false
-        }}],
-        "questions":[{"id":"relevant","type":"relevant","ask":"line content"}]
-    });
-    let outcome = runtime
-        .run("paged".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
-        .await
-        .unwrap();
-    let assess = outcome.structured_content["queries"][0]["next"]["clasify"]["queries"][0].clone();
-    assert!(assess.is_object(), "{}", outcome.structured_content);
-    assert_eq!(
-        assess["extras"],
-        json!(VERBOSE),
-        "an extras walk continues as one"
-    );
-    assert_eq!(
-        assess["questions"][0]["id"], "relevant",
-        "Continuation must preserve question identity"
-    );
-    let resource = assess["resources"][0].as_object().unwrap();
-    assert_eq!(
-        resource
-            .keys()
-            .map(String::as_str)
-            .collect::<std::collections::BTreeSet<_>>(),
-        std::collections::BTreeSet::from(["id", "maxChars", "query", "tool"]),
-        "{assess}"
-    );
-    octocode_native::contracts::prepare_many_and_validate("clasify", support::queries(assess.clone()))
-        .expect("next.clasify must execute unchanged");
-    octocode_native::contracts::validate_output("clasify", &outcome.structured_content)
-        .expect("nested query-cell-page output");
-    assert_eq!(assess["questions"][0]["type"], "relevant");
-    let mut next = Some(assess);
-    let mut last_end = outcome.structured_content["queries"][0]["resources"][0]["pages"]
-        .as_array()
-        .unwrap()
-        .last()
-        .unwrap()["scope"]["endLine"]
-        .as_u64()
-        .unwrap();
-    for _ in 0..4 {
-        let Some(query) = next.take() else {
-            break;
-        };
-        let page = runtime
-            .run("continue-preset".into(), "clasify".into(), support::queries(query))
-            .await
-            .unwrap();
-        let row = &page.structured_content["queries"][0];
-        assert!(row.get("templateVersion").is_none());
-        for page in row["resources"][0]["pages"].as_array().unwrap() {
-            assert_eq!(page["scope"]["startLine"].as_u64().unwrap(), last_end + 1);
-            last_end = page["scope"]["endLine"].as_u64().unwrap();
-        }
-        next = row.pointer("/next/clasify").cloned();
-    }
-    assert!(next.is_none(), "continuation must terminate");
-    assert_eq!(last_end, 200);
-    runtime.close().await;
-}
-
-#[tokio::test]
-async fn payload_over_max_chars_returns_an_executable_clasify_continuation() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/systemone"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "model":"resolved",
-            "answers":{"answer":{"type":"noul","noul":0.6}},
-            "usage":{"input_tokens":2,"output_tokens":1}
-        })))
-        .expect(5)
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    let file = workspace.write("over-budget.txt", filler(80_001));
-    let runtime = provider_runtime(&workspace, &server);
-    let input = json!({
-        "id":"over-budget",
-        "reasoning":"Assess no more than the resource payload budget.","mainGoal":"Decide the next read.",
-        "resources":[{"id":"file","maxChars":80_000,"tool":"localFetch","query":{
-            "path":file,"mainGoal": "test", "reasoning":"Read the complete file.","fullContent":true
-        }}],
-        "questions":[{"id":"relevant","type":"yesno","ask":"Relevant?"}]
-    });
-    let first = runtime
-        .run("over-budget-first".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
-        .await
-        .unwrap();
-    let assess = first.structured_content["queries"][0]["next"]["clasify"]["queries"][0].clone();
-    octocode_native::contracts::prepare_many_and_validate("clasify", support::queries(assess.clone()))
-        .expect("next.clasify must satisfy the public input contract");
-
-    let resumed = runtime
-        .run("over-budget-resume".into(), "clasify".into(), support::queries(assess))
-        .await
-        .expect("next.clasify must execute unchanged");
-    let resumed_query = &resumed.structured_content["queries"][0];
-    assert!(no_continuation(resumed_query), "{resumed_query}");
-    assert_eq!(
-        resumed_query["resources"][0]["coverage"]["state"],
-        "complete"
-    );
-    runtime.close().await;
-}
-
-#[tokio::test]
-async fn invalid_inner_query_is_rejected_with_the_exact_contract_field() {
-    let workspace = Workspace::new();
-    let runtime = workspace.runtime(&[
-        ("OCTOCODE_BETA", "true".into()),
-        ("OCTOCODE_CLASSIFICATION_API", "secret".into()),
-    ]);
-    let input = json!({
-        "id": "bad-inner-query",
-        "reasoning": "Test that an invalid inner path surfaces its field name.","mainGoal":"Decide the next read.",
-        "resources": [{
-            "id": "r1",
-            "tool": "localFetch",
-            "query": { "path": 42 }
-        }],
-        "questions": [{
-            "id": "q1",
-            "type": "yesno", "ask": "Relevant?"
-        }]
-    });
-    let error = runtime
-        .run("bad-inner-query".into(), "clasify".into(), support::queries(input))
-        .await
-        .expect_err("invalid delegated path must fail contract validation");
-    assert_eq!(error.code, "invalidInput");
-    let payload = error.payload.expect("structured validation payload");
-    let error = payload["error"].as_str().expect("validation error");
-    assert!(
-        error.contains("queries.0.resources.0.query.path"),
-        "validation error must name the nested path field: {payload}"
-    );
-    runtime.close().await;
-}
-
-#[tokio::test]
-async fn search_resource_fans_out_candidates_from_only_the_requested_page() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/systemone"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "model":"resolved",
-            "answers":{"answer":{"type":"noul","noul":0.4}},
-            "usage":{"input_tokens":2,"output_tokens":1}
-        })))
-        .expect(2)
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    for index in 0..6 {
-        workspace.write(&format!("src/file{index}.txt"), "needle marker\n");
-    }
-    let root = workspace.write("src/file6.txt", "needle marker\n");
-    let root = root.parent().unwrap().to_string_lossy().into_owned();
-    let runtime = provider_runtime(&workspace, &server);
-    let input = json!({
-        "id":"search-page",
-        "reasoning":"Judge one search page.","mainGoal":"Decide the next read.",
-        "resources":[{"id":"hits","candidateEvidence":"search","tool":"localSearch","query":{
-            "path":root,"matchString":"needle","mainGoal": "test", "reasoning":"Find hits.",
-            "resultView":"paginated","pageSize":2
-        }}],
-        "questions":[{"id":"relevant","type":"yesno","ask":"Relevant?"}]
-    });
-    let outcome = runtime
-        .run("search-page".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
-        .await
-        .unwrap();
-    let query = &outcome.structured_content["queries"][0];
-    let cell = &query["resources"][0];
-    let pages = cell["pages"].as_array().unwrap();
-    assert_eq!(pages.len(), 2, "{cell}");
-    assert_eq!(cell["coverage"]["state"], "partial");
-    let source_paths = pages
-        .iter()
-        .map(|page| page["source"]["path"].as_str().unwrap().to_owned())
-        .collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(
-        source_paths.len(),
-        2,
-        "each candidate needs its own source: {cell}"
-    );
-    // Workspace-relative (TOOL_DATA_CONTRACT "Paths"); localFetch resolves
-    // them against the workspace root, so they stay executable.
-    assert!(
-        source_paths.iter().all(|path| {
-            !std::path::Path::new(path).is_absolute() && workspace.workspace.join(path).is_file()
-        }),
-        "local candidate paths must be workspace-relative files: {source_paths:?}"
-    );
-    let resume = &query["next"]["clasify"]["queries"][0]["resources"][0];
-    assert_eq!(resume["tool"], "localSearch", "{query}");
-    assert_eq!(resume["query"]["page"], 2, "{resume}");
-    let requests = server.received_requests().await.unwrap();
-    assert_eq!(requests.len(), 2);
-    let judged_paths = requests
-        .iter()
-        .map(|request| {
-            let sent: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
-            assert!(
-                sent["state"]["data"]["files"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .flat_map(|file| file["matches"].as_array().into_iter().flatten())
-                    .any(|row| row["value"]
-                        .as_str()
-                        .is_some_and(|value| value.contains("needle"))),
-                "{sent}"
-            );
-            assert!(
-                sent["state"]["data"].get("next").is_none(),
-                "continuations stay out of provider state: {sent}"
-            );
-            let files = sent["state"]["data"]["files"].as_array().unwrap();
-            assert_eq!(
-                files.len(),
-                1,
-                "one provider state per file candidate: {sent}"
-            );
-            files[0]["path"].as_str().unwrap().to_owned()
-        })
-        .collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(judged_paths.len(), 2, "each file must be judged once");
-    octocode_native::contracts::validate_output("clasify", &outcome.structured_content)
-        .expect("single-page search output contract");
-    runtime.close().await;
-}
-
-/// clasify's own `next.clasify` is a generated `ClasifyInput` that passes the
-/// same preparation and validation as caller input, and replays as-is.
-#[tokio::test]
-async fn emitted_next_clasify_is_schema_valid_input_and_replays() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/systemone"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "model":"resolved",
-            "answers":{"answer":{"type":"noul","noul":0.4}},
-            "usage":{"input_tokens":2,"output_tokens":1}
-        })))
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    for index in 0..5 {
-        workspace.write(&format!("src/file{index}.txt"), "needle marker\n");
-    }
-    let root = workspace.write("src/file5.txt", "needle marker\n");
-    let root = root.parent().unwrap().to_string_lossy().into_owned();
-    let runtime = provider_runtime(&workspace, &server);
-    let input = json!({
-        "id":"walk",
-        "reasoning":"Judge the hits page by page.","mainGoal":"Decide the next read.",
-        "resources":[{"id":"hits","tool":"localSearch","query":{
-            "path":root,"matchString":"needle","resultView":"paginated","pageSize":2
-        }}],
-        "questions":[{"id":"relevant","type":"yesno","ask":"Relevant?"}]
-    });
-    let first = runtime
-        .run("walk-1".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
-        .await
-        .unwrap();
-    octocode_native::contracts::validate_output("clasify", &first.structured_content)
-        .expect("first page output contract");
-    let next = first.structured_content["queries"][0]["next"]["clasify"]["queries"][0].clone();
-    assert_eq!(next["mainGoal"], "Decide the next read.", "{next}");
-    assert_eq!(next["questions"][0]["id"], "relevant", "{next}");
-    assert_eq!(next["resources"][0]["query"]["page"], 2, "{next}");
-    serde_json::from_value::<octocode_native::contracts::tool_types::ClasifyInput>(support::queries(
-        next.clone(),
-    ))
-    .unwrap_or_else(|error| panic!("generated ClasifyInput: {error}: {next}"));
-    let prepared =
-        octocode_native::contracts::prepare_many_and_validate("clasify", support::queries(next.clone()))
-            .unwrap_or_else(|error| {
-                panic!(
-                    "clasify input contract: {:?}: {next}",
-                    error
-                        .issues
-                        .first()
-                        .map(|issue| (&issue.path, &issue.message))
-                )
-            });
-    assert_eq!(prepared.len(), 1);
-    let first_paths = first.structured_content["queries"][0]["resources"][0]["pages"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|page| page["source"]["path"].clone())
-        .collect::<Vec<_>>();
-    let replay = runtime
-        .run("walk-2".into(), "clasify".into(), support::queries(next))
-        .await
-        .expect("replayed next.clasify");
-    octocode_native::contracts::validate_output("clasify", &replay.structured_content)
-        .expect("replayed page output contract");
-    let cell = &replay.structured_content["queries"][0]["resources"][0];
-    assert_ne!(cell["coverage"]["state"], "error", "{cell}");
-    let pages = cell["pages"].as_array().unwrap();
-    assert!(!pages.is_empty(), "{cell}");
-    assert!(
-        pages
-            .iter()
-            .all(|page| !first_paths.contains(&page["source"]["path"])),
-        "the replay reads the next page: {cell}"
-    );
-    runtime.close().await;
-}
-
-#[tokio::test]
-async fn file_chunk_scout_judges_every_hit_cluster_of_a_clipped_file() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/systemone"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "model":"resolved",
-            "answers":{"answer":{"type":"noul","noul":0.7}},
-            "usage":{"input_tokens":3,"output_tokens":1}
-        })))
-        .expect(2)
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    // Eleven hits near the top clip the file at ten rows; the deciding hit
-    // sits far below, listed only in the file's moreLines.
-    let mut body = String::from("header\n");
-    for _ in 0..11 {
-        body.push_str("needle marker\n");
-    }
-    // Long filler lines keep the file over one page, so it is judged by
-    // hit windows rather than whole.
-    for _ in 0..390 {
-        body.push_str(&format!("filler line {}\n", "x".repeat(80)));
-    }
-    body.push_str("needle decides the answer\n");
-    workspace.write("src/only.txt", body);
-    let root = workspace
-        .workspace
-        .join("src")
-        .to_string_lossy()
-        .into_owned();
-    let runtime = provider_runtime(&workspace, &server);
-    let input = json!({
-        "id":"clusters",
-        "reasoning":"Judge every hit cluster.","mainGoal":"Find the deciding line.",
-        "resources":[{"id":"hits",
-            "tool":"localSearch","candidateEvidence":"fileChunks","query":{
-                "path":root,"matchString":"needle"
-            }
-        }],
-        "questions":[{"id":"decides","type":"yesno","ask":"Does this source decide the answer?"}]
-    });
-    let outcome = runtime
-        .run("clusters".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
-        .await
-        .expect("cluster scout");
-    let pages = outcome.structured_content["queries"][0]["resources"][0]["pages"]
-        .as_array()
-        .unwrap()
-        .clone();
-    let starts = pages
-        .iter()
-        .map(|page| page["scope"]["startLine"].as_u64())
-        .collect::<Vec<_>>();
-    assert_eq!(starts.len(), 2, "{}", outcome.structured_content);
-    assert!(
-        pages.iter().all(|page| page.get("error").is_none()),
-        "{pages:?}"
-    );
-    let sent = server
-        .received_requests()
-        .await
-        .unwrap()
-        .iter()
-        .map(|request| {
-            serde_json::from_slice::<serde_json::Value>(&request.body).unwrap()["state"]["content"]
-                .as_str()
-                .unwrap_or_default()
-                .to_owned()
-        })
-        .collect::<Vec<_>>();
-    assert!(
-        sent.iter()
-            .any(|content| content.contains("needle decides the answer")),
-        "{sent:?}"
-    );
-    octocode_native::contracts::validate_output("clasify", &outcome.structured_content)
-        .expect("cluster output contract");
-    runtime.close().await;
-}
-
-/// Two hit clusters of one file within a window radius are judged as one
-/// contiguous page: one provider call instead of two (a small file is one
-/// whole page). A span too large for one bounded page falls back to one page
-/// per cluster.
-#[tokio::test]
-async fn file_chunk_scout_judges_near_clusters_of_one_file_in_one_call() {
-    for (filler, calls) in [("filler line", 1u64), (&*"long filler ".repeat(18), 2)] {
-        let server = MockServer::builder().start().await;
-        Mock::given(method("POST"))
-            .and(path("/v1/systemone"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "model":"resolved",
-                "answers":{"answer":{"type":"noul","noul":0.7}},
-                "usage":{"input_tokens":3,"output_tokens":1}
-            })))
-            .expect(calls)
-            .mount(&server)
-            .await;
-        let workspace = Workspace::new();
-        let mut body = String::from("header\n");
-        for _ in 0..11 {
-            body.push_str("needle marker\n");
-        }
-        for _ in 0..150 {
-            body.push_str(filler);
-            body.push('\n');
-        }
-        body.push_str("needle decides the answer\n");
-        workspace.write("src/only.txt", body);
-        let root = workspace
-            .workspace
-            .join("src")
-            .to_string_lossy()
-            .into_owned();
-        let runtime = provider_runtime(&workspace, &server);
-        let input = json!({
-            "id":"near",
-            "reasoning":"Judge near hit clusters.","mainGoal":"Find the deciding line.",
-            "resources":[{"id":"hits",
-                "tool":"localSearch","candidateEvidence":"fileChunks","query":{
-                    "path":root,"matchString":"needle"
-                }
-            }],
-            "questions":[{"id":"decides","type":"yesno","ask":"Does this source decide the answer?"}]
-        });
-        let outcome = runtime
-            .run("near".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
-            .await
-            .expect("near scout");
-        let pages = outcome.structured_content["queries"][0]["resources"][0]["pages"]
-            .as_array()
-            .unwrap()
-            .clone();
-        assert_eq!(pages.len() as u64, calls, "{}", outcome.structured_content);
-        assert!(
-            pages.iter().all(|page| page.get("error").is_none()),
-            "{pages:?}"
-        );
-        let sent = server
-            .received_requests()
-            .await
-            .unwrap()
-            .iter()
-            .map(|request| {
-                serde_json::from_slice::<serde_json::Value>(&request.body).unwrap()["state"]["content"]
-                    .as_str()
-                    .unwrap_or_default()
-                    .to_owned()
-            })
-            .collect::<Vec<_>>();
-        assert!(
-            sent.iter()
-                .any(|content| content.contains("needle decides the answer")),
-            "{sent:?}"
-        );
-        assert!(
-            sent.iter().any(|content| content.contains("needle marker")),
-            "{sent:?}"
-        );
-        octocode_native::contracts::validate_output("clasify", &outcome.structured_content)
-            .expect("near cluster output contract");
         runtime.close().await;
     }
 }
 
 #[tokio::test]
-async fn file_chunk_scout_hydrates_the_candidate_cap_and_returns_exact_reads() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/systemone"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "model":"resolved",
-            "answers":{"answer":{"type":"noul","noul":0.7}},
-            "usage":{"input_tokens":3,"output_tokens":1}
-        })))
-        .expect(40)
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    for index in 0..45 {
-        workspace.write(
-            &format!("src/candidate{index}.txt"),
-            format!("header\nneedle marker\nbody-only fact {index}\nfooter\n"),
-        );
-    }
-    let root = workspace
-        .workspace
-        .join("src")
-        .to_string_lossy()
-        .into_owned();
-    let runtime = provider_runtime(&workspace, &server);
-    let input = json!({
-        "id":"hydrated-search",
-        "reasoning":"Judge source around each search hit.","mainGoal":"Decide the next read.",
-        "resources":[{"id":"hits",
-            "tool":"localSearch","candidateEvidence":"fileChunks","query":{
-                "path":root,"matchString":"needle","mainGoal": "test", "reasoning":"Find candidates.",
-                "resultView":"paginated","pageSize":50
-            }
-        ,"maxChars":20_000}],
-        "questions":[{"id":"relevant",
-            "type":"yesno","ask":"Does this source contain a body-only fact?"
-        }]
-    });
-    let outcome = runtime
-        .run("hydrated-search".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
-        .await
-        .expect("hydrated scout");
-    let query = &outcome.structured_content["queries"][0];
-    let pages = query["resources"][0]["pages"].as_array().unwrap();
-    assert_eq!(pages.len(), 40, "{query}");
-    for page in pages {
-        // Ranks 1–3 carry their exact read; the rest are ranked rows that
-        // name their file and lines.
-        if page["rank"].as_u64().unwrap() > 3 {
-            assert!(page.get("hints").is_none(), "{page}");
-            assert!(page["scope"]["startLine"].is_u64(), "{page}");
-            continue;
-        }
-        assert_eq!(page["hints"]["read"]["tool"], "localFetch", "{page}");
-        // An exact replay states no confidence.
-        assert!(page["hints"]["read"].get("confidence").is_none(), "{page}");
-        // Workspace-relative, like every local tool's rows.
-        assert!(
-            page["source"]["path"]
-                .as_str()
-                .is_some_and(|p| p.starts_with("src/candidate")),
-            "{page}"
-        );
-        assert!(page.get("limitations").is_none(), "stated once: {page}");
-    }
-    let read = &pages[0]["hints"]["read"];
-    let fetched = runtime
-        .run(
-            "hydrated-read".into(),
-            "localFetch".into(),
-            json!({"queries":[read["query"]]}),
-        )
-        .await
-        .expect("read replays");
-    assert_eq!(
-        fetched.structured_content["results"][0]["data"]["path"], pages[0]["source"]["path"],
-        "{}",
-        fetched.structured_content
-    );
-    // Each small file is judged whole, so no page claims a bounded chunk.
-    assert!(
-        !query.to_string().contains("bounded candidate chunk"),
-        "{query}"
-    );
-    let resume = &query["next"]["clasify"]["queries"][0]["resources"][0];
-    assert_eq!(resume["candidateEvidence"], "fileChunks");
-    assert_eq!(resume["query"]["page"], 2);
-    assert_eq!(resume["query"]["pageSize"], 40);
-    let requests = server.received_requests().await.unwrap();
-    assert_eq!(requests.len(), 40);
-    for request in requests {
-        let sent: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
-        let state = &sent["state"];
-        assert!(
-            state["content"]
-                .as_str()
-                .is_some_and(|body| body.contains("body-only fact")),
-            "{sent}"
-        );
-        assert!(state["content"].as_str().unwrap().chars().count() <= 4_000);
-        assert!(
-            state.get("matches").is_none(),
-            "search snippets must not reach Jev: {sent}"
-        );
-    }
-    octocode_native::contracts::validate_output("clasify", &outcome.structured_content)
-        .expect("hydrated scout output contract");
-    runtime.close().await;
-}
-
-/// Every line span one rendered page covers: its judged `scope`, and each
-/// range its read names (one row or a `queries` batch).
-fn page_spans(page: &serde_json::Value) -> Vec<(u64, u64)> {
-    let mut spans = Vec::new();
-    if let (Some(start), Some(end)) = (
-        page.pointer("/scope/startLine")
-            .and_then(serde_json::Value::as_u64),
-        page.pointer("/scope/endLine")
-            .and_then(serde_json::Value::as_u64),
-    ) {
-        spans.push((start, end));
-    }
-    let rows = page
-        .pointer("/hints/read/query/queries")
-        .and_then(serde_json::Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    for row in rows {
-        for range in row["ranges"].as_array().into_iter().flatten() {
-            if let Some((start, end)) = range.as_str().and_then(|range| range.split_once('-')) {
-                spans.push((start.parse().unwrap(), end.parse().unwrap()));
-            }
-        }
-    }
-    spans
-}
-
-/// A fileChunks walk over tools/clasify covered 242 of 296 hit
-/// lines: a file whose search page lists 10 rows and 24 more lines but only
-/// counts the other 26 (`moreLinesUnlisted`) still has every hit line reach
-/// a window, judged or unjudged with its read.
-#[tokio::test]
-async fn file_chunks_reach_hit_lines_the_search_page_only_counted() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/systemone"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "model":"resolved",
-            "answers":{"answer":{"type":"noul","noul":0.7}},
-            "usage":{"input_tokens":3,"output_tokens":1}
-        })))
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    // Two hundred long hit lines, one every three lines: too large to show
-    // whole, so the page shows 10 rows, lists 24 more lines, and counts the
-    // rest.
-    let hits = (1..=200).map(|step| step * 3).collect::<Vec<u64>>();
-    let mut body = String::new();
-    for line in 1..=610 {
-        if hits.contains(&line) {
-            body.push_str(&format!("needle {line} {}\n", filler(900)));
-        } else {
-            body.push_str("filler\n");
-        }
-    }
-    workspace.write("src/many.txt", body);
-    let root = workspace
-        .workspace
-        .join("src")
-        .to_string_lossy()
-        .into_owned();
-    let runtime = provider_runtime(&workspace, &server);
-    let search = json!({"path":root,"matchString":"needle"});
-    let listed = runtime
-        .run(
-            "unlisted-search".into(),
-            "localSearch".into(),
-            json!({"queries":[{"path":root,"matchString":"needle","pageSize":5}]}),
-        )
-        .await
-        .expect("search");
-    let file = &listed.structured_content["results"][0]["data"]["files"][0];
-    assert!(
-        file.pointer("/pagination/moreLinesUnlisted")
-            .and_then(serde_json::Value::as_u64)
-            .is_some_and(|unlisted| unlisted > 0),
-        "the fixture leaves hit lines unlisted: {}",
-        file["pagination"]
-    );
-    let input = json!({
-        "id":"unlisted","reasoning":"r","mainGoal":"Find the deciding line.",
-        "resources":[{"id":"hits","tool":"localSearch","candidateEvidence":"fileChunks","query":search}],
-        "questions":[{"id":"decides","type":"yesno","ask":"Does this source decide the answer?"}]
-    });
-    let outcome = runtime
-        .run("unlisted".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
-        .await
-        .expect("clasify");
-    let query = &outcome.structured_content["queries"][0];
-    let spans = query["resources"][0]["pages"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .flat_map(page_spans)
-        .collect::<Vec<_>>();
-    let missing = hits
-        .iter()
-        .filter(|hit| {
-            !spans
-                .iter()
-                .any(|(start, end)| (*start..=*end).contains(*hit))
-        })
-        .collect::<Vec<_>>();
-    assert!(missing.is_empty(), "uncovered {missing:?}: {query}");
-    octocode_native::contracts::validate_output("clasify", &outcome.structured_content)
-        .expect("unlisted hits output contract");
-    runtime.close().await;
-}
-
-#[tokio::test]
-async fn hydrated_search_skips_inner_match_replays_and_reaches_later_files() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/systemone"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "model":"resolved",
-            "answers":{"answer":{"type":"noul","noul":0.7}},
-            "usage":{"input_tokens":3,"output_tokens":1}
-        })))
-        .expect(3)
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    for name in ["a", "b", "c"] {
-        workspace.write(
-            &format!("src/{name}.txt"),
-            format!("needle {name} first\nneedle {name} second\nneedle {name} third\n"),
-        );
-    }
-    let root = workspace
-        .workspace
-        .join("src")
-        .to_string_lossy()
-        .into_owned();
-    let runtime = provider_runtime(&workspace, &server);
-    let input = json!({
-        "id":"hydrated-axis", "reasoning":"Judge each file once.", "mainGoal":"Find evidence.",
-        "resources":[{"id":"hits","tool":"localSearch","candidateEvidence":"fileChunks",
-            "query":{"path":root,"matchString":"needle","pageSize":2,"matchPageSize":1,
-                "sort":"path","mainGoal":"Find files.","reasoning":"Read hits."},
-            "maxChars":20_000}],
-        "questions":[{"id":"relevant","type":"yesno","ask":"Is there a needle?"}]
-    });
-    let first = runtime
-        .run(
-            "hydrated-axis-first".into(),
-            "clasify".into(),
-            support::with_extras(input, &VERBOSE),
-        )
-        .await
-        .expect("first page");
-    let first_query = &first.structured_content["queries"][0];
-    assert_eq!(
-        first_query["resources"][0]["pages"]
-            .as_array()
-            .map(Vec::len),
-        Some(2)
-    );
-    let next = &first_query["next"]["clasify"]["queries"][0];
-    assert_eq!(next["resources"][0]["query"]["page"], 2, "{first_query}");
-    assert_eq!(
-        next["resources"][0]["query"]["matchPage"]
-            .as_u64()
-            .unwrap_or(1),
-        1
-    );
-    let second = runtime
-        .run(
-            "hydrated-axis-second".into(),
-            "clasify".into(),
-            json!({"queries":[next]}),
-        )
-        .await
-        .expect("second page");
-    assert_eq!(
-        second.structured_content["queries"][0]["resources"][0]["pages"]
-            .as_array()
-            .map(Vec::len),
-        Some(1)
-    );
-    let requests = server.received_requests().await.expect("requests");
-    assert_eq!(requests.len(), 3, "each hydrated file is judged once");
-    runtime.close().await;
-}
-
-/// 64 identical error objects (12.2 KB of 38 KB, each with
-/// a one-window read) were repeated: hit windows a spent budget left unjudged state their
-/// error once per resource, and each file's unjudged windows share one read
-/// that names each window once; judged and unjudged together cover every hit.
-#[tokio::test]
-async fn unjudged_hit_windows_state_their_error_once_and_batch_per_file() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/systemone"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "model":"resolved",
-            "answers":{"answer":{"type":"noul","noul":0.7}},
-            "usage":{"input_tokens":3,"output_tokens":1}
-        })))
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    // Ten files over one page each, with seven far hit clusters each: more
-    // windows than the page budget judges.
-    let hits = (0..7).map(|step| 10 + step * 400).collect::<Vec<u64>>();
-    for file in 0..10 {
-        let mut body = String::new();
-        for line in 1..=2500 {
-            body.push_str(if hits.contains(&line) {
-                "needle marker\n"
-            } else {
-                "filler line padded so the file stays over one page\n"
-            });
-        }
-        workspace.write(&format!("src/f{file}.txt"), body);
-    }
-    let root = workspace
-        .workspace
-        .join("src")
-        .to_string_lossy()
-        .into_owned();
-    let runtime = provider_runtime(&workspace, &server);
-    let input = json!({
-        "id":"spent","reasoning":"r","mainGoal":"Find the deciding line.",
-        "resources":[{"id":"hits","tool":"localSearch","candidateEvidence":"fileChunks",
-            "query":{"path":root,"matchString":"needle"}}],
-        "questions":[{"id":"a","type":"yesno","ask":"Does this source decide the answer?"}]
-    });
-    let outcome = runtime
-        .run("spent".into(), "clasify".into(), support::queries(input))
-        .await
-        .expect("clasify");
-    let query = &outcome.structured_content["queries"][0];
-    let resource = &query["resources"][0];
-    let pages = resource["pages"].as_array().cloned().unwrap_or_default();
-    let unjudged = pages
-        .iter()
-        .filter(|page| page.get("answers").is_none())
-        .collect::<Vec<_>>();
-    assert!(
-        !unjudged.is_empty(),
-        "the fixture spends the page budget: {query}"
-    );
-    assert_eq!(
-        resource["error"]["errorCode"], "classificationBudgetSpent",
-        "{query}"
-    );
-    assert_eq!(
-        outcome
-            .structured_content
-            .to_string()
-            .matches("classificationBudgetSpent")
-            .count(),
-        1,
-        "stated once: {query}"
-    );
-    let mut files = std::collections::HashSet::new();
-    for page in &unjudged {
-        assert!(page.get("error").is_none(), "{page}");
-        let rows = page
-            .pointer("/hints/read/query/queries")
-            .and_then(serde_json::Value::as_array)
-            .unwrap_or_else(|| panic!("a batched read: {page}"));
-        let path = rows[0]["path"].as_str().unwrap().to_owned();
-        assert!(files.insert(path), "one unjudged page per file: {query}");
-    }
-    // Judged pages name their window (`line`..`endLine`); together with the
-    // batched reads they cover every hit of every file.
-    for file in 0..10 {
-        let path = format!("src/f{file}.txt");
-        let mut spans = Vec::new();
-        for page in &pages {
-            let named = page["path"].as_str() == Some(path.as_str())
-                || page
-                    .pointer("/hints/read/query/queries/0/path")
-                    .and_then(serde_json::Value::as_str)
-                    == Some(path.as_str());
-            if !named {
-                continue;
-            }
-            if let (Some(start), Some(end)) = (page["line"].as_u64(), page["endLine"].as_u64()) {
-                spans.push((start, end));
-            }
-            spans.extend(page_spans(page));
-        }
-        for hit in &hits {
-            assert!(
-                spans
-                    .iter()
-                    .any(|(start, end)| (*start..=*end).contains(hit)),
-                "{path}:{hit} unreached: {query}"
-            );
-        }
-    }
-    octocode_native::contracts::validate_output("clasify", &outcome.structured_content)
-        .expect("unjudged batch output contract");
-    runtime.close().await;
-}
-
-/// Wide search pages share the matrix page budget: each resource judges its
-/// share of candidates and `next.clasify` resumes the rest; nothing fails.
-#[tokio::test]
-async fn wide_search_pages_share_the_page_budget_and_resume() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/systemone"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "model":"resolved",
-            "answers":{"answer_0":{"type":"noul","noul":0.7},"answer_1":{"type":"noul","noul":0.6}},
-            "usage":{"input_tokens":3,"output_tokens":1}
-        })))
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    for root in ["a", "b"] {
-        for index in 0..31 {
-            workspace.write(
-                &format!("{root}/candidate{index}.txt"),
-                "needle\nbody evidence\n",
-            );
-        }
-    }
-    let resource = |id: &str, root: &str| {
-        json!({
-            "id":id,"tool":"localSearch","candidateEvidence":"search","query":{
-                "path":workspace.workspace.join(root),"matchString":"needle","mainGoal": "test", "reasoning":"Find candidates.",
-                "pageSize":30
-            }
-        })
-    };
-    let questions = (0..2)
-        .map(|index| {
-            json!({
-                "id":format!("q{index}"),"type":"yesno","ask":format!("Check {index}?")
-            })
-        })
-        .collect::<Vec<_>>();
-    let runtime = provider_runtime(&workspace, &server);
-    let outcome = runtime
-        .run(
-            "wide-pages".into(),
-            "clasify".into(),
-            support::with_extras(json!({
-                "id":"wide-pages","reasoning":"Exercise the page budget.","mainGoal":"Decide the next read.",
-                "resources":[resource("a","a"),resource("b","b")],"questions":questions
-            }), &VERBOSE),
-        )
-        .await
-        .expect("bounded wide pages");
-    let query = &outcome.structured_content["queries"][0];
-    let resources = query["resources"].as_array().unwrap();
-    let judged = resources
-        .iter()
-        .flat_map(|r| r["pages"].as_array().unwrap())
-        .filter(|page| page.get("answers").is_some())
-        .count();
-    assert!(judged > 0 && judged <= 48, "{query}");
-    assert!(
-        resources
-            .iter()
-            .flat_map(|r| r["pages"].as_array().unwrap())
-            .all(|page| page["error"]["errorCode"] != "classificationExpandedCellsExceeded"),
-        "{query}"
-    );
-    assert!(
-        query.pointer("/next/clasify").is_some(),
-        "the rest resumes: {query}"
-    );
-    runtime.close().await;
-}
-
-#[tokio::test]
-async fn empty_file_is_reported_without_a_provider_call() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .respond_with(ResponseTemplate::new(500))
-        .expect(0)
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    let file = workspace.write("empty.txt", "");
-    let runtime = provider_runtime(&workspace, &server);
-    let input = json!({
-        "id":"empty","reasoning":"Screen an empty artifact.","mainGoal":"Decide the next read.",
-        "resources":[{"id":"e","tool":"localFetch","query":{"path":file,"mainGoal": "test", "reasoning":"Read it."}}],
-        "questions":[{"id":"q","type":"yesno","ask":"Relevant?"}]
-    });
-    let outcome = runtime
-        .run("empty".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
-        .await
-        .unwrap();
-    let resource = &outcome.structured_content["queries"][0]["resources"][0];
-    assert_eq!(resource["coverage"]["state"], "error", "{resource}");
-    assert!(
-        outcome.all_failed,
-        "MCP must expose failed evidence as a tool error"
-    );
-    assert_eq!(
-        resource["pages"][0]["error"]["errorCode"],
-        "classificationContextEmpty"
-    );
-    octocode_native::contracts::validate_output("clasify", &outcome.structured_content)
-        .expect("empty-file output contract");
-    runtime.close().await;
-}
-
-#[tokio::test]
-async fn empty_search_page_is_not_sent_to_the_provider() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .respond_with(ResponseTemplate::new(500))
-        .expect(0)
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    let file = workspace.write("present.txt", "hello world\n");
-    let runtime = workspace.runtime(&[
-        ("OCTOCODE_BETA", "true".into()),
-        ("OCTOCODE_CLASSIFICATION_API", "secret".into()),
-        ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
-    ]);
-    let input = json!({
-        "id":"empty-search","reasoning":"Screen a search page.","mainGoal":"Decide the next read.",
-        "resources":[{"id":"e","tool":"localSearch","query":{
-            "path":file,"matchString":"UNLIKELY_OCTOCODE_SENTINEL_673829",
-            "mainGoal": "test", "reasoning":"Find matching source."
-        }}],
-        "questions":[{"id":"q","type":"yesno","ask":"Does this page show a match?"}]
-    });
-    let outcome = runtime
-        .run("empty-search".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
-        .await
-        .unwrap();
-    let resource = &outcome.structured_content["queries"][0]["resources"][0];
-    assert_eq!(resource["coverage"]["state"], "error", "{resource}");
-    assert!(
-        outcome.all_failed,
-        "MCP must expose failed evidence as a tool error"
-    );
-    assert_eq!(
-        resource["pages"][0]["error"]["errorCode"],
-        "classificationContextEmpty"
-    );
-    runtime.close().await;
-}
-
-#[tokio::test]
-async fn disjoint_file_match_windows_return_real_ranges_without_a_focus() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "model":"resolved",
-            "answers":{"answer":{"type":"noul","noul":0.95}},
-            "usage":{"input_tokens":5,"output_tokens":1}
-        })))
-        .expect(1)
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    let body = (1..=220)
-        .map(|line| {
-            if line == 10 || line == 160 {
-                format!("MARKER {line}\n")
-            } else {
-                format!("line {line}\n")
-            }
-        })
-        .collect::<String>();
-    let file = workspace.write("disjoint.rs", body);
-    let runtime = provider_runtime(&workspace, &server);
-    let input = json!({
-        "id":"disjoint","reasoning":"Find relevant match windows.","mainGoal":"Decide the next read.",
-        "resources":[{"id":"f","tool":"localFetch","query":{
-            "path":file,"mainGoal": "test", "reasoning":"Read matching windows.",
-            "matchString":"MARKER","contextLines":45,"length":50000
-        }}],
-        "questions":[{"id":"q","type":"yesno","ask":"Does this content show MARKER?"}]
-    });
-    let outcome = runtime
-        .run("disjoint".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
-        .await
-        .unwrap();
-    let page = &outcome.structured_content["queries"][0]["resources"][0]["pages"][0];
-    assert_eq!(
-        page["scope"]["lineRanges"].as_array().map(Vec::len),
-        Some(2),
-        "{page}"
-    );
-    assert!(page.get("focus").is_none(), "{page}");
-    octocode_native::contracts::validate_output("clasify", &outcome.structured_content)
-        .expect("disjoint scope output contract");
-    runtime.close().await;
-}
-
-#[tokio::test]
-async fn long_positive_scout_sends_only_authored_questions_and_preserves_probabilities() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "model":"resolved",
-            "answers":{
-                "answer_0":{"type":"noul","noul":0.93456789},
-                "answer_1":{"type":"choice","choice":"yes","confidence":0.87654321,
-                    "probabilities":{"yes":0.9995,"no":0.0005}}
-            },
-            "usage":{"input_tokens":5,"output_tokens":2}
-        })))
-        .expect(1)
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    let body = (1..=200).map(|n| format!("line {n}\n")).collect::<String>();
-    let file = workspace.write("long.rs", body);
-    let expected_source_path = file.clone();
-    let runtime = provider_runtime(&workspace, &server);
-    let input = json!({
-        "id":"pure-scout","reasoning":"Screen the document.","mainGoal":"Decide the next read.",
-        "resources":[{"id":"f","tool":"localFetch","query":{
-            "path":file,"mainGoal": "test", "reasoning":"Read the source."
-        }}],
-        "questions":[
-            {"id":"shutdown","type":"yesno","ask":"Could this document contain shutdown guidance?"},
-            {"id":"role","type":"choice","ask":"Classify the document's role.",
-                "labels":{"yes":"Has guidance","no":"No guidance"}}
-        ]
-    });
-    let outcome = runtime
-        .run("pure-scout".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
-        .await
-        .unwrap();
-    let page = &outcome.structured_content["queries"][0]["resources"][0]["pages"][0];
-    assert_eq!(page["answers"]["shutdown"]["yesno"], 0.93456789);
-    assert_eq!(
-        page["answers"]["role"],
-        json!({
-            "choice":"yes","confidence":0.87654321,
-            "probabilities":{"yes":0.9995,"no":0.0005}
-        })
-    );
-    assert!(page.get("focus").is_none(), "{page}");
-    assert!(
-        outcome.structured_content["queries"][0]
-            .get("lowSignal")
-            .is_none()
-    );
-    // Local sources display workspace-relative (TOOL_DATA_CONTRACT "Paths").
-    assert_eq!(
-        page["source"]["path"],
-        expected_source_path
-            .file_name()
-            .unwrap()
-            .to_string_lossy()
-            .as_ref()
-    );
-    assert!(page["source"].get("evidenceHash").is_none());
-    let requests = server.received_requests().await.expect("mock requests");
-    assert_eq!(requests.len(), 1, "Clasify must not add a focus call");
-    let sent: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
-    assert_eq!(
-        sent["questions"]
-            .as_object()
-            .map(|questions| questions.len()),
-        Some(2)
-    );
-    assert_eq!(
-        sent["questions"]["answer_0"],
-        json!({
-            "instructions":{
-                "question":"Could this document contain shutdown guidance?",
-                "goal":"Decide the next read."
-            },
-            "type":"noul"
-        })
-    );
-    assert_eq!(
-        sent["questions"]["answer_1"],
-        json!({
-            "instructions":{
-                "question":"Classify the document's role.",
-                "goal":"Decide the next read."
-            },
-            "type":"choice",
-            "criteria":{"yes":"Has guidance","no":"No guidance"}
-        })
-    );
-    assert!(
-        sent["state"]["content"]
-            .as_str()
-            .is_some_and(|content| content.contains("line 200")),
-        "{sent}"
-    );
-    assert!(sent.get("windows").is_none());
-    octocode_native::contracts::validate_output("clasify", &outcome.structured_content)
-        .expect("pure scout output contract");
-    runtime.close().await;
-}
-
-#[tokio::test]
-async fn snippet_continuations_visit_every_file_and_match_page_before_completing() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/systemone"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "model":"resolved",
-            "answers":{"answer":{"type":"noul","noul":0.1}},
-            "usage":{"input_tokens":2,"output_tokens":1}
-        })))
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    workspace.write(
-        "fixture/a.txt",
-        "marker: alpha\nmarker: secret needle\nmarker: omega\n",
-    );
-    let root = workspace.write(
-        "fixture/b.txt",
-        "marker: beta\nmarker: gamma\nmarker: delta\n",
-    );
-    let root = root.parent().unwrap().to_string_lossy().into_owned();
-    let runtime = provider_runtime(&workspace, &server);
-    let mut input = json!({
-        "id":"matrix-1","reasoning":"Cover every file and match page.","mainGoal":"Decide the next read.",
-        "resources":[{"id":"files","candidateEvidence":"search","tool":"localSearch","query":{
-            "mainGoal": "test", "reasoning":"Page snippets.","path":root,"matchString":"marker",
-            "pageSize":1,"matchPageSize":1,"sort":"path"
-        }}],
-        "questions":[{"id":"needle","type":"yesno","ask":"Does the evidence contain secret needle?"}]
-    });
-    let mut coverages = Vec::new();
-    for call in 0..10 {
-        let outcome = runtime
-            .run(
-                format!("page-{call}"),
-                "clasify".into(),
-                support::with_extras(input.clone(), &VERBOSE),
-            )
-            .await
-            .unwrap();
-        let query = &outcome.structured_content["queries"][0];
-        coverages.push(query["resources"][0]["coverage"]["state"].clone());
-        match query["next"].get("clasify") {
-            Some(next) => input = next.clone(),
-            None => break,
-        }
-    }
-    let sent = server
-        .received_requests()
-        .await
-        .unwrap()
-        .iter()
-        .map(|request| {
-            let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
-            body["state"].to_string()
-        })
-        .collect::<Vec<_>>();
-    let visited = |needle: &str| sent.iter().filter(|state| state.contains(needle)).count();
-    for line in ["alpha", "secret needle", "omega", "beta", "gamma", "delta"] {
-        assert_eq!(
-            visited(line),
-            1,
-            "{line} must be judged exactly once: {sent:#?}"
-        );
-    }
-    assert_eq!(coverages.len(), 6, "{coverages:?}");
-    assert!(
-        coverages[..5].iter().all(|coverage| coverage == "partial"),
-        "every page with an outstanding branch is partial: {coverages:?}"
-    );
-    assert_eq!(coverages[5], "complete", "{coverages:?}");
-    runtime.close().await;
-}
-
-#[tokio::test]
-async fn clasify_locate_preflight_returns_a_typed_error_without_capture_or_provider_calls() {
-    let server = MockServer::builder().start().await;
-    let workspace = Workspace::new();
-    let runtime = workspace.runtime(&[
-        ("OCTOCODE_BETA", "true".into()),
-        ("OCTOCODE_CLASSIFICATION_API", "secret".into()),
-        ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
-    ]);
-    let input = json!({
-        "reasoning":"Reject locate on a search resource.",
-        "mainGoal":"Files that state the validation rules.",
-        "resources":[
-            {"id":"unread","tool":"localFetch","query":{"path":"/does-not-exist"}},
-            {"id":"search","tool":"ghSearchCode","query":{"owner":"nonexistent"},"candidateEvidence":"search"}
-        ],
-        "questions":[
-            {"type":"locate","ask":"Validation rules"},
-            {"type":"yesno","ask":"Does this validate requests?"}
-        ]
-    });
-    let outcome = runtime
-        .run("preflight".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
-        .await
-        .expect("typed rejection rather than WorkerFailed");
-    let resources = outcome.structured_content["queries"][0]["resources"]
-        .as_array()
-        .unwrap();
-    assert_eq!(resources.len(), 2);
-    for resource in resources {
-        assert_eq!(resource["coverage"]["state"], "error");
-        let page = &resource["pages"][0];
-        assert_eq!(
-            page["error"]["errorCode"],
-            "classificationLocateUnsupported"
-        );
-        assert!(page["error"]["error"].as_str().unwrap().contains("search"));
-        assert!(page.get("answers").is_none());
-    }
-    assert!(server.received_requests().await.unwrap().is_empty());
-}
-
-#[tokio::test]
-async fn a_repeated_matrix_replays_its_judgment_without_a_second_provider_request() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/systemone"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "model":"resolved",
-            "answers":{"answer":{"type":"noul","noul":0.7}},
-            "usage":{"input_tokens":2,"output_tokens":1}
-        })))
-        .expect(1)
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    let file = workspace.write("replay.txt", "The retry floor is 100 ms.\n");
-    let runtime = provider_runtime(&workspace, &server);
-    let mut input = query();
-    input["resources"] = json!([{"id":"source","tool":"localFetch","query":{"path":file}}]);
-    input["questions"] = json!([{"id":"floor","type":"yesno","ask":"Is the retry floor stated?"}]);
-    let first = runtime
-        .run("replay-1".into(), "clasify".into(), support::queries(input.clone()))
-        .await
-        .expect("first judgment");
-    let second = runtime
-        .run("replay-2".into(), "clasify".into(), support::queries(input))
-        .await
-        .expect("replayed judgment");
-    let answer = |outcome: &octocode_native::runtime::ToolOutcome| {
-        compact_answer(
-            &outcome.structured_content["queries"][0]["resources"][0],
-            "floor",
-        )
-    };
-    assert_eq!(answer(&first), json!(0.7), "{}", first.structured_content);
-    assert_eq!(answer(&second), answer(&first));
-    assert_eq!(server.received_requests().await.unwrap().len(), 1);
-}
-
-#[tokio::test]
-async fn identical_pages_in_one_call_share_a_single_provider_request() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/systemone"))
-        .respond_with(noul_response(0.6).set_delay(Duration::from_millis(200)))
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    let runtime = provider_runtime(&workspace, &server);
-    let evidence = "The dedupe sentinel 4411 is stated here.";
-    let matrix = |id: &str| {
-        json!({
-            "id":id,"reasoning":"Screen duplicated evidence.","mainGoal":"Decide the next read.",
-            "resources":[{"id":"a","value":evidence},{"id":"b","value":evidence}],
-            "questions":[{"id":"q","type":"yesno","ask":"Is sentinel 4411 stated?"}]
-        })
-    };
-    let outcome = runtime
-        .run(
-            "dedupe".into(),
-            "clasify".into(),
-            json!({"queries":[matrix("m1"), matrix("m2")]}),
-        )
-        .await
-        .unwrap();
-    for query in outcome.structured_content["queries"].as_array().unwrap() {
-        for resource in query["resources"].as_array().unwrap() {
-            assert_eq!(
-                compact_answer(resource, "q"),
-                json!(0.6),
-                "{}",
-                outcome.structured_content
-            );
-        }
-    }
-    assert_eq!(
-        server.received_requests().await.unwrap().len(),
-        1,
-        "four identical cells must not race four provider requests"
-    );
-    runtime.close().await;
-}
-
-#[tokio::test]
-async fn judgment_cache_ignores_correlation_ids_but_not_question_text() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/systemone"))
-        .respond_with(noul_response(0.4))
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    let runtime = provider_runtime(&workspace, &server);
-    let input = |question_id: &str, ask: &str| {
-        json!({
-            "id":"ids","reasoning":"Cache key probe.","mainGoal":"Decide the next read.",
-            "resources":[{"id":"v","value":"Cache id sentinel 7719."}],
-            "questions":[{"id":question_id,"type":"yesno","ask":ask}]
-        })
-    };
-    for (label, question_id, ask) in [
-        ("first", "q", "Is sentinel 7719 stated?"),
-        ("renamed", "renamed", "Is sentinel 7719 stated?"),
-        ("changed", "q", "Is sentinel 7720 stated?"),
-    ] {
-        let outcome = runtime
-            .run(
-                label.into(),
-                "clasify".into(),
-                support::queries(input(question_id, ask)),
-            )
-            .await
-            .unwrap();
-        assert_eq!(
-            compact_answer(
-                &outcome.structured_content["queries"][0]["resources"][0],
-                question_id
-            ),
-            json!(0.4),
-            "{label}: {}",
-            outcome.structured_content
-        );
-    }
-    assert_eq!(
-        server.received_requests().await.unwrap().len(),
-        2,
-        "a renamed id replays; changed question text asks again"
-    );
-    runtime.close().await;
-}
-
-#[tokio::test]
-async fn prefilter_window_is_centered_on_the_hit_not_aligned_to_a_bucket() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/systemone"))
-        .respond_with(noul_response(0.9))
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    // The hit sits on line 601, the first line of the second 600-line bucket;
-    // its enclosing function header is on line 596.
-    let source = (1..=1300)
-        .map(|line| match line {
-            596 => "function retryDelay(attempt) { // HEADER_SENTINEL\n".to_owned(),
-            601 => "  const RETRY_FLOOR_MS = 100;\n".to_owned(),
-            _ => format!("const filler_{line} = {line};\n"),
-        })
-        .collect::<String>();
-    let file = workspace.write("huge.js", source);
-    let runtime = provider_runtime(&workspace, &server);
-    let outcome = runtime
-        .run(
-            "prefilter".into(),
-            "clasify".into(),
-            support::with_extras(json!({
-                "id":"pf","reasoning":"Judge only the hit window.","mainGoal":"Find the retry floor.",
-                "resources":[{"id":"f","prefilter":["RETRY_FLOOR_MS"],
-                    "tool":"localFetch","query":{"path":file}}],
-                "questions":[{"id":"q","type":"yesno","ask":"Is the retry floor defined?"}]
-            }), &VERBOSE),
-        )
-        .await
-        .unwrap();
-    let pages = outcome.structured_content["queries"][0]["resources"][0]["pages"]
-        .as_array()
-        .unwrap()
-        .clone();
-    assert_eq!(pages.len(), 1, "{}", outcome.structured_content);
-    let scope = &pages[0]["scope"];
-    let (start, end) = (
-        scope["startLine"].as_u64().unwrap(),
-        scope["endLine"].as_u64().unwrap(),
-    );
-    assert!(
-        start < 596 && end > 601 && end - start < 600,
-        "window {start}-{end} must surround the hit"
-    );
-    let requests = server.received_requests().await.unwrap();
-    assert_eq!(requests.len(), 1);
-    assert!(String::from_utf8_lossy(&requests[0].body).contains("HEADER_SENTINEL"));
-    runtime.close().await;
-}
-
-#[tokio::test]
-async fn prefilter_hits_beyond_three_windows_resume_through_next_clasify() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/systemone"))
-        .respond_with(noul_response(0.9))
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    // Four hits, each needing its own 600-line window.
-    let hits = [100_u64, 1100, 2100, 3100];
-    let source = (1..=4000_u64)
-        .map(|line| {
-            if hits.contains(&line) {
-                format!("const NEEDLE_{line} = {line}; // NEEDLE_MARK\n")
-            } else {
-                format!("const filler_{line} = {line};\n")
-            }
-        })
-        .collect::<String>();
-    let file = workspace.write("walk.js", source);
-    let runtime = provider_runtime(&workspace, &server);
-    let judged = |content: &serde_json::Value| {
-        content["queries"][0]["resources"][0]["pages"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|page| {
-                (
-                    page["scope"]["startLine"].as_u64().unwrap(),
-                    page["scope"]["endLine"].as_u64().unwrap(),
-                )
-            })
-            .collect::<Vec<_>>()
-    };
-    let covers = |pages: &[(u64, u64)], line: u64| {
-        pages
-            .iter()
-            .any(|(start, end)| (*start..=*end).contains(&line))
-    };
-    let input = |max_chars: Option<u64>| {
-        let mut resource = json!({"id":"f","prefilter":["NEEDLE_MARK"],
-            "tool":"localFetch","query":{"path":file}});
-        if let Some(max_chars) = max_chars {
-            resource["maxChars"] = json!(max_chars);
-        }
-        json!({
-            "id":"walk","reasoning":"Judge every hit window.","mainGoal":"Find the needle.",
-            "resources":[resource],
-            "questions":[{"id":"q","type":"yesno","ask":"Is a needle defined?"}]
-        })
-    };
-
-    let first = runtime
-        .run("walk-1".into(), "clasify".into(), support::with_extras(input(None), &VERBOSE))
-        .await
-        .unwrap();
-    let pages = judged(&first.structured_content);
-    assert_eq!(pages.len(), 3, "{}", first.structured_content);
-    for line in &hits[..3] {
-        assert!(covers(&pages, *line), "{line} in {pages:?}");
-    }
-    assert!(!covers(&pages, 3100));
-    let query = &first.structured_content["queries"][0];
-    assert!(
-        query.to_string().contains("Prefilter"),
-        "dropped hits must be reported: {query}"
-    );
-    let resume = query["next"]["clasify"]["queries"][0].clone();
-    assert!(
-        resume.is_object(),
-        "dropped hits need a continuation: {query}"
-    );
-    let resumed = runtime
-        .run("walk-2".into(), "clasify".into(), support::queries(resume))
-        .await
-        .expect("next.clasify must execute unchanged");
-    let pages = judged(&resumed.structured_content);
-    assert!(covers(&pages, 3100), "{}", resumed.structured_content);
-    assert!(pages.iter().all(|(start, _)| *start > 2100), "{pages:?}");
-    assert!(
-        resumed.structured_content["queries"][0]
-            .get("next")
-            .is_none()
-    );
-
-    // One maxChars budget spans every window: the second window waits for
-    // the next call instead of each window getting its own full budget.
-    let tight = runtime
-        .run(
-            "walk-tight".into(),
-            "clasify".into(),
-            support::with_extras(input(Some(20_000)), &VERBOSE),
-        )
-        .await
-        .unwrap();
-    let pages = judged(&tight.structured_content);
-    assert_eq!(pages.len(), 1, "{}", tight.structured_content);
-    assert!(covers(&pages, 100));
-    let resume =
-        &tight.structured_content["queries"][0]["next"]["clasify"]["queries"][0]["resources"][0];
-    assert_eq!(resume["prefilter"], json!(["NEEDLE_MARK"]), "{resume}");
-    let from = range_start(&resume["query"]);
-    assert!(from > 100 && from <= 1100, "resume at {from}");
-
-    // Local absolute paths never reach the external provider.
-    for request in server.received_requests().await.unwrap() {
-        let body = String::from_utf8_lossy(&request.body);
-        for root in [
-            workspace.workspace.clone(),
-            std::fs::canonicalize(&workspace.workspace).unwrap(),
-        ] {
-            let root = root.to_string_lossy().replace('\\', "/");
-            assert!(
-                !body.contains(&root),
-                "absolute path sent to provider: {body}"
-            );
-        }
-    }
-    runtime.close().await;
-}
-
-#[tokio::test]
-async fn partial_provider_answers_are_not_cached_and_a_failed_read_is_isolated() {
-    let server = MockServer::builder().start().await;
-    // First response drops answer_1 (partial); later responses are complete.
-    Mock::given(method("POST"))
-        .and(path("/v1/systemone"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "model":"resolved",
-            "answers":{"answer_0":{"type":"noul","noul":0.3}},
-            "usage":{"input_tokens":2,"output_tokens":1}
-        })))
-        .up_to_n_times(1)
-        .mount(&server)
-        .await;
-    Mock::given(method("POST"))
-        .and(path("/v1/systemone"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "model":"resolved",
-            "answers":{"answer_0":{"type":"noul","noul":0.3},"answer_1":{"type":"noul","noul":0.9}},
-            "usage":{"input_tokens":2,"output_tokens":1}
-        })))
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    let missing = workspace.workspace.join("missing-8812.txt");
-    let runtime = provider_runtime(&workspace, &server);
-    let input = json!({
-        "id":"partial","reasoning":"Partial answers stay unresolved.","mainGoal":"Decide the next read.",
-        "resources":[
-            {"id":"gone","tool":"localFetch","query":{"path":missing}},
-            {"id":"v","value":"Partial cache sentinel 5521."}
-        ],
-        "questions":[
-            {"id":"a","type":"yesno","ask":"Is sentinel 5521 stated?"},
-            {"id":"b","type":"yesno","ask":"Is sentinel 5522 stated?"}
-        ]
-    });
-    let first = runtime
-        .run("partial-1".into(), "clasify".into(), support::with_extras(input.clone(), &VERBOSE))
-        .await
-        .unwrap();
-    let resources = &first.structured_content["queries"][0]["resources"];
-    assert_eq!(resources[0]["coverage"]["state"], "error", "{resources}");
-    assert!(resources[0]["pages"][0]["error"]["errorCode"].is_string());
-    assert_eq!(resources[1]["coverage"]["state"], "partial", "{resources}");
-    assert_eq!(
-        resources[1]["pages"][0]["answers"]["a"],
-        json!({"yesno":0.3})
-    );
-    assert!(resources[1]["pages"][0]["answers"]["b"]["error"].is_object());
-    let second = runtime
-        .run("partial-2".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
-        .await
-        .unwrap();
-    let page = &second.structured_content["queries"][0]["resources"][1]["pages"][0];
-    assert_eq!(page["answers"]["b"], json!({"yesno":0.9}), "{page}");
-    assert_eq!(
-        server.received_requests().await.unwrap().len(),
-        2,
-        "a partial answer set must be asked again, not replayed"
-    );
-    runtime.close().await;
-}
-
-/// orangu 09-28: clasify with a ghSearchCode resource failed with
-/// `classificationContextContractViolation` on every resource. A code-search
-/// page must be judged like any other search resource.
-#[tokio::test]
-async fn gh_search_code_resource_is_judged_without_a_context_contract_violation() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/systemone"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "model":"resolved",
-            "answers":{"answer":{"type":"noul","noul":0.6}},
-            "usage":{"input_tokens":2,"output_tokens":1}
-        })))
-        .mount(&server)
-        .await;
-    let items = (0..3)
-        .map(|n| {
-            json!({
-                "name": format!("f{n}.rs"), "path": format!("src/f{n}.rs"),
-                "sha": format!("{n:040}"), "html_url": "https://github.com/o/r",
-                "repository": {"full_name":"o/r","html_url":"https://github.com/o/r","url":"https://api.github.com/repos/o/r"},
-                "text_matches": [{"fragment": format!("fn semaphore_acquire_{n}() {{}}"), "matches": [{"indices":[3,12]}]}]
-            })
-        })
-        .collect::<Vec<_>>();
-    Mock::given(method("GET"))
-        .and(path("/api/v3/search/code"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "total_count": 3, "incomplete_results": false, "items": items
-        })))
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    let runtime = workspace.runtime(&[
-        ("OCTOCODE_BETA", "true".into()),
-        ("OCTOCODE_CLASSIFICATION_API", "secret".into()),
-        ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
-        // Own GitHub limiter key: the process-wide budget is keyed by host and
-        // token, so concurrent GitHub fixtures must not share throttling state.
-        ("GITHUB_TOKEN", "clasify-gh-search-code-fixture".into()),
-        ("GITHUB_API_URL", format!("{}/api/v3", server.uri())),
-        ("REQUEST_TIMEOUT", MOCK_PROVIDER_TIMEOUT_MS.into()),
-    ]);
-    let input = json!({
-        "reasoning":"Judge the code-search hits.","mainGoal":"Where the semaphore is acquired.",
-        "resources":[{"id":"hits","candidateEvidence":"search","tool":"ghSearchCode","query":{
-            "owner":"o","repo":"r","keywords":["semaphore"]
-        }}],
-        "questions":[{"id":"relevant","type":"yesno","ask":"Does this acquire the semaphore?"}]
-    });
-    let outcome = runtime
-        .run("gh-code".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
-        .await
-        .expect("clasify");
-    let rendered = outcome.structured_content.to_string();
-    assert!(!rendered.contains("ContextContractViolation"), "{rendered}");
-    let cell = &outcome.structured_content["queries"][0]["resources"][0];
-    assert_ne!(cell["coverage"]["state"], "error", "{cell}");
-    octocode_native::contracts::validate_output("clasify", &outcome.structured_content)
-        .expect("clasify output contract");
-    runtime.close().await;
-}
-
-/// A lone strong locate window on a GitHub file is public in `best` with an
-/// exact, schema-valid read that names owner/repo/path/branch.
-#[tokio::test]
-async fn a_lone_strong_locate_window_in_best_carries_an_exact_github_read() {
-    use base64::Engine as _;
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/systemone"))
-        .respond_with(Judge {
-            strategy: Strategy::TopPassage {
-                top: 0.9,
-                exists: 0.9,
-            },
-        })
-        .mount(&server)
-        .await;
-    let sha = "0123456789abcdef0123456789abcdef01234567";
-    Mock::given(method("GET"))
-        .and(path("/api/v3/repos/o/r/commits/main"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"sha": sha})))
-        .mount(&server)
-        .await;
-    Mock::given(method("GET"))
-        .and(path("/api/v3/repos/o/r/commits"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
-        .mount(&server)
-        .await;
-    let source = (1..=40)
-        .map(|n| format!("fn step_{n}() -> u32 {{\n    {n}\n}}\n"))
-        .collect::<String>();
-    Mock::given(method("GET"))
-        .and(path("/api/v3/repos/o/r/contents/src%2Fsteps.rs"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "type":"file","encoding":"base64",
-            "content": base64::engine::general_purpose::STANDARD.encode(&source),
-            "size": source.len(), "sha": "f".repeat(40), "path":"src/steps.rs"
-        })))
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    let runtime = workspace.runtime(&[
-        ("OCTOCODE_BETA", "true".into()),
-        ("OCTOCODE_CLASSIFICATION_API", "secret".into()),
-        ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
-        // Own GitHub limiter key: the process-wide budget is keyed by host and
-        // token, so concurrent GitHub fixtures must not share throttling state.
-        ("GITHUB_TOKEN", "clasify-locate-read-fixture".into()),
-        ("GITHUB_API_URL", format!("{}/api/v3", server.uri())),
-        ("REQUEST_TIMEOUT", MOCK_PROVIDER_TIMEOUT_MS.into()),
-    ]);
-    let input = json!({
-        "reasoning":"Locate the first step.","mainGoal":"Where step one is defined.",
-        "resources":[{"id":"gh","tool":"ghGetFileContent","query":{
-            "owner":"o","repo":"r","path":"src/steps.rs","ref":"main","fullContent":true
-        }}],
-        "questions":[{"id":"t","type":"locate","ask":"The function that returns one."}]
-    });
-    let outcome = runtime
-        .run("locate-gh".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
-        .await
-        .expect("clasify");
-    let output = &outcome.structured_content;
-    octocode_native::contracts::validate_output("clasify", output)
-        .expect("best row read output contract");
-    let rows = output["queries"][0]["best"]["t"]
-        .as_array()
-        .unwrap_or_else(|| panic!("best rows: {output}"));
-    assert!(!rows.is_empty(), "{output}");
-    for row in rows {
-        let read = &row["hints"]["read"];
-        assert_eq!(read["tool"], "ghGetFileContent", "{row}");
-        let query = &read["query"]["queries"][0];
-        assert_eq!(query["owner"], "o", "{row}");
-        assert_eq!(query["repo"], "r", "{row}");
-        assert_eq!(query["path"], "src/steps.rs", "{row}");
-        assert_eq!(query["ref"], "main", "{row}");
-        // ghGetFileContent's published line-span spelling.
-        assert_eq!(
-            query["ranges"],
-            json!([format!("{}-{}", row["line"], row["endLine"])]),
-            "{row}"
-        );
-        assert!(query.get("fullContent").is_none(), "{row}");
-    }
-    assert_eq!(rows[0]["line"], 1, "{output}");
-    // A finished walk has no carry; nothing private leaks.
-    assert!(no_continuation(&output["queries"][0]), "{output}");
-    assert!(!output.to_string().contains("fileRead"), "{output}");
-    runtime.close().await;
-}
-
-/// A matrix that also asks a described target runs locate; its literal
-/// target (one identifier in a lookup sentence) over a local file keeps its
-/// string hint and gains `hints.findText`, a schema-valid literal search
-/// that runs. The described target adds no hint. Two literals share one
-/// search that reaches both.
-#[tokio::test]
-async fn identifier_locate_target_emits_an_executable_local_search() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/systemone"))
-        .respond_with(Judge {
-            strategy: Strategy::TopPassage {
-                top: 0.9,
-                exists: 0.9,
-            },
-        })
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    let source = (1..=40)
-        .map(|n| format!("fn step_{n}() -> u32 {{\n    {n}\n}}\n"))
-        .collect::<String>();
-    let file = workspace.write("src/steps.rs", source);
-    let file = file.to_string_lossy().into_owned();
-    let runtime = provider_runtime(&workspace, &server);
-    let input = json!({
-        "reasoning":"Locate a step.","mainGoal":"Where step_17 is defined.",
-        "resources":[{"id":"steps","tool":"localFetch","query":{
-            "path":file,"fullContent":true
-        }}],
-        "questions":[
-            {"id":"t","type":"locate","ask":"Where is step_17 defined?"},
-            {"id":"u","type":"locate","ask":"find step_23"},
-            {"id":"d","type":"locate","ask":"The step function that returns one."}
-        ]
-    });
-    let outcome = runtime
-        .run("locate-literal".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
-        .await
-        .expect("clasify");
-    let output = &outcome.structured_content;
-    octocode_native::contracts::validate_output("clasify", output)
-        .expect("literal search continuation output contract");
-    let query = &output["queries"][0];
-    assert!(query["best"]["d"].is_array(), "locate ran: {query}");
-    assert_eq!(
-        query["hints"]["text"].as_array().map(Vec::len),
-        Some(2),
-        "one tip per literal target: {query}"
-    );
-    assert!(
-        query["hints"]["text"][0]
-            .as_str()
-            .unwrap_or_default()
-            .contains("step_17"),
-        "{query}"
-    );
-    let search = &query["hints"]["findText"];
-    assert_eq!(search["tool"], "localSearch", "{query}");
-    assert_eq!(
-        search["query"]["queries"][0]["path"],
-        file.as_str(),
-        "{search}"
-    );
-    // One search reaches every literal: an alternation of both.
-    assert_eq!(
-        search["query"]["queries"][0]["matchString"], "step_17|step_23",
-        "{search}"
-    );
-    assert_eq!(search["query"]["queries"][0]["regex"], "rust", "{search}");
-    let found = runtime
-        .run(
-            "literal-search".into(),
-            "localSearch".into(),
-            search["query"].clone(),
-        )
-        .await
-        .expect("next.localSearch executes");
-    let rendered = found.structured_content.to_string();
-    assert!(rendered.contains("fn step_17()"), "{rendered}");
-    assert!(rendered.contains("fn step_23()"), "{rendered}");
-    assert!(
-        !rendered.contains("fn step_1()"),
-        "literal match only: {rendered}"
-    );
-    runtime.close().await;
-}
-
-/// A directory outline pages by declaration rows, so one file's declarations
-/// can straddle a symbols page. Scout judges each file once, whole: the page
-/// holding a file's first row judges all of its rows, and the next page skips
-/// the rows it already judged.
-#[tokio::test]
-async fn symbols_scout_judges_each_file_once_across_outline_pages() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/systemone"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "model":"resolved",
-            "answers":{"answer":{"type":"noul","noul":0.4}},
-            "usage":{"input_tokens":2,"output_tokens":1}
-        })))
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    workspace.write(
-        "src/a.rs",
-        "fn a1() {}\nfn a2() {}\nfn a3() {}\nfn a4() {}\nfn a5() {}\n",
-    );
-    workspace.write("src/b.rs", "fn b1() {}\nfn b2() {}\n");
-    let root = workspace.write("src/c.rs", "fn c1() {}\n");
-    let root = root.parent().unwrap().to_string_lossy().into_owned();
-    let runtime = provider_runtime(&workspace, &server);
-    let mut input = json!({
-        "id":"outline",
-        "reasoning":"Pick a file.","mainGoal":"Which file declares the handler.",
-        "resources":[{"id":"ast","tool":"astSearch","query":{
-            "path":root,"operation":"symbols","pageSize":2
-        }}],
-        "questions":[{"id":"rel","type":"yesno","ask":"Relevant?"}]
-    });
-    let mut judged: Vec<(String, usize)> = Vec::new();
-    for call in 0..6 {
-        let outcome = runtime
-            .run(
-                format!("outline-{call}"),
-                "clasify".into(),
-                support::with_extras(input.clone(), &VERBOSE),
-            )
-            .await
-            .expect("clasify");
-        let query = &outcome.structured_content["queries"][0];
-        for page in query["resources"][0]["pages"]
-            .as_array()
-            .into_iter()
-            .flatten()
-        {
-            let path = page["source"]["path"]
-                .as_str()
-                .unwrap_or_default()
-                .to_owned();
-            let lines = page["hints"]["read"]["query"]["queries"][0]["ranges"][0]
-                .as_str()
-                .and_then(|window| window.split_once('-'))
-                .and_then(|(_, end)| end.parse::<usize>().ok())
-                .unwrap_or(0);
-            judged.push((path, lines));
-        }
-        match query["next"].get("clasify") {
-            Some(next) => input = next.clone(),
-            None => break,
-        }
-    }
-    let files = judged
-        .iter()
-        .map(|(path, _)| path.as_str())
-        .collect::<Vec<_>>();
-    assert_eq!(files, ["src/a.rs", "src/b.rs", "src/c.rs"], "{judged:?}");
-    runtime.close().await;
-}
-
-/// The default output is compact; `extras: details, stats` returns the full
-/// receipt plus provider usage.
-#[tokio::test]
-async fn a_matrix_compacts_by_default_and_extras_return_the_full_receipt() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/systemone"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "model":"resolved",
-            "answers":{
-                "answer_0":{"type":"noul","noul":0.8},
-                "answer_1":{"type":"choice","choice":"runtime","confidence":1.0,
-                    "probabilities":{"runtime":1.0,"test":0.0}}
-            },
-            "usage":{"input_tokens":7,"output_tokens":2}
-        })))
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    let file = workspace.write("trace.txt", "Evidence is present.\n");
-    let runtime = provider_runtime(&workspace, &server);
-    let mut unified = json!({
-        "id":"m","mainGoal":"Decide whether the trace states the fact.",
-        "reasoning":"The next read depends on it.",
-        "resources":[{"id":"src","tool":"localFetch","query":{"path":file}}],
-        "questions":[
-            {"id":"present","type":"relevant","ask":"the fact"},
-            {"id":"kind","type":"choice","ask":"Kind?","labels":{"runtime":null,"test":null}}
-        ]
-    });
-    let compact = runtime
-        .run("unified".into(), "clasify".into(), support::queries(unified.clone()))
-        .await
-        .expect("the matrix is valid");
-    assert_eq!(server.received_requests().await.unwrap().len(), 1);
-    octocode_native::contracts::validate_output("clasify", &compact.structured_content)
-        .expect("compact output contract");
-    let snapshot = compact
-        .structured_content
-        .pointer("/queries/0/resources/0/pages/0/hints/read/query/queries/0/snapshot")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or_default()
-        .to_owned();
-    // The read pins the judged file version: an edit fails the read instead
-    // of shifting its lines.
-    assert!(
-        snapshot.len() == 64 && snapshot.chars().all(|c| c.is_ascii_hexdigit()),
-        "{}",
-        compact.structured_content
-    );
-    assert_eq!(
-        compact.structured_content["queries"][0]["resources"][0],
-        // The host never saw the delegated read: a positive verdict
-        // carries the read of exactly the judged lines.
-        json!({"id":"src","path":"trace.txt","totalLines":1,
-            "pages":[{"line":1,"endLine":1,"answers":{"present":0.8,"kind":"runtime"},
-                // A cross-tool lead starts its own step: no matrix brief.
-                "hints":{"read":{"tool":"localFetch","query":{"queries":[{
-                    "path":"trace.txt","snapshot":snapshot,"ranges":["1-1"]}]}}}}]}),
-        "{}",
-        compact.structured_content
-    );
-    unified["extras"] = json!(VERBOSE);
-    unified["questions"][0]["ask"] = json!("the fact, judged again");
-    let full = runtime
-        .run("extras".into(), "clasify".into(), support::queries(unified))
-        .await
-        .expect("extras are accepted");
-    let query = &full.structured_content["queries"][0];
-    assert_eq!(query["usage"]["calls"], 1, "{query}");
-    assert_eq!(query["usage"]["inputTokens"], 7);
-    assert_eq!(query["usage"]["outputTokens"], 2);
-    assert!(query["usage"]["ms"].is_u64());
-    let page = &query["resources"][0]["pages"][0];
-    assert_eq!(
-        page["usage"],
-        json!({"calls":1,"inputTokens":7,"outputTokens":2})
-    );
-    assert_eq!(page["answers"]["present"], json!({"yesno":0.8}));
-    assert_eq!(page["answers"]["kind"]["probabilities"]["runtime"], 1.0);
-    runtime.close().await;
-}
-
-#[tokio::test]
-async fn search_candidates_above_max_chars_never_reach_the_provider() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .respond_with(noul_response(0.7))
-        .expect(0)
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    let root = write_hit_files(&workspace, 1, 120);
-    let runtime = provider_runtime(&workspace, &server);
-    let input = json!({
-        "id":"capped","reasoning":"Bound candidate evidence.","mainGoal":"Decide the next read.",
-        "resources":[{"id":"hits","maxChars":1,"candidateEvidence":"search","tool":"localSearch","query":{
-            "path":root,"matchString":"needle","sort":"path","pageSize":3,"reasoning":"Find hits."
-        }}],
-        "questions":[{"id":"relevant","type":"yesno","ask":"Relevant?"}]
-    });
-    let outcome = runtime
-        .run("capped".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
-        .await
-        .unwrap();
-    let query = &outcome.structured_content["queries"][0];
-    let cell = &query["resources"][0];
-    assert_eq!(cell["coverage"]["state"], "error", "{cell}");
-    let pages = cell["pages"].as_array().unwrap();
-    assert_eq!(pages.len(), 3, "every candidate stays visible: {cell}");
-    for page in pages {
-        assert_eq!(
-            page["error"]["errorCode"], "classificationContextTooLarge",
-            "{page}"
-        );
-        assert_eq!(
-            page["hints"]["read"]["tool"], "localFetch",
-            "an unjudged candidate keeps its read: {page}"
-        );
-    }
-    assert!(no_continuation(query), "{query}");
-    assert_eq!(query["usage"]["calls"], 0, "{query}");
-    octocode_native::contracts::validate_output("clasify", &outcome.structured_content)
-        .expect("capped search output contract");
-    runtime.close().await;
-}
-
-#[tokio::test]
-async fn search_candidates_past_the_remaining_budget_resume_without_skips() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .respond_with(noul_response(0.4))
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    // One candidate carries 3 × 190 characters of snippets plus its row
-    // fields; two never fit 1,100.
-    let root = write_hit_files(&workspace, 3, 190);
-    let runtime = provider_runtime(&workspace, &server);
-    let mut input = json!({
-        "id":"budget","reasoning":"Bound candidate evidence.","mainGoal":"Decide the next read.",
-        "resources":[{"id":"hits","maxChars":1100,"candidateEvidence":"search","tool":"localSearch","query":{
-            "path":root,"matchString":"needle","sort":"path","pageSize":3,"reasoning":"Find hits."
-        }}],
-        "questions":[{"id":"relevant","type":"yesno","ask":"Relevant?"}]
-    });
-    let mut calls = 0;
-    loop {
-        calls += 1;
-        assert!(calls <= 5, "the walk must terminate");
-        let outcome = runtime
-            .run(
-                format!("budget-{calls}"),
-                "clasify".into(),
-                support::with_extras(input.clone(), &VERBOSE),
-            )
-            .await
-            .unwrap();
-        octocode_native::contracts::validate_output("clasify", &outcome.structured_content)
-            .expect("budgeted search output contract");
-        let query = &outcome.structured_content["queries"][0];
-        for page in query["resources"][0]["pages"].as_array().unwrap() {
-            assert!(page.get("error").is_none(), "{page}");
-        }
-        match query["next"].get("clasify") {
-            Some(next) => {
-                octocode_native::contracts::prepare_many_and_validate(
-                    "clasify",
-                    support::queries(next.clone()),
-                )
-                .expect("next.clasify replays unchanged");
-                input = next.clone();
-            }
-            None => break,
-        }
-    }
-    let states = sent_states(&server).await;
-    for marker in ["ALPHA", "BRAVO", "CHARLIE"] {
-        assert_eq!(
-            states
-                .iter()
-                .filter(|state| state.to_string().contains(marker))
-                .count(),
-            1,
-            "{marker} must be judged exactly once: {states:#?}"
-        );
-    }
-    assert_eq!(states.len(), 3);
-    assert!(calls >= 2, "1,100 characters cannot hold two candidates");
-    runtime.close().await;
-}
-
-#[tokio::test]
-async fn list_items_above_max_chars_never_reach_the_provider() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .respond_with(noul_response(0.7))
-        .expect(0)
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    workspace.write("src/a.rs", "fn alpha_handler() {}\n");
-    let root = workspace.write("src/b.rs", "fn bravo_handler() {}\n");
-    let root = root.parent().unwrap().to_string_lossy().into_owned();
-    let runtime = provider_runtime(&workspace, &server);
-    let input = json!({
-        "id":"outline","reasoning":"Pick a file.","mainGoal":"Which file declares the handler.",
-        "resources":[{"id":"ast","maxChars":1,"tool":"astSearch","query":{
-            "path":root,"operation":"symbols"
-        }}],
-        "questions":[{"id":"rel","type":"yesno","ask":"Relevant?"}]
-    });
-    let outcome = runtime
-        .run("outline".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
-        .await
-        .unwrap();
-    let cell = &outcome.structured_content["queries"][0]["resources"][0];
-    let pages = cell["pages"].as_array().unwrap();
-    assert_eq!(pages.len(), 2, "{cell}");
-    for page in pages {
-        assert_eq!(
-            page["error"]["errorCode"], "classificationContextTooLarge",
-            "{page}"
-        );
-        assert!(page["hints"]["read"].is_object(), "{page}");
-    }
-    runtime.close().await;
-}
-
-#[tokio::test]
-async fn hydrated_candidates_share_one_max_chars_budget() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .respond_with(noul_response(0.4))
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    // Multi-byte text in three distant hit clusters per file: every window is
-    // its own read, so a per-candidate split alone would overrun the budget.
-    let body = |marker: &str| {
-        (1..=400)
-            .map(|line| {
-                if [1, 200, 400].contains(&line) {
-                    format!("needle {marker} ünïcödé ✓ {}\n", filler(40))
-                } else {
-                    format!("filler ëëëë {}\n", filler(30))
-                }
-            })
-            .collect::<String>()
-    };
-    workspace.write("hyd/a.txt", body("ALPHA"));
-    let root = workspace.write("hyd/b.txt", body("BRAVO"));
-    let root = root.parent().unwrap().to_string_lossy().into_owned();
-    let runtime = provider_runtime(&workspace, &server);
-    let max_chars = 900;
-    let input = json!({
-        "id":"hydrated","reasoning":"Bound hydrated evidence.","mainGoal":"Decide the next read.",
-        "resources":[{"id":"hits","maxChars":max_chars,"tool":"localSearch","query":{
-            "path":root,"matchString":"needle","sort":"path","reasoning":"Find hits."
-        },"candidateEvidence":"fileChunks"}],
-        "questions":[{"id":"relevant","type":"yesno","ask":"Relevant?"}]
-    });
-    runtime
-        .run("hydrated".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
-        .await
-        .unwrap();
-    fn content_chars(value: &serde_json::Value) -> usize {
-        match value {
-            serde_json::Value::Array(items) => items.iter().map(content_chars).sum(),
-            serde_json::Value::Object(fields) => fields
-                .get("content")
-                .and_then(serde_json::Value::as_str)
-                .map_or_else(
-                    || fields.values().map(content_chars).sum(),
-                    |content| content.chars().count(),
-                ),
-            _ => 0,
-        }
-    }
-    let states = sent_states(&server).await;
-    assert!(!states.is_empty());
-    let total = states.iter().map(content_chars).sum::<usize>();
-    assert!(
-        total <= max_chars,
-        "hydrated evidence {total} exceeds maxChars {max_chars}: {states:#?}"
-    );
-    runtime.close().await;
-}
-
-#[tokio::test]
-async fn a_hydrated_window_cut_by_its_budget_still_contains_its_hit() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .respond_with(noul_response(0.9))
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    // One hit in the middle of long lines: the hit-centered window is several
-    // times the read budget.
-    let body = (1..=300)
-        .map(|line| {
-            if line == 150 {
-                format!("needle DECIDING verdict-line {}\n", filler(70))
-            } else {
-                format!("prose {line} {}\n", filler(90))
-            }
-        })
-        .collect::<String>();
-    let root = workspace.write("cut/a.txt", body);
-    let root = root.parent().unwrap().to_string_lossy().into_owned();
-    let runtime = provider_runtime(&workspace, &server);
-    let max_chars = 3000;
-    let input = json!({
-        "id":"cut","reasoning":"Judge the hit region.","mainGoal":"Decide the next read.",
-        "resources":[{"id":"hits","maxChars":max_chars,"tool":"localSearch","query":{
-            "path":root,"matchString":"needle DECIDING","reasoning":"Find hits."
-        },"candidateEvidence":"fileChunks"}],
-        "questions":[{"id":"relevant","type":"yesno","ask":"Relevant?"}]
-    });
-    let outcome = runtime
-        .run("cut".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
-        .await
-        .unwrap();
-    let states = sent_states(&server).await;
-    assert_eq!(states.len(), 1, "{states:#?}");
-    let state = states[0].to_string();
-    assert!(
-        state.contains("verdict-line"),
-        "the judged window must contain its hit: {state}"
-    );
-    assert!(
-        state.len() < 2 * max_chars + 2_000,
-        "the window stays within its budget: {} chars",
-        state.len()
-    );
-    let page = &outcome.structured_content["queries"][0]["resources"][0]["pages"][0];
-    let scope = &page["scope"];
-    let (start, end) = (
-        scope["startLine"].as_u64().unwrap_or(0),
-        scope["endLine"].as_u64().unwrap_or(0),
-    );
-    assert!(
-        start <= 150 && 150 <= end,
-        "the scope names the judged lines around the hit: {page:#?}"
-    );
-    runtime.close().await;
-}
-
-#[tokio::test]
-async fn sufficient_unread_file_evidence_returns_a_bounded_verification_read() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .respond_with(noul_response(0.95))
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    let file = workspace.write(
-        "policy.rs",
-        "// header\nconst WIDE_RESULT_FILES: usize = 8;\nconst OTHER: usize = 3;\n// tail\n",
-    );
-    let runtime = provider_runtime(&workspace, &server);
-    let input = json!({
-        "id":"threshold","reasoning":"Answer from the deciding source.","mainGoal":"Find the handoff threshold.",
-        "resources":[{"id":"threshold","tool":"localFetch","query":{"path":file,"ranges":["2-3"]}}],
-        "questions":[{"id":"sufficient","type":"sufficient","ask":"How many files trigger the handoff?"}]
-    });
-    let outcome = runtime
-        .run("threshold".into(), "clasify".into(), support::queries(input))
-        .await
-        .unwrap();
-    let resource = &outcome.structured_content["queries"][0]["resources"][0];
-    let page = &resource["pages"][0];
-    assert_eq!(page["answers"]["sufficient"], 0.95, "{resource}");
-    let read = &page["hints"]["read"];
-    assert_eq!(read["tool"], "localFetch", "{resource}");
-    assert_eq!(read["query"]["queries"][0]["path"], "policy.rs", "{read}");
-    assert_eq!(
-        read["query"]["queries"][0]["ranges"],
-        json!(["2-3"]),
-        "{read}"
-    );
-    octocode_native::contracts::validate_output("clasify", &outcome.structured_content)
-        .expect("verification read output contract");
-
-    // Supplied evidence is already held: no read is invented for it.
-    let held = json!({
-        "id":"held","reasoning":"Judge held evidence.","mainGoal":"Find the handoff threshold.",
-        "resources":[{"id":"held","value":"const WIDE_RESULT_FILES: usize = 8;"}],
-        "questions":[{"id":"sufficient","type":"sufficient","ask":"How many files trigger the handoff?"}]
-    });
-    let outcome = runtime
-        .run("held".into(), "clasify".into(), support::queries(held))
-        .await
-        .unwrap();
-    assert!(
-        !outcome.structured_content.to_string().contains("\"read\""),
-        "{}",
-        outcome.structured_content
-    );
-    runtime.close().await;
-}
-
-#[tokio::test]
-async fn confident_negative_file_pages_add_no_read() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .respond_with(noul_response(0.05))
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    let file = workspace.write("other.rs", "const OTHER: usize = 3;\n");
-    let runtime = provider_runtime(&workspace, &server);
-    let input = json!({
-        "id":"negative","reasoning":"Answer from the deciding source.","mainGoal":"Find the handoff threshold.",
-        "resources":[{"id":"other","tool":"localFetch","query":{"path":file}}],
-        "questions":[{"id":"sufficient","type":"sufficient","ask":"How many files trigger the handoff?"}]
-    });
-    let outcome = runtime
-        .run("negative".into(), "clasify".into(), support::queries(input))
-        .await
-        .unwrap();
-    assert!(
-        !outcome.structured_content.to_string().contains("\"read\""),
-        "{}",
-        outcome.structured_content
-    );
-    runtime.close().await;
-}
-
-#[tokio::test]
-async fn an_oversized_next_page_shrinks_and_the_replay_advances() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .respond_with(noul_response(0.2))
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    let file = workspace.write("uneven.txt", uneven_lines());
-    let runtime = provider_runtime(&workspace, &server);
-    let mut input = json!({
-        "id":"walk","reasoning":"Walk the file in bounded pages.","mainGoal":"Decide the next read.",
-        "extras":VERBOSE,
-        "resources":[{"id":"doc","maxChars":400,"tool":"localFetch","query":{
-            "path":file,"unit":"lines","length":8
-        }}],
-        "questions":[{"id":"q","type":"yesno","ask":"Is the marker stated?"}]
-    });
-    let mut covered = 0u64;
-    let mut calls = 0;
-    loop {
-        calls += 1;
-        assert!(calls <= 10, "the walk must terminate");
-        let outcome = runtime
-            .run(
-                format!("walk-{calls}"),
-                "clasify".into(),
-                support::queries(input.clone()),
-            )
-            .await
-            .unwrap();
-        let query = &outcome.structured_content["queries"][0];
-        for page in query["resources"][0]["pages"].as_array().unwrap() {
-            assert!(page.get("error").is_none(), "replay must advance: {query}");
-            let scope = &page["scope"];
-            assert_eq!(
-                scope["startLine"].as_u64().unwrap(),
-                covered + 1,
-                "no interval is skipped or repeated: {query}"
-            );
-            covered = scope["endLine"].as_u64().unwrap();
-        }
-        match query["next"].get("clasify") {
-            Some(next) => {
-                assert_eq!(next["queries"][0]["extras"], json!(VERBOSE), "{next}");
-                input = next.clone();
-            }
-            None => break,
-        }
-    }
-    assert_eq!(covered, 24);
-    for state in sent_states(&server).await {
-        assert!(
-            state.to_string().chars().count() < 2_000,
-            "every judged page stayed bounded: {state}"
-        );
-    }
-    runtime.close().await;
-}
-
-/// A `ranges` read larger than `maxChars` is judged in
-/// line windows that each fit, with `next.clasify` reading the rest of the
-/// range, instead of failing `classificationContextTooLarge` with no read.
-/// Every requested line is judged exactly once, and none outside the range.
-#[tokio::test]
-async fn an_oversized_ranges_read_is_judged_in_fitting_windows() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .respond_with(noul_response(0.2))
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    let file = workspace.write("uneven.txt", uneven_lines());
-    let runtime = provider_runtime(&workspace, &server);
-    let mut input = json!({
-        "id":"ranges","reasoning":"Judge one range in bounded pages.","mainGoal":"Decide the next read.",
-        "extras":VERBOSE,
-        "resources":[{"id":"doc","maxChars":400,"tool":"localFetch","query":{
-            "path":file,"ranges":["3-22"]
-        }}],
-        "questions":[{"id":"q","type":"yesno","ask":"Is the marker stated?"}]
-    });
-    let mut covered = 2u64;
-    let mut calls = 0;
-    loop {
-        calls += 1;
-        assert!(calls <= 12, "the walk must terminate");
-        let outcome = runtime
-            .run(
-                format!("ranges-{calls}"),
-                "clasify".into(),
-                support::queries(input.clone()),
-            )
-            .await
-            .unwrap();
-        let query = &outcome.structured_content["queries"][0];
-        let resource = &query["resources"][0];
-        assert!(
-            resource.get("error").is_none(),
-            "an oversized range is split, not failed: {query}"
-        );
-        for page in resource["pages"].as_array().unwrap() {
-            assert!(page.get("error").is_none(), "{query}");
-            let scope = &page["scope"];
-            assert_eq!(
-                scope["startLine"].as_u64().unwrap(),
-                covered + 1,
-                "no line is skipped or repeated: {query}"
-            );
-            covered = scope["endLine"].as_u64().unwrap();
-        }
-        match query["next"].get("clasify") {
-            Some(next) => input = next.clone(),
-            None => break,
-        }
-    }
-    assert_eq!(covered, 22);
-    assert!(calls > 1, "the range did not fit one call");
-    runtime.close().await;
-}
-
-#[tokio::test]
-async fn an_oversized_whole_file_read_shrinks_into_line_chunks() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .respond_with(noul_response(0.2))
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    let file = workspace.write("uneven.txt", uneven_lines());
-    let runtime = provider_runtime(&workspace, &server);
-    let mut input = json!({
-        "id":"whole","reasoning":"Judge the whole file in bounded pages.","mainGoal":"Decide the next read.",
-        "extras":VERBOSE,
-        "resources":[{"id":"doc","maxChars":400,"tool":"localFetch","query":{"path":file}}],
-        "questions":[{"id":"q","type":"yesno","ask":"Is the marker stated?"}]
-    });
-    let mut covered = 0u64;
-    let mut calls = 0;
-    loop {
-        calls += 1;
-        assert!(calls <= 10, "the walk must terminate");
-        let outcome = runtime
-            .run(
-                format!("whole-{calls}"),
-                "clasify".into(),
-                support::queries(input.clone()),
-            )
-            .await
-            .unwrap();
-        let query = &outcome.structured_content["queries"][0];
-        for page in query["resources"][0]["pages"].as_array().unwrap() {
-            assert!(
-                page.get("error").is_none(),
-                "the whole file shrinks: {query}"
-            );
-            let scope = &page["scope"];
-            assert_eq!(
-                scope["startLine"].as_u64().unwrap(),
-                covered + 1,
-                "no interval is skipped or repeated: {query}"
-            );
-            covered = scope["endLine"].as_u64().unwrap();
-        }
-        match query["next"].get("clasify") {
-            Some(next) => input = next.clone(),
-            None => break,
-        }
-    }
-    assert_eq!(covered, 24);
-    for state in sent_states(&server).await {
-        assert!(
-            state.to_string().chars().count() < 2_000,
-            "every judged page stayed bounded: {state}"
-        );
-    }
-    runtime.close().await;
-}
-
-#[tokio::test]
-async fn a_line_larger_than_the_whole_budget_is_terminal_not_a_repeating_continuation() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .respond_with(noul_response(0.2))
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    let file = workspace.write(
-        "wide.txt",
-        format!("short one\n{}\nshort three\n", filler(500)),
-    );
-    let runtime = provider_runtime(&workspace, &server);
-    let input = json!({
-        "id":"wide","reasoning":"Walk the file in bounded pages.","mainGoal":"Decide the next read.",
-        "resources":[{"id":"doc","maxChars":100,"tool":"localFetch","query":{
-            "path":file,"unit":"lines","length":1
-        }}],
-        "questions":[{"id":"q","type":"yesno","ask":"Is the marker stated?"}]
-    });
-    let outcome = runtime
-        .run("wide".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
-        .await
-        .unwrap();
-    let query = &outcome.structured_content["queries"][0];
-    let pages = query["resources"][0]["pages"].as_array().unwrap();
-    assert!(pages[0].get("answers").is_some(), "{query}");
-    let failed = pages.last().unwrap();
-    assert_eq!(
-        failed["error"]["errorCode"], "classificationContextTooLarge",
-        "{query}"
-    );
-    assert!(
-        no_continuation(query),
-        "no continuation may replay the same oversized page: {query}"
-    );
-    runtime.close().await;
-}
-
-#[tokio::test]
-async fn a_changed_source_is_rejected_on_replay_instead_of_mixing_versions() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .respond_with(noul_response(0.2))
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    let file = workspace.write("doc.txt", uneven_lines());
-    let runtime = provider_runtime(&workspace, &server);
-    let input = json!({
-        "id":"versions","reasoning":"Walk the file in bounded pages.","mainGoal":"Decide the next read.",
-        "resources":[{"id":"doc","maxChars":200,"tool":"localFetch","query":{
-            "path":file,"unit":"lines","length":8
-        }}],
-        "questions":[{"id":"q","type":"yesno","ask":"Is the marker stated?"}]
-    });
-    let first = runtime
-        .run("versions-1".into(), "clasify".into(), support::queries(input))
-        .await
-        .unwrap();
-    let next = first.structured_content["queries"][0]["next"]["clasify"]["queries"][0].clone();
-    assert!(next.is_object(), "{}", first.structured_content);
-    let before = server.received_requests().await.unwrap().len();
-    workspace.write("doc.txt", format!("changed\n{}", uneven_lines()));
-    let replay = runtime
-        .run("versions-2".into(), "clasify".into(), support::with_extras(next, &VERBOSE))
-        .await
-        .unwrap();
-    let query = &replay.structured_content["queries"][0];
-    let page = &query["resources"][0]["pages"][0];
-    assert_eq!(page["error"]["errorCode"], "staleSnapshot", "{query}");
-    assert!(page.get("answers").is_none(), "{query}");
-    assert_eq!(
-        server.received_requests().await.unwrap().len(),
-        before,
-        "no page of the new version is judged"
-    );
-    runtime.close().await;
-}
-
-/// A located window on a walk that is still open is offered as `hints.read`
-/// ahead of the walk, which stays in `next.clasify`; no prose repeats the
-/// read. Every clasify continuation kind (the walk, the top read, row and
-/// page reads, the literal search, chunk-page verification reads) runs
-/// exactly as emitted, with and without the caller's brief.
-#[tokio::test]
-async fn every_clasify_continuation_kind_replays_verbatim() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/systemone"))
-        .respond_with(Judge {
-            strategy: Strategy::TopPassage {
-                top: 0.99,
-                exists: 0.95,
-            },
-        })
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    let source = (1..=4000_u64)
-        .map(|line| format!("const walk_filler_{line} = {line}; // ordinary line\n"))
-        .collect::<String>();
-    let file = workspace.write("walk.js", source);
-    let file = file.to_string_lossy().into_owned();
-    let runtime = provider_runtime(&workspace, &server);
-    let mut kinds = std::collections::BTreeSet::new();
-    for (full, briefed, ask) in [
-        (false, false, "Where the walk sets its filler value"),
-        (true, false, "Where the walk sets its filler value"),
-        (false, true, "Where the walk sets its filler value"),
-    ] {
-        let mut input = json!({
-            "resources":[{"id":"f","maxChars":20000,"tool":"localFetch","query":{"path":file}}],
-            "questions":[{"id":"t","type":"locate","ask":ask}]
-        });
-        if full {
-            input["extras"] = json!(VERBOSE);
-        }
-        if briefed {
-            input["mainGoal"] = json!("Find where the walk sets its value.");
-            input["reasoning"] = json!("Read the deciding line.");
-        }
-        let mut calls = 0;
-        loop {
-            calls += 1;
-            assert!(calls <= 12, "the walk must terminate");
-            let outcome = runtime
-                .run(
-                    format!("walk-{calls}"),
-                    "clasify".into(),
-                    support::queries(input.clone()),
-                )
-                .await
-                .unwrap();
-            let output = &outcome.structured_content;
-            octocode_native::contracts::validate_output("clasify", output)
-                .expect("clasify output contract");
-            let query = &output["queries"][0];
-            if calls == 1 {
-                assert!(
-                    query["next"]["clasify"]["queries"][0].is_object(),
-                    "the walk is open: {query}"
-                );
-                let tips = query["hints"]["text"].to_string();
-                assert!(!tips.contains("hints.read"), "no read-first prose: {query}");
-                if !full {
-                    assert_eq!(query["hints"]["read"]["tool"], "localFetch", "{query}");
-                }
-                let keys: Vec<&String> = query.as_object().unwrap().keys().collect();
-                let position = |key: &str| keys.iter().position(|name| *name == key);
-                assert!(
-                    position("hints") < position("next"),
-                    "the read comes before the walk: {keys:?}"
-                );
-            }
-            match replay_every_continuation(&runtime, output, briefed, &mut kinds).await {
-                Some(next) => input = next,
-                None => break,
-            }
-        }
-        assert!(calls >= 2, "{ask}: the file spans several calls");
-    }
-    // A literal target routes straight to its literal search (no walk).
-    for (full, briefed) in [(true, false), (false, true)] {
-        let mut input = json!({
-            "resources":[{"id":"f","maxChars":20000,"tool":"localFetch","query":{"path":file}}],
-            "questions":[{"id":"t","type":"locate","ask":"Where walk_filler_7 is set"}]
-        });
-        if full {
-            input["extras"] = json!(VERBOSE);
-        }
-        if briefed {
-            input["mainGoal"] = json!("Find where the walk sets its value.");
-            input["reasoning"] = json!("Read the deciding line.");
-        }
-        let outcome = runtime
-            .run("literal".into(), "clasify".into(), support::queries(input))
-            .await
-            .unwrap();
-        let output = &outcome.structured_content;
-        octocode_native::contracts::validate_output("clasify", output)
-            .expect("clasify output contract");
-        assert!(
-            replay_every_continuation(&runtime, output, briefed, &mut kinds)
-                .await
-                .is_none(),
-            "no walk: {output}"
-        );
-    }
-
-    // Chunk pages of a yes/no screen offer verification reads of exactly
-    // their judged lines.
-    let chunk_server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .respond_with(noul_response(0.6))
-        .mount(&chunk_server)
-        .await;
-    let chunked = workspace.write("uneven.txt", uneven_lines());
-    let chunk_runtime = provider_runtime(&workspace, &chunk_server);
-    let mut input = json!({
-        "resources":[{"id":"doc","maxChars":400,"tool":"localFetch","query":{
-            "path":chunked,"unit":"lines","length":8
-        }}],
-        "questions":[{"id":"q","type":"yesno","ask":"Is the marker stated?"}]
-    });
-    let mut chunk_kinds = std::collections::BTreeSet::new();
-    let mut calls = 0;
-    loop {
-        calls += 1;
-        assert!(calls <= 10, "the walk must terminate");
-        let outcome = chunk_runtime
-            .run(
-                format!("chunk-{calls}"),
-                "clasify".into(),
-                support::queries(input.clone()),
-            )
-            .await
-            .unwrap();
-        match replay_every_continuation(
-            &chunk_runtime,
-            &outcome.structured_content,
-            false,
-            &mut chunk_kinds,
-        )
-        .await
-        {
-            Some(next) => input = next,
-            None => break,
-        }
-    }
-    for kind in ["clasify:clasify", "row-or-page:localFetch"] {
-        assert!(
-            chunk_kinds.contains(kind),
-            "chunk walk: {kind} not exercised: {chunk_kinds:?}"
-        );
-    }
-    for kind in [
-        "clasify:clasify",
-        "read:localFetch",
-        "row-or-page:localFetch",
-        "findText:localSearch",
-    ] {
-        assert!(kinds.contains(kind), "{kind} not exercised: {kinds:?}");
-    }
-    runtime.close().await;
-    chunk_runtime.close().await;
-}
-
-#[tokio::test]
-async fn exhausted_provider_quota_fails_once_per_resource_and_is_remembered() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/systemone"))
-        .respond_with(ResponseTemplate::new(402).set_body_json(json!({"detail":"no credit"})))
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    let runtime = workspace.runtime(&[
-        // Its own account: the remembered 402 is per endpoint and key, and
-        // pooled mock servers reuse ports across tests.
-        ("OCTOCODE_BETA", "true".into()),
-        ("OCTOCODE_CLASSIFICATION_API", "quota-secret".into()),
-        ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
-        ("OCTOCODE_CLASSIFICATION_CONCURRENCY", "1".into()),
-        ("REQUEST_TIMEOUT", MOCK_PROVIDER_TIMEOUT_MS.into()),
-    ]);
-    let input = json!({
-        "id":"bill","reasoning":"r","mainGoal":"g",
-        "resources":[
-            {"id":"v1","value":"alpha one"},
-            {"id":"v2","value":"beta two"}
-        ],
-        "questions":[
-            {"id":"a","type":"yesno","ask":"Is alpha stated?"},
-            {"id":"b","type":"yesno","ask":"Is beta stated?"},
-            {"id":"c","type":"yesno","ask":"Is gamma stated?"}
-        ]
-    });
-    let out = runtime
-        .run("quota".into(), "clasify".into(), support::queries(input))
-        .await
-        .unwrap();
-    let resources = out.structured_content["queries"][0]["resources"]
-        .as_array()
-        .unwrap();
-    assert_eq!(resources.len(), 2);
-    for resource in resources {
-        assert_eq!(resource["coverage"]["state"], "error", "{resource}");
-        assert_eq!(
-            resource["error"]["errorCode"], "classificationQuotaExhausted",
-            "{resource}"
-        );
-        assert!(resource.get("answers").is_none(), "{resource}");
-    }
-    // The first 402 stops the call: one provider request, not one per page.
-    assert_eq!(server.received_requests().await.unwrap().len(), 1);
-    // A walk that judged nothing offers no next.clasify: it would skip the
-    // failed pages; the rerun is the original query.
-    let file = workspace.write(
-        "quota-walk.txt",
-        (0..200)
-            .map(|index| format!("line {index}\n"))
-            .collect::<String>(),
-    );
-    let walk = json!({
-        "id":"walk","reasoning":"r","mainGoal":"g",
-        "resources":[{"id":"file","maxChars":5000,"tool":"localFetch","query":{
-            "path":file,"length":1,"fullContent":false
-        }}],
-        "questions":[{"id":"relevant","type":"relevant","ask":"line content"}]
-    });
-    let out = runtime
-        .run("quota-walk".into(), "clasify".into(), support::queries(walk))
-        .await
-        .unwrap();
-    let row = &out.structured_content["queries"][0];
-    assert_eq!(row["resources"][0]["coverage"]["state"], "error", "{row}");
-    assert!(row.pointer("/next/clasify").is_none(), "{row}");
-    // The 402 is remembered across calls: the walk sent no request and
-    // answers with the same error (its bounded reads still run, so
-    // per-page input checks come first) and the read the host runs instead
-    // The resource's own query, valid input for its tool.
-    assert_eq!(
-        row["resources"][0]["error"]["errorCode"], "classificationQuotaExhausted",
-        "{row}"
-    );
-    let read = resource_read(&row["resources"][0]).unwrap_or_else(|| panic!("read: {row}"));
-    assert_eq!(read["tool"], "localFetch", "{row}");
-    octocode_native::contracts::validate_query("localFetch", lead_row(&read["query"]))
-        .expect("the read lead is valid localFetch input");
-    assert_eq!(
-        out.exit_class(),
-        octocode_native::runtime::ExitClass::Failed(
-            octocode_native::runtime::FailureKind::Execution
-        ),
-        "{row}"
-    );
-    // Inside the remembered 402, a per-page input error (locate over a
-    // minified view) is still the caller's error, not the quota.
-    let minified = json!({
-        "id":"min","reasoning":"r","mainGoal":"g",
-        "resources":[{"id":"file","tool":"localFetch","query":{"path":file,"ranges":["1-40"],"minify":"standard"}}],
-        "questions":[{"id":"where","type":"locate","ask":"the line that names line 7"}]
-    });
-    let out = runtime
-        .run("quota-minified".into(), "clasify".into(), support::queries(minified))
-        .await
-        .unwrap();
-    let row = &out.structured_content["queries"][0];
-    assert!(
-        row.to_string().contains("classificationLocateUnsupported"),
-        "{row}"
-    );
-    assert_eq!(
-        out.exit_class(),
-        octocode_native::runtime::ExitClass::InvalidInput,
-        "{row}"
-    );
-    // The remembered 402 still routes a literal target: the tip and its
-    // exact search are local facts, not provider answers.
-    let named = json!({
-        "id":"named","reasoning":"r","mainGoal":"g",
-        "resources":[{"id":"file","tool":"localFetch","query":{"path":file,"ranges":["1-40"]}}],
-        "questions":[{"id":"h","type":"locate","ask":"Where is serverCron defined?"}]
-    });
-    let out = runtime
-        .run("quota-named".into(), "clasify".into(), support::queries(named.clone()))
-        .await
-        .unwrap();
-    let row = &out.structured_content["queries"][0];
-    assert!(
-        row["hints"]["text"]
-            .as_array()
-            .is_some_and(|tips| tips.iter().any(|tip| tip
-                .as_str()
-                .is_some_and(|tip| tip.contains("serverCron") && tip.contains("literal lookup")))),
-        "{row}"
-    );
-    assert_eq!(row["hints"]["findText"]["tool"], "localSearch", "{row}");
-    // MCP sees the same routes.
-    let out = runtime
-        .run_mcp("quota-named-mcp".into(), "clasify".into(), support::queries(named))
-        .await
-        .unwrap();
-    let row = &out["structuredContent"]["queries"][0];
-    assert_eq!(row["hints"]["findText"]["tool"], "localSearch", "{row}");
-    assert_eq!(server.received_requests().await.unwrap().len(), 1);
-    runtime.close().await;
-}
-
-/// A provider refusal over a fanned-out search: the refusal is stated
-/// once on the resource, not on every page; pages a spent page budget left
-/// unjudged keep their own error; every captured window keeps its read as
-/// the host's fallback; and the candidates past the captured page are
-/// counted, since a walk that judged nothing offers no next.clasify.
-#[tokio::test]
-async fn provider_refusal_is_stated_once_and_keeps_every_captured_read() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/systemone"))
-        .respond_with(ResponseTemplate::new(402).set_body_json(json!({"detail":"no credit"})))
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    // 43 files, each with three hit clusters far apart: 40 hydrate (the
-    // fileChunks cap), and their windows exceed the page budget.
-    for file in 0..43 {
-        let mut body = String::new();
-        for line in 1..=900 {
-            // Long filler keeps each file over one page (hit windows, not whole).
-            body.push_str(if line % 400 == 10 {
-                "needle marker\n"
-            } else {
-                "filler line with enough padding to keep this file over one page\n"
-            });
-        }
-        workspace.write(&format!("src/f{file}.txt"), body);
-    }
-    let root = workspace
-        .workspace
-        .join("src")
-        .to_string_lossy()
-        .into_owned();
-    let runtime = workspace.runtime(&[
-        // Its own account: the remembered 402 is per endpoint and key.
-        ("OCTOCODE_BETA", "true".into()),
-        ("OCTOCODE_CLASSIFICATION_API", "quota-fanout-secret".into()),
-        ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
-        ("OCTOCODE_CLASSIFICATION_CONCURRENCY", "1".into()),
-        ("REQUEST_TIMEOUT", MOCK_PROVIDER_TIMEOUT_MS.into()),
-    ]);
-    let input = json!({
-        "id":"refused","reasoning":"r","mainGoal":"Find the deciding line.",
-        "resources":[{"id":"hits","tool":"localSearch","candidateEvidence":"fileChunks",
-            "query":{"path":root,"matchString":"needle"}}],
-        "questions":[
-            {"id":"decides","type":"yesno","ask":"Does this source decide the answer?"},
-            {"id":"names","type":"yesno","ask":"Does this source name the marker?"}
-        ]
-    });
-    let out = runtime
-        .run("refused".into(), "clasify".into(), support::queries(input))
-        .await
-        .unwrap();
-    let row = &out.structured_content["queries"][0];
-    let resource = &row["resources"][0];
-    assert_eq!(resource["coverage"]["state"], "error", "{row}");
-    assert_eq!(
-        resource["error"]["errorCode"], "classificationQuotaExhausted",
-        "{row}"
-    );
-    let pages = resource["pages"].as_array().cloned().unwrap_or_default();
-    let refusals = out
-        .structured_content
-        .to_string()
-        .matches("classificationQuotaExhausted")
-        .count();
-    assert_eq!(refusals, 1, "the refusal is stated once: {row}");
-    assert!(
-        pages
-            .iter()
-            .filter(|page| page.get("error").is_some())
-            .all(|page| page["error"]["errorCode"] == "classificationBudgetSpent"),
-        "{row}"
-    );
-    assert!(
-        pages.len() > 5
-            && pages
-                .iter()
-                .all(|page| page.pointer("/hints/read").is_some()),
-        "every captured window keeps its read: {row}"
-    );
-    assert!(row.pointer("/next/clasify").is_none(), "{row}");
-    assert!(
-        resource["limitations"]
-            .as_array()
-            .is_some_and(|limits| limits.iter().any(|limit| limit
-                .as_str()
-                .is_some_and(|limit| limit.starts_with("3 more search candidates")))),
-        "the uncaptured candidates are counted: {row}"
-    );
-    assert_eq!(server.received_requests().await.unwrap().len(), 1);
-    octocode_native::contracts::validate_output("clasify", &out.structured_content)
-        .expect("refusal output contract");
-    runtime.close().await;
-}
-
-/// GitHub repository search pages sliced by `page`/`per_page`, as GitHub
-/// serves them.
-#[derive(Clone)]
-struct RepoSearchPages {
-    repos: usize,
-}
-
-impl Respond for RepoSearchPages {
-    fn respond(&self, request: &Request) -> ResponseTemplate {
-        let param = |name: &str, default: usize| {
-            request
-                .url
-                .query_pairs()
-                .find(|(key, _)| key == name)
-                .and_then(|(_, value)| value.parse::<usize>().ok())
-                .unwrap_or(default)
-        };
-        let (page, per) = (param("page", 1).max(1), param("per_page", 30).max(1));
-        let items = ((page - 1) * per..(page * per).min(self.repos))
-            .map(|n| {
-                json!({"full_name": format!("o/repo{n}"), "name": format!("repo{n}"),
-                       "owner": {"login": "o"}, "html_url": "https://x", "default_branch": "main",
-                       "description": format!("Repository {n} {}", "detail ".repeat(20)),
-                       "archived": false})
-            })
-            .collect::<Vec<_>>();
-        ResponseTemplate::new(200).set_body_json(json!({
-            "total_count": self.repos, "incomplete_results": false, "items": items
-        }))
-    }
-}
-
-/// A list resource whose `maxChars` fits only some candidates of a page
-/// defers the rest to `next.clasify`, which resumes at the first deferred
-/// candidate (a page that starts there), so the walk judges every
-/// candidate exactly once instead of skipping to the next page.
-#[tokio::test]
-async fn a_list_walk_rejudges_budget_deferred_candidates() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/systemone"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "model":"resolved",
-            "answers":{"answer":{"type":"noul","noul":0.6}},
-            "usage":{"input_tokens":2,"output_tokens":1}
-        })))
-        .mount(&server)
-        .await;
-    Mock::given(method("GET"))
-        .and(path("/api/v3/search/repositories"))
-        .respond_with(RepoSearchPages { repos: 12 })
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    let runtime = workspace.runtime(&[
-        ("OCTOCODE_BETA", "true".into()),
-        ("OCTOCODE_CLASSIFICATION_API", "secret".into()),
-        ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
-        ("GITHUB_TOKEN", "clasify-list-budget-fixture".into()),
-        ("GITHUB_API_URL", format!("{}/api/v3", server.uri())),
-        ("REQUEST_TIMEOUT", MOCK_PROVIDER_TIMEOUT_MS.into()),
-    ]);
-    let mut next = Some(json!({
-        "reasoning":"Judge the repositories.","mainGoal":"Which repository holds the parser.",
-        "resources":[{"id":"repos","tool":"ghSearchRepo","maxChars":500,
-            "query":{"keywords":["parser"],"pageSize":5}}],
-        "questions":[{"id":"a","type":"yesno","ask":"Does this repository hold the parser?"}]
-    }));
-    let mut judged = Vec::<String>::new();
-    let mut pages = Vec::<(u64, u64)>::new();
-    let mut calls = 0;
-    while let Some(input) = next.take() {
-        calls += 1;
-        let query = &input
-            .pointer("/queries/0/resources/0/query")
-            .unwrap_or(&input["resources"][0]["query"]);
-        pages.push((
-            query["page"].as_u64().unwrap_or(1),
-            query["pageSize"].as_u64().unwrap_or(0),
-        ));
-        assert!(calls <= 20, "walk did not finish");
-        let outcome = runtime
-            .run(format!("list-{calls}"), "clasify".into(), support::with_extras(input, &VERBOSE))
-            .await
-            .expect("clasify");
-        let row = &outcome.structured_content["queries"][0];
-        assert!(
-            !row.to_string().contains("classificationBudgetSpent"),
-            "call {calls}: a deferred candidate was left unjudged: {row}"
-        );
-        for page in row["resources"][0]["pages"]
-            .as_array()
-            .into_iter()
-            .flatten()
-        {
-            if page.get("answers").is_some() {
-                let item = page
-                    .pointer("/source/item")
-                    .or_else(|| page.get("item"))
-                    .and_then(serde_json::Value::as_str)
-                    .unwrap_or_else(|| panic!("call {calls}: page names its item: {page}"));
-                judged.push(item.to_owned());
-            }
-        }
-        next = row.pointer("/next/clasify").cloned();
-    }
-    let mut sorted = judged.clone();
-    sorted.sort();
-    sorted.dedup();
-    assert_eq!(sorted.len(), judged.len(), "judged twice: {judged:?}");
-    let mut expected = (0..12).map(|n| format!("o/repo{n}")).collect::<Vec<_>>();
-    expected.sort();
-    assert_eq!(sorted, expected, "every candidate judged: {judged:?}");
-    // After a resume re-pages mid-page, the walk steps back to the
-    // original 5-row pages at the next aligned boundary.
-    assert_eq!(
-        pages,
-        vec![(1, 5), (2, 2), (5, 1), (2, 5), (8, 1), (5, 2), (3, 5)],
-        "{pages:?}"
-    );
-    runtime.close().await;
-}
-
-/// On a GitHub file, a `ghGetFileContent` `ranges` read
-/// larger than `maxChars` is judged in fitting line windows, with
-/// `next.clasify` reading the rest, every requested line exactly once.
-#[tokio::test]
-async fn an_oversized_github_ranges_read_is_judged_in_fitting_windows() {
-    use base64::Engine as _;
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/systemone"))
-        .respond_with(noul_response(0.2))
-        .mount(&server)
-        .await;
-    let sha = "0123456789abcdef0123456789abcdef01234567";
-    Mock::given(method("GET"))
-        .and(path("/api/v3/repos/o/r/commits/main"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"sha": sha})))
-        .mount(&server)
-        .await;
-    Mock::given(method("GET"))
-        .and(path("/api/v3/repos/o/r/commits"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
-        .mount(&server)
-        .await;
-    let source = uneven_lines();
-    Mock::given(method("GET"))
-        .and(path("/api/v3/repos/o/r/contents/uneven.txt"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "type":"file","encoding":"base64",
-            "content": base64::engine::general_purpose::STANDARD.encode(&source),
-            "size": source.len(), "sha": "f".repeat(40), "path":"uneven.txt"
-        })))
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    let runtime = workspace.runtime(&[
-        ("OCTOCODE_BETA", "true".into()),
-        ("OCTOCODE_CLASSIFICATION_API", "secret".into()),
-        ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
-        ("GITHUB_TOKEN", "clasify-gh-ranges-fixture".into()),
-        ("GITHUB_API_URL", format!("{}/api/v3", server.uri())),
-        ("REQUEST_TIMEOUT", MOCK_PROVIDER_TIMEOUT_MS.into()),
-    ]);
-    let mut input = json!({
-        "id":"ghranges","reasoning":"Judge one range in bounded pages.","mainGoal":"Decide the next read.",
-        "extras":VERBOSE,
-        "resources":[{"id":"doc","maxChars":400,"tool":"ghGetFileContent","query":{
-            "owner":"o","repo":"r","path":"uneven.txt","ref":"main","ranges":["3-22"]
-        }}],
-        "questions":[{"id":"q","type":"yesno","ask":"Is the marker stated?"}]
-    });
-    let mut covered = 2u64;
-    let mut calls = 0;
-    loop {
-        calls += 1;
-        assert!(calls <= 12, "the walk must terminate");
-        let outcome = runtime
-            .run(
-                format!("ghranges-{calls}"),
-                "clasify".into(),
-                support::queries(input.clone()),
-            )
-            .await
-            .unwrap();
-        let query = &outcome.structured_content["queries"][0];
-        let resource = &query["resources"][0];
-        assert!(resource.get("error").is_none(), "{query}");
-        for page in resource["pages"].as_array().unwrap() {
-            assert!(page.get("error").is_none(), "{query}");
-            let scope = &page["scope"];
-            assert_eq!(
-                scope["startLine"].as_u64().unwrap(),
-                covered + 1,
-                "no line is skipped or repeated: {query}"
-            );
-            covered = scope["endLine"].as_u64().unwrap();
-        }
-        match query["next"].get("clasify") {
-            Some(next) => input = next.clone(),
-            None => break,
-        }
-    }
-    assert_eq!(covered, 22);
-    assert!(calls > 1, "the range did not fit one call");
-    runtime.close().await;
-}
-
-/// A single line inside a `ranges` read that alone exceeds `maxChars` cannot
-/// be judged, but stays reachable: its page carries an executable read, and
-/// the lines after it continue through `next.clasify`.
-#[tokio::test]
-async fn an_unsplittable_line_in_a_ranges_read_keeps_its_read_and_the_rest() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .respond_with(noul_response(0.2))
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    let file = workspace.write(
-        "wide.txt",
-        format!("short one\n{}\nshort three\nshort four\n", filler(500)),
-    );
-    let runtime = provider_runtime(&workspace, &server);
-    let input = json!({
-        "id":"wide","reasoning":"Judge one range in bounded pages.","mainGoal":"Decide the next read.",
-        "resources":[{"id":"doc","maxChars":100,"tool":"localFetch","query":{
-            "path":file,"ranges":["2-4"]
-        }}],
-        "questions":[{"id":"q","type":"yesno","ask":"Is the marker stated?"}]
-    });
-    let outcome = runtime
-        .run("wide-range".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
-        .await
-        .unwrap();
-    let query = &outcome.structured_content["queries"][0];
-    let resource = &query["resources"][0];
-    let failed = resource["pages"]
-        .as_array()
-        .and_then(|pages| pages.iter().find(|page| page.get("error").is_some()))
-        .unwrap_or(resource);
-    assert_eq!(
-        failed["error"]["errorCode"], "classificationContextTooLarge",
-        "{query}"
-    );
-    let read = resource_read(resource)
-        .or_else(|| failed["hints"]["read"].as_object().cloned().map(Into::into))
-        .unwrap_or_else(|| panic!("the oversized line keeps an executable read: {query}"));
-    assert_eq!(read["tool"], "localFetch", "{query}");
-    assert_eq!(
-        lead_row(&read["query"])["ranges"],
-        json!(["2-2"]),
-        "{query}"
-    );
-    let next = &query["next"]["clasify"];
-    assert_eq!(
-        next["queries"][0]["resources"][0]["query"]["ranges"],
-        json!(["3-4"]),
-        "the lines after the oversized one continue: {query}"
-    );
-    octocode_native::contracts::validate_output("clasify", &outcome.structured_content)
-        .expect("output contract");
-    runtime.close().await;
-}
-
-/// A path list (structureSearch, ghStructure, astTopology) stays one page, so
-/// `relevant`/`sufficient` over it is one whole-list verdict. The verdict is
-/// kept and one tip routes the agent to `choice` over the paths; a `choice`
-/// matrix gets no tip.
-#[tokio::test]
-async fn whole_list_questions_over_a_path_list_hint_toward_choice() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .respond_with(noul_response(0.6))
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    workspace.write("src/alpha.rs", "fn alpha() {}\n");
-    let file = workspace.write("src/bravo.rs", "fn bravo() {}\n");
-    let dir = file.parent().unwrap().to_path_buf();
-    let runtime = provider_runtime(&workspace, &server);
-    let matrix = |id: &str, question: serde_json::Value| {
-        json!({
-            "id":id,"reasoning":"Pick the file to read.","mainGoal":"Find the bravo handler.",
-            "resources":[{"id":"tree","tool":"structureSearch","query":{"operation":"files","path":dir}}],
-            "questions":[question]
-        })
-    };
-    let tip = |query: &serde_json::Value| {
-        query["hints"]["text"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(serde_json::Value::as_str)
-            .find(|hint| hint.contains("one page"))
-            .map(str::to_owned)
-    };
-    for kind in ["relevant", "sufficient"] {
-        let outcome = runtime
-            .run(
-                format!("list-{kind}"),
-                "clasify".into(),
-                support::queries(matrix(
-                    kind,
-                    json!({"id":"q","type":kind,"ask":"Which file defines bravo?"}),
-                )),
-            )
-            .await
-            .unwrap();
-        let query = &outcome.structured_content["queries"][0];
-        assert!(
-            compact_answer(&query["resources"][0], "q").is_number(),
-            "{query}"
-        );
-        let tip = tip(query).unwrap_or_else(|| panic!("no choice tip: {query}"));
-        assert!(tip.chars().count() <= 120, "{tip}");
-        octocode_native::contracts::validate_output("clasify", &outcome.structured_content)
-            .expect("output contract");
-    }
-    let outcome = runtime
-        .run(
-            "list-choice".into(),
-            "clasify".into(),
-            support::queries(matrix(
-                "choice",
-                json!({"id":"q","type":"choice","ask":"Does this list name the bravo file?",
-                    "labels":{"yes":"Names it","no":"Does not"}}),
-            )),
-        )
-        .await
-        .unwrap();
-    assert!(
-        tip(&outcome.structured_content["queries"][0]).is_none(),
-        "{}",
-        outcome.structured_content
-    );
-    runtime.close().await;
-}
-
-/// Every page of a multi-page file read is pinned to the captured version:
-/// page 1's verification read carries the same `snapshot` as page 2's, so a
-/// changed file fails the read instead of returning other lines.
-#[tokio::test]
-async fn every_page_read_of_a_paged_file_pins_the_captured_snapshot() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .respond_with(noul_response(0.95))
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    let body = (1..=24).map(|n| format!("line {n}\n")).collect::<String>();
-    let file = workspace.write("doc.txt", body);
-    let runtime = provider_runtime(&workspace, &server);
-    let input = json!({
-        "id":"pinned","reasoning":"Walk the file in pages.","mainGoal":"Find the marker.",
-        "resources":[{"id":"doc","tool":"localFetch","query":{"path":file,"unit":"lines","length":8}}],
-        "questions":[{"id":"s","type":"sufficient","ask":"Is the marker stated?"}]
-    });
-    let outcome = runtime
-        .run("pinned".into(), "clasify".into(), support::queries(input))
-        .await
-        .unwrap();
-    let resource = &outcome.structured_content["queries"][0]["resources"][0];
-    let pages = resource["pages"]
-        .as_array()
-        .unwrap_or_else(|| panic!("{resource}"));
-    assert!(pages.len() >= 2, "{resource}");
-    let snapshots = pages
-        .iter()
-        .map(|page| lead_row(&page["hints"]["read"]["query"])["snapshot"].clone())
-        .collect::<Vec<_>>();
-    assert!(
-        snapshots[0].is_string(),
-        "page 1 read is pinned: {resource}"
-    );
-    assert!(
-        snapshots.iter().all(|snapshot| *snapshot == snapshots[0]),
-        "{resource}"
-    );
-    octocode_native::contracts::validate_output("clasify", &outcome.structured_content)
-        .expect("output contract");
-    runtime.close().await;
-}
-
-/// Five small files, each judged whole: (relevant, sufficient).
-const SCOUT_SAMPLE: [(f64, f64); 5] = [
-    (0.95, 0.8),
-    (0.9, 0.4),
-    (0.6, 0.3),
-    (0.15, 0.1),
-    (0.1, 0.05),
-];
-
-fn scout_sample_input(root: &str) -> serde_json::Value {
-    json!({
-        "id":"scout","mainGoal":"The code that decides a retry.",
-        "resources":[{"id":"s","tool":"localSearch","query":{"path":root,"matchString":"needle"}}],
-        "questions":[
-            {"id":"rel","type":"relevant","ask":"Decides whether to retry"},
-            {"id":"suf","type":"sufficient","ask":"Shows the retry condition"}
-        ]
-    })
-}
-
-fn write_scout_sample(workspace: &Workspace) -> String {
-    for (index, (relevant, sufficient)) in SCOUT_SAMPLE.iter().enumerate() {
-        // Files 1 and 3 exceed one file's hydration share: they are judged in
-        // windows around their two distant hits.
-        let lines = if index % 2 == 1 { 900 } else { 40 + index * 37 };
-        let hit = format!("fn needle_{index}() {{}} // SCORES {relevant} {sufficient}\n");
-        let filler = |from: usize, to: usize| {
-            (from..to)
-                .map(|n| {
-                    format!("    let value_{n} = compute({n}); // padding line for the scout\n")
-                })
-                .collect::<String>()
-        };
-        let body = format!(
-            "// SCOUT file {index}\n{hit}{}{hit}{}",
-            filler(0, lines / 2),
-            filler(lines / 2, lines)
-        );
-        workspace.write(&format!("src/f{index}.rs"), body);
-    }
-    workspace
-        .workspace
-        .join("src")
-        .to_string_lossy()
-        .into_owned()
-}
-
-/// Every `(path, lead)` of a value: `hints.*`/`next.*` entries that are calls.
-fn leads(value: &serde_json::Value, at: &str, out: &mut Vec<(String, serde_json::Value)>) {
-    match value {
-        serde_json::Value::Object(map) => {
-            for (key, child) in map {
-                let here = format!("{at}.{key}");
-                if key == "hints" || key == "next" {
-                    for (name, lead) in child.as_object().into_iter().flatten() {
-                        if lead.get("tool").is_some() || name == "clasify" {
-                            out.push((format!("{here}.{name}"), lead.clone()));
-                        }
-                    }
-                }
-                leads(child, &here, out);
-            }
-        }
-        serde_json::Value::Array(items) => {
-            for (index, item) in items.iter().enumerate() {
-                leads(item, &format!("{at}[{index}]"), out);
-            }
-        }
-        _ => {}
-    }
-}
-
-/// SCOUT default output (5 files, two judged in windows): ranks 1–3 and any
-/// page whose `sufficient` is at least 0.7 keep a read; a part-file page's
-/// read of exactly its `scope` is implied; answers stay keyed by question.
-/// Measured (serde_json bytes of the structured output): 1197 before
-/// (every window page carried its read) → 791 after.
-#[tokio::test]
-async fn scout_sample_output_bytes() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .respond_with(Judge {
-            strategy: Strategy::Scores,
-        })
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    let root = write_scout_sample(&workspace);
-    let runtime = provider_runtime(&workspace, &server);
-    let outcome = runtime
-        .run(
-            "scout-sample".into(),
-            "clasify".into(),
-            support::queries(scout_sample_input(&root)),
-        )
-        .await
-        .unwrap();
-    octocode_native::contracts::validate_output("clasify", &outcome.structured_content)
-        .expect("output contract");
-    let text = outcome.structured_content.to_string();
-    eprintln!("SCOUT bytes={} {text}", text.len());
-    assert!(text.len() <= 800, "{text}");
-    let pages = outcome.structured_content["queries"][0]["resources"][0]["pages"]
-        .as_array()
-        .unwrap();
-    assert_eq!(pages.len(), 7, "{text}");
-    for page in pages {
-        assert!(page["answers"]["rel"].is_number() && page["answers"]["suf"].is_number());
-        assert!(page["rank"].is_u64(), "{page}");
-        // Ranked rows past the top three name their file and span only.
-        if page["rank"].as_u64().unwrap() > 3 {
-            assert!(page.get("hints").is_none(), "{page}");
-        }
-    }
-    let mut found = Vec::new();
-    leads(&outcome.structured_content, "", &mut found);
-    assert!(
-        found.is_empty(),
-        "every remaining read is implied: {found:?}"
-    );
-    runtime.close().await;
-}
-
-/// LOCATE default output (one whole file): `best` holds the window, the
-/// query's `hints.read` reads exactly that window pinned to the judged file
-/// version, and the resource states the file once. The one whole-file page
-/// only restated `exists` and folds away. Measured: 324 bytes before (page
-/// row, unpinned read) → 265 without the page → 343 with the 64-hex pin.
-#[tokio::test]
-async fn locate_sample_output_bytes() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .respond_with(Judge {
-            strategy: Strategy::TopPassage {
-                top: 0.8,
-                exists: 0.9,
-            },
-        })
-        .mount(&server)
-        .await;
+async fn a_local_source_judges_exactly_its_ranges_and_leads_to_the_same_read() {
+    let server = provider(1).await;
     let workspace = Workspace::new();
     let body = (1..=60)
-        .map(|n| format!("fn step_{n}() -> u32 {{\n    {n}\n}}\n"))
+        .map(|n| format!("line {n} {}\n", if n == 30 { "OUTSIDE" } else { "inside" }))
         .collect::<String>();
-    let file = workspace.write("src/steps.rs", &body);
+    workspace.write("docs/guide.md", &body);
     let runtime = provider_runtime(&workspace, &server);
-    let input = json!({
-        "id":"loc","mainGoal":"Where the step order is decided.",
-        "resources":[{"id":"f","tool":"localFetch","query":{"path":file}}],
-        "questions":[
-            {"id":"where","type":"locate","ask":"Where the step order is decided"},
-            {"id":"suf","type":"sufficient","ask":"States the step order"}
-        ]
-    });
-    let outcome = runtime
+    let out = clasify(
+        &runtime,
+        vec![json!({
+            "source":{"tool":"localFetch","query":{"path":"docs/guide.md","ranges":["2-4","40-41"]}},
+            "questions":{"inside":noul("Does the selection say inside?")}
+        })],
+    )
+    .await;
+    let state = &sent(&server).await[0]["state"];
+    let text = state["text"].as_str().unwrap();
+    for line in [2, 3, 4, 40, 41] {
+        assert!(text.contains(&format!("line {line} inside")), "{text}");
+    }
+    for line in [1, 5, 30, 39, 42] {
+        assert!(
+            !text.contains(&format!("line {line} ")),
+            "line {line} is outside: {text}"
+        );
+    }
+    let result = &out["queries"][0];
+    assert_eq!(result["answers"]["inside"]["noul"], 0.9);
+    let read = &result["hints"]["read"];
+    assert_eq!(read["tool"], "localFetch");
+    let row = &read["query"]["queries"][0];
+    assert_eq!(row["path"], "docs/guide.md");
+    assert_eq!(row["ranges"], json!(["2-4", "40-41"]));
+    assert_eq!(row["minify"], "none");
+    assert_eq!(row["snapshot"].as_str().map(str::len), Some(64), "{row}");
+    assert!(
+        !out.to_string().contains("line 3 inside"),
+        "no source body is returned"
+    );
+    runtime.close().await;
+}
+
+/// R02: disjoint ranges stay intersected through every content page the
+/// capture follows; no line outside them reaches the provider.
+#[tokio::test]
+async fn a_multi_page_capture_keeps_disjoint_ranges_on_every_page() {
+    let server = provider(1).await;
+    let workspace = Workspace::new();
+    let body = (1..=1200)
+        .map(|n| {
+            let tag = if (401..600).contains(&n) || n > 1000 {
+                "OUT"
+            } else {
+                "in"
+            };
+            format!("row {n:04} {tag} {}\n", "x".repeat(16))
+        })
+        .collect::<String>();
+    workspace.write("data/rows.txt", &body);
+    let runtime = provider_runtime(&workspace, &server);
+    let out = clasify(
+        &runtime,
+        vec![json!({
+            "source":{"tool":"localFetch","query":{"path":"data/rows.txt","ranges":["1-400","600-1000"]}},
+            "questions":{"q":noul("Does every selected row say in?")}
+        })],
+    )
+    .await;
+    assert!(out["queries"][0].get("answers").is_some(), "{out}");
+    let text = sent(&server).await[0]["state"]["text"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(!text.contains("OUT"), "an outside line was captured");
+    for row in [1, 400, 600, 1000] {
+        assert!(
+            text.contains(&format!("row {row:04} in")),
+            "row {row} missing"
+        );
+    }
+    assert!(
+        text.len() > 16 * 1024,
+        "the selection spans more than one page"
+    );
+    runtime.close().await;
+}
+
+#[tokio::test]
+async fn the_read_lead_returns_the_classified_capture() {
+    let server = provider(1).await;
+    let workspace = Workspace::new();
+    workspace.write("src/a.rs", "fn a() {}\nfn b() {}\nfn c() {}\n");
+    let runtime = provider_runtime(&workspace, &server);
+    let out = clasify(
+        &runtime,
+        vec![json!({
+            "source":{"tool":"localFetch","query":{"path":"src/a.rs","fullContent":true}},
+            "questions":{"b":noul("Does the file define b?")}
+        })],
+    )
+    .await;
+    let read = out["queries"][0]["hints"]["read"].clone();
+    let replay = runtime
         .run(
-            "locate-sample".into(),
-            "clasify".into(),
-            support::queries(input.clone()),
+            "read-lead".into(),
+            read["tool"].as_str().unwrap().into(),
+            read["query"].clone(),
         )
         .await
+        .expect("lead runs");
+    let content = replay.structured_content["results"][0]["data"]["content"]
+        .as_str()
         .unwrap();
-    octocode_native::contracts::validate_output("clasify", &outcome.structured_content)
-        .expect("output contract");
-    let query = &outcome.structured_content["queries"][0];
-    let text = outcome.structured_content.to_string();
-    eprintln!("LOCATE bytes={} {text}", text.len());
-    // The stop signal is the resource's one answer; the window is in `best`.
-    assert_eq!(
-        query["resources"][0],
-        json!({"id":"f","path":"src/steps.rs","totalLines":180,"answers":{"suf":0.9}}),
-        "{text}"
-    );
-    let row = &query["best"]["where"][0];
-    let read = &query["hints"]["read"];
-    let read_row = &read["query"]["queries"][0];
-    assert_eq!(
-        read_row["ranges"],
-        json!([format!("{}-{}", row["line"], row["endLine"])]),
-        "{text}"
-    );
-    assert_eq!(read_row["path"], "src/steps.rs");
-    assert!(read_row["snapshot"].is_string(), "{text}");
-    let replay = || {
-        runtime.run(
-            "locate-read".into(),
+    assert!(content.contains("fn b() {}"), "{content}");
+    // A changed file no longer matches the captured snapshot.
+    workspace.write("src/a.rs", "fn changed() {}\n");
+    let stale = runtime
+        .run(
+            "stale-lead".into(),
             "localFetch".into(),
             read["query"].clone(),
         )
-    };
-    let fresh = replay().await.unwrap();
-    assert!(fresh.failure.is_none(), "{}", fresh.structured_content);
-    // An edit after the judgment fails the pinned read instead of shifting it.
-    workspace.write("src/steps.rs", format!("// edited\n{body}"));
-    let stale = replay().await.unwrap();
-    assert!(
-        stale
-            .structured_content
-            .to_string()
-            .contains("staleSnapshot"),
+        .await
+        .expect("typed row");
+    assert_eq!(
+        stale.structured_content["results"][0]["data"]["errorCode"], "staleSnapshot",
         "{}",
         stale.structured_content
     );
     runtime.close().await;
 }
 
-/// The search → clasify handoff carries the brief the agent sent on the
-/// matrix only: the search resource reruns without it (a resource read
-/// inherits the matrix brief) and without the search's own `extras`. The
-/// clasify run's own leads carry no brief; its walk keeps the matrix brief.
 #[tokio::test]
-async fn the_search_handoff_carries_only_the_sent_brief() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .respond_with(Judge {
-            strategy: Strategy::Scores,
-        })
-        .mount(&server)
-        .await;
+async fn an_oversized_or_missing_source_fails_its_row_without_provider_work() {
+    let server = provider(1).await;
     let workspace = Workspace::new();
-    for index in 0..9 {
-        workspace.write(
-            &format!("src/r{index}.rs"),
-            format!("// retry delay policy {index}\nfn wait_{index}() {{}}\n"),
-        );
-    }
-    let root = workspace
-        .workspace
-        .join("src")
-        .to_string_lossy()
-        .into_owned();
-    let runtime = provider_runtime(&workspace, &server);
-    let search = json!({
-        "mainGoal":"Where the retry delay grows after each failure.",
-        "reasoning":"Pick the deciding file.",
-        "path":root, "matchString":"retry delay", "extras":["stats"]
-    });
-    let outcome = runtime
-        .run(
-            "handoff".into(),
-            "localSearch".into(),
-            json!({"queries":[search.clone()]}),
-        )
-        .await
-        .unwrap();
-    let data = &outcome.structured_content["results"][0]["data"];
-    let lead = &data["hints"]["clasify"];
-    let matrix = &lead["query"]["queries"][0];
-    // The goal is the one question's ask; the matrix does not repeat it.
-    assert_eq!(
-        matrix["questions"],
-        json!([{"id":"relevant","type":"relevant","ask":search["mainGoal"]}]),
-        "{data}"
+    workspace.write(
+        "big.txt",
+        "x".repeat(80) + &"\nfiller line of text".repeat(3000),
     );
-    assert!(matrix.get("mainGoal").is_none(), "{data}");
-    assert_eq!(matrix["reasoning"], search["reasoning"], "{data}");
-    let resource = &matrix["resources"][0]["query"];
-    for field in ["mainGoal", "reasoning", "extras"] {
-        assert!(resource.get(field).is_none(), "{field}: {resource}");
+    let runtime = provider_runtime(&workspace, &server);
+    let out = clasify(
+        &runtime,
+        vec![
+            json!({"id":"big","source":{"tool":"localFetch","query":{"path":"big.txt","fullContent":true}},
+                "questions":{"q":noul("Is it big?")}}),
+            json!({"id":"gone","source":{"tool":"localFetch","query":{"path":"missing.txt","ranges":["1-2"]}},
+                "questions":{"q":noul("Is it there?")}}),
+            state_row(),
+        ],
+    )
+    .await;
+    let rows = out["queries"].as_array().unwrap();
+    assert_eq!(
+        rows[0]["error"]["errorCode"], "classificationContextTooLarge",
+        "{out}"
+    );
+    assert!(rows[0].get("answers").is_none());
+    assert_eq!(rows[1]["error"]["errorCode"], "pathNotFound", "{out}");
+    assert_eq!(
+        rows[2]["answers"]["restart"]["noul"], 0.9,
+        "a sibling keeps its answer"
+    );
+    assert_eq!(
+        sent(&server).await.len(),
+        1,
+        "only the state row reached the provider"
+    );
+    runtime.close().await;
+}
+
+#[tokio::test]
+async fn a_github_source_reads_its_requested_ref_and_pins_the_lead_to_that_commit() {
+    let provider = provider(2).await;
+    let github = MockServer::builder().start().await;
+    let shas = [
+        (
+            "v1",
+            "1111111111111111111111111111111111111111",
+            "old body\n",
+        ),
+        (
+            "v2",
+            "2222222222222222222222222222222222222222",
+            "new body\n",
+        ),
+    ];
+    for (reference, sha, body) in shas {
+        Mock::given(method("GET"))
+            .and(path(format!("/api/v3/repos/a/b/commits/{reference}")))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"sha": sha})))
+            .mount(&github)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/api/v3/repos/a/b/contents/src%2Flib.rs"))
+            .and(query_param("ref", sha))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "type":"file","encoding":"base64","content":STANDARD.encode(body),
+                "size":body.len(),"sha":format!("{:0>40}", reference),"path":"src/lib.rs"
+            })))
+            .mount(&github)
+            .await;
     }
-    let mut found = Vec::new();
-    leads(data, "", &mut found);
-    for (at, other) in found.iter().filter(|(at, _)| !at.ends_with(".clasify")) {
-        let text = other.to_string();
-        assert!(
-            !text.contains("\"mainGoal\"") && !text.contains("\"reasoning\""),
-            "{at}: {text}"
-        );
-    }
-    let screened = runtime
-        .run("screen".into(), "clasify".into(), lead["query"].clone())
+    let workspace = Workspace::new();
+    let runtime = workspace.runtime(&[
+        ("OCTOCODE_BETA", "true".into()),
+        ("OCTOCODE_CLASSIFICATION_API", "secret".into()),
+        ("OCTOCODE_CLASSIFICATION_API_HOST", provider.uri()),
+        ("GITHUB_API_URL", format!("{}/api/v3", github.uri())),
+    ]);
+    let row = |reference: &str| {
+        json!({"id":reference,"source":{"tool":"ghGetFileContent","query":{
+            "owner":"a","repo":"b","path":"src/lib.rs","ref":reference,"fullContent":true}},
+            "questions":{"q":noul("Does the file say body?")}})
+    };
+    let out = clasify(&runtime, vec![row("v1"), row("v2")]).await;
+    let states = sent(&provider)
         .await
-        .unwrap();
-    octocode_native::contracts::validate_output("clasify", &screened.structured_content)
-        .expect("output contract");
-    let mut found = Vec::new();
-    leads(&screened.structured_content, "", &mut found);
-    for (at, lead) in &found {
-        let text = if at.ends_with(".clasify") {
-            // The walk is the same matrix: its brief stays on the matrix,
-            // never inside a resource read.
-            lead["queries"][0]["resources"].to_string()
-        } else {
-            lead.to_string()
-        };
-        assert!(
-            !text.contains("\"mainGoal\"") && !text.contains("\"reasoning\""),
-            "{at}: {text}"
-        );
+        .into_iter()
+        .map(|request| request["state"].to_string())
+        .collect::<Vec<_>>();
+    assert!(
+        states.iter().any(|state| state.contains("old body")),
+        "{states:?}"
+    );
+    assert!(
+        states.iter().any(|state| state.contains("new body")),
+        "{states:?}"
+    );
+    for (index, (_, sha, _)) in shas.iter().enumerate() {
+        let lead = &out["queries"][index]["hints"]["read"];
+        assert_eq!(lead["tool"], "ghGetFileContent");
+        assert_eq!(lead["query"]["queries"][0]["ref"], *sha, "{lead}");
+        assert_eq!(lead["query"]["queries"][0]["minify"], "none");
     }
     runtime.close().await;
 }
 
-/// A failed read keeps the read tool's own recovery lead (every error
-/// carries an executable next step): a missing directory under an existing
-/// parent leads to `structureSearch` on that parent.
 #[tokio::test]
-async fn failed_read_keeps_the_read_tools_recovery_lead() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .respond_with(ResponseTemplate::new(500))
-        .expect(0)
-        .mount(&server)
-        .await;
+async fn a_disabled_reader_is_rejected_at_validation_before_any_work() {
+    let server = provider(0).await;
     let workspace = Workspace::new();
-    let present = workspace.write("src/present.txt", "hello\n");
-    let missing = present.parent().unwrap().join("no-such-dir");
     let runtime = workspace.runtime(&[
         ("OCTOCODE_BETA", "true".into()),
         ("OCTOCODE_CLASSIFICATION_API", "secret".into()),
         ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
+        ("DISABLE_TOOLS", "localFetch".into()),
     ]);
-    let input = json!({
-        "id":"failed-read","reasoning":"Screen a failed read.","mainGoal":"Decide the next read.",
-        "resources":[{"id":"e","tool":"localSearch","query":{
-            "path":missing,"matchString":"x","mainGoal":"test","reasoning":"Find it."
-        }}],
-        "questions":[{"id":"q","type":"yesno","ask":"Does this page show a match?"}]
-    });
-    let outcome = runtime
-        .run("failed-read".into(), "clasify".into(), support::with_extras(input, &VERBOSE))
+    let error = runtime
+        .run(
+            "disabled-reader".into(),
+            "clasify".into(),
+            json!({"queries":[{"source":{"tool":"localFetch","query":{"path":"a.rs","ranges":["1-2"]}},
+                "questions":{"q":noul("Anything?")}}]}),
+        )
         .await
-        .unwrap();
-    let resource = &outcome.structured_content["queries"][0]["resources"][0];
-    let error = &resource["pages"][0]["error"];
-    assert_eq!(error["errorCode"], "pathNotFound", "{resource}");
-    let lead = &error["hints"]["viewTree"];
-    assert_eq!(lead["tool"], "structureSearch", "{error}");
-    // The lead lists the nearest existing parent (workspace-relative).
-    assert_eq!(lead["query"]["queries"][0]["path"], "src", "{error}");
+        .expect_err("rejected at validation");
+    assert_eq!(error.code, "invalidInput", "{error:?}");
+    let issues = error.validation_issues.expect("field issues");
+    assert_eq!(issues[0].rule_id, "clasify.source-reader-available");
+    assert_eq!(issues[0].path, ["queries", "0", "source"]);
+    assert!(
+        issues[0].message.contains("localFetch"),
+        "{}",
+        issues[0].message
+    );
+    runtime.close().await;
+}
+
+#[tokio::test]
+async fn removed_matrix_input_is_rejected_not_converted() {
+    let server = provider(0).await;
+    let workspace = Workspace::new();
+    let runtime = provider_runtime(&workspace, &server);
+    for legacy in [
+        json!({"resources":[{"value":"x"}],"questions":[{"type":"yesno","ask":"Relevant?"}]}),
+        json!({"state":"x","questions":{"q":{"type":"locate","instructions":"Where?"}}}),
+        json!({"state":"x","questions":{"q":noul("x")},"resources":[{"value":"x"}]}),
+    ] {
+        let error = runtime
+            .run(
+                "legacy".into(),
+                "clasify".into(),
+                json!({"queries":[legacy.clone()]}),
+            )
+            .await
+            .expect_err("legacy shape");
+        assert_eq!(error.code, "invalidInput", "{legacy}");
+    }
+    runtime.close().await;
+}
+
+#[tokio::test]
+async fn a_provider_failure_fails_the_row_and_the_runtime_recovers() {
+    let server = MockServer::builder().start().await;
+    let attempts = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counted = attempts.clone();
+    Mock::given(method("POST"))
+        .and(path("/v1/systemone"))
+        .respond_with(move |request: &Request| {
+            if counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+                ResponseTemplate::new(401)
+            } else {
+                Typed.respond(request)
+            }
+        })
+        .mount(&server)
+        .await;
+    let workspace = Workspace::new();
+    let runtime = provider_runtime(&workspace, &server);
+    let failed = clasify(&runtime, vec![state_row()]).await;
+    assert_eq!(
+        failed["queries"][0]["error"]["errorCode"], "classificationProviderError",
+        "{failed}"
+    );
+    assert!(failed["queries"][0].get("answers").is_none());
+    let recovered = clasify(&runtime, vec![state_row()]).await;
+    assert_eq!(recovered["queries"][0]["answers"]["restart"]["noul"], 0.9);
+    assert!(
+        recovered["queries"][0].get("replayed").is_none(),
+        "a failure is never cached"
+    );
+    runtime.close().await;
+}
+
+#[tokio::test]
+async fn response_pagination_is_rejected_for_clasify() {
+    let server = provider(0).await;
+    let workspace = Workspace::new();
+    let runtime = provider_runtime(&workspace, &server);
+    let error = runtime
+        .run(
+            "paged".into(),
+            "clasify".into(),
+            json!({"queries":[state_row()],"responseLength":100}),
+        )
+        .await
+        .expect_err("unsupported");
+    assert_eq!(error.code, "unsupportedResponsePagination");
     runtime.close().await;
 }

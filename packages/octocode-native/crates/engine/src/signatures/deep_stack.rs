@@ -204,7 +204,6 @@ mod tests {
 
     #[test]
     fn a_panicking_job_yields_default_and_keeps_the_pool_alive() {
-        #[allow(clippy::panic)]
         let value: u32 = run_on_deep_stack(|| panic!("boom"));
         assert_eq!(value, 0);
         assert_eq!(run_on_deep_stack(|| 3_u32), 3);
@@ -237,10 +236,7 @@ mod tests {
             );
             return;
         }
-        #[allow(clippy::panic)]
-        {
-            panic!("the job never got a pool thread");
-        }
+        panic!("the job never got a pool thread");
     }
 
     #[test]

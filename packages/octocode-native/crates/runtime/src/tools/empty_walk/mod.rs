@@ -208,7 +208,6 @@ impl Diagnosis {
     }
 
     /// The distinct skipped entries behind the sampled files, first-found first.
-    #[cfg(test)]
     pub(crate) fn skips(&self) -> &[Skip] {
         &self.skips
     }
@@ -380,10 +379,81 @@ pub(crate) fn diagnose_shown<E>(
 }
 
 /// Every file one fully lifted walk reached, each tagged with the causes
-/// that hide it ([`Cause::bit`]), and whether the walk was cut.
-struct Tagged {
+/// that hide it ([`Cause::bit`]), and whether the walk was cut: every relaxed
+/// walk is answered from the tags, so a diagnosis walks once.
+pub(crate) struct Tagged {
     files: Vec<(PathBuf, u8)>,
     cut: bool,
+}
+
+impl Tagged {
+    /// The files a tool's own search found under `root` with every cause
+    /// lifted (or a `cut` search's first ones), each tagged by its path: an
+    /// ignore rule on the way (an include glob's match aside), a dot entry,
+    /// a default-pruned directory, or a generated file the default excludes
+    /// skip.
+    pub(crate) fn found(
+        root: &Path,
+        mode: PruneMode,
+        globs: Globs<'_>,
+        files: impl IntoIterator<Item = PathBuf>,
+        cut: bool,
+    ) -> Result<Self, String> {
+        let overrides = globs.overrides(root).map_err(|error| error.reason)?;
+        let rules = IgnoreRules::new(root);
+        let prune = Prune::new(mode.directories(true));
+        let files = files
+            .into_iter()
+            .map(|file| {
+                let mut bits = 0;
+                for (prefix, is_dir) in prefixes(root, &file) {
+                    if bits & Cause::Ignored.bit() == 0
+                        && !overrides.matched(&prefix, is_dir).is_whitelist()
+                        && rules.is_ignored(&prefix, is_dir)
+                    {
+                        bits |= Cause::Ignored.bit();
+                    }
+                    let name = prefix.file_name().unwrap_or_default();
+                    if name.to_string_lossy().starts_with('.') {
+                        bits |= Cause::Hidden.bit();
+                    }
+                    let generated = !is_dir
+                        && crate::policy::discovery::generated_file_pattern(
+                            &name.to_string_lossy(),
+                        )
+                        .is_some();
+                    if (is_dir && prune.names(name)) || generated {
+                        bits |= Cause::DefaultExcluded.bit();
+                    }
+                }
+                (file, bits)
+            })
+            .collect();
+        Ok(Self { files, cut })
+    }
+
+    /// What the relaxed `walk` finds; with `requested`, only files that walk
+    /// did not reach.
+    pub(crate) fn find(&self, walk: Walk, requested: Option<Walk>) -> Hits {
+        let lifted = walk.lifted_bits();
+        let reached = requested.map(Walk::lifted_bits);
+        let mut files = self
+            .files
+            .iter()
+            .filter(|(_, bits)| bits & !lifted == 0)
+            .filter(|(_, bits)| reached.is_none_or(|reached| bits & !reached != 0))
+            .map(|(path, _)| path);
+        let sample = files
+            .by_ref()
+            .take(SAMPLE_FILES)
+            .cloned()
+            .collect::<Vec<_>>();
+        Hits {
+            count: sample.len() + files.count(),
+            sample,
+            cut: self.cut,
+        }
+    }
 }
 
 /// A file probe for a tool without a text engine of its own: the files under
@@ -515,24 +585,7 @@ impl<'a> FileProbe<'a> {
             .get_or_init(|| self.tag().map_err(|error| error.reason))
             .as_ref()
             .map_err(Clone::clone)?;
-        let lifted = walk.lifted_bits();
-        let reached = self.requested.map(Walk::lifted_bits);
-        let mut files = tagged
-            .files
-            .iter()
-            .filter(|(_, bits)| bits & !lifted == 0)
-            .filter(|(_, bits)| reached.is_none_or(|reached| bits & !reached != 0))
-            .map(|(path, _)| path);
-        let sample = files
-            .by_ref()
-            .take(SAMPLE_FILES)
-            .cloned()
-            .collect::<Vec<_>>();
-        Ok(Hits {
-            count: sample.len() + files.count(),
-            sample,
-            cut: tagged.cut,
-        })
+        Ok(tagged.find(walk, self.requested))
     }
 }
 

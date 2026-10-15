@@ -14,7 +14,7 @@ import {
   propagateOctocodeEnv,
 } from '../src/index.js';
 import { isProtectedKey, parseEnv, PROTECTED_KEYS } from '../src/dotenv.js';
-import { MAX_TIMEOUT, MIN_TIMEOUT } from '../src/config/contract.generated.js';
+import { CONFIG_FIELDS } from '../src/config/contract.generated.js';
 
 describe('getOctocodeHome', () => {
   it('OCTOCODE_HOME override wins, path is resolved', () => {
@@ -99,8 +99,6 @@ describe('PROTECTED_KEYS', () => {
     for (const k of [
       'GITHUB_API_URL',
       'OCTOCODE_CLASSIFICATION_API_HOST',
-      // Automatic local ranking may send source evidence to the provider.
-      'OCTOCODE_RANKING_ENABLED',
       'OCTOCODE_ALLOW_PRIVATE_REGISTRY',
       'OCTOCODE_LSP_CONFIG',
       'ALLOWED_PATHS',
@@ -157,7 +155,11 @@ describe('PROTECTED_KEYS', () => {
       'OCTOCODE_ALLOW_PRIVATE_REGISTRY',
       'OCTOCODE_LSP_CONFIG',
       'OCTOCODE_CLASSIFICATION_API_HOST',
-      'OCTOCODE_RANKING_ENABLED',
+      // The OAuth app a login or refresh uses: a repository must not choose it.
+      'OCTOCODE_GITHUB_CLIENT_ID',
+      // A workspace may narrow, never widen: local tools off, redaction on.
+      'OCTOCODE_ENABLE_LOCAL',
+      'OCTOCODE_REDACT_EMAILS',
     ];
     expect([...PROTECTED_KEYS].sort()).toEqual([...CANONICAL].sort());
   });
@@ -350,6 +352,19 @@ describe('loadOctocodeEnv', () => {
     expect(kept.sources.OCTOCODE_STORAGE_MODE).toBe('global');
   });
 
+  it('never reads the home .env a second time as the workspace layer', () => {
+    // cwd = the OS home makes <cwd>/.octocode the Octocode home.
+    const osHome = join(tmpDir, 'user');
+    mkdirSync(join(osHome, '.octocode'), { recursive: true });
+    writeFileSync(join(osHome, '.octocode', '.env'), 'GH_TOKEN=home-token\n');
+    const { map, sources } = loadOctocodeEnv({
+      home: join(osHome, '.octocode'),
+      cwd: osHome,
+    });
+    expect(map.GH_TOKEN).toBe('home-token');
+    expect(sources.GH_TOKEN).toBe('global');
+  });
+
   it('project .env NOT loaded when trusted=false', () => {
     writeFileSync(join(cwd, '.octocode', '.env'), 'PROJECT_KEY=project\n');
     const { map } = loadOctocodeEnv({ home, cwd, trusted: false });
@@ -440,9 +455,18 @@ describe('DEFAULT_CONFIG', () => {
   });
 
   it('timeout bounds are sane', () => {
-    expect(MIN_TIMEOUT).toBeLessThan(MAX_TIMEOUT);
-    expect(DEFAULT_CONFIG.network.timeout).toBeGreaterThanOrEqual(MIN_TIMEOUT);
-    expect(DEFAULT_CONFIG.network.timeout).toBeLessThanOrEqual(MAX_TIMEOUT);
+    const timeout = CONFIG_FIELDS.find(field => field.path === 'network.timeout')!;
+    expect(timeout.minimum).toBeLessThan(timeout.maximum!);
+    expect(DEFAULT_CONFIG.network.timeout).toBeGreaterThanOrEqual(timeout.minimum!);
+    expect(DEFAULT_CONFIG.network.timeout).toBeLessThanOrEqual(timeout.maximum!);
+  });
+
+  it('an optional integer setting defaults to unset, not zero', () => {
+    expect(DEFAULT_CONFIG.lsp.maxMemoryMb).toBeNull();
+    const field = CONFIG_FIELDS.find(field => field.path === 'lsp.maxMemoryMb')!;
+    expect(field).toEqual(
+      expect.objectContaining({ type: 'number', minimum: 0, defaultValue: null })
+    );
   });
 });
 

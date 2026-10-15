@@ -186,6 +186,12 @@ pub(crate) fn repository_search(repo: &str) -> Value {
         .build()
 }
 
+/// The error for an owner-wide search that found no such login. It names the
+/// login; the caller adds the spelling hint only where one helps.
+pub(crate) fn owner_not_found_message(owner: &str) -> String {
+    format!("Owner \"{owner}\" not found: no GitHub user or organization has this login")
+}
+
 /// A missing ref's failure gets the runnable refs listing (the lead is the
 /// fix: no hint beside it); any other failure is returned unchanged.
 pub(crate) fn with_ref_recovery(mut failure: GhFailure, owner: &str, repo: &str) -> GhFailure {
@@ -278,6 +284,27 @@ pub(crate) fn renamed_warning(owner: &str, repo: &str, to: &(String, String)) ->
         "Repository {owner}/{repo} was renamed to {}/{}; leads use the canonical name.",
         to.0, to.1
     )
+}
+
+/// Keywords are ANDed literal terms: a bare GitHub boolean operator (`OR`,
+/// `NOT`, `AND`, as GitHub spells them) standing as a word of a keyword
+/// would be searched as a word (quoted into a phrase) and silently empty
+/// the search, so it is refused, naming the operator and the one way to ask
+/// for alternatives.
+pub(crate) fn reject_boolean_keywords<S: AsRef<str>>(keywords: &[S]) -> Result<(), ProviderError> {
+    let operator = keywords
+        .iter()
+        .flat_map(|keyword| keyword.as_ref().split_whitespace())
+        .find_map(|word| ["OR", "NOT", "AND"].into_iter().find(|op| word == *op));
+    match operator {
+        Some(operator) => Err(ProviderError::new(
+            ProviderErrorKind::Validation,
+            format!(
+                "keywords are ANDed literal terms; {operator} is no operator here: run one search per alternative"
+            ),
+        )),
+        None => Ok(()),
+    }
 }
 
 /// Results GitHub search reaches for one query, however many match.
@@ -430,48 +457,59 @@ pub(crate) fn broaden_lead(tool: ToolId, variants: Vec<Value>, limit: usize) -> 
     })
 }
 
+/// What GitHub said about one search page's completeness.
+#[derive(Clone, Copy)]
+pub(crate) struct SearchCompleteness<'a> {
+    pub(crate) tool: ToolId,
+    /// GitHub's own match count (past the cap, more than the reachable
+    /// `totalItems`).
+    pub(crate) matched: usize,
+    /// GitHub's incomplete-results flag.
+    pub(crate) incomplete: bool,
+    pub(crate) page: usize,
+    pub(crate) has_more: bool,
+    /// What one result is (`code`, `repository`), for the count warning.
+    pub(crate) subject: &'a str,
+}
+
 /// Provider-side incompleteness of a search page: the 1,000-result cap and
 /// GitHub's own incomplete-results flag (with a `retry` of the same page).
-/// `matched` is GitHub's own match count; past the cap the first page
-/// states it, since the reachable `totalItems` is not the count.
-#[allow(clippy::too_many_arguments)]
+/// Past the cap the first page states GitHub's match count, since the
+/// reachable `totalItems` is not the count. Only the last reachable page of
+/// a capped search ends coverage (`terminalLimit`: no executable
+/// continuation remains).
 pub(crate) fn apply_partial(
     value: &mut Value,
-    tool: ToolId,
     query: &impl serde::Serialize,
-    incomplete: bool,
-    matched: usize,
-    page: usize,
-    has_more: bool,
-    subject: &str,
+    facts: &SearchCompleteness<'_>,
 ) {
-    let capped = matched > SEARCH_RESULT_CAP;
-    let mut reasons = Vec::new();
-    if capped {
+    use crate::tools::paging::{mark_partial, terminal_limit};
+    let SearchCompleteness {
+        tool,
+        matched,
+        incomplete,
+        page,
+        has_more,
+        subject,
+    } = *facts;
+    if matched > SEARCH_RESULT_CAP {
         // The match count is this call's fact; that search stops at 1,000
         // is the cap reason (`providerResultCap`), not a per-call note.
-        if page == 1 {
-            push_warnings(
-                value,
-                [format!(
-                    "GitHub matched {matched} {subject} results; the first {SEARCH_RESULT_CAP} are reachable."
-                )],
-            );
-        }
-        reasons.push("providerResultCap");
-        // terminalLimit means no executable continuation remains: only the
-        // last reachable page of a capped search ends coverage.
-        if !has_more {
-            value["terminalLimit"] = json!(true);
+        let count = (page == 1).then(|| {
+            format!(
+                "GitHub matched {matched} {subject} results; the first {SEARCH_RESULT_CAP} are reachable."
+            )
+        });
+        let warnings = Vec::from_iter(count);
+        if has_more {
+            mark_partial(value, "providerResultCap", &warnings);
+        } else {
+            terminal_limit(value, "providerResultCap", &warnings);
         }
     }
     if incomplete {
-        reasons.push("providerIncompleteResults");
+        mark_partial(value, "providerIncompleteResults", &[]);
         value["next"]["retry"] = page_replay(tool, query, page);
-    }
-    if !reasons.is_empty() {
-        value["isPartial"] = json!(true);
-        value["partialReasons"] = json!(reasons);
     }
 }
 

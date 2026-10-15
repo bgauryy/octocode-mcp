@@ -1,22 +1,24 @@
 import fs from 'node:fs';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
+import type { MessageEnvelope } from '../shared/messages.js';
 import { addReply, cutText, errorMessage } from '../shared/util.js';
 import { fenceUntrusted, headerText } from '../shared/fence.js';
-import { sanitizeTerminalText, storedText } from '../shared/sanitize.js';
-import { dbFailure, interruptRefusal, leaseAge, MESSAGE_MAX_CHARS, outside, resolveLockPath, resolveTarget, USER_SENDER } from './routing.js';
+import { storedText, visibleControls } from '../shared/sanitize.js';
+import { dbFailure, interruptRefusal, leaseAge, MESSAGE_MAX_CHARS, outside, resolveLockPath, resolveTarget, USER_SENDER, wakes } from './routing.js';
 import { AGENT_ID_ENV, PARENT_ID_ENV, PARENT_PID_ENV, pathKey, TeamStore } from './store.js';
-import { envFlag, SUBAGENT_ENV } from '../shared/env.js';
+import { envFlag, ownNonce, SUBAGENT_ENV } from '../shared/env.js';
 import { interactive } from '../shared/interactive.js';
 import { parentGone, sameProcess, terminateSelf } from '../shared/process.js';
-import type { Lease, LeaseRequest, Member, SendOptions } from './model.js';
+import type { Lease, LeaseRequest, Member, Message, SendOptions } from './model.js';
 import { Mail, mailIds } from './mail.js';
+import { userProof } from './proof.js';
 import { HeldLeases, LEASE_IDLE_MS } from './held.js';
 import { Inbox } from './inbox.js';
 import { PeerLeases, type PeerLease } from './peer-leases.js';
 import type { EditLog } from './edits.js';
 import { AgentDbError } from '../agentdb/db.js';
 import { agentDbPath, peerDbPath } from '../shared/home.js';
-import { saveFullOutput } from '../shared/spill.js';
+import { saveMessageFile } from './spill.js';
 import { agentName, LINE_MAX, newMember } from './identity.js';
 import { TeamTicker, type TeamView } from './ticker.js';
 
@@ -29,20 +31,25 @@ const HEARTBEAT_MS = 5_000;
 const FAILED_TICKS_NOTICE = 30;
 /** How often a subagent checks that the Pi process that started it still runs. */
 const PARENT_CHECK_MS = 1_000;
+/** Every this many parent checks the start time is compared too: a reused pid is noticed within that many seconds, and the event loop is not stalled by a `ps` every second. */
+const PARENT_START_EVERY = 15;
 /** Names drawn in turn when other processes keep taking them. */
 const JOIN_ATTEMPTS = 8;
+/** An idle agent handed a waking message that the model has not been called with after this long was not started by Pi (no model, or no sign-in). */
+const WAKE_STUCK_MS = 10_000;
 
 /**
  * Whether the process named by `OCTOCODE_PARENT_PID` (`<pid> <start time>`, the start time when known) is gone. A
  * direct parent is judged by the pid and reparenting; through a launcher, a recorded start time tells a later process
  * that reused the pid from the parent.
  */
-export function parentProcessGone(value: string): boolean {
+export function parentProcessGone(value: string, compareStart = true): boolean {
   const [pid = '', ...started] = value.trim().split(' ');
   const parentPid = Number(pid);
   if (!Number.isInteger(parentPid) || parentPid <= 0) return false;
   if (parentGone(parentPid)) return true;
-  return process.ppid !== parentPid && started.length > 0 && !sameProcess(parentPid, started.join(' '));
+  // The start time costs a synchronous `ps`, so a caller that polls compares it only now and then (`compareStart`).
+  return compareStart && process.ppid !== parentPid && started.length > 0 && !sameProcess(parentPid, started.join(' '));
 }
 
 /** This process's place in the team: joins, reports what it is doing, holds reservations and delivers messages sent to it. */
@@ -75,13 +82,17 @@ export class Team {
   /** Why the database cannot be used at all (a foreign file); shown in /agents and the footer. */
   private schemaProblem: string | undefined;
   private failedTicks = 0;
-  /** When this agent last worked (or joined): an idle owner's reservations lapse `leaseIdleMs` after it. */
+  /** When this agent last worked (or joined): an idle owner's reservations lapse `LEASE_IDLE_MS` (`held.ts`) after it. */
   private activeAt = 0;
   private readonly held = new HeldLeases();
   /** The agents-communication package's path leases (read-only), opened on the first guarded write. */
   private peers: PeerLeases | undefined;
   private readonly inbox = new Inbox();
   private readonly mail: Mail;
+  /** When an idle agent was handed a waking message that has not reached the model yet; undefined when none is outstanding. */
+  private wakeHandedAt: number | undefined;
+  /** The user was told about the current stuck wake. */
+  private wakeReported = false;
   /** A subagent's check that its parent still runs: on from the session start, whether or not it joins the team. */
   private parentWatch: NodeJS.Timeout | undefined;
   /** Subagents this session started that have finished: id → where their report went, for a later message to them. */
@@ -89,6 +100,8 @@ export class Team {
   /** Resumes a finished subagent that still lingers (set by the subagents domain); its receipt, else undefined. */
   setResumer(resume: (to: string, text: string, from: string, signal?: AbortSignal) => Promise<string | undefined>): void { this.resumer = resume; }
   private resumer: ((to: string, text: string, from: string, signal?: AbortSignal) => Promise<string | undefined>) | undefined;
+  private messageHook: ((message: MessageEnvelope, ctx: ExtensionContext, signal?: AbortSignal) => Promise<void>) | undefined;
+  setMessageHook(hook: (message: MessageEnvelope, ctx: ExtensionContext, signal?: AbortSignal) => Promise<void>): void { this.messageHook = hook; }
 
   /** Recent completion receipts; active-agent limits cannot bound a long session's history. */
   rememberFinished(id: string, receipt: string): void {
@@ -96,7 +109,21 @@ export class Team {
     this.finished.set(id, receipt);
     if (this.finished.size > 128) this.finished.delete(this.finished.keys().next().value!);
   }
-  constructor(pi: ExtensionAPI, private readonly env: NodeJS.ProcessEnv = process.env) { this.mail = new Mail(pi); }
+  constructor(pi: ExtensionAPI, private readonly env: NodeJS.ProcessEnv = process.env) { this.mail = new Mail(pi, () => ownNonce(this.env)); }
+
+  /** Secrets of the subagents this session started, by agent id (`vouch`): what signs a message the user types for one. */
+  private readonly secrets = new Map<string, string>();
+
+  /**
+   * Registers the secret this session gave subagent `id` (the secret in its `PERMISSION_NONCE_FILE_ENV` file), so `/agents tell` can sign for it and
+   * the child can tell the user's message from a forged one. Returns what ends it, when the child is gone.
+   */
+  vouch(id: string, secret: string): () => void {
+    this.secrets.set(id, secret);
+    return () => {
+      if (this.secrets.get(id) === secret) this.secrets.delete(id);
+    };
+  }
 
   /** Aborted while an interrupt waits for this agent's run to stop (`agent_before_settle` waits end early on it). */
   get interrupted(): AbortSignal { return this.mail.interrupted; }
@@ -125,10 +152,13 @@ export class Team {
   private watchParent(): void {
     const parent = this.env[PARENT_PID_ENV];
     if (!parent || this.parentWatch) return;
+    let checks = 0;
     this.parentWatch = setInterval(() => {
-      if (!parentProcessGone(parent)) return;
+      if (!parentProcessGone(parent, checks++ % PARENT_START_EVERY === 0)) return;
       clearInterval(this.parentWatch);
       this.parentWatch = undefined;
+      // Where a signal ends the process outright (Windows) nothing runs after it: the row and reservations go now, not when a peer's sweep finds the pid dead.
+      try { this.leave(); } catch { /* locked database: the sweep reaps the row */ }
       terminateSelf();
     }, PARENT_CHECK_MS);
     this.parentWatch.unref();
@@ -202,6 +232,8 @@ export class Team {
     this.held.clear();
     this.inbox.reset(this.db, me?.id);
     this.mail.reset();
+    this.wakeHandedAt = undefined;
+    this.wakeReported = false;
     // Only a row that still names this process: a name another process holds now is not ours to remove.
     if (me && this.db) this.db.remove(me.id, Date.now(), me);
   }
@@ -272,23 +304,51 @@ export class Team {
     if (to === 'all' && !scope) return { error: 'No agents in this session yet: nothing to broadcast to.' };
     const members = db.list();
     const targets = resolveTarget(members, from, to, this.parentId, scope);
+    const beforeSend = async (recipient: string): Promise<string | undefined> => {
+      const ctx = this.ctx;
+      if (!this.messageHook || !ctx) return undefined;
+      const signal = options.signal ? AbortSignal.any([options.signal, ...(ctx.signal ? [ctx.signal] : [])]) : ctx.signal;
+      try {
+        await this.messageHook({ channel: 'internal', direction: 'outbound', from, to: recipient, text, ...(options.replyTo !== undefined ? { replyTo: String(options.replyTo) } : {}) }, ctx, signal);
+        options.signal?.throwIfAborted();
+        if (this.ctx !== ctx) throw new Error('The session changed before the message could be sent.');
+      } catch (error) { return errorMessage(error); }
+      return undefined;
+    };
+    if (typeof targets === 'string' && this.finished.has(to) && this.resumer) {
+      const denied = await beforeSend(to);
+      if (denied) return { error: denied };
+    }
     const resumed = typeof targets === 'string' && this.finished.has(to) ? await this.resumer?.(to, text, from, options.signal) : undefined;
     if (resumed) return { sent: [to], id: 0, resumed };
     if (typeof targets === 'string') return { error: this.finished.has(to) ? `${to} has finished and takes no more messages; ${this.finished.get(to)} To continue its work, start a new agent and give it the context it needs.` : targets };
     const refused = options.interrupt ? interruptRefusal(members, targets, from, to, scope) : undefined;
     if (refused) return { error: refused };
+    for (const target of targets) {
+      const denied = await beforeSend(target.id);
+      if (denied) return { error: denied };
+    }
+    options.signal?.throwIfAborted();
     // A message is FYI unless the sender says it needs an answer: a default that asked for answers made two agents wake each other forever.
     const replyRequired = options.replyRequired ?? false;
-    // Stored sanitized: every reader (the model, the panel, other processes) gets plain text.
-    const delivered = spilledMessage(sanitizeTerminalText(text), from);
+    // Stored with controls shown as escapes: every reader (the model, the panel, other processes) gets text that cannot steer a terminal, and the evidence stays.
+    const delivered = spilledMessage(visibleControls(text), from);
     if (typeof delivered !== 'string') return delivered;
     const reply = options.replyTo !== undefined ? { replyTo: options.replyTo } : {};
-    const flags = { replyRequired, wake: outside(from), interrupt: options.interrupt === true, ...reply };
+    // Only the user's messages are signed, and only for a child this session started: any other recipient reads them as unverified.
+    const sign = from === USER_SENDER ? (id: number, recipient: string) => this.signed(id, recipient, delivered) : undefined;
+    const flags = { replyRequired, wake: outside(from), interrupt: options.interrupt === true, ...reply, ...(sign ? { sign } : {}) };
     const { id, departed } = db.send(from, targets.map((target) => target.id), delivered, flags);
     if (id === undefined) return { error: `${departed.join(', ')} left the team; the message was not sent.` };
     if (from === USER_SENDER) this.mail.createdForUser(id);
     const sent = targets.map((target) => target.id).filter((target) => !departed.includes(target));
     return { sent, id, ...(departed.length > 0 ? { departed } : {}) };
+  }
+
+  /** The signature of the user's message `text` (stored as message `id`) for child `recipient`; undefined when this session did not start it. */
+  private signed(id: number, recipient: string, text: string): string | undefined {
+    const secret = this.secrets.get(recipient);
+    return secret ? userProof(secret, { id, to: recipient, text }) : undefined;
   }
 
   /** Reserve paths (a trailing `/` marks a whole directory tree) for this agent. */
@@ -364,8 +424,8 @@ export class Team {
     const { lease, peer, lapsed, error } = this.check(absolute);
     if (error) return `Team database unavailable (${error}); retry the change.`;
     if (lapsed) return `Your reservation on ${lapsed} lapsed; lock it again before editing ${display}.`;
-    if (peer) return sanitizeTerminalText(`${display} is reserved by ${peer.name} (${peer.vendor} agent in agents-communication; ${peer.reason}; ${leaseAge(peer)}). Do other work, or message ${peer.name} through agents-communication and retry after they unlock.`);
-    return lease ? sanitizeTerminalText(`${display} is reserved by ${lease.owner} (${lease.reason}; ${leaseAge(lease)}). Do other work, or sendMessage ${lease.owner} and retry after they unlock.`) : undefined;
+    if (peer) return visibleControls(`${display} is reserved by ${peer.name} (${peer.vendor} agent in agents-communication; ${peer.reason}; ${leaseAge(peer)}). Do other work, or message ${peer.name} through agents-communication and retry after they unlock.`);
+    return lease ? visibleControls(`${display} is reserved by ${lease.owner} (${lease.reason}; ${leaseAge(lease)}). Do other work, or sendMessage ${lease.owner} and retry after they unlock.`) : undefined;
   }
 
   /** Who changed which file recently, once the database exists; throws when it is unusable. */
@@ -464,12 +524,39 @@ export class Team {
     }
   }
 
+  /** Hands a batch to Pi; notes when it should wake an idle agent, to tell whether Pi started that turn (`checkWake`). */
+  private handOver(batch: Message[]): boolean {
+    const handed = this.mail.deliver(batch, this.parentId, this.ctx);
+    if (handed && this.wakeHandedAt === undefined && this.ctx?.isIdle() && batch.some(wakes)) this.wakeHandedAt = Date.now();
+    return handed;
+  }
+
+  /**
+   * Pi swallows a refused turn start (no model selected, no sign-in): the message then stays handed but unseen until the
+   * agent leaves, when it becomes a dead letter. An idle agent that still has not reached the model with a waking message
+   * after `WAKE_STUCK_MS` is reported to its user once, so the cause (`/model`, `/login`) is not a silent wait.
+   */
+  private checkWake(): void {
+    if (this.wakeHandedAt === undefined) return;
+    const ctx = this.ctx;
+    if (!this.inbox.awaitingContext || !ctx || !ctx.isIdle()) {
+      // The model saw it, or a turn is running: nothing is stuck.
+      this.wakeHandedAt = undefined;
+      this.wakeReported = false;
+      return;
+    }
+    if (this.wakeReported || Date.now() - this.wakeHandedAt < WAKE_STUCK_MS) return;
+    this.wakeReported = true;
+    if (ctx.hasUI) ctx.ui.notify('A team message should have started a turn, but Pi did not run one (select a model with /model and sign in with /login). The message stays queued; its sender is told it went unread if this session ends first.', 'warning');
+  }
+
   private deliverNow(db: TeamStore): void {
     if (!this.me) return;
     // A settlement send can fail while Pi changes state. An interactive session stays alive to retry held mail.
     if (!this.headless() && this.ctx?.isIdle()) this.mail.settled();
     // An idle subagent without a UI has had its last turn: mail waits, and becomes a dead letter when it leaves.
-    if (!(this.headless() && this.ctx?.isIdle())) this.inbox.deliver(db, this.me.id, (batch) => this.mail.deliver(batch, this.parentId, this.ctx));
+    if (!(this.headless() && this.ctx?.isIdle())) this.inbox.deliver(db, this.me.id, (batch) => this.handOver(batch));
+    this.checkWake();
     if (!this.statusChanged && Date.now() - this.savedAt < HEARTBEAT_MS) return;
     this.flush(db);
     this.mail.reportDeadLetters(db, this.me.id);
@@ -481,11 +568,11 @@ export class Team {
  * private file and delivered as its head plus the file's path, still within the limit so no reader cuts the pointer off.
  * `text` is already sanitized, and the file holds it the way the recipient's message would carry it: fenced as data from
  * `from` (the user's own words excepted), because the recipient reads the file with `read`, outside the message's fence.
- * An error when the file cannot be written (nothing is sent rather than a message with a silent gap).
+ * The file is named by the hash of its content (`team/spill.ts`), so the signature of a user's message covers it. An error when the file cannot be written (nothing is sent rather than a message with a silent gap).
  */
-function spilledMessage(text: string, from: string): string | { error: string } {
+export function spilledMessage(text: string, from: string): string | { error: string } {
   if (text.length <= MESSAGE_MAX_CHARS) return text;
-  const file = saveFullOutput(from === USER_SENDER ? text : fenceUntrusted(`Full message (${text.length} characters) from ${headerText(from, 64)}`, text), 'message');
+  const file = saveMessageFile(from === USER_SENDER ? text : fenceUntrusted(`Full message (${text.length} characters) from ${headerText(from, 64)}`, text));
   if (!file) return { error: `Message is ${text.length} characters (the limit is ${MESSAGE_MAX_CHARS}) and could not be saved to a file. Send a summary. Nothing was sent.` };
   const note = `\n[Full message (${text.length} characters): ${file}]`;
   return `${cutText(text, Math.max(0, MESSAGE_MAX_CHARS - note.length), { chars: true })}${note}`;

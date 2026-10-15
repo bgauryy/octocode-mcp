@@ -1,6 +1,6 @@
 import type { AgentDb } from '../agentdb/db.js';
 import { sessionRunningPid } from '../agentdb/liveness.js';
-import { sanitizeTerminalText, secretProblem, storedText } from '../shared/sanitize.js';
+import { sanitizeTerminalText, secretProblem, storedText, visibleControls } from '../shared/sanitize.js';
 import { cutText } from '../shared/util.js';
 import { toItem, type Row } from './row.js';
 
@@ -135,6 +135,9 @@ export function refuseSecrets(fields: Record<string, string | readonly string[] 
   }
 }
 
+/** Who the store records for what a person does (`/backlog`), as opposed to an agent (`agent`, `agent:<id>`). */
+export const USER_AUTHOR = 'user';
+
 export const priorityName = (priority: number): Priority => PRIORITIES[priority] ?? 'p2';
 
 interface AddInput {
@@ -154,7 +157,7 @@ interface AddInput {
   sourceSession?: string;
 }
 
-interface UpdateInput {
+export interface UpdateInput {
   title?: string;
   goal?: string;
   body?: string;
@@ -216,7 +219,7 @@ export class BacklogStore {
   /** The row id of the item `ref` names, refused when it is missing, is `item` itself, or already comes from `item`. */
   private origin(ref: string, item?: Item): number {
     const target = this.get(ref);
-    if (!target) throw new BacklogError(`No backlog item ${sanitizeTerminalText(ref)} to link from.`);
+    if (!target) throw new BacklogError(`No backlog item ${visibleControls(ref)} to link from.`);
     if (!item) return target.rowId;
     if (target.rowId === item.rowId) throw new BacklogError(`${item.ref} cannot come from itself.`);
     const seen = new Set<number>();
@@ -269,6 +272,8 @@ export class BacklogStore {
   add(input: AddInput): Item {
     const title = storedText(input.title);
     if (!title) throw new BacklogError('An item needs a title.');
+    // A person may jot a bare title; whatever an agent adds says how to tell it is done.
+    if (input.createdBy !== USER_AUTHOR && !storedText(input.goal)) throw new BacklogError('add needs a goal: the done criterion, a check someone else can run.');
     refuseSecrets({ title: input.title, goal: input.goal, body: input.body, paths: input.paths, why: input.why, evidence: input.evidence, plan: input.plan, tags: input.tags });
     const agentDb = this.agentDb();
     return agentDb.transaction(() => {
@@ -393,7 +398,7 @@ export class BacklogStore {
       const at = this.now();
       for (const child of this.derived(item)) {
         agentDb.db.prepare('UPDATE backlog SET from_item = NULL, version = version + 1 WHERE id = ?').run(child.rowId);
-        this.log(child, at, actor?.id ?? 'user', 'change', `from ${item.ref} → none (${item.ref} "${item.title}" was removed)`);
+        this.log(child, at, actor?.id ?? USER_AUTHOR, 'change', `from ${item.ref} → none (${item.ref} "${item.title}" was removed)`);
       }
       agentDb.db.prepare('DELETE FROM backlog WHERE id = ?').run(item.rowId);
       return item;

@@ -172,10 +172,7 @@ async fn mcp_local_fetch_snapshots_stale_only_the_mutated_batch_row() {
         .await
         .expect("MCP localFetch batch");
     let structured = &initial["structuredContent"];
-    assert!(
-        !structured.to_string().contains("\"cursor\""),
-        "the replayable query carries source identity; no cursor duplicate: {structured}"
-    );
+    support::checks::assert_absent(structured, "cursor");
     let rows = structured["results"].as_array().expect("MCP result rows");
     let continuation =
         |row: usize| rows[row]["data"]["next"]["continueWindow"]["query"]["queries"][0].clone();
@@ -205,6 +202,48 @@ async fn mcp_local_fetch_snapshots_stale_only_the_mutated_batch_row() {
     assert!(restart.get("snapshot").is_none(), "{restart}");
     assert!(restart.get("offset").is_none(), "{restart}");
     assert_eq!(rows[1]["data"]["content"], "2\tsecond-2\n", "{}", rows[1]);
+    runtime.close().await;
+}
+
+/// A streamed (over 10 MiB) read of several ranges whose snapshot no longer
+/// names the source restarts the whole read: every requested range, without
+/// the snapshot, from the runtime's one restart owner.
+#[tokio::test]
+async fn a_stale_streamed_range_read_restarts_every_range() {
+    let workspace = Workspace::new();
+    let line = "streamed payload payload payload payload\n";
+    let path = workspace.write("big.log", line.repeat(11 * 1024 * 1024 / line.len()));
+    let runtime = workspace.runtime(&[]);
+    let stale = call(
+        &runtime,
+        "localFetch",
+        query_path(
+            &path,
+            json!({"ranges": ["1-2", "5-6"], "snapshot": "0".repeat(64)}),
+        ),
+    )
+    .await
+    .expect("typed stale row");
+    let data = row_data(&stale);
+    assert_eq!(data["errorCode"], "staleSnapshot", "{data}");
+    let restart = &data["next"]["restart"]["query"]["queries"][0];
+    assert_eq!(restart["ranges"], json!(["1-2", "5-6"]), "{data}");
+    assert!(restart.get("snapshot").is_none(), "{data}");
+    let again = call(
+        &runtime,
+        "localFetch",
+        data["next"]["restart"]["query"].clone(),
+    )
+    .await
+    .expect("restart");
+    let again = row_data(&again);
+    let numbered = again["content"]
+        .as_str()
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|line| line.split_once('\t')?.0.parse::<u32>().ok())
+        .collect::<Vec<_>>();
+    assert_eq!(numbered, [1, 2, 5, 6], "{again}");
     runtime.close().await;
 }
 
@@ -401,9 +440,13 @@ async fn beta_ast_tools_require_the_shared_opt_in() {
         }),
     )
     .await
-    .expect_err("astRewrite must be opt-in");
-    assert_eq!(error.code, "missingConfiguration");
-    assert!(error.message.contains("OCTOCODE_BETA"));
+    .expect_err("astRewrite is parked");
+    // Parked: disabled on every surface, so no opt-in enables it.
+    assert_eq!(error.code, "toolUnavailable", "{error:?}");
+    assert_eq!(
+        error.message,
+        "Tool astRewrite is not available in this native runtime: it is disabled in this build."
+    );
     let topology_error = call(
         &runtime,
         "astTopology",
@@ -419,7 +462,7 @@ async fn beta_ast_tools_require_the_shared_opt_in() {
     runtime.close().await;
 
     let enabled = workspace.runtime(&[("OCTOCODE_BETA", "true".into())]);
-    assert!(enabled.is_available("astRewrite"));
+    assert!(!enabled.is_available("astRewrite"), "parked");
     assert!(enabled.is_available("astTopology"));
     enabled.close().await;
 }
@@ -444,7 +487,7 @@ async fn host_options_environment_controls_embedded_tool_availability() {
     .expect("embedded runtime with explicit environment");
     // Beta never opens a CLI-only tool on MCP.
     assert!(runtime.is_available("astSearch"));
-    let catalog = runtime.catalog().expect("catalog");
+    let catalog = runtime.catalog();
     for name in ["astTopology", "astRewrite"] {
         assert!(!runtime.is_available(name), "{name}");
         let entry = catalog["tools"]
@@ -454,7 +497,13 @@ async fn host_options_environment_controls_embedded_tool_availability() {
             .find(|tool| tool["name"] == name)
             .unwrap_or_else(|| panic!("{name} entry"));
         assert_eq!(entry["available"], false, "{name}");
-        assert_eq!(entry["unavailableReason"], "cliOnly", "{name}");
+        // A parked tool's reason is that it is disabled, on any surface.
+        let reason = if name == "astRewrite" {
+            "disabled"
+        } else {
+            "cliOnly"
+        };
+        assert_eq!(entry["unavailableReason"], reason, "{name}");
     }
     let error = runtime
         .run_mcp(
@@ -484,12 +533,9 @@ async fn runtime_catalog_lists_available_tools() {
             .all(|tool| tool["outputSchema"].is_object()),
         "internal output schemas must remain available for runtime validation"
     );
-    let catalog = runtime.catalog().expect("catalog");
+    let catalog = runtime.catalog();
     assert_eq!(catalog["fingerprint"], internal["fingerprint"]);
-    assert!(
-        !catalog.to_string().contains("\"outputSchema\""),
-        "public runtime catalog must not expose output schemas"
-    );
+    support::checks::assert_absent(&catalog, "outputSchema");
     assert!(
         catalog["tools"]
             .as_array()
@@ -918,7 +964,7 @@ async fn ast_topology_result_pages_reject_a_changed_graph() {
         data.get("results").is_none(),
         "an error row lists nothing: {data}"
     );
-    let restart = &data["next"]["restartDiagnostics"]["query"]["queries"][0];
+    let restart = &data["next"]["restart"]["query"]["queries"][0];
     // Page 1 is the default, so compaction may omit it.
     assert!(restart.get("page").is_none_or(|page| page == 1), "{data}");
     assert!(restart.get("diagnosticSnapshot").is_none(), "{data}");
@@ -975,11 +1021,7 @@ async fn local_fetch_redacted_content_is_marked_not_verbatim() {
     let outcome = call(&runtime, "localFetch", query_path(&clean, json!({})))
         .await
         .expect("clean read");
-    assert!(
-        !row_data(&outcome).to_string().contains("redactedContent"),
-        "{}",
-        row_data(&outcome)
-    );
+    support::checks::assert_absent(row_data(&outcome), "redactedContent");
     runtime.close().await;
 }
 
@@ -1187,7 +1229,7 @@ async fn default_excludes_false_walks_dependency_directories() {
     )
     .await
     .expect("default prune");
-    // Not searched, and disclosed: only the warning names it.
+    // Not searched, and disclosed separately from matched files.
     assert!(
         !serde_json::to_string(&row_data(&pruned)["files"])
             .unwrap_or_default()
@@ -1195,10 +1237,17 @@ async fn default_excludes_false_walks_dependency_directories() {
         "{}",
         names(&pruned)
     );
-    assert!(
-        names(&pruned).contains("Default excludes skipped 1 dir (node_modules/)"),
+    assert_eq!(
+        row_data(&pruned)["skippedPaths"],
+        json!({"entries":[{"path":"node_modules","cause":"default-excluded"}],"sampled":false}),
         "{}",
         names(&pruned)
+    );
+    assert!(
+        row_data(&pruned)["warnings"]
+            .as_array()
+            .expect("warnings")
+            .contains(&json!("Default excludes skipped 1 dir."))
     );
     let all = call(
         &runtime,
@@ -1207,7 +1256,14 @@ async fn default_excludes_false_walks_dependency_directories() {
     )
     .await
     .expect("defaults off");
-    assert!(names(&all).contains("node_modules"), "{}", names(&all));
+    let mut paths = row_data(&all)["files"]
+        .as_array()
+        .expect("matched files")
+        .iter()
+        .map(|file| file["path"].as_str().expect("match path"))
+        .collect::<Vec<_>>();
+    paths.sort_unstable();
+    assert_eq!(paths, ["node_modules/dep/index.js", "src/app.rs"]);
     let tree = call(
         &runtime,
         "structureSearch",
@@ -1341,9 +1397,21 @@ async fn local_search_discloses_default_excluded_dirs_and_files_with_a_rerun() {
     .expect("search");
     let text = found.structured_content.to_string();
     assert_eq!(files_of(&found).len(), 1, "{text}");
-    assert!(
-        text.contains("Default excludes skipped 2 dirs (dist/, target/) and 2 files (Cargo.lock, vendor/lib.min.js); the same search with defaultExcludes:false covers them."),
+    assert_eq!(
+        row_data(&found)["skippedPaths"],
+        json!({"entries":[
+            {"path":"dist","cause":"default-excluded"},
+            {"path":"drivers/target","cause":"default-excluded"},
+            {"path":"Cargo.lock","cause":"default-excluded"},
+            {"path":"vendor/lib.min.js","cause":"default-excluded"}
+        ],"sampled":false}),
         "{text}"
+    );
+    assert!(
+        row_data(&found)["warnings"]
+            .as_array()
+            .expect("warnings")
+            .contains(&json!("Default excludes skipped 2 dirs and 2 files."))
     );
     let lead = found
         .structured_content
@@ -1362,7 +1430,18 @@ async fn local_search_discloses_default_excluded_dirs_and_files_with_a_rerun() {
     let all = call(&runtime, "localSearch", lead["query"].clone())
         .await
         .expect("rerun");
-    assert_eq!(files_of(&all).len(), 5, "{}", all.structured_content);
+    assert_eq!(
+        files_of(&all),
+        [
+            "Cargo.lock",
+            "dist/bundle.js",
+            "drivers/scsi/core.c",
+            "drivers/target/transport.c",
+            "vendor/lib.min.js",
+        ],
+        "{}",
+        all.structured_content
+    );
     runtime.close().await;
 }
 

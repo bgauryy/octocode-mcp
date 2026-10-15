@@ -2,7 +2,7 @@
 // Live regression suite: local fixtures + isolated headless Chrome + the real check scripts.
 // Fixtures: tests/fixtures/actions.html (+ tests/fixtures/frame.html iframe),
 // tests/fixtures/list.html, tests/fixtures/perf.html.
-// Needs Chrome; no network. Usage: node tests/live-suite.mjs [--keep] [--only <name-substring>]
+// Needs Chrome; no network. Usage: node tests/live-suite.mjs [--keep] [--only <name-substring[,name-substring...]>]
 import { spawnSync, spawn } from 'child_process';
 import { createServer } from 'http';
 import {
@@ -23,13 +23,16 @@ const FIXTURES = join(ROOT, 'tests', 'fixtures');
 const args = process.argv.slice(2);
 if (args.includes('-h') || args.includes('--help')) {
   console.log(
-    'Usage: live-suite.mjs [--keep] [--only <substring>]\n\nRuns snapshot, action, wait, upload, drag, iframe, screenshot, perf and cross-cwd cleanup checks against local fixtures in an isolated headless Chrome.'
+    'Usage: live-suite.mjs [--keep] [--only <substring[,substring...]>]\n\nRuns snapshot, action, wait, upload, drag, iframe, screenshot, perf and cross-cwd cleanup checks against local fixtures in an isolated headless Chrome.'
   );
   process.exit(0);
 }
 const SERVE = args.includes('--serve-fixtures'); // internal: child process that serves the fixtures
 const KEEP = args.includes('--keep');
-const ONLY = args.includes('--only') ? args[args.indexOf('--only') + 1] : '';
+// A comma-separated list keeps every case matching any substring, in suite order.
+const ONLY = args.includes('--only')
+  ? args[args.indexOf('--only') + 1].split(',')
+  : [];
 const CDP_PORT = String(9400 + Math.floor(Math.random() * 400));
 // Checks stage helpers and write artifacts under <cwd>/.octocode; keep that out of the skill folder.
 const WORK = SERVE ? null : mkdtempSync(join(tmpdir(), 'octo-live-'));
@@ -189,7 +192,7 @@ const waitFor = text =>
 
 const results = [];
 async function test(name, fn) {
-  if (ONLY && !name.includes(ONLY)) return;
+  if (ONLY.length && !ONLY.some(part => name.includes(part))) return;
   const started = Date.now();
   try {
     await fn();
@@ -651,8 +654,9 @@ export async function run(cdp) {
   } finally { await cdp.send('Target.detachFromTarget', { sessionId }); }
   let handler, timer;
   const completed = new Promise((resolve, reject) => {
+    // The flush waits on every renderer: seconds on a loaded host, so the bound only catches a hang.
     handler = resolve; cdp.on('Tracing.tracingComplete', handler);
-    timer = setTimeout(() => reject(new Error('Trace did not finish')), 5000);
+    timer = setTimeout(() => reject(new Error('Trace did not finish')), 30000);
   });
   try {
     await cdp.send('Tracing.start', { transferMode: 'ReturnAsStream', categories: 'devtools.timeline' });

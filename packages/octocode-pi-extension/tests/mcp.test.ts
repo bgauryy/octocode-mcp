@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { registerMcpCommand } from '../src/mcp/command.js';
 import { configuredOctocodeServer, OCTOCODE_MCP_SPEC, OctocodeMcp, octocodeLaunch, registerOctocodeMcp } from '../src/mcp/octocode.js';
-import { octocodeToolDefinition, sanitizeJson, TEXT_MAX_BYTES, toToolResult, TURN_MAX_CHARS, TurnBudget } from '../src/mcp/tools.js';
+import { octocodeToolDefinition, sanitizeJson, TEXT_MAX_CHARS, toToolResult, TURN_MAX_CHARS, TurnBudget } from '../src/mcp/tools.js';
 import { Subcommands } from '../src/shared/commands.js';
 import { isOctocodeTool } from '../src/shared/octocode-tools.js';
 import { fakeCtx, fakePi, rendered, theme } from './fake-pi.js';
@@ -251,6 +251,16 @@ describe('Octocode MCP client', () => {
     await mcp.close();
   });
 
+  it('shows controls in the server\'s instructions as visible escapes, never dropped', async () => {
+    const { fake, ctx, mcp } = session((cwd) => ({ ...echo(cwd), env: { ECHO_INSTRUCTIONS: 'Use it.\u001b]0;pwned\u0007\u202e' } }));
+    await mcp.start(ctx);
+    expect(await mcp.ready(ctx)).toBe(true);
+    const expected = 'Use it.\\u{1b}]0;pwned\\u{7}\\u{202e}';
+    expect(mcp.instructions).toBe(expected);
+    expect(fake.tools.get('mcp__octocode__shout').namespace.instructions).toBe(expected);
+    await mcp.close();
+  });
+
   it('registers tools without a namespace instructions block when the server has none', async () => {
     const { fake, ctx, mcp } = session(echo, {});
     const quiet = (cwd: string) => ({ ...echo(cwd), env: { ECHO_INSTRUCTIONS: '' } });
@@ -286,12 +296,12 @@ describe('Octocode MCP client', () => {
     await mcp.close();
   });
 
-  it('strips terminal escape sequences from the server stderr in the failure text and the notice', async () => {
+  it('shows terminal escape sequences in the server stderr as visible escapes in the failure text and the notice', async () => {
     const { ctx, mcp, notes } = session((cwd) => exits(cwd, 'boom \u001b]0;pwned\u0007\u001b[31mred\u001b[0m\u202e!'));
     await mcp.start(ctx);
     expect(await mcp.ready(ctx)).toBe(false);
     const error = mcp.status().error!;
-    expect(error).toContain('boom red!');
+    expect(error).toContain('boom \\u{1b}]0;pwned\\u{7}\\u{1b}[31mred\\u{1b}[0m\\u{202e}!');
     expect(error).not.toMatch(/[\u001b\u0007\u202e]/);
     expect(notes[0]!.message).not.toMatch(/[\u001b\u0007\u202e]/);
   });
@@ -415,7 +425,7 @@ describe('Octocode tool results and rendering', () => {
   it('gives a page over 20 KB to the model whole: no cut, no marker, non-ASCII intact', async () => {
     const page = `${'- row: héllo wörld — 日本語\n'.repeat(1_100)}  next:\n    continueChars: { charOffset: 20000 }\n${'- last row ✓\n'.repeat(300)}`;
     expect(Buffer.byteLength(page)).toBeGreaterThan(40 * 1024);
-    expect(Buffer.byteLength(page)).toBeLessThan(TEXT_MAX_BYTES);
+    expect(page.length).toBeLessThan(TEXT_MAX_CHARS);
     const result = await toToolResult('localFetch', { content: [{ type: 'text', text: page }, { type: 'image', data: 'aW1n', mimeType: 'image/png' }] }, false);
     expect(result.content).toEqual([{ type: 'text', text: page }, { type: 'image', data: 'aW1n', mimeType: 'image/png' }]);
     expect(result).not.toHaveProperty('structuredContent');
@@ -428,7 +438,7 @@ describe('Octocode tool results and rendering', () => {
     const bigImage = 'A'.repeat(700_000);
     const result = await toToolResult('localSearch', { content: [{ type: 'text', text: huge }, { type: 'image', data: bigImage, mimeType: 'image/png' }, { type: 'image', data: 'aW1n', mimeType: 'image/png' }] }, false);
     const [text, dropped, kept] = result.content as Array<{ type: string; text?: string; data?: string }>;
-    expect(Buffer.byteLength(text!.text!)).toBeLessThanOrEqual(TEXT_MAX_BYTES);
+    expect(text!.text!.length).toBeLessThanOrEqual(TEXT_MAX_CHARS);
     expect(text!.text).toContain('tail line');
     const textFile = /Full output: (\S+?); search/.exec(text!.text!)?.[1];
     expect(fs.readFileSync(textFile!.replace(/^~/, os.homedir()), 'utf8')).toBe(huge);
@@ -503,9 +513,20 @@ describe('Octocode result size budgets', () => {
   const page = (bytes: number, mark: string) => `${'- row: some repository text\n'.repeat(Math.ceil(bytes / 28))}next:\n  continueChars: { charOffset: ${mark} }\n`;
   const shown = (result: Awaited<ReturnType<typeof toToolResult>>) => (result.content[0] as { text: string }).text;
 
-  it('keeps the cap near 50,000 characters: above the server\'s own page of 50,000 characters plus its header, below 100 KB', () => {
-    expect(TEXT_MAX_BYTES).toBeGreaterThan(50_100);
-    expect(TEXT_MAX_BYTES).toBeLessThanOrEqual(64_000);
+  it.each([
+    ['BMP text', '日'.repeat(50_000)],
+    ['astral text', '😀'.repeat(25_000)],
+    ['short lines', 'x\n'.repeat(25_000)],
+  ])('passes a character-bounded page of %s whole, with and without a turn budget', async (_name, body) => {
+    const full = `${body}\nnext:\n  continueChars: { charOffset: 50000 }\n`;
+    for (const budget of [undefined, new TurnBudget()]) {
+      expect(shown(await toToolResult('localFetch', { content: [{ type: 'text', text: full }] }, false, undefined, budget))).toBe(full);
+    }
+  });
+
+  it('keeps the character cap above a server page plus its header', () => {
+    expect(TEXT_MAX_CHARS).toBeGreaterThan(50_100);
+    expect(TEXT_MAX_CHARS).toBeLessThanOrEqual(64_000);
   });
 
   it('passes a server page of 50,052 bytes (the largest measured) whole', async () => {
@@ -518,7 +539,7 @@ describe('Octocode result size budgets', () => {
     const huge = page(120_000, '777');
     const result = await toToolResult('localSearch', { content: [{ type: 'text', text: huge }] }, false);
     const text = shown(result);
-    expect(Buffer.byteLength(text)).toBeLessThanOrEqual(TEXT_MAX_BYTES);
+    expect(text.length).toBeLessThanOrEqual(TEXT_MAX_CHARS);
     expect(text).toContain('continueChars: { charOffset: 777 }');
     expect(text).toMatch(/\[… \d+ lines omitted …\]/);
     expect(fileOf(text)).toBe(huge);
@@ -526,7 +547,7 @@ describe('Octocode result size budgets', () => {
 
   it('counts the results of one turn and spills what passes the budget, each whole to its own file', async () => {
     const budget = new TurnBudget();
-    const pages = Array.from({ length: 6 }, (_, i) => page(TEXT_MAX_BYTES - 100, String(i)));
+    const pages = Array.from({ length: 6 }, (_, i) => page(TEXT_MAX_CHARS - 100, String(i)));
     const results = [];
     for (const text of pages) results.push(shown(await toToolResult('localFetch', { content: [{ type: 'text', text }] }, false, undefined, budget)));
     // Whole while the turn is under budget: three results fit in 200,000 characters.
@@ -544,13 +565,13 @@ describe('Octocode result size budgets', () => {
 
   it('starts a new turn with the whole budget, and counts only what the model gets', async () => {
     const budget = new TurnBudget();
-    for (let i = 0; i < 5; i++) await toToolResult('localFetch', { content: [{ type: 'text', text: page(TEXT_MAX_BYTES - 100, String(i)) }] }, false, undefined, budget);
+    for (let i = 0; i < 5; i++) await toToolResult('localFetch', { content: [{ type: 'text', text: page(TEXT_MAX_CHARS - 100, String(i)) }] }, false, undefined, budget);
     expect(budget.limit()).toBeLessThan(8_000);
     budget.reset();
-    expect(budget.limit()).toBe(TEXT_MAX_BYTES);
+    expect(budget.limit()).toBe(TEXT_MAX_CHARS);
     const small = new TurnBudget();
     for (let i = 0; i < 100; i++) await toToolResult('t', { content: [{ type: 'text', text: 'x'.repeat(1_000) }] }, false, undefined, small);
-    expect(small.limit()).toBe(TEXT_MAX_BYTES);
+    expect(small.limit()).toBe(TEXT_MAX_CHARS);
   });
 
   it('resets the turn budget when Pi starts a turn', async () => {
@@ -559,7 +580,7 @@ describe('Octocode result size budgets', () => {
     mcp.turn.charge(TURN_MAX_CHARS);
     expect(mcp.turn.limit()).toBeLessThan(8_000);
     await fake.fire('turn_start', { type: 'turn_start' }, fakeCtx({ cwd: tmp() }));
-    expect(mcp.turn.limit()).toBe(TEXT_MAX_BYTES);
+    expect(mcp.turn.limit()).toBe(TEXT_MAX_CHARS);
   });
 });
 
@@ -578,8 +599,10 @@ describe('Octocode result sanitizing', () => {
   it('keeps what a file holds visible to the model: ZWJ, BOM, bidi, tag characters and CRLF', async () => {
     const text = '1\tok = "a\u200db"\r\n2\tBOM\ufeffmid\r\n3\tzero\u200bwidth \u202eevil\u202c\n4\ttag\u{e0041}\rend';
     const result = await toToolResult('localFetch', { content: [{ type: 'text', text }] }, false);
-    expect(result.content).toEqual([{ type: 'text', text: '1\tok = "a\\u{200d}b"\\r\n2\tBOM\\u{feff}mid\\r\n3\tzero\\u{200b}width \\u{202e}evil\\u{202c}\n4\ttag\\u{e0041}\\rend' }]);
+    expect(result.content).toEqual([{ type: 'text', text: '1\tok = "a\\u{200d}b"\r\n2\tBOM\\u{feff}mid\r\n3\tzero\\u{200b}width \\u{202e}evil\\u{202c}\n4\ttag\\u{e0041}\\rend' }]);
     // Nothing raw that steers a terminal is left.
     expect(JSON.stringify(result.content)).not.toMatch(/[\u0000-\u0008\u000b-\u001f\u202a-\u202e\u200b-\u200d\ufeff]/u);
+    // Raw CR never stands alone: only the CR of a CRLF pair, which the terminal draws as a line break, is left.
+    expect((result.content[0] as { text: string }).text.replaceAll('\r\n', '')).not.toContain('\r');
   });
 });

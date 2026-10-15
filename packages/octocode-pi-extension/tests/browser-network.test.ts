@@ -9,12 +9,13 @@ import { startCdpStub, type CdpHandler, type CdpStub } from './fixtures/cdp-stub
 import { fakeCtx, fakePermission, fakePi } from './fake-pi.js';
 import type { AuditEntry } from '../src/permission/audit.js';
 import type { PermissionMode } from '../src/permission/mode.js';
-import { PagePolicy } from '../src/browser/network.js';
+import { PagePolicy, VERDICTS_MAX } from '../src/browser/network.js';
+import type { HostLookup } from '../src/web/guard.js';
 
 const launch = vi.hoisted(() => vi.fn());
 vi.mock('chrome-launcher', () => ({ launch }));
 
-const { BrowserTool, registerBrowserTool } = await import('../src/browser/tool.js');
+const { AUDIT_KEYS_MAX, BrowserTool, registerBrowserTool } = await import('../src/browser/tool.js');
 const { openBrowser } = await import('../src/browser/cdp.js');
 
 const PRIVATE_HOSTS = ['http://169.254.169.254/latest/meta-data', 'http://10.0.0.1/admin', 'http://[::1]:8080/', 'http://127.0.0.1:9/secret', 'http://192.168.1.1/'];
@@ -62,23 +63,102 @@ describe('PagePolicy', () => {
     expect(resolver).toHaveBeenCalledTimes(2);
   });
 
-  it('approves only the host and port the agent opened, and only when it is not public', async () => {
-    const page = policy({ 'cdn.example': ['93.184.216.34'], 'app.local': ['127.0.0.1'] });
-    expect(await page.approve(new URL('https://cdn.example/'))).toBe(false);
-    expect(await page.approve(new URL('http://127.0.0.1:3000/app'))).toBe(true);
-    expect(await page.approve(new URL('http://app.local:8080/'))).toBe(true);
-    expect(page.approved.map((url) => url.host)).toEqual(['127.0.0.1:3000', 'app.local:8080']);
+  it('approves only the host and port the agent opened, decides nothing itself, and forgets them on revoke', async () => {
+    const resolver = lookup({ 'cdn.example': ['93.184.216.34'], 'app.local': ['127.0.0.1'] });
+    const page = new PagePolicy({ report: () => undefined, lookup: resolver });
+    page.approve(new URL('http://127.0.0.1:3000/app'), 'session');
+    page.approve(new URL('http://app.local:8080/'), 'session');
+    // Approval never resolves a name: the caller classified once and asked net.private.
+    expect(resolver).not.toHaveBeenCalled();
+    await expect(page.check('https://cdn.example/x', 'Script')).resolves.toBeUndefined();
     await expect(page.check('http://127.0.0.1:3000/app.js', 'Script')).resolves.toBeUndefined();
     await expect(page.check('http://app.local:8080/x', 'XHR')).resolves.toBeUndefined();
     // Another port, another host of the same machine: still the page's own choice.
     await expect(page.check('http://127.0.0.1:3001/', 'XHR')).rejects.toThrow(/Blocked private/);
     await expect(page.check('http://app.local/', 'Document')).rejects.toThrow(/Blocked private/);
     await expect(page.check('http://10.0.0.1:3000/', 'Image')).rejects.toThrow(/Blocked private/);
+    page.revoke();
+    await expect(page.check('http://127.0.0.1:3000/app.js', 'Script')).rejects.toThrow(/Blocked private/);
+    await expect(page.check('http://app.local:8080/x', 'XHR')).rejects.toThrow(/Blocked private/);
+  });
+
+  it('approves a once-approved host for its tab only, until that tab leaves the host or closes', async () => {
+    const page = policy();
+    page.approve(new URL('http://127.0.0.1:3000/'), { tab: 'a' });
+    await expect(page.check('http://127.0.0.1:3000/x.js', 'Script', { tab: 'a' })).resolves.toBeUndefined();
+    // Another tab, or a request with no tab behind it, never reaches it; nor does another port.
+    await expect(page.check('http://127.0.0.1:3000/x.js', 'XHR', { tab: 'b' })).rejects.toThrow(/Blocked private/);
+    await expect(page.check('http://127.0.0.1:3000/x.js', 'XHR')).rejects.toThrow(/Blocked private/);
+    await expect(page.check('http://127.0.0.1:3001/x.js', 'XHR', { tab: 'a' })).rejects.toThrow(/Blocked private/);
+    // The same host, a path or fragment away, is still its own.
+    page.navigated('a', 'http://127.0.0.1:3000/other#frag');
+    await expect(page.check('http://127.0.0.1:3000/x.js', 'Script', { tab: 'a' })).resolves.toBeUndefined();
+    page.navigated('b', 'https://example.com/');
+    // Navigating to another host ends it, though the tab comes back.
+    page.navigated('a', 'https://93.184.216.34/');
+    await expect(page.check('http://127.0.0.1:3000/x.js', 'Script', { tab: 'a' })).rejects.toThrow(/Blocked private/);
+    page.navigated('a', 'http://127.0.0.1:3000/');
+    await expect(page.check('http://127.0.0.1:3000/x.js', 'Script', { tab: 'a' })).rejects.toThrow(/Blocked private/);
+    // A tab that closes takes its approval along.
+    page.approve(new URL('http://127.0.0.1:3000/'), { tab: 'a' });
+    expect(page.approves('127.0.0.1', 3000)).toBe(true);
+    page.closed('a');
+    expect(page.approves('127.0.0.1', 3000)).toBe(false);
+    await expect(page.check('http://127.0.0.1:3000/x.js', 'Script', { tab: 'a' })).rejects.toThrow(/Blocked private/);
+    // A tab approved for one host moves to the next one the agent opens.
+    page.approve(new URL('http://127.0.0.1:3000/'), { tab: 'a' });
+    page.approve(new URL('http://127.0.0.1:4000/'), { tab: 'a' });
+    expect(page.approves('127.0.0.1', 3000)).toBe(false);
+    expect(page.approves('127.0.0.1', 4000)).toBe(true);
+  });
+
+  it('gives a popup the approval of the tab that opened it, until the popup leaves the host', async () => {
+    const page = policy();
+    page.approve(new URL('http://127.0.0.1:3000/'), { tab: 'a' });
+    page.opened('a', 'popup');
+    await expect(page.check('http://127.0.0.1:3000/x.js', 'Script', { tab: 'popup' })).resolves.toBeUndefined();
+    page.navigated('popup', 'https://93.184.216.34/');
+    await expect(page.check('http://127.0.0.1:3000/x.js', 'Script', { tab: 'popup' })).rejects.toThrow(/Blocked private/);
+    // The opener keeps its own; a popup of a tab with none gets none.
+    await expect(page.check('http://127.0.0.1:3000/x.js', 'Script', { tab: 'a' })).resolves.toBeUndefined();
+    page.opened('other', 'popup2');
+    await expect(page.check('http://127.0.0.1:3000/x.js', 'Script', { tab: 'popup2' })).rejects.toThrow(/Blocked private/);
+  });
+
+  it('keeps a session approval for every tab, whatever they navigate to, until revoke', async () => {
+    const page = policy();
+    page.approve(new URL('http://127.0.0.1:3000/'), 'session');
+    for (const tab of ['a', 'b', undefined]) await expect(page.check('http://127.0.0.1:3000/x.js', 'XHR', tab ? { tab } : {})).resolves.toBeUndefined();
+    page.navigated('a', 'https://93.184.216.34/');
+    await expect(page.check('http://127.0.0.1:3000/x.js', 'XHR', { tab: 'a' })).resolves.toBeUndefined();
+    expect(page.approves('127.0.0.1', 3000)).toBe(true);
+    page.revoke();
+    await expect(page.check('http://127.0.0.1:3000/x.js', 'XHR', { tab: 'a' })).rejects.toThrow(/Blocked private/);
+  });
+
+  it('lets a worker of an approved origin reach that host while a tab holds it, and no worker of another origin', async () => {
+    const page = policy();
+    page.approve(new URL('http://127.0.0.1:3000/'), { tab: 'a' });
+    await expect(page.check('http://127.0.0.1:3000/data', 'Fetch', { origin: 'http://127.0.0.1:3000' })).resolves.toBeUndefined();
+    await expect(page.check('http://127.0.0.1:3000/data', 'Fetch', { origin: 'https://evil.example' })).rejects.toThrow(/Blocked private/);
+    page.closed('a');
+    await expect(page.check('http://127.0.0.1:3000/data', 'Fetch', { origin: 'http://127.0.0.1:3000' })).rejects.toThrow(/Blocked private/);
+  });
+
+  it('refuses a name that answered public once and private since, and sees it answer from a private address', async () => {
+    let clock = 0;
+    let answers = 0;
+    const flipping: HostLookup = async () => [{ address: answers++ === 0 ? '93.184.216.34' : '10.0.0.5' }];
+    const page = new PagePolicy({ report: () => undefined, lookup: flipping, now: () => clock });
+    await expect(page.check('https://rebind.example/', 'Document')).resolves.toBeUndefined();
+    clock = 31_000;
+    await expect(page.check('https://rebind.example/x', 'XHR')).rejects.toThrow(/Blocked private or local address: rebind\.example/);
+    expect(page.rebinds('https://rebind.example/x', '10.0.0.5', 443)).toBe(true);
   });
 
   it('sees a public name answered from a private address, but not an approved or proxied one', async () => {
     const page = policy({ 'app.local': ['127.0.0.1'] });
-    await page.approve(new URL('http://app.local:8080/'));
+    page.approve(new URL('http://app.local:8080/'), { tab: 'tab-1' });
     expect(page.rebinds('https://cdn.example/x', '10.0.0.5', 443)).toBe(true);
     expect(page.rebinds('https://cdn.example/x', '[::1]', 443)).toBe(true);
     expect(page.rebinds('https://cdn.example/x', '93.184.216.34', 443)).toBe(false);
@@ -132,12 +212,12 @@ interface Setup {
   page: () => NonNullable<ReturnType<CdpStub['pages']['get']>>;
 }
 
-async function setup(options: { mode?: PermissionMode; handle?: CdpHandler; targets?: Parameters<typeof startCdpStub>[0] extends infer O ? (O extends { targets?: infer T } ? T : never) : never } = {}): Promise<Setup> {
+async function setup(options: { mode?: PermissionMode; lookup?: HostLookup; flushMs?: number; handle?: CdpHandler; targets?: Parameters<typeof startCdpStub>[0] extends infer O ? (O extends { targets?: infer T } ? T : never) : never } = {}): Promise<Setup> {
   const cdp = await startCdpStub({ handle: pageHandler(options.handle), ...(options.targets ? { targets: options.targets } : {}) });
   stubs.push(cdp);
   vi.stubEnv('OCTOCODE_CHROME_PORT', String(cdp.port));
   const fake = fakePi();
-  const browser = new BrowserTool(fakePermission(options.mode ?? 'full', { pi: fake.pi }));
+  const browser = new BrowserTool(fakePermission(options.mode ?? 'full', { pi: fake.pi }), { ...(options.lookup ? { lookup: options.lookup } : {}), ...(options.flushMs ? { flushMs: options.flushMs } : {}) });
   tools.push(browser);
   let tool: { execute: (...args: unknown[]) => Promise<{ content: Array<{ type: string; text?: string }> }> } | undefined;
   registerBrowserTool({ registerTool: (definition: typeof tool) => (tool = definition), on: () => undefined } as unknown as ExtensionAPI, browser);
@@ -153,6 +233,12 @@ async function setup(options: { mode?: PermissionMode; handle?: CdpHandler; targ
     page: () => [...cdp.pages.values()].at(-1)!,
   };
 }
+
+/** Opens `url` as the agent does and records its approval for the tab the session drives now. */
+const openFor = async (browser: InstanceType<typeof BrowserTool>, url: string): Promise<void> => (await browser.open(url))((await browser.session()).targetId);
+
+/** A tab's frame navigated, as Chrome reports it; the main frame unless `frame` names a parent. */
+const navigates = (page: { emit: (method: string, params?: Record<string, unknown>) => void }, url: string, frame: Record<string, unknown> = {}) => page.emit('Page.frameNavigated', { frame: { id: 'main', url, ...frame } });
 
 const paused = (requestId: string, url: string, resourceType: string, extra: Record<string, unknown> = {}) => ({ requestId, request: { url }, resourceType, frameId: 'f', ...extra });
 const answered = (cdp: CdpStub, method: 'Fetch.failRequest' | 'Fetch.continueRequest'): string[] => cdp.commands.filter((command) => command.method === method).map((command) => String(command.params['requestId']));
@@ -197,9 +283,112 @@ describe('browser page requests', () => {
     expect(refused.map((entry) => entry.allowed)).toEqual(refused.map(() => false));
     expect(refused).toHaveLength(6);
     expect(refused[0]!.note).toMatch(/^browser: blocked a page request \(XHR\)/);
-    page.emit('Fetch.requestPaused', paused('again', PRIVATE_HOSTS[0]!, 'Image'));
+    // The same refusal again is counted, not written again; a different resource type to the same host is another refusal and is audited.
+    page.emit('Fetch.requestPaused', paused('again', PRIVATE_HOSTS[0]!, 'XHR'));
     await vi.waitFor(() => expect(answered(cdp, 'Fetch.failRequest')).toContain('again'));
     expect(audit().filter((entry) => entry.action === 'invariant')).toHaveLength(6);
+    page.emit('Fetch.requestPaused', paused('other-type', PRIVATE_HOSTS[0]!, 'Image'));
+    await vi.waitFor(() => expect(answered(cdp, 'Fetch.failRequest')).toContain('other-type'));
+    expect(audit().filter((entry) => entry.action === 'invariant')).toHaveLength(7);
+    expect(audit().filter((entry) => entry.action === 'invariant').at(-1)!.note).toMatch(/blocked a page request \(Image\)/);
+    // When the browser session ends, the repeat is audited with its count.
+    await browser.close();
+    const summary = audit().filter((entry) => entry.action === 'invariant').at(-1)!;
+    expect(summary.note).toMatch(/^browser: \(2 times this browser session\) blocked a page request \(XHR\)/);
+  });
+
+  it('audits a repeat count soon after it grows, not only when the browser session ends', async () => {
+    const { cdp, browser, audit } = await setup({ flushMs: 40 });
+    await browser.session();
+    const page = [...cdp.pages.values()].at(-1)!;
+    for (const id of ['r1', 'r2', 'r3']) page.emit('Fetch.requestPaused', paused(id, 'http://127.0.0.1:9/x', 'XHR'));
+    const notes = () => audit().filter((entry) => entry.action === 'invariant').map((entry) => entry.note);
+    // Written before any close: a crash now still leaves the count.
+    await vi.waitFor(() => expect(notes().at(-1)).toMatch(/^browser: \(3 times this browser session\) blocked a page request/));
+    expect(notes()).toHaveLength(2);
+    // Nothing new, nothing more written; a further repeat is written again, cumulatively.
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(notes()).toHaveLength(2);
+    page.emit('Fetch.requestPaused', paused('r4', 'http://127.0.0.1:9/x', 'XHR'));
+    await vi.waitFor(() => expect(notes().at(-1)).toMatch(/^browser: \(4 times this browser session\)/));
+    await browser.close();
+    expect(notes()).toHaveLength(3);
+  });
+
+  it('counts the refusals past the distinct-entry bound under one entry instead of listing or dropping them', async () => {
+    const { cdp, browser, audit } = await setup();
+    await browser.session();
+    const page = [...cdp.pages.values()].at(-1)!;
+    const total = AUDIT_KEYS_MAX + 7;
+    for (let n = 0; n < total; n++) page.emit('Fetch.requestPaused', paused(`r${n}`, `http://10.0.${n >> 8}.${n & 255}/`, 'XHR'));
+    await vi.waitFor(() => expect(answered(cdp, 'Fetch.failRequest')).toHaveLength(total), { timeout: 5_000 });
+    const entries = () => audit().filter((entry) => entry.action === 'invariant');
+    await vi.waitFor(() => expect(entries()).toHaveLength(AUDIT_KEYS_MAX + 1));
+    expect(entries().at(-1)!.note).toMatch(/^browser: 1 more distinct refusals or reports after the first 100/);
+    await browser.close();
+    expect(entries()).toHaveLength(AUDIT_KEYS_MAX + 2);
+    expect(entries().at(-1)!.note).toMatch(/^browser: 7 more distinct refusals or reports after the first 100, counted here and not listed one by one/);
+  });
+
+  it('bounds the host verdicts it keeps: the oldest is dropped at the bound and classified again, never answered wrongly', async () => {
+    const names = Array.from({ length: VERDICTS_MAX + 1 }, (_, n) => `h${n}.example`);
+    const counting = vi.fn(async () => [{ address: '93.184.216.34' }]);
+    const bounded = new PagePolicy({ report: () => undefined, lookup: counting, now: () => 0 });
+    for (const name of names) await bounded.check(`https://${name}/`, 'Image');
+    expect(counting).toHaveBeenCalledTimes(names.length);
+    // The newest is still remembered; the oldest was dropped at the bound and is looked up again.
+    await bounded.check(`https://${names.at(-1)}/`, 'Image');
+    expect(counting).toHaveBeenCalledTimes(names.length);
+    await bounded.check(`https://${names[0]}/`, 'Image');
+    expect(counting).toHaveBeenCalledTimes(names.length + 1);
+  });
+
+  it('does not approve a name that answered public to the agent check and private afterwards, and never grants net.private for it', async () => {
+    for (const mode of ['full', 'workspace'] as const) {
+      let answers = 0;
+      const flipping: HostLookup = async () => [{ address: answers++ === 0 ? '93.184.216.34' : '10.0.0.5' }];
+      const { cdp, browser, audit } = await setup({ mode, lookup: flipping });
+      const ctx = fakeCtx({ cwd: '/private/tmp' });
+      const select = vi.fn(async (_title: string, choices: string[]) => choices[0]!);
+      ctx.ui.select = select;
+      browser.useContext(ctx, 'call-1');
+      await browser.session();
+      const page = [...cdp.pages.values()].at(-1)!;
+      await browser.open('http://rebind.example/');
+      // The page's own requests to that name now see a private answer: refused, though the agent opened the name.
+      page.emit('Fetch.requestPaused', paused('own', 'http://rebind.example/app.js', 'Script'));
+      await vi.waitFor(() => expect(answered(cdp, 'Fetch.failRequest')).toEqual(['own']));
+      expect(answered(cdp, 'Fetch.continueRequest')).toEqual([]);
+      expect(audit().filter((entry) => entry.action === 'net.private')).toEqual([]);
+      expect(select).not.toHaveBeenCalled();
+      await browser.close();
+    }
+  });
+
+  it('still asks net.private for a private name and approves it once granted', async () => {
+    const privateLookup: HostLookup = async () => [{ address: '10.0.0.5' }];
+    const { cdp, browser, audit } = await setup({ mode: 'full', lookup: privateLookup });
+    await browser.session();
+    const page = [...cdp.pages.values()].at(-1)!;
+    await openFor(browser, 'http://app.local:8080/');
+    expect(audit().filter((entry) => entry.action === 'net.private')).toHaveLength(1);
+    page.emit('Fetch.requestPaused', paused('own', 'http://app.local:8080/app.js', 'Script'));
+    await vi.waitFor(() => expect(answered(cdp, 'Fetch.continueRequest')).toEqual(['own']));
+    // Another port of the same name stays the page's own choice.
+    page.emit('Fetch.requestPaused', paused('other', 'http://app.local:9090/', 'XHR'));
+    await vi.waitFor(() => expect(answered(cdp, 'Fetch.failRequest')).toEqual(['other']));
+  });
+
+  it('forgets what the agent opened when the browser session ends', async () => {
+    const privateLookup: HostLookup = async () => [{ address: '10.0.0.5' }];
+    const { cdp, browser } = await setup({ mode: 'full', lookup: privateLookup });
+    await browser.session();
+    await openFor(browser, 'http://app.local:8080/');
+    await browser.close();
+    await browser.session();
+    const page = [...cdp.pages.values()].at(-1)!;
+    page.emit('Fetch.requestPaused', paused('again', 'http://app.local:8080/app.js', 'Script'));
+    await vi.waitFor(() => expect(answered(cdp, 'Fetch.failRequest')).toEqual(['again']));
   });
 
   it('fails private page requests in every mode, with nothing to confirm', async () => {
@@ -221,18 +410,105 @@ describe('browser page requests', () => {
     const page = [...cdp.pages.values()].at(-1)!;
     page.emit('Fetch.requestPaused', paused('before', 'http://127.0.0.1:3000/app.js', 'Script'));
     await vi.waitFor(() => expect(answered(cdp, 'Fetch.failRequest')).toEqual(['before']));
-    await browser.open('http://127.0.0.1:3000/');
+    await openFor(browser, 'http://127.0.0.1:3000/');
     page.emit('Fetch.requestPaused', paused('own', 'http://127.0.0.1:3000/app.js', 'Script'));
     page.emit('Fetch.requestPaused', paused('other', 'http://127.0.0.1:3001/api', 'XHR'));
     await vi.waitFor(() => expect(answered(cdp, 'Fetch.continueRequest')).toEqual(['own']));
     await vi.waitFor(() => expect(answered(cdp, 'Fetch.failRequest')).toEqual(['before', 'other']));
   });
 
+  it('scopes "Allow once" to the tab that opened the private host, and ends it when the tab navigates elsewhere', async () => {
+    const { cdp, browser } = await setup({ mode: 'manual' });
+    const ctx = fakeCtx({ cwd: '/private/tmp' });
+    ctx.ui.select = async (_title, choices) => choices[0]!;
+    browser.useContext(ctx, 'call-1');
+    await browser.session();
+    const page = [...cdp.pages.values()].at(-1)!;
+    await openFor(browser, 'http://127.0.0.1:3000/');
+    navigates(page, 'http://127.0.0.1:3000/app');
+    // A frame of the page is not the tab navigating.
+    navigates(page, 'https://example.com/ad', { id: 'ad', parentId: 'main' });
+    page.emit('Fetch.requestPaused', paused('own', 'http://127.0.0.1:3000/app.js', 'Script'));
+    await vi.waitFor(() => expect(answered(cdp, 'Fetch.continueRequest')).toEqual(['own']));
+    // The tab goes to a public page: that page's script cannot reach the host the agent opened earlier.
+    navigates(page, 'https://example.com/');
+    page.emit('Fetch.requestPaused', paused('hostile', 'http://127.0.0.1:3000/secret', 'Fetch'));
+    await vi.waitFor(() => expect(answered(cdp, 'Fetch.failRequest')).toEqual(['hostile']));
+  });
+
+  it('lets a popup of a once-approved tab load the host the tab was opened on, and a popup of any other tab nothing private', async () => {
+    const { cdp, browser } = await setup({ mode: 'full' });
+    const session = await browser.session();
+    await openFor(browser, 'http://127.0.0.1:3000/');
+    const popup = cdp.autoAttach({ id: 'popup-1', type: 'page', openerId: session.targetId });
+    await vi.waitFor(() => expect(cdp.commands.some((command) => command.method === 'Fetch.enable')).toBe(true));
+    popup.emit('Fetch.requestPaused', paused('own', 'http://127.0.0.1:3000/popup.js', 'Script'));
+    popup.emit('Fetch.requestPaused', paused('other', 'http://127.0.0.1:3001/popup.js', 'Script'));
+    await vi.waitFor(() => expect(answered(cdp, 'Fetch.continueRequest')).toContain('own'));
+    await vi.waitFor(() => expect(answered(cdp, 'Fetch.failRequest')).toContain('other'));
+  });
+
+  it('keeps a session grant for the whole browser session, across navigations of the tab', async () => {
+    const { cdp, browser } = await setup({ mode: 'manual' });
+    const ctx = fakeCtx({ cwd: '/private/tmp' });
+    const select = vi.fn(async (_title: string, choices: string[]) => choices.find((choice) => choice.endsWith('for this session') && choice.includes('127.0.0.1:3000')) ?? choices[0]!);
+    ctx.ui.select = select;
+    browser.useContext(ctx, 'call-1');
+    await browser.session();
+    const page = [...cdp.pages.values()].at(-1)!;
+    await openFor(browser, 'http://127.0.0.1:3000/');
+    navigates(page, 'https://example.com/');
+    page.emit('Fetch.requestPaused', paused('later', 'http://127.0.0.1:3000/app.js', 'Script'));
+    await vi.waitFor(() => expect(answered(cdp, 'Fetch.continueRequest')).toEqual(['later']));
+    // The grant also answers the next open, with no new dialog.
+    await openFor(browser, 'http://127.0.0.1:3000/again');
+    expect(select).toHaveBeenCalledTimes(1);
+    await browser.close();
+    await browser.session();
+    [...cdp.pages.values()].at(-1)!.emit('Fetch.requestPaused', paused('after', 'http://127.0.0.1:3000/app.js', 'Script'));
+    await vi.waitFor(() => expect(answered(cdp, 'Fetch.failRequest')).toEqual(['after']));
+  });
+
+  it('keys grants by host and effective port: a grant for http://localhost does not cover https://localhost', async () => {
+    const { browser } = await setup({ mode: 'manual', lookup: async () => [{ address: '10.0.0.5' }] });
+    const ctx = fakeCtx({ cwd: '/private/tmp' });
+    const dialogs: string[][] = [];
+    ctx.ui.select = async (_title: string, choices: string[]) => {
+      dialogs.push(choices);
+      return choices.find((choice) => choice.endsWith('for this session')) ?? choices[0]!;
+    };
+    browser.useContext(ctx, 'call-1');
+    await browser.open('http://app.local/');
+    await browser.open('http://app.local:80/other');
+    expect(dialogs).toHaveLength(1);
+    expect(dialogs[0]).toContain('Allow app.local:80 for this session');
+    await browser.open('https://app.local/');
+    expect(dialogs).toHaveLength(2);
+    expect(dialogs[1]).toContain('Allow app.local:443 for this session');
+    expect(browser.permission.grants()).toEqual(['net.private: app.local:80', 'net.private: app.local:443']);
+  });
+
+  it('drops a tab\'s approval when the tab closes', async () => {
+    const { cdp, browser } = await setup({ mode: 'full' });
+    const session = await browser.session();
+    await openFor(browser, 'http://127.0.0.1:3000/');
+    const page = cdp.pages.get(session.targetId)!;
+    page.emit('Fetch.requestPaused', paused('own', 'http://127.0.0.1:3000/app.js', 'Script'));
+    await vi.waitFor(() => expect(answered(cdp, 'Fetch.continueRequest')).toEqual(['own']));
+    navigates(page, 'http://127.0.0.1:3000/app');
+    await vi.waitFor(() => expect([...session.tabOrigins.values()]).toEqual(['http://127.0.0.1:3000']));
+    expect(session.policy!.approves('127.0.0.1', 3000)).toBe(true);
+    // Chrome reports the tab gone: its approval ends with it, and so does the origin it pinned.
+    page.drop();
+    await vi.waitFor(() => expect(session.tabOrigins.size).toBe(0));
+    expect(session.policy!.approves('127.0.0.1', 3000)).toBe(false);
+  });
+
   it('fails a paused request the policy does not answer within 5 seconds', async () => {
     const cdp = await startCdpStub({ handle: pageHandler() });
     stubs.push(cdp);
     const report = vi.fn();
-    const session = await openBrowser({}, { port: cdp.port, reuseTab: true, policy: { check: () => new Promise<never>(() => undefined), rebinds: () => false, report } });
+    const session = await openBrowser({}, { port: cdp.port, reuseTab: true, policy: { check: () => new Promise<never>(() => undefined), rebinds: () => false, report, navigated: () => undefined, opened: () => undefined, closed: () => undefined, approves: () => false } });
     const started = Date.now();
     [...cdp.pages.values()].at(-1)!.emit('Fetch.requestPaused', paused('slow', 'https://slow.example/x', 'XHR'));
     await vi.waitFor(() => expect(answered(cdp, 'Fetch.failRequest')).toEqual(['slow']), { timeout: 9_000 });
@@ -282,7 +558,7 @@ describe('browser page requests', () => {
   it('does not report a WebSocket to the host the agent opened', async () => {
     const { cdp, browser, audit } = await setup();
     const session = await browser.session();
-    await browser.open('http://127.0.0.1:4000/');
+    await openFor(browser, 'http://127.0.0.1:4000/');
     [...cdp.pages.values()].at(-1)!.emit('Network.webSocketCreated', { requestId: 'w', url: 'ws://127.0.0.1:4000/hmr' });
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(session.warning).toBeUndefined();
@@ -361,14 +637,14 @@ describe('browser launched Chrome behind the filtering proxy', () => {
         .on('error', reject);
     });
 
-  async function launched(mode: PermissionMode) {
+  async function launched(mode: PermissionMode, lookup?: HostLookup) {
     const cdp = await startCdpStub({ handle: pageHandler() });
     stubs.push(cdp);
     launch.mockResolvedValue({ port: cdp.port, kill: vi.fn(async () => undefined), process: { unref: vi.fn() } });
     vi.stubEnv('OCTOCODE_HOME', fakeHome());
     vi.stubEnv('OCTOCODE_CHROME_PORT', '');
     const fake = fakePi();
-    const browser = new BrowserTool(fakePermission(mode, { pi: fake.pi }));
+    const browser = new BrowserTool(fakePermission(mode, { pi: fake.pi }), lookup ? { lookup } : {});
     tools.push(browser);
     return { cdp, browser, audit: () => fake.entries.map((entry) => entry.data as AuditEntry) };
   }
@@ -379,42 +655,58 @@ describe('browser launched Chrome behind the filtering proxy', () => {
     const { cdp, browser } = await launched('manual');
     const session = await browser.session();
     const proxy = session.chrome!.proxy!;
-    const allow = vi.spyOn(proxy, 'allow');
     expect(launch.mock.calls[0]![0].chromeFlags).toContain(`--proxy-server=${proxy.url}`);
 
     // Refused (manual, no one to ask), and a public target: neither is allowed through the proxy.
     await expect(browser.open(`http://127.0.0.1:${approvedPort}/`)).rejects.toThrow(/no one can be asked here/);
-    expect(allow).not.toHaveBeenCalled();
     // A page request never allows anything.
     [...cdp.pages.values()].at(-1)!.emit('Fetch.requestPaused', paused('r', `http://127.0.0.1:${approvedPort}/x`, 'XHR'));
     await vi.waitFor(() => expect(answered(cdp, 'Fetch.failRequest')).toEqual(['r']));
-    expect(allow).not.toHaveBeenCalled();
     expect((await viaProxy(proxy.url, `http://127.0.0.1:${approvedPort}/`)).status).toBe(403);
 
     // The agent opens one target (full mode: allowed without a prompt).
     const full = await launched('full');
     const fullSession = await full.browser.session();
-    const fullAllow = vi.spyOn(fullSession.chrome!.proxy!, 'allow');
-    await full.browser.open('https://93.184.216.34/');
-    expect(fullAllow).not.toHaveBeenCalled();
-    await full.browser.open(`http://127.0.0.1:${approvedPort}/`);
-    expect(fullAllow).toHaveBeenCalledTimes(1);
-    expect(fullAllow.mock.calls[0]![0].href).toBe(`http://127.0.0.1:${approvedPort}/`);
+    await openFor(full.browser, 'https://93.184.216.34/');
+    await openFor(full.browser, `http://127.0.0.1:${approvedPort}/`);
     const fullProxy = fullSession.chrome!.proxy!.url;
     expect(await viaProxy(fullProxy, `http://127.0.0.1:${approvedPort}/`)).toMatchObject({ status: 200, body: 'approved' });
     expect(await viaProxy(fullProxy, `http://127.0.0.1:${otherPort}/`)).toMatchObject({ status: 403, blocked: 'private' });
 
-    // A Chrome that starts later is told about the targets the agent already opened.
+    // A Chrome that starts later is a new browser session: nothing the agent opened before is allowed until it opens it again.
     await full.browser.close();
     const again = await full.browser.session();
+    expect(await viaProxy(again.chrome!.proxy!.url, `http://127.0.0.1:${approvedPort}/`)).toMatchObject({ status: 403, blocked: 'private' });
+    await openFor(full.browser, `http://127.0.0.1:${approvedPort}/`);
     expect(await viaProxy(again.chrome!.proxy!.url, `http://127.0.0.1:${approvedPort}/`)).toMatchObject({ status: 200, body: 'approved' });
 
-    // The refusal is in the audit, once per host.
+    // The refusal is in the audit, once per host and browser session.
     expect(await viaProxy(again.chrome!.proxy!.url, `http://127.0.0.1:${otherPort}/`)).toMatchObject({ status: 403 });
     const proxied = full.audit().filter((entry) => entry.note?.includes('filtering proxy'));
-    expect(proxied).toHaveLength(1);
-    expect(proxied[0]).toMatchObject({ action: 'invariant', allowed: false, what: [`127.0.0.1:${otherPort}`] });
+    expect(proxied.map((entry) => entry.what)).toEqual([[`127.0.0.1:${otherPort}`], [`127.0.0.1:${approvedPort}`], [`127.0.0.1:${otherPort}`]]);
+    expect(proxied[0]).toMatchObject({ action: 'invariant', allowed: false });
     expect(proxied[0]!.note).toBe('browser: the filtering proxy refused a page connection to a local or private address');
+  }, 30_000);
+
+  it('scopes the filtering proxy like the page policy: a once-approved host is open while its tab holds it', async () => {
+    const approvedPort = await listen('approved');
+    const { cdp, browser } = await launched('full');
+    const session = await browser.session();
+    await openFor(browser, `http://127.0.0.1:${approvedPort}/`);
+    const proxyUrl = session.chrome!.proxy!.url;
+    expect(await viaProxy(proxyUrl, `http://127.0.0.1:${approvedPort}/`)).toMatchObject({ status: 200, body: 'approved' });
+    // The tab left the host: nothing keeps it open.
+    navigates(cdp.pages.get(session.targetId)!, 'https://93.184.216.34/');
+    expect(await viaProxy(proxyUrl, `http://127.0.0.1:${approvedPort}/`)).toMatchObject({ status: 403, blocked: 'private' });
+  }, 30_000);
+
+  it('never lets the proxy through to a name that answered public to the agent check and private afterwards', async () => {
+    let answers = 0;
+    const flipping: HostLookup = async () => [{ address: answers++ === 0 ? '93.184.216.34' : '127.0.0.1' }];
+    const { browser } = await launched('full', flipping);
+    const session = await browser.session();
+    await openFor(browser, 'http://rebind.example/');
+    expect((await viaProxy(session.chrome!.proxy!.url, 'http://rebind.example/')).status).toBe(403);
   }, 30_000);
 
   it('trusts the proxy for rebinding and WebSockets: neither is reported from the page session', async () => {

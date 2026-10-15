@@ -105,11 +105,15 @@ describe('a tab the session moved away from', () => {
     const { cdp, session } = await attached();
     const first = session.page;
     const firstPage = cdp.pages.get('page-1')!;
+    firstPage.emit('Runtime.consoleAPICalled', { type: 'log', args: [{ value: 'logged on the first tab' }] });
+    await vi.waitFor(() => expect(session.console).toEqual(['[log] logged on the first tab']));
     session.console.push('[log] from the first tab');
     await switchTo(session, socketOf(cdp, 'page-2'));
+    // The discarded line is still in the console log, and a marker shows where the new tab's lines begin.
+    expect(fs.readFileSync(session.consoleLog!.file!, 'utf8')).toMatch(/^\[log\] logged on the first tab\n\[tab\] console of \S+\n$/);
     // The earlier tab's lines are discarded and counted, so the console result can say so.
     expect(session.console).toEqual([]);
-    expect(session.consoleLost).toEqual({ dropped: 0, cleared: 1 });
+    expect(session.consoleLost).toEqual({ dropped: 0, cleared: 2 });
     // The background tab's console and dialogs do not show up as the driven page's.
     firstPage.emit('Runtime.consoleAPICalled', { type: 'log', args: [{ value: 'from the background' }] });
     firstPage.emit('Page.javascriptDialogOpening', { type: 'alert', message: 'hi' });

@@ -27,8 +27,6 @@ pub struct HostOptions {
     /// injection deterministic; standalone surfaces fall back to process env.
     pub env: Option<BTreeMap<String, String>>,
     #[serde(default)]
-    pub trusted_project: bool,
-    #[serde(default)]
     pub surface: RuntimeSurface,
     /// Override the per-request execution timeout in seconds (default:
     /// [`super::lifecycle::DEFAULT_TIMEOUT`], the budget of every surface).
@@ -65,9 +63,7 @@ pub struct ToolRuntime {
     security: Arc<ContentSecurity>,
     github_cache: super::github_cache::GitHubContentCache,
     github_services: Arc<
-        std::sync::OnceLock<
-            Result<super::github::GitHubServices, crate::providers::github::ProviderError>,
-        >,
+        std::sync::OnceLock<Result<super::github::GitHubServices, octocode_github::ProviderError>>,
     >,
     lsp_pool: Arc<octocode_engine::lsp::pool::LspClientPool>,
     /// Sanitized full views of recently paged local files (this runtime's
@@ -81,13 +77,13 @@ pub struct ToolRuntime {
     /// Resolved once from the immutable config and surface. Provider
     /// failures are request-local and do not remove an advertised tool.
     availability: Arc<super::availability::ToolAvailability>,
-    /// Provider settings and the ranking switch, resolved once.
-    clasify: crate::tools::clasify::ClasifySettings,
-    ranking_available: bool,
+    /// Provider settings and selection availability, resolved once.
+    evaluator: crate::tools::judgment::Evaluator,
+    selection_available: bool,
     lsp_execution_config: Arc<crate::tools::lsp_search::LspExecutionConfig>,
     /// The sandbox workspace root (configured workspaceRoot, else host cwd).
     workspace_root: PathBuf,
-    /// Vendor selected by `classification.type`, resolved once at construction.
+    /// The built-in classification provider.
     classification: &'static dyn crate::providers::classification::ClassificationProvider,
 }
 
@@ -165,7 +161,7 @@ fn page_replay_key(
     mcp: bool,
     queries: &[Value],
     indices: &[usize],
-    credential: Option<&crate::providers::github::ResolvedCredential>,
+    credential: Option<&octocode_github::ResolvedCredential>,
 ) -> [u8; 32] {
     use sha2::{Digest, Sha256};
     // A request-supplied token partitions replays: one caller's page never
@@ -241,7 +237,7 @@ fn invalid_input_error(tool: &str, error: contracts::ContractValidationError) ->
 /// Security-gate failures of one row as field issues, so they isolate and
 /// render like any other invalid field. Only clasify evidence may be
 /// redacted in place: any other rewritten value — including a clasify
-/// resource read's `query` — would silently change what a tool runs and leak
+/// `source` — would silently change what a tool reads and leak
 /// the placeholder into continuations.
 fn security_issues(
     checked: &ValidationResult,
@@ -276,7 +272,14 @@ fn security_issues(
                 }),
         );
     }
-    let redactable = |field: &&String| clasify && !field.starts_with("resources[].query.");
+    let redactable = |field: &&String| {
+        clasify
+            && ["state", "questions"].iter().any(|root| {
+                field.as_str() == *root
+                    || field.starts_with(&format!("{root}."))
+                    || field.starts_with(&format!("{root}["))
+            })
+    };
     issues.extend(
         checked
             .secret_fields
@@ -426,7 +429,6 @@ impl ToolRuntime {
             options.env.unwrap_or_else(octocode_io::env::vars_lossy),
             cwd,
             home,
-            options.trusted_project,
             options.surface,
         );
         let mut runtime = Self::new(input)?;
@@ -441,7 +443,10 @@ impl ToolRuntime {
         }
         // storage.mode=memory must not touch the disk cache at all.
         if config::is_persistent_storage_enabled(&runtime.config.resolved) {
-            super::maintenance::run_if_due(&runtime.config.home);
+            super::maintenance::run_if_due(
+                &runtime.config.home,
+                crate::tools::source_capture::url::capture_ttl(&runtime.config.resolved),
+            );
         }
         if let Some(secs) = options.timeout_secs {
             // An embedder's budget replaces the surface default.
@@ -461,10 +466,12 @@ impl ToolRuntime {
         let mut additional_roots: Vec<PathBuf> =
             local.allowed_paths.iter().map(PathBuf::from).collect();
         // Local tools read the GitHub checkouts (clones, materialized trees)
-        // under the cache home, never the rest of it (credentials, logs).
+        // and clasify URL captures under the cache home, never the rest of
+        // it (credentials, logs).
         additional_roots.extend([
             crate::tools::gh_clone_repo::cache::clones_root(&octocode_home),
             crate::tools::gh_structure::materialize::materialize_root(&octocode_home),
+            crate::tools::source_capture::url::capture_root(&octocode_home),
         ]);
         // Default sandbox: the configured workspace, or the process cwd when
         // unconfigured — never all of $HOME. Broad $HOME access is opt-in
@@ -484,64 +491,64 @@ impl ToolRuntime {
         let security = ContentSecurity::new();
         let requests =
             RequestRuntime::new(RuntimeLimits::default()).map_err(runtime_execution_error)?;
-        let response_dir = config::is_persistent_storage_enabled(&config.resolved)
-            .then(|| octocode_home.join("tmp").join("response"));
+        // Each response cache owns its directory, so one cache's budget or
+        // clear never touches the other's entries.
+        let persistent = config::is_persistent_storage_enabled(&config.resolved);
+        let response_dir = persistent.then(|| octocode_home.join("tmp").join("response"));
         let github_cache = super::github_cache::GitHubContentCache::new(
             crate::cache::CacheConfig::default(),
-            response_dir.clone(),
+            response_dir,
         );
-        let artifact_cache = response_dir
-            .map(|dir| Arc::new(crate::providers::artifact::ArtifactCache::new(Some(dir))));
+        let artifact_cache = persistent.then(|| {
+            Arc::new(crate::providers::artifact::ArtifactCache::new(Some(
+                octocode_home.join("tmp").join("artifact"),
+            )))
+        });
         let lsp_execution_config = Arc::new(crate::tools::lsp_search::LspExecutionConfig {
             config_path: config.resolved.lsp.config_path.clone(),
-            trust_project_config: input.trusted_project || config.resolved.lsp.trust_project_config,
-            // Resolved settings the engine reads by name; `lsp.cacheDir` may
-            // come from `.octocoderc`, not only the environment.
+            trust_project_config: config.resolved.lsp.trust_project_config,
+            // Resolved settings the engine reads by name: `lsp.cacheDir` and
+            // `lsp.maxMemoryMb` may come from `.octocoderc`, not only the
+            // environment, and the resolved value wins either way.
             env: config
                 .effective_env
                 .iter()
                 .filter(|(key, _)| key.starts_with("OCTOCODE_"))
                 .map(|(key, value)| (key.clone(), value.clone()))
                 .chain(
-                    config
-                        .resolved
-                        .lsp
-                        .cache_dir
-                        .clone()
-                        .zip(config::field::LSP_CACHE_DIR.env_name())
-                        .map(|(dir, env)| (env.to_owned(), dir)),
+                    [
+                        (
+                            config::field::LSP_CACHE_DIR,
+                            config.resolved.lsp.cache_dir.clone(),
+                        ),
+                        (
+                            config::field::LSP_MAX_MEMORY_MB,
+                            config.resolved.lsp.max_memory_mb.map(|mb| mb.to_string()),
+                        ),
+                    ]
+                    .into_iter()
+                    .filter_map(|(field, value)| Some((field.env_name()?.to_owned(), value?))),
                 )
                 .collect(),
             octocode_home: Some(octocode_home),
             lead_cache: std::sync::Arc::default(),
             prewarm_state: std::sync::Arc::default(),
         });
-        let classification = crate::providers::classification::provider_for(
-            config.resolved.classification.r#type.as_str(),
-        )
-        .ok_or_else(|| {
-            RuntimeError::new(
-                "invalidClassificationConfiguration",
-                format!(
-                    "classification.type \"{}\" has no registered provider",
-                    config.resolved.classification.r#type
-                ),
-            )
-        })?;
+        let classification = crate::providers::classification::provider();
+        let evaluator = evaluator(&config, classification, &config.home, persistent);
         let availability = Arc::new(super::availability::ToolAvailability::resolve(
             &config,
             input.runtime_surface,
         ));
-        let clasify = clasify_settings(&config, classification);
-        let ranking_available = ranking_available(&config, &availability);
+        let selection_available = selection_available(&config, &availability);
         Ok(Self {
             requests,
             input,
             config,
             classification,
             availability,
-            clasify,
-            ranking_available,
+            evaluator,
+            selection_available,
             paths: Arc::new(paths),
             security: Arc::new(security),
             github_cache,
@@ -571,8 +578,12 @@ impl ToolRuntime {
         config::inspector_data(&self.input, &self.config)
     }
 
-    pub fn clear_github_cache(&self) {
+    /// Delete every cached response: GitHub content and registry answers.
+    pub fn clear_response_caches(&self) {
         self.github_cache.clear();
+        if let Some(artifact) = &self.artifact_cache {
+            artifact.clear();
+        }
     }
 
     /// Resolved presentation switches shared by MCP and CLI discovery.
@@ -590,7 +601,7 @@ impl ToolRuntime {
             .collect();
         json!({
             "deferred": deferred,
-            "ranking": self.ranking_available,
+            "selection": self.selection_available,
         })
     }
 
@@ -654,7 +665,7 @@ impl ToolRuntime {
     /// Runtime truth only: tool names, availability, grammar capabilities, and
     /// the enforcement contract fingerprint. Presentation and MCP instructions
     /// are delivered to agents by the JS layers from `@octocodeai/octocode-core`.
-    pub fn catalog(&self) -> Result<Value, RuntimeError> {
+    pub fn catalog(&self) -> Value {
         // Generated constants only: the catalog never parses the contract.
         let tools = ToolId::ALL
             .into_iter()
@@ -671,7 +682,7 @@ impl ToolRuntime {
                 entry
             })
             .collect::<Vec<_>>();
-        Ok(json!({
+        json!({
             "fingerprint": contracts::tool_types::TOOL_TYPES_CONTRACT_FINGERPRINT,
             "grammarCapabilities": octocode_engine::portable::grammar_capabilities(),
             // Languages whose lspSearch server resolves here (resolution only);
@@ -679,7 +690,7 @@ impl ToolRuntime {
             "lspServers": self.lsp_server_languages(),
             "presentation": self.presentation(),
             "tools": tools,
-        }))
+        })
     }
 
     pub fn admit(&self, request_id: String) -> Result<super::RequestAdmission, RuntimeError> {
@@ -762,7 +773,7 @@ impl ToolRuntime {
             Err(error) => {
                 if error.code == "missingConfiguration"
                     && let Some(id) = ToolId::from_name(&tool)
-                    && let Err(invalid) = self.admit_queries(id, &input, mcp)
+                    && let Err(invalid) = self.admit_queries(id, &input)
                     && invalid.code == "invalidInput"
                 {
                     return Err(invalid);
@@ -770,16 +781,17 @@ impl ToolRuntime {
                 return Err(error);
             }
         };
-        let clasify = if id.is_clasify() {
+        let clasify = id.is_clasify();
+        if clasify {
             crate::tools::clasify::reject_response_pagination(&input)?;
-            Some(self.clasify.clone())
-        } else {
-            None
-        };
+        }
         // Parse response-paging options before contract validation.
         let mut options = ResponsePageOptions::deserialize(&input).unwrap_or_default();
         options.render_text = Some(render_text);
-        let (queries, rejected_rows) = self.admit_queries(id, &input, mcp)?;
+        let AdmittedRows {
+            queries,
+            rejected: rejected_rows,
+        } = self.admit_queries(id, &input)?;
         let response_query = if queries.len() == 1 {
             queries[0].clone()
         } else {
@@ -811,7 +823,7 @@ impl ToolRuntime {
         let replayed = options
             .response_snapshot
             .as_deref()
-            .filter(|_| clasify.is_none())
+            .filter(|_| !clasify)
             .and_then(|snapshot| self.page_replays.get(&replay_key, snapshot));
         let run = ChannelRun {
             id,
@@ -824,7 +836,6 @@ impl ToolRuntime {
             clasify,
             dispatcher: self.dispatcher(),
             output: OutputSettings {
-                stats_enabled: config::is_stats_enabled(&self.config.resolved),
                 redact_emails: self.config.resolved.output.redact_emails,
                 auto_page_chars: self.config.resolved.output.pagination.default_char_length
                     as usize,
@@ -887,34 +898,50 @@ impl ToolRuntime {
     /// Validated, security-checked rows to run, and the rows rejected by
     /// index. A batch isolates invalid rows; clasify (whose matrices share
     /// batch-level rules) and a call with no valid row fail as a whole.
-    #[allow(clippy::type_complexity)]
-    fn admit_queries(
-        &self,
-        id: ToolId,
-        input: &Value,
-        mcp: bool,
-    ) -> Result<(Vec<Value>, Vec<(usize, Value)>), RuntimeError> {
+    fn admit_queries(&self, id: ToolId, input: &Value) -> Result<AdmittedRows, RuntimeError> {
         let tool = id.as_str();
-        let (prepared, mut invalid) = prepare_queries(tool, input)?;
+        let PreparedRows {
+            valid: prepared,
+            mut invalid,
+        } = prepare_queries(tool, input)?;
         if id.is_clasify() {
-            crate::tools::clasify::admission::check(prepared.iter().map(|(_, query)| query))
+            crate::tools::clasify::admit(prepared.iter().map(|(_, query)| query))
                 .map_err(|error| invalid_input_error(tool, error))?;
         }
         let bulk = input.is_array() || input.get("queries").is_some();
         let mut queries = Vec::with_capacity(prepared.len());
         for (index, query) in prepared {
-            let checked = self.security.validate_input_parameters(&query);
+            let checked = if id.is_clasify() {
+                self.security.validate_state_parameters(
+                    &query,
+                    crate::tools::clasify::max_state_chars(
+                        query["longContext"].as_bool() == Some(true),
+                    ),
+                )
+            } else {
+                self.security.validate_input_parameters(&query)
+            };
             let prefix = if bulk {
                 vec!["queries".to_owned(), index.to_string()]
             } else {
                 Vec::new()
             };
             let mut issues = security_issues(&checked, &prefix, id.is_clasify());
+            if query.get("clasifyContext").is_some() && !self.selection_available {
+                let mut path = prefix.clone();
+                path.push("clasifyContext".into());
+                issues.push(crate::contracts::ValidationIssue {
+                    rule_id: "clasifyContext.available".into(),
+                    schema: None,
+                    received: None,
+                    path,
+                    message: "clasifyContext requires an available classification provider; configure JEV or omit the context.".into(),
+                });
+            }
             if id.is_clasify() {
-                issues.extend(crate::tools::clasify::context::unavailable_context_issues(
+                issues.extend(crate::tools::clasify::unavailable_source_issues(
                     &query,
                     &prefix,
-                    mcp,
                     &self.availability,
                 ));
             }
@@ -949,7 +976,7 @@ impl ToolRuntime {
                 rejected_row(id, *index, raw, error)
             })
             .collect();
-        Ok((queries, rejected))
+        Ok(AdmittedRows { queries, rejected })
     }
 
     /// The domain execution path for this call's rows.
@@ -967,8 +994,8 @@ impl ToolRuntime {
             local_views: self.local_views.clone(),
             lsp_execution_config: self.lsp_execution_config.clone(),
             availability: self.availability.clone(),
-            ranking_available: self.ranking_available,
-            clasify: self.clasify.clone(),
+            selection_available: self.selection_available,
+            evaluator: self.evaluator.clone(),
             artifact_cache: self.artifact_cache.clone(),
         }
     }
@@ -985,65 +1012,82 @@ fn graph_local_disabled() -> graph_store::GraphOutput {
     )
 }
 
-/// Provider settings for every clasify call and ranked read of a runtime.
-fn clasify_settings(
+/// The one classification evaluator of a runtime: public clasify and every
+/// ranked read share its client, judgment cache and accounting. Judgments
+/// persist across processes only under persistent storage.
+fn evaluator(
     config: &ConfigOutput,
     provider: &'static dyn crate::providers::classification::ClassificationProvider,
-) -> crate::tools::clasify::ClasifySettings {
-    crate::tools::clasify::ClasifySettings {
-        key: super::availability::classification_key(config)
+    octocode_home: &std::path::Path,
+    persistent: bool,
+) -> crate::tools::judgment::Evaluator {
+    crate::tools::judgment::Evaluator::new(
+        super::availability::classification_key(config)
             .map(|value| SecretString::from(value.to_owned())),
-        base_url: config::field::CLASSIFICATION_API_HOST
+        config::field::CLASSIFICATION_API_HOST
             .env_name()
             .and_then(|env| config.env_value(env))
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_owned)
             .unwrap_or_else(|| provider.default_host().to_owned()),
-        endpoint_path: provider.endpoint_path().to_owned(),
-        model: provider.default_model().to_owned(),
+        config
+            .resolved
+            .classification
+            .model
+            .clone()
+            .filter(|model| !model.trim().is_empty())
+            .unwrap_or_else(|| provider.default_model().to_owned()),
         provider,
-        timeout: Duration::from_millis(config.resolved.network.timeout as u64),
-        retries: config.resolved.network.max_retries as u32,
-        max_concurrency: config.resolved.classification.max_concurrency as usize,
-    }
+        Duration::from_millis(u64::from(config.resolved.network.timeout)),
+        config.resolved.network.max_retries,
+        config.resolved.classification.max_concurrency as usize,
+        persistent.then(|| octocode_home.join("tmp").join("judgment")),
+        config::is_stats_enabled(&config.resolved).then(|| config.home.clone()),
+    )
 }
 
-/// A visible read tool may use the provider through its opt-in `goals`
+/// A visible read tool may use the provider through its opt-in `clasifyContext`
 /// field even when the public clasify tool is hidden; eligibility comes from
 /// the embedded contract instead of another tool list.
-fn ranking_available(
+fn selection_available(
     config: &ConfigOutput,
     availability: &super::availability::ToolAvailability,
 ) -> bool {
     super::availability::classification_key(config).is_some()
-        && config.resolved.ranking.enabled
         && availability
             .available()
             .iter()
             .filter_map(|name| ToolId::from_name(name))
             .any(|id| {
                 id != ToolId::Clasify
-                    && crate::contracts::query_schema_value(id, None, "goals", "type").is_some()
+                    && crate::contracts::query_schema_value(id, None, "clasifyContext", "type")
+                        .is_some()
             })
+}
+
+/// A call's rows that passed admission, and the rejected ones as indexed
+/// error rows.
+struct AdmittedRows {
+    queries: Vec<Value>,
+    rejected: Vec<(usize, Value)>,
+}
+
+/// A batch's contract-validated rows by input index, and the invalid ones.
+struct PreparedRows {
+    valid: Vec<(usize, Value)>,
+    invalid: Vec<(usize, contracts::ContractValidationError)>,
 }
 
 /// Contract-validated rows by input index, and the invalid ones. Row
 /// isolation: when only some rows of a batch are invalid, the valid rows
 /// still run and the rest become indexed error rows.
-#[allow(clippy::type_complexity)]
-fn prepare_queries(
-    tool: &str,
-    input: &Value,
-) -> Result<
-    (
-        Vec<(usize, Value)>,
-        Vec<(usize, contracts::ContractValidationError)>,
-    ),
-    RuntimeError,
-> {
+fn prepare_queries(tool: &str, input: &Value) -> Result<PreparedRows, RuntimeError> {
     match contracts::prepare_many_and_validate(tool, input.clone()) {
-        Ok(prepared) => Ok((prepared.into_iter().enumerate().collect(), Vec::new())),
+        Ok(prepared) => Ok(PreparedRows {
+            valid: prepared.into_iter().enumerate().collect(),
+            invalid: Vec::new(),
+        }),
         Err(error) => {
             let Some(rows) = contracts::prepare_rows(tool, input) else {
                 return Err(invalid_input_error(tool, error));
@@ -1056,7 +1100,10 @@ fn prepare_queries(
                     Err(error) => invalid.push((index, error)),
                 }
             }
-            Ok((prepared, invalid))
+            Ok(PreparedRows {
+                valid: prepared,
+                invalid,
+            })
         }
     }
 }
@@ -1066,7 +1113,6 @@ type StageResult = Result<Result<ToolOutcome, contracts::ContractValidationError
 /// Output settings one call reads from the resolved config.
 #[derive(Clone, Copy)]
 struct OutputSettings {
-    stats_enabled: bool,
     redact_emails: bool,
     auto_page_chars: usize,
     text_format: render::TextFormat,
@@ -1083,7 +1129,7 @@ struct ChannelRun {
     /// Original input index of each admitted row (`row_indices` module).
     row_indices: Vec<usize>,
     response_query: Value,
-    clasify: Option<crate::tools::clasify::ClasifySettings>,
+    clasify: bool,
     dispatcher: super::domain_dispatch::DomainDispatcher,
     output: OutputSettings,
     replayed: Option<PageReplay>,
@@ -1130,7 +1176,7 @@ impl ChannelRun {
         let scope = continuations::Scope {
             is_available: &available,
         };
-        if self.clasify.is_some() {
+        if self.clasify {
             self.run_clasify(rejected, &scope, context)
         } else {
             self.run_rows(rejected, &scope, context)
@@ -1159,24 +1205,20 @@ impl ChannelRun {
         }
     }
 
-    /// Clasify runs its own batch and pages at the evidence level
-    /// (`next.clasify`), so its response never auto-pages.
+    /// Clasify runs its own rows through the shared evaluator; its answers
+    /// are billed per evaluation, so its response never auto-pages.
     fn run_clasify(
         &self,
         rejected: Vec<(usize, Value)>,
         scope: &continuations::Scope<'_>,
         context: &ExecutionContext,
     ) -> StageResult {
-        let Some(clasify) = &self.clasify else {
-            return Err(ExecutionError::WorkerFailed);
-        };
-        let (home, stats_enabled) = (&self.dispatcher.home, self.output.stats_enabled);
-        let mut receipts = clasify.call(
+        let mut receipts = crate::tools::clasify::call(
+            &self.dispatcher.evaluator,
             &self.queries,
             rejected,
             &self.dispatcher,
             context,
-            |usage| crate::tools::clasify::stats::record_classification(home, stats_enabled, usage),
         )?;
         if let Err(error) = continuations::finalize(
             &mut receipts.structured,
@@ -1190,7 +1232,6 @@ impl ChannelRun {
         stage::finish(
             stage::StageInput {
                 failure: receipts.failure,
-                source_digest: receipts.source_digest,
                 ..stage
             },
             context,
@@ -1206,48 +1247,13 @@ impl ChannelRun {
         context: &ExecutionContext,
     ) -> StageResult {
         let started = std::time::SystemTime::now();
-        let EvaluatedRows {
-            mut rows,
+        let ShapedRows {
+            structured,
+            response_query,
+            rejected_at,
             failure,
             source_digest,
-        } = self.evaluate_rows(context)?;
-        let rejected_at: Vec<usize> = rejected.iter().map(|(index, _)| *index).collect();
-        for (row, index) in rows.iter_mut().zip(&self.row_indices) {
-            row["index"] = json!(index);
-        }
-        rows.extend(rejected.into_iter().map(|(_, row)| row));
-        rows.sort_by_key(|row| row["index"].as_u64());
-        let tool = self.id.as_str();
-        let by_row = crate::tools::clasify::handoff::row_queries(&self.queries, &rejected_at);
-        let mut structured = rows::envelope_in(rows, self.id, &by_row, &self.dispatcher.paths);
-        rows::sanitize_output(
-            &mut structured,
-            self.id,
-            &self.dispatcher.security,
-            context,
-            self.output.redact_emails,
-        )?;
-        let mut response_query = self.response_query.clone();
-        crate::tools::ranking::apply_sanitized_rows(
-            self.id,
-            &mut structured,
-            &self.queries,
-            &self.row_indices,
-            &mut response_query,
-            &self.dispatcher.ranking_runtime(context),
-        )?;
-        crate::tools::clasify::handoff::attach(&mut structured, tool, &by_row);
-        // An invalid continuation is a runtime defect: it fails loudly in
-        // debug builds; otherwise finalize dropped it and marked its row,
-        // which keeps its evidence.
-        if let Err(error) = continuations::finalize(
-            &mut structured,
-            self.id,
-            &continuations::Sources::Rows(&by_row),
-            scope,
-        ) {
-            debug_assert!(false, "invalid {tool} continuation: {:?}", error.issues);
-        }
+        } = self.shape_rows(rejected, scope, context)?;
         // A replay seed only for a response that can page: an explicit
         // window, or one near the automatic page size.
         let pageable = self.options.explicit()
@@ -1325,6 +1331,70 @@ impl ChannelRun {
         Ok(finished)
     }
 
+    /// Executes the admitted rows, merges the `rejected` ones back in input
+    /// order, and builds the sanitized, ranked envelope with its finalized
+    /// continuations.
+    fn shape_rows(
+        &self,
+        rejected: Vec<(usize, Value)>,
+        scope: &continuations::Scope<'_>,
+        context: &ExecutionContext,
+    ) -> Result<ShapedRows, ExecutionError> {
+        let EvaluatedRows {
+            mut rows,
+            failure,
+            source_digest,
+        } = self.evaluate_rows(context)?;
+        let rejected_at: Vec<usize> = rejected.iter().map(|(index, _)| *index).collect();
+        for (row, index) in rows.iter_mut().zip(&self.row_indices) {
+            row["index"] = json!(index);
+        }
+        rows.extend(rejected.into_iter().map(|(_, row)| row));
+        rows.sort_by_key(|row| row["index"].as_u64());
+        let by_row = super::row_indices::by_position(&self.queries, &rejected_at);
+        let mut structured = rows::envelope_in(rows, self.id, &by_row, &self.dispatcher.paths);
+        rows::sanitize_output(
+            &mut structured,
+            self.id,
+            &self.dispatcher.security,
+            context,
+            self.output.redact_emails,
+        )?;
+        let mut response_query = self.response_query.clone();
+        if self.id.output().selects_provider_page() {
+            crate::tools::selection::apply_sanitized_rows(
+                self.id,
+                &mut structured,
+                &self.queries,
+                &self.row_indices,
+                &mut response_query,
+                &self.dispatcher.selection_runtime(context),
+            )?;
+        }
+        // An invalid continuation is a runtime defect: it fails loudly in
+        // debug builds; otherwise finalize dropped it and marked its row,
+        // which keeps its evidence.
+        if let Err(error) = continuations::finalize(
+            &mut structured,
+            self.id,
+            &continuations::Sources::Rows(&by_row),
+            scope,
+        ) {
+            debug_assert!(
+                false,
+                "invalid {} continuation: {:?}",
+                self.id, error.issues
+            );
+        }
+        Ok(ShapedRows {
+            structured,
+            response_query,
+            rejected_at,
+            failure,
+            source_digest,
+        })
+    }
+
     /// Runs every row (sharing the response window) and shapes it: result
     /// row, diagnostics, cache mark, hint policy, verbose prune, minimize.
     fn evaluate_rows(&self, context: &ExecutionContext) -> Result<EvaluatedRows, ExecutionError> {
@@ -1360,7 +1430,7 @@ impl ChannelRun {
                 row["cache"] = json!(1);
             }
             rows::apply_hint_policy(&mut row, id, query);
-            crate::response::pages::note_remaining(&mut row, id);
+            crate::response::pages::note_remaining(&mut row, id, result.remaining);
             extras::prune_row(&mut row, id, query);
             rows::minimize_row(&mut row, id, query);
             rows.push(row);
@@ -1371,6 +1441,16 @@ impl ChannelRun {
             source_digest,
         })
     }
+}
+
+/// One call's public envelope before the response stage, with the input
+/// positions of its rejected rows.
+struct ShapedRows {
+    structured: Value,
+    response_query: Value,
+    rejected_at: Vec<usize>,
+    failure: Option<FailureKind>,
+    source_digest: Option<String>,
 }
 
 /// Shaped result rows of one call, with the batch's failure kind and the
@@ -1547,26 +1627,39 @@ mod security_issue_tests {
     /// Clasify evidence may be redacted in place; a credential-looking value
     /// in a resource read's `query` would run redacted, so it is rejected.
     #[test]
-    fn a_secret_in_a_clasify_resource_query_is_rejected_not_redacted() {
+    fn a_secret_in_a_clasify_source_is_rejected_and_in_state_redacted() {
         let token = format!("ghp_{}", "a".repeat(36));
+        let state = crate::security::ContentSecurity::new()
+            .validate_input_parameters(&json!({"state":{"held":token}}));
+        assert!(
+            security_issues(&state, &[], true).is_empty(),
+            "held state is redacted in place"
+        );
         let checked = crate::security::ContentSecurity::new().validate_input_parameters(
-            &json!({"resources":[
-                {"id":"held","value":token},
-                {"id":"read","tool":"localSearch","query":{"path":".","matchString":token}}
-            ]}),
+            &json!({"source":{"tool":"localFetch","query":{"path":token}}}),
         );
         let issues = security_issues(&checked, &[], true);
         let paths = issues
             .iter()
             .map(|issue| issue.path.join("."))
             .collect::<Vec<_>>();
-        assert_eq!(paths, ["resources[].query.matchString"], "{issues:?}");
+        assert_eq!(paths, ["source.query.path"], "{issues:?}");
         assert!(
             issues
                 .iter()
                 .all(|issue| issue.rule_id == "security.credential"),
             "{issues:?}"
         );
+        let asset = crate::security::ContentSecurity::new().validate_input_parameters(
+            &json!({"assets":{"image":{"type":"image","source":{"url":format!("https://example.com/{token}.png")}}}}),
+        );
+        let issues = security_issues(&asset, &[], true);
+        assert_eq!(
+            issues.len(),
+            1,
+            "an asset locator cannot be silently redacted"
+        );
+        assert_eq!(issues[0].path, ["assets.image.source.url"]);
     }
 }
 
@@ -1585,7 +1678,6 @@ mod construction_tests {
             env: vars,
             cwd: home.to_path_buf(),
             os_home: home.to_path_buf(),
-            trusted_project: false,
             global_env: FileInput::Missing {
                 path: home.join(".env"),
             },
@@ -1642,22 +1734,14 @@ mod construction_tests {
     }
 
     #[test]
-    fn ranking_presentation_requires_provider_and_an_available_goal_tool() {
+    fn selection_presentation_requires_provider_and_an_available_goal_tool() {
         let home = tempfile::tempdir().expect("home");
         for (env, expected) in [
             (vec![], false),
-            (vec![("OCTOCODE_RANKING_ENABLED", "true")], false),
-            (vec![("OCTOCODE_CLASSIFICATION_API", "fixture-key")], false),
+            (vec![("OCTOCODE_CLASSIFICATION_API", "fixture-key")], true),
+            (vec![("OCTOCODE_CLASSIFICATION_API", "fixture-key")], true),
             (
                 vec![
-                    ("OCTOCODE_RANKING_ENABLED", "true"),
-                    ("OCTOCODE_CLASSIFICATION_API", "fixture-key"),
-                ],
-                true,
-            ),
-            (
-                vec![
-                    ("OCTOCODE_RANKING_ENABLED", "true"),
                     ("OCTOCODE_CLASSIFICATION_API", "fixture-key"),
                     ("DISABLE_TOOLS", "clasify"),
                 ],
@@ -1665,7 +1749,6 @@ mod construction_tests {
             ),
             (
                 vec![
-                    ("OCTOCODE_RANKING_ENABLED", "true"),
                     ("OCTOCODE_CLASSIFICATION_API", "fixture-key"),
                     ("TOOLS_TO_RUN", "ghSearchHistory"),
                 ],
@@ -1673,7 +1756,6 @@ mod construction_tests {
             ),
             (
                 vec![
-                    ("OCTOCODE_RANKING_ENABLED", "true"),
                     ("OCTOCODE_CLASSIFICATION_API", "fixture-key"),
                     ("TOOLS_TO_RUN", "ghSearchCode"),
                 ],
@@ -1681,7 +1763,6 @@ mod construction_tests {
             ),
             (
                 vec![
-                    ("OCTOCODE_RANKING_ENABLED", "true"),
                     ("OCTOCODE_CLASSIFICATION_API", "fixture-key"),
                     ("TOOLS_TO_RUN", "clasify"),
                 ],
@@ -1689,7 +1770,6 @@ mod construction_tests {
             ),
             (
                 vec![
-                    ("OCTOCODE_RANKING_ENABLED", "true"),
                     ("OCTOCODE_CLASSIFICATION_API", "   "),
                     ("DISABLE_TOOLS", "clasify"),
                 ],
@@ -1697,7 +1777,7 @@ mod construction_tests {
             ),
         ] {
             let runtime = runtime(home.path(), &env);
-            assert_eq!(runtime.presentation()["ranking"], expected, "{env:?}");
+            assert_eq!(runtime.presentation()["selection"], expected, "{env:?}");
         }
     }
 
@@ -1707,15 +1787,14 @@ mod construction_tests {
         let runtime = runtime(
             home.path(),
             &[
-                ("OCTOCODE_RANKING_ENABLED", "true"),
                 ("OCTOCODE_CLASSIFICATION_API", "fixture-key"),
                 ("TOOLS_TO_RUN", "ghSearchCode"),
             ],
         );
         assert!(!runtime.is_available("clasify"));
-        assert_eq!(runtime.presentation()["ranking"], true);
+        assert_eq!(runtime.presentation()["selection"], true);
         assert!(!runtime.is_available("clasify"));
-        assert!(runtime.dispatcher().ranking_available);
+        assert!(runtime.dispatcher().selection_available);
     }
 
     #[tokio::test]
@@ -1724,13 +1803,12 @@ mod construction_tests {
         let runtime = runtime(
             home.path(),
             &[
-                ("OCTOCODE_RANKING_ENABLED", "true"),
                 ("OCTOCODE_CLASSIFICATION_API", "fixture-key"),
                 ("TOOLS_TO_RUN", "ghSearchHistory"),
             ],
         );
-        assert_eq!(runtime.presentation()["ranking"], false);
-        assert!(!runtime.dispatcher().ranking_available);
+        assert_eq!(runtime.presentation()["selection"], false);
+        assert!(!runtime.dispatcher().selection_available);
     }
 
     #[test]
@@ -1742,15 +1820,77 @@ mod construction_tests {
         assert!(persistent.artifact_cache.is_some());
     }
 
+    /// A file-sourced language-server setting reaches the engine exactly as
+    /// its environment spelling does (`lsp.cacheDir`, `lsp.maxMemoryMb`).
+    #[test]
+    fn file_sourced_lsp_settings_reach_the_engine() {
+        let home = tempfile::tempdir().expect("home");
+        let mut vars = BTreeMap::new();
+        vars.insert(
+            "OCTOCODE_HOME".to_owned(),
+            home.path().to_string_lossy().into_owned(),
+        );
+        let runtime = ToolRuntime::new(crate::config::ConfigInput {
+            env: vars,
+            cwd: home.path().to_path_buf(),
+            os_home: home.path().to_path_buf(),
+            global_env: FileInput::Missing {
+                path: home.path().join(".env"),
+            },
+            project_env: FileInput::Missing {
+                path: home.path().join(".octocode/.env"),
+            },
+            config_file: FileInput::Read {
+                path: home.path().join(".octocoderc"),
+                text: r#"{"lsp":{"maxMemoryMb":512,"cacheDir":"/tmp/lsp-cache"}}"#.into(),
+            },
+            project_config_file: FileInput::Missing {
+                path: home.path().join(".octocode/.octocoderc"),
+            },
+            runtime_surface: RuntimeSurface::Mcp,
+        })
+        .expect("runtime");
+        let env = &runtime.lsp_execution_config().env;
+        for (field, value) in [
+            (config::field::LSP_MAX_MEMORY_MB, "512"),
+            (config::field::LSP_CACHE_DIR, "/tmp/lsp-cache"),
+        ] {
+            let name = field.env_name().expect("bound");
+            assert_eq!(env.get(name).map(String::as_str), Some(value), "{name}");
+        }
+    }
+
+    /// `cache clear` empties both response caches, each in its own
+    /// directory, and leaves the rest of the home alone.
+    #[test]
+    fn clearing_response_caches_empties_both_directories() {
+        let home = tempfile::tempdir().expect("home");
+        let runtime = runtime(home.path(), &[("OCTOCODE_STORAGE_MODE", "persistent")]);
+        let tmp = home.path().join("tmp");
+        for (dir, file) in [("response", "a.json"), ("artifact", "b.json")] {
+            std::fs::create_dir_all(tmp.join(dir)).expect("dir");
+            std::fs::write(tmp.join(dir).join(file), "{}").expect("entry");
+        }
+        std::fs::write(home.path().join("keep.txt"), "x").expect("other");
+        runtime.clear_response_caches();
+        for dir in ["response", "artifact"] {
+            let left = std::fs::read_dir(tmp.join(dir))
+                .map(|entries| entries.count())
+                .unwrap_or(0);
+            assert_eq!(left, 0, "{dir}");
+        }
+        assert!(home.path().join("keep.txt").exists());
+    }
+
     #[test]
     fn replay_bytes_are_the_serialized_length() {
         let value = json!({"a": "é😀\n\"", "b": [1, 2.5, null]});
         assert_eq!(json_bytes(&value), value.to_string().len());
     }
 
-    /// Local tools reach only the GitHub checkouts under the cache home
-    /// (clones, materialized trees), never the rest of it: credentials and
-    /// logs stay outside every root.
+    /// Local tools reach only the GitHub checkouts (clones, materialized
+    /// trees) and URL captures under the cache home, never the rest of it:
+    /// credentials and logs stay outside every root.
     #[test]
     fn cache_home_exposes_only_checkout_trees() {
         let workspace = tempfile::tempdir().expect("workspace");
@@ -1761,7 +1901,8 @@ mod construction_tests {
         let clone = crate::tools::gh_clone_repo::cache::clones_root(&home).join("o/r/main/f.rs");
         let tree =
             crate::tools::gh_structure::materialize::materialize_root(&home).join("o/r/sha/f.rs");
-        for file in [&credentials, &log, &clone, &tree] {
+        let capture = crate::tools::source_capture::url::capture_root(&home).join("sha/source.txt");
+        for file in [&credentials, &log, &clone, &tree, &capture] {
             std::fs::create_dir_all(file.parent().expect("parent")).expect("dir");
             std::fs::write(file, "x").expect("file");
         }
@@ -1774,7 +1915,6 @@ mod construction_tests {
             env: vars,
             cwd: workspace.path().to_path_buf(),
             os_home: os_home.path().to_path_buf(),
-            trusted_project: false,
             global_env: FileInput::Missing {
                 path: os_home.path().join(".env"),
             },
@@ -1797,7 +1937,7 @@ mod construction_tests {
                 denied.display()
             );
         }
-        for allowed in [&clone, &tree] {
+        for allowed in [&clone, &tree, &capture] {
             assert!(
                 runtime.paths.validate(allowed).is_ok(),
                 "{}",

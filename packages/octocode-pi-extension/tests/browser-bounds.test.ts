@@ -10,6 +10,7 @@ vi.mock('chrome-launcher', () => ({ launch }));
 vi.mock('node:dns/promises', () => ({ lookup: async () => [{ address: '93.184.216.34', family: 4 }] })); // public: no network
 
 const { BrowserTool, registerBrowserTool } = await import('../src/browser/tool.js');
+const { ORIGINS_MAX, noteOrigin } = await import('../src/browser/cdp.js');
 
 type Result = { content: Array<{ type: string; text?: string; data?: string }> };
 type Tool = { execute: (id: string, params: Record<string, unknown>, signal: AbortSignal | undefined, onUpdate: undefined, ctx: ExtensionContext) => Promise<Result> };
@@ -137,11 +138,55 @@ describe('browser page events are bounded', () => {
     await text({ action: 'screenshot' });
     const consoleText = await text({ action: 'console' });
     expect(consoleText.startsWith('[log] start-')).toBe(true);
-    expect(consoleText.length).toBeLessThan(2_300);
-    expect(consoleText).toMatch(/… \[\d+ more characters cut\]$/);
+    expect(consoleText.length).toBeLessThan(2_400);
+    expect(consoleText).toMatch(/… \[\d+ more characters cut; the whole line is in \S+\]$/);
     const listing = (await text({ action: 'download' })).split('\n');
     expect(listing.some((line) => line.includes('file-149.bin'))).toBe(true);
     expect(listing.some((line) => line.includes('file-0.bin'))).toBe(false);
     expect(listing.length).toBeLessThanOrEqual(102);
+  });
+});
+
+/** Just the parts of a session `noteOrigin` reads: the origins noted and the origin each driven tab shows. */
+const sessionWith = (tabOrigins: Record<string, string> = {}) => ({ origins: new Set<string>(), tabOrigins: new Map(Object.entries(tabOrigins)) }) as unknown as Parameters<typeof noteOrigin>[0];
+
+describe('the origins a session remembers are bounded', () => {
+  it('forgets the origin noted longest ago at the bound, and keeps one that was loaded again', () => {
+    const session = sessionWith();
+    noteOrigin(session, 'https://first.example/');
+    for (let n = 0; n < ORIGINS_MAX - 1; n++) noteOrigin(session, `https://site-${n}.example/`);
+    expect(session.origins.size).toBe(ORIGINS_MAX);
+    noteOrigin(session, 'https://first.example/again');
+    noteOrigin(session, 'https://new.example/');
+    expect(session.origins.size).toBe(ORIGINS_MAX);
+    expect(session.origins.has('https://first.example')).toBe(true);
+    expect(session.origins.has('https://new.example')).toBe(true);
+    expect(session.origins.has('https://site-0.example')).toBe(false);
+    expect(session.origins.has('https://site-1.example')).toBe(true);
+    noteOrigin(session, 'about:blank');
+    noteOrigin(session, 'not a url');
+    expect(session.origins.size).toBe(ORIGINS_MAX);
+  });
+
+  it('never forgets the origin a driven tab shows, however many others a page loads: the oldest unpinned one goes', () => {
+    const session = sessionWith({ 'tab-1': 'https://evil.example' });
+    noteOrigin(session, 'https://evil.example/');
+    for (let n = 0; n < ORIGINS_MAX * 2; n++) noteOrigin(session, `https://a${n}.example/`);
+    expect(session.origins.has('https://evil.example')).toBe(true);
+    expect(session.origins.size).toBe(ORIGINS_MAX);
+    // The pinned origin took one slot; the oldest unpinned ones were forgotten, the newest kept.
+    expect(session.origins.has('https://a0.example')).toBe(false);
+    expect(session.origins.has(`https://a${ORIGINS_MAX * 2 - 1}.example`)).toBe(true);
+  });
+
+  it('keeps every origin when all are pinned, past the bound, and forgets one again once its tab leaves it', () => {
+    const tabs = Object.fromEntries(Array.from({ length: ORIGINS_MAX + 5 }, (_, n) => [`tab-${n}`, `https://t${n}.example`]));
+    const session = sessionWith(tabs);
+    for (let n = 0; n < ORIGINS_MAX + 5; n++) noteOrigin(session, `https://t${n}.example/`);
+    expect(session.origins.size).toBe(ORIGINS_MAX + 5);
+    session.tabOrigins.delete('tab-0');
+    noteOrigin(session, 'https://next.example/');
+    expect(session.origins.has('https://t0.example')).toBe(false);
+    expect(session.origins.size).toBe(ORIGINS_MAX + 5);
   });
 });

@@ -111,13 +111,23 @@ class DeliveryMixin:
             prior = query(self.db, 'SELECT transport,endpoint FROM attachments WHERE session=?', [session])
             if not prior or prior[0].get('transport') != mode or prior[0].get('endpoint') != input.get('endpoint') or identity.get('vendorSession') != vendor:
                 self.ensure_binding_change_allowed(session)
+            else:
+                self.reconcile_completed_orphan(session)
             if 'vendorSession' in input:
                 execute(self.db, 'UPDATE sessions SET vendorSession=? WHERE id=?', [vendor, session])
             execute(self.db, 'INSERT INTO attachments(session,transport,endpoint,updatedAt) VALUES(?,?,?,?) ON CONFLICT(session) DO UPDATE SET transport=excluded.transport,endpoint=excluded.endpoint,updatedAt=excluded.updatedAt', [session, mode, input.get('endpoint'), now()])
             return self.attachment(session)
     def ensure_binding_change_allowed(self, session):
+        self.reconcile_completed_orphan(session)
         if query(self.db, "SELECT 1 FROM dispatches WHERE recipient=? AND state='staged' LIMIT 1", [session]):
             raise ValueError('Attachment has staged delivery; inspect it and resolve or explicitly retry before rebinding')
+    def reconcile_completed_orphan(self, session):
+        # A live owner may still submit, even after the recipient acknowledges.
+        if delivery_owner_live(self.database, session):
+            return
+        # Preserve unknown submission and its token after completed orphan recovery.
+        # Leaving it staged would fence the replacement owner's first binding again.
+        execute(self.db, "UPDATE dispatches SET state='uncertain',error=COALESCE(error,'Delivery owner exited before submit receipt; recipient acknowledged; binding explicitly recovered') WHERE recipient=? AND state='staged' AND EXISTS(SELECT 1 FROM deliveries d WHERE d.message=dispatches.message AND d.recipient=dispatches.recipient AND d.acknowledgedAt IS NOT NULL)", [session])
     def attachment(self, session):
         self.known(session, False)
         rows = query(self.db, 'SELECT a.*,s.vendorSession FROM attachments a JOIN sessions s ON s.id=a.session WHERE a.session=?', [session])
@@ -195,7 +205,9 @@ class DeliveryMixin:
         catalog.command('retry_delivery', input)
         with transaction(self.db):
             self.known(session, True)
-            changed = execute(self.db, "UPDATE dispatches SET state='ready',error=? WHERE recipient=? AND message=? AND state<>'ready' AND EXISTS(SELECT 1 FROM deliveries d JOIN messages m ON m.id=d.message WHERE d.message=dispatches.message AND d.recipient=dispatches.recipient AND d.acknowledgedAt IS NULL AND m.expiresAt>?)", [input['reason'], session, input['message'], now()])
+            if query(self.db, "SELECT 1 FROM dispatches WHERE recipient=? AND message=? AND state='submitted'", [session, input['message']]):
+                raise ValueError('Message {} was already submitted: the host accepted it, so it is never resent. Check the recipient, wait for complete, or send a new request with a new key'.format(input['message']))
+            changed = execute(self.db, "UPDATE dispatches SET state='ready',error=? WHERE recipient=? AND message=? AND state NOT IN ('ready','submitted') AND EXISTS(SELECT 1 FROM deliveries d JOIN messages m ON m.id=d.message WHERE d.message=dispatches.message AND d.recipient=dispatches.recipient AND d.acknowledgedAt IS NULL AND m.expiresAt>?)", [input['reason'], session, input['message'], now()])
             return {'ready': changed == 1}
     def record_usage(self, session, input):
         catalog.command('record_usage', input)

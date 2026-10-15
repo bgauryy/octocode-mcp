@@ -219,62 +219,42 @@ pub fn second() -> usize {
 ";
 
 #[tokio::test]
-async fn a_match_window_that_cuts_its_declaration_offers_the_rest_as_a_lead() {
+async fn a_match_window_that_cuts_its_declaration_offers_no_reread_and_block_reads_it() {
     let workspace = Workspace::new();
     let path = workspace.write("src/lib.rs", SOURCE);
     let runtime = workspace.runtime(&[]);
-    let outcome = runtime
-        .run(
-            "lead".into(),
-            "localFetch".into(),
-            json!({"queries":[{"path": path, "matchString": "needle here", "contextLines": 2,
-                "extras": ["hints"]}]}),
-        )
-        .await
-        .expect("read");
-    let data = &outcome.structured_content["results"][0]["data"];
-    let lead = &data["hints"]["readBlock"];
-    assert_eq!(lead["tool"], "localFetch", "{data}");
-    // The lead reads only the lines of `first` the window left out.
-    let query = &lead["query"]["queries"][0];
-    assert_eq!(query["ranges"], json!(["1-9", "15-21"]), "{query}");
-    let rest = runtime
-        .run(
-            "lead-run".into(),
-            "localFetch".into(),
-            json!({"queries":[query.clone()]}),
-        )
-        .await
-        .expect("lead runs unchanged");
+    let read = |query: serde_json::Value| {
+        let runtime = &runtime;
+        async move {
+            runtime
+                .run(
+                    "read".into(),
+                    "localFetch".into(),
+                    json!({"queries":[query]}),
+                )
+                .await
+                .expect("read")
+                .structured_content["results"][0]["data"]
+                .clone()
+        }
+    };
+    for query in [
+        json!({"path": path, "matchString": "needle here", "contextLines": 2, "extras": ["hints"]}),
+        json!({"path": path, "matchString": "needle here", "contextLines": 0, "extras": ["hints"]}),
+        json!({"path": path, "matchString": "other needle", "extras": ["hints"]}),
+    ] {
+        let data = read(query.clone()).await;
+        assert!(data["hints"].get("readBlock").is_none(), "{query}: {data}");
+        assert!(data["next"].get("readBlock").is_none(), "{query}: {data}");
+    }
+    // The caller reads the whole declaration with `block`.
+    let data = read(json!({"path": path, "matchString": "needle here", "block": true})).await;
     let mut lines = BTreeMap::new();
     numbered_lines(data["content"].as_str().unwrap(), &mut lines);
-    numbered_lines(
-        rest.structured_content["results"][0]["data"]["content"]
-            .as_str()
-            .unwrap(),
-        &mut lines,
-    );
     assert_eq!(
         lines.keys().copied().collect::<Vec<_>>(),
-        (1..=21).collect::<Vec<_>>()
+        (1..=21).collect::<Vec<_>>(),
+        "{data}"
     );
-
-    // Exact-line reads and windows that already cover the block offer none.
-    for query in [
-        json!({"path": path, "matchString": "needle here", "contextLines": 0}),
-        json!({"path": path, "matchString": "other needle"}),
-        json!({"path": path, "matchString": "needle here", "block": true}),
-    ] {
-        let outcome = runtime
-            .run(
-                "no-lead".into(),
-                "localFetch".into(),
-                json!({"queries":[query.clone()]}),
-            )
-            .await
-            .expect("read");
-        let data = &outcome.structured_content["results"][0]["data"];
-        assert!(data["hints"].get("readBlock").is_none(), "{query}: {data}");
-    }
     runtime.close().await;
 }

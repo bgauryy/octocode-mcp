@@ -133,12 +133,11 @@ export async function boundImagePart<T extends { type: 'image'; data: string; mi
   label: string,
   options: { limits?: ImageLimits; savedAs?: string } = {},
 ): Promise<Array<T | { type: 'text'; text: string }>> {
-  const { maxBytes: _modelBytes, ...resize } = options.limits ?? imageLimits();
   const budget = imageBudget(options.limits);
   if (part.data.length <= budget) return [part];
   const file = options.savedAs ?? saveImageFile(part.data, part.mimeType, label);
   try {
-    const resized = await resizeImage(Buffer.from(part.data, 'base64'), part.mimeType, { ...resize, maxBytes: budget });
+    const resized = await resizeImage(Buffer.from(part.data, 'base64'), part.mimeType, { ...(options.limits ?? imageLimits()), maxBytes: budget });
     if (resized && resized.data.length <= budget) {
       const dimensions = formatDimensionNote(resized);
       return [

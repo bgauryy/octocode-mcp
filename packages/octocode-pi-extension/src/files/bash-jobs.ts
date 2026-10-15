@@ -9,7 +9,8 @@ import { claimSuffix, parseClaim } from '../shared/claims.js';
 import { PRIVATE_FILE_MODE, privateDir, sessionOutputDir, sessionsRoot } from '../shared/home.js';
 import { formatDuration, shortPath } from '../shared/format.js';
 import { adoptTree, groupAlive, groupStartTimes, killTree, prepareTree, processAlive, processMatch, processStartTime, sameProcess, stopTree } from '../shared/process.js';
-import { sanitizeTerminalText } from '../shared/sanitize.js';
+import { RotatingLog } from '../shared/rotating-log.js';
+import { visibleControls, withoutColors } from '../shared/sanitize.js';
 import { cutText, errorMessage, firstLine } from '../shared/util.js';
 
 /**
@@ -56,86 +57,6 @@ export function shellSettings(cwd: string, projectTrusted: boolean): ShellSettin
 /** The command as Pi's bash runs it: the settings prefix on its own line first. */
 export function prefixed(command: string, commandPrefix?: string): string {
   return commandPrefix ? `${commandPrefix}\n${command}` : command;
-}
-
-/**
- * A job's log. Only Pi writes it (the job's output arrives through pipes), so rotation can neither lose nor reorder
- * output: once the log would pass `max` bytes it moves to `<log>.1`, replacing the previous one, and a new log starts
- * with a note naming it. Writes never throw: a log that cannot be written (disk full, quota, a vanished folder) records
- * the first error and its size, then stops recording; `jobReport` says so, so a tail that ends early is not taken for
- * the job's last output.
- */
-class JobLog {
-  private fd: number | undefined;
-  private size = 0;
-  /** How many times the log moved to `<log>.1`: the first keeps the earlier output there, each later one drops what `.1` held. */
-  rotations = 0;
-  /** Bytes of the rotation note at the head of the current log: a log holding only the note has no output to move. */
-  private header = 0;
-  /** The first write error and the size of the log when it happened; the log writes nothing after it. */
-  failure: { bytes: number; error: string } | undefined;
-
-  constructor(
-    readonly file: string,
-    private readonly max: number,
-  ) {
-    this.fd = fs.openSync(file, 'a', PRIVATE_FILE_MODE);
-  }
-
-  write(data: string | Buffer): void {
-    if (this.fd === undefined) return;
-    const chunk = typeof data === 'string' ? Buffer.from(data) : data;
-    try {
-      let rest = chunk;
-      while (rest.length > 0) {
-        const room = this.max - this.size;
-        if (rest.length <= room) {
-          this.append(rest);
-          break;
-        }
-        // Fill the log up to its last whole line that fits; a line longer than an empty log is cut at the cap.
-        const fits = room > 0 ? rest.subarray(0, room).lastIndexOf(0x0a) + 1 : 0;
-        const take = fits > 0 ? fits : this.size > this.header ? 0 : Math.max(room, 1);
-        if (take > 0) this.append(rest.subarray(0, take));
-        rest = rest.subarray(take);
-        if (rest.length > 0) this.rotate();
-      }
-    } catch (error) {
-      this.failure ??= { bytes: this.size, error: errorMessage(error) };
-      this.close();
-    }
-  }
-
-  close(): void {
-    if (this.fd === undefined) return;
-    try {
-      fs.closeSync(this.fd);
-    } catch {
-      // Already closed.
-    }
-    this.fd = undefined;
-  }
-
-  private append(chunk: Buffer): void {
-    for (let offset = 0; offset < chunk.length; ) {
-      const written = fs.writeSync(this.fd!, chunk, offset);
-      offset += written;
-      this.size += written;
-    }
-  }
-
-  private rotate(): void {
-    fs.closeSync(this.fd!);
-    this.fd = undefined;
-    fs.renameSync(this.file, `${this.file}.1`);
-    this.fd = fs.openSync(this.file, 'a', PRIVATE_FILE_MODE);
-    this.size = 0;
-    this.rotations++;
-    const older = this.rotations > 1 ? '; older output was dropped' : '';
-    const note = Buffer.from(`[earlier output is in ${path.basename(this.file)}.1${older}]\n`);
-    this.append(note);
-    this.header = note.length;
-  }
 }
 
 /**
@@ -415,7 +336,7 @@ export class BashJobs {
     const id = `bash-${++this.next}`;
     // Job ids restart with each extension instance (a /reload), so the start time keeps an earlier log.
     const log = path.join(dir, `${id}-${Date.now()}.log`);
-    const output = new JobLog(log, maxLogBytes);
+    const output = new RotatingLog(log, maxLogBytes);
     const shell = getShellConfig(settings.shellPath);
     const viaStdin = shell.commandTransport === 'stdin';
     const script = prefixed(command, settings.commandPrefix);
@@ -594,8 +515,9 @@ export function jobReport(job: BashJob, exit: JobExit): string {
             ? `failed with exit code ${exit.code}`
             : `ended by ${exit.signal ?? 'an error'}`;
   const { text, earlier } = logTail(job.log);
-  // Logs hold raw terminal output: colors and cursor moves would only cost tokens (and could hide text).
-  const tail = sanitizeTerminalText(text).trimEnd();
+  // Logs hold raw terminal output. Colors are dropped (as Pi's bash does; the log keeps them); every other control
+  // character shows as a visible escape, so nothing is hidden from the model.
+  const tail = visibleControls(withoutColors(text)).trimEnd();
   const before = earlier > 0 ? `[+${earlier} earlier line${earlier === 1 ? '' : 's'} in the log]` : '';
   const stopped = exit.logStopped ? `log stopped at ${exit.logStopped.bytes} bytes: ${exit.logStopped.error}; later output was not recorded` : '';
   // Rotation keeps one older file: the first rotation leaves the earlier output in `.1`, a later one replaces it.

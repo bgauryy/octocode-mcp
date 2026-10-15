@@ -5,16 +5,19 @@ mod npmrc;
 mod nuget;
 mod registries;
 mod release_ref;
+#[cfg(test)]
+pub(crate) mod test_http;
 mod types;
 mod util;
 mod versions;
 
 pub use http::{ArtifactCache, ArtifactHttp, SystemArtifactHttp};
+pub(crate) use npm::invalid_registry_url;
 pub(crate) use npmrc::npm_authorization;
 pub use release_ref::{ReleaseTags, TagFuture};
 pub use types::{
     ArtifactError, ArtifactItem, ArtifactProviderPage, ArtifactProviderState, ArtifactSearchQuery,
-    ArtifactType, ResolvedNpmRegistry,
+    ArtifactType, ResolvedNpmRegistry, TerminalLimit,
 };
 pub(crate) use util::{github_repo_dir, github_repository, github_slug};
 
@@ -105,6 +108,18 @@ fn page_state(query: &ArtifactSearchQuery) -> ArtifactProviderState {
             ..Default::default()
         },
     }
+}
+
+/// The limit a discovery `query` ends at when its page maps to a registry
+/// position past the paging range; `None` when the registry can serve it.
+/// A next-page lead names only a page this admits.
+pub(crate) fn page_out_of_range(query: &ArtifactSearchQuery) -> Option<TerminalLimit> {
+    validate_cursor_state(&page_state(query)).err()?;
+    Some(TerminalLimit::result_cap(format!(
+        "page {} at pageSize {} starts past result {MAX_CURSOR_OFFSET}, the deepest a discovery pages.",
+        query.page(),
+        query.page_size()
+    )))
 }
 
 /// Registries cap deep paging well below these bounds; a page beyond them

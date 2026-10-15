@@ -245,7 +245,7 @@ pub(super) fn page_window(page: u32, cut: &PageCut<'_>) -> (std::ops::Range<usiz
 
 /// The cursor a character-cut continuation names: the digest, the row
 /// `page` starts at, and a check over the three, so an edited row or the
-/// cursor of another page binds to no page (see [`split_snapshot`]).
+/// cursor of another page binds to no page (see [`read_row_cursor`]).
 pub(super) fn row_cursor(digest: &str, row: usize, page: usize) -> String {
     format!("{digest}@{row}.{}", cursor_check(digest, row, page))
 }
@@ -265,7 +265,7 @@ fn cursor_check(digest: &str, row: usize, page: usize) -> String {
 /// continuation of `page`, the row that page starts at (see
 /// [`page_window`]). `None` when the snapshot names a row its check does not
 /// bind to this digest and page: an edited cursor, or another page's.
-pub(super) fn split_snapshot(pinned: &str, page: usize) -> Option<(&str, Option<usize>)> {
+pub(super) fn read_row_cursor(pinned: &str, page: usize) -> Option<(&str, Option<usize>)> {
     let Some((digest, cursor)) = pinned.rsplit_once('@') else {
         return Some((pinned, None));
     };

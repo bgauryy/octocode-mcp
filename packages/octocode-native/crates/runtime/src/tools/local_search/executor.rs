@@ -35,10 +35,6 @@ pub(super) const MAX_DEFAULT_MATCH_CONTENT_LENGTH: u32 = 4000;
 /// Rows per file when a result is too large to show whole.
 pub(super) const DEFAULT_MAX_MATCHES_PER_FILE: u32 = 10;
 
-/// Row continuations that copy the query: `next.nextPage` and the clasify
-/// handoff's search resource.
-pub(super) const ROW_QUERY_COPIES: usize = 2;
-
 /// Files per page for snippet views (the first page of a default-layout
 /// result larger than the budget); path-only list views stay at 100.
 pub(super) const DEFAULT_SNIPPET_PAGE_SIZE: u32 = 20;
@@ -56,7 +52,7 @@ pub fn execute_local_search(
     walk_threads: Option<u32>,
     response_window: Option<usize>,
 ) -> Result<LocalSearchResult, ToolError> {
-    execute_local_search_ranked(
+    execute_local_search_selected(
         query,
         paths,
         security,
@@ -67,130 +63,176 @@ pub fn execute_local_search(
     )
 }
 
-pub(crate) fn execute_local_search_ranked(
+pub(crate) fn execute_local_search_selected(
     query: &LocalSearchQuery,
     paths: &PathPolicy,
     security: &ContentSecurity,
     cancel: &impl CancellationCheck,
     walk_threads: Option<u32>,
     response_window: Option<usize>,
-    ranking: Option<&crate::tools::ranking::Runtime>,
+    selection: Option<&crate::tools::selection::Runtime>,
 ) -> Result<LocalSearchResult, ToolError> {
     cancel.check().map_err(ToolError::cancelled)?;
-    let Scanned {
-        validated,
-        mut parsed,
-        digests,
-        page_budget,
-        identity: result_identity,
-        query_key,
-        stored_redaction,
-        reusable,
-        search_options,
-        policy_key,
-        skipped,
-    } = scan_query(query, paths, cancel, walk_threads, response_window)?;
+    let mut scan = scan_query(query, paths, cancel, walk_threads, response_window)?;
     // The bytes a stored scan's secret check must read, or `None` when the
     // scan is fresh; a stored file whose digest is missing reads as changed.
+    let digests = scan.digests.take();
     let expected_digest = |source: &std::path::Path| -> Option<Option<super::manifest::Digest>> {
         digests.as_ref().map(|digests| digests.get(source).copied())
     };
-    let root = &validated.canonical;
+    let root = &scan.validated.canonical;
     let output_root = if root.is_file() {
         root.parent().unwrap_or(root)
     } else {
         root.as_path()
     };
-    let Shaped {
-        layout,
-        redacted,
-        redaction,
-        unverified,
-        outlines,
-        ranking: rank_outcome,
-    } = shape_page(
+    let scope = PageScope {
         query,
         paths,
-        &mut parsed,
         output_root,
-        page_budget,
-        &expected_digest,
-        stored_redaction.as_ref(),
+        expected_digest: &expected_digest,
         security,
         cancel,
-        ranking,
-        &result_identity,
+    };
+    let shaped = shape_page(
+        &scope,
+        &mut scan.parsed,
+        scan.page_budget,
+        scan.stored_redaction.as_ref(),
+        selection,
+        &scan.identity,
     )?;
-    let total_files = parsed.files.len() as u32;
-    let empty = total_files == 0;
-    let reusable = reusable.map(|value| super::manifest::Fresh {
+    let total_files = scan.parsed.files.len() as u32;
+    let reusable = scan.reusable.take().map(|value| super::manifest::Fresh {
         value,
-        query_key,
-        redaction,
-        skipped: skipped.clone(),
+        query_key: std::mem::take(&mut scan.query_key),
+        redaction: shaped.redaction,
+        skipped: scan.skipped.clone(),
     });
-    let (mut next, leftover_matches) = cursor(
+    let selection_token = shaped.selection.as_ref().map(|rank| rank.token.as_str());
+    let (next, leftover_matches) = cursor(
         query,
-        &parsed,
-        &layout,
-        &result_identity,
+        &scan.parsed,
+        &shaped.layout,
+        &scan.identity,
         reusable,
-        policy_key,
-        rank_outcome.as_ref().map(|rank| rank.token.as_str()),
+        std::mem::take(&mut scan.policy_key),
+        selection_token,
     );
-    let octocode_engine::types::TextSearchResult {
-        files: scanned,
-        stats: scanned_stats,
-    } = parsed;
-    let mut stats = search_stats(query.result_view, &scanned_stats, total_files);
-    let (mut files, shown_redacted) = project_files(query, &layout, scanned, &redacted);
-    let symbol = searched_symbol(query, &layout);
-    // Rows render with the root's prefix, which the page cut charged.
-    let keys_budget = page_budget.saturating_sub(layout.prefix_chars.saturating_mul(files.len()));
-    let keys_note = annotate_match_keys(
-        &mut files,
+    let rows = annotate_rows(
+        &scope,
+        &shaped.layout,
+        std::mem::take(&mut scan.parsed.files),
+        &shaped.redacted,
+        shaped.outlines,
+        scan.page_budget,
+    );
+    let page = Page {
+        root,
+        layout: &shaped.layout,
+        scanned: &scan.parsed.stats,
+        skipped: &scan.skipped,
+        search_options: &scan.search_options,
+        total_files,
+        unverified: shaped.unverified,
+        leftover_matches,
+    };
+    let mut result = settle_row(&scope, &page, rows, next)?;
+    if let Some(selected) = &shaped.selection {
+        if selected.receipt.selected_items < selected.receipt.total_items {
+            let mut recovery = normalized_query(query, streamed_layout(query));
+            if let Some(fields) = recovery.as_object_mut() {
+                for key in ["clasifyContext", "selection", "page", "matchPage"] {
+                    fields.remove(key);
+                }
+                fields.insert("snapshot".into(), json!(scan.identity));
+            }
+            let next = result.next.get_or_insert_with(|| json!({}));
+            next["unfiltered"] = crate::tools::result::Continuation::new(
+                crate::tools::id::ToolId::LocalSearch,
+                recovery,
+            )
+            .confidence("exact")
+            .build();
+        }
+        if selected.receipt.total_items > 0 && result.files.is_empty() {
+            result.status = SearchStatus::Success;
+        }
+    }
+    result.source_snapshot = Some(scan.identity);
+    result.selection = shaped.selection.map(|selection| selection.receipt);
+    Ok(result)
+}
+
+/// One cut and verified page, as [`settle_row`] reads it.
+struct Page<'a> {
+    /// The validated search root (a file or a directory).
+    root: &'a std::path::Path,
+    layout: &'a Layout,
+    scanned: &'a octocode_engine::types::TextSearchStats,
+    skipped: &'a crate::policy::discovery::WalkSkips,
+    /// The query's own walk, for probes over the same scope.
+    search_options: &'a TextSearchOptions,
+    /// Files the scan collected, on every page.
+    total_files: u32,
+    /// Some values were redacted because their source could not be re-read.
+    unverified: bool,
+    /// Rows remain in the shown files.
+    leftover_matches: bool,
+}
+
+/// The row of one page: its status, coverage warnings, leads and limits.
+fn settle_row(
+    scope: &PageScope<'_, impl CancellationCheck>,
+    page: &Page<'_>,
+    rows: Annotated<'_>,
+    mut next: Option<Value>,
+) -> Result<LocalSearchResult, ToolError> {
+    let PageScope {
+        query,
+        paths,
         output_root,
-        keys_budget,
-        &|source| expected_digest(source),
-        security,
-    );
-    let (definition, enclosing_note) = annotate_enclosing(
-        &mut files,
-        symbol,
-        symbol.filter(|_| super::enclosing::declaration_search(&query.match_string)),
+        cancel,
+        ..
+    } = *scope;
+    let (layout, total_files) = (page.layout, page.total_files);
+    let empty = total_files == 0
+        && !(query.clasify_context.is_some() && page.scanned.files_matched.unwrap_or(0) > 0);
+    let mut stats = search_stats(query.result_view, page.scanned, total_files);
+    let mut coverage = Coverage::of(
+        query,
+        &stats,
+        page.scanned,
+        page.root,
         output_root,
-        &|source| expected_digest(source),
-        outlines,
-        security,
+        page.skipped,
     );
-    let mut coverage = Coverage::of(query, &stats, &scanned_stats, root, output_root, &skipped);
-    let mut warnings = coverage.warnings(&layout, shown_redacted, unverified, empty);
-    warnings.extend(keys_note);
-    warnings.extend(enclosing_note);
+    let mut warnings = coverage.warnings(layout, rows.shown_redacted, page.unverified, empty);
+    warnings.extend(rows.notes);
     let capped = stats.capped.unwrap_or(false);
     let (status, settled_terminal) = settle(
         query,
-        &layout,
+        layout,
         empty,
         capped,
-        leftover_matches,
+        page.leftover_matches,
         coverage.gap(),
         next.is_none(),
     );
     let mut hints = coverage.empty_hints(empty);
     // Leads go in after the status is settled: they are optional follow-ups
     // and never stand in for a page.
-    let skipped_match = Found {
+    let (skipped_match, skipped_paths) = Found {
         query,
         paths,
-        root,
+        root: page.root,
         output_root,
-        files: &files,
-        layout: &layout,
-        definition: definition.as_ref(),
-        symbol,
-        scanned: &scanned_stats,
-        skipped: &skipped,
+        files: &rows.files,
+        layout,
+        definition: rows.definition.as_ref(),
+        symbol: rows.symbol,
+        scanned: page.scanned,
+        skipped: page.skipped,
         walk_complete: !coverage.walk_cut,
         empty,
     }
@@ -199,22 +241,118 @@ pub(crate) fn execute_local_search_ranked(
         &mut next,
         &mut hints,
         &mut warnings,
-        &search_options,
+        page.search_options,
         cancel,
-    );
+    )?;
     if skipped_match {
         coverage.skipped_paths_hold_matches(&mut hints);
     }
-    // A retry over the skipped paths reaches the match, so no limit ends
-    // this answer.
-    let terminal_limit = settled_terminal && !skipped_match;
-    // Files past the collection cap are on no page: every page says so and
-    // leads to the scope's tree to split the search.
-    let uncollected = uncollected_warning(&stats, total_files);
     // A zero-match search cut by a binary file proved nothing about the cut
     // files: the tree of the scope is the way to narrow it.
-    let unproven_empty = empty && coverage.binary_cut;
-    if (coverage.scope_miss || uncollected.is_some() || unproven_empty)
+    let lists_scope = coverage.scope_miss || (empty && coverage.binary_cut);
+    route_beyond_pages(
+        query,
+        layout,
+        &stats,
+        total_files,
+        lists_scope,
+        &mut next,
+        &mut warnings,
+    );
+    Ok(LocalSearchResult {
+        status,
+        stats,
+        files: rows.files,
+        pagination: file_paging(query, layout, total_files),
+        hints,
+        next,
+        is_partial: coverage.gap() || capped,
+        // A retry over the skipped paths reaches the match, so no limit ends
+        // this answer.
+        terminal_limit: settled_terminal && !skipped_match,
+        warnings,
+        skipped_paths,
+        source_snapshot: None,
+        source_root: output_root.to_path_buf(),
+        selection: None,
+    })
+}
+
+/// The page's rows, projected and annotated: each hit's match keys and
+/// enclosing declaration, and the searched symbol's declaration among them.
+struct Annotated<'q> {
+    files: Vec<SearchFile>,
+    /// Shown values redaction changed.
+    shown_redacted: usize,
+    symbol: Option<&'q str>,
+    definition: Option<Definition>,
+    /// Warnings the annotations add.
+    notes: Vec<String>,
+}
+
+/// Project the page's shown rows and annotate them (see [`Annotated`]).
+fn annotate_rows<'q>(
+    scope: &PageScope<'q, impl CancellationCheck>,
+    layout: &Layout,
+    scanned: Vec<octocode_engine::types::TextSearchFile>,
+    redacted: &Redacted,
+    outlines: Outlines,
+    page_budget: usize,
+) -> Annotated<'q> {
+    let PageScope {
+        query,
+        output_root,
+        expected_digest,
+        security,
+        ..
+    } = *scope;
+    let (mut files, shown_redacted) = project_files(query, layout, scanned, redacted);
+    let symbol = searched_symbol(query, layout);
+    // Rows render with the root's prefix, which the page cut charged.
+    let keys_budget = page_budget.saturating_sub(layout.prefix_chars.saturating_mul(files.len()));
+    let mut notes = Vec::new();
+    notes.extend(annotate_match_keys(
+        &mut files,
+        output_root,
+        keys_budget,
+        expected_digest,
+        security,
+    ));
+    let (definition, enclosing_note) = annotate_enclosing(
+        &mut files,
+        symbol,
+        symbol.filter(|_| super::enclosing::declaration_search(&query.match_string)),
+        output_root,
+        expected_digest,
+        outlines,
+        security,
+    );
+    notes.extend(enclosing_note);
+    Annotated {
+        files,
+        shown_redacted,
+        symbol,
+        definition,
+        notes,
+    }
+}
+
+/// What lies past every page the row can continue to: files past the
+/// collection cap are on no page (every page says so), and with them, a
+/// scope miss or an unproven empty result (`lists_scope`), the row leads
+/// to the scope's tree to split the search; file pages past the last page a
+/// continuation names are counted.
+fn route_beyond_pages(
+    query: &LocalSearchQuery,
+    layout: &Layout,
+    stats: &SearchStats,
+    total_files: u32,
+    lists_scope: bool,
+    next: &mut Option<Value>,
+    warnings: &mut Vec<String>,
+) {
+    let uncollected = uncollected_warning(stats, total_files);
+    if (lists_scope || uncollected.is_some())
         && let Some(map) = next.get_or_insert_with(|| json!({})).as_object_mut()
     {
         map.insert("viewTree".into(), scope_listing(query));
@@ -225,20 +363,6 @@ pub(crate) fn execute_local_search_ranked(
         layout.total_pages,
         next.as_ref(),
     ));
-    Ok(LocalSearchResult {
-        status,
-        stats,
-        files,
-        pagination: file_paging(query, &layout, total_files),
-        hints,
-        next,
-        is_partial: coverage.gap() || capped,
-        terminal_limit,
-        warnings,
-        source_snapshot: Some(result_identity),
-        source_root: output_root.to_path_buf(),
-        ranking: rank_outcome.map(|rank| rank.receipt),
-    })
 }
 
 /// File pages past the last page a continuation can name: how many, and
@@ -310,7 +434,7 @@ pub(super) struct Shaped {
     pub(super) unverified: bool,
     /// Outlines parsed from the verified reads (see [`verify_shown`]).
     pub(super) outlines: Outlines,
-    pub(super) ranking: Option<crate::tools::ranking::Outcome>,
+    pub(super) selection: Option<crate::tools::selection::Outcome>,
 }
 
 /// Redact the scan, order it, cut the page, and verify what it shows.
@@ -320,128 +444,128 @@ pub(super) struct Shaped {
 /// the page neither reads nor shows is checked on the page that shows it,
 /// so a path swapped for a symlink after the walk never has its bytes read
 /// or its rows shown.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn shape_page(
-    query: &LocalSearchQuery,
-    paths: &PathPolicy,
+    scope: &PageScope<'_, impl CancellationCheck>,
     parsed: &mut octocode_engine::types::TextSearchResult,
-    output_root: &std::path::Path,
     page_budget: usize,
-    expected_digest: &ExpectedDigest<'_>,
     stored_redaction: Option<&Redaction>,
-    security: &ContentSecurity,
-    cancel: &impl CancellationCheck,
-    ranking: Option<&crate::tools::ranking::Runtime>,
+    selection: Option<&crate::tools::selection::Runtime>,
     identity: &str,
 ) -> Result<Shaped, ToolError> {
-    let (mut redacted, redaction) = redact_scan(
+    let PageScope {
         query,
-        parsed,
-        output_root,
-        expected_digest,
         paths,
-        security,
-        cancel,
-        stored_redaction,
-    )?;
+        output_root,
+        ..
+    } = *scope;
+    let (mut redacted, redaction) = redact_scan(scope, parsed, stored_redaction)?;
     order_files(query, &mut parsed.files);
-    let ranking = if query.goals.is_empty() {
-        if query.ranking.is_some() {
-            return Err(stale_snapshot(query));
-        }
-        None
-    } else {
-        if query.snapshot.is_some() && query.ranking.is_none() {
-            return Err(stale_snapshot(query));
-        }
-        let unsupported =
-            if query.sort != LocalSearchQuerySort::Relevance || query.reverse == Some(true) {
-                Some("explicitSort")
-            } else if matches!(
-                query.result_view,
-                LocalSearchQueryResultView::Files
-                    | LocalSearchQueryResultView::FilesWithout
-                    | LocalSearchQueryResultView::CountLines
-                    | LocalSearchQueryResultView::CountMatches
-            ) {
-                Some("unsupportedView")
-            } else {
-                None
-            };
-        let needs_states = crate::tools::ranking::needs_candidate_states(
-            ranking,
-            query.ranking.as_ref().map(|token| token.as_str()),
-            unsupported,
-            parsed.files.len(),
-        );
-        let candidates = parsed
-            .files
-            .iter()
-            .map(|file| {
-                if needs_states {
-                    let state = json!({"path": file.path, "matches": file.matches.iter().map(|hit| json!({"line":hit.line,"value":hit.value})).collect::<Vec<_>>()});
-                    let evidence_chars = state.to_string().chars().count();
-                    crate::tools::ranking::Candidate { state: Some(state), evidence_chars }
-                } else {
-                    crate::tools::ranking::Candidate { state: None, evidence_chars: 0 }
-                }
-            })
-            .collect::<Vec<_>>();
-        let query_json = normalized_query(query, streamed_layout(query));
-        let outcome = crate::tools::ranking::order(
-            ranking,
-            &query_json,
-            identity,
-            query.ranking.as_ref().map(|s| s.as_str()),
-            &candidates,
-            unsupported,
-        )
-        .map_err(|failure| match failure {
-            crate::tools::ranking::Failure::Stale => stale_snapshot(query),
-            crate::tools::ranking::Failure::Cancelled => {
-                ToolError::cancelled("Ranking was cancelled")
-            }
-        })?;
-        let mut original = std::mem::take(&mut parsed.files)
-            .into_iter()
-            .map(Some)
-            .collect::<Vec<_>>();
-        parsed.files = outcome
-            .order
-            .iter()
-            .map(|&index| {
-                original
-                    .get_mut(index)
-                    .and_then(Option::take)
-                    .ok_or_else(|| stale_snapshot(query))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        Some(outcome)
-    };
+    let selection = select_files(query, parsed, selection, identity)?;
     let layout = Layout::cut(query, paths, output_root, parsed, page_budget);
     for (index, _) in &layout.shown {
         validate_matched(paths, &output_root.join(&parsed.files[*index].path))?;
     }
     let mut outlines = Outlines::new();
-    let unverified = verify_shown(
-        query,
-        parsed,
-        &layout,
-        output_root,
-        expected_digest,
-        &mut redacted,
-        &mut outlines,
-        security,
-        cancel,
-    )?;
+    let unverified = verify_shown(scope, parsed, &layout, &mut redacted, &mut outlines)?;
     Ok(Shaped {
         layout,
         redacted,
         redaction,
         unverified,
         outlines,
-        ranking,
+        selection,
     })
+}
+
+/// Select matched-file evidence before paging; replay requires its bound plan.
+fn select_files(
+    query: &LocalSearchQuery,
+    parsed: &mut octocode_engine::types::TextSearchResult,
+    selection: Option<&crate::tools::selection::Runtime>,
+    identity: &str,
+) -> Result<Option<crate::tools::selection::Outcome>, ToolError> {
+    if query.clasify_context.is_none() {
+        return match query.selection {
+            Some(_) => Err(stale_snapshot(query)),
+            None => Ok(None),
+        };
+    }
+    if query.snapshot.is_some() && query.selection.is_none() {
+        return Err(stale_snapshot(query));
+    }
+    if matches!(
+        query.result_view,
+        LocalSearchQueryResultView::Files
+            | LocalSearchQueryResultView::FilesWithout
+            | LocalSearchQueryResultView::CountLines
+            | LocalSearchQueryResultView::CountMatches
+    ) {
+        let mut error = ToolError::new(
+            "invalidInput",
+            "clasifyContext requires a content view; use paginated or matchOnly.",
+        );
+        let mut recovery = normalized_query(query, streamed_layout(query));
+        if let Some(fields) = recovery.as_object_mut() {
+            for key in ["clasifyContext", "selection", "page", "matchPage"] {
+                fields.remove(key);
+            }
+        }
+        error.next = Some(Box::new(
+            json!({"unfiltered": crate::tools::result::Continuation::new(
+            crate::tools::id::ToolId::LocalSearch, recovery).build()}),
+        ));
+        return Err(error);
+    }
+    let unsupported = None;
+    let needs_states = crate::tools::selection::needs_candidate_states(
+        selection,
+        query.selection.as_ref().map(|token| token.as_str()),
+        unsupported,
+        parsed.files.len(),
+    );
+    let candidates = parsed
+        .files
+        .iter()
+        .map(|file| {
+            if needs_states {
+                let state = json!({"path": file.path, "matches": file.matches.iter().map(|hit| json!({"line":hit.line,"value":hit.value})).collect::<Vec<_>>()});
+                crate::tools::selection::Candidate::new(Some(state))
+            } else {
+                crate::tools::selection::Candidate::new(None)
+            }
+        })
+        .collect::<Vec<_>>();
+    let query_json = normalized_query(query, streamed_layout(query));
+    let outcome = crate::tools::selection::select(
+        selection,
+        &query_json,
+        identity,
+        query.selection.as_ref().map(|s| s.as_str()),
+        &candidates,
+        unsupported,
+        crate::contracts::tool_types::SelectionUnit::Files,
+    )
+    .map_err(|failure| match failure {
+        crate::tools::selection::Failure::Stale => stale_snapshot(query),
+        crate::tools::selection::Failure::Cancelled => {
+            ToolError::cancelled("Selection was cancelled")
+        }
+    })?;
+    let mut original = std::mem::take(&mut parsed.files)
+        .into_iter()
+        .map(Some)
+        .collect::<Vec<_>>();
+    parsed.files = outcome
+        .selected
+        .iter()
+        .map(|&index| {
+            original
+                .get_mut(index)
+                .and_then(Option::take)
+                .ok_or_else(|| stale_snapshot(query))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Some(outcome))
 }
 
 /// The row's status, and whether it ends at a limit nothing continues.
@@ -530,10 +654,7 @@ pub(super) fn scan_query(
     // to the workspace and must cut the same pages.
     let mut sized = normalized_query(query, streamed_layout(query));
     sized["path"] = json!(validated.canonical.to_string_lossy());
-    let page_budget = crate::tools::stream_page::page_chars(
-        response_window,
-        crate::tools::stream_page::reserve_chars(&sized, ROW_QUERY_COPIES),
-    );
+    let page_budget = crate::tools::page_windows::page_budget(response_window, &sized);
     // A stored scan was stored under the snapshot derived from its query
     // key and its unchanged collected result: a query with the same key
     // derives that snapshot again, so only another key needs the digest.
@@ -1013,6 +1134,8 @@ pub(crate) fn classify_search(
     } else {
         SearchStatus::Success
     };
-    let terminal = (partial || has_more) && next_missing;
+    // Later file pages may already be offered by the branch's first page.
+    // Their absence here is not a cap; cursor ceilings are settled separately.
+    let terminal = (capped || leftover_matches || coverage_gap) && next_missing;
     (status, terminal)
 }

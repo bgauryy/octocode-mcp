@@ -8,6 +8,9 @@ import { num, type Row } from '../agentdb/rows.js';
 import { ancestorKeys, leaseKey, overlappingRequests } from './lease-key.js';
 import { text, toLease, toMember, toMessage, toTraffic, type DeadLetter, type Lease, type LeaseRequest, type Member, type Message, type SendOptions, type Traffic } from './model.js';
 
+/** Makes the `proof` of message `id` for `recipient` (see `userProof`); undefined for a recipient the caller cannot sign for. */
+type SignProof = (id: number, recipient: string) => string | undefined;
+
 /**
  * The team tables of the agent database: who works in this repository, what they say to each other, and which files
  * they have reserved. One SQLite file shared by every Pi process on the machine (WAL, so readers never block),
@@ -42,6 +45,27 @@ export const LEASE_MS = 90_000;
 const MESSAGE_RETENTION_MS = 24 * 3_600_000;
 export const INBOX_BATCH_SIZE = 32;
 const PRUNE_INTERVAL_MS = 60_000;
+
+/** How long a start-time comparison (a `ps` call) is reused: `list` and `send` run often, and a pid reused inside this window is retired by `sweep` anyway. */
+const VERDICT_TTL_MS = 30_000;
+const verdicts = new Map<string, { at: number; running: boolean }>();
+
+/**
+ * Whether the process a row names still runs, by the rule `sweep` and `join` use (`sameProcess`: alive and not a later
+ * process that got the pid), so `list` and `send` never treat a reused pid as a live agent. A dead pid is judged without
+ * `ps`; a live one's start-time comparison is cached.
+ */
+function running(pid: number, started: string | undefined, now: number): boolean {
+  if (!processAlive(pid)) return false;
+  if (!started) return true;
+  const key = `${pid} ${started}`;
+  const cached = verdicts.get(key);
+  if (cached && now - cached.at < VERDICT_TTL_MS) return cached.running;
+  const same = sameProcess(pid, started);
+  verdicts.set(key, { at: now, running: same });
+  if (verdicts.size > 256) verdicts.delete(verdicts.keys().next().value!);
+  return same;
+}
 
 /** A member has not heartbeat for `STALE_MS`: its process may only be stalled, so it is hidden but keeps its mail and row. */
 const stale = (seenAt: number, now: number): boolean => now - seenAt > STALE_MS;
@@ -275,7 +299,7 @@ export class TeamStore {
          FROM agents a WHERE a.workspace = ? ORDER BY a.joined_at, a.id`,
       )
       .all(this.workspace) as Row[];
-    const live = rows.map(toMember).filter((member) => !stale(member.updatedAt, now) && processAlive(member.pid));
+    const live = rows.map(toMember).filter((member) => !stale(member.updatedAt, now) && running(member.pid, member.started, now));
     const held = this.leases(now);
     return live.map((member) => {
       const locks = held.filter((lease) => lease.owner === member.id).map((lease) => (lease.kind === 'tree' ? `${lease.path}/` : lease.path));
@@ -285,8 +309,9 @@ export class TeamStore {
 
   /** Ids of this workspace's agents that can still read mail: every one whose process runs, stale (stalled) ones included. */
   private reachable(): Set<string> {
-    const rows = this.db.prepare('SELECT id, pid FROM agents WHERE workspace = ?').all(this.workspace) as Row[];
-    return new Set(rows.filter((row) => processAlive(num(row['pid']))).map((row) => String(row['id'])));
+    const rows = this.db.prepare('SELECT id, pid, started FROM agents WHERE workspace = ?').all(this.workspace) as Row[];
+    const now = Date.now();
+    return new Set(rows.filter((row) => running(num(row['pid']), text(row['started']), now)).map((row) => String(row['id'])));
   }
 
   // ── messages ──────────────────────────────────────────────────────────────
@@ -296,9 +321,13 @@ export class TeamStore {
    * completes the delivery it answers. Recipients that left or whose process ended are refused and returned in
    * `departed`; with none left, nothing is stored and `id` is undefined.
    * `wake` (a question, or a sender outside the team) lets it start an idle recipient's turn; otherwise only the
-   * answer to a question that recipient asked, and still awaited, wakes it.
+   * answer to a question that recipient asked, and still awaited, wakes it. `sign` makes the recipient's `proof` once the
+   * message has its id (see `userProof`); it returns undefined for a recipient the caller cannot sign for.
    */
-  send(from: string, to: string[], body: string, options: SendOptions & { replyRequired: boolean; wake?: boolean }, now = Date.now()): { id: number | undefined; departed: string[] } {
+  send(
+    from: string, to: string[], body: string, options: SendOptions & { replyRequired: boolean; wake?: boolean; sign?: SignProof },
+    now = Date.now(),
+  ): { id: number | undefined; departed: string[] } {
     return this.transaction(() => {
       // Read in the same IMMEDIATE transaction as the insert: no recipient can leave in between.
       const live = this.reachable();
@@ -316,8 +345,11 @@ export class TeamStore {
         .prepare('INSERT INTO messages (workspace, sender, body, reply_required, reply_to, created_at) VALUES (?, ?, ?, ?, ?, ?)')
         .run(this.workspace, from, body, options.replyRequired ? 1 : 0, options.replyTo ?? null, now);
       const id = Number(lastInsertRowid);
-      const insert = this.db.prepare('INSERT INTO deliveries (message, recipient, wake) VALUES (?, ?, ?)');
-      for (const recipient of recipients) insert.run(id, recipient, options.interrupt ? 2 : options.wake || options.replyRequired || recipient === asker ? 1 : 0);
+      const insert = this.db.prepare('INSERT INTO deliveries (message, recipient, wake, proof) VALUES (?, ?, ?, ?)');
+      for (const recipient of recipients) {
+        const wake = options.interrupt ? 2 : options.wake || options.replyRequired || recipient === asker ? 1 : 0;
+        insert.run(id, recipient, wake, options.sign?.(id, recipient) ?? null);
+      }
       if (options.replyTo !== undefined) this.db.prepare('UPDATE deliveries SET completed_at = ? WHERE message = ? AND recipient = ? AND completed_at IS NULL').run(now, options.replyTo, from);
       return { id, departed };
     });
@@ -361,11 +393,17 @@ export class TeamStore {
     return num((this.db.prepare('SELECT COUNT(*) AS n FROM deliveries WHERE recipient = ? AND message > ? AND delivered_at IS NULL AND dead_at IS NULL').get(id, after) as Row)['n']);
   }
 
+  /** The ids of the messages up to `through` that still wait undelivered for `id`: the inbox handed those over, or its mark ran ahead of this database. */
+  waitingThrough(id: string, through: number): number[] {
+    const rows = this.db.prepare('SELECT message FROM deliveries WHERE recipient = ? AND message <= ? AND delivered_at IS NULL AND dead_at IS NULL').all(id, through) as Row[];
+    return rows.map((row) => num(row['message']));
+  }
+
   /** One bounded batch of messages newer than `after` waiting for `id`, oldest first. `ack` marks the ones the model saw. */
   pending(id: string, after = 0): Message[] {
     const rows = this.db
       .prepare(
-        `SELECT m.id, m.sender, m.body, m.created_at, m.reply_required, m.reply_to, d.wake, s.role AS sender_role, s.task AS sender_goal
+        `SELECT m.id, m.sender, m.body, m.created_at, m.reply_required, m.reply_to, d.wake, d.proof, s.role AS sender_role, s.task AS sender_goal
          FROM deliveries d JOIN messages m ON m.id = d.message LEFT JOIN agents s ON s.id = m.sender
          WHERE d.recipient = ? AND d.message > ? AND d.delivered_at IS NULL AND d.dead_at IS NULL ORDER BY m.id LIMIT ?`,
       )

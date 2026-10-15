@@ -23,6 +23,8 @@ export function say(ctx: Pick<ExtensionContext, 'hasUI' | 'ui'>, text: string, l
 export interface Subcommand {
   /** One line for `/octocode help` and completions, including usage, e.g. `api [on [http]|off] — the external API`. */
   description: string;
+  /** Long operations acquire the dialog lock only around their actual UI interactions. */
+  dialog?: 'handler' | 'interaction';
   handler(args: string, ctx: ExtensionCommandContext): Promise<void>;
   /** Completions for the text after `<name> `. */
   complete?(prefix: string): AutocompleteItem[] | null;
@@ -73,7 +75,7 @@ export class Subcommands {
         const command = this.entries.get(name);
         if (!command) return say(ctx, `Unknown subcommand "${name}".\n${this.help()}`, 'warning');
         // Subcommands open dialogs (menus, confirms) while a run's tools may open theirs: one shows at a time.
-        await withDialog(() => command.handler(rest, ctx));
+        await (command.dialog === 'interaction' ? command.handler(rest, ctx) : withDialog(() => command.handler(rest, ctx)));
       },
     });
   }
@@ -90,7 +92,7 @@ export class Subcommands {
     pi.registerCommand(name, {
       description: command.description,
       getArgumentCompletions: (prefix) => command.complete?.(prefix.trimStart()) ?? null,
-      handler: (args, ctx) => withDialog(() => command.handler(args.trim(), ctx)),
+      handler: (args, ctx) => command.dialog === 'interaction' ? command.handler(args.trim(), ctx) : withDialog(() => command.handler(args.trim(), ctx)),
     });
   }
 

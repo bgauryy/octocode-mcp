@@ -149,6 +149,10 @@ describe('what the team shows about an agent', () => {
   it('strips terminal escapes from another process\'s goal and role', () => {
     const evil = [member('x-y', 'main'), member('evil-agent', 'rev\u001b[2Jiewer', { parentId: 'x-y', goal: 'goal\u001b]0;pwned\u0007 here', status: 'working' })];
     expect(widgetLines(evil, 'x-y', NOW, theme, 150).join('\n')).not.toMatch(/\u001b|pwned/);
-    expect(describeMembers(evil, 'x-y', NOW)).not.toMatch(/\u001b|pwned/);
+    // The model reads this text: the controls stay as visible escapes, never raw.
+    const described = describeMembers(evil, 'x-y', NOW);
+    expect(described).not.toMatch(/\u001b|\u0007/);
+    expect(described).toContain('rev\\u{1b}[2Jiewer');
+    expect(described).toContain('goal: goal\\u{1b}]0;pwned\\u{7} here');
   });
 });

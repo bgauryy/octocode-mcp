@@ -6,9 +6,11 @@ pub(crate) use output::Output;
 
 use crate::providers::artifact::{
     ArtifactCache, ArtifactError, ArtifactProviderContext, ArtifactProviderPage, ReleaseTags,
-    SystemArtifactHttp, execute_artifact, github_repository, github_slug,
+    SystemArtifactHttp, execute_artifact, github_repository, github_slug, invalid_registry_url,
+    page_out_of_range,
 };
 use crate::tools::id::ToolId;
+use crate::tools::paging;
 use crate::tools::result::Continuation;
 use octocode_github::RequestBudget;
 use serde_json::{Value, json};
@@ -80,12 +82,7 @@ fn npm_registry(
         Some(raw) => (raw, None),
         None => ("https://registry.npmjs.org/", Some("npmjs")),
     };
-    let base = url::Url::parse(raw).map_err(|_| {
-        ArtifactError::new(
-            "invalidInput",
-            "Invalid npm registry URL: use HTTP(S) without credentials, query or fragment.",
-        )
-    })?;
+    let base = url::Url::parse(raw).map_err(|_| invalid_registry_url())?;
     let cache_identity = cache_identity
         .or_else(|| base.host_str())
         .unwrap_or("npm")
@@ -136,12 +133,8 @@ fn respond(
         name_github_repository(row);
     }
     let mut data = json!({ "artifacts": rows });
-    let mut terminal_limit = terminal_limit;
     match query.package_name() {
-        None => {
-            let page_cap = discovery_page(query, &mut data, next_state.is_some(), total);
-            terminal_limit = terminal_limit.or(page_cap);
-        }
+        None => discovery_page(query, &mut data, next_state.is_some(), total),
         // An exact lookup whose source lives on GitHub continues to its
         // tree. Registry metadata can point at a fork or stale repo, so
         // these are leads, not proof.
@@ -155,14 +148,9 @@ fn respond(
             }
         }
     }
-    let missing = missing_ref_warnings(&artifacts);
-    if !missing.is_empty() {
-        data["warnings"] = json!(missing);
-    }
+    paging::push_warnings(&mut data, missing_ref_warnings(&artifacts));
     if let Some(limit) = terminal_limit {
-        data["isPartial"] = json!(true);
-        data["terminalLimit"] = json!(true);
-        data["partialReasons"] = json!([limit]);
+        paging::terminal_limit(&mut data, limit.reason, &[limit.warning]);
     }
     if artifacts.is_empty() {
         data["status"] = json!("empty");
@@ -176,7 +164,7 @@ fn respond(
 /// Typed row shaping before encoding: a row whose registry names no
 /// repository but whose homepage is a GitHub repository points at it; a
 /// homepage restating the repository is cleared (kept with `details`); the
-/// release source is labeled; a complete dependency list drops its count.
+/// release source is labeled.
 fn shape_rows(query: &ArtifactSearchQuery, artifacts: &mut [ArtifactItem]) {
     let exact = query.package_name().is_some();
     let details = query.wants(crate::contracts::tool_types::ExtraKind::Details);
@@ -194,15 +182,10 @@ fn shape_rows(query: &ArtifactSearchQuery, artifacts: &mut [ArtifactItem]) {
 /// A discovery page's facts, from the shared page facts: the page, its size,
 /// whether more exist and the registry's total when it counts one (a
 /// registry total is no page count: deep pages can be unreachable), and the
-/// next page, which carries the whole query. When the contract rejects the
-/// next page (past its page maximum), the rest is unreachable by paging: the
-/// returned reason states that terminal limit.
-fn discovery_page(
-    query: &ArtifactSearchQuery,
-    data: &mut Value,
-    more: bool,
-    total: Option<u64>,
-) -> Option<String> {
+/// next page, which carries the whole query. A next page past the contract's
+/// `page` maximum, or one the registry cannot serve, is no lead: the row
+/// ends at that terminal limit instead.
+fn discovery_page(query: &ArtifactSearchQuery, data: &mut Value, more: bool, total: Option<u64>) {
     let current = query.page();
     let facts = crate::response::pages::PageFacts::open(
         usize::try_from(current).unwrap_or(usize::MAX),
@@ -215,20 +198,21 @@ fn discovery_page(
     };
     data["pagination"] = facts.to_value();
     if !more {
-        return None;
+        return;
     }
-    let mut next = query.clone();
-    next.set_page(current + 1);
-    let next_query = serde_json::to_value(next).ok()?;
-    if crate::contracts::validate_query(ToolId::ArtifactSearch.as_str(), next_query.clone())
-        .is_err()
-    {
-        return Some(format!(
-            "Page {current} is the last page artifactSearch can request; narrow the keywords to reach the remaining results."
-        ));
+    let next = usize::try_from(current.saturating_add(1)).unwrap_or(usize::MAX);
+    let Some(next) = paging::next_cursor(data, ToolId::ArtifactSearch, None, "page", next) else {
+        return;
+    };
+    let mut next_query = query.clone();
+    next_query.set_page(u64::try_from(next).unwrap_or(u64::MAX));
+    if let Some(limit) = page_out_of_range(&next_query) {
+        paging::terminal_limit(data, limit.reason, &[limit.warning]);
+        return;
     }
-    data["next"]["nextPage"] = Continuation::new(ToolId::ArtifactSearch, next_query).build();
-    None
+    if let Ok(next_query) = serde_json::to_value(next_query) {
+        data["next"]["nextPage"] = Continuation::new(ToolId::ArtifactSearch, next_query).build();
+    }
 }
 
 /// One warning per row whose registry release commit GitHub does not have.
@@ -610,6 +594,7 @@ mod page_tests {
 #[cfg(test)]
 mod npm_auth_tests {
     use super::*;
+    use crate::providers::artifact::test_http::KnownTags;
 
     /// Loopback npm registry recording each request's Authorization header.
     async fn registry() -> (u16, wiremock::MockServer) {
@@ -750,23 +735,6 @@ mod npm_auth_tests {
         }
     }
 
-    /// GitHub answers every ref check with `exists`.
-    struct Refs {
-        exists: Option<bool>,
-    }
-
-    impl crate::providers::artifact::ReleaseTags for Refs {
-        fn exists<'a>(
-            &'a self,
-            _owner: &'a str,
-            _repo: &'a str,
-            _reference: &'a str,
-        ) -> crate::providers::artifact::TagFuture<'a> {
-            let exists = self.exists;
-            Box::pin(async move { exists })
-        }
-    }
-
     /// An npm `gitHead` GitHub does not have (an unpushed or rewritten
     /// commit) is no release source: the row offers the default branch
     /// (`viewRepo`, `verification:"defaultBranch"`) and its warning names the
@@ -790,9 +758,7 @@ mod npm_auth_tests {
             "registryUrl": format!("http://127.0.0.1:{}", server.address().port()),
         }));
         let deadline = Instant::now() + std::time::Duration::from_secs(300);
-        let missing = Refs {
-            exists: Some(false),
-        };
+        let missing = KnownTags::always(Some(false));
         let checked = ArtifactCall {
             tags: Some(&missing),
             ..call(deadline, true)
@@ -803,12 +769,16 @@ mod npm_auth_tests {
         let row = &data["artifacts"][0];
         assert!(row.get("sourceRef").is_none(), "{data}");
         assert_eq!(row["verification"], "defaultBranch", "{data}");
-        let warnings = data["warnings"].to_string();
-        assert!(warnings.contains(sha), "{data}");
-        assert!(warnings.contains("microsoft/TypeScript"), "{data}");
+        assert_eq!(
+            data["warnings"],
+            json!([format!(
+                "typescript 7.0.2: release commit {sha} is not in microsoft/TypeScript (unpushed or rewritten)."
+            )]),
+            "{data}"
+        );
 
         for exists in [Some(true), None] {
-            let refs = Refs { exists };
+            let refs = KnownTags::always(exists);
             let checked = ArtifactCall {
                 tags: Some(&refs),
                 ..call(deadline, true)
@@ -897,8 +867,13 @@ mod npm_auth_tests {
         assert_eq!(data["terminalLimit"], true, "{data}");
         assert_eq!(data["pagination"]["totalItems"], 100_000, "{data}");
         assert!(data["next"].get("nextPage").is_none(), "{data}");
-        let reason = data["partialReasons"][0].as_str().unwrap_or_default();
-        assert!(reason.contains("at most 60 of 100000"), "{data}");
+        assert_eq!(
+            data["partialReasons"],
+            json!(["providerResultCap"]),
+            "{data}"
+        );
+        let warning = data["warnings"][0].as_str().unwrap_or_default();
+        assert!(warning.contains("at most 60 of 100000"), "{data}");
         // The boundary page: its probe is still honored, the page is not.
         let server = npm_window(100_000, 59).await;
         let data = execute(npm_page(&server, 7, 10), call(deadline, true))
@@ -926,12 +901,47 @@ mod npm_auth_tests {
             .expect("discovery succeeds");
         assert!(data["next"].get("nextPage").is_none(), "{data}");
         assert_eq!(data["terminalLimit"], true, "{data}");
-        assert!(
-            data["partialReasons"][0]
-                .as_str()
-                .is_some_and(|reason| reason.contains("Page 1000 is the last page")),
+        assert_eq!(
+            data["partialReasons"],
+            json!([paging::CURSOR_MAXIMUM]),
             "{data}"
         );
+        let warning = data["warnings"][0].as_str().unwrap_or_default();
+        assert!(warning.contains("page:1000"), "{data}");
+    }
+
+    /// A next page the registry cannot serve (its first result past the
+    /// deepest offset a discovery pages) is no lead either: the row ends at
+    /// the registry's result cap, naming that page.
+    #[tokio::test]
+    async fn a_next_page_past_the_registry_reach_states_a_terminal_limit() {
+        let server = npm_window(100_000, 100_000).await;
+        let deadline = Instant::now() + std::time::Duration::from_secs(300);
+        let inside = execute(npm_page(&server, 100, 100), call(deadline, true))
+            .await
+            .expect("discovery succeeds");
+        assert_eq!(
+            inside["next"]["nextPage"]["query"]["queries"][0]["page"], 101,
+            "{inside}"
+        );
+        let data = execute(npm_page(&server, 101, 100), call(deadline, true))
+            .await
+            .expect("discovery succeeds");
+        assert_eq!(data["artifacts"][0]["name"], "p10000", "{data}");
+        assert!(data["next"].get("nextPage").is_none(), "{data}");
+        assert_eq!(data["terminalLimit"], true, "{data}");
+        assert_eq!(
+            data["partialReasons"],
+            json!(["providerResultCap"]),
+            "{data}"
+        );
+        let warning = data["warnings"][0].as_str().unwrap_or_default();
+        assert!(warning.contains("page 102 at pageSize 100"), "{data}");
+        crate::contracts::validate_output(
+            ToolId::ArtifactSearch.as_str(),
+            &json!({"results": [{"index": 0, "data": data}]}),
+        )
+        .expect("contract-valid terminal page");
     }
 
     /// A discovery page states the shared page facts: the page, its size,
@@ -971,23 +981,19 @@ mod npm_auth_tests {
     #[tokio::test]
     async fn user_npmrc_token_reaches_only_its_scoped_registry() {
         let (port, seen) = registry().await;
-        let dir = tempfile::tempdir().unwrap();
-        let scoped = dir.path().join("scoped.npmrc");
-        std::fs::write(
-            &scoped,
+        let dir = crate::tools::test_support::Fixture::new();
+        let scoped = dir.write(
+            "scoped.npmrc",
             format!("//127.0.0.1:{port}/:_authToken=synthetic\n"),
-        )
-        .unwrap();
+        );
         lookup(port, &scoped).await;
-        let other = dir.path().join("other.npmrc");
-        std::fs::write(
-            &other,
+        let other = dir.write(
+            "other.npmrc",
             format!(
                 "//127.0.0.1:{}/:_authToken=elsewhere\n",
                 port.wrapping_add(1)
             ),
-        )
-        .unwrap();
+        );
         lookup(port, &other).await;
         assert_eq!(
             authorizations(&seen).await,

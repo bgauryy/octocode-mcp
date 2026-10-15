@@ -1,9 +1,10 @@
 //! Text views of history items: the body view and its char windows, and the
 //! `matchString` needle every content filter matches.
+use super::rest::BodyWindows;
 use super::util::string;
 use super::{HistoryItemRequest, ItemOperation};
 use crate::tools::id::ToolId;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 /// One char window of `value` and its page row.
 pub(super) fn paginate_text(
@@ -79,36 +80,27 @@ pub(super) fn delivered_earlier(offset: Option<usize>, body_page: &Value) -> boo
         && body_page["hasMore"] != true
 }
 
-/// Window one item body through the body view, remembering the first window
-/// that has more text (the surface's body continuation) and whether the view
-/// dropped text (`bodyView` + `next.readRawBody`).
+/// Window one item body through the body view, noting its window on the
+/// page's `windows` (one shared `offset` continues every cut body) and
+/// whether the view dropped text (`bodyView` + `next.readRawBody`).
 pub(super) fn window_body(
     body: &str,
     offset: Option<usize>,
     query: &HistoryItemRequest,
-    first_more: &mut Option<Value>,
+    windows: &mut BodyWindows,
     dropped: &mut bool,
 ) -> (String, Value) {
     let view = history_body_view(body, query);
     *dropped |= view_dropped_text(body, &view);
     let (text, page) = paginate_text(&view, offset, query.char_length());
-    if page["hasMore"] == true {
-        // One shared `offset` continues every cut body of the page: the
-        // first cut body's page carries the chars left in all of them.
-        let left = page["total"]
-            .as_u64()
-            .zip(page["nextOffset"].as_u64())
-            .map_or(0, |(total, next)| total.saturating_sub(next));
-        let first = first_more.get_or_insert_with(|| page.clone());
-        let so_far = first["remainingChars"].as_u64().unwrap_or(0);
-        first["remainingChars"] = json!(so_far + left);
-    }
+    windows.add(&page);
     (text, page)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn text_windows_are_unicode_safe() {
@@ -141,9 +133,9 @@ mod tests {
             "operation":"pullRequest","mainGoal":"g","reasoning":"r","owner":"o","repo":"r","number":1
         }))
         .expect("pr query");
-        let mut first_more = None;
+        let mut windows = BodyWindows::default();
         let mut dropped = false;
-        let (text, _) = window_body(raw, None, &pr, &mut first_more, &mut dropped);
+        let (text, _) = window_body(raw, None, &pr, &mut windows, &mut dropped);
         assert!(dropped, "{text}");
         assert!(!text.contains("checklist"), "{text}");
         let raw_pr = HistoryItemRequest::from_row(json!({
@@ -152,32 +144,40 @@ mod tests {
         }))
         .expect("raw pr query");
         let mut dropped = false;
-        let (text, _) = window_body(raw, None, &raw_pr, &mut first_more, &mut dropped);
+        let (text, _) = window_body(raw, None, &raw_pr, &mut windows, &mut dropped);
         assert!(!dropped);
         assert_eq!(text, raw);
     }
 
     /// (microsoft/TypeScript#57465: seven 26–37k-char comments on one
     /// page): one shared `offset` continues every cut body of a page, so
-    /// the page's body entry counts the chars left in all of them, not only
-    /// in the first cut one.
+    /// the page's body entry is the first cut window and its rest counts
+    /// the chars left in all of them, not only in the first cut one.
     #[test]
     fn cut_bodies_of_one_page_count_every_remaining_char() {
         let pr = HistoryItemRequest::from_row(json!({
             "operation":"pullRequest","owner":"o","repo":"r","number":1,"minify":"none","length":10
         }))
         .expect("pr query");
-        let mut first_more = None;
+        let mut windows = BodyWindows::default();
         let mut dropped = false;
         for body in ["a".repeat(25), "b".repeat(5), "c".repeat(40)] {
-            window_body(&body, None, &pr, &mut first_more, &mut dropped);
+            window_body(&body, None, &pr, &mut windows, &mut dropped);
         }
-        let page = first_more.expect("a cut body");
+        let mut rest = super::super::rest::Rest::default();
+        let mut pagination = serde_json::Map::new();
+        rest.bodies("commentBody", windows, &mut pagination);
+        let page = &pagination["commentBody"];
         assert_eq!(page["nextOffset"], 10, "{page}");
-        assert_eq!(page["remainingChars"], 15 + 30, "{page}");
+        assert_eq!(page["total"], 25, "{page}");
+        assert_eq!(
+            rest.note("continueCommentBody", "commentBody", page)
+                .map(|note| note.left),
+            Some(format!("{} more comment body chars", 15 + 30))
+        );
     }
 
-    /// A view that only reflows whitespace keeps the body verbatim, so body    /// A view that only reflows whitespace keeps the body verbatim, so body
+    /// A view that only reflows whitespace keeps the body verbatim, so body
     /// offsets are GitHub's own character offsets.
     #[test]
     fn whitespace_only_views_keep_the_source_text() {
@@ -187,9 +187,9 @@ mod tests {
         .expect("pr query");
         let raw = "Intro  \r\n\n\n\nDetails\n\n\n- item\n";
         assert_eq!(history_body_view(raw, &pr), raw);
-        let mut first_more = None;
+        let mut windows = BodyWindows::default();
         let mut dropped = false;
-        let (text, page) = window_body(raw, None, &pr, &mut first_more, &mut dropped);
+        let (text, page) = window_body(raw, None, &pr, &mut windows, &mut dropped);
         assert_eq!(text, raw);
         assert_eq!(page["total"], raw.chars().count());
         assert!(!dropped);

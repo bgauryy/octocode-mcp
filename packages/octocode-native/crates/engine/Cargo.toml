@@ -44,7 +44,6 @@ grep-matcher = "0.1.9"
 grep-pcre2 = "0.1.10"
 grep-regex = "0.1.14"
 grep-searcher = "0.1.17"
-globset = { workspace = true }
 hex = { workspace = true }
 ignore = { workspace = true }
 moka = { version = "0.12", default-features = false, features = ["sync"] }

@@ -87,7 +87,10 @@ test('C5 description lint: a <workflow> note naming a neighbor names one of its 
     ['terminal note naming no tool passes', 'Read lines. <workflow>cite lines by number</workflow>', []],
     ['missing note fails', 'Find text with localFetch matchString.', ['no <workflow> note']],
     ['neighbor without a field fails', 'Find text. <workflow>then localFetch</workflow>', ['names localFetch but none of its fields']],
-  ]) await t.test(name, () => assert.deepEqual(descriptionLint('localSearch', description, ['localSearch', 'localFetch'], fields), reasons));
+    // Core's workflow grammar names what the source returns to carry over.
+    ['neighbor with a carried output field passes', 'Find text. <workflow>hit commitSha → localFetch</workflow>', []],
+    ['an output field outside the note does not count', 'Find text with commitSha. <workflow>then localFetch</workflow>', ['names localFetch but none of its fields']],
+  ]) await t.test(name, () => assert.deepEqual(descriptionLint('localSearch', description, ['localSearch', 'localFetch'], fields, new Set(['commitSha'])), reasons));
 });
 
 test('C5 surface budget: total above SURFACE_BUDGET or a tool above its quota fails', async t => {

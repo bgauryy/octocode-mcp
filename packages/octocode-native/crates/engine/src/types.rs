@@ -268,6 +268,10 @@ pub struct FileSystemQueryOptions {
     /// Store at most this many matching entries while still counting matches
     /// when stop_at_limit is false.
     pub limit: Option<u32>,
+    /// Wall time the walk may spend before it stops at the next entry and
+    /// reports where in [`FileSystemQueryResult::time_cut`]. `None` walks
+    /// to the end.
+    pub time_budget: Option<std::time::Duration>,
 }
 
 #[derive(Debug, Clone)]
@@ -304,6 +308,11 @@ pub struct FileSystemQueryResult {
     /// Root-relative paths of the directories `exclude_dir` pruned, in walk
     /// order: what a listing or an empty result did not cover.
     pub pruned_dirs: Vec<String>,
+    /// Root-relative path of the first entry the walk did not inspect
+    /// because its `time_budget` ran out. The walk is name-ordered and
+    /// depth-first, so every entry before it in that order was inspected and
+    /// every entry from it on was not. `None`: the walk was not cut by time.
+    pub time_cut: Option<String>,
 }
 
 // ── graph scan types ─────────────────────────────────────────────────────────

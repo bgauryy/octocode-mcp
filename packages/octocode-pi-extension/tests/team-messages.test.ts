@@ -3,6 +3,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import { EXTERNAL_SENDER, messageText, USER_SENDER, wakes } from '../src/team/routing.js';
 import type { Member, Message } from '../src/team/model.js';
+import { userProof, userProofValid } from '../src/team/proof.js';
 import { TeamStore } from '../src/team/store.js';
 import { tmp } from './helpers.js';
 
@@ -20,6 +21,18 @@ describe('team message delivery', () => {
       internals.reachable = () => (inTransaction.push(internals.db.isTransaction), reachable());
       expect(store.send('main-aaaaaa', ['a-0001'], 'hi', { replyRequired: false }).id).toBeGreaterThan(0);
       expect(inTransaction).toEqual([true]);
+    } finally { store.close(); }
+  });
+
+  it('stores the signature `sign` makes for each recipient with its delivery, and none where it cannot sign', () => {
+    const store = TeamStore.open(tmp(), path.join(tmp(), 'team.sqlite'));
+    try {
+      for (const id of ['a-0001', 'b-0002']) store.save({ id, role: 'a', pid: process.pid, status: 'idle', joinedAt: 1_000, updatedAt: Date.now(), toolCalls: 0, input: 0, cacheRead: 0, output: 0, cost: 0, unpriced: false });
+      const { id } = store.send('user', ['a-0001', 'b-0002'], 'hi', { replyRequired: false, sign: (message, recipient) => (recipient === 'a-0001' ? userProof('secret-a', { id: message, to: recipient, text: 'hi' }) : undefined) });
+      const [mine] = store.pending('a-0001');
+      expect(mine).toMatchObject({ id, to: 'a-0001' });
+      expect(userProofValid('secret-a', mine!)).toBe(true);
+      expect(store.pending('b-0002')[0]!.proof).toBeUndefined();
     } finally { store.close(); }
   });
 

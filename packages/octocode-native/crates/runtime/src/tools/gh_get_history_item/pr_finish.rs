@@ -12,9 +12,9 @@ use super::window::clamp_warning;
 use crate::contracts::tool_types::ExtraKind;
 use crate::tools::gh_shared::ensure_next;
 use crate::tools::id::ToolId;
-use crate::tools::paging::push_warnings;
-use crate::tools::result::remove_nulls;
-use serde_json::{Value, json};
+use crate::tools::paging::{mark_partial, push_warnings};
+use crate::tools::result::{ToolData, remove_nulls};
+use serde_json::{Map, Value, json};
 
 /// A scope or literal that matched nothing: an empty row with a recovery
 /// tip, or, when other sections hold evidence, a warning.
@@ -56,20 +56,21 @@ pub(super) fn finish_pr(
     plan: &PrPlan,
     shaped: ShapedPr,
     graphql_fallback: Option<String>,
-) -> Value {
+) -> ToolData {
     let ShapedPr {
         row,
         files,
         minified,
         menu,
         comment_reads,
+        rest,
     } = shaped;
     let patch_mode = wants.patch_mode.as_str();
     // A `matchString` miss in the files is an empty row only when no other
     // section of the read (body, comments, reviews) holds evidence;
     // otherwise the row says so in a warning.
     let other_evidence = wants.body
-        || ["comments", "reviews"].iter().any(|key| {
+        || ["comments", "reviewComments", "reviews"].iter().any(|key| {
             row.get(*key)
                 .and_then(Value::as_array)
                 .is_some_and(|items| !items.is_empty())
@@ -93,52 +94,25 @@ pub(super) fn finish_pr(
             [super::filter::match_dropped_warning(dropped, listed)],
         );
     }
-    promote_pr_continuations(&mut out, query);
+    let remaining = promote_pr_continuations(&mut out, query, &rest);
+    if out.pointer("/providerLimit/reason").and_then(Value::as_str)
+        == Some("providerCommitListLimit")
+    {
+        push_warnings(&mut out, [
+            "GitHub ended this PR's commit list before commitsCount; inspect a local checkout with sufficient history.".to_owned()
+        ]);
+    }
     attach_full_patch_continuation(&mut out, query);
     attach_raw_body_read(&mut out, query, &minified);
     if let Some((path, sha)) = &files.first_unsearched {
         attach_unsearched_read(&mut out, query, path, sha.as_deref());
     }
     attach_context_reads(&mut out, query, &files.clipped);
-    // The row's next steps ride the response's leads (one capped list),
-    // never a second list nested in the row; the contract's lead priority
-    // keeps every lead under the lead cap.
-    let merge_read = files.merge_read.filter(|_| patch_mode != "none");
     // A patch read's next step is the code at either side of its numbered
     // diff: those reads rank ahead of the section menu.
-    let leads = files
-        .side_reads
-        .into_iter()
-        .map(|(name, read)| (name.to_owned(), read))
-        .chain(
-            menu.and_then(|menu| match menu {
-                Value::Object(menu) => Some(menu),
-                _ => None,
-            })
-            .into_iter()
-            .flatten(),
-        )
-        .chain(merge_read.map(|read| ("readAtMerge".to_owned(), read)));
-    for (name, lead) in leads {
-        ensure_next(&mut out);
-        if let Some(next) = out["next"].as_object_mut() {
-            next.entry(name).or_insert(lead);
-        }
-    }
-    // The comments' own leads go before the menu's: they are the reads the
-    // comment page asked for, ten anchor ranges each.
-    if !comment_reads.is_empty() {
-        ensure_next(&mut out);
-        if let Some(next) = out["next"].as_object_mut() {
-            for (index, read) in comment_reads.into_iter().enumerate().rev() {
-                let name = match index {
-                    0 => "readCommentCode".to_owned(),
-                    n => format!("readCommentCode{}", n + 1),
-                };
-                next.shift_insert(0, name, read);
-            }
-        }
-    }
+    let merge_read = files.merge_read.filter(|_| patch_mode != "none");
+    attach_leads(&mut out, files.side_reads, menu, merge_read);
+    lead_with_comment_reads(&mut out, comment_reads);
     if !query.wants(ExtraKind::Details) {
         trim_content_pagination(&mut out);
     }
@@ -147,7 +121,56 @@ pub(super) fn finish_pr(
     {
         out["graphqlFallback"] = json!(reason);
     }
-    out
+    ToolData {
+        remaining,
+        ..ToolData::from(out)
+    }
+}
+
+/// The row's next steps ride the response's leads (one capped list), never
+/// a second list nested in the row; the contract's lead priority keeps every
+/// lead under the lead cap. The side reads of the numbered diff come first,
+/// then the section menu, then the merge-commit read; a page continuation
+/// already under a name keeps it.
+fn attach_leads(
+    out: &mut Value,
+    side_reads: Vec<(&'static str, Value)>,
+    menu: Option<Value>,
+    merge_read: Option<Value>,
+) {
+    let menu = match menu {
+        Some(Value::Object(menu)) => menu,
+        _ => Map::new(),
+    };
+    let leads = side_reads
+        .into_iter()
+        .map(|(name, read)| (name.to_owned(), read))
+        .chain(menu)
+        .chain(merge_read.map(|read| ("readAtMerge".to_owned(), read)));
+    for (name, lead) in leads {
+        ensure_next(out);
+        if let Some(next) = out["next"].as_object_mut() {
+            next.entry(name).or_insert(lead);
+        }
+    }
+}
+
+/// The review comments' own leads go before the menu's: they are the reads
+/// the comment page asked for, ten anchor ranges each.
+fn lead_with_comment_reads(out: &mut Value, comment_reads: Vec<Value>) {
+    if comment_reads.is_empty() {
+        return;
+    }
+    ensure_next(out);
+    if let Some(next) = out["next"].as_object_mut() {
+        for (index, read) in comment_reads.into_iter().enumerate().rev() {
+            let name = match index {
+                0 => "readCommentCode".to_owned(),
+                n => format!("readCommentCode{}", n + 1),
+            };
+            next.shift_insert(0, name, read);
+        }
+    }
 }
 
 /// A `matchString` search that skipped patchless files covers only part of
@@ -161,11 +184,7 @@ pub(super) fn attach_unsearched_read(
     path: &str,
     sha: Option<&str>,
 ) {
-    out["isPartial"] = json!(true);
-    match out.get_mut("partialReasons").and_then(Value::as_array_mut) {
-        Some(reasons) => reasons.push(json!("patchUnavailable")),
-        None => out["partialReasons"] = json!(["patchUnavailable"]),
-    }
+    mark_partial(out, "patchUnavailable", &[]);
     let (Some(needle), Some(sha)) = (query.match_string(), sha) else {
         return;
     };
@@ -198,14 +217,10 @@ fn attach_context_reads(
     if clipped.is_empty() {
         return;
     }
-    out["isPartial"] = json!(true);
-    match out.get_mut("partialReasons").and_then(Value::as_array_mut) {
-        Some(reasons) => reasons.push(json!("contextClipped")),
-        None => out["partialReasons"] = json!(["contextClipped"]),
-    }
-    push_warnings(
+    mark_partial(
         out,
-        [format!(
+        "contextClipped",
+        &[format!(
             "contextLines {} reaches past the diff hunks of {} file(s) (contextClipped).",
             match_context(query),
             clipped.len()
@@ -265,7 +280,7 @@ fn trim_content_pagination(out: &mut Value) {
         pages.remove("patches");
     }
     if let Some(patches) = pages.get_mut("patches").and_then(Value::as_object_mut) {
-        patches.retain(|key, _| matches!(key.as_str(), "hasMore" | "unfinishedFiles"));
+        patches.retain(|key, _| key == "hasMore");
     }
     if pages.is_empty() {
         row.remove("contentPagination");

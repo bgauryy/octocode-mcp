@@ -156,6 +156,9 @@ export function contentText(content: unknown, options: { separator?: string; ima
     .join(options.separator ?? '\n');
 }
 
+/** `text` as a regular-expression source that matches it literally. */
+export const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }

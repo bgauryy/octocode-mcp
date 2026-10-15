@@ -6,14 +6,24 @@ import { formatChanges, formatSnapshot, snapshot } from '../src/browser/snapshot
 const sessionOf = (data: unknown) => ({ page: { untilDialog: <T>(work: Promise<T>) => work, evaluate: async () => data } }) as unknown as BrowserSession;
 
 describe('snapshot spill', () => {
-  it('saves the full snapshot sanitized, so the model never reads page escapes or bidi text through the file', async () => {
+  it('saves the full snapshot with controls and hidden characters as visible escapes: nothing raw to steer a terminal, nothing dropped', async () => {
     const items = Array.from({ length: 1_000 }, (_, index) => `[${index + 1}] button "Action \u202e${index + 1}"`);
     const out = await snapshot(sessionOf({ title: 'Big \u001b]0;pwned\u0007', url: 'https://example.com', text: `page\u200d text ${'word '.repeat(10_000)}\u{e0041}`, items }));
     const file = /Full snapshot \(every element and all text\): (\S+);/.exec(out)![1]!.replace(/^~/, process.env['HOME']!);
     const saved = fs.readFileSync(file, 'utf8');
-    expect(saved).toContain('[1000] button "Action 1000"');
-    expect(saved).toMatch(/page text /);
+    expect(saved).toContain('[1000] button "Action \\u{202e}1000"');
+    expect(saved).toContain('# Big \\u{1b}]0;pwned\\u{7}');
+    expect(saved).toContain('page\\u{200d} text ');
+    expect(saved).toContain('\\u{e0041}');
     expect(saved).not.toMatch(/[\u001b\u0007\u202e\u200d\u{e0041}]/u);
+  });
+
+  it('keeps CRLF page text as it is and escapes a lone carriage return', async () => {
+    const items = Array.from({ length: 1_000 }, (_, index) => `[${index + 1}] button "Action ${index + 1}"`);
+    const out = await snapshot(sessionOf({ title: 'T', url: 'https://example.com', text: `crlf\r\nline\rlone ${'word '.repeat(10)}`, items }));
+    const file = /Full snapshot \(every element and all text\): (\S+);/.exec(out)![1]!.replace(/^~/, process.env['HOME']!);
+    const saved = fs.readFileSync(file, 'utf8');
+    expect(saved).toContain('crlf\r\nline\\rlone ');
   });
 });
 

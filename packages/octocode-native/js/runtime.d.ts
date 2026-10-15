@@ -12,15 +12,23 @@ export interface NativeRuntimeOptions {
   cwd?: string;
   /** Explicit host environment; standalone surfaces fall back to process env. */
   env?: Record<string, string>;
-  trustedProject?: boolean;
   /** Per-request execution timeout in seconds. */
   timeoutSecs?: number;
 }
 
-/** A tool in the runtime catalog: name and availability only. */
+/** Why a catalog tool is unavailable (absent when it is available). */
+export type NativeUnavailableReason =
+  | 'disabled'
+  | 'toolsList'
+  | 'cliOnly'
+  | 'missingConfiguration';
+
+/** A tool in the runtime catalog: name, one-line description and availability. */
 export interface NativeCatalogTool {
   name: string;
+  shortDescription: string;
   available: boolean;
+  unavailableReason?: NativeUnavailableReason;
 }
 
 /** The runtime catalog: runtime truth, no agent-facing presentation. */
@@ -33,8 +41,8 @@ export interface NativeCatalog {
   /** Resolved switches for host schema presentation. */
   presentation?: {
     deferred?: string[];
-    /** Ranking is configured for at least one visible goals-capable read tool. */
-    ranking?: boolean;
+    /** Selection is configured for at least one visible clasifyContext-capable read tool. */
+    selection?: boolean;
   };
 }
 

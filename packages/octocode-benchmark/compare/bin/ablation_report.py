@@ -277,7 +277,7 @@ def markdown(report: dict) -> str:
                   "(unrounded values in JSON). "
                   f"Head-to-head (>1 point): {c['head_to_head_within_one_tie']}.", "",
                   "Adoption and traced provider attempts (off/on): "
-                  f"goals {s['adoption']['off']['goal_queries']}/{s['adoption']['on']['goal_queries']}, "
+                  f"classifier queries {s['adoption']['off']['goal_queries']}/{s['adoption']['on']['goal_queries']}, "
                   f"ranking replay {s['adoption']['off']['ranking_replay_queries']}/{s['adoption']['on']['ranking_replay_queries']}, "
                   f"clasify calls {s['adoption']['off']['clasify_calls']}/{s['adoption']['on']['clasify_calls']}; "
                   f"provider attempts {s['provider']['off']['attempts_known']}/{s['provider']['on']['attempts_known']} "

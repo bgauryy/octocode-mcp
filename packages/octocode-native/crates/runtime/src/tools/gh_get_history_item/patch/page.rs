@@ -6,6 +6,7 @@ use super::super::text::needle;
 use super::super::util::str_at;
 use super::super::window::{literal_patch_window, patch_window};
 use super::hunks::history_patch_view;
+use crate::response::pages::SpanFacts;
 use crate::tools::result::remove_nulls;
 use serde_json::{Value, json};
 
@@ -17,6 +18,8 @@ pub(in crate::tools::gh_get_history_item) struct PatchPage {
     /// The page-stream `offset` that continues this window; `None` once
     /// every patch on the page is delivered.
     pub(in crate::tools::gh_get_history_item) cursor: Option<usize>,
+    /// This window over the page's whole patch stream, in chars.
+    pub(in crate::tools::gh_get_history_item) stream: SpanFacts,
     /// Files this window starts whose `matchString` context the hunks cut
     /// short (no head text), with the new-side windows they wanted.
     pub(in crate::tools::gh_get_history_item) clipped: Vec<(String, Vec<String>)>,
@@ -61,47 +64,16 @@ pub(in crate::tools::gh_get_history_item) fn shape_patch_page_reserving(
             rows,
             unfinished: Vec::new(),
             cursor: None,
+            stream: SpanFacts::window("chars", 0, 0, 0),
             clipped: Vec::new(),
         };
     }
-    let shaped = files
-        .iter()
-        .map(|file| {
-            file.get("patch").and_then(Value::as_str).map(|patch| {
-                history_patch_view(patch, str_at(file, "/filename").unwrap_or(""), query)
-            })
-        })
-        .collect::<Vec<_>>();
-    // A `matchString` view narrowed to matching hunks names the whole
-    // patch's size: the row marker selects the lossless re-read
-    // (`next.readFullPatches`).
-    let narrowed = files
-        .iter()
-        .zip(&shaped)
-        .map(|(file, view)| {
-            let patch = str_at(file, "/patch")?;
-            view.as_ref()
-                .is_some_and(|view| view.narrowed)
-                .then(|| patch.chars().count())
-        })
-        .collect::<Vec<_>>();
-    let mut clipped = Vec::with_capacity(shaped.len());
-    let mut hits = Vec::with_capacity(shaped.len());
-    let views = shaped
-        .into_iter()
-        .map(|view| {
-            let view = view.map(|view| {
-                clipped.push(view.clipped);
-                hits.push(view.narrowed.then_some(view.hits));
-                view.text
-            });
-            if view.is_none() {
-                clipped.push(Vec::new());
-                hits.push(None);
-            }
-            view
-        })
-        .collect::<Vec<_>>();
+    let PatchViews {
+        views,
+        narrowed,
+        hits,
+        clipped,
+    } = PatchViews::of(&files, query);
     let lengths = views
         .iter()
         .map(|view| view.as_deref().map_or(0, |v| v.chars().count()))
@@ -140,9 +112,10 @@ pub(in crate::tools::gh_get_history_item) fn shape_patch_page_reserving(
         })
         .collect::<Vec<_>>();
     let end = window_end(&views, &starts, &lengths, offset, window);
-    let cursor = (0..files.len())
-        .any(|i| lengths[i] > 0 && starts[i] + lengths[i] > end)
-        .then_some(end);
+    // A file whose patch runs past the window's end leaves the stream to
+    // continue there.
+    let stream_window = SpanFacts::window("chars", offset, end.saturating_sub(offset), total);
+    let cursor = stream_window.next_offset();
     let stream = PatchStream {
         views: &views,
         narrowed: &narrowed,
@@ -158,7 +131,54 @@ pub(in crate::tools::gh_get_history_item) fn shape_patch_page_reserving(
         rows,
         unfinished,
         cursor,
+        stream: stream_window,
         clipped,
+    }
+}
+
+/// The patch view of every file of a page (`None`: GitHub sent no patch),
+/// with what a `matchString` narrowing left of each.
+struct PatchViews {
+    views: Vec<Option<String>>,
+    /// Whole-patch sizes of views narrowed to hit hunks: the row marker
+    /// selects the lossless re-read (`next.readFullPatches`).
+    narrowed: Vec<Option<usize>>,
+    /// Hit-line starts of each narrowed view.
+    hits: Vec<Option<Vec<usize>>>,
+    /// New-side windows each view's context could not reach.
+    clipped: Vec<Vec<String>>,
+}
+
+impl PatchViews {
+    fn of(files: &[Value], query: &HistoryItemRequest) -> Self {
+        let mut out = Self {
+            views: Vec::with_capacity(files.len()),
+            narrowed: Vec::with_capacity(files.len()),
+            hits: Vec::with_capacity(files.len()),
+            clipped: Vec::with_capacity(files.len()),
+        };
+        for file in files {
+            let patch = str_at(file, "/patch");
+            let view = patch.map(|patch| {
+                history_patch_view(patch, str_at(file, "/filename").unwrap_or(""), query)
+            });
+            match (patch, view) {
+                (Some(patch), Some(view)) => {
+                    out.narrowed
+                        .push(view.narrowed.then(|| patch.chars().count()));
+                    out.hits.push(view.narrowed.then_some(view.hits));
+                    out.clipped.push(view.clipped);
+                    out.views.push(Some(view.text));
+                }
+                _ => {
+                    out.narrowed.push(None);
+                    out.hits.push(None);
+                    out.clipped.push(Vec::new());
+                    out.views.push(None);
+                }
+            }
+        }
+        out
     }
 }
 
@@ -282,8 +302,9 @@ impl PatchStream<'_> {
                     row["patch"] = json!(text);
                     let cut = local_end < len;
                     if cut || local_start > 0 {
-                        // Per-file coordinates; the page-stream cursor that
-                        // `offset` continues rides `PatchPage::cursor`.
+                        // Per-file coordinates only, without a window's
+                        // `nextOffset`: the cursor `offset` continues is the
+                        // page stream's (`PatchPage::cursor`), never a file's.
                         row["patchPagination"] = json!({"unit":"chars","offset":local_start,"length":local_end - local_start,"total":len,"hasMore":cut});
                     }
                 }

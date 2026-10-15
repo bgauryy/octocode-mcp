@@ -135,9 +135,7 @@ pub(super) fn attach_provider_context(
         .as_object_mut();
     if let Some(lsp) = lsp {
         lsp.insert("serverAvailable".into(), json!(true));
-        if let Some(provider) = provider_for_operation(&query.operation()) {
-            lsp.insert("provider".into(), json!(provider));
-        }
+        settle_provider(lsp, &query.operation());
         settle_source(lsp, anchored);
         // `lsp.receipt` is verbose (core field class): the verbose stage
         // drops it unless the row's `extras` names `receipts`.
@@ -176,6 +174,18 @@ pub(super) fn attach_provider_context(
 /// A server answer is `source:"lsp"`, implied on anchored rows and stated
 /// on the others. A degraded source another stage set (a native scan that
 /// stood in for the server) is kept: it is what the row's evidence rests on.
+/// The row's provider is the capability that answered: a fallback names its
+/// own (`implementationProvider` for `subtypes`); every other row names the
+/// operation's.
+pub(super) fn settle_provider(lsp: &mut serde_json::Map<String, Value>, operation: &str) {
+    if lsp.get("provider").is_some_and(Value::is_string) {
+        return;
+    }
+    if let Some(provider) = provider_for_operation(operation) {
+        lsp.insert("provider".into(), json!(provider));
+    }
+}
+
 fn settle_source(lsp: &mut serde_json::Map<String, Value>, anchored: bool) {
     if lsp
         .get("source")

@@ -4,10 +4,11 @@ import { formatDuration } from '../shared/format.js';
 import { resultBlock } from '../shared/render.js';
 import { say, type Subcommands } from '../shared/commands.js';
 import { HOOKS_ENV, envFlag } from '../shared/env.js';
-import { redactSecrets, sanitizeTerminalText } from '../shared/sanitize.js';
+import { redactSecrets, sanitizeTerminalText, visibleControls } from '../shared/sanitize.js';
 import { configFileLines, repoKey, tildePath } from '../shared/home.js';
 import { projectTrust } from '../shared/trust.js';
 import { clipText, contentText, errorMessage, firstLine, isRecord } from '../shared/util.js';
+import { EXTERNAL_MESSAGE_TYPE, INTERNAL_MESSAGE_TYPE, type MessageEnvelope } from '../shared/messages.js';
 import { commandsFor, emptyHooks, HOOK_EVENTS, hookCalls, hookFiles, loadHooks, type HookCommand, type HookConfig, type HookEvent } from './config.js';
 import { capContext, failureOf, interpret, runHook, type HookVerdict } from './runner.js';
 
@@ -17,7 +18,8 @@ import { capContext, failureOf, interpret, runHook, type HookVerdict } from './r
  * compaction, source `compact`) → context for the next prompt, PreCompact → `session_before_compact` (side effects
  * only), Stop → `agent_before_settle` (a block makes the agent continue with the reason), Notification → when Pi asks
  * the user something or an answer waits (side effects only). Off unless `OCTOCODE_HOOKS=1`, because hooks written for
- * another agent run arbitrary commands.
+ * another agent run arbitrary commands. Octocode's PreMessageSend gates team/API/external sends; PostMessageReceive
+ * observes actual delivery without changing the body or requesting a reply.
  */
 const CONTEXT_TYPE = 'octocode-hook-context';
 /** Longest the first prompt waits for SessionStart hooks still running. */
@@ -86,7 +88,7 @@ const START_SOURCE: Record<string, string> = { startup: 'startup', reload: 'star
 const hookCount = (config: HookConfig): number => HOOK_EVENTS.reduce((sum, event) => sum + config[event].reduce((n, group) => n + group.hooks.length, 0), 0);
 
 /** What `/hooks` and `/octocode` show about hooks. */
-interface HooksView {
+export interface HooksView {
   /** One line for the `/octocode` status. */
   summary(): string;
   /** On/off, the loaded commands per event, the files read (✓ = exists) and any config errors. */
@@ -95,7 +97,26 @@ interface HooksView {
   preToolUse(event: ToolCallEvent, ctx: ExtensionContext): Promise<(ToolCallEventResult & { ask?: string }) | undefined>;
   /** Runs the Notification hooks matching `notice.type` in the background (a no-op while hooks are off). */
   notification(notice: HookNotice, ctx: ExtensionContext): void;
+  messageSend(message: MessageEnvelope, ctx: ExtensionContext): Promise<{ block?: string; ask?: string } | undefined>;
+  messageReceive(message: MessageEnvelope, ctx: ExtensionContext): Promise<void>;
 }
+
+function receivedMessages(value: unknown): MessageEnvelope[] {
+  if (!isRecord(value) || value.role !== 'custom' || !isRecord(value.details)) return [];
+  if (value.customType !== INTERNAL_MESSAGE_TYPE && value.customType !== EXTERNAL_MESSAGE_TYPE) return [];
+  const envelope = value.details.message;
+  if (isRecord(envelope) && (envelope.channel === 'internal' || envelope.channel === 'external') && typeof envelope.from === 'string' && typeof envelope.to === 'string' && typeof envelope.text === 'string' && typeof envelope.id === 'string') {
+    return [{ channel: envelope.channel, direction: 'inbound', from: envelope.from, to: envelope.to, text: envelope.text, id: envelope.id, ...(typeof envelope.replyTo === 'string' ? { replyTo: envelope.replyTo } : {}) }];
+  }
+  if (value.customType !== INTERNAL_MESSAGE_TYPE || !Array.isArray(value.details.messages)) return [];
+  return value.details.messages.flatMap((message): MessageEnvelope[] => {
+    if (!isRecord(message) || typeof message.id !== 'number' || typeof message.from !== 'string' || typeof message.to !== 'string' || typeof message.text !== 'string') return [];
+    return [{ channel: 'internal', direction: 'inbound', from: message.from, to: message.to, text: message.text, id: String(message.id), ...(typeof message.replyTo === 'number' ? { replyTo: String(message.replyTo) } : {}) }];
+  });
+}
+
+const messageKey = (message: MessageEnvelope): string | undefined => message.id === undefined ? undefined : JSON.stringify([message.channel, message.direction, message.from, message.to, message.id]);
+const messageNames = (message: MessageEnvelope): string[] => [message.channel, `${message.channel}.${message.direction}`];
 
 function timingText(timing: HookTiming | undefined): string {
   if (!timing) return '';
@@ -134,6 +155,8 @@ export function registerHooks(pi: ExtensionAPI, env: NodeJS.ProcessEnv = process
     report: (cwd) => hooksReport(enabled, config, errors, cwd, home, timings),
     preToolUse: async () => undefined,
     notification: () => undefined,
+    messageSend: async () => undefined,
+    messageReceive: async () => undefined,
   };
   // Registered even when hooks are off: a resumed session may hold Stop feedback from an earlier run.
   registerStopRenderer(pi);
@@ -143,6 +166,10 @@ export function registerHooks(pi: ExtensionAPI, env: NodeJS.ProcessEnv = process
   let starting: Promise<void> | undefined;
   /** Ends the current session's SessionStart hooks (on shutdown or the next session start), so none outlive it. */
   let startAbort = new AbortController();
+  let messageAbort = new AbortController();
+  let messageSessionId: string | undefined;
+  const received = new Set<string>();
+  let receivedObjects = new WeakSet<MessageEnvelope>();
   /** The repository root for CLAUDE_PROJECT_DIR, found once per session and only when a hook actually runs. */
   let root: string | undefined;
   /** Stop-hook continuations in a row (reset by a prompt or a tool call). */
@@ -173,15 +200,16 @@ export function registerHooks(pi: ExtensionAPI, env: NodeJS.ProcessEnv = process
    * A `PreToolUse` hook gave no answer. Hooks fail open, so the call goes ahead unless the hook is `failClosed`; either
    * way the user sees a warning (once per hook, with a UI) and the audit records it. Returns the block reason when failing closed.
    */
-  const hookFailed = (ctx: ExtensionContext, hook: HookCommand, failure: string, tool: string): string | undefined => {
+  const hookFailed = (ctx: ExtensionContext, hook: HookCommand, failure: string, target: string, event: 'PreToolUse' | 'PreMessageSend'): string | undefined => {
     const closed = hook.failClosed === true;
-    const command = clipText(firstLine(redactSecrets(sanitizeTerminalText(hook.command))), 80);
-    onFailure?.([`PreToolUse hook ${failure}: ${command}`, `tool: ${tool}`], closed ? 'hook failed; failClosed denied the call' : 'hook failed; hooks fail open, the call was allowed', !closed);
-    if (ctx.hasUI && !failureWarned.has(hook.command)) {
-      failureWarned.add(hook.command);
-      ctx.ui.notify(`PreToolUse hook ${failure}: ${command}. ${closed ? 'The call was denied (failClosed).' : 'The call was allowed (hooks fail open); set "failClosed": true on the hook to deny instead.'}`, 'warning');
+    const command = clipText(firstLine(redactSecrets(visibleControls(hook.command))), 80);
+    onFailure?.([`${event} hook ${failure}: ${command}`, `${event === 'PreToolUse' ? 'tool' : 'message'}: ${target}`], closed ? 'hook failed; failClosed denied the call' : 'hook failed; hooks fail open, the call was allowed', !closed);
+    const key = `${event}\0${hook.command}`;
+    if (ctx.hasUI && !failureWarned.has(key)) {
+      failureWarned.add(key);
+      ctx.ui.notify(`${event} hook ${failure}: ${command}. ${closed ? 'The call was denied (failClosed).' : 'The call was allowed (hooks fail open); set "failClosed": true on the hook to deny instead.'}`, 'warning');
     }
-    return closed ? `PreToolUse hook ${failure} and is set to failClosed: ${command}` : undefined;
+    return closed ? `${event} hook ${failure} and is set to failClosed: ${command}` : undefined;
   };
 
   /**
@@ -199,8 +227,11 @@ export function registerHooks(pi: ExtensionAPI, env: NodeJS.ProcessEnv = process
       hooks.map(async (hook) => {
         const run = await timeHook(ctx, event, hook, () => runHook(hook, payload, ctx.cwd, env, signal));
         const verdict = interpret(event, run);
-        const failure = event === 'PreToolUse' ? failureOf(hook, run, signal?.aborted === true) : undefined;
-        const block = failure ? hookFailed(ctx, hook, failure, String(payload['tool_name'] ?? '')) : undefined;
+        const gate = event === 'PreToolUse' || event === 'PreMessageSend' ? event : undefined;
+        const failure = gate ? failureOf(hook, run, signal?.aborted === true) : undefined;
+        const message = isRecord(payload['message']) ? payload['message'] : {};
+        const target = gate === 'PreMessageSend' ? `${message.from} -> ${message.to}` : String(payload['tool_name'] ?? '');
+        const block = failure && gate ? hookFailed(ctx, hook, failure, target, gate) : undefined;
         return block ? { ...verdict, block } : verdict;
       }),
     );
@@ -238,6 +269,21 @@ export function registerHooks(pi: ExtensionAPI, env: NodeJS.ProcessEnv = process
   };
 
   pi.on('session_start', async (event, ctx) => {
+    messageAbort.abort();
+    messageAbort = new AbortController();
+    messageSessionId = undefined;
+    received.clear();
+    receivedObjects = new WeakSet();
+    try {
+      messageSessionId = ctx.sessionManager.getSessionId();
+      for (const entry of ctx.sessionManager.getBranch?.() ?? []) {
+        const message = entry.type === 'message' ? entry.message : entry.type === 'custom_message' ? { role: 'custom', ...entry } : undefined;
+        for (const envelope of receivedMessages(message)) {
+          const key = messageKey(envelope);
+          if (key) received.add(key);
+        }
+      }
+    } catch { messageAbort.abort(); }
     const loaded = loadHooks(ctx.cwd, await projectTrust(ctx), home);
     config = loaded.config;
     errors = loaded.errors;
@@ -248,7 +294,7 @@ export function registerHooks(pi: ExtensionAPI, env: NodeJS.ProcessEnv = process
   });
   // Claude Code runs SessionStart again (source `compact`) after a compaction: its context comes with the next prompt.
   pi.on('session_compact', async (_event, ctx) => startHooks(ctx, 'compact', false));
-  pi.on('session_shutdown', async () => startAbort.abort());
+  pi.on('session_shutdown', async () => { startAbort.abort(); messageAbort.abort(); });
 
   // SessionStart context reaches the model once, with the next prompt, as data rather than instructions.
   pi.on('before_agent_start', async (_event, ctx) => {
@@ -279,6 +325,39 @@ export function registerHooks(pi: ExtensionAPI, env: NodeJS.ProcessEnv = process
     const ask = verdicts.map((verdict) => verdict.ask).filter(Boolean).join('\n\n');
     return ask ? { ask: capContext(ask) } : undefined;
   };
+
+  view.messageSend = async (message, ctx) => {
+    if (ctx.sessionManager.getSessionId() !== messageSessionId) throw new Error('The message belongs to a different session.');
+    const signal = ctx.signal ? AbortSignal.any([messageAbort.signal, ctx.signal]) : messageAbort.signal;
+    signal.throwIfAborted();
+    const verdict = await dispatch(ctx, 'PreMessageSend', messageNames(message), () => ({ message }), signal);
+    signal.throwIfAborted();
+    return verdict.block ? { block: `Blocked by a PreMessageSend hook: ${verdict.block}` } : verdict.ask ? { ask: verdict.ask } : undefined;
+  };
+
+  view.messageReceive = async (message, ctx) => {
+    const signal = messageAbort.signal;
+    if (signal.aborted) return;
+    try { if (ctx.sessionManager.getSessionId() !== messageSessionId) return; }
+    catch { return; }
+    const key = messageKey(message);
+    if (key ? received.has(key) : receivedObjects.has(message)) return;
+    if (key) received.add(key);
+    else receivedObjects.add(message);
+    // Observers never change the message or add a reply, even if a hook prints a gate verdict.
+    await dispatch(ctx, 'PostMessageReceive', messageNames(message), () => ({ message }), signal).catch(() => undefined);
+  };
+
+  pi.on('context', async (event, ctx) => {
+    const signal = messageAbort.signal;
+    for (const message of event.messages) {
+      for (const envelope of receivedMessages(message)) {
+        if (signal.aborted) return undefined;
+        await view.messageReceive(envelope, ctx);
+      }
+    }
+    return undefined;
+  });
 
   view.notification = (notice, ctx) => {
     const input = { message: notice.message, ...(notice.title ? { title: notice.title } : {}), notification_type: notice.type };

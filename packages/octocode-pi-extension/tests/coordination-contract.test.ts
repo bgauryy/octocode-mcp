@@ -80,6 +80,6 @@ describe('agent coordination contract (shared vectors)', () => {
   it('keeps the generated case-folding table equal to the package\'s frozen Unicode table', () => {
     const table = JSON.parse(fs.readFileSync(SOURCE, 'utf8')) as { version: string; casefold: Record<string, number[]> };
     expect(CASE_FOLDING_UNICODE_VERSION).toBe(table.version);
-    expect(fs.readFileSync(TARGET, 'utf8')).toBe(renderCasefoldTable(table));
+    expect(fs.readFileSync(TARGET, 'utf8'), 'src/team/casefold-table.ts is stale: run `yarn casefold:generate` in packages/octocode-pi-extension').toBe(renderCasefoldTable(table));
   });
 });

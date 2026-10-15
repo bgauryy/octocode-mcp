@@ -1,10 +1,11 @@
 use super::http::{JSON, RegistryClient};
 use super::util::{
-    commit_sha, endpoint, object_for, parse_url, required, rows, safe_url, string, total,
+    commit_sha, date_prefix, endpoint, object_for, parse_url, required, rows, safe_url, string,
+    total,
 };
 use super::{
     ArtifactError, ArtifactItem, ArtifactProviderPage, ArtifactProviderState, ArtifactSearchQuery,
-    ArtifactType,
+    ArtifactType, TerminalLimit,
 };
 use serde_json::{Map, Value};
 use std::cmp::Ordering;
@@ -24,7 +25,7 @@ pub(crate) async fn nuget(
             artifacts: vec![],
             next_state: None,
             total: None,
-            terminal_limit: Some(limit_reason()),
+            terminal_limit: Some(reach_limit()),
             registry: None,
         });
     }
@@ -69,21 +70,21 @@ pub(crate) async fn nuget(
     let more = count
         .map(|count| next_offset < count)
         .unwrap_or(fetched.len() >= take);
-    let reason = if more && artifacts.is_empty() {
-        Some("NuGet returned an empty page before its reported total.".into())
+    let limit = if more && artifacts.is_empty() {
+        Some(TerminalLimit::short_page("NuGet"))
     } else if more && next_offset >= REACHABLE_END {
-        Some(limit_reason())
+        Some(reach_limit())
     } else {
         None
     };
     Ok(ArtifactProviderPage {
-        next_state: (more && reason.is_none()).then(|| ArtifactProviderState {
+        next_state: (more && limit.is_none()).then(|| ArtifactProviderState {
             offset: Some(next_offset),
             ..Default::default()
         }),
         artifacts,
         total: count,
-        terminal_limit: reason,
+        terminal_limit: limit,
         registry: None,
     })
 }
@@ -214,6 +215,9 @@ async fn exact(
         None => latest(&pages, client).await?,
     };
     let mut artifact = item(&release)?;
+    artifact.published_at =
+        date_prefix(release.get("published")).filter(|day| !day.starts_with(UNLISTED_YEAR));
+    artifact.dependencies = Some(declared_dependencies(&release));
     // The registration catalogEntry usually omits `repository`; the package's
     // own nuspec declares it.
     if artifact.repository.is_none()
@@ -224,6 +228,55 @@ async fn exact(
         artifact.source_ref = commit;
     }
     Ok(ArtifactProviderPage::single(artifact))
+}
+
+/// The `published` year NuGet gives an unlisted release: no release day.
+const UNLISTED_YEAR: &str = "1900-";
+
+/// A catalog entry's dependencies as `Id range`, each once, in declared
+/// order. One that only some target frameworks declare names them
+/// (`System.ValueTuple [4.5.0, ) (.NETFramework4.6.2)`); a group without
+/// a framework applies to all. No group, or only empty ones, declares none.
+fn declared_dependencies(entry: &Map<String, Value>) -> Vec<String> {
+    let groups = entry
+        .get("dependencyGroups")
+        .and_then(Value::as_array)
+        .map_or(&[][..], Vec::as_slice);
+    // Each dependency, with the frameworks declaring it (`None`: all).
+    let mut declared: Vec<(String, Option<Vec<String>>)> = Vec::new();
+    for group in groups {
+        let framework = string(group.get("targetFramework"));
+        let dependencies = group.get("dependencies").and_then(Value::as_array);
+        for dependency in dependencies.into_iter().flatten() {
+            let Some(id) = string(dependency.get("id")) else {
+                continue;
+            };
+            let name = match string(dependency.get("range")) {
+                Some(range) => format!("{id} {range}"),
+                None => id,
+            };
+            let index = declared
+                .iter()
+                .position(|(known, _)| *known == name)
+                .unwrap_or_else(|| {
+                    declared.push((name, Some(Vec::new())));
+                    declared.len() - 1
+                });
+            let frameworks = &mut declared[index].1;
+            match (&framework, frameworks.as_mut()) {
+                (Some(framework), Some(list)) => list.push(framework.clone()),
+                (None, _) => *frameworks = None,
+                (Some(_), None) => {}
+            }
+        }
+    }
+    declared
+        .into_iter()
+        .map(|(name, frameworks)| match frameworks {
+            Some(list) if list.len() < groups.len() => format!("{name} ({})", list.join(", ")),
+            _ => name,
+        })
+        .collect()
 }
 
 /// Newest registration pages first. The highest listed stable version wins;
@@ -489,12 +542,15 @@ fn compare_versions(left: &str, right: &str) -> Result<Ordering, ArtifactError> 
     }
 }
 
-fn limit_reason() -> String {
-    "NuGet search reaches only the first 4000 results (skip <= 3000, take <= 1000). Narrow keywords to reach additional packages.".into()
+fn reach_limit() -> TerminalLimit {
+    TerminalLimit::result_cap(format!(
+        "NuGet search serves only the first {REACHABLE_END} results (skip <= {MAX_SKIP})."
+    ))
 }
 
 #[cfg(test)]
 mod tests {
+    use super::super::test_http::RouteHttp;
     use super::super::types::{artifact_query, test_budget};
     use super::*;
     use crate::providers::artifact::http::{
@@ -503,53 +559,8 @@ mod tests {
     use octocode_github::RequestBudget;
     use serde_json::json;
 
-    /// Serves fixtures by URL-path fragment. Routing (rather than call order)
-    /// keeps tests independent of the process-global artifact JSON cache,
-    /// which is keyed by URL and can absorb the shared index.json fetch.
-    struct RouteMock(Vec<(&'static str, Vec<u8>)>);
-
-    impl RouteMock {
-        fn json_routes(routes: Vec<(&'static str, serde_json::Value)>) -> Self {
-            Self(
-                routes
-                    .into_iter()
-                    .map(|(fragment, value)| {
-                        (
-                            fragment,
-                            serde_json::to_vec(&value).expect("NuGet test data should be valid"),
-                        )
-                    })
-                    .collect(),
-            )
-        }
-    }
-
-    impl ArtifactHttp for RouteMock {
-        fn get<'a>(
-            &'a self,
-            req: ArtifactHttpRequest,
-            _budget: &'a RequestBudget,
-        ) -> ArtifactHttpFuture<'a> {
-            let path = req.url.path().to_owned();
-            let body = self
-                .0
-                .iter()
-                .find(|(fragment, _)| path.contains(fragment))
-                .map(|(_, body)| body.clone());
-            Box::pin(async move {
-                match body {
-                    Some(body) => Ok(ArtifactHttpResponse { status: 200, body }),
-                    None => Ok(ArtifactHttpResponse {
-                        status: 404,
-                        body: b"not found".to_vec(),
-                    }),
-                }
-            })
-        }
-    }
-
     /// The exact `Newtonsoft.Json` lookup against `http`.
-    async fn newtonsoft_exact(http: &RouteMock) -> ArtifactProviderPage {
+    async fn newtonsoft_exact(http: &RouteHttp) -> ArtifactProviderPage {
         let b = test_budget();
         let client = RegistryClient::uncached(http, &b);
         let q = artifact_query(
@@ -560,6 +571,8 @@ mod tests {
             .await
             .expect("nuget exact")
     }
+
+    const REGISTRATION: &str = "/v3/registration5/newtonsoft.json/index.json";
 
     fn service_index() -> serde_json::Value {
         json!({
@@ -587,14 +600,14 @@ mod tests {
             "@type": "PackageBaseAddress/3.0.0",
             "@id": "https://api.nuget.org/v3-flatcontainer/"
         }));
-        let mut http = RouteMock::json_routes(vec![
-            ("registration5/newtonsoft.json", registration),
+        let http = RouteHttp::routes(vec![
+            (REGISTRATION, registration),
             ("/v3/index.json", index),
-        ]);
-        http.0.push((
-            "newtonsoft.json.nuspec",
+        ])
+        .bytes(
+            "/v3-flatcontainer/newtonsoft.json/13.0.4/newtonsoft.json.nuspec",
             br#"<package><metadata><repository type="git" url="https://github.com/JamesNK/Newtonsoft.Json" commit="0A2E291C0D9C0C7675D445703E51750363A549EF" /></metadata></package>"#.to_vec(),
-        ));
+        );
         let page = newtonsoft_exact(&http).await;
         let item = &page.artifacts[0];
         // 13.0.5 is unlisted; 14.0.1-beta2 is a prerelease.
@@ -632,8 +645,8 @@ mod tests {
                 }
             ]
         });
-        let http = RouteMock::json_routes(vec![
-            ("newtonsoft.json", registration),
+        let http = RouteHttp::routes(vec![
+            (REGISTRATION, registration),
             ("/v3/index.json", service_index()),
         ]);
         let page = newtonsoft_exact(&http).await;
@@ -641,10 +654,9 @@ mod tests {
         let item = &page.artifacts[0];
         assert_eq!(item.name, "Newtonsoft.Json");
         assert_eq!(item.version.as_deref(), Some("13.0.3"));
-        assert!(
-            item.registry_url.contains("nuget.org"),
-            "{}",
-            item.registry_url
+        assert_eq!(
+            item.registry_url,
+            "https://www.nuget.org/packages/Newtonsoft.Json"
         );
         // Live catalogEntry payloads omit `repository` (verified against
         // registration5-gz-semver2 for Newtonsoft.Json). A marketing
@@ -674,9 +686,12 @@ mod tests {
             {"catalogEntry": {"id": "Newtonsoft.Json", "version": "9.0.1"}},
             {"catalogEntry": {"id": "Newtonsoft.Json", "version": "12.0.3"}}
         ]});
-        let http = RouteMock::json_routes(vec![
-            ("registration5/newtonsoft.json/page/", old_page),
-            ("registration5/newtonsoft.json/index.json", registration),
+        let http = RouteHttp::routes(vec![
+            (
+                "/v3/registration5/newtonsoft.json/page/9.0.1/12.0.3.json",
+                old_page,
+            ),
+            (REGISTRATION, registration),
             ("/v3/index.json", service_index()),
         ]);
         let b = test_budget();
@@ -716,6 +731,54 @@ mod tests {
             .await
             .expect_err("range");
         assert_eq!(range.code, "capabilityUnavailable", "{range:?}");
+    }
+
+    /// An exact row states its publish day and its dependency groups'
+    /// entries once each; one only some frameworks declare names them. An
+    /// unlisted release's placeholder day (1900) is no day, and a release
+    /// without dependency groups declares none.
+    #[tokio::test]
+    async fn nuget_exact_rows_state_the_publish_day_and_dependencies() {
+        let dependency = |id: &str, range: &str| json!({"id": id, "range": range});
+        let registration = json!({"items": [{"upper": "4.4.0", "items": [
+            {"catalogEntry": {"id": "Newtonsoft.Json", "version": "4.4.0",
+                "published": "2026-07-10T03:35:24.047+00:00",
+                "dependencyGroups": [
+                    {"targetFramework": "net10.0"},
+                    {"targetFramework": ".NETFramework4.6.2", "dependencies": [
+                        dependency("System.Diagnostics.DiagnosticSource", "[8.0.1, )"),
+                        dependency("System.ValueTuple", "[4.5.0, )")]},
+                    {"targetFramework": "net8.0", "dependencies": [
+                        dependency("System.Diagnostics.DiagnosticSource", "[8.0.1, )")]},
+                    {"dependencies": [dependency("Everywhere", "[1.0.0, )")]}
+                ]}}
+        ]}]});
+        let http = RouteHttp::routes(vec![
+            (REGISTRATION, registration),
+            ("/v3/index.json", service_index()),
+        ]);
+        let item = &newtonsoft_exact(&http).await.artifacts[0];
+        assert_eq!(item.published_at.as_deref(), Some("2026-07-10"));
+        assert_eq!(
+            item.dependencies,
+            Some(vec![
+                "System.Diagnostics.DiagnosticSource [8.0.1, ) (.NETFramework4.6.2, net8.0)"
+                    .to_owned(),
+                "System.ValueTuple [4.5.0, ) (.NETFramework4.6.2)".to_owned(),
+                "Everywhere [1.0.0, )".to_owned(),
+            ])
+        );
+        let unlisted = json!({"items": [{"upper": "1.0.0", "items": [
+            {"catalogEntry": {"id": "Newtonsoft.Json", "version": "1.0.0",
+                "published": "1900-01-01T00:00:00+00:00"}}
+        ]}]});
+        let http = RouteHttp::routes(vec![
+            (REGISTRATION, unlisted),
+            ("/v3/index.json", service_index()),
+        ]);
+        let item = &newtonsoft_exact(&http).await.artifacts[0];
+        assert_eq!(item.published_at, None);
+        assert_eq!(item.dependencies, Some(Vec::new()));
     }
 
     #[test]
@@ -804,9 +867,12 @@ mod tests {
         let page = nuget(&q, &at(3998), &client).await.unwrap();
         assert_eq!(names(&page), ["pkg3998", "pkg3999"]);
         assert!(page.next_state.is_none());
-        assert!(page.terminal_limit.is_some());
+        let reason =
+            |page: &ArtifactProviderPage| page.terminal_limit.as_ref().map(|limit| limit.reason);
+        assert_eq!(reason(&page), Some("providerResultCap"));
         let page = nuget(&q, &at(4000), &client).await.unwrap();
-        assert!(page.artifacts.is_empty() && page.terminal_limit.is_some());
+        assert!(page.artifacts.is_empty());
+        assert_eq!(reason(&page), Some("providerResultCap"));
         assert!(
             http.0
                 .lock()
@@ -838,8 +904,8 @@ mod tests {
                 }
             ]
         });
-        let http = RouteMock::json_routes(vec![
-            ("serilog", registration),
+        let http = RouteHttp::routes(vec![
+            ("/v3/registration5/serilog/index.json", registration),
             ("/v3/index.json", service_index()),
         ]);
         let b = test_budget();

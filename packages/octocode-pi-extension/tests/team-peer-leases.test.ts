@@ -185,6 +185,15 @@ describe('peer leases in the team reservation gate', () => {
     await expect(gate({ toolName: 'write', input: { path: 'a.ts', content: '' } } as never, ctx)).resolves.toBeUndefined();
   });
 
+  it('shows controls in a peer lease reason and a file name as visible escapes', () => {
+    const { cwd, team } = collaborate();
+    const target = path.join(cwd, 'src', 'a.ts');
+    peerDb(peerDbPath(), [{ path: target, expiresAt: Date.now() + 60_000, reason: 'refactor\u001b[2J' }], { sessionExpiresAt: Date.now() + 60_000 });
+    const reason = team.reservation(target, 'src/a\u202e.ts')!;
+    expect(reason).toContain('src/a\\u{202e}.ts is reserved by cc (claude agent in agents-communication; refactor\\u{1b}[2J;');
+    expect(reason).not.toMatch(/[\u001b\u202e]/u);
+  });
+
   it('refuses a write to a file a package agent holds, naming the holder, until it unlocks', async () => {
     const { cwd, team, gate, ctx } = collaborate();
     const target = path.join(cwd, 'src', 'a.ts');

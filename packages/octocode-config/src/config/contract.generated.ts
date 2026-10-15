@@ -3,172 +3,6 @@
 
 export type OutputFormat = "yaml" | "json";
 export type StorageMode = "persistent" | "memory";
-export type ClassificationVendor = "jev";
-
-export interface GitHubConfigOptions {
-  /** GitHub REST API root. GitHub Enterprise commonly uses /api/v3. */
-  apiUrl?: string;
-
-  /** Use GitHub GraphQL where supported; false forces REST-only access. */
-  graphqlEnabled?: boolean;
-}
-
-export interface LocalConfigOptions {
-  /** Enable local filesystem tools on every runtime surface. */
-  enabled?: boolean;
-
-  /** Enable beta features and tools; off by default on every surface. `octocode schema` reports which tools the gate withholds. */
-  beta?: boolean;
-
-  /** Extra absolute or home-relative roots added to the allowed roots (workspace root and OCTOCODE_HOME). */
-  /** The environment value is a comma-separated list. */
-  allowedPaths?: string[];
-
-  /** Optional absolute or home-relative workspace root. */
-  workspaceRoot?: string;
-}
-
-export interface ToolsConfigOptions {
-  /** Strict tool allowlist replacing the default tool set. */
-  enabled?: string[] | null;
-
-  /** Tools removed from the default tool set. */
-  disabled?: string[] | null;
-}
-
-export interface McpConfigOptions {
-  /** Available tools left out of tools/list; one run({tool, query}) tool executes them and next/hints leads that name them. */
-  deferred?: string[] | null;
-}
-
-export interface NetworkConfigOptions {
-  /** Request timeout in milliseconds. */
-  timeout?: number;
-
-  /** Maximum retries after a failed request. */
-  maxRetries?: number;
-
-  /** Longest GitHub rate-limit wait in milliseconds (primary or secondary limit, code-search window) before a call fails with retryAfter. */
-  /** Waiting does not count against network.timeout; the tool call's own deadline still bounds it. The default stays under the 60 s tool-call timeout some MCP hosts apply. */
-  maxRateLimitWait?: number;
-
-  /** Allow private, loopback, or link-local artifact registries. */
-  /** Security-sensitive SSRF escape hatch; opt in only for trusted enterprise registries. */
-  allowPrivateRegistry?: boolean;
-}
-
-export interface LspConfigOptions {
-  /** Optional path to a custom lsp-servers.json. */
-  configPath?: string;
-
-  /** Whether `octocode lsp-server install` may download a managed language server: prompt (ask), off, or auto. */
-  autoInstall?: "prompt" | "off" | "auto";
-
-  /** Directory for managed language-server installs; default <octocode home>/lsp. */
-  cacheDir?: string;
-
-  /** Resident-memory cap per language server process tree, in MiB (a non-negative integer). Unset: 25% of host RAM, between 4096 and 8192. 0 disables the cap. A server over the cap is stopped and lspSearch reports serverCrashed (not retryable). */
-  maxMemoryMb?: string;
-
-  /** Trust a project .octocode/lsp-servers.json. Security-sensitive: a trusted project config can launch server binaries. */
-  trustProjectConfig?: boolean;
-
-  /** Language-server prewarm: targeted starts the server an offered lspSearch call names; all also warms the file a read or search names; off disables it. */
-  prewarm?: "targeted" | "all" | "off";
-}
-
-export interface OutputConfigOptions {
-  /** Encoding of rendered text content (the MCP text channel): yaml or json. Structured content and CLI stdout are always JSON. */
-  format?: OutputFormat;
-
-  /** Mask email addresses such as GitHub commit authors. */
-  redactEmails?: boolean;
-
-  pagination?: OutputPaginationConfigOptions;
-}
-
-export interface OutputPaginationConfigOptions {
-  /** Automatic pagination character budget. */
-  defaultCharLength?: number;
-}
-
-export interface StorageConfigOptions {
-  /** Whether caches and runtime state may persist on disk. */
-  mode?: StorageMode;
-
-  /** Write stats.json on flush; stats remain in memory either way. */
-  stats?: boolean;
-
-  cloneCache?: StorageCloneCacheConfigOptions;
-}
-
-export interface StorageCloneCacheConfigOptions {
-  /** Milliseconds a ghCloneRepo checkout stays fresh before it is re-fetched. */
-  ttl?: number;
-
-  /** Byte cap for the on-disk ghCloneRepo cache; least-recently-used checkouts are evicted above it. */
-  maxSize?: number;
-
-  /** Maximum repositories the ghCloneRepo cache keeps. */
-  maxClones?: number;
-}
-
-export interface RankingConfigOptions {
-  /** Enable goal-based ordering on supported reads. Requires the classification API credential, independently of the public clasify tool. */
-  enabled?: boolean;
-
-  /** Maximum complete evidence units classified per ranking operation; other units keep their original order. */
-  maxCandidates?: number;
-
-  /** Maximum evidence characters sent for one ranking operation. */
-  maxChars?: number;
-
-  /** Total ranking deadline in milliseconds, bounded by the enclosing request deadline. */
-  timeoutMs?: number;
-}
-
-export interface ClassificationConfigOptions {
-  /** Classification vendor. Per-vendor defaults (host, model, endpoint) are built in. */
-  type?: ClassificationVendor;
-
-  /** Classification provider API key, required for goals ranking and the beta clasify tool. */
-  /** Credential values are omitted from resolved configuration and diagnostics. */
-  api?: string | null;
-
-  /** Optional override of the selected vendor's default API root. */
-  /** Requires HTTP or HTTPS at config validation; provider policy may require HTTPS except loopback. */
-  apiHost?: string | null;
-
-  /** Process-wide maximum in-flight classification provider requests per provider endpoint. */
-  maxConcurrency?: number;
-}
-
-export interface OctocodeConfig {
-  $schema?: string;
-
-  /** Configuration schema version. */
-  version?: number;
-
-  github?: GitHubConfigOptions;
-
-  local?: LocalConfigOptions;
-
-  tools?: ToolsConfigOptions;
-
-  mcp?: McpConfigOptions;
-
-  network?: NetworkConfigOptions;
-
-  lsp?: LspConfigOptions;
-
-  output?: OutputConfigOptions;
-
-  storage?: StorageConfigOptions;
-
-  ranking?: RankingConfigOptions;
-
-  classification?: ClassificationConfigOptions;
-}
 
 export interface RequiredGitHubConfig {
   apiUrl: string;
@@ -202,7 +36,7 @@ export interface RequiredLspConfig {
   configPath: string | undefined;
   autoInstall: "prompt" | "off" | "auto";
   cacheDir: string | undefined;
-  maxMemoryMb: string | undefined;
+  maxMemoryMb: number | null;
   trustProjectConfig: boolean;
   prewarm: "targeted" | "all" | "off";
 }
@@ -229,20 +63,15 @@ export interface RequiredStorageCloneCacheConfig {
   maxClones: number;
 }
 
-export interface RequiredRankingConfig {
-  enabled: boolean;
+export interface RequiredClassificationConfig {
+  model: string | undefined;
+  maxConcurrency: number;
   maxCandidates: number;
   maxChars: number;
   timeoutMs: number;
 }
 
-export interface RequiredClassificationConfig {
-  type: ClassificationVendor;
-  maxConcurrency: number;
-}
-
 export interface ResolvedConfigData {
-  version: number;
   github: RequiredGitHubConfig;
   local: RequiredLocalConfig;
   tools: RequiredToolsConfig;
@@ -251,16 +80,14 @@ export interface ResolvedConfigData {
   lsp: RequiredLspConfig;
   output: RequiredOutputConfig;
   storage: RequiredStorageConfig;
-  ranking: RequiredRankingConfig;
   classification: RequiredClassificationConfig;
 }
 
-export type ConfigFieldKind = 'boolean' | 'number' | 'string' | 'url' | 'path' | 'stringArray' | 'enum' | 'schemaVersion';
+export type ConfigFieldKind = 'boolean' | 'number' | 'string' | 'url' | 'path' | 'stringArray' | 'enum';
 export interface ConfigEnvBinding {
   name: string;
   dotenv?: 'all' | 'home' | 'never';
   normalize?: 'trim' | 'lower';
-  invalid?: 'skip' | 'default';
   workspaceNarrowsTo?: string;
 }
 export interface ConfigFieldSpec {
@@ -285,17 +112,6 @@ export interface ConfigFieldSpec {
 
 export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
   {
-    "path": "version",
-    "section": "",
-    "key": "version",
-    "type": "schemaVersion",
-    "file": true,
-    "resolved": true,
-    "credential": false,
-    "description": "Configuration schema version.",
-    "defaultValue": 1
-  },
-  {
     "path": "github.apiUrl",
     "section": "github",
     "key": "apiUrl",
@@ -307,8 +123,7 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "env": {
       "name": "GITHUB_API_URL",
       "dotenv": "home",
-      "normalize": "trim",
-      "invalid": "skip"
+      "normalize": "trim"
     },
     "defaultValue": "https://api.github.com"
   },
@@ -336,7 +151,9 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "credential": false,
     "description": "Enable local filesystem tools on every runtime surface.",
     "env": {
-      "name": "OCTOCODE_ENABLE_LOCAL"
+      "name": "OCTOCODE_ENABLE_LOCAL",
+      "dotenv": "home",
+      "workspaceNarrowsTo": "false"
     },
     "defaultValue": true
   },
@@ -499,7 +316,7 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "path": "lsp.configPath",
     "section": "lsp",
     "key": "configPath",
-    "type": "string",
+    "type": "path",
     "file": true,
     "resolved": true,
     "credential": false,
@@ -523,8 +340,7 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "env": {
       "name": "OCTOCODE_LSP_AUTO_INSTALL",
       "dotenv": "home",
-      "normalize": "lower",
-      "invalid": "skip"
+      "normalize": "lower"
     },
     "defaultValue": "prompt",
     "values": [
@@ -553,17 +369,18 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "path": "lsp.maxMemoryMb",
     "section": "lsp",
     "key": "maxMemoryMb",
-    "type": "string",
+    "type": "number",
     "file": true,
     "resolved": true,
     "credential": false,
-    "description": "Resident-memory cap per language server process tree, in MiB (a non-negative integer). Unset: 25% of host RAM, between 4096 and 8192. 0 disables the cap. A server over the cap is stopped and lspSearch reports serverCrashed (not retryable).",
+    "description": "Resident-memory cap per language server process tree, in MiB. Unset: 25% of host RAM, between 4096 and 8192. 0 disables the cap. A server over the cap is stopped and lspSearch reports serverCrashed (not retryable).",
     "env": {
       "name": "OCTOCODE_LSP_MAX_MEMORY_MB",
-      "dotenv": "home",
-      "normalize": "trim"
+      "dotenv": "home"
     },
-    "defaultValue": null
+    "defaultValue": null,
+    "minimum": 0,
+    "maximum": 4294967295
   },
   {
     "path": "lsp.trustProjectConfig",
@@ -591,8 +408,7 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "description": "Language-server prewarm: targeted starts the server an offered lspSearch call names; all also warms the file a read or search names; off disables it.",
     "env": {
       "name": "OCTOCODE_LSP_PREWARM",
-      "normalize": "lower",
-      "invalid": "skip"
+      "normalize": "lower"
     },
     "defaultValue": "targeted",
     "values": [
@@ -612,8 +428,7 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "description": "Encoding of rendered text content (the MCP text channel): yaml or json. Structured content and CLI stdout are always JSON.",
     "env": {
       "name": "OCTOCODE_OUTPUT_FORMAT",
-      "normalize": "lower",
-      "invalid": "default"
+      "normalize": "lower"
     },
     "defaultValue": "yaml",
     "values": [
@@ -631,7 +446,9 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "credential": false,
     "description": "Mask email addresses such as GitHub commit authors.",
     "env": {
-      "name": "OCTOCODE_REDACT_EMAILS"
+      "name": "OCTOCODE_REDACT_EMAILS",
+      "dotenv": "home",
+      "workspaceNarrowsTo": "true"
     },
     "defaultValue": false
   },
@@ -664,7 +481,6 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
       "name": "OCTOCODE_STORAGE_MODE",
       "dotenv": "home",
       "normalize": "lower",
-      "invalid": "skip",
       "workspaceNarrowsTo": "memory"
     },
     "defaultValue": "persistent",
@@ -737,91 +553,6 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "maximum": 1000
   },
   {
-    "path": "ranking.enabled",
-    "section": "ranking",
-    "key": "enabled",
-    "type": "boolean",
-    "file": true,
-    "resolved": true,
-    "credential": false,
-    "description": "Enable goal-based ordering on supported reads. Requires the classification API credential, independently of the public clasify tool.",
-    "env": {
-      "name": "OCTOCODE_RANKING_ENABLED",
-      "dotenv": "home",
-      "workspaceNarrowsTo": "false"
-    },
-    "defaultValue": false
-  },
-  {
-    "path": "ranking.maxCandidates",
-    "section": "ranking",
-    "key": "maxCandidates",
-    "type": "number",
-    "file": true,
-    "resolved": true,
-    "credential": false,
-    "description": "Maximum complete evidence units classified per ranking operation; other units keep their original order.",
-    "env": {
-      "name": "OCTOCODE_RANKING_MAX_CANDIDATES"
-    },
-    "defaultValue": 64,
-    "minimum": 1,
-    "maximum": 256
-  },
-  {
-    "path": "ranking.maxChars",
-    "section": "ranking",
-    "key": "maxChars",
-    "type": "number",
-    "file": true,
-    "resolved": true,
-    "credential": false,
-    "description": "Maximum evidence characters sent for one ranking operation.",
-    "env": {
-      "name": "OCTOCODE_RANKING_MAX_CHARS"
-    },
-    "defaultValue": 131072,
-    "minimum": 1024,
-    "maximum": 1048576
-  },
-  {
-    "path": "ranking.timeoutMs",
-    "section": "ranking",
-    "key": "timeoutMs",
-    "type": "number",
-    "file": true,
-    "resolved": true,
-    "credential": false,
-    "description": "Total ranking deadline in milliseconds, bounded by the enclosing request deadline.",
-    "env": {
-      "name": "OCTOCODE_RANKING_TIMEOUT_MS"
-    },
-    "defaultValue": 10000,
-    "minimum": 100,
-    "maximum": 60000
-  },
-  {
-    "path": "classification.type",
-    "section": "classification",
-    "key": "type",
-    "type": "enum",
-    "file": true,
-    "resolved": true,
-    "credential": false,
-    "description": "Classification vendor. Per-vendor defaults (host, model, endpoint) are built in.",
-    "env": {
-      "name": "OCTOCODE_CLASSIFICATION_TYPE",
-      "dotenv": "all",
-      "normalize": "trim",
-      "invalid": "skip"
-    },
-    "defaultValue": "jev",
-    "values": [
-      "jev"
-    ],
-    "enumStyle": "quotedOr"
-  },
-  {
     "path": "classification.api",
     "section": "classification",
     "key": "api",
@@ -829,7 +560,7 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "file": true,
     "resolved": false,
     "credential": true,
-    "description": "Classification provider API key, required for goals ranking and the beta clasify tool.",
+    "description": "Classification provider API key, required for read-tool classifiers and the beta clasify tool.",
     "notes": "Credential values are omitted from resolved configuration and diagnostics.",
     "env": {
       "name": "OCTOCODE_CLASSIFICATION_API",
@@ -846,11 +577,28 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "file": true,
     "resolved": false,
     "credential": true,
-    "description": "Optional override of the selected vendor's default API root.",
+    "description": "Optional override of the classification provider's default API root.",
     "notes": "Requires HTTP or HTTPS at config validation; provider policy may require HTTPS except loopback.",
     "env": {
       "name": "OCTOCODE_CLASSIFICATION_API_HOST",
       "dotenv": "home",
+      "normalize": "trim"
+    },
+    "defaultValue": null
+  },
+  {
+    "path": "classification.model",
+    "section": "classification",
+    "key": "model",
+    "type": "string",
+    "file": true,
+    "resolved": true,
+    "credential": false,
+    "description": "Classification model for read-tool classifiers and clasify; a clasify row's model overrides it.",
+    "notes": "Pin an exact model (for example jev-1.13.0) for reproducible results; an alias can change behind cached answers until they expire.",
+    "env": {
+      "name": "OCTOCODE_CLASSIFICATION_MODEL",
+      "dotenv": "all",
       "normalize": "trim"
     },
     "defaultValue": null
@@ -870,77 +618,61 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "defaultValue": 10,
     "minimum": 1,
     "maximum": 64
+  },
+  {
+    "path": "classification.maxCandidates",
+    "section": "classification",
+    "key": "maxCandidates",
+    "type": "number",
+    "file": true,
+    "resolved": true,
+    "credential": false,
+    "description": "Maximum complete evidence units assessed per context selection operation; unassessed units remain unknown and recoverable.",
+    "env": {
+      "name": "OCTOCODE_CLASSIFICATION_MAX_CANDIDATES"
+    },
+    "defaultValue": 64,
+    "minimum": 1,
+    "maximum": 256
+  },
+  {
+    "path": "classification.maxChars",
+    "section": "classification",
+    "key": "maxChars",
+    "type": "number",
+    "file": true,
+    "resolved": true,
+    "credential": false,
+    "description": "Maximum total characters in serialized sanitized candidate states per context selection operation, including source metadata; excludes question instructions and request envelopes.",
+    "env": {
+      "name": "OCTOCODE_CLASSIFICATION_MAX_CHARS"
+    },
+    "defaultValue": 131072,
+    "minimum": 1024,
+    "maximum": 1048576
+  },
+  {
+    "path": "classification.timeoutMs",
+    "section": "classification",
+    "key": "timeoutMs",
+    "type": "number",
+    "file": true,
+    "resolved": true,
+    "credential": false,
+    "description": "Context selection deadline in milliseconds, bounded by the enclosing request deadline.",
+    "env": {
+      "name": "OCTOCODE_CLASSIFICATION_TIMEOUT_MS"
+    },
+    "defaultValue": 10000,
+    "minimum": 100,
+    "maximum": 60000
   }
 ];
-export const CONFIG_SCHEMA_VERSION = 1;
-export const CONFIG_FILE_NAME = ".octocoderc";
 export const RUNTIME_SURFACES = ["mcp","cli"] as const;
 export type RuntimeSurface = (typeof RUNTIME_SURFACES)[number];
-export const DEFAULT_RUNTIME_SURFACE: RuntimeSurface = RUNTIME_SURFACES[0];
 export const ENV_TOKEN_VARS = ["GH_TOKEN","GITHUB_TOKEN"] as const;
-export type EnvTokenVar = (typeof ENV_TOKEN_VARS)[number];
-export const PROTECTED_KEY_NAMES = ["PATH","HOME","SHELL","USER","LOGNAME","PWD","TMPDIR","NODE_OPTIONS","PYTHON","OCTOCODE_HOME","OCTOCODE_AST_REWRITE_STATE_DIR","OCTOCODE_CARGO","GITHUB_API_URL","OCTOCODE_BETA","ALLOWED_PATHS","WORKSPACE_ROOT","OCTOCODE_ALLOW_PRIVATE_REGISTRY","OCTOCODE_LSP_CONFIG","OCTOCODE_LSP_AUTO_INSTALL","OCTOCODE_LSP_CACHE_DIR","OCTOCODE_LSP_MAX_MEMORY_MB","OCTOCODE_TRUST_PROJECT_LSP_CONFIG","OCTOCODE_STORAGE_MODE","OCTOCODE_RANKING_ENABLED","OCTOCODE_CLASSIFICATION_API_HOST"] as const;
-export const HOME_TRUSTED_ENV_KEYS = ["OCTOCODE_AST_REWRITE_STATE_DIR","OCTOCODE_CARGO","GITHUB_API_URL","OCTOCODE_BETA","ALLOWED_PATHS","WORKSPACE_ROOT","OCTOCODE_ALLOW_PRIVATE_REGISTRY","OCTOCODE_LSP_CONFIG","OCTOCODE_LSP_AUTO_INSTALL","OCTOCODE_LSP_CACHE_DIR","OCTOCODE_LSP_MAX_MEMORY_MB","OCTOCODE_TRUST_PROJECT_LSP_CONFIG","OCTOCODE_STORAGE_MODE","OCTOCODE_RANKING_ENABLED","OCTOCODE_CLASSIFICATION_API_HOST"] as const;
+export const PROTECTED_KEY_NAMES = ["PATH","HOME","SHELL","USER","LOGNAME","PWD","TMPDIR","NODE_OPTIONS","PYTHON","OCTOCODE_GITHUB_CLIENT_ID","OCTOCODE_HOME","OCTOCODE_AST_REWRITE_STATE_DIR","OCTOCODE_CARGO","GITHUB_API_URL","OCTOCODE_ENABLE_LOCAL","OCTOCODE_BETA","ALLOWED_PATHS","WORKSPACE_ROOT","OCTOCODE_ALLOW_PRIVATE_REGISTRY","OCTOCODE_LSP_CONFIG","OCTOCODE_LSP_AUTO_INSTALL","OCTOCODE_LSP_CACHE_DIR","OCTOCODE_LSP_MAX_MEMORY_MB","OCTOCODE_TRUST_PROJECT_LSP_CONFIG","OCTOCODE_REDACT_EMAILS","OCTOCODE_STORAGE_MODE","OCTOCODE_CLASSIFICATION_API_HOST"] as const;
+export const HOME_TRUSTED_ENV_KEYS = ["OCTOCODE_GITHUB_CLIENT_ID","OCTOCODE_AST_REWRITE_STATE_DIR","OCTOCODE_CARGO","GITHUB_API_URL","OCTOCODE_ENABLE_LOCAL","OCTOCODE_BETA","ALLOWED_PATHS","WORKSPACE_ROOT","OCTOCODE_ALLOW_PRIVATE_REGISTRY","OCTOCODE_LSP_CONFIG","OCTOCODE_LSP_AUTO_INSTALL","OCTOCODE_LSP_CACHE_DIR","OCTOCODE_LSP_MAX_MEMORY_MB","OCTOCODE_TRUST_PROJECT_LSP_CONFIG","OCTOCODE_REDACT_EMAILS","OCTOCODE_STORAGE_MODE","OCTOCODE_CLASSIFICATION_API_HOST"] as const;
 /** Home-trusted switches a workspace may set only to this narrowing value. */
-export const WORKSPACE_NARROW_ONLY_ENV: Readonly<Record<string, string>> = {"OCTOCODE_STORAGE_MODE":"memory","OCTOCODE_RANKING_ENABLED":"false"};
-export const CONFIG_SOURCE_ENV_KEYS = ["OCTOCODE_GITHUB_CLIENT_ID","GITHUB_API_URL","OCTOCODE_GITHUB_GRAPHQL","OCTOCODE_ENABLE_LOCAL","OCTOCODE_BETA","ALLOWED_PATHS","WORKSPACE_ROOT","TOOLS_TO_RUN","DISABLE_TOOLS","OCTOCODE_DEFER_TOOLS","REQUEST_TIMEOUT","MAX_RETRIES","OCTOCODE_MAX_RATE_LIMIT_WAIT","OCTOCODE_ALLOW_PRIVATE_REGISTRY","OCTOCODE_LSP_CONFIG","OCTOCODE_LSP_AUTO_INSTALL","OCTOCODE_LSP_CACHE_DIR","OCTOCODE_LSP_MAX_MEMORY_MB","OCTOCODE_TRUST_PROJECT_LSP_CONFIG","OCTOCODE_LSP_PREWARM","OCTOCODE_OUTPUT_FORMAT","OCTOCODE_REDACT_EMAILS","OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH","OCTOCODE_STORAGE_MODE","OCTOCODE_ENABLE_STATS","OCTOCODE_CACHE_TTL_MS","OCTOCODE_MAX_CACHE_SIZE","OCTOCODE_MAX_CLONES","OCTOCODE_RANKING_ENABLED","OCTOCODE_RANKING_MAX_CANDIDATES","OCTOCODE_RANKING_MAX_CHARS","OCTOCODE_RANKING_TIMEOUT_MS","OCTOCODE_CLASSIFICATION_TYPE","OCTOCODE_CLASSIFICATION_API","OCTOCODE_CLASSIFICATION_API_HOST","OCTOCODE_CLASSIFICATION_CONCURRENCY"] as const;
-export type ConfigSourceEnvKey = (typeof CONFIG_SOURCE_ENV_KEYS)[number];
-export const DEFAULT_CONFIG_VALUE: ResolvedConfigData = { "version": 1, "github": { "apiUrl": "https://api.github.com", "graphqlEnabled": true }, "local": { "enabled": true, "beta": false, "allowedPaths": [], "workspaceRoot": undefined }, "tools": { "enabled": null, "disabled": null }, "mcp": { "deferred": null }, "network": { "timeout": 30000, "maxRetries": 3, "maxRateLimitWait": 45000, "allowPrivateRegistry": false }, "lsp": { "configPath": undefined, "autoInstall": "prompt", "cacheDir": undefined, "maxMemoryMb": undefined, "trustProjectConfig": false, "prewarm": "targeted" }, "output": { "format": "yaml", "redactEmails": false, "pagination": { "defaultCharLength": 50000 } }, "storage": { "mode": "persistent", "stats": false, "cloneCache": { "ttl": 86400000, "maxSize": 2147483648, "maxClones": 50 } }, "ranking": { "enabled": false, "maxCandidates": 64, "maxChars": 131072, "timeoutMs": 10000 }, "classification": { "type": "jev", "maxConcurrency": 10 } };
-export const DEFAULT_GITHUB_API_URL = "https://api.github.com" as const;
-export const DEFAULT_GITHUB_GRAPHQL_ENABLED = true as const;
-export const DEFAULT_LOCAL_ENABLED = true as const;
-export const DEFAULT_LOCAL_BETA = false as const;
-export const DEFAULT_LOCAL_ALLOWED_PATHS = [] as const;
-export const DEFAULT_LOCAL_WORKSPACE_ROOT = null;
-export const DEFAULT_TOOLS_ENABLED = null;
-export const DEFAULT_TOOLS_DISABLED = null;
-export const DEFAULT_MCP_DEFERRED = null;
-export const DEFAULT_NETWORK_TIMEOUT = 30000 as const;
-export const MIN_TIMEOUT = 5000;
-export const MAX_TIMEOUT = 300000;
-export const DEFAULT_NETWORK_MAX_RETRIES = 3 as const;
-export const MIN_RETRIES = 0;
-export const MAX_RETRIES = 10;
-export const DEFAULT_NETWORK_MAX_RATE_LIMIT_WAIT = 45000 as const;
-export const MIN_NETWORK_MAX_RATE_LIMIT_WAIT = 0;
-export const MAX_NETWORK_MAX_RATE_LIMIT_WAIT = 300000;
-export const DEFAULT_NETWORK_ALLOW_PRIVATE_REGISTRY = false as const;
-export const DEFAULT_LSP_CONFIG_PATH = null;
-export const DEFAULT_LSP_AUTO_INSTALL = "prompt" as const;
-export const DEFAULT_LSP_CACHE_DIR = null;
-export const DEFAULT_LSP_MAX_MEMORY_MB = null;
-export const DEFAULT_LSP_TRUST_PROJECT_CONFIG = false as const;
-export const DEFAULT_LSP_PREWARM = "targeted" as const;
-export const DEFAULT_OUTPUT_FORMAT = "yaml" as const;
-export const OUTPUT_FORMATS = ["yaml","json"] as const;
-export const DEFAULT_OUTPUT_REDACT_EMAILS = false as const;
-export const DEFAULT_OUTPUT_DEFAULT_CHAR_LENGTH = 50000 as const;
-export const MIN_OUTPUT_DEFAULT_CHAR_LENGTH = 1000;
-export const MAX_OUTPUT_DEFAULT_CHAR_LENGTH = 50000;
-export const DEFAULT_STORAGE_MODE = "persistent" as const;
-export const STORAGE_MODES = ["persistent","memory"] as const;
-export const DEFAULT_STORAGE_STATS = false as const;
-export const DEFAULT_CLONE_CACHE_TTL = 86400000 as const;
-export const MIN_CLONE_CACHE_TTL = 60000;
-export const MAX_CLONE_CACHE_TTL = 2592000000;
-export const DEFAULT_CLONE_CACHE_MAX_SIZE = 2147483648 as const;
-export const MIN_CLONE_CACHE_MAX_SIZE = 1048576;
-export const MAX_CLONE_CACHE_MAX_SIZE = 1099511627776;
-export const DEFAULT_CLONE_CACHE_MAX_CLONES = 50 as const;
-export const MIN_CLONE_CACHE_MAX_CLONES = 1;
-export const MAX_CLONE_CACHE_MAX_CLONES = 1000;
-export const DEFAULT_RANKING_ENABLED = false as const;
-export const DEFAULT_RANKING_MAX_CANDIDATES = 64 as const;
-export const MIN_RANKING_MAX_CANDIDATES = 1;
-export const MAX_RANKING_MAX_CANDIDATES = 256;
-export const DEFAULT_RANKING_MAX_CHARS = 131072 as const;
-export const MIN_RANKING_MAX_CHARS = 1024;
-export const MAX_RANKING_MAX_CHARS = 1048576;
-export const DEFAULT_RANKING_TIMEOUT_MS = 10000 as const;
-export const MIN_RANKING_TIMEOUT_MS = 100;
-export const MAX_RANKING_TIMEOUT_MS = 60000;
-export const DEFAULT_CLASSIFICATION_TYPE = "jev" as const;
-export const CLASSIFICATION_VENDORS = ["jev"] as const;
-export const DEFAULT_CLASSIFICATION_MAX_CONCURRENCY = 10 as const;
-export const MIN_CLASSIFICATION_CONCURRENCY = 1;
-export const MAX_CLASSIFICATION_CONCURRENCY = 64;
+export const WORKSPACE_NARROW_ONLY_ENV: Readonly<Record<string, string>> = {"OCTOCODE_ENABLE_LOCAL":"false","OCTOCODE_REDACT_EMAILS":"true","OCTOCODE_STORAGE_MODE":"memory"};
+export const DEFAULT_CONFIG_VALUE: ResolvedConfigData = { "github": { "apiUrl": "https://api.github.com", "graphqlEnabled": true }, "local": { "enabled": true, "beta": false, "allowedPaths": [], "workspaceRoot": undefined }, "tools": { "enabled": null, "disabled": null }, "mcp": { "deferred": null }, "network": { "timeout": 30000, "maxRetries": 3, "maxRateLimitWait": 45000, "allowPrivateRegistry": false }, "lsp": { "configPath": undefined, "autoInstall": "prompt", "cacheDir": undefined, "maxMemoryMb": null, "trustProjectConfig": false, "prewarm": "targeted" }, "output": { "format": "yaml", "redactEmails": false, "pagination": { "defaultCharLength": 50000 } }, "storage": { "mode": "persistent", "stats": false, "cloneCache": { "ttl": 86400000, "maxSize": 2147483648, "maxClones": 50 } }, "classification": { "model": undefined, "maxConcurrency": 10, "maxCandidates": 64, "maxChars": 131072, "timeoutMs": 10000 } };

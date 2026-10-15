@@ -4,14 +4,15 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { atomicWriteFile, atomicWriteFileSync } from '../src/shared/atomic.js';
 import { say, Subcommands, wordCompletions } from '../src/shared/commands.js';
-import { envFlag, envInt } from '../src/shared/env.js';
-import { dirsToRepoRoot, repoKey, sweepStaleOutputs, workspaceScratchDir } from '../src/shared/home.js';
+import { envFlag, envInt, ownNonce, PERMISSION_NONCE_FILE_ENV, sameSecret, takeNonce } from '../src/shared/env.js';
+import { dirsToRepoRoot, repoKey, sweepStaleOutputs, workspaceRoot, workspaceScratchDir } from '../src/shared/home.js';
 import { findManifest, minimumPiVersion, packageRoot, versionBelow } from '../src/shared/package.js';
 import { killTree, processAlive, stopTree } from '../src/shared/process.js';
 import { formatCost, formatTokens, formatTokenUsage } from '../src/shared/format.js';
 import { addReply, capChars, capOutput, clipText, contentText, cutText, emptyTotals, entryMessage, settleWithin, spendOf, unpricedModel } from '../src/shared/util.js';
 import { fakeCtx, fakePi } from './fake-pi.js';
 import { tmp } from './helpers.js';
+import { nonceFile } from './nonce-file.js';
 
 describe('settleWithin', () => {
   it('ends on the work, the timeout or an abort, never rejects, and removes its abort listener', async () => {
@@ -66,6 +67,50 @@ describe('envFlag / envInt', () => {
   });
 });
 
+describe('the subagent nonce', () => {
+  it('is read from the file an injected environment names, which is unlinked and no longer named', () => {
+    const file = nonceFile('abc');
+    const env: NodeJS.ProcessEnv = { [PERMISSION_NONCE_FILE_ENV]: file };
+    expect(ownNonce(env)).toBeUndefined();
+    expect(takeNonce(env)).toBe('abc');
+    expect(fs.existsSync(file)).toBe(false);
+    expect(env).not.toHaveProperty(PERMISSION_NONCE_FILE_ENV);
+    expect(ownNonce(env)).toBe('abc');
+    expect(takeNonce(env)).toBe('abc');
+    expect(takeNonce({})).toBeUndefined();
+    // A missing file gives no nonce, and nothing throws.
+    expect(takeNonce({ [PERMISSION_NONCE_FILE_ENV]: path.join(tmp(), 'gone') })).toBeUndefined();
+  });
+
+  it('stays with the process after the file and the variable are gone, so a reload still has it', () => {
+    const saved = process.env[PERMISSION_NONCE_FILE_ENV];
+    const slot = Symbol.for('octocode.permissionNonce');
+    const held = (globalThis as Record<symbol, unknown>)[slot];
+    try {
+      const file = nonceFile('n-1');
+      process.env[PERMISSION_NONCE_FILE_ENV] = file;
+      expect(takeNonce()).toBe('n-1');
+      expect(process.env[PERMISSION_NONCE_FILE_ENV]).toBeUndefined();
+      expect(fs.existsSync(file)).toBe(false);
+      expect(ownNonce()).toBe('n-1');
+      expect(takeNonce()).toBe('n-1');
+    } finally {
+      (globalThis as Record<symbol, unknown>)[slot] = held;
+      if (saved === undefined) delete process.env[PERMISSION_NONCE_FILE_ENV];
+      else process.env[PERMISSION_NONCE_FILE_ENV] = saved;
+    }
+  });
+
+  it('compares secrets in constant time over equal-length buffers: only the same string matches', () => {
+    expect(sameSecret('abc', 'abc')).toBe(true);
+    expect(sameSecret('abc', 'abd')).toBe(false);
+    expect(sameSecret('abc', 'abcd')).toBe(false);
+    expect(sameSecret('abc', undefined)).toBe(false);
+    expect(sameSecret('abc', 1)).toBe(false);
+    expect(sameSecret('', '')).toBe(false);
+  });
+});
+
 describe('paths', () => {
   it('walks up to the repository root, else stays at cwd', () => {
     const root = tmp('octocode-paths-');
@@ -100,6 +145,19 @@ describe('paths', () => {
     const elsewhere = path.join(above, 'other');
     fs.mkdirSync(elsewhere);
     expect(repoKey(elsewhere).root).toBe(fs.realpathSync(elsewhere));
+  });
+
+  it('names no permission workspace for home, a folder above it or `/`, and the repository root elsewhere', () => {
+    const home = tmp('octocode-paths-home-');
+    const proj = path.join(home, 'proj');
+    fs.mkdirSync(path.join(proj, '.git'), { recursive: true });
+    vi.stubEnv('HOME', home);
+    expect(workspaceRoot(home)).toBeUndefined();
+    expect(workspaceRoot(path.dirname(home))).toBeUndefined();
+    expect(workspaceRoot('/')).toBeUndefined();
+    expect(workspaceRoot(proj)).toBe(fs.realpathSync(proj));
+    // Per-repository state still keys on the folder itself.
+    expect(repoKey(home).root).toBe(fs.realpathSync(home));
   });
 
   it('resolves one checkout reached through a symlink to one repository', () => {

@@ -220,7 +220,7 @@ async function main() {
     const env = { ...isolated, OCTOCODE_CLASSIFICATION_API: 'poc-loopback-key', OCTOCODE_CLASSIFICATION_API_HOST: `http://127.0.0.1:${server.address().port}`,
       OCTOCODE_BETA: 'true', OCTOCODE_RANKING_ENABLED: 'true', OCTOCODE_ENABLE_LOCAL: 'true', OCTOCODE_ENABLE_STATS: 'false',
       OCTOCODE_RANKING_MAX_CANDIDATES: '64', OCTOCODE_RANKING_MAX_CHARS: '131072', OCTOCODE_RANKING_TIMEOUT_MS: '10000',
-      OCTOCODE_CLASSIFICATION_CONCURRENCY: '1', OCTOCODE_STORAGE_MODE: 'memory', OCTOCODE_LSP_PREWARM: 'false',
+      OCTOCODE_CLASSIFICATION_CONCURRENCY: '1', OCTOCODE_STORAGE_MODE: 'memory', OCTOCODE_LSP_PREWARM: 'off',
       OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH: '20000', MAX_RETRIES: '0', WORKSPACE_ROOT: fixture, ALLOWED_PATHS: fixture, DISABLE_TOOLS: '', TOOLS_TO_RUN: '' };
     run.schema = await invoke(['schema', 'localFetch', '--view', 'full'], fixture, env);
     if (mode === 'live') {
@@ -235,7 +235,7 @@ async function main() {
           current = { ...item, arm };
           const begin = ledger.length, time = performance.now();
           try {
-            const pages = await walk({ path: file, goals: [item.goal], minify: 'none', unit: 'lines', length: 10 }, env, fixture);
+            const pages = await walk({ path: file, classifiers: [item.goal], minify: 'none', unit: 'lines', length: 10 }, env, fixture);
             await Promise.allSettled([...pending]);
             const entries = ledger.slice(begin);
             results.push({ case: item.id, arm, coverage: coverage(pages, item.source), ...arrival(pages, item.gold),
@@ -258,7 +258,7 @@ async function main() {
       for (const [id, source] of Object.entries(sources)) {
         const file = path.join(fixture, `${id}.txt`); await fs.writeFile(file, source);
         current = { id, arm: 'current-cli', fail: id === 'partial-failure' };
-        const query = { path: file, goals: ['Find the PROOF evidence.'], minify: 'none', unit: 'lines', length: 10 };
+        const query = { path: file, classifiers: ['Find the PROOF evidence.'], minify: 'none', unit: 'lines', length: 10 };
         const begin = ledger.length;
         const result = await invoke(['localFetch', JSON.stringify({ queries: id === 'duplicate' ? [query, query] : [query] }), '--json'], fixture, env);
         const requests = ledger.slice(begin);
@@ -273,9 +273,11 @@ async function main() {
       }
       const selection = path.join(fixture, 'selection.txt');
       await fs.writeFile(selection, Array.from({ length: 120 }, (_, i) => i === 99 ? 'PROOF EXCLUDED_MARKER' : `Display record ${i + 1}`).join('\n') + '\n');
-      for (const prefilter of [undefined, ['EXCLUDED_MARKER']]) {
-        current = { id: prefilter ? 'disjoint-prefilter' : 'disjoint-control', arm: 'current-cli' }; const begin = ledger.length;
-        const result = await invoke(['clasify', JSON.stringify({ queries: [{ resources: [{ tool: 'localFetch', query: { path: selection, ranges: ['1-5', '10-15'] }, ...(prefilter ? { prefilter } : {}) }], questions: [{ type: 'relevant', ask: 'Find the PROOF evidence.' }], extras: ['details'] }] }), '--json'], fixture, env);
+      const proof = { proof: { type: 'noul', instructions: 'Does the selection contain the PROOF evidence?' } };
+      {
+        // A disjoint range selection is judged as selected; nothing outside it reaches the provider.
+        current = { id: 'disjoint-selection', arm: 'current-cli' }; const begin = ledger.length;
+        const result = await invoke(['clasify', JSON.stringify({ queries: [{ source: { tool: 'localFetch', query: { path: selection, ranges: ['1-5', '10-15'] } }, questions: proof }] }), '--json'], fixture, env);
         results.push({ case: current.id, current: result, excludedEvidenceSent: ledger.slice(begin).some(x => JSON.stringify(x.state).includes('EXCLUDED_MARKER')) });
       }
       for (const unicode of [false, true]) {
@@ -283,16 +285,18 @@ async function main() {
         const lines = Array.from({ length: 300 }, () => (unicode ? '界' : 'x').repeat(40)); lines[0] = 'INDEX_MARKER'; lines[249] = 'PROOF releases reserved capacity';
         const source = lines.join('\n') + '\n'; await fs.writeFile(file, source);
         current = { id: unicode ? 'unicode-hydration' : 'ascii-hydration', arm: 'current-cli' }; const begin = ledger.length;
-        const input = { queries: [{ resources: [{ tool: 'localSearch', query: { path: file, matchString: 'INDEX_MARKER', includeIgnored: true } }], questions: [{ type: 'relevant', ask: 'What releases reserved capacity?' }], extras: ['details', 'hints'] }] };
+        const input = { queries: [{ source: { tool: 'localFetch', query: { path: file, ranges: ['1-300'] } }, questions: { release: { type: 'noul', instructions: 'Does the selection state what releases reserved capacity?' } } }] };
         const result = await invoke(['clasify', JSON.stringify(input), '--json'], fixture, env);
         results.push({ case: current.id, chars: chars(source), bytes: Buffer.byteLength(source), current: result,
           decidingEvidenceSent: ledger.slice(begin).some(x => JSON.stringify(x.state).includes('PROOF')) });
         if (!unicode) {
-          const lead = result.output.queries?.[0]?.resources?.[0]?.pages?.[0]?.hints?.read;
+          const lead = result.output.queries?.[0]?.hints?.read;
           if (lead) {
             await fs.writeFile(file, source.replace('INDEX_MARKER', 'CHANGED_AFTER_JUDGMENT'));
             const replay = await invoke([lead.tool, JSON.stringify(lead.query), '--json'], fixture, env);
-            results.push({ case: 'local-snapshot', lead, current: replay, returnedChangedText: JSON.stringify(replay.output).includes('CHANGED_AFTER_JUDGMENT') });
+            // The lead pins the judged snapshot: a changed file must be refused, not returned.
+            results.push({ case: 'local-snapshot', lead, replay, refusedAsStale: replay.output?.results?.[0]?.data?.errorCode === 'staleSnapshot',
+              returnedChangedText: JSON.stringify(replay.output).includes('CHANGED_AFTER_JUDGMENT') });
           } else results.push({ case: 'local-snapshot', error: 'No executable read lead' });
         }
       }
@@ -301,7 +305,7 @@ async function main() {
       await fs.writeFile(controlFile, control.source);
       current = { id: 'pager-control', arm: 'current-cli' };
       const begin = ledger.length;
-      const pages = await walk({ path: controlFile, goals: [control.goal], minify: 'none', unit: 'lines', length: 10 }, env, fixture);
+      const pages = await walk({ path: controlFile, classifiers: [control.goal], minify: 'none', unit: 'lines', length: 10 }, env, fixture);
       results.push({ case: 'pager-control', coverage: coverage(pages, control.source), pages: pages.length,
         scoringCalls: ledger.length - begin, expectedInitialCandidates: chunks(control.source).length,
         continuationDidNotRescore: ledger.length - begin === chunks(control.source).length });
@@ -315,7 +319,7 @@ async function main() {
     await fs.rm(isolated.OCTOCODE_HOME, { recursive: true, force: true });
   }
   console.log(JSON.stringify({ output: path.join(out, 'run.json'), ...run.totals }));
-  if (stopped || results.some(x => x.error || x.coverage === false || x.current?.code !== undefined && x.current.code !== 0)) process.exitCode = 1;
+  if (stopped || results.some(x => x.error || x.coverage === false || x.returnedChangedText || x.current?.code !== undefined && x.current.code !== 0)) process.exitCode = 1;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) main().catch(error => { console.error(error.message); process.exitCode = 1; });

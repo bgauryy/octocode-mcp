@@ -5,6 +5,7 @@ import path from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { buildMcpInstructions } from '@octocodeai/config/mcp';
+import { getDirectToolDefinitionsWithAddons } from '@octocodeai/config/schema';
 
 const [referenceServer, nativeServer, addon] = process.argv.slice(2);
 assert.ok(referenceServer && nativeServer && addon,
@@ -78,8 +79,12 @@ try {
   assert.ok(localFetch, 'native catalog must advertise localFetch');
   assert.ok(localFetch.title);
   assert.equal(Object.hasOwn(localFetch, 'outputSchema'), false);
-  // tools/list omits annotations and output schemas (ARCHITECTURE.md).
-  assert.equal(Object.hasOwn(localFetch, 'annotations'), false);
+  // tools/list carries core's annotations and omits output schemas (ARCHITECTURE.md).
+  assert.deepEqual(
+    localFetch.annotations,
+    getDirectToolDefinitionsWithAddons({ availableTools: ['localFetch'] })
+      .find(definition => definition.name === 'localFetch').annotations,
+  );
   const [expected, actual] = await Promise.all([collect(reference), collect(native)]);
   assert.deepEqual(withoutOpaqueCursors(actual), withoutOpaqueCursors(expected));
 

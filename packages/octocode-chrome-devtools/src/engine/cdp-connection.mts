@@ -4,6 +4,7 @@ type Pending = {
   resolve: (value: Payload) => void;
   reject: (error: Error) => void;
   timer: NodeJS.Timeout;
+  sessionId?: string;
 };
 type Session = {
   targetInfo: Payload;
@@ -34,12 +35,14 @@ export function connectCDP(
     let nextId = 1,
       closed = false,
       opened = false;
-    const drain = (reason: string) => {
-      for (const entry of pending.values()) {
+    // A detached target never answers: fail its requests now instead of at their deadline.
+    const drain = (reason: string, sessionId?: string) => {
+      for (const [id, entry] of pending) {
+        if (sessionId !== undefined && entry.sessionId !== sessionId) continue;
         clearTimeout(entry.timer);
         entry.reject(new Error(reason));
+        pending.delete(id);
       }
-      pending.clear();
     };
     function makeSession() {
       return {
@@ -68,6 +71,7 @@ export function connectCDP(
               resolve: resolveRequest,
               reject: rejectRequest,
               timer,
+              sessionId,
             });
             try {
               socket.send(
@@ -130,6 +134,9 @@ export function connectCDP(
           );
         else entry.resolve(message.result ?? {});
       } else if (message.method) {
+        const detached = message.params?.sessionId;
+        if (message.method === 'Target.detachedFromTarget' && detached)
+          drain(`Session ${detached} detached from its target`, detached);
         const meta = message.sessionId ? { sessionId: message.sessionId } : {};
         const dispatch = (handler: Handler, args: unknown[]) => {
           const failed = (error: unknown) => {

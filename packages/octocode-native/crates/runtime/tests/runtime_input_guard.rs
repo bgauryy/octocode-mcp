@@ -161,43 +161,39 @@ async fn an_oversized_row_fails_in_band_while_other_rows_run() {
     runtime.close().await;
 }
 
+/// A string for an integer or boolean field is the canonical schema's
+/// rejection, never a repair: the error names the JSON value to send.
 #[tokio::test]
-async fn numeric_and_boolean_strings_are_coerced_for_typed_fields() {
+async fn numeric_and_boolean_strings_are_rejected_with_the_value_to_send() {
     let workspace = Workspace::new();
     let file = workspace.write("src/a.txt", "one\ntwo\nthree\n");
     let runtime = workspace.runtime(&[]);
-    let outcome = runtime
-        .run(
-            "coerce".into(),
-            "localFetch".into(),
-            json!({"queries":[
-                row(json!({"path":file,"matchString":"two","contextLines":"0"})),
-                row(json!({"path":file,"fullContent":"true"})),
-            ]}),
-        )
-        .await
-        .expect("lossless strings are coerced");
-    let rows = outcome.structured_content["results"].as_array().unwrap();
-    assert!(rows.iter().all(|row| row["status"] != "error"), "{rows:?}");
-    let text = outcome.structured_content.to_string();
-    assert!(text.contains("two"), "{text}");
-
-    for bad in [json!("2.0"), json!("02"), json!(" 2"), json!("two")] {
+    for (field, value, hint) in [
+        ("contextLines", json!("0"), "send 0"),
+        ("fullContent", json!("true"), "send true"),
+    ] {
+        let mut query = json!({"path":file,"matchString":"two"});
+        query[field] = value;
+        if field == "fullContent" {
+            query.as_object_mut().unwrap().remove("matchString");
+        }
         let error = runtime
             .run(
-                "coerce-bad".into(),
+                "strict".into(),
                 "localFetch".into(),
-                json!({"queries":[row(json!({"path":file,"matchString":"two","contextLines":bad}))]}),
+                json!({"queries":[row(query)]}),
             )
             .await
-            .expect_err("only exact integer strings coerce");
-        assert_eq!(error.code, "invalidInput", "{bad}");
+            .expect_err("a string is not a number or boolean");
+        assert_eq!(error.code, "invalidInput", "{field}");
+        let payload = error.payload.as_deref().unwrap().to_string();
+        assert!(payload.contains(hint), "{field}: {payload}");
     }
     runtime.close().await;
 }
 
 #[tokio::test]
-async fn clasify_redacts_evidence_but_rejects_a_credential_in_a_resource_read() {
+async fn clasify_rejects_a_credential_in_a_source_read() {
     let server = wiremock::MockServer::builder().start().await;
     wiremock::Mock::given(wiremock::matchers::method("POST"))
         .respond_with(wiremock::ResponseTemplate::new(500))
@@ -205,7 +201,7 @@ async fn clasify_redacts_evidence_but_rejects_a_credential_in_a_resource_read() 
         .mount(&server)
         .await;
     let workspace = Workspace::new();
-    let file = workspace.write("trace.txt", "Evidence is present.\n");
+    workspace.write("trace.txt", "Evidence is present.\n");
     let runtime = workspace.runtime(&[
         ("OCTOCODE_BETA", "true".into()),
         ("OCTOCODE_CLASSIFICATION_API", "secret".into()),
@@ -214,19 +210,19 @@ async fn clasify_redacts_evidence_but_rejects_a_credential_in_a_resource_read() 
     let input = json!({"queries":[{
         "id":"decision",
         "mainGoal":"Decide whether the file states the fact.",
-        "reasoning":"Exercise the resource-read input guard.",
-        "resources":[{"id":"source","tool":"localFetch","query":{"path":file,"matchString":TOKEN}}],
-        "questions":[{"id":"relevant","type":"yesno","ask":"Is evidence present?"}]
+        "reasoning":"Exercise the source-read input guard.",
+        "source":{"tool":"localFetch","query":{"path":format!("{TOKEN}.txt"),"ranges":["1-1"]}},
+        "questions":{"relevant":{"type":"noul","instructions":"Is evidence present?"}}
     }]});
     let error = runtime
         .run("clasify-secret".into(), "clasify".into(), input)
         .await
-        .expect_err("a resource read must not run a rewritten query");
+        .expect_err("a source read must not run a rewritten query");
     assert_eq!(error.code, "invalidInput");
     let payload = error.payload.as_deref().unwrap();
     let message = payload["error"].as_str().unwrap_or_default();
     assert!(
-        message.contains("resources[].query.matchString") && message.contains("credential"),
+        message.contains("source.query.path") && message.contains("credential"),
         "{payload}"
     );
     assert!(!payload.to_string().contains(TOKEN), "{payload}");

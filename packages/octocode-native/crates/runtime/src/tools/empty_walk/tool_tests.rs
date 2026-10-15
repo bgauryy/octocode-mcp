@@ -331,7 +331,27 @@ fn a_match_behind_a_skipped_path_is_named_and_its_lead_lifts_only_that() {
                 .find(|(cause, _)| *cause == first)
                 .map(|(_, reason)| *reason)
                 .expect("scenario names the cause");
-            assert!(prose(&out).contains(reason), "{label}: `{reason}` in {out}");
+            if tool.name == "localSearch" {
+                let entry_path = scenario.dir.split('/').next().expect("directory");
+                assert!(
+                    out["skippedPaths"]["entries"]
+                        .as_array()
+                        .expect("skipped entries")
+                        .iter()
+                        .any(|entry| entry["path"]
+                            == json!(
+                                root.0
+                                    .canonicalize()
+                                    .expect("canonical fixture")
+                                    .join(entry_path)
+                            )
+                            && entry["cause"] == first.label()
+                            && entry["reason"] == reason),
+                    "{label}: exact skipped path, cause and `{reason}` in {out}"
+                );
+            } else {
+                assert!(prose(&out).contains(reason), "{label}: `{reason}` in {out}");
+            }
             // The lead runs and finds the match.
             let found = (tool.run)(&root.0, &lead);
             assert!((tool.found)(&found), "{label}: lead found nothing: {found}");

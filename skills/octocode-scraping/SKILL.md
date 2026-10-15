@@ -44,7 +44,7 @@ flowchart LR
 
 - Start with `scripts/corpus-inspect.mjs --session-dir <d>` or `scripts/corpus-find.mjs --session-dir <d> --query <t>`; run each `next.*` continuation unchanged.
 - Navigate by the task and observed labels, URLs, scores, evidence; update the graph after each transition. Ranking never permits submitting a form.
-- Unread artifact where exact text or a small read does not decide: [clasify](references/corpus.md#locate-in-unread-text-clasify).
+- Unread artifact where exact text or a small read does not decide: [classifiers or clasify](references/corpus.md#find-evidence-in-unread-text-classifiers-clasify).
 - Pick extraction fields from the question; verify in saved source; cite artifact path and source URL.
 
 ## Resources

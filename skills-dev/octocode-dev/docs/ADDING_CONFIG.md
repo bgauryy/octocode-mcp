@@ -208,7 +208,7 @@ Source beats alias order: process → workspace `.octocode/.env` → global `.en
 - The generic Rust credential adapter applies environment-first file fallback into `effective_env`.
 - The generated input type and generic validators recognize credential fields in `.octocoderc`; generated resolved types exclude them.
 - An existing credential alias from either file prevents the canonical `.octocoderc` fallback from replacing it.
-- Reference: the `classification` section is `resolved: true`. `classification.api` (`dotenv: "all"`) and `classification.apiHost` (`dotenv: "home"`) are credential fields and never enter `ResolvedConfig`; `classification.type` and `classification.maxConcurrency` resolve normally.
+- Reference: the `classification` section is `resolved: true`. `classification.api` (`dotenv: "all"`) and `classification.apiHost` (`dotenv: "home"`) are credential fields and never enter `ResolvedConfig`; `classification.maxConcurrency` resolves normally.
 
 Pattern B tests must prove:
 

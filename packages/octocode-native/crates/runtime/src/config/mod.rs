@@ -2,6 +2,8 @@
 mod acquire;
 mod dotenv;
 mod edit;
+#[cfg(test)]
+mod effect_tests;
 mod json_edit;
 #[cfg(test)]
 mod layering_tests;
@@ -12,7 +14,6 @@ mod types;
 mod validation;
 pub use acquire::{acquire_config_input, octocode_home};
 pub use dotenv::parse_env;
-pub(crate) use dotenv::{parse_boolean_env, parse_string_array_env};
 pub use edit::{
     backup_path, config_revision, edit_scoped_env, read_private_config, replace_private_config,
     validate_env_edit,
@@ -36,13 +37,24 @@ mod tests {
     use serde_json::json;
     use std::collections::BTreeMap;
     use std::fs;
+    /// A valid value of `key` labeled `label`: an http(s) URL for a URL
+    /// setting's variable, `label` itself otherwise.
+    fn valid_value(key: &str, label: &str) -> String {
+        let url = CONFIG_FIELDS
+            .iter()
+            .any(|field| field.kind == ConfigFieldKind::Url && field.env_name() == Some(key));
+        if url {
+            format!("https://{label}.example")
+        } else {
+            label.to_owned()
+        }
+    }
     fn input(env: BTreeMap<String, String>, file: Option<&str>) -> ConfigInput {
         let home = std::path::PathBuf::from("/synthetic/home");
         ConfigInput {
             env,
             cwd: "/synthetic/cwd".into(),
             os_home: "/synthetic".into(),
-            trusted_project: false,
             global_env: FileInput::Missing {
                 path: home.join(".env"),
             },
@@ -79,7 +91,11 @@ mod tests {
         assert_eq!(digest(&[], None), base);
         assert_eq!(digest(&[("TERM_SESSION_ID", "x")], None), base);
         for name in DECLARED_ENV_KEYS {
-            assert_ne!(digest(&[(name, "/tmp/x")], None), base, "{name}");
+            assert_ne!(
+                digest(&[(name, &valid_value(name, "x"))], None),
+                base,
+                "{name}"
+            );
         }
         assert_ne!(
             digest(&[], Some("{\"local\":{\"enabled\":false}}")),
@@ -157,9 +173,19 @@ mod tests {
     #[test]
     fn validation_covers_fractional_ranges_paths_and_warnings() {
         let (ok, _) = validation::config_issues(
-            &json!({"network":{"timeout":5000.5,"maxRetries":2.5},"tools":{"enabled":null}}),
+            &json!({"network":{"timeout":5000.0,"maxRetries":2},"tools":{"enabled":null}}),
         );
         assert!(ok.is_empty());
+        // A fraction is not an integer setting's value.
+        let (fractional, _) =
+            validation::config_issues(&json!({"network":{"timeout":5000.5,"maxRetries":2.5}}));
+        assert_eq!(
+            fractional
+                .iter()
+                .map(|issue| issue.path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["network.timeout", "network.maxRetries"]
+        );
         let (bad, warnings) = validation::config_issues(
             &json!({"local":{"allowedPaths":["relative","/a/../b"]},"extra":1}),
         );
@@ -175,7 +201,7 @@ mod tests {
         let out = resolve_config(&input(env, None));
         assert!(out.resolved.local.beta);
         // `12ms` is not an integer: the setting keeps its default and says so.
-        assert_eq!(out.resolved.network.timeout, 30000.);
+        assert_eq!(out.resolved.network.timeout, 30000);
         assert!(
             out.diagnostics.iter().any(|d| d.code == "invalid_env_value"
                 && d.field_path.as_deref() == Some("network.timeout"))
@@ -191,8 +217,8 @@ mod tests {
     #[test]
     fn classification_max_concurrency_defaults_overrides_and_clamps() {
         let out = resolve_config(&input(BTreeMap::new(), None));
-        assert_eq!(out.resolved.classification.max_concurrency, 10.);
-        for (raw, expected) in [("4", 4.), ("0", 1.), ("1000", 64.), ("nope", 10.)] {
+        assert_eq!(out.resolved.classification.max_concurrency, 10);
+        for (raw, expected) in [("4", 4), ("0", 1), ("1000", 64), ("nope", 10)] {
             let env =
                 BTreeMap::from([("OCTOCODE_CLASSIFICATION_CONCURRENCY".into(), raw.to_owned())]);
             assert_eq!(
@@ -208,10 +234,10 @@ mod tests {
             BTreeMap::new(),
             Some("{\"classification\":{\"maxConcurrency\":3}}"),
         ));
-        assert_eq!(file.resolved.classification.max_concurrency, 3.);
+        assert_eq!(file.resolved.classification.max_concurrency, 3);
         assert_eq!(
             get_config_value(&file.resolved, "classification.maxConcurrency"),
-            Some(json!(3.0))
+            Some(json!(3))
         );
     }
     #[test]
@@ -222,7 +248,7 @@ mod tests {
         ));
         assert_eq!(out.source, ConfigSource::File);
         assert!(out.resolved.local.enabled, "bad field → default");
-        assert_eq!(out.resolved.network.timeout, 5000., "valid sibling kept");
+        assert_eq!(out.resolved.network.timeout, 5000, "valid sibling kept");
         assert_eq!(out.diagnostics.len(), 1);
         assert_eq!(out.diagnostics[0].severity, Severity::Warning);
         assert_eq!(
@@ -232,13 +258,9 @@ mod tests {
     }
     #[test]
     fn dotenv_protection_and_trust() {
-        let (mut map, sources) = merged_env(
-            Some("A=g\nPATH=/bad\nGITHUB_TOKEN=file"),
-            Some("A=p\nP=x"),
-            true,
-        );
+        let merged = merged_env(Some("A=g\nPATH=/bad\nGITHUB_TOKEN=file"), Some("A=p\nP=x"));
         let mut target = BTreeMap::from([("A".into(), "host".into()), ("P".into(), String::new())]);
-        let r = apply_env(&map, sources, &mut target);
+        let r = apply_env(merged, &mut target);
         assert_eq!(
             target
                 .get("A")
@@ -253,7 +275,6 @@ mod tests {
         );
         assert_eq!(r.skipped_protected, vec!["PATH"]);
         assert_eq!(target.get("GITHUB_TOKEN").map(String::as_str), Some("file"));
-        map.clear()
     }
     #[test]
     fn token_is_redacted_and_storage_stats_are_explicit() {
@@ -285,7 +306,6 @@ mod tests {
             env.clone(),
             cwd.clone(),
             root.path().to_path_buf(),
-            false,
             RuntimeSurface::Cli,
         ));
         fs::write(home.join(".octocoderc"), "{\"network\":{\"timeout\":6000}}")
@@ -294,12 +314,11 @@ mod tests {
             env,
             cwd,
             root.path().to_path_buf(),
-            false,
             RuntimeSurface::Cli,
         ));
         assert_eq!(
             (a.resolved.network.timeout, b.resolved.network.timeout),
-            (5000., 6000.)
+            (5000, 6000)
         )
     }
     #[test]
@@ -352,7 +371,7 @@ mod tests {
         assert_eq!(mixed.source, ConfigSource::Mixed);
         assert_eq!(
             get_config_value(&mixed.resolved, "network.timeout"),
-            Some(json!(6000.0))
+            Some(json!(6000))
         );
         assert_eq!(get_config_value(&mixed.resolved, "does.not.exist"), None);
         assert_eq!(resolve_config(&input(env, None)).source, ConfigSource::Env)
@@ -371,7 +390,6 @@ mod tests {
             path: "/synthetic/cwd/.octocode/.env".into(),
             text: "PROJECT=private-project-value".into(),
         };
-        i.trusted_project = true;
         let out = resolve_config(&i);
         let view = inspector_data(&i, &out);
         assert_eq!((view.global_key_count, view.project_key_count), (1, 1));
@@ -396,7 +414,6 @@ mod tests {
             path: "/synthetic/cwd/.octocode/.env".into(),
             text: "EXISTING=private-project-value".into(),
         };
-        i.trusted_project = true;
         let out = resolve_config(&i);
         let view = inspector_data(&i, &out);
         assert_eq!(
@@ -471,13 +488,11 @@ mod tests {
             "GH_TOKEN",
             "GITHUB_TOKEN",
             "OCTOCODE_CLASSIFICATION_API",
-            "OCTOCODE_CLASSIFICATION_TYPE",
             "OCTOCODE_CLASSIFICATION_API_HOST",
         ] {
-            for (trusted, explicit, expected) in [
-                (false, None, "project-secret"),
-                (true, None, "project-secret"),
-                (true, Some("process-secret"), "process-secret"),
+            for (explicit, expected) in [
+                (None, "project-secret"),
+                (Some("process-secret"), "process-secret"),
             ] {
                 // Home-trusted keys (e.g. an endpoint) never come from a workspace.
                 let expected =
@@ -486,30 +501,31 @@ mod tests {
                     } else {
                         expected
                     };
+                let value = |label: &str| valid_value(key, label);
+                let expected = value(expected);
                 let env = explicit
-                    .map(|value| BTreeMap::from([(key.into(), value.into())]))
+                    .map(|label| BTreeMap::from([(key.into(), value(label))]))
                     .unwrap_or_default();
                 let mut i = input(env, None);
-                i.trusted_project = trusted;
                 i.global_env = FileInput::Read {
                     path: "/synthetic/home/.env".into(),
-                    text: format!("{key}=home-secret\nHOME_ONLY=home"),
+                    text: format!("{key}={}\nHOME_ONLY=home", value("home-secret")),
                 };
                 i.project_env = FileInput::Read {
                     path: "/synthetic/cwd/.octocode/.env".into(),
-                    text: format!("{key}=project-secret"),
+                    text: format!("{key}={}", value("project-secret")),
                 };
                 let out = resolve_config(&i);
                 assert_eq!(
                     out.env_value(key),
-                    Some(expected),
-                    "{key}, trusted={trusted}"
+                    Some(expected.as_str()),
+                    "{key}, explicit={explicit:?}"
                 );
                 assert_eq!(out.env_value("HOME_ONLY"), Some("home"));
                 if ENV_TOKEN_VARS.contains(&key) {
                     assert_eq!(
                         out.token.as_ref().map(|token| token.token()),
-                        Some(expected)
+                        Some(expected.as_str())
                     );
                 }
                 if ENV_TOKEN_VARS.contains(&key) || key == "OCTOCODE_CLASSIFICATION_API" {
@@ -526,30 +542,33 @@ mod tests {
         for field in CONFIG_FIELDS {
             if let Some(binding) = field.env {
                 let key = binding.name;
+                let value = |label: &str| valid_value(key, label);
                 for explicit in [false, true] {
                     let mut i = input(BTreeMap::new(), None);
-                    assert!(!i.trusted_project);
                     if explicit {
-                        i.env.insert(key.into(), "process-value".into());
+                        i.env.insert(key.into(), value("process-value"));
                     }
                     i.global_env = FileInput::Read {
                         path: "/home/.env".into(),
-                        text: format!("{key}=home-value\nHOME_ONLY=home"),
+                        text: format!("{key}={}\nHOME_ONLY=home", value("home-value")),
                     };
                     i.project_env = FileInput::Read {
                         path: "/workspace/.octocode/.env".into(),
-                        text: format!("{key}=workspace-value"),
+                        text: format!("{key}={}", value("workspace-value")),
                     };
                     let out = resolve_config(&i);
                     assert_eq!(
                         out.env_value(key),
-                        Some(if explicit {
-                            "process-value"
-                        } else if HOME_TRUSTED_ENV_KEYS.contains(&key) {
-                            "home-value"
-                        } else {
-                            "workspace-value"
-                        }),
+                        Some(
+                            value(if explicit {
+                                "process-value"
+                            } else if HOME_TRUSTED_ENV_KEYS.contains(&key) {
+                                "home-value"
+                            } else {
+                                "workspace-value"
+                            })
+                            .as_str()
+                        ),
                         "{key}"
                     );
                     assert_eq!(out.env_value("HOME_ONLY"), Some("home"));
@@ -560,7 +579,7 @@ mod tests {
                     };
                     assert_eq!(
                         resolve_config(&i).env_value(key),
-                        Some("home-value"),
+                        Some(value("home-value").as_str()),
                         "blank workspace {key}"
                     );
                 }
@@ -654,7 +673,6 @@ mod tests {
             BTreeMap::from([("OCTOCODE_CLASSIFICATION_API".into(), String::new())]),
             Some(r#"{"classification":{"api":"file-secret"}}"#),
         );
-        i.trusted_project = true;
         i.global_env = FileInput::Read {
             path: "/synthetic/home/.env".into(),
             text: "OCTOCODE_CLASSIFICATION_API=home-secret".into(),

@@ -109,13 +109,6 @@ fn import_bindings(content: &str, file: &str) -> Option<HashMap<Spot, String>> {
 const MODULE_EXTENSIONS: [&str; 12] = [
     "ts", "tsx", "d.ts", "js", "jsx", "mts", "cts", "mjs", "cjs", "json", "d.mts", "d.cts",
 ];
-/// Source extensions a compiled `.js`-style specifier may name.
-const COMPILED_EXTENSIONS: [(&str, &[&str]); 4] = [
-    ("js", &["ts", "tsx", "d.ts"]),
-    ("jsx", &["tsx"]),
-    ("mjs", &["mts", "d.mts"]),
-    ("cjs", &["cts", "d.cts"]),
-];
 
 /// Whether a relative `specifier` imported from `file` names no file: no
 /// exact path, no compiled-name source swap, no extension probe, no directory
@@ -143,7 +136,7 @@ fn module_candidates(base: &Path) -> Vec<PathBuf> {
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_default();
     let mut candidates = vec![base.to_path_buf()];
-    for (compiled, sources) in COMPILED_EXTENSIONS {
+    for (compiled, sources) in octocode_engine::signatures::languages::JS_SOURCE_SWAPS {
         if let Some(stem) = name.strip_suffix(&format!(".{compiled}")) {
             candidates.extend(
                 sources
@@ -286,6 +279,7 @@ mod tests {
         touch("src/a.ts");
         touch("src/dir/index.ts");
         touch("src/styles.css");
+        touch("src/view.d.ts");
         let policy = crate::tools::test_support::workspace_policy(&root);
         let missing = proven_missing(&policy);
         let file = root.join("src/b.ts").to_string_lossy().into_owned();
@@ -302,6 +296,7 @@ mod tests {
             "a path the policy denies cannot be judged"
         );
         assert!(stop("./a.js"), "compiled name of a.ts");
+        assert!(stop("./view.jsx"), "declaration of a compiled .jsx name");
         assert!(stop("./a"), "extension probe");
         assert!(stop("./dir"), "directory index");
         assert!(stop("./styles.css"), "an exact file");

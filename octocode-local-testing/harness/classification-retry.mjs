@@ -20,16 +20,26 @@ const ctx = await setup({ label: 'cache-retry', classificationResponder: async r
   }
   return { body };
 } });
-const env = { ...ctx.env, MAX_RETRIES: '1' };
+// Session stats (persistent storage only) are the accounting surface for
+// provider requests: a row carries the provider's usage, not request counts.
+const env = { ...ctx.env, MAX_RETRIES: '1', OCTOCODE_STORAGE_MODE: 'persistent', OCTOCODE_ENABLE_STATS: 'true' };
+const statsFile = path.join(env.OCTOCODE_HOME, 'stats.json');
+const usageTotals = () => {
+  try { return JSON.parse(fs.readFileSync(statsFile, 'utf8')).stats?.clasify ?? {}; } catch { return {}; }
+};
+const usageSince = before => {
+  const now = usageTotals();
+  return Object.fromEntries(['calls', 'known_usage_calls', 'unknown_usage_calls', 'input_tokens', 'output_tokens']
+    .map(key => [key, (now[key] ?? 0) - (before[key] ?? 0)]));
+};
 let client;
 const traces = [];
-const query = (value, ask = 'Does the evidence contain an explicit null field?') => ({
-  resources: [{ id: 'value', value }],
-  questions: [{ id: 'answer', type: 'yesno', ask }],
-  extras: ['details', 'stats'],
+const query = (state, instructions = 'Does the evidence contain an explicit null field?') => ({
+  state,
+  questions: { answer: { type: 'noul', instructions } },
 });
-const verdicts = result => collect(result.json ?? result.sc, value => typeof value.yesno === 'number').map(value => value.yesno);
-const matrix = result => (result.json ?? result.sc)?.queries?.[0];
+const verdicts = result => collect(result.json ?? result.sc, value => value.type === 'noul' && typeof value.noul === 'number').map(value => value.noul);
+const row = result => (result.json ?? result.sc)?.queries?.[0];
 const errors = result => collect(result.json ?? result.sc, value => typeof value.errorCode === 'string').map(value => value.errorCode);
 const call = async (input, label) => {
   const before = ctx.calls();
@@ -46,34 +56,49 @@ try {
   const first = await call(query({ stable: 'evidence', x: null }), 'explicit null');
   check('cold judgment sends one request and returns its answer', first.calls === 1 && verdicts(first.result).includes(0.9));
   const same = await call(query({ stable: 'evidence', x: null }), 'same exact evidence');
-  check('warm judgment sends no request or reused token charges', same.calls === 0 && matrix(same.result)?.usage?.calls === 0 && verdicts(same.result).includes(0.9));
+  check('warm judgment sends no request and marks the saved answer as replayed', same.calls === 0 && row(same.result)?.replayed === true && row(first.result)?.replayed === undefined && verdicts(same.result).includes(0.9));
   const missing = await call(query({ stable: 'evidence' }), 'missing field');
   check('removing an explicit null invalidates the judgment', missing.calls === 1 && verdicts(missing.result).includes(0.1), JSON.stringify({ calls: missing.calls, errors: errors(missing.result) }));
   const ordered = await call(query({ x: null, nested: { b: 2, a: 1 } }), 'object order original');
   const reordered = await call(query({ nested: { a: 1, b: 2 }, x: null }), 'object order reversed');
-  check('object key order alone reuses the judgment', ordered.calls === 1 && reordered.calls === 0 && verdicts(reordered.result).includes(0.9));
+  // The provider receives the row's own state in its own key order, so a
+  // reordered object is different provider input: an exact-state cache judges it fresh.
+  check('a reordered state object is judged fresh, not replayed', ordered.calls === 1 && reordered.calls === 1 && row(reordered.result)?.replayed === undefined,
+    JSON.stringify({ ordered: ordered.calls, reordered: reordered.calls, replayed: row(reordered.result)?.replayed ?? false }));
   const changedQuestion = await call(query({ stable: 'evidence', x: null }, 'Is the x field present with a null value?'), 'different question');
   check('changing the question requires a fresh judgment', changedQuestion.calls === 1 && verdicts(changedQuestion.result).includes(0.9));
 
   mode = 'slow';
   const beforeWave = ctx.calls();
+  const waveUsage = usageTotals();
   const wave = await Promise.all(Array.from({ length: 4 }, () => client.call('clasify', query({ wave: 'success' }))));
   check('concurrent identical callers share one successful request', ctx.calls() - beforeWave === 1 && wave.every(result => verdicts(result).includes(0.1)));
-  check('shared-flight usage is charged to one caller', wave.reduce((total, result) => total + (matrix(result)?.usage?.calls ?? 0), 0) === 1);
+  const fresh = wave.filter(result => row(result)?.replayed !== true).length;
+  const waveCharged = usageSince(waveUsage);
+  check('shared-flight usage is charged to one caller', fresh === 1 && waveCharged.calls === 1 && waveCharged.input_tokens === 10, JSON.stringify({ fresh, waveCharged }));
 
   mode = 'unauthorized-slow';
   const beforeFailedWave = ctx.calls();
+  const failedUsage = usageTotals();
   const failedWave = await Promise.all(Array.from({ length: 4 }, () => client.call('clasify', query({ wave: 'failed' }))));
   check('concurrent identical callers share one provider failure', ctx.calls() - beforeFailedWave === 1 && failedWave.every(result => errors(result).includes('classificationProviderError')));
-  check('shared failed-flight usage counts one attempted request', failedWave.reduce((total, result) => total + (matrix(result)?.usage?.calls ?? 0), 0) === 1);
+  const failedCharged = usageSince(failedUsage);
+  check('shared failed-flight usage counts one attempted request', failedCharged.calls === 1, JSON.stringify(failedCharged));
 
   mode = 'throttle';
   remainingFailures = 1;
   const retryStart = ctx.calls();
+  const retryUsage = usageTotals();
   const retried = await call(query({ retry: 'throttle' }), '429 then success');
   const packets = ctx.mock.classificationRequests.slice(retryStart);
   check('transient failure retries once with identical provider input', retried.calls === 2 && packets.length === 2 && stable(packets[0]) === stable(packets[1]) && verdicts(retried.result).includes(0.1));
-  check('retry usage counts both attempts without inventing missing tokens', matrix(retried.result)?.usage?.calls === 2 && !Object.hasOwn(matrix(retried.result)?.usage ?? {}, 'inputTokens'));
+  // The row shows the provider's reported usage; the throttled attempt
+  // reported none, so it is counted as an attempt with unknown usage.
+  const retryCharged = usageSince(retryUsage);
+  check('retry usage counts both attempts without inventing missing tokens',
+    stable(row(retried.result)?.usage) === stable({ input_tokens: 10, output_tokens: 2 })
+      && retryCharged.calls === 2 && retryCharged.known_usage_calls === 1 && retryCharged.unknown_usage_calls === 1 && retryCharged.input_tokens === 10,
+    JSON.stringify({ usage: row(retried.result)?.usage, retryCharged }));
   remainingFailures = 10;
   const beforeNoRetry = ctx.calls();
   const noRetry = await ctx.cli('clasify', query({ retry: 'disabled' }), { MAX_RETRIES: '0' });
@@ -124,7 +149,7 @@ try {
   }
 
   const file = path.join(ctx.fixture, 'ranking-guide.txt');
-  const sourceQuery = { path: file, length: 10, goals: ['Find the cancellation rule.'] };
+  const sourceQuery = { path: file, length: 10, classifiers: ['Find the cancellation rule.'] };
   const beforeRanking = ctx.calls();
   const initial = await ctx.cli('localFetch', sourceQuery);
   const data = success(initial);
@@ -138,10 +163,10 @@ try {
 
   const accountChanged = await ctx.cliArgs([next.tool, JSON.stringify(next.query), '--json'], { OCTOCODE_CLASSIFICATION_API: 'fixture-key-rotated' });
   check('account change rejects old order before provider work', errors(accountChanged).includes('staleSnapshot') && ctx.calls() === beforeReplay);
-  const newGoal = structuredClone(next.query);
-  newGoal.queries[0].goals = ['Find the bookkeeping rule.'];
-  const goalChanged = await ctx.cliArgs([next.tool, JSON.stringify(newGoal), '--json']);
-  check('goal change rejects old order before provider work', errors(goalChanged).includes('staleSnapshot') && ctx.calls() === beforeReplay);
+  const newClassifiers = structuredClone(next.query);
+  newClassifiers.queries[0].classifiers = ['Find the bookkeeping rule.'];
+  const classifiersChanged = await ctx.cliArgs([next.tool, JSON.stringify(newClassifiers), '--json']);
+  check('classifier change rejects old order before provider work', errors(classifiersChanged).includes('staleSnapshot') && ctx.calls() === beforeReplay);
 
   // Replays through a fresh MCP process use the same saved identity.
   const replayMcp = await client.raw(next.tool, next.query);

@@ -5,12 +5,11 @@ This reference is generated from [`packages/octocode-config/config-contract.json
 
 ## Complete `.octocoderc` example
 
-`null` means “use the next source or generated default.” JSON comments and trailing commas are accepted by the loader even though this generated example is strict JSON.
+`null` means “use the next source or the generated default” for every setting, lists included. JSON comments and trailing commas are accepted by the loader even though this generated example is strict JSON.
 
 ```json
 {
   "$schema": "https://octocode.ai/schemas/config-v1.json",
-  "version": 1,
   "github": {
     "apiUrl": "https://api.github.com",
     "graphqlEnabled": true
@@ -58,17 +57,14 @@ This reference is generated from [`packages/octocode-config/config-contract.json
       "maxClones": 50
     }
   },
-  "ranking": {
-    "enabled": false,
+  "classification": {
+    "api": null,
+    "apiHost": null,
+    "model": null,
+    "maxConcurrency": 10,
     "maxCandidates": 64,
     "maxChars": 131072,
     "timeoutMs": 10000
-  },
-  "classification": {
-    "type": "jev",
-    "api": null,
-    "apiHost": null,
-    "maxConcurrency": 10
   }
 }
 ```
@@ -79,10 +75,9 @@ Environment values take precedence over `.octocoderc`. Each setting has at most 
 
 | `.octocoderc` path | Environment | Default | Type / constraint | Description |
 |---|---|---|---|---|
-| `version` | — | `1` | integer | Configuration schema version. |
 | `github.apiUrl` | `GITHUB_API_URL` | `"https://api.github.com"` | url | GitHub REST API root. GitHub Enterprise commonly uses /api/v3. GITHUB_API_URL: shell or trusted home .env |
 | `github.graphqlEnabled` | `OCTOCODE_GITHUB_GRAPHQL` | `true` | boolean | Use GitHub GraphQL where supported; false forces REST-only access. |
-| `local.enabled` | `OCTOCODE_ENABLE_LOCAL` | `true` | boolean | Enable local filesystem tools on every runtime surface. |
+| `local.enabled` | `OCTOCODE_ENABLE_LOCAL` | `true` | boolean | Enable local filesystem tools on every runtime surface. OCTOCODE_ENABLE_LOCAL: shell or trusted home .env |
 | `local.beta` | `OCTOCODE_BETA` | `false` | boolean | Enable beta features and tools; off by default on every surface. `octocode schema` reports which tools the gate withholds. OCTOCODE_BETA: shell or trusted home .env |
 | `local.allowedPaths` | `ALLOWED_PATHS` | `[]` | string array | Extra absolute or home-relative roots added to the allowed roots (workspace root and OCTOCODE_HOME). The environment value is a comma-separated list. ALLOWED_PATHS: shell or trusted home .env |
 | `local.workspaceRoot` | `WORKSPACE_ROOT` | process.cwd() | path | Optional absolute or home-relative workspace root. WORKSPACE_ROOT: shell or trusted home .env |
@@ -93,28 +88,27 @@ Environment values take precedence over `.octocoderc`. Each setting has at most 
 | `network.maxRetries` | `MAX_RETRIES` | `3` | integer (0–10) | Maximum retries after a failed request. |
 | `network.maxRateLimitWait` | `OCTOCODE_MAX_RATE_LIMIT_WAIT` | `45000` | integer (0–300000) | Longest GitHub rate-limit wait in milliseconds (primary or secondary limit, code-search window) before a call fails with retryAfter. Waiting does not count against network.timeout; the tool call's own deadline still bounds it. The default stays under the 60 s tool-call timeout some MCP hosts apply. |
 | `network.allowPrivateRegistry` | `OCTOCODE_ALLOW_PRIVATE_REGISTRY` | `false` | boolean | Allow private, loopback, or link-local artifact registries. Security-sensitive SSRF escape hatch; opt in only for trusted enterprise registries. OCTOCODE_ALLOW_PRIVATE_REGISTRY: shell or trusted home .env |
-| `lsp.configPath` | `OCTOCODE_LSP_CONFIG` | unset | string | Optional path to a custom lsp-servers.json. OCTOCODE_LSP_CONFIG: shell or trusted home .env |
+| `lsp.configPath` | `OCTOCODE_LSP_CONFIG` | unset | path | Optional path to a custom lsp-servers.json. OCTOCODE_LSP_CONFIG: shell or trusted home .env |
 | `lsp.autoInstall` | `OCTOCODE_LSP_AUTO_INSTALL` | `"prompt"` | `prompt` or `off` or `auto` | Whether `octocode lsp-server install` may download a managed language server: prompt (ask), off, or auto. OCTOCODE_LSP_AUTO_INSTALL: shell or trusted home .env |
 | `lsp.cacheDir` | `OCTOCODE_LSP_CACHE_DIR` | unset | path | Directory for managed language-server installs; default <octocode home>/lsp. OCTOCODE_LSP_CACHE_DIR: shell or trusted home .env |
-| `lsp.maxMemoryMb` | `OCTOCODE_LSP_MAX_MEMORY_MB` | unset | string | Resident-memory cap per language server process tree, in MiB (a non-negative integer). Unset: 25% of host RAM, between 4096 and 8192. 0 disables the cap. A server over the cap is stopped and lspSearch reports serverCrashed (not retryable). OCTOCODE_LSP_MAX_MEMORY_MB: shell or trusted home .env |
+| `lsp.maxMemoryMb` | `OCTOCODE_LSP_MAX_MEMORY_MB` | 25% of host RAM, between 4096 and 8192 | integer (0–4294967295) | Resident-memory cap per language server process tree, in MiB. Unset: 25% of host RAM, between 4096 and 8192. 0 disables the cap. A server over the cap is stopped and lspSearch reports serverCrashed (not retryable). OCTOCODE_LSP_MAX_MEMORY_MB: shell or trusted home .env |
 | `lsp.trustProjectConfig` | `OCTOCODE_TRUST_PROJECT_LSP_CONFIG` | `false` | boolean | Trust a project .octocode/lsp-servers.json. Security-sensitive: a trusted project config can launch server binaries. OCTOCODE_TRUST_PROJECT_LSP_CONFIG: shell or trusted home .env |
 | `lsp.prewarm` | `OCTOCODE_LSP_PREWARM` | `"targeted"` | `targeted` or `all` or `off` | Language-server prewarm: targeted starts the server an offered lspSearch call names; all also warms the file a read or search names; off disables it. |
 | `output.format` | `OCTOCODE_OUTPUT_FORMAT` | `"yaml"` | `yaml` or `json` | Encoding of rendered text content (the MCP text channel): yaml or json. Structured content and CLI stdout are always JSON. |
-| `output.redactEmails` | `OCTOCODE_REDACT_EMAILS` | `false` | boolean | Mask email addresses such as GitHub commit authors. |
+| `output.redactEmails` | `OCTOCODE_REDACT_EMAILS` | `false` | boolean | Mask email addresses such as GitHub commit authors. OCTOCODE_REDACT_EMAILS: shell or trusted home .env |
 | `output.pagination.defaultCharLength` | `OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH` | `50000` | integer (1000–50000) | Automatic pagination character budget. |
 | `storage.mode` | `OCTOCODE_STORAGE_MODE` | `"persistent"` | `persistent` or `memory` | Whether caches and runtime state may persist on disk. OCTOCODE_STORAGE_MODE: shell or trusted home .env |
 | `storage.stats` | `OCTOCODE_ENABLE_STATS` | `false` | boolean | Write stats.json on flush; stats remain in memory either way. |
 | `storage.cloneCache.ttl` | `OCTOCODE_CACHE_TTL_MS` | `86400000` | integer (60000–2592000000) | Milliseconds a ghCloneRepo checkout stays fresh before it is re-fetched. |
 | `storage.cloneCache.maxSize` | `OCTOCODE_MAX_CACHE_SIZE` | `2147483648` | integer (1048576–1099511627776) | Byte cap for the on-disk ghCloneRepo cache; least-recently-used checkouts are evicted above it. |
 | `storage.cloneCache.maxClones` | `OCTOCODE_MAX_CLONES` | `50` | integer (1–1000) | Maximum repositories the ghCloneRepo cache keeps. |
-| `ranking.enabled` | `OCTOCODE_RANKING_ENABLED` | `false` | boolean | Enable goal-based ordering on supported reads. Requires the classification API credential, independently of the public clasify tool. OCTOCODE_RANKING_ENABLED: shell or trusted home .env |
-| `ranking.maxCandidates` | `OCTOCODE_RANKING_MAX_CANDIDATES` | `64` | integer (1–256) | Maximum complete evidence units classified per ranking operation; other units keep their original order. |
-| `ranking.maxChars` | `OCTOCODE_RANKING_MAX_CHARS` | `131072` | integer (1024–1048576) | Maximum evidence characters sent for one ranking operation. |
-| `ranking.timeoutMs` | `OCTOCODE_RANKING_TIMEOUT_MS` | `10000` | integer (100–60000) | Total ranking deadline in milliseconds, bounded by the enclosing request deadline. |
-| `classification.type` | `OCTOCODE_CLASSIFICATION_TYPE` | jev | `jev` | Classification vendor. Per-vendor defaults (host, model, endpoint) are built in. |
-| `classification.api` | `OCTOCODE_CLASSIFICATION_API` | unset | string | Classification provider API key, required for goals ranking and the beta clasify tool. Credential values are omitted from resolved configuration and diagnostics. Credential-only; excluded from ResolvedConfig. |
-| `classification.apiHost` | `OCTOCODE_CLASSIFICATION_API_HOST` | vendor default (jev: https://api.typesafe.ai) | url | Optional override of the selected vendor's default API root. Requires HTTP or HTTPS at config validation; provider policy may require HTTPS except loopback. OCTOCODE_CLASSIFICATION_API_HOST: shell or trusted home .env Credential-only; excluded from ResolvedConfig. |
+| `classification.api` | `OCTOCODE_CLASSIFICATION_API` | unset | string | Classification provider API key, required for read-tool classifiers and the beta clasify tool. Credential values are omitted from resolved configuration and diagnostics. Credential-only; excluded from ResolvedConfig. |
+| `classification.apiHost` | `OCTOCODE_CLASSIFICATION_API_HOST` | built-in provider default (https://api.typesafe.ai) | url | Optional override of the classification provider's default API root. Requires HTTP or HTTPS at config validation; provider policy may require HTTPS except loopback. OCTOCODE_CLASSIFICATION_API_HOST: shell or trusted home .env Credential-only; excluded from ResolvedConfig. |
+| `classification.model` | `OCTOCODE_CLASSIFICATION_MODEL` | built-in provider default (jev-latest) | string | Classification model for read-tool classifiers and clasify; a clasify row's model overrides it. Pin an exact model (for example jev-1.13.0) for reproducible results; an alias can change behind cached answers until they expire. |
 | `classification.maxConcurrency` | `OCTOCODE_CLASSIFICATION_CONCURRENCY` | `10` | integer (1–64) | Process-wide maximum in-flight classification provider requests per provider endpoint. |
+| `classification.maxCandidates` | `OCTOCODE_CLASSIFICATION_MAX_CANDIDATES` | `64` | integer (1–256) | Maximum complete evidence units assessed per context selection operation; unassessed units remain unknown and recoverable. |
+| `classification.maxChars` | `OCTOCODE_CLASSIFICATION_MAX_CHARS` | `131072` | integer (1024–1048576) | Maximum total characters in serialized sanitized candidate states per context selection operation, including source metadata; excludes question instructions and request envelopes. |
+| `classification.timeoutMs` | `OCTOCODE_CLASSIFICATION_TIMEOUT_MS` | `10000` | integer (100–60000) | Context selection deadline in milliseconds, bounded by the enclosing request deadline. |
 
 ## GitHub token priority
 
@@ -133,3 +127,37 @@ Tokens first choose the highest-priority source: process environment → workspa
 | `OCTOCODE_HOME` | Overrides the Octocode configuration directory (default: <os-home>/.octocode) |
 | `OCTOCODE_AST_REWRITE_STATE_DIR` | Override the astRewrite transaction/recovery state directory. |
 | `OCTOCODE_CARGO` | Override the cargo executable used for Rust dependency-graph analysis. |
+
+## Home-only environment variables
+
+A workspace `.octocode/.env` cannot set these; the value is skipped and listed under `skippedProtected` in `octocode config --json`, and the setting bound to one is ignored in a workspace `.octocoderc` with a `workspace_config_protected` warning. A workspace may still set the narrowing value shown.
+
+| Environment variable | Workspace may set only |
+|---|---|
+| `OCTOCODE_GITHUB_CLIENT_ID` | — |
+| `OCTOCODE_AST_REWRITE_STATE_DIR` | — |
+| `OCTOCODE_CARGO` | — |
+| `GITHUB_API_URL` | — |
+| `OCTOCODE_ENABLE_LOCAL` | `false` |
+| `OCTOCODE_BETA` | — |
+| `ALLOWED_PATHS` | — |
+| `WORKSPACE_ROOT` | — |
+| `OCTOCODE_ALLOW_PRIVATE_REGISTRY` | — |
+| `OCTOCODE_LSP_CONFIG` | — |
+| `OCTOCODE_LSP_AUTO_INSTALL` | — |
+| `OCTOCODE_LSP_CACHE_DIR` | — |
+| `OCTOCODE_LSP_MAX_MEMORY_MB` | — |
+| `OCTOCODE_TRUST_PROJECT_LSP_CONFIG` | — |
+| `OCTOCODE_REDACT_EMAILS` | `true` |
+| `OCTOCODE_STORAGE_MODE` | `memory` |
+| `OCTOCODE_CLASSIFICATION_API_HOST` | — |
+
+## Removed settings
+
+A removed name is reported once as a `removed_setting` warning and otherwise ignored.
+
+| Name | Where | What to do |
+|---|---|---|
+| `version` | `.octocoderc` | The configuration file no longer declares a schema version; delete the key. |
+| `classification.type` | `.octocoderc` | The classification provider is built in; delete the key. |
+| `OCTOCODE_CLASSIFICATION_TYPE` | environment | The classification provider is built in; unset the variable. |

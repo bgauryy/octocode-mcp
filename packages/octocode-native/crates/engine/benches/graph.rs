@@ -26,7 +26,7 @@ fn graph(c: &mut Criterion) {
     let mut group = c.benchmark_group(format!("graph_{files}x{fanout}"));
     group.sample_size(10);
     group.bench_function("build", |b| {
-        b.iter(|| frozen_graph(black_box(files), fanout))
+        b.iter(|| frozen_graph(black_box(files), fanout));
     });
     group.bench_function("snapshot", |b| {
         b.iter(|| {
@@ -44,7 +44,7 @@ fn graph(c: &mut Criterion) {
                 }
             }
             builder.finish()
-        })
+        });
     });
     group.bench_function("reachable_and_scc", |b| {
         b.iter(|| {
@@ -52,7 +52,7 @@ fn graph(c: &mut Criterion) {
                 reachable(&graph, &["src/file-00000.rs".to_owned()], false).len(),
                 scc(&graph, false).len(),
             )
-        })
+        });
     });
     group.finish();
 }

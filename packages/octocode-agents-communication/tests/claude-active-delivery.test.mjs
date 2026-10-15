@@ -74,7 +74,7 @@ setInterval(() => { if (received && fs.existsSync(release)) finish(); }, 20);
   const recipient = events().find(event => event.type === 'ready').session;
   const call = jsonCall(binary, workspace, database, {stdio:'pipe'});
   const sender = call('join', {name:'reviewer',vendor:'raw'}).id;
-  const send = (body, wake) => call('send_message', {to:recipient,body,key:body,reasoning:'Verify native managed delivery',replyRequired:false,...(wake ? {wake} : {})}, sender).id;
+  const send = (body, wake = 'action') => call('send_message', {to:recipient,body,key:body,reasoning:'Verify native managed delivery',replyRequired:false,wake}, sender).id;
   const state = message => {
     const db = new DatabaseSync(database, {readOnly:true});
     try {
@@ -110,7 +110,7 @@ test('managed Claude receives native peer input while its original turn is still
   await until(() => f.events().some(event => event.type === 'turn-completed'), f.detail);
 });
 
-test('passive-only mail does not start an idle Claude turn; default action uses the peer socket', {skip:process.platform==='win32'}, async t => {
+test('passive-only mail does not start an idle Claude turn; an action wake uses the peer socket', {skip:process.platform==='win32'}, async t => {
   const f = await fixture(t, 'idle');
   await until(() => f.events().some(event => event.type === 'turn-completed'), f.detail);
   const passive = f.send('passive-context', 'passive');

@@ -192,7 +192,10 @@ pub(super) fn visit_named_expanding_macros(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the recursive walk threads the macro-body frame and the file context flat, like the matcher (see clippy.toml)"
+)]
 fn walk_expanding<'tree>(
     root: Node<'tree>,
     prefix: &[Node<'tree>],

@@ -105,12 +105,12 @@ describe('incremental subagent reports', () => {
     expect(fs.readFileSync(path.join(scratch, 'report.md'), 'utf8')).toBe(`${first}\n\n---\n\nreplacement`);
   });
 
-  it('keeps a bounded answer when scratch is unavailable and sanitizes the disk report', () => {
+  it('keeps a bounded answer when scratch is unavailable and shows controls in the disk report as visible escapes', () => {
     const scratch = tmp();
     const text = `\u001b[2J${'detail '.repeat(2000)}\u202e`;
     const disk = new ReportTracker(scratch);
     disk.answer(text, 'stop');
-    expect(fs.readFileSync(path.join(scratch, 'report.md'), 'utf8')).toBe('detail '.repeat(2000));
+    expect(fs.readFileSync(path.join(scratch, 'report.md'), 'utf8')).toBe(`\\u{1b}[2J${'detail '.repeat(2000)}\\u{202e}`);
     const unavailable = new ReportTracker(path.join(scratch, 'missing'));
     unavailable.answer(text, 'stop');
     expect(unavailable.result().text).not.toContain('Full report:');

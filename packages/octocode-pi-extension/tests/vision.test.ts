@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_IMAGE_EDGE, imageLimits, sniffImageType } from '../src/shared/vision.js';
+import { imageLimits, sniffImageType } from '../src/shared/vision.js';
 import { noisyPng } from './helpers.js';
 
 describe('imageLimits', () => {
@@ -13,8 +13,7 @@ describe('imageLimits', () => {
   });
 
   it('falls back to 1568 px, under the 2000 px many-image rule, when the model says nothing about images', () => {
-    const unknown = { maxWidth: DEFAULT_IMAGE_EDGE, maxHeight: DEFAULT_IMAGE_EDGE };
-    expect(DEFAULT_IMAGE_EDGE).toBe(1568);
+    const unknown = { maxWidth: 1568, maxHeight: 1568 };
     expect(imageLimits()).toEqual(unknown);
     expect(imageLimits(null)).toEqual(unknown);
     expect(imageLimits({})).toEqual(unknown);

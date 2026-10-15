@@ -230,9 +230,13 @@ impl AskPass {
         let mut nonce = [0_u8; 16];
         getrandom::fill(&mut nonce).map_err(|error| failed(error.to_string()))?;
         let directory = parent.join(format!("askpass-{}", hex::encode(nonce)));
-        let mut builder = std::fs::DirBuilder::new();
+        let builder = std::fs::DirBuilder::new();
         #[cfg(unix)]
-        std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+        let builder = {
+            let mut builder = builder;
+            std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+            builder
+        };
         builder
             .create(&directory)
             .map_err(|error| failed(error.to_string()))?;
@@ -455,9 +459,9 @@ mod env_and_scrub_tests {
     #[test]
     fn the_token_reaches_git_only_through_an_owner_only_askpass_helper() {
         use std::os::unix::fs::PermissionsExt;
-        let home = tempfile::tempdir().expect("home");
-        let dump = home.path().join("dump");
-        let script = home.path().join("git");
+        let home = crate::tools::test_support::Fixture::new();
+        let dump = home.0.join("dump");
+        let script = home.0.join("git");
         std::fs::write(
             &script,
             format!(
@@ -489,7 +493,7 @@ mod env_and_scrub_tests {
                 &GitRunControl {
                     cancellation: &crate::tools::cancel::NeverCancel,
                     deadline: Instant::now() + Duration::from_secs(15),
-                    cache_home: home.path(),
+                    cache_home: &home.0,
                 },
             )
             .expect("fixture runs");
@@ -498,9 +502,10 @@ mod env_and_scrub_tests {
             line.starts_with("user:") || line.starts_with("pass:") || line.starts_with("other:")
         });
         let child = child.join("\n");
-        assert!(!child.contains(token), "{child}");
-        assert!(!child.contains(&basic_credential(token)), "{child}");
-        assert!(!child.contains("GIT_CONFIG_VALUE"), "{child}");
+        let environment = serde_json::json!(child);
+        for secret in [token, basic_credential(token).as_str(), "GIT_CONFIG_VALUE"] {
+            crate::tools::test_support::checks::assert_absent(&environment, secret);
+        }
         assert_eq!(
             answers,
             ["user:x-access-token", &format!("pass:{token}"), "other:"],
@@ -534,7 +539,8 @@ mod env_and_scrub_tests {
         let basic = basic_credential("ghp_token123");
         let text = format!("fatal: config value {basic} rejected; token ghp_token123");
         let scrubbed = scrub(&text, Some("ghp_token123"), Path::new("/nonexistent-home"));
-        assert!(!scrubbed.contains(&basic), "{scrubbed}");
-        assert!(!scrubbed.contains("ghp_token123"), "{scrubbed}");
+        for secret in [basic.as_str(), "ghp_token123"] {
+            crate::tools::test_support::checks::assert_absent(&serde_json::json!(scrubbed), secret);
+        }
     }
 }

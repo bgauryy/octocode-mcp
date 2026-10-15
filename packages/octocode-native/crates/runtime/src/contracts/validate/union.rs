@@ -802,7 +802,6 @@ mod tests {
     ) -> Result<Value, super::ContractValidationError> {
         let schema = &super::super::contract_tool(tool)?["outputSchema"];
         let mut candidate = output.clone();
-        crate::contracts::shared_fields::restore(&mut candidate);
         super::validate_schema(schema, schema, &mut candidate, &mut Vec::new())?;
         Ok(candidate)
     }
@@ -1010,26 +1009,46 @@ mod tests {
     #[test]
     fn clasify_question_selectors_report_the_selected_forms_missing_field() {
         for (question, field) in [
-            (json!({"type":"adds","ask":"Retry safety"}), "known"),
-            (json!({"type":"relevant"}), "ask"),
-            (json!({"type":"choice","ask":"Choose a label"}), "labels"),
+            (
+                json!({"type":"choice","instructions":"Choose a label"}),
+                "criteria",
+            ),
+            (json!({"type":"score","instructions":"Rate it"}), "criteria"),
         ] {
             let error = prepare_many_and_validate(
                 "clasify",
                 json!({"queries":[{
                     "id":"missing-question-field",
-                    "mainGoal": "test", "reasoning":"Check the selected question.",
-                    "resources":[{"id":"held","value":"Observed evidence"}],
-                    "questions":[question]
+                    "state":"Observed evidence",
+                    "questions":{"check":question}
                 }]}),
             )
             .expect_err("the selected question lacks a required field");
             assert_eq!(error.issues.len(), 1, "{error:?}");
             assert_eq!(
                 error.issues[0].path,
-                ["queries", "0", "questions", "0", field]
+                ["queries", "0", "questions", "check", field]
             );
             assert_eq!(error.issues[0].rule_id, "schema.required");
+        }
+    }
+
+    #[test]
+    fn clasify_noul_and_box_allow_missing_or_null_instructions() {
+        for question in [
+            json!({"type":"noul"}),
+            json!({"type":"noul","instructions":null,"criteria":null}),
+            json!({"type":"box"}),
+            json!({"type":"box","instructions":null}),
+        ] {
+            prepare_many_and_validate(
+                "clasify",
+                json!({"queries":[{
+                    "state":"Observed evidence",
+                    "questions":{"check":question}
+                }]}),
+            )
+            .expect("Noul and Box do not require instructions");
         }
     }
 

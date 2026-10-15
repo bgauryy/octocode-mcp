@@ -12,6 +12,7 @@ use octocode_engine::types::FileSystemQueryOptions;
 use serde_json::{Value, json};
 use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 
+use super::Walking;
 use super::files::walk_warnings;
 use crate::contracts::tool_types::StructureSearchQueryTree;
 
@@ -90,6 +91,8 @@ struct TreeWalk {
     available: usize,
     total_discovered: usize,
     was_capped: bool,
+    /// The walk ran out of time before this root-relative entry.
+    time_cut: Option<String>,
     files: usize,
     dirs: usize,
     bytes: i64,
@@ -121,6 +124,7 @@ pub fn execute_tree(
     security: &ContentSecurity,
     cancel: &dyn CancellationCheck,
     response_window: Option<usize>,
+    budget: std::time::Duration,
 ) -> super::StructureResult {
     let validated = super::validated_root(q.path.as_str(), paths, cancel)?;
     if validated.canonical.is_file() {
@@ -155,12 +159,12 @@ pub fn execute_tree(
             security,
             cancel,
             requested,
-            None,
+            Walking::Listing(budget),
         )
     })?;
     // The page cut is part of the snapshot: a continuation under a
     // different response window restarts instead of skipping entries.
-    let budget = super::page_budget(response_window, &identity);
+    let budget = crate::tools::page_windows::page_budget(response_window, &identity);
     let snapshot = crate::digest::json_sha256(&json!([
         identity,
         budget,
@@ -219,7 +223,7 @@ pub fn execute_tree(
                 security,
                 cancel,
                 super::PROBE_HITS,
-                Some(&bound),
+                Walking::Probe(&bound),
             )?;
             let cut = found.was_capped || bound.cut();
             Ok(super::found_entries(
@@ -242,8 +246,9 @@ fn walk_tree(
     security: &ContentSecurity,
     cancel: &dyn CancellationCheck,
     requested: usize,
-    bound: Option<&super::ProbeBound>,
+    walking: Walking<'_>,
 ) -> Result<TreeWalk, ToolError> {
+    let bound = walking.probe();
     // Leave out what localSearch leaves out: ignored entries (unless
     // includeIgnored, counted by the walk) and paths the path policy denies
     // (sensitive names, and symlinks out of the allowed roots). Denied
@@ -251,7 +256,7 @@ fn walk_tree(
     // never silently dropped.
     let show_hidden = q.include_hidden.unwrap_or(false);
     let include = crate::policy::include::include_globs(&q.include);
-    let probe = super::FilterProbe::new(root, &include, &q.extensions, None);
+    let probe = super::FilterProbe::new(root, &include, &q.extensions, None)?;
     let withheld = std::sync::Mutex::new(crate::policy::discovery::Withheld::default());
     let hidden = AtomicUsize::new(0);
     let pruned = PruneMode::SyntaxVisible.directories(q.default_excludes.defaults());
@@ -269,6 +274,7 @@ fn walk_tree(
             exclude_dir: Some(pruned.clone()),
             exclude: (!q.exclude.is_empty()).then(|| q.exclude.clone()),
             stop_at_limit: Some(true),
+            time_budget: walking.budget(),
             limit: Some(bound.map_or(super::max_walk(), |_| {
                 u32::try_from(requested).unwrap_or(u32::MAX)
             })),
@@ -336,6 +342,9 @@ fn walk_tree(
         available,
         total_discovered: native.total_discovered as usize,
         was_capped: native.was_capped,
+        time_cut: native
+            .time_cut
+            .map(|at| security.sanitize_text(&at, None).content),
         files,
         dirs,
         bytes,
@@ -447,6 +456,7 @@ fn tree_page(
         available: walk.available,
         limit_cut: walk.available > requested,
         scan_cut: walk.was_capped,
+        time_cut: walk.time_cut.clone(),
         early_exit: false,
         total_discovered: walk.total_discovered,
         scan_offset: q.scan_offset(),
@@ -486,7 +496,8 @@ fn tree_page(
         "files": files,
         "snapshot": snapshot,
     });
-    if total == 0 {
+    // A walk cut by time proved nothing about what it did not scan.
+    if total == 0 && walk.time_cut.is_none() {
         out["status"] = json!("empty");
     }
     // The walk's summary and its retries describe the whole listing: page 1

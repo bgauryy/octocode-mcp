@@ -51,7 +51,9 @@ async function promptSize(options: { subagent: boolean; exclude?: string[] }): P
  */
 // 17_900: +100 for the no-polling rule in the agent and bash descriptions. Without it an agent
 // sleep-polled a background subagent for about 25 minutes (ISSUES.md P1).
-const MAIN_CEILING = 17_900;
+// +1,100 for the user-requested main-session externalAgent contract: one adapter surface
+// replaces vendor-specific tool descriptions; subagents still exclude it.
+const MAIN_CEILING = 19_000;
 const READ_ONLY_SUBAGENT_CEILING = 11_150;
 
 describe('prompt size', () => {

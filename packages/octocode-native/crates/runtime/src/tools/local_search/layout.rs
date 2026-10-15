@@ -27,8 +27,8 @@ pub(super) struct Layout {
     pub(super) shown: PageRows,
     pub(super) total_pages: u32,
     pub(super) files_per_page: Option<u32>,
-    /// What the pages walk, in the pages' own unit: hit rows on streamed
-    /// pages (a file rides several), files on grid pages.
+    /// What the pages walk: hit rows on default content pages (a file rides
+    /// several), files on list and grid pages.
     pub(super) total_items: u32,
     pub(super) matches_per: u32,
     pub(super) out_of_range: bool,
@@ -51,8 +51,7 @@ impl Layout {
     /// size of files shows every hit on one page: paging metadata and
     /// continuations would cost more than the rows they hide. A page never
     /// holds more files than its page size, so its enclosing names cover it.
-    /// A caller cap always wins; larger results keep the
-    /// 10-rows-per-file default on their first page.
+    /// A caller cap always wins; default pages fill their byte budget.
     pub(super) fn cut(
         query: &LocalSearchQuery,
         paths: &PathPolicy,
@@ -109,7 +108,9 @@ impl Layout {
             }
         }
         let streamed = streamed_layout(query);
-        let (shown, total_pages, files_per_page, total_items) = if streamed {
+        let (shown, total_pages, files_per_page, total_items) = if streamed && list {
+            Self::list_stream(query, &parsed.files, page_budget, &costs)
+        } else if streamed {
             Self::stream(
                 query,
                 &parsed.files,
@@ -201,6 +202,42 @@ impl Layout {
             total_pages,
             None,
             u32::try_from(rows).unwrap_or(u32::MAX),
+        )
+    }
+
+    fn list_stream(
+        query: &LocalSearchQuery,
+        files: &[octocode_engine::types::TextSearchFile],
+        page_budget: usize,
+        costs: &PageCosts,
+    ) -> (PageRows, u32, Option<u32>, u32) {
+        let sizes = files
+            .iter()
+            .map(|file| {
+                let projected = SearchFile {
+                    path: file.path.clone(),
+                    matches: None,
+                    match_keys: Vec::new(),
+                    total_occurrences: (query.result_view
+                        == LocalSearchQueryResultView::CountMatches)
+                        .then_some(file.match_count),
+                    total_matched_lines: (query.result_view
+                        == LocalSearchQueryResultView::CountLines)
+                        .then_some(file.match_count),
+                    pagination: None,
+                };
+                crate::tools::stream_page::json_chars(&projected) + costs.prefix_chars + 1
+            })
+            .collect::<Vec<_>>();
+        let pages = crate::tools::page_windows::Paging::Chars(page_budget).windows(&sizes);
+        let shown = crate::tools::page_windows::nth_page(&pages, query.page() as usize)
+            .map(|window| window.clone().map(|index| (index, 0..0)).collect())
+            .unwrap_or_default();
+        (
+            shown,
+            u32::try_from(pages.len()).unwrap_or(u32::MAX).max(1),
+            None,
+            u32::try_from(files.len()).unwrap_or(u32::MAX),
         )
     }
 
@@ -440,26 +477,16 @@ pub(super) fn max_expansion_rows() -> usize {
 /// Rows one page shows: (file index, rank-order row range), in page order.
 pub(super) type PageRows = Vec<(usize, std::ops::Range<usize>)>;
 
-/// The default layout: neither page axis is caller-sized and no later match
-/// page is asked for. Path-only list views keep file pages.
+/// Default layouts use the response budget when neither page axis is sized.
 pub(super) fn streamed_layout(q: &LocalSearchQuery) -> bool {
-    !matches!(
-        q.result_view,
-        LocalSearchQueryResultView::Files
-            | LocalSearchQueryResultView::FilesWithout
-            | LocalSearchQueryResultView::CountLines
-            | LocalSearchQueryResultView::CountMatches
-    ) && q.page_size().is_none()
-        && q.match_page_size().is_none()
-        && q.match_page() <= 1
+    q.page_size().is_none() && q.match_page_size().is_none() && q.match_page() <= 1
 }
 
 /// Default-layout pages, cut from one row stream: each file's first
 /// `per_file` ranked rows in file order, then every file's remaining rows.
 /// Each page holds as much of the stream as fits `budget` serialized chars
 /// (at least one row), counting a file's `pagination` whenever its later
-/// rows may fall on a later page; the first holds only first-pass rows, so
-/// a large result opens with a lean overview, and no page holds more than
+/// rows may fall on a later page. No page holds more than
 /// [`ENCLOSING_MAX_FILES`] files, so every hit row it shows is named. No
 /// page shows clipped values that need more reads than one `expandValues`
 /// call runs ([`max_expansion_rows`]), so each page's values are one call
@@ -485,13 +512,12 @@ pub(super) fn stream_pages(
     let first = files
         .iter()
         .enumerate()
-        .map(|(index, file)| (index, 0..file.matches.len().min(per_file), true));
+        .map(|(index, file)| (index, 0..file.matches.len().min(per_file)));
     let rest = files
         .iter()
         .enumerate()
         .filter(|(_, file)| file.matches.len() > per_file)
-        .map(|(index, file)| (index, per_file..file.matches.len(), false));
-    let first_page_files = DEFAULT_SNIPPET_PAGE_SIZE as usize;
+        .map(|(index, file)| (index, per_file..file.matches.len()));
     let mut pages: Vec<PageRows> = Vec::new();
     let mut page: PageRows = Vec::new();
     let mut slot = std::collections::HashMap::<usize, usize>::new();
@@ -501,7 +527,7 @@ pub(super) fn stream_pages(
     let max_reads = max_expansion_rows();
     // `expandValues` rows the page's clipped values need.
     let mut reads = 0usize;
-    for (index, rows, overview) in first.chain(rest) {
+    for (index, rows) in first.chain(rest) {
         let file = &files[index];
         // A row-less file still takes its place as one entry.
         let entries: Vec<Option<usize>> = if rows.is_empty() {
@@ -538,8 +564,7 @@ pub(super) fn stream_pages(
             let over_reads = reads + added_reads(&page, &slot) > max_reads;
             // Every page names the enclosing declaration of each hit row in
             // at most `ENCLOSING_MAX_FILES` files, so no page holds more.
-            let page_full = (pages.is_empty() && !overview)
-                || (!has_file && page.len() >= first_page_files.min(ENCLOSING_MAX_FILES));
+            let page_full = !has_file && page.len() >= ENCLOSING_MAX_FILES;
             if !page.is_empty() && (over_budget || page_full || over_reads) {
                 pages.push(std::mem::take(&mut page));
                 slot.clear();
@@ -603,6 +628,51 @@ pub(super) struct GridPage {
     pub(super) value_cap: usize,
 }
 
+/// A multiline file's clipped values: the file searched again alone with
+/// `matchContentLength` raised to its longest clipped value (`None` when
+/// already at the widest view), and a read from its first clipped line,
+/// which localFetch pages to the end of the file.
+fn multiline_expansion(
+    query: &LocalSearchQuery,
+    path: &str,
+    clipped: &[&SearchMatch],
+    context: u32,
+) -> (Option<Value>, Value) {
+    let longest = clipped
+        .iter()
+        .filter_map(|matched| matched.original_chars)
+        .max()
+        .unwrap_or(0)
+        .min(MAX_MATCH_CONTENT_LENGTH);
+    let first = clipped
+        .iter()
+        .map(|matched| matched.line)
+        .min()
+        .unwrap_or(1);
+    let fetch = Continuation::new(
+        ToolId::LocalFetch,
+        json!({"path": path, "ranges": [format!("{}-{}", first.saturating_sub(context).max(1), READ_TO_END_LINE)]}),
+    )
+    .confidence("exact")
+    .build();
+    // A file-scoped search is a fresh run: no page, snapshot or saved
+    // selection of the wider scope carries over.
+    let search = (longest > effective_match_content_length(query) as usize).then(|| {
+        let mut search = normalized_query(query, true);
+        if let Some(fields) = search.as_object_mut() {
+            for key in ["page", "matchPage", "snapshot", "selection", "pageSize"] {
+                fields.remove(key);
+            }
+            fields.insert("path".into(), json!(path));
+            fields.insert("matchContentLength".into(), json!(longest));
+        }
+        Continuation::new(ToolId::LocalSearch, search)
+            .confidence("exact")
+            .build()
+    });
+    (search, fetch)
+}
+
 /// Reads that return every clipped value of a page whole. A grid page whose
 /// longest clipped value fits both the contract maximum and the per-row
 /// budget gets one widened copy of the query. Otherwise each file gets its
@@ -635,12 +705,14 @@ pub(super) fn expand_values(
         && longest <= MAX_MATCH_CONTENT_LENGTH.min(grid.value_cap)
         && longest > effective_match_content_length(query) as usize
     {
-        // The snapshot names this value width, so the widened page is a
-        // fresh run of the same page (same rows while the source is unchanged).
+        // The snapshot and a saved selection name this value width, so the
+        // widened page is a fresh run of the same page (same rows while the
+        // source is unchanged).
         let mut widened = normalized_query(query, false);
         widened["matchContentLength"] = json!(longest);
         if let Some(fields) = widened.as_object_mut() {
             fields.remove("snapshot");
+            fields.remove("selection");
         }
         return vec![
             Continuation::new(ToolId::LocalSearch, widened)
@@ -667,40 +739,7 @@ pub(super) fn expand_values(
             .workspace_relative(&source)
             .unwrap_or_else(|| source.to_string_lossy().into_owned());
         if multiline {
-            let longest = clipped
-                .iter()
-                .filter_map(|matched| matched.original_chars)
-                .max()
-                .unwrap_or(0)
-                .min(MAX_MATCH_CONTENT_LENGTH);
-            // Read from the first clipped line; localFetch pages the rest of
-            // the file.
-            let first = clipped
-                .iter()
-                .map(|matched| matched.line)
-                .min()
-                .unwrap_or(1);
-            let fetch = Continuation::new(
-                ToolId::LocalFetch,
-                json!({"path": path, "ranges": [format!("{}-{}", first.saturating_sub(context).max(1), READ_TO_END_LINE)]}),
-            )
-            .confidence("exact")
-            .build();
-            // Already at the widest view, only the read reaches the value.
-            let search = (longest > effective_match_content_length(query) as usize).then(|| {
-                let mut search = normalized_query(query, true);
-                if let Some(fields) = search.as_object_mut() {
-                    for key in ["page", "matchPage", "snapshot", "pageSize"] {
-                        fields.remove(key);
-                    }
-                    fields.insert("path".into(), json!(path));
-                    fields.insert("matchContentLength".into(), json!(longest));
-                }
-                Continuation::new(ToolId::LocalSearch, search)
-                    .confidence("exact")
-                    .build()
-            });
-            multiline_reads.push((search, fetch));
+            multiline_reads.push(multiline_expansion(query, &path, &clipped, context));
             continue;
         }
         // A value clipped out of a line longer than a read page is read by

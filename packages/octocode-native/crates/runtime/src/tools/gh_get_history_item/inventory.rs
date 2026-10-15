@@ -183,8 +183,6 @@ pub(super) fn group_by_directory(
 
 /// What shaping a pull request's changed-file page found.
 pub(super) struct ShapedFiles {
-    /// A selected path matched no changed file and the provider has no more.
-
     /// The page's review pick (`next.readSelectedPatches`).
     pub(super) review: Vec<String>,
     /// In-scope text files a `matchString` could not search because GitHub
@@ -200,6 +198,9 @@ pub(super) struct ShapedFiles {
     /// Files whose `matchString` context the hunks cut short, with the
     /// new-side windows to read at the head.
     pub(super) clipped: Vec<(String, Vec<String>)>,
+    /// Files of the patch window not fully delivered (a working count, never
+    /// an output field).
+    pub(super) unfinished_patches: usize,
 }
 
 /// Review priority of a changed path: source first, then tests, then other
@@ -351,6 +352,7 @@ pub(super) fn shape_pr_files(
             first_unsearched,
             match_dropped,
             clipped: Vec::new(),
+            unfinished_patches: 0,
         };
     }
     let shaped = patches
@@ -371,12 +373,9 @@ pub(super) fn shape_pr_files(
         row["files"] = Value::Array(shaped);
     }
     // One continuation covers the page's patch stream: the same file page
-    // at the stream cursor; the page counts the unfinished files.
-    if let Some(cursor) = patches.cursor {
-        pagination.insert(
-            "patches".into(),
-            json!({"hasMore":true,"nextOffset":cursor,"unfinishedFiles":patches.unfinished.len()}),
-        );
+    // at the stream cursor, the window over the page's patch stream.
+    if patches.cursor.is_some() {
+        pagination.insert("patches".into(), patches.stream.to_value());
     }
     pagination.insert("files".into(), page);
     ShapedFiles {
@@ -385,6 +384,7 @@ pub(super) fn shape_pr_files(
         first_unsearched,
         match_dropped,
         clipped: patches.clipped,
+        unfinished_patches: patches.unfinished.len(),
     }
 }
 

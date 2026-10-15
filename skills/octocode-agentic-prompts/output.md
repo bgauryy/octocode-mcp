@@ -30,7 +30,7 @@ Put findings under `## Findings` as one table, most severe first, with `Critical
 | Location | Text | Behavioral effect | Severity | Repair |
 |---|---|---|---|---|
 
-A change report has `## Changes`, one row per edit; every saved report has `## Findings` or `## Changes`.
+A change report has `## Changes`, one row per edit; every saved report has either `## Findings` or `## Changes`.
 
 Date the file name with `date +%F`, never memory. Render, fix every `warning:` line, and reply with a short summary and the `.html` and `.md` paths:
 

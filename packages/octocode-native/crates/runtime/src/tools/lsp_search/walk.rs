@@ -11,10 +11,11 @@
 //! capped in code; each level's requests run concurrently under a small
 //! bound; per-node failures are collected as data.
 
-use super::failure::{LspFailure, continuation, mark_partial};
+use super::anchor::Position;
+use super::failure::{LspFailure, continuation, partial_with_retry};
 use super::importers::{
-    Importers, WindowRequest, callers_from_references, enclosing_callable, flatten_symbols,
-    verified_anchors,
+    ImporterSearch, Importers, WindowRequest, callers_from_references, enclosing_callable,
+    flatten_symbols, verified_anchors,
 };
 use super::locations::{public_range, salted_items_payload, snapshot_changed};
 use super::render::{as_array, decode_uri_path, symbol_kind_name, uri_to_path};
@@ -156,14 +157,14 @@ pub(super) fn builtin_name(node: &Value) -> String {
 }
 
 /// Memoized node identity and authorization for one walk.
-struct NodeKeys<'a> {
+pub(super) struct NodeKeys<'a> {
     paths: &'a PathPolicy,
     canonical: HashMap<String, String>,
     authorized: HashMap<String, bool>,
 }
 
 impl<'a> NodeKeys<'a> {
-    fn new(paths: &'a PathPolicy) -> Self {
+    pub(super) fn new(paths: &'a PathPolicy) -> Self {
         Self {
             paths,
             canonical: HashMap::new(),
@@ -173,7 +174,7 @@ impl<'a> NodeKeys<'a> {
 
     /// `(canonical path, selectionRange start/end)`; `range` when the item
     /// has no selection range.
-    fn key(&mut self, node: &Value) -> String {
+    pub(super) fn key(&mut self, node: &Value) -> String {
         let uri = node.get("uri").and_then(Value::as_str).unwrap_or_default();
         let path = self
             .canonical
@@ -1226,7 +1227,7 @@ pub(super) fn mark_partial_expansion(
             )
         }
     };
-    mark_partial(row, query, reason, &[warning]);
+    partial_with_retry(row, query, reason, &[warning]);
     if let Some(object) = row.as_object_mut() {
         object.insert(
             "expansionFailures".into(),
@@ -1469,7 +1470,11 @@ async fn hierarchy_roots(
     client: &NativeLspClient,
     query: &LspSearchQuery,
     paths: &PathPolicy,
-    (path, line, character): (&str, u32, u32),
+    Position {
+        path,
+        line,
+        character,
+    }: Position<'_>,
     cancel: &dyn CancellationCheck,
 ) -> Result<(Vec<Value>, &'static [Expansion]), LspFailure> {
     let (prepared, expansions): (Value, &[Expansion]) = match query.operation().as_str() {
@@ -1543,6 +1548,17 @@ pub(super) struct ImporterRecovery<'a> {
     pub(super) window: WindowRequest<'a>,
 }
 
+/// One hierarchy request: the query, the scope its lexical scans search
+/// (and where the answer's files are recorded), the anchor, importer
+/// recovery for an incoming walk, and the characters a page may spend.
+pub(super) struct HierarchyRequest<'a> {
+    pub(super) query: &'a LspSearchQuery,
+    pub(super) scope: &'a Scope,
+    pub(super) anchor: Position<'a>,
+    pub(super) recovery: Option<ImporterRecovery<'a>>,
+    pub(super) budget: usize,
+}
+
 /// A call or type hierarchy walk from the anchor. With `recovery`, an
 /// incoming walk first takes the server's level-1 answer, then verifies
 /// only the importer files that answer does not cover (the same contract as
@@ -1555,20 +1571,21 @@ pub(super) struct ImporterRecovery<'a> {
 /// only. Level-1 callers in a candidate file belong to that file's window;
 /// deeper levels are not windowed, so with `depth` > 1 subtrees reached from
 /// different windows may repeat.
-#[allow(clippy::too_many_arguments)]
 pub(super) async fn hierarchy(
     client: &NativeLspClient,
-    query: &LspSearchQuery,
     sources: &mut SourceCache<'_>,
-    scope: &Scope,
-    (path, line, character): (&str, u32, u32),
-    recovery: Option<ImporterRecovery<'_>>,
     cancel: &dyn CancellationCheck,
-    budget: usize,
+    request: HierarchyRequest<'_>,
 ) -> Result<(Value, Option<Importers>), LspFailure> {
+    let HierarchyRequest {
+        query,
+        scope,
+        anchor,
+        recovery,
+        budget,
+    } = request;
     let paths = sources.policy();
-    let (roots, expansions) =
-        hierarchy_roots(client, query, paths, (path, line, character), cancel).await?;
+    let (roots, expansions) = hierarchy_roots(client, query, paths, anchor, cancel).await?;
     let depth = query.graph_depth().unwrap_or(1);
     let mut items = Vec::new();
     let mut failures = Vec::new();
@@ -1583,59 +1600,21 @@ pub(super) async fn hierarchy(
         if expansion == Expansion::IncomingCalls
             && let Some(recovery) = &recovery
         {
-            let mut answered = walk.answered_files();
-            answered.insert(canonical_uri_path(path));
-            let importers = verified_anchors(
-                client,
-                sources,
-                recovery.snippet_policy,
-                cancel,
-                &recovery.symbol,
+            let incoming = IncomingRecovery {
+                anchor,
                 scope,
-                path,
-                line,
-                character,
-                &answered,
-                recovery.window,
-            )
-            .await?;
-            if importers.stale {
+                recovery,
+                depth,
+            };
+            let Some(recovered) = incoming
+                .run(client, sources, cancel, &mut walk, &mut class_facts)
+                .await?
+            else {
                 return Ok((snapshot_changed(query), None));
-            }
-            let mut foreign = importers
-                .window
-                .iter()
-                .flat_map(|window| window.foreign().cloned())
-                .collect::<HashSet<_>>();
-            if recovery.window.page > 1 {
-                // A later importer page leaves out the anchor's answer
-                // (listed on importer page 1): walk from this window's
-                // importer roots only.
-                foreign.extend(answered.iter().cloned());
-                walk = Walk::new(paths, &[], expansion, depth);
-            }
-            let extra = importer_roots(client, paths, &importers, cancel).await?;
-            walk.add_roots(client, extra, foreign, cancel).await?;
-            // Reference-derived callers fill in only files the server's
-            // call hierarchy did not answer for at level 1.
-            let mut skip = walk.answered_files();
-            skip.extend(answered.iter().cloned());
-            let derived =
-                callers_from_references(client, sources, cancel, &importers, &skip).await?;
-            for (node, sites) in derived {
-                let edge = HierarchyEdge {
-                    node,
-                    parent: None,
-                    level: 1,
-                    sites,
-                };
-                let narrowed = class_facts.narrow(&edge, sources).await;
-                let mut item = public_edge(expansion, &edge, narrowed.as_ref());
-                item["source"] = json!(RECOVERED_FROM_REFERENCES);
-                derived_items.push(item);
-            }
-            verified = Some(importers);
-            anchor_answered = answered;
+            };
+            derived_items = recovered.items;
+            verified = Some(recovered.importers);
+            anchor_answered = recovered.answered;
         }
         let mut walk = walk.finish(client, cancel).await?;
         if expansion == Expansion::IncomingCalls {
@@ -1654,7 +1633,7 @@ pub(super) async fn hierarchy(
         walks.push((expansion, walk));
     }
     scope.answer(
-        answer_files(path, &items, verified.as_ref())
+        answer_files(anchor.path, &items, verified.as_ref())
             .into_iter()
             .chain(anchor_answered),
     );
@@ -1688,6 +1667,95 @@ pub(super) async fn hierarchy(
     // `unexpandedParents` and `continueWalk*`.
     mark_truncation(&mut row, query, &walks);
     Ok((row, verified))
+}
+
+/// Importer recovery of one incoming walk (see [`hierarchy`]).
+struct IncomingRecovery<'r, 'a> {
+    anchor: Position<'a>,
+    scope: &'a Scope,
+    recovery: &'r ImporterRecovery<'a>,
+    depth: u32,
+}
+
+/// What importer recovery added to an incoming walk.
+struct Recovered {
+    importers: Importers,
+    /// The anchor's file and every file its own walk answered at level 1.
+    answered: HashSet<String>,
+    /// Caller rows derived from the importers' references.
+    items: Vec<Value>,
+}
+
+impl IncomingRecovery<'_, '_> {
+    /// Verify the importer window the walk's level-1 answer does not cover,
+    /// root `walk` at the importers' call sites too, and derive callers from
+    /// their references. `None` when the window's snapshot is stale.
+    async fn run<'p>(
+        &self,
+        client: &NativeLspClient,
+        sources: &mut SourceCache<'p>,
+        cancel: &dyn CancellationCheck,
+        walk: &mut Walk<'p>,
+        class_facts: &mut ClassFacts,
+    ) -> Result<Option<Recovered>, LspFailure> {
+        let paths = sources.policy();
+        let mut answered = walk.answered_files();
+        answered.insert(canonical_uri_path(self.anchor.path));
+        let importers = verified_anchors(
+            client,
+            sources,
+            self.recovery.snippet_policy,
+            cancel,
+            ImporterSearch {
+                symbol: &self.recovery.symbol,
+                scope: self.scope,
+                declaration: self.anchor,
+                known_files: &answered,
+                window: self.recovery.window,
+            },
+        )
+        .await?;
+        if importers.stale {
+            return Ok(None);
+        }
+        let mut foreign = importers
+            .window
+            .iter()
+            .flat_map(|window| window.foreign().cloned())
+            .collect::<HashSet<_>>();
+        if self.recovery.window.page > 1 {
+            // A later importer page leaves out the anchor's answer (listed
+            // on importer page 1): walk from this window's importer roots
+            // only.
+            foreign.extend(answered.iter().cloned());
+            *walk = Walk::new(paths, &[], Expansion::IncomingCalls, self.depth);
+        }
+        let extra = importer_roots(client, paths, &importers, cancel).await?;
+        walk.add_roots(client, extra, foreign, cancel).await?;
+        // Reference-derived callers fill in only files the server's call
+        // hierarchy did not answer for at level 1.
+        let mut skip = walk.answered_files();
+        skip.extend(answered.iter().cloned());
+        let derived = callers_from_references(client, sources, cancel, &importers, &skip).await?;
+        let mut items = Vec::new();
+        for (node, sites) in derived {
+            let edge = HierarchyEdge {
+                node,
+                parent: None,
+                level: 1,
+                sites,
+            };
+            let narrowed = class_facts.narrow(&edge, sources).await;
+            let mut item = public_edge(Expansion::IncomingCalls, &edge, narrowed.as_ref());
+            item["source"] = json!(RECOVERED_FROM_REFERENCES);
+            items.push(item);
+        }
+        Ok(Some(Recovered {
+            importers,
+            answered,
+            items,
+        }))
+    }
 }
 
 /// Every file a walk's answer covers: the anchor, each listed node and call

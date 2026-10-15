@@ -84,7 +84,7 @@ pub(super) struct ListingPage<'a> {
 
 impl<'a> ListingPage<'a> {
     pub(super) fn of(query: &GhStructureQuery, all: &'a [TreeEntry]) -> Self {
-        let current = crate::tools::num::usize_of(query.page);
+        let current = query.page.map_or(1, crate::tools::num::usize_of);
         let per_page = crate::tools::num::usize_of(
             query
                 .page_size
@@ -151,38 +151,24 @@ pub(super) fn summary(entries: &[TreeEntry]) -> Value {
     summary
 }
 
-/// Provider limits and skipped entries of the walk, stated on the page.
+/// Provider limits and skipped entries of the walk, stated on the page. A
+/// limit's `terminalLimitReached` code is the shared coverage code
+/// (`response::pages::coverage_codes`), never restated here.
 pub(super) fn disclose_limits(traversal: &Traversal, value: &mut Value, output: &mut ToolData) {
-    let mut partial_reasons = Vec::<&str>::new();
+    use crate::tools::paging::{mark_partial, terminal_limit};
     if traversal.contents_limit {
-        partial_reasons.push("providerContentsLimit");
-        value["terminalLimit"] = json!(true);
+        terminal_limit(value, "providerContentsLimit", &[]);
         value["providerLimit"] = json!({
             "reason": "providerContentsLimit",
             "maxEntriesPerDirectory": CONTENTS_LIMIT
         });
-        output.diagnostics.add(
-            "terminalLimitReached",
-            &format!(
-                "A GitHub Contents directory reached the {CONTENTS_LIMIT}-entry provider limit; completeness is unknown."
-            ),
-            true,
-        );
     }
     if traversal.fetch_limit {
-        partial_reasons.push("treeFetchLimit");
-        value["terminalLimit"] = json!(true);
+        terminal_limit(value, "treeFetchLimit", &[]);
         value["providerLimit"] = json!({
             "reason": "treeFetchLimit",
             "maxDirectoryFetches": MAX_DIRECTORY_FETCHES
         });
-        output.diagnostics.add(
-            "terminalLimitReached",
-            &format!(
-                "The tree walk stopped after {MAX_DIRECTORY_FETCHES} directory reads; narrow path or lower maxDepth."
-            ),
-            true,
-        );
     }
     if !traversal.omitted.is_empty() {
         // Dependency/VCS/build directories are skipped by design; name each
@@ -190,16 +176,12 @@ pub(super) fn disclose_limits(traversal: &Traversal, value: &mut Value, output: 
         value["omitted"] = json!(traversal.omitted);
     }
     if traversal.failed_subtrees > 0 {
-        partial_reasons.push("partialTreeFailures");
+        mark_partial(value, "partialTreeFailures", &[]);
         output.diagnostics.add(
             "partialTreeFailures",
             "One or more repository subdirectories could not be read; retry the same page or narrow the path/depth.",
             true,
         );
-    }
-    if !partial_reasons.is_empty() {
-        value["isPartial"] = json!(true);
-        value["partialReasons"] = json!(partial_reasons);
     }
 }
 

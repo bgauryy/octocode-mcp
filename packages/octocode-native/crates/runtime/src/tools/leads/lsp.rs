@@ -4,8 +4,7 @@ use octocode_engine::lsp::config::{
 };
 use octocode_engine::lsp::workspace::resolve_workspace_root_for_file;
 use serde_json::{Value, json};
-use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -180,34 +179,19 @@ pub fn with_lead_discovery<R>(
     run()
 }
 
-/// The runtime-resolved discovery of the current request, else (a caller
-/// outside a dispatched row, such as a unit test) the process environment.
+/// The runtime-resolved discovery of the current request. Every dispatched
+/// local row runs inside [`with_lead_discovery`]; a caller outside one (a unit
+/// test) probes the built-in defaults, never the bare process environment.
 fn discovery() -> LspDiscoveryOptions {
-    if let Some(options) = LEAD_DISCOVERY.with(|cell| cell.borrow().clone()) {
-        return options;
-    }
-    let env: BTreeMap<String, String> = octocode_io::env::vars_lossy()
-        .into_iter()
-        .filter(|(key, _)| key.starts_with("OCTOCODE_"))
-        .collect();
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let os_home = std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map_or_else(|| PathBuf::from("."), PathBuf::from);
-    LspDiscoveryOptions {
-        config_path: env
-            .get("OCTOCODE_LSP_CONFIG")
-            .filter(|value| !value.trim().is_empty())
-            .map(PathBuf::from),
-        trust_project_config: false,
-        octocode_home: Some(crate::config::octocode_home(&env, &cwd, &os_home)),
-        env,
-    }
+    LEAD_DISCOVERY
+        .with(|cell| cell.borrow().clone())
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
 
     #[test]
     fn negative_probe_expires_and_cache_stays_bounded() {
@@ -237,10 +221,8 @@ mod tests {
             Some("resolved")
         );
         let after = discovery();
-        assert_ne!(
-            after.env.get("OCTOCODE_LEAD_PROBE").map(String::as_str),
-            Some("resolved")
-        );
+        assert!(after.env.is_empty(), "{after:?}");
+        assert!(after.config_path.is_none() && after.octocode_home.is_none());
     }
 
     /// A declaration lead runs `callers` for a callable and `references`

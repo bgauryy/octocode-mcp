@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+### Changed — configuration (2026-10-14)
+- **A workspace can lower a numeric setting, never raise it.** A workspace
+  `.octocoderc` number above the home `.octocoderc` value (else the default)
+  is ignored with a `workspace_config_raises_limit` warning. A workspace may
+  also narrow `OCTOCODE_ENABLE_LOCAL`, `OCTOCODE_REDACT_EMAILS`,
+  `OCTOCODE_RANKING_ENABLED` and `OCTOCODE_STORAGE_MODE`, never widen them.
+- **Path settings expand `~`** (`local.allowedPaths`, `local.workspaceRoot`,
+  `lsp.configPath`, `lsp.cacheDir`) once, when settings resolve; a relative
+  path is rejected with a warning.
+- **New warnings:** a tool list naming no tool (`unknown_tool_name`, with the
+  nearest name) and a removed setting (`removed_setting`: `version`,
+  `classification.type`, `OCTOCODE_CLASSIFICATION_TYPE`).
+- **`config get` masks secrets** and says where the value lives (home,
+  workspace or process environment); `--json` adds `source` and `path`.
+- **`astRewrite` is parked:** unavailable on MCP and the CLI (`disabled`).
+
+### Changed — GitHub reads and leads (2026-10-14)
+- **Identical concurrent GitHub file reads send one request**, and a cached
+  file at a resolved commit is served without a conditional request.
+- **A terminal page keeps the default lead set.** A page that ends at a
+  terminal limit no longer lists every lead with every row; `extras:["hints"]`
+  shows the rest, as on any complete page.
+
+
 ### Fixed — tool-review round (2026-10-12)
 - **GitHub code search never queues a call it will then refuse.** A wait the
   rate-limit window already puts past the cap is refused before queueing, and
@@ -118,7 +142,7 @@
 ### Breaking — `@octocodeai/config` package
 - **Public API trimmed to what Octocode uses:** `CONFIG_FIELDS`, `DEFAULT_CONFIG`,
   `ENV_TOKEN_VARS`, `INTERACTIVE_EXECUTION_TIMEOUT_SECS`, `RuntimeSurface`,
-  `applyOctocodeEnv`, `configFieldEnvNames`, `contractDriftAllowed`,
+  `applyOctocodeEnv`, `configFieldEnvName`, `contractDriftAllowed`,
   `contractDriftMessage`, `devOverridesAllowed`, `getConfigFilePath`,
   `getOctocodeHome`, `getProjectConfigFilePath`, `loadOctocodeEnv`,
   `propagateOctocodeEnv`. The TypeScript settings resolver, validator, and

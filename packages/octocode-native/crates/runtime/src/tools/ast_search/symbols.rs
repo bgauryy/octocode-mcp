@@ -11,6 +11,7 @@ use crate::{
     security::ContentSecurity,
     tools::cancel::CancellationCheck,
 };
+use ignore::gitignore::Gitignore;
 use octocode_engine::signatures::graph_facts::GraphFactNoteKind;
 use octocode_engine::types::GraphFactsScanOptions;
 use serde_json::{Value, json};
@@ -43,9 +44,14 @@ impl AstSearchQuerySymbols {
     pub(crate) fn page(&self) -> u32 {
         u32_of(self.page)
     }
-    /// The caller's symbols per page; unset fills the response window.
+    /// The caller's symbols per page, at most the contract's `pageSize`
+    /// maximum (the type keeps it non-zero); unset fills the response window.
     pub(crate) fn page_size(&self) -> Option<usize> {
-        self.page_size.map(|size| u32_of(size) as usize)
+        use crate::tools::id::query_limits::ast_search::symbols::PAGE_SIZE_MAXIMUM;
+        self.page_size.map(|size| {
+            usize::try_from(size.get())
+                .map_or(PAGE_SIZE_MAXIMUM, |size| size.min(PAGE_SIZE_MAXIMUM))
+        })
     }
     pub(crate) fn snapshot(&self) -> Option<&str> {
         self.snapshot.as_deref().map(String::as_str)
@@ -164,7 +170,7 @@ pub fn execute_symbols(
             Ok(outline) => outline,
             Err(terminal) => return Ok(terminal),
         };
-        let set = select(q, &p.canonical, outline, security, cancel)?;
+        let set = select(q, &p.canonical, outline, cancel)?;
         return Ok(render_page(q, &set, response_window));
     }
     // Later pages of a directory outline reuse page 1's selection while no
@@ -173,7 +179,8 @@ pub fn execute_symbols(
     // (last written over two seconds before) when it was stored and still
     // are, so a write in the clock tick of a scan cannot hide behind an
     // unchanged time.
-    let (memo_key, settled) = directory_memo_key(q, &p.canonical, paths, cancel)?;
+    let mapped = mapped_files(q, &p.canonical)?;
+    let (memo_key, settled) = directory_memo_key(q, &p.canonical, mapped.as_ref(), paths, cancel)?;
     let other_key = || with_settled(memo_key.clone(), !settled);
     let hit = if q.page() > 1 {
         SYMBOL_PAGES
@@ -186,13 +193,13 @@ pub fn execute_symbols(
     };
     if let Some(hit) = hit {
         let mut page = render_page(q, &hit.value, response_window);
-        note_skipped(q, &p.canonical, paths, cancel, &mut page);
+        note_skipped(q, &p.canonical, mapped.as_ref(), paths, cancel, &mut page);
         return Ok(page);
     }
     let outline = outline_directory(q, &p.canonical, paths, cancel)?;
-    let set = select(q, &p.canonical, outline, security, cancel)?;
+    let set = select(q, &p.canonical, outline, cancel)?;
     let mut page = render_page(q, &set, response_window);
-    note_skipped(q, &p.canonical, paths, cancel, &mut page);
+    note_skipped(q, &p.canonical, mapped.as_ref(), paths, cancel, &mut page);
     let bytes = serde_json::to_vec(&set).map_or(usize::MAX, |encoded| encoded.len());
     SYMBOL_PAGES.put(
         memo_key,
@@ -215,6 +222,7 @@ pub fn execute_symbols(
 fn note_skipped(
     q: &AstSearchQuerySymbols,
     root: &std::path::Path,
+    mapped: Option<&Gitignore>,
     paths: &PathPolicy,
     cancel: &dyn CancellationCheck,
     out: &mut Value,
@@ -233,31 +241,16 @@ fn note_skipped(
     let discovery = paths.discovery_walk();
     let permits = |path: &std::path::Path| discovery.permits(path);
     let stop = || cancel.check().is_err();
-    // `languageGlobs` map more files to an outlined grammar, by their path
-    // relative to the scanned root, as the scan itself does.
-    let mapped = q.language_globs().and_then(|globs| {
-        let mut set = globset::GlobSetBuilder::new();
-        for pattern in globs.values().flatten() {
-            set.add(globset::Glob::new(pattern).ok()?);
-        }
-        set.build().ok()
-    });
     // A file counts when it can declare the name: an outlined language that
     // spells it, like the scan's own prefilter.
     let keep = |path: &std::path::Path| {
-        (outlined.contains(&octocode_engine::text::extension_of(
-            &path.to_string_lossy(),
-            true,
-            "",
-        )) || mapped.as_ref().is_some_and(|set| {
-            path.strip_prefix(root)
-                .is_ok_and(|relative| set.is_match(relative))
-        })) && filter.as_ref().is_none_or(|filter| {
-            super::read_parse_source(path)
-                .ok()
-                .flatten()
-                .is_some_and(|bytes| filter.spelled_in(&String::from_utf8_lossy(&bytes)))
-        })
+        outlinable(&outlined, mapped, path)
+            && filter.as_ref().is_none_or(|filter| {
+                super::read_parse_source(path)
+                    .ok()
+                    .flatten()
+                    .is_some_and(|bytes| filter.spelled_in(&String::from_utf8_lossy(&bytes)))
+            })
     };
     // What the outline scan itself would reach from `at` under `walk`: it
     // applies the ignore rules found from its own root (`at`), which a probe
@@ -700,6 +693,7 @@ fn with_settled(mut key: CacheKey, settled: bool) -> CacheKey {
 fn directory_memo_key(
     q: &AstSearchQuerySymbols,
     canonical: &std::path::Path,
+    mapped: Option<&Gitignore>,
     paths: &PathPolicy,
     cancel: &dyn CancellationCheck,
 ) -> Result<(CacheKey, bool), ToolError> {
@@ -715,7 +709,7 @@ fn directory_memo_key(
         q.max_files(),
         q.scan_offset()
     ]);
-    let (fingerprint, settled) = directory_fingerprint(q, canonical, paths, cancel)?;
+    let (fingerprint, settled) = directory_fingerprint(q, canonical, mapped, paths, cancel)?;
     let key = CacheKey {
         namespace: "ast-symbol-pages".into(),
         scope: fingerprint,
@@ -724,14 +718,16 @@ fn directory_memo_key(
     Ok((with_settled(key, settled), settled))
 }
 
-/// Digest of the files a directory outline would scan: path, size and
-/// modification time, walked under the caller's path policy; and whether
-/// every one was last modified at least [`SourceStamp::SETTLE`] ago.
+/// Digest of the files a directory outline would scan (an outlined extension
+/// or a `languageGlobs` match, `mapped`): path, size and modification time,
+/// walked under the caller's path policy; and whether every one was last
+/// modified at least [`SourceStamp::SETTLE`] ago.
 ///
 /// [`SourceStamp::SETTLE`]: octocode_engine::graph::SourceStamp::SETTLE
 fn directory_fingerprint(
     q: &AstSearchQuerySymbols,
     canonical: &std::path::Path,
+    mapped: Option<&Gitignore>,
     paths: &PathPolicy,
     cancel: &dyn CancellationCheck,
 ) -> Result<(String, bool), ToolError> {
@@ -741,20 +737,30 @@ fn directory_fingerprint(
     let settle_ms = octocode_engine::graph::SourceStamp::SETTLE.as_millis() as f64;
     let options = directory_scan_options(q, canonical);
     let discovery = paths.discovery_walk();
+    let outlined = octocode_engine::signatures::graph_facts::graph_fact_extensions();
+    // A mapped file has an extension no outlined grammar claims, so with
+    // `languageGlobs` the walk admits files by extension or glob, as the
+    // outline scan does.
+    let admit = |path: &std::path::Path, file_type: Option<std::fs::FileType>| {
+        discovery.permits_entry(path, file_type)
+            && (mapped.is_none()
+                || !file_type.map_or_else(|| path.is_file(), |kind| kind.is_file())
+                || outlinable(&outlined, mapped, path))
+    };
     let walk = octocode_engine::portable::query_file_system(
         octocode_engine::types::FileSystemQueryOptions {
             path: options.path,
             recursive: Some(true),
             ignore: options.ignore,
             entry_type: Some("f".to_owned()),
-            extensions: Some(octocode_engine::signatures::graph_facts::graph_fact_extensions()),
+            extensions: mapped.is_none().then(|| outlined.clone()),
             exclude_dir: options.exclude_dir,
             exclude: options.exclude,
             stop_at_limit: Some(true),
             limit: options.max_files,
             ..Default::default()
         },
-        &|path, file_type| discovery.permits_entry(path, file_type),
+        &admit,
         &|| cancel.check().is_err(),
     )
     .map_err(super::native_error)?;
@@ -776,12 +782,39 @@ fn directory_fingerprint(
     Ok((crate::digest::json_sha256(&json!(stats)), settled))
 }
 
+/// The files a directory query's `languageGlobs` map to a grammar, compiled
+/// against the scanned root in the one local glob dialect the outline scan
+/// uses; `None` without globs. A glob that does not compile is `invalidGlob`.
+fn mapped_files(
+    q: &AstSearchQuerySymbols,
+    root: &std::path::Path,
+) -> Result<Option<Gitignore>, ToolError> {
+    let Some(globs) = q.language_globs() else {
+        return Ok(None);
+    };
+    octocode_engine::search::glob::set(
+        root,
+        globs.values().flatten().map(String::as_str),
+        "languageGlobs",
+    )
+    .map_err(super::native_error)
+}
+
+/// Whether the outline scan parses `path`: an outlined extension, or a
+/// `languageGlobs` match.
+fn outlinable(outlined: &[String], mapped: Option<&Gitignore>, path: &std::path::Path) -> bool {
+    outlined.contains(&octocode_engine::text::extension_of(
+        &path.to_string_lossy(),
+        true,
+        "",
+    )) || mapped.is_some_and(|set| octocode_engine::search::glob::matches(set, path, false))
+}
+
 /// Applies the kind and name filters to an outline and pins the result.
 fn select(
     q: &AstSearchQuerySymbols,
     canonical: &std::path::Path,
     outline: Outline,
-    security: &ContentSecurity,
     cancel: &dyn CancellationCheck,
 ) -> Result<SymbolSet, ToolError> {
     cancel.check().map_err(ToolError::cancelled)?;
@@ -857,7 +890,6 @@ fn select(
         truncated,
         skipped
     ]));
-    sanitize_paths(security, &mut declarations, &mut diagnostics);
     // A name search that may be missing declarations (a recovered parse,
     // skipped files) completes with a text search for the same name.
     // An empty name search leads to the name's text as well.
@@ -971,26 +1003,6 @@ fn place_notes(
     }
 }
 
-/// Redacts every row and diagnostic path as the security policy shows it.
-fn sanitize_paths(
-    security: &ContentSecurity,
-    declarations: &mut [Value],
-    diagnostics: &mut [Value],
-) {
-    for row in declarations.iter_mut().chain(diagnostics.iter_mut()) {
-        if let Some(path) = row["path"].as_str() {
-            row["path"] = json!(security.sanitize_text(path, None).content);
-        }
-        if let Some(files) = row.get_mut("files").and_then(Value::as_array_mut) {
-            for file in files {
-                if let Some(path) = file["path"].as_str() {
-                    file["path"] = json!(security.sanitize_text(path, None).content);
-                }
-            }
-        }
-    }
-}
-
 /// One declaration a name filter singles out: its callers (a callable) or
 /// references are the usual next question, and only a language server
 /// answers it; none is offered when no server runs for the file.
@@ -1097,57 +1109,17 @@ pub(super) fn render_page(
     set: &SymbolSet,
     response_window: Option<usize>,
 ) -> Value {
-    let SymbolSet {
-        references,
-        read,
-        text_search,
-        path,
-        snapshot,
-        declarations,
-        diagnostics,
-        files_scanned,
-        skipped,
-        truncated,
-        scan_resume,
-        recovered,
-        withheld,
-        pruned,
-        directory,
-    } = set;
-    let (skipped, truncated) = (*skipped, *truncated);
-    if q.page() > 1 && q.snapshot() != Some(snapshot.as_str()) {
-        let mut restart = serde_json::to_value(q).unwrap_or_default();
-        if let Some(query) = restart.as_object_mut() {
-            query.retain(|key, value| key != "snapshot" && !value.is_null());
-        }
-        restart["page"] = json!(1);
-        return crate::tools::result::stale_snapshot(
-            crate::tools::result::Continuation::new(ToolId::AstSearch, restart)
-                .confidence("exact")
-                .build(),
-        );
+    if q.page() > 1 && q.snapshot() != Some(set.snapshot.as_str()) {
+        return crate::tools::result::stale_snapshot(crate::tools::result::restart_query(
+            ToolId::AstSearch,
+            &crate::tools::result::query_row(q, &[]),
+        ));
     }
+    let (skipped, truncated) = (set.skipped, set.truncated);
     let page = q.page().max(1) as usize;
-    let budget = crate::tools::page_windows::page_budget(
-        response_window,
-        &serde_json::to_value(q).unwrap_or_default(),
-    );
-    let paging = crate::tools::page_windows::Paging::of(
-        q.page_size().map(|size| size.clamp(1, 1000)),
-        budget,
-    );
-    // Pages count top-level rows; each carries its members.
-    let spans = top_level_spans(declarations);
-    let sizes = row_sizes(declarations, &spans, *directory);
-    let windows = paging.windows(&sizes);
-    let range = crate::tools::page_windows::nth_page(&windows, page)
-        .filter(|window| !window.is_empty())
-        .map_or(declarations.len()..declarations.len(), |window| {
-            spans[window.start].start..spans[window.end - 1].end
-        });
-    let more = page < windows.len();
+    let cut = SymbolPage::of(q, set, response_window);
     let incomplete = truncated || skipped > 0;
-    let rows = &declarations[range];
+    let rows = &set.declarations[cut.range.clone()];
     // An explicit `maxFiles` cut below the schema maximum is raisable:
     // expandScan outlines on with a doubled bound. A cut by the scan time
     // budget resumes where it stopped. Either resumes after the files this
@@ -1156,16 +1128,119 @@ pub(super) fn render_page(
     let expand_scan = super::scan_window::expand_scan(
         truncated,
         q.max_files(),
-        *scan_resume,
+        set.scan_resume,
         super::scan_window::ScanLimits::SYMBOLS,
     );
-    let mut diagnostics = diagnostics.clone();
-    if truncated {
+    let mut out = json!({"operation":"symbols","filesScanned":set.files_scanned,"filesSkipped":skipped,"diagnostics":outline_diagnostics(q, set),"isPartial":cut.more||incomplete||set.recovered});
+    // Each coverage cut names itself, so a partial final page (no `next`)
+    // still says why it is partial.
+    for (cut, reason) in [
+        (truncated, super::scan_window::cut_reason(q.max_files())),
+        (skipped > 0, "filesSkipped"),
+        (set.recovered, "parseRecovered"),
+    ] {
+        if cut {
+            crate::tools::paging::mark_partial(&mut out, reason, &[]);
+        }
+    }
+    // What the default excludes left out is disclosed like localSearch
+    // does; an empty outline leads over it in `note_skipped`.
+    crate::tools::paging::push_warnings(
+        &mut out,
+        set.withheld
+            .iter()
+            .cloned()
+            .chain((!set.pruned.is_empty()).then(|| pruned_notice(&set.pruned))),
+    );
+    // A directory outline groups rows under their file, like `match` results,
+    // so each path is written once instead of on every declaration; a file
+    // outline names its file once. Rows are outline rows (see
+    // `tools::symbol_outline`).
+    if set.directory || rows.iter().any(|row| row.get("path").is_some()) {
+        out["files"] = Value::Array(group_by_file(rows));
+    } else {
+        out["path"] = json!(set.path);
+        out["symbols"] = Value::Array(declaration_rows(rows));
+    }
+    // The snapshot only pins later pages to the same source; a single page
+    // has nothing to pin.
+    if cut.more || page > 1 {
+        out["snapshot"] = json!(set.snapshot);
+    }
+    out["pagination"] = cut.pagination;
+    if skipped > 0 {
+        crate::tools::paging::terminal_limit(&mut out, "filesSkipped", &[]);
+    }
+    if truncated && expand_scan.is_none() {
+        crate::tools::paging::terminal_limit(
+            &mut out,
+            super::scan_window::cut_reason(q.max_files()),
+            &[],
+        );
+    }
+    attach_symbol_leads(q, set, &mut out, cut.more, expand_scan);
+    if set.declarations.is_empty() && !incomplete {
+        out["status"] = json!("empty");
+        out["hints"] = json!([empty_hint(q, set.files_scanned)]);
+    }
+    out
+}
+
+/// The top-level rows of one symbols page.
+struct SymbolPage {
+    /// The page's rows (with their members) in the declarations.
+    range: std::ops::Range<usize>,
+    /// Top-level rows are left after the page.
+    more: bool,
+    /// Its pagination block.
+    pagination: Value,
+}
+
+impl SymbolPage {
+    /// Page `q.page()` of `set`: top-level rows cut by `pageSize`, else by
+    /// the response window; a page past the end is empty.
+    fn of(q: &AstSearchQuerySymbols, set: &SymbolSet, response_window: Option<usize>) -> Self {
+        let declarations = &set.declarations;
+        let page = q.page().max(1) as usize;
+        let budget = crate::tools::page_windows::page_budget(
+            response_window,
+            &serde_json::to_value(q).unwrap_or_default(),
+        );
+        let paging = crate::tools::page_windows::Paging::of(q.page_size(), budget);
+        // Pages count top-level rows; each carries its members.
+        let spans = top_level_spans(declarations);
+        let sizes = row_sizes(declarations, &spans, set.directory);
+        let windows = paging.windows(&sizes);
+        let range = crate::tools::page_windows::nth_page(&windows, page)
+            .filter(|window| !window.is_empty())
+            .map_or(declarations.len()..declarations.len(), |window| {
+                spans[window.start].start..spans[window.end - 1].end
+            });
+        let more = page < windows.len();
+        let facts = match q.page_size() {
+            Some(size) => crate::response::pages::PageFacts::counted(page, size, spans.len()),
+            None => {
+                crate::response::pages::PageFacts::sized(page, windows.len(), spans.len(), more)
+            }
+        };
+        Self {
+            range,
+            more,
+            pagination: facts.out_of_range(page > windows.len().max(1)).to_value(),
+        }
+    }
+}
+
+/// The outline's diagnostics plus what its scan cut: a truncated candidate
+/// scan, and files no page outlines.
+fn outline_diagnostics(q: &AstSearchQuerySymbols, set: &SymbolSet) -> Vec<Value> {
+    let mut diagnostics = set.diagnostics.clone();
+    if set.truncated {
         let message = match q.max_files() {
             Some(limit) => format!(
                 "Candidate scan hit the maxFiles limit ({limit}); files beyond it were not outlined."
             ),
-            None => super::scan_window::ceiling_note(*scan_resume).map_or_else(
+            None => super::scan_window::ceiling_note(set.scan_resume).map_or_else(
                 || {
                     "Candidate scan stopped at its time budget; files beyond it were not outlined."
                         .to_owned()
@@ -1175,90 +1250,41 @@ pub(super) fn render_page(
         };
         diagnostics.push(json!({"code":"structural.scan.truncated","message":message}));
     }
-    let mut out = json!({"operation":"symbols","filesScanned":files_scanned,"filesSkipped":skipped,"diagnostics":diagnostics,"isPartial":more||incomplete||*recovered});
-    // Each coverage cut names itself, so a partial final page (no `next`)
-    // still says why it is partial.
-    let partial_reasons = [
-        (
-            truncated,
-            if q.max_files().is_some() {
-                "maxFiles"
-            } else {
-                "scanBudget"
-            },
-        ),
-        (skipped > 0, "filesSkipped"),
-        (*recovered, "parseRecovered"),
-    ]
-    .into_iter()
-    .filter_map(|(cut, reason)| cut.then_some(reason))
-    .collect::<Vec<_>>();
-    if !partial_reasons.is_empty() {
-        out["partialReasons"] = json!(partial_reasons);
+    if set.skipped > 0 {
+        diagnostics.push(json!({
+            "code":"symbols.filesSkipped",
+            "message":format!("terminalLimit: {} files were not outlined (parse byte limit, encoding or read failure); no page reaches their declarations.", set.skipped),
+        }));
     }
-    let mut warnings = withheld.iter().cloned().collect::<Vec<_>>();
-    // What the default excludes left out is disclosed like localSearch
-    // does; an empty outline leads over it in `note_skipped`.
-    if !pruned.is_empty() {
-        warnings.push(pruned_notice(pruned));
-    }
-    if !warnings.is_empty() {
-        out["warnings"] = json!(warnings);
-    }
-    // A directory outline groups rows under their file, like `match` results,
-    // so each path is written once instead of on every declaration; a file
-    // outline names its file once. Rows are outline rows (see
-    // `tools::symbol_outline`).
-    if *directory || rows.iter().any(|row| row.get("path").is_some()) {
-        out["files"] = Value::Array(group_by_file(rows));
-    } else {
-        out["path"] = json!(path);
-        out["symbols"] = Value::Array(declaration_rows(rows));
-    }
-    // The snapshot only pins later pages to the same source; a single page
-    // has nothing to pin.
-    if more || page > 1 {
-        out["snapshot"] = json!(snapshot);
-    }
-    let facts = match q.page_size() {
-        Some(size) => {
-            crate::response::pages::PageFacts::counted(page, size.clamp(1, 1000), spans.len())
-        }
-        None => crate::response::pages::PageFacts::sized(page, windows.len(), spans.len(), more),
-    };
-    out["pagination"] = facts.out_of_range(page > windows.len().max(1)).to_value();
-    if skipped > 0 || (truncated && expand_scan.is_none()) {
-        out["terminalLimit"] = json!(true);
-        if skipped > 0 {
-            diagnostics.push(json!({
-                "code":"symbols.filesSkipped",
-                "message":format!("terminalLimit: {skipped} files were not outlined (parse byte limit, encoding or read failure); no page reaches their declarations."),
-            }));
-            out["diagnostics"] = json!(diagnostics);
-        }
-    }
+    diagnostics
+}
+
+/// `next`: the next page, the scan resume on the window's last page, and
+/// the outline's leads (references, text search and read on page 1).
+fn attach_symbol_leads(
+    q: &AstSearchQuerySymbols,
+    set: &SymbolSet,
+    out: &mut Value,
+    more: bool,
+    expand_scan: Option<super::scan_window::ScanWindow>,
+) {
+    let page = q.page().max(1) as usize;
     if more
         && let Some(next_page) = crate::tools::paging::next_cursor(
-            &mut out,
+            out,
             ToolId::AstSearch,
             Some("symbols"),
             "page",
             page + 1,
         )
     {
-        let mut nq = serde_json::to_value(q).unwrap_or_default();
-        if let Some(map) = nq.as_object_mut() {
-            map.retain(|_, value| !value.is_null());
-        }
-        nq["snapshot"] = json!(snapshot);
+        let mut nq = crate::tools::result::query_row(q, &[]);
+        nq["snapshot"] = json!(set.snapshot);
         nq["page"] = json!(next_page);
         out["next"] = json!({"nextPage":crate::tools::result::Continuation::new(ToolId::AstSearch, nq).confidence("exact").build()})
     }
     if let Some(window) = expand_scan.filter(|_| !more) {
-        let mut nq = serde_json::to_value(q).unwrap_or_default();
-        if let Some(map) = nq.as_object_mut() {
-            map.retain(|key, value| key != "snapshot" && !value.is_null());
-        }
+        let mut nq = crate::tools::result::query_row(q, &["snapshot"]);
         if let Some(bound) = window.max_files {
             nq["maxFiles"] = json!(bound);
         }
@@ -1268,35 +1294,35 @@ pub(super) fn render_page(
             .confidence("exact")
             .build();
     }
-    if let Some(lead) = references {
+    if let Some(lead) = &set.references {
         let name = crate::tools::leads::lsp::lead_name(&lead["query"]["queries"][0]);
         out["next"][name] = lead.clone();
     }
-    if let Some(lead) = text_search.as_ref().filter(|_| page == 1) {
+    if let Some(lead) = set.text_search.as_ref().filter(|_| page == 1) {
         out["next"]["findText"] = lead.clone();
     }
-    if let Some(lead) = read.as_ref().filter(|_| page == 1) {
+    if let Some(lead) = set.read.as_ref().filter(|_| page == 1) {
         out["next"]["read"] = lead.clone();
     }
-    if declarations.is_empty() && !incomplete {
-        out["status"] = json!("empty");
-        // What was searched: the name (when asked) and the file count.
-        let named = q
-            .name_filter()
-            .map(|filter| {
-                let names = filter
-                    .entries
-                    .iter()
-                    .map(|entry| entry.text.as_str())
-                    .collect::<Vec<_>>();
-                format!("named {} ", names.join(", "))
-            })
-            .unwrap_or_default();
-        let files = if *files_scanned == 1 { "file" } else { "files" };
-        out["hints"] = json!([format!("0 declarations {named}in {files_scanned} {files}.")]);
-    }
-    out
 }
+
+/// What an empty outline searched: the name (when asked) and the file count.
+fn empty_hint(q: &AstSearchQuerySymbols, files_scanned: usize) -> String {
+    let named = q
+        .name_filter()
+        .map(|filter| {
+            let names = filter
+                .entries
+                .iter()
+                .map(|entry| entry.text.as_str())
+                .collect::<Vec<_>>();
+            format!("named {} ", names.join(", "))
+        })
+        .unwrap_or_default();
+    let files = if files_scanned == 1 { "file" } else { "files" };
+    format!("0 declarations {named}in {files_scanned} {files}.")
+}
+
 /// Characters each top-level row (a span of `declarations`) adds to its
 /// page: its rendered row with its members, and for a directory outline its
 /// file's `path` the first time that file appears.

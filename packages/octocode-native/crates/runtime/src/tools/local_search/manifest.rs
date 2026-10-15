@@ -15,7 +15,6 @@ use octocode_engine::types::{TextSearchMatch, TextSearchResult};
 use sha2::{Digest as _, Sha256};
 use std::{
     collections::HashMap,
-    io::Read,
     path::PathBuf,
     time::{Duration, SystemTime},
 };
@@ -87,18 +86,13 @@ fn stamp(path: &str) -> Option<(u64, Option<SystemTime>)> {
         .map(|meta| (meta.len(), meta.modified().ok()))
 }
 
-/// Streamed SHA-256 of `path`.
+/// Streamed SHA-256 of `path` ([`octocode_engine::digest::copy_hashed`]).
 pub fn digest_file(path: &std::path::Path) -> std::io::Result<Digest> {
-    let mut file = std::fs::File::open(path)?;
-    let mut hasher = Sha256::new();
-    let mut buf = vec![0u8; 64 * 1024];
-    loop {
-        let read = file.read(&mut buf)?;
-        if read == 0 {
-            return Ok(hasher.finalize().into());
-        }
-        hasher.update(&buf[..read]);
-    }
+    let file = std::fs::File::open(path)?;
+    let (_, hex) = octocode_engine::digest::copy_hashed(file, std::io::sink())?;
+    let mut digest = [0; 32];
+    hex::decode_to_slice(hex, &mut digest).map_err(std::io::Error::other)?;
+    Ok(digest)
 }
 
 /// Bytes a scan would occupy, or `None` when it exceeds the per-scan budget.
@@ -204,12 +198,15 @@ pub fn put(snapshot: String, policy: String, fresh: Fresh) {
 /// Hash `path` and check every match value against the hashed bytes; `None`
 /// when the file is unreadable, over `budget`, or no longer holds a value.
 fn read_source(path: &str, matches: &[TextSearchMatch], budget: &mut u64) -> Option<Source> {
-    let meta = std::fs::metadata(path).ok()?;
-    *budget = budget.checked_sub(meta.len())?;
-    let bytes = std::fs::read(path).ok()?;
-    if u64::try_from(bytes.len()).ok()? != meta.len() {
+    // Bounded by the budget left: a file grown past it is refused unread.
+    let octocode_engine::text::Source { bytes, metadata } =
+        octocode_engine::text::read_source(std::path::Path::new(path), *budget).ok()?;
+    let size = u64::try_from(bytes.len()).ok()?;
+    // A length other than the handle's own means it was written meanwhile.
+    if size != metadata.len() {
         return None;
     }
+    *budget -= size;
     if !matches.is_empty() {
         let text = String::from_utf8_lossy(&bytes);
         let lines = text
@@ -225,8 +222,8 @@ fn read_source(path: &str, matches: &[TextSearchMatch], budget: &mut u64) -> Opt
     }
     Some(Source {
         path: path.to_owned(),
-        size: meta.len(),
-        modified: meta.modified().ok(),
+        size,
+        modified: metadata.modified().ok(),
         digest: Sha256::digest(&bytes).into(),
     })
 }
@@ -373,6 +370,26 @@ mod tests {
             fresh(one_match(&path, 2, "not in the file")),
         );
         assert!(get(snapshot, "policy").is_none());
+    }
+
+    /// The re-read is bounded by the hash budget left: a file past it is
+    /// refused unread and spends nothing; one within it spends its size.
+    #[test]
+    fn a_reread_source_is_bounded_by_the_budget_left() {
+        let dir = tempfile::tempdir().expect("fixture directory");
+        let path = dir.path().join("ten.txt");
+        std::fs::write(&path, "0123456789").expect("fixture");
+        let path = path.to_string_lossy().into_owned();
+        let mut budget = 9;
+        assert!(read_source(&path, &[], &mut budget).is_none());
+        assert_eq!(budget, 9);
+        let mut budget = 25;
+        let source = read_source(&path, &[], &mut budget).expect("within budget");
+        assert_eq!((source.size, budget), (10, 15));
+        let digest: Digest = Sha256::digest(b"0123456789").into();
+        assert_eq!(source.digest, digest);
+        // A directory is not a regular file and is never read.
+        assert!(read_source(&dir.path().to_string_lossy(), &[], &mut 100).is_none());
     }
 
     #[test]

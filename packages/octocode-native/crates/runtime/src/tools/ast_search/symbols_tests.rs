@@ -2,7 +2,7 @@
 //! declarations: peak memory follows the answer, not the repository.
 use super::symbols::{AstSearchQuerySymbols, Outline, outline_directory};
 use crate::tools::cancel::NeverCancel;
-use crate::tools::test_support::{Fixture, simple_policy};
+use crate::tools::test_support::{Fixture, checks, simple_policy};
 use serde_json::json;
 
 fn query(root: &std::path::Path, extra: serde_json::Value) -> AstSearchQuerySymbols {
@@ -97,8 +97,7 @@ fn an_empty_name_search_does_not_blame_files_it_scanned() {
     let out = empty_outline(&root.0, json!({"symbolName":"zzNoSuchSymbol"}));
     assert_eq!(out["status"], "empty", "{out}");
     assert_eq!(out["filesScanned"], 5, "{out}");
-    let hints = out["hints"].to_string();
-    assert!(!hints.contains("skipped paths"), "{hints}");
+    checks::assert_absent(&out["hints"], "skipped paths");
     assert!(out["next"].get("includeSkipped").is_none(), "{out}");
 }
 
@@ -109,11 +108,7 @@ fn an_empty_name_search_counts_only_the_hidden_files() {
     let root = Fixture::new();
     files(&root.0, 5);
     std::fs::create_dir_all(root.0.join(".cfg")).expect("dir");
-    std::fs::write(
-        root.0.join(".cfg/hidden.ts"),
-        "export const zzNeedle = 1;\n",
-    )
-    .expect("hidden");
+    root.write(".cfg/hidden.ts", "export const zzNeedle = 1;\n");
     let out = empty_outline(&root.0, json!({"symbolName":"zzNeedle"}));
     assert_eq!(out["status"], "empty", "{out}");
     let hints = out["hints"].to_string();
@@ -193,11 +188,10 @@ fn the_hidden_lead_keeps_the_exclude_anchored_to_the_scan_root() {
 fn the_hidden_lead_keeps_the_language_globs_anchored_to_the_scan_root() {
     let root = Fixture::new();
     std::fs::create_dir_all(root.0.join(".cfg/include")).expect("dirs");
-    std::fs::write(
-        root.0.join(".cfg/include/widget.h"),
+    root.write(
+        ".cfg/include/widget.h",
         "namespace Space { class Widget {}; }\n",
-    )
-    .expect("header");
+    );
     let out = empty_outline(
         &root.0,
         json!({"symbolName":"Widget","languageGlobs":{"cpp":[".cfg/include/**/*.h"]}}),
@@ -220,14 +214,10 @@ fn the_hidden_lead_keeps_the_language_globs_anchored_to_the_scan_root() {
 fn a_language_globs_file_behind_an_ignore_rule_gets_a_lead() {
     let root = Fixture::new();
     std::fs::create_dir_all(root.0.join(".git")).expect("git dir");
-    std::fs::write(root.0.join(".gitignore"), "gen/\n").expect("gitignore");
+    root.write(".gitignore", "gen/\n");
     std::fs::create_dir_all(root.0.join("gen")).expect("dir");
-    std::fs::write(
-        root.0.join("gen/api.tsx.in"),
-        "export function zzMapped() {}\n",
-    )
-    .expect("mapped source");
-    std::fs::write(root.0.join("main.ts"), "export const kept = 1;\n").expect("source");
+    root.write("gen/api.tsx.in", "export function zzMapped() {}\n");
+    root.write("main.ts", "export const kept = 1;\n");
     let out = empty_outline(
         &root.0,
         json!({"symbolName":"zzMapped","languageGlobs":{"typescript":["**/*.tsx.in"]}}),
@@ -244,8 +234,8 @@ fn a_language_globs_file_behind_an_ignore_rule_gets_a_lead() {
 #[test]
 fn the_hidden_file_lead_keeps_the_scope_and_its_filters() {
     let root = Fixture::new();
-    std::fs::write(root.0.join(".hidden.ts"), "export function hf() {}\n").expect("hidden");
-    std::fs::write(root.0.join("plain.ts"), "export function other() {}\n").expect("plain");
+    root.write(".hidden.ts", "export function hf() {}\n");
+    root.write("plain.ts", "export function other() {}\n");
     let out = empty_outline(
         &root.0,
         json!({"symbolName":"hf","languageGlobs":{"typescript":["**/*.ts"]},"exclude":["**/none/**"]}),
@@ -270,7 +260,7 @@ fn the_hidden_file_lead_keeps_the_scope_and_its_filters() {
 fn skipped_workspace(hidden_name: &str, ignored_name: &str) -> Fixture {
     let root = Fixture::new();
     std::fs::create_dir_all(root.0.join(".git")).expect("git dir");
-    std::fs::write(root.0.join(".gitignore"), "build/\n").expect("gitignore");
+    root.write(".gitignore", "build/\n");
     for (file, name) in [
         (".hidden/h.ts", hidden_name),
         ("build/out.ts", ignored_name),
@@ -295,7 +285,7 @@ fn an_ignored_symbol_leads_to_its_own_scope_with_the_ignore_flags_lifted() {
     assert!(out["next"].get("narrowScope").is_none(), "{out}");
     let hints = out["hints"].to_string();
     assert!(hints.contains("1 file(s)"), "{hints}");
-    assert!(!hints.contains(".hidden"), "{hints}");
+    checks::assert_absent(&out["hints"], ".hidden");
     let lead = skipped_lead(&out);
     assert_eq!(lead["path"], json!(root.0.to_string_lossy()), "{out}");
     assert_eq!(lead["includeIgnored"], json!(true), "{out}");
@@ -306,18 +296,31 @@ fn an_ignored_symbol_leads_to_its_own_scope_with_the_ignore_flags_lifted() {
     assert!(declares(&found, "ignoredSym"), "{found}");
 }
 
-/// A name only a hidden directory holds lifts `includeHidden` alone.
+/// An empty outline's lead lifts exactly the walk flags that reach the
+/// name's files (only `includeHidden` for a hidden directory), never one the
+/// request already set, and running it finds the name.
 #[test]
-fn a_hidden_symbol_lead_lifts_only_the_hidden_flag() {
+fn a_symbol_lead_lifts_exactly_the_flags_left_to_reach_it() {
     let root = skipped_workspace("hiddenSym", "ignoredSym");
-    let out = empty_outline(&root.0, json!({"symbolName":"hiddenSym"}));
-    assert_eq!(out["status"], "empty", "{out}");
-    let lead = skipped_lead(&out);
-    assert_eq!(lead["includeHidden"], json!(true), "{lead}");
-    assert!(lead.get("includeIgnored").is_none(), "{lead}");
-    assert!(lead.get("defaultExcludes").is_none(), "{lead}");
-    let found = run_lead(&root.0, lead);
-    assert!(declares(&found, "hiddenSym"), "{found}");
+    for (request, lifted) in [
+        (
+            json!({"symbolName":"hiddenSym"}),
+            json!({"includeHidden":true}),
+        ),
+        (
+            json!({"symbolName":"hiddenSym","includeIgnored":true}),
+            json!({"includeHidden":true,"includeIgnored":true}),
+        ),
+    ] {
+        let out = empty_outline(&root.0, request.clone());
+        assert_eq!(out["status"], "empty", "{request}: {out}");
+        let lead = skipped_lead(&out);
+        for flag in ["includeHidden", "includeIgnored", "defaultExcludes"] {
+            assert_eq!(lead.get(flag), lifted.get(flag), "{request} {flag}: {lead}");
+        }
+        let found = run_lead(&root.0, lead);
+        assert!(declares(&found, "hiddenSym"), "{request}: {found}");
+    }
 }
 
 /// A name held both by a hidden directory and by an ignored one: one lead
@@ -349,22 +352,6 @@ fn a_symbol_behind_hidden_and_ignored_paths_gets_one_lead_lifting_both() {
     assert!(files.iter().any(|f| f.ends_with("h.ts")), "{found}");
 }
 
-/// With `includeIgnored` already on, the lead lifts only what is left.
-#[test]
-fn a_symbol_lead_never_repeats_a_flag_the_request_already_set() {
-    let root = skipped_workspace("hiddenSym", "ignoredSym");
-    let out = empty_outline(
-        &root.0,
-        json!({"symbolName":"hiddenSym","includeIgnored":true}),
-    );
-    assert_eq!(out["status"], "empty", "{out}");
-    let lead = skipped_lead(&out);
-    assert_eq!(lead["includeIgnored"], json!(true), "{lead}");
-    assert_eq!(lead["includeHidden"], json!(true), "{lead}");
-    let found = run_lead(&root.0, lead);
-    assert!(declares(&found, "hiddenSym"), "{found}");
-}
-
 /// Several hidden directories holding the name are all reached by the one
 /// lead, so no hidden file stays unreachable behind the first one.
 #[test]
@@ -378,7 +365,7 @@ fn every_hidden_directory_holding_the_name_is_reached() {
         )
         .expect("source");
     }
-    std::fs::write(root.0.join("main.ts"), "export const kept = 1;\n").expect("source");
+    root.write("main.ts", "export const kept = 1;\n");
     let out = empty_outline(&root.0, json!({"symbolName":"twinSym"}));
     let found = run_lead(&root.0, skipped_lead(&out));
     let files = found_files(&found);
@@ -448,11 +435,10 @@ fn a_scan_cut_past_the_scan_offset_bound_is_terminal() {
 fn an_outline_leaves_out_gitignored_files_and_leads_to_them() {
     let root = Fixture::new();
     std::fs::create_dir_all(root.0.join(".git")).expect("git dir");
-    std::fs::write(root.0.join(".gitignore"), "gen/\n").expect("gitignore");
+    root.write(".gitignore", "gen/\n");
     std::fs::create_dir_all(root.0.join("gen")).expect("dir");
-    std::fs::write(root.0.join("gen/out.ts"), "export const zzGenerated = 1;\n")
-        .expect("ignored source");
-    std::fs::write(root.0.join("main.ts"), "export const kept = 1;\n").expect("source");
+    root.write("gen/out.ts", "export const zzGenerated = 1;\n");
+    root.write("main.ts", "export const kept = 1;\n");
     let kept = empty_outline(&root.0, json!({}));
     assert_eq!(found_files(&kept).len(), 1, "{kept}");
     assert_eq!(kept["filesScanned"], 1, "{kept}");
@@ -471,4 +457,45 @@ fn an_outline_leaves_out_gitignored_files_and_leads_to_them() {
         json!({"symbolName":"zzGenerated","includeIgnored":true}),
     );
     assert!(declares(&direct, "zzGenerated"), "{direct}");
+}
+
+/// Writes `source` to `path` last modified an hour ago (`age_secs` more), so
+/// a scan sees it settled and the page memo may serve a repeated page 1.
+fn write_settled(path: &std::path::Path, source: &str, age_secs: u64) {
+    std::fs::write(path, source).expect("source");
+    let modified = std::time::SystemTime::now() - std::time::Duration::from_secs(3600 + age_secs);
+    std::fs::File::options()
+        .write(true)
+        .open(path)
+        .and_then(|file| file.set_modified(modified))
+        .expect("set modified");
+}
+
+/// A file only `languageGlobs` map to a grammar is part of what the page
+/// memo fingerprints: an edit to it is outlined anew, never served from the
+/// selection stored before the edit.
+#[test]
+fn an_edit_to_a_language_globs_file_is_not_served_from_the_page_memo() {
+    let root = Fixture::new();
+    let mapped = root.0.join("lib.inc");
+    let globs = json!({"languageGlobs":{"cpp":["*.inc"]}});
+    write_settled(&mapped, "int zzBefore() { return 1; }\n", 0);
+    let before = empty_outline(&root.0, globs.clone());
+    assert!(declares(&before, "zzBefore"), "{before}");
+    write_settled(&mapped, "int zzAfterEdit() { return 2; }\n", 60);
+    let after = empty_outline(&root.0, globs);
+    assert!(declares(&after, "zzAfterEdit"), "{after}");
+    assert!(!declares(&after, "zzBefore"), "{after}");
+}
+
+/// `pageSize` is held to the contract's `symbols` maximum (the generated
+/// fact, not a literal), and a size within it is kept exactly.
+#[test]
+fn a_symbols_page_size_is_held_to_the_contract_maximum() {
+    use crate::tools::id::query_limits::ast_search::symbols::PAGE_SIZE_MAXIMUM;
+    let root = Fixture::new();
+    for (asked, kept) in [(PAGE_SIZE_MAXIMUM + 1, PAGE_SIZE_MAXIMUM), (7, 7)] {
+        let q = query(&root.0, json!({ "pageSize": asked }));
+        assert_eq!(q.page_size(), Some(kept), "pageSize {asked}");
+    }
 }

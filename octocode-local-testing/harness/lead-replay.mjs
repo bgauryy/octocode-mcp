@@ -19,8 +19,10 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { FIXTURES, LIVE, REPOS, ROOT, checks, cliEntry, startServer, writeResults } from './mcp-client.mjs';
 import { PAGE_KEYS, atoms, canon, judgeLead, leadsOf, outcomeOf, properties, rowOf, scopeChanges, short, sourceScopeForPage } from './lead-predicates.mjs';
+import { createQueryDefaults } from './query-defaults.mjs';
 
 const SUITE = 'lead-replay';
+const defaultsOf = createQueryDefaults(JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/octocode-config/contract/tool-contract.json'), 'utf8')).tools);
 const { check, skip, summary, results } = checks(SUITE);
 const BUDGET_MS = Number(process.env.OCTOCODE_LEAD_REPLAY_BUDGET_MS ?? 140_000);
 const STARTED = Date.now();
@@ -215,7 +217,14 @@ async function pool(items, worker) {
   await Promise.all(Array.from({ length: CONCURRENCY }, async () => { while (i < items.length) await worker(items[i++]); }));
 }
 
+const contract = JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/octocode-config/contract/tool-contract.json'), 'utf8'));
+// A parked tool (contract `disabled`) runs on no surface; harness/rewrite.mjs proves the refusal.
+const PARKED = new Set(contract.tools.filter(t => t.disabled).map(t => t.name));
 const plan = fixtures().filter(([tool, , label]) => {
+  if (PARKED.has(tool)) {
+    skip(`fixture ${label}`, `${tool} is parked (disabled on every surface)`);
+    return false;
+  }
   if (onMcp(tool) || CLI_ONLY.has(tool)) return true;
   skip(`fixture ${label}`, `${tool} is not registered on this server`);
   return false;
@@ -269,7 +278,7 @@ function flush(lead, source) {
 
 /** Judge one executed lead against the predicates of its key family (harness/lead-predicates.mjs). */
 function judge(lead, source, entry, shown, { walked = false } = {}) {
-  for (const { assertion, ok, detail } of judgeLead(lead, source, entry, shown, { walked, root: ROOT, propsOf })) record(lead, source, assertion, ok, detail);
+  for (const { assertion, ok, detail } of judgeLead(lead, source, entry, shown, { walked, root: ROOT, propsOf, defaultsOf })) record(lead, source, assertion, ok, detail);
   flush(lead, source);
   return outcomeOf(entry);
 }
@@ -377,7 +386,6 @@ for (let cursor = 0; cursor < queue.length;) {
 for (const item of queue.filter(item => item.lead.key === 'apply')) await replay(item);
 
 // Report.
-const contract = JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/octocode-config/contract/tool-contract.json'), 'utf8'));
 const contractKeys = new Set(Object.values(contract.continuationChannels?.kinds ?? {}).flat());
 const emitted = new Set([...keyStats.keys()].map(k => k.split('.').slice(1).join('.')));
 const unexercised = [...contractKeys].filter(k => !emitted.has(k)).sort();

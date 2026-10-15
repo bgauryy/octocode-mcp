@@ -4,6 +4,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 pub use crate::contracts::tool_types::{AstTopologyQuery, AstTopologyQueryRustWorkspace};
 
+/// The file bound of a scan without `maxFiles`.
+pub(crate) const DEFAULT_SCAN_FILES: u32 = 20_000;
+
 /// The `analysis` discriminant of an [`AstTopologyQuery`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GraphAnalysis {
@@ -148,6 +151,11 @@ impl AstTopologyQuery {
     }
     pub(crate) fn max_files(&self) -> Option<u32> {
         every_analysis!(self, max_files => max_files.map(u32_of))
+    }
+    /// The file bound the scan walks under: `maxFiles`, else
+    /// [`DEFAULT_SCAN_FILES`].
+    pub(crate) fn scan_files(&self) -> u32 {
+        self.max_files().unwrap_or(DEFAULT_SCAN_FILES)
     }
     pub(crate) fn page(&self) -> u32 {
         every_analysis!(self, page => u32_of(*page))

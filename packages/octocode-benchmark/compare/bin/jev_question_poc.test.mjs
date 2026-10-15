@@ -1,25 +1,25 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
-import { questions, mergeRanges, classifyDecision, sourceCoverage, selectedRanges, heldAnswers } from './jev_question_poc.mjs';
+import { questions, mergeRanges, classifyDecision, sourceCoverage, heldAnswers } from './jev_question_poc.mjs';
 import { judgmentCases, noveltyCases } from '../jev-proposal-poc/question-cases.mjs';
 
 test('question policies keep conditions and never send grading labels', () => {
   for (const item of judgmentCases()) {
-    assert.equal(questions(item, 'compound', 'supports').length, 1);
+    assert.deepEqual(Object.keys(questions(item, 'compound')), ['whole']);
     for (const style of ['atomic', 'atomic-evidence']) {
-      const qs = questions(item, style, 'supports');
+      const qs = Object.values(questions(item, style));
       assert.equal(qs.length, 2);
-      assert.ok(qs.every(q => !Object.hasOwn(q, 'expected')));
-      assert.ok(qs.every((q, i) => typeof q.ask === 'string' && q.ask.startsWith(item.atoms[i].claim)));
+      assert.ok(qs.every(q => q.type === 'noul' && Object.keys(q).sort().join() === 'instructions,type'));
+      assert.ok(qs.every((q, i) => q.instructions.startsWith(item.atoms[i].claim)));
     }
   }
 });
 
-test('held state answers use the compact resource answer shape', () => {
-  assert.deepEqual(heldAnswers([{json:{queries:[{resources:[{answers:{q:0.9}}]}]}}]), {q:0.9});
+test('held state answers read each provider Noul value by question key', () => {
+  assert.deepEqual(heldAnswers([{json:{queries:[{answers:{q:{type:'noul',noul:0.9}}}]}}]), {q:0.9});
   assert.throws(() => heldAnswers([]));
-  assert.throws(() => heldAnswers([{json:{queries:[{resources:[{}]}]}}]));
+  assert.throws(() => heldAnswers([{json:{queries:[{error:{errorCode:'classificationProviderError'}}]}}]));
 });
 
 test('the six paired support families match observable code behavior', () => {
@@ -41,11 +41,9 @@ test('unknown judgments never become a confident negative', () => {
   assert.equal(classifyDecision([0.8, 1]), true);
 });
 
-test('source-window union keeps gaps and selects from model output only', () => {
+test('source-window union keeps gaps', () => {
   assert.deepEqual(mergeRanges([[5, 8], [2, 3], [3, 6], [12, 13], [12, 13]]), [[2, 8], [12, 13]]);
   assert.throws(() => mergeRanges([[0, 3]]));
-  const outputs = [{json:{queries:[{best:{a:[{line:5,endLine:8,exists:0.99}],b:[{line:8,endLine:10,exists:0.8}],c:[{line:1,endLine:2,exists:0.7}]}}]}}];
-  assert.deepEqual(selectedRanges(outputs, ['a', 'b', 'c']), [[5, 10]]);
 });
 
 test('coverage requires both facts and matching source bytes, not echoed questions', () => {

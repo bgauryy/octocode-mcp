@@ -86,8 +86,8 @@ fn no_production_lock_is_skipped_when_poisoned() {
             if name.contains("test") || ALLOWED.contains(&relative.as_str()) {
                 continue;
             }
-            // Test-only items may use any shape.
-            let production = production_source(&file);
+            // Test-only items may use any shape; prose and literals hold none.
+            let production = code_only(&production_source(&file));
             for found in pattern.find_iter(&production) {
                 let line = production[..found.start()].lines().count();
                 offenders.push(format!("{relative}:{line}"));

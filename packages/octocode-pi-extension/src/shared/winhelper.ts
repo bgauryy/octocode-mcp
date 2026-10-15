@@ -1,9 +1,10 @@
 import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
 import { classifyScript, type Classification, type ScriptCommand } from './winclassify.js';
 import { WINDOWS_HELPER_SCRIPT } from './winhelper-script.js';
+import { powerShellCandidates } from './winpath.js';
 
 /**
- * The Windows helper: one `pwsh` (else `powershell.exe`) per Pi process, started on first use, that owns a Job Object per
+ * The Windows helper: one `pwsh` (else Windows PowerShell), started by absolute path, per Pi process, started on first use, that owns a Job Object per
  * process tree and parses PowerShell for the shell classifier (the program is winhelper-script.ts). It exits when its
  * stdin closes, which ends every tree assigned to it, so the trees die with Pi even when Pi crashes.
  *
@@ -19,7 +20,6 @@ const REQUEST_MS = 15_000;
 /** How long a stopping helper gets to exit after its stdin closed, before it is killed. */
 const STOP_MS = 3_000;
 
-const SHELLS = ['pwsh', 'powershell.exe'] as const;
 const SPAWN_OPTIONS: SpawnOptions = { stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true };
 
 export interface HelperOptions {
@@ -27,7 +27,7 @@ export interface HelperOptions {
   spawn?: (command: string, args: string[], options: SpawnOptions) => ChildProcess;
   /** The platform process trees are managed on; anything but `win32` has no job to assign. */
   platform?: () => NodeJS.Platform;
-  /** PowerShell executables to try, in order. */
+  /** PowerShell executables to try, in order; by default `pwsh` from PATH, then System32's Windows PowerShell, by absolute path (see winpath.ts). */
   shells?: readonly string[];
   startupMs?: number;
   requestMs?: number;
@@ -95,7 +95,7 @@ export class WindowsHelper {
   }
 
   async #launch(): Promise<boolean> {
-    for (const shell of this.#options.shells ?? SHELLS) if (await this.#open(shell)) return true;
+    for (const shell of this.#options.shells ?? powerShellCandidates()) if (await this.#open(shell)) return true;
     this.#unavailable = true;
     return false;
   }
@@ -122,6 +122,7 @@ export class WindowsHelper {
       let buffer = '';
       const startup = setTimeout(() => child.kill(), this.#options.startupMs ?? STARTUP_MS);
       stdin.on('error', () => undefined);
+      stdout.on('error', () => undefined);
       stdout.setEncoding('utf8');
       stdout.on('data', (chunk: string) => {
         buffer += chunk;

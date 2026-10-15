@@ -69,7 +69,7 @@ try {
   call(workspace, database, 'unlock', { leaseId: handoff.lease.id }, b);
   result.checks.push('workspace discovery and conflicting lease handoff');
 
-  const request = { to: b, body: 'Confirm this work handoff', reasoning: 'Verify durable delivery across CLI and MCP', key: 'release-question', wake: 'action' };
+  const request = { to: b, body: 'Confirm this work handoff', reasoning: 'Verify durable delivery across CLI and MCP', key: 'release-question', replyRequired: true, wake: 'action' };
   const sent = call(workspace, database, 'send_message', request, a);
   assert.deepEqual(call(workspace, database, 'send_message', request, a), sent);
   const frames = [

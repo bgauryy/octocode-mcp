@@ -13,6 +13,7 @@ from .completion import CompletionMixin
 from .documents import DocumentsMixin
 from .dispatch import DeliveryMixin, now
 from .peers import PeersMixin
+from .expiry import ExpiryMixin, RESERVED_KEY_PREFIXES
 from .workspace import coordination_scope, stored_scope, scope_workspaces
 
 PAGE_BYTES = 16 * 1024
@@ -63,7 +64,7 @@ def page(rows, string_cursor, command, input, metadata_bytes=0):
     return result
 
 
-class Store(LeaseMixin, RecordsMixin, HealthMixin, CompletionMixin, DocumentsMixin, DeliveryMixin, PeersMixin):
+class Store(LeaseMixin, RecordsMixin, HealthMixin, CompletionMixin, DocumentsMixin, DeliveryMixin, PeersMixin, ExpiryMixin):
     def __init__(self, database, workspace, read_only=False, create=False):
         self.workspace = str(Path(workspace).resolve(strict=True))
         self.coordination_scope = coordination_scope(self.workspace)
@@ -203,8 +204,10 @@ class Store(LeaseMixin, RecordsMixin, HealthMixin, CompletionMixin, DocumentsMix
                     result = {'alive': True, 'expiresAt': expires}
                     if input.get('renewLeases'):
                         result['renewedLeases'] = execute(self.db, 'UPDATE leases SET expiresAt=?,refreshedAt=? WHERE owner=? AND workspace=? AND expiresAt>? AND expiresAt<?', (expires, at, session, self.workspace, at, expires))
-                    # Periodic heartbeats hand silently expired leases to waiters.
+                    # Periodic heartbeats hand silently expired leases to waiters and
+                    # tell the sender of any request that expired unacknowledged.
                     self.grant_waits(at)
+                    self.notify_expired(session, at)
                     return result
                 if name == 'set_status':
                     self.known(session)
@@ -261,7 +264,7 @@ class Store(LeaseMixin, RecordsMixin, HealthMixin, CompletionMixin, DocumentsMix
                 # The reply body stays the exact answer; the outcome travels in reasoning, which inbox returns.
                 reasoning = 'Outcome: {}'.format(input['outcome']) + ('; ' + input['reasoning'] if 'reasoning' in input else '')
                 catalog.text(dict(reasoning=reasoning), 'reasoning')
-            return self.send(session, dict(replyTo=input['message'], body=body, reasoning=reasoning, key='complete:{}'.format(input['message'])), False, True)
+            return self.send(session, dict(replyTo=input['message'], body=body, reasoning=reasoning, key='complete:{}'.format(input['message']), wake='action'), False, True)
         with transaction(self.db):
             self.known(session)
             messages = input.get('messages', [input.get('message')])
@@ -282,14 +285,14 @@ class Store(LeaseMixin, RecordsMixin, HealthMixin, CompletionMixin, DocumentsMix
             raise ValueError('Supply exactly one of to or topic. For replies use complete with message and reply.')
         target = '*' if broadcast else catalog.text(input, 'to') if 'to' in input else catalog.text(input, 'topic') if 'topic' in input else None
         body, reasoning = catalog.text(input, 'body'), catalog.text(input, 'reasoning')
-        reply_required = input.get('replyRequired', not broadcast and 'topic' not in input and 'replyTo' not in input)
+        reply_required = input.get('replyRequired', False)
         if 'replyTo' in input and reply_required:
             raise ValueError('Replies are informational; use replyRequired:false. Start a new direct request for new work')
         duration = catalog.ttl(input, 3600000)
-        wake = input.get('wake', 'passive' if broadcast or 'topic' in input else 'action')
+        wake = input.get('wake', 'action' if reply_required else 'passive')
         key = catalog.text(input, 'key') if 'key' in input else str(uuid.uuid4())
-        if not completing and key.startswith('complete:'):
-            raise ValueError('Keys beginning complete: are reserved for complete replies')
+        if not completing and key.startswith(RESERVED_KEY_PREFIXES):
+            raise ValueError('Keys beginning complete: or expired: are reserved for final replies and runtime notices')
         with transaction(self.db):
             self.known(session)
             if 'to' in input and not broadcast:

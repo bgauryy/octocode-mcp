@@ -9,7 +9,7 @@ const { getPlatformSuffix } = require('../bin/platform.cjs');
 // crates/runtime/src/lib.rs, which tests/distribution.test.ts checks. It
 // guards a stale install or a candidate addon loaded through octocode-mcp's
 // dev-only OCTOCODE_NATIVE_BINDING override (this loader never reads it).
-const NATIVE_ABI_VERSION = 6;
+const NATIVE_ABI_VERSION = 7;
 
 const suffix = getPlatformSuffix();
 if (!suffix) {

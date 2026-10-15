@@ -206,8 +206,15 @@ pub(super) fn failure_hint(query: &LspSearchQuery, code: &str) -> Option<&'stati
 
 /// The static tip of an empty category; `None` when the row's reason says
 /// it all.
-pub(super) fn empty_hint(category: &str) -> Option<&'static str> {
+pub(super) fn empty_hint(category: &str, operation: &str) -> Option<&'static str> {
     Some(match category {
+        // The anchor resolved: an empty hierarchy is an answer, not a bad anchor.
+        "noLocations" if operation == "subtypes" => {
+            "Nothing extends or implements this symbol in the files checked; confirm with the name search lead."
+        }
+        "noLocations" if operation == "supertypes" => {
+            "No base type found: a root type has none. Confirm with the definition."
+        }
         "noLocations" => {
             "Verify the symbol and anchor; then try references/definition alternatives or exact syntax/text search."
         }
@@ -275,10 +282,7 @@ fn attach_text_search(value: &mut Value, query: &LspSearchQuery, confidence: Opt
     else {
         return;
     };
-    let lead = crate::tools::result::Continuation::new(
-        ToolId::LocalSearch,
-        json!({"path": scope, "matchString": symbol, "regex": "literal", "wholeWord": true, "caseMode": "sensitive"}),
-    );
+    let lead = text_search_lead(symbol, &scope, &[], None);
     value["next"]["findText"] = match confidence {
         Some(confidence) => lead.confidence(confidence),
         None => lead,
@@ -299,7 +303,7 @@ pub(super) fn empty(
         "reason": reason,
         "lsp": { "serverAvailable": server_available },
     });
-    if let Some(hint) = empty_hint(category) {
+    if let Some(hint) = empty_hint(category, &query.operation()) {
         row["hints"] = json!([hint]);
     }
     // A workspaceRoot-only query has no file: the row names none.
@@ -369,16 +373,16 @@ pub(super) fn mark_diagnostics_unpublished(row: &mut Value, query: &LspSearchQue
         "The language server published no diagnostics for this document within {wait_ms} ms."
     ));
     row["hints"] = json!(
-        empty_hint("diagnosticsNotPublished")
+        empty_hint("diagnosticsNotPublished", "diagnostic")
             .into_iter()
             .collect::<Vec<_>>()
     );
-    mark_partial(row, query, "diagnosticsNotPublished", &[]);
+    partial_with_retry(row, query, "diagnosticsNotPublished", &[]);
 }
 
 /// Flag a row as incomplete with a machine-readable reason, human warnings,
 /// and an executable `next.retry` of the same query.
-pub(super) fn mark_partial(
+pub(super) fn partial_with_retry(
     row: &mut Value,
     query: &LspSearchQuery,
     reason: &str,
@@ -504,11 +508,7 @@ pub(super) fn directory_anchor(
         .filter(|symbol| !symbol.trim().is_empty())
     {
         Some(symbol) => {
-            row["next"]["findText"] = crate::tools::result::Continuation::new(
-                ToolId::LocalSearch,
-                json!({"path": name, "matchString": symbol, "regex": "literal", "wholeWord": true, "caseMode": "sensitive"}),
-            )
-            .build();
+            row["next"]["findText"] = text_search_lead(symbol, &name, &[], None).build();
         }
         None => {
             row["next"]["list"] = crate::tools::result::Continuation::new(
@@ -528,12 +528,9 @@ pub(super) fn attach_recovery_next(value: &mut Value, query: &LspSearchQuery) {
     let symbol = query.symbol_name().filter(|name| !name.trim().is_empty());
     // A directory (a workspaceSymbol scope) is searched, not fetched.
     if let Some(symbol) = symbol.filter(|_| std::path::Path::new(&path).is_dir()) {
-        value["next"]["read"] = crate::tools::result::Continuation::new(
-            ToolId::LocalSearch,
-            json!({ "path": path, "matchString": symbol }),
-        )
-        .confidence("exact")
-        .build();
+        value["next"]["read"] = text_search_lead(symbol, &path, &[], None)
+            .confidence("exact")
+            .build();
         return;
     }
     let mut read = json!({ "path": path });
@@ -792,13 +789,15 @@ pub(super) fn flag_partial(
     match name {
         // Partial only with an executable recovery.
         Some(name) => {
-            crate::tools::paging::mark_partial(row, reason, &warnings);
-            row["next"]["findText"] = text_search_lead(name, scope, text_only.as_deref());
+            // A fixed per-request cap: no page or retry reaches the
+            // unchecked files, only the lexical lead below.
             if CAPPED_REASONS.contains(&reason) {
-                // A fixed per-request cap: no page or retry reaches the
-                // unchecked files, only the lexical lead above.
-                row["terminalLimit"] = json!(true);
+                crate::tools::paging::terminal_limit(row, reason, &warnings);
+            } else {
+                crate::tools::paging::mark_partial(row, reason, &warnings);
             }
+            row["next"]["findText"] =
+                text_search_lead(name, &scope.root, &scope.include, text_only.as_deref()).build();
         }
         // A position anchor has no name to search for: coverage reason and
         // warning only.
@@ -833,7 +832,7 @@ pub(super) fn ignored_text_lead(
     scope: &super::scope::Scope,
     files: &[String],
 ) -> Value {
-    let mut lead = text_search_lead(name, scope, Some(files));
+    let mut lead = text_search_lead(name, &scope.root, &scope.include, Some(files)).build();
     for row in lead["query"]["queries"]
         .as_array_mut()
         .into_iter()
@@ -844,35 +843,56 @@ pub(super) fn ignored_text_lead(
     lead
 }
 
-/// The lexical lead: one row per listed file when there are a few,
-/// otherwise the whole scope with the language family's globs. The
-/// word-bounded pattern is a `rust` regex: an unset `regex` would search its
-/// `\b` spelling as literal text.
+/// The one lexical lead every lspSearch row builds: one row per listed file
+/// when there are a few, otherwise `root` with the language family's globs.
+/// Paths are the caller's (workspace-relative as the response names them).
+/// The match is the symbol, whole-word and case-sensitive like the scans it
+/// stands in for; the word-bounded pattern is a `rust` regex, as an unset
+/// `regex` would search its `\b` spelling as literal text. Unbuilt, so a
+/// caller can lower its confidence.
 pub(super) fn text_search_lead(
     name: &str,
-    scope: &super::scope::Scope,
-    text_only: Option<&[String]>,
-) -> Value {
-    let pattern = super::render::word_pattern(name);
-    if let Some(files) = text_only.filter(|files| (1..=LISTED_TEXT_FILES).contains(&files.len())) {
-        let rows = files
-            .iter()
-            .map(|file| json!({ "path": file, "matchString": pattern, "regex": "rust" }))
-            .collect::<Vec<_>>();
+    root: &str,
+    include: &[String],
+    files: Option<&[String]>,
+) -> crate::tools::result::Continuation {
+    let row = |path: &str| {
+        json!({
+            "path": path,
+            "matchString": super::render::word_pattern(name),
+            "regex": "rust",
+            "caseMode": "sensitive",
+        })
+    };
+    if let Some(files) = files.filter(|files| (1..=LISTED_TEXT_FILES).contains(&files.len())) {
+        let rows = files.iter().map(|file| row(file)).collect::<Vec<_>>();
         return crate::tools::result::Continuation::input(
             ToolId::LocalSearch,
             json!({ "queries": rows }),
         )
-        .confidence("high")
-        .build();
+        .confidence("high");
     }
-    let mut search = json!({ "path": scope.root, "matchString": pattern, "regex": "rust" });
-    if !scope.include.is_empty() {
-        search["include"] = json!(scope.include);
+    let mut search = row(root);
+    if !include.is_empty() {
+        search["include"] = json!(include);
     }
-    crate::tools::result::Continuation::new(ToolId::LocalSearch, search)
-        .confidence("medium")
-        .build()
+    crate::tools::result::Continuation::new(ToolId::LocalSearch, search).confidence("medium")
+}
+
+/// `files` named as the response names them: relative to the workspace when
+/// inside it, as given otherwise.
+pub(super) fn shown_paths(
+    paths: &crate::policy::path::PathPolicy,
+    files: &[String],
+) -> Vec<String> {
+    files
+        .iter()
+        .map(|file| {
+            paths
+                .workspace_relative(file)
+                .unwrap_or_else(|| file.clone())
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -919,14 +939,14 @@ mod tests {
             root.path().to_string_lossy().into_owned(),
             vec!["*.py".into()],
         );
-        let wide = text_search_lead("get", &scope, None);
+        let wide = text_search_lead("get", &scope.root, &scope.include, None).build();
         assert_eq!(run_rows(&wide, root.path()), vec![2], "{wide}");
         let files = vec![file.to_string_lossy().into_owned()];
-        let listed = text_search_lead("get", &scope, Some(&files));
+        let listed = text_search_lead("get", &scope.root, &scope.include, Some(&files)).build();
         assert_eq!(run_rows(&listed, root.path()), vec![2], "{listed}");
         // A name whose edge is not a word character has no `\b` there.
         std::fs::write(&file, "$store = 1\n$stored = 2\n").expect("source");
-        let dollar = text_search_lead("$store", &scope, None);
+        let dollar = text_search_lead("$store", &scope.root, &scope.include, None).build();
         assert_eq!(run_rows(&dollar, root.path()), vec![1], "{dollar}");
     }
 }

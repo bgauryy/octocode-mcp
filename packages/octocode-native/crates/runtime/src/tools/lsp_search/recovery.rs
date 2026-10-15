@@ -4,6 +4,7 @@
 //! policy-gated [`SourceCache`], and location reads go through the engine
 //! snippet policy.
 
+use super::anchor::Position;
 use super::cancellable;
 use super::failure::LspFailure;
 use super::render::uri_to_path;
@@ -216,6 +217,16 @@ fn hop_failure_warning(snippet: &JsCodeSnippet, depth: usize, failure: &LspFailu
     )
 }
 
+/// The references request [`recover_aliases`] extends: the anchor's
+/// `symbol`, whether declarations count, and the references the server
+/// (`provider`) already reported.
+pub(super) struct AliasSearch<'a> {
+    pub(super) symbol: Option<&'a str>,
+    pub(super) include_declaration: bool,
+    pub(super) anchor: Position<'a>,
+    pub(super) provider: &'a [JsCodeSnippet],
+}
+
 /// References through aliasing imports (`import { x as y }`) the server did
 /// not report: for each file that already references the symbol, find
 /// imports that rename it, confirm by definition identity that the alias is
@@ -223,19 +234,23 @@ fn hop_failure_warning(snippet: &JsCodeSnippet, depth: usize, failure: &LspFailu
 /// [`MAX_ALIAS_FILES_READ`] files read and [`MAX_ALIAS_IMPORTS`] verified
 /// imports per request; a cap that leaves files or imports unchecked sets
 /// [`AliasRecovery::capped`].
-#[allow(clippy::too_many_arguments)]
 pub(super) async fn recover_aliases(
     client: &NativeLspClient,
     sources: &mut SourceCache<'_>,
     snippet_policy: &SnippetReadPolicy,
     cancel: &dyn CancellationCheck,
-    symbol: Option<&str>,
-    include_declaration: bool,
-    path: &str,
-    line: u32,
-    character: u32,
-    provider: &[JsCodeSnippet],
+    search: AliasSearch<'_>,
 ) -> Result<AliasRecovery, LspFailure> {
+    let AliasSearch {
+        symbol,
+        include_declaration,
+        anchor: Position {
+            path,
+            line,
+            character,
+        },
+        provider,
+    } = search;
     let Some(symbol) = symbol else {
         return Ok(AliasRecovery::default());
     };

@@ -6,9 +6,8 @@
 //! call of a response once, row by row:
 //! 1. inherit the source row's non-empty `extras` (never over the call's
 //!    own) on same-tool calls, only the `hints` opt-in on cross-tool calls.
-//!    No continuation inherits the brief (`mainGoal`, `reasoning`): it is
-//!    optional, request-level, and copied into every row of every page it
-//!    was the largest token sink of a walk;
+//!    Ordinary continuations omit the optional brief (`mainGoal`, `reasoning`).
+//!    Context selection keeps a copied brief because it affects judgment and replay;
 //! 2. drop cross-tool calls this surface cannot run (a row whose drop a scope
 //!    rule names gets one warning);
 //! 3. channel each call (pages stay in `next`, leads and prose go to `hints`;
@@ -24,9 +23,9 @@ use std::collections::HashMap;
 
 use serde_json::{Map, Value};
 
-use super::channels::{HINTS_KEY, PAGES_KEY};
 use crate::contracts::{ContractValidationError, ValidationIssue, validate_query};
 use crate::tools::id::ToolId;
+use crate::tools::id::continuation_channels::{HINTS_KEY, PAGES_KEY};
 
 /// Which cross-tool calls a surface can run; a call to a disabled tool drops
 /// silently.
@@ -34,8 +33,9 @@ pub struct Scope<'a> {
     pub is_available: &'a dyn Fn(&str) -> bool,
 }
 
+#[cfg(test)]
 impl Scope<'static> {
-    /// Every tool runs (embedded and test surfaces).
+    /// Every tool runs (test surfaces).
     #[must_use]
     pub fn everything() -> Self {
         Scope {
@@ -48,7 +48,7 @@ impl Scope<'static> {
 pub enum Sources<'a> {
     /// Ordinary rows: the input query of row `index` (`None` when rejected).
     Rows(&'a [Option<&'a Value>]),
-    /// Clasify results: the matrix with the same `id`, else the same position.
+    /// Clasify results: the input row with the same `id`, else the same position.
     Matrices(&'a Value),
 }
 
@@ -230,9 +230,6 @@ fn visit(value: &mut Value, ctx: &mut Visit<'_, '_>, path: &mut Vec<String>) {
             if is_call(object) {
                 return;
             }
-            if ctx.tool.output().resource_major() {
-                seal_reads(object);
-            }
             for key in [PAGES_KEY, HINTS_KEY] {
                 if let Some(Value::Object(calls)) = object.get_mut(key) {
                     calls.retain(|_, call| keep(call, ctx));
@@ -250,20 +247,20 @@ fn visit(value: &mut Value, ctx: &mut Visit<'_, '_>, path: &mut Vec<String>) {
             // what that item withholds and stay.
             let row_level = path.len() <= 3;
             // A resource-major tool's reads are its deliverable (clasify's
-            // located windows), never optional leads.
+            // read of exactly what was judged), never optional leads.
             let opt_in_leads = row_level
                 && !ctx.recovery
                 && !ctx.tool.output().resource_major()
                 && !wants_hints(ctx.extras.as_ref());
             // An object that reports a failure (`errorCode`) is a recovery
-            // row wherever it sits: clasify's resource errors carry no row `status`.
+            // row wherever it sits: a clasify row's error carries no row `status`.
             let recovery = ctx.recovery || object.contains_key("errorCode");
             super::channels::shape(object, ctx.tool, recovery, opt_in_leads);
             for key in [PAGES_KEY, HINTS_KEY] {
                 if let Some(Value::Object(calls)) = object.get_mut(key) {
                     for (name, call) in calls.iter_mut() {
                         path.extend([key.to_owned(), name.clone()]);
-                        compact_call(name, call, ctx, path);
+                        compact_call(call, ctx, path);
                         path.truncate(path.len() - 2);
                     }
                 }
@@ -287,20 +284,6 @@ fn is_call(object: &Map<String, Value>) -> bool {
 
 fn call_of(value: &Value) -> bool {
     value.as_object().is_some_and(is_call)
-}
-
-/// Clasify walks its reads in the clasify resource shape (`{tool, query:
-/// row}`); as output they become complete inputs like every continuation.
-fn seal_reads(object: &mut Map<String, Value>) {
-    for key in [PAGES_KEY, HINTS_KEY] {
-        if let Some(Value::Object(calls)) = object.get_mut(key) {
-            for call in calls.values_mut() {
-                if let Some(sealed) = crate::tools::result::Continuation::from_row_call(call) {
-                    *call = sealed;
-                }
-            }
-        }
-    }
 }
 
 /// Whether the surface keeps `call`: its own tool always; another tool only
@@ -342,20 +325,9 @@ fn inherit(call: &mut Value, ctx: &Visit<'_, '_>) {
     }
 }
 
-/// Drops the brief (`mainGoal`, `reasoning`) a tool copied into a call when
-/// it built the call by cloning its row query. The brief is request-level,
-/// so no continuation carries it; only a tool whose input reads the brief as
-/// its question (the clasify handoff) keeps it.
+/// Removes request-only metadata from ordinary calls. Context selection keeps
+/// the brief because it contributes to provider questions and the saved plan.
 fn drop_brief(call: &mut Value) {
-    // A resource-major tool's matrices take the brief as their question.
-    if call
-        .get("tool")
-        .and_then(Value::as_str)
-        .and_then(ToolId::from_name)
-        .is_some_and(|tool| tool.output().resource_major())
-    {
-        return;
-    }
     let Some(rows) = call
         .get_mut("query")
         .and_then(|query| query.get_mut("queries"))
@@ -364,6 +336,9 @@ fn drop_brief(call: &mut Value) {
         return;
     };
     for row in rows.iter_mut().filter_map(Value::as_object_mut) {
+        if row.get("clasifyContext").is_some_and(Value::is_object) {
+            continue;
+        }
         row.remove("mainGoal");
         row.remove("reasoning");
     }
@@ -386,9 +361,8 @@ fn extras_of(query: &Value) -> Option<Value> {
         .cloned()
 }
 
-/// Compact one `next`/`hints` entry: a call, or clasify's own `next.clasify`
-/// input (its matrices' reads compact against their own tools).
-fn compact_call(name: &str, call: &mut Value, ctx: &mut Visit<'_, '_>, path: &[String]) {
+/// Compact one `next`/`hints` call against the tool it names.
+fn compact_call(call: &mut Value, ctx: &mut Visit<'_, '_>, path: &[String]) {
     let target = call.get("tool").and_then(Value::as_str).map(str::to_owned);
     let (within, issues) = match (target, call.get_mut("query")) {
         (Some(tool), Some(query)) => (
@@ -397,9 +371,6 @@ fn compact_call(name: &str, call: &mut Value, ctx: &mut Visit<'_, '_>, path: &[S
                 .err()
                 .map(|error| error.issues),
         ),
-        _ if ToolId::from_name(name).is_some_and(|named| named.output().resource_major()) => {
-            (None, Some(compact_matrix_reads(call, ctx.memo)))
-        }
         _ => (None, None),
     };
     ctx.issues
@@ -422,17 +393,12 @@ fn compact_rows(
         Some(rows) => rows.iter_mut().collect(),
         None => vec![query],
     };
-    let resource_major =
-        ToolId::from_name(tool).is_some_and(|named| named.output().resource_major());
     let mut issues = Vec::new();
     for (index, row) in rows.into_iter().enumerate() {
-        let mut row_issues = match compact_query(tool, row, memo) {
+        let row_issues = match compact_query(tool, row, memo) {
             Ok(()) => Vec::new(),
             Err(error) => error.issues,
         };
-        if resource_major {
-            row_issues.extend(compact_matrix_reads(row, memo));
-        }
         issues.extend(row_issues.into_iter().map(|mut issue| {
             issue
                 .path
@@ -445,52 +411,6 @@ fn compact_rows(
     } else {
         Err(ContractValidationError { issues })
     }
-}
-
-/// A clasify input nests one ordinary read per resource; compact each
-/// against its own tool (the matrix itself is validated as clasify). Returns
-/// the issues of invalid reads, by path within `input`.
-fn compact_matrix_reads(input: &mut Value, memo: &mut Memo) -> Vec<ValidationIssue> {
-    let matrices: Vec<(Vec<String>, &mut Value)> =
-        match input.get_mut("queries").and_then(Value::as_array_mut) {
-            Some(rows) => rows
-                .iter_mut()
-                .enumerate()
-                .map(|(index, row)| (vec!["queries".to_owned(), index.to_string()], row))
-                .collect(),
-            None => vec![(Vec::new(), input)],
-        };
-    let mut issues = Vec::new();
-    for (prefix, matrix) in matrices {
-        let Some(resources) = matrix.get_mut("resources").and_then(Value::as_array_mut) else {
-            continue;
-        };
-        for (index, read) in resources.iter_mut().enumerate() {
-            let Some(read) = read.as_object_mut() else {
-                continue;
-            };
-            let Some(tool) = read.get("tool").and_then(Value::as_str).map(str::to_owned) else {
-                continue;
-            };
-            let Some(query) = read.get_mut("query").filter(|query| query.is_object()) else {
-                continue;
-            };
-            if let Err(error) = compact_query(&tool, query, memo) {
-                issues.extend(error.issues.into_iter().map(|mut issue| {
-                    let mut path = prefix.clone();
-                    path.extend([
-                        "resources".to_owned(),
-                        index.to_string(),
-                        "query".to_owned(),
-                    ]);
-                    path.append(&mut issue.path);
-                    issue.path = path;
-                    issue
-                }));
-            }
-        }
-    }
-    issues
 }
 
 /// Drop each field whose removal validates to the identical query, so the
@@ -585,10 +505,7 @@ mod tests {
         let mut out = json!({"results":[
             {"index":0,"data":{"next":{
                 "nextPage":call("ghSearchCode", json!({"owner":"o","keywords":["a"],"page":2})),
-                "viewRepo":call("ghStructure", json!({"owner":"o","repo":"r"})),
-                "clasify":call("clasify", json!({"mainGoal":"Locate.","reasoning":"Unread.",
-                    "resources":[{"id":"f","tool":"localFetch","query":{"path":"/a"}}],
-                    "questions":[{"id":"t","type":"locate","ask":"where"}]}))
+                "viewRepo":call("ghStructure", json!({"owner":"o","repo":"r"}))
             }}},
             {"index":1,"data":{"items":[{"next":{
                 "nextPage":call("ghSearchCode", json!({"owner":"o","keywords":["b"],"page":2})),
@@ -613,11 +530,6 @@ mod tests {
             json!(["hints"]),
             "a cross-tool lead keeps only the lead opt-in"
         );
-        let clasify = &out["results"][0]["data"]["hints"]["clasify"]["query"]["queries"][0];
-        assert_eq!(
-            clasify["mainGoal"], "Locate.",
-            "a brief the tool built into its lead stays"
-        );
         let items = &out["results"][1]["data"]["items"][0];
         let page = &items["next"]["nextPage"]["query"]["queries"][0];
         assert_eq!(
@@ -629,10 +541,31 @@ mod tests {
         assert!(read.get("extras").is_none(), "{read}");
     }
 
+    #[test]
+    fn selection_pages_keep_the_brief_but_unfiltered_recovery_drops_it() {
+        let source = json!({"owner":"o","keywords":["a"],"mainGoal":"Find capacity ownership.","reasoning":"Inspect the release path.","clasifyContext":{"classifiers":["Where is reserved capacity released?"]}});
+        let mut page = source.clone();
+        page["page"] = json!(2);
+        let mut recovery = source.clone();
+        recovery.as_object_mut().unwrap().remove("clasifyContext");
+        let mut out = json!({"results":[{"index":0,"data":{"next":{
+            "nextPage":call("ghSearchCode",page),
+            "unfiltered":call("ghSearchCode",recovery)
+        }}}]});
+        run(&mut out, ToolId::GhSearchCode, &[Some(&source)]);
+        let next = &out["results"][0]["data"]["next"];
+        let page = &next["nextPage"]["query"]["queries"][0];
+        assert_eq!(page["mainGoal"], source["mainGoal"]);
+        assert_eq!(page["reasoning"], source["reasoning"]);
+        let recovery = &next["unfiltered"]["query"]["queries"][0];
+        assert!(recovery.get("mainGoal").is_none());
+        assert!(recovery.get("reasoning").is_none());
+        assert!(recovery.get("clasifyContext").is_none());
+    }
+
     /// A tool that builds its page by cloning the row query copies the brief
     /// with it; the one continuation stage drops it there too, on pages and
-    /// leads alike, so no tool has to remember to. Only a call to a tool
-    /// whose input reads the brief (the clasify handoff) keeps it.
+    /// leads alike, so no tool has to remember to.
     #[test]
     fn a_brief_a_tool_copied_into_its_continuation_is_dropped() {
         let source = json!({"mainGoal":"Find a.","reasoning":"First."});
@@ -640,10 +573,7 @@ mod tests {
         let mut out = json!({"results":[{"index":0,"data":{
             "next":{"nextPage":call("localSearch", copied(2))},
             "hints":{
-                "readFile":call("localFetch", json!({"path":"/r/a","mainGoal":"Find a.","reasoning":"First."})),
-                "clasify":call("clasify", json!({"mainGoal":"Find a.",
-                    "resources":[{"id":"f","tool":"localFetch","query":{"path":"/r/a"}}],
-                    "questions":[{"id":"t","type":"locate","ask":"where"}]}))
+                "readFile":call("localFetch", json!({"path":"/r/a","mainGoal":"Find a.","reasoning":"First."}))
             }
         }}]});
         run(&mut out, ToolId::LocalSearch, &[Some(&source)]);
@@ -660,10 +590,6 @@ mod tests {
                 "{name} carries no brief: {row}"
             );
         }
-        assert_eq!(
-            data["hints"]["clasify"]["query"]["queries"][0]["mainGoal"], "Find a.",
-            "the clasify handoff reads the brief as its question"
-        );
     }
 
     /// The brief is request-level: copied into every row of a page it was
@@ -760,10 +686,10 @@ mod tests {
     }
 
     #[test]
-    fn clasify_reads_become_complete_inputs_without_a_brief() {
+    fn a_clasify_read_lead_is_its_result_and_always_shows() {
         let input = json!({"queries":[{"id":"m1","mainGoal":"G1"},{"id":"m2","mainGoal":"G2"}]});
-        let mut out = json!({"queries":[{"id":"m2","next":{"clasify":{"queries":[{"resources":[{"tool":"localFetch","query":{"path":"/a"}}]}]}},
-            "resources":[{"pages":[{"next":{"read":{"tool":"localFetch","confidence":"high","query":{"path":"/a","ranges":["1-2"]}}}}]}]}]});
+        let mut out = json!({"queries":[{"id":"m2","answers":{},
+            "hints":{"read":call("localFetch", json!({"path":"/a","ranges":["1-2"],"minify":"none"}))}}]});
         finalize(
             &mut out,
             ToolId::Clasify,
@@ -771,19 +697,15 @@ mod tests {
             &Scope::everything(),
         )
         .expect("valid");
-        let read = &out["queries"][0]["resources"][0]["pages"][0]["hints"]["read"];
+        let read = &out["queries"][0]["hints"]["read"];
         assert_eq!(
-            read["query"],
-            json!({"queries":[{"path":"/a","ranges":["1-2"]}]}),
-            "a cross-tool read takes no brief"
+            read["query"]["queries"][0]["path"], "/a",
+            "shown without extras hints: {read}"
         );
         assert!(
-            read.get("confidence").is_none(),
-            "leads carry no confidence: {read}"
+            read["query"]["queries"][0].get("mainGoal").is_none(),
+            "{read}"
         );
-        // The walk stays a page, and its matrix is clasify input.
-        let walk = &out["queries"][0]["next"]["clasify"]["queries"][0]["resources"][0];
-        assert_eq!(walk["query"], json!({"path":"/a"}));
     }
 
     #[test]
@@ -845,33 +767,6 @@ mod tests {
         assert_eq!(
             &path[..6],
             ["results", "0", "data", "next", "nextPage", "query"]
-        );
-    }
-
-    #[test]
-    fn an_invalid_matrix_read_is_an_error_with_its_path() {
-        let input = json!({"queries":[{"id":"m1","mainGoal":"G1"}]});
-        let mut out = json!({"queries":[{"id":"m1","next":{"clasify":{"queries":[
-            {"resources":[{"tool":"localFetch","query":{"bogus":true}}]}]}}}]});
-        let error = finalize(
-            &mut out,
-            ToolId::Clasify,
-            &Sources::Matrices(&input),
-            &Scope::everything(),
-        )
-        .expect_err("invalid read");
-        assert_eq!(
-            &error.issues[0].path[..8],
-            [
-                "queries",
-                "0",
-                "next",
-                "clasify",
-                "queries",
-                "0",
-                "resources",
-                "0"
-            ]
         );
     }
 
@@ -953,9 +848,7 @@ mod tests {
         let mut out = json!({"results":[
             {"index":0,"data":{"next":{
                 "nextPage":call("ghStructure", json!({"owner":"o","repo":"r","page":2})),
-                "materialized":call("localSearch", json!({"path":"/x","matchString":"a"})),
-                "clasify":call("clasify", json!({"resources":[{"id":"f","tool":"localFetch","query":{"path":"/a"}}],
-                    "questions":[{"id":"t","type":"locate","ask":"where"}]}))
+                "materialized":call("localSearch", json!({"path":"/x","matchString":"a"}))
             },"warnings":["tool warning"]}},
             {"index":1,"data":{"next":{"read":call("localFetch", json!({"path":"/a"}))}}}
         ]});
@@ -1003,7 +896,7 @@ mod tests {
         assert!(data.get("next").is_none(), "{data}");
         assert_eq!(
             data["hints"],
-            json!({(crate::response::channels::HINT_TEXT_KEY): [ToolId::GhSearchCode.output().fallback_hint(&query)]}),
+            json!({(crate::tools::id::continuation_channels::HINT_TEXT_KEY): [ToolId::GhSearchCode.output().fallback_hint(&query)]}),
             "{data}"
         );
     }

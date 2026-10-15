@@ -22,7 +22,7 @@ describe('permission lifecycle', () => {
     const second = permission.check(ctx, request(), dialog);
     await vi.waitFor(() => expect(dialog).toHaveBeenCalledTimes(1));
     answer('session');
-    expect(await Promise.all([first, second])).toEqual([{ allowed: true, via: 'user' }, { allowed: true, via: 'grant' }]);
+    expect(await Promise.all([first, second])).toEqual([{ allowed: true, via: 'user', lasts: 'session' }, { allowed: true, via: 'grant', lasts: 'session' }]);
     expect(dialog).toHaveBeenCalledTimes(1);
   });
 

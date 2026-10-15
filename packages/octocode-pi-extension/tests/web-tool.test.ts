@@ -256,7 +256,7 @@ describe('web tool', () => {
 
   it('returns 20 KB of a page by default, more with maxChars, and says how to get the rest', async () => {
     vi.stubEnv('OCTOCODE_HOME', tmp());
-    const page = `\u001b]8;;http://x\u0007${'x'.repeat(80_000)}\u202e`;
+    const page = 'x'.repeat(80_000);
     const base = await serve((_req, res) => {
       res.writeHead(200, { 'content-type': 'text/plain' });
       res.end(page);
@@ -278,6 +278,29 @@ describe('web tool', () => {
       /^x{50000}\n\[\u2026 30000 more characters cut; the whole page could not be saved to a file; the last 30000 characters are beyond web's 50000-character limit: download the page with bash \(curl -o\) to read them\]$/,
     );
     expect(text(await tool.execute('id', { url: `${base}/` }))).toMatch(/60000 more characters cut; the whole page could not be saved to a file; maxChars 50000 shows up to 50000; the last 30000 characters are beyond/);
+  });
+
+  it('shows hidden characters of a page as visible escapes, in the preview and in the saved page', async () => {
+    vi.stubEnv('OCTOCODE_HOME', tmp());
+    const page = `\u001b]8;;http://x\u0007link\u202e${'x'.repeat(30_000)}\u200b end\rlone\r\ncrlf`;
+    const base = await serve((_req, res) => {
+      res.writeHead(200, { 'content-type': 'text/plain' });
+      res.end(page);
+    });
+    const tool = webTool();
+    const first = text(await tool.execute('id', { url: `${base}/`, maxChars: 1_000 }));
+    expect(first.startsWith('\\u{1b}]8;;http://x\\u{7}link\\u{202e}xxx')).toBe(true);
+    expect(first).not.toMatch(/[\u001b\u0007\u202e\u200b]/u);
+    const saved = fs.readFileSync(/is in (\S+):/.exec(first)![1]!, 'utf8');
+    expect(saved).toBe(page.replace('\u001b', '\\u{1b}').replace('\u0007', '\\u{7}').replace('\u202e', '\\u{202e}').replace('\u200b', '\\u{200b}').replace('\rlone', '\\rlone'));
+    const small = text(await tool.execute('id', { url: `${base}/x`, maxChars: 50_000 }));
+    expect(small).toContain('\\u{200b} end\\rlone\r\ncrlf');
+  });
+
+  it('shows hidden characters in search results as visible escapes', async () => {
+    guard.stub = async () => new Response(JSON.stringify({ results: [{ title: 'T\u202eitle', url: 'https://t.example', content: 'snip\u001b[31mpet\u200b' }] }), { status: 200, headers: { 'content-type': 'application/json' } });
+    vi.stubEnv('TAVILY_API_KEY', 'tv');
+    expect(text(await webTool().execute('id', { query: 'q' }))).toBe('1. T\\u{202e}itle\n   https://t.example\n   snip\\u{1b}[31mpet\\u{200b}');
   });
 
   it('keeps a multi-byte page preview within the output budget, so only the page itself is saved', async () => {
@@ -366,6 +389,20 @@ describe('web tool', () => {
     vi.stubEnv('TAVILY_API_KEY', 'tv');
     const outcome = await search('x', 3, process.env);
     expect(outcome).toMatchObject({ provider: 'duckduckgo', failures: ['tavily: HTTP 401 from api.tavily.com'] });
+  });
+
+  it('shows control characters in a failed search or fetch as visible escapes, and keeps the error type', async () => {
+    guard.stub = async () => {
+      throw new Error('proxy said \u001b[2J\u202eevil');
+    };
+    const tool = webTool();
+    const failure = (params: Record<string, unknown>) => tool.execute('id', params).then(() => new Error('did not fail'), (error: unknown) => error as Error);
+    const search = await failure({ query: 'example' });
+    expect(search).toBeInstanceOf(Error);
+    expect(search.message).toMatch(/^Search failed: .*\\u\{1b\}\[2J\\u\{202e\}evil/);
+    expect(search.message).not.toMatch(/[\u001b\u202e]/);
+    const fetched = await failure({ url: 'https://example.com/\u001b[2J' });
+    expect(fetched.message).not.toMatch(/[\u001b\u202e]/);
   });
 
   it('renders the call as the URL or the search query', () => {

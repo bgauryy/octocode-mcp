@@ -16,7 +16,7 @@ DISABLED_FEATURES = ('shell_tool','unified_exec','view_image','apps','plugins','
     'image_generation','goals','sleep_tool','hooks','skill_search','workspace_dependencies',
     'code_mode_host','unbounded_connection_retries','shell_snapshot')
 ENV_ALLOW = ('PATH','LANG','LC_ALL','TMPDIR','CODEX_HOME','OPENAI_API_KEY','GH_TOKEN','GITHUB_TOKEN',
-    'OCTOCODE_CLASSIFICATION_API','OCTOCODE_CLASSIFICATION_TYPE','OCTOCODE_CLASSIFICATION_API_HOST',
+    'OCTOCODE_CLASSIFICATION_API','OCTOCODE_CLASSIFICATION_MODEL','OCTOCODE_CLASSIFICATION_API_HOST',
     'OCTOCODE_CLASSIFICATION_CONCURRENCY','OCTOCODE_LSP_CONFIG','OCTOCODE_LSP_CACHE_DIR','OCTOCODE_LSP_MAX_MEMORY_MB','SSL_CERT_FILE','SSL_CERT_DIR','NODE_EXTRA_CA_CERTS')
 
 
@@ -56,8 +56,8 @@ def semantic_gates(server, env):
     disabled = {name.strip() for name in effective.get('DISABLE_TOOLS', '').split(',') if name.strip()}
     clasify = (credential and effective.get('OCTOCODE_BETA') == 'true'
                and (not selected or 'clasify' in selected) and 'clasify' not in disabled)
-    goals = credential and effective.get('OCTOCODE_RANKING_ENABLED') == 'true'
-    return clasify, goals
+    classifiers = credential and effective.get('OCTOCODE_RANKING_ENABLED') == 'true'
+    return clasify, classifiers
 
 
 @contextmanager
@@ -116,7 +116,7 @@ def main():
             (run/'prompt.template.md').write_bytes(args.prompt.read_bytes())
             args.prompt.write_text(prompt)
         server['env'].setdefault('WORKSPACE_ROOT',str(lab))
-        clasify, goals = semantic_gates(server, env)
+        clasify, classifiers = semantic_gates(server, env)
         metadata={'runner':'codex','model':args.model,'mcp':True,'timeout':args.timeout,
             'max_tool_calls':args.max_tool_calls,'budget_unit':'tool_calls','builtins_disabled':list(DISABLED_FEATURES),
             'prompt_sha256':hashlib.sha256(prompt.encode()).hexdigest(),
@@ -124,7 +124,7 @@ def main():
             'usage_scope':'Codex reported solver tokens; JEV provider tokens are separate'}
         (run/'runner.json').write_text(json.dumps(metadata,indent=1))
         try:
-            receipt=probe(server,clasify,goals,env,lab,sentinel)
+            receipt=probe(server,clasify,classifiers,env,lab,sentinel)
             (run/'preflight.json').write_text(json.dumps(receipt,indent=1))
             if not receipt['ok']: raise RuntimeError('; '.join(receipt['problems']))
         except Exception as exc:

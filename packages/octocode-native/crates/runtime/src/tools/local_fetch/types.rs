@@ -108,9 +108,9 @@ impl LocalFetchQuery {
     }
 }
 
-/// Default line-page request. The 16 KiB page budget, not a line count,
-/// bounds each page, so short-line files are not split into many tiny calls.
-pub const DEFAULT_LINE_CHUNK: usize = 2000;
+/// Default line-page safety ceiling. The byte budget bounds ordinary pages;
+/// short-line files can fill it without an additional fixed row limit.
+pub const DEFAULT_LINE_CHUNK: usize = crate::tools::id::query_limits::local_fetch::LENGTH_MAXIMUM;
 
 /// Lines an unanchored read of a view longer than one line page returns
 /// before paging on.
@@ -152,13 +152,13 @@ pub struct Pagination {
     /// next page resumes line paging at, so only that line is byte-chunked.
     pub resume_line: Option<usize>,
 }
-/// A typed localFetch follow-up; it serializes through the one shared
-/// continuation builder ([`crate::tools::result::Continuation`]).
+/// A localFetch read a result leads to (a page, a restart, a lead); it
+/// serializes through the one shared continuation builder ([`crate::tools::result::Continuation`]).
 #[derive(Clone, Debug, PartialEq)]
-pub struct Continuation {
+pub struct FetchCall {
     pub query: LocalFetchQuery,
 }
-impl Serialize for Continuation {
+impl Serialize for FetchCall {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::Error;
         let row = serde_json::to_value(&self.query).map_err(S::Error::custom)?;
@@ -169,37 +169,37 @@ impl Serialize for Continuation {
 }
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 pub struct NextCalls {
+    /// Explicit recovery of the complete source view, including selected evidence.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unfiltered: Option<FetchCall>,
     #[serde(rename = "continueWindow", skip_serializing_if = "Option::is_none")]
-    pub continue_window: Option<Continuation>,
+    pub continue_window: Option<FetchCall>,
     #[serde(rename = "readBoundedLines", skip_serializing_if = "Option::is_none")]
-    pub read_bounded_lines: Option<Continuation>,
+    pub read_bounded_lines: Option<FetchCall>,
     /// Offset-zero recovery for a page requested past the end of the view.
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub restart: Option<Continuation>,
+    pub restart: Option<FetchCall>,
     /// The whole matched lines a long-line match showed only byte windows of.
     #[serde(
         rename = "wholeLines",
         skip_serializing_if = "Option::is_none",
         default
     )]
-    pub whole_lines: Option<Continuation>,
+    pub whole_lines: Option<FetchCall>,
     /// The rest of a declaration a `block` range stopped inside.
     #[serde(
         rename = "continueBlock",
         skip_serializing_if = "Option::is_none",
         default
     )]
-    pub continue_block: Option<Continuation>,
-    /// The whole declarations a `block` match kept only a context window of.
-    #[serde(rename = "readBlock", skip_serializing_if = "Option::is_none", default)]
-    pub read_block: Option<Continuation>,
+    pub continue_block: Option<FetchCall>,
     /// The full default match window a byte-bounded window narrowed.
     #[serde(
         rename = "expandContext",
         skip_serializing_if = "Option::is_none",
         default
     )]
-    pub expand_context: Option<Continuation>,
+    pub expand_context: Option<FetchCall>,
     /// A structureSearch tree of a path that is a directory, not a file.
     #[serde(rename = "viewTree", skip_serializing_if = "Option::is_none", default)]
     pub view_tree: Option<serde_json::Value>,
@@ -216,26 +216,26 @@ pub struct NextCalls {
         skip_serializing_if = "Option::is_none",
         default
     )]
-    pub ignore_case: Option<Continuation>,
+    pub ignore_case: Option<FetchCall>,
     /// The same match read without its `ranges`, after the ranges selected
     /// no line while the file has hits outside them.
     #[serde(rename = "read", skip_serializing_if = "Option::is_none", default)]
-    pub read: Option<Continuation>,
+    pub read: Option<FetchCall>,
     /// The same read with each regex item that does not compile repaired.
     #[serde(rename = "repair", skip_serializing_if = "Option::is_none", default)]
-    pub repair: Option<Continuation>,
+    pub repair: Option<FetchCall>,
 }
 
 impl NextCalls {
     /// Add every continuation `other` carries; `self` keeps its own on a clash.
     pub fn absorb(&mut self, other: NextCalls) {
         let NextCalls {
+            unfiltered,
             continue_window,
             read_bounded_lines,
             restart,
             whole_lines,
             continue_block,
-            read_block,
             expand_context,
             view_tree,
             find_file,
@@ -245,12 +245,12 @@ impl NextCalls {
             repair,
         } = other;
         for (mine, theirs) in [
+            (&mut self.unfiltered, unfiltered),
             (&mut self.continue_window, continue_window),
             (&mut self.read_bounded_lines, read_bounded_lines),
             (&mut self.restart, restart),
             (&mut self.whole_lines, whole_lines),
             (&mut self.continue_block, continue_block),
-            (&mut self.read_block, read_block),
             (&mut self.expand_context, expand_context),
             (&mut self.ignore_case, ignore_case),
             (&mut self.read, read),
@@ -276,14 +276,14 @@ impl NextCalls {
     }
 
     /// The localFetch reads among these continuations.
-    pub fn reads_mut(&mut self) -> impl Iterator<Item = &mut Continuation> {
+    pub fn reads_mut(&mut self) -> impl Iterator<Item = &mut FetchCall> {
         [
+            &mut self.unfiltered,
             &mut self.continue_window,
             &mut self.read_bounded_lines,
             &mut self.restart,
             &mut self.whole_lines,
             &mut self.continue_block,
-            &mut self.read_block,
             &mut self.expand_context,
             &mut self.ignore_case,
             &mut self.read,
@@ -294,7 +294,7 @@ impl NextCalls {
     }
 
     /// Whether a continuation reads more of this result (a page), as opposed
-    /// to an optional lead such as `readBlock`; only a page makes the row
+    /// to an optional lead such as `read`; only a page makes the row
     /// partial.
     pub fn leaves_more(&self) -> bool {
         serde_json::to_value(self)
@@ -392,6 +392,8 @@ pub enum PartialReason {
     /// prefix of the matches.
     #[serde(rename = "regex-match-limit")]
     RegexMatchLimit,
+    #[serde(rename = "streamed-line-size-limit")]
+    StreamedLineSizeLimit,
 }
 
 /// A declaration a `block:true` read widened a hit to: its name, name line
@@ -414,7 +416,7 @@ pub struct LocalFetchResult {
     pub resource_missing: bool,
     pub source_sha256: Option<String>,
     pub content: Option<String>,
-    pub ranking: Option<crate::contracts::tool_types::Ranking>,
+    pub selection: Option<crate::contracts::tool_types::Selection>,
     pub content_view: Option<MinifyMode>,
     pub minify_fallback: Option<MinifyFallback>,
     pub error_code: Option<String>,
@@ -457,7 +459,7 @@ impl LocalFetchResult {
             resource_missing: false,
             source_sha256: None,
             content: None,
-            ranking: None,
+            selection: None,
             content_view: None,
             minify_fallback: None,
             error_code: None,
@@ -494,6 +496,17 @@ impl LocalFetchResult {
             error_code: Some(code.into()),
             error: Some(message),
             ..Self::blank("error")
+        }
+    }
+
+    /// Ends the row at a limit no continuation lifts, as
+    /// [`crate::tools::paging::terminal_limit`] marks a JSON row: partial for
+    /// `reason`, and `terminalLimit`.
+    pub(super) fn terminal_limit(&mut self, reason: PartialReason) {
+        self.is_partial = Some(true);
+        self.terminal_limit = Some(true);
+        if !self.partial_reasons.contains(&reason) {
+            self.partial_reasons.push(reason);
         }
     }
 }
@@ -561,28 +574,26 @@ struct PaginationWire<'a> {
     out_of_range: bool,
 }
 impl Serialize for PaginationWire<'_> {
+    /// The one window shape ([`crate::response::pages::SpanFacts`]), with
+    /// `total` dropped when it repeats `totalLines` and `outOfRange` added.
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        use serde::ser::SerializeMap;
         let page = self.page;
-        let mut map = serializer.serialize_map(None)?;
-        map.serialize_entry("unit", &page.unit)?;
-        map.serialize_entry("offset", &page.offset)?;
-        map.serialize_entry("length", &page.length)?;
-        match page.unit {
-            WindowUnit::Lines if self.source_lines != Some(page.total_lines) => {
-                map.serialize_entry("total", &page.total_lines)?
+        let (unit, total) = match page.unit {
+            WindowUnit::Lines => ("lines", page.total_lines),
+            WindowUnit::Bytes => ("bytes", page.total_bytes),
+        };
+        let mut block =
+            crate::response::pages::SpanFacts::window(unit, page.offset, page.length, total)
+                .to_value();
+        if let Some(block) = block.as_object_mut() {
+            if page.unit == WindowUnit::Lines && self.source_lines == Some(total) {
+                block.shift_remove("total");
             }
-            WindowUnit::Bytes => map.serialize_entry("total", &page.total_bytes)?,
-            _ => {}
+            if self.out_of_range {
+                block.insert("outOfRange".into(), serde_json::Value::Bool(true));
+            }
         }
-        map.serialize_entry("hasMore", &page.has_more)?;
-        if let Some(next_offset) = page.next_offset {
-            map.serialize_entry("nextOffset", &next_offset)?;
-        }
-        if self.out_of_range {
-            map.serialize_entry("outOfRange", &true)?;
-        }
-        map.end()
+        block.serialize(serializer)
     }
 }
 
@@ -656,7 +667,7 @@ impl Serialize for LocalFetchResult {
             map.serialize_entry("path", &self.path)?;
         }
         opt(&mut map, "content", &self.content)?;
-        opt(&mut map, "ranking", &self.ranking)?;
+        opt(&mut map, "selection", &self.selection)?;
         // `none` is the default view; only a transformed view is news (a
         // tool with another default clears its own before this).
         opt(
@@ -912,7 +923,7 @@ mod line_read_tests {
     use super::{LineRange, LocalFetchQuery, line_read};
     use crate::tools::id::query_limits::local_fetch::RANGES_MAX_ITEMS;
 
-    /// Every lead `line_read` builds (readBlock, continueBlock,
+    /// Every lead `line_read` builds (continueBlock,
     /// readBoundedLines) spells lines with the published `ranges`, never
     /// startLine/endLine, and clears a span the caller sent.
     #[test]

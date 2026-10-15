@@ -65,9 +65,9 @@ class SummaryTest(unittest.TestCase):
             self.assertIsNone(result["uncached_input_tokens"])
             self.assertEqual(result["problems"], ["private path was readable"])
 
-    def test_goals_and_replays_are_distinct_from_classifier_tool_calls(self):
+    def test_classifiers_and_replays_are_distinct_from_clasify_tool_calls(self):
         calls = [
-            {"cmd": 'localFetch {"queries":[{"goals":["relevant"]},{"goals":["relevant"],"ranking":"plan"}]}'},
+            {"cmd": 'localFetch {"queries":[{"classifiers":["relevant"]},{"classifiers":["relevant"],"ranking":"plan"}]}'},
             {"cmd": 'clasify {"queries":[{}]}'},
             {"cmd": 'localFetch {"queries":[{"path":"exact"}]}'},
         ]
@@ -76,6 +76,10 @@ class SummaryTest(unittest.TestCase):
         self.assertEqual(result["ranking_replay_queries"], 1)
         self.assertEqual(result["initial_goal_queries"], 1)
         self.assertEqual(result["tool_calls"], {"localFetch": 2, "clasify": 1})
+
+    def test_historical_goals_transcripts_still_count_as_classifier_queries(self):
+        calls = [{"cmd": 'localSearch {"queries":[{"goals":["relevant"]}]}'}]
+        self.assertEqual(campaign.semantic_calls(calls)["goal_queries"], 1)
 
     def test_two_mcp_arms_never_collapse_and_other_corpus_is_excluded(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -2,6 +2,9 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { cutText } from '../shared/util.js';
 import { openTab, pageTargets, switchTo, type BrowserSession, type PageTarget } from './cdp.js';
 
+/** What the agent opening a private page records for the tab that loads it (see `BrowserTool.open`); nothing for a public page. */
+export type Approval = (tab: string) => void;
+
 /**
  * Tab numbers stay put for the session: tabs are numbered in the order this session first saw them, not in Chrome's
  * most-recently-used order, which changes every time a tab is switched to.
@@ -38,20 +41,21 @@ async function whenLoaded(session: BrowserSession, timeoutMs = 10_000, signal?: 
  * `navigate`: `open` runs first for a tab on a web address (the permission check, a private host included), and a
  * refusal leaves the session where it was.
  */
-export async function selectTab(session: BrowserSession, index: number | undefined, open: (url: string) => Promise<void>, signal?: AbortSignal): Promise<void> {
+export async function selectTab(session: BrowserSession, index: number | undefined, open: (url: string) => Promise<Approval>, signal?: AbortSignal): Promise<void> {
   const tabs = await orderedTabs(session);
   const tab = index === undefined ? undefined : tabs[index - 1];
   if (!tab) throw new Error(`No tab ${index ?? ''}. ${await describeTabs(session)}`);
   if (tab.id !== session.targetId) {
-    if (tab.url && /^(https?|wss?):/i.test(tab.url)) await open(tab.url);
+    if (tab.url && /^(https?|wss?):/i.test(tab.url)) (await open(tab.url))(tab.id);
     await switchTo(session, tab);
   }
   await whenLoaded(session, 10_000, signal);
 }
 
-/** Opens `url` in a new tab and drives it. The tab opens blank, so the session's policy sees the first load too. */
-export async function newTab(session: BrowserSession, url: string, signal?: AbortSignal): Promise<void> {
+/** Opens `url` in a new tab and drives it, `approve` recording what the agent's permission allowed for that tab. The tab opens blank, so the session's policy sees the first load too. */
+export async function newTab(session: BrowserSession, url: string, approve: Approval, signal?: AbortSignal): Promise<void> {
   await switchTo(session, await openTab(session.port, 'about:blank'));
+  approve(session.targetId);
   delete session.blocked;
   const result = await session.page.send<{ errorText?: string }>('Page.navigate', { url }, signal);
   if (result.errorText) throw new Error(`Navigation failed: ${result.errorText}${session.blocked ? ` (blocked ${session.blocked})` : ''}`);

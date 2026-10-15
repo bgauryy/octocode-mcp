@@ -180,8 +180,8 @@ pub fn numbered_view(data: &Value) -> Option<String> {
 
 fn ranked_read(data: &Value) -> bool {
     matches!(
-        data.pointer("/ranking/status").and_then(Value::as_str),
-        Some("ranked" | "partial")
+        data.pointer("/selection/status").and_then(Value::as_str),
+        Some("complete" | "partial")
     )
 }
 
@@ -217,10 +217,10 @@ fn number_file_row(data: &mut Value) -> bool {
         return false;
     };
     let reordered = matches!(
-        map.get("ranking")
+        map.get("selection")
             .and_then(|rank| rank.get("status"))
             .and_then(Value::as_str),
-        Some("ranked" | "partial")
+        Some("complete" | "partial")
     );
     let Some(ranges) = map.get("sourceLineRanges").and_then(ranges_of) else {
         return false;
@@ -705,7 +705,7 @@ mod tests {
         let mut response = serde_json::json!({"results":[{"data":{
             "content":"late\n... [lines 8-9 not requested] ...\nearlier\n",
             "sourceLineRanges":[{"line":10,"endLine":10},{"line":3,"endLine":3}],
-            "ranking":{"status":"ranked","rankedItems":2,"totalItems":2}
+            "selection":{"status":"complete","selectedItems":2,"totalItems":2}
         }}]});
         number_read_rows(ToolId::LocalFetch, &mut response);
         let data = &response["results"][0]["data"];

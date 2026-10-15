@@ -1,5 +1,6 @@
 import { execFileSync, spawn } from 'node:child_process';
 import { windowsTree } from './winhelper.js';
+import { system32Executable } from './winpath.js';
 
 /** How long a stopped process tree gets after SIGTERM before SIGKILL. */
 export const KILL_GRACE_MS = 500;
@@ -116,7 +117,7 @@ export function groupStartTimes(pgid: number): Array<{ pid: number; started: str
 /** `taskkill /T /F` on `pid`: walks the tree below a live root, and fails (exit 128) once the root has exited. Never throws. */
 function taskkill(pid: number): void {
   try {
-    spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true }).on('error', () => undefined);
+    spawn(system32Executable('taskkill.exe'), ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true }).on('error', () => undefined);
   } catch {
     // taskkill is missing; nothing more to do.
   }

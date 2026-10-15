@@ -203,16 +203,20 @@ fn clasify_command(workspace: &Workspace, server: &MockServer) -> Command {
     command
 }
 
-fn matrix(resources: Value) -> Value {
-    json!({"queries":[{
-        "reasoning":"Triage files.","mainGoal":"Which files define steps.",
-        "resources":resources,
-        "questions":[{"id":"q","type":"yesno","ask":"Does it define a step?"}]
-    }]})
+/// One clasify row per state or source.
+fn rows(inputs: Vec<Value>) -> Value {
+    json!({"queries": inputs.into_iter().map(|input| {
+        let mut row = json!({"reasoning":"Triage files.",
+            "questions":{"q":{"type":"noul","instructions":"Does it define a step?"}}});
+        for (key, value) in input.as_object().expect("input object") {
+            row[key] = value.clone();
+        }
+        row
+    }).collect::<Vec<_>>()})
 }
 
 #[tokio::test]
-async fn clasify_exits_by_resource_outcome() {
+async fn clasify_exits_by_worst_row_outcome() {
     let server = classification_provider(std::time::Duration::ZERO).await;
     let workspace = Workspace::new();
     let file = workspace
@@ -224,12 +228,14 @@ async fn clasify_exits_by_resource_outcome() {
         .join("src/nope.rs")
         .to_string_lossy()
         .into_owned();
-    let read = |id: &str, path: &str| json!({"id":id,"tool":"localFetch","query":{"path":path,"fullContent":true}});
+    let read = |id: &str, path: &str| json!({"id":id,"source":{"tool":"localFetch","query":{"path":path,"fullContent":true}}});
+    let state = json!({"id":"v","state":{"fact":"present"}});
     let cases = [
-        (matrix(json!([read("ok", &file)])), 0),
-        (matrix(json!([read("x", &missing)])), 3),
-        (matrix(json!([read("ok", &file), read("x", &missing)])), 0),
-        (matrix(json!([{"id":"v","value":{"fact":"present"}}])), 0),
+        (rows(vec![read("ok", &file)]), 0),
+        (rows(vec![read("x", &missing)]), 3),
+        (rows(vec![read("ok", &file), read("x", &missing)]), 3),
+        (rows(vec![read("x", &missing), read("ok", &file)]), 3),
+        (rows(vec![state.clone()]), 0),
     ];
     for (input, expected) in cases {
         let command = clasify_command(&workspace, &server);
@@ -256,7 +262,7 @@ async fn interrupted_call_exits_130() -> Result<(), String> {
     command
         .args([
             "clasify",
-            &matrix(json!([{"id":"v","value":{"fact":"present"}}])).to_string(),
+            &rows(vec![json!({"id":"v","state":{"fact":"present"}})]).to_string(),
         ])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());

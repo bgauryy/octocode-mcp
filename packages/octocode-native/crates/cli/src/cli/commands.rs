@@ -211,7 +211,7 @@ pub(super) enum Command {
         #[arg(long)]
         socket: std::path::PathBuf,
     },
-    /// Show the cache home directory (`status`) or delete all cached GitHub responses (`clear`).
+    /// Show the cache home directory (`status`) or delete all cached GitHub and package registry responses (`clear`).
     #[command(hide = true)]
     Cache {
         #[arg(value_enum)]
@@ -241,7 +241,7 @@ pub(super) enum Command {
 pub(super) enum CacheAction {
     /// Print the cache home directory and recent evictions.
     Status,
-    /// Delete all cached GitHub responses.
+    /// Delete all cached GitHub and package registry responses.
     Clear,
 }
 
@@ -271,12 +271,12 @@ pub(super) enum ConfigCommand {
     Home,
     /// Print a key's resolved value (environment, then workspace .env, then global .env); exit 1 when unset.
     Get {
-        /// Environment key, e.g. `OCTOCODE_CLASSIFICATION_API`.
+        /// Environment key or setting path, e.g. `OCTOCODE_CLASSIFICATION_API` or `classification.api`.
         key: String,
     },
     /// Set a key in the global .env: `set KEY VALUE`, or `set KEY --stdin` to keep secrets out of shell history.
     Set {
-        /// Environment key, e.g. `OCTOCODE_CLASSIFICATION_API`.
+        /// Environment key or setting path, e.g. `OCTOCODE_CLASSIFICATION_API` or `classification.api`.
         key: String,
         /// Value to store; omit with `--stdin`.
         value: Option<String>,
@@ -286,12 +286,12 @@ pub(super) enum ConfigCommand {
     },
     /// Remove every assignment of a key from the global .env.
     Unset {
-        /// Environment key to remove, e.g. `OCTOCODE_BETA`.
+        /// Environment key or setting path to remove, e.g. `OCTOCODE_BETA`.
         key: String,
     },
     /// Exit 0 when a key is set (from the environment or a .env file), 1 when unset; never prints the value.
     Check {
-        /// Environment key, e.g. `GITHUB_TOKEN`.
+        /// Environment key or setting path, e.g. `GITHUB_TOKEN`.
         key: String,
     },
 }

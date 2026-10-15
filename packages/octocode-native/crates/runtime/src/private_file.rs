@@ -1,8 +1,13 @@
 //! Owner-only files: no-follow opens, bounded reads, and atomic replacement.
 use std::ffi::OsStr;
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
+#[cfg(not(any(unix, windows)))]
+use std::path::PathBuf;
 use std::path::{Component, Path};
+
+#[cfg(windows)]
+mod windows;
 
 /// Open a regular file without following a final symlink. Nonblocking, so a
 /// FIFO planted at `path` fails instead of hanging; `create` makes it 0600.
@@ -24,7 +29,11 @@ pub(crate) fn open_no_follow(path: &Path, create: bool) -> io::Result<File> {
             .mode(0o600)
             .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
     }
+    #[cfg(windows)]
+    windows::no_follow(&mut options);
     let file = options.open(path)?;
+    #[cfg(windows)]
+    windows::reject_reparse(&file)?;
     if !file.metadata()?.is_file() {
         return Err(not_regular());
     }
@@ -72,10 +81,11 @@ fn names_beneath<'a>(boundary: &Path, path: &'a Path) -> io::Result<Vec<&'a OsSt
 pub(crate) struct BeneathDir {
     #[cfg(unix)]
     directory: File,
-    /// Windows has no `*at` calls in std: every operation re-resolves this
-    /// path, so a swap between the walk and an operation is narrowed, not
-    /// closed. This is the platform's existing behaviour, kept on purpose.
-    #[cfg(not(unix))]
+    /// Windows retains the walked chain and executes child operations relative
+    /// to its final handle; sharing flags additionally prevent renames.
+    #[cfg(windows)]
+    guards: Vec<File>,
+    #[cfg(not(any(unix, windows)))]
     directory: PathBuf,
 }
 
@@ -85,10 +95,108 @@ impl BeneathDir {
         Self::walk(boundary, &names_beneath(boundary, path)?)
     }
 
+    /// Create missing descendants and hold the final directory without following
+    /// links at any descendant component.
+    pub(crate) fn create_all(boundary: &Path, path: &Path) -> io::Result<Self> {
+        let names = names_beneath(boundary, path)?;
+        let mut directory = Self::open(boundary, boundary)?;
+        for name in names {
+            #[cfg(unix)]
+            {
+                use std::os::fd::AsRawFd;
+                let component = c_name(name)?;
+                // SAFETY: the held descriptor is a directory and component is
+                // one NUL-terminated name. Existing entries are opened no-follow.
+                if unsafe {
+                    libc::mkdirat(directory.directory.as_raw_fd(), component.as_ptr(), 0o700)
+                } != 0
+                {
+                    let error = io::Error::last_os_error();
+                    if error.kind() != io::ErrorKind::AlreadyExists {
+                        return Err(error);
+                    }
+                }
+                directory.directory = open_at(
+                    &directory.directory,
+                    name,
+                    libc::O_RDONLY | libc::O_DIRECTORY,
+                    0,
+                )?;
+            }
+            #[cfg(windows)]
+            {
+                let child = windows::open_child_directory(
+                    directory.guards.last().ok_or_else(not_regular)?,
+                    name,
+                    true,
+                )?;
+                directory.guards.push(child);
+            }
+            #[cfg(not(any(unix, windows)))]
+            {
+                let child = directory.directory.join(name);
+                match fs::create_dir(&child) {
+                    Ok(()) => {}
+                    Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+                    Err(error) => return Err(error),
+                }
+                if !fs::symlink_metadata(&child)?.is_dir() {
+                    return Err(not_regular());
+                }
+                directory.directory = child;
+            }
+        }
+        Ok(directory)
+    }
+
+    /// Open or create a regular writable lock file without following a leaf link.
+    pub(crate) fn open_lock(&self, name: &OsStr) -> io::Result<File> {
+        #[cfg(unix)]
+        let file = match open_at(
+            &self.directory,
+            name,
+            libc::O_RDWR | libc::O_CREAT | libc::O_EXCL | libc::O_NONBLOCK,
+            0o600,
+        ) {
+            Ok(file) => file,
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                open_at(&self.directory, name, libc::O_RDWR | libc::O_NONBLOCK, 0)?
+            }
+            Err(error) => return Err(error),
+        };
+        #[cfg(windows)]
+        let file = windows::open_child_file(
+            self.guards.last().ok_or_else(not_regular)?,
+            name,
+            windows::FileOpen::Lock,
+        )?;
+        #[cfg(not(any(unix, windows)))]
+        let file = open_no_follow(&self.directory.join(name), true)?;
+        if !file.metadata()?.is_file() {
+            return Err(not_regular());
+        }
+        Ok(file)
+    }
+
+    /// Publish complete bytes relative to the held directory. Renaming replaces
+    /// a leaf link itself, never writes to its target.
+    pub(crate) fn write_atomic(&self, name: &OsStr, bytes: &[u8]) -> io::Result<()> {
+        let temporary = octocode_io::atomic::unique_sibling(Path::new(name), "tmp")?;
+        let temporary = temporary.file_name().ok_or_else(not_regular)?;
+        let result = (|| {
+            let mut file = self.create_new(temporary, 0o600)?;
+            file.write_all(bytes)?;
+            drop(file);
+            self.rename(temporary, name)
+        })();
+        if result.is_err() {
+            let _ = self.remove_if_present(temporary);
+        }
+        result
+    }
+
     /// Whether walking from `boundary` to `path` again still reaches this
-    /// directory. On Unix it compares device and inode; Windows std exposes
-    /// no stable file identity, so there a fresh walk without links is all
-    /// it checks.
+    /// directory. Unix compares device/inode; Windows compares handle identity.
     pub(crate) fn still_at(&self, boundary: &Path, path: &Path) -> io::Result<bool> {
         let again = Self::open(boundary, path)?;
         #[cfg(unix)]
@@ -97,7 +205,10 @@ impl BeneathDir {
             let (now, held) = (again.directory.metadata()?, self.directory.metadata()?);
             now.dev() == held.dev() && now.ino() == held.ino()
         };
-        #[cfg(not(unix))]
+        #[cfg(windows)]
+        let same = windows::identity(self.guards.last().ok_or_else(not_regular)?)?
+            == windows::identity(again.guards.last().ok_or_else(not_regular)?)?;
+        #[cfg(not(any(unix, windows)))]
         let same = {
             let _ = again;
             true
@@ -115,7 +226,16 @@ impl BeneathDir {
             libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL,
             (mode & 0o600) as libc::mode_t,
         );
-        #[cfg(not(unix))]
+        #[cfg(windows)]
+        let file = {
+            let _ = mode;
+            windows::open_child_file(
+                self.guards.last().ok_or_else(not_regular)?,
+                name,
+                windows::FileOpen::Create,
+            )
+        };
+        #[cfg(not(any(unix, windows)))]
         let file = octocode_io::atomic::create_new(&self.directory.join(name), mode);
         file
     }
@@ -125,7 +245,13 @@ impl BeneathDir {
     pub(crate) fn open_file(&self, name: &OsStr) -> io::Result<File> {
         #[cfg(unix)]
         let file = open_at(&self.directory, name, libc::O_RDONLY | libc::O_NONBLOCK, 0)?;
-        #[cfg(not(unix))]
+        #[cfg(windows)]
+        let file = windows::open_child_file(
+            self.guards.last().ok_or_else(not_regular)?,
+            name,
+            windows::FileOpen::Read,
+        )?;
+        #[cfg(not(any(unix, windows)))]
         let file = open_no_follow(&self.directory.join(name), false)?;
         if !file.metadata()?.is_file() {
             return Err(not_regular());
@@ -149,7 +275,9 @@ impl BeneathDir {
                 Err(io::Error::last_os_error())
             }
         };
-        #[cfg(not(unix))]
+        #[cfg(windows)]
+        let result = windows::rename(self.guards.last().ok_or_else(not_regular)?, from, to);
+        #[cfg(not(any(unix, windows)))]
         let result = fs::rename(self.directory.join(from), self.directory.join(to));
         result
     }
@@ -168,7 +296,9 @@ impl BeneathDir {
                 Err(io::Error::last_os_error())
             }
         };
-        #[cfg(not(unix))]
+        #[cfg(windows)]
+        let result = windows::remove(self.guards.last().ok_or_else(not_regular)?, name);
+        #[cfg(not(any(unix, windows)))]
         let result = fs::remove_file(self.directory.join(name));
         match result {
             Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
@@ -201,10 +331,20 @@ impl BeneathDir {
         Ok(Self { directory })
     }
 
-    /// Elsewhere: refuse any component that is not a real directory. This
-    /// checks before later operations use the path, so it narrows the swap
-    /// window rather than closing it.
-    #[cfg(not(unix))]
+    /// Windows pins each no-reparse component until all operations finish.
+    #[cfg(windows)]
+    fn walk(boundary: &Path, names: &[&OsStr]) -> io::Result<Self> {
+        let mut guards = vec![windows::open_directory(boundary)?];
+        for name in names {
+            let child =
+                windows::open_child_directory(guards.last().ok_or_else(not_regular)?, name, false)?;
+            guards.push(child);
+        }
+        Ok(Self { guards })
+    }
+
+    /// Other targets retain the checked-path fallback.
+    #[cfg(not(any(unix, windows)))]
     fn walk(boundary: &Path, names: &[&OsStr]) -> io::Result<Self> {
         let mut directory = boundary.to_path_buf();
         for name in names {
@@ -220,6 +360,12 @@ impl BeneathDir {
 #[cfg(unix)]
 fn c_name(name: &OsStr) -> io::Result<std::ffi::CString> {
     use std::os::unix::ffi::OsStrExt;
+    let mut components = Path::new(name).components();
+    if !matches!(components.next(), Some(Component::Normal(component)) if component == name)
+        || components.next().is_some()
+    {
+        return Err(not_regular());
+    }
     std::ffi::CString::new(name.as_bytes()).map_err(|_| not_regular())
 }
 
@@ -271,7 +417,6 @@ pub(crate) fn read_limited(reader: impl Read, limit: u64) -> io::Result<Vec<u8>>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
 
     #[test]
     fn bounded_read_rejects_oversize_instead_of_truncating() {

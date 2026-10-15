@@ -1,4 +1,4 @@
-// Goal ranking acceptance against a loopback classifier, on fresh CLI processes
+// Classifier ranking acceptance against a loopback classifier, on fresh CLI processes
 // and MCP. This checks protocol/evidence correctness, not semantic model quality.
 // Run after native + CLI + MCP builds: node octocode-local-testing/harness/local-ranking.mjs
 import assert from 'node:assert/strict';
@@ -12,7 +12,7 @@ import { ROOT, RESULTS, startServer, expandShared, hermeticEnv } from './mcp-cli
 const fixture = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'octocode-ranking-')));
 const cliPath = path.join(ROOT, 'packages/octocode/out/octocode.js');
 const marker = 'SEMANTIC_TARGET_EVIDENCE';
-const goals = ['Find evidence explaining cancellation of a waiting request'];
+const classifiers = ['Find evidence explaining cancellation of a waiting request'];
 const searchDir = path.join(fixture, 'search');
 fs.mkdirSync(searchDir);
 for (let i = 0; i < 5; i++) {
@@ -69,7 +69,7 @@ const env = {
   OCTOCODE_RANKING_MAX_CHARS: '1048576',
   OCTOCODE_RANKING_TIMEOUT_MS: '10000',
   OCTOCODE_STORAGE_MODE: 'memory',
-  OCTOCODE_LSP_PREWARM: 'false',
+  OCTOCODE_LSP_PREWARM: 'off',
   MAX_RETRIES: '0',
   DISABLE_TOOLS: '', TOOLS_TO_RUN: '', ALLOWED_PATHS: fixture, WORKSPACE_ROOT: fixture,
 };
@@ -133,8 +133,8 @@ async function walk(call, tool, query) {
   return { rows, results };
 }
 
-const search = { path: searchDir, matchString: 'topic', goals, pageSize: 1, matchPageSize: 100 };
-const fetch = { path: docPath, goals, unit: 'lines', length: 80 };
+const search = { path: searchDir, matchString: 'topic', classifiers, pageSize: 1, matchPageSize: 100 };
+const fetch = { path: docPath, classifiers, unit: 'lines', length: 80 };
 try {
   for (const [label, overrides, shown] of [
     ['enabled', {}, true],
@@ -150,13 +150,13 @@ try {
         for (const tool of ['localSearch', 'localFetch']) {
           const mcpSchema = server.tools.find(entry => entry.name === tool)?.inputSchema.properties?.queries?.items;
           assert.ok(mcpSchema);
-          assert.equal(Boolean(mcpSchema.properties?.goals), shown);
-          assert.ok(!mcpSchema.required?.includes('goals'));
+          assert.equal(Boolean(mcpSchema.properties?.classifiers), shown);
+          assert.ok(!mcpSchema.required?.includes('classifiers'));
           for (const view of ['query', 'full']) {
             const result = await cliArgs(['schema', tool, '--view', view], overrides);
             assert.equal(result.code, 0);
-            assert.equal(Boolean(result.json.querySchema?.properties?.goals), shown);
-            assert.ok(!result.json.querySchema.required?.includes('goals'));
+            assert.equal(Boolean(result.json.querySchema?.properties?.classifiers), shown);
+            assert.ok(!result.json.querySchema.required?.includes('classifiers'));
             const continuation = view === 'query' ? result.json.continuationFields : result.json.querySchema.properties;
             assert.equal(Boolean(continuation?.ranking), shown);
           }
@@ -164,28 +164,22 @@ try {
       } finally { server.close(); }
     });
   }
-  await check('schema: failed MCP provider probe omits goals', async () => {
-    mode = '401';
-    const server = await startServer({ env, cwd: fixture, timeoutMs: 25000 });
-    try {
-      assert.ok(!server.tools.some(tool => tool.name === 'clasify'));
-      for (const tool of server.tools.filter(tool => ['localSearch', 'localFetch'].includes(tool.name))) {
-        assert.equal(tool.inputSchema.properties?.queries?.items?.properties?.goals, undefined);
-      }
-    } finally { server.close(); }
-  });
-  await check('schema: hidden clasify still probes ranking provider failure', async () => {
+  // MCP discovery never contacts the provider (the startup probe was removed):
+  // a failing provider keeps every advertised surface and surfaces per call.
+  for (const overrides of [{}, { DISABLE_TOOLS: 'clasify' }]) await check(`schema: a failing provider is not probed at discovery and fails per call (${Object.keys(overrides)[0] ?? 'default'})`, async () => {
     mode = '401';
     const before = calls;
-    const server = await startServer({ env: { ...env, DISABLE_TOOLS: 'clasify' }, cwd: fixture, timeoutMs: 25000 });
+    const server = await startServer({ env: { ...env, ...overrides }, cwd: fixture, timeoutMs: 25000 });
     try {
-      assert.ok(calls > before, 'goals-only MCP checks provider readiness');
-      assert.ok(!server.tools.some(tool => tool.name === 'clasify'));
+      assert.equal(calls, before, 'discovery makes no provider call');
+      assert.equal(server.tools.some(tool => tool.name === 'clasify'), !overrides.DISABLE_TOOLS);
       for (const name of ['localSearch', 'localFetch']) {
         const schema = server.tools.find(tool => tool.name === name)?.inputSchema.properties.queries.items;
-        assert.ok(schema);
-        assert.equal(schema.properties.goals, undefined, 'failed provider hides goals');
+        assert.ok(schema?.properties.classifiers, `${name} keeps classifiers`);
       }
+      const row = successful({ json: (await server.call('localSearch', search)).sc });
+      assert.equal(row.ranking?.status, 'fallback');
+      assert.ok(calls > before, 'the call attempts the provider');
     } finally { server.close(); }
   });
   await check('schema: no usable semantic surface makes no startup provider call', async () => {
@@ -203,25 +197,25 @@ try {
       } finally { server.close(); }
     }
   });
-  for (const overrides of [{ DISABLE_TOOLS: 'clasify' }, { OCTOCODE_BETA: 'false' }]) await check(`hidden clasify (${Object.keys(overrides)[0]}): goals work, public calls and handoffs stay disabled`, async () => {
+  for (const overrides of [{ DISABLE_TOOLS: 'clasify' }, { OCTOCODE_BETA: 'false' }]) await check(`hidden clasify (${Object.keys(overrides)[0]}): classifiers work, public calls and handoffs stay disabled`, async () => {
     const server = await startServer({ env: { ...env, ...overrides }, cwd: fixture, timeoutMs: 25000 });
     try {
       assert.ok(!server.tools.some(tool => tool.name === 'clasify'));
-      const publicQuery = { resources: [{ value: { evidence: 'waiting request' } }], questions: [{ id: 'q', type: 'yesno', ask: 'Does the evidence mention a waiting request?' }] };
+      const publicQuery = { state: { evidence: 'waiting request' }, questions: { q: { type: 'noul', instructions: 'Does the evidence mention a waiting request?' } } };
       const beforePublic = calls;
       const cliRejected = await cli('clasify', publicQuery, overrides);
       assert.notEqual(cliRejected.code, 0, 'CLI rejects hidden public clasify');
+      assert.equal(cliRejected.json.errorCode, overrides.DISABLE_TOOLS ? 'toolUnavailable' : 'missingConfiguration', JSON.stringify(cliRejected.json));
       const mcpRejected = await server.raw('clasify', { queries: [publicQuery] });
       assert.ok(mcpRejected.isError || mcpRejected.sc?.errorCode, 'MCP rejects hidden public clasify');
       assert.equal(calls, beforePublic, 'rejected public calls do not send evidence');
-      const plain = { ...search, goals: undefined, matchString: 'ordinary bookkeeping', pageSize: 5, extras: ['hints'], mainGoal: goals[0] };
-      const visible = successful(await cli('localSearch', plain));
-      assert.ok(visible.hints?.clasify, 'control produces a classification handoff');
-      for (const result of [await cli('localSearch', plain, overrides), { json: (await server.call('localSearch', plain)).sc }]) {
+      // Retrieval emits no clasify handoff on any surface (RFC: Scout/handoff flows removed).
+      const plain = { ...search, classifiers: undefined, matchString: 'ordinary bookkeeping', pageSize: 5, extras: ['hints'], mainGoal: classifiers[0] };
+      for (const result of [await cli('localSearch', plain), await cli('localSearch', plain, overrides), { json: (await server.call('localSearch', plain)).sc }]) {
         const row = successful(result);
         assert.equal(row.hints?.clasify, undefined);
         assert.equal(row.next?.clasify, undefined);
-        assert.ok(!JSON.stringify(result.json).includes('"tool":"clasify"'), 'hidden tool receives no executable lead');
+        assert.ok(!JSON.stringify(result.json).includes('"tool":"clasify"'), 'retrieval returns no clasify lead');
       }
       const beforeRank = calls;
       const cliRanked = successful(await cli('localSearch', search, overrides));
@@ -230,7 +224,7 @@ try {
         assert.equal(row.ranking?.status, 'ranked');
         assert.ok(JSON.stringify(row).includes(marker));
       }
-      assert.ok(calls > beforeRank, 'goals invoke the provider with public clasify hidden');
+      assert.ok(calls > beforeRank, 'classifiers invoke the provider with public clasify hidden');
       return { tools: server.tools.length, discoveryChars: JSON.stringify(server.tools).length, instructionChars: server.init.instructions?.length ?? 0 };
     } finally { server.close(); }
   });
@@ -242,7 +236,7 @@ try {
         assert.equal(calls, before);
         assert.equal(row.ranking?.status, 'skipped');
       }
-      const { goals: omitted, ...plain } = query;
+      const { classifiers: omitted, ...plain } = query;
       assert.ok(omitted);
       const before = calls;
       assert.equal(successful(await cli(tool, plain)).ranking, undefined);
@@ -289,11 +283,11 @@ try {
       mode = 'score';
       return attempts;
     });
-    await check(`${label}: malformed plan, changed goal or changed view reject replay`, async () => {
+    await check(`${label}: malformed plan, changed classifiers or changed view reject replay`, async () => {
       const row = successful(await cli(tool, query));
       const lead = row.next?.continueWindow ?? row.next?.nextPage;
       assert.ok(lead);
-      for (const change of [{ ranking: 'bad-plan' }, { goals: ['A different goal'] }]) {
+      for (const change of [{ ranking: 'bad-plan' }, { classifiers: ['A different classifier'] }]) {
         const result = await cli(tool, { ...lead.query.queries[0], ...change });
         assert.equal(data(result)?.errorCode, 'staleSnapshot');
         assert.ok(data(result)?.next?.restart);
@@ -306,7 +300,7 @@ try {
     });
   }
   await check('explicit sort and transformed fetch skip ranking', async () => {
-    for (const [tool, query] of [['localSearch', { ...search, sort: 'path' }], ['localSearch', { ...search, reverse: true }], ['localSearch', { ...search, resultView: 'files' }], ['localSearch', { ...search, resultView: 'countMatches' }], ['localFetch', { ...fetch, unit: 'bytes' }], ['localFetch', { path: path.join(searchDir, '0.txt'), goals, fullContent: true }], ['localFetch', { path: docPath, goals, minify: 'standard' }]]) {
+    for (const [tool, query] of [['localSearch', { ...search, sort: 'path' }], ['localSearch', { ...search, reverse: true }], ['localSearch', { ...search, resultView: 'files' }], ['localSearch', { ...search, resultView: 'countMatches' }], ['localFetch', { ...fetch, unit: 'bytes' }], ['localFetch', { path: path.join(searchDir, '0.txt'), classifiers, fullContent: true }], ['localFetch', { path: docPath, classifiers, minify: 'standard' }]]) {
       const before = calls;
       const row = successful(await cli(tool, query));
       assert.equal(row.ranking?.status, 'skipped');
@@ -327,7 +321,7 @@ try {
     fs.mkdirSync(oneDir);
     const onePath = path.join(oneDir, 'note.txt');
     fs.writeFileSync(onePath, 'topic: one complete evidence unit.\n');
-    for (const [tool, query] of [['localSearch', { path: oneDir, matchString: 'topic', goals }], ['localFetch', { path: onePath, goals }]]) {
+    for (const [tool, query] of [['localSearch', { path: oneDir, matchString: 'topic', classifiers }], ['localFetch', { path: onePath, classifiers }]]) {
       const before = calls;
       const row = successful(await cli(tool, query));
       assert.equal(row.ranking.status, 'skipped');
@@ -362,8 +356,8 @@ try {
     assert.deepEqual(ranked.rows, baseline.rows);
     fs.writeFileSync(path.join(RESULTS, 'local-ranking-tied-walk.json'), JSON.stringify({ expectedCount, baseline, ranked }, null, 2));
   });
-  await check('fetch defaults and multiple goals survive continuation replay', async () => {
-    const query = { path: docPath, goals: [...goals, 'Find bookkeeping background records'] };
+  await check('fetch defaults and multiple classifiers survive continuation replay', async () => {
+    const query = { path: docPath, classifiers: [...classifiers, 'Find bookkeeping background records'] };
     const ranked = await walk(cli, 'localFetch', query);
     const baseline = await walk((t, q) => cli(t, q, { OCTOCODE_RANKING_ENABLED: 'false' }), 'localFetch', query);
     assert.deepEqual(ranked.rows.sort(), baseline.rows.sort());
@@ -383,7 +377,7 @@ try {
     const lines = Array.from({ length: 160 }, (_, i) => `Row ${i}: שלום 世界 🐙 ${'background '.repeat(8)}`);
     lines[135] = `${marker} בקשה מבוטלת before it starts.`;
     fs.writeFileSync(edgePath, lines.join('\r\n'));
-    const query = { path: edgePath, goals, unit: 'lines', length: 17 };
+    const query = { path: edgePath, classifiers, unit: 'lines', length: 17 };
     const baseline = await walk((t, q) => cli(t, q, { OCTOCODE_RANKING_ENABLED: 'false' }), 'localFetch', query);
     const ranked = await walk(cli, 'localFetch', query);
     assert.deepEqual(ranked.rows.sort(), baseline.rows.sort());
@@ -396,7 +390,7 @@ try {
     const streamPath = path.join(fixture, 'stream.txt');
     fs.writeFileSync(streamPath, 'Large streaming source evidence.\n'.repeat(350000));
     const before = calls;
-    const row = successful(await cli('localFetch', { path: streamPath, goals, unit: 'lines', length: 10 }));
+    const row = successful(await cli('localFetch', { path: streamPath, classifiers, unit: 'lines', length: 10 }));
     assert.equal(row.ranking.status, 'skipped');
     assert.equal(row.ranking.reason, 'streamingSource');
     const next = successful(await cli('localFetch', row.next.continueWindow.query.queries[0]));
@@ -406,7 +400,7 @@ try {
     assert.equal(sourceRows(next)[0].split('\t')[0], '11');
   });
   await check('disjoint fetch ranges retain source anchors after ranking', async () => {
-    const query = { path: docPath, goals, ranges: ['5-35', '885-925'], unit: 'lines', length: 31 };
+    const query = { path: docPath, classifiers, ranges: ['5-35', '885-925'], unit: 'lines', length: 31 };
     const baseline = await walk((t, q) => cli(t, q, { OCTOCODE_RANKING_ENABLED: 'false' }), 'localFetch', query);
     const ranked = await walk(cli, 'localFetch', query);
     assert.deepEqual(ranked.rows.sort(), baseline.rows.sort());
@@ -421,8 +415,8 @@ try {
     fs.writeFileSync(secretPath, `topic postgres://admin:${password}@db.example.com/app\n-----BEGIN RSA PRIVATE KEY-----\n${`${body}\n`.repeat(100)}-----END RSA PRIVATE KEY-----\n`);
     fs.writeFileSync(path.join(secretDir, 'public.txt'), 'topic public documentation.\n');
     const before = sentStates.length;
-    successful(await cli('localSearch', { path: secretDir, matchString: 'topic', goals }));
-    successful(await cli('localFetch', { path: secretPath, goals, unit: 'lines', length: 10 }));
+    successful(await cli('localSearch', { path: secretDir, matchString: 'topic', classifiers }));
+    successful(await cli('localFetch', { path: secretPath, classifiers, unit: 'lines', length: 10 }));
     const outgoing = JSON.stringify(sentStates.slice(before));
     assert.ok(sentStates.length > before);
     assert.ok(!outgoing.includes(password));
@@ -440,151 +434,73 @@ try {
       }
     }
   });
-  await check('clasify delegates reads once; nested goals explicitly add a ranking pass', async () => {
-    const outcomes = [];
-    for (const withGoals of [false, true]) {
-      const before = calls;
-      const start = sentQuestions.length;
-      const result = await cli('clasify', {
-        resources: [{ id: 'document', tool: 'localFetch', query: {
-          path: docPath, unit: 'lines', length: 80, ...(withGoals ? { goals } : {}),
-        } }],
-        questions: [{ id: 'answer', type: 'yesno', ask: 'Does this evidence explain cancellation of a waiting request?' }],
-      }, { OCTOCODE_RANKING_MAX_CANDIDATES: '2' });
-      assert.equal(result.code, 0, JSON.stringify(result.json));
-      const requests = sentQuestions.slice(start);
-      const rankingCalls = requests.filter(questions => questions.some(question => question.type === 'score')).length;
-      const judgmentCalls = requests.filter(questions => questions.some(question => question.type === 'noul')).length;
-      assert.equal(rankingCalls, withGoals ? 2 : 0);
-      assert.ok(judgmentCalls > 0, 'public matrix still receives its requested judgment');
-      assert.equal(calls - before, rankingCalls + judgmentCalls, 'no recursive public tool dispatch');
-      outcomes.push({ withGoals, rankingCalls, judgmentCalls });
-    }
-    return outcomes;
+  await check('clasify source judges one captured selection with no ranking pass and a pinned read lead', async () => {
+    const before = calls;
+    const start = sentQuestions.length;
+    const result = await cli('clasify', {
+      source: { tool: 'localFetch', query: { path: docPath, ranges: ['880-920'] } },
+      questions: { answer: { type: 'noul', instructions: 'Does this evidence explain cancellation of a waiting request?' } },
+    });
+    assert.equal(result.code, 0, JSON.stringify(result.json));
+    const row = result.json.queries[0];
+    assert.equal(row.answers.answer.type, 'noul');
+    assert.equal(row.answers.answer.noul, 0.99, 'the captured selection includes the target line');
+    assert.equal(calls - before, 1, 'one provider request for one selected state');
+    assert.deepEqual(sentQuestions.slice(start).flat().map(question => question.type), ['noul'], 'no ranking question is sent');
+    assert.ok(!JSON.stringify(row).includes('Cancelling a waiting request'), 'no source body is returned');
+    const read = row.hints.read;
+    assert.equal(read.tool, 'localFetch');
+    const exact = read.query.queries[0];
+    assert.deepEqual(exact.ranges, ['880-920']);
+    assert.equal(exact.minify, 'none');
+    assert.ok(exact.snapshot, 'the lead pins the captured snapshot');
+    assert.equal(exact.classifiers, undefined, 'source verification does not add a ranking stage');
+    assert.equal(exact.ranking, undefined, 'source verification carries no ranking plan');
+    const lines = sourceRows(successful(await cli(read.tool, exact)));
+    assert.equal(lines.length, 41);
+    assert.ok(lines.some(line => line.includes(marker)));
+    assert.equal(calls - before, 1, 'verification makes no provider call');
   });
-  await check('clasify deferral preserves ranked search order and accounts for every candidate', async () => {
-    const traces = [];
-    try {
-      for (const { pageSize, matchPageSize, candidateEvidence, maxChars = 600 } of [
-        { pageSize: 3, matchPageSize: 100, candidateEvidence: 'search' },
-        { pageSize: 5, matchPageSize: 100, candidateEvidence: 'search' },
-        { pageSize: 3, matchPageSize: 1, candidateEvidence: 'fileChunks', maxChars: 350 },
-      ]) {
-        const started = sentQuestions.length;
-        let matrix = {
-          resources: [{ id: 'files', tool: 'localSearch', candidateEvidence, maxChars,
-            query: { ...search, pageSize, matchPageSize } }],
-          questions: [{ id: 'answer', type: 'yesno', ask: 'Does this candidate explain request cancellation?' }],
-        };
-        const pages = [], coverages = [], seenMatrix = new Set();
-        let callsInWalk = 0;
-        while (matrix) {
-          assert.ok(callsInWalk++ < 6, 'bounded continuation walk');
-          const matrixId = JSON.stringify(matrix);
-          assert.ok(!seenMatrix.has(matrixId), 'clasify continuation does not repeat');
-          seenMatrix.add(matrixId);
-          const result = await cli('clasify', matrix);
-          traces.push({ pageSize, matchPageSize, candidateEvidence, maxChars, response: result.json });
-          const query = result.json.queries?.[0] ?? result.json.results?.[0]?.data?.queries?.[0];
-          assert.ok(query, JSON.stringify(result.json));
-          const resource = query.resources?.[0];
-          coverages.push(resource?.coverage);
-          pages.push(...(resource?.pages ?? []).map(page => ({ ...page, path: page.path ?? page.source?.path ?? resource.path })));
-          const rankingCalls = sentQuestions.slice(started).filter(questions => questions.some(q => q.type === 'score')).length;
-          assert.equal(rankingCalls, 5, 'deferred clasify candidates must not re-rank the search');
-          matrix = query.next?.clasify?.queries?.[0];
-        }
-        const providerPackets = sentStates.slice(started).map((state, i) => ({ state, questions: sentQuestions[started + i] }));
-        traces.push({ pageSize, matchPageSize, candidateEvidence, maxChars, providerPackets });
-        const judgedPackets = providerPackets.filter(packet => packet.questions.some(question => question.type === 'noul')).map(packet => JSON.stringify(packet));
-        assert.equal(new Set(judgedPackets).size, judgedPackets.length, 'the same classification state and questions are not sent twice');
-        const identities = pages.map(page => page.path ?? page.source?.path);
-        assert.ok(identities.every(Boolean), 'every page has a source identity');
-        assert.deepEqual([...new Set(identities)].sort(), Array.from({ length: 5 }, (_, i) => `search/${i}.txt`), 'all selected source files remain reachable');
-        if (candidateEvidence === 'search') {
-          assert.equal(identities.length, 5, 'each search candidate is accounted for once');
-          assert.ok(pages.some(page => page.error), 'search fixture exercises the explicit unjudged outcome');
-        } else {
-          assert.ok(callsInWalk > 1, 'hydration crosses an outer file page despite inner match pagination');
-          assert.ok(coverages.some(coverage => coverage?.state === 'partial'), 'bounded hydration reports partial coverage');
-          assert.ok(pages.some(page => page.error), 'bounded hydration exposes an unjudged source remainder');
-          const windows = pages.map(page => JSON.stringify({ path: page.path, line: page.line, endLine: page.endLine, scope: page.scope, error: page.error?.errorCode, read: page.hints?.read?.query }));
-          assert.equal(new Set(windows).size, windows.length, 'no judged or unjudged window repeats');
-          const reached = new Map();
-          for (const page of pages) {
-            const read = page.hints?.read ?? {
-              tool: 'localFetch', query: { queries: [{ path: page.path, ranges: [`${page.line}-${page.endLine}`] }] },
-            };
-            if (!page.hints?.read) {
-              assert.ok(page.answers && Number.isInteger(page.line) && Number.isInteger(page.endLine), 'judged windows without optional hints retain exact source anchors');
-            }
-            assert.equal(read.tool, 'localFetch');
-            for (const exact of read.query.queries) {
-              assert.equal(exact.goals, undefined, 'source verification does not add another ranking stage');
-              const result = await cli(read.tool, exact);
-              traces.push({ pageSize, matchPageSize, candidateEvidence, maxChars, verification: true, query: exact, response: result.json });
-              const rows = reached.get(page.path) ?? new Set();
-              sourceRows(successful(result)).forEach(row => rows.add(row));
-              reached.set(page.path, rows);
-            }
-          }
-          for (const source of new Set(identities)) {
-            const expected = fs.readFileSync(path.join(fixture, source), 'utf8').trimEnd().split('\n').map((line, i) => `${i + 1}\t${line}`);
-            assert.deepEqual([...reached.get(source)].sort(), expected.sort(), 'judged and unjudged read leads recover every original source line');
-          }
-        }
-        for (const page of pages.filter(page => page.error)) {
-          assert.equal(page.error.errorCode, 'classificationBudgetSpent');
-          const read = page.hints?.read;
-          assert.equal(read?.tool, 'localFetch', JSON.stringify(page));
-          assert.ok(read.query?.queries?.length, 'unjudged candidate retains its executable read');
-          if (candidateEvidence === 'search') successful(await cli(read.tool, read.query.queries[0]));
-        }
-      }
-    } finally {
-      fs.writeFileSync(path.join(RESULTS, 'local-ranking-nested.json'), `${JSON.stringify(traces, null, 2)}\n`);
+  await check('nested classifiers in a clasify source and legacy inputs are rejected before provider access', async () => {
+    const before = calls;
+    const nested = await cli('clasify', {
+      source: { tool: 'localFetch', query: { path: docPath, ranges: ['1-10'], classifiers } },
+      questions: { answer: { type: 'noul', instructions: 'Is cancellation explained?' } },
+    });
+    assert.equal(nested.json.errorCode, 'invalidInput', JSON.stringify(nested.json));
+    const legacy = await cli('clasify', {
+      resources: [{ id: 'document', tool: 'localFetch', query: { path: docPath } }],
+      questions: [{ id: 'answer', type: 'yesno', ask: 'Is cancellation explained?' }],
+    });
+    assert.deepEqual(legacy.json, {
+      error: 'queries.0.resources: Unknown field: resources',
+      details: ['queries.0.state: Missing required field: state', 'queries.0.questions: Expected object'],
+      errorCode: 'invalidInput',
+    });
+    for (const tool of ['localSearch', 'localFetch']) {
+      const { classifiers: omitted, ...plain } = tool === 'localSearch' ? search : fetch;
+      assert.ok(omitted);
+      const result = await cli(tool, { ...plain, goals: classifiers });
+      assert.deepEqual(result.json, { error: 'Remove unknown field(s) from queries[0]: goals', errorCode: 'invalidInput' });
     }
-    return { searchPageSizes: [3, 5], hydrated: { pageSize: 3, matchPageSize: 1, maxChars: 350 }, candidatesPerWalk: 5 };
+    assert.equal(calls, before, 'rejected inputs send no evidence');
   });
-  await check('clasify shrinks ranked fetch windows without repeating classification', async () => {
-    const rankedPath = path.join(fixture, 'ranked-verification.txt');
-    fs.writeFileSync(rankedPath, `${marker} Request cancellation explanation.\n${docLines.slice(1).join('\n')}\n`);
-    const started = sentQuestions.length;
-    let matrix = {
-      resources: [{ id: 'document', tool: 'localFetch', maxChars: 600, query: { ...fetch, path: rankedPath } }],
-      questions: [{ id: 'answer', type: 'yesno', ask: 'Does this evidence explain request cancellation?' }],
-    };
-    const trace = [];
-    try {
-      for (let page = 0; page < 2; page++) {
-        assert.ok(matrix, 'fixture has a second window');
-        const result = await cli('clasify', matrix, { OCTOCODE_RANKING_MAX_CANDIDATES: '2' });
-        trace.push(result.json);
-        const query = result.json.queries?.[0] ?? result.json.results?.[0]?.data?.queries?.[0];
-        assert.ok(query, JSON.stringify(result.json));
-        const resource = query.resources?.[0];
-        assert.ok(resource?.pages?.length, JSON.stringify(query));
-        assert.ok(resource.pages.every(page => !page.error), JSON.stringify(resource));
-        const reads = resource.pages.map(page => page.hints?.read).filter(Boolean);
-        if (page === 0) assert.ok(reads.length, 'positive first window offers source verification');
-        for (const read of reads) {
-          const exact = read.query.queries[0];
-          assert.equal(exact.goals, undefined, 'source verification does not request new ranking');
-          assert.equal(exact.ranking, undefined, 'source ranges do not reuse a ranked-view plan');
-          successful(await cli(read.tool, exact));
-        }
-        const rankingCalls = sentQuestions.slice(started).filter(questions => questions.some(q => q.type === 'score')).length;
-        assert.equal(rankingCalls, 2, 'shrinking retains the original ranking plan');
-        matrix = query.next?.clasify?.queries?.[0];
+  await check('ranked fetch pages carry no verification reread hint and no lead inherits a ranking plan', async () => {
+    const pages = await walk(cli, 'localFetch', { ...fetch, extras: ['hints'] });
+    assert.equal(data(pages.results[0]).ranking.status, 'ranked');
+    for (const result of pages.results) {
+      const row = data(result);
+      assert.equal(row.hints?.readBlock, undefined);
+      for (const [name, lead] of Object.entries(row.hints ?? {})) {
+        if (name === 'text') continue;
+        for (const query of lead.query?.queries ?? []) assert.equal(query.ranking, undefined, `hints.${name} inherits no ranking plan`);
       }
-    } finally {
-      fs.writeFileSync(path.join(RESULTS, 'local-ranking-fetch-shrink.json'), `${JSON.stringify(trace, null, 2)}\n`);
     }
   });
   await check('oversized indivisible line stays available without provider clipping', async () => {
     const giantPath = path.join(fixture, 'giant.txt');
     fs.writeFileSync(giantPath, `${marker} ${'x'.repeat(9000)}\n`);
-    const query = { path: giantPath, goals, unit: 'lines', length: 1 };
+    const query = { path: giantPath, classifiers, unit: 'lines', length: 1 };
     const before = calls;
     const ranked = successful(await cli('localFetch', query));
     const baseline = successful(await cli('localFetch', query, { OCTOCODE_RANKING_ENABLED: 'false' }));

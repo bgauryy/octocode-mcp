@@ -48,6 +48,8 @@ export interface Message {
   sender?: { role: string; goal?: string };
   /** Set when it stops a busy recipient's current step (its running tool is cancelled) and continues the run with it. */
   interrupt?: boolean;
+  /** Set on a message the user typed for this recipient: the signature the parent made with the secret it gave the recipient (`userProof`). */
+  proof?: string;
 }
 
 /** How a message is sent: whether it asks for a reply, which message it answers, and whether it interrupts. */
@@ -155,6 +157,7 @@ export function toMessage(row: Row, to: string): Message {
     ...(typeof replyTo === 'number' ? { replyTo } : {}),
     ...(typeof wake === 'number' ? { wake: wake >= 1 } : {}),
     ...(wake === 2 ? { interrupt: true } : {}),
+    ...(typeof row['proof'] === 'string' ? { proof: row['proof'] } : {}),
     ...(role ? { sender: { role, ...(goal ? { goal } : {}) } } : {}),
   };
 }

@@ -7,10 +7,10 @@ import { errorMessage, isRecord } from '../shared/util.js';
 /**
  * Claude Code / Codex command hooks, read from the files those agents use. The shape is theirs:
  * `{ "hooks": { "PreToolUse": [{ "matcher": "Bash", "hooks": [{ "type": "command", "command": "…", "timeout": 60 }] }] } }`.
- * Only `command` hooks for the six events Pi can map are kept; anything else is ignored.
+ * Only `command` hooks for mapped events are kept; anything else is ignored.
  */
 
-export const HOOK_EVENTS = ['PreToolUse', 'PostToolUse', 'SessionStart', 'PreCompact', 'Stop', 'Notification'] as const;
+export const HOOK_EVENTS = ['PreToolUse', 'PostToolUse', 'SessionStart', 'PreCompact', 'Stop', 'Notification', 'PreMessageSend', 'PostMessageReceive'] as const;
 export type HookEvent = (typeof HOOK_EVENTS)[number];
 
 export interface HookCommand {
@@ -18,7 +18,7 @@ export interface HookCommand {
   timeoutMs: number;
   /** The file it came from. */
   source: string;
-  /** Opt-in (`"failClosed": true`): a `PreToolUse` timeout, crash or invalid JSON denies the call instead of allowing it. */
+  /** Opt-in (`"failClosed": true`): a pre-tool or pre-message failure denies the operation. */
   failClosed?: true;
 }
 
@@ -33,7 +33,7 @@ export type HookConfig = Record<HookEvent, HookGroup[]>;
 const DEFAULT_TIMEOUT_S = 60;
 const MAX_TIMEOUT_S = 600;
 
-export const emptyHooks = (): HookConfig => ({ PreToolUse: [], PostToolUse: [], SessionStart: [], PreCompact: [], Stop: [], Notification: [] });
+export const emptyHooks = (): HookConfig => ({ PreToolUse: [], PostToolUse: [], SessionStart: [], PreCompact: [], Stop: [], Notification: [], PreMessageSend: [], PostMessageReceive: [] });
 
 /**
  * User hook files always (`~/.claude/settings.json`, `~/.codex/hooks.json`, `~/.octocode/hooks.json`); project files

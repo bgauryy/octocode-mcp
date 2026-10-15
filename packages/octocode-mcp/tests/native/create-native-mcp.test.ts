@@ -4,6 +4,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/server';
 import { buildMcpInstructions } from '@octocodeai/config/mcp';
 import {
+  getDirectToolDefinitionsWithAddons,
   getNativeContractFingerprint,
   isCliOnlyTool,
   TOOL_NAMES,
@@ -148,6 +149,7 @@ const tool = (
   extra: Partial<NativeCatalogTool> = {}
 ): NativeCatalogTool => ({
   name,
+  shortDescription: `${name} description.`,
   available,
   ...extra,
 });
@@ -235,9 +237,15 @@ describe('createNativeMcp registration + execution', () => {
       TOOL_NAMES.CLASIFY,
     ]);
     expect(list.tools.every(t => !Object.hasOwn(t, 'outputSchema'))).toBe(true);
-    // Core authors one MCP hint: every registered tool only reads.
+    // Every core-authored hint survives the MCP registration and transport.
+    const authored = getDirectToolDefinitionsWithAddons({
+      availableTools: list.tools.map(listed => listed.name),
+    });
     for (const listed of list.tools)
-      expect(listed.annotations, listed.name).toEqual({ readOnlyHint: true });
+      expect(listed.annotations, listed.name).toEqual(
+        authored.find(definition => definition.name === listed.name)!
+          .annotations
+      );
 
     await client.close();
     await instance.close();
@@ -267,8 +275,9 @@ describe('createNativeMcp registration + execution', () => {
       'localFetch',
       TOOL_NAMES.CLASIFY,
     ]);
-    // One prompt for every surface: callers use only exposed controls.
-    expect(client.getInstructions()).toBe(buildMcpInstructions());
+    expect(client.getInstructions()).toBe(
+      buildMcpInstructions({ availableTools: list.tools.map(t => t.name) })
+    );
     const matrix = {
       mainGoal: 'Check provider recovery.',
       reasoning: 'The same host must retain the public tool.',
@@ -470,7 +479,7 @@ describe('createNativeMcp registration + execution', () => {
     expect(runtime.closeCount).toBe(1);
   });
 
-  it('forwards client cancellation (notifications/cancelled) to runtime.cancel with the JSON-RPC id', async () => {
+  it('forwards client cancellation (notifications/cancelled) with the admitted native request id', async () => {
     const instance = await createNativeMcp({
       env: {},
       binding: bindingFor(() => ({
@@ -506,11 +515,97 @@ describe('createNativeMcp registration + execution', () => {
     controller.abort();
     await call;
     await vi.waitFor(() => expect(runtime.cancelled).toHaveLength(1));
-    // Keyed by the JSON-RPC request id, not a random UUID.
     expect(runtime.cancelled[0]).toBe(runtime.executions[0]!.requestId);
-    expect(runtime.cancelled[0]).toMatch(/^\d+$/);
     await client.close();
     await instance.close();
+  });
+
+  it('keeps numeric and string JSON-RPC ids independent during concurrent execution', async () => {
+    const instance = await createNativeMcp({
+      env: {},
+      binding: bindingFor(() => ({
+        fingerprint: getNativeContractFingerprint(),
+        tools: [tool('localFetch', true)],
+      })),
+    });
+    const [serverTransport, clientTransport] =
+      InMemoryTransport.createLinkedPair();
+    const replies: Array<{ id: string | number; result: unknown }> = [];
+    clientTransport.onmessage = message => {
+      if ('id' in message && 'result' in message) replies.push(message);
+    };
+    const runtime = FakeRuntime.last!;
+    try {
+      await Promise.all([
+        instance.server.connect(serverTransport),
+        clientTransport.start(),
+      ]);
+      await clientTransport.send({
+        jsonrpc: '2.0',
+        id: 'initialize',
+        method: 'initialize',
+        params: {
+          protocolVersion: '2025-06-18',
+          capabilities: {},
+          clientInfo: { name: 'request-id-types', version: '1' },
+        },
+      });
+      await vi.waitFor(() =>
+        expect(replies.some(reply => reply.id === 'initialize')).toBe(true)
+      );
+      await clientTransport.send({
+        jsonrpc: '2.0',
+        method: 'notifications/initialized',
+      });
+      runtime.hang = true;
+      await clientTransport.send({
+        jsonrpc: '2.0',
+        id: 7,
+        method: 'tools/call',
+        params: {
+          name: 'localFetch',
+          arguments: { queries: [{ path: 'first.txt' }] },
+        },
+      });
+      await vi.waitFor(() => expect(runtime.executions).toHaveLength(1));
+      runtime.hang = false;
+      await clientTransport.send({
+        jsonrpc: '2.0',
+        id: '7',
+        method: 'tools/call',
+        params: {
+          name: 'localFetch',
+          arguments: { queries: [{ path: 'second.txt' }] },
+        },
+      });
+      await vi.waitFor(() => expect(runtime.executions).toHaveLength(2));
+      await vi.waitFor(() =>
+        expect(replies.find(reply => reply.id === '7')?.result).toMatchObject({
+          isError: false,
+        })
+      );
+      const [first, second] = runtime.executions;
+      expect(first!.requestId).not.toBe(second!.requestId);
+      expect(first!.input).toEqual({ queries: [{ path: 'first.txt' }] });
+      expect(second!.input).toEqual({ queries: [{ path: 'second.txt' }] });
+      await clientTransport.send({
+        jsonrpc: '2.0',
+        method: 'notifications/cancelled',
+        params: { requestId: 7, reason: 'Cancel only the first request.' },
+      });
+      await vi.waitFor(() =>
+        expect(runtime.cancelled).toEqual([first!.requestId])
+      );
+      expect(runtime.cancelled).not.toContain(second!.requestId);
+    } finally {
+      await clientTransport.send({
+        jsonrpc: '2.0',
+        method: 'notifications/cancelled',
+        params: { requestId: 7, reason: 'Fixture cleanup.' },
+      });
+      await clientTransport.close();
+      await instance.close();
+    }
   });
 
   describe('native execution errors', () => {

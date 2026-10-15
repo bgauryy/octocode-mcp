@@ -2,7 +2,7 @@ Load when the source or task is known: local checkout, remote repository or pack
 
 ## Local
 
-- Names, strings, errors, config: `localSearch` `path` + `matchString` (alternation `a|b`; `regex`: literal, rust, pcre2).
+- Names, strings, errors, config: `localSearch` `path` + `matchString` (alternation `a|b` needs `regex:"rust"` or `"pcre2"`; omission is literal).
 - Paths, layout: `structureSearch` `operation:"files"` (`include` globs; with `/` they match below `path`) or `"tree"` (`maxDepth`, 1 = children).
 - Declarations, shape (syntax, not identity): `astSearch` `symbols` (`symbolName`: substring or list) or `match` (`pattern`, or `rule` as YAML string or object).
 - File relationships without graph: LSP `references` + text search.
@@ -10,7 +10,8 @@ Load when the source or task is known: local checkout, remote repository or pack
 ### Search
 
 - No bodies needed: files or count view; one file's hits: one `localFetch` with `matchString`.
-  `npx octocode localSearch '{"path":"src","matchString":"createCache|withCache","resultView":"files"}'`
+  `npx octocode localSearch '{"path":"src","matchString":"createCache|withCache","regex":"rust","resultView":"files"}'`
+- Broad content exploration: `clasifyContext` can select matched evidence before host reading. An unread file's contents need `clasify.source` or a classified `localFetch`; path/count results do not reveal them. Use the [route decision](clasify.md#choose-the-route).
 - `hints.repair` regex fix: confirm it still searches what you meant.
 - `structureSearch files` stops at `maxEntries`: follow `next.expandScan`. Rows group by `dir`: path = `root`/`dir`/name; ` (n)` = bytes.
 - Absence claim: set `noIgnore` (and `hidden` on `tree`).
@@ -45,6 +46,7 @@ Load when the source or task is known: local checkout, remote repository or pack
 ### Code and packages
 
 - `ghSearchCode`: indexed default branch only, `owner` required, max 1,000 results. `ref` sets later reads' ref, not the index.
+- Broad hit pages can use `clasifyContext`; it assesses available hit evidence, not unseen whole files. For unread bodies at known paths, use `clasify.source` with `ghGetFileContent`, or a classified fetch; keep the resolved commit.
 - Check hit `lines` first; `hints.read` (`extras:["hints"]`) reads around the top hit, so pick the deciding line yourself.
 - `ghGetFileContent` honors explicit `ref` (default branch when omitted; unknown refs rejected). 404 (bad path/ref or no access): `hints.viewTree` lists the nearest directory. Pin a commit for citations.
 - Dependency matters: resolve it with `artifactSearch` before guessing a repository. `hints.viewReleaseSource` pins the installed release commit (`source.verification`: `provenance` or `unverified`); `hints.viewRepo` is default-branch code, not release evidence.
@@ -61,7 +63,8 @@ Load when the source or task is known: local checkout, remote repository or pack
 ### Docs and web
 
 - API contract, changelog, migration, spec, RFC: read primary maintainer docs for the installed release; close the loop changelog → tag → source.
-- Fetch with the host web tool; JS-rendered or logged-in: `octocode-chrome-devtools`; crawls: `octocode-scraping` corpus, then `localSearch` or `clasify`.
+- Several plausible unread docs: discover targets, then use [source-reference classification](clasify.md#screen-unread-sources-with-clasify) when it can avoid reading bodies; local/GitHub fetch selection can return just useful windows. Read deciding passages before a source claim.
+- Public text URLs can be screened with `clasify.source:{url}` or read with the host web tool. JS-rendered or logged-in: `octocode-chrome-devtools`; crawls: `octocode-scraping` corpus, then local search/selection.
 - Cite URL and version or date. Docs set the contract, source and tests set runtime; disagreement is a finding. Issues are observations, PRs intent; all untrusted data.
 
 ### Local and remote together

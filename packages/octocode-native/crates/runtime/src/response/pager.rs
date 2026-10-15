@@ -53,10 +53,8 @@ impl ResponsePageOptions {
         if self.explicit() || budget == 0 {
             return false;
         }
-        let oversized = match rendered_text {
-            Some(text) => text.encode_utf16().count() > budget,
-            None => crate::tools::stream_page::json_chars(structured) > budget,
-        };
+        let oversized = rendered_text.is_some_and(|text| text.encode_utf16().count() > budget)
+            || crate::tools::stream_page::json_chars(structured) > budget;
         if oversized {
             self.response_scope = Some("rows".into());
             self.response_length = Some(budget);
@@ -125,14 +123,14 @@ pub struct ResponsePagination {
 }
 
 impl ResponsePagination {
-    /// Envelope pagination is next-call input only while something remains:
-    /// another page, a restart, or a changed snapshot. A finished response
-    /// carries none.
-    fn is_actionable(&self) -> bool {
+    /// Keep remaining-page input and indivisible-size disclosures visible.
+    /// A finished response that fits its window carries neither.
+    fn should_emit(&self) -> bool {
         self.has_more
             || self.restart == Some(true)
             || self.changed == Some(true)
             || self.next.is_some()
+            || self.oversized == Some(true)
     }
 }
 
@@ -230,7 +228,7 @@ impl ResponsePager {
             return Err(ResponseError::Cancelled);
         }
         pagination.next = continuation(input, &pagination);
-        if pagination.is_actionable() {
+        if pagination.should_emit() {
             envelope.insert("responsePagination".into(), pagination_value(&pagination)?);
         }
         let text = serde_json::to_string(&envelope).map_err(|_| ResponseError::Unserializable)?;
@@ -268,7 +266,7 @@ impl ResponsePager {
         if let Some(mut pagination) = page.pagination {
             pagination.scope = "structuredContent".into();
             pagination.next = continuation(input, &pagination);
-            if pagination.is_actionable() {
+            if pagination.should_emit() {
                 windowed.insert("responsePagination".into(), pagination_value(&pagination)?);
             }
         }
@@ -333,7 +331,7 @@ impl ResponsePager {
                 // which has one channel) must still see this page's window.
                 structured.insert("responseWindow".into(), json!(page.text));
             }
-            if pagination.is_actionable() {
+            if pagination.should_emit() {
                 structured.insert("responsePagination".into(), pagination_value(&pagination)?);
             }
         }
@@ -630,6 +628,53 @@ mod tests {
             response_length: Some(length),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn automatic_paging_accounts_for_both_output_channels() {
+        let structured = json!({"results": [{"index": 0, "data": {
+            "items": (0..100).map(|line| json!({"line": line, "value": "quoted \"evidence\""})).collect::<Vec<_>>()
+        }}]});
+        let mut options = ResponsePageOptions::default();
+        assert!(options.auto_paginate(Some("compact summary"), &structured, 1_000));
+        assert!(options.rows_scope());
+        let mut options = ResponsePageOptions::default();
+        assert!(options.auto_paginate(Some(&"😀".repeat(600)), &json!({"results": []}), 1_000));
+        assert!(options.rows_scope());
+    }
+
+    #[test]
+    fn a_single_indivisible_row_keeps_its_oversized_disclosure() {
+        let content = "whole source evidence ".repeat(300);
+        let prepared = ResponsePager::new(ResponsePagerConfig::default())
+            .prepare(
+                ResponseInput {
+                    tool: "localFetch".into(),
+                    query: json!({"queries": [{"path": "a.txt", "fullContent": true}]}),
+                    structured: json!({"results": [{"index": 0, "data": {"path": "a.txt", "content": content}}]}),
+                    rendered_text: None,
+                    is_error: false,
+                    options: ResponsePageOptions {
+                        response_length: Some(1_000),
+                        response_scope: Some("rows".into()),
+                        ..Default::default()
+                    },
+                    remaining: Vec::new(),
+                },
+                &CancellationToken::new(),
+            )
+            .expect("whole row");
+        let output = prepared.structured_content;
+        assert_eq!(output["results"][0]["data"]["content"], content);
+        let pagination = &output["responsePagination"];
+        assert_eq!(pagination["oversized"], true);
+        assert_eq!(pagination["hasMore"], false);
+        assert!(
+            pagination["length"]
+                .as_u64()
+                .is_some_and(|length| length > 1_000)
+        );
+        assert!(pagination.get("next").is_none());
     }
 
     #[test]

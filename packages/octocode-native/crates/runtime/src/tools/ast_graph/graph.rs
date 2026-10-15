@@ -210,10 +210,7 @@ fn scan_facts(
     if q.max_files().is_none() {
         admit_scope(q, root, &exclude, globs.clone(), paths, cancel)?;
     }
-    let max_files = q
-        .max_files()
-        .unwrap_or(20_000)
-        .clamp(1, super::topology_max("maxFiles"));
+    let max_files = q.scan_files().clamp(1, super::topology_max("maxFiles"));
     let discovery = paths.discovery_walk();
     octocode_engine::graph::scan_graph_facts(
         GraphFactsScanOptions {
@@ -1555,23 +1552,10 @@ pub(super) fn scope_too_broad(
     let over_maximum = capped || count > maximum;
     let last = entries.last().map(String::as_str).filter(|_| capped);
     let walked = |dir: &str| last.is_none_or(|last| walked_past(dir, last));
-    let mut by_dir: BTreeMap<String, u32> = BTreeMap::new();
-    for relative in entries {
-        let mut parts = relative.split('/');
-        let (Some(first), Some(second)) = (parts.next(), parts.next()) else {
-            continue;
-        };
-        // Group by package-level directory (packages/x, crates/y) when the
-        // first segment is a workspace container, else by the first segment.
-        let key = if parts.next().is_some() && WORKSPACE_CONTAINERS.contains(&first) {
-            format!("{first}/{second}")
-        } else {
-            first.to_owned()
-        };
-        *by_dir.entry(key).or_default() += 1;
-    }
-    let mut ranked: Vec<(String, u32)> =
-        by_dir.into_iter().filter(|(dir, _)| walked(dir)).collect();
+    let mut ranked: Vec<(String, u32)> = files_by_dir(entries)
+        .into_iter()
+        .filter(|(dir, _)| walked(dir))
+        .collect();
     ranked.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
     // A query anchored on files (source, target, entrypoints) can only
     // narrow to a directory that holds all of them: the widest admissible one.
@@ -1626,7 +1610,10 @@ pub(super) fn scope_too_broad(
             "expandScan".into(),
             Continuation::new(
                 ToolId::AstTopology,
-                continuation(root_path.clone(), Some(count.max(20_000).min(maximum))),
+                continuation(
+                    root_path.clone(),
+                    Some(count.max(super::types::DEFAULT_SCAN_FILES).min(maximum)),
+                ),
             )
             .confidence("low")
             .build(),
@@ -1640,24 +1627,7 @@ pub(super) fn scope_too_broad(
         };
         let mut query = continuation(path, None);
         if anchored.is_some() {
-            // Re-root the anchors that were relative to the old root.
-            let prefix = format!("{dir}/");
-            let rebase = |value: &mut serde_json::Value| {
-                if let Some(text) = value.as_str()
-                    && !Path::new(text).is_absolute()
-                    && let Some(rest) = normalize(text).strip_prefix(&prefix)
-                {
-                    *value = serde_json::json!(rest);
-                }
-            };
-            for field in ["source", "target"] {
-                if let Some(value) = query.get_mut(field) {
-                    rebase(value);
-                }
-            }
-            if let Some(entries) = query.get_mut("entrypoints").and_then(|v| v.as_array_mut()) {
-                entries.iter_mut().for_each(rebase);
-            }
+            rebase_anchors(&mut query, dir);
         }
         next.insert(
             "narrowScope".into(),
@@ -1670,6 +1640,48 @@ pub(super) fn scope_too_broad(
         error.next = Some(Box::new(serde_json::Value::Object(next)));
     }
     error
+}
+
+/// Files per directory a re-rooted scan could start at: the package-level
+/// directory (`packages/x`, `crates/y`) under a workspace container, else
+/// the first segment. Files at the root itself are counted under none.
+fn files_by_dir(entries: &[String]) -> BTreeMap<String, u32> {
+    let mut by_dir: BTreeMap<String, u32> = BTreeMap::new();
+    for relative in entries {
+        let mut parts = relative.split('/');
+        let (Some(first), Some(second)) = (parts.next(), parts.next()) else {
+            continue;
+        };
+        let key = if parts.next().is_some() && WORKSPACE_CONTAINERS.contains(&first) {
+            format!("{first}/{second}")
+        } else {
+            first.to_owned()
+        };
+        *by_dir.entry(key).or_default() += 1;
+    }
+    by_dir
+}
+
+/// Re-roots at `dir` the query's anchors (`source`, `target`,
+/// `entrypoints`) that were relative to the old root.
+fn rebase_anchors(query: &mut serde_json::Value, dir: &str) {
+    let prefix = format!("{dir}/");
+    let rebase = |value: &mut serde_json::Value| {
+        if let Some(text) = value.as_str()
+            && !Path::new(text).is_absolute()
+            && let Some(rest) = normalize(text).strip_prefix(&prefix)
+        {
+            *value = serde_json::json!(rest);
+        }
+    };
+    for field in ["source", "target"] {
+        if let Some(value) = query.get_mut(field) {
+            rebase(value);
+        }
+    }
+    if let Some(entries) = query.get_mut("entrypoints").and_then(|v| v.as_array_mut()) {
+        entries.iter_mut().for_each(rebase);
+    }
 }
 
 /// The widest directory under `root` that holds every file the query names
@@ -1744,12 +1756,12 @@ pub(crate) fn normalize(p: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use crate::tools::ast_graph::test_support::{known, write_file};
+    use crate::tools::ast_graph::test_support::{Fixture, known};
 
-    fn cargo_fixture() -> tempfile::TempDir {
-        let root = tempfile::tempdir().unwrap();
+    fn cargo_fixture() -> Fixture {
+        let root = Fixture::new();
         std::fs::write(
-            root.path().join("Cargo.toml"),
+            root.0.as_path().join("Cargo.toml"),
             "[workspace]\nmembers = [\"a\", \"b\", \"z_one\", \"z_two\"]\nresolver = \"2\"\n",
         )
         .unwrap();
@@ -1759,7 +1771,7 @@ mod tests {
             ("z_one", ""),
             ("z_two", ""),
         ] {
-            let directory = root.path().join(name);
+            let directory = root.0.as_path().join(name);
             std::fs::create_dir_all(directory.join("src")).unwrap();
             std::fs::write(directory.join("src/lib.rs"), "pub fn item() {}\n").unwrap();
             std::fs::write(directory.join("Cargo.toml"), format!(
@@ -1773,7 +1785,7 @@ mod tests {
     fn cargo_aliases_are_resolved_in_the_importing_package() {
         let fixture = cargo_fixture();
         let crates = super::load_cargo_crates(
-            &fixture.path().canonicalize().unwrap(),
+            &fixture.0.as_path().canonicalize().unwrap(),
             None,
             &crate::tools::cancel::NeverCancel,
         )
@@ -1809,7 +1821,7 @@ mod tests {
     #[test]
     fn cargo_member_manifest_changes_refresh_dependency_aliases() {
         let fixture = cargo_fixture();
-        let manifest = fixture.path().join("z_two/Cargo.toml");
+        let manifest = fixture.0.as_path().join("z_two/Cargo.toml");
         let text = std::fs::read_to_string(&manifest).unwrap();
         std::fs::write(
             &manifest,
@@ -1819,13 +1831,13 @@ mod tests {
         // Warm up after any first-run lockfile creation, so only the member
         // manifest changes between the two observations below.
         super::load_cargo_crates(
-            &fixture.path().canonicalize().unwrap(),
+            &fixture.0.as_path().canonicalize().unwrap(),
             None,
             &crate::tools::cancel::NeverCancel,
         )
         .unwrap();
         let before = super::load_cargo_crates(
-            &fixture.path().canonicalize().unwrap(),
+            &fixture.0.as_path().canonicalize().unwrap(),
             None,
             &crate::tools::cancel::NeverCancel,
         )
@@ -1833,7 +1845,7 @@ mod tests {
         let text = std::fs::read_to_string(&manifest).unwrap();
         std::fs::write(&manifest, text.replace("shared =", "renamed =")).unwrap();
         let after = super::load_cargo_crates(
-            &fixture.path().canonicalize().unwrap(),
+            &fixture.0.as_path().canonicalize().unwrap(),
             None,
             &crate::tools::cancel::NeverCancel,
         )
@@ -2109,25 +2121,13 @@ mod tests {
 
     #[test]
     fn tsconfig_aliases_and_workspace_packages_link_in_a_built_graph() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().canonicalize().unwrap();
-        write_file(
-            &root,
-            "tsconfig.json",
-            "{ /* jsonc */ \"compilerOptions\": { \"paths\": { \"@app/*\": [\"./app/src/*\"], }, }, }",
-        );
-        write_file(
-            &root,
-            "lib/package.json",
-            r#"{ "name": "@acme/lib", "main": "./dist/index.js", "exports": { ".": { "import": "./dist/index.js" } } }"#,
-        );
-        write_file(&root, "lib/src/index.ts", "export const lib = 1;\n");
-        write_file(&root, "app/src/util.ts", "export const util = 1;\n");
-        write_file(
-            &root,
-            "app/src/main.ts",
-            "import { util } from '@app/util';\nimport { lib } from '@acme/lib';\nimport { gone } from '@app/gone';\nimport React from 'react';\nexport const all = [util, lib, gone, React];\n",
-        );
+        let dir = Fixture::new();
+        let root = dir.0.as_path().canonicalize().unwrap();
+        dir.write("tsconfig.json", "{ /* jsonc */ \"compilerOptions\": { \"paths\": { \"@app/*\": [\"./app/src/*\"], }, }, }");
+        dir.write("lib/package.json", r#"{ "name": "@acme/lib", "main": "./dist/index.js", "exports": { ".": { "import": "./dist/index.js" } } }"#);
+        dir.write("lib/src/index.ts", "export const lib = 1;\n");
+        dir.write("app/src/util.ts", "export const util = 1;\n");
+        dir.write("app/src/main.ts", "import { util } from '@app/util';\nimport { lib } from '@acme/lib';\nimport { gone } from '@app/gone';\nimport React from 'react';\nexport const all = [util, lib, gone, React];\n");
         let built = fixture_graph(&root, &super::BuildExtras::default());
         let imports = &built.facts["app/src/main.ts"].imports;
         let target = |spec: &str| {
@@ -2194,20 +2194,12 @@ mod tests {
 
     #[test]
     fn c_includes_search_project_include_dirs() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().canonicalize().unwrap();
-        write_file(&root, "include/proj/api.h", "int api(void);\n");
-        write_file(&root, "third/include/dep.h", "int dep(void);\n");
-        write_file(
-            &root,
-            "compile_commands.json",
-            &serde_json::json!([{"directory": root, "command": "cc -Ithird/include -c src/main.c", "file": "src/main.c"}]).to_string(),
-        );
-        write_file(
-            &root,
-            "src/main.c",
-            "#include \"proj/api.h\"\n#include <dep.h>\n#include <stdio.h>\nint main(void) { return api() + dep(); }\n",
-        );
+        let dir = Fixture::new();
+        let root = dir.0.as_path().canonicalize().unwrap();
+        dir.write("include/proj/api.h", "int api(void);\n");
+        dir.write("third/include/dep.h", "int dep(void);\n");
+        dir.write("compile_commands.json", serde_json::json!([{"directory": root, "command": "cc -Ithird/include -c src/main.c", "file": "src/main.c"}]).to_string());
+        dir.write("src/main.c", "#include \"proj/api.h\"\n#include <dep.h>\n#include <stdio.h>\nint main(void) { return api() + dep(); }\n");
         let built = fixture_graph(&root, &super::BuildExtras::default());
         let imports = &built.facts["src/main.c"].imports;
         let target = |spec: &str| {
@@ -2226,12 +2218,12 @@ mod tests {
     /// `.git/info/exclude` leave files out of every scan.
     #[test]
     fn ignore_rules_always_apply() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().canonicalize().unwrap();
+        let dir = Fixture::new();
+        let root = dir.0.as_path().canonicalize().unwrap();
         std::fs::create_dir_all(root.join(".git/info")).unwrap();
-        write_file(&root, ".git/info/exclude", "local-only.ts\n");
-        write_file(&root, ".gitignore", "generated/\n*.gen.ts\n");
-        write_file(&root, "pkg/.gitignore", "scratch/\n!keep.gen.ts\n");
+        dir.write(".git/info/exclude", "local-only.ts\n");
+        dir.write(".gitignore", "generated/\n*.gen.ts\n");
+        dir.write("pkg/.gitignore", "scratch/\n!keep.gen.ts\n");
         for file in [
             "src/main.ts",
             "generated/api.ts",
@@ -2240,7 +2232,7 @@ mod tests {
             "pkg/scratch/tmp.ts",
             "local-only.ts",
         ] {
-            write_file(&root, file, "export const x = 1;\n");
+            dir.write(file, "export const x = 1;\n");
         }
         let filtered = fixture_graph(
             &root,

@@ -379,26 +379,28 @@ try {
   );
   if (expectedTools.includes(TOOL_NAMES.CLASIFY)) {
     await check(
-      'clasify rejects caller model selection before provider access',
+      'clasify rejects the removed resources/presets shape before provider access',
       async () => {
         const response = await invoke(TOOL_NAMES.CLASIFY, {
           queries: [
             {
-              id: 'caller-model-rejected',
-              reasoning:
-                'Verify that provider model selection remains runtime-owned.',
+              id: 'legacy-shape-rejected',
               resources: [{ id: 'evidence', value: 'Supplied evidence.' }],
               questions: [
                 { id: 'bounded', type: 'yesno', ask: 'Is evidence supplied?' },
               ],
-              model: 'caller-model-is-forbidden',
             },
           ],
         });
-        const row = response.structuredContent?.results?.[0];
-        assert.ok(response.isError || row?.status === 'error');
-        assert.equal(row?.data?.usage, undefined);
-        assert.match(JSON.stringify(response), /unknown field.*model/i);
+        assert.equal(response.isError, true);
+        assert.deepEqual(response.structuredContent, {
+          error: 'queries.0.resources: Unknown field: resources',
+          details: [
+            'queries.0.state: Missing required field: state',
+            'queries.0.questions: Expected object',
+          ],
+          errorCode: 'invalidInput',
+        });
       }
     );
   }
@@ -709,63 +711,37 @@ try {
     }
   );
   await check(
-    'astRewrite is CLI-only: MCP rejects it, the CLI previews and applies on an isolated fixture',
+    'astRewrite is parked: MCP does not list or run it, and the CLI refuses it without writing',
     async () => {
       assert.ok(
         !expectedTools.includes('astRewrite'),
         'MCP must not list astRewrite'
       );
-      // An unlisted tool is a protocol error (-32602) or an error result, never a rewrite.
-      const rejected = await client
-        .callTool({
-          name: 'astRewrite',
-          arguments: {
-            queries: [
-              {
-                reasoning: 'Verify MCP never rewrites.',
-                path: fixture,
-                language: 'typescript',
-                pattern: 'oldCall($A)',
-                rewrite: 'newCall($A)',
-              },
-            ],
-          },
-        })
-        .then(
-          result => result.isError === true,
-          error => /not found|not available/i.test(String(error?.message))
-        );
-      assert.ok(rejected, 'MCP must reject astRewrite');
       const directory = await mkdtemp(path.join(fixture, 'cli-rewrite-'));
       const file = path.join(directory, 'source.ts');
+      const rule = {
+        reasoning: 'Verify a parked rewrite never runs.',
+        path: directory,
+        language: 'typescript',
+        pattern: 'oldCall($A)',
+        rewrite: 'newCall($A)',
+      };
       try {
-        await writeFile(file, 'oldCall(1);\noldCall(2);\n');
-        const rule = {
-          reasoning: 'Verify CLI rewrite.',
-          path: directory,
-          language: 'typescript',
-          pattern: 'oldCall($A)',
-          rewrite: 'newCall($A)',
-          pageSize: 10,
-        };
-        const preview = executeCliTool('astRewrite', [rule]).results[0].data;
-        assert.equal(preview.mode, 'preview');
-        assert.equal(preview.matchCount, 2);
-        // Apply is the preview's hints.apply lead replayed verbatim: it carries
-        // the snapshot (not echoed in minimal output) and the expected hashes.
-        assert.equal(preview.next, undefined);
-        assert.equal(preview.hints?.apply?.tool, 'astRewrite');
-        assert.equal(preview.hints.apply.query.queries[0].apply, true);
-        const applied = executeCliTool(
-          'astRewrite',
-          preview.hints.apply.query.queries
-        ).results[0].data;
-        assert.equal(applied.mode, 'apply');
-        assert.equal(applied.transaction.committed, true);
-        assert.equal(
-          await readFile(file, 'utf8'),
-          'newCall(1);\nnewCall(2);\n'
-        );
+        await writeFile(file, 'oldCall(1);\n');
+        // An unlisted tool is a protocol error (-32602) or an error result, never a rewrite.
+        const rejected = await client
+          .callTool({ name: 'astRewrite', arguments: { queries: [rule] } })
+          .then(
+            result => result.isError === true,
+            error => /not found|not available/i.test(String(error?.message))
+          );
+        assert.ok(rejected, 'MCP must reject astRewrite');
+        assert.deepEqual(executeCliTool('astRewrite', [rule], 5), {
+          error:
+            'Tool astRewrite is not available in this native runtime: it is disabled in this build.',
+          errorCode: 'toolUnavailable',
+        });
+        assert.equal(await readFile(file, 'utf8'), 'oldCall(1);\n');
       } finally {
         await rm(directory, { recursive: true, force: true });
       }
@@ -1095,51 +1071,49 @@ try {
   if (values.live && !values.quick) {
     if (expectedTools.includes(TOOL_NAMES.CLASIFY)) {
       await check(
-        'clasify executes yesno, choice, and score through the live provider',
+        'clasify executes noul, choice, and score through the live provider',
         async () => {
           const response = await invoke(TOOL_NAMES.CLASIFY, {
             queries: [
               {
                 id: 'live-primitives',
-                reasoning:
-                  'Verify every semantic primitive through the built MCP surface.',
-                resources: [
-                  {
-                    id: 'fixture',
-                    value:
-                      'The fixture explicitly states that alpha is enabled.',
+                state: 'The fixture explicitly states that alpha is enabled.',
+                questions: {
+                  stated: {
+                    type: 'noul',
+                    instructions: 'Does the fixture state that alpha is enabled?',
                   },
-                ],
-                questions: [
-                  {
-                    id: 'yesno',
-                    type: 'yesno',
-                    ask: 'Does the fixture state that alpha is enabled?',
-                  },
-                  {
-                    id: 'choice',
+                  state: {
                     type: 'choice',
-                    ask: 'Which state does the fixture assign to alpha?',
-                    labels: { enabled: null, disabled: null },
+                    instructions: 'Which state does the fixture assign to alpha?',
+                    criteria: {
+                      enabled: 'The fixture says alpha is enabled.',
+                      disabled: 'The fixture says alpha is disabled.',
+                    },
                   },
-                  {
-                    id: 'score',
+                  explicit: {
                     type: 'score',
-                    ask: 'How explicit is the fixture about alpha being enabled?',
-                    labels: ['not stated', 'implied', 'explicitly stated'],
+                    instructions:
+                      'How explicit is the fixture about alpha being enabled?',
+                    criteria: ['not stated', 'implied', 'explicitly stated'],
                   },
-                ],
+                },
               },
             ],
           });
-          assert.equal(response.isError, false);
-          const resource =
-            response.structuredContent?.queries?.[0]?.resources?.[0];
-          assert.equal(resource?.coverage, 'complete');
-          const answers = resource?.pages?.[0]?.answers;
-          assert.ok(typeof answers?.yesno?.yesno === 'number');
-          assert.ok(typeof answers?.choice?.choice === 'string');
-          assert.ok(typeof answers?.score?.score === 'number');
+          assert.equal(response.isError, false, JSON.stringify(response));
+          const row = response.structuredContent?.queries?.[0];
+          assert.equal(row?.id, 'live-primitives');
+          assert.equal(typeof row.model, 'string');
+          assert.equal(typeof row.usage?.input_tokens, 'number');
+          assert.equal(row.answers.stated.type, 'noul');
+          assert.equal(typeof row.answers.stated.noul, 'number');
+          assert.equal(row.answers.state.type, 'choice');
+          assert.ok(['enabled', 'disabled'].includes(row.answers.state.choice));
+          assert.equal(row.answers.explicit.type, 'score');
+          assert.equal(typeof row.answers.explicit.score, 'number');
+          // A literal state needs no source-read lead.
+          assert.equal(row.hints, undefined);
         }
       );
     }
@@ -1380,87 +1354,52 @@ try {
     });
     if (expectedTools.includes(TOOL_NAMES.CLASIFY)) {
       await check(
-        'clasify captures every allowed resource tool and completes continuations',
+        'clasify judges each source reader without returning a body, and its read lead returns the captured source',
         async () => {
-          const resourceTools = new Set();
-          const visit = value => {
-            if (!value || typeof value !== 'object') return;
-            for (const name of value.properties?.tool?.enum ?? [])
-              resourceTools.add(name);
-            Object.values(value).forEach(visit);
+          const sourceSchema = list.tools.find(
+            tool => tool.name === TOOL_NAMES.CLASIFY
+          ).inputSchema.properties.queries.items.properties.source;
+          const readers = sourceSchema.properties.tool.enum;
+          const sources = {
+            localFetch: {
+              path: path.join(fixture, 'math.ts'),
+              ranges: ['1-3'],
+            },
+            ghGetFileContent: {
+              ...repo,
+              path: 'README',
+              ref: sha,
+              fullContent: true,
+            },
           };
-          visit(
-            list.tools.find(tool => tool.name === TOOL_NAMES.CLASIFY)
-              .inputSchema
-          );
-          assert.ok(resourceTools.size > 0);
-          const resources = [...resourceTools].map(tool => {
-            const sample = receipt.calls.find(
-              call =>
-                call.name === tool &&
-                call.response.isError === false &&
-                call.response.structuredContent?.results?.[0]?.data &&
-                !['empty', 'error'].includes(
-                  call.response.structuredContent.results[0].status
-                )
-            );
-            assert.ok(sample, `${tool}: no successful resource fixture`);
-            return { id: tool, tool, query: sample.arguments.queries[0] };
-          });
-          let input = {
-            queries: [
-              {
-                resources,
-                questions: [
-                  {
-                    id: 'evidence',
-                    type: 'yesno',
-                    ask: 'Does this evidence identify a named file, repository, package, or code symbol?',
+          assert.deepEqual([...readers].sort(), Object.keys(sources).sort());
+          for (const tool of readers) {
+            const response = await invoke(TOOL_NAMES.CLASIFY, {
+              queries: [
+                {
+                  id: tool,
+                  source: { tool, query: sources[tool] },
+                  questions: {
+                    named: {
+                      type: 'noul',
+                      instructions:
+                        'Does this source name a file, repository, package, or code symbol?',
+                    },
                   },
-                ],
-              },
-            ],
-          };
-          const completed = new Set();
-          let calls = 0;
-          while (input) {
-            assert.ok(calls++ < 20, 'clasify continuations did not terminate');
-            const response = await invoke(TOOL_NAMES.CLASIFY, input);
-            assert.equal(response.isError, false);
-            const matrix = response.structuredContent?.queries?.[0];
-            assert.ok(matrix?.resources?.length);
-            assert.deepEqual(
-              matrix.resources.map(resource => resource.id),
-              input.queries[0].resources.map(resource => resource.id)
-            );
-            for (const resource of matrix.resources) {
-              assert.ok(
-                ['complete', 'partial'].includes(resource.coverage),
-                JSON.stringify(resource)
-              );
-              assert.ok(resource.pages.length > 0);
-              for (const page of resource.pages) {
-                assert.equal(page.error, undefined);
-                const answer =
-                  page.answers?.evidence?.yesno ?? page.answers?.evidence;
-                assert.ok(
-                  typeof answer === 'number' && answer >= 0 && answer <= 1,
-                  JSON.stringify(page)
-                );
-                assert.equal(page.content, undefined);
-                assert.equal(page.body, undefined);
-              }
-              if (resource.coverage === 'complete') completed.add(resource.id);
-              else
-                assert.ok(
-                  matrix.next?.clasify?.queries?.[0]?.resources.some(
-                    next => next.id === resource.id
-                  )
-                );
-            }
-            input = matrix.next?.clasify;
+                },
+              ],
+            });
+            assert.equal(response.isError, false, JSON.stringify(response));
+            const row = response.structuredContent.queries[0];
+            assert.equal(row.error, undefined, JSON.stringify(row));
+            const answer = row.answers.named.noul;
+            assert.ok(answer >= 0 && answer <= 1, JSON.stringify(row));
+            assert.equal(JSON.stringify(row).includes('Hello World'), false);
+            const lead = row.hints?.read;
+            assert.equal(lead?.tool, tool, JSON.stringify(row));
+            const read = await nextCall(lead);
+            assert.ok(String(read.content ?? '').length > 0, tool);
           }
-          assert.deepEqual([...completed].sort(), [...resourceTools].sort());
         }
       );
     }

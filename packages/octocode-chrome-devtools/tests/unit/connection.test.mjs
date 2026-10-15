@@ -11,6 +11,16 @@ async function fixture(fn) {
     socket.on('message', bytes => {
       const call = JSON.parse(String(bytes));
       if (call.method === 'Test.pending') return;
+      if (call.method === 'Test.detach') {
+        socket.send(
+          JSON.stringify({
+            method: 'Target.detachedFromTarget',
+            params: { sessionId: call.params.detach },
+          })
+        );
+        socket.send(JSON.stringify({ id: call.id, result: {} }));
+        return;
+      }
       if (call.method === 'Test.close') {
         socket.close();
         return;
@@ -96,6 +106,25 @@ test('pending requests reject on deadline, unexpected close and explicit cleanup
     await assert.rejects(request, /Session closed/);
   });
 });
+test('a detached target rejects its pending requests at once and leaves other sessions alone', () =>
+  fixture(async session => {
+    const started = Date.now();
+    const detached = session.send('Test.pending', {}, 'child');
+    const sibling = session.send('Test.pending', {}, 'sibling', {
+      timeoutMs: 200,
+    });
+    const root = session.send('Test.pending', {}, undefined, {
+      timeoutMs: 200,
+    });
+    // Settle the expectations before the sends reject so no rejection goes unhandled.
+    const outcomes = Promise.allSettled([detached, sibling, root]);
+    await session.send('Test.detach', { detach: 'child' });
+    const [child, other, top] = await outcomes;
+    assert.match(child.reason.message, /Session child detached/);
+    assert.match(other.reason.message, /CDP timeout.*Test.pending/);
+    assert.match(top.reason.message, /CDP timeout.*Test.pending/);
+    assert.ok(Date.now() - started >= 150, 'siblings kept their own deadline');
+  }));
 test('event failures from another JavaScript realm keep the handler error evidence', () =>
   fixture(async (_session, url) => {
     const module = new URL(

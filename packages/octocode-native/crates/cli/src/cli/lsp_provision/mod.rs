@@ -11,19 +11,12 @@ use octocode_engine::lsp::managed::{
     ArchiveKind, ManifestAsset, cached_server_bin_path, manifest, manifest_server, marker_path,
     platform_id, resolve_cached_server,
 };
+use octocode_native::config::LspAutoInstall;
 use octocode_native::runtime::ToolRuntime;
 use std::future::Future;
 use std::io::{BufReader, Read, Seek};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
-
-/// Auto-install policy, from `lsp.autoInstall`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ProvisionMode {
-    Off,
-    Prompt,
-    Auto,
-}
 
 const MAX_REDIRECTS: usize = 5;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
@@ -43,15 +36,6 @@ const ALLOWED_HOSTS: [&str; 4] = [
     "release-assets.githubusercontent.com",
     "releases.hashicorp.com",
 ];
-
-/// The configured auto-install policy. Defaults to `Prompt` when unset.
-pub fn provision_mode(raw: Option<&str>) -> ProvisionMode {
-    match raw.unwrap_or("").trim().to_ascii_lowercase().as_str() {
-        "auto" => ProvisionMode::Auto,
-        "off" => ProvisionMode::Off,
-        _ => ProvisionMode::Prompt,
-    }
-}
 
 /// True when `url` is https and its host is on the release allowlist.
 pub fn host_allowed(url: &str) -> bool {
@@ -301,7 +285,7 @@ pub async fn provision_server<F, Fut>(
     root: &Path,
     name: &str,
     platform: &str,
-    mode: ProvisionMode,
+    mode: LspAutoInstall,
     fetch: F,
 ) -> ProvisionOutcome
 where
@@ -321,7 +305,7 @@ where
     if let Some(existing) = resolve_cached_server(root, name, platform) {
         return ProvisionOutcome::present(existing, "already-present");
     }
-    if mode == ProvisionMode::Off {
+    if mode == LspAutoInstall::Off {
         return ProvisionOutcome::fail(
             "Auto-install is off. Set OCTOCODE_LSP_AUTO_INSTALL=prompt|auto (or pass --yes) to allow downloading.",
         );
@@ -632,9 +616,9 @@ pub async fn run(
                 names
             };
             let mode = if yes || force {
-                ProvisionMode::Auto
+                LspAutoInstall::Auto
             } else {
-                provision_mode(Some(&runtime.config().resolved.lsp.auto_install))
+                runtime.config().resolved.lsp.auto_install
             };
             run_install(&root, &platform, targets, mode, json, fetch_allowlisted).await
         }
@@ -689,7 +673,7 @@ async fn run_install<F, Fut>(
     root: &Path,
     platform: &str,
     targets: Vec<String>,
-    mode: ProvisionMode,
+    mode: LspAutoInstall,
     json: bool,
     fetch: F,
 ) -> u8
@@ -822,14 +806,20 @@ mod tests {
             .enable_all()
             .build()
             .expect("runtime");
-        let started = std::time::Instant::now();
         // Built inside the runtime, as production builds it inside the async fetch.
-        let result = runtime.block_on(async {
+        let (result, elapsed) = runtime.block_on(async {
             let client = download_client(Duration::from_millis(200)).expect("client");
-            client.get(format!("http://{addr}/")).send().await
+            // Platform client setup is separate from a request's read timeout.
+            let started = std::time::Instant::now();
+            let result = client.get(format!("http://{addr}/")).send().await;
+            (result, started.elapsed())
         });
-        assert!(result.is_err(), "a stalled peer must not hang the request");
-        assert!(started.elapsed() < Duration::from_secs(4));
+        let error = result.expect_err("a stalled peer must not hang the request");
+        assert!(
+            error.is_timeout(),
+            "the stalled read must time out: {error}"
+        );
+        assert!(elapsed < Duration::from_secs(4), "request took {elapsed:?}");
     }
 
     #[test]
@@ -887,14 +877,6 @@ mod tests {
         assert!(!host_allowed("http://github.com/foo")); // not https
         assert!(!host_allowed("https://evil.example.com/foo")); // not allowlisted
         assert!(!host_allowed("not a url"));
-    }
-
-    #[test]
-    fn provision_mode_parses() {
-        assert_eq!(provision_mode(Some("auto")), ProvisionMode::Auto);
-        assert_eq!(provision_mode(Some(" OFF ")), ProvisionMode::Off);
-        assert_eq!(provision_mode(None), ProvisionMode::Prompt);
-        assert_eq!(provision_mode(Some("nonsense")), ProvisionMode::Prompt);
     }
 
     fn asset(archive: ArchiveKind, bin_path: Option<&'static str>) -> ManifestAsset {
@@ -1209,7 +1191,7 @@ mod tests {
         );
         // provision_server short-circuits to already-present (fetch must not run).
         let again =
-            provision_server(root, "rust-analyzer", platform, ProvisionMode::Auto, never).await;
+            provision_server(root, "rust-analyzer", platform, LspAutoInstall::Auto, never).await;
         assert_eq!(again.source, Some("already-present"));
     }
 
@@ -1217,25 +1199,25 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn provision_refusals_name_their_reason() {
         type Fetch = fn(&'static str, tokio::fs::File) -> Spooled;
-        let cases: [(&str, &str, ProvisionMode, Fetch, &str); 3] = [
+        let cases: [(&str, &str, LspAutoInstall, Fetch, &str); 3] = [
             (
                 "rust-analyzer",
                 "linux-x64",
-                ProvisionMode::Auto,
+                LspAutoInstall::Auto,
                 tampered,
                 "Checksum mismatch",
             ),
             (
                 "clangd",
                 "linux-x64",
-                ProvisionMode::Off,
+                LspAutoInstall::Off,
                 never,
                 "Auto-install is off",
             ),
             (
                 "clangd",
                 "linux-arm64",
-                ProvisionMode::Auto,
+                LspAutoInstall::Auto,
                 never,
                 "no linux-arm64 release asset",
             ),
@@ -1332,7 +1314,7 @@ mod tests {
             dir.path(),
             "rust-analyzer",
             "linux-x64",
-            ProvisionMode::Auto,
+            LspAutoInstall::Auto,
             tampered,
         )
         .await;
@@ -1349,7 +1331,7 @@ mod tests {
             dir.path(),
             "linux-x64",
             vec!["rust-analyzer".to_owned()],
-            ProvisionMode::Auto,
+            LspAutoInstall::Auto,
             true,
             tampered,
         )
@@ -1369,7 +1351,7 @@ mod tests {
             dir.path(),
             "rust-analyzer",
             "linux-x64",
-            ProvisionMode::Auto,
+            LspAutoInstall::Auto,
             never,
         ))
         .catch_unwind()
@@ -1382,7 +1364,7 @@ mod tests {
             dir.path(),
             "rust-analyzer",
             "linux-x64",
-            ProvisionMode::Auto,
+            LspAutoInstall::Auto,
             tampered,
         )
         .await;

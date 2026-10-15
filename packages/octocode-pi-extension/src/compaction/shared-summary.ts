@@ -47,10 +47,10 @@ Use this EXACT format:
 - [Any data, examples, or references needed to continue]
 - [Or "(none)" if not applicable]
 
-Keep each section concise. Preserve exact file paths, function names, and error messages. Code adds the lists of files read and modified after your summary: do not write \`<read-files>\` or \`<modified-files>\` blocks.`;
+Keep each section concise. Preserve exact file paths, function names, and error messages. Code adds the lists of files read and modified and the files saved from tool results after your summary: do not write \`<read-files>\`, \`<modified-files>\` or \`<saved-results>\` blocks.`;
 
 /** Said when the conversation starts with an earlier summary, which this one replaces. */
-const PREVIOUS_SUMMARY_NOTE = `The conversation begins with an earlier summary. Update it: keep its entries (goals, progress, decisions, context), move finished work to Done, and add what the later messages show; newer messages win where they contradict it. Code appended the sections "## User Messages" and "## Recovery" and the \`<read-files>\` and \`<modified-files>\` blocks to that summary and appends them again to yours: do not copy them.`;
+const PREVIOUS_SUMMARY_NOTE = `The conversation begins with an earlier summary. Update it: keep its entries (goals, progress, decisions, context), move finished work to Done, and add what the later messages show; newer messages win where they contradict it. Code appended the sections "## User Messages" and "## Recovery" and the \`<read-files>\`, \`<modified-files>\` and \`<saved-results>\` blocks to that summary and appends them again to yours: do not copy them.`;
 
 /** The longest a quoted start of a message gets. */
 const QUOTE_CHARS = 120;

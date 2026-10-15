@@ -1,3 +1,4 @@
+use super::Walking;
 use crate::contracts::tool_types::DefaultExcludes;
 use crate::policy::prune::DefaultsFlag;
 use crate::tools::empty_walk::Walk;
@@ -115,6 +116,8 @@ struct FilesWalk {
     available: usize,
     total_discovered: usize,
     was_capped: bool,
+    /// The walk ran out of time before this root-relative entry.
+    time_cut: Option<String>,
     /// Files, directories and file bytes of this window's rows, counted
     /// before directories with their own group fold into its header.
     files: usize,
@@ -137,25 +140,18 @@ impl super::memo::Listed for FilesWalk {
     }
 }
 
-pub fn execute_files(
+/// Snapshot fingerprint over the query shape, the page cut, and the
+/// ordered result set, so a continuation cursor (page>1) can be rejected
+/// with `staleSnapshot` when the corpus or query drifted between pages, or a
+/// different response window would cut other pages. The page budget is
+/// measured on it, so every page of one snapshot cuts at the same rows.
+fn snapshot_identity(
     q: &StructureSearchQueryFiles,
-    paths: &PathPolicy,
-    security: &ContentSecurity,
-    cancel: &dyn CancellationCheck,
-    response_window: Option<usize>,
-) -> super::StructureResult {
-    let validated = super::validated_root(q.path.as_str(), paths, cancel)?;
-    validate_time(q.time.as_ref())?;
-    let requested = q
-        .max_entries()
-        .unwrap_or_else(super::max_walk)
-        .min(super::max_walk()) as usize;
-    // Snapshot fingerprint over the query shape, the page cut, and the
-    // ordered result set, so a continuation cursor (page>1) can be rejected
-    // with `staleSnapshot` when the corpus or query drifted
-    // between pages, or a different response window would cut other pages.
-    let identity = json!([
-        validated.canonical.to_string_lossy(),
+    root: &std::path::Path,
+    requested: usize,
+) -> Value {
+    json!([
+        root.to_string_lossy(),
         q.max_depth(),
         q.min_depth(),
         q.include(),
@@ -177,7 +173,24 @@ pub fn execute_files(
         q.default_excludes,
         q.time,
         q.size,
-    ]);
+    ])
+}
+
+pub fn execute_files(
+    q: &StructureSearchQueryFiles,
+    paths: &PathPolicy,
+    security: &ContentSecurity,
+    cancel: &dyn CancellationCheck,
+    response_window: Option<usize>,
+    budget: std::time::Duration,
+) -> super::StructureResult {
+    let validated = super::validated_root(q.path.as_str(), paths, cancel)?;
+    validate_time(q.time.as_ref())?;
+    let requested = q
+        .max_entries()
+        .unwrap_or_else(super::max_walk)
+        .min(super::max_walk()) as usize;
+    let identity = snapshot_identity(q, &validated.canonical, requested);
     let policy = paths.identity();
     let page = q.page().max(1) as usize;
     let (walk, stored) = super::walked(page, q.snapshot(), &policy, || {
@@ -188,10 +201,10 @@ pub fn execute_files(
             security,
             cancel,
             requested,
-            None,
+            Walking::Listing(budget),
         )
     })?;
-    let budget = super::page_budget(response_window, &identity);
+    let budget = crate::tools::page_windows::page_budget(response_window, &identity);
     // The row layout cuts pages too, so it is part of the snapshot.
     let snapshot = crate::digest::json_sha256(&json!([
         identity,
@@ -228,40 +241,55 @@ pub fn execute_files(
         paths,
         cancel,
     )?;
+    note_empty(
+        &mut out,
+        q,
+        &validated.canonical,
+        &walk,
+        paths,
+        security,
+        cancel,
+    )?;
+    Ok(out)
+}
+
+/// [`super::note_empty`] for an empty files listing: the probe re-walks the
+/// same filters with the skipped paths let in, within the probe budget.
+fn note_empty(
+    out: &mut Value,
+    q: &StructureSearchQueryFiles,
+    root: &std::path::Path,
+    walk: &FilesWalk,
+    paths: &PathPolicy,
+    security: &ContentSecurity,
+    cancel: &dyn CancellationCheck,
+) -> Result<(), ToolError> {
     let shown = Walk {
         ignored: q.include_ignored == Some(true),
         hidden: true,
         default_excludes: q.default_excludes.defaults(),
     };
     let bound = super::ProbeBound::new(super::PROBE_BUDGET);
-    super::note_empty(
-        &mut out,
-        q,
-        (&validated.canonical, paths),
-        &walk.uncovered,
-        shown,
-        |relaxed| {
-            let mut relaxed_query = q.clone();
-            relaxed_query.include_ignored = Some(relaxed.ignored);
-            relaxed_query.default_excludes = Some(DefaultExcludes(relaxed.default_excludes));
-            relaxed_query.scan_offset = None;
-            let found = walk_files(
-                &relaxed_query,
-                &validated.canonical,
-                paths,
-                security,
-                cancel,
-                super::PROBE_HITS,
-                Some(&bound),
-            )?;
-            let cut = found.was_capped || bound.cut();
-            Ok(super::found_entries(
-                found.rows.into_iter().map(|row| row.source),
-                cut,
-            ))
-        },
-    )?;
-    Ok(out)
+    super::note_empty(out, q, (root, paths), &walk.uncovered, shown, |relaxed| {
+        let mut relaxed_query = q.clone();
+        relaxed_query.include_ignored = Some(relaxed.ignored);
+        relaxed_query.default_excludes = Some(DefaultExcludes(relaxed.default_excludes));
+        relaxed_query.scan_offset = None;
+        let found = walk_files(
+            &relaxed_query,
+            root,
+            paths,
+            security,
+            cancel,
+            super::PROBE_HITS,
+            Walking::Probe(&bound),
+        )?;
+        let cut = found.was_capped || bound.cut();
+        Ok(super::found_entries(
+            found.rows.into_iter().map(|row| row.source),
+            cut,
+        ))
+    })
 }
 
 /// Path order is the walk order (name-sorted, depth-first), so the first
@@ -271,10 +299,57 @@ fn early_exit(q: &StructureSearchQueryFiles) -> bool {
     q.sort() == "path"
 }
 
+/// The engine walk a files listing runs: the query's filters over `root`,
+/// stopping at `walk_limit` entries.
+fn query_options(
+    q: &StructureSearchQueryFiles,
+    root: &std::path::Path,
+    walk_limit: u32,
+) -> FileSystemQueryOptions {
+    let time = &q.time;
+    let access = q.access();
+    let access = access.as_deref();
+    FileSystemQueryOptions {
+        path: root.to_string_lossy().into_owned(),
+        include_root: Some(true),
+        recursive: Some(true),
+        max_depth: q.max_depth(),
+        min_depth: q.min_depth(),
+        ignore: octocode_engine::search::walk::IgnorePolicy::new(q.include_ignored, Some(true)),
+        names: q.include(),
+        extensions: q.extensions(),
+        regex: q.name_regex.clone(),
+        entry_type: q.entry_type(),
+        empty: q.empty,
+        modified_within: time.as_ref().and_then(|t| t.modified_within.clone()),
+        modified_before: time.as_ref().and_then(|t| t.modified_before.clone()),
+        accessed_within: time.as_ref().and_then(|t| t.accessed_within.clone()),
+        size_greater: q
+            .size
+            .as_ref()
+            .and_then(|s| s.greater.as_ref())
+            .map(ToString::to_string),
+        size_less: q
+            .size
+            .as_ref()
+            .and_then(|s| s.less.as_ref())
+            .map(ToString::to_string),
+        permissions: q.permissions(),
+        executable: Some(access == Some("executable")),
+        readable: Some(access == Some("readable")),
+        writable: Some(access == Some("writable")),
+        exclude_dir: Some(PruneMode::SyntaxVisible.directories(q.default_excludes.defaults())),
+        exclude: q.exclude(),
+        stop_at_limit: Some(true),
+        limit: Some(walk_limit),
+        ..Default::default()
+    }
+}
+
 /// Walk once: rows sorted and cut to `requested`, path-ordered rows grouped
 /// like `tree`, directories with their own group not also listed bare. A
-/// probe walk (`bound`) stops at its first `requested` entries, whatever the
-/// sort, and admits nothing past its deadline.
+/// probe walk stops at its first `requested` entries, whatever the sort, and
+/// admits nothing past its deadline; a listing walk stops at its time budget.
 fn walk_files(
     q: &StructureSearchQueryFiles,
     root: &std::path::Path,
@@ -282,11 +357,9 @@ fn walk_files(
     security: &ContentSecurity,
     cancel: &dyn CancellationCheck,
     requested: usize,
-    bound: Option<&super::ProbeBound>,
+    walking: Walking<'_>,
 ) -> Result<FilesWalk, ToolError> {
-    let time = &q.time;
-    let access = q.access();
-    let access = access.as_deref();
+    let bound = walking.probe();
     // Leave out what the tree and localSearch leave out: ignored entries,
     // pruned during the walk (and counted by it) unless `includeIgnored`.
     let probe = super::FilterProbe::new(
@@ -294,7 +367,7 @@ fn walk_files(
         &q.include().unwrap_or_default(),
         &q.extensions,
         q.name_regex.as_deref(),
-    );
+    )?;
     let withheld = std::sync::Mutex::new(crate::policy::discovery::Withheld::default());
     let detail = q.detail();
     let sort = q.sort();
@@ -306,38 +379,8 @@ fn walk_files(
     let discovery = paths.discovery_walk();
     let native = octocode_engine::portable::query_file_system(
         FileSystemQueryOptions {
-            path: root.to_string_lossy().into_owned(),
-            include_root: Some(true),
-            recursive: Some(true),
-            max_depth: q.max_depth(),
-            min_depth: q.min_depth(),
-            ignore: octocode_engine::search::walk::IgnorePolicy::new(q.include_ignored, Some(true)),
-            names: q.include(),
-            extensions: q.extensions(),
-            regex: q.name_regex.clone(),
-            entry_type: q.entry_type(),
-            empty: q.empty,
-            modified_within: time.as_ref().and_then(|t| t.modified_within.clone()),
-            modified_before: time.as_ref().and_then(|t| t.modified_before.clone()),
-            accessed_within: time.as_ref().and_then(|t| t.accessed_within.clone()),
-            size_greater: q
-                .size
-                .as_ref()
-                .and_then(|s| s.greater.as_ref())
-                .map(ToString::to_string),
-            size_less: q
-                .size
-                .as_ref()
-                .and_then(|s| s.less.as_ref())
-                .map(ToString::to_string),
-            permissions: q.permissions(),
-            executable: Some(access == Some("executable")),
-            readable: Some(access == Some("readable")),
-            writable: Some(access == Some("writable")),
-            exclude_dir: Some(PruneMode::SyntaxVisible.directories(q.default_excludes.defaults())),
-            exclude: q.exclude(),
-            stop_at_limit: Some(true),
-            limit: Some(walk_limit),
+            time_budget: walking.budget(),
+            ..query_options(q, root, walk_limit)
         },
         &|path, file_type| {
             // The root itself stays admitted: a probe out of time lists
@@ -406,6 +449,9 @@ fn walk_files(
         available,
         total_discovered: native.total_discovered as usize,
         was_capped: native.was_capped,
+        time_cut: native
+            .time_cut
+            .map(|at| security.sanitize_text(&at, None).content),
         files,
         dirs,
         bytes,
@@ -498,6 +544,7 @@ fn files_page(
         available: walk.available,
         limit_cut,
         scan_cut,
+        time_cut: walk.time_cut.clone(),
         early_exit,
         total_discovered: walk.total_discovered,
         scan_offset: q.scan_offset(),
@@ -532,7 +579,8 @@ fn files_page(
         facts = facts.with_page_size(size.clamp(1, super::structure_max("pageSize") as usize));
     }
     let mut out = json!({"path":super::display_name(root),"snapshot":snapshot,"files":files,"pagination":facts.to_value()});
-    if total == 0 {
+    // A walk cut by time proved nothing about what it did not scan.
+    if total == 0 && walk.time_cut.is_none() {
         out["status"] = json!("empty")
     }
     let mut warnings = walk.warnings.clone();
@@ -853,7 +901,7 @@ mod tests {
             &ContentSecurity::new(),
             &crate::tools::cancel::NeverCancel,
             super::super::PROBE_HITS,
-            Some(&bound),
+            Walking::Probe(&bound),
         )
         .expect("walk");
         assert!(walk.rows.is_empty());
@@ -866,7 +914,7 @@ mod tests {
             &ContentSecurity::new(),
             &crate::tools::cancel::NeverCancel,
             super::super::PROBE_HITS,
-            None,
+            Walking::Listing(super::super::WALK_BUDGET),
         )
         .expect("walk");
         assert_eq!(walk.rows.len(), 1);
@@ -914,7 +962,7 @@ mod tests {
                     &ContentSecurity::new(),
                     &crate::tools::cancel::NeverCancel,
                     super::super::PROBE_HITS,
-                    Some(&bound),
+                    Walking::Probe(&bound),
                 )?;
                 Ok(super::super::found_entries(
                     found.rows.into_iter().map(|row| row.source),

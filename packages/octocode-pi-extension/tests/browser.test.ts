@@ -52,6 +52,7 @@ const pageHandler: CdpHandler = (method, params, page) => {
     }
     if (expression.includes('location.href + " | "')) return { result: { value: 'https://example.com/ | Stub page' } };
     if (expression === 'boom()') return { exceptionDetails: { text: 'Uncaught', exception: { description: 'ReferenceError: boom is not defined' } } };
+    if (expression === 'bad()') return { exceptionDetails: { text: 'Uncaught', exception: { description: 'Error: \u001b[2Jwiped\u202e' } } };
     if (expression === 'undefined') return { result: {} };
     if (expression === 'document.title') return { result: { value: 'Stub page' } };
     return { result: { value: { answer: 42 } } };
@@ -136,6 +137,8 @@ describe('browser tool over a shared Chrome', () => {
     expect(JSON.parse(await text({ action: 'evaluate', expression: '({ answer: 42 })' }))).toEqual({ answer: 42 });
     expect(await text({ action: 'evaluate', expression: 'undefined' })).toBe('undefined');
     await expect(run({ action: 'evaluate', expression: 'boom()' })).rejects.toThrow('ReferenceError: boom is not defined');
+    // A page's exception text reaches the model as visible escapes, not terminal sequences.
+    await expect(run({ action: 'evaluate', expression: 'bad()' })).rejects.toThrow('Error: \\u{1b}[2Jwiped\\u{202e}');
     await expect(run({ action: 'evaluate' })).rejects.toThrow(/needs expression/);
 
     const shot = await run({ action: 'screenshot' });
@@ -163,16 +166,23 @@ describe('browser tool over a shared Chrome', () => {
     page.emit('Runtime.consoleAPICalled', { type: 'log', args: [{ value: 'x'.repeat(2_500) }] });
     await vi.waitFor(async () => expect(await text({ action: 'console' })).toContain('x'.repeat(100)));
     const shown = await text({ action: 'console' });
-    // 206 lines in a buffer of 200: the 6 oldest are gone, the first kept is line 7; the long line says what was cut.
-    expect(shown.split('\n')[0]).toBe('[6 earlier console lines dropped: only the last 200 are kept]');
+    // 206 lines in a buffer of 200: the 6 oldest are gone from the view, the first kept is line 7; the long line says what was cut.
+    const [first, where] = shown.split('\n');
+    expect(first).toBe('[6 earlier console lines dropped from this view: only the last 200 are kept]');
+    const file = /every console line is in (\S+); search it/.exec(where!)?.[1];
+    expect(file).toBeDefined();
     expect(shown).toContain('[log] line 7\n');
     expect(shown).not.toContain('[log] line 6\n');
-    expect(shown).toMatch(/x… \[\d+ more characters cut\]$/);
-    // A tab change discards the earlier tab's lines and counts them (see the tab-policy test); the result names the count.
+    expect(shown).toMatch(/x… \[\d+ more characters cut; the whole line is in \S+\]$/);
+    // The named file holds every line, whole: the dropped ones and the uncut long one.
+    const saved = fs.readFileSync(path.resolve(file!.replace(/^~/, os.homedir())), 'utf8').split('\n');
+    expect(saved.slice(0, 6)).toEqual(['[log] line 1', '[log] line 2', '[log] line 3', '[log] line 4', '[log] line 5', '[log] line 6']);
+    expect(saved).toContain(`[log] ${'x'.repeat(2_500)}`);
+    // A tab change discards the earlier tab's lines and counts them (see the tab-policy test); the result names the count and the log.
     const session = await browser.session();
     session.console = [];
     session.consoleLost = { dropped: 0, cleared: 206 };
-    expect(await text({ action: 'console' })).toBe('[206 lines from earlier tabs discarded when the tab changed]\n(no console messages)');
+    expect(await text({ action: 'console' })).toMatch(/^\[206 lines from earlier tabs left this view when the tab changed\]\n\[every console line is in \S+; search it or read it by line range\]\n\(no console messages\)$/);
   }, 20_000);
 
   it('reports navigation errors and does not wait for a load event on a same-document navigation', async () => {
@@ -239,7 +249,7 @@ describe('browser tool over a shared Chrome', () => {
     expect(await text({ action: 'evaluate', expression: 'nothing' })).toBe('undefined');
   }, 20_000);
 
-  it('strips terminal controls from page output and saves a large evaluate result to a file', async () => {
+  it('shows terminal controls in page output as visible escapes and saves a large evaluate result to a file', async () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'octocode-browser-home-'));
     vi.stubEnv('OCTOCODE_HOME', home);
     const big = Array.from({ length: 5000 }, (_, n) => `row ${n + 1} ${'q'.repeat(40)}`).join('\n');
@@ -254,13 +264,42 @@ describe('browser tool over a shared Chrome', () => {
     vi.stubEnv('OCTOCODE_CHROME_PORT', String(cdp.port));
     const { run } = register();
     const textOf = async (args: Record<string, unknown>) => ((await run(args)).content as Array<{ text: string }>)[0]!.text;
-    expect(await textOf({ action: 'evaluate', expression: 'hostile' })).toBe('ared evil');
+    expect(await textOf({ action: 'evaluate', expression: 'hostile' })).toBe('a\\u{1b}[31mred\\u{1b}[0m \\u{202e}evil');
     const saved = await textOf({ action: 'evaluate', expression: 'big' });
     expect(saved).toContain('row 1 ');
     expect(saved).toContain('row 5000 ');
     const file = /Full output: (\S+?\.txt)/.exec(saved)?.[1];
     expect(file?.startsWith(path.join(home, 'agent', 'pi', 'sessions'))).toBe(true);
     expect(fs.readFileSync(file!, 'utf8')).toBe(big);
+  }, 20_000);
+
+  it('shows page text, console lines, the console log file and a timed-out wait\'s page as visible escapes: nothing raw, nothing dropped', async () => {
+    vi.stubEnv('OCTOCODE_HOME', fs.mkdtempSync(path.join(os.tmpdir(), 'octocode-browser-home-')));
+    const hostile = { title: 'T\u001b]0;pwned\u0007', url: 'https://example.com/', text: 'zero\u200bwidth \u202eevil\rlone\r\ncrlf', items: ['[1] button "Go\u009b"'] };
+    const cdp = await stub({
+      handle: (method, params, page) => (method === 'Runtime.evaluate' && String(params['expression']).includes('items.push') ? { result: { value: hostile } } : pageHandler(method, params, page)),
+    });
+    vi.stubEnv('OCTOCODE_CHROME_PORT', String(cdp.port));
+    const { text, run, browser } = register();
+    // Page text (title, element names, body text): CRLF stays, a lone CR is `\r`.
+    const page = await text({ action: 'snapshot' });
+    expect(page).toContain('# T\\u{1b}]0;pwned\\u{7}');
+    expect(page).toContain('[1] button "Go\\u{9b}"');
+    expect(page).toContain('zero\\u{200b}width \\u{202e}evil\\rlone\r\ncrlf');
+    expect(page).not.toMatch(/[\u001b\u0007\u009b\u200b\u202e]|\r(?!\n)/u);
+    // Console lines in the result and in the log file.
+    const live = cdp.pages.get('tab-1')!;
+    live.emit('Runtime.consoleAPICalled', { type: 'log', args: [{ value: 'a\u001b[31mred\u001b[0m \u202eevil' }] });
+    live.emit('Runtime.exceptionThrown', { exceptionDetails: { exception: { description: 'Error: \u0000nul' } } });
+    const expected = '[log] a\\u{1b}[31mred\\u{1b}[0m \\u{202e}evil\n[exception] Error: \\u{0}nul';
+    await vi.waitFor(async () => expect(await text({ action: 'console' })).toBe(expected));
+    const logFile = (await browser.session()).consoleLog!.file!;
+    await vi.waitFor(() => expect(fs.readFileSync(logFile, 'utf8')).toBe(`${expected}\n`));
+    // Error text: a wait that times out carries the current page, escaped.
+    const failure = await run({ action: 'wait', text: 'never appears', timeout: 1 }).catch((error: Error) => error.message);
+    expect(failure).toMatch(/^Timed out after 1s waiting for "never appears" to appear\./);
+    expect(failure).toContain('# T\\u{1b}]0;pwned\\u{7}');
+    expect(failure).not.toMatch(/[\u001b\u0007\u009b\u200b\u202e]|\r(?!\n)/u);
   }, 20_000);
 
   it('renders calls and results on one line each', () => {
@@ -529,7 +568,7 @@ describe('keyboard and waits', () => {
 
 describe('browser input, forms, waits and tabs', () => {
   /** A page whose [1] is a text field, [2] a checkbox, [3] a button that opens a popup, and [4] a drop zone. */
-  function interactive(options: { html5Drag?: boolean; late?: () => boolean; restless?: boolean } = {}) {
+  function interactive(options: { html5Drag?: boolean; late?: () => boolean; restless?: boolean; typing?: string } = {}) {
     let stub: CdpStub | undefined;
     let pointed = '';
     const handle: CdpHandler = (method, params, page) => {
@@ -543,7 +582,7 @@ describe('browser input, forms, waits and tabs', () => {
           if (Number(pointed) > 4) return { result: { value: null } };
           if (expression.includes('elementFromPoint')) return { result: { value: { x: 10 * Number(pointed), y: 20, covered: '' } } };
           if (expression.includes("'aria-checked'")) return { result: { value: pointed === '2' ? 'unchecked' : 'text' } };
-          if (expression.includes("'no-focus'")) return { result: { value: 'field' } };
+          if (expression.includes("'no-focus'")) return { result: { value: options.typing ?? 'field' } };
         }
         if (expression.includes('smallest visible element') || expression.includes('const want =')) return { result: { value: 4 } };
         if (expression.includes('parts.join')) return { result: { value: options.late?.() ? 'Saved!' : 'Form' } };
@@ -595,6 +634,17 @@ describe('browser input, forms, waits and tabs', () => {
     expect(cdp.commands.filter((command) => command.method === 'Input.dispatchMouseEvent' && command.params['type'] === 'mousePressed')).toHaveLength(1);
     await expect(run({ action: 'fill', fields: [{ ref: 9, value: 'x' }] })).rejects.toThrow(/No field was filled:\n\[9\]: No element \[9\]/);
     await expect(run({ action: 'fill' })).rejects.toThrow(/fill needs fields/);
+  }, 20_000);
+
+  it('shows page text in a failed field or a refused type as visible escapes, and keeps a CRLF in a partial fill', async () => {
+    const { text, run } = await open({ typing: 'no-option:Red\r\nBlue\u001b[2J\u202e' });
+    const partial = await text({ action: 'fill', fields: [{ ref: 1, value: 'x' }, { ref: 2, value: 'true' }] });
+    expect(partial).toContain('Filled 1 of 2 field(s).');
+    // The CRLF is evidence and stays; the terminal sequence and bidi override show as escapes.
+    expect(partial).toContain('Options: Red\r\nBlue\\u{1b}[2J\\u{202e}');
+    expect(partial).not.toContain('\u001b');
+    await expect(run({ action: 'type', ref: 1, text: 'x' })).rejects.toThrow(/Options: Red\r\nBlue\\u\{1b\}\[2J\\u\{202e\}/);
+    await expect(run({ action: 'fill', fields: [{ ref: 1, value: 'x' }] })).rejects.toThrow(/No field was filled:\n\[1\]: .*\\u\{1b\}/s);
   }, 20_000);
 
   it('navigates until text appears, notes a page that keeps changing, and leaves the system locale alone', async () => {

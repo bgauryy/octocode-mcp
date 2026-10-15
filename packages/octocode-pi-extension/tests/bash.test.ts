@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
-import { DEFAULT_BASH_TIMEOUT, effectiveTimeout, registerBashTool } from '../src/files/bash.js';
+import { DEFAULT_BASH_TIMEOUT, MAX_FOREGROUND_TIMEOUT, effectiveTimeout, registerBashTool } from '../src/files/bash.js';
 import { BashJobs, jobReport, logTail, prefixed, shellSettings, type ShellSettings } from '../src/files/bash-jobs.js';
 import { RERUN_HINT } from '../src/files/render.js';
 import { Subcommands } from '../src/shared/commands.js';
@@ -20,14 +20,21 @@ const until = async (check: () => boolean, ms = 5_000) => {
 };
 
 describe('bash deadline', () => {
-  it('honours the timeout a call asks for, longer or shorter, and fills a missing one with 15 minutes', () => {
+  it('honours the timeout a call asks for, longer or shorter, up to an hour, and fills a missing one with 15 minutes', () => {
     expect(DEFAULT_BASH_TIMEOUT).toBe(900);
-    expect(effectiveTimeout(undefined)).toBe(900);
-    expect(effectiveTimeout(30)).toBe(30);
-    expect(effectiveTimeout(5_000)).toBe(5_000);
-    expect(effectiveTimeout(0)).toBe(900);
-    expect(effectiveTimeout(-1)).toBe(900);
-    expect(effectiveTimeout(Number.NaN)).toBe(900);
+    expect(MAX_FOREGROUND_TIMEOUT).toBe(3600);
+    expect(effectiveTimeout(undefined)).toEqual({ seconds: 900, clamped: false });
+    expect(effectiveTimeout(30)).toEqual({ seconds: 30, clamped: false });
+    expect(effectiveTimeout(3_600)).toEqual({ seconds: 3_600, clamped: false });
+    expect(effectiveTimeout(0)).toEqual({ seconds: 900, clamped: false });
+    expect(effectiveTimeout(-1)).toEqual({ seconds: 900, clamped: false });
+    expect(effectiveTimeout(Number.NaN)).toEqual({ seconds: 900, clamped: false });
+  });
+
+  it('clamps a longer foreground timeout to an hour and says so', () => {
+    expect(effectiveTimeout(3_601)).toEqual({ seconds: 3_600, clamped: true });
+    expect(effectiveTimeout(1e6)).toEqual({ seconds: 3_600, clamped: true });
+    expect(effectiveTimeout(Number.POSITIVE_INFINITY)).toEqual({ seconds: 900, clamped: false });
   });
 });
 
@@ -79,6 +86,31 @@ describe('bash tool', () => {
     const started = Date.now();
     await expect(tool.execute('t1', { command: 'echo before; sleep 30', timeout: 1 }, undefined, undefined, ctx)).rejects.toThrow(/before[\s\S]*Command timed out after 1 seconds[\s\S]*background: true/);
     expect(Date.now() - started).toBeLessThan(10_000);
+  });
+
+  it('carries the clamp note on a command that failed for another reason: a non-zero exit, and an abort', async () => {
+    const { tool, ctx } = setup();
+    const failed = await tool.execute('t1', { command: 'echo oops; exit 3', timeout: 1_000_000 }, undefined, undefined, ctx);
+    expect(failed.content[0].text).toMatch(/oops[\s\S]*exited with code 3[\s\S]*\(timeout clamped to 3600 s; use background: true for longer\)/);
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 300);
+    await expect(tool.execute('t2', { command: 'echo started; sleep 30', timeout: 1_000_000 }, controller.signal, undefined, ctx)).rejects.toThrow(/aborted[\s\S]*\(timeout clamped to 3600 s; use background: true for longer\)/);
+    const plain = new AbortController();
+    setTimeout(() => plain.abort(), 300);
+    const message = await tool.execute('t3', { command: 'sleep 30', timeout: 60 }, plain.signal, undefined, ctx).catch((error: Error) => error.message);
+    expect(message).toMatch(/aborted/);
+    expect(message).not.toMatch(/clamped/);
+  });
+
+  it('states in the result that a foreground timeout above an hour was clamped, and says nothing otherwise', async () => {
+    const { tool, ctx } = setup();
+    const clamped = await tool.execute('t1', { command: 'echo done', timeout: 1_000_000 }, undefined, undefined, ctx);
+    expect(clamped.content[0].text).toContain('done');
+    expect(clamped.content[0].text).toContain('(timeout clamped to 3600 s; use background: true for longer)');
+    const plain = await tool.execute('t2', { command: 'echo done', timeout: 3_600 }, undefined, undefined, ctx);
+    expect(plain.content[0].text).not.toMatch(/clamped/);
+    expect(tool.parameters.properties.timeout.description).toContain('at most 3600s');
+    expect(tool.parameters.properties.timeout).not.toHaveProperty('maximum');
   });
 
   it('moves the full output of a truncated command out of the temp dir into its own folder', async () => {
@@ -326,12 +358,12 @@ describe('bash tool', () => {
     expect(report.at(-1)).toBe('line 100');
   });
 
-  it('strips terminal escapes from the reported log tail', () => {
+  it('drops colors from the reported log tail and shows other terminal escapes as visible escapes', () => {
     const dir = tmp();
     const log = path.join(dir, 'job.log');
     fs.writeFileSync(log, '\u001b[32mPASS\u001b[0m tests\r\n\u001b]0;title\u0007done\n');
     const job = { id: 'bash-8', command: 'yarn test', cwd: dir, pid: 1, log, startedAt: 0, done: Promise.resolve({ code: 0, signal: null, seconds: 1 }) };
-    expect(jobReport(job, { code: 0, signal: null, seconds: 1 }).split('\n').slice(2)).toEqual(['PASS tests', 'done']);
+    expect(jobReport(job, { code: 0, signal: null, seconds: 1 }).split('\n').slice(2)).toEqual(['PASS tests\r', '\\u{1b}]0;title\\u{7}done']);
   });
 });
 

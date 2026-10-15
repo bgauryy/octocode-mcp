@@ -1,33 +1,7 @@
-//! Streamed page sizing shared by the local listing tools. A default-layout
-//! page is cut so the whole response row fits the configured response window
-//! (`output.pagination.defaultCharLength`); otherwise the response pager
-//! splits the page into row parts and every page walk costs extra calls.
-//! Sizes are serialized JSON chars in UTF-16 units, the unit the response
-//! pager measures, so escaping and non-ASCII text count as they render.
-
-/// Upper bound on the rows one streamed page carries, whatever the window:
-/// a larger window means fewer hops, not ever-larger pages.
-pub(crate) const MAX_PAGE_CHARS: usize = 24_000;
-
-/// Room for everything a response row holds besides its listed entries:
-/// the envelope, stats, pagination, warnings, and the fixed text of row
-/// continuations and handoffs.
-const ROW_SKELETON_CHARS: usize = 2_000;
-
-/// Room for the caller's `mainGoal` and `reasoning`, which row continuations
-/// copy. They are budgeted at a fixed size rather than measured, so a walk
-/// whose continuation rewords them still cuts every page at the same rows.
-const FREE_TEXT_CHARS: usize = 1_200;
-
-/// Query fields that never change which rows a page holds.
-const UNSIZED_QUERY_FIELDS: [&str; 6] = [
-    "mainGoal",
-    "reasoning",
-    "page",
-    "matchPage",
-    "snapshot",
-    "ranking",
-];
+//! JSON size measurement shared by the paging owners and the response
+//! pager. Sizes are serialized JSON chars in UTF-16 units, the unit the
+//! response pager measures, so escaping and non-ASCII text count as they
+//! render.
 
 /// Counts the UTF-16 units of UTF-8 written to it.
 struct Utf16Counter(usize);
@@ -67,35 +41,6 @@ pub fn json_text_chars(text: &str) -> usize {
     json_chars(&text).saturating_sub(2)
 }
 
-/// Chars a streamed page's entries may take. With a response window, the
-/// page leaves room for the row around it ([`reserve_chars`]); a tiny window
-/// still gets half of itself, so a walk keeps moving (its pages then split
-/// into row parts). Without one, pages take [`MAX_PAGE_CHARS`].
-pub fn page_chars(window: Option<usize>, reserve: usize) -> usize {
-    match window {
-        Some(window) => window
-            .saturating_sub(reserve)
-            .max(window / 2)
-            .clamp(1, MAX_PAGE_CHARS),
-        None => MAX_PAGE_CHARS,
-    }
-}
-
-/// What a response row needs besides its entries, for a row whose
-/// continuations copy `query` `copies` times. Only fields that select rows
-/// are measured, so every page of one walk gets the same budget.
-pub fn reserve_chars(query: &serde_json::Value, copies: usize) -> usize {
-    let measured = match query.as_object() {
-        Some(fields) => fields
-            .iter()
-            .filter(|(name, _)| !UNSIZED_QUERY_FIELDS.contains(&name.as_str()))
-            .map(|(name, value)| json_text_chars(name) + json_chars(value) + 4)
-            .sum::<usize>(),
-        None => json_chars(query),
-    };
-    ROW_SKELETON_CHARS + FREE_TEXT_CHARS + copies.saturating_mul(measured)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -113,24 +58,5 @@ mod tests {
             assert_eq!(json_chars(&value), rendered, "{value}");
         }
         assert_eq!(json_text_chars("a\"b\u{1F600}"), 6);
-    }
-
-    #[test]
-    fn page_chars_leave_the_row_room_inside_the_window() {
-        assert_eq!(page_chars(None, 5_000), MAX_PAGE_CHARS);
-        assert_eq!(page_chars(Some(50_000), 4_000), MAX_PAGE_CHARS);
-        assert_eq!(page_chars(Some(20_000), 4_000), 16_000);
-        assert_eq!(page_chars(Some(1_000), 4_000), 500);
-    }
-
-    #[test]
-    fn reserve_ignores_free_text_and_cursor_fields() {
-        let first = json!({"mainGoal": "g", "reasoning": "r", "path": "src", "matchString": "x"});
-        let later = json!({"mainGoal": "a much longer goal", "reasoning": "reworded",
-            "path": "src", "matchString": "x", "page": 7, "snapshot": "lexical-live-v2:abc",
-            "ranking": "saved-order-added-after-the-first-page"});
-        assert_eq!(reserve_chars(&first, 2), reserve_chars(&later, 2));
-        let wider = json!({"path": "src", "matchString": "a longer search"});
-        assert!(reserve_chars(&wider, 2) > reserve_chars(&first, 2));
     }
 }

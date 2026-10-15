@@ -1,141 +1,247 @@
-use super::{AstResult, AstSearchQuery, execute_ast};
+//! astSearch scope: path policy, walk disclosure, cancellation and
+//! grammar selection.
+use super::test_rows::*;
 use crate::tools::cancel::NeverCancel;
-use crate::tools::result::ToolError;
-use crate::tools::test_support::{AfterRoot, Fixture, sensitive_fixture, simple_policy};
-use crate::{
-    policy::path::PathPolicy, security::ContentSecurity, tools::cancel::CancellationCheck,
-};
+use crate::tools::test_support::{AfterRoot, Fixture, checks, sensitive_fixture, simple_policy};
 use serde_json::json;
-use std::path::PathBuf;
 
-/// Tests speak JSON rows, or a continuation's complete input (its one row);
-/// the runtime owns the typed parse.
-fn execute_row(
-    query: serde_json::Value,
-    paths: &PathPolicy,
-    security: &ContentSecurity,
-    cancellation: &dyn CancellationCheck,
-) -> AstResult {
-    let row = query
-        .get("queries")
-        .map_or(query.clone(), |rows| rows[0].clone());
-    let query: AstSearchQuery = serde_json::from_value(row).expect("typed astSearch row");
-    execute_ast(&query, paths, security, cancellation, None)
-}
-
-/// A match row `{line, column, endLine?, value}` as (line, endLine, value).
-fn lean_row(row: &serde_json::Value) -> (u64, Option<u64>, &str) {
-    (
-        row["line"].as_u64().expect("match row line"),
-        row["endLine"].as_u64(),
-        row["value"].as_str().expect("match row value"),
-    )
-}
-
-/// The declaration names of an outline row (a declaration object and its
-/// nested members), in source order.
-fn outline_row_names(row: &serde_json::Value) -> Vec<&str> {
-    let mut names = vec![row["symbolName"].as_str().expect("declaration row")];
-    for member in row["members"].as_array().into_iter().flatten() {
-        names.extend(outline_row_names(member));
+#[test]
+fn capped_incompatible_grammar_preserves_partial_coverage_and_reaches_later_grammar() {
+    let root = Fixture::new();
+    root.write("a.py", "def ordinary():\n    return 1\n");
+    root.write("z.ts", "export function target() { return 2; }\n");
+    for selector in [json!({}), json!({"include":["*.py", "*.ts"]})] {
+        let mut query = json!({"operation":"match","path":root.0,
+            "rule":{"kind":"function_declaration"},"maxFiles":1,"captureText":true});
+        query
+            .as_object_mut()
+            .expect("query")
+            .extend(selector.as_object().expect("selector").clone());
+        let first = run(&root.0, query).expect("bounded grammar coverage");
+        assert_eq!(first["isPartial"], true, "{first}");
+        assert!(
+            first["partialReasons"]
+                .as_array()
+                .expect("cuts")
+                .contains(&json!("compileFailed")),
+            "{first}"
+        );
+        assert!(first["diagnostics"].to_string().contains("a.py"), "{first}");
+        let next = first["next"]["expandScan"]["query"]["queries"][0].clone();
+        assert!(next.is_object(), "{first}");
+        assert!(next.get("language").is_none(), "{next}");
+        let after = run(&root.0, next).expect("later compatible grammar");
+        assert_eq!(after["matchCount"], 1, "{after}");
+        assert!(
+            after["files"][0]["matches"][0]["value"]
+                .as_str()
+                .expect("value")
+                .contains("function target"),
+            "{after}"
+        );
+        assert!(after["next"].get("expandScan").is_none(), "{after}");
     }
-    names
-}
-
-/// Every expansion was followed: at most the read of the hits remains.
-fn only_read_left(out: &serde_json::Value) -> bool {
-    out["next"]
-        .as_object()
-        .is_none_or(|next| next.keys().all(|name| name == "read"))
-}
-
-/// The first declaration name of an outline row.
-fn outline_name(row: &serde_json::Value) -> &str {
-    outline_row_names(row)[0]
-}
-
-fn outline_names(rows: &serde_json::Value) -> Vec<&str> {
-    rows.as_array()
-        .expect("outline rows")
-        .iter()
-        .flat_map(outline_row_names)
-        .collect()
+    for selector in [
+        json!({"pattern":"function $F() { $$$BODY }"}),
+        json!({"rule":{"kind":"function_declaration"}, "include":["*.ts"]}),
+        json!({"rule":{"kind":"function_declaration"}, "exclude":["*.py"]}),
+    ] {
+        let mut query = json!({"operation":"match","path":root.0,"maxFiles":1,"captureText":true});
+        query
+            .as_object_mut()
+            .expect("query")
+            .extend(selector.as_object().expect("selector").clone());
+        let mut out = run(&root.0, query).expect("valid selector beyond incompatible grammar");
+        let mut matches = Vec::new();
+        for _ in 0..3 {
+            matches.extend(
+                out["files"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .flat_map(|file| {
+                        file["matches"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .map(|found| found["value"].clone())
+                    }),
+            );
+            let Some(next) = out["next"].get("expandScan") else {
+                break;
+            };
+            out = run(&root.0, next["query"]["queries"][0].clone()).expect("copied pattern scan");
+        }
+        assert_eq!(matches.len(), 1, "{matches:?}: {out}");
+        assert!(
+            matches[0]
+                .as_str()
+                .expect("match")
+                .contains("function target"),
+            "{matches:?}"
+        );
+        assert!(out["next"].get("expandScan").is_none(), "{out}");
+    }
+    for selector in [
+        json!({"rule":{"kind":"not_a_node"}}),
+        json!({"language":"python", "rule":{"kind":"function_declaration"}}),
+    ] {
+        let mut query = json!({"operation":"match","path":root.0,"maxFiles":1});
+        query
+            .as_object_mut()
+            .expect("query")
+            .extend(selector.as_object().expect("selector").clone());
+        let error = run(&root.0, query).expect_err("invalid selector");
+        assert_eq!(error.code, "invalidPattern", "{error:?}");
+    }
+    let query = json!({"operation":"match","path":root.0,"maxFiles":1,"pattern":"target("});
+    let first = run(&root.0, query).expect("bounded pattern coverage");
+    assert_eq!(first["isPartial"], true, "{first}");
+    let next = first["next"]["expandScan"]["query"]["queries"][0].clone();
+    assert!(next.is_object(), "{first}");
+    let last = run(&root.0, next).expect("remaining incompatible grammar is partial coverage");
+    assert_eq!(last["isPartial"], true, "{last}");
+    assert!(
+        last["partialReasons"]
+            .as_array()
+            .expect("cuts")
+            .contains(&json!("compileFailed")),
+        "{last}"
+    );
+    assert!(last["next"].get("expandScan").is_none(), "{last}");
+    let error = run(
+        &root.0,
+        json!({"operation":"match","path":root.0,
+        "maxFiles":10,"pattern":"target("}),
+    )
+    .expect_err("whole-scope invalid pattern");
+    assert_eq!(error.code, "invalidPattern", "{error:?}");
+    let error = run(
+        &root.0,
+        json!({"operation":"match","path":root.0,
+        "pattern":"missing("}),
+    )
+    .expect_err("prefilter cannot hide invalid whole-scope pattern");
+    assert_eq!(error.code, "invalidPattern", "{error:?}");
 }
 
 #[test]
-fn match_pagination_ceilings_preserve_rows_and_disclose_terminal_limits() {
+fn a_final_incompatible_scan_window_keeps_earlier_valid_hits_and_terminal_coverage() {
     let root = Fixture::new();
-    for i in 0..1001 {
-        std::fs::write(root.0.join(format!("f{i:04}.ts")), "console.log(1);\n").expect("file");
-    }
-    let (paths, security) = simple_policy(&root.0);
-    let base = json!({"operation":"match","path":root.0,"pattern":"console.log($A)","language":"typescript","pageSize":1,"maxFiles":1500,"mainGoal":"test","reasoning":"test"});
-    let first = execute_row(base.clone(), &paths, &security, &NeverCancel).expect("first page");
-    let mut last = first["next"]["nextPage"]["query"]["queries"][0].clone();
-    last["page"] = json!(1000);
-    let page = execute_row(last, &paths, &security, &NeverCancel).expect("ceiling page");
-    assert_eq!(page["files"].as_array().expect("files").len(), 1, "{page}");
-    assert!(page["next"].get("nextPage").is_none(), "{page}");
-    assert_eq!(page["terminalLimit"], true, "{page}");
-
-    let file = root.0.join("rows.ts");
-    std::fs::write(&file, "console.log(1);\n".repeat(1001)).expect("match rows");
-    let first_rows = execute_row(json!({"operation":"match","path":file,"pattern":"console.log($A)","language":"typescript","matchPageSize":1,"mainGoal":"test","reasoning":"test"}), &paths, &security, &NeverCancel).expect("first match page");
-    let mut last_rows = first_rows["next"]["nextMatchPage"]["query"]["queries"][0].clone();
-    last_rows["matchPage"] = json!(1000);
-    let row_page = execute_row(last_rows, &paths, &security, &NeverCancel).expect("match ceiling");
-    assert_eq!(
-        row_page["files"][0]["matches"]
-            .as_array()
-            .expect("rows")
-            .len(),
-        1,
-        "{row_page}"
-    );
+    root.write("a.ts", "export function target() { return 2; }\n");
+    root.write("z.py", "def ordinary():\n    return 1\n");
+    let first = run(
+        &root.0,
+        json!({"operation":"match","path":root.0,
+        "rule":{"kind":"function_declaration"},"maxFiles":1}),
+    )
+    .expect("first compatible grammar");
+    assert_eq!(first["matchCount"], 1, "{first}");
+    let next = first["next"]["expandScan"]["query"]["queries"][0].clone();
+    assert!(next.is_object(), "{first}");
+    let last = run(&root.0, next).expect("last grammar cannot invalidate earlier hits");
+    assert_eq!(last["matchCount"], 0, "{last}");
+    assert_eq!(last["isPartial"], true, "{last}");
     assert!(
-        row_page["next"].get("nextMatchPage").is_none(),
-        "{row_page}"
+        last["partialReasons"]
+            .as_array()
+            .expect("cuts")
+            .contains(&json!("compileFailed")),
+        "{last}"
     );
-    assert_eq!(row_page["terminalLimit"], true, "{row_page}");
+    assert!(last["next"].get("expandScan").is_none(), "{last}");
 }
 
+#[test]
+fn directory_scan_windows_infer_each_files_grammar_without_losing_other_languages() {
+    let root = Fixture::new();
+    for (name, source) in [
+        ("a.ts", "hit(1);\nhit(2);\n"),
+        ("b.js", "hit(3);\nhit(4);\n"),
+        ("c.rs", "fn f() { hit(5);\nhit(6); }\n"),
+        ("d.py", "hit(7)\nhit(8)\n"),
+    ] {
+        root.write(name, source);
+    }
+    let mut pending = std::collections::VecDeque::from([json!({
+        "operation":"match","path":root.0,"pattern":"hit($A)",
+        "maxFiles":1,"pageSize":1,"matchPageSize":1
+    })]);
+    let mut values = Vec::new();
+    let mut calls = 0;
+    while let Some(query) = pending.pop_front() {
+        calls += 1;
+        assert!(calls < 30, "continuations terminate");
+        assert!(query.get("language").is_none(), "{query}");
+        let out = run(&root.0, query).expect("per-file grammar scan");
+        for file in out["files"].as_array().into_iter().flatten() {
+            for found in file["matches"].as_array().into_iter().flatten() {
+                values.push(found["value"].as_str().expect("match").to_owned());
+            }
+        }
+        for next in out["next"]
+            .as_object()
+            .into_iter()
+            .flat_map(|next| next.iter())
+        {
+            let (name, next) = next;
+            if next["tool"] == "astSearch" && checks::page_channels().contains(name) {
+                pending.extend(
+                    next["query"]["queries"]
+                        .as_array()
+                        .expect("rows")
+                        .iter()
+                        .cloned(),
+                );
+            }
+        }
+    }
+    values.sort();
+    assert_eq!(
+        values,
+        (1..=8).map(|i| format!("hit({i})")).collect::<Vec<_>>()
+    );
+}
+
+/// Each astSearch walk (the outline scan of `symbols`, the structural scan
+/// of `match`; neither is structureSearch's walk) applies the path policy
+/// before it counts or reads a descendant: with `includeHidden`, the
+/// credential directory, the sensitive file names and `.env.ts` are neither
+/// scanned nor named.
 #[test]
 fn descendant_policy_precedes_discovery_totals_and_line_reads() {
     let root = sensitive_fixture();
+    root.write(".aws/hidden.ts", "oldCall(secret);\n");
+    root.write(".env.ts", "oldCall(ignored);\n");
+    root.write("visible.ts", "oldCall(visible);\n");
     let (paths, security) = simple_policy(&root.0);
-    let symbols = execute_row(
-        json!({"operation":"symbols","mainGoal":"test","reasoning":"test","path":root.0}),
-        &paths,
-        &security,
-        &NeverCancel,
-    )
-    .expect("symbols");
-    assert_eq!(symbols["filesScanned"], 1);
-    assert_eq!(symbols["filesSkipped"], 0);
-    assert_eq!(outline_name(&symbols["files"][0]["symbols"][0]), "visible");
-
-    std::fs::write(root.0.join(".aws/hidden.ts"), "oldCall(secret);\n").expect("hidden ast");
-    std::fs::write(root.0.join(".env.ts"), "oldCall(ignored);\n").expect("ignored ast");
-    std::fs::write(root.0.join("visible.ts"), "oldCall(visible);\n").expect("visible ast");
-    let matches = execute_row(
-        json!({
-            "operation":"match","mainGoal":"test","reasoning":"test","path":root.0,"language":"typescript",
-            "pattern":"oldCall($A)","includeHidden":true
-        }),
-        &paths,
-        &security,
-        &NeverCancel,
-    )
-    .expect("structural matches");
-    assert_eq!(matches["matchCount"], 1);
-    assert_eq!(matches["files"].as_array().expect("files").len(), 1);
     let root_name = root.0.file_name().expect("root name").to_string_lossy();
-    assert_eq!(
-        matches["files"][0]["path"],
-        format!("{root_name}/visible.ts")
-    );
-    assert!(!matches.to_string().contains("hidden.ts"));
-    assert!(!matches.to_string().contains(".env.ts"));
+    for (row, count, expected) in [
+        (
+            json!({"operation":"symbols","path":root.0,"includeHidden":true}),
+            "filesScanned",
+            2,
+        ),
+        (
+            json!({"operation":"match","path":root.0,"language":"typescript","pattern":"oldCall($A)","includeHidden":true}),
+            "matchCount",
+            1,
+        ),
+    ] {
+        let out = execute_row(row.clone(), &paths, &security, &NeverCancel).expect("walk");
+        assert_eq!(out[count], expected, "{row}: {out}");
+        let listed = checks::paths_in(&out["files"]);
+        assert!(!listed.is_empty(), "{row}: {out}");
+        assert!(
+            listed
+                .iter()
+                .all(|path| path.starts_with(&format!("{root_name}/visible."))),
+            "{row}: {out}"
+        );
+        for withheld in ["hidden.ts", ".env.ts", "credentials", "tfstate"] {
+            checks::assert_absent(&out, withheld);
+        }
+    }
 }
 
 /// A directory scan whose path policy withheld candidate entries says so,
@@ -146,15 +252,14 @@ fn descendant_policy_precedes_discovery_totals_and_line_reads() {
 fn directory_scans_disclose_policy_withheld_entries() {
     let root = Fixture::new();
     std::fs::create_dir_all(root.0.join(".aws")).expect("aws dir");
-    std::fs::write(root.0.join(".aws/store.ts"), "register(secret);\n").expect("withheld");
+    root.write(".aws/store.ts", "register(secret);\n");
     // The repository's own `.git` is a dot entry out of the walk's
     // view, so it is not disclosed on every scan.
     std::fs::create_dir_all(root.0.join(".git")).expect("git dir");
-    std::fs::write(
-        root.0.join("visible.ts"),
+    root.write(
+        "visible.ts",
         "register(visible);\nexport function shown() {}\n",
-    )
-    .expect("visible");
+    );
     let disclosed = |out: &serde_json::Value| {
         out["warnings"].as_array().is_some_and(|warnings| {
             warnings.iter().any(|w| {
@@ -182,52 +287,7 @@ fn directory_scans_disclose_policy_withheld_entries() {
     let symbols = run(&root.0, json!({"operation":"symbols","path":root.0})).expect("symbols");
     // Dot directories are out of a symbols walk's view, disclosed or not.
     assert_eq!(symbols["filesScanned"], 1, "{symbols}");
-    assert!(!symbols.to_string().contains("store.ts"), "{symbols}");
-}
-
-#[test]
-fn structural_zero_is_empty_with_actionable_pattern_guidance() {
-    let root = Fixture::new();
-    let source = root.0.join("source.ts");
-    std::fs::write(&source, "const answer = 42;\n").expect("source");
-    let (paths, security) = simple_policy(&root.0);
-
-    let missing = execute_row(
-        json!({"operation":"match","mainGoal":"test","reasoning":"test","path":source,"pattern":"let $A = $B"}),
-        &paths,
-        &security,
-        &NeverCancel,
-    )
-    .expect("structural zero");
-    assert_eq!(missing["status"], "empty", "{missing}");
-    assert!(
-        !missing["isPartial"].as_bool().unwrap_or(false),
-        "{missing}"
-    );
-    // The per-call fact only; the node shape is the viewTree lead.
-    assert_eq!(
-        missing["hints"],
-        json!(["0 matches in 1 typescript file."]),
-        "{missing}"
-    );
-    assert_eq!(
-        missing["next"]["viewTree"]["query"]["queries"][0]["operation"], "syntaxTree",
-        "{missing}"
-    );
-
-    // Trailing punctuation the pattern omits is not required (ast-grep
-    // smart strictness, as astRewrite matches).
-    for pattern in ["const $A = $B;", "const $A = $B"] {
-        let found = execute_row(
-            json!({"operation":"match","mainGoal":"test","reasoning":"test","path":source,"pattern":pattern}),
-            &paths,
-            &security,
-            &NeverCancel,
-        )
-        .expect("structural match");
-        assert_eq!(found["matchCount"], 1, "{found}");
-        assert!(found.get("status").is_none(), "{found}");
-    }
+    checks::assert_absent(&symbols, "store.ts");
 }
 
 #[test]
@@ -265,384 +325,33 @@ fn directory_prefilter_skips_are_aggregated_once() {
     assert_eq!(result["status"], "empty", "{result}");
 }
 
+/// A cancellation during either astSearch directory walk stops it with
+/// `cancelled`.
 #[test]
 fn cancellation_interrupts_descendant_traversal() {
     let root = Fixture::new();
-    std::fs::write(root.0.join("source.rs"), "source").expect("source");
+    root.write("source.rs", "source");
     let (paths, security) = simple_policy(&root.0);
-    let error = execute_row(
-        json!({
-            "operation":"match","mainGoal":"test","reasoning":"test","path":root.0,"language":"rust",
-            "pattern":"source($A)"
-        }),
-        &paths,
-        &security,
-        &AfterRoot(std::sync::atomic::AtomicUsize::new(0)),
-    )
-    .expect_err("cancel structural walk");
-    assert_eq!(error.code, "cancelled");
-}
-
-// Regression: astSearch `match` over a directory must not silently drop files
-// past `maxFiles`. When the candidate scan is truncated, the result must carry
-// an explicit truncation signal (a `structural.scan.truncated` diagnostic and a
-// top-level `truncated`/`complete:false`) rather than reporting a bounded set as
-// if it were the whole corpus.
-#[test]
-fn match_directory_scan_truncation_is_surfaced_not_silent() {
-    let root = Fixture::new();
-    // Three candidate files, each with the matchable identifier `source`.
-    for name in ["a.rs", "b.rs", "c.rs"] {
-        std::fs::write(root.0.join(name), "pub fn source() {}\n").expect("source file");
-    }
-    let (paths, security) = simple_policy(&root.0);
-    let out = execute_row(
-        json!({
-            "operation":"match","mainGoal":"test","reasoning":"test","path":root.0,"language":"rust",
-            "pattern":"pub fn source() {}","maxFiles":1
-        }),
-        &paths,
-        &security,
-        &NeverCancel,
-    )
-    .expect("match runs");
-
-    assert!(out.get("truncated").is_none(), "undeclared field: {out}");
-    assert_eq!(
-        out["partialReasons"],
-        json!(["maxFiles"]),
-        "a capped scan names its cap; got {out}"
-    );
-    assert_eq!(
-        out["isPartial"],
-        json!(true),
-        "capped scan is partial; got {out}"
-    );
-    let diagnostics = out["diagnostics"].as_array().cloned().unwrap_or_default();
-    assert!(
-        diagnostics
-            .iter()
-            .any(|d| d["code"] == json!("structural.scan.truncated")),
-        "expected a structural.scan.truncated diagnostic; got {out}"
-    );
-}
-
-/// A `maxFiles` cut below the schema maximum is a raisable bound, not a
-/// terminal limit: match and symbols pages carry `next.expandScan`, which
-/// doubles the bound from page 1, and a warning naming the cut.
-#[test]
-fn a_raisable_max_files_cut_offers_an_expanded_scan() {
-    let root = Fixture::new();
-    for name in ["a.rs", "b.rs", "c.rs"] {
-        std::fs::write(root.0.join(name), "pub fn source() {}\n").expect("source file");
-    }
-    let rows = [
-        json!({"operation":"match","mainGoal":"test","reasoning":"test","path":root.0,"language":"rust",
-            "pattern":"pub fn source() {}","maxFiles":1}),
-        json!({"operation":"symbols","mainGoal":"test","reasoning":"test","path":root.0,"maxFiles":1}),
-    ];
-    for query in rows {
-        let out = run(&root.0, query.clone()).expect("scan");
-        assert!(out.get("terminalLimit").is_none(), "{out}");
-        let expand = &out["next"]["expandScan"]["query"]["queries"][0];
-        assert_eq!(expand["maxFiles"], 2, "{out}");
-        assert_eq!(expand["page"], 1, "{out}");
-        assert!(
-            expand
-                .get("snapshot")
-                .is_none_or(serde_json::Value::is_null),
-            "{out}"
-        );
-        assert!(
-            out["diagnostics"]
-                .as_array()
-                .is_some_and(|diagnostics| diagnostics
-                    .iter()
-                    .any(|d| d["code"] == "structural.scan.truncated")),
-            "{out}"
-        );
-        let expanded = run(&root.0, expand.clone()).expect("expanded scan");
-        assert_eq!(
-            expanded["next"]["expandScan"]["query"]["queries"][0]["maxFiles"], 4,
-            "{expanded}"
-        );
-        let whole = {
-            let mut whole = query.clone();
-            whole["maxFiles"] = json!(4);
-            run(&root.0, whole).expect("whole scan")
-        };
-        assert!(whole["next"].get("expandScan").is_none(), "{whole}");
-        assert!(whole.get("terminalLimit").is_none(), "{whole}");
-    }
-}
-
-#[test]
-fn match_continuation_rejects_stale_snapshot() {
-    let root = Fixture::new();
-    for name in ["a.rs", "b.rs", "c.rs", "d.rs"] {
-        std::fs::write(root.0.join(name), "pub fn source() {}\n").expect("file");
-    }
-    let (paths, security) = simple_policy(&root.0);
-    let page1 = execute_row(
-        json!({"operation":"match","mainGoal":"test","reasoning":"test","path":root.0,"language":"rust","pattern":"pub fn source() {}","pageSize":2}),
-        &paths,
-        &security,
-        &NeverCancel,
-    )
-    .expect("page1");
-    let snapshot = page1["snapshot"].as_str().expect("snapshot").to_string();
-    std::fs::write(root.0.join("e.rs"), "pub fn source() {}\n").expect("mutate corpus");
-    let page2 = execute_row(
-        json!({"operation":"match","mainGoal":"test","reasoning":"test","path":root.0,"language":"rust","pattern":"pub fn source() {}","pageSize":2,"page":2,"snapshot":snapshot}),
-        &paths,
-        &security,
-        &NeverCancel,
-    )
-    .expect("page2");
-    assert_eq!(page2["errorCode"], json!("staleSnapshot"), "got {page2}");
-    // Never a dead end: the restart is page 1 of the same query, unpinned.
-    let restart = &page2["next"]["restart"]["query"]["queries"][0];
-    assert_eq!(restart["page"], 1, "{page2}");
-    assert!(restart.get("snapshot").is_none(), "{page2}");
-    let fresh = run(&root.0, restart.clone()).expect("restart runs");
-    assert_eq!(fresh["pagination"]["totalItems"], 5, "{fresh}");
-}
-
-#[test]
-fn an_unparseable_pattern_reports_untagged_text() {
-    let root = Fixture::new();
-    let source = root.0.join("a.rs");
-    std::fs::write(&source, "fn a() {}\n").expect("a");
-    for path in [source.clone(), root.0.clone()] {
-        let error = run(
-            &root.0,
-            json!({"operation":"match","mainGoal":"test","reasoning":"test","path":path,"language":"rust","pattern":"neu("}),
+    for row in [
+        json!({"operation":"symbols","path":root.0}),
+        json!({"operation":"match","path":root.0,"language":"rust","pattern":"source($A)"}),
+    ] {
+        let error = execute_row(
+            row.clone(),
+            &paths,
+            &security,
+            &AfterRoot(std::sync::atomic::AtomicUsize::new(0)),
         )
-        .expect_err("invalid pattern");
-        assert_eq!(error.code, "invalidPattern");
-        assert!(!error.message.starts_with('['), "{}", error.message);
+        .expect_err("cancel the walk");
+        assert_eq!(error.code, "cancelled", "{row}");
     }
-}
-
-#[test]
-fn a_match_offers_a_read_of_the_top_files_hits() {
-    let root = Fixture::new();
-    std::fs::write(
-        root.0.join("a.rs"),
-        "fn a() {\n    hit(1);\n}\n\n\n\n\n\n\n\n\nfn b() { hit(2); }\n",
-    )
-    .expect("a");
-    let out = run(
-        &root.0,
-        json!({"operation":"match","mainGoal":"test","reasoning":"test","path":root.0,"language":"rust","pattern":"hit($A)"}),
-    )
-    .expect("match");
-    let read = &out["next"]["read"];
-    assert_eq!(read["tool"], "localFetch", "{out}");
-    let row = &read["query"]["queries"][0];
-    assert_eq!(row["ranges"], json!(["1-5", "9-15"]), "{out}");
-    assert!(
-        row["path"]
-            .as_str()
-            .is_some_and(|path| path.ends_with("a.rs") && std::path::Path::new(path).is_absolute()),
-        "{out}"
-    );
-    crate::contracts::validate_query("localFetch", row.clone()).expect("a valid localFetch row");
-}
-
-/// A multi-line match shows only its header in the row, so the top read
-/// covers the whole match (with context), not a window around its first line.
-#[test]
-fn a_multi_line_match_read_covers_the_whole_match() {
-    let root = Fixture::new();
-    let body = (1..=8)
-        .map(|n| format!("    step({n});\n"))
-        .collect::<String>();
-    std::fs::write(
-        root.0.join("a.rs"),
-        format!("// head\nfn run() {{\n{body}}}\n"),
-    )
-    .expect("a");
-    let out = run(
-        &root.0,
-        json!({"operation":"match","mainGoal":"test","reasoning":"test","path":root.0,"language":"rust","pattern":"fn run() { $$$BODY }"}),
-    )
-    .expect("match");
-    let row = &out["next"]["read"]["query"]["queries"][0];
-    assert_eq!(row["ranges"], json!(["1-14"]), "{out}");
-}
-
-fn run(root: &std::path::Path, query: serde_json::Value) -> Result<serde_json::Value, ToolError> {
-    let (paths, security) = simple_policy(root);
-    execute_row(query, &paths, &security, &NeverCancel)
-}
-
-/// A page past the end of an astSearch match listing is the shared
-/// out-of-range outcome (`pagination.outOfRange`), with or without the
-/// snapshot: a missing snapshot is a fresh scan of that page, never a
-/// `staleSnapshot` error, and only a snapshot that no longer matches is stale.
-#[test]
-fn match_page_past_the_end_is_out_of_range_not_stale() {
-    let root = Fixture::new();
-    for name in ["a.ts", "b.ts", "c.ts"] {
-        std::fs::write(root.0.join(name), "console.log(1);\n").expect("file");
-    }
-    let base = json!({"operation":"match","path":root.0,"language":"typescript",
-        "pattern":"console.log($A)","pageSize":2});
-    let first = run(&root.0, base.clone()).expect("first");
-    let snapshot = first["next"]["nextPage"]["query"]["queries"][0]["snapshot"].clone();
-    let mut bare = base.clone();
-    bare["page"] = json!(99);
-    let mut pinned = bare.clone();
-    pinned["snapshot"] = snapshot;
-    for query in [bare, pinned] {
-        let out = run(&root.0, query).expect("out of range page");
-        assert!(out.get("errorCode").is_none(), "{out}");
-        assert_eq!(out["files"], json!([]), "{out}");
-        assert_eq!(out["pagination"]["outOfRange"], true, "{out}");
-        assert_eq!(out["pagination"]["currentPage"], 99, "{out}");
-        assert_eq!(out["pagination"]["totalPages"], 2, "{out}");
-    }
-    let mut wrong = base;
-    wrong["page"] = json!(2);
-    wrong["snapshot"] = json!("not-the-snapshot");
-    let stale = run(&root.0, wrong).expect("stale");
-    assert_eq!(stale["errorCode"], "staleSnapshot", "{stale}");
-}
-
-/// A syntax tree of a file with no registered grammar is a failed row
-/// (`status: "error"`, a declared code, the engine's message), not a partial
-/// payload that exits 0.
-#[test]
-fn syntax_tree_of_an_unsupported_file_is_an_error_row() {
-    let root = Fixture::new();
-    let file = root.0.join("data.json");
-    std::fs::write(&file, "{\"a\":1}\n").expect("file");
-    let out = run(&root.0, json!({"operation":"syntaxTree","path":file})).expect("row");
-    assert_eq!(out["status"], "error", "{out}");
-    assert_eq!(out["errorCode"], "languageUnsupported", "{out}");
-    assert!(
-        out["error"]
-            .as_str()
-            .is_some_and(|message| message.contains(".json")),
-        "{out}"
-    );
-    assert!(out.get("isPartial").is_none(), "{out}");
-}
-
-/// A failed inspection states its error once: the row carries no empty
-/// page, no snapshot, no single-page block and no diagnostics that repeat
-/// `error`, and no recovery text about paging.
-#[test]
-fn syntax_tree_error_row_states_the_error_once() {
-    let root = Fixture::new();
-    let file = root.0.join("data.json");
-    std::fs::write(&file, "{\"a\":1}\n").expect("file");
-    let out = run(&root.0, json!({"operation":"syntaxTree","path":file})).expect("row");
-    let mut keys: Vec<&str> = out
-        .as_object()
-        .expect("row")
-        .keys()
-        .map(String::as_str)
-        .collect();
-    keys.sort_unstable();
-    assert_eq!(
-        keys,
-        ["error", "errorCode", "operation", "path", "status"],
-        "{out}"
-    );
-    assert!(!out.to_string().contains("next page"), "{out}");
-}
-
-#[test]
-fn directory_pattern_that_compiles_in_no_file_is_an_error_not_empty() {
-    let root = Fixture::new();
-    for name in ["a.rs", "b.rs"] {
-        std::fs::write(root.0.join(name), "fn main() {}\n").expect("file");
-    }
-    let error = run(
-        &root.0,
-        json!({"operation":"match","mainGoal":"test","reasoning":"test","path":root.0,"language":"rust","pattern":"fn ???"}),
-    )
-    .expect_err("uncompilable pattern must fail loudly");
-    assert_eq!(error.code, "invalidPattern");
-}
-
-#[test]
-fn match_pagination_limits_next_match_page_to_the_current_file_page() {
-    let root = Fixture::new();
-    std::fs::write(root.0.join("a.rs"), "fn a() { hit(1); }\n").expect("a");
-    std::fs::write(root.0.join("b.rs"), "fn b() { hit(1); hit(2); hit(3); }\n").expect("b");
-    let base = json!({
-        "operation":"match","mainGoal":"test","reasoning":"test","path":root.0,"language":"rust","pattern":"hit($A)",
-        "pageSize":1,"matchPageSize":2
-    });
-    let page1 = run(&root.0, base.clone()).expect("page1");
-    // A file whose matches all fit on its match page carries no row counts.
-    assert_eq!(
-        page1["files"][0]["matches"].as_array().map(Vec::len),
-        Some(1),
-        "{page1}"
-    );
-    assert!(
-        page1["files"][0].get("totalMatchRows").is_none()
-            && page1["files"][0].get("returnedMatchRows").is_none(),
-        "{page1}"
-    );
-    assert!(
-        page1["next"].get("nextMatchPage").is_none(),
-        "page 1 has no truncated file, so no nextMatchPage: {page1}"
-    );
-    let next = page1["next"]["nextPage"]["query"]["queries"][0].clone();
-    let page2 = run(&root.0, next).expect("page2");
-    assert_eq!(
-        page2["files"][0]["matches"].as_array().map(Vec::len),
-        Some(2),
-        "{page2}"
-    );
-    assert!(
-        page2["next"]["nextMatchPage"].is_object(),
-        "unreturned matches remain: {page2}"
-    );
-    let deeper = page2["next"]["nextMatchPage"]["query"]["queries"][0].clone();
-    assert_eq!(deeper["matchPage"], 2, "{page2}");
-    assert_eq!(deeper["page"], 2, "{page2}");
-    let page2b = run(&root.0, deeper.clone()).expect("page2 matchPage2");
-    assert_eq!(
-        page2b["files"][0]["matches"].as_array().map(Vec::len),
-        Some(1),
-        "{page2b}"
-    );
-
-    // A nextPage continuation always restarts per-file match pagination.
-    let mut mid = base;
-    mid["matchPage"] = json!(2);
-    mid["snapshot"] = page1["snapshot"].clone();
-    let mid = run(&root.0, mid).expect("page1 matchPage2");
-    assert_eq!(
-        mid["next"]["nextPage"]["query"]["queries"][0]["matchPage"], 1,
-        "{mid}"
-    );
-}
-
-#[test]
-fn single_file_with_unreturned_matches_is_not_complete() {
-    let root = Fixture::new();
-    let source = root.0.join("many.rs");
-    std::fs::write(&source, "fn m() { hit(1); hit(2); hit(3); }\n").expect("source");
-    let out = run(
-        &root.0,
-        json!({"operation":"match","mainGoal":"test","reasoning":"test","path":source,"pattern":"hit($A)","matchPageSize":2}),
-    )
-    .expect("match");
-    assert!(out["next"]["nextMatchPage"].is_object(), "{out}");
 }
 
 #[test]
 fn lang_type_is_validated_and_intersected_with_include() {
     let root = Fixture::new();
-    std::fs::write(root.0.join("a.ts"), "oldCall(x);\n").expect("ts");
-    std::fs::write(root.0.join("b.py"), "oldCall(x)\n").expect("py");
+    root.write("a.ts", "oldCall(x);\n");
+    root.write("b.py", "oldCall(x)\n");
     let unknown = run(
         &root.0,
         json!({"operation":"match","mainGoal":"test","reasoning":"test","path":root.0,"language":"klingon","pattern":"oldCall($A)"}),
@@ -674,7 +383,7 @@ fn lang_type_is_validated_and_intersected_with_include() {
     .expect_err("single file outside language");
     assert_eq!(mismatch.code, "languageMismatch");
 
-    std::fs::write(root.0.join("notes.txt"), "oldCall(x)\n").expect("txt");
+    root.write("notes.txt", "oldCall(x)\n");
     let unsupported = run(
         &root.0,
         json!({"operation":"match","mainGoal":"test","reasoning":"test","path":root.0.join("notes.txt"),"pattern":"oldCall($A)"}),
@@ -687,8 +396,8 @@ fn lang_type_is_validated_and_intersected_with_include() {
 #[test]
 fn dot_prefixed_lang_type_selects_only_that_extension() {
     let root = Fixture::new();
-    std::fs::write(root.0.join("a.ts"), "oldCall(x);\n").expect("ts");
-    std::fs::write(root.0.join("b.mts"), "oldCall(y);\n").expect("mts");
+    root.write("a.ts", "oldCall(x);\n");
+    root.write("b.mts", "oldCall(y);\n");
 
     let exact = run(
         &root.0,
@@ -794,12 +503,8 @@ fn directory_symbols_use_path_scoped_header_parser_and_preserve_it_in_next_page(
     let root = Fixture::new();
     std::fs::create_dir_all(root.0.join("include")).expect("include directory");
     std::fs::create_dir_all(root.0.join("legacy")).expect("legacy directory");
-    std::fs::write(
-        root.0.join("include/widget.h"),
-        "namespace Space { class Widget {}; }\n",
-    )
-    .expect("cpp header");
-    std::fs::write(root.0.join("legacy/plain.h"), "struct Plain { int x; };\n").expect("c header");
+    root.write("include/widget.h", "namespace Space { class Widget {}; }\n");
+    root.write("legacy/plain.h", "struct Plain { int x; };\n");
     let result = run(&root.0, json!({"operation":"symbols","mainGoal":"test","reasoning":"test","path":root.0,"languageGlobs":{"cpp":["include/**/*.h"]},"pageSize":1})).expect("directory symbols");
     assert_eq!(result["filesScanned"], 2, "{result}");
     assert_eq!(
@@ -816,1000 +521,15 @@ fn directory_symbols_use_path_scoped_header_parser_and_preserve_it_in_next_page(
     assert!(names.contains(&"Plain"), "{result} {next}");
 }
 
-#[test]
-fn match_content_length_bounds_each_match_value() {
-    let root = Fixture::new();
-    let source = root.0.join("long.rs");
-    let args = (0..200)
-        .map(|i| format!("arg{i}"))
-        .collect::<Vec<_>>()
-        .join(", ");
-    std::fs::write(&source, format!("fn m() {{ call({args}); }}\n")).expect("source");
-    let value_len = |length: Option<u32>| {
-        let mut query = json!({"operation":"match","mainGoal":"test","reasoning":"test","path":source,"pattern":"call($$$A)"});
-        if let Some(length) = length {
-            query["matchContentLength"] = json!(length);
-        }
-        let out = run(&root.0, query).expect("match");
-        lean_row(&out["files"][0]["matches"][0]).2.chars().count()
-    };
-    assert_eq!(value_len(Some(40)), 40);
-    assert!(value_len(Some(5_000)) > 300);
-    assert_eq!(value_len(None), 500);
-}
-
-/// The localFetch read rows of the one `expandValues` lead, by path. The
-/// lead has one name (never `expandValues2`…) and batches its rows within
-/// localFetch's input limit.
-fn value_reads(out: &serde_json::Value) -> Vec<serde_json::Value> {
-    let names = out["next"]
-        .as_object()
-        .into_iter()
-        .flatten()
-        .filter(|(name, _)| name.starts_with("expandValues"))
-        .map(|(name, _)| name.as_str())
-        .collect::<Vec<_>>();
-    assert!(
-        names.len() <= 1 && names.iter().all(|name| *name == "expandValues"),
-        "{out}"
-    );
-    let read = &out["next"]["expandValues"];
-    if read.is_null() {
-        return vec![];
-    }
-    assert_eq!(read["tool"], "localFetch", "{read}");
-    let rows = read["query"]["queries"].as_array().expect("rows").clone();
-    assert!(
-        rows.len() <= crate::tools::result::rows_per_call(crate::tools::id::ToolId::LocalFetch),
-        "{read}"
-    );
-    for row in &rows {
-        crate::contracts::validate_query("localFetch", row.clone())
-            .expect("a valid localFetch row");
-    }
-    let mut reads = rows;
-    reads.sort_by_key(|row| row["path"].as_str().map(str::to_owned));
-    reads
-}
-
-/// A value cut at `matchContentLength` is display clipping, not a coverage
-/// gap: every match is listed, so the row is not partial. The cut is never
-/// silent: the shown text ends in `…`, an object row says `truncated`, and
-/// `next.expandValues` reads exactly the clipped rows' lines whole.
-#[test]
-fn clipped_values_do_not_mark_the_row_partial() {
-    let root = Fixture::new();
-    let source = root.0.join("long.rs");
-    let args = (0..200)
-        .map(|i| format!("arg{i}"))
-        .collect::<Vec<_>>()
-        .join(", ");
-    std::fs::write(
-        &source,
-        format!("fn n() {{ call(x); }}\nfn m() {{\n    call({args});\n}}\n"),
-    )
-    .expect("source");
-    let out = run(
-        &root.0,
-        json!({"operation":"match","path":source,"pattern":"call($$$A)","captureText":true}),
-    )
-    .expect("match");
-    assert!(out.get("isPartial").is_none(), "{out}");
-    assert!(out.get("partialReasons").is_none(), "{out}");
-    let rows = out["files"][0]["matches"].as_array().expect("rows");
-    assert_eq!(rows.len(), 2, "{out}");
-    assert!(rows[0].get("clipped").is_none(), "{out}");
-    assert_eq!(rows[1]["clipped"], true, "{out}");
-    assert!(
-        rows[1]["value"].as_str().is_some_and(|v| v.ends_with('…')),
-        "{out}"
-    );
-    let reads = value_reads(&out);
-    assert_eq!(reads.len(), 1, "{out}");
-    assert_eq!(reads[0]["ranges"], json!(["3-3"]), "{out}");
-    assert!(
-        reads[0]["path"]
-            .as_str()
-            .is_some_and(|path| path.ends_with("long.rs")),
-        "{out}"
-    );
-    // The lean view hides the `$$$A` capture as well: one expandCaptures
-    // re-run returns captures and whole values; it is still not partial.
-    let lean = run(
-        &root.0,
-        json!({"operation":"match","path":source,"pattern":"call($$$A)"}),
-    )
-    .expect("lean match");
-    assert!(lean.get("isPartial").is_none(), "{lean}");
-    let expand = &lean["next"]["expandCaptures"]["query"]["queries"][0];
-    assert_eq!(expand["captureText"], true, "{lean}");
-    let full = format!("call({args})");
-    assert_eq!(expand["matchContentLength"], full.chars().count(), "{lean}");
-    let expanded = run(&root.0, expand.clone()).expect("expanded");
-    assert_eq!(expanded["files"][0]["matches"][1]["value"], full.as_str());
-    assert!(only_read_left(&expanded), "{expanded}");
-}
-
-/// A match row with every file and match page shown and no scope gap is
-/// `complete`: its expansions (`expandCaptures`, `expandValues`) and the
-/// hits read are drill-downs, so the response stage does not mark it
-/// partial. A file page left, or a scope gap, keeps it open.
-#[test]
-fn match_rows_without_unread_pages_are_complete() {
-    let root = Fixture::new();
-    let long = format!("call({});\n", "y".repeat(3000));
-    std::fs::write(root.0.join("a.ts"), &long).expect("a");
-    std::fs::write(root.0.join("b.ts"), "call(1);\n").expect("b");
-    let base =
-        json!({"operation":"match","path":root.0,"pattern":"call($$$A)","language":"typescript"});
-    let out = run(&root.0, base.clone()).expect("match");
-    assert_eq!(out["complete"], true, "{out}");
-    assert!(out["next"].get("expandCaptures").is_some(), "{out}");
-    let row = crate::response::rows::result_row(
-        crate::tools::id::ToolId::AstSearch,
-        0,
-        &base,
-        out.clone(),
-        None,
-    );
-    assert!(row.pointer("/data/isPartial").is_none(), "{row}");
-    let mut paged = base.clone();
-    paged["pageSize"] = json!(1);
-    let open = run(&root.0, paged).expect("first file page");
-    assert!(open.get("complete").is_none(), "{open}");
-    let mut capped = base;
-    capped["maxFiles"] = json!(1);
-    let gap = run(&root.0, capped).expect("capped scan");
-    assert!(gap.get("complete").is_none(), "{gap}");
-}
-
-/// Clipped rows across files and past the read-range limit each stay
-/// reachable: one `expandValues` row per file and per range batch.
-#[test]
-fn clipped_values_read_per_file_in_range_batches() {
-    let root = Fixture::new();
-    let long = format!("call({});", "y".repeat(80));
-    let many = (0..30)
-        .map(|i| {
-            if i % 2 == 0 {
-                long.clone()
-            } else {
-                format!("// {i}")
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    std::fs::write(root.0.join("a.rs"), format!("fn a() {{\n{many}\n}}\n")).expect("a");
-    std::fs::write(root.0.join("b.rs"), format!("fn b() {{\n{long}\n}}\n")).expect("b");
-    let out = run(
-        &root.0,
-        json!({"operation":"match","path":root.0,"language":"rust","pattern":"call($A)","captureText":true,"matchContentLength":20}),
-    )
-    .expect("match");
-    assert!(out.get("isPartial").is_none(), "{out}");
-    let reads = value_reads(&out);
-    let ranges = reads
-        .iter()
-        .flat_map(|row| row["ranges"].as_array().cloned().unwrap_or_default())
-        .collect::<Vec<_>>();
-    // 15 clipped calls in a.rs (lines 2, 4, … 30) and one in b.rs (line 2).
-    assert_eq!(ranges.len(), 16, "{out}");
-    let max = crate::tools::id::query_limits::local_fetch::RANGES_MAX_ITEMS;
-    assert!(
-        reads
-            .iter()
-            .all(|row| row["ranges"].as_array().map_or(0, Vec::len) <= max),
-        "{out}"
-    );
-    assert!(reads.len() >= 3, "{out}");
-}
-
-/// A value longer than the `matchContentLength` maximum still reads whole:
-/// the lead is a line read, not a longer re-run that would cut again.
-#[test]
-fn values_past_the_content_maximum_read_their_lines() {
-    let root = Fixture::new();
-    let source = root.0.join("huge.rs");
-    // Few long arguments keep the value past the content maximum while the
-    // matcher's work (one node per argument) stays far inside its deadline
-    // on a loaded machine.
-    let args = (0..400)
-        .map(|i| format!("argument_with_a_long_descriptive_name_{i:04}"))
-        .collect::<Vec<_>>()
-        .join(", ");
-    std::fs::write(&source, format!("fn m() {{\n    call({args});\n}}\n")).expect("source");
-    let out = run(
-        &root.0,
-        json!({"operation":"match","path":source,"pattern":"call($$$A)","captureText":true}),
-    )
-    .expect("match");
-    assert!(out.get("isPartial").is_none(), "{out}");
-    assert_eq!(value_reads(&out)[0]["ranges"], json!(["2-2"]), "{out}");
-    let codes = out["diagnostics"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|d| d["code"].as_str())
-        .collect::<Vec<_>>();
-    assert!(!codes.contains(&"structural.match.valueClipped"), "{out}");
-}
-
-/// A cut header row (a whole block) expands its captures and whole text in
-/// one re-run; a lean cut without hidden captures reads its lines.
-#[test]
-fn block_and_lean_cuts_expand_to_the_whole_text() {
-    let root = Fixture::new();
-    let source = root.0.join("long.rs");
-    std::fs::write(&source, "fn m() { call(1); }\nfn n() { call(x); }\n").expect("source");
-    let lean = run(
-        &root.0,
-        json!({"operation":"match","path":source,"pattern":"fn n() { call(x); }","matchContentLength":8}),
-    )
-    .expect("lean cut");
-    assert!(lean.get("isPartial").is_none(), "{lean}");
-    assert!(lean["next"].get("expandCaptures").is_none(), "{lean}");
-    assert_eq!(value_reads(&lean)[0]["ranges"], json!(["2-2"]), "{lean}");
-    let block = root.0.join("block.rs");
-    let body = (0..120)
-        .map(|i| format!("    let v{i} = {i};"))
-        .collect::<Vec<_>>()
-        .join("\n");
-    std::fs::write(&block, format!("fn big() {{\n{body}\n}}\n")).expect("block");
-    let out = run(
-        &root.0,
-        json!({"operation":"match","mainGoal":"test","reasoning":"test","path":block,"pattern":"fn $N() { $$$B }"}),
-    )
-    .expect("block match");
-    assert!(value_reads(&out).is_empty(), "{out}");
-    let expand = out["next"]["expandCaptures"]["query"]["queries"][0].clone();
-    assert_eq!(expand["captureText"], true, "{out}");
-    let expanded = run(&root.0, expand).expect("expanded block");
-    let value = expanded["files"][0]["matches"][0]["value"]
-        .as_str()
-        .expect("value");
-    assert!(value.ends_with("let v119 = 119; }"), "{value}");
-    assert!(only_read_left(&expanded), "{expanded}");
-}
-
-#[test]
-fn unknown_symbol_kinds_are_rejected_and_source_limits_are_errors() {
-    let root = Fixture::new();
-    let source = root.0.join("lib.rs");
-    std::fs::write(&source, "pub fn visible() {}\n").expect("source");
-    let error = run(
-        &root.0,
-        json!({"operation":"symbols","mainGoal":"test","reasoning":"test","path":source,"kinds":["functoin"]}),
-    )
-    .expect_err("unknown kind");
-    // An `.input.invalid` code is an input rejection: CLI exit 2 and a
-    // "correct the field" hint, never "broaden the query".
-    assert_eq!(error.code, "invalidInput");
-    assert!(crate::response::rows::is_invalid_input_code(&error.code));
-    assert!(
-        error.message.contains("function, impl"),
-        "{}",
-        error.message
-    );
-    let ok = run(
-        &root.0,
-        json!({"operation":"symbols","mainGoal":"test","reasoning":"test","path":source,"kinds":["function"]}),
-    )
-    .expect("known kind");
-    assert_eq!(outline_name(&ok["symbols"][0]), "visible");
-
-    let large = root.0.join("large.rs");
-    std::fs::write(
-        &large,
-        "// x\n".repeat(super::MAX_PARSE_SOURCE_BYTES / 5 + 1),
-    )
-    .expect("large");
-    for query in [
-        json!({"operation":"symbols","mainGoal":"test","reasoning":"test","path":large}),
-        json!({"operation":"syntaxTree","mainGoal":"test","reasoning":"test","path":large}),
-    ] {
-        let out = run(&root.0, query).expect("limit row");
-        assert_eq!(out["errorCode"], "fileTooLarge", "{out}");
-        assert_eq!(out["status"], "error", "{out}");
-        // No literal searched: the typed error is the whole answer.
-        assert!(
-            out.get("next").is_none() && out.get("hints").is_none(),
-            "{out}"
-        );
-    }
-    // A searched name leads to a text search of it in the same file.
-    let named = run(
-        &root.0,
-        json!({"operation":"symbols","path":large,"symbolName":"visible"}),
-    )
-    .expect("limit row");
-    let lead = &named["next"]["findText"];
-    assert_eq!(lead["tool"], "localSearch", "{named}");
-    assert_eq!(
-        lead["query"]["queries"][0]["matchString"], "visible",
-        "{named}"
-    );
-    assert!(
-        lead["query"]["queries"][0]["path"]
-            .as_str()
-            .is_some_and(|path| path.ends_with("large.rs")),
-        "{named}"
-    );
-    let pattern = run(
-        &root.0,
-        json!({"operation":"match","path":large,"pattern":"console.log"}),
-    );
-    let error = pattern.expect_err("pattern over the parse limit");
-    assert_eq!(error.code, "fileTooLarge");
-    let next = error.next.expect("findText lead");
-    assert_eq!(next["findText"]["query"]["queries"][0]["regex"], "literal");
-    use crate::tools::output::ToolOutput;
-    assert_eq!(
-        super::output::Output.error_hint("fileTooLarge"),
-        Some(crate::tools::output::NO_HINT)
-    );
-}
-
-#[test]
-fn single_file_symbols_are_compact_and_path_free() {
-    let root = Fixture::new();
-    let source = root.0.join("shapes.rs");
-    std::fs::write(
-        &source,
-        "struct A;\nimpl A {\n    fn run() {}\n}\nstruct B; impl B { fn run() {} }\n",
-    )
-    .expect("source");
-    let out = run(
-        &root.0,
-        json!({"operation":"symbols","mainGoal":"test","reasoning":"test","path":source}),
-    )
-    .expect("symbols");
-    // Rows are path-free; a continuation names its file absolutely until the
-    // envelope anchors it on the workspace.
-    let mut rows = out.clone();
-    rows.as_object_mut().map(|row| row.remove("next"));
-    let text = rows.to_string();
-    let root_text = root.0.to_string_lossy();
-    assert!(
-        !text.contains(root_text.as_ref()),
-        "absolute path leaked: {out}"
-    );
-    assert_eq!(out["isPartial"], false, "{out}");
-    // One declaration row each (rendered here as the text outline): no
-    // path, ranges or engine ids; an endLine only when the declaration
-    // spans lines; members indented under the `impl` that holds them.
-    assert_eq!(
-        json!(crate::tools::symbol_outline::outline_rows(
-            &crate::tools::symbol_outline::flatten_members(
-                out["symbols"].as_array().expect("rows")
-            )
-        )),
-        json!([
-            "1 struct A",
-            "2-4 impl A",
-            "  3 method run",
-            "5 struct B",
-            "5 impl B",
-            "  5 method run"
-        ]),
-        "{out}"
-    );
-    // One page has nothing to pin, and the static syntax-only caveat is in
-    // the tool description, not every response.
-    assert!(out.get("snapshot").is_none(), "{out}");
-    assert!(
-        !out.to_string().contains("syntax-only"),
-        "static caveat repeated: {out}"
-    );
-}
-
-/// Every symbols row is an object (a class with members, and a file
-/// of member-less declarations alike); `pagination.totalItems` counts the
-/// top-level rows, and pages by `pageSize` reach each top-level row once
-/// with its members.
-#[test]
-fn symbols_rows_are_objects_and_pages_count_top_level_rows() {
-    fn all_objects(rows: &serde_json::Value) -> bool {
-        rows.as_array().expect("rows").iter().all(|row| {
-            row.is_object()
-                && row["symbolName"].is_string()
-                && row["line"].is_u64()
-                && row.get("members").is_none_or(all_objects)
-        })
-    }
-    let root = Fixture::new();
-    let class = root.0.join("service.ts");
-    std::fs::write(
-        &class,
-        "export class Service {\n  setParent() {}\n  dispose() {}\n}\nexport function boot() {}\nexport class Empty {}\n",
-    )
-    .expect("class");
-    let plain = root.0.join("plain.ts");
-    std::fs::write(
-        &plain,
-        "export function one() {}\nexport function two() {}\nexport const three = 3;\n",
-    )
-    .expect("plain");
-    for (source, top_level, all) in [(&class, 3, 5), (&plain, 3, 3)] {
-        let out = run(
-            &root.0,
-            json!({"operation":"symbols","mainGoal":"test","reasoning":"test","path":source}),
-        )
-        .expect("symbols");
-        assert!(all_objects(&out["symbols"]), "{out}");
-        let rows = out["symbols"].as_array().expect("rows");
-        assert_eq!(rows.len(), top_level, "{out}");
-        assert_eq!(out["pagination"]["totalItems"], top_level, "{out}");
-        assert_eq!(outline_names(&out["symbols"]).len(), all, "{out}");
-        // Pages of one top-level row each reach every row once, members
-        // with their parent.
-        let mut query = json!({"operation":"symbols","mainGoal":"test","reasoning":"test","path":source,"pageSize":1});
-        let mut paged = Vec::new();
-        loop {
-            let page = run(&root.0, query.clone()).expect("page");
-            assert_eq!(page["pagination"]["totalItems"], top_level, "{page}");
-            assert!(all_objects(&page["symbols"]), "{page}");
-            assert_eq!(page["symbols"].as_array().map(Vec::len), Some(1), "{page}");
-            paged.extend(page["symbols"].as_array().expect("rows").iter().cloned());
-            match page["next"]["nextPage"]["query"]["queries"].get(0) {
-                Some(next) => query = next.clone(),
-                None => break,
-            }
-        }
-        assert_eq!(json!(paged), out["symbols"], "{source:?}");
-    }
-    // A directory outline groups the same object rows under each file and
-    // counts each file's top-level rows.
-    let out = run(
-        &root.0,
-        json!({"operation":"symbols","mainGoal":"test","reasoning":"test","path":root.0}),
-    )
-    .expect("directory symbols");
-    let files = out["files"].as_array().expect("files");
-    assert!(
-        files.iter().all(|file| all_objects(&file["symbols"])),
-        "{out}"
-    );
-    let rows: usize = files
-        .iter()
-        .map(|file| file["symbols"].as_array().map_or(0, Vec::len))
-        .sum();
-    assert_eq!(out["pagination"]["totalItems"], rows, "{out}");
-    crate::contracts::validate_output("astSearch", &json!({"results":[{"index":0,"data":out}]}))
-        .expect("object rows satisfy the output contract");
-}
-
-#[test]
-fn cached_symbol_pages_still_check_content_and_path_policy() {
-    let root = Fixture::new();
-    let source = root.0.join("pages.ts");
-    std::fs::write(
-        &source,
-        "export function one() {}\nexport function two() {}\n",
-    )
-    .expect("source");
-    let first = run(
-        &root.0,
-        json!({"operation":"symbols","mainGoal":"test","reasoning":"test","path":source,"pageSize":1}),
-    )
-    .expect("first");
-    let next = first["next"]["nextPage"]["query"]["queries"][0].clone();
-    assert_eq!(
-        outline_name(&run(&root.0, next.clone()).expect("second")["symbols"][0]),
-        "two"
-    );
-    // Same byte length: cache invalidation cannot rely only on file size.
-    std::fs::write(
-        &source,
-        "export function one() {}\nexport function six() {}\n",
-    )
-    .expect("changed");
-    let stale = run(&root.0, next.clone()).expect("stale");
-    assert_eq!(stale["errorCode"], "staleSnapshot");
-    let restart = &stale["next"]["restart"];
-    assert_eq!(restart["tool"], "astSearch");
-    assert_eq!(restart["query"]["queries"][0]["operation"], "symbols");
-    assert_eq!(restart["query"]["queries"][0]["pageSize"], 1);
-    assert_eq!(restart["query"]["queries"][0]["page"], 1);
-    assert!(restart["query"].get("snapshot").is_none());
-    let restarted =
-        run(&root.0, restart["query"].clone()).expect("execute returned restart unchanged");
-    assert_eq!(outline_name(&restarted["symbols"][0]), "one");
-    assert_ne!(restarted["snapshot"], first["snapshot"]);
-    let second = run(
-        &root.0,
-        restarted["next"]["nextPage"]["query"]["queries"][0].clone(),
-    )
-    .expect("new snapshot continuation");
-    assert_eq!(outline_name(&second["symbols"][0]), "six");
-    let fresh = run(
-        &root.0,
-        json!({"operation":"symbols","mainGoal":"test","reasoning":"test","path":source,"pageSize":2}),
-    )
-    .expect("fresh");
-    assert_eq!(outline_names(&fresh["symbols"])[1], "six");
-    let forbidden = Fixture::new();
-    assert!(
-        run(&forbidden.0, next).is_err(),
-        "warm extraction must not bypass root authorization"
-    );
-}
-
-#[test]
-fn symbols_outline_places_twin_members_and_columns_only_when_ambiguous() {
-    let root = Fixture::new();
-    let source = root.0.join("twins.rs");
-    std::fs::write(
-        &source,
-        "struct A;\nimpl A {\n    fn one() {}\n}\nimpl A {\n    fn two() {}\n}\nfn x() {} fn x() {}\n",
-    )
-    .expect("source");
-    let out = run(
-        &root.0,
-        json!({"operation":"symbols","mainGoal":"test","reasoning":"test","path":source}),
-    )
-    .expect("symbols");
-    // The two `impl A` blocks share one row listing both ranges, so `two`
-    // (line 6) sits in the second; the two `x` on one line differ only by
-    // column, so only they carry it.
-    assert_eq!(
-        json!(crate::tools::symbol_outline::outline_rows(
-            &crate::tools::symbol_outline::flatten_members(
-                out["symbols"].as_array().expect("rows")
-            )
-        )),
-        json!([
-            "1 struct A",
-            "2-4,5-7 impl A",
-            "  3 method one; 6 two",
-            "8 function x col 4; 8 x col 14"
-        ]),
-        "{out}"
-    );
-    // Pages count top-level rows (struct A, two impl A, two x): page 2 of
-    // 4 holds the last `x`, and no member is cut from its parent.
-    assert_eq!(out["pagination"]["totalItems"], 5, "{out}");
-    let second = run(
-        &root.0,
-        json!({"operation":"symbols","mainGoal":"test","reasoning":"test","path":source,"pageSize":4,"page":2,
-            "snapshot":out_snapshot(&root.0, &source)}),
-    )
-    .expect("second page");
-    assert_eq!(
-        crate::tools::symbol_outline::outline_rows(&crate::tools::symbol_outline::flatten_members(
-            second["symbols"].as_array().expect("rows")
-        )),
-        [json!("8 function x col 14")],
-        "{second}"
-    );
-}
-
-#[test]
-fn symbols_trait_impls_name_their_trait_and_macro_members_nest() {
-    // tokio named_pipe.rs: five `impl … NamedPipeServer` blocks must say
-    // which trait each implements, and `cfg_io_util! { pub fn … }` inside an
-    // impl belongs to that impl, in source order.
-    let root = Fixture::new();
-    let source = root.0.join("pipe.rs");
-    std::fs::write(
-        &source,
-        "pub struct Pipe;\nimpl Pipe {\n    pub fn read() {}\n    cfg_io_util! {\n        pub fn read_buf() {}\n    }\n}\nimpl AsyncWrite for Pipe {\n    fn poll_flush() {}\n}\nimpl<T: Clone> std::fmt::Debug for Wrap<T> {\n    fn fmt() {}\n}\n",
-    )
-    .expect("source");
-    let out = run(&root.0, json!({"operation":"symbols","path":source})).expect("symbols");
-    assert_eq!(
-        json!(crate::tools::symbol_outline::outline_rows(
-            &crate::tools::symbol_outline::flatten_members(
-                out["symbols"].as_array().expect("rows")
-            )
-        )),
-        json!([
-            "1 struct Pipe +",
-            "2-7 impl Pipe",
-            "  3 method read +; 5 read_buf +",
-            "8-10 impl AsyncWrite for Pipe",
-            "  9 method poll_flush",
-            "11-13 impl std::fmt::Debug for Wrap",
-            "  12 method fmt"
-        ]),
-        "{out}"
-    );
-    // The type name still selects every impl of the type; the lead anchors
-    // lspSearch on the type, as for an inherent impl.
-    let named = run(
-        &root.0,
-        json!({"operation":"symbols","path":source,"symbolName":"Pipe","kinds":["impl"]}),
-    )
-    .expect("named");
-    let names: Vec<&str> = named["symbols"]
-        .as_array()
-        .expect("rows")
-        .iter()
-        .map(outline_name)
-        .collect();
-    assert_eq!(names, ["Pipe", "AsyncWrite for Pipe"], "{named}");
-    let trait_only = run(
-        &root.0,
-        json!({"operation":"symbols","path":source,"symbolName":"AsyncWrite for Pipe"}),
-    )
-    .expect("trait impl");
-    assert_eq!(
-        outline_name(&trait_only["symbols"][0]),
-        "AsyncWrite for Pipe"
-    );
-    // The lead exists only where rust-analyzer runs.
-    if let Some(lead) = trait_only["hints"].get("references") {
-        assert_eq!(
-            lead["query"]["queries"][0]["symbolName"], "Pipe",
-            "{trait_only}"
-        );
-    }
-}
-
-/// The snapshot of a 4-row symbols page of `source`.
-fn out_snapshot(root: &std::path::Path, source: &std::path::Path) -> serde_json::Value {
-    let first = run(
-        root,
-        json!({"operation":"symbols","mainGoal":"test","reasoning":"test","path":source,"pageSize":4}),
-    )
-    .expect("first page");
-    first["snapshot"].clone()
-}
-
-#[test]
-fn directory_symbols_keep_row_paths_without_static_notes() {
-    let root = Fixture::new();
-    std::fs::write(root.0.join("a.rs"), "fn a() {}\n").expect("a");
-    std::fs::write(root.0.join("b.rs"), "fn b() {}\n").expect("b");
-    let out = run(
-        &root.0,
-        json!({"operation":"symbols","mainGoal":"test","reasoning":"test","path":root.0}),
-    )
-    .expect("symbols");
-    assert!(out.get("symbols").is_none(), "{out}");
-    let files = out["files"].as_array().expect("files");
-    assert_eq!(files.len(), 2, "{out}");
-    for file in files {
-        assert!(file["path"].is_string(), "{out}");
-        let rows = file["symbols"].as_array().expect("rows");
-        assert_eq!(rows.len(), 1, "{out}");
-        assert!(
-            rows[0].get("path").is_none(),
-            "path written once per file: {out}"
-        );
-    }
-    let diagnostics = out["diagnostics"].as_array().expect("diagnostics");
-    assert!(diagnostics.is_empty(), "{out}");
-}
-
-#[test]
-fn match_rows_withhold_captures_by_default_and_omit_single_line_ends() {
-    let root = Fixture::new();
-    let source = root.0.join("calls.ts");
-    std::fs::write(&source, "oldCall(one);\noldCall(\n  two\n);\n").expect("source");
-    let query = json!({"operation":"match","mainGoal":"test","reasoning":"test","path":source,"pattern":"oldCall($A)"});
-    let out = run(&root.0, query.clone()).expect("match");
-    let matches = out["files"][0]["matches"].as_array().expect("matches");
-    // Lean rows (objects): the line and 1-based column (a span adds its
-    // end line) and the normalized text; no captures.
-    assert_eq!(
-        matches,
-        &vec![
-            json!({"line":1,"column":1,"value":"oldCall(one)"}),
-            json!({"line":2,"column":1,"endLine":4,"value":"oldCall( two )"})
-        ],
-        "{out}"
-    );
-    // Equal per-file counts repeat `matches.len()`.
-    assert!(out["files"][0].get("totalMatchRows").is_none(), "{out}");
-    // Both $A captures show in the values: nothing to expand.
-    assert!(
-        out.get("next")
-            .is_none_or(|next| next.get("expandCaptures").is_none()),
-        "{out}"
-    );
-    // A value cut short hides its capture, which stays one exact
-    // continuation away.
-    let mut cut = query.clone();
-    cut["matchContentLength"] = json!(6);
-    let out = run(&root.0, cut).expect("match");
-    let expand = &out["next"]["expandCaptures"]["query"]["queries"][0];
-    assert_eq!(expand["captureText"], true, "{out}");
-
-    let mut expanded = query;
-    expanded["captureText"] = json!(true);
-    let out = run(&root.0, expanded).expect("match");
-    let single = &out["files"][0]["matches"][0];
-    assert_eq!(single["line"], 1, "{single}");
-    assert_eq!(single["column"], 1, "{single}");
-    assert!(single.get("endLine").is_none(), "{single}");
-    assert!(
-        single.get("endColumn").is_none(),
-        "single-line end: {single}"
-    );
-    let span = &out["files"][0]["matches"][1];
-    assert_eq!(span["endLine"], 4, "{span}");
-    assert!(span["endColumn"].is_u64(), "{span}");
-    assert!(
-        single.get("metavars").is_none(),
-        "duplicate capture map: {single}"
-    );
-    assert_eq!(single["metavarRanges"]["A"][0]["text"], "one", "{single}");
-    assert!(
-        single["metavarRanges"]["A"][0].get("endLine").is_none(),
-        "{single}"
-    );
-    assert!(out["next"].get("expandCaptures").is_none(), "{out}");
-}
-
-#[test]
-fn patterns_without_metavariables_offer_no_capture_expansion() {
-    let root = Fixture::new();
-    let source = root.0.join("calls.ts");
-    std::fs::write(&source, "oldCall(one);\n").expect("source");
-    let out = run(
-        &root.0,
-        json!({"operation":"match","mainGoal":"test","reasoning":"test","path":source,"pattern":"oldCall(one)"}),
-    )
-    .expect("match");
-    assert_eq!(
-        out["files"][0]["matches"][0],
-        json!({"line":1,"column":1,"value":"oldCall(one)"}),
-        "{out}"
-    );
-    assert!(
-        out.get("next")
-            .is_none_or(|next| next.get("expandCaptures").is_none()),
-        "{out}"
-    );
-}
-
-#[test]
-fn list_captures_are_withheld_by_default_and_expand_on_request() {
-    let root = Fixture::new();
-    let source = root.0.join("body.rs");
-    std::fs::write(
-        &source,
-        "fn a() -> u8 {\n    let x = 1;\n    let y = 2;\n    x + y\n}\n",
-    )
-    .expect("source");
-    let query = json!({"operation":"match","mainGoal":"test","reasoning":"test","path":source,
-        "pattern":"fn $N() -> u8 { $$$B }"});
-    let out = run(&root.0, query.clone()).expect("match");
-    // A lean row: no capture dump, the header stands in for the body.
-    let (line, end, value) = lean_row(&out["files"][0]["matches"][0]);
-    assert_eq!((line, end, value), (1, Some(5), "fn a() -> u8 …"), "{out}");
-    assert!(out["next"]["expandCaptures"].is_object(), "{out}");
-
-    let mut expanded = query;
-    expanded["captureText"] = json!(true);
-    let out = run(&root.0, expanded).expect("match");
-    let m = &out["files"][0]["matches"][0];
-    let body = m["metavarRanges"]["B"].as_array().expect("B ranges");
-    assert_eq!(body.len(), 3, "{out}");
-    assert_eq!(body[0]["text"], "let x = 1;", "{out}");
-    assert_eq!(body[0]["line"], 2, "{out}");
-    assert_eq!(m["metavarRanges"]["N"][0]["text"], "a", "{m}");
-}
-
-#[test]
-fn rust_item_pattern_without_visibility_also_matches_pub_items() {
-    let root = Fixture::new();
-    let source = root.0.join("lib.rs");
-    std::fs::write(
-        &source,
-        "pub fn a() -> Result<u8, String> { Ok(1) }\nfn b() -> Result<u8, String> { Ok(2) }\n",
-    )
-    .expect("source");
-    let relaxed = |out: &serde_json::Value| {
-        out["diagnostics"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .any(|d| d["code"] == "structural.pattern.relaxed" && d["severity"] == "warning")
-    };
-    // ast-grep reads the visibility modifier as a named child, so `fn` alone
-    // skips `pub fn`; the result also runs the visible spelling and says so.
-    let out = run(
-        &root.0,
-        json!({"operation":"match","mainGoal":"test","reasoning":"test","path":source,
-            "pattern":"fn $N() -> Result<$T, String> { $$$B }"}),
-    )
-    .expect("match");
-    assert_eq!(out["matchCount"], 2, "{out}");
-    assert!(relaxed(&out), "{out}");
-    assert!(!out.to_string().contains("visibilityExact"), "{out}");
-    // A pattern that already names the visibility is run as written.
-    let out = run(
-        &root.0,
-        json!({"operation":"match","mainGoal":"test","reasoning":"test","path":source,
-            "pattern":"pub fn $N() -> Result<$T, String> { $$$B }"}),
-    )
-    .expect("match");
-    assert_eq!(out["matchCount"], 1, "{out}");
-    assert!(!relaxed(&out), "{out}");
-}
-
-/// A rule that does not parse as a rule (an unknown key, malformed YAML) is
-/// `invalidPattern` with no lead: the message names the key, and no syntax
-/// tree shows a rule's keys. A rule naming a kind this grammar lacks, or a
-/// pattern that does not compile, still leads to the file's syntax tree,
-/// where its node shapes are read.
-#[test]
-fn rule_parse_errors_carry_no_tree_lead() {
-    let root = Fixture::new();
-    let source = root.0.join("lib.rs");
-    std::fs::write(&source, "fn a() {}\n").expect("source");
-    for rule in ["rule:\n  kindx: function_item\n", "pattern: [\nnot: yaml"] {
-        for path in [&source, &root.0] {
-            let error = run(
-                &root.0,
-                json!({"operation":"match","mainGoal":"test","reasoning":"test","path":path,
-                    "language":"rust","rule":rule}),
-            )
-            .expect_err("invalid rule");
-            assert_eq!(error.code, "invalidPattern", "{rule}: {error:?}");
-            assert!(error.message.contains("invalid rule YAML"), "{error:?}");
-            assert!(!error.message.starts_with('['), "{error:?}");
-            assert!(error.hints.is_empty(), "{error:?}");
-            assert!(error.next.is_none(), "{rule}: {error:?}");
-        }
-    }
-    // Without language, a rule no grammar parses is the rule's error, never
-    // a choice between the directory's grammars.
-    std::fs::write(root.0.join("b.py"), "def b(): pass\n").expect("python");
-    let error = run(
-        &root.0,
-        json!({"operation":"match","mainGoal":"test","reasoning":"test","path":root.0,
-            "rule":"kindx: function_item"}),
-    )
-    .expect_err("invalid rule");
-    assert_eq!(error.code, "invalidPattern", "{error:?}");
-    assert!(error.message.contains("unknown field `kindx`"), "{error:?}");
-    assert!(error.next.is_none(), "{error:?}");
-    for query in [
-        json!({"rule":"kind: not_a_real_kind"}),
-        json!({"pattern":"fn ???"}),
-    ] {
-        let mut row =
-            json!({"operation":"match","mainGoal":"test","reasoning":"test","path":source});
-        row.as_object_mut()
-            .expect("object")
-            .extend(query.as_object().expect("object").clone());
-        let error = run(&root.0, row).expect_err("does not compile");
-        assert_eq!(error.code, "invalidPattern", "{error:?}");
-        let next = error.next.as_ref().expect("viewTree");
-        assert_eq!(
-            next["viewTree"]["query"]["queries"][0]["path"],
-            json!(source.canonicalize().expect("source").to_string_lossy()),
-            "{next}"
-        );
-    }
-}
-
-#[test]
-fn flow_js_symbols_list_hooks_and_mark_a_recovered_parse_partial() {
-    let root = Fixture::new();
-    let source = root.0.join("Hooks.js");
-    std::fs::write(
-        &source,
-        "// @flow\nimport type {D} from 'd';\ntype Dispatch<A> = A => void;\n\
-         export function useState<S>(init: (() => S) | S): [S, Dispatch<S>] {\n  if (x) {\n    y();\n  }\n  return z;\n}\n\
-         export function useRef<T>(v: T): {current: T} {\n  if (x) {\n    y();\n  }\n  return z;\n}\n",
-    )
-    .expect("source");
-    let out = run(
-        &root.0,
-        json!({"operation":"symbols","mainGoal":"test","reasoning":"test","path":source}),
-    )
-    .expect("symbols");
-    let names = outline_names(&out["symbols"]);
-    assert!(
-        names.contains(&"useState") && names.contains(&"useRef"),
-        "{out}"
-    );
-    assert!(!names.contains(&"if"), "{out}");
-    let recovered = out["diagnostics"].as_array().is_some_and(|ds| {
-        ds.iter().any(|d| {
-            d["message"]
-                .as_str()
-                .is_some_and(|m| m.starts_with("tree-sitter recovered"))
-        })
-    });
-    // A recovered parse is a partial inventory, never a complete one.
-    assert!(
-        recovered,
-        "the Flow type alias forces a recovered parse: {out}"
-    );
-    assert_eq!(out["isPartial"], json!(true), "{out}");
-    // A partial page without `next` still names why it is partial.
-    assert_eq!(out["partialReasons"], json!(["parseRecovered"]), "{out}");
-}
-
-/// A single-file match parses the file as a directory scan does: raw.
-/// Redacting first shifted columns and could erase a matched row; values
-/// are still redacted in the output.
-#[test]
-fn single_file_match_keeps_redacted_rows_and_directory_positions() {
-    let root = Fixture::new();
-    let source = root.0.join("k.ts");
-    std::fs::write(
-        &source,
-        "export const A = \"plain\"; hit(1);\nexport const GITHUB_TOKEN = \"ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789\"; hit(2);\n",
-    )
-    .expect("source");
-    let rows = |path: &std::path::Path| {
-        let out = run(
-            &root.0,
-            json!({"operation":"match","mainGoal":"test","reasoning":"test","path":path,"language":"typescript","pattern":"export const $N = $V"}),
-        )
-        .expect("match");
-        let file = out["files"][0].clone();
-        assert!(file.is_object(), "{out}");
-        file["matches"].as_array().expect("matches").clone()
-    };
-    let single = rows(&source);
-    let directory = rows(&root.0);
-    assert_eq!(single.len(), 2, "{single:?}");
-    assert_eq!(single, directory);
-}
-
-/// A pattern the grammar cannot parse fails before any prefilter: a
-/// directory where no file holds the anchor must not report `complete` and
-/// empty for `foo(`.
-#[test]
-fn invalid_pattern_is_an_error_even_when_every_file_is_prefiltered() {
-    let root = Fixture::new();
-    std::fs::write(root.0.join("a.ts"), "const value = 1;\n").expect("source");
-    let error = run(
-        &root.0,
-        json!({"operation":"match","mainGoal":"test","reasoning":"test","path":root.0,"language":"typescript","pattern":"foo("}),
-    )
-    .expect_err("an unparseable pattern must fail loudly");
-    // The response stage attaches the repair hint for this code.
-    assert_eq!(error.code, "invalidPattern", "{error:?}");
-}
-
-/// A multi-line match with a body block shows its header (text before the
-/// body) with line/endLine anchors, not the flattened body; captureText:true
-/// (next.expandCaptures) returns the whole match text.
-#[test]
-fn block_matches_default_to_their_header_and_expand_on_request() {
-    let root = Fixture::new();
-    let source = root.0.join("lib.rs");
-    std::fs::write(
-        &source,
-        "pub fn load(\n    path: &str,\n) -> Result<u8, String> {\n    let raw = read(path)?;\n    parse(raw)\n}\n",
-    )
-    .expect("source");
-    let query = json!({"operation":"match","mainGoal":"test","reasoning":"test","path":source,
-        "rule":"rule:\n  kind: function_item\n"});
-    let out = run(&root.0, query.clone()).expect("match");
-    assert_eq!(
-        out["files"][0]["matches"][0],
-        json!({"line":1,"column":1,"endLine":6,"value":"pub fn load( path: &str, ) -> Result<u8, String> …"}),
-        "{out}"
-    );
-    assert!(out["next"]["expandCaptures"].is_object(), "{out}");
-
-    let mut expanded = query;
-    expanded["captureText"] = json!(true);
-    let out = run(&root.0, expanded).expect("match");
-    let value = out["files"][0]["matches"][0]["value"]
-        .as_str()
-        .expect("value");
-    assert!(value.ends_with("parse(raw) }"), "{out}");
-    assert!(out["next"].get("expandCaptures").is_none(), "{out}");
-}
-
 /// A directory match without language uses the one grammar whose files the
-/// scope holds; continuations pin the inferred grammar.
+/// scope holds; continuations retain per-file inference rather than narrowing it.
 #[test]
 fn directory_match_infers_the_only_grammar_present() {
     let root = Fixture::new();
-    std::fs::write(root.0.join("a.rs"), "fn a() { hit(1); }\n").expect("a");
+    root.write("a.rs", "fn a() { hit(1); }\n");
     std::fs::create_dir(root.0.join("nested")).expect("nested");
-    std::fs::write(root.0.join("nested/b.rs"), "fn b() { hit(2); }\n").expect("b");
-    std::fs::write(root.0.join("README.md"), "hit(3)\n").expect("doc");
+    root.write("nested/b.rs", "fn b() { hit(2); }\n");
+    root.write("README.md", "hit(3)\n");
     let out = run(
         &root.0,
         json!({"operation":"match","mainGoal":"test","reasoning":"test","path":root.0,"pattern":"hit($A)","pageSize":1}),
@@ -1817,268 +537,46 @@ fn directory_match_infers_the_only_grammar_present() {
     .expect("language inferred from the .rs files");
     assert_eq!(out["matchCount"], 2, "{out}");
     assert_eq!(out["inferredLanguage"], "rust", "{out}");
-    assert_eq!(
-        out["next"]["nextPage"]["query"]["queries"][0]["language"], "rust",
-        "{out}"
-    );
+    let next = out["next"]["nextPage"]["query"]["queries"][0].clone();
+    assert!(next.get("language").is_none(), "{out}");
+    let continued = run(&root.0, next).expect("same inferred scope");
+    assert_eq!(continued["snapshot"], out["snapshot"], "{continued}");
+    assert!(continued["next"].get("nextPage").is_none(), "{continued}");
     let explicit = run(
         &root.0,
         json!({"operation":"match","mainGoal":"test","reasoning":"test","path":root.0,"pattern":"hit($A)","pageSize":1,"language":"rust"}),
     )
     .expect("explicit language");
-    assert_eq!(
-        explicit["snapshot"], out["snapshot"],
-        "same scope, same snapshot"
-    );
+    assert_eq!(explicit["matchCount"], out["matchCount"], "{explicit}");
     assert!(explicit.get("inferredLanguage").is_none(), "{explicit}");
 }
 
 #[test]
-fn directory_match_with_several_parsing_grammars_names_the_candidates() {
+fn directory_match_covers_each_parsing_grammar_and_explicit_language_still_filters() {
     let root = Fixture::new();
-    std::fs::write(root.0.join("a.rs"), "fn a() { hit(1); }\n").expect("a");
-    std::fs::write(root.0.join("b.ts"), "hit(2);\n").expect("b");
-    // The scope is mostly TypeScript, so its grammar leads the repair
-    // (hints keep a lead's first row) although `rust` sorts first by name.
-    std::fs::write(root.0.join("c.ts"), "hit(3);\n").expect("c");
-    let error = run(
-        &root.0,
-        json!({"operation":"match","mainGoal":"test","reasoning":"test","path":root.0,"pattern":"hit($A)"}),
-    )
-    .expect_err("two grammars parse the pattern");
-    assert_eq!(error.code, "languageRequired", "{error:?}");
-    for language in ["rust", "typescript"] {
-        assert!(error.message.contains(language), "{error:?}");
-    }
-    // One repair lead runs the query once per candidate grammar; no text.
-    let next = error.next.as_ref().expect("repair lead");
-    assert_eq!(next.as_object().map(|next| next.len()), Some(1), "{next}");
-    assert!(error.hints.is_empty(), "{error:?}");
-    let rows = next["repair"]["query"]["queries"]
-        .as_array()
-        .expect("batch");
-    assert_eq!(rows.len(), 2, "{next}");
-    for (row, language) in rows.iter().zip(["typescript", "rust"]) {
-        assert_eq!(row["language"], language, "{next}");
-        assert_eq!(row["pattern"], "hit($A)", "{next}");
-    }
-    // The named language is the repair: it scans only that grammar's files.
+    root.write("a.rs", "fn a() { hit(1); }\n");
+    root.write("b.ts", "hit(2);\n");
+    root.write("c.ts", "hit(3);\n");
+    root.write("d.js", "hit(4);\n");
+    root.write("e.py", "hit(5)\n");
     let out = run(
         &root.0,
-        json!({"operation":"match","mainGoal":"test","reasoning":"test","path":root.0,"pattern":"hit($A)","language":"rust"}),
+        json!({"operation":"match","path":root.0,"pattern":"hit($A)"}),
     )
-    .expect("explicit language");
-    assert_eq!(out["matchCount"], 1, "{out}");
+    .expect("each file selects its grammar");
+    assert_eq!(out["matchCount"], 5, "{out}");
+    assert_eq!(out["files"].as_array().map(Vec::len), Some(5), "{out}");
     assert!(out.get("inferredLanguage").is_none(), "{out}");
-}
-
-/// A rule object and its YAML string select the same nodes.
-#[test]
-fn object_and_yaml_rules_match_identically() {
-    let root = Fixture::new();
-    std::fs::write(
-        root.0.join("lib.rs"),
-        "fn a() { unsafe { Pin::new_unchecked(&mut x); } }\nfn b() { Pin::new_unchecked(&mut y); }\n",
+    let explicit = run(
+        &root.0,
+        json!({"operation":"match","path":root.0,"pattern":"hit($A)","language":"rust"}),
     )
-    .expect("source");
-    // A short value cut hides the capture, so the page offers expandCaptures.
-    let base = json!({"operation":"match","mainGoal":"test","reasoning":"test","path":root.0,"language":"rust","matchContentLength":12});
-    let mut yaml = base.clone();
-    yaml["rule"] = json!(
-        "pattern: Pin::new_unchecked($A)\nnot:\n  inside:\n    kind: unsafe_block\n    stopBy: end"
-    );
-    let mut object = base;
-    object["rule"] = json!({"pattern":"Pin::new_unchecked($A)","not":{"inside":{"kind":"unsafe_block","stopBy":"end"}}});
-    let yaml = run(&root.0, yaml).expect("yaml rule");
-    let object = run(&root.0, object).expect("object rule");
-    assert_eq!(yaml["files"], object["files"], "{yaml} vs {object}");
+    .expect("explicit selector");
+    assert_eq!(explicit["matchCount"], 1, "{explicit}");
     assert_eq!(
-        yaml["files"][0]["matches"].as_array().map(Vec::len),
+        explicit["files"].as_array().map(Vec::len),
         Some(1),
-        "{yaml}"
-    );
-    assert_eq!(lean_row(&yaml["files"][0]["matches"][0]).0, 2, "{yaml}");
-    // The continuation copies the object rule exactly as written.
-    assert_eq!(
-        object["next"]["expandCaptures"]["query"]["queries"][0]["rule"],
-        json!({"pattern":"Pin::new_unchecked($A)","not":{"inside":{"kind":"unsafe_block","stopBy":"end"}}}),
-        "{object}"
-    );
-    let continuation = object["next"]["expandCaptures"]["query"]["queries"][0].clone();
-    assert!(
-        serde_json::from_value::<super::AstSearchQuery>(continuation).is_ok(),
-        "the continuation parses as a typed row"
-    );
-}
-
-/// Matches inside a `macro_rules!` template body are listed (no
-/// silent omission behind `complete:true`).
-#[test]
-fn macro_rules_template_bodies_are_listed() {
-    let root = Fixture::new();
-    std::fs::write(
-        root.0.join("m.rs"),
-        "macro_rules! get {\n    ($e:expr) => {\n        config.value.unwrap()\n    };\n}\nfn main() {\n    other.unwrap();\n}\n",
-    )
-    .expect("source");
-    let out = run(
-        &root.0,
-        json!({"operation":"match","path":root.0,"language":"rust","pattern":"$X.unwrap()"}),
-    )
-    .expect("match");
-    let lines = out["files"][0]["matches"]
-        .as_array()
-        .map(|rows| rows.iter().map(|row| lean_row(row).0).collect::<Vec<_>>())
-        .unwrap_or_default();
-    assert_eq!(lines, [3, 7], "{out}");
-}
-
-/// The rule-file object `{rule: …}` matches like the YAML rule file
-/// (`rule:` wrapper) and like the bare rule.
-#[test]
-fn rule_config_object_matches_like_yaml_rule_file() {
-    let root = Fixture::new();
-    std::fs::write(
-        root.0.join("lib.rs"),
-        "fn a() { unsafe { Pin::new_unchecked(&mut x); } }\nfn b() { Pin::new_unchecked(&mut y); }\n",
-    )
-    .expect("source");
-    let base = json!({"operation":"match","path":root.0,"language":"rust"});
-    let bare = json!({"pattern":"Pin::new_unchecked($A)","not":{"inside":{"kind":"unsafe_block","stopBy":"end"}}});
-    let mut yaml = base.clone();
-    yaml["rule"] = json!(
-        "id: pin\nlanguage: rust\nrule:\n  pattern: Pin::new_unchecked($A)\n  not:\n    inside:\n      kind: unsafe_block\n      stopBy: end"
-    );
-    let mut object = base.clone();
-    object["rule"] = json!({ "rule": bare });
-    let mut plain = base;
-    plain["rule"] = bare;
-    let yaml = run(&root.0, yaml).expect("yaml rule file");
-    let object = run(&root.0, object).expect("rule file object");
-    let plain = run(&root.0, plain).expect("bare rule");
-    assert_eq!(yaml["files"], object["files"], "{yaml} vs {object}");
-    assert_eq!(plain["files"], object["files"], "{plain} vs {object}");
-    assert_eq!(
-        object["files"][0]["matches"].as_array().map(Vec::len),
-        Some(1),
-        "{object}"
-    );
-}
-
-#[test]
-fn symbols_name_list_returns_the_union_and_a_string_is_one_entry() {
-    let root = Fixture::new();
-    let source = root.0.join("task.rs");
-    std::fs::write(
-        &source,
-        "fn complete() {}\nfn try_read_output() {}\nfn other() {}\n",
-    )
-    .expect("source");
-    let names = |out: &serde_json::Value| {
-        outline_names(&out["symbols"])
-            .into_iter()
-            .map(str::to_owned)
-            .collect::<Vec<_>>()
-    };
-    let list = run(
-        &root.0,
-        json!({"operation":"symbols","mainGoal":"test","reasoning":"test","path":source,"symbolName":["complete","try_read_output"]}),
-    )
-    .expect("list");
-    assert_eq!(names(&list), ["complete", "try_read_output"], "{list}");
-    let single = run(
-        &root.0,
-        json!({"operation":"symbols","mainGoal":"test","reasoning":"test","path":source,"symbolName":"complete"}),
-    )
-    .expect("single");
-    assert_eq!(names(&single), ["complete"], "{single}");
-}
-
-#[test]
-fn symbols_list_entries_prefer_exact_names_and_lowercase_ignores_case() {
-    let root = Fixture::new();
-    let source = root.0.join("query.rs");
-    std::fs::write(
-        &source,
-        "fn get() {}\nfn aget() {}\nfn get_or_create() {}\nfn Native() {}\nfn parse_x() {}\n",
-    )
-    .expect("source");
-    let names = |query: serde_json::Value| {
-        let mut row =
-            json!({"operation":"symbols","mainGoal":"test","reasoning":"test","path":source});
-        row["symbolName"] = query;
-        let out = run(&root.0, row).expect("symbols");
-        outline_names(&out["symbols"])
-            .into_iter()
-            .map(str::to_owned)
-            .collect::<Vec<_>>()
-    };
-    // A list names identifiers: an entry with an exact declaration keeps
-    // only it; an entry without one still matches as a substring.
-    assert_eq!(names(json!(["get", "parse"])), ["get", "parse_x"]);
-    // One string is a one-entry list: exact first, else a substring family.
-    assert_eq!(names(json!("get")), ["get"]);
-    assert_eq!(names(json!("ge")), ["get", "aget", "get_or_create"]);
-    // All-lowercase text ignores case; any capital makes it exact-case.
-    assert_eq!(names(json!("native")), ["Native"]);
-    assert!(names(json!("NATIVE")).is_empty());
-}
-
-#[test]
-fn a_single_named_declaration_leads_to_its_callers() {
-    let root = Fixture::new();
-    let source = root.0.join("lead.rs");
-    std::fs::write(&source, "struct S;\n\nfn helper() {}\nfn helper_two() {}\n").expect("source");
-    let symbols = |name: serde_json::Value| {
-        run(
-            &root.0,
-            json!({"operation":"symbols","mainGoal":"test","reasoning":"test","path":source,"symbolName":name}),
-        )
-        .expect("symbols")
-    };
-    // A string names an identifier exactly like a one-entry list.
-    assert_eq!(symbols(json!("helper")), symbols(json!(["helper"])));
-    let one = symbols(json!(["helper"]));
-    // Offered only where a language server runs for the file.
-    if crate::tools::leads::lsp::verify_query(
-        &source.to_string_lossy(),
-        "helper",
-        3,
-        crate::tools::leads::lsp::Verify::Callers,
-    )
-    .is_none()
-    {
-        assert!(one["next"].get("findCallers").is_none(), "{one}");
-        return;
-    }
-    let lead = &one["next"]["findCallers"];
-    assert_eq!(lead["tool"], "lspSearch", "{one}");
-    // A function's usual next question is its call sites.
-    assert_eq!(lead["query"]["queries"][0]["operation"], "callers", "{one}");
-    assert_eq!(lead["query"]["queries"][0]["symbolName"], "helper", "{one}");
-    assert_eq!(lead["query"]["queries"][0]["line"], 3, "{one}");
-    let uri = lead["query"]["queries"][0]["path"].as_str().expect("uri");
-    assert!(
-        std::path::Path::new(uri).is_absolute() && uri.ends_with("lead.rs"),
-        "{uri}"
-    );
-    // Several declarations, or no name filter, name no single symbol.
-    for many in [symbols(json!("help")), symbols(json!(null))] {
-        assert!(many["next"].get("callers").is_none(), "{many}");
-    }
-    // A directory scope resolves the row's file for the lead.
-    let dir = run(
-        &root.0,
-        json!({"operation":"symbols","mainGoal":"test","reasoning":"test","path":root.0,"symbolName":["helper"]}),
-    )
-    .expect("directory symbols");
-    let uri = dir["next"]["findCallers"]["query"]["queries"][0]["path"]
-        .as_str()
-        .expect("directory path");
-    assert_eq!(
-        std::path::Path::new(uri),
-        source.canonicalize().expect("canonical"),
-        "{dir}"
+        "{explicit}"
     );
 }
 
@@ -2086,12 +584,8 @@ fn a_single_named_declaration_leads_to_its_callers() {
 fn a_bare_include_word_matches_file_names_containing_it() {
     let root = Fixture::new();
     std::fs::create_dir_all(root.0.join("nested")).expect("dir");
-    std::fs::write(
-        root.0.join("nested/handler_test.rs"),
-        "fn a() { hit(1); }\n",
-    )
-    .expect("a");
-    std::fs::write(root.0.join("other.rs"), "fn b() { hit(2); }\n").expect("b");
+    root.write("nested/handler_test.rs", "fn a() { hit(1); }\n");
+    root.write("other.rs", "fn b() { hit(2); }\n");
     let out = run(
         &root.0,
         json!({"operation":"match","mainGoal":"test","reasoning":"test","path":root.0,
@@ -2109,157 +603,13 @@ fn a_bare_include_word_matches_file_names_containing_it() {
     );
 }
 
-#[test]
-fn directory_symbols_by_name_parse_only_files_that_spell_the_name() {
-    let root = Fixture::new();
-    std::fs::write(root.0.join("a.rs"), "pub fn helper() {}\n").expect("a");
-    // No file without the name is parsed: its recovered-parse diagnostic
-    // cannot mark the named outline partial.
-    std::fs::write(root.0.join("b.rs"), "fn broken( {\n").expect("b");
-    std::fs::write(root.0.join("c.rs"), "fn Helper_case() {}\n").expect("c");
-    let out = run(
-        &root.0,
-        json!({"operation":"symbols","mainGoal":"test","reasoning":"test","path":root.0,"symbolName":"helper"}),
-    )
-    .expect("symbols");
-    assert_eq!(out["isPartial"], false, "{out}");
-    assert_eq!(
-        out["diagnostics"].as_array().map(Vec::len),
-        Some(0),
-        "{out}"
-    );
-    assert_eq!(out["filesScanned"], 3, "{out}");
-    let files = out["files"].as_array().expect("files");
-    assert_eq!(files.len(), 1, "{out}");
-    assert_eq!(outline_names(&files[0]["symbols"]), ["helper"], "{out}");
-    // All-lowercase text ignores case in the byte prefilter too.
-    let folded = run(
-        &root.0,
-        json!({"operation":"symbols","mainGoal":"test","reasoning":"test","path":root.0,"symbolName":"helper_case"}),
-    )
-    .expect("folded");
-    assert_eq!(
-        outline_names(&folded["files"][0]["symbols"]),
-        ["Helper_case"],
-        "{folded}"
-    );
-}
-
-#[test]
-fn an_empty_declaration_pattern_retries_with_the_parts_it_omitted() {
-    let root = Fixture::new();
-    let typed = root.0.join("typed.ts");
-    std::fs::write(
-        &typed,
-        "export function typed(a: number): number { return a; }\nfunction local(): void {}\n",
-    )
-    .expect("typed");
-    let mixed = root.0.join("mixed.ts");
-    std::fs::write(
-        &mixed,
-        "export function typed(a: number): number { return a; }\nexport function untyped(b) { return b; }\n",
-    )
-    .expect("mixed");
-    let rust = root.0.join("items.rs");
-    std::fs::write(
-        &rust,
-        "pub fn a() -> u8 { 1 }\npub(crate) fn b() {}\nfn c() {}\n",
-    )
-    .expect("rust");
-    let python = root.0.join("defs.py");
-    std::fs::write(&python, "def f(x) -> int:\n    return x\n").expect("python");
-    let matched = |path: &PathBuf, pattern: &str| {
-        run(
-            &root.0,
-            json!({"operation":"match","mainGoal":"test","reasoning":"test","path":path,"pattern":pattern}),
-        )
-        .expect("match")
-    };
-    let relaxed = |out: &serde_json::Value| {
-        out["diagnostics"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .any(|d| d["code"] == "structural.pattern.relaxed")
-    };
-
-    // Every function has a return type: the pattern as written matches
-    // nothing, so the retry spells the return type it omitted.
-    let out = matched(&typed, "export function $N($$$A) { $$$B }");
-    assert_eq!(out["matchCount"], 1, "{out}");
-    assert!(out.get("status").is_none(), "{out}");
-    assert!(relaxed(&out), "{out}");
-    let out = matched(&typed, "function $N($$$A) { $$$B }");
-    assert_eq!(out["matchCount"], 2, "{out}");
-
-    // A pattern that matches as written still gains the spellings it
-    // omitted: the untyped function and the typed one.
-    let out = matched(&mixed, "export function $N($$$A) { $$$B }");
-    assert_eq!(out["matchCount"], 2, "{out}");
-    assert!(relaxed(&out), "{out}");
-
-    // Rust: visibility and the return type; Python: the return annotation.
-    let out = matched(&rust, "fn $N() { $$$B }");
-    assert_eq!(out["matchCount"], 3, "{out}");
-    assert!(relaxed(&out), "c as written, a and b relaxed: {out}");
-    let only_pub = root.0.join("pub.rs");
-    std::fs::write(&only_pub, "pub fn a() -> u8 { 1 }\npub(crate) fn b() {}\n").expect("pub");
-    let out = matched(&only_pub, "fn $N() { $$$B }");
-    assert_eq!(out["matchCount"], 2, "{out}");
-    assert!(relaxed(&out), "{out}");
-    let out = matched(&python, "def $F($$$A): $$$B");
-    assert_eq!(out["matchCount"], 1, "{out}");
-    assert!(relaxed(&out), "{out}");
-
-    // Nothing to add, or nothing found either way: the plain empty result.
-    let out = matched(&typed, "class $C { $$$B }");
-    assert_eq!(out["status"], "empty", "{out}");
-    assert!(!relaxed(&out), "{out}");
-}
-
-/// A single-file outline leads to its natural next read: the top
-/// declaration's lines; a directory outline names no single read.
-#[test]
-fn a_single_file_outline_leads_to_its_top_declaration() {
-    let root = Fixture::new();
-    let file = root.0.join("lib.rs");
-    std::fs::write(
-        &file,
-        "pub fn first() {\n    one();\n}\n\npub fn second() {}\n",
-    )
-    .expect("source");
-    let (paths, security) = simple_policy(&root.0);
-    let outline = execute_row(
-        json!({"operation":"symbols","path":file}),
-        &paths,
-        &security,
-        &NeverCancel,
-    )
-    .expect("symbols");
-    let read = &outline["next"]["read"];
-    assert_eq!(read["tool"], "localFetch", "{outline}");
-    assert_eq!(
-        read["query"]["queries"][0]["ranges"],
-        json!(["1-3"]),
-        "{outline}"
-    );
-    let listing = execute_row(
-        json!({"operation":"symbols","path":root.0}),
-        &paths,
-        &security,
-        &NeverCancel,
-    )
-    .expect("symbols");
-    assert!(listing["next"].get("read").is_none(), "{listing}");
-}
-
 /// `.ts` and `.tsx` are one family: `typescript` scans `.tsx` with the TSX
 /// parser, so a mixed directory needs no language.
 #[test]
 fn directory_match_over_a_grammar_family_infers_the_family() {
     let root = Fixture::new();
-    std::fs::write(root.0.join("a.ts"), "hit(1);\n").expect("a");
-    std::fs::write(root.0.join("b.tsx"), "const v = <div>{hit(2)}</div>;\n").expect("b");
+    root.write("a.ts", "hit(1);\n");
+    root.write("b.tsx", "const v = <div>{hit(2)}</div>;\n");
     let out = run(
         &root.0,
         json!({"operation":"match","path":root.0,"pattern":"hit($A)"}),
@@ -2267,552 +617,6 @@ fn directory_match_over_a_grammar_family_infers_the_family() {
     .expect("one family");
     assert_eq!(out["inferredLanguage"], "typescript", "{out}");
     assert_eq!(out["matchCount"], 2, "{out}");
-}
-
-/// A parse-recovery note repeated by several files that list declarations
-/// is one counted entry naming every file, not one entry per file.
-#[test]
-fn symbols_count_one_recovery_note_across_files_that_list_declarations() {
-    let root = Fixture::new();
-    for index in 1..=3 {
-        std::fs::write(
-            root.0.join(format!("f{index}.rs")),
-            format!("fn foo_{index}() {{}}\nfn caller() {{ foo_{index}(; }}\n"),
-        )
-        .expect("broken");
-    }
-    let out = run(
-        &root.0,
-        json!({"operation":"symbols","path":root.0,"symbolName":"foo_","pageSize":1}),
-    )
-    .expect("symbols");
-    let diagnostics = out["diagnostics"].as_array().expect("diagnostics");
-    assert_eq!(diagnostics.len(), 1, "{out}");
-    let message = diagnostics[0]["message"].as_str().expect("message");
-    assert!(message.starts_with("tree-sitter recovered"), "{out}");
-    assert!(message.ends_with("(3 files)"), "{out}");
-    let mut files = diagnostics[0]["files"]
-        .as_array()
-        .expect("files")
-        .iter()
-        .filter_map(|file| file["path"].as_str())
-        .map(|path| path.rsplit('/').next().unwrap_or(path).to_owned())
-        .collect::<Vec<_>>();
-    files.sort();
-    assert_eq!(files, ["f1.rs", "f2.rs", "f3.rs"], "{out}");
-    assert_eq!(out["partialReasons"], json!(["parseRecovered"]), "{out}");
-}
-
-/// Files whose parse-recovery notes share a message share one counted
-/// entry with every path, and a text search completes the name lookup the
-/// recovered parses may have missed.
-#[test]
-fn symbols_group_recovery_notes_of_files_without_a_listed_declaration() {
-    let root = Fixture::new();
-    std::fs::write(root.0.join("a.rs"), "fn sdsnewlen() {}\n").expect("a");
-    for file in ["b.rs", "c.rs"] {
-        std::fs::write(root.0.join(file), "fn caller() { sdsnewlen(; }\n").expect("broken");
-    }
-    let out = run(
-        &root.0,
-        json!({"operation":"symbols","path":root.0,"symbolName":"sdsnewlen"}),
-    )
-    .expect("symbols");
-    let diagnostics = out["diagnostics"].as_array().expect("diagnostics");
-    assert_eq!(diagnostics.len(), 1, "{out}");
-    assert!(diagnostics[0].get("path").is_none(), "{out}");
-    let files = diagnostics[0]["files"].as_array().expect("files");
-    assert_eq!(files.len(), 2, "{out}");
-    assert!(files.iter().all(|file| file["path"].is_string()), "{out}");
-    assert!(
-        diagnostics[0]["message"]
-            .as_str()
-            .is_some_and(|m| m.starts_with("tree-sitter recovered")),
-        "{out}"
-    );
-    assert_eq!(out["isPartial"], true, "{out}");
-    let lead = &out["next"]["findText"];
-    assert_eq!(lead["tool"], "localSearch", "{out}");
-    assert_eq!(
-        lead["query"]["queries"][0]["matchString"], "sdsnewlen",
-        "{out}"
-    );
-}
-
-/// A recovered parse can hide a declaration of the queried name only
-/// where its syntax errors spell that name. A file that only calls the name
-/// in code that parsed keeps no note and leaves the outline complete.
-#[test]
-fn recovered_notes_only_for_files_whose_errors_spell_the_name() {
-    let root = Fixture::new();
-    std::fs::write(root.0.join("a.c"), "int foo(int x) { return x; }\n").expect("a");
-    // Calls `foo` on a clean line; the syntax error is elsewhere.
-    std::fs::write(
-        root.0.join("b.c"),
-        "int caller(void) { return foo(1); }\n\nint broken( {\n  return 2;\n}\n",
-    )
-    .expect("b");
-    // The syntax error spells `foo`: a declaration could hide there.
-    std::fs::write(root.0.join("c.c"), "int user(void) {\n  int foo( = 3;\n}\n").expect("c");
-    let out = run(
-        &root.0,
-        json!({"operation":"symbols","path":root.0,"symbolName":"foo"}),
-    )
-    .expect("symbols");
-    let diagnostics = out["diagnostics"].as_array().cloned().unwrap_or_default();
-    let noted = diagnostics
-        .iter()
-        .flat_map(|d| {
-            d["files"]
-                .as_array()
-                .cloned()
-                .unwrap_or_default()
-                .into_iter()
-                .map(|file| file["path"].clone())
-                .chain(d.get("path").cloned())
-        })
-        .filter_map(|path| path.as_str().map(str::to_owned))
-        .collect::<Vec<_>>();
-    assert!(noted.iter().any(|path| path.ends_with("c.c")), "{out}");
-    assert!(!noted.iter().any(|path| path.ends_with("b.c")), "{out}");
-    assert_eq!(out["isPartial"], true, "{out}");
-    // Only b.c's irrelevant note: the outline is complete.
-    std::fs::remove_file(root.0.join("c.c")).expect("remove c");
-    let out = run(
-        &root.0,
-        json!({"operation":"symbols","path":root.0,"symbolName":"foo"}),
-    )
-    .expect("symbols");
-    assert!(
-        out["diagnostics"].as_array().is_none_or(Vec::is_empty),
-        "{out}"
-    );
-    assert_eq!(out["isPartial"], false, "{out}");
-}
-
-/// A name-filtered outline that lists a declaration from a recovered parse
-/// cites a partial inventory: the file keeps its note and the page is
-/// partial, wherever the syntax error sits. Recovered files that list
-/// nothing and whose errors do not spell the name stay out.
-#[test]
-fn a_recovered_file_that_lists_the_named_declaration_keeps_its_note() {
-    let root = Fixture::new();
-    for index in 1..=3 {
-        std::fs::write(
-            root.0.join(format!("f{index}.rs")),
-            format!("pub fn helper{index}() {{}}\nfn broken( {{\n"),
-        )
-        .expect("broken");
-    }
-    let out = run(
-        &root.0,
-        json!({"operation":"symbols","path":root.0,"symbolName":"helper2"}),
-    )
-    .expect("symbols");
-    assert_eq!(
-        outline_names(&out["files"][0]["symbols"]),
-        ["helper2"],
-        "{out}"
-    );
-    let diagnostics = out["diagnostics"].as_array().expect("diagnostics");
-    assert_eq!(diagnostics.len(), 1, "{out}");
-    let noted = diagnostics[0].to_string();
-    assert!(noted.contains("f2.rs"), "{out}");
-    assert!(
-        !noted.contains("f1.rs") && !noted.contains("f3.rs"),
-        "{out}"
-    );
-    assert_eq!(out["isPartial"], true, "{out}");
-    assert_eq!(out["partialReasons"], json!(["parseRecovered"]), "{out}");
-}
-
-/// An empty symbols search says what it searched (the name and the
-/// file count) and leads to the name's text.
-#[test]
-fn empty_symbols_hint_names_file_count_and_text_lead() {
-    let root = Fixture::new();
-    std::fs::write(root.0.join("a.rs"), "fn alpha() {}\n").expect("a");
-    std::fs::write(root.0.join("b.rs"), "fn beta() { missing_name(); }\n").expect("b");
-    let out = run(
-        &root.0,
-        json!({"operation":"symbols","path":root.0,"symbolName":"missing_name"}),
-    )
-    .expect("symbols");
-    assert_eq!(out["status"], "empty", "{out}");
-    let hints = out["hints"].as_array().expect("hints");
-    assert!(
-        hints.iter().any(|hint| hint
-            .as_str()
-            .is_some_and(|text| text.contains("0 declarations named missing_name in 2 files"))),
-        "{out}"
-    );
-    let lead = &out["next"]["findText"];
-    assert_eq!(lead["tool"], "localSearch", "{out}");
-    assert_eq!(
-        lead["query"]["queries"][0]["matchString"], "missing_name",
-        "{out}"
-    );
-    // Without a name, the hint counts the files and names no text lead.
-    let outline = run(
-        &root.0,
-        json!({"operation":"symbols","path":root.0,"kinds":["class"]}),
-    )
-    .expect("outline");
-    assert_eq!(outline["status"], "empty", "{outline}");
-    assert!(
-        outline["hints"][0]
-            .as_str()
-            .is_some_and(|text| text.contains("0 declarations in 2 files")),
-        "{outline}"
-    );
-    assert!(outline["next"].get("findText").is_none(), "{outline}");
-}
-
-/// An empty match counts the files it parsed and leads to the syntax
-/// tree of the first, where the pattern's node shape can be compared.
-#[test]
-fn empty_match_hint_leads_to_syntax_tree() {
-    let root = Fixture::new();
-    std::fs::write(root.0.join("a.rs"), "fn alpha() { beta(1); }\n").expect("a");
-    let out = run(
-        &root.0,
-        json!({"operation":"match","path":root.0,"language":"rust","pattern":"beta($A, $B)"}),
-    )
-    .expect("match");
-    assert_eq!(out["status"], "empty", "{out}");
-    assert!(
-        out["hints"][0]
-            .as_str()
-            .is_some_and(|text| text.starts_with("0 matches in 1 rust file.")),
-        "{out}"
-    );
-    let lead = &out["next"]["viewTree"];
-    assert_eq!(lead["tool"], "astSearch", "{out}");
-    let row = &lead["query"]["queries"][0];
-    assert_eq!(row["operation"], "syntaxTree", "{out}");
-    assert!(
-        row["path"]
-            .as_str()
-            .is_some_and(|path| path.ends_with("a.rs")),
-        "{out}"
-    );
-    crate::contracts::validate_query("astSearch", row.clone()).expect("a valid syntaxTree row");
-}
-
-/// A wrapped rule document given as text, here the JSON spelling of
-/// `{rule:{…}}` (valid YAML), matches like the bare rule.
-#[test]
-fn wrapped_rule_document_matches_like_the_bare_rule() {
-    let root = Fixture::new();
-    std::fs::write(root.0.join("a.rs"), "fn a() { f(x); g(1); }\n").expect("source");
-    let base = json!({"operation":"match","path":root.0,"language":"rust"});
-    let mut bare = base.clone();
-    bare["rule"] = json!({"pattern":"f($A)"});
-    let mut wrapped = base;
-    // The JSON text of `{rule:{pattern:"f($A)"}}` is valid YAML for it.
-    wrapped["rule"] = json!(json!({"rule":{"pattern":"f($A)"}}).to_string());
-    let bare = run(&root.0, bare).expect("bare rule");
-    let wrapped = run(&root.0, wrapped).expect("wrapped rule");
-    assert_eq!(bare["files"], wrapped["files"], "{bare} vs {wrapped}");
-    assert_eq!(
-        wrapped["files"][0]["matches"].as_array().map(Vec::len),
-        Some(1),
-        "{wrapped}"
-    );
-}
-
-/// A one-line `typedef struct X X;` declares
-/// `type X` and `struct X` on one name line. The struct is the typedef's
-/// sibling, never its own parent's member, and no row is dropped. A
-/// multi-line `typedef struct Y {…} Y;` keeps its struct nested (different
-/// name lines), and a struct field keeps its struct parent.
-#[test]
-fn c_one_line_typedef_struct_is_not_its_own_parent() {
-    let root = Fixture::new();
-    let source = root.0.join("module.c");
-    std::fs::write(
-        &source,
-        "struct Api {\n    void *func;\n};\ntypedef struct Api Api;\ntypedef struct Fwd Fwd;\n\
-         typedef struct Ctx {\n    int flags;\n} Ctx;\n",
-    )
-    .expect("source");
-    let out = run(
-        &root.0,
-        json!({"operation":"symbols","mainGoal":"test","reasoning":"test","path":source}),
-    )
-    .expect("symbols");
-    let rows = &out["symbols"];
-    let flat = crate::tools::symbol_outline::flatten_members(rows.as_array().expect("rows"));
-    // Every declaration survives, in source order.
-    let named: Vec<(&str, &str, u64)> = flat
-        .iter()
-        .map(|row| {
-            (
-                row["symbolName"].as_str().expect("name"),
-                row["kind"].as_str().expect("kind"),
-                row["line"].as_u64().expect("line"),
-            )
-        })
-        .collect();
-    for want in [
-        ("Api", "struct", 1),
-        ("Api", "type", 4),
-        ("Api", "struct", 4),
-        ("Fwd", "type", 5),
-        ("Fwd", "struct", 5),
-        ("Ctx", "type", 8),
-    ] {
-        assert!(named.contains(&want), "{want:?} missing: {out}");
-    }
-    for row in &flat {
-        assert!(
-            !(row.get("parent") == row.get("symbolName")
-                && row.get("parentLine") == row.get("line")),
-            "self-parented row {row}: {out}"
-        );
-    }
-    let parent_of = |name: &str, kind: &str, line: u64| {
-        flat.iter()
-            .find(|row| row["symbolName"] == name && row["kind"] == kind && row["line"] == line)
-            .and_then(|row| row.get("parent").cloned())
-    };
-    assert_eq!(parent_of("Api", "struct", 4), None, "{out}");
-    assert_eq!(parent_of("Fwd", "struct", 5), None, "{out}");
-}
-
-/// Follow `next.nextPage`, then `next.expandScan`, to the end of the chain;
-/// returns every page.
-fn ast_chain(root: &std::path::Path, query: serde_json::Value) -> Vec<serde_json::Value> {
-    let mut pages = Vec::new();
-    let mut next = Some(query);
-    while let Some(query) = next.take() {
-        assert!(pages.len() < 200, "the chain does not end");
-        let out = run(root, query).expect("page");
-        let page = out["next"].get("nextPage");
-        let expand = out["next"].get("expandScan");
-        assert!(
-            page.is_none() || expand.is_none(),
-            "one continuation per page: {out}"
-        );
-        next = page
-            .or(expand)
-            .map(|call| call["query"]["queries"][0].clone());
-        if next.is_none() {
-            assert!(out.get("terminalLimit").is_none(), "{out}");
-        }
-        pages.push(out);
-    }
-    pages
-}
-
-/// Every `(file, row)` a page lists: match rows under `files[].matches`,
-/// symbol rows under `files[].symbols`.
-fn ast_rows(pages: &[serde_json::Value]) -> Vec<String> {
-    pages
-        .iter()
-        .flat_map(|out| out["files"].as_array().cloned().unwrap_or_default())
-        .flat_map(|file| {
-            let path = file["path"].as_str().expect("path").to_owned();
-            let rows = file
-                .get("matches")
-                .or_else(|| file.get("symbols"))
-                .and_then(serde_json::Value::as_array)
-                .cloned()
-                .unwrap_or_default();
-            rows.into_iter().map(move |row| format!("{path} {row}"))
-        })
-        .collect()
-}
-
-/// `next.expandScan` resumes after the files its window evaluated, so
-/// the chain of pages and widened scans lists every match and declaration
-/// exactly once, under each sort.
-#[test]
-fn expanded_scans_reach_every_file_exactly_once() {
-    let root = Fixture::new();
-    for dir in ["a", "a/deep", "b"] {
-        std::fs::create_dir_all(root.0.join(dir)).expect("dir");
-        for n in 0..5 {
-            let body = "pub fn source() {}\n".repeat(n + 1);
-            std::fs::write(root.0.join(format!("{dir}/f{n}.rs")), body).expect("source file");
-        }
-    }
-    let queries = [
-        serde_json::json!({"operation":"match","path":root.0,"language":"rust","pattern":"pub fn source() {}","pageSize":2}),
-        serde_json::json!({"operation":"match","path":root.0,"language":"rust","pattern":"pub fn source() {}","pageSize":2,"sort":"matchCount"}),
-        serde_json::json!({"operation":"symbols","path":root.0,"pageSize":4}),
-    ];
-    for query in queries {
-        let whole = ast_rows(&ast_chain(&root.0, query.clone()));
-        assert_eq!(whole.len(), 45, "{query}");
-        let mut cut = query.clone();
-        cut["maxFiles"] = serde_json::json!(2);
-        let pages = ast_chain(&root.0, cut);
-        assert!(pages.len() > 4, "{query}");
-        assert!(
-            pages
-                .iter()
-                .any(|page| page["next"]["expandScan"]["query"]["queries"][0]["scanOffset"] == 8),
-            "{query}"
-        );
-        let mut walked = ast_rows(&pages);
-        let mut expected = whole.clone();
-        walked.sort();
-        expected.sort();
-        assert_eq!(walked, expected, "{query}: no duplicate, no gap");
-    }
-}
-
-/// The happy-path rows carry exactly what the next hop takes: a file
-/// outline names its file once and each declaration as an object
-/// `{symbolName, kind, line, endLine}`; a directory outline groups under each
-/// file's `path` without restating the queried directory; a match row is
-/// `{line, endLine?, value}` (no `endLine` on a single-line match).
-#[test]
-fn happy_path_rows_carry_the_next_hop_anchors() {
-    let root = Fixture::new();
-    std::fs::create_dir_all(root.0.join("src")).expect("src");
-    let file = root.0.join("src/lib.rs");
-    std::fs::write(
-        &file,
-        "pub fn alpha() {\n    beta(1);\n}\n\nfn beta(x: u8) {}\n",
-    )
-    .expect("lib");
-
-    let outline = run(
-        &root.0,
-        json!({"operation":"symbols","path":file,"symbolName":"alpha"}),
-    )
-    .expect("file outline");
-    assert_eq!(outline["path"], "lib.rs", "{outline}");
-    let row = &outline["symbols"][0];
-    assert_eq!(
-        (
-            &row["symbolName"],
-            &row["line"],
-            &row["endLine"],
-            &row["kind"]
-        ),
-        (&json!("alpha"), &json!(1), &json!(3), &json!("function")),
-        "{outline}"
-    );
-
-    let directory = run(
-        &root.0,
-        json!({"operation":"symbols","path":root.0.join("src")}),
-    )
-    .expect("directory outline");
-    assert!(directory.get("path").is_none(), "{directory}");
-    assert_eq!(directory["files"][0]["path"], "src/lib.rs", "{directory}");
-    assert!(directory["files"][0]["symbols"].is_array(), "{directory}");
-
-    let matched = run(
-        &root.0,
-        json!({"operation":"match","path":file,"pattern":"fn $N($$$P) { $$$B }"}),
-    )
-    .expect("match");
-    let rows = matched["files"][0]["matches"].as_array().expect("rows");
-    let multi = rows.iter().find(|row| row["line"] == 1).expect("alpha");
-    assert_eq!(multi["endLine"], 3, "{matched}");
-    assert!(multi["value"].is_string(), "{matched}");
-    let single = rows.iter().find(|row| row["line"] == 5).expect("beta");
-    assert!(single.get("endLine").is_none(), "{matched}");
-    for row in rows {
-        let keys = row.as_object().expect("row").keys().collect::<Vec<_>>();
-        assert!(
-            keys.iter()
-                .all(|key| ["line", "endLine", "value", "column"].contains(&key.as_str())),
-            "{row}"
-        );
-    }
-}
-
-/// A later match page lists only files it still has matches for; the
-/// per-file page facts no longer restate the continuation or the counts.
-#[test]
-fn a_later_match_page_drops_files_whose_matches_ended() {
-    let root = Fixture::new();
-    std::fs::write(root.0.join("a.rs"), "fn a() { hit(1); hit(2); hit(3); }\n").expect("a");
-    std::fs::write(root.0.join("b.rs"), "fn b() { hit(4); }\n").expect("b");
-    let first = run(
-        &root.0,
-        json!({"operation":"match","path":root.0,"language":"rust","pattern":"hit($A)","matchPageSize":2}),
-    )
-    .expect("page 1");
-    let files = first["files"].as_array().expect("files");
-    assert_eq!(files.len(), 2, "{first}");
-    let a = files
-        .iter()
-        .find(|file| file["path"].as_str().is_some_and(|p| p.ends_with("a.rs")))
-        .expect("a");
-    assert!(
-        a.get("totalMatchRows").is_none() && a.get("returnedMatchRows").is_none(),
-        "{a}"
-    );
-    assert!(a["pagination"].get("nextMatchPage").is_none(), "{a}");
-    let next = first["next"]["nextMatchPage"].clone();
-    let second = run(&root.0, next["query"].clone()).expect("match page 2");
-    let files = second["files"].as_array().expect("files");
-    assert_eq!(files.len(), 1, "{second}");
-    assert_eq!(
-        files[0]["matches"].as_array().map(Vec::len),
-        Some(1),
-        "{second}"
-    );
-    let seen = |out: &serde_json::Value| {
-        out["files"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .flat_map(|file| {
-                let path = file["path"].as_str().unwrap_or_default().to_owned();
-                file["matches"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .map(move |row| (path.clone(), row["line"].clone(), row["value"].clone()))
-            })
-            .collect::<Vec<_>>()
-    };
-    let (one, two) = (seen(&first), seen(&second));
-    assert!(two.iter().all(|row| !one.contains(row)), "{first} {second}");
-}
-
-/// Repairable failures carry their one lead and no advice text: a rule
-/// that does not compile against a file leads to its syntax tree; a
-/// language no file under a directory has leads to the query in the grammar
-/// the directory does hold (a repair never removes a field the run needs).
-#[test]
-fn repairable_failures_carry_one_lead() {
-    let root = Fixture::new();
-    let file = root.0.join("a.rs");
-    std::fs::write(&file, "fn a() {}\n").expect("a");
-    let error = run(
-        &root.0,
-        json!({"operation":"match","path":file,"rule":"kind: not_a_real_kind"}),
-    )
-    .expect_err("unknown kind");
-    assert_eq!(error.code, "invalidPattern", "{error:?}");
-    assert!(error.hints.is_empty(), "{error:?}");
-    let next = error.next.as_ref().expect("lead");
-    assert_eq!(
-        next["viewTree"]["query"]["queries"][0]["operation"], "syntaxTree",
-        "{next}"
-    );
-
-    let out = run(
-        &root.0,
-        json!({"operation":"match","path":root.0,"language":"python","pattern":"print($A)"}),
-    )
-    .expect("no python file");
-    let repair = &out["next"]["repair"]["query"]["queries"][0];
-    assert_eq!(repair["language"], "rust", "{out}");
-    assert_eq!(repair["pattern"], "print($A)", "{out}");
-    assert_eq!(
-        out["hints"],
-        json!(["No python file under this path was parsed."]),
-        "{out}"
-    );
 }
 
 /// A directory whose files the walk skipped as ignored or hidden parsed
@@ -2823,7 +627,7 @@ fn an_empty_match_over_ignored_and_hidden_files_leads_to_them() {
     for (dir, flag) in [("gen", "includeIgnored"), (".cfg", "includeHidden")] {
         let root = Fixture::new();
         std::fs::create_dir_all(root.0.join(".git")).expect("git dir");
-        std::fs::write(root.0.join(".gitignore"), "gen/\n").expect("gitignore");
+        root.write(".gitignore", "gen/\n");
         let pkg = root.0.join("pkg");
         std::fs::create_dir_all(pkg.join(dir)).expect("dir");
         std::fs::write(pkg.join(dir).join("a.py"), "print(1)\n").expect("source");
@@ -2853,43 +657,6 @@ fn an_empty_match_over_ignored_and_hidden_files_leads_to_them() {
     }
 }
 
-/// A directory outline discloses the default-excluded directories it
-/// pruned, and an empty one leads to the same query over them.
-#[test]
-fn symbols_disclose_default_excluded_directories() {
-    let root = Fixture::new();
-    std::fs::create_dir_all(root.0.join("node_modules/pkg")).expect("dirs");
-    std::fs::write(
-        root.0.join("node_modules/pkg/index.ts"),
-        "export function hiddenHelper() {}\n",
-    )
-    .expect("pruned source");
-    std::fs::write(root.0.join("main.ts"), "export const x = 1;\n").expect("source");
-    let out = run(
-        &root.0,
-        json!({"operation":"symbols","mainGoal":"test","reasoning":"test","path":root.0,"symbolName":"hiddenHelper"}),
-    )
-    .expect("symbols");
-    let warnings = out["warnings"].to_string();
-    assert!(warnings.contains("node_modules/"), "{out}");
-    let lead = &out["next"]["includeSkipped"];
-    assert_eq!(lead["tool"], "astSearch", "{out}");
-    let query = &lead["query"]["queries"][0];
-    assert_eq!(query["defaultExcludes"], false, "{out}");
-    assert_eq!(query["symbolName"], "hiddenHelper", "{out}");
-    assert!(query.get("snapshot").is_none(), "{out}");
-    let all = run(&root.0, query.clone()).expect("lead runs");
-    assert!(
-        all["files"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .flat_map(|file| file["symbols"].as_array().into_iter().flatten())
-            .any(|symbol| symbol["symbolName"] == "hiddenHelper"),
-        "{all}"
-    );
-}
-
 /// An empty match that did parse files still names the ignored files of its
 /// grammar it left out, and leads to the same query with them on: the hint
 /// about the pattern's shape is not the only explanation.
@@ -2897,11 +664,10 @@ fn symbols_disclose_default_excluded_directories() {
 fn an_empty_match_beside_parsed_files_names_the_ignored_ones() {
     let root = Fixture::new();
     std::fs::create_dir_all(root.0.join(".git")).expect("git dir");
-    std::fs::write(root.0.join(".gitignore"), "gen/\n").expect("gitignore");
+    root.write(".gitignore", "gen/\n");
     std::fs::create_dir_all(root.0.join("gen")).expect("dir");
-    std::fs::write(root.0.join("gen/b.ts"), "export const y = double(2);\n")
-        .expect("ignored source");
-    std::fs::write(root.0.join("a.ts"), "export const x = 1;\n").expect("source");
+    root.write("gen/b.ts", "export const y = double(2);\n");
+    root.write("a.ts", "export const x = 1;\n");
     let request = json!({
         "operation":"match","mainGoal":"test","reasoning":"test",
         "path":root.0,"language":"typescript","pattern":"double($A)"
@@ -2926,9 +692,9 @@ fn an_empty_match_beside_parsed_files_names_the_ignored_ones() {
 #[test]
 fn a_skipped_file_is_one_skip_with_one_diagnostic() {
     let root = Fixture::new();
-    std::fs::write(root.0.join("a.ts"), "foo(1);\n").expect("source");
+    root.write("a.ts", "foo(1);\n");
     let large = "foo(2);\n".repeat(super::MAX_PARSE_SOURCE_BYTES / 8 + 1);
-    std::fs::write(root.0.join("big.ts"), large).expect("large");
+    root.write("big.ts", large);
     std::fs::write(
         root.0.join("bin.ts"),
         [0xff_u8, b'f', b'o', b'o', b'(', 0xfe],
@@ -2959,155 +725,4 @@ fn a_skipped_file_is_one_skip_with_one_diagnostic() {
         "{recovery}"
     );
     assert!(!recovery.contains("maxFileBytes"), "{recovery}");
-}
-
-/// A relaxed pattern carries the relaxed rule its continuations replay, and
-/// states the counts as written and relaxed.
-#[test]
-fn a_relaxed_pattern_carries_its_rule_and_both_counts() {
-    let root = Fixture::new();
-    let source = root.0.join("lib.rs");
-    std::fs::write(&source, "pub fn a() { x(); }\nfn b() { y(); }\n").expect("source");
-    let out = run(
-        &root.0,
-        json!({"operation":"match","path":source,"pattern":"fn $N() { $$$B }"}),
-    )
-    .expect("match");
-    assert_eq!(out["matchCount"], 2, "{out}");
-    let note = out["diagnostics"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .find(|d| d["code"] == "structural.pattern.relaxed")
-        .expect("relaxed note");
-    let message = note["message"].as_str().expect("message");
-    // Per-call facts only: the counts, beside the relaxed `rule`. Why
-    // continuations replay it is the tool description's.
-    assert_eq!(
-        message, "1 match as written; 2 match the relaxed rule.",
-        "{message}"
-    );
-    let any = note["rule"]["any"].as_array().expect("relaxed rule");
-    assert_eq!(any[0], json!({"pattern":"fn $N() { $$$B }"}), "{out}");
-    assert!(
-        any.contains(&json!({"pattern":"pub fn $N() { $$$B }"})),
-        "{out}"
-    );
-}
-
-/// A clipped value that spans more lines than a hit read shows (a whole
-/// file's match) is not offered for a whole read: `expandValues` would put
-/// the file on the page. Shorter clipped values in the same file still are.
-#[test]
-fn a_clipped_whole_file_value_is_not_offered_for_reading() {
-    let root = Fixture::new();
-    let source = root.0.join("long.rs");
-    let body = (0..500)
-        .map(|i| format!("    call_{i}(argument_{i});"))
-        .collect::<Vec<_>>()
-        .join("\n");
-    std::fs::write(
-        &source,
-        format!(
-            "fn m() {{\n{body}\n}}\nfn n() {{ call({}); }}\n",
-            "y".repeat(600)
-        ),
-    )
-    .expect("source");
-    let out = run(
-        &root.0,
-        json!({"operation":"match","path":source,"rule":"kind: function_item","captureText":true}),
-    )
-    .expect("match");
-    assert_eq!(out["matchCount"], 2, "{out}");
-    let reads = value_reads(&out);
-    assert_eq!(reads.len(), 1, "{out}");
-    assert_eq!(reads[0]["ranges"], json!(["503-503"]), "{out}");
-}
-
-/// An empty one-file outline counts "1 file", not "1 files".
-#[test]
-fn an_empty_single_file_outline_counts_one_file() {
-    let root = Fixture::new();
-    let source = root.0.join("a.ts");
-    std::fs::write(&source, "x();\n").expect("source");
-    let out = run(&root.0, json!({"operation":"symbols","path":source})).expect("symbols");
-    assert_eq!(out["status"], "empty", "{out}");
-    assert_eq!(out["hints"], json!(["0 declarations in 1 file."]), "{out}");
-}
-
-/// A file whose matches continue on a later match page names why the row is
-/// partial: `matchPages`, beside `next.nextMatchPage`.
-#[test]
-fn a_file_with_more_match_pages_names_its_partial_reason() {
-    let root = Fixture::new();
-    std::fs::write(root.0.join("a.rs"), "fn a() { hit(1); hit(2); hit(3); }\n").expect("a");
-    let out = run(
-        &root.0,
-        json!({"operation":"match","path":root.0,"language":"rust","pattern":"hit($A)","matchPageSize":2}),
-    )
-    .expect("match");
-    assert!(out["next"].get("nextMatchPage").is_some(), "{out}");
-    assert_eq!(out["partialReasons"], json!(["matchPages"]), "{out}");
-    let last = run(
-        &root.0,
-        out["next"]["nextMatchPage"]["query"]["queries"][0].clone(),
-    )
-    .expect("last match page");
-    assert!(last.get("partialReasons").is_none(), "{last}");
-}
-
-/// Clipped values in more files than one localFetch call reads are never
-/// dropped: `expandValues` batches the first files, and a per-call warning
-/// names each file and line range left out of it, with the clipped value too
-/// long for a hit read.
-#[test]
-fn clipped_values_past_one_read_batch_are_named() {
-    let root = Fixture::new();
-    let long = format!("call({});", "y".repeat(80));
-    let files = crate::tools::result::rows_per_call(crate::tools::id::ToolId::LocalFetch) + 2;
-    for index in 0..files {
-        std::fs::write(
-            root.0.join(format!("f{index}.rs")),
-            format!("fn f() {{\n{long}\n}}\n"),
-        )
-        .expect("source");
-    }
-    // One call spanning 500+ lines: too long for a hit read.
-    let args = (0..500)
-        .map(|i| format!("    argument_{i},"))
-        .collect::<Vec<_>>()
-        .join("\n");
-    std::fs::write(
-        root.0.join("z.rs"),
-        format!("fn z() {{\ncall(\n{args}\n);\n}}\n"),
-    )
-    .expect("z");
-    let out = run(
-        &root.0,
-        json!({"operation":"match","path":root.0,"language":"rust","rule":"kind: call_expression",
-            "captureText":true,"matchContentLength":20}),
-    )
-    .expect("match");
-    let reads = value_reads(&out);
-    assert_eq!(
-        reads.len(),
-        crate::tools::result::rows_per_call(crate::tools::id::ToolId::LocalFetch),
-        "{out}"
-    );
-    let read = reads
-        .iter()
-        .filter_map(|row| row["path"].as_str())
-        .map(|path| path.rsplit('/').next().unwrap_or(path).to_owned())
-        .collect::<Vec<_>>();
-    let warnings = out["warnings"].as_array().expect("warnings");
-    assert_eq!(warnings.len(), 1, "{out}");
-    let warning = warnings[0].as_str().expect("text");
-    // Every file with a clipped value is read or named, never both.
-    for index in 0..files {
-        let name = format!("f{index}.rs");
-        let named = warning.contains(&format!("{name} 2-2"));
-        assert!(read.contains(&name) != named, "{name}: {out}");
-    }
-    assert!(warning.contains("z.rs 2-503"), "{out}");
 }

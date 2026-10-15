@@ -27,7 +27,6 @@ describe('trusted dotenv credential fallbacks', () => {
     'GH_TOKEN',
     'GITHUB_TOKEN',
     'OCTOCODE_CLASSIFICATION_API',
-    'OCTOCODE_CLASSIFICATION_TYPE',
   ])('%s uses process > trusted project > home per key', key => {
     writeFileSync(join(home, '.env'), `${key}=home-secret\nHOME_ONLY=home`);
     writeFileSync(join(cwd, '.octocode', '.env'), `${key}=project-secret`);

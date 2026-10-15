@@ -37,34 +37,34 @@ fn same_file(a: &Path, b: &Path) -> bool {
             (Ok(a), Ok(b)) if a == b
         )
 }
+/// A workspace layer file, unless it is the home file itself: when cwd is the
+/// OS home, `<cwd>/.octocode` is the Octocode home and its files are the home
+/// layers only, never read a second time as workspace layers.
+fn workspace_file(path: PathBuf, home_file: &Path) -> FileInput {
+    if same_file(&path, home_file) {
+        FileInput::Missing { path }
+    } else {
+        read_file(path)
+    }
+}
 pub fn acquire_config_input(
     env: BTreeMap<String, String>,
     cwd: PathBuf,
     os_home: PathBuf,
-    trusted_project: bool,
     runtime_surface: RuntimeSurface,
 ) -> ConfigInput {
     let home = octocode_home(&env, &cwd, &os_home);
     let workspace = cwd.join(".octocode");
+    let global_env = home.join(".env");
     let global_config = home.join(CONFIG_FILE_NAME);
-    let project_config = workspace.join(CONFIG_FILE_NAME);
     ConfigInput {
-        global_env: read_file(home.join(".env")),
-        project_env: read_file(workspace.join(".env")),
-        // When the workspace directory IS the Octocode home (cwd = OS home),
-        // the global file must not be read a second time as a workspace layer.
-        project_config_file: if same_file(&project_config, &global_config) {
-            FileInput::Missing {
-                path: project_config,
-            }
-        } else {
-            read_file(project_config)
-        },
+        project_env: workspace_file(workspace.join(".env"), &global_env),
+        project_config_file: workspace_file(workspace.join(CONFIG_FILE_NAME), &global_config),
+        global_env: read_file(global_env),
         config_file: read_file(global_config),
         env,
         cwd,
         os_home,
-        trusted_project,
         runtime_surface,
     }
 }

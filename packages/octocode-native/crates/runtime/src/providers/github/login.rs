@@ -376,9 +376,7 @@ pub async fn verify_token(api_url: &str, token: &str, timeout: Duration) -> Toke
                 .ok()
                 .and_then(|value| value.get("login")?.as_str().map(str::to_owned)),
         ),
-        Err(error) if error.kind == super::ProviderErrorKind::Authentication => {
-            TokenCheck::Rejected
-        }
+        Err(error) if error.kind == ProviderErrorKind::Authentication => TokenCheck::Rejected,
         Err(_) => TokenCheck::Unverified,
     }
 }
@@ -630,7 +628,10 @@ async fn refresh_selected(
     if client_id.trim().is_empty() {
         return Err(ProviderError::new(
             ProviderErrorKind::Authentication,
-            "Set OCTOCODE_GITHUB_CLIENT_ID to refresh credentials for this GitHub host",
+            format!(
+                "Set {} to refresh credentials for this GitHub host",
+                crate::config::environment::OCTOCODE_GITHUB_CLIENT_ID
+            ),
         ));
     }
     let load = |host: &str| credentials.load_from(host, source);

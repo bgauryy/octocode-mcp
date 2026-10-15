@@ -1,6 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use ignore::gitignore::Gitignore;
 use regex::Regex;
@@ -54,6 +54,8 @@ struct CompiledQuery {
     /// everything under it.
     exclude: Option<Gitignore>,
     limit: usize,
+    /// When the walk stops at its next entry (`time_budget` after it began).
+    deadline: Option<Instant>,
     warnings: Vec<String>,
 }
 
@@ -65,6 +67,7 @@ struct QueryState {
     permission_denied: u32,
     ignored: u32,
     pruned_dirs: Vec<String>,
+    time_cut: Option<String>,
 }
 
 /// Walk `options.path` in name order, listing the entries its filters
@@ -126,6 +129,7 @@ pub(crate) fn query_file_system(
         ignored: state.ignored,
         warnings: query.warnings,
         pruned_dirs: state.pruned_dirs,
+        time_cut: state.time_cut,
     })
 }
 
@@ -207,6 +211,7 @@ impl CompiledQuery {
             prune: Prune::new(options.exclude_dir.iter().flatten()),
             exclude,
             limit: options.limit.map(|n| n as usize).unwrap_or(DEFAULT_LIMIT),
+            deadline: options.time_budget.map(|budget| Instant::now() + budget),
             warnings,
         })
     }
@@ -288,6 +293,15 @@ fn walk_children(
         if stop() {
             return Err(Error::cancelled());
         }
+        if query
+            .deadline
+            .is_some_and(|deadline| Instant::now() >= deadline)
+        {
+            let path = dir_entry.path();
+            let relative = path.strip_prefix(&query.root).unwrap_or(&path);
+            state.time_cut = Some(normalize_path(relative));
+            return Ok(());
+        }
 
         let path = dir_entry.path();
         // The entry type comes with the directory listing on common
@@ -331,7 +345,9 @@ fn walk_children(
 
         if query.recursive && is_directory {
             walk_children(&path, depth + 1, query, state, admit, stop)?;
-            if query.stop_at_limit && state.total_discovered as usize > query.limit {
+            if state.time_cut.is_some()
+                || (query.stop_at_limit && state.total_discovered as usize > query.limit)
+            {
                 return Ok(());
             }
         }
@@ -755,6 +771,31 @@ mod tests {
 
         assert_eq!(result.entries.len(), 1);
         assert_eq!(result.entries[0].name, "leaf.ts");
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn a_spent_time_budget_stops_at_the_first_unread_entry_and_names_it() {
+        let root = temp_root("time_cut");
+        for dir in ["a", "b"] {
+            fs::create_dir_all(root.join(dir)).expect("dir");
+            File::create(root.join(dir).join("f.ts")).expect("file");
+        }
+        let run = |time_budget| {
+            query_file_system_inner(FileSystemQueryOptions {
+                path: root.to_string_lossy().to_string(),
+                time_budget,
+                ..Default::default()
+            })
+            .expect("query")
+        };
+        let cut = run(Some(std::time::Duration::ZERO));
+        assert_eq!(cut.time_cut.as_deref(), Some("a"));
+        assert!(cut.entries.is_empty(), "nothing before the cut was read");
+        let whole = run(Some(std::time::Duration::from_secs(3600)));
+        assert_eq!(whole.time_cut, None);
+        assert_eq!(whole.entries.len(), 4);
+        assert_eq!(run(None).time_cut, None);
         fs::remove_dir_all(root).expect("cleanup");
     }
 

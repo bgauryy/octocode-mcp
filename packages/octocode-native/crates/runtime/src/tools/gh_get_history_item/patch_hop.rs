@@ -199,17 +199,9 @@ pub(super) fn commit_query(q: &HistoryItemRequest, reference: &str, nested: bool
             },
         })
     };
-    let mut row = typed()
+    typed()
         .map(|query| query_row(&query, &[]))
-        .unwrap_or_default();
-    if let Ok(original) = serde_json::to_value(&q.query)
-        && let Some(goals) = original.get("goals")
-        && goals.is_array()
-        && !goals.as_array().is_some_and(Vec::is_empty)
-    {
-        row["goals"] = goals.clone();
-    }
-    row
+        .unwrap_or_default()
 }
 
 /// `next.*` for a commit or comparison file page (also nested per PR commit

@@ -35,6 +35,12 @@ describe('provenance: untrusted text saved as data', () => {
     }
   });
 
+  it('has no ordinary workspace file when the session has no workspace (home), so quoted text there still asks', () => {
+    const provenance = createProvenance({ workspaceRoot: () => undefined });
+    provenance.record(result('web', { url: 'https://example.com/install' }, PAGE), ctx);
+    expect(provenance.check(fileWrite('docs/report.md', `The page says: "${SPAN}"`), ctx)?.why).toMatch(/contains text from web/);
+  });
+
   it('still asks when the path itself carries untrusted text', () => {
     const provenance = seeded();
     expect(provenance.check(fileWrite(`docs/${SPAN.replace(/[^a-z-]/g, '-')}.md`, 'plain'), ctx)).toBeUndefined();

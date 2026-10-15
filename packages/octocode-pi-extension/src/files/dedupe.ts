@@ -2,7 +2,7 @@ import { isDeepStrictEqual } from 'node:util';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { OCTOCODE_TOOL_PREFIX } from '../shared/octocode-tools.js';
 import { isRecord } from '../shared/util.js';
-import { clearedResults, contextMessages, toolCallArguments } from './reads.js';
+import { clearedResults, contextMessages, plainText, toolCallArguments } from './reads.js';
 
 /**
  * Repeated reads: when a read returns exactly the text an earlier call with the same arguments returned, and that earlier
@@ -13,13 +13,6 @@ import { clearedResults, contextMessages, toolCallArguments } from './reads.js';
 
 /** Tools whose result is the content of a file: Pi's `read` and Octocode's `localFetch`. */
 const DEDUPED_TOOLS: ReadonlySet<string> = new Set(['read', `${OCTOCODE_TOOL_PREFIX}localFetch`]);
-
-/** The text of a result made only of text parts, else undefined (an image is never replaced). */
-function plainText(content: unknown): string | undefined {
-  if (!Array.isArray(content) || content.length === 0) return undefined;
-  const parts = content.map((part) => (isRecord(part) && part['type'] === 'text' && typeof part['text'] === 'string' ? part['text'] : undefined));
-  return parts.every((text) => text !== undefined) ? parts.join('\n') : undefined;
-}
 
 /** The note that stands for a repeated result of `toolName` called with `input`. */
 export function unchangedNote(toolName: string, input: Record<string, unknown>): string {

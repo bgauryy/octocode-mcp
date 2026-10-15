@@ -12,7 +12,13 @@ class FakeRuntime {
   catalog() {
     return {
       fingerprint: this.fingerprint,
-      tools: [{ name: 'localFetch', available: true }],
+      tools: [
+        {
+          name: 'localFetch',
+          shortDescription: 'Read a file.',
+          available: true,
+        },
+      ],
     };
   }
 

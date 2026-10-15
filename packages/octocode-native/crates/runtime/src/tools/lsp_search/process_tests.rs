@@ -3,6 +3,9 @@
 //! processes behind. Unix-only (process groups, `kill -0`).
 
 use super::failure::LspFailure;
+use crate::tools::id::ToolId;
+use crate::tools::test_support::checks::{assert_absent, paths_in};
+use crate::tools::test_support::{Fixture, assert_row_contract};
 use octocode_engine::error::ErrorKind;
 use octocode_engine::lsp::client::NativeLspClient;
 use octocode_engine::lsp::pool::{LspClientPool, LspPoolOptions};
@@ -58,17 +61,17 @@ fn node_available() -> bool {
         .is_ok_and(|output| output.status.success())
 }
 
-fn fixture(tag: &str) -> (PathBuf, PathBuf) {
+/// A canonical workspace holding the fake server script and `a.ts`; the
+/// directory goes when the [`Fixture`] drops.
+fn fixture() -> (Fixture, PathBuf, PathBuf) {
     use std::os::unix::fs::PermissionsExt;
-    let root = std::env::temp_dir().join(format!("octocode-lsp-proc-{tag}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&root);
-    std::fs::create_dir_all(&root).expect("root");
-    let root = root.canonicalize().expect("canonical root");
+    let dir = Fixture::new();
+    let root = dir.0.canonicalize().expect("canonical root");
     let script = root.join("fake-lsp.js");
     std::fs::write(&script, FAKE_SERVER).expect("script");
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).expect("chmod");
     std::fs::write(root.join("a.ts"), "const a = 1;\n").expect("source");
-    (root, script)
+    (dir, root, script)
 }
 
 fn config(root: &Path, script: &Path, pids: Option<&Path>) -> JsLanguageServerConfig {
@@ -106,7 +109,7 @@ fn server_crash_mid_request_fails_pending_fast_as_server_crashed() {
         eprintln!("skipping: node not available");
         return;
     }
-    let (root, script) = fixture("crash");
+    let (_dir, root, script) = fixture();
     tokio::runtime::Runtime::new().expect("rt").block_on(async {
         let client = NativeLspClient::new(config(&root, &script, None));
         client.start().await.expect("fake server starts");
@@ -130,7 +133,6 @@ fn server_crash_mid_request_fails_pending_fast_as_server_crashed() {
         assert_eq!(LspFailure::from_engine(&error).code, "serverCrashed");
         let _ = client.stop().await;
     });
-    let _ = std::fs::remove_dir_all(root);
 }
 
 /// Repeated acquire/stop through the pool leaves no server or grandchild
@@ -141,7 +143,7 @@ fn acquire_stop_loop_leaves_no_child_processes() {
         eprintln!("skipping: node not available");
         return;
     }
-    let (root, script) = fixture("leak");
+    let (_dir, root, script) = fixture();
     let pids = root.join("pids.txt");
     tokio::runtime::Runtime::new().expect("rt").block_on(async {
         let pool = LspClientPool::new(LspPoolOptions {
@@ -174,7 +176,6 @@ fn acquire_stop_loop_leaves_no_child_processes() {
         assert!(Instant::now() < deadline, "leaked processes: {survivors:?}");
         std::thread::sleep(Duration::from_millis(50));
     }
-    let _ = std::fs::remove_dir_all(root);
 }
 
 /// A prewarm whose file is over the open cap (or unreadable) warmed
@@ -186,7 +187,7 @@ fn prewarm_frees_its_key_when_the_file_is_not_opened() {
         eprintln!("skipping: node not available");
         return;
     }
-    let (root, script) = fixture("prewarm");
+    let (_dir, root, script) = fixture();
     let large = root.join("large.ts");
     std::fs::write(&large, "x".repeat(2 * 1024 * 1024 + 1)).expect("large source");
     tokio::runtime::Runtime::new().expect("rt").block_on(async {
@@ -205,7 +206,6 @@ fn prewarm_frees_its_key_when_the_file_is_not_opened() {
         assert_eq!(pool.len(), 1, "every warm reused one pooled server");
         pool.clear_all().await;
     });
-    let _ = std::fs::remove_dir_all(root);
 }
 
 /// A V8 (Node) server reserves address space far past its resident use; it
@@ -218,7 +218,7 @@ fn node_server_starts_under_the_default_address_space_cap() {
         eprintln!("skipping: node not available");
         return;
     }
-    let (root, script) = fixture("rlimit");
+    let (_dir, root, script) = fixture();
     tokio::runtime::Runtime::new().expect("rt").block_on(async {
         let client = NativeLspClient::new(config(&root, &script, None));
         client
@@ -228,7 +228,6 @@ fn node_server_starts_under_the_default_address_space_cap() {
         assert!(client.is_alive().await);
         let _ = client.stop().await;
     });
-    let _ = std::fs::remove_dir_all(root);
 }
 
 /// A real provider answers the first definition with an alias location, then
@@ -244,11 +243,7 @@ fn nested_definition_failure_keeps_location_with_partial_provenance() {
         "Node is required for the real LSP fixture"
     );
     for fail in [true, false] {
-        let (root, script) = fixture(if fail {
-            "definition-error"
-        } else {
-            "definition-ok"
-        });
+        let (_dir, root, script) = fixture();
         std::fs::write(root.join("b.ts"), "const b = 1;\n").expect("alias source");
         let server = FAKE_SERVER
             .replace("hoverProvider: true", "definitionProvider: true")
@@ -290,12 +285,12 @@ fn nested_definition_failure_keeps_location_with_partial_provenance() {
                 character: 6,
                 language_id: Some("typescript"),
                 budget: 16_000,
+                response_window: None,
             }
             .run()
             .await
             .expect("definition row retains earlier evidence");
-            let text = row.to_string();
-            assert!(text.contains("b.ts"), "{row}");
+            assert!(lists_path(&row, "b.ts"), "{row}");
             if fail {
                 assert_eq!(row["isPartial"], true, "{row}");
                 assert!(
@@ -305,8 +300,14 @@ fn nested_definition_failure_keeps_location_with_partial_provenance() {
                         .contains(&json!("definitionHopFailed")),
                     "{row}"
                 );
-                assert!(text.contains("injected follow-up failure"), "{row}");
-                assert!(text.contains("not verified terminal identity"), "{row}");
+                // The server's failure reaches the caller in a warning.
+                assert!(
+                    row["warnings"].as_array().is_some_and(|warnings| warnings
+                        .iter()
+                        .filter_map(serde_json::Value::as_str)
+                        .any(|warning| warning.contains("injected follow-up failure"))),
+                    "{row}"
+                );
                 assert_eq!(row["next"]["retry"]["tool"], "lspSearch");
             } else {
                 assert!(
@@ -315,11 +316,10 @@ fn nested_definition_failure_keeps_location_with_partial_provenance() {
                         .is_some_and(|reasons| reasons.contains(&json!("definitionHopFailed"))),
                     "{row}"
                 );
-                assert!(!text.contains("injected follow-up failure"), "{row}");
+                assert_absent(&row, "injected follow-up failure");
             }
             client.stop().await.expect("fixture server closed");
         });
-        std::fs::remove_dir_all(root).expect("fixture removed");
     }
 }
 
@@ -337,7 +337,7 @@ fn type_hierarchy_falls_back_when_the_server_has_no_type_hierarchy() {
         node_available(),
         "Node is required for the real LSP fixture"
     );
-    let (root, script) = fixture("type-hierarchy-fallback");
+    let (_dir, root, script) = fixture();
     std::fs::write(root.join("b.ts"), "export interface Base {}\n").expect("base");
     std::fs::write(root.join("a.ts"), "export class Child extends Base {}\n").expect("child");
     let server = FAKE_SERVER
@@ -349,23 +349,25 @@ fn type_hierarchy_falls_back_when_the_server_has_no_type_hierarchy() {
             "  } else if (msg.method === 'textDocument/hover') {\n    process.exit(3);",
             r#"  } else if (msg.method === 'textDocument/implementation') {
     const dir = msg.params.textDocument.uri.slice(0, msg.params.textDocument.uri.lastIndexOf('/') + 1);
-    const at = (name, line) => ({ uri: dir + name, range: { start: { line, character: 13 }, end: { line, character: 18 } } });
-    send({ jsonrpc: '2.0', id: msg.id, result: [at('a.ts', 0), at('b.ts', 0)] });
+    const at = (name, character, length) => ({ uri: dir + name, range: { start: { line: 0, character }, end: { line: 0, character: character + length } } });
+    send({ jsonrpc: '2.0', id: msg.id, result: [at('a.ts', 13, 5), at('b.ts', 17, 4)] });
   } else if (msg.method === 'textDocument/definition') {
     const dir = msg.params.textDocument.uri.slice(0, msg.params.textDocument.uri.lastIndexOf('/') + 1);
     send({ jsonrpc: '2.0', id: msg.id, result: [{ uri: dir + 'b.ts', range: { start: { line: 0, character: 17 }, end: { line: 0, character: 21 } } }] });"#,
         );
     std::fs::write(&script, server).expect("fixture server");
     let paths = crate::tools::test_support::workspace_policy(&root);
-    let path = root.join("a.ts").to_string_lossy().into_owned();
-    let uri = octocode_engine::lsp::uri::path_to_uri(&path).expect("uri");
     tokio::runtime::Runtime::new().expect("rt").block_on(async {
         let client = NativeLspClient::new(config(&root, &script, None));
         client.start().await.expect("server starts");
-        for (operation, source) in [("subtypes", "implementation"), ("supertypes", "heritage")] {
+        for (operation, source, file, symbol, character, expected) in [
+            ("subtypes", "implementation", "b.ts", "Base", 17, "a.ts"),
+            ("supertypes", "heritage", "a.ts", "Child", 13, "b.ts"),
+        ] {
+            let path = root.join(file).to_string_lossy().into_owned();
             let query = serde_json::from_value(json!({
                 "operation":operation, "mainGoal":"test", "reasoning":"test",
-                "path":uri, "symbolName":"Child", "line":1
+                "path":path, "symbolName":symbol, "line":1
             }))
             .expect("query");
             let mut sources = SourceCache::new(&paths);
@@ -380,9 +382,10 @@ fn type_hierarchy_falls_back_when_the_server_has_no_type_hierarchy() {
                 scope: &super::scope::Scope::new(root.to_string_lossy().into_owned(), Vec::new()),
                 root_only: false,
                 line: 0,
-                character: 13,
+                character,
                 language_id: Some("typescript"),
                 budget: 16_000,
+                response_window: None,
             }
             .run()
             .await
@@ -395,14 +398,14 @@ fn type_hierarchy_falls_back_when_the_server_has_no_type_hierarchy() {
                 .map(|found| found["path"].as_str().unwrap_or_default().to_owned())
                 .collect::<Vec<_>>();
             assert!(
-                paths.iter().all(|found| found.ends_with("b.ts")),
+                paths.iter().all(|found| found.ends_with(expected)),
                 "{operation} lists only other declarations: {row}"
             );
             assert_eq!(paths.len(), 1, "{row}");
+            assert!(row.get("isPartial").is_none(), "{row}");
         }
         client.stop().await.expect("fixture server closed");
     });
-    std::fs::remove_dir_all(root).expect("fixture removed");
 }
 
 /// When the implementation request cannot be answered (here a server error;
@@ -419,7 +422,7 @@ fn subtypes_fall_back_to_a_labelled_heritage_scan_when_implementation_fails() {
         node_available(),
         "Node is required for the real LSP fixture"
     );
-    let (root, script) = fixture("subtypes-scan");
+    let (_dir, root, script) = fixture();
     std::fs::write(root.join("b.ts"), "export interface Base {}\n").expect("base");
     std::fs::write(root.join("a.ts"), "export class Child extends Base {}\n").expect("child");
     std::fs::write(
@@ -466,6 +469,7 @@ fn subtypes_fall_back_to_a_labelled_heritage_scan_when_implementation_fails() {
             character: 17,
             language_id: Some("typescript"),
             budget: 16_000,
+            response_window: None,
         }
         .run()
         .await
@@ -487,21 +491,20 @@ fn subtypes_fall_back_to_a_labelled_heritage_scan_when_implementation_fails() {
             row["warnings"].to_string().contains("unverified"),
             "the rows are labelled unverified: {row}"
         );
-        assert_contract_valid(&row);
+        let query = serde_json::to_value(&query).expect("query json");
+        assert_row_contract(ToolId::LspSearch, &query, &row);
         // The scan is a labelled stand-in: the same query, retried, asks the
         // server again.
         assert_eq!(row["next"]["retry"]["tool"], "lspSearch", "{row}");
         assert_eq!(row["isPartial"], true, "{row}");
         client.stop().await.expect("fixture server closed");
     });
-    std::fs::remove_dir_all(root).expect("fixture removed");
 }
 
 /// Runs `operation` on `file`'s symbol (zero-based `line`/`character`)
 /// against a server whose `textDocument/implementation` fails, over a
 /// workspace where `Child` extends `Base` and `Impl` implements it.
 fn implementation_failing_row(
-    tag: &str,
     operation: &str,
     (file, symbol, line, character): (&str, &str, u32, u32),
 ) -> Result<serde_json::Value, super::LspFailure> {
@@ -513,7 +516,7 @@ fn implementation_failing_row(
         node_available(),
         "Node is required for the real LSP fixture"
     );
-    let (root, script) = fixture(tag);
+    let (_dir, root, script) = fixture();
     std::fs::write(
         root.join("b.ts"),
         "export interface Base {\n  run(): void;\n}\nexport class Plain {\n  go(): void {}\n}\n",
@@ -537,7 +540,7 @@ fn implementation_failing_row(
     let paths = crate::tools::test_support::workspace_policy(&root);
     let path = root.join(file).to_string_lossy().into_owned();
     let uri = octocode_engine::lsp::uri::path_to_uri(&path).expect("uri");
-    let outcome = tokio::runtime::Runtime::new().expect("rt").block_on(async {
+    tokio::runtime::Runtime::new().expect("rt").block_on(async {
         let client = NativeLspClient::new(config(&root, &script, None));
         client.start().await.expect("server starts");
         let query = serde_json::from_value(json!({
@@ -563,14 +566,13 @@ fn implementation_failing_row(
             character,
             language_id: Some("typescript"),
             budget: 16_000,
+            response_window: None,
         }
         .run()
         .await;
         client.stop().await.expect("fixture server closed");
         outcome
-    });
-    std::fs::remove_dir_all(root).expect("fixture removed");
-    outcome
+    })
 }
 
 /// `implementation` on a type is answered by the same labelled heritage
@@ -579,7 +581,7 @@ fn implementation_failing_row(
 /// with a retry that asks the server again.
 #[test]
 fn implementation_on_a_type_falls_back_to_the_labelled_heritage_scan() {
-    let row = implementation_failing_row("impl-scan", "implementation", ("b.ts", "Base", 0, 17))
+    let row = implementation_failing_row("implementation", ("b.ts", "Base", 0, 17))
         .unwrap_or_else(|error| panic!("a type anchor falls back: {error:?}"));
     assert_eq!(row["lsp"]["source"], "native-graph-facts", "{row}");
     assert_eq!(row["kind"], "implementation", "{row}");
@@ -607,16 +609,16 @@ fn implementation_on_a_type_falls_back_to_the_labelled_heritage_scan() {
         row["next"]["retry"]["query"]["queries"][0]["operation"], "implementation",
         "{row}"
     );
-    assert_contract_valid(&row);
+    let query = serde_json::json!({"operation": "implementation", "path": "b.ts", "symbolName": "Base", "line": 1});
+    assert_row_contract(ToolId::LspSearch, &query, &row);
 }
 
 /// A member has no heritage clause to scan: `implementation` on it keeps
 /// the server failure (a scan would claim "no implementations").
 #[test]
 fn implementation_on_a_member_keeps_the_server_failure() {
-    let failure =
-        implementation_failing_row("impl-member", "implementation", ("b.ts", "run", 1, 2))
-            .expect_err("no scan can answer a member");
+    let failure = implementation_failing_row("implementation", ("b.ts", "run", 1, 2))
+        .expect_err("no scan can answer a member");
     assert_eq!(failure.code, "requestFailed");
     assert!(!failure.hint.contains("workspaceRoot"), "{}", failure.hint);
 }
@@ -688,7 +690,7 @@ fn warm_references_repeat_sends_no_requests_and_reads_each_file_once() {
         node_available(),
         "Node is required for the real LSP fixture"
     );
-    let (root, script) = fixture("warm-reuse");
+    let (_dir, root, script) = fixture();
     std::fs::write(&script, REUSE_SERVER).expect("server");
     std::fs::write(root.join("a.ts"), "export function foo() {}\n").expect("a");
     std::fs::write(
@@ -765,6 +767,7 @@ fn warm_references_repeat_sends_no_requests_and_reads_each_file_once() {
                         character: 16,
                         language_id: Some("typescript"),
                         budget: 16_000,
+                        response_window: None,
                     }
                     .run()
                     .await
@@ -775,10 +778,7 @@ fn warm_references_repeat_sends_no_requests_and_reads_each_file_once() {
         let cold = request().await;
         let cold_requests = requests();
         let cold_reads = authorized.swap(0, Ordering::SeqCst);
-        assert!(
-            cold.to_string().contains("c.ts"),
-            "importer recovered: {cold}"
-        );
+        assert!(lists_path(&cold, "c.ts"), "importer recovered: {cold}");
         assert!(cold_requests > 0);
         // a.ts, b.ts, c.ts: once each, though several responses name them.
         assert_eq!(cold_reads, 3, "{cold}");
@@ -792,7 +792,6 @@ fn warm_references_repeat_sends_no_requests_and_reads_each_file_once() {
         assert_eq!(authorized.load(Ordering::SeqCst), 3);
         client.stop().await.expect("fixture server closed");
     });
-    std::fs::remove_dir_all(root).expect("fixture removed");
 }
 
 /// A TypeScript-like server whose project sees only the anchor file (an
@@ -860,29 +859,23 @@ const IMPORTERS: usize = 60;
 
 /// A workspace with `a.ts` declaring `target`, [`IMPORTERS`] files that
 /// import and call it, the fake server, and an explicit server config.
-fn importer_fixture(tag: &str) -> (PathBuf, super::LspExecutionConfig) {
-    importer_fixture_of(tag, &[("f", IMPORTERS)])
+fn importer_fixture() -> (Fixture, PathBuf, super::LspExecutionConfig) {
+    importer_fixture_of(&[("f", IMPORTERS)])
 }
 
 /// Like [`importer_fixture`], with `layout` listing `(prefix, count)` runs of
 /// files that spell `target`; candidates sort by name, so runs fill importer
 /// windows in order. An `n` file spells the name but binds another
 /// declaration (no reference); any other prefix imports and calls it.
-fn importer_fixture_of(
-    tag: &str,
-    layout: &[(&str, usize)],
-) -> (PathBuf, super::LspExecutionConfig) {
+fn importer_fixture_of(layout: &[(&str, usize)]) -> (Fixture, PathBuf, super::LspExecutionConfig) {
     use std::os::unix::fs::PermissionsExt;
-    let root = std::env::temp_dir().join(format!(
-        "octocode-lsp-importers-{tag}-{}",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_dir_all(&root);
-    std::fs::create_dir_all(&root).expect("root");
-    let root = root.canonicalize().expect("canonical root");
+    let dir = Fixture::new();
+    let outer = dir.0.canonicalize().expect("canonical fixture");
+    let root = outer.join("ws");
+    std::fs::create_dir_all(&root).expect("workspace");
     // The server script lives beside the workspace: it spells the symbol,
     // and a candidate scan must not count it.
-    let script = root.with_extension("fake-ts-lsp.js");
+    let script = outer.join("fake-ts-lsp.js");
     let source = IMPORTER_SERVER.replace(
         "__ROOT__",
         &serde_json::to_string(&root.to_string_lossy()).expect("root literal"),
@@ -910,12 +903,7 @@ fn importer_fixture_of(
         config_path: Some(config.to_string_lossy().into_owned()),
         ..super::LspExecutionConfig::default()
     };
-    (root, execution)
-}
-
-fn remove_importer_fixture(root: &Path) {
-    let _ = std::fs::remove_file(root.with_extension("fake-ts-lsp.js"));
-    let _ = std::fs::remove_dir_all(root);
+    (dir, root, execution)
 }
 
 fn write_importer(root: &Path, name: &str) {
@@ -926,17 +914,9 @@ fn write_importer(root: &Path, name: &str) {
     .expect("importer");
 }
 
-/// One page as the public response validates it.
-fn assert_contract_valid(row: &serde_json::Value) {
-    let mut out = serde_json::json!({"results":[{"index":0,"data":row}]});
-    crate::response::continuations::finalize(
-        &mut out,
-        crate::tools::id::ToolId::LspSearch,
-        &crate::response::continuations::Sources::Rows(&[]),
-        &crate::response::continuations::Scope::everything(),
-    )
-    .expect("valid continuations");
-    crate::contracts::validate_output("lspSearch", &out).expect("page satisfies the contract");
+/// Whether a row names a file ending in `name` under a `path` key.
+fn lists_path(row: &serde_json::Value, name: &str) -> bool {
+    paths_in(row).iter().any(|path| path.ends_with(name))
 }
 
 /// The single query row of a continuation.
@@ -970,6 +950,7 @@ async fn walk_pages(
             .get("importerPage")
             .and_then(serde_json::Value::as_u64)
             .unwrap_or(1);
+        let query_row = row.clone();
         let query = serde_json::from_value(row).expect("continuation is a valid query");
         let result = super::execute(
             query,
@@ -982,7 +963,7 @@ async fn walk_pages(
         .await
         .expect("page");
         assert_ne!(result["status"], "error", "{result}");
-        assert_contract_valid(&result);
+        assert_row_contract(ToolId::LspSearch, &query_row, &result);
         let page = next_row(&result, "nextPage");
         let importer = next_row(&result, "nextImporterPage");
         assert!(
@@ -1030,12 +1011,8 @@ fn reference_rows(row: &serde_json::Value) -> Vec<(String, u64, u64)> {
 
 /// Walks `operation` over a workspace whose first window imports `target`,
 /// then `silent` files that spell it without binding it, then one importer.
-async fn walk_across_silent_windows(
-    tag: &str,
-    operation: &str,
-    silent: usize,
-) -> (PathBuf, Vec<Walked>) {
-    let (root, execution) = importer_fixture_of(tag, &[("f", 24), ("n", silent), ("z", 1)]);
+async fn walk_across_silent_windows(operation: &str, silent: usize) -> (Fixture, Vec<Walked>) {
+    let (dir, root, execution) = importer_fixture_of(&[("f", 24), ("n", silent), ("z", 1)]);
     let pool = LspClientPool::new(LspPoolOptions::default());
     let start = serde_json::json!({
         "operation": operation, "path": root.join("a.ts").to_string_lossy(),
@@ -1043,7 +1020,7 @@ async fn walk_across_silent_windows(
         "workspaceRoot": root.to_string_lossy()
     });
     let (pages, _) = walk_pages(&pool, &root, &execution, start).await;
-    (root, pages)
+    (dir, pages)
 }
 
 /// A gitignored file that spells the name is never an importer candidate,
@@ -1055,7 +1032,7 @@ fn importer_recovery_names_gitignored_files_it_skipped() {
         eprintln!("skipping: node not available");
         return;
     }
-    let (root, execution) = importer_fixture_of("ignored", &[("f", 2)]);
+    let (_dir, root, execution) = importer_fixture_of(&[("f", 2)]);
     std::fs::create_dir_all(root.join(".git")).expect("repository marker");
     std::fs::write(root.join(".gitignore"), "gen/\n").expect("gitignore");
     std::fs::create_dir_all(root.join("gen")).expect("ignored dir");
@@ -1065,12 +1042,12 @@ fn importer_recovery_names_gitignored_files_it_skipped() {
     )
     .expect("ignored importer");
     let pool = LspClientPool::new(LspPoolOptions::default());
-    let query = serde_json::from_value(serde_json::json!({
+    let query_row = serde_json::json!({
         "operation": "references", "path": root.join("a.ts").to_string_lossy(),
         "symbolName": "target", "line": 1, "pageSize": 100,
         "workspaceRoot": root.to_string_lossy()
-    }))
-    .expect("query");
+    });
+    let query = serde_json::from_value(query_row.clone()).expect("query");
     let paths = crate::tools::test_support::workspace_policy(&root);
     let row = tokio::runtime::Runtime::new()
         .expect("rt")
@@ -1083,7 +1060,7 @@ fn importer_recovery_names_gitignored_files_it_skipped() {
             None,
         ))
         .expect("row");
-    assert_contract_valid(&row);
+    assert_row_contract(ToolId::LspSearch, &query_row, &row);
     assert!(
         row["files"]
             .as_array()
@@ -1092,7 +1069,14 @@ fn importer_recovery_names_gitignored_files_it_skipped() {
                 .is_some_and(|path| path.ends_with("f001.ts")))),
         "{row}"
     );
-    assert!(!row.to_string().contains("g000.ts\",\"matches"), "{row}");
+    assert!(
+        !row["files"]
+            .as_array()
+            .is_some_and(|files| files.iter().any(|file| file["path"]
+                .as_str()
+                .is_some_and(|path| path.ends_with("g000.ts")))),
+        "the ignored file is no answer row: {row}"
+    );
     assert_eq!(row["isPartial"], true, "{row}");
     assert!(
         row["partialReasons"]
@@ -1133,7 +1117,6 @@ fn importer_recovery_names_gitignored_files_it_skipped() {
         found.iter().any(|path| path.ends_with("g000.ts")),
         "{found:?}"
     );
-    remove_importer_fixture(&root);
 }
 
 /// An importer window with no verified site is a step of a continuing scan,
@@ -1147,14 +1130,9 @@ fn importer_windows_without_sites_are_skipped_not_returned_empty() {
         return;
     }
     for operation in ["references", "callers"] {
-        let (root, pages) =
-            tokio::runtime::Runtime::new()
-                .expect("rt")
-                .block_on(walk_across_silent_windows(
-                    &format!("skip-{operation}"),
-                    operation,
-                    48,
-                ));
+        let (_dir, pages) = tokio::runtime::Runtime::new()
+            .expect("rt")
+            .block_on(walk_across_silent_windows(operation, 48));
         // Windows: f000-f023 | n000-n023 | n024-n047 | z000.
         assert_eq!(
             pages.len(),
@@ -1164,11 +1142,10 @@ fn importer_windows_without_sites_are_skipped_not_returned_empty() {
         let landed = &pages[1].row;
         assert!(landed.get("status").is_none(), "{operation}: {landed}");
         assert!(
-            landed.to_string().contains("z000.ts"),
+            lists_path(landed, "z000.ts"),
             "{operation}: the importer behind the silent windows is listed: {landed}"
         );
         assert!(landed.get("isPartial").is_none(), "{operation}: {landed}");
-        remove_importer_fixture(&root);
     }
 }
 
@@ -1183,8 +1160,7 @@ fn a_first_page_of_silent_windows_with_more_to_scan_is_not_empty() {
     }
     let silent = 24 * (super::importers::MAX_WINDOWS_PER_REQUEST + 2);
     for operation in ["references", "callers"] {
-        let (root, execution) =
-            importer_fixture_of(&format!("first-{operation}"), &[("n", silent), ("z", 1)]);
+        let (_dir, root, execution) = importer_fixture_of(&[("n", silent), ("z", 1)]);
         let pool = LspClientPool::new(LspPoolOptions::default());
         let start = serde_json::json!({
             "operation": operation, "path": root.join("a.ts").to_string_lossy(),
@@ -1207,10 +1183,9 @@ fn a_first_page_of_silent_windows_with_more_to_scan_is_not_empty() {
         assert!(
             pages
                 .last()
-                .is_some_and(|page| page.row.to_string().contains("z000.ts")),
+                .is_some_and(|page| lists_path(&page.row, "z000.ts")),
             "{operation}: the walk reaches the importer past the silent windows"
         );
-        remove_importer_fixture(&root);
     }
 }
 
@@ -1226,14 +1201,9 @@ fn a_capped_run_of_silent_windows_is_a_page_of_a_continuing_scan() {
     }
     let silent = 24 * (super::importers::MAX_WINDOWS_PER_REQUEST + 2);
     for operation in ["references", "callers"] {
-        let (root, pages) =
-            tokio::runtime::Runtime::new()
-                .expect("rt")
-                .block_on(walk_across_silent_windows(
-                    &format!("cap-{operation}"),
-                    operation,
-                    silent,
-                ));
+        let (_dir, pages) = tokio::runtime::Runtime::new()
+            .expect("rt")
+            .block_on(walk_across_silent_windows(operation, silent));
         assert_eq!(pages.len(), 3, "{operation}: first, capped, landing");
         let capped = &pages[1].row;
         assert!(
@@ -1258,7 +1228,6 @@ fn a_capped_run_of_silent_windows_is_a_page_of_a_continuing_scan() {
                     .is_some_and(|path| path.ends_with("z000.ts")))),
             "{operation}"
         );
-        remove_importer_fixture(&root);
     }
 }
 
@@ -1274,7 +1243,7 @@ fn importer_pages_reach_every_reference_exactly_once() {
         eprintln!("skipping: node not available");
         return;
     }
-    let (root, execution) = importer_fixture("refs");
+    let (_dir, root, execution) = importer_fixture();
     tokio::runtime::Runtime::new().expect("rt").block_on(async {
         let pool = LspClientPool::new(LspPoolOptions::default());
         let start = serde_json::json!({
@@ -1372,9 +1341,9 @@ fn importer_pages_reach_every_reference_exactly_once() {
             .expect("stale page");
             assert_eq!(row["errorCode"], "staleSnapshot", "{row}");
             let restart = next_row(&row, "restart").expect("restart");
-            assert!(restart.get("importerPage").is_none(), "{restart}");
-            assert!(restart.get("snapshot").is_none(), "{restart}");
-            assert_eq!(restart["page"], 1, "{restart}");
+            for cursor in crate::tools::result::CURSOR_FIELDS {
+                assert!(restart.get(cursor).is_none(), "{cursor}: {restart}");
+            }
         }
         // The restart walks the changed list once more: 61 importers.
         let (pages, _) = walk_pages(&pool, &root, &execution, start).await;
@@ -1386,7 +1355,6 @@ fn importer_pages_reach_every_reference_exactly_once() {
         assert_eq!(rows.len(), unique.len(), "no duplicates after restart");
         assert_eq!(rows.len(), 1 + 2 * (IMPORTERS + 1));
     });
-    remove_importer_fixture(&root);
 }
 
 /// Callers past the importer cap: each importer file's reference-derived
@@ -1398,7 +1366,7 @@ fn importer_pages_reach_every_caller_exactly_once() {
         eprintln!("skipping: node not available");
         return;
     }
-    let (root, execution) = importer_fixture("callers");
+    let (_dir, root, execution) = importer_fixture();
     tokio::runtime::Runtime::new().expect("rt").block_on(async {
         let pool = LspClientPool::new(LspPoolOptions::default());
         let start = serde_json::json!({
@@ -1435,7 +1403,6 @@ fn importer_pages_reach_every_caller_exactly_once() {
             "every importer's caller once, in its window"
         );
     });
-    remove_importer_fixture(&root);
 }
 
 /// tsserver answers when octocode's tsgo cannot start, and the answer
@@ -1449,7 +1416,7 @@ fn a_tsgo_that_fails_to_start_falls_back_to_tsserver_and_says_so() {
         node_available(),
         "Node is required for the real LSP fixture"
     );
-    let (root, script) = fixture("tsgo-fallback");
+    let (_dir, root, script) = fixture();
     let missing = root.join("no-such-tsgo");
     let path = root.join("a.ts").to_string_lossy().into_owned();
     let uri = octocode_engine::lsp::uri::path_to_uri(&path).expect("uri");
@@ -1503,5 +1470,692 @@ fn a_tsgo_that_fails_to_start_falls_back_to_tsserver_and_says_so() {
         drop(again);
         pool.clear_all().await;
     });
-    std::fs::remove_dir_all(root).expect("fixture removed");
+}
+
+type ImplementationTargets<'a> = (&'a str, usize, &'a [(&'a str, usize)]);
+
+fn fallback_graph_rows(
+    files: &[(&str, &str)],
+    definitions: &[(&str, usize, &str, &str, usize)],
+    implementations: &[ImplementationTargets<'_>],
+    queries: &[(&str, &str, usize, u32)],
+) -> Vec<serde_json::Value> {
+    fallback_graph_pages(files, definitions, implementations, queries)
+        .into_iter()
+        .map(|mut pages| {
+            assert_eq!(pages.len(), 1, "this fixture expects an unpaged result");
+            pages.remove(0)
+        })
+        .collect()
+}
+
+fn fallback_graph_pages(
+    files: &[(&str, &str)],
+    definitions: &[(&str, usize, &str, &str, usize)],
+    implementations: &[ImplementationTargets<'_>],
+    queries: &[(&str, &str, usize, u32)],
+) -> Vec<Vec<serde_json::Value>> {
+    use super::ops::Operation;
+    use super::source::{SourceCache, snippet_policy};
+    use crate::tools::cancel::NeverCancel;
+    use serde_json::json;
+    let (_dir, root, script) = fixture();
+    for (file, content) in files {
+        std::fs::write(root.join(file), content).expect("source fixture");
+    }
+    let declaration = |file: &str, line: usize| {
+        let content = files
+            .iter()
+            .find(|(name, _)| *name == file)
+            .expect("file")
+            .1;
+        let text = content.lines().nth(line).expect("line");
+        let name = text.split_whitespace().nth(2).expect("declaration name");
+        let start = text.find(name).expect("name position");
+        json!({"uri": octocode_engine::lsp::uri::path_to_uri(&root.join(file).to_string_lossy()).expect("uri"),
+            "range": {"start":{"line":line,"character":start},"end":{"line":line,"character":start+name.len()}}})
+    };
+    let mut graph = json!({"definitions":{},"implementations":{}});
+    for (file, line, name, target, target_line) in definitions {
+        let text = files
+            .iter()
+            .find(|(entry, _)| entry == file)
+            .expect("file")
+            .1
+            .lines()
+            .nth(*line)
+            .expect("line");
+        let column = text.rfind(name).expect("reference position");
+        graph["definitions"]
+            .as_object_mut()
+            .expect("definition map")
+            .entry(format!("{file}:{line}:{column}"))
+            .or_insert_with(|| json!([]))
+            .as_array_mut()
+            .expect("definition targets")
+            .push(declaration(target, *target_line));
+    }
+    for (file, line, targets) in implementations {
+        let node = declaration(file, *line);
+        let column = node["range"]["start"]["character"]
+            .as_u64()
+            .expect("column");
+        graph["implementations"][format!("{file}:{line}:{column}")] = json!(
+            targets
+                .iter()
+                .map(|(target, line)| declaration(target, *line))
+                .collect::<Vec<_>>()
+        );
+    }
+    let server = FAKE_SERVER
+        .replace("hoverProvider: true", "definitionProvider: true, implementationProvider: true")
+        .replace(
+            "  } else if (msg.method === 'textDocument/hover') {\n    process.exit(3);",
+            r#"  } else if (msg.method === 'textDocument/definition' || msg.method === 'textDocument/implementation') {
+    const graph = JSON.parse(process.env.FAKE_LSP_GRAPH);
+    const file = require('path').basename(new URL(msg.params.textDocument.uri).pathname);
+    const p = msg.params.position;
+    const key = `${file}:${p.line}:${p.character}`;
+    const entries = graph[msg.method.endsWith('/definition') ? 'definitions' : 'implementations'];
+    send({ jsonrpc: '2.0', id: msg.id, result: entries[key] || [] });"#,
+        );
+    std::fs::write(&script, server).expect("fixture server");
+    let mut config = config(&root, &script, None);
+    config.env = Some(
+        [("FAKE_LSP_GRAPH".into(), graph.to_string())]
+            .into_iter()
+            .collect(),
+    );
+    let paths = crate::tools::test_support::workspace_policy(&root);
+    tokio::runtime::Runtime::new().expect("rt").block_on(async {
+        let client = NativeLspClient::new(config);
+        client.start().await.expect("server starts");
+        let mut rows = Vec::new();
+        for (operation, file, line, depth) in queries {
+            let node = declaration(file, *line);
+            let name = files.iter().find(|(entry, _)| entry == file).expect("file").1.lines().nth(*line).expect("line").split_whitespace().nth(2).expect("name");
+            let path = root.join(file).to_string_lossy().into_owned();
+            let mut query: super::LspSearchQuery = serde_json::from_value(json!({"operation":operation,"path":path,"line":line+1,"symbolName":name,"graphDepth":depth})).expect("query");
+            let mut pages = Vec::new();
+            loop {
+                let mut sources = SourceCache::new(&paths);
+                let policy = snippet_policy(&paths);
+                let scope = super::scope::Scope::new(root.to_string_lossy().into_owned(), vec!["*.ts".into()]);
+                let row = Operation { client: &client, query: &query, sources: &mut sources, snippet_policy: &policy,
+                    cancel: &NeverCancel, path: &path, scope: &scope, root_only: false, line: u32::try_from(*line).expect("line"),
+                    character: u32::try_from(node["range"]["start"]["character"].as_u64().expect("character")).expect("character"),
+                    language_id:Some("typescript"), budget:16_000, response_window:None }.run().await.expect("fallback hierarchy");
+                let row = super::failure::with_next(&query, row);
+                assert_row_contract(ToolId::LspSearch, &serde_json::to_value(&query).expect("wire query"), &row);
+                let next = row.pointer("/next/nextPage/query/queries/0").cloned();
+                pages.push(row);
+                let Some(next) = next else { break };
+                let continued: super::LspSearchQuery = serde_json::from_value(next).expect("executable nextPage");
+                assert!(continued.page() > query.page(), "page cursor must advance");
+                query = continued;
+            }
+            rows.push(pages);
+        }
+        client.stop().await.expect("fixture server closed");
+        rows
+    })
+}
+
+#[test]
+fn fallback_type_hierarchy_obeys_depth_and_records_intermediate_identity() {
+    let rows = fallback_graph_rows(
+        &[(
+            "chain.ts",
+            "export class Base {}\nexport class Middle extends Base {}\nexport class Leaf extends Middle {}\n",
+        )],
+        &[
+            ("chain.ts", 1, "Base", "chain.ts", 0),
+            ("chain.ts", 2, "Middle", "chain.ts", 1),
+        ],
+        &[
+            ("chain.ts", 0, &[("chain.ts", 1), ("chain.ts", 2)]),
+            ("chain.ts", 1, &[("chain.ts", 2)]),
+            ("chain.ts", 2, &[]),
+        ],
+        &[
+            ("supertypes", "chain.ts", 2, 1),
+            ("supertypes", "chain.ts", 2, 2),
+            ("supertypes", "chain.ts", 2, 3),
+            ("subtypes", "chain.ts", 0, 1),
+            ("subtypes", "chain.ts", 0, 2),
+            ("subtypes", "chain.ts", 0, 3),
+        ],
+    );
+    for (index, row) in rows.iter().enumerate() {
+        let matches = row["matches"].as_array().expect("matches");
+        assert_eq!(
+            matches.len(),
+            if index % 3 == 0 { 1 } else { 2 },
+            "{index}: {row}"
+        );
+        if index % 3 != 0 {
+            assert_eq!(matches[1]["via"]["symbolName"], "Middle", "{row}");
+        }
+        assert!(
+            row.get("isPartial").is_none(),
+            "fully resolved graph: {row}"
+        );
+    }
+}
+
+#[test]
+fn fallback_type_hierarchy_resolves_aliases_and_rejects_shadow_names() {
+    let rows = fallback_graph_rows(
+        &[
+            ("base.ts", "export class Base {}\n"),
+            (
+                "alias.ts",
+                "import { Base as Renamed } from './base';\nexport class Child extends Renamed {}\n",
+            ),
+            (
+                "shadow.ts",
+                "export class Base {}\nexport class Unrelated extends Base {}\n",
+            ),
+        ],
+        &[
+            ("alias.ts", 1, "Renamed", "base.ts", 0),
+            ("shadow.ts", 1, "Base", "shadow.ts", 0),
+        ],
+        &[("base.ts", 0, &[("alias.ts", 1), ("shadow.ts", 1)])],
+        &[
+            ("supertypes", "alias.ts", 1, 1),
+            ("subtypes", "base.ts", 0, 1),
+        ],
+    );
+    assert_eq!(rows[0]["matches"].as_array().expect("matches").len(), 1);
+    assert!(
+        rows[0]["matches"][0]["path"]
+            .as_str()
+            .expect("path")
+            .ends_with("base.ts"),
+        "{}",
+        rows[0]
+    );
+    assert_eq!(rows[1]["matches"].as_array().expect("matches").len(), 1);
+    assert_eq!(rows[1]["matches"][0]["symbolName"], "Child", "{}", rows[1]);
+    assert!(
+        rows.iter().all(|row| row.get("isPartial").is_none()),
+        "{rows:?}"
+    );
+}
+
+#[test]
+fn fallback_type_hierarchy_resolves_implementation_aliases_and_deduplicates_declarations() {
+    let rows = fallback_graph_rows(
+        &[
+            (
+                "chain.ts",
+                "export interface Base {}\nexport class Middle implements Base {}\nexport class Leaf extends Middle {}\n",
+            ),
+            (
+                "alias.ts",
+                "import { Middle as Parent } from './chain';\nexport class AliasLeaf extends Parent {}\n",
+            ),
+            (
+                "shadow.ts",
+                "export interface Base {}\nexport class Middle implements Base {}\n",
+            ),
+        ],
+        &[
+            ("chain.ts", 1, "Base", "chain.ts", 0),
+            ("chain.ts", 2, "Middle", "chain.ts", 1),
+            ("alias.ts", 0, "Middle", "chain.ts", 1),
+            ("alias.ts", 1, "Parent", "chain.ts", 1),
+            ("shadow.ts", 1, "Base", "shadow.ts", 0),
+        ],
+        &[
+            (
+                "chain.ts",
+                0,
+                &[
+                    ("alias.ts", 0),
+                    ("chain.ts", 1),
+                    ("chain.ts", 1),
+                    ("chain.ts", 2),
+                    ("alias.ts", 1),
+                    ("shadow.ts", 1),
+                ],
+            ),
+            (
+                "chain.ts",
+                1,
+                &[
+                    ("alias.ts", 0),
+                    ("chain.ts", 2),
+                    ("alias.ts", 1),
+                    ("chain.ts", 2),
+                ],
+            ),
+        ],
+        &[
+            ("subtypes", "chain.ts", 0, 1),
+            ("subtypes", "chain.ts", 0, 2),
+        ],
+    );
+    for (index, row) in rows.iter().enumerate() {
+        assert!(
+            row.get("isPartial").is_none(),
+            "all alias candidates resolve: {row}"
+        );
+        let matches = row["matches"].as_array().expect("matches");
+        assert_eq!(matches.len(), if index == 0 { 1 } else { 3 }, "{row}");
+        assert_eq!(matches[0]["symbolName"], "Middle", "{row}");
+        assert!(
+            matches[0]["path"]
+                .as_str()
+                .expect("path")
+                .ends_with("chain.ts"),
+            "{row}"
+        );
+        if index == 1 {
+            assert_eq!(matches[1]["symbolName"], "Leaf", "{row}");
+            assert_eq!(matches[2]["symbolName"], "AliasLeaf", "{row}");
+            for child in &matches[1..] {
+                assert_eq!(child["level"], 2, "{row}");
+                assert_eq!(child["via"]["symbolName"], "Middle", "{row}");
+            }
+        }
+    }
+}
+
+#[test]
+fn fallback_type_hierarchy_keeps_known_edges_when_an_implementation_alias_is_ambiguous() {
+    let rows = fallback_graph_rows(
+        &[
+            ("base.ts", "export interface Base {}\n"),
+            ("left.ts", "export class Left implements Base {}\n"),
+            ("right.ts", "export class Right implements Base {}\n"),
+            ("alias.ts", "import { Either } from './left';\n"),
+            ("same.ts", "import { Left as One } from './left';\n"),
+        ],
+        &[
+            ("left.ts", 0, "Base", "base.ts", 0),
+            ("right.ts", 0, "Base", "base.ts", 0),
+            ("alias.ts", 0, "Either", "left.ts", 0),
+            ("alias.ts", 0, "Either", "right.ts", 0),
+            ("same.ts", 0, "Left", "left.ts", 0),
+            ("same.ts", 0, "Left", "left.ts", 0),
+        ],
+        &[(
+            "base.ts",
+            0,
+            &[("alias.ts", 0), ("same.ts", 0), ("left.ts", 0)],
+        )],
+        &[("subtypes", "base.ts", 0, 1)],
+    );
+    let row = &rows[0];
+    let matches = row["matches"].as_array().expect("matches");
+    assert_eq!(
+        matches.len(),
+        1,
+        "the known declaration stays, ambiguous targets do not: {row}"
+    );
+    assert_eq!(matches[0]["symbolName"], "Left", "{row}");
+    assert_eq!(row["isPartial"], true, "{row}");
+    assert_eq!(
+        row["partialReasons"],
+        serde_json::json!(["typeHierarchyExpansionFailed"]),
+        "{row}"
+    );
+    assert!(
+        row["warnings"]
+            .to_string()
+            .contains("2 distinct type declarations"),
+        "{row}"
+    );
+    assert_eq!(row["next"]["retry"]["tool"], "lspSearch", "{row}");
+}
+
+#[test]
+fn fallback_type_hierarchy_preserves_diamond_edges_and_terminates_cycles() {
+    let diamond = fallback_graph_rows(
+        &[(
+            "diamond.ts",
+            "export interface Root {}\nexport interface Left extends Root {}\nexport interface Right extends Root {}\nexport interface Join extends Left, Right {}\nexport interface Tail extends Join {}\n",
+        )],
+        &[
+            ("diamond.ts", 1, "Root", "diamond.ts", 0),
+            ("diamond.ts", 2, "Root", "diamond.ts", 0),
+            ("diamond.ts", 3, "Left", "diamond.ts", 1),
+            ("diamond.ts", 3, "Right", "diamond.ts", 2),
+            ("diamond.ts", 4, "Join", "diamond.ts", 3),
+        ],
+        &[
+            (
+                "diamond.ts",
+                0,
+                &[
+                    ("diamond.ts", 1),
+                    ("diamond.ts", 2),
+                    ("diamond.ts", 3),
+                    ("diamond.ts", 4),
+                ],
+            ),
+            ("diamond.ts", 1, &[("diamond.ts", 3), ("diamond.ts", 4)]),
+            ("diamond.ts", 2, &[("diamond.ts", 3), ("diamond.ts", 4)]),
+            ("diamond.ts", 3, &[("diamond.ts", 4)]),
+        ],
+        &[("subtypes", "diamond.ts", 0, 3)],
+    );
+    let matches = diamond[0]["matches"].as_array().expect("diamond matches");
+    assert_eq!(matches.len(), 5, "{diamond:?}");
+    assert_eq!(
+        matches
+            .iter()
+            .filter(|entry| entry["symbolName"] == "Tail")
+            .count(),
+        1,
+        "{diamond:?}"
+    );
+    let via = matches
+        .iter()
+        .filter(|entry| entry["symbolName"] == "Join")
+        .map(|entry| entry["via"]["symbolName"].as_str().expect("via"))
+        .collect::<Vec<_>>();
+    assert_eq!(via, ["Left", "Right"], "{diamond:?}");
+    let cycle = fallback_graph_rows(
+        &[(
+            "cycle.ts",
+            "export class A extends B {}\nexport class B extends A {}\n",
+        )],
+        &[
+            ("cycle.ts", 0, "B", "cycle.ts", 1),
+            ("cycle.ts", 1, "A", "cycle.ts", 0),
+        ],
+        &[
+            ("cycle.ts", 0, &[("cycle.ts", 0), ("cycle.ts", 1)]),
+            ("cycle.ts", 1, &[("cycle.ts", 0), ("cycle.ts", 1)]),
+        ],
+        &[
+            ("supertypes", "cycle.ts", 0, 20),
+            ("subtypes", "cycle.ts", 0, 20),
+        ],
+    );
+    for row in cycle {
+        let matches = row["matches"].as_array().expect("cycle matches");
+        assert_eq!(matches.len(), 2, "{row}");
+        assert_eq!(matches[0]["symbolName"], "B", "{row}");
+        assert_eq!(matches[1]["symbolName"], "A", "{row}");
+        assert_eq!(matches[1]["via"]["symbolName"], "B", "{row}");
+    }
+}
+
+#[test]
+fn fallback_type_hierarchy_marks_unresolved_relations_partial_with_retry() {
+    let rows = fallback_graph_rows(
+        &[(
+            "unknown.ts",
+            "export class Base {}\nexport class Child extends Unknown {}\n",
+        )],
+        &[],
+        &[("unknown.ts", 0, &[("unknown.ts", 1)])],
+        &[
+            ("supertypes", "unknown.ts", 1, 2),
+            ("subtypes", "unknown.ts", 0, 2),
+        ],
+    );
+    for row in rows {
+        assert_eq!(row["isPartial"], true, "{row}");
+        assert_eq!(
+            row["partialReasons"],
+            serde_json::json!(["typeHierarchyExpansionFailed"]),
+            "{row}"
+        );
+        assert_eq!(row["next"]["retry"]["tool"], "lspSearch", "{row}");
+        assert!(
+            row["matches"].as_array().is_none_or(Vec::is_empty),
+            "unverified edges omitted: {row}"
+        );
+    }
+}
+
+#[test]
+fn fallback_type_hierarchy_discloses_bounded_candidate_verification() {
+    let cap = super::walk::MAX_HIERARCHY_NODES;
+    let mut content = "export class Base {}\n".to_owned();
+    for index in 0..=cap {
+        content.push_str(&format!("export class Child{index} extends Base {{}}\n"));
+    }
+    let definitions = (1..=cap + 1)
+        .map(|line| ("wide.ts", line, "Base", "wide.ts", 0))
+        .collect::<Vec<_>>();
+    let candidates = (1..=cap + 1)
+        .map(|line| ("wide.ts", line))
+        .collect::<Vec<_>>();
+    let mut results = fallback_graph_pages(
+        &[("wide.ts", &content)],
+        &definitions,
+        &[("wide.ts", 0, &candidates)],
+        &[("subtypes", "wide.ts", 0, 1)],
+    );
+    assert_eq!(results.len(), 1);
+    let pages = results.remove(0);
+    assert!(
+        pages.len() > 1,
+        "the verified prefix must cross the page budget"
+    );
+    let mut identities = std::collections::HashSet::new();
+    let mut reached = 0;
+    for (page_index, row) in pages.iter().enumerate() {
+        assert_eq!(row["pagination"]["totalItems"], cap, "{row}");
+        assert_eq!(row["pagination"]["currentPage"], page_index + 1, "{row}");
+        assert_eq!(
+            row["pagination"]["hasMore"],
+            page_index + 1 < pages.len(),
+            "{row}"
+        );
+        let shown = row["matches"].as_array().expect("matches");
+        assert!(!shown.is_empty(), "each page retains complete rows: {row}");
+        for matched in shown {
+            assert_eq!(matched["symbolName"], format!("Child{reached}"), "{row}");
+            assert_eq!(matched["displayRange"]["startLine"], reached + 2, "{row}");
+            assert_eq!(matched["level"], 1, "{row}");
+            assert!(
+                identities.insert((matched["path"].clone(), matched["displayRange"].to_string())),
+                "no repeated declaration: {matched}"
+            );
+            reached += 1;
+        }
+        assert_eq!(row["terminalLimit"], true, "{row}");
+        assert_eq!(row["isPartial"], true, "{row}");
+        assert_eq!(
+            row["partialReasons"],
+            serde_json::json!(["hierarchyCandidateLimit"]),
+            "{row}"
+        );
+    }
+    assert_eq!(reached, cap, "all verified candidates must be reachable");
+    assert_eq!(
+        identities.len(),
+        cap,
+        "each declaration must be reached once"
+    );
+    assert!(
+        pages
+            .last()
+            .expect("final page")
+            .pointer("/next/nextPage")
+            .is_none(),
+        "the route terminates"
+    );
+}
+
+#[test]
+fn workspace_symbol_provider_coverage_is_unknown_without_losing_semantic_rows() {
+    use super::ops::Operation;
+    use super::source::{SourceCache, snippet_policy};
+    use crate::tools::cancel::NeverCancel;
+    use serde_json::{Value, json};
+    assert!(
+        node_available(),
+        "Node is required for the real LSP fixture"
+    );
+    let (_dir, root, script) = fixture();
+    let server = FAKE_SERVER
+        .replace("hoverProvider: true", "workspaceSymbolProvider: true, documentSymbolProvider: true")
+        .replace(
+            "  } else if (msg.method === 'textDocument/hover') {\n    process.exit(3);",
+            r#"  } else if (msg.method === 'workspace/symbol') {
+    const names = msg.params.query === 'missing' ? [] : ['普通', 'Alias', 'Shared', 'Shared'];
+    const uri = require('url').pathToFileURL(require('path').join(process.cwd(), 'a.ts')).href;
+    const symbols = names.map((name, line) => ({name, kind: 12,
+      containerName: line === 3 ? 'Shadow' : 'Module',
+      location: {uri, range: {start: {line, character: line === 0 ? 3 : 0}, end: {line, character: 8}}}}));
+    send({jsonrpc:'2.0', id:msg.id, result:symbols});
+  } else if (msg.method === 'textDocument/documentSymbol') {
+    send({jsonrpc:'2.0', id:msg.id, result:[{name:'ordinary',kind:12,
+      range:{start:{line:0,character:0},end:{line:0,character:8}},
+      selectionRange:{start:{line:0,character:0},end:{line:0,character:8}}}]});"#,
+        );
+    std::fs::write(&script, server).expect("fixture server");
+    let paths = crate::tools::test_support::workspace_policy(&root);
+    let path = root.join("a.ts").to_string_lossy().into_owned();
+    tokio::runtime::Runtime::new().expect("rt").block_on(async {
+        let client = NativeLspClient::new(config(&root, &script, None));
+        client.start().await.expect("server starts");
+        for (page_size, root_only) in [(2, false), (1000, false), (1000, true)] {
+            let anchor = if root_only {
+                root.to_string_lossy().into_owned()
+            } else {
+                path.clone()
+            };
+            let mut query: super::LspSearchQuery = serde_json::from_value(json!({
+                "operation":"workspaceSymbol", "path":anchor, "symbolName":"Shared",
+                "pageSize":page_size
+            }))
+            .expect("query");
+            let mut found = Vec::new();
+            let mut page_count = 0;
+            loop {
+                let mut sources = SourceCache::new(&paths);
+                let policy = snippet_policy(&paths);
+                let scope = super::scope::Scope::new(
+                    root.to_string_lossy().into_owned(),
+                    vec!["*.ts".into()],
+                );
+                let row = Operation {
+                    client: &client,
+                    query: &query,
+                    sources: &mut sources,
+                    snippet_policy: &policy,
+                    cancel: &NeverCancel,
+                    path: &anchor,
+                    scope: &scope,
+                    root_only,
+                    line: 0,
+                    character: 0,
+                    language_id: Some("typescript"),
+                    budget: 16_000,
+                    response_window: None,
+                }
+                .run()
+                .await
+                .expect("workspace symbols");
+                let row = super::failure::with_next(&query, row);
+                assert_eq!(row["isPartial"], true, "{row}");
+                assert_eq!(
+                    row["partialReasons"],
+                    json!(["workspaceSymbolCoverageUnknown"])
+                );
+                assert!(
+                    row.get("terminalLimit").is_none(),
+                    "unknown is not a proven cap"
+                );
+                assert_eq!(row["pagination"]["totalItems"], 4);
+                let published =
+                    crate::tools::test_support::published(ToolId::LspSearch, &query.to_row(), &row);
+                assert_row_contract(ToolId::LspSearch, &query.to_row(), &row);
+                assert!(
+                    published
+                        .pointer("/results/0/data/next/inspectDocumentSymbols")
+                        .is_none(),
+                    "optional lead is not pagination: {published}"
+                );
+                found.extend(row["matches"].as_array().expect("matches").iter().cloned());
+                page_count += 1;
+                let Some(next) = row.pointer("/next/nextPage/query/queries/0") else {
+                    let hint = &published["results"][0]["data"]["hints"]["inspectDocumentSymbols"];
+                    assert_eq!(
+                        hint["query"]["queries"][0],
+                        json!({"operation":"documentSymbols", "path":path})
+                    );
+                    break;
+                };
+                assert!(page_count < 3, "continuation must terminate");
+                query = serde_json::from_value(next.clone()).expect("executable next page");
+            }
+            assert_eq!(page_count, if page_size == 2 { 2 } else { 1 });
+            assert_eq!(
+                found
+                    .iter()
+                    .map(|v| v["symbolName"].as_str().expect("name"))
+                    .collect::<Vec<_>>(),
+                ["Shared", "Shared", "普通", "Alias"]
+            );
+            assert_eq!(found[0]["containerName"], "Module");
+            assert_eq!(found[1]["containerName"], "Shadow");
+            let identities = found
+                .iter()
+                .map(|v| (v["path"].clone(), v["displayRange"].clone()))
+                .collect::<Vec<_>>();
+            assert_eq!(
+                identities
+                    .iter()
+                    .collect::<std::collections::HashSet<_>>()
+                    .len(),
+                4
+            );
+            assert_eq!(
+                found[2]["displayRange"],
+                json!({"startLine":1,"startCharacter":4,"endLine":1})
+            );
+        }
+        for (operation, name, partial) in [
+            ("workspaceSymbol", Some("missing"), true),
+            ("documentSymbols", None, false),
+        ] {
+            let mut wire = json!({"operation":operation,"path":path});
+            if let Some(name) = name {
+                wire["symbolName"] = json!(name);
+            }
+            let query: super::LspSearchQuery = serde_json::from_value(wire.clone()).expect("query");
+            let mut sources = SourceCache::new(&paths);
+            let policy = snippet_policy(&paths);
+            let scope =
+                super::scope::Scope::new(root.to_string_lossy().into_owned(), vec!["*.ts".into()]);
+            let row = Operation {
+                client: &client,
+                query: &query,
+                sources: &mut sources,
+                snippet_policy: &policy,
+                cancel: &NeverCancel,
+                path: &path,
+                scope: &scope,
+                root_only: false,
+                line: 0,
+                character: 0,
+                language_id: Some("typescript"),
+                budget: 16_000,
+                response_window: None,
+            }
+            .run()
+            .await
+            .expect("provider answer");
+            let row = super::failure::with_next(&query, row);
+            assert_eq!(
+                row.get("isPartial")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+                partial,
+                "{row}"
+            );
+            assert_row_contract(ToolId::LspSearch, &wire, &row);
+        }
+        client.stop().await.expect("fixture server closed");
+    });
 }

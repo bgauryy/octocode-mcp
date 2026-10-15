@@ -20,7 +20,7 @@ Each row is runnable after replacing IDs, paths, and placeholders; the JSON is i
 | `resume` | Reuse an expired identity of the same vendor; reacquire leases. | `agent resume '{"vendor":"claude"}'` |
 | `leave` | Finish a lifecycle this process owns; release leases/subscriptions/claims. | `agent leave` |
 | `peers` | Find live collaborators and exact recipient IDs. | `agent peers` |
-| `send_message` | Ask one peer or publish to a subscribed topic. | `agent send_message '{"to":"api-reviewer","body":"Situation: API changed. Request: review src/api.ts for compatibility risks.","reasoning":"Resolve compatibility; done when risks are listed"}'` |
+| `send_message` | Ask one peer or publish to a subscribed topic. | `agent send_message '{"to":"api-reviewer","body":"Situation: API changed. Request: review src/api.ts for compatibility risks.","reasoning":"Resolve compatibility; done when risks are listed","replyRequired":true}'` |
 | `notify_all` | A relevant announcement to current active peers. | `agent notify_all '{"body":"API review is ready","reasoning":"Coordinate review","replyRequired":false}'` |
 | `inbox` | Read pending unexpired deliveries; optionally one message. | `agent inbox '{"message":17}'` |
 | `inbox wait` | Explicitly wait for pending mail; does not renew presence or acknowledge it. | `agent inbox wait '{"timeoutMs":1000}'` |
@@ -38,7 +38,7 @@ Each row is runnable after replacing IDs, paths, and placeholders; the JSON is i
 | `hook` | Offer incoming context to a raw/custom host bridge. | `agent hook '{"format":"json"}'` |
 | `confirm_delivery` | Confirm SDK acceptance using the exact offered ID/token pairs. | `agent confirm_delivery '{"items":[{"id":17,"dispatchToken":"EXACT_UUID"}]}'` |
 | `listen` | Own a delivery loop without starting an LLM; maintain presence. | `agent listen --duration-ms 60000` |
-| `retry_delivery` | Explicitly retry an inspected uncertain attempt; duplication is possible. | `agent retry_delivery '{"message":17,"reason":"Receiver inspection confirms retry is needed"}'` |
+| `retry_delivery` | Explicitly retry an inspected staged or uncertain attempt; duplication is possible. A submitted attempt (host accepted it) is refused, never resent. | `agent retry_delivery '{"message":17,"reason":"Receiver inspection confirms retry is needed"}'` |
 | `host-config` | Generate a hook settings preview to merge into the host. | `comm host-config --vendor codex` |
 | `host-hook` | Host hook handler; consumes actual host event JSON on stdin. | `comm host-hook --vendor codex < /absolute/host-event.json` |
 | `completion-check` | Optional Claude Stop recovery guard; host supplies stop-event JSON. | `agent completion-check - < /absolute/stop-event.json` |

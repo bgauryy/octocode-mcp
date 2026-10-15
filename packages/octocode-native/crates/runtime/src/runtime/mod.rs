@@ -18,6 +18,7 @@ mod tool_output;
 pub use crate::tools::result::FailureKind;
 pub use engine::{Channel, HostOptions, RuntimeError, ToolOutcome, ToolRuntime};
 pub use exit::ExitClass;
+pub(crate) use exit::failure_kind;
 pub use lifecycle::{
     DEFAULT_TIMEOUT, ExecutionContext, ExecutionError, RequestAdmission, RequestRuntime,
     RuntimeLimits,

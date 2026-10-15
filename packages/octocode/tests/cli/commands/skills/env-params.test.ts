@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { configFieldEnvNames, ENV_TOKEN_VARS } from '@octocodeai/config';
+import { configFieldEnvName, ENV_TOKEN_VARS } from '@octocodeai/config';
 import {
   envParamRows,
   getSkillEnvStatus,
@@ -12,8 +12,8 @@ import {
 } from '../../../../src/cli/commands/skills/env-params.js';
 import { fakeNative } from '../../../utils/fake-native.js';
 
-const classificationKeys = configFieldEnvNames('classification.api');
-const allKeys = [...ENV_TOKEN_VARS, ...classificationKeys];
+const classificationKey = configFieldEnvName('classification.api')!;
+const allKeys = [...ENV_TOKEN_VARS, classificationKey];
 
 describe('skill env params come from the config contract', () => {
   let home: string;
@@ -34,7 +34,7 @@ describe('skill env params come from the config contract', () => {
   it('lists every GitHub token name and the classification key', () => {
     const keys = SKILL_ENV_PARAMS['octocode-rfc-generator']!.map(p => p.key);
     expect(keys).toEqual(allKeys);
-    expect(classificationKeys).toEqual(['OCTOCODE_CLASSIFICATION_API']);
+    expect(classificationKey).toBe('OCTOCODE_CLASSIFICATION_API');
     expect(groupLabel('github-token')).toContain(ENV_TOKEN_VARS.join(', '));
   });
 
@@ -96,6 +96,22 @@ describe('skill env params come from the config contract', () => {
     expect(isEnvSet(key)).toBe(false);
     writeFileSync(path.join(home, '.env'), `${key}=from-home\n`);
     expect(isEnvSet(key)).toBe(true);
+  });
+
+  it('asks native for a classification key it resolves from .octocoderc', () => {
+    const key = classificationKey;
+    writeFileSync(
+      path.join(home, '.octocoderc'),
+      JSON.stringify({ classification: { api: 'test-file-secret' } })
+    );
+    expect(isEnvSet(key)).toBe(false);
+    vi.stubEnv('OCTOCODE_NATIVE_BIN', fakeNative(home, undefined, [key]));
+    expect(isEnvSet(key)).toBe(true);
+    const rows = envParamRows(getSkillEnvStatus('octocode-research'));
+    expect(rows.find(row => row.key === key)).toEqual(
+      expect.objectContaining({ status: 'set', groupSatisfied: true })
+    );
+    expect(JSON.stringify(rows)).not.toContain('test-file-secret');
   });
 
   it('honors the workspace .env layer, as the native resolver does', () => {

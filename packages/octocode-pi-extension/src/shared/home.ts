@@ -403,3 +403,14 @@ export function repoKey(cwd: string): RepoKey {
   repoCache.set(cwd, result);
   return result;
 }
+
+/**
+ * The folder a permission mode treats as "the workspace" for `cwd`: its repository root, or none when that root is the
+ * home folder, a folder above it or `/` (a session started in `~` has no workspace: everything under `~`, from
+ * `~/.ssh` to `~/.zshrc`, is outside it). The one rule behind every workspace-scoped allow; `repoKey` still names the
+ * folder for per-repository state (team, backlog, memory).
+ */
+export function workspaceRoot(cwd: string): string | undefined {
+  const { root } = repoKey(cwd);
+  return spansHome(root) ? undefined : root;
+}

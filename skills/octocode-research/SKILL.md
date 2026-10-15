@@ -12,7 +12,7 @@ flowchart LR
   F[FRAME question, corpus] --> C[CLASSIFY] --> M[MODEL path] --> A{Exact anchor?}
   A -- yes --> R[SEARCH / READ]
   A -- no --> S{Judgment changes next read?}
-  S -- yes --> Q[classifiers or clasify] --> R
+  S -- yes --> Q[clasifyContext or clasify] --> R
   S -- no --> R
   R --> P[PROVE] --> E{Answers the claim?}
   E -- no --> R
@@ -51,15 +51,15 @@ Trace only `entry → transformations → state → output → consumers`; switc
 
 ## Classifiers or clasify?
 
-Use a semantic route only when choosing unread evidence saves later reads or a typed judgment changes the next action; else an exact anchor or bounded read. Choosing which captured source to read: optional `classifiers` on the search or fetch call; a typed judgment over held state or unread source: `clasify`; exhaustive coverage or identity: deterministic tools.
+When a broad search or fetch would make the host read many plausible candidates, use `clasifyContext:{classifiers:[...]}` on `localSearch`, `localFetch`, `ghSearchCode` or `ghGetFileContent` to return selected evidence. When a typed answer can choose among unread files, docs or images, use `clasify` with source references or image assets; discover concrete targets before screening a folder. Exact anchors, small reads, identity and exhaustive coverage use ordinary tools.
 
-Never ask both for the same relevance decision. Typed opinions never dismiss a finding; source does. Route unavailable or incomplete: targeted reads, scope left unresolved.
+Ask one observable question per missing fact. Optional `mainGoal`/`reasoning` add context to inline selection; use a short call rationale, not private reasoning. Read [clasify](references/clasify.md) for scopes and typed requests. Never repeat the same relevance decision in both routes. Read deciding evidence before a source claim; stop when it answers the question. Unknown or withheld evidence is unresolved, never proof of absence.
 
 ## Tools and setup
 
 - Unfamiliar or failed call: `schema <name> --view query`. Env and availability: [octocode](references/octocode.md#16-public-tools); never print credentials.
-- Batch up to 5 independent rows; dependent probes stay sequential. `mainGoal`/`reasoning` only in multi-call research.
-- `next.*`: run unchanged, or narrow and name what stays unread; `hints.*` leads: [octocode](references/octocode.md).
+- Batch up to 5 independent rows; dependent probes stay sequential. Omit research metadata when it adds no useful context.
+- Copy needed paging calls unchanged. `next.unfiltered` recovers the complete original view, including selected evidence; use it for unresolved coverage or completeness, not automatically after a sufficient answer. Name unread scope. Paging and optional `hints.*`: [octocode](references/octocode.md#read-results-and-recover).
 
 ## Resources
 

@@ -185,7 +185,7 @@ test('Pi native context preserves reply correlation without replaying durable me
  try {
   const session = controller.getBinding().session;
   const sender = f.run('join', { vendor: 'raw', name: 'peer' }).id;
-  const question = f.run('send_message', { to: sender, body: 'Can you review?', reasoning: 'Request a peer review', conversationId: 'review:42' }, session);
+  const question = f.run('send_message', { to: sender, body: 'Can you review?', reasoning: 'Request a peer review', replyRequired: true, conversationId: 'review:42' }, session);
   const reply = f.run('complete', { message:question.id, reply:'Review complete.', reasoning:'Report review result' }, sender);
   const notice = f.run('send_message', { to: session, body: 'Independent notice.', reasoning: 'Share a separate update' }, sender);
   await controller.drain();
@@ -239,7 +239,7 @@ test('action arriving during a Pi turn waits for idle and wakes once after agent
  try {
   const session=controller.getBinding().session,sender=f.run('join',{vendor:'raw',name:'sender'}).id;
   await f.fire('agent_start');
-  f.run('send_message',{to:session,body:'Next task',reasoning:'Coordinate after the active task'},sender);
+  f.run('send_message',{to:session,body:'Next task',wake:'action',reasoning:'Coordinate after the active task'},sender);
   await controller.drain();
   assert.equal(f.sent.filter(s=>s.message.customType==='octocode-peer').length,0);
   await f.fire('agent_end');
@@ -254,7 +254,7 @@ test('Pi before_agent_start includes action context in the existing turn without
  await f.fire('session_start');
  try {
   const session=controller.getBinding().session,sender=f.run('join',{vendor:'raw',name:'sender'}).id;
-  f.run('send_message',{to:session,body:'Join the current task',reasoning:'Supply context to the turn already starting'},sender);
+  f.run('send_message',{to:session,body:'Join the current task',wake:'action',reasoning:'Supply context to the turn already starting'},sender);
   f.ctx.isIdle=()=>false;
   await controller.drain();assert.equal(f.sent.filter(s=>s.message.customType==='octocode-peer').length,0);
   await f.fire('before_agent_start');
@@ -271,7 +271,7 @@ test('a user turn starting during a Pi inbox read suppresses the pending automat
  const controller=registerPiInbox(f.pi,{binary:wrapper,database:f.database});await f.fire('session_start');
  try {
   const session=controller.getBinding().session,sender=f.run('join',{vendor:'raw',name:'sender'}).id;
-  f.run('send_message',{to:session,body:'Concurrent action',reasoning:'Join the task while a user turn starts'},sender);
+  f.run('send_message',{to:session,body:'Concurrent action',wake:'action',reasoning:'Join the task while a user turn starts'},sender);
   const draining=controller.drain();
   const deadline=Date.now()+5000;while(!existsSync(marker)){if(Date.now()>deadline)throw new Error('Hook read did not reach barrier');await new Promise(r=>setTimeout(r,5));}
   const starting=f.fire('before_agent_start');
@@ -286,7 +286,7 @@ test('Pi action wakes a fresh session before disk persistence but confirms only 
  const controller=registerPiInbox(f.pi,{binary,database:f.database});await f.fire('session_start');
  try {
   const session=controller.getBinding().session,sender=f.run('join',{vendor:'raw',name:'sender'}).id;
-  const message=f.run('send_message',{to:session,body:'Start review',reasoning:'Wake a fresh receiver'},sender);
+  const message=f.run('send_message',{to:session,body:'Start review',wake:'action',reasoning:'Wake a fresh receiver'},sender);
   const state=()=>JSON.parse(execFileSync(binary,['fetch',JSON.stringify({types:['dispatch.staged','dispatch.submitted','dispatch.uncertain','dispatch.ready'],current:true,from:session,where:{messageId:message.id}}),'--workspace',f.workspace,'--database',f.database,'--session',session],{encoding:'utf8'})).items[0].type.slice('dispatch.'.length);
   await controller.drain();await controller.drain();
   const peers=f.sent.filter(s=>s.message.customType==='octocode-peer');
@@ -301,7 +301,7 @@ test('Pi native delivery rejection stays staged and visible without an automatic
  const errors=[];t.mock.method(console,'error',message=>errors.push(message));
  try {
   const session=controller.getBinding().session,sender=f.run('join',{vendor:'raw',name:'sender'}).id;
-  const message=f.run('send_message',{to:session,body:'Needs handling',reasoning:'Verify failed native delivery remains pending'},sender);
+  const message=f.run('send_message',{to:session,body:'Needs handling',wake:'action',reasoning:'Verify failed native delivery remains pending'},sender);
   let attempts=0;f.pi.sendMessage=()=>{attempts++;throw new Error('Native session unavailable');};
   await controller.drain();await controller.drain();
   assert.equal(attempts,1);assert.ok(errors.some(e=>e.includes('Native session unavailable')));
@@ -350,7 +350,7 @@ test('Pi opt-in completion recovers omitted FYI once per external work cycle wit
   f.run('complete',{message:sent.id},session);
   await f.fire('input',{source:'rpc',text:'Next task'});await f.fire('agent_start');await f.fire('agent_end');
   await checks.settledAllow(3);assert.equal(completionMessages(f).length,2);
-  f.run('send_message',{to:session,body:'New action',reasoning:'Verify action cycle reset'},sender);
+  f.run('send_message',{to:session,body:'New action',wake:'action',reasoning:'Verify action cycle reset'},sender);
   await controller.drain();await f.fire('agent_start');await f.fire('agent_end');await settleCompletion(f,3);
  } finally {await f.fire('session_shutdown');}
 });

@@ -166,6 +166,50 @@ function pullJson(base, repo, pr, model) {
   };
 }
 
+/**
+ * The GitHub GraphQL answer for the history documents ghGetHistoryItem sends:
+ * a pull request's first page of collections (`repository.pullRequest`, with
+ * only the connections whose page-size variable the document binds) and an
+ * issue's closing references (`closedByPullRequestsReferences`), from the same
+ * model as REST. `null` for any other document (left unhandled).
+ */
+function graphqlAnswer(model, findRepo, query, variables) {
+  const repo = findRepo(variables.owner, variables.repo);
+  const demo = repo === model.repos[0];
+  if (/pullRequest\(number:\$number\)/.test(query)) {
+    const pr = demo && model.pulls.find(x => x.number === variables.number);
+    if (!pr) return { data: { repository: repo ? { pullRequest: null } : null }, errors: [{ type: 'NOT_FOUND', message: `Could not resolve to a PullRequest with the number of ${variables.number}.` }] };
+    const changed = pr.head.added.map(fp => ({ path: fp, additions: lines(textOf(model, pr.head, fp)).filter((l, i, a) => i < a.length - 1 || l !== '').length, deletions: 0, changeType: 'ADDED' }));
+    const connection = (first, nodes) => ({ pageInfo: { hasNextPage: nodes.length > first }, nodes: nodes.slice(0, first) });
+    const node = {
+      number: pr.number, title: pr.title, url: `https://github.com/${repo.owner}/${repo.name}/pull/${pr.number}`,
+      state: pr.merged ? 'MERGED' : pr.state.toUpperCase(), body: pr.body, isDraft: false, author: { login: USER.login, __typename: 'User' },
+      labels: { pageInfo: { hasNextPage: false }, nodes: [] },
+      baseRefName: 'main', baseRefOid: pr.base.oid, headRefName: `feature-${pr.number}`, headRefOid: pr.head.oid,
+      createdAt: pr.date, updatedAt: pr.date, closedAt: pr.state === 'closed' ? pr.date : null, mergedAt: pr.merged ? pr.date : null,
+      mergeCommit: pr.merged ? { oid: pr.head.oid } : null,
+      comments: { totalCount: 0 }, changedFiles: changed.length, additions: changed.reduce((n, f) => n + f.additions, 0), deletions: 0,
+      commitsCount: { totalCount: 1 }, reviewThreads: { totalCount: 0 },
+    };
+    if (variables.files !== undefined) node.files = connection(variables.files, changed);
+    if (variables.discussion !== undefined) node.commentsConn = connection(variables.discussion, []);
+    if (variables.reviews !== undefined) node.reviews = connection(variables.reviews, []);
+    if (variables.commits !== undefined) {
+      const c = pr.head;
+      node.commits = connection(variables.commits, [{ commit: { oid: c.oid, message: c.message, messageHeadline: c.message.split('\n')[0], authoredDate: c.date, author: { name: 'Octo Dev', user: { login: USER.login } } } }]);
+    }
+    return { data: { repository: { pullRequest: node } } };
+  }
+  if (/closedByPullRequestsReferences/.test(query)) {
+    const issue = demo && model.issues.find(x => x.number === variables.number);
+    if (!issue) return { data: { repository: repo ? { issue: null } : null }, errors: [{ type: 'NOT_FOUND', message: `Could not resolve to an Issue with the number of ${variables.number}.` }] };
+    // No model pull request closes an issue: an empty, complete reference set.
+    const references = variables.first === undefined ? { totalCount: 0 } : { totalCount: 0, pageInfo: { hasNextPage: false }, nodes: [] };
+    return { data: { repository: { issue: { closedByPullRequestsReferences: references } } } };
+  }
+  return null;
+}
+
 /** A jev System One answer per requested question, shaped by the question's type. */
 function jevAnswer(question) {
   if (question.type === 'noul') return { type: 'noul', noul: 0.9 };
@@ -318,7 +362,7 @@ export async function startMock({ fixtureDir, tmpDir, token, configureModel, cla
       const request = JSON.parse(body || '{}');
       classificationRequests.push(request);
       if (classificationResponder) {
-        const response = await classificationResponder(request);
+        const response = await classificationResponder(request, headers);
         send(response.status ?? 200, response.body);
         return true;
       }
@@ -344,6 +388,14 @@ export async function startMock({ fixtureDir, tmpDir, token, configureModel, cla
         return true;
       }
       send(200, { name: pkg.name, description: pkg.description, 'dist-tags': { latest: pkg.version }, versions: Object.fromEntries(pkg.versions.map(v => [v, manifest(v)])), time: Object.fromEntries(pkg.versions.map((v, i) => [v, DATE(i)])), license: 'MIT', repository: { type: 'git', url: 'git+https://github.com/octo/demo.git' } });
+      return true;
+    }
+    // ---- GitHub GraphQL (`<host>/api/graphql` beside an `/api/v3` REST base)
+    if (method === 'POST' && (p === '/api/graphql' || p === '/graphql')) {
+      const { query = '', variables = {} } = JSON.parse(body || '{}');
+      const answer = graphqlAnswer(model, findRepo, query, variables);
+      if (!answer) return false;
+      send(200, answer);
       return true;
     }
     // ---- GitHub REST

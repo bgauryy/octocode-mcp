@@ -1,16 +1,18 @@
 //! Management uses generated field metadata and never returns stored secret values.
-use super::resolver::{parse_candidate, workspace_file_allowed, workspace_setting_allowed};
+use super::resolver::{
+    clamp_of, parse_candidate, workspace_file_allowed, workspace_setting_allowed,
+};
 use super::validation::{get_path, validate_field};
 use super::{
-    CONFIG_FIELDS, ConfigFieldKind, ConfigFieldSpec, ConfigNormalize, ConfigOutput,
-    config_revision, edit_config_json, get_config_value, parse_config_json, parse_env,
-    read_private_config, replace_private_config,
+    CONFIG_FIELDS, ConfigFieldKind, ConfigFieldSpec, ConfigOutput, SettingSource, config_revision,
+    edit_config_json, get_config_value, parse_config_json, parse_env, read_private_config,
+    replace_private_config,
 };
 use serde_json::{Value, json};
 use std::path::Path;
 fn field_value(field: &ConfigFieldSpec, value: &Value) -> Result<(), String> {
     let mut errors = Vec::new();
-    validate_field(field, Some(value), &mut errors, &mut Vec::new());
+    validate_field(field, Some(value), &mut errors);
     if !errors.is_empty() {
         return Err(format!(
             "Invalid value for {}; check its type, range, and allowed values.",
@@ -19,6 +21,9 @@ fn field_value(field: &ConfigFieldSpec, value: &Value) -> Result<(), String> {
     }
     Ok(())
 }
+/// Whether `value` is one a setting's variable may be saved with: one the
+/// resolver accepts and uses as given (a value it would clamp is rejected
+/// here, so a saved value means what it says). Undeclared keys are free-form.
 pub fn validate_env_value(key: &str, value: &str) -> Result<(), String> {
     let Some((field, binding)) = CONFIG_FIELDS.iter().find_map(|field| {
         field
@@ -31,34 +36,15 @@ pub fn validate_env_value(key: &str, value: &str) -> Result<(), String> {
     if value.trim().is_empty() {
         return Ok(());
     }
-    let normalized = match binding.normalize {
-        Some(ConfigNormalize::Trim) => value.trim().to_owned(),
-        Some(ConfigNormalize::Lower) => value.trim().to_ascii_lowercase(),
-        None => value.to_owned(),
-    };
-    let v = match field.kind {
-        ConfigFieldKind::Boolean => super::parse_boolean_env(Some(value)).map(Value::Bool),
-        ConfigFieldKind::Number | ConfigFieldKind::SchemaVersion => {
-            value.trim().parse::<i64>().ok().map(|n| json!(n))
-        }
-        ConfigFieldKind::StringArray => Some(json!(
-            super::parse_string_array_env(Some(value)).unwrap_or_default()
-        )),
-        _ => Some(Value::String(normalized)),
+    let raw = Value::String(value.to_owned());
+    if parse_candidate(field, &raw, true, binding.normalize).is_none()
+        || clamp_of(field, &raw, true).is_some()
+    {
+        return Err(format!(
+            "Invalid value for {key}; check its type, range, and allowed values."
+        ));
     }
-    .ok_or_else(|| format!("Invalid value for {key}; check its expected type."))?;
-    if field.file {
-        field_value(field, &v)
-    } else {
-        match field.kind {
-            ConfigFieldKind::Enum if !field.values.contains(&v.as_str().unwrap_or_default()) => {
-                Err(format!(
-                    "Invalid value for {key}; check its allowed values."
-                ))
-            }
-            _ => Ok(()),
-        }
-    }
+    Ok(())
 }
 /// Set or remove one `.octocoderc` setting under the inspected `revision`.
 /// Errors are `InvalidInput` for a rejected key or value, `WouldBlock` when
@@ -240,26 +226,18 @@ pub fn inspect_management(config: &ConfigOutput, workspace: &Path) -> Value {
                 warnings.push(json!({"file":name,"key":field.path,"message":"Invalid saved setting; its value is omitted."}));
             }
         }
-        let selected = field.env.filter(|binding| {
-            config.env_value(binding.name).is_some_and(|value| {
-                parse_candidate(field,&Value::String(value.to_owned()),true,binding.normalize).is_some()
-                    || binding.invalid == super::ConfigInvalidEnv::Default
-            })
-        });
-        let source = if let Some(binding) = selected {
-            if config.dotenv.applied.iter().any(|key| key == binding.name) {
-                match config.dotenv.sources.get(binding.name).map(String::as_str) {
-                    Some("global") => "homeEnv",
-                    Some("project") => "workspaceEnv",
-                    _ => "process",
-                }
-            } else { "process" }
-        } else if project.is_some_and(|v| parse_candidate(field,v,false,None).is_some() && workspace_setting_allowed(field,v)) {
-            "workspaceSettings"
-        } else if home.is_some_and(|v| parse_candidate(field,v,false,None).is_some()) { "homeSettings" } else { "default" };
+        let source = match config.setting_source(field.path) {
+            SettingSource::Process => "process",
+            SettingSource::HomeEnv => "homeEnv",
+            SettingSource::WorkspaceEnv => "workspaceEnv",
+            SettingSource::WorkspaceFile => "workspaceSettings",
+            SettingSource::HomeFile => "homeSettings",
+            SettingSource::Default => "default",
+        };
+        let env_key = matches!(source, "process" | "homeEnv" | "workspaceEnv").then(|| field.env_name()).flatten();
         let workspace_allowed=workspace_file_allowed(field);
         let workspace_narrow_values=field.values.iter().filter(|value| !workspace_allowed && workspace_setting_allowed(field,&json!(value))).copied().collect::<Vec<_>>();
-        json!({"key":field.path,"value":shown(field,get_config_value(&config.resolved,field.path)),"homeValue":shown(field,home.cloned()),"workspaceValue":shown(field,project.cloned()),"homeSet":home_saved.is_some(),"workspaceSet":workspace_saved.is_some(),"source":source,"envKey":selected.map(|b|b.name),"workspaceAllowed":workspace_allowed,"workspaceNarrowValues":workspace_narrow_values})
+        json!({"key":field.path,"value":shown(field,get_config_value(&config.resolved,field.path)),"homeValue":shown(field,home.cloned()),"workspaceValue":shown(field,project.cloned()),"homeSet":home_saved.is_some(),"workspaceSet":workspace_saved.is_some(),"source":source,"envKey":env_key,"workspaceAllowed":workspace_allowed,"workspaceNarrowValues":workspace_narrow_values})
     }).collect::<Vec<_>>();
     let credential_settings = CONFIG_FIELDS
         .iter()
@@ -324,7 +302,6 @@ mod tests {
             )]),
             cwd.clone(),
             root,
-            false,
             super::super::RuntimeSurface::Cli,
         );
         let config = super::super::resolve_config(&input);
@@ -352,7 +329,7 @@ mod tests {
         std::fs::write(home.join(".env"), "OCTOCODE_ENABLE_LOCAL=true\n").unwrap();
         std::fs::write(
             home.join(".octocoderc"),
-            r#"{"local":{"enabled":false},"network":{"maxRetries":2.5}}"#,
+            r#"{"local":{"enabled":false},"network":{"maxRetries":2}}"#,
         )
         .unwrap();
         for (raw, source) in [("nope", "homeSettings"), ("true", "process")] {
@@ -363,7 +340,6 @@ mod tests {
                 ]),
                 cwd.clone(),
                 root.clone(),
-                false,
                 super::super::RuntimeSurface::Cli,
             );
             let config = super::super::resolve_config(&input);
@@ -406,7 +382,6 @@ mod tests {
             )]),
             cwd.clone(),
             root,
-            false,
             super::super::RuntimeSurface::Cli,
         );
         let output = inspect_management(

@@ -4,14 +4,14 @@ Every tool's fields, defaults, limits, results, and continuations, on MCP and th
 
 ## How every tool call works
 
-The CLI and MCP expose the same contracts. Every tool, `clasify` included, takes a `queries[]` envelope and returns one row per input position. MCP requires `queries`; the CLI runs one bare query object as one query; a bare array is rejected. A failed row, `clasify` rows included, does not erase successful siblings.
+The CLI and MCP expose the same contracts. Every tool, `clasify` included, advertises a `queries[]` envelope and returns one row per input position. Native admission also runs one bare query object as one row on CLI, MCP and the direct addon; a bare array is rejected. Use the advertised envelope for tool calls and copy continuations unchanged. A failed row, `clasify` rows included, does not erase successful siblings.
 
 ### Base call envelope
 
 | Field | Scope | Meaning |
 | --- | --- | --- |
 | `queries` | Required, outer | 1–5 queries for the same tool. Rows keep their zero-based input `index` and run concurrently, except `ghCloneRepo` and `astRewrite` rows (in order); `clasify` schedules its own provider work. Batching creates no dependencies between rows. |
-| `mainGoal`, `reasoning` | Optional, per query, ≤500 chars each | The research question, and why this row advances it. Only for multi-call research on an unknown; a top-level value is not inherited, and a blank one is dropped. Not a ranking instruction or proof; no secrets, hidden chain-of-thought, or required runtime data. Carry-over rules: [TOOL_DATA_CONTRACT.md](TOOL_DATA_CONTRACT.md#executable-continuations). They never reach the classification provider. |
+| `mainGoal`, `reasoning` | Optional, per query, ≤500 chars each | The research question, and why this row advances it. Only for multi-call research on an unknown; a top-level value is not inherited, and a blank one is dropped. Not an activation switch or proof; no secrets, hidden chain-of-thought, or required runtime data. Carry-over rules: [TOOL_DATA_CONTRACT.md](TOOL_DATA_CONTRACT.md#executable-continuations). When clasifyContext is supplied, both are additional context for the classification provider. |
 | `extras` | Optional, per query | Opt-in output kinds: `hints` (lead calls on a successful row), `details` (secondary details), `stats` (scan stats, counters), `receipts` (provenance), `echo` (request echoes and default values), `diagnostics` (`meta`, HTTP ids). Default rows are minimal; each kind adds its fields back ([minimal by default](TOOL_DATA_CONTRACT.md#minimal-by-default)). Continuations inherit it. Paging snapshots stay in `next`. |
 | `responseLength` | Optional, outer | Whole-response text window, 1–50,000 chars; it does not replace a tool's own pagination. Omitted: a response over `output.pagination.defaultCharLength` (default 50,000) pages automatically through `responsePagination.next`, and a page with rows left opens with an `incomplete — …` warning. |
 | `responseOffset`, `responseSnapshot`, `responseScope` | Optional, outer | Copy the first two from `responsePagination.next`. `responseScope` is what an explicit window pages: `text` (default), `structured` (serialized envelope), or `rows` (whole rows). |
@@ -57,7 +57,7 @@ Availability:
 - `ghCloneRepo` is CLI-only (MCP never registers it) and needs persistent storage.
 - `astRewrite` and `astTopology` are CLI-only and need `OCTOCODE_BETA=true` (or `local.beta: true`), their only gate (for `astRewrite` it covers preview and apply). Without it, `schema` and root help omit them, and `schema <name>` reports `availability.enabled:false` with `envVar:"OCTOCODE_BETA"`. MCP never registers them, and no MCP instruction, description, or lead names them.
 - LSP needs a compatible server for the file language.
-- Public `clasify` needs beta and a nonblank classification API credential; `classifiers` on four read tools need that credential and ranking enabled, independently of beta. See the [availability table](OCTOCODE_CLASIFY.md#availability).
+- Public `clasify` needs beta and a nonblank classification API credential; `clasifyContext` on four readers needs that credential, independently of beta. See the [availability table](OCTOCODE_CLASIFY.md#availability).
 
 ## Text, AST, graph, and LSP: choose the evidence you need
 
@@ -96,7 +96,7 @@ Tokens, precedence, `GITHUB_API_URL` (GitHub Enterprise), OAuth login, and refre
 | `matchIn` | `name`, `description`, `readme` (broader, slower). |
 | `qualifiers` | ≤200 chars of rarer filters (`forks:>50 size:<5000 good-first-issues:>2 is:public`). Allowlisted keys; no `repo:`/`org:`/`user:`, and no key that has a typed field. |
 | `sort` | `best-match` (default) or `<field>:desc`: `stars:desc`, `forks:desc`, `help-wanted-issues:desc`, `updated:desc` (latest push). The form is `<field>:<direction>`, as in `ghSearchHistory`; `artifactSearch` has no sort. |
-| `pageSize` | 1–100, default 20. |
+| `pageSize` | 1–100, default 50. |
 | `fields` | Row keys to keep (gh `--json a,b`); each row keeps its id, `owner`+`repo`. |
 
 Malformed counts and dates fail validation and name the accepted forms.
@@ -122,10 +122,10 @@ Owner listing (`owner` only): the REST listing ordered by latest push (`order: "
 | `extensions` | 1–5, e.g. `["ts","tsx"]`; each is its own indexed search on the same page number, sharing `pageSize` (each lists `ceil(pageSize/k)`), merged into one page. |
 | `filename` | GitHub also matches names that contain it; check each path. |
 | `matchIn` | `file` (default: hits) or `path` (paths only). |
-| `pageSize` | 1–100, default 20: files per page, not lines. Each file lists up to 5 hit lines; `matchCount` is the file's total and `next.readHits` reads the rest. `pagination.totalItems` counts files (GitHub `total_count`, capped at 1000). |
+| `pageSize` | 1–100, default 50: files per page, not lines. Each file lists up to 5 hit lines; `matchCount` is the file's total and `next.readHits` reads the rest. `pagination.totalItems` counts files (GitHub `total_count`, capped at 1000). |
 | `fields` | Row keys to keep; each row keeps `path` (and `owner`/`repo` on owner-wide pages). Without `lines` no hit lines are read. |
 
-A repo-scoped `matchIn:"file"` search resolves its hit-line commit during the index search, then reads the page's files concurrently. Row shapes (`lines`, `matchCount`, `readHits`, `alsoAt`, `atRef`, `lineResolved`, `indexRef`) and the non-head `ref` warning with `hints.viewRepo`: [search result shapes](TOOL_DATA_CONTRACT.md#search-result-shapes). With `extras:["hints"]`, `hints.read` is a `ghGetFileContent` `ranges` read pinned to the commit where the hit was verified; a file absent at the requested `ref` gets no read. A complete page whose files list fewer hit lines than they have is `isPartial` with `partialReasons:["hitLinesNotListed"]`; `next.readHits` reads the unlisted lines (a page with more pages behind it states its remainder through `pagination`). A page GitHub marks incomplete is `isPartial` with `partialReasons:["providerIncompleteResults"]`, empty or not. A renamed repository is searched under its new name, with a warning that names it. A file's `next.readHits` is a `ghGetFileContent` read of the hits the listing did not show: `ranges` are one-based line numbers from the line after the last shown hit to the file's last line (never byte offsets), and `matchString` returns only the matching lines inside them. An empty repository-wide search is unproven absence (the index covers the default branch and lags): `next.cloneRepo` is the `ghCloneRepo` query for the searched repository; `localSearch` the clone to verify. A path-scoped empty search leads to `ghStructure` on that path instead.
+A repo-scoped `matchIn:"file"` search resolves its hit-line commit during the index search, then reads the page's files concurrently. Row shapes (`lines`, `matchCount`, `readHits`, `alsoAt`, `atRef`, `lineResolved`, `indexRef`) and the non-head `ref` warning with `hints.viewRepo`: [search result shapes](TOOL_DATA_CONTRACT.md#search-result-shapes). With `extras:["hints"]`, `hints.read` is a `ghGetFileContent` `ranges` read pinned to the commit where the hit was verified; a file absent at the requested `ref` gets no read. A complete page whose files list fewer hit lines than they have is `isPartial` with `partialReasons:["hitLinesNotListed"]`; `next.readHits` reads the unlisted lines (a page with more pages behind it states its remainder through `pagination`). A page GitHub marks incomplete is `isPartial` with `partialReasons:["providerIncompleteResults"]`, empty or not. GitHub's code-search totals are estimates and its index moves between page reads (the tool description says so once): `totalItems`/`totalPages` can change and pages can repeat or omit files, and a later page drops files an earlier page of the same search listed (compared against the earlier pages still in the response cache, 60 s each), naming the drops and how many earlier pages it could read. A page that holds only repeats is not an empty search. A renamed repository is searched under its new name, with a warning that names it. A file's `next.readHits` is a `ghGetFileContent` read of the hits the listing did not show: `ranges` are one-based line numbers from the line after the last shown hit to the file's last line (never byte offsets), and `matchString` returns only the matching lines inside them. An empty repository-wide search is unproven absence (the index covers the default branch and lags): `next.cloneRepo` is the `ghCloneRepo` query for the searched repository; `localSearch` the clone to verify. A path-scoped empty search leads to `ghStructure` on that path instead.
 
 ### `ghStructure`
 
@@ -142,7 +142,7 @@ A repo-scoped `matchIn:"file"` search resolves its hit-line commit during the in
 | `ref` | Branch, tag, or SHA. A missing ref is an error, never a default-branch fallback. |
 | `maxDepth` | 1–20; omitted: 1, or 20 with `include`. |
 | `include` | 1–100 case-insensitive globs, ORed over repository-relative paths at any ref (`**/_exception_handler.py`, `src/**/*.ts`). Without `/` a glob matches entry names; a bare word matches names that contain it. |
-| `pageSize` | 1–500; default 300 entries (`refs`: default 30, up to 100). |
+| `pageSize` | 1–500; default 300 entries (`refs`: default 100, up to 100). |
 | `materialize` | Writes this page's listed files (≤50, ≤300 KiB each) to `location.localPath`. |
 | `materializeOffset` | 0–500: index in this page; resumes capped blob writes. |
 
@@ -182,8 +182,8 @@ Reads one GitHub file without a checkout. Directories: `ghStructure`; a local su
 Reader rules (here and in `localFetch`):
 
 - Choose one extraction intent: whole file, line range, matching slices, or symbol outline. Symbol outlines reject match and line selectors. Selection precedes minification, redaction, and pagination; offsets are zero-based in the selected view. A whole-file line page of the `minify:"standard"` view counts raw source lines (the unit of `totalLines`, the gutter and `ranges`): each page covers `offset+1` through `offset+length` and shows the lines of that span the view kept.
-- `unit:"lines"` (default) uses `length:2000`, but the 16384-byte page budget usually ends the page first; an oversized line switches to bytes. `unit:"bytes"` defaults to 16384 UTF-8 bytes; a byte end can extend by up to three bytes to finish a code point.
-- On `ghGetFileContent`, the first page of a `matchString` or `ranges` read holds 6 KiB (its hits often answer); `next.continueWindow` pages the rest at the 16384-byte budget. A continuation carries only `offset` (plus `unit`/`length` when not the default line page).
+- `unit:"lines"` (default) fills the configured response window, up to 50,000 source lines per page. An explicit `length` is a maximum under that window; an oversized line can switch to bytes. `unit:"bytes"` defaults to 16384 UTF-8 bytes; a byte end can extend by up to three bytes to finish a code point.
+- Both readers size ordinary line pages for serialized output, including escaping, UTF-16 characters and source-line gutters. Selected reads use the same configured window from page 1. Copy `next.continueWindow` unchanged to retain the selection, snapshot, source coordinates and any selection plan. See [response paging](TOOL_DATA_CONTRACT.md#executable-continuations) for indivisible-page exceptions.
 - `matchString` reads are always verbatim (redaction still applies). `matchRanges` cover all selected context windows (overlaps merged); `matchedLines` (with `extras:["details"]`) holds the matching anchors on the current page; `selectedMatchCount` (with `extras:["stats"]`) counts matching lines in the selected view. In a JSON file (`.json`, `.jsonc`, `.json5`), `matchKeys` names each hit line's key path (`{"221":"devDependencies.vite"}`; `[i]` is an array item; a key holding `.`, `[`, `]`, `"` or a space is quoted), so a window that hides its section header still says which section a hit belongs to. A tolerant line scan of the whole file finds the path: comments, trailing commas and broken nesting degrade to the nearest open container, never to an error.
 - A `matchString` item that does not compile under `regex:"rust"` or `"pcre2"` fails with `invalidPattern`, and the error names the item (`matchString[2] "def post("`); `regex:"rust"` is the engine `localSearch` runs, so both tools give one reason and the same verdict at any file size; when every item compiles as PCRE2 (backreferences, lookaround) `next.repair` is the same read with `regex:"pcre2"`, else it escapes the metacharacter. A range stays bounded by its end line; a match continuation keeps its pattern and context. Lines inside a requested span are never elided. Line numbers and gap markers: [numbered source content](TOOL_DATA_CONTRACT.md#numbered-source-content).
 - `totalLines` (and `sourceBytes`, with `extras:["stats"]`) describe the original file (`localFetch` reports it on every successful text read, including empty files and no matches); `pagination.totalLines` (when it differs: a selected or outline view) and `pagination.totalBytes` (every byte page) describe the selected view. `minifyFallback` gives the requested and applied modes and why, when an outline is unavailable.
@@ -222,7 +222,7 @@ Approximate cost: `matchString` 50–300 tokens; a small range 100–500; a larg
 | `qualifiers` (≤200) | `"author:x reviewed-by:y review:approved is:draft in:title merged:>2024-01-01 status:success -author:dependabot[bot]"` | `"commenter:x label:bug -label:wontfix"` | Only `author:` and `committer:` |
 | `fields` | Row keys to keep beside `number` (a picked `state` keeps `mergedAt`) | Beside `number` | Beside `commitSha` |
 
-Omitted `sort`: best match with keywords, else newest first; `order:"asc"` + `sort:"created"` is oldest first. `pageSize` 1–100, default 10. Search returns candidates and identities only: it takes no single-item identity, and commit search returns no diffs; read details with `ghGetHistoryItem`.
+Omitted `sort`: best match with keywords, else newest first; `order:"asc"` + `sort:"created"` is oldest first. `pageSize` 1–100, default 50. Search returns candidates and identities only: it takes no single-item identity, and commit search returns no diffs; read details with `ghGetHistoryItem`.
 
 Validation: `qualifiers` rejects `repo:`/`org:`/`user:` (scope comes from `owner`/`repo`), unknown keys, and a filter set twice. A leading `-` excludes on any PR or issue key (`-label:wontfix`, `-author:dependabot[bot]`; it routes a PR query through search); `is:` negates only as a PR's `-is:draft` (the `state` field owns open/closed/merged), and commit qualifiers take no negation. One name per filter: GitHub's `status:` and `merged:` (no `checks:`/`merged-at:`). `owner`, `repo`, and person qualifiers (`author:`, `committer:`, `assignee:`, `mentions:`, `commenter:`, `reviewed-by:`, `review-requested:`) must be GitHub logins, names, or commit emails; labels cannot contain quotes or backslashes; a range or state qualifier is one term (whitespace inside `> 5` is removed). Any other value is a validation error, never a changed scope. An `archived:` qualifier always routes a PR query through search, which enforces it. PR branch filters are `head:` and `base:`.
 
@@ -258,7 +258,7 @@ Fields from another operation are rejected, not ignored.
 | `contextLines` | PR, commit, compare | 0–100, default 3 lines around each patch hit. |
 | `minify` | PR | `standard` (default) or `none` (Text views). |
 | `offset`, `length` | all | Body, comment, or patch text window; `length` 1–100,000. |
-| `pageSize` | all | PR 1–1000 (omitted: 30; a patch-free inventory fills the page). Others 1–100, default 30. |
+| `pageSize` | all | PR 1–1000 (omitted: 100 for collections and patches; a patch-free inventory fills the page). Others 1–100, default 100. |
 | `page` | all | 1–1000: the page of the section a read lists; copy from `next` (each page continuation names the one section it pages). |
 
 `include`, `status`, and `minChanges` keep files that match every field set; a scope that matches no changed file returns an empty row with an inventory hint.
@@ -278,7 +278,7 @@ Fields from another operation are rejected, not ignored.
 
 **Text views.** PR `minify:"standard"` compacts the Markdown of the body, comments, inline comments, and reviews; `none` keeps them after redaction. Dropped text sets `bodyView:"minified"` with `hints.readRawBody`. Match-filtered reads keep anchors. Issue, commit, and compare reads take no `minify` and return exact text after redaction. Bodies and comment bodies window by `offset`/`length` (automatic 12,000 characters); a continuation reads one surface. `next.continueCommentBody` (PR or issue) lists only the comments it continues; an issue's hop pages exactly the comments its first window showed and keeps that window's `body` section for sizing without showing the body again; `next.continueBody` reads the issue body. Comment-item continuations reset the text offset. Body, comment body, item page, file, and patch windows are independent; follow each.
 
-**Collections.** One provider batch per source and call: 100 discussion comments, inline comments, or reviews; 50 commit summaries. `pageSize` bounds displayed items per batch (default 30, max 100); `next.nextReviewPage` pages reviews independently (`sections:["reviews"]` with its `page`), and review bodies keep their text continuations. Follow `next.*` even after a filter empties a batch; it carries `collectionPages` positions and resets item and text windows, and a zero position marks an exhausted source. `countScope: "providerBatch"` counts describe one batch. `reviewComments` rows carry `path`, `side`, `startLine` (multi-line only), `line`, `commitSha` (read the code at that ref), `outdated:true` when anchored to the original diff, and `inReplyToId` on replies.
+**Collections.** One provider batch per source and call: 100 discussion comments, inline comments, or reviews; 50 commit summaries. `pageSize` bounds displayed items per batch (default 100, max 100); `next.nextReviewPage` pages reviews independently (`sections:["reviews"]` with its `page`), and review bodies keep their text continuations. Follow `next.*` even after a filter empties a batch; it carries `collectionPages` positions and resets item and text windows, and a zero position marks an exhausted source. `countScope: "providerBatch"` counts describe one batch. `reviewComments` rows carry `path`, `side`, `startLine` (multi-line only), `line`, `commitSha` (read the code at that ref), `outdated:true` when anchored to the original diff, and `inReplyToId` on replies.
 
 **Comparison order.** A default `compare` lists `files` before `commits`: `pagination` pages the commits and `filePagination` the files; `next.nextCommitPage` and `next.nextFilePage` (each names its list in `sections`) page them.
 
@@ -329,7 +329,7 @@ Finds packages by capability, resolves a known dependency to registry metadata, 
 | `packageName` | Exact coordinate (`@scope/name`, `group:artifact`, a Go module path); exclusive with `keywords`. `name@version` and PyPI `name==version` stay valid. |
 | `version` | 1–100 chars, exact lookups only. npm, PyPI, crates.io: exact, range (`^3`, `>=2.31,<3`, `v18`, resolved like the registry's installer), or tag (`latest`, `next`). Go, NuGet, Maven: exact or `latest`. A missing version is `versionNotFound` with the nearest published versions (final releases first). |
 | `keywords` | 1–100 discovery terms. Not PyPI: a PyPI keyword query is `invalidInput`, with no fallback to a website or third-party service. |
-| `page`, `pageSize` | Discovery only: page 1–1000 (copy `next.nextPage`), `pageSize` 1–100, default 10. |
+| `page`, `pageSize` | Discovery only: page 1–1000 (copy `next.nextPage`), `pageSize` 1–100, default 50. |
 | `registryUrl` | npm only: HTTP(S) registry override; omitted, npm lookups use registry.npmjs.org (set it for a private or scoped registry). Credentials are not tool inputs. |
 
 Rows (`artifacts[]`): canonical identity, available version, `description`, license, `homepage` (omitted when it is the repository page; `extras:["details"]` keeps it, its only effect on this tool), and source metadata; `extras:["receipts"]` adds registry URLs; rows never restate `ecosystem`. Exact rows add, when the registry has them, `publishedAt`, `deprecated`, `yanked`, `dependencies`/`peerDependencies` lists (`name@range` strings; `[]` declares none, and `peerDependencies` is absent on non-npm rows), and `engines` (npm: an object of every declared engine, e.g. `{"node":">=18","npm":">=9"}`), `requiresPython` (PyPI), or `rustVersion` (crates). npm discovery rows carry `downloadsMonthly`. Go package paths stay separate from module identities. Metadata can be absent; popularity is not comparable across registries. crates.io exact versions read the version record and crate metadata, not the whole version list.
@@ -358,7 +358,7 @@ Paging and errors: follow `next.nextPage`; unknown totals stay unknown, and an e
 
 Lexical search. Outlines and metadata: `structureSearch`; syntax: `astSearch`; file graphs: `astTopology`.
 
-`classifiers` optionally asks for semantic relevance ordering of matched files. It does not retrieve files outside the lexical scope. See [classifier relevance ranking](#classifier-relevance-ranking).
+`clasifyContext` optionally selects relevant matched-file evidence before returning it. It does not retrieve files outside the lexical scope. See [context selection](#context-selection).
 
 | Field | Values and meaning |
 |---|---|
@@ -375,8 +375,8 @@ Lexical search. Outlines and metadata: `structureSearch`; syntax: `astSearch`; f
 | `fileHas`, `fileLacks` | File-level AND / NOT (≤100 terms each): keep a matched file only if it also contains every `fileHas` term and no `fileLacks` term, anywhere in the file. Each term is literal and smart-case on its own (all-lowercase ignores case). |
 | `include`, `exclude`, `defaultExcludes`, `includeHidden`, `includeIgnored`, `maxDepth` | [Shared local rules](#shared-local-rules). |
 | `sort`, `reverse` | `relevance` (default), `traversal`, `matchCount`, `path`, `modified`, `accessed`, `created`; `reverse` applies before pagination. |
-| `pageSize` | 1–1000 files; omitted: about 24 KB pages (path and count views: 100 files). |
-| `matchPage`, `matchPageSize` | ≤1000; 1–100,000 rows per file; omitted: every row when the result fits one page, else 10 per file on page 1. |
+| `pageSize` | 1–1000 files; omitted, fill the configured response window. Content pages retain at most 20 files; path and count views use adaptive file counts. |
+| `matchPage`, `matchPageSize` | ≤1000; 1–100,000 rows per file; omitted, fill the configured response window from the first page. |
 | `snapshot` | ≤200 chars; copy from `next`. |
 
 `relevance`: for one bare identifier, declaring files first; generated files (a `generated` directory, a `.generated.`/`_pb2.`-style name, a `DO NOT EDIT`/`@generated`/`Automatically generated` header, or `linguist-generated`/`linguist-vendored` in `.gitattributes`, resolved as git does) after every hand-written file; for a word alternation (`retry|backoff|jitter`, optionally `\b(…)\b`), files holding more of its words first, so one common word repeated cannot outrank them; then match count, source paths before test, vendored, and bundled paths, declaration hits before code and comment/string hits, then path. `files`/`filesWithout` order by source paths first, then path. `relevance` and `matchCount` keep the 10,000 highest-ranked files (`capReason:"maxCollectedFiles"`; `stats`, with `extras:["stats"]`, count all matched files).
@@ -385,7 +385,7 @@ How it differs from `rg` (same engine family, measured hit-for-hit equal on shar
 
 | Need | `rg` | `localSearch` |
 |---|---|---|
-| Output size | every line, all of a minified line | ~24 KB lossless pages; long lines clipped around the hit with an `expandValues` read |
+| Output size | every line, all of a minified line | configured-window lossless pages; long lines clipped around the hit with an `expandValues` read |
 | Secrets in hits | printed | redacted, with a `redactedMatches` warning; credential files never walked |
 | Order | walk order | `relevance` (above); per-file counts sorted by count |
 | Empty result | exit 1 | names what was skipped and why (ignore rule, hidden, pruned dir), other spellings (`findSimilar`), and the lead that searches them |
@@ -405,7 +405,7 @@ Rows: `path` is relative to `root` (the queried directory, or a queried file's p
 
 | Key | When and what |
 |---|---|
-| `next.nextPage`, `next.nextMatchPage` | Without `pageSize`/`matchPageSize`, `nextPage` walks the rest in about 24 KB pages. With either set, `nextMatchPage` finishes the shown files' remaining rows first (later match pages list only files with rows left), then `nextPage` advances to the next files and resets the match page. This gives one executable route without repeated file pages. A terminal match-cursor limit still allows advancing to later files. |
+| `next.nextPage`, `next.nextMatchPage` | Without `pageSize`/`matchPageSize`, `nextPage` walks the rest in pages sized for the configured response window. With either set, `nextMatchPage` finishes the shown files' remaining rows first (later match pages list only files with rows left), then `nextPage` advances to the next files and resets the match page. This gives one executable route without repeated file pages. A terminal match-cursor limit still allows advancing to later files. |
 | `next.restart` | Stale snapshot: rerun from page 1. |
 | `next.expandValues` | A clipped value. On a `pageSize`/`matchPageSize` page: the same page with a wider `matchContentLength`. On a default page: one `localFetch` batch of the clipped lines, one row per file (whole-file values are not offered), or for a multiline match the file searched alone with a wider `matchContentLength`. |
 | `hints.read` | With `extras:["hints"]`, `localFetch` on the first page of a complete result: a shown declaration of the searched symbol, whole; else ±6 lines around the top file's hits (a `matchString` read past 10 ranges). |
@@ -437,8 +437,8 @@ astSearch(operation="match", path="src", rule="rule:\n  pattern: await $C\n  ins
 | `captureText` | `match` | Opt-in captures. |
 | `matchContentLength` | `match` | 1–100,000, default 500 characters per hit. |
 | `sort`, `reverse` | `match` | `path` (default) or `matchCount`. |
-| `pageSize` | all | Default 20 files (`match`), 100 nodes (`syntaxTree`), 500 declarations (`symbols`); ≤1000. |
-| `matchPage`, `matchPageSize` | `match` | Default 100 matches per file page (≤1000). |
+| `pageSize` | all | ≤1000 files (`match`), nodes (`syntaxTree`) or declarations (`symbols`); omitted, fill the configured response window. |
+| `matchPage`, `matchPageSize` | `match` | ≤1000 matches per file page; omitted, fill the configured response window. |
 | `maxFiles` | `match`, `symbols` | Default 2000; ≤100,000 (the engine's walk ceiling, so a scan cut there ends with `terminalLimit`). |
 | `scanOffset`, `snapshot` | | Copy from `next`. |
 | `namedOnly` | `syntaxTree` | Default `true`: skip anonymous nodes. |
@@ -493,7 +493,7 @@ Directory outlines (`tree`, the default) and file metadata (`files`), with no pa
 | `entryType`, `extensions` | both | `f` or `d`; extensions without a dot. |
 | `exclude`, `defaultExcludes`, `includeIgnored` | both | [Shared local rules](#shared-local-rules); `includeIgnored` lists `.gitignore`d entries. |
 | `includeHidden` | `tree` | Include dot entries. |
-| `pageSize` | both | ≤1000 rows; omitted: about 24 KB pages. |
+| `pageSize` | both | ≤1000 rows; omitted, fill the configured response window. |
 | `maxEntries` | both | 1–10,000 entries scanned before paging. |
 | `scanOffset`, `snapshot` | both | Copy from `next`. |
 | `nameRegex` | `files` | Rust regex over the basename. |
@@ -506,26 +506,23 @@ Directory outlines (`tree`, the default) and file metadata (`files`), with no pa
 Rows are `{dir, files}` groups with a workspace-relative `dir` (`dir + "/" + name` is a local path); entry and cut fields (`clipped`, `atLeast`, `totalAvailable`): [search result shapes](TOOL_DATA_CONTRACT.md#search-result-shapes). Entries have one shape in both operations: `name (bytes[, symlink])`, `name/` for a directory, and `extras: ["details"]` adds `totalLines=N` and `modifiedMs=N` to each file. `tree` lists `path`'s own group first, then subdirectories in walk order. A bare `"name/"` entry is left out when that directory has its own group on any page; every other entry appears once. Later pages reuse the first page's walk while the listed entries are unchanged. `summary` counts what was left out: `.gitignore`d entries, policy-withheld entries (the warning counts only entries the filters could match), default-excluded directories (named, such as `build, node_modules`), and, without `includeHidden`, dot entries (pruned directories such as `.git` excluded).
 
 - A listing cut at `maxEntries` offers `next.expandScan` on its last page (doubled `maxEntries`, `scanOffset` = rows already listed); pages plus `expandScan` list every entry once.
+- A walk is bounded by time as well (10 s, the same budget as `astSearch`'s scan window). A listing that runs out of time returns the entries it read with `isPartial`, `partialReasons:["walkDeadline"]`, `terminalLimit` and a warning naming the first unscanned entry; entries from there on in walk order (name-sorted, depth-first) are on no page. It is never `empty`, and `hints.narrowScope` leads to a narrower `tree`. An unnarrowed whole-tree walk with every ignore rule lifted (`includeIgnored` with `defaultExcludes:false`) over a build directory is the usual cause.
 - With `extras:["hints"]`, `files` page 1 offers `hints.read`: the `minify:"symbols"` outline of the first source or doc file.
 - A filtered `tree` that skipped dot entries offers `hints.includeHidden`. An empty listing whose skipped entries (`.gitignore`, dot entries, the default prune) hold matches offers `next.includeSkipped` with only the flags that find them, and a warning naming the rule, entry or directory; `files` lists `.gitignore`d entries once `defaultExcludes:false`, so that one flag is its lead for a pruned directory.
 - A missing `path`: `pathNotFound` with `hints.viewTree` (nearest existing parent). A file as `path`: `notADirectory` with `next.read`, its `minify:"symbols"` outline.
 
-### Classifier relevance ranking
+### Context selection
 
-Only `localFetch`, `localSearch`, `ghGetFileContent`, and `ghSearchCode` accept `classifiers`: 1–5 nonblank, self-contained evidence questions (up to 1,000 characters each). Other tools reject the field. MCP and CLI schemas expose `classifiers` on those four tools only with [ranking enabled](CONFIGURATION.md#read-tool-relevance-ranking) and a configured nonblank classification credential; otherwise they omit it and its ranking continuation field. Each string compiles through one core template into a JEV Score question; eligible operations judge sanitized evidence and put the highest-scoring candidates first; protected and incomplete operations report a zero-call skip. Search scores sanitized match evidence and orders files; fetch orders complete raw line windows while preserving source line numbers. The best score across classifiers determines order; ties keep the original order. `mainGoal` remains optional workflow metadata. The [classifier guide](OCTOCODE_CLASIFY.md#classifiers-on-search-and-fetch) owns the per-tool scope and routing.
-
-Both CLI and MCP schema discovery use configured availability without contacting the provider. A failed semantic request keeps the fields available so a later request can succeed after provider recovery.
+`localFetch`, `localSearch`, `ghGetFileContent` and `ghSearchCode` accept `clasifyContext:{classifiers:[...],longContext?:boolean}` when JEV is configured. Each atomic question describes evidence needed for the next research step. Optional `mainGoal` and `reasoning` add context. No extra ranking switch is required, and a call without context makes zero JEV requests.
 
 <!-- tool: localFetch -->
 ```json
-{"path":"docs/guide.md","classifiers":["How does cancelling a queued request release its reserved capacity?"]}
+{"path":"docs/guide.md","clasifyContext":{"classifiers":["How does cancelling a queued request release its reserved capacity?"]}}
 ```
 
-Provider budgets limit the classified scope. The visible `ranking` receipt gives `status`, `scope` (`selectedView` or `providerPage`), `rankedItems`, `totalItems`, and a reason when needed. Unranked candidates remain in their original order after ranked candidates. A `partial` ranking is not a whole-corpus relevance judgment. A `fallback` preserves ordinary ordering after a provider error or timeout. `skipped` explains a disabled gate, unsupported view, or a single candidate whose order cannot change. Calls without classifiers make no classification request.
+The shared evaluator selects relevant evidence before host delivery. The visible `selection` receipt distinguishes selected, excluded and unknown units; only selected bodies return, in source order. Provider failure and budget limits create unknowns, not raw-body fallback. Selected pages replay a bound token without new JEV work; `next.unfiltered` explicitly recovers the complete view when needed. A low relevance judgment never proves absence.
 
-Copy the `ranking` token from `next.*` unchanged. It fixes the order for the same candidate set across CLI processes and MCP calls without repeating classification. A new provider page uses a new page-local decision, never the previous page’s permutation. Source, classifiers, selection, or relevant configuration changes invalidate the plan and return `staleSnapshot` with `next.restart`. A fetch offset addresses the ranked view; use its source gutters and `sourceLineRanges` for original locations. Results carry no automatic verification reread lead; a follow-up read is a new ordinary read without ranking controls.
-
-Explicit non-relevance search sorts and reverse ordering remain authoritative. Search views that return only paths or counts lack match evidence and skip ranking. Fetch ranking applies to raw line views, using complete lines in windows of about 2,048 characters. Oversized lines and an unterminated final window remain unranked. Byte windows, `fullContent`, minified views, and files above the 10 MiB streaming threshold retain their requested representation and report skipped ranking. Follow every continuation needed by the question: ranking never authorizes treating omitted pages as absent evidence. With statistics enabled, provider calls and reported tokens contribute to the existing classification counters.
+The [classifier guide](OCTOCODE_CLASIFY.md#classifiers-on-search-and-fetch) owns scope, decisions, unsupported representations, line windows, long-context behavior and recovery. Original source positions remain in gutters and line ranges. Ordinary exact and exhaustive reads remain available.
 
 ### `localFetch`
 
@@ -534,12 +531,12 @@ Reads a known local path; a path-only read returns exact source after redaction.
 | Field | Meaning |
 | --- | --- |
 | `unit`, `offset` | `lines` (default) or UTF-8 `bytes` of the selected view; zero-based offset (raw source lines for a whole-file `minify:"standard"` read, outline lines with `minify:"symbols"`; byte offsets on code-point boundaries), default 0. |
-| `length` | 1–50,000. Omitted, a line page fills the 16 KiB budget (the continuation carries only its `offset`); a byte page is 16384 bytes. A first read of a 2,000+ line file with no selector (`matchString`, `ranges`, `block`, `offset`, `unit`, `length`, a `minify` view, or `fullContent`) returns its first 50 lines with a hint; `next.continueWindow` pages on at the default size, and `fullContent: true` reads it whole. |
+| `length` | 1–50,000, a maximum under the configured response window. Omitted, ordinary line pages fill that window; byte pages default to 16384 bytes. A first bare read of a source above the in-memory limit previews 100 source lines, then `next.continueWindow` continues through bounded windows. `fullContent:true` selects the whole view and can still return continuations. |
 | `matchString` | Nonempty source text, or a list matching any entry; `regex`, `caseMode` and `wholeWord` as in `ghGetFileContent`. A multiline match keeps every line it touches, in original byte coordinates. |
 | `contextLines` | 0–100, default 3 per side. A matched line over 2,000 bytes (minified source) shows 200-byte windows around each hit instead; full-source redaction precedes byte matching, edges expand to whole code points, and disjoint windows are separated by `... [N bytes omitted] ...`. |
 | `minify` | `none` (default), `standard` (compact), `symbols` (whole-file outline). Match views keep source text. |
 | `block` | Widens a range or match window to its enclosing declaration (≤400 lines). With `matchString`, hits on a declaration head widen to that declaration and other hits keep their window; when no hit is a head, each hit widens. A range, or a match on a declaration's first line, also takes the doc comments and attributes above. JS/TS functions assigned to a member (`res.redirect = function () {}`, `exports.x = () => {}`) are declarations. A window no declaration encloses keeps its lines with a `block:` warning. |
-| `fullContent` | Complete unpaged view within resource and security limits; no window controls. |
+| `fullContent` | Select the complete view within resource and security limits; no window selectors. Follow emitted continuations when the view needs multiple pages. |
 | `snapshot` | From a continuation; a file changed since is rejected, not mixed. |
 
 - Paging: a source over 10 MiB is read in line windows without loading it whole (several `ranges` in one read with not-requested markers; `unit:"lines"` continues to the end through `next.continueWindow`). Line pages keep whole lines within 16384 bytes. An offset at or past the end returns empty content with an offset-zero `next.restart` (`extras:["echo"]` adds `pagination.outOfRange:true`). Continuations stop at the selected range or matched view.
@@ -567,8 +564,8 @@ CLI-only beta ([availability](#internal-external-and-hybrid-tools)); without the
 | `rustWorkspace` | `syntax` (default) or `cargo`; see Resolution. |
 | `maxFiles` | 1–50,000 files; the scan stops and warns past it. |
 | `supersedes` | Continuation-only (copy `next.expandScan`). |
-| `page`, `pageSize` | Page ≤1000; 1–100 rows, default 50. |
-| `diagnosticPage`, `diagnosticPageSize`, `diagnosticSnapshot` | Coverage-diagnostic pages (1–100, default 25), independent of `page`. |
+| `page`, `pageSize` | Page ≤1000; 1–100 rows, default 100. |
+| `diagnosticPage`, `diagnosticPageSize`, `diagnosticSnapshot` | Coverage-diagnostic pages (1–100, default 100), independent of `page`. A `diagnosticPage` past the last is empty (`coverage.diagnosticPagination.outOfRange`, a warning naming the page and the page count) with `next.restartDiagnostics` for page 1, as on every tool. |
 
 Scope and cuts ([`expandScan` meanings](TOOL_DATA_CONTRACT.md#search-result-shapes)):
 
@@ -651,7 +648,7 @@ npx octocode astRewrite '{"queries":[{"path":"/ABS/repo/src","pattern":"console.
 | `contextLines`, `groupByFile` | 0–100; boolean | `definition`, `references`, `typeDefinition`, `implementation`: source lines around each location (keep `0` unless you need previews); per-file rollups. |
 | `includeDeclaration` | default `true` | `references` only; turn it off before unused analysis. |
 | `graphDepth` | 0–20, default 1 | Call and type hierarchy depth; 1 = direct edges. |
-| `page`, `pageSize` | ≤1000; 1–100 | Default 40 locations or 100 symbols. Copy `page` only from `next.nextPage`. |
+| `page`, `pageSize` | ≤1000; 1–1000 | Omitted, fill the configured response window. Copy `page` only from `next.nextPage`. |
 | `snapshot` | ≤128 chars | From `next.nextPage` or `next.nextImporterPage`; omit on page 1, required later. |
 | `importerPage` | 1–1000 | TS/JS `references` and `callers` importer scan: first candidate window of the request; copy only from `next.nextImporterPage`. |
 
@@ -664,7 +661,7 @@ npx octocode astRewrite '{"queries":[{"path":"/ABS/repo/src","pattern":"console.
 | `hover` | Type, signature, docs. | `hover`; `null` is `empty` with `noHover`. |
 | `documentSymbols` | File outline. | `symbols[]` in the [`astSearch`](#astsearch) outline format, `unlistedNested` (function locals, counted only), pagination. |
 | `typeDefinition`, `implementation` | Declared type; implementations of an interface or abstract symbol (when supported). | `matches[]`. |
-| `workspaceSymbol` | Symbols from one server (not merged across servers). A `workspaceRoot`-only query opens one representative source (tsconfig `include` root, then `src/`). | `matches[]` of `{name, kind, containerName?, path, displayRange}`, paged. |
+| `workspaceSymbol` | Symbols from one server (not merged across servers). A `workspaceRoot`-only query opens one representative source (tsconfig `include` root, then `src/`). | `matches[]` of `{name, kind, containerName?, path, displayRange}`, paged over the returned provider rows; coverage remains unknown. |
 | `supertypes`, `subtypes` | Type hierarchy (recursive with `graphDepth`) when advertised. | `matches[]` of `{name, kind, detail?, path, displayRange, level, via?}`, or `capabilityUnavailable`. |
 | `diagnostic` | Pull diagnostics when the server has a pull provider, else the bounded push cache. | Diagnostics, or `empty` (`noDiagnostics`, `diagnosticsNotPublished`). |
 
@@ -673,6 +670,7 @@ Response fields: `resolvedSymbol` (the anchor; `.name` is an optional discovery 
 Empty and partial:
 
 - Empty: `kind:"empty"`, row `status: "empty"` (CLI exit `1` when every row is empty), `category` `noLocations`, `noHover`, `noDiagnostics`, `diagnosticsNotPublished`, or `unsupportedOperation`. Read the category, not only the exit code.
+- `workspaceSymbol` is partial with `workspaceSymbolCoverageUnknown`: the protocol supplies no completeness marker or provider cursor. Native pagination covers the returned rows; neither its final page nor an empty response proves exhaustive workspace coverage. An optional `documentSymbols` lead inspects one authorized file with different matching semantics.
 - A server still loading the project: partial row, `partialReasons: ["languageServerIndexing"]`, a warning, and `next.retry`; zero results then prove nothing. Other empty results are not retried.
 - Reference counts cover the server's returned set (`matchCount`, `fileCount` with `extras:["stats"]`); `coverage` appears only with a per-call fact (`textOnlyFiles`, an unnamed row's `reason`). `source` labels recovered rows: `recoveredAlias` (through an aliasing import; counted in `recoveredAliasReferences`), `recoveredImporter` (re-queried from a verified importer's import anchor), `recoveredFromReferences` (a caller). On `importerScanFailed`, or a TypeScript file with no project configuration (`inferredProject`), the row is partial with the reason in `partialReasons`, and a name-anchored request carries `hints.findText`, a `localSearch` of the files that spell the name outside the answer. A partial row with no page continuation keeps its leads in the default output, each with every row: they are its only route to what it withholds. Rust references under `cfg(feature …)` gates carry `partialReasons:["cfgGatedFiles"]` and `next.expandFeatures`.
 - `pagination.snapshot` fingerprints the canonical query plus the full result set; it validates a recomputed set across processes and keeps no old rows. A changed set, or a later page without its snapshot, fails as `staleSnapshot` (no items, `next.restart`).
@@ -752,9 +750,9 @@ An `lsp-servers.json` entry adds an extension or replaces a built-in server (ano
 
 ## Semantic assessment reference
 
-`clasify` takes `queries[]` rows of keyed JEV `questions` (`noul`, `choice`, `score`, with `instructions` and `criteria`) over exactly one of literal `state` or a `source` reference: a `localFetch` or `ghGetFileContent` row with explicit `ranges` or `fullContent:true`, or an HTTPS `url`. Each row returns the provider's typed `answers`, the `model` that answered and its `usage`, plus a `hints.read` lead to exactly what was judged for a source row; never a body. A failed or oversized row returns an `error`. Read `npx octocode schema clasify --view query` for current fields.
+`clasify` takes `queries[]` rows of keyed JEV `questions` (`noul`, `choice`, `score`, `box`, with provider-shaped instructions and criteria) over exactly one of literal `state` or a `source` reference: a `localFetch` or `ghGetFileContent` row with explicit `ranges` or `fullContent:true`, or an HTTPS `url`. Each row returns the provider's typed `answers`, the `model` that answered and its `usage`, plus a `hints.read` lead to exactly what was judged for a source row; never a body. Optional `assets` resolve unread PNG/JPEG references internally; results carry image provenance and saved inspection paths without bytes. `longContext:true` explicitly opts into the larger context limit. A separate `{operation:"models"}` row returns the provider model catalog. A failed or oversized row returns an `error`. Read `npx octocode schema clasify --view query` for current fields.
 
-Use [classifiers](#classifier-relevance-ranking) to choose evidence to read, and `clasify` only for a typed judgment that changes your next action. The [classifier and clasify guide](OCTOCODE_CLASIFY.md) owns primitives, sources, output, limits and availability. Answers guide inspection; verify deciding source.
+Use [context selection](#context-selection) to choose evidence to read, and `clasify` only for a typed judgment that changes your next action. The [classifier and clasify guide](OCTOCODE_CLASIFY.md) owns primitives, sources, output, limits and availability. Answers guide inspection; verify deciding source.
 
 ## Clone and local tools workflow
 

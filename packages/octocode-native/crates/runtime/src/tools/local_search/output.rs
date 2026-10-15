@@ -25,7 +25,9 @@ impl ToolOutput for Output {
     fn text_shape(&self) -> TextShape {
         TextShape::SearchHits
     }
-    fn reports_scan_totals(&self) -> bool {
+    /// Every view, including countLines (no `matchCount`) and filesWithout
+    /// (neither total).
+    fn reports_scan_totals(&self, _data: &serde_json::Map<String, Value>) -> bool {
         true
     }
 }

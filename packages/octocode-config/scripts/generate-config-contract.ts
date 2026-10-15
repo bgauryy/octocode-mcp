@@ -18,11 +18,10 @@ type EnvBinding = {
   name: string;
   dotenv?: 'all' | 'home' | 'never';
   normalize?: 'trim' | 'lower';
-  invalid?: 'skip' | 'default';
   workspaceNarrowsTo?: string;
 };
 type Field = {
-  type: 'boolean' | 'number' | 'string' | 'url' | 'path' | 'stringArray' | 'enum' | 'schemaVersion';
+  type: 'boolean' | 'number' | 'string' | 'url' | 'path' | 'stringArray' | 'enum';
   description: string;
   notes?: string;
   env?: EnvBinding;
@@ -31,9 +30,6 @@ type Field = {
   displayDefault?: string;
   itemFormat?: 'path';
   typeName?: string;
-  constantName?: string;
-  boundsName?: string;
-  valuesConstant?: string;
   enumStyle?: 'list' | 'quotedOr';
   minimum?: number;
   span?: number;
@@ -64,6 +60,10 @@ type Contract = {
       description?: string;
     }
   >;
+  removed?: {
+    settings?: Record<string, string>;
+    environment?: Record<string, string>;
+  };
   sections: Record<string, Section>;
 };
 
@@ -80,14 +80,6 @@ function asObject(value: unknown, label: string): JsonObject {
     throw new Error(`${label} must be an object`);
   }
   return value as JsonObject;
-}
-
-function toScreamingSnake(value: string): string {
-  return value
-    .replace(/\./g, '_')
-    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
-    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
-    .toUpperCase();
 }
 
 function toPascal(value: string): string {
@@ -131,22 +123,10 @@ function setPath(root: JsonObject, path: string, value: unknown): void {
   current[parts.at(-1)!] = value;
 }
 
-function getPath(root: JsonObject, path: string): unknown {
-  let current: unknown = root;
-  for (const part of path.split('.')) {
-    if (typeof current !== 'object' || current === null || Array.isArray(current)) {
-      return undefined;
-    }
-    current = (current as JsonObject)[part];
-  }
-  return current;
-}
-
-function ownDefault(field: FlatField, schemaVersion: number): unknown {
+function ownDefault(field: FlatField): unknown {
   switch (field.type) {
-    case 'schemaVersion':
-      return schemaVersion;
     case 'number': {
+      if (field.default === null) return null;
       const minimum = field.minimum!;
       const maximum = minimum + field.span!;
       return minimum + Math.min(field.defaultOffset!, maximum - minimum);
@@ -158,10 +138,10 @@ function ownDefault(field: FlatField, schemaVersion: number): unknown {
   }
 }
 
-function buildDefaults(contract: Contract, fields: FlatField[]): JsonObject {
+function buildDefaults(fields: FlatField[]): JsonObject {
   const result: JsonObject = {};
   for (const field of fields.filter(field => field.resolved)) {
-    setPath(result, field.path, ownDefault(field, contract.config.schemaVersion));
+    setPath(result, field.path, ownDefault(field));
   }
   return result;
 }
@@ -176,13 +156,8 @@ function directChildren(sectionPath: string, sections: Record<string, Section>):
   });
 }
 
-function sectionInterfaceName(
-  sectionPath: string,
-  required: boolean,
-  sections: Record<string, Section>
-): string {
-  const base = `${sections[sectionPath]?.typeName ?? toPascal(sectionPath)}Config`;
-  return required ? `Required${base}` : `${base}Options`;
+function sectionInterfaceName(sectionPath: string, sections: Record<string, Section>): string {
+  return `Required${sections[sectionPath]?.typeName ?? toPascal(sectionPath)}Config`;
 }
 
 function enumType(field: Field): string {
@@ -190,29 +165,10 @@ function enumType(field: Field): string {
   return field.values!.map(value => JSON.stringify(value)).join(' | ');
 }
 
-function inputFieldType(field: Field): string {
-  switch (field.type) {
-    case 'schemaVersion':
-    case 'number':
-      return 'number';
-    case 'boolean':
-      return 'boolean';
-    case 'stringArray':
-      return field.default === null ? 'string[] | null' : 'string[]';
-    case 'enum':
-      return enumType(field);
-    case 'string':
-    case 'url':
-    case 'path':
-      return field.credential ? 'string | null' : 'string';
-  }
-}
-
 function resolvedFieldType(field: Field): string {
   switch (field.type) {
-    case 'schemaVersion':
     case 'number':
-      return 'number';
+      return field.default === null ? 'number | null' : 'number';
     case 'boolean':
       return 'boolean';
     case 'stringArray':
@@ -226,12 +182,6 @@ function resolvedFieldType(field: Field): string {
   }
 }
 
-function renderFieldDocs(field: Field, indent = '  '): string {
-  const lines = [`${indent}/** ${field.description.replace(/\*\//g, '* /')} */`];
-  if (field.notes) lines.push(`${indent}/** ${field.notes.replace(/\*\//g, '* /')} */`);
-  return lines.join('\n');
-}
-
 function renderInterfaces(contract: Contract): string {
   const sections = contract.sections;
   const enumAliases = new Map<string, string>();
@@ -243,31 +193,7 @@ function renderInterfaces(contract: Contract): string {
     }
   }
 
-  const inputInterfaces = Object.entries(sections)
-    .filter(([path, section]) => path !== '' && section.file)
-    .map(([sectionPath, section]) => {
-      const members = Object.entries(section.fields).map(
-        ([key, field]) => `${renderFieldDocs(field)}\n  ${key}?: ${inputFieldType(field)};`
-      );
-      for (const child of directChildren(sectionPath, sections).filter(path => sections[path]!.file)) {
-        const key = child.slice(sectionPath.length + 1);
-        members.push(`  ${key}?: ${sectionInterfaceName(child, false, sections)};`);
-      }
-      return `export interface ${sectionInterfaceName(sectionPath, false, sections)} {\n${members.join('\n\n')}\n}`;
-    })
-    .join('\n\n');
-
   const root = sections['']!;
-  const rootMembers = [
-    '  $schema?: string;',
-    ...Object.entries(root.fields).map(
-      ([key, field]) => `${renderFieldDocs(field)}\n  ${key}?: ${inputFieldType(field)};`
-    ),
-    ...directChildren('', sections)
-      .filter(path => sections[path]!.file)
-      .map(path => `  ${path}?: ${sectionInterfaceName(path, false, sections)};`),
-  ];
-
   const requiredInterfaces = Object.entries(sections)
     .filter(([path, section]) => path !== '' && section.resolved)
     .map(([sectionPath, section]) => {
@@ -276,9 +202,9 @@ function renderInterfaces(contract: Contract): string {
         .map(([key, field]) => `  ${key}: ${resolvedFieldType(field)};`);
       for (const child of directChildren(sectionPath, sections).filter(path => sections[path]!.resolved)) {
         const key = child.slice(sectionPath.length + 1);
-        members.push(`  ${key}: ${sectionInterfaceName(child, true, sections)};`);
+        members.push(`  ${key}: ${sectionInterfaceName(child, sections)};`);
       }
-      return `export interface ${sectionInterfaceName(sectionPath, true, sections)} {\n${members.join('\n')}\n}`;
+      return `export interface ${sectionInterfaceName(sectionPath, sections)} {\n${members.join('\n')}\n}`;
     })
     .join('\n\n');
 
@@ -288,16 +214,10 @@ function renderInterfaces(contract: Contract): string {
       .map(([key, field]) => `  ${key}: ${resolvedFieldType(field)};`),
     ...directChildren('', sections)
       .filter(path => sections[path]!.resolved)
-      .map(path => `  ${path}: ${sectionInterfaceName(path, true, sections)};`),
+      .map(path => `  ${path}: ${sectionInterfaceName(path, sections)};`),
   ];
 
   return `${[...enumAliases].map(([name, type]) => `export type ${name} = ${type};`).join('\n')}
-
-${inputInterfaces}
-
-export interface OctocodeConfig {
-${rootMembers.join('\n\n')}
-}
 
 ${requiredInterfaces}
 
@@ -330,18 +250,15 @@ function orderedEnvironment(fields: FlatField[], contract: Contract) {
   );
   const protectedNames: string[] = [];
   const homeTrusted: string[] = [];
-  const sourceNames: string[] = [];
   const workspaceNarrowOnly: Record<string, string> = {};
   for (const [name, definition] of Object.entries(contract.environment)) {
     if ((definition.dotenv ?? 'all') !== 'all') protectedNames.push(name);
     if (definition.dotenv === 'home') homeTrusted.push(name);
-    if (definition.configSource) sourceNames.push(name);
   }
   for (const binding of fieldBindings) {
     if ((binding.dotenv ?? 'all') !== 'all') protectedNames.push(binding.name);
     if (binding.dotenv === 'home') homeTrusted.push(binding.name);
     if (binding.workspaceNarrowsTo) workspaceNarrowOnly[binding.name] = binding.workspaceNarrowsTo;
-    sourceNames.push(binding.name);
   }
   const tokenNames = Object.entries(contract.environment)
     .filter(([, definition]) => definition.tokenPriority !== undefined)
@@ -351,35 +268,14 @@ function orderedEnvironment(fields: FlatField[], contract: Contract) {
     fieldBindings,
     protectedNames: [...new Set(protectedNames)],
     homeTrusted: [...new Set(homeTrusted)],
-    sourceNames: [...new Set(sourceNames)],
     tokenNames,
     workspaceNarrowOnly,
   };
 }
 
-function renderConstants(fields: FlatField[], defaults: JsonObject): string {
-  const output: string[] = [];
-  for (const field of fields) {
-    if (!field.resolved || field.type === 'schemaVersion') continue;
-    const constantName = field.constantName ?? toScreamingSnake(field.path);
-    const value = getPath(defaults, field.path);
-    const constAssertion = value === null ? '' : ' as const';
-    output.push(`export const DEFAULT_${constantName} = ${JSON.stringify(value)}${constAssertion};`);
-    if (field.type === 'number') {
-      const boundsName = field.boundsName ?? constantName;
-      output.push(`export const MIN_${boundsName} = ${field.minimum};`);
-      output.push(`export const MAX_${boundsName} = ${field.minimum! + field.span!};`);
-    }
-    if (field.type === 'enum' && field.valuesConstant) {
-      output.push(`export const ${field.valuesConstant} = ${JSON.stringify(field.values)} as const;`);
-    }
-  }
-  return output.join('\n');
-}
-
 function render(contract: Contract): string {
   const fields = flattenFields(contract);
-  const defaults = buildDefaults(contract, fields);
+  const defaults = buildDefaults(fields);
   const fieldByPath = new Map(fields.map(field => [field.path, field]));
   const environment = orderedEnvironment(fields, contract);
   const metadata = fields.map(field => ({
@@ -393,7 +289,7 @@ function render(contract: Contract): string {
     description: field.description,
     notes: field.notes,
     env: field.env,
-    defaultValue: ownDefault(field, contract.config.schemaVersion),
+    defaultValue: ownDefault(field),
     minimum: field.minimum,
     maximum: field.minimum !== undefined ? field.minimum + field.span! : undefined,
     values: field.values,
@@ -406,12 +302,11 @@ function render(contract: Contract): string {
 
 ${renderInterfaces(contract)}
 
-export type ConfigFieldKind = 'boolean' | 'number' | 'string' | 'url' | 'path' | 'stringArray' | 'enum' | 'schemaVersion';
+export type ConfigFieldKind = 'boolean' | 'number' | 'string' | 'url' | 'path' | 'stringArray' | 'enum';
 export interface ConfigEnvBinding {
   name: string;
   dotenv?: 'all' | 'home' | 'never';
   normalize?: 'trim' | 'lower';
-  invalid?: 'skip' | 'default';
   workspaceNarrowsTo?: string;
 }
 export interface ConfigFieldSpec {
@@ -435,21 +330,14 @@ export interface ConfigFieldSpec {
 }
 
 export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = ${JSON.stringify(metadata, null, 2)};
-export const CONFIG_SCHEMA_VERSION = ${contract.config.schemaVersion};
-export const CONFIG_FILE_NAME = ${JSON.stringify(contract.config.fileName)};
 export const RUNTIME_SURFACES = ${JSON.stringify(contract.config.runtimeSurfaces)} as const;
 export type RuntimeSurface = (typeof RUNTIME_SURFACES)[number];
-export const DEFAULT_RUNTIME_SURFACE: RuntimeSurface = RUNTIME_SURFACES[0];
 export const ENV_TOKEN_VARS = ${JSON.stringify(environment.tokenNames)} as const;
-export type EnvTokenVar = (typeof ENV_TOKEN_VARS)[number];
 export const PROTECTED_KEY_NAMES = ${JSON.stringify(environment.protectedNames)} as const;
 export const HOME_TRUSTED_ENV_KEYS = ${JSON.stringify(environment.homeTrusted)} as const;
 /** Home-trusted switches a workspace may set only to this narrowing value. */
 export const WORKSPACE_NARROW_ONLY_ENV: Readonly<Record<string, string>> = ${JSON.stringify(environment.workspaceNarrowOnly)};
-export const CONFIG_SOURCE_ENV_KEYS = ${JSON.stringify(environment.sourceNames)} as const;
-export type ConfigSourceEnvKey = (typeof CONFIG_SOURCE_ENV_KEYS)[number];
 export const DEFAULT_CONFIG_VALUE: ResolvedConfigData = ${renderTsValue(defaults, '', fieldByPath)};
-${renderConstants(fields, defaults)}
 `;
 }
 
@@ -469,9 +357,9 @@ async function loadContract(): Promise<Contract> {
   return contract as Contract;
 }
 
-function markdownDefault(field: FlatField, schemaVersion: number): string {
+function markdownDefault(field: FlatField): string {
   if (field.displayDefault) return field.displayDefault;
-  const value = ownDefault(field, schemaVersion);
+  const value = ownDefault(field);
   return value === null ? 'unset' : `\`${JSON.stringify(value)}\``;
 }
 
@@ -481,7 +369,6 @@ function markdownType(field: FlatField): string {
   }
   if (field.type === 'enum') return field.values!.map(value => `\`${value}\``).join(' or ');
   if (field.type === 'stringArray') return 'string array';
-  if (field.type === 'schemaVersion') return 'integer';
   return field.type;
 }
 
@@ -489,7 +376,7 @@ function renderDocumentation(contract: Contract): string {
   const fields = flattenFields(contract);
   const example: JsonObject = { $schema: `https://octocode.ai/schemas/config-v${contract.config.schemaVersion}.json` };
   for (const field of fields.filter(field => field.file)) {
-    const value = ownDefault(field, contract.config.schemaVersion);
+    const value = ownDefault(field);
     setPath(example, field.path, structuredClone(value));
   }
   const rows = fields.map(field => {
@@ -504,7 +391,7 @@ function renderDocumentation(contract: Contract): string {
       .filter(Boolean)
       .join(' ')
       .replace(/\|/g, '\\|');
-    return `| ${filePath} | ${environment} | ${markdownDefault(field, contract.config.schemaVersion)} | ${markdownType(field)} | ${notes} |`;
+    return `| ${filePath} | ${environment} | ${markdownDefault(field)} | ${markdownType(field)} | ${notes} |`;
   });
   const tokens = Object.entries(contract.environment)
     .filter(([, definition]) => definition.tokenPriority !== undefined)
@@ -516,6 +403,19 @@ function renderDocumentation(contract: Contract): string {
       definition.tokenPriority === undefined
     )
     .map(([name, definition]) => `| \`${name}\` | ${definition.description ?? ''} |`);
+  const environment = orderedEnvironment(fields, contract);
+  const homeOnly = environment.homeTrusted.map(name => {
+    const narrows = environment.workspaceNarrowOnly[name];
+    return `| \`${name}\` | ${narrows === undefined ? '—' : `\`${narrows}\``} |`;
+  });
+  const removed = [
+    ...Object.entries(contract.removed?.settings ?? {}).map(
+      ([name, reason]) => `| \`${name}\` | \`.octocoderc\` | ${reason} |`
+    ),
+    ...Object.entries(contract.removed?.environment ?? {}).map(
+      ([name, reason]) => `| \`${name}\` | environment | ${reason} |`
+    ),
+  ];
 
   return `<!-- Generated by packages/octocode-config/scripts/generate-config-contract.ts. Do not edit. -->
 # Octocode configuration settings
@@ -524,7 +424,7 @@ This reference is generated from [\`packages/octocode-config/config-contract.jso
 
 ## Complete \`.octocoderc\` example
 
-\`null\` means “use the next source or generated default.” JSON comments and trailing commas are accepted by the loader even though this generated example is strict JSON.
+\`null\` means “use the next source or the generated default” for every setting, lists included. JSON comments and trailing commas are accepted by the loader even though this generated example is strict JSON.
 
 \`\`\`json
 ${JSON.stringify(example, null, 2)}
@@ -551,6 +451,22 @@ ${tokens.join('\n')}
 | Environment variable | Description |
 |---|---|
 ${additionalEnvironment.join('\n')}
+
+## Home-only environment variables
+
+A workspace \`.octocode/.env\` cannot set these; the value is skipped and listed under \`skippedProtected\` in \`octocode config --json\`, and the setting bound to one is ignored in a workspace \`.octocoderc\` with a \`workspace_config_protected\` warning. A workspace may still set the narrowing value shown.
+
+| Environment variable | Workspace may set only |
+|---|---|
+${homeOnly.join('\n')}
+
+## Removed settings
+
+A removed name is reported once as a \`removed_setting\` warning and otherwise ignored.
+
+| Name | Where | What to do |
+|---|---|---|
+${removed.join('\n')}
 `;
 }
 

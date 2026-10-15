@@ -590,8 +590,8 @@ fn minimize_data(data: &mut Map<String, Value>, tool: ToolId, query: &Value, ech
     // included.
     data.retain(|key, value| !super::pages::is_pagination_key(key) || echo || walks_on(value));
     // The stats extra asks for every total.
-    if tool.output().reports_scan_totals() && !super::extras::wants(query, ExtraKind::Stats) {
-        minimize_search_totals(tool, data);
+    if tool.output().reports_scan_totals(data) && !super::extras::wants(query, ExtraKind::Stats) {
+        minimize_search_totals(data);
     }
 }
 
@@ -671,13 +671,9 @@ fn variants_of(
 /// matched (it shows the search ran where intended). Coverage limits
 /// (`partialReasons`, `terminalLimit`), `binarySkipped` and unreadable-path
 /// errors (`fileErrors`) remain public even on the final page: they explain
-/// evidence that was not returned. Every localSearch view minimizes the same
-/// way, including countLines (no `matchCount`) and filesWithout (neither
-/// total); an astSearch row carries scan totals only beside `matchCount`.
-fn minimize_search_totals(tool: ToolId, data: &mut Map<String, Value>) {
-    if tool != ToolId::LocalSearch && !data.contains_key("matchCount") {
-        return;
-    }
+/// evidence that was not returned. Which rows carry the totals is the tool's
+/// answer ([`crate::tools::output::ToolOutput::reports_scan_totals`]).
+fn minimize_search_totals(data: &mut Map<String, Value>) {
     let has_rows = data
         .get("files")
         .and_then(Value::as_array)
@@ -741,12 +737,12 @@ pub fn envelope_in(
             .validate(".")
             .ok()
             .map(|valid| valid.canonical.to_string_lossy().into_owned());
-        let mut value = envelope(rows);
+        let mut value = envelope(tool, rows);
         anchor_topology(&mut value, &roots, workspace.as_deref());
         return value;
     }
     if anchor == PathAnchor::Common {
-        return envelope(rows);
+        return envelope(tool, rows);
     }
     if anchor == PathAnchor::QueryParent {
         for (row, root) in rows.iter_mut().zip(&roots) {
@@ -782,7 +778,7 @@ pub fn envelope_in(
         })
         .collect::<Vec<_>>();
     let heads = checked_out_heads(tool, &roots, &receipts);
-    let mut value = compact(rows, workspace);
+    let mut value = compact(tool, rows, workspace);
     attach_heads(&mut value, &heads);
     value
 }
@@ -999,20 +995,20 @@ fn prefix_relative_paths(value: &mut Value, depth: usize, prefix: &str) {
     }
 }
 
-pub fn envelope(rows: Vec<Value>) -> Value {
+pub fn envelope(tool: ToolId, rows: Vec<Value>) -> Value {
     let mut paths = Vec::new();
     for row in &rows {
         visit_paths(&row["data"], 0, &mut paths);
     }
     let base = common_directory(&paths);
-    compact(rows, base)
+    compact(tool, rows, base)
 }
 
 /// Rewrite every absolute row path under `base` relative to it (the base
-/// itself becomes `.`), hoist shared leaf fields, and wrap the rows. Paths
+/// itself becomes `.`), hoist `tool`'s shared leaf fields, and wrap the rows. Paths
 /// outside `base` stay absolute; without such a path, or a continuation
 /// whose relative `path` resolves against `base`, there is no `base`.
-fn compact(mut rows: Vec<Value>, base: Option<String>) -> Value {
+fn compact(tool: ToolId, mut rows: Vec<Value>, base: Option<String>) -> Value {
     let base = base.filter(|base| {
         let inside = format!("{base}/");
         let mut paths = Vec::new();
@@ -1029,7 +1025,7 @@ fn compact(mut rows: Vec<Value>, base: Option<String>) -> Value {
     for row in &mut rows {
         rewrite_paths(&mut row["data"], 0, base.as_deref());
     }
-    let shared = crate::contracts::shared_fields::hoist(&mut rows);
+    let shared = crate::contracts::shared_fields::hoist(tool, &mut rows);
     let mut value = json!({"results":rows});
     if let Some(base) = base {
         value["root"] = json!(base);

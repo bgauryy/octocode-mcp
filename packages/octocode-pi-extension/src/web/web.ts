@@ -1,7 +1,8 @@
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, truncateHead, type ExtensionAPI, type ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import { timingOf, plural, resultBlock, resultText, spillPath, timedTool, toolHeader } from '../shared/render.js';
-import { sanitizeTerminalText } from '../shared/sanitize.js';
+import { visibleControls } from '../shared/sanitize.js';
+import { visibleError } from '../shared/visible-error.js';
 import { boundImagePart, capOutputToFile, saveFullOutput, saveImageFile } from '../shared/spill.js';
 import { imageLimits } from '../shared/vision.js';
 import { shortPath } from '../shared/format.js';
@@ -43,7 +44,7 @@ async function imageResult(image: FetchedImage, model: ExtensionContext['model']
   const parts = await boundImagePart({ type: 'image' as const, data, mimeType: image.mimeType }, 'web image', { limits: imageLimits(model), ...(file ? { savedAs: file } : {}) });
   const line = `${image.url}: ${image.mimeType} image, ${formatSize(image.bytes.byteLength)}. ${file ? `Original saved to ${file}.` : 'The original could not be saved.'}`;
   const details: WebDetails = { kind: 'image', mimeType: image.mimeType, bytes: image.bytes.byteLength, ...(file ? { file } : {}) };
-  return { content: [{ type: 'text' as const, text: sanitizeTerminalText(line) }, ...parts], details };
+  return { content: [{ type: 'text' as const, text: visibleControls(line) }, ...parts], details };
 }
 
 /**
@@ -125,45 +126,50 @@ export function registerWebTool(pi: ExtensionAPI, permission: Permission): void 
       return resultBlock(theme, context, { summary, body, spill: file ?? spillPath(text), ...timingOf(result.details) });
     },
     async execute(id, params, signal, _onUpdate, ctx) {
-      signal?.throwIfAborted();
-      const url = params.url?.trim();
-      const query = params.query?.trim();
-      if (url && query) throw new Error('Provide exactly one of url or query.');
-      if (url) {
-        const max = Math.min(Math.max(Math.floor(params.maxChars ?? DEFAULT_FETCH_CHARS), 1_000), MAX_FETCH_CHARS);
-        // Page text is untrusted: strip terminal escapes and bidi controls before the model sees it.
-        const approved = await approveFetch(permission, ctx, id, url, signal);
-        const fetched = await fetchUrl(url, signal, approved);
-        if (typeof fetched !== 'string') return imageResult(fetched, ctx.model);
-        const text = sanitizeTerminalText(fetched);
-        const reason = unreadReason(text);
-        if (reason) return textResult<WebDetails>(text, { kind: 'notice', reason });
-        const lines = text.split('\n').length;
-        const size = { kind: 'fetch' as const, bytes: Buffer.byteLength(text), lines };
-        if (text.length <= max) return textResult<WebDetails>(capOutputToFile(text, { label: 'web' }), size);
-        // A longer page is saved whole (read the rest from the file, no refetch); the inline part folds link lists
-        // (sidebars, tables of contents) so content comes first.
-        const file = saveFullOutput(text, 'web');
-        if (file) {
-          // Octocode tools take an absolute path; without them the short form is enough to read.
-          const tools = savedPageTools(pi.getActiveTools());
-          const where = tools.clasify || tools.localSearch || tools.localFetch ? file : shortPath(file);
-          const hint = `the whole page (${lines} lines, links included) is in ${where}: ${savedPageLead(tools)}`;
-          return textResult<WebDetails>(savedPreview(collapseLinkRuns(text), max, hint), { ...size, file });
-        }
-        // Nothing holds the rest, so nothing is folded and the note says exactly what stays out of reach.
-        return textResult<WebDetails>(capOutputToFile(capChars(text, max, unsavedHint(text.length, max)), { label: 'web' }), size);
-      }
-      if (!query) throw new Error('Provide url or query.');
       try {
-        const { provider, hits, failures } = await search(query, Math.min(Math.max(Math.floor(params.maxResults ?? 8), 1), 20), process.env, signal);
-        const details: WebDetails = { kind: 'search', provider, results: hits.length };
-        // Which provider answered matters only when others failed first: results may differ in kind and quality.
-        const via = failures.length > 0 ? `\n\n(via ${provider}; skipped ${failures.join('; ')})` : '';
-        if (hits.length === 0) return textResult(sanitizeTerminalText(`No results (${provider}).${failures.length > 0 ? ` (skipped ${failures.join('; ')})` : ''}`), details);
-        return textResult(sanitizeTerminalText(hits.map((hit, index) => `${index + 1}. ${hit.title}\n   ${hit.url}\n   ${hit.snippet}`).join('\n\n') + via), details);
+        signal?.throwIfAborted();
+        const url = params.url?.trim();
+        const query = params.query?.trim();
+        if (url && query) throw new Error('Provide exactly one of url or query.');
+        if (url) {
+          const max = Math.min(Math.max(Math.floor(params.maxChars ?? DEFAULT_FETCH_CHARS), 1_000), MAX_FETCH_CHARS);
+          // Page text is untrusted: terminal escapes, bidi and invisible characters become visible escapes (nothing is dropped) before the model sees it.
+          const approved = await approveFetch(permission, ctx, id, url, signal);
+          const fetched = await fetchUrl(url, signal, approved);
+          if (typeof fetched !== 'string') return imageResult(fetched, ctx.model);
+          const text = visibleControls(fetched);
+          const reason = unreadReason(text);
+          if (reason) return textResult<WebDetails>(text, { kind: 'notice', reason });
+          const lines = text.split('\n').length;
+          const size = { kind: 'fetch' as const, bytes: Buffer.byteLength(text), lines };
+          if (text.length <= max) return textResult<WebDetails>(capOutputToFile(text, { label: 'web' }), size);
+          // A longer page is saved whole (read the rest from the file, no refetch); the inline part folds link lists
+          // (sidebars, tables of contents) so content comes first.
+          const file = saveFullOutput(text, 'web');
+          if (file) {
+            // Octocode tools take an absolute path; without them the short form is enough to read.
+            const tools = savedPageTools(pi.getActiveTools());
+            const where = tools.clasify || tools.localSearch || tools.localFetch ? file : shortPath(file);
+            const hint = `the whole page (${lines} lines, links included) is in ${where}: ${savedPageLead(tools)}`;
+            return textResult<WebDetails>(savedPreview(collapseLinkRuns(text), max, hint), { ...size, file });
+          }
+          // Nothing holds the rest, so nothing is folded and the note says exactly what stays out of reach.
+          return textResult<WebDetails>(capOutputToFile(capChars(text, max, unsavedHint(text.length, max)), { label: 'web' }), size);
+        }
+        if (!query) throw new Error('Provide url or query.');
+        try {
+          const { provider, hits, failures } = await search(query, Math.min(Math.max(Math.floor(params.maxResults ?? 8), 1), 20), process.env, signal);
+          const details: WebDetails = { kind: 'search', provider, results: hits.length };
+          // Which provider answered matters only when others failed first: results may differ in kind and quality.
+          const via = failures.length > 0 ? `\n\n(via ${provider}; skipped ${failures.join('; ')})` : '';
+          if (hits.length === 0) return textResult(visibleControls(`No results (${provider}).${failures.length > 0 ? ` (skipped ${failures.join('; ')})` : ''}`), details);
+          return textResult(visibleControls(hits.map((hit, index) => `${index + 1}. ${hit.title}\n   ${hit.url}\n   ${hit.snippet}`).join('\n\n') + via), details);
+        } catch (error) {
+          throw new Error(`Search failed: ${errorMessage(error)}`);
+        }
       } catch (error) {
-        throw new Error(`Search failed: ${errorMessage(error)}`);
+        // Page text, URLs and provider answers reach the model in errors too.
+        throw visibleError(error);
       }
     },
   }));

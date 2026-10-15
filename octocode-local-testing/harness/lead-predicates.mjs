@@ -63,7 +63,8 @@ export const KEY_TOOLS = [
   [/^readPullRequest$/, { tools: ['ghGetHistoryItem'], operation: 'pullRequest' }],
   [/^readIssue$/, { tools: ['ghGetHistoryItem'], operation: 'issue' }],
   [/^readCommit$/, { tools: ['ghGetHistoryItem', 'ghGetFileContent'] }],
-  [/^view(Tree|Refs|ReleaseSource)$/, { tools: ['ghStructure', 'structureSearch'] }],
+  [/^viewTree$/, { tools: ['ghStructure', 'structureSearch', 'astSearch'], operations: { astSearch: 'syntaxTree' } }],
+  [/^view(Refs|ReleaseSource)$/, { tools: ['ghStructure', 'structureSearch'] }],
   [/^viewRepo$/, { tools: ['ghStructure', 'ghSearchRepo'] }],
   [/^readDiagnostics$/, { tools: ['lspSearch', 'astTopology'] }],
   [/^read(Block|Hits|Declaration|Files)?$/, { tools: ['localFetch', 'ghGetFileContent', 'ghGetHistoryItem'] }],
@@ -206,7 +207,12 @@ export function scopeChanges(src, lead, { mutable = new Set(), additions = false
 // A count-view continuation materializes localSearch's default pageSize.
 // Accept that one field only when the source page reports the same effective
 // size, while comparing every other field against the original query.
-export function sourceScopeForPage(source, lead, sq, lq) {
+export function sourceScopeForPage(source, lead, sq, lq, defaultsOf = () => ({})) {
+  // A whole-file read using the default view selects exact lines. Its window
+  // carries that view after dropping fullContent; non-default views stay strict.
+  if (lead.tool === source.tool && lead.key === 'continueWindow' && sq.fullContent === true &&
+      (!Object.hasOwn(sq, 'minify') || sq.minify === defaultsOf(source.tool, sq).minify) &&
+      lq.minify === 'none') return { ...sq, minify: 'none' };
   if (source.tool !== 'localSearch' || lead.tool !== source.tool || lead.key !== 'nextPage' ||
       Object.hasOwn(sq, 'pageSize') || sq.resultView !== lq.resultView) return sq;
   const reported = source.entry.sc?.results?.[lead.rowIndex ?? 0]?.data?.pagination?.pageSize;
@@ -232,7 +238,7 @@ export function fileHolds(rel, text, root) {
  * `root` resolves relative paths; `propsOf(tool)` lists the tool's accepted
  * query fields (for lifts-flag). Returns `[{ assertion, ok, detail }]`.
  */
-export function judgeLead(lead, source, entry, shown, { walked = false, root = process.cwd(), propsOf = () => new Set() } = {}) {
+export function judgeLead(lead, source, entry, shown, { walked = false, root = process.cwd(), propsOf = () => new Set(), defaultsOf = () => ({}) } = {}) {
   const results = [];
   const record = (assertion, ok, detail) => { results.push({ assertion, ok: !!ok, detail }); return ok; };
   const out = outcomeOf(entry);
@@ -250,7 +256,10 @@ export function judgeLead(lead, source, entry, shown, { walked = false, root = p
   if (!walked && PAGE_KEYS.test(key) && key !== 'responsePagination.next') record('channel', lead.container === 'next', `${key} is a page but sits under ${lead.container}`);
 
   const rule = KEY_TOOLS.find(([re]) => re.test(key))?.[1];
-  if (rule && !walked) record('key-tool', rule.tools.includes(lead.tool) && (!rule.operation || lq.operation === rule.operation), `${lead.tool} operation=${lq.operation ?? '-'}; ${key} expects ${rule.tools.join('|')}${rule.operation ? ` ${rule.operation}` : ''}`);
+  if (rule && !walked) {
+    const operation = rule.operation ?? rule.operations?.[lead.tool];
+    record('key-tool', rule.tools.includes(lead.tool) && (!operation || lq.operation === operation), `${lead.tool} operation=${lq.operation ?? '-'}; ${key} expects ${rule.tools.join('|')}${operation ? ` ${operation}` : ''}`);
+  }
   if (!walked && (SAME_TOOL_KEYS.test(key) || SAME_TOOL_PAGE_KEYS.test(key))) record('key-tool', sameTool || (key === 'includeArchived' && lead.tool === 'ghSearchRepo'), `${lead.tool} lead from a ${source.tool} row`);
 
   // Request-level fields (TOOL_DATA_CONTRACT): no continuation inherits mainGoal/reasoning; a same-tool lead inherits extras, a cross-tool lead only `hints`.
@@ -279,7 +288,8 @@ export function judgeLead(lead, source, entry, shown, { walked = false, root = p
   // A same-tool lead keeps everything it does not mutate.
   if (single && sameTool && (flag || key === 'includeSkipped' || PAGE_KEYS.test(key) || /^(restart|retry)$/.test(key))) {
     const mutable = MUTABLE.find(([re]) => re.test(key))?.[1];
-    const changed = scopeChanges(sourceScopeForPage(source, lead, sq, lq), lq, { mutable, additions: ADDS_OPTIONS.test(key) || /^continue/.test(key), root });
+    const sourceScope = sourceScopeForPage(source, lead, sq, lq, defaultsOf);
+    const changed = scopeChanges({ ...defaultsOf(source.tool, sourceScope), ...sourceScope }, { ...defaultsOf(lead.tool, lq), ...lq }, { mutable, additions: ADDS_OPTIONS.test(key) || /^continue/.test(key), root });
     record('keeps-scope', changed.length === 0, changed.join('; '));
   }
   // narrowScope keeps the question (what is searched) and changes where it looks.

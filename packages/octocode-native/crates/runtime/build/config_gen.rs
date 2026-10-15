@@ -2,8 +2,8 @@
 //! metadata rendered from `config-contract.json` into `config_contract.rs`.
 
 use super::{
-    bool_value, config_path, integer, invalid, object, rust_enum_variant, rust_ident, set_path,
-    string, to_pascal, to_screaming_snake,
+    bool_value, config_path, integer, invalid, object, rust_enum_variant, rust_ident, string,
+    to_pascal, to_screaming_snake,
 };
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
@@ -71,39 +71,45 @@ fn fields<'a>(contract: &'a Value) -> Result<Vec<Field<'a>>, Box<dyn Error>> {
     Ok(output)
 }
 
-fn own_default(field: &Field<'_>, schema_version: i64) -> Result<Value, Box<dyn Error>> {
-    let field_type = string(
+fn field_type<'a>(field: &Field<'a>) -> Result<&'a str, Box<dyn Error>> {
+    string(
         field
             .definition
             .get("type")
             .ok_or_else(|| invalid(format!("{}.type is required", field.path)))?,
         &format!("{}.type", field.path),
-    )?;
-    match field_type {
-        "schemaVersion" => Ok(Value::from(schema_version)),
+    )
+}
+
+fn required_integer(field: &Field<'_>, key: &str) -> Result<i64, Box<dyn Error>> {
+    integer(
+        field
+            .definition
+            .get(key)
+            .ok_or_else(|| invalid(format!("{}.{key} is required", field.path)))?,
+        &format!("{}.{key}", field.path),
+    )
+}
+
+/// `(minimum, maximum)` of a number field: the contract states the minimum and
+/// the span above it.
+fn number_bounds(field: &Field<'_>) -> Result<(i64, i64), Box<dyn Error>> {
+    let minimum = required_integer(field, "minimum")?;
+    Ok((minimum, minimum + required_integer(field, "span")?))
+}
+
+/// A field whose contract default is `null`: unset is a distinct value.
+fn nullable(field: &Field<'_>) -> bool {
+    field.definition.get("default").is_some_and(Value::is_null)
+}
+
+fn own_default(field: &Field<'_>) -> Result<Value, Box<dyn Error>> {
+    match field_type(field)? {
+        "number" if nullable(field) => Ok(Value::Null),
         "number" => {
-            let minimum = integer(
-                field
-                    .definition
-                    .get("minimum")
-                    .ok_or_else(|| invalid(format!("{}.minimum is required", field.path)))?,
-                &format!("{}.minimum", field.path),
-            )?;
-            let span = integer(
-                field
-                    .definition
-                    .get("span")
-                    .ok_or_else(|| invalid(format!("{}.span is required", field.path)))?,
-                &format!("{}.span", field.path),
-            )?;
-            let offset = integer(
-                field
-                    .definition
-                    .get("defaultOffset")
-                    .ok_or_else(|| invalid(format!("{}.defaultOffset is required", field.path)))?,
-                &format!("{}.defaultOffset", field.path),
-            )?;
-            Ok(Value::from(minimum + offset.min(span)))
+            let (minimum, maximum) = number_bounds(field)?;
+            let offset = required_integer(field, "defaultOffset")?;
+            Ok(Value::from(minimum + offset.min(maximum - minimum)))
         }
         "enum" => field
             .definition
@@ -120,16 +126,83 @@ fn own_default(field: &Field<'_>, schema_version: i64) -> Result<Value, Box<dyn 
     }
 }
 
-fn build_defaults(all_fields: &[Field<'_>], schema_version: i64) -> Result<Value, Box<dyn Error>> {
-    let mut defaults = Value::Object(Map::new());
-    for field in all_fields.iter().filter(|field| field.resolved) {
-        set_path(
-            &mut defaults,
-            &field.path,
-            own_default(field, schema_version)?,
-        )?;
+/// The smallest unsigned integer type holding a number field's range.
+fn integer_type(field: &Field<'_>) -> Result<&'static str, Box<dyn Error>> {
+    let (minimum, maximum) = number_bounds(field)?;
+    Ok(if minimum < 0 {
+        "i64"
+    } else if maximum <= i64::from(u32::MAX) {
+        "u32"
+    } else {
+        "u64"
+    })
+}
+
+/// The Rust enum an enum field resolves to: its contract `typeName`, else
+/// its path in PascalCase (`lsp.prewarm` → `LspPrewarm`).
+fn enum_type_name(field: &Field<'_>) -> Result<String, Box<dyn Error>> {
+    match field.definition.get("typeName") {
+        Some(name) => Ok(string(name, &format!("{}.typeName", field.path))?.to_owned()),
+        None => Ok(to_pascal(&field.path)),
     }
-    Ok(defaults)
+}
+
+fn enum_values<'a>(field: &Field<'a>) -> Result<Vec<&'a str>, Box<dyn Error>> {
+    field
+        .definition
+        .get("values")
+        .and_then(Value::as_array)
+        .ok_or_else(|| invalid(format!("{}.values must be an array", field.path)))?
+        .iter()
+        .map(|value| string(value, &format!("{}.values", field.path)))
+        .collect()
+}
+
+/// The Rust expression of a field's contract default.
+fn default_literal(field: &Field<'_>) -> Result<String, Box<dyn Error>> {
+    let default = own_default(field)?;
+    if default.is_null() {
+        return Ok("None".to_owned());
+    }
+    Ok(match field_type(field)? {
+        "boolean" => default
+            .as_bool()
+            .ok_or_else(|| invalid(format!("{}.default must be a boolean", field.path)))?
+            .to_string(),
+        "number" => default
+            .as_i64()
+            .ok_or_else(|| invalid(format!("{}.default must be an integer", field.path)))?
+            .to_string(),
+        "enum" => format!(
+            "{}::{}",
+            enum_type_name(field)?,
+            rust_enum_variant(
+                default
+                    .as_str()
+                    .ok_or_else(|| invalid(format!("{} enum default", field.path)))?
+            )?
+        ),
+        "stringArray" => {
+            let items = default
+                .as_array()
+                .ok_or_else(|| invalid(format!("{}.default must be an array", field.path)))?
+                .iter()
+                .map(|item| {
+                    string(item, &format!("{}.default", field.path))
+                        .map(|item| format!("{item:?}.to_owned()"))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            if items.is_empty() {
+                "Vec::new()".to_owned()
+            } else {
+                format!("vec![{}]", items.join(", "))
+            }
+        }
+        _ => format!(
+            "{:?}.to_owned()",
+            string(&default, &format!("{}.default", field.path))?
+        ),
+    })
 }
 
 fn write_string_slice(
@@ -176,28 +249,93 @@ fn rust_type_name(
     Ok(format!("{base}Config"))
 }
 
-fn rust_field_type(definition: &Map<String, Value>) -> Result<String, Box<dyn Error>> {
-    let kind = string(
-        definition
-            .get("type")
-            .ok_or_else(|| invalid("field.type is required"))?,
-        "field.type",
-    )?;
-    let nullable = definition.get("default").is_some_and(Value::is_null);
-    Ok(match kind {
-        "schemaVersion" => "serde_json::Value".to_owned(),
+fn rust_field_type(field: &Field<'_>) -> Result<String, Box<dyn Error>> {
+    let nullable = nullable(field);
+    let base = match field_type(field)? {
         "boolean" => "bool".to_owned(),
-        "number" => "f64".to_owned(),
-        "stringArray" if nullable => "Option<Vec<String>>".to_owned(),
+        "number" => integer_type(field)?.to_owned(),
         "stringArray" => "Vec<String>".to_owned(),
-        "string" | "url" | "path" if nullable => "Option<String>".to_owned(),
-        "string" | "url" | "path" | "enum" => "String".to_owned(),
+        "string" | "url" | "path" => "String".to_owned(),
+        "enum" => enum_type_name(field)?,
         other => {
             return Err(invalid(format!(
                 "unsupported generated Rust field type {other}"
             )));
         }
+    };
+    Ok(if nullable {
+        format!("Option<{base}>")
+    } else {
+        base
     })
+}
+
+/// One Rust enum per enum field. Its default is the contract default (the
+/// first value); `as_str` is the wire value.
+fn render_enums(output: &mut String, all_fields: &[Field<'_>]) -> Result<(), Box<dyn Error>> {
+    let mut rendered = BTreeSet::new();
+    for field in all_fields
+        .iter()
+        .filter(|field| field.resolved && field_type(field).ok() == Some("enum"))
+    {
+        let name = enum_type_name(field)?;
+        if !rendered.insert(name.clone()) {
+            return Err(invalid(format!("enum type {name} is declared twice")));
+        }
+        let values = enum_values(field)?;
+        writeln!(
+            output,
+            "/// `{}` values.\n#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq, serde::Serialize, serde::Deserialize)]\npub enum {name} {{",
+            field.path
+        )?;
+        for (index, value) in values.iter().enumerate() {
+            if index == 0 {
+                writeln!(output, "    #[default]")?;
+            }
+            writeln!(
+                output,
+                "    #[serde(rename = {value:?})]\n    {},",
+                rust_enum_variant(value)?
+            )?;
+        }
+        writeln!(
+            output,
+            "}}\n\nimpl {name} {{\n    /// The contract spelling of this value.\n    #[must_use]\n    pub const fn as_str(self) -> &'static str {{\n        match self {{"
+        )?;
+        for value in &values {
+            writeln!(
+                output,
+                "            Self::{} => {value:?},",
+                rust_enum_variant(value)?
+            )?;
+        }
+        writeln!(
+            output,
+            "        }}\n    }}\n}}\n\nimpl std::fmt::Display for {name} {{\n    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {{\n        f.write_str(self.as_str())\n    }}\n}}\n"
+        )?;
+    }
+    Ok(())
+}
+
+/// One member of a generated struct: name, Rust type, default expression.
+type Member = (String, String, String);
+
+fn write_struct(output: &mut String, name: &str, members: &[Member]) -> std::fmt::Result {
+    writeln!(
+        output,
+        "#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]\n#[serde(rename_all = \"camelCase\")]\npub struct {name} {{"
+    )?;
+    for (member, field_type, _) in members {
+        writeln!(output, "    pub {member}: {field_type},")?;
+    }
+    writeln!(
+        output,
+        "}}\n\n/// The config contract's defaults.\nimpl Default for {name} {{\n    fn default() -> Self {{\n        Self {{"
+    )?;
+    for (member, _, default) in members {
+        writeln!(output, "            {member}: {default},")?;
+    }
+    writeln!(output, "        }}\n    }}\n}}\n")
 }
 
 fn render_structs(
@@ -211,20 +349,30 @@ fn render_structs(
             .ok_or_else(|| invalid("contract.sections is required"))?,
         "contract.sections",
     )?;
-    let mut rendered = BTreeMap::<String, Vec<(String, String)>>::new();
+    if !sections.contains_key("") {
+        return Err(invalid("root section is required"));
+    }
+    let mut rendered = BTreeMap::<String, Vec<Member>>::new();
     for (section_path, section_value) in sections {
-        if section_path.is_empty() {
-            continue;
-        }
         let section = object(section_value, &format!("sections.{section_path}"))?;
         if !bool_value(section.get("resolved"), false, "section.resolved")? {
             continue;
         }
-        let type_name = rust_type_name(section_path, section)?;
+        let type_name = if section_path.is_empty() {
+            "ResolvedConfig".to_owned()
+        } else {
+            rust_type_name(section_path, section)?
+        };
         let mut members = all_fields
             .iter()
             .filter(|field| field.section == section_path && field.resolved)
-            .map(|field| Ok((rust_ident(field.key), rust_field_type(field.definition)?)))
+            .map(|field| {
+                Ok((
+                    rust_ident(field.key),
+                    rust_field_type(field)?,
+                    default_literal(field)?,
+                ))
+            })
             .collect::<Result<Vec<_>, Box<dyn Error>>>()?;
         for child_path in direct_children(section_path, sections) {
             let child = object(
@@ -238,7 +386,12 @@ fn render_structs(
                     .rsplit('.')
                     .next()
                     .ok_or_else(|| invalid(format!("invalid child section {child_path}")))?;
-                members.push((rust_ident(key), rust_type_name(&child_path, child)?));
+                let child_type = rust_type_name(&child_path, child)?;
+                members.push((
+                    rust_ident(key),
+                    child_type.clone(),
+                    format!("{child_type}::default()"),
+                ));
             }
         }
         if let Some(existing) = rendered.get(&type_name) {
@@ -249,59 +402,39 @@ fn render_structs(
             }
             continue;
         }
-        rendered.insert(type_name.clone(), members.clone());
-        writeln!(
-            output,
-            "#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]\n#[serde(rename_all = \"camelCase\")]\npub struct {type_name} {{"
-        )?;
-        for (name, field_type) in members {
-            writeln!(output, "    pub {name}: {field_type},")?;
-        }
-        writeln!(output, "}}\n")?;
+        write_struct(output, &type_name, &members)?;
+        rendered.insert(type_name, members);
     }
 
-    if !sections.contains_key("") {
-        return Err(invalid("root section is required"));
+    // One typed setter per resolved field: a value that does not fit its
+    // field is an error for that field alone, never for the others.
+    writeln!(
+        output,
+        "impl ResolvedConfig {{\n    /// Set the field at contract `path` from its JSON value; the field\n    /// keeps its value when `value` does not fit its type.\n    pub fn set_json(&mut self, path: &str, value: serde_json::Value) -> Result<(), String> {{\n        let error = |error: serde_json::Error| format!(\"{{path}}: {{error}}\");\n        match path {{"
+    )?;
+    for field in all_fields.iter().filter(|field| field.resolved) {
+        let member = field
+            .path
+            .split('.')
+            .map(rust_ident)
+            .collect::<Vec<_>>()
+            .join(".");
+        writeln!(
+            output,
+            "            {:?} => self.{member} = serde_json::from_value(value).map_err(error)?,",
+            field.path
+        )?;
     }
     writeln!(
         output,
-        "#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]\n#[serde(rename_all = \"camelCase\")]\npub struct ResolvedConfig {{"
+        "            _ => return Err(format!(\"{{path}} is not a resolved setting\")),\n        }}\n        Ok(())\n    }}\n}}\n"
     )?;
-    for field in all_fields
-        .iter()
-        .filter(|field| field.section.is_empty() && field.resolved)
-    {
-        writeln!(
-            output,
-            "    pub {}: {},",
-            rust_ident(field.key),
-            rust_field_type(field.definition)?
-        )?;
-    }
-    for child_path in direct_children("", sections) {
-        let child = object(
-            sections
-                .get(&child_path)
-                .ok_or_else(|| invalid(format!("missing section {child_path}")))?,
-            &format!("sections.{child_path}"),
-        )?;
-        if bool_value(child.get("resolved"), false, "section.resolved")? {
-            writeln!(
-                output,
-                "    pub {}: {},",
-                rust_ident(&child_path),
-                rust_type_name(&child_path, child)?
-            )?;
-        }
-    }
-    writeln!(output, "}}\n")?;
     Ok(())
 }
 
 fn render_field_metadata(
     output: &mut String,
     all_fields: &[Field<'_>],
-    schema_version: i64,
 ) -> Result<(), Box<dyn Error>> {
     for (index, field) in all_fields.iter().enumerate() {
         let binding = field
@@ -326,16 +459,7 @@ fn render_field_metadata(
                     }
                     None => "None",
                 };
-                let invalid_mode = match binding.get("invalid").and_then(Value::as_str) {
-                    Some("default") => "ConfigInvalidEnv::Default",
-                    Some("skip") | None => "ConfigInvalidEnv::Skip",
-                    Some(other) => {
-                        return Err(invalid(format!("unsupported invalid mode {other}")));
-                    }
-                };
-                format!(
-                    "Some(ConfigEnvBinding {{ name: {name:?}, normalize: {normalize}, invalid: {invalid_mode} }})"
-                )
+                format!("Some(ConfigEnvBinding {{ name: {name:?}, normalize: {normalize} }})")
             }
         };
         writeln!(
@@ -369,7 +493,6 @@ fn render_field_metadata(
                 .ok_or_else(|| invalid(format!("{}.type is required", field.path)))?,
             &format!("{}.type", field.path),
         )? {
-            "schemaVersion" => "SchemaVersion",
             "boolean" => "Boolean",
             "number" => "Number",
             "stringArray" => "StringArray",
@@ -379,7 +502,7 @@ fn render_field_metadata(
             "string" => "String",
             other => return Err(invalid(format!("unsupported field type {other}"))),
         };
-        let default_json = serde_json::to_string(&own_default(field, schema_version)?)?;
+        let default_json = serde_json::to_string(&own_default(field)?)?;
         let minimum = field
             .definition
             .get("minimum")
@@ -528,18 +651,39 @@ fn environment_arrays(
     ))
 }
 
+/// Settings and variables the contract removed, each with the reason a
+/// diagnostic names: a removed name is reported, never silently accepted.
+fn render_removed(output: &mut String, root: &Map<String, Value>) -> Result<(), Box<dyn Error>> {
+    let removed = root
+        .get("removed")
+        .map(|value| object(value, "contract.removed"))
+        .transpose()?;
+    for (key, constant) in [
+        ("settings", "REMOVED_SETTINGS"),
+        ("environment", "REMOVED_ENV_KEYS"),
+    ] {
+        writeln!(output, "pub const {constant}: &[(&str, &str)] = &[")?;
+        if let Some(entries) = removed
+            .and_then(|removed| removed.get(key))
+            .map(|value| object(value, &format!("contract.removed.{key}")))
+            .transpose()?
+        {
+            for (name, reason) in entries {
+                let reason = string(reason, &format!("contract.removed.{key}.{name}"))?;
+                writeln!(output, "    ({name:?}, {reason:?}),")?;
+            }
+        }
+        writeln!(output, "];\n")?;
+    }
+    Ok(())
+}
+
 fn render(contract: &Value) -> Result<String, Box<dyn Error>> {
     let root = object(contract, "contract")?;
     let config = object(
         root.get("config")
             .ok_or_else(|| invalid("contract.config is required"))?,
         "contract.config",
-    )?;
-    let schema_version = integer(
-        config
-            .get("schemaVersion")
-            .ok_or_else(|| invalid("config.schemaVersion is required"))?,
-        "config.schemaVersion",
     )?;
     let file_name = string(
         config
@@ -558,16 +702,11 @@ fn render(contract: &Value) -> Result<String, Box<dyn Error>> {
         .first()
         .ok_or_else(|| invalid("config.runtimeSurfaces must not be empty"))?;
     let all_fields = fields(contract)?;
-    let defaults = build_defaults(&all_fields, schema_version)?;
     let (tokens, protected, home, sources, narrow) = environment_arrays(contract, &all_fields)?;
 
     let mut output = String::from(
         "// @generated by crates/runtime/build.rs from packages/octocode-config/config-contract.json.\n// Do not edit.\n\n",
     );
-    writeln!(
-        output,
-        "pub const CONFIG_SCHEMA_VERSION: i64 = {schema_version};"
-    )?;
     writeln!(
         output,
         "pub const CONFIG_FILE_NAME: &str = {file_name:?};\n"
@@ -628,12 +767,9 @@ fn render(contract: &Value) -> Result<String, Box<dyn Error>> {
         writeln!(output, "    ({name:?}, {value:?}),")?;
     }
     writeln!(output, "];\n")?;
-    render_field_metadata(&mut output, &all_fields, schema_version)?;
-    writeln!(
-        output,
-        "pub const DEFAULT_RESOLVED_CONFIG_JSON: &str = {:?};\n",
-        serde_json::to_string(&defaults)?
-    )?;
+    render_removed(&mut output, root)?;
+    render_field_metadata(&mut output, &all_fields)?;
+    render_enums(&mut output, &all_fields)?;
     render_structs(&mut output, contract, &all_fields)?;
     Ok(output)
 }

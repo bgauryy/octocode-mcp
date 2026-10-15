@@ -220,15 +220,8 @@ pub(super) async fn walk_contents<C: octocode_github::ConditionalCache>(
         max_depth,
     } = *listing;
     // Every tree page re-runs the walk; reuse a complete one for the cache TTL.
-    let walk_key = format!(
-        "{}:{branch}:{root}:{max_depth}",
-        repo_key("git-tree-walk", owner, repo)
-    );
-    let partition = provider.transport.cache_partition(context, None).ok();
-    if let Some(partition) = &partition
-        && let Some(cached) = provider.cache.get(partition, &walk_key).await
-        && let Ok(walk) = serde_json::from_slice::<Traversal>(&cached.bytes)
-    {
+    let memo = WalkMemo::of(provider, &at, context);
+    if let Some(walk) = memo.get(provider).await {
         return Ok(walk);
     }
     let mut traversal = Traversal::default();
@@ -317,25 +310,75 @@ pub(super) async fn walk_contents<C: octocode_github::ConditionalCache>(
             pending.push((child_path, depth + 1, false, entry.sha.clone()));
         }
     }
-    if traversal.failed_subtrees == 0
-        && let Some(partition) = &partition
-        && let Ok(bytes) = serde_json::to_vec(&traversal)
-    {
-        provider
-            .cache
-            .put(
-                partition,
-                walk_key,
-                octocode_github::CachedContent {
-                    etag: None,
-                    bytes: bytes.into(),
-                    resolved_ref: branch.to_owned(),
-                },
-                octocode_github::Retention::Pinned,
-            )
-            .await;
+    if traversal.failed_subtrees == 0 {
+        memo.put(provider, &traversal).await;
     }
     Ok(traversal)
+}
+
+/// Where a complete Contents walk of one listing is kept: by repository,
+/// commit, root and depth, under the cache partition of the request.
+struct WalkMemo {
+    partition: Option<octocode_github::Partition>,
+    key: String,
+    commit: String,
+}
+
+impl WalkMemo {
+    fn of<C: octocode_github::ConditionalCache>(
+        provider: &GitHubProvider<C>,
+        listing: &Listing<'_>,
+        context: &RequestContext,
+    ) -> Self {
+        let Listing {
+            owner,
+            repo,
+            branch,
+            root,
+            max_depth,
+        } = *listing;
+        Self {
+            partition: provider.transport.cache_partition(context, None).ok(),
+            key: format!(
+                "{}:{branch}:{root}:{max_depth}",
+                repo_key("git-tree-walk", owner, repo)
+            ),
+            commit: branch.to_owned(),
+        }
+    }
+
+    async fn get<C: octocode_github::ConditionalCache>(
+        &self,
+        provider: &GitHubProvider<C>,
+    ) -> Option<Traversal> {
+        let cached = provider
+            .cache
+            .get(self.partition.as_ref()?, &self.key)
+            .await?;
+        serde_json::from_slice(&cached.bytes).ok()
+    }
+
+    async fn put<C: octocode_github::ConditionalCache>(
+        &self,
+        provider: &GitHubProvider<C>,
+        traversal: &Traversal,
+    ) {
+        if let (Some(partition), Ok(bytes)) = (&self.partition, serde_json::to_vec(traversal)) {
+            provider
+                .cache
+                .put(
+                    partition,
+                    self.key.clone(),
+                    octocode_github::CachedContent {
+                        etag: None,
+                        bytes: bytes.into(),
+                        resolved_ref: self.commit.clone(),
+                    },
+                    octocode_github::Retention::Pinned,
+                )
+                .await;
+        }
+    }
 }
 
 /// A directory past the Contents API's entry cap, read whole from its own
@@ -401,7 +444,7 @@ async fn whole_directory<C: octocode_github::ConditionalCache>(
                 } else {
                     format!("{dir}/{}", entry.path)
                 },
-                kind: match entry.kind.as_str() {
+                kind: match git_kind(&entry) {
                     "blob" => "file".to_owned(),
                     "tree" => "dir".to_owned(),
                     "commit" => "submodule".to_owned(),
@@ -471,7 +514,7 @@ pub(super) fn root_is_directory(
         return Ok(());
     }
     match tree.tree.iter().find(|entry| entry.path == root) {
-        Some(entry) if entry.kind != "tree" => Err(not_a_directory(root, &entry.kind)),
+        Some(entry) if entry.kind != "tree" => Err(not_a_directory(root, git_kind(entry))),
         Some(_) => Ok(()),
         // A complete tree without the root: the path does not exist at this
         // commit, as the contents API would answer (404).
@@ -526,7 +569,7 @@ pub(super) fn traversal_from_git_tree(
         if depth == 0 || depth > max_depth {
             continue;
         }
-        let kind = match entry.kind.as_str() {
+        let kind = match git_kind(&entry) {
             "blob" => EntryKind::File,
             "tree" => EntryKind::Dir,
             other => {
@@ -559,6 +602,17 @@ pub(super) fn traversal_from_git_tree(
         });
     }
     traversal
+}
+
+/// A git tree entry's type, with a `blob` of the symlink mode (`120000`)
+/// typed `symlink`, as the Contents API types it: a link has no listable
+/// content and is never shown as a file.
+fn git_kind(entry: &octocode_github::TreeEntry) -> &str {
+    if entry.kind == "blob" && entry.mode.as_deref() == Some("120000") {
+        "symlink"
+    } else {
+        &entry.kind
+    }
 }
 
 /// The last segment of a repository-relative path.

@@ -2,6 +2,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { launchChrome } from '../src/browser/launch.js';
+import { keyOf } from '../src/browser/network.js';
 
 /** Real Chrome behind the filtering proxy. Run with PI_TEST_CHROME=1 (needs a local Chrome); skipped otherwise. */
 describe.skipIf(process.env['PI_TEST_CHROME'] !== '1')('Chrome behind the filtering proxy', () => {
@@ -51,9 +52,11 @@ describe.skipIf(process.env['PI_TEST_CHROME'] !== '1')('Chrome behind the filter
     const page = http.createServer((_request, response) => response.writeHead(200, { 'content-type': 'text/html' }).end('<!doctype html><title>t</title>'));
     const pagePort = await listen(page);
     const onBlocked = vi.fn();
-    const chrome = await launchChrome(true, undefined, { onBlocked });
+    const opened = new Set<string>();
+    const allow = (url: URL): void => void opened.add(keyOf(url));
+    const chrome = await launchChrome(true, undefined, { onBlocked, approved: (hostname, port) => opened.has(`${hostname}:${port}`) });
     cleanups.push(() => chrome.kill());
-    chrome.proxy!.allow(new URL(`http://127.0.0.1:${pagePort}/`));
+    allow(new URL(`http://127.0.0.1:${pagePort}/`));
 
     await evaluate(chrome.port, `location.href = 'http://127.0.0.1:${pagePort}/'; 0`);
     await vi.waitFor(async () => expect(await evaluate(chrome.port, 'location.href')).toBe(`http://127.0.0.1:${pagePort}/`), { timeout: 10_000 });
@@ -67,7 +70,7 @@ describe.skipIf(process.env['PI_TEST_CHROME'] !== '1')('Chrome behind the filter
     expect(upgrades).toBe(0);
     expect(onBlocked).toHaveBeenCalledWith({ host: `127.0.0.1:${secretPort}`, reason: 'private' });
 
-    chrome.proxy!.allow(new URL(`ws://127.0.0.1:${secretPort}/`));
+    allow(new URL(`ws://127.0.0.1:${secretPort}/`));
     expect(await evaluate(chrome.port, probe)).toBe('error'); // the server drops the upgrade, but...
     expect(upgrades).toBe(1); // ...it reached the server this time
   }, 60_000);

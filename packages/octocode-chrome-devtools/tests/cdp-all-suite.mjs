@@ -20,8 +20,9 @@ const args = process.argv.slice(2),
     args.includes(flag) ? args[args.indexOf(flag) + 1] : fallback;
 if (args.includes('--help')) {
   console.log(`Usage: cdp-all-suite.mjs [--via script|run] [--batch <n>] [--command-ms <ms>] [--only <Domain>] [--report <JSON file>] [--keep]
-Sends every advertised CDP command to an isolated headless Chrome (page target, then the
-browser target for -32601) and classifies each reply:
+Sends every advertised CDP command to an isolated headless Chrome (page target; then the
+browser, tab and dedicated worker targets, each for what the previous one answered -32601)
+and classifies each reply:
   ok, chrome-error (Chrome routed and rejected the call), exception (reply carried
   exceptionDetails), timeout (no reply within --command-ms), target-destroyed /
   browser-destroyed (loss reproduced by replay; the suite relaunches and continues),
@@ -41,7 +42,31 @@ const via = get('--via', 'script'),
   engineDir = join(import.meta.dirname, '../dist/engine');
 if (!['run', 'script'].includes(via)) throw Error('--via needs script or run');
 const failing = new Set(['not-found', 'transport', 'engine']);
+// Classes that mean no target knew the command.
+const notFound = new Set(['not-found', 'unavailable']);
 const lossClasses = new Set(['closed', 'engine']);
+// A command is sent to the next target only while the previous one did not know it.
+// tab and worker are flattened sessions attached from the browser connection: neither
+// has its own /json entry the engine could select (tab) or a page that owns it (worker).
+const scopes = {
+  page: { select: ['--new-tab', 'about:blank', '--close-tab'] },
+  browser: { select: ['--browser'] },
+  tab: { select: ['--browser'], attach: 'tab' },
+  // A worker answers from its own thread and drops a method it lacks without any reply,
+  // so its silence says nothing: it keeps the earlier target's -32601 and is not waited on.
+  worker: {
+    select: ['--browser'],
+    attach: 'worker',
+    commandMs: 500,
+    silentUnknown: true,
+  },
+};
+// The initial page owns a dedicated worker that a replaced browser or target must regain.
+const fixtureUrl =
+  'data:text/html,' +
+  encodeURIComponent(
+    '<title>cdp-all</title><script>new Worker("data:text/javascript,setInterval(()=>{},1000)")</script>'
+  );
 
 const work = mkdtempSync(join(tmpdir(), 'octo-cdp-all-'));
 const port = await new Promise((yes, no) => {
@@ -92,6 +117,31 @@ async function alive() {
     return false;
   }
 }
+async function listTargets() {
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/json/list`, {
+      signal: AbortSignal.timeout(1500),
+    });
+    return res.ok ? await res.json() : [];
+  } catch {
+    return [];
+  }
+}
+// Waits for the fixture page's worker; a sweep that lost it opens the fixture again.
+async function ensureWorker(reopen = false) {
+  const has = async () =>
+    (await listTargets()).some(target => target.type === 'worker');
+  if (reopen && !(await has()))
+    await fetch(
+      `http://127.0.0.1:${port}/json/new?${encodeURIComponent(fixtureUrl)}`,
+      { method: 'PUT', signal: AbortSignal.timeout(5000) }
+    ).catch(() => {});
+  for (let waited = 0; waited < 5000; waited += 100) {
+    if (await has()) return;
+    await new Promise(yes => setTimeout(yes, 100));
+  }
+  throw Error('Fixture worker target did not appear');
+}
 async function launch(first = false) {
   if (!first) counters.relaunches++;
   const r = await engine([
@@ -100,7 +150,7 @@ async function launch(first = false) {
     '--port',
     port,
     '--url',
-    'about:blank',
+    fixtureUrl,
   ]);
   const info = JSON.parse(
     r.out.split('\n').find(line => line.startsWith('{')) ?? '{}'
@@ -109,11 +159,15 @@ async function launch(first = false) {
     throw Error('Launch failed: ' + r.out);
   if (first && info.reused !== false)
     throw Error('Suite needs a fresh isolated browser');
+  await ensureWorker();
   return info;
 }
 // Returns true when the browser had died and was relaunched.
 async function ensureBrowser() {
-  if (await alive()) return false;
+  if (await alive()) {
+    await ensureWorker(true);
+    return false;
+  }
   // A destroyed browser leaves a stale tracked session; cleanup is idempotent.
   await engine(['cleanup', '--port', port], 30000);
   await launch();
@@ -175,27 +229,61 @@ function classify(error, replied) {
   }
   if (/CDP timeout|step deadline/.test(error))
     return { class: 'timeout', error };
-  if (/WebSocket|Session (already )?closed|closed unexpectedly/i.test(error))
+  if (
+    /WebSocket|Session (already )?closed|closed unexpectedly|detached from its target/i.test(
+      error
+    )
+  )
     return { class: 'closed', error };
   return { class: 'engine', error };
 }
 
-const selectionFor = scope =>
-  scope === 'browser'
-    ? ['--browser']
-    : ['--new-tab', 'about:blank', '--close-tab'];
-const deadline = count => String(count * commandMs + 30000);
+const selectionFor = scope => scopes[scope].select;
+const msFor = scope => scopes[scope].commandMs ?? commandMs;
+const deadline = (count, scope) => String(count * msFor(scope) + 30000);
 
 // Runs queue[from..] as one plan of cdp steps; a stop ends the batch.
+// Steps that attach the session a tab or worker scope sends through; they head each plan.
+// $step counts from 1.
+const attachSteps = type =>
+  type
+    ? [
+        {
+          op: 'cdp',
+          method: 'Target.getTargets',
+          params: { filter: [{ type }] },
+        },
+        {
+          op: 'cdp',
+          method: 'Target.attachToTarget',
+          params: {
+            targetId: { $step: 1, pointer: '/targetInfos/0/targetId' },
+            flatten: true,
+          },
+        },
+      ]
+    : [];
 async function attemptRun(queue, from, scope) {
   const batch = queue.slice(from, from + batchSize);
   const file = join(work, 'plan.json');
+  const prelude = attachSteps(scopes[scope].attach);
+  const session = prelude.length
+    ? { session: { $step: 2, pointer: '/sessionId' } }
+    : {};
   writeFileSync(
     file,
     JSON.stringify({
-      commandMs,
-      waitMs: commandMs,
-      steps: batch.map(({ method, params }) => ({ op: 'cdp', method, params })),
+      commandMs: msFor(scope),
+      waitMs: msFor(scope),
+      steps: [
+        ...prelude,
+        ...batch.map(({ method, params }) => ({
+          op: 'cdp',
+          method,
+          params,
+          ...session,
+        })),
+      ],
     })
   );
   const r = await engine(
@@ -205,27 +293,32 @@ async function attemptRun(queue, from, scope) {
       '--port',
       port,
       '--script-timeout',
-      deadline(batch.length),
+      deadline(batch.length, scope),
       '--plan',
       file,
     ],
-    Number(deadline(batch.length)) + 30000
+    Number(deadline(batch.length, scope)) + 30000
   );
   const resultFile = artifact(r.out, 'browser-result.json');
   if (!resultFile)
     return [{ index: from, ...classify(r.out.slice(-600), false) }];
-  return JSON.parse(readFileSync(resultFile, 'utf8')).steps.map(
-    (step, offset) =>
-      step.status === 'complete'
-        ? { index: from + offset, class: 'ok' }
-        : {
-            index: from + offset,
-            // A saved cdp-N.json means Chrome replied and the engine rejected exceptionDetails.
-            ...classify(
-              step.error ?? 'missing step error',
-              /\/cdp-\d+\.json$/.test(step.artifact ?? '')
-            ),
-          }
+  const steps = JSON.parse(readFileSync(resultFile, 'utf8')).steps;
+  // A target that cannot be attached is a suite failure, not an answer from the target.
+  if (steps.slice(0, prelude.length).some(step => step.status !== 'complete'))
+    throw Error(
+      `Cannot attach a ${scopes[scope].attach} target: ${JSON.stringify(steps.slice(0, prelude.length))}`
+    );
+  return steps.slice(prelude.length).map((step, offset) =>
+    step.status === 'complete'
+      ? { index: from + offset, class: 'ok' }
+      : {
+          index: from + offset,
+          // A saved cdp-N.json means Chrome replied and the engine rejected exceptionDetails.
+          ...classify(
+            step.error ?? 'missing step error',
+            /\/cdp-\d+\.json$/.test(step.artifact ?? '')
+          ),
+        }
   );
 }
 
@@ -237,11 +330,21 @@ async function attemptScript(queue, from, scope) {
   writeFileSync(
     file,
     `const queue = ${JSON.stringify(batch.map(({ method, params }) => ({ method, params })))};
+const attach = ${JSON.stringify(scopes[scope].attach ?? null)};
 export async function run(cdp) {
+  let sessionId;
+  if (attach) {
+    const { targetInfos } = await cdp.send('Target.getTargets', { filter: [{ type: attach }] });
+    if (!targetInfos.length) {
+      console.log('[CDPALL] ' + JSON.stringify({ setup: 'No ' + attach + ' target to attach' }));
+      return;
+    }
+    ({ sessionId } = await cdp.send('Target.attachToTarget', { targetId: targetInfos[0].targetId, flatten: true }));
+  }
   for (const [offset, row] of queue.entries()) {
     let reply;
     try {
-      const result = await cdp.send(row.method, row.params, undefined, { timeoutMs: ${commandMs} });
+      const result = await cdp.send(row.method, row.params, sessionId, { timeoutMs: ${msFor(scope)} });
       reply = result?.exceptionDetails ? { offset, replied: true, error: String(result.exceptionDetails.text) } : { offset, ok: true };
     } catch (error) {
       reply = { offset, error: error.message };
@@ -260,19 +363,21 @@ export async function run(cdp) {
       '--port',
       port,
       '--script-timeout',
-      deadline(batch.length),
+      deadline(batch.length, scope),
     ],
-    Number(deadline(batch.length)) + 30000
+    Number(deadline(batch.length, scope)) + 30000
   );
-  const rows = r.out
+  const replies = r.out
     .split('\n')
     .filter(line => line.startsWith('[CDPALL] '))
-    .map(line => JSON.parse(line.slice(9)))
-    .map(row =>
-      row.ok
-        ? { index: from + row.offset, class: 'ok' }
-        : { index: from + row.offset, ...classify(row.error, row.replied) }
-    );
+    .map(line => JSON.parse(line.slice(9)));
+  const setup = replies.find(row => row.setup);
+  if (setup) throw Error(setup.setup);
+  const rows = replies.map(row =>
+    row.ok
+      ? { index: from + row.offset, class: 'ok' }
+      : { index: from + row.offset, ...classify(row.error, row.replied) }
+  );
   return rows.length
     ? rows
     : [{ index: from, ...classify(r.out.slice(-600), false) }];
@@ -374,26 +479,35 @@ try {
   );
 
   const sweepStarted = Date.now();
-  const pageOutcome = await sweep(queue, 'page');
-  // Browser-level domains answer -32601 on page targets; route those to the browser target.
-  const missing = pageOutcome.flatMap((row, index) =>
-    row.class === 'not-found' ? [index] : []
-  );
-  const browserOutcome = missing.length
-    ? await sweep(
-        missing.map(index => queue[index]),
-        'browser'
-      )
-    : [];
+  // Each target answers what the previous ones did not know (-32601): the browser target
+  // owns browser-level domains, a tab target owns tab-scoped ones, workers their own.
+  const finals = new Array(queue.length);
+  let remaining = queue.map((_row, index) => index);
+  const tried = [];
+  for (const scope of Object.keys(scopes)) {
+    if (!remaining.length) break;
+    tried.push(scope);
+    const outcome = await sweep(
+      remaining.map(index => queue[index]),
+      scope
+    );
+    remaining = remaining.filter((index, position) => {
+      const row = outcome[position];
+      if (scopes[scope].silentUnknown && row.class === 'timeout') {
+        finals[index] = { ...finals[index], tried: [...tried] };
+        return true;
+      }
+      finals[index] = { target: scope, tried: [...tried], ...row };
+      return row.class === 'not-found';
+    });
+  }
   const sweepMs = Date.now() - sweepStarted;
   const methods = queue.map((row, index) => {
-    const browser = browserOutcome[missing.indexOf(index)],
-      { index: _index, ...final } = browser ?? pageOutcome[index];
+    const { index: _index, ...final } = finals[index];
     if (final.class === 'not-found' && !row.stable) final.class = 'unavailable';
     return {
       method: row.method,
       params: row.params,
-      target: browser ? 'browser' : 'page',
       ...final,
       ...(final.error ? { error: final.error.slice(0, 300) } : {}),
     };
@@ -467,6 +581,17 @@ try {
       advertised: queue.length,
       sent: methods.length,
       totals,
+      byTarget: Object.fromEntries(
+        Object.keys(scopes).map(scope => [
+          scope,
+          {
+            tried: methods.filter(row => row.tried.includes(scope)).length,
+            answered: methods.filter(
+              row => row.target === scope && !notFound.has(row.class)
+            ).length,
+          },
+        ])
+      ),
       failures: failures.length,
     },
     events: {

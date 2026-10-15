@@ -1,21 +1,16 @@
 //! Type hierarchy without `typeHierarchyProvider`.
 //!
-//! typescript-language-server and tsgo advertise no type hierarchy, so
-//! `supertypes` and `subtypes` would always fail there. `subtypes` falls back
-//! to `textDocument/implementation`; `supertypes` reads the declaration's
-//! heritage clause (`extends` / `implements`, from the syntax facts) and asks
-//! the server for each base type's definition. Both rows are labelled with the
-//! source they came from, never presented as a server type hierarchy.
-//!
-//! When the server cannot answer `textDocument/implementation` at all (a
-//! timeout on a large project, a crash, a rejected request), `subtypes`
-//! reads the heritage clauses of every workspace file that spells the base
-//! name instead: a syntax answer, matched by name and labelled unverified.
+//! The shared walker follows source heritage clauses resolved by the server.
+//! Implementation locations are candidate subtypes: their resolved immediate
+//! heritage establishes whether they are direct children of the queried type.
+//! When implementation requests fail, the separate source scan remains an
+//! explicitly unverified, partial syntax answer.
 
 use super::failure::LspFailure;
 use super::source::read_bounded_source;
-use octocode_engine::graph::{GraphFactEdge, GraphFactsDocument};
+use octocode_engine::graph::GraphFactsDocument;
 use octocode_engine::lsp::types::{JsCodeSnippet, JsExactPosition, JsRange};
+use octocode_engine::signatures::graph_facts::GraphFactNoteKind;
 use std::collections::BTreeSet;
 use std::future::Future;
 
@@ -40,42 +35,149 @@ pub(super) struct BaseType {
     pub(super) character: u32,
 }
 
-/// The base types of the innermost type declaration holding `anchor_line`
-/// (zero-based), in source order. Empty when the line sits in no type
-/// declaration or the declaration names no base.
-pub(super) fn base_types(content: &str, file: &str, anchor_line: u32) -> Vec<BaseType> {
-    let Some(facts) = octocode_engine::portable::extract_graph_facts(content, file) else {
-        return Vec::new();
-    };
-    let Ok(document) = serde_json::from_str::<GraphFactsDocument>(&facts) else {
-        return Vec::new();
-    };
-    let Some(declaration) = document
+pub(super) fn type_node(
+    document: &GraphFactsDocument,
+    path: &str,
+    line: u32,
+    character: u32,
+) -> Result<serde_json::Value, String> {
+    let point = octocode_engine::graph::GraphPosition { line, character };
+    let declaration = document
         .declarations
         .iter()
-        .filter(|declaration| {
-            document
-                .edges
-                .iter()
-                .any(|edge| edge.from == declaration.id)
-                && declaration.range.start.line <= anchor_line
-                && anchor_line <= declaration.range.end.line
+        .find(|declaration| {
+            matches!(
+                declaration.kind.as_str(),
+                "class" | "interface" | "struct" | "trait" | "enum"
+            ) && ((declaration.selection_range.start <= point
+                && point < declaration.selection_range.end)
+                || declaration.range.start == point)
         })
-        .min_by_key(|declaration| declaration.range.end.line - declaration.range.start.line)
-    else {
-        return Vec::new();
-    };
+        .ok_or_else(|| {
+            format!(
+                "No parsed type declaration at {path}:{}:{}",
+                line + 1,
+                character + 1
+            )
+        })?;
+    Ok(serde_json::json!({
+        "uri": octocode_engine::lsp::uri::path_to_uri(path).map_err(|error| error.to_string())?,
+        "name": declaration.name, "kind": declaration.kind,
+        "range": declaration.range, "selectionRange": declaration.selection_range
+    }))
+}
+
+pub(super) fn direct_bases(
+    document: &GraphFactsDocument,
+    content: &str,
+    path: &str,
+    node: &serde_json::Value,
+) -> Result<Vec<BaseType>, String> {
+    let declaration = document
+        .declarations
+        .iter()
+        .find(|declaration| {
+            serde_json::to_value(&declaration.selection_range)
+                .ok()
+                .as_ref()
+                == node.get("selectionRange")
+        })
+        .ok_or_else(|| format!("The type declaration changed in {path}"))?;
     let lines = content.lines().collect::<Vec<_>>();
-    let mut bases = document
+    document
         .edges
         .iter()
-        .filter(|edge| edge.from == declaration.id)
-        .filter(|edge| matches!(edge.relation.as_str(), "extends" | "implements"))
-        .filter_map(|edge| base_type(edge, &lines))
+        .filter(|edge| {
+            edge.from == declaration.id
+                && matches!(edge.relation.as_str(), "extends" | "implements")
+        })
+        .map(|edge| {
+            let line = edge
+                .line
+                .checked_sub(1)
+                .ok_or_else(|| "Invalid heritage line".to_owned())?;
+            let text = lines
+                .get(usize::try_from(line).map_err(|error| error.to_string())?)
+                .ok_or_else(|| "Heritage line unavailable".to_owned())?;
+            let start = if line == declaration.selection_range.end.line {
+                declaration.selection_range.end.character
+            } else {
+                0
+            };
+            let end = if line == declaration.range.end.line {
+                declaration.range.end.character
+            } else {
+                u32::MAX
+            };
+            let leaf = edge
+                .to
+                .rsplit(['.', ':'])
+                .next()
+                .filter(|leaf| !leaf.is_empty())
+                .ok_or_else(|| "Heritage name unavailable".to_owned())?;
+            let mut from = 0;
+            let mut positions = Vec::new();
+            while let Some(found) = text[from..].find(&edge.to) {
+                let offset = from + found;
+                let suffix = offset + edge.to.len();
+                let is_word = |ch: char| ch.is_alphanumeric() || ch == '_' || ch == '$';
+                let column = u32::try_from(text[..offset].encode_utf16().count())
+                    .map_err(|error| error.to_string())?;
+                if column >= start
+                    && column < end
+                    && !text[..offset].chars().next_back().is_some_and(is_word)
+                    && !text[suffix..].chars().next().is_some_and(is_word)
+                {
+                    let prefix = &edge.to[..edge.to.len() - leaf.len()];
+                    positions.push(
+                        column
+                            + u32::try_from(prefix.encode_utf16().count())
+                                .map_err(|error| error.to_string())?,
+                    );
+                }
+                from = suffix;
+            }
+            let [character] = positions.as_slice() else {
+                return Err(format!(
+                    "Cannot establish an exact heritage anchor for {} in {path}:{}",
+                    edge.to,
+                    line + 1
+                ));
+            };
+            Ok(BaseType {
+                name: edge.to.clone(),
+                relation: edge.relation.clone(),
+                line,
+                character: *character,
+            })
+        })
+        .collect()
+}
+
+pub(super) fn type_document(content: &str, path: &str) -> Result<GraphFactsDocument, String> {
+    let facts = octocode_engine::portable::extract_graph_facts(content, path)
+        .ok_or_else(|| format!("Type heritage parsing unavailable for {path}"))?;
+    let document: GraphFactsDocument = serde_json::from_str(&facts)
+        .map_err(|error| format!("Type heritage parsing failed for {path}: {error}"))?;
+    // Every tree-sitter document carries the static syntax-only caveat; it
+    // marks no gap. Any other diagnostic (recovered parse, deadline, Rust
+    // attributes) means declarations or heritage clauses may be missing.
+    let gaps = document
+        .diagnostics
+        .iter()
+        .filter(|note| GraphFactNoteKind::of(note) != Some(GraphFactNoteKind::SyntaxOnly))
+        .map(String::as_str)
         .collect::<Vec<_>>();
-    bases.sort_by_key(|base| (base.line, base.character));
-    bases.dedup();
-    bases
+    if !document.error_lines.is_empty()
+        || !gaps.is_empty()
+        || document.rust_root_unsupported == Some(true)
+    {
+        return Err(format!(
+            "Type heritage parse is incomplete for {path}: {}",
+            gaps.join("; ")
+        ));
+    }
+    Ok(document)
 }
 
 /// Whether the zero-based `line` holds the declaration of the type `name`:
@@ -94,61 +196,9 @@ pub(super) fn anchors_type_declaration(content: &str, file: &str, line: u32, nam
             && declaration.selection_range.start.line == line
             && matches!(
                 declaration.kind.as_str(),
-                "class" | "interface" | "struct" | "trait"
+                "class" | "interface" | "struct" | "trait" | "enum"
             )
     })
-}
-
-fn base_type(edge: &GraphFactEdge, lines: &[&str]) -> Option<BaseType> {
-    let line = edge.line.checked_sub(1)?;
-    let text = lines.get(usize::try_from(line).ok()?)?;
-    let leaf = edge
-        .to
-        .rsplit(['.', ':'])
-        .next()
-        .filter(|leaf| !leaf.is_empty())?;
-    let character = word_offset(text, leaf)?;
-    Some(BaseType {
-        name: edge.to.clone(),
-        relation: edge.relation.clone(),
-        line,
-        character,
-    })
-}
-
-/// UTF-16 column of the first whole-word `word` in `text`.
-fn word_offset(text: &str, word: &str) -> Option<u32> {
-    let is_word = |ch: char| ch.is_alphanumeric() || ch == '_' || ch == '$';
-    let mut from = 0;
-    while let Some(found) = text[from..].find(word) {
-        let start = from + found;
-        let end = start + word.len();
-        let before = text[..start].chars().next_back();
-        let after = text[end..].chars().next();
-        if !before.is_some_and(is_word) && !after.is_some_and(is_word) {
-            return u32::try_from(text[..start].encode_utf16().count()).ok();
-        }
-        from = end;
-    }
-    None
-}
-
-/// The caller-facing note: which clauses were read.
-pub(super) fn describe(bases: &[BaseType]) -> String {
-    let clauses = bases
-        .iter()
-        .map(|base| format!("{} {}", base.relation, base.name))
-        .collect::<Vec<_>>()
-        .join(", ");
-    format!(
-        "Supertypes are the definitions of the heritage clause ({clauses}) read from source: direct bases only."
-    )
-}
-
-/// The caller-facing note of a subtypes answer taken from
-/// `textDocument/implementation`.
-pub(super) fn describe_implementation() -> String {
-    "Subtypes are the server's textDocument/implementation answer: direct and transitive subtypes together, not marked.".to_owned()
 }
 
 /// Whether a failed `textDocument/implementation` request leaves the syntax
@@ -370,8 +420,34 @@ pub(super) fn describe_scan(
 mod tests {
     use super::*;
 
+    /// Callers hold canonical absolute paths; a node's URI needs one.
+    fn absolute(file: &str) -> String {
+        std::env::temp_dir()
+            .join(file)
+            .to_string_lossy()
+            .into_owned()
+    }
+
     fn bases(content: &str, file: &str, line: u32) -> Vec<(String, String, u32, u32)> {
-        base_types(content, file, line)
+        let file = &absolute(file);
+        let document = type_document(content, file).expect("graph facts");
+        let declaration = document
+            .declarations
+            .iter()
+            .filter(|declaration| {
+                declaration.range.start.line <= line
+                    && line <= declaration.range.end.line
+                    && matches!(
+                        declaration.kind.as_str(),
+                        "class" | "interface" | "struct" | "trait" | "enum"
+                    )
+            })
+            .min_by_key(|declaration| declaration.range.end.line - declaration.range.start.line)
+            .expect("type declaration");
+        let anchor = &declaration.selection_range.start;
+        let node = type_node(&document, file, anchor.line, anchor.character).expect("type node");
+        direct_bases(&document, content, file, &node)
+            .expect("direct heritage")
             .into_iter()
             .map(|b| (b.name, b.relation, b.line, b.character))
             .collect()
@@ -410,8 +486,52 @@ mod tests {
     }
 
     #[test]
+    fn a_recovered_parse_proves_no_heritage_but_the_syntax_only_caveat_does_not_block() {
+        let clean = type_document("class Child(Base):\n    pass\n", &absolute("a.py"))
+            .expect("a clean tree-sitter parse answers");
+        assert!(
+            clean
+                .diagnostics
+                .iter()
+                .any(|note| { GraphFactNoteKind::of(note) == Some(GraphFactNoteKind::SyntaxOnly) })
+        );
+        let broken = type_document("class Child(Base:\n    pass\n", &absolute("a.py"))
+            .expect_err("a recovered parse may miss a clause");
+        assert!(
+            broken.starts_with("Type heritage parse is incomplete"),
+            "{broken}"
+        );
+        assert!(!broken.contains("syntax-only"), "{broken}");
+    }
+
+    #[test]
     fn a_whole_word_match_skips_longer_identifiers() {
-        assert_eq!(word_offset("class XBase extends Base", "Base"), Some(20));
+        assert_eq!(
+            bases("class XBase extends Base {}", "a.ts", 0),
+            vec![("Base".into(), "extends".into(), 0, 20)]
+        );
+    }
+
+    #[test]
+    fn heritage_anchors_keep_same_line_declarations_and_utf16_columns_distinct() {
+        let content = "const emoji = \"😀\"; class A extends ns.Base {} class B extends Other {}";
+        let file = &absolute("a.ts");
+        let document = type_document(content, file).expect("graph facts");
+        for (name, base) in [("A", "ns.Base"), ("B", "Other")] {
+            let offset =
+                content.find(&format!("class {name}")).expect("declaration") + "class ".len();
+            let column = u32::try_from(content[..offset].encode_utf16().count()).expect("column");
+            let node = type_node(&document, file, 0, column).expect("exact declaration");
+            let bases = direct_bases(&document, content, file, &node).expect("direct heritage");
+            assert_eq!(bases.len(), 1);
+            assert_eq!(bases[0].name, base);
+            let leaf = base.rsplit('.').next().expect("leaf");
+            let offset = content.find(base).expect("base") + base.len() - leaf.len();
+            assert_eq!(
+                bases[0].character,
+                u32::try_from(content[..offset].encode_utf16().count()).expect("column")
+            );
+        }
     }
 
     #[test]
@@ -484,12 +604,12 @@ mod tests {
     /// each, and counts the rest.
     #[test]
     fn the_unread_warning_names_a_few_and_counts_the_rest() {
-        let unread = (1..=7).map(|n| format!("/r/f{n}.ts")).collect::<Vec<_>>();
+        let unread = (1..=7).map(|n| format!("src/f{n}.ts")).collect::<Vec<_>>();
         let warning = describe_unread(&unread);
         assert!(warning.contains("7 file(s)"), "{warning}");
-        assert!(warning.contains("/r/f5.ts and 2 more."), "{warning}");
-        assert!(!warning.contains("/r/f6.ts"), "{warning}");
-        assert!(describe_unread(&unread[..1]).ends_with("missing: /r/f1.ts."));
+        assert!(warning.contains("src/f5.ts and 2 more."), "{warning}");
+        assert!(!warning.contains("src/f6.ts"), "{warning}");
+        assert!(describe_unread(&unread[..1]).ends_with("missing: src/f1.ts."));
     }
 
     /// The scan names every file it could not read, so the gap in a
@@ -506,21 +626,8 @@ mod tests {
         assert_eq!(unread, vec![missing]);
     }
 
-    /// Every no-hierarchy path says which relatives it lists: the clause
-    /// reads are direct only, the implementation answer mixes both.
     #[test]
-    fn every_fallback_note_says_direct_or_transitive() {
-        let bases = vec![BaseType {
-            name: "Base".into(),
-            relation: "extends".into(),
-            line: 0,
-            character: 0,
-        }];
-        let note = describe(&bases);
-        assert_eq!(
-            note,
-            "Supertypes are the definitions of the heritage clause (extends Base) read from source: direct bases only."
-        );
+    fn a_syntax_fallback_note_discloses_direct_unverified_relations() {
         let failure = LspFailure::invalid_query("x");
         assert!(describe_scan(&failure, "Base", 3, "subtypes").contains("direct subtypes only"));
         let implementations = describe_scan(&failure, "Base", 3, "implementation");
@@ -528,11 +635,6 @@ mod tests {
             implementations.contains("direct implementations only")
                 && implementations.contains("run implementation on each"),
             "{implementations}"
-        );
-        let note = describe_implementation();
-        assert!(
-            note.contains("direct and transitive") && note.contains("not marked"),
-            "{note}"
         );
     }
 

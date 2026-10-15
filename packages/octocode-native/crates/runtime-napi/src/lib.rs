@@ -101,7 +101,7 @@ impl NativeRuntime {
     }
     #[napi(catch_unwind)]
     pub fn catalog(&self) -> napi::Result<Value> {
-        boundary(|| self.runtime.catalog().map_err(boundary_error))
+        boundary(|| Ok(self.runtime.catalog()))
     }
     #[napi(catch_unwind)]
     pub fn cancel(&self, request_id: String) -> napi::Result<bool> {

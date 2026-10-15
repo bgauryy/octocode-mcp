@@ -583,8 +583,8 @@ mod tests {
     /// for the settle window; a fresh write keeps the hash as the proof.
     #[test]
     fn a_source_stamp_settles_two_seconds_after_the_last_write() {
-        let root = std::env::temp_dir().join(format!("octocode-stamp-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
+        let fixture = tempfile::tempdir().expect("fixture");
+        let root = fixture.path().to_path_buf();
         fs::create_dir_all(&root).expect("create fixture");
         let file = root.join("a.ts");
         fs::write(&file, "export const a = 1;").expect("write fixture");
@@ -613,7 +613,6 @@ mod tests {
         .expect("scan graph facts");
         assert_eq!(result.entries.len(), 1);
         assert_eq!(result.entries[0].source_stamp, None);
-        fs::remove_dir_all(root).expect("cleanup fixture");
     }
 
     /// An unset `max_files` caps nothing but the time: a tree past the old
@@ -621,9 +620,8 @@ mod tests {
     /// chunk boundary and the resumes reach every file exactly once.
     #[test]
     fn an_unbounded_scan_resumes_exactly_once_past_its_time_budget() {
-        let root =
-            std::env::temp_dir().join(format!("octocode-graph-budget-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
+        let fixture = tempfile::tempdir().expect("fixture");
+        let root = fixture.path().to_path_buf();
         create_supported_files(&root, 1_300);
         let scan = |skip: u32, budget: Option<std::time::Duration>| {
             scan_with_budget(
@@ -663,16 +661,14 @@ mod tests {
         }
         assert_eq!(seen.len(), 1_300);
         assert!(calls > 1);
-        fs::remove_dir_all(root).expect("cleanup fixture");
     }
 
     /// A mapped scan keeps only what its map returns, so a scan over a huge
     /// tree holds the few rows the caller wants, not every file's facts.
     #[test]
     fn a_mapped_scan_keeps_only_what_the_map_returns() {
-        let root =
-            std::env::temp_dir().join(format!("octocode-graph-mapped-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
+        let fixture = tempfile::tempdir().expect("fixture");
+        let root = fixture.path().to_path_buf();
         create_supported_files(&root, 40);
         let scan = super::scan_graph_facts(
             GraphFactsScanOptions {
@@ -694,7 +690,6 @@ mod tests {
         assert_eq!(scan.parsed, 40, "every file is parsed and counted");
         assert_eq!(scan.kept, [("entry-7.ts".to_owned(), "value7".to_owned())]);
         assert!(!scan.truncated);
-        fs::remove_dir_all(root).expect("cleanup fixture");
     }
 
     /// The facts cache weighs estimated heap, not source bytes: facts of a
@@ -717,8 +712,8 @@ mod tests {
 
     #[test]
     fn scans_supported_files_and_counts_export_references() {
-        let root = std::env::temp_dir().join(format!("octocode-graph-scan-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
+        let fixture = tempfile::tempdir().expect("fixture");
+        let root = fixture.path().to_path_buf();
         fs::create_dir_all(root.join("src")).expect("create fixture");
         fs::write(
             root.join("src/entry.ts"),
@@ -751,14 +746,13 @@ mod tests {
         );
         assert_eq!(result.entries[0].reference_counts[0].count, 1);
         assert!(!result.truncated);
-        fs::remove_dir_all(root).expect("cleanup fixture");
     }
 
     #[cfg(feature = "tree-sitter-cpp")]
     #[test]
     fn path_scoped_cpp_header_override_changes_only_matching_headers() {
-        let root =
-            std::env::temp_dir().join(format!("octocode-header-globs-{}", std::process::id()));
+        let fixture = tempfile::tempdir().expect("fixture");
+        let root = fixture.path().to_path_buf();
         fs::create_dir_all(root.join("include")).expect("create include fixture");
         fs::create_dir_all(root.join("legacy")).expect("create legacy fixture");
         fs::write(
@@ -841,11 +835,8 @@ mod tests {
 
     #[test]
     fn reports_stable_read_and_extraction_failures() {
-        let root = std::env::temp_dir().join(format!(
-            "octocode-graph-scan-diagnostics-{}",
-            std::process::id()
-        ));
-        let _ = fs::remove_dir_all(&root);
+        let fixture = tempfile::tempdir().expect("fixture");
+        let root = fixture.path().to_path_buf();
         fs::create_dir_all(&root).expect("create fixture");
         fs::write(root.join("invalid.js"), [0xff, 0xfe]).expect("write invalid utf8 fixture");
         let extraction_size = crate::signatures::MAX_PARSE_SIZE + 1;
@@ -873,16 +864,12 @@ mod tests {
                 ("invalid.js", "graph.scan.readFailed"),
             ]
         );
-        fs::remove_dir_all(root).expect("cleanup fixture");
     }
 
     #[test]
     fn preserves_reference_counts_from_both_fact_producers() {
-        let root = std::env::temp_dir().join(format!(
-            "octocode-graph-scan-reference-metadata-{}",
-            std::process::id()
-        ));
-        let _ = fs::remove_dir_all(&root);
+        let fixture = tempfile::tempdir().expect("fixture");
+        let root = fixture.path().to_path_buf();
         fs::create_dir_all(&root).expect("create fixture");
         fs::write(
             root.join("main.ts"),
@@ -915,14 +902,12 @@ mod tests {
             // The declaration name token is not a reference; the value use is.
             [("lib.rs", "beta", 1), ("main.ts", "alpha", 1)]
         );
-        fs::remove_dir_all(root).expect("cleanup fixture");
     }
 
     #[test]
     fn typed_scan_preserves_structural_ids_ranges_edges_and_content_receipt() {
-        let root =
-            std::env::temp_dir().join(format!("octocode-graph-typed-scan-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
+        let fixture = tempfile::tempdir().expect("fixture");
+        let root = fixture.path().to_path_buf();
         fs::create_dir_all(&root).expect("create fixture");
         fs::write(
             root.join("lib.rs"),
@@ -953,14 +938,12 @@ mod tests {
                 .all(|decl| decl.range.end >= decl.range.start)
         );
         assert!(entry.facts.edges.iter().all(|edge| !edge.id.is_empty()));
-        fs::remove_dir_all(root).expect("cleanup fixture");
     }
 
     #[test]
     fn reports_truncation_only_when_graph_scan_exceeds_the_file_cap() {
-        let root =
-            std::env::temp_dir().join(format!("octocode-graph-scan-cap-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
+        let fixture = tempfile::tempdir().expect("fixture");
+        let root = fixture.path().to_path_buf();
         create_supported_files(&root, 3);
 
         let below_cap = scan_graph_facts(GraphFactsScanOptions {
@@ -992,17 +975,12 @@ mod tests {
         .expect("scan over cap");
         assert_eq!(over_cap.entries.len(), 2);
         assert!(over_cap.truncated);
-
-        fs::remove_dir_all(root).expect("cleanup fixture");
     }
 
     #[test]
     fn detects_graph_scan_overflow_across_directory_boundaries() {
-        let root = std::env::temp_dir().join(format!(
-            "octocode-graph-scan-nested-cap-{}",
-            std::process::id()
-        ));
-        let _ = fs::remove_dir_all(&root);
+        let fixture = tempfile::tempdir().expect("fixture");
+        let root = fixture.path().to_path_buf();
         // Each child ends exactly at the initial cap, whichever is visited first.
         create_supported_files(&root.join("left"), 1);
         create_supported_files(&root.join("right"), 1);
@@ -1035,16 +1013,12 @@ mod tests {
             !expanded.truncated,
             "an exactly full complete scan has no overflow"
         );
-        fs::remove_dir_all(root).expect("cleanup fixture");
     }
 
     #[test]
     fn ignored_files_do_not_make_an_exact_graph_cap_partial() {
-        let root = std::env::temp_dir().join(format!(
-            "octocode-graph-scan-filtered-cap-{}",
-            std::process::id()
-        ));
-        let _ = fs::remove_dir_all(&root);
+        let fixture = tempfile::tempdir().expect("fixture");
+        let root = fixture.path().to_path_buf();
         create_supported_files(&root, 1);
         fs::write(root.join("ignored.txt"), "not graph input").expect("write ignored file");
         fs::create_dir_all(root.join("ignored-directory")).expect("create ignored subtree");
@@ -1066,7 +1040,6 @@ mod tests {
             !result.truncated,
             "nonmatching entries are not graph overflow"
         );
-        fs::remove_dir_all(root).expect("cleanup fixture");
     }
 
     fn path_string(path: &Path) -> String {
@@ -1075,8 +1048,8 @@ mod tests {
 
     #[test]
     fn policy_denied_graph_files_do_not_consume_the_scan_budget() {
-        let root =
-            std::env::temp_dir().join(format!("octocode-graph-policy-{}", std::process::id()));
+        let fixture = tempfile::tempdir().expect("fixture");
+        let root = fixture.path().to_path_buf();
         fs::create_dir_all(root.join("private")).expect("fixture");
         fs::write(root.join("private/hidden.rs"), "pub fn hidden() {}").expect("hidden");
         fs::write(root.join("visible.rs"), "pub fn visible() {}").expect("visible");
@@ -1094,14 +1067,13 @@ mod tests {
         assert_eq!(result.entries.len(), 1);
         assert_eq!(result.files_skipped, 0);
         assert!(!result.truncated);
-        fs::remove_dir_all(root).expect("cleanup");
     }
 
     #[test]
     fn graph_read_enforces_limit_when_file_grows_after_discovery() {
         use std::sync::atomic::{AtomicUsize, Ordering};
-        let root =
-            std::env::temp_dir().join(format!("octocode-graph-growth-{}", std::process::id()));
+        let fixture = tempfile::tempdir().expect("fixture");
+        let root = fixture.path().to_path_buf();
         fs::create_dir_all(&root).expect("fixture");
         let file = root.join("growing.rs");
         fs::write(&file, "pub fn initial() {}").expect("initial");
@@ -1126,6 +1098,5 @@ mod tests {
         assert_eq!(scanned_paths(&result), ["growing.rs", "z.rs"]);
         assert_eq!(result.skipped[0].relative_path, "growing.rs");
         assert_eq!(result.skipped[0].code, "graph.scan.fileTooLarge");
-        fs::remove_dir_all(root).expect("cleanup");
     }
 }

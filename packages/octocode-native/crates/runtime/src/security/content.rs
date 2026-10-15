@@ -6,11 +6,6 @@ use serde_json::{Map, Value};
 use crate::policy::{PolicyError, PolicyErrorCode};
 
 const MAX_STRING_LENGTH: usize = 10_000;
-/// clasify `resources[].value` is evidence to judge, not a tool parameter; the
-/// 4 MiB request cap bounds it, so its subtree gets an evidence-sized limit
-/// (self-review drafts and supplied excerpts routinely exceed 10k chars).
-/// Secret redaction still applies to every leaf.
-const MAX_EVIDENCE_STRING_LENGTH: usize = 1_000_000;
 /// Contract `limits.maxInputArrayItems`.
 const MAX_ARRAY_LENGTH: usize = crate::tools::id::MAX_INPUT_ARRAY_ITEMS;
 const MAX_DEPTH: usize = 20;
@@ -584,6 +579,20 @@ impl ContentSecurity {
     }
 
     pub fn validate_input_parameters(&self, params: &Value) -> ValidationResult {
+        self.validate_parameters(params, None)
+    }
+
+    /// Allow the caller's declared serialized-state bound only for the root
+    /// state. Other fields keep their ordinary limits and every leaf is scanned.
+    pub(crate) fn validate_state_parameters(
+        &self,
+        params: &Value,
+        state_limit: usize,
+    ) -> ValidationResult {
+        self.validate_parameters(params, Some(state_limit))
+    }
+
+    fn validate_parameters(&self, params: &Value, state_limit: Option<usize>) -> ValidationResult {
         let Some(object) = params.as_object() else {
             return ValidationResult {
                 sanitized_params: Map::new(),
@@ -593,19 +602,30 @@ impl ContentSecurity {
                 secret_fields: Vec::new(),
             };
         };
-        self.validate_object(object, 0, MAX_STRING_LENGTH, false)
+        if let (Some(limit), Some(state)) = (state_limit, object.get("state"))
+            && state.to_string().chars().count() > limit
+        {
+            return ValidationResult {
+                sanitized_params: Map::new(),
+                is_valid: false,
+                has_secrets: false,
+                warnings: vec![format!(
+                    "Parameter state exceeds maximum serialized length ({limit} characters)"
+                )],
+                secret_fields: Vec::new(),
+            };
+        }
+        self.validate_object(object, 0, MAX_STRING_LENGTH, state_limit)
     }
 
-    /// `in_context` is true only for an item of a `resources` list
-    /// (clasify's `resources[]`); its `value` child is evidence and
-    /// gets the evidence-sized limit. A `value` key anywhere else keeps the
-    /// parameter limit.
+    /// A state allowance applies at the declared root only; its already bounded
+    /// subtree inherits it without granting it to unrelated nested `state` keys.
     fn validate_object(
         &self,
         object: &Map<String, Value>,
         depth: usize,
         limit: usize,
-        in_context: bool,
+        state_limit: Option<usize>,
     ) -> ValidationResult {
         if depth > MAX_DEPTH {
             return ValidationResult {
@@ -624,8 +644,21 @@ impl ContentSecurity {
             secret_fields: Vec::new(),
         };
         for (key, value) in object {
-            let limit = if in_context && key == "value" {
-                MAX_EVIDENCE_STRING_LENGTH
+            // Keys also become provider input and diagnostic field paths.
+            // Reject credentials here; renaming keys would change the data.
+            if self.sanitize_text(key, None).has_secrets {
+                out.warnings.push(
+                    "A parameter key contains a credential; remove it before retrying".into(),
+                );
+                out.is_valid = false;
+                out.has_secrets = true;
+                continue;
+            }
+            // Ordinary parameter limits count UTF-16 units. The complete state
+            // was bounded above in Unicode scalar values; allow both UTF-16
+            // units of an astral character without rejecting valid evidence.
+            let limit = if key == "state" {
+                state_limit.map_or(limit, |bound| bound.saturating_mul(2))
             } else {
                 limit
             };
@@ -668,7 +701,7 @@ impl ContentSecurity {
                     }
                 }
                 Value::Object(nested) => {
-                    let result = self.validate_object(nested, depth + 1, limit, false);
+                    let result = self.validate_object(nested, depth + 1, limit, None);
                     let nested = out.absorb(
                         result,
                         |field| format!("{key}.{field}"),
@@ -699,6 +732,12 @@ impl ContentSecurity {
         limit: usize,
         out: &mut ValidationResult,
     ) -> Option<Vec<Value>> {
+        if depth > MAX_DEPTH {
+            out.warnings
+                .push("Maximum nesting depth exceeded".to_owned());
+            out.is_valid = false;
+            return None;
+        }
         if values.len() > MAX_ARRAY_LENGTH {
             out.warnings.push(format!(
                 "Parameter {key} array exceeds maximum length (100 items)"
@@ -722,9 +761,7 @@ impl ContentSecurity {
                     array.push(Value::String(result.content));
                 }
                 Value::Object(nested) => {
-                    // A clasify resource's `value` is supplied
-                    // evidence, exempt from the parameter cap.
-                    let result = self.validate_object(nested, depth + 1, limit, key == "resources");
+                    let result = self.validate_object(nested, depth + 1, limit, None);
                     let nested = out.absorb(
                         result,
                         |field| format!("{key}[].{field}"),
@@ -736,11 +773,9 @@ impl ContentSecurity {
                 // leaving `{"x":[["ghp_…"]]}` unscanned. Recurse so
                 // string leaves at any array depth are sanitized.
                 Value::Array(inner) => {
-                    array.push(Value::Array(self.sanitize_nested_array(
-                        inner,
-                        depth + 1,
-                        &mut item_secrets,
-                    )));
+                    if let Some(nested) = self.validate_array(key, inner, depth + 1, limit, out) {
+                        array.push(Value::Array(nested));
+                    }
                 }
                 _ => array.push(item.clone()),
             }
@@ -750,40 +785,6 @@ impl ContentSecurity {
             out.secret_fields.push(format!("{key}[]"));
         }
         Some(array)
-    }
-
-    /// Recursively sanitize the string leaves of a (possibly deeply) nested
-    /// array so no credential survives at any array depth. Objects delegate to
-    /// [`validate_object`]; scalars are passed through unchanged. Depth is
-    /// bounded by `MAX_DEPTH` to match the object walk and cap recursion.
-    fn sanitize_nested_array(
-        &self,
-        values: &[Value],
-        depth: usize,
-        has_secrets: &mut bool,
-    ) -> Vec<Value> {
-        if depth > MAX_DEPTH {
-            return values.to_vec();
-        }
-        values
-            .iter()
-            .map(|item| match item {
-                Value::String(text) => {
-                    let result = self.sanitize_text(text, None);
-                    *has_secrets |= result.has_secrets;
-                    Value::String(result.content)
-                }
-                Value::Object(nested) => {
-                    let result = self.validate_object(nested, depth + 1, MAX_STRING_LENGTH, false);
-                    *has_secrets |= result.has_secrets;
-                    Value::Object(result.sanitized_params)
-                }
-                Value::Array(inner) => {
-                    Value::Array(self.sanitize_nested_array(inner, depth + 1, has_secrets))
-                }
-                _ => item.clone(),
-            })
-            .collect()
     }
 }
 
@@ -995,16 +996,76 @@ mod tests {
     }
 
     #[test]
-    fn clasify_evidence_values_may_exceed_the_parameter_length_cap() {
+    fn credential_keys_are_rejected_without_echoing_or_renaming_them() {
+        let token = format!("ghp_{}", "a".repeat(36));
+        let params = serde_json::json!({"state":[{"nested":{token.clone():"ordinary value"}}]});
+        let checked = ContentSecurity::new().validate_state_parameters(&params, 32_000);
+        assert!(!checked.is_valid);
+        assert!(checked.has_secrets);
+        assert!(!format!("{checked:?}").contains(&token));
+    }
+
+    #[test]
+    fn only_declared_state_inherits_the_current_evidence_limit() {
         let policy = ContentSecurity::new();
-        let long = "x".repeat(20_000);
-        let evidence = serde_json::json!({"resources":[{"value":{"draft":long}}]});
-        assert!(policy.validate_input_parameters(&evidence).is_valid);
-        let parameter = serde_json::json!({"matchString":"y".repeat(20_000)});
-        assert!(!policy.validate_input_parameters(&parameter).is_valid);
-        // A `value` key outside `resources[]` keeps the parameter cap.
-        let stray = serde_json::json!({"filter":{"value":"z".repeat(20_000)}});
-        assert!(!policy.validate_input_parameters(&stray).is_valid);
+        let evidence = serde_json::json!({"state":{"draft":"x".repeat(20_000)}});
+        assert!(policy.validate_state_parameters(&evidence, 32_000).is_valid);
+        assert!(!policy.validate_input_parameters(&evidence).is_valid);
+        for other in [
+            serde_json::json!({"matchString":"x".repeat(20_000)}),
+            serde_json::json!({"resources":[{"value":"x".repeat(20_000)}]}),
+            serde_json::json!({"filter":{"state":"x".repeat(20_000)}}),
+        ] {
+            assert!(!policy.validate_state_parameters(&other, 32_000).is_valid);
+        }
+    }
+
+    #[test]
+    fn state_limit_counts_complete_unicode_evidence_and_nested_arrays() {
+        let policy = ContentSecurity::new();
+        let unicode = serde_json::json!({"state":[[{"text":"😀".repeat(20_000)}]]});
+        assert!(policy.validate_state_parameters(&unicode, 32_000).is_valid);
+        let over = serde_json::json!({"state":["a".repeat(17_000),"b".repeat(17_000)]});
+        assert!(!policy.validate_state_parameters(&over, 32_000).is_valid);
+        let long = serde_json::json!({"state":"x".repeat(40_000)});
+        assert!(!policy.validate_state_parameters(&long, 32_000).is_valid);
+        assert!(policy.validate_state_parameters(&long, 256_000).is_valid);
+        let token = format!("ghp_{}", "a".repeat(37));
+        let value =
+            serde_json::json!({"state":[[{"text":format!("{} {token}","a".repeat(20_000))}]]});
+        let checked = policy.validate_state_parameters(&value, 32_000);
+        assert!(checked.is_valid && checked.has_secrets);
+        assert!(
+            !serde_json::to_string(&checked.sanitized_params)
+                .unwrap()
+                .contains(&token)
+        );
+    }
+
+    #[test]
+    fn nested_arrays_cannot_bypass_parameter_bounds() {
+        let policy = ContentSecurity::new();
+        assert!(
+            !policy
+                .validate_input_parameters(&serde_json::json!({"x":[["x".repeat(10_001)]]}))
+                .is_valid
+        );
+        assert!(
+            !policy
+                .validate_input_parameters(
+                    &serde_json::json!({"x":[[(0..101).collect::<Vec<_>>()]]})
+                )
+                .is_valid
+        );
+        let mut deep = serde_json::json!("safe");
+        for _ in 0..25 {
+            deep = serde_json::json!([deep]);
+        }
+        assert!(
+            !policy
+                .validate_input_parameters(&serde_json::json!({"x":deep}))
+                .is_valid
+        );
     }
 
     #[test]

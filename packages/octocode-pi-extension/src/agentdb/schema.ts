@@ -24,7 +24,8 @@ export const AGENT_APPLICATION_ID = 0x4f635067;
  * `why` and `plan`: free text) and its
  * notes (`kind`: the agent's text or the change log the store writes on every update), memories and the team tables
  * (`agents.cache_read`: prompt tokens read from cache; `agents.started`: the start time of the process `pid` names, so
- * heartbeats and liveness tell it from a later process that got the same pid).
+ * heartbeats and liveness tell it from a later process that got the same pid; `deliveries.proof`: the signature that
+ * lets a subagent verify a message the user typed, see `team/proof.ts`).
  */
 const SCHEMA = `
 CREATE TABLE sessions (
@@ -73,7 +74,7 @@ CREATE TABLE messages (
 CREATE INDEX messages_age ON messages(created_at);
 CREATE TABLE deliveries (
   message INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE, recipient TEXT NOT NULL,
-  delivered_at INTEGER, completed_at INTEGER, dead_at INTEGER, wake INTEGER, notified_at INTEGER, PRIMARY KEY(message, recipient));
+  delivered_at INTEGER, completed_at INTEGER, dead_at INTEGER, wake INTEGER, notified_at INTEGER, proof TEXT, PRIMARY KEY(message, recipient));
 CREATE INDEX deliveries_inbox ON deliveries(recipient, delivered_at);
 CREATE INDEX deliveries_unnotified ON deliveries(message) WHERE dead_at IS NOT NULL AND notified_at IS NULL;
 CREATE TABLE leases (

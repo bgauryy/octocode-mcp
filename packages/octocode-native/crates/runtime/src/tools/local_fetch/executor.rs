@@ -38,9 +38,7 @@ fn source_too_large(path: &str, len: u64, limit: SourceSizeLimit) -> LocalFetchR
     };
     let mut result = LocalFetchResult::error(path.to_owned(), "fileTooLarge", message);
     result.source_bytes = Some(len as usize);
-    result.is_partial = Some(true);
-    result.terminal_limit = Some(true);
-    result.partial_reasons = vec![PartialReason::FullContentSource];
+    result.terminal_limit(PartialReason::FullContentSource);
     result.hints = vec![hint.into()];
     result
 }
@@ -64,27 +62,20 @@ pub fn execute_local_fetch(
     regex: &impl RegexMatch,
     window: Option<usize>,
 ) -> LocalFetchResult {
-    execute_local_fetch_ranked(q, paths, security, cancel, regex, window, None)
+    execute_local_fetch_selected(q, paths, security, cancel, regex, window, None)
 }
 
-pub(crate) fn execute_local_fetch_ranked(
+pub(crate) fn execute_local_fetch_selected(
     q: &LocalFetchQuery,
     paths: &impl PathAccess,
     security: &impl ContentScan,
     cancel: &impl CancellationCheck,
     regex: &impl RegexMatch,
     window: Option<usize>,
-    ranking: Option<&crate::tools::ranking::Runtime>,
+    selection: Option<&crate::tools::selection::Runtime>,
 ) -> LocalFetchResult {
     if let Err(e) = cancel.check() {
         return LocalFetchResult::error(q.path.to_string(), "cancelled", e);
-    }
-    // A complete read is an unsupported first-view for ranking. Its own
-    // bounded continuation clears fullContent, while a caller must not replay
-    // an existing ranked line plan as a new complete read. `unit` is not
-    // bound here: an oversized line may legitimately continue in byte units.
-    if !q.goals.is_empty() && q.ranking.is_some() && q.full_content == Some(true) {
-        return stale_snapshot(q);
     }
     if let Some(refused) = context_without_match(q) {
         return refused;
@@ -115,7 +106,7 @@ pub(crate) fn execute_local_fetch_ranked(
         return refuse_binary(q, display_path);
     }
     if !in_memory {
-        return fetch_streamed(q, &validated, &meta, security, cancel, regex, ranking);
+        return fetch_streamed(q, &validated, &meta, security, cancel, regex, selection);
     }
     // Read at most the cap (+1 sentinel byte). Re-check the length in case the
     // file grew past the ceiling between the stat above and this read (TOCTOU).
@@ -128,7 +119,7 @@ pub(crate) fn execute_local_fetch_ranked(
             return LocalFetchResult::error(q.path.to_string(), "fileReadFailed", e.to_string());
         }
     };
-    let mut result = process_fetched_content_ranked(
+    let mut result = process_fetched_content_selected(
         q,
         &bytes,
         path,
@@ -141,7 +132,7 @@ pub(crate) fn execute_local_fetch_ranked(
         security,
         cancel,
         regex,
-        ranking,
+        selection,
     );
     bind_continuation_to_source(&mut result);
     name_read_file(&mut result, q, &validated.named);
@@ -226,8 +217,18 @@ fn fetch_streamed(
     security: &impl ContentScan,
     cancel: &impl CancellationCheck,
     regex: &impl RegexMatch,
-    ranking: Option<&crate::tools::ranking::Runtime>,
+    _selection: Option<&crate::tools::selection::Runtime>,
 ) -> LocalFetchResult {
+    if q.clasify_context.is_some() {
+        return unsupported_selection(
+            q,
+            "Context selection requires an in-memory raw source view; narrow the source or use the unfiltered read.",
+            None,
+        );
+    }
+    if q.selection.is_some() {
+        return stale_snapshot(q);
+    }
     let path = &file.canonical;
     let mut result = super::large_source::fetch_window(
         q,
@@ -238,65 +239,22 @@ fn fetch_streamed(
         cancel,
         regex,
     );
-    if result.status == "error" {
-        return result;
-    }
     result.path = q.path.to_string();
     name_read_file(&mut result, q, &file.named);
-    if q.goals.is_empty() {
-        return if q.ranking.is_some() {
-            stale_snapshot(q)
-        } else {
-            result
-        };
-    }
-    if q.snapshot.is_some() && q.ranking.is_none() {
-        return stale_snapshot(q);
-    }
-    let source = format!(
-        "{}:{}",
-        path.display(),
-        result.source_sha256.as_deref().unwrap_or("")
-    );
-    let mut query_json = serde_json::to_value(q).unwrap_or_default();
-    // Streamed range heads advance their `ranges` selector as
-    // part of pagination. The skipped plan is source-wide.
-    if let Some(query) = query_json.as_object_mut() {
-        query.remove("ranges");
-    }
-    let outcome = match crate::tools::ranking::order(
-        ranking,
-        &query_json,
-        &source,
-        q.ranking.as_ref().map(|s| s.as_str()),
-        &[],
-        Some("streamingSource"),
-    ) {
-        Ok(outcome) => outcome,
-        Err(failure) => return ranking_failure(q, failure),
-    };
-    if let Some(read) = result
-        .next
-        .as_mut()
-        .and_then(|next| next.continue_window.as_mut())
-    {
-        read.query.ranking = outcome.token.parse().ok();
-    }
-    result.ranking = Some(outcome.receipt);
     result
 }
 
-/// The row for a ranking that could not order the source.
-fn ranking_failure(
+/// The row for a selection that could not order the source.
+fn selection_failure(
     q: &LocalFetchQuery,
-    failure: crate::tools::ranking::Failure,
+    failure: crate::tools::selection::Failure,
 ) -> LocalFetchResult {
     match failure {
-        crate::tools::ranking::Failure::Stale => stale_snapshot(q),
-        crate::tools::ranking::Failure::Cancelled => LocalFetchResult::error(
+        crate::tools::selection::Failure::Stale => stale_snapshot(q),
+        crate::tools::selection::Failure::Cancelled => LocalFetchResult::error(
             q.path.to_string(),
             "cancelled",
-            "Ranking was cancelled".into(),
+            "Selection was cancelled".into(),
         ),
     }
 }
@@ -322,37 +280,6 @@ fn not_a_file(q: &LocalFetchQuery) -> LocalFetchResult {
         ..NextCalls::default()
     });
     result
-}
-
-/// A missing file's listing by its stem (the name without its
-/// extension) from `root` (see [`PathFailure::search_root`]): a moved file
-/// or a changed extension shows at any depth.
-fn missing_file_listing(q: &LocalFetchQuery, root: &str) -> Option<serde_json::Value> {
-    let name = Path::new(q.path.as_str()).file_name()?.to_string_lossy();
-    // `stem.*`: the same name under any extension (a file moved from `.rs`
-    // to `.ts` is still found), never every name merely containing the stem.
-    // A name without an extension is matched as written.
-    let include = match name.split_once('.') {
-        Some((stem, _)) if !stem.is_empty() => format!("{}.*", escape_glob(stem)),
-        _ => name.to_string(),
-    };
-    (!include.is_empty()).then(|| {
-        crate::tools::result::Continuation::new(
-            ToolId::StructureSearch,
-            serde_json::json!({"operation": "files", "path": root, "include": [include]}),
-        )
-        .build()
-    })
-}
-
-/// `text` as a glob that matches only itself.
-fn escape_glob(text: &str) -> String {
-    text.chars()
-        .flat_map(|c| match c {
-            '*' | '?' | '[' | ']' | '{' | '}' => vec!['[', c, ']'],
-            _ => vec![c],
-        })
-        .collect()
 }
 
 /// The row for a path the policy refused or could not resolve.
@@ -390,7 +317,7 @@ fn path_failure(q: &LocalFetchQuery, failure: PathFailure) -> LocalFetchResult {
         && let Some(listing) = failure
             .search_root
             .as_deref()
-            .and_then(|root| missing_file_listing(q, root))
+            .and_then(|root| crate::tools::leads::find_file::find_file(root, q.path.as_str()))
     {
         result.next = Some(NextCalls {
             find_file: Some(listing),
@@ -416,20 +343,21 @@ fn refuse_binary(q: &LocalFetchQuery, display_path: &str) -> LocalFetchResult {
     result
 }
 
-/// Bind the next page of a local view to the file version it was cut from, so
-/// a replay against a changed file is rejected instead of mixing versions.
+/// Bind both selected pages and unfiltered recovery to the captured file
+/// version, so neither can silently read a different source.
 /// (Remote reads pin a commit SHA in their continuation instead.)
 fn bind_continuation_to_source(result: &mut LocalFetchResult) {
     let snapshot = result
         .source_sha256
         .as_deref()
         .and_then(|digest| digest.parse().ok());
-    if let Some(next) = result
-        .next
-        .as_mut()
-        .and_then(|next| next.continue_window.as_mut())
-    {
-        next.query.snapshot = snapshot;
+    if let Some(next) = result.next.as_mut() {
+        for read in [&mut next.continue_window, &mut next.unfiltered]
+            .into_iter()
+            .flatten()
+        {
+            read.query.snapshot = snapshot.clone();
+        }
     }
 }
 
@@ -448,7 +376,7 @@ pub fn process_fetched_content(
         || ".".to_owned(),
         |name| name.to_string_lossy().into_owned(),
     );
-    process_fetched_content_ranked(
+    process_fetched_content_selected(
         q,
         bytes,
         source_path,
@@ -461,7 +389,7 @@ pub fn process_fetched_content(
     )
 }
 
-pub(crate) fn process_fetched_content_ranked(
+pub(crate) fn process_fetched_content_selected(
     q: &LocalFetchQuery,
     bytes: &[u8],
     source_path: &std::path::Path,
@@ -470,7 +398,7 @@ pub(crate) fn process_fetched_content_ranked(
     security: &impl ContentScan,
     cancel: &impl CancellationCheck,
     regex: &impl RegexMatch,
-    ranking: Option<&crate::tools::ranking::Runtime>,
+    selection: Option<&crate::tools::selection::Runtime>,
 ) -> LocalFetchResult {
     if let Some(refused) = context_without_match(q) {
         return refused;
@@ -483,21 +411,22 @@ pub(crate) fn process_fetched_content_ranked(
         Ok(extraction) => extraction,
         Err(error) => return extraction_error(q, error),
     };
-    let rank = RankInput {
+    let selection_input = SelectionInput {
         q,
         source_path,
         provider_path,
         sha256: &source.sha256,
-        runtime: ranking,
+        runtime: selection,
     };
     if ext.count == Some(0) {
-        return rank_no_match(&rank, no_match(q, &source, regex));
+        return select_no_match(&selection_input, no_match(q, &source, regex));
     }
     let mut view = select_view(q, &mut ext);
-    let rank_outcome = match rank_view(&rank, &mut view, &mut ext, security) {
-        Ok(outcome) => outcome,
-        Err(result) => return *result,
-    };
+    let selection_outcome =
+        match select_view_chunks(&selection_input, &mut view, &mut ext, security) {
+            Ok(outcome) => outcome,
+            Err(result) => return *result,
+        };
     if let Err(e) = cancel.check() {
         return LocalFetchResult::error(q.path.to_string(), "cancelled", e);
     }
@@ -508,7 +437,15 @@ pub(crate) fn process_fetched_content_ranked(
     if let Err(e) = cancel.check() {
         return LocalFetchResult::error(cut.q.path.to_string(), "cancelled", e);
     }
-    page_result(cut, source, ext, view, rank_outcome, source_path, facts)
+    page_result(
+        cut,
+        source,
+        ext,
+        view,
+        selection_outcome,
+        source_path,
+        facts,
+    )
 }
 
 /// `contextLines` widens matchString hits; a read without matchString has
@@ -525,109 +462,109 @@ fn context_without_match(q: &LocalFetchQuery) -> Option<LocalFetchResult> {
     let mut query = q.clone();
     query.context_lines = None;
     result.next = Some(NextCalls {
-        repair: Some(Continuation { query }),
+        repair: Some(FetchCall { query }),
         ..NextCalls::default()
     });
     Some(result)
 }
 
-/// What a goal ranking of one source reads.
-struct RankInput<'a> {
+/// Source and runtime needed to select evidence before paging.
+struct SelectionInput<'a> {
     q: &'a LocalFetchQuery,
     source_path: &'a std::path::Path,
     provider_path: &'a str,
     sha256: &'a str,
-    runtime: Option<&'a crate::tools::ranking::Runtime>,
+    runtime: Option<&'a crate::tools::selection::Runtime>,
 }
 
-impl RankInput<'_> {
-    /// The ranking's source key: the path and the digest of its bytes.
+impl SelectionInput<'_> {
+    /// The selection's source key: the path and the digest of its bytes.
     fn source_key(&self) -> String {
-        format!("{}:{}", self.source_path.display(), self.sha256)
+        format!(
+            "fetch-chunks-v2:{}:{}",
+            self.source_path.display(),
+            self.sha256
+        )
     }
 }
 
-/// A read that selected nothing carries the ranking receipt of its goals; a
+/// A read that selected nothing carries the selection receipt of its goals; a
 /// ranked replay without goals is stale.
-fn rank_no_match(rank: &RankInput, mut result: LocalFetchResult) -> LocalFetchResult {
-    let q = rank.q;
-    if q.goals.is_empty() {
-        return if q.ranking.is_some() {
+fn select_no_match(input: &SelectionInput, mut result: LocalFetchResult) -> LocalFetchResult {
+    let q = input.q;
+    if q.clasify_context.is_none() {
+        return if q.selection.is_some() {
             stale_snapshot(q)
         } else {
             result
         };
     }
     let query_json = serde_json::to_value(q).unwrap_or_default();
-    match crate::tools::ranking::order(
-        rank.runtime,
+    match crate::tools::selection::select(
+        input.runtime,
         &query_json,
-        &rank.source_key(),
-        q.ranking.as_ref().map(|token| token.as_str()),
+        &input.source_key(),
+        q.selection.as_ref().map(|token| token.as_str()),
         &[],
         None,
+        crate::contracts::tool_types::SelectionUnit::Chunks,
     ) {
-        Ok(outcome) => result.ranking = Some(outcome.receipt),
-        Err(failure) => return ranking_failure(q, failure),
+        Ok(outcome) => result.selection = Some(outcome.receipt),
+        Err(failure) => return selection_failure(q, failure),
     }
     result
 }
 
-/// Order the view's chunks by the read's goals. A read without goals, or a
-/// paged read without its ranking token, is not ranked here.
-fn rank_view(
-    rank: &RankInput,
+/// Select complete source windows before response paging.
+fn select_view_chunks(
+    input: &SelectionInput,
     view: &mut View,
     ext: &mut super::extraction::Extraction,
     security: &impl ContentScan,
-) -> Result<Option<crate::tools::ranking::Outcome>, Box<LocalFetchResult>> {
-    let q = rank.q;
-    if q.goals.is_empty() {
-        if q.ranking.is_some() {
+) -> Result<Option<crate::tools::selection::Outcome>, Box<LocalFetchResult>> {
+    let q = input.q;
+    if q.clasify_context.is_none() {
+        if q.selection.is_some() {
             return Err(Box::new(stale_snapshot(q)));
         }
         return Ok(None);
     }
-    if q.offset().is_some_and(|offset| offset > 0) && q.ranking.is_none() {
+    if q.offset().is_some_and(|offset| offset > 0) && q.selection.is_none() {
         return Err(Box::new(stale_snapshot(q)));
     }
-    let unsupported = if view.mode != MinifyMode::None
-        || q.full_content == Some(true)
-        || q.unit == Some(WindowUnit::Bytes)
+    if view.mode != MinifyMode::None || (q.unit == Some(WindowUnit::Bytes) && q.selection.is_none())
     {
-        Some("unsupportedView")
-    } else {
-        None
-    };
-    let (candidates, chunks) = super::ranking::chunks(
+        return Err(Box::new(unsupported_selection(
+            q,
+            "clasifyContext requires raw text in line units; omit minify/unit or use minify:none and unit:lines.",
+            Some(input.sha256),
+        )));
+    }
+    let unsupported = None;
+    let (candidates, chunks) = super::selection::chunks(
         &view.text,
         ext.source_lines.as_deref(),
-        rank.source_path,
-        rank.provider_path,
+        input.source_path,
+        input.provider_path,
         security,
-        rank.runtime,
-        q.ranking.as_ref().map(|token| token.as_str()),
+        input.runtime,
+        q.selection.as_ref().map(|token| token.as_str()),
         unsupported,
     );
     let query_json = serde_json::to_value(q).unwrap_or_default();
-    let outcome = crate::tools::ranking::order(
-        rank.runtime,
+    let outcome = crate::tools::selection::select(
+        input.runtime,
         &query_json,
-        &rank.source_key(),
-        q.ranking.as_ref().map(|s| s.as_str()),
+        &input.source_key(),
+        q.selection.as_ref().map(|s| s.as_str()),
         &candidates,
         unsupported,
+        crate::contracts::tool_types::SelectionUnit::Chunks,
     )
-    .map_err(|failure| Box::new(ranking_failure(q, failure)))?;
-    if matches!(
-        outcome.receipt.status,
-        crate::contracts::tool_types::RankingStatus::Ranked
-            | crate::contracts::tool_types::RankingStatus::Partial
-    ) {
-        let (text, source_lines) = super::ranking::reorder(&view.text, &chunks, &outcome.order);
-        view.text = text;
-        ext.source_lines = Some(source_lines);
-    }
+    .map_err(|failure| Box::new(selection_failure(q, failure)))?;
+    let (text, source_lines) = super::selection::project(&view.text, &chunks, &outcome.selected);
+    view.text = text;
+    ext.source_lines = Some(source_lines);
     Ok(Some(outcome))
 }
 
@@ -662,28 +599,33 @@ fn cut_page<'a>(
     let head_view = head_query(&q, view.mode, view.text.len());
     let head = head_view.is_some();
     let page_q = head_view.as_ref().unwrap_or(&q);
-    // A selected view's first page may be held to the caller's preview
-    // budget; its continuations page at the line page budget.
+    // A configured response window owns the page budget. Keep the smaller
+    // fallback for direct callers without one and any explicit preview.
     let line_page_bytes = facts
         .first_page_bytes
         .filter(|_| (q.match_string.is_some() || q.has_ranges()) && q.offset().is_none())
-        .unwrap_or(super::pagination::LINE_PAGE_BYTES);
+        .unwrap_or_else(|| {
+            facts
+                .window
+                .map_or(super::pagination::LINE_PAGE_BYTES, |window| {
+                    crate::tools::page_windows::page_budget(
+                        Some(window),
+                        &crate::tools::result::query_row(q.as_ref(), &[]),
+                    )
+                })
+        });
     // A transformed whole-file view pages in raw source lines (the unit of
     // `totalLines`, the gutter and `ranges`); an outline pages its own lines.
     let source_lines = (view.mode == MinifyMode::Standard && ext.source_lines.is_none())
         .then(|| SourceLines::of_gutter(&view.text, source.total_lines))
         .flatten();
-    let scanned = scan_page(
-        &q,
-        page_q,
-        &view.text,
+    let window = PageWindow {
+        query: page_q,
+        view: &view.text,
         line_page_bytes,
-        source_path,
-        security,
-        source,
-        ext.start,
-        source_lines.as_ref(),
-    )?;
+        source_lines: source_lines.as_ref(),
+    };
+    let scanned = scan_page(&q, &window, source_path, security, source, ext.start)?;
     Ok(CutPage {
         q,
         view_limited,
@@ -699,7 +641,7 @@ fn page_result(
     mut source: Source,
     mut ext: super::extraction::Extraction,
     view: View,
-    rank_outcome: Option<crate::tools::ranking::Outcome>,
+    selection_outcome: Option<crate::tools::selection::Outcome>,
     source_path: &std::path::Path,
     facts: &SourceFacts,
 ) -> LocalFetchResult {
@@ -725,9 +667,17 @@ fn page_result(
     warn_redacted(&pg.text, scanned.redacted, &source, &mut warnings);
     warn_unmatchable(q, &source, &ext.matched_lines, &mut warnings);
     let out_of_range = pg.out_of_range;
-    let token = rank_outcome.as_ref().map(|outcome| outcome.token.as_str());
-    let next = continue_calls(q, &pg, head, token, &mut ext, &mut warnings);
-    read_scope_warnings(q, &pg, head, source.total_lines, &mut warnings);
+    let token = selection_outcome
+        .as_ref()
+        .map(|outcome| outcome.token.as_str());
+    let mut next = continue_calls(q, &pg, head, token, &mut ext, &mut warnings);
+    if selection_outcome
+        .as_ref()
+        .is_some_and(|selected| selected.receipt.selected_items < selected.receipt.total_items)
+    {
+        next.get_or_insert_with(NextCalls::default).unfiltered = Some(unfiltered_read(q));
+    }
+    read_scope_warnings(q, &pg, &mut warnings);
     // Redaction (source-wide for matchString, or on the page) replaces text
     // within lines; the anchors stay and the warning above says the text is
     // not verbatim.
@@ -785,12 +735,35 @@ fn page_result(
         .collect(),
         out_of_range,
         next,
-        ranking: rank_outcome.map(|outcome| outcome.receipt),
+        selection: selection_outcome.map(|outcome| outcome.receipt),
         ..LocalFetchResult::blank("success")
     }
 }
 
-/// The page's continuations: its next page bound to the ranking token, plus
+fn unfiltered_read(q: &LocalFetchQuery) -> FetchCall {
+    let mut query = q.clone();
+    query.clasify_context = None;
+    query.selection = None;
+    query.offset = None;
+    query.length = None;
+    FetchCall { query }
+}
+
+fn unsupported_selection(
+    q: &LocalFetchQuery,
+    message: &str,
+    digest: Option<&str>,
+) -> LocalFetchResult {
+    let mut result = LocalFetchResult::error(q.path.to_string(), "invalidInput", message.into());
+    result.source_sha256 = digest.map(str::to_owned);
+    result.next = Some(NextCalls {
+        unfiltered: Some(unfiltered_read(q)),
+        ..NextCalls::default()
+    });
+    result
+}
+
+/// The page's continuations: its next page bound to the selection token, plus
 /// follow-ups to data the extraction selected but did not return.
 fn continue_calls(
     q: &LocalFetchQuery,
@@ -804,7 +777,7 @@ fn continue_calls(
     if let Some(token) = token
         && let Some(read) = next.as_mut().and_then(|next| next.continue_window.as_mut())
     {
-        read.query.ranking = token.parse().ok();
+        read.query.selection = token.parse().ok();
     }
     let follow_ups = std::mem::take(&mut ext.next);
     if !pg.out_of_range && !follow_ups.is_empty() {
@@ -936,7 +909,7 @@ fn no_match(q: &LocalFetchQuery, source: &Source, regex: &impl RegexMatch) -> Lo
         ));
         let mut query = q.clone();
         query.case_mode = Some(ReadCaseMode::Insensitive);
-        Continuation { query }
+        FetchCall { query }
     });
     // A `ranges` read that missed while this file has hits outside its
     // ranges: the same read without them selects those lines.
@@ -961,7 +934,7 @@ fn no_match(q: &LocalFetchQuery, source: &Source, regex: &impl RegexMatch) -> Lo
                 "lines match"
             }
         ));
-        Continuation { query }
+        FetchCall { query }
     });
     // The text may live in another file of this directory: one localSearch
     // there finds it (not offered when redactions hide the text, or when
@@ -1114,22 +1087,35 @@ struct ScannedPage {
     warnings: Vec<String>,
 }
 
+/// How a page is cut from a view: the page's query, the view text, the
+/// bytes one line page may hold, and the raw source lines a transformed
+/// view pages in (see [`page_within`]).
+#[derive(Clone, Copy)]
+struct PageWindow<'a> {
+    query: &'a LocalFetchQuery,
+    view: &'a str,
+    line_page_bytes: usize,
+    source_lines: Option<&'a SourceLines>,
+}
+
 /// Cut the page and scan it for secrets. A line or byte page is scanned on
 /// its own window (see `sanitize_line_page` / `sanitize_byte_page`); a
 /// complete view, or a window whose scan fails, takes the whole-view scan,
 /// which owns the typed security-limit recovery.
-#[allow(clippy::too_many_arguments)]
 fn scan_page(
     q: &LocalFetchQuery,
-    page_q: &LocalFetchQuery,
-    selected: &str,
-    line_page_bytes: usize,
+    cut: &PageWindow<'_>,
     source_path: &std::path::Path,
     security: &impl ContentScan,
     source: &Source,
     first_line: Option<usize>,
-    source_lines: Option<&SourceLines>,
 ) -> Result<ScannedPage, Box<LocalFetchResult>> {
+    let PageWindow {
+        query: page_q,
+        view: selected,
+        line_page_bytes,
+        source_lines,
+    } = *cut;
     let pagination_error = |e| {
         Box::new(LocalFetchResult::error(
             q.path.to_string(),
@@ -1206,13 +1192,11 @@ fn security_limit(
     result.total_lines = Some(source.total_lines);
     result.source_chars = Some(source.chars);
     result.source_bytes = Some(source.bytes);
-    result.is_partial = Some(true);
-    result.terminal_limit = Some(true);
-    result.partial_reasons = vec![PartialReason::SecuritySelectedView];
+    result.terminal_limit(PartialReason::SecuritySelectedView);
     if source.total_lines > 1 && (q.start_line().is_none() || q.start_line() != q.end_line()) {
         let line = first_line.or(q.start_line()).unwrap_or(1);
         result.next = Some(NextCalls {
-            read_bounded_lines: Some(Continuation {
+            read_bounded_lines: Some(FetchCall {
                 query: single_line_query(q, line),
             }),
             ..NextCalls::default()
@@ -1306,32 +1290,22 @@ fn page_next(
     let mut query = q.clone();
     query.offset = Some(0);
     Some(NextCalls {
-        restart: Some(Continuation { query }),
+        restart: Some(FetchCall { query }),
         ..NextCalls::default()
     })
 }
 
-/// Notes for a read with no anchor: a large file's head, and a reversed
-/// range. Rows with content keep no prose hint, so these are warnings.
+/// Notes for a read's scope: a reversed range and a long-line byte walk.
+/// A large file's head needs none: the description states the head size and
+/// the row carries `totalLines` and `continueWindow`.
 fn read_scope_warnings(
     q: &LocalFetchQuery,
     pg: &super::pagination::Page,
-    head: bool,
-    total_lines: usize,
     warnings: &mut Vec<String>,
 ) {
     warnings.extend(reversed_range_warnings(q));
     if let Some(pages) = long_line_pages(q, pg) {
         warnings.push(long_line_warning(pages));
-    } else if head && pg.pagination.has_more {
-        // A line page states its source span; a byte fallback its view lines.
-        let shown = match pg.pagination.unit {
-            WindowUnit::Lines => pg.pagination.offset + pg.pagination.length,
-            WindowUnit::Bytes => pg.view_lines.1,
-        };
-        warnings.push(format!(
-            "Large file ({total_lines} lines) read without an anchor: returned its first {shown} lines."
-        ));
     }
 }
 
@@ -1389,12 +1363,13 @@ fn page_source_ranges(
             end: view_lines.1,
         }];
     };
-    let page_lines: Vec<usize> = lines
+    let mut page_lines: Vec<usize> = lines
         [view_lines.0.saturating_sub(1)..view_lines.1.min(lines.len())]
         .iter()
         .copied()
         .filter(|line| *line != super::extraction::OMISSION_LINE)
         .collect();
+    page_lines.dedup();
     compress_ranges(&page_lines)
 }
 
@@ -1461,24 +1436,16 @@ fn single_line_query(q: &LocalFetchQuery, line: usize) -> LocalFetchQuery {
 }
 
 /// The continued source changed since its page was cut. Pages of two file
-/// versions must not be combined; restart the same view from the start.
-fn stale_snapshot(q: &LocalFetchQuery) -> LocalFetchResult {
-    let mut result = LocalFetchResult::error(
+/// versions must not be combined. The row names no restart of its own: the
+/// runtime's one restart owner (`response::pages::restart_stale`, through
+/// [`crate::tools::result::restart_query`]) adds the caller's whole query
+/// without its cursors, so a streamed range read restarts every range.
+pub(super) fn stale_snapshot(q: &LocalFetchQuery) -> LocalFetchResult {
+    LocalFetchResult::error(
         q.path.to_string(),
         "staleSnapshot",
         crate::response::pages::STALE_SNAPSHOT_ERROR.into(),
-    );
-    let mut query = q.clone();
-    query.snapshot = None;
-    query.ranking = None;
-    query.offset = None;
-    result.next = Some(NextCalls {
-        continue_window: None,
-        read_bounded_lines: None,
-        restart: Some(Continuation { query }),
-        ..NextCalls::default()
-    });
-    result
+    )
 }
 
 /// The first bounded line page of the same view as a complete read.
@@ -1559,8 +1526,8 @@ mod source_size_tests {
     use std::fs;
 
     use super::super::tests::{Paths, q};
-    use crate::tools::test_support::Fixture;
     use crate::security::scan::Passthrough;
+    use crate::tools::test_support::Fixture;
 
     /// Read `req` under `dir` with a passthrough scan.
     fn fetch(req: &LocalFetchQuery, paths: &Paths) -> LocalFetchResult {
@@ -2027,6 +1994,186 @@ mod line_page_scan_tests {
             .collect()
     }
 
+    #[test]
+    fn fetch_partition_binding_rejects_same_count_legacy_replay() {
+        use crate::contracts::tool_types::SelectionUnit;
+        use crate::tools::selection::{
+            Candidate, Decision, JudgeCall, Limits, Runtime, SelectionJudge,
+        };
+        use serde_json::json;
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
+        use std::time::{Duration, Instant};
+
+        struct FirstCandidate(Arc<AtomicUsize>);
+        impl SelectionJudge for FirstCandidate {
+            fn identity(&self) -> serde_json::Value {
+                json!({"test":"fetch-partition"})
+            }
+            fn select(&self, call: JudgeCall<'_>) -> Result<Vec<(usize, Decision)>, String> {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Ok(call
+                    .admitted
+                    .iter()
+                    .map(|&ordinal| {
+                        (
+                            ordinal,
+                            if ordinal == 0 {
+                                Decision::Selected
+                            } else {
+                                Decision::Excluded
+                            },
+                        )
+                    })
+                    .collect())
+            }
+        }
+
+        let executor = tokio::runtime::Runtime::new().expect("runtime");
+        let calls = Arc::new(AtomicUsize::new(0));
+        let runtime = Runtime {
+            limits: Limits {
+                max_candidates: 64,
+                max_chars: 20_000,
+                timeout: Duration::from_secs(5),
+            },
+            available: true,
+            judge: Arc::new(FirstCandidate(calls.clone())),
+            handle: executor.handle().clone(),
+            context: crate::runtime::ExecutionContext {
+                cancellation: tokio_util::sync::CancellationToken::new(),
+                deadline: Instant::now() + Duration::from_secs(5),
+                walk_threads: None,
+                response_window: None,
+                github_credential: None,
+            },
+        };
+        let first = format!("{}\n", "a".repeat(999));
+        let second = format!("{}\n", "b".repeat(999));
+        let third = format!("{}\n", "c".repeat(2_047));
+        let source = (1..=20)
+            .map(|line| match line {
+                1 => first.as_str(),
+                10 => second.as_str(),
+                20 => third.as_str(),
+                _ => "gap\n",
+            })
+            .collect::<String>();
+        let query: LocalFetchQuery = serde_json::from_value(json!({
+            "path":"/fixture/source.txt", "ranges":["1-1","10-10","20-20"],
+            "minify":"none", "clasifyContext":{"classifiers":["Find the first evidence"]}
+        }))
+        .expect("query");
+        let path = Path::new("/fixture/source.txt");
+        let sha256 = crate::digest::sha256(source.as_bytes());
+        let input = SelectionInput {
+            q: &query,
+            source_path: path,
+            provider_path: "/fixture/source.txt",
+            sha256: &sha256,
+            runtime: Some(&runtime),
+        };
+        let extracted = extract(&query, &source, &LocalFetchRegex)
+            .unwrap_or_else(|_| panic!("source extraction"));
+        let (current, _) = super::super::selection::chunks(
+            &extracted.text,
+            extracted.source_lines.as_deref(),
+            path,
+            input.provider_path,
+            &security(),
+            Some(&runtime),
+            None,
+            None,
+        );
+        let legacy = [
+            Candidate::new(Some(
+                json!({"content":format!("{first}{}{second}", super::super::extraction::omission_marker(2, 9))}),
+            )),
+            Candidate::new(Some(
+                json!({"content":super::super::extraction::omission_marker(11, 19)}),
+            )),
+            Candidate::new(Some(json!({"content":third}))),
+        ];
+        assert_eq!(current.len(), legacy.len());
+        assert_eq!(current[0].state.as_ref().unwrap()["content"], first);
+        assert!(
+            legacy[0].state.as_ref().unwrap()["content"]
+                .as_str()
+                .unwrap()
+                .contains(&second)
+        );
+        let query_json = serde_json::to_value(&query).expect("query JSON");
+        let select = |source: &str, prior: Option<&str>, candidates: &[Candidate]| {
+            crate::tools::selection::select(
+                Some(&runtime),
+                &query_json,
+                source,
+                prior,
+                candidates,
+                None,
+                SelectionUnit::Chunks,
+            )
+        };
+        let old = select(&format!("{}:{sha256}", path.display()), None, &legacy)
+            .unwrap_or_else(|_| panic!("legacy plan"));
+        let replay = (0..current.len())
+            .map(|_| Candidate::new(None))
+            .collect::<Vec<_>>();
+        assert!(matches!(
+            select(&input.source_key(), Some(&old.token), &replay),
+            Err(crate::tools::selection::Failure::Stale)
+        ));
+        let fresh =
+            select(&input.source_key(), None, &current).unwrap_or_else(|_| panic!("fresh plan"));
+        let resumed = select(&input.source_key(), Some(&fresh.token), &replay)
+            .unwrap_or_else(|_| panic!("fresh replay"));
+        assert_eq!(resumed.selected, [0]);
+        assert_eq!(resumed.token, fresh.token);
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn selected_reads_fill_the_configured_window_and_keep_explicit_lengths() {
+        let source = filler(1_200);
+        let mut query = LocalFetchQuery {
+            path: "/fixture/app.ts".parse().expect("path"),
+            ranges: vec!["1-1200".parse().expect("range")],
+            ..LocalFetchQuery::test_default()
+        };
+        let read = |query: &LocalFetchQuery| {
+            process_fetched_content(
+                query,
+                source.as_bytes(),
+                Path::new("/fixture/app.ts"),
+                &SourceFacts {
+                    window: Some(50_000),
+                    ..SourceFacts::default()
+                },
+                &security(),
+                &NeverCancel,
+                &LocalFetchRegex,
+            )
+        };
+        let complete = read(&query);
+        assert_eq!(complete.status, "success");
+        assert!(
+            complete
+                .content
+                .as_deref()
+                .expect("content")
+                .contains("filler_1200")
+        );
+        assert!(!complete.pagination.as_ref().expect("pagination").has_more);
+
+        query.unit = Some(WindowUnit::Lines);
+        query.length = wire_positive(17);
+        let explicit = read(&query);
+        assert_eq!(explicit.pagination.as_ref().expect("pagination").length, 17);
+        assert!(explicit.pagination.as_ref().expect("pagination").has_more);
+    }
+
     /// A read with no anchor whose view would not fit one page returns a
     /// short head instead of the page: the read is not targeted yet. Paging
     /// on, whole-file reads and anchored reads are unchanged; a file that
@@ -2042,10 +2189,9 @@ mod line_page_scan_tests {
         };
         let head = fetch(&source, &plain);
         assert_eq!(head.returned_lines, Some(HEAD_LINES), "{head:?}");
-        assert_eq!(
-            head.warnings,
-            vec!["Large file (1000 lines) read without an anchor: returned its first 50 lines."]
-        );
+        // The head's facts are data (totalLines, continueWindow), not a note.
+        assert!(head.warnings.is_empty(), "{:?}", head.warnings);
+        assert_eq!(head.total_lines, Some(1_000), "{head:?}");
         let next = head
             .next
             .and_then(|next| next.continue_window)

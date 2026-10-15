@@ -10,7 +10,8 @@ const launch = vi.hoisted(() => vi.fn());
 vi.mock('chrome-launcher', () => ({ launch }));
 
 const { startFilteringProxy } = await import('../src/browser/proxy.js');
-const { launchChrome, proxyFlags } = await import('../src/browser/launch.js');
+const { keyOf } = await import('../src/browser/network.js');
+const { launchChrome, proxyFlags, restrictWebRtc } = await import('../src/browser/launch.js');
 
 const PUBLIC_IP = '93.184.216.34';
 const PRIVATE_IP = '10.1.2.3';
@@ -99,9 +100,11 @@ async function getVia(proxy: FilteringProxy, url: string): Promise<string> {
 }
 
 async function start(options: Parameters<typeof startFilteringProxy>[0] = {}) {
-  const proxy = await startFilteringProxy({ env: {}, ...options });
+  // Stands in for the browser's `PagePolicy.approves`: `allow` is the agent opening a private host.
+  const opened = new Set<string>();
+  const proxy = await startFilteringProxy({ env: {}, approved: (hostname, port) => opened.has(`${hostname}:${port}`), ...options });
   cleanups.push(() => proxy.close());
-  return proxy;
+  return Object.assign(proxy, { allow: (url: URL): void => void opened.add(keyOf(url)) });
 }
 
 /** Names for the stub resolver. */
@@ -420,7 +423,7 @@ describe('launching Chrome behind the proxy', () => {
 
   it('names the proxy and removes the loopback bypass, so loopback is filtered too', async () => {
     const proxy = await start();
-    expect(proxyFlags(proxy)).toEqual([`--proxy-server=http://127.0.0.1:${proxy.port}`, '--proxy-bypass-list=<-loopback>', '--force-webrtc-ip-handling-policy=disable_non_proxied_udp']);
+    expect(proxyFlags(proxy)).toEqual([`--proxy-server=http://127.0.0.1:${proxy.port}`, '--proxy-bypass-list=<-loopback>']);
   });
 
   it('starts the proxy with a fresh Chrome and stops it when Chrome is killed', async () => {
@@ -449,10 +452,48 @@ describe('launching Chrome behind the proxy', () => {
     expect(await accepts(Number(new URL(url).port))).toBe(false);
   });
 
-  it('does not proxy a Chrome on the persistent profile, which outlives the session', async () => {
+  it('does not proxy a Chrome on the persistent profile, which outlives the session, but still restricts its WebRTC', async () => {
     fakeChrome();
-    const chrome = await launchChrome(false, '/profile');
+    const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'octocode-profile-'));
+    cleanups.push(() => fs.rmSync(profile, { recursive: true, force: true }));
+    const chrome = await launchChrome(false, profile);
     expect(launch.mock.calls[0]![0].chromeFlags.join(' ')).not.toContain('--proxy');
     expect(chrome.proxy).toBeUndefined();
+    expect(JSON.parse(fs.readFileSync(path.join(profile, 'Default', 'Preferences'), 'utf8'))).toEqual({ webrtc: { ip_handling_policy: 'disable_non_proxied_udp' } });
+  });
+
+  it('writes the WebRTC policy into a fresh profile before Chrome starts, not as a switch Chrome ignores', async () => {
+    isolatedHome();
+    let seen: unknown;
+    launch.mockImplementation(async (options: { userDataDir: string; chromeFlags: string[] }) => {
+      seen = JSON.parse(fs.readFileSync(path.join(options.userDataDir, 'Default', 'Preferences'), 'utf8'));
+      expect(options.chromeFlags.join(' ')).not.toContain('webrtc');
+      return { port: 9222, kill: async () => undefined };
+    });
+    await (await launchChrome(true, undefined, { env: {} })).kill();
+    expect(seen).toEqual({ webrtc: { ip_handling_policy: 'disable_non_proxied_udp' } });
+  });
+
+  it('keeps the other preferences of an existing profile, replaces a weaker policy, and rebuilds an unreadable file', () => {
+    const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'octocode-profile-'));
+    cleanups.push(() => fs.rmSync(profile, { recursive: true, force: true }));
+    const file = path.join(profile, 'Default', 'Preferences');
+    fs.mkdirSync(path.dirname(file));
+    fs.writeFileSync(file, JSON.stringify({ homepage: 'https://example.test', webrtc: { ip_handling_policy: 'default', multiple_routes_enabled: false } }));
+    restrictWebRtc(profile);
+    expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual({ homepage: 'https://example.test', webrtc: { ip_handling_policy: 'disable_non_proxied_udp', multiple_routes_enabled: false } });
+    fs.writeFileSync(file, '{not json');
+    restrictWebRtc(profile);
+    expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual({ webrtc: { ip_handling_policy: 'disable_non_proxied_udp' } });
+  });
+
+  it('does not start Chrome when the policy cannot be written', async () => {
+    fakeChrome();
+    const blocker = fs.mkdtempSync(path.join(os.tmpdir(), 'octocode-profile-'));
+    cleanups.push(() => fs.rmSync(blocker, { recursive: true, force: true }));
+    const profile = path.join(blocker, 'file');
+    fs.writeFileSync(profile, 'not a folder');
+    await expect(launchChrome(false, profile)).rejects.toThrow();
+    expect(launch).not.toHaveBeenCalled();
   });
 });

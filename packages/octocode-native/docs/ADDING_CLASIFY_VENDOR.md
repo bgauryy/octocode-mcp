@@ -1,8 +1,9 @@
 # Adding a clasify vendor
 
 The `clasify` tool's transport, batch scheduler, context capture, and paging
-engine are all vendor-agnostic. Adding a new classification API is exactly
-**four steps** — no changes to those layers.
+engine are all vendor-agnostic. One provider is built in and no setting
+selects it. Adding a second classification API takes **four steps**, the last
+of which reintroduces a selection setting — no changes to those layers.
 
 Reference implementation: [`jev.rs`](../crates/runtime/src/providers/classification/jev.rs)
 
@@ -95,36 +96,22 @@ pub mod myvendor;
 
 ---
 
-## 3 — Add an arm to `provider_for`
+## 3 — Choose between providers
 
-In the same file:
-
-```rust
-pub fn provider_for(vendor: &str) -> Option<&'static dyn ClassificationProvider> {
-    match vendor {
-        "jev" => Some(&jev::JEV),
-        "myvendor" => Some(&myvendor::MY_VENDOR), // ← add this
-        _ => None,
-    }
-}
-```
-
-An unknown id is `None`, never a default vendor. `ToolRuntime::new` resolves the
-provider once and fails with `invalidConfiguration` for an id no arm matches, so a
-new vendor that is missing its arm is reported at startup. Add a case to the
-`provider_for_resolves_only_registered_vendors` test.
+`provider()` in the same file returns the one built-in provider. With two,
+replace it with a selection over a typed setting (step 4); an unknown value must
+be impossible by construction (a generated enum), never a silent default.
 
 ---
 
-## 4 — Extend the config contract
+## 4 — Add a selection setting to the config contract
 
-The `classification.type` enum is generated into the config contract
-(`packages/octocode-config`, see `src/config/contract.generated.ts`). Add `"myvendor"`
-to the enum where the contract declares it, then regenerate:
-
-```bash
-yarn contracts:regen   # repo root: regenerates packages/octocode-config/contract/
-```
+Declare an `enum` field (for example `classification.vendor`) in
+`packages/octocode-config/config-contract.json` with both vendor ids, then
+regenerate with `yarn workspace @octocodeai/config generate:config-contract`.
+The native build generates a Rust enum for it; match on that enum in
+`provider()`. The retired `classification.type` name stays listed under
+`removed` in the contract, so do not reuse it.
 
 ---
 
@@ -147,8 +134,7 @@ new `providers/classification/myvendor.rs`.
 
 - [ ] `crates/runtime/src/providers/classification/myvendor.rs` created
 - [ ] `pub mod myvendor;` added to `mod.rs`
-- [ ] `"myvendor"` arm added to `provider_for()` (no default arm)
-- [ ] `"myvendor"` added to the `classification.type` enum in the config contract
-- [ ] `yarn contracts:regen` run; `packages/octocode-config/contract/` changes committed
+- [ ] `provider()` selects by a generated enum setting (no default arm)
+- [ ] The selection setting added to the config contract and generated outputs regenerated
 - [ ] At least one integration test exercises `clasify` with a mock of your API
       (see `crates/runtime/tests/runtime_clasify.rs` for the existing Jev fixture pattern)

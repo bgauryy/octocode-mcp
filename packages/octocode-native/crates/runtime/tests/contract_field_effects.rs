@@ -7,13 +7,31 @@ use octocode_native::contracts::contract_json;
 use serde_json::Value;
 
 const COVERAGE_JSON: &str = include_str!("../src/contracts/field-effect-coverage.json");
-const DISCRIMINATOR_FIELDS: &[&str] = &[
-    "operation",
-    "candidateEvidence",
-    "regex",
-    "type",
-    "ecosystem",
-];
+const DISCRIMINATOR_FIELDS: &[&str] = &["operation", "regex", "type", "ecosystem"];
+
+fn assert_references_resolve(root: &Value) {
+    // Validate each stored reference once. Recursive AST rules are valid schemas;
+    // expanding them into field paths would produce an infinite coverage ledger.
+    let mut pending = vec![root];
+    while let Some(value) = pending.pop() {
+        match value {
+            Value::Object(object) => {
+                if let Some(reference) = object.get("$ref").and_then(Value::as_str) {
+                    let pointer = reference
+                        .strip_prefix('#')
+                        .expect("contract refs are local");
+                    assert!(
+                        root.pointer(pointer).is_some(),
+                        "dangling contract reference: {reference}"
+                    );
+                }
+                pending.extend(object.values());
+            }
+            Value::Array(values) => pending.extend(values),
+            _ => {}
+        }
+    }
+}
 
 fn collect_fields(schema: &Value, prefix: &str, fields: &mut BTreeSet<String>) {
     if let Some(properties) = schema.get("properties").and_then(Value::as_object) {
@@ -34,6 +52,13 @@ fn collect_fields(schema: &Value, prefix: &str, fields: &mut BTreeSet<String>) {
             format!("{prefix}[]")
         };
         collect_fields(items, &path, fields);
+    }
+    // A keyed map's values (clasify `questions`): `questions{}.type`.
+    if let Some(values) = schema
+        .get("additionalProperties")
+        .filter(|value| value.is_object())
+    {
+        collect_fields(values, &format!("{prefix}{{}}"), fields);
     }
     for union in ["anyOf", "oneOf", "allOf"] {
         if let Some(branches) = schema.get(union).and_then(Value::as_array) {
@@ -72,6 +97,12 @@ fn collect_values(schema: &Value, target: &str, prefix: &str, values: &mut BTree
             format!("{prefix}[]")
         };
         collect_values(items, target, &path, values);
+    }
+    if let Some(entries) = schema
+        .get("additionalProperties")
+        .filter(|value| value.is_object())
+    {
+        collect_values(entries, target, &format!("{prefix}{{}}"), values);
     }
     for union in ["anyOf", "oneOf", "allOf"] {
         if let Some(branches) = schema.get(union).and_then(Value::as_array) {
@@ -133,6 +164,8 @@ fn every_public_field_and_discriminator_has_declared_engine_effect_coverage() {
 
     for tool in contract_tools {
         let name = tool["name"].as_str().expect("tool name");
+        assert_references_resolve(&tool["querySchema"]);
+        assert_references_resolve(&tool["inputSchema"]);
         let tool_coverage = &coverage_tools[name];
         let evidence = tool_coverage["evidence"]
             .as_array()

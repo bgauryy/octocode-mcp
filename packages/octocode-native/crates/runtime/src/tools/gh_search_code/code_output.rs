@@ -241,7 +241,8 @@ pub(super) async fn line_commit<C: octocode_github::ConditionalCache>(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
+/// The page's line hits, read at one commit (repo-scoped) or at each hit's
+/// indexed commit (owner-wide); `None` when the page lists no lines.
 pub(super) async fn resolve_lines<C: octocode_github::ConditionalCache>(
     provider: &octocode_github::GitHubProvider<C>,
     query: &GhSearchCodeQuery,

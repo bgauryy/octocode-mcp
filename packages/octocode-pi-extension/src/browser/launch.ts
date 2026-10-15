@@ -1,8 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { launch, type LaunchedChrome } from 'chrome-launcher';
-import { HOME_NAMES, outputDir, sweepDeadOutputs } from '../shared/home.js';
+import { atomicWriteFileSync } from '../shared/atomic.js';
+import { HOME_NAMES, outputDir, PRIVATE_FILE_MODE, sweepDeadOutputs } from '../shared/home.js';
 import { processAlive } from '../shared/process.js';
+import { isRecord } from '../shared/util.js';
 import { startFilteringProxy, type FilteringProxy, type FilteringProxyOptions } from './proxy.js';
 
 /** Starting Chrome for a session, and finding the Chrome already running on a persistent profile. */
@@ -17,9 +19,36 @@ export type OwnChrome = LaunchedChrome & { proxy?: FilteringProxy };
 export const proxyFlags = (proxy: FilteringProxy): string[] => [
   `--proxy-server=${proxy.url}`,
   '--proxy-bypass-list=<-loopback>',
-  // WebRTC's UDP does not go through an HTTP proxy: this stops it from reaching local addresses directly.
-  '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
 ];
+
+/**
+ * WebRTC's UDP (ICE: STUN and TURN servers a page names, host candidates) does not go through the HTTP proxy or the CDP
+ * request guard, so a page could send packets to a private address. Chrome reads this policy from the profile
+ * preference `webrtc.ip_handling_policy`; the `--force-webrtc-ip-handling-policy` switch is honored only by content_shell
+ * and old headless, not by Chrome (verified: Chrome 155 still sent STUN and TURN datagrams to a loopback server with it).
+ * `disable_non_proxied_udp` allows UDP only through a proxy that supports it, so none is sent and no address is gathered.
+ */
+const WEBRTC_POLICY = 'disable_non_proxied_udp';
+
+/**
+ * Sets `webrtc.ip_handling_policy` in the profile's `Default/Preferences`, keeping every other preference, before Chrome
+ * starts on `userDataDir` (a running Chrome would overwrite the file). Throws when it cannot: Chrome must not start
+ * without the policy.
+ */
+export function restrictWebRtc(userDataDir: string): void {
+  const file = path.join(userDataDir, 'Default', 'Preferences');
+  let prefs: Record<string, unknown> = {};
+  try {
+    const parsed: unknown = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (isRecord(parsed)) prefs = parsed;
+  } catch (error) {
+    // No file yet (a fresh profile), or one Chrome could not read either and would rebuild.
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error;
+  }
+  const webrtc = isRecord(prefs['webrtc']) ? prefs['webrtc'] : {};
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  atomicWriteFileSync(file, JSON.stringify({ ...prefs, webrtc: { ...webrtc, ip_handling_policy: WEBRTC_POLICY } }), { mode: PRIVATE_FILE_MODE });
+}
 
 /**
  * A launched Chrome: `profile` (kept, visible mode) or a fresh profile folder under `<Octocode home>/pi-browser/` (not
@@ -29,13 +58,17 @@ export const proxyFlags = (proxy: FilteringProxy): string[] => [
 export async function launchChrome(headless: boolean, profile?: string, proxyOptions?: FilteringProxyOptions): Promise<OwnChrome> {
   // Headless Chrome defaults to an 800x600 window, where many sites collapse into a mobile layout (no search box).
   const flags = [...(headless ? ['--headless=new', '--window-size=1366,900'] : []), '--no-first-run', '--no-default-browser-check'];
-  if (profile) return launch({ startingUrl: 'about:blank', userDataDir: profile, chromeFlags: flags });
+  if (profile) {
+    restrictWebRtc(profile);
+    return launch({ startingUrl: 'about:blank', userDataDir: profile, chromeFlags: flags });
+  }
   const root = outputDir(HOME_NAMES.browser);
   sweepDeadOutputs(root, 0);
   const proxy = await startFilteringProxy(proxyOptions);
   const userDataDir = fs.mkdtempSync(path.join(root, `${process.pid}-`));
   let chrome: OwnChrome;
   try {
+    restrictWebRtc(userDataDir);
     chrome = await launch({ startingUrl: 'about:blank', userDataDir, chromeFlags: [...flags, ...proxyFlags(proxy)] });
   } catch (error) {
     await proxy.close();

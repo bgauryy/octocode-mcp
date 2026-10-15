@@ -69,8 +69,9 @@ describe.skipIf(!ready)('launcher → native binary e2e', () => {
       const instructions = JSON.parse(main.stdout).instructions as string;
       expect(instructions.length).toBeGreaterThan(0);
       expect(JSON.parse(schema.stdout).instructions).toBe(instructions);
-      // Shared guidance refers callers to the exposed controls.
-      expect(instructions).toContain('<clasify>Use exposed controls. ');
+      expect(instructions.includes('<clasify>')).toBe(Boolean(key));
+      expect(instructions.includes('clasifyContext')).toBe(Boolean(key));
+      expect(instructions).not.toContain('clasify screens unread');
       expect(
         JSON.parse(schema.stdout).tools.map(
           (tool: { name: string }) => tool.name
@@ -102,6 +103,27 @@ describe.skipIf(!ready)('launcher → native binary e2e', () => {
     const badJson = runLauncher(['localSearch', '{"queries":[']);
     expect(badJson.status).toBe(2);
     expect(JSON.parse(badJson.stdout).error).toContain('Invalid JSON query');
+  });
+
+  it('redacts native argument errors on both output channels', () => {
+    const token = `ghp_${'a'.repeat(37)}`;
+    const json = runLauncher(['localFetch', '{}', token, '--json']);
+    expect(json.status).toBe(2);
+    expect(json.stderr).toBe('');
+    expect(json.stdout).not.toContain(token);
+    const error = JSON.parse(json.stdout);
+    expect(error.errorCode).toBe('invalidInput');
+    expect(error.error).toMatch(/^unexpected argument '\[REDACTED-/);
+    expect(error.error).toMatch(/' found$/);
+    expect(error).not.toHaveProperty('kind');
+
+    const text = runLauncher(['config', token]);
+    expect(text.status).toBe(2);
+    expect(text.stdout).toBe('');
+    expect(text.stderr).not.toContain(token);
+    expect(text.stderr).toMatch(/^error: unrecognized subcommand '\[REDACTED-/);
+    expect(text.stderr).toContain('\n\nUsage: octocode config [OPTIONS]\n');
+    expect(text.stderr).toMatch(/For more information, try '--help'\.\n$/);
   });
 
   it('reads the query from stdin with --input -', () => {

@@ -37,6 +37,37 @@ describe('Activity: consequential calls', () => {
     expect(activity.describe(200)).toBe('⚠ shell.destructive: rm -rf build +1');
   });
 
+  it('reports nothing back from consequential', () => {
+    const activity = new Activity();
+    activity.start(0);
+    activity.toolStart('1', 'bash', { command: 'make' }, 0);
+    expect(activity.consequential('shell', 'make', false, 0)).toBeUndefined();
+    expect(activity.consequential('shell', 'ls', false, 100)).toBeUndefined();
+  });
+
+  it('drops the line of a call that ends without running (blocked after the check) while other calls still run', () => {
+    const activity = new Activity();
+    activity.start(0);
+    activity.toolStart('1', 'bash', { command: 'sleep 9' }, 0);
+    activity.toolStart('2', 'bash', { command: 'rm -rf build' }, 0);
+    // The second call's check let it through, and another handler then blocked it: its tool ends at once.
+    activity.checking('2', true, 10);
+    activity.consequential('shell.destructive', 'rm -rf build', true, 10);
+    activity.checking('2', false, 20);
+    expect(activity.describe(20)).toBe('⚠ shell.destructive: rm -rf build');
+    activity.toolEnd('2', 30);
+    expect(activity.describe(30)).toBe('Running bash sleep 9');
+    // A line whose call is another one stays until that one ends.
+    activity.checking('1', true, 2_000);
+    activity.consequential('shell', 'sleep 9', false, 2_000);
+    activity.checking('1', false, 2_000);
+    activity.toolStart('3', 'read', {}, 2_100);
+    activity.toolEnd('3', 2_200);
+    expect(activity.describe(2_200)).toBe('shell: sleep 9');
+    activity.toolEnd('1', 2_300);
+    expect(activity.describe(2_300)).toBeUndefined();
+  });
+
   it('forgets the line when the run ends', () => {
     const activity = new Activity();
     activity.start(0);

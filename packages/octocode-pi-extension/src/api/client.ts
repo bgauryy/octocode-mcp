@@ -1,7 +1,8 @@
 import http from 'node:http';
 import net from 'node:net';
-import { MAX_FRAME_BYTES, type ApiEvent, type RpcResponse } from './protocol.js';
+import { MAX_FRAME_BYTES, type ApiEvent } from './protocol.js';
 import type { InstanceRecord } from './registry.js';
+import { isRecord } from '../shared/util.js';
 
 /** A failed call, carrying the JSON-RPC code. */
 export class ApiCallError extends Error {
@@ -14,69 +15,121 @@ export class ApiCallError extends Error {
   }
 }
 
-const unwrap = (response: RpcResponse): unknown => {
-  if ('error' in response) throw new ApiCallError(response.error.message, response.error.code, response.error.data);
-  return response.result;
-};
-
 /** A `tool.start`/`tool.end` for a call another tool made (it carries `parentId`). */
 export const isNestedToolEvent = (event: ApiEvent): boolean => (event.type === 'tool.start' || event.type === 'tool.end') && typeof event.data['parentId'] === 'string';
 
-/**
- * A client for one instance: prefers the Unix socket, falls back to loopback HTTP. Reference implementation for
- * integrations, and what the `octocode-pi-api` command and the tests use.
- */
+export interface ApiCallOptions {
+  timeoutMs?: number;
+  signal?: AbortSignal;
+}
+
+/** One discovered instance; a configured socket is authoritative and never falls back to HTTP. */
 export class ApiClient {
   private next = 0;
 
   constructor(private readonly instance: Pick<InstanceRecord, 'socket' | 'http'>) {}
 
-  async call<T = unknown>(method: string, params: Record<string, unknown> = {}): Promise<T> {
-    const id = ++this.next;
-    const request = { jsonrpc: '2.0', id, method, params };
-    const response = this.instance.socket ? await this.overSocket(request) : await this.overHttp(request);
-    return unwrap(response) as T;
+  async call<T = unknown>(method: string, params: Record<string, unknown> = {}, options: ApiCallOptions = {}): Promise<T> {
+    const timeoutMs = options.timeoutMs ?? 610_000;
+    if (!Number.isFinite(timeoutMs) || timeoutMs < 1 || timeoutMs > 3_660_000) throw new Error('API timeoutMs must be from 1 to 3660000');
+    if (options.signal?.aborted) throw new Error('API call aborted');
+    const request = { jsonrpc: '2.0', id: ++this.next, method, params };
+    const payload = JSON.stringify(request);
+    if (Buffer.byteLength(payload, 'utf8') > MAX_FRAME_BYTES) throw new Error('API request exceeds the frame byte limit');
+    const response = this.instance.socket
+      ? await this.overSocket(payload, { ...options, timeoutMs })
+      : await this.overHttp(payload, { ...options, timeoutMs });
+    if (!isRecord(response) || response['jsonrpc'] !== '2.0' || response['id'] !== request.id) throw new Error('Invalid API response identity');
+    const result = Object.hasOwn(response, 'result');
+    const failed = Object.hasOwn(response, 'error');
+    if (result === failed) throw new Error('Invalid API response envelope');
+    if (failed) {
+      const error = response['error'];
+      if (!isRecord(error) || !Number.isInteger(error['code']) || typeof error['message'] !== 'string') throw new Error('Invalid API error response');
+      const token = this.instance.http?.token;
+      const safe = token ? JSON.parse(JSON.stringify(error).replaceAll(token, '[redacted]')) as Record<string, unknown> : error;
+      throw new ApiCallError(safe['message'] as string, safe['code'] as number, safe['data']);
+    }
+    return response['result'] as T;
   }
 
-  private overSocket(request: object): Promise<RpcResponse> {
+  private overSocket(payload: string, options: ApiCallOptions & { timeoutMs: number }): Promise<unknown> {
     return new Promise((resolve, reject) => {
       const socket = net.connect(this.instance.socket!);
       let buffer = '';
+      let finished = false;
+      const finish = (error?: Error, response?: unknown): void => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timer);
+        options.signal?.removeEventListener('abort', abort);
+        socket.destroy();
+        if (error) reject(error);
+        else resolve(response);
+      };
+      const abort = (): void => finish(new Error('API call aborted'));
+      const timer = setTimeout(() => finish(new Error('API call timed out; delivery may have been accepted')), options.timeoutMs);
       socket.setEncoding('utf8');
-      socket.once('error', reject);
-      socket.on('connect', () => socket.write(`${JSON.stringify(request)}\n`));
+      socket.once('error', () => finish(new Error('API socket transport failed')));
+      socket.once('close', () => finish(new Error('API socket closed before its response')));
+      options.signal?.addEventListener('abort', abort, { once: true });
+      if (options.signal?.aborted) return abort();
+      socket.on('connect', () => socket.write(`${payload}\n`));
       socket.on('data', (chunk: string) => {
         buffer += chunk;
+        if (Buffer.byteLength(buffer, 'utf8') > MAX_FRAME_BYTES) return finish(new Error('API response exceeds the frame byte limit'));
         const newline = buffer.indexOf('\n');
         if (newline < 0) return;
-        socket.end();
-        try {
-          resolve(JSON.parse(buffer.slice(0, newline)) as RpcResponse);
-        } catch (error) {
-          reject(error);
-        }
+        try { finish(undefined, JSON.parse(buffer.slice(0, newline))); }
+        catch { finish(new Error('Invalid API response JSON')); }
       });
     });
   }
 
-  private overHttp(request: object): Promise<RpcResponse> {
+  private overHttp(payload: string, options: ApiCallOptions & { timeoutMs: number }): Promise<unknown> {
     const target = this.instance.http;
     if (!target) return Promise.reject(new Error('The instance has neither a socket nor an HTTP endpoint'));
+    let url: URL;
+    try { url = new URL(target.url); } catch { return Promise.reject(new Error('Invalid API HTTP endpoint')); }
+    if (url.protocol !== 'http:' || !['127.0.0.1', '[::1]', 'localhost'].includes(url.hostname) || url.username || url.password || url.search || url.hash || url.pathname !== '/') {
+      return Promise.reject(new Error('API HTTP endpoint must be an authenticated loopback origin'));
+    }
+    url.pathname = '/rpc';
     return new Promise((resolve, reject) => {
-      const req = http.request(`${target.url}/rpc`, { method: 'POST', headers: { authorization: `Bearer ${target.token}`, 'content-type': 'application/json' } }, (res) => {
+      let finished = false;
+      let response: http.IncomingMessage | undefined;
+      const finish = (error?: Error, value?: unknown): void => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timer);
+        options.signal?.removeEventListener('abort', abort);
+        response?.destroy();
+        req.destroy();
+        if (error) reject(error);
+        else resolve(value);
+      };
+      const abort = (): void => finish(new Error('API call aborted'));
+      const req = http.request(url, { method: 'POST', headers: { authorization: `Bearer ${target.token}`, 'content-type': 'application/json' } }, (res) => {
+        response = res;
+        if (res.statusCode !== 200) return finish(new Error(`API HTTP request failed (${res.statusCode ?? 'unknown status'})`));
         let body = '';
         res.setEncoding('utf8');
-        res.on('data', (chunk: string) => (body += chunk));
+        res.on('data', (chunk: string) => {
+          body += chunk;
+          if (Buffer.byteLength(body, 'utf8') > MAX_FRAME_BYTES) finish(new Error('API response exceeds the frame byte limit'));
+        });
+        res.once('error', () => finish(new Error('API HTTP response failed')));
+        res.once('aborted', () => finish(new Error('API HTTP response ended prematurely')));
         res.on('end', () => {
-          try {
-            resolve(JSON.parse(body) as RpcResponse);
-          } catch (error) {
-            reject(error);
-          }
+          try { finish(undefined, JSON.parse(body)); }
+          catch { finish(new Error('Invalid API response JSON')); }
         });
       });
-      req.on('error', reject);
-      req.end(JSON.stringify(request));
+      const timer = setTimeout(() => finish(new Error('API call timed out; delivery may have been accepted')), options.timeoutMs);
+      req.once('error', () => finish(new Error('API HTTP transport failed')));
+      options.signal?.addEventListener('abort', abort, { once: true });
+      if (options.signal?.aborted) return abort();
+      req.end(payload);
     });
   }
 

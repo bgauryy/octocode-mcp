@@ -324,6 +324,8 @@ export function registerAgentTool(pi: ExtensionAPI, getProfiles: () => Map<strin
   };
   // A reload stops them without asking: their reports (now, or at the next start when late) say it was the reload.
   const stopAll = (reason?: string) => stopRuns(reason === 'reload' ? 'the /reload' : 'session shutdown');
+  /** What this session offers a child: its permission state, its UI when a person can be asked, and its team's signature for the user's messages. */
+  const relayHost = (ctx: Pick<ExtensionContext, 'hasUI' | 'ui'>): RelayHost => ({ permission, vouch: (id, secret) => team.vouch(id, secret), ...(ctx.hasUI ? { ui: ctx.ui } : {}) });
   permission.onRevoke(() => {
     cancelLaunches();
     void stopRuns(PERMISSION_STOP);
@@ -378,15 +380,16 @@ export function registerAgentTool(pi: ExtensionAPI, getProfiles: () => Map<strin
     label: 'Agent',
     description:
       'Delegate a self-contained task to a fresh Pi session that does not inherit this conversation. ' +
-      `Foreground calls return the report; background calls return the agent's name and send the report later. At most ${maxSubagents()} run at once; a call past that waits for one to finish. ` +
-      'A long report names its full file. Review the result before integrating it. Never poll or sleep for a background report.',
+      `Foreground calls return the report; background calls return the agent's name and its report arrives later. At most ${maxSubagents()} run at once; a call past that waits for one to finish. ` +
+      'A long report names its full file. Review the result before integrating it. Never poll or sleep for a background report. ' +
+      'A subagent updates only backlog items you claimed: claim one first and name its id in the task.',
     promptSnippet: 'Delegate bounded work to a subagent',
     parameters: Type.Object({
       goal: Type.String({ description: GOAL_DESCRIPTION }),
       task: Type.String({ description: 'Brief: purpose, done-when, bounded scope and paths, evidence and decisions the subagent cannot infer, existing authorization, required output' }),
       profile: Type.Optional(Type.String({ description: 'Profile name from the active Profiles list; omit for a general-purpose subagent' })),
       model: Type.Optional(Type.String({ description: 'Model override: provider/id, bare id or purpose (small, medium), optionally :thinking. Refused when unavailable; omit for the profile\'s model, else this session\'s' })),
-      background: Type.Optional(Type.Boolean({ description: 'Return at once for long or parallel work; the report arrives as a message. `sendMessage` redirects it; `coordinate stop` ends it' })),
+      background: Type.Optional(Type.Boolean({ description: 'Return at once for long or parallel work. `sendMessage` redirects it; `coordinate stop` ends it' })),
       collaborate: Type.Optional(Type.Boolean({ description: 'true on each call of subagents that must coordinate directly (shared contracts); false for independent tasks' })),
       isolate: Type.Optional(Type.Boolean({ description: 'Work in a private git worktree; changes land on refs/octocode/pi/<id>, not in this tree. The report names the ref: ask the user to run `/agents merge <id>` to bring them in' })),
     }),
@@ -415,7 +418,7 @@ export function registerAgentTool(pi: ExtensionAPI, getProfiles: () => Map<strin
       run.identity.permission = { mode: permission.mode, grants: [...new Set([...grants, ...permission.childGrants()])] };
       // With a person to ask, the child's approval dialogs come here (this tool exists only in the main session).
       run.identity.relay = ctx.hasUI;
-      const host: RelayHost = { permission, ...(ctx.hasUI ? { ui: ctx.ui } : {}) };
+      const host = relayHost(ctx);
       const isolation = new Isolation(run.identity.id);
       let finalized: Promise<string> | undefined;
       const finish = () => (finalized ??= isolation.finish().finally(run.release));
@@ -480,7 +483,7 @@ export function registerAgentTool(pi: ExtensionAPI, getProfiles: () => Map<strin
       const message = `Follow-up from ${from === USER_SENDER ? 'the user' : 'your parent'}:\n${text}`;
       const args = buildAgentArgs(run.profile, run.route.model, undefined, undefined, savedSession(run, true));
       const resumed = run;
-      const host: RelayHost = { permission, ...(ctx.hasUI ? { ui: ctx.ui } : {}) };
+      const host = relayHost(ctx);
       const launch = (signal: AbortSignal) => runSubagent(message, args, ctx.cwd, resumed.profile, resumed.identity, signal, track(undefined), undefined, undefined, host);
       startBackground(runs, run, details, text, launch, () => Promise.resolve('').finally(resumed.release), ctx.sessionManager.getSessionId(), lingerFor(run, ctx));
       forgetLinger(id);

@@ -35,7 +35,7 @@
   "tools": [
     {
       "name": "clasify",
-      "description": "Locate unread source or make a bounded typed judgment; returns read leads, no bodies (beta: requires OCTOCODE_BETA and OCTOCODE_CLASSIFICATION_API)"
+      "description": "Judge unread text/images or held state; returns JEV answers, no bodies (beta: requires OCTOCODE_BETA and OCTOCODE_CLASSIFICATION_API)"
     },
     {
       "name": "ghSearchRepo",

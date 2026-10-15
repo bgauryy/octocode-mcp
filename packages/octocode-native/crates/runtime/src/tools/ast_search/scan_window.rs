@@ -63,6 +63,16 @@ pub(super) fn expand_scan(
     }
 }
 
+/// The `partialReasons` entry of a cut scan: the caller's `maxFiles`, or
+/// the time budget of a scan without one.
+pub(super) fn cut_reason(max_files: Option<u32>) -> &'static str {
+    if max_files.is_some() {
+        "maxFiles"
+    } else {
+        "scanBudget"
+    }
+}
+
 /// Why an unbounded cut has no continuation, for the scan diagnostic: the
 /// walk ceiling, reachable files only by narrowing the scope.
 pub(super) fn ceiling_note(resume: Option<u32>) -> Option<String> {

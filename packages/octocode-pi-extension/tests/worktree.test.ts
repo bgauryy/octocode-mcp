@@ -67,6 +67,24 @@ describe('isolated subagent worktrees', () => {
     expect(git(dir, 'show', 'refs/octocode/pi/dup-1-2:src/a.txt')).toBe('second');
   });
 
+  it('saves an agent named like an earlier fallback ref to the next free name, and merges each by its own id', async () => {
+    const dir = repo();
+    const home = tmp();
+    const texts: Record<string, string> = { 'dup-1': 'first\n', 'dup-1-2': 'named like a fallback\n' };
+    const refs: string[] = [];
+    // dup-1, dup-1 again (takes dup-1-2), then an agent really named dup-1-2: its own ref is taken too.
+    for (const [id, text] of [['dup-1', texts['dup-1']!], ['dup-1', 'second\n'], ['dup-1-2', texts['dup-1-2']!]] as const) {
+      const worktree = await createWorktree(dir, id, home);
+      fs.writeFileSync(path.join(worktree.cwd, 'src', 'a.txt'), text);
+      refs.push((await finishWorktree(worktree)).ref!);
+    }
+    expect(refs).toEqual(['refs/octocode/pi/dup-1', 'refs/octocode/pi/dup-1-2', 'refs/octocode/pi/dup-1-2-2']);
+    expect(git(dir, 'show', 'refs/octocode/pi/dup-1-2:src/a.txt')).toBe('second');
+    expect(git(dir, 'show', 'refs/octocode/pi/dup-1-2-2:src/a.txt')).toBe('named like a fallback');
+    expect(await mergeAgent(dir, 'dup-1-2-2')).toMatchObject({ ok: true });
+    expect(await pendingRefs(dir)).toEqual(['dup-1', 'dup-1-2']);
+  });
+
   it('reports no ref when nothing changed', async () => {
     const dir = repo();
     const worktree = await createWorktree(dir, 'idle-1', tmp());

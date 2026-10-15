@@ -56,7 +56,7 @@ async fn github_cache_survives_runtime_close_until_explicitly_cleared() {
     assert_eq!(contents.len(), 1);
     assert!(contents[0].headers.get("if-none-match").is_none());
 
-    second.clear_github_cache();
+    second.clear_response_caches();
     let outcome = call(&second, "ghGetFileContent", query).await.unwrap();
     assert_eq!(row_status(&outcome), "success");
     let requests = server.received_requests().await.unwrap();

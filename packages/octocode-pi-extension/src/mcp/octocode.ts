@@ -7,7 +7,7 @@ import { MCP_ENV, envFlag } from '../shared/env.js';
 import { octocodeHome } from '../shared/home.js';
 import { packageRoot } from '../shared/package.js';
 import { OCTOCODE_SERVER, OCTOCODE_TOOL_PREFIX } from '../shared/octocode-tools.js';
-import { sanitizeTerminalText } from '../shared/sanitize.js';
+import { visibleControls } from '../shared/sanitize.js';
 import type { Tool } from '@earendil-works/pi-mcp';
 import { OctocodeServer, type Launch, type ServerStatus } from './client.js';
 import { octocodeToolDefinition, TurnBudget } from './tools.js';
@@ -134,7 +134,7 @@ export class OctocodeMcp {
   /** The server's `initialize` instructions (how its tools work together), sanitized: the server's text is not trusted. */
   get instructions(): string | undefined {
     const text = this.server.instructions;
-    return text ? sanitizeTerminalText(text).trim() || undefined : undefined;
+    return text ? visibleControls(text).trim() || undefined : undefined;
   }
 
   /** Stops the server and starts it again for this session, whatever state it was in. */
@@ -177,7 +177,7 @@ export class OctocodeMcp {
 
   /** Registers every listed tool with Pi, and withdraws the ones the server no longer lists. */
   private register(tools: readonly Tool[], instructions: string | undefined): void {
-    const namespace = { name: OCTOCODE_TOOL_PREFIX.replace(/__$/, ''), ...(instructions ? { instructions: sanitizeTerminalText(instructions).trim() } : {}) };
+    const namespace = { name: OCTOCODE_TOOL_PREFIX.replace(/__$/, ''), ...(instructions ? { instructions: visibleControls(instructions).trim() } : {}) };
     const listed = new Set<string>();
     for (const tool of tools) {
       const name = `${OCTOCODE_TOOL_PREFIX}${tool.name}`;

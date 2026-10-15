@@ -146,6 +146,19 @@ describe('the browser connection', () => {
     expect(stub.commands).toHaveLength(before);
   });
 
+  it('rejects a command at once when the socket cannot send it, and leaves the session usable', async () => {
+    const { a } = await twoPages();
+    const send = vi.spyOn(WebSocket.prototype, 'send').mockImplementationOnce(() => {
+      throw new Error('socket is closing');
+    });
+    try {
+      await expect(a.send('Page.enable')).rejects.toThrow('Could not send Page.enable: socket is closing');
+    } finally {
+      send.mockRestore();
+    }
+    await expect(a.send('Page.enable')).resolves.toEqual({});
+  });
+
   it('answers a malformed or unknown frame without breaking the session', async () => {
     const { a, stub } = await twoPages();
     stub.pages.get('a')!.raw('not json');

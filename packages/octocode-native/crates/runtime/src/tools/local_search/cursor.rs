@@ -21,7 +21,7 @@ pub(super) fn cursor(
     result_identity: &str,
     reusable: Option<super::manifest::Fresh>,
     policy_key: String,
-    ranking: Option<&str>,
+    selection: Option<&str>,
 ) -> (Option<Value>, bool) {
     let page = query.page().max(1);
     let match_page = query.match_page().max(1);
@@ -29,14 +29,15 @@ pub(super) fn cursor(
     let empty = parsed.files.is_empty();
     // A streamed page names its continuation; a grid page also needs the
     // snapshot while a shown file has rows beyond one match page.
-    let snapshot = (!empty
-        && (query.snapshot.is_some()
-            || page < layout.total_pages
-            || (!streamed
-                && parsed
-                    .files
-                    .iter()
-                    .any(|f| f.matches.len() as u32 > layout.matches_per))))
+    let snapshot = (selection.is_some()
+        || (!empty
+            && (query.snapshot.is_some()
+                || page < layout.total_pages
+                || (!streamed
+                    && parsed
+                        .files
+                        .iter()
+                        .any(|f| f.matches.len() as u32 > layout.matches_per)))))
     .then(|| result_identity.to_owned());
     if snapshot.is_some()
         && let Some(scan) = reusable
@@ -61,32 +62,18 @@ pub(super) fn cursor(
         match_page,
         snapshot.as_deref(),
         streamed,
-        ranking,
+        selection,
     );
     (next, leftover_matches)
 }
 
 /// A continuation whose snapshot no longer describes the source; `next.restart`
-/// reruns page 1 without it.
+/// reruns the query from its first page, without any cursor.
 pub(super) fn stale_snapshot(query: &LocalSearchQuery) -> ToolError {
-    let mut restart = normalized_query(query, streamed_layout(query));
-    if let Some(object) = restart.as_object_mut() {
-        object.remove("snapshot");
-        object.remove("ranking");
-    }
-    restart["page"] = json!(1);
-    restart["matchPage"] = json!(1);
-    ToolError {
-        next: Some(Box::new(json!({
-            "restart": Continuation::new(ToolId::LocalSearch, restart)
-                .confidence("exact")
-                .build()
-        }))),
-        ..ToolError::new(
-            "staleSnapshot",
-            crate::response::pages::STALE_SNAPSHOT_ERROR,
-        )
-    }
+    ToolError::stale_snapshot(crate::tools::result::restart_query(
+        ToolId::LocalSearch,
+        &normalized_query(query, streamed_layout(query)),
+    ))
 }
 
 /// A stored scan's file no longer hashes to the bytes its values came from:
@@ -135,12 +122,12 @@ pub(super) fn build_next(
     match_page: u32,
     snapshot: Option<&str>,
     streamed: bool,
-    ranking: Option<&str>,
+    selection: Option<&str>,
 ) -> Option<Value> {
     let mut map = serde_json::Map::new();
     let mut base = normalized_query(q, streamed);
-    if let Some(token) = ranking {
-        base["ranking"] = json!(token);
+    if let Some(token) = selection {
+        base["selection"] = json!(token);
     }
     if let Some(snapshot) = snapshot {
         base["snapshot"] = json!(snapshot);

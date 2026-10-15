@@ -12,7 +12,9 @@ A sanitization failure discards the unsafe value and returns a typed error. Bulk
 
 ## Input validation
 
-The generated `@octocodeai/octocode-core` schemas reject unknown fields and invalid operation combinations. Native validation also rejects strings over 10,000 UTF-16 code units, arrays over 100 entries, nesting deeper than 20 levels, `__proto__`/`constructor`/`prototype` keys, and invalid paths, cursor identities, snapshots, hashes, and numeric bounds.
+The generated `@octocodeai/octocode-core` schemas reject unknown fields and invalid operation combinations. Native validation also rejects ordinary parameter strings over 10,000 UTF-16 code units, arrays over 100 entries, nesting deeper than 20 levels, `__proto__`/`constructor`/`prototype` keys, and invalid paths, cursor identities, snapshots, hashes, and numeric bounds.
+
+Clasify literal state uses its declared serialized-state limit instead of the ordinary string limit; nested values remain scanned and bounded. Credential-looking object keys are rejected without echoing or renaming them.
 
 Credentials are acquired after request admission and pinned for the request lifetime. Tool query fields never accept credentials.
 
@@ -24,12 +26,13 @@ The runtime scans untrusted provider and filesystem content before rendering. De
 
 ### Classification egress
 
-`clasify` and enabled `classifiers` send sanitized evidence to the configured provider (`OCTOCODE_CLASSIFICATION_API_HOST`, default Jev); classification sends nothing without a key. Ranking sends the classifier questions and authorized candidate evidence: paths with returned matches, raw text windows with source line numbers, or the selected snippets of result rows. It does not hydrate unseen bodies or widen requested fields, sections, or ranges. Each public clasify request carries:
+`clasify` and `clasifyContext` send text evidence to the configured provider (`OCTOCODE_CLASSIFICATION_API_HOST`, default Jev); classification sends nothing without a key. Context selection sends the classifier questions, supplied mainGoal and reasoning, and authorized candidate evidence: paths with returned matches, raw text windows with source line numbers, or the selected snippets of result rows. It does not hydrate unseen bodies or widen requested fields, sections, or ranges. Public `clasify` can also send explicitly referenced images. Each evaluation request carries:
 
-- the model and the caller's keyed questions, unchanged;
-- one state: the caller's literal `state`, or the complete selected source captured through the authorized reader and sanitized like a direct tool call.
+- the model and the caller's keyed questions, with secret-bearing values sanitized;
+- one state: the caller's literal `state`, or the complete selected source captured through the authorized reader and sanitized like a direct tool call;
+- optional explicitly referenced PNG/JPEG assets, captured internally and sent as their original bytes. Image pixels and metadata are not text-scanned or redacted.
 
-`mainGoal` and `reasoning` are never sent. A source reference passes the input security policy before capture; secrets are redacted before sending. A URL source is fetched over HTTPS only, under the address policy at connection and every redirect, with bounded size and redirects; no GitHub or other stored credential is sent to that origin. Treat classifier questions, clasify questions and selected evidence as disclosed to that provider. Shared path policy and sanitation apply before either route sends evidence.
+For inline context selection, supplied `mainGoal` and `reasoning` are part of the provider instructions; ordinary calls without `clasifyContext` send no JEV request. Text and image source locators pass the input security policy before capture; credential-looking locators are rejected. Text secrets are redacted before sending. A URL source is fetched over HTTPS only, under the address policy at connection and every redirect, with bounded size and redirects; no GitHub or other stored credential is sent to that origin. Treat classifier questions, clasify questions and selected evidence as disclosed to that provider. Shared path policy applies to both routes. Text sanitation applies to text evidence; images are sent only when explicitly named in `assets`. Image bytes stay out of tool responses, which contain capture identity and a saved inspection path instead. The model catalog operation sends no evidence.
 
 ## Filesystem policy
 

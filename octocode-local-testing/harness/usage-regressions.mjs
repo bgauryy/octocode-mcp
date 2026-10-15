@@ -88,10 +88,13 @@ for (const [label, tool, query, field, want, never] of [
   }
 }
 
-// Shapes accepted losslessly (bare string for a list field).
+// Strict admission: a bare string for a list field is rejected with the
+// exact wrap repair, and the wrapped value then runs.
 {
   const e = await call('localSearch', { path: RUNTIME, matchString: 'fn validate', include: '*.rs', pageSize: 3 });
-  check('U13 MCP: include as a bare string is accepted', !e.isError && !e.rowErrors, e.text.slice(0, 160));
+  check('U13 MCP: include as a bare string is rejected with the wrap repair', e.isError && e.sc?.errorCode === 'invalidInput' && e.sc?.error === 'queries.0.include: Expected array; wrap the value: ["*.rs"]', e.text.slice(0, 160));
+  const wrapped = await call('localSearch', { path: RUNTIME, matchString: 'fn validate', include: ['*.rs'], pageSize: 3 });
+  check('U13 MCP: the wrapped include runs', !wrapped.isError && !wrapped.rowErrors, wrapped.text.slice(0, 160));
 }
 
 // Large reads are bounded with an exact continuation, on both surfaces.

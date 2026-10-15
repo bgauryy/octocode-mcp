@@ -41,8 +41,8 @@ pub(crate) const DETECTORS: &[&str] = &[
 
 /// Languages whose named imports are linked to declarations, so "no
 /// importer" is meaningful for unused-export.
-const NAMED_IMPORT_LANGUAGES: &[&str] = &["typescript", "tsx", "javascript", "jsx", "python"];
-const PACKAGE_SCOPED: &[&str] = &["go", "java", "kotlin", "scala", "csharp"];
+const NAMED_IMPORT_LANGUAGES: &[&str] = &["typescript", "tsx", "javascript", "python"];
+const PACKAGE_SCOPED: &[&str] = &["go", "java", "scala", "csharp"];
 const ABSTRACT_KINDS: &[&str] = &[
     "interface",
     "trait",
@@ -612,26 +612,28 @@ fn push_pending(out: &mut Vec<Finding>, pending: Vec<Pending>) {
     for (detector, subject, title, severity, confidence, evidence, controls) in pending {
         push(
             out,
-            detector,
-            subject,
-            &[],
-            title,
-            severity,
-            confidence,
-            0.5,
-            evidence,
-            controls,
-            Vec::new(),
+            Draft {
+                detector,
+                subject,
+                id_parts: &[],
+                title,
+                severity,
+                confidence,
+                impact: 0.5,
+                evidence,
+                controls,
+                verify: Vec::new(),
+            },
         );
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn push(
-    out: &mut Vec<Finding>,
+/// A finding before its id and score are derived.
+struct Draft<'a> {
     detector: &'static str,
     subject: String,
-    id_parts: &[&str],
+    /// Parts besides the subject that make the finding's id unique.
+    id_parts: &'a [&'a str],
     title: String,
     severity: f64,
     confidence: f64,
@@ -639,7 +641,21 @@ fn push(
     evidence: Value,
     controls: Vec<&'static str>,
     verify: Vec<String>,
-) {
+}
+
+fn push(out: &mut Vec<Finding>, draft: Draft<'_>) {
+    let Draft {
+        detector,
+        subject,
+        id_parts,
+        title,
+        severity,
+        confidence,
+        impact,
+        evidence,
+        controls,
+        verify,
+    } = draft;
     let mut parts = vec![subject.as_str()];
     parts.extend(id_parts);
     let id = stable_id(detector, &parts);
@@ -736,16 +752,18 @@ fn detect_cycles(c: &mut Ctx) {
     for (subject, all, title, severity, confidence, impact, evidence, controls, verify) in found {
         push(
             &mut c.findings,
-            "cycle",
-            subject,
-            &[&all],
-            title,
-            severity,
-            confidence,
-            impact,
-            evidence,
-            controls,
-            verify,
+            Draft {
+                detector: "cycle",
+                subject,
+                id_parts: &[&all],
+                title,
+                severity,
+                confidence,
+                impact,
+                evidence,
+                controls,
+                verify,
+            },
         );
     }
 }
@@ -807,19 +825,21 @@ fn detect_dir_cycles(c: &mut Ctx) {
         }
         push(
             &mut c.findings,
-            "dir-cycle",
-            keys[0].to_owned(),
-            &[&keys.join(",")],
-            format!(
-                "Directories depend on each other in a cycle ({} dirs)",
-                keys.len()
-            ),
-            0.5 * magnitude(keys.len()),
-            if rust { 0.3 } else { 0.7 },
-            0.5,
-            json!({"dirs": keys, "witness": hops}),
-            controls,
-            Vec::new(),
+            Draft {
+                detector: "dir-cycle",
+                subject: keys[0].to_owned(),
+                id_parts: &[&keys.join(",")],
+                title: format!(
+                    "Directories depend on each other in a cycle ({} dirs)",
+                    keys.len()
+                ),
+                severity: 0.5 * magnitude(keys.len()),
+                confidence: if rust { 0.3 } else { 0.7 },
+                impact: 0.5,
+                evidence: json!({"dirs": keys, "witness": hops}),
+                controls,
+                verify: Vec::new(),
+            },
         );
     }
 }
@@ -924,54 +944,59 @@ fn detect_reachability(c: &mut Ctx) {
         }
         push(
             &mut c.findings,
-            "unreachable-file",
-            key.clone(),
-            &[],
-            if orphan {
-                "Orphan file: nothing imports it and it imports nothing".into()
-            } else {
-                "Not reachable from any inferred entrypoint".into()
+            Draft {
+                detector: "unreachable-file",
+                subject: key.clone(),
+                id_parts: &[],
+                title: if orphan {
+                    "Orphan file: nothing imports it and it imports nothing".into()
+                } else {
+                    "Not reachable from any inferred entrypoint".into()
+                },
+                severity: 0.6,
+                confidence: entry_quality
+                    * if orphan { 1.0 } else { 0.85 }
+                    * if templates { 0.5 } else { 1.0 },
+                impact: 0.2,
+                evidence: json!({"orphan": orphan, "entrypoints": entries.len(), "entryRules": rules}),
+                controls,
+                verify: vec![
+                    format!(
+                        "octocode graph query dependents {} --edge imports,uses,calls",
+                        quote(&key)
+                    ),
+                    "confirm with lspSearch references on its exports before deleting".into(),
+                ],
             },
-            0.6,
-            entry_quality * if orphan { 1.0 } else { 0.85 } * if templates { 0.5 } else { 1.0 },
-            0.2,
-            json!({"orphan": orphan, "entrypoints": entries.len(), "entryRules": rules}),
-            controls,
-            vec![
-                format!(
-                    "octocode graph query dependents {} --edge imports,uses,calls",
-                    quote(&key)
-                ),
-                "confirm with lspSearch references on its exports before deleting".into(),
-            ],
         );
     }
     for file in test_only {
         let key = v.key(file).to_owned();
         push(
             &mut c.findings,
-            "test-only",
-            key.clone(),
-            &[],
-            "Production file used only by tests".into(),
-            0.45,
-            entry_quality,
-            0.2,
-            json!({"reachedFromTests": true, "reachedFromEntrypoints": false}),
-            vec!["tests and configs treated as a separate entry class"],
-            vec![format!(
-                "octocode graph query dependents {} --edge imports,uses,calls",
-                quote(&key)
-            )],
+            Draft {
+                detector: "test-only",
+                subject: key.clone(),
+                id_parts: &[],
+                title: "Production file used only by tests".into(),
+                severity: 0.45,
+                confidence: entry_quality,
+                impact: 0.2,
+                evidence: json!({"reachedFromTests": true, "reachedFromEntrypoints": false}),
+                controls: vec!["tests and configs treated as a separate entry class"],
+                verify: vec![format!(
+                    "octocode graph query dependents {} --edge imports,uses,calls",
+                    quote(&key)
+                )],
+            },
         );
     }
 }
 
-fn detect_unused_exports(c: &mut Ctx) {
-    let v = &c.v;
+/// Files whose exports are public API: entries and anything they
+/// re-export, transitively.
+fn public_api_files(v: &View<'_>) -> BTreeSet<u32> {
     let t = v.t;
-    // Files whose exports are public API: entries and anything they
-    // re-export, transitively.
     let mut public = v.entries.keys().copied().collect::<BTreeSet<_>>();
     let mut queue = public.iter().copied().collect::<VecDeque<_>>();
     while let Some(file) = queue.pop_front() {
@@ -984,6 +1009,13 @@ fn detect_unused_exports(c: &mut Ctx) {
             }
         }
     }
+    public
+}
+
+fn detect_unused_exports(c: &mut Ctx) {
+    let v = &c.v;
+    let t = v.t;
+    let public = public_api_files(v);
     let namespace_used = t
         .edges
         .iter()
@@ -1041,19 +1073,21 @@ fn detect_unused_exports(c: &mut Ctx) {
         let key = v.key(file).to_owned();
         push(
             &mut c.findings,
-            "export-only-local",
-            key,
-            &[&names.join(",")],
-            format!(
-                "{} export(s) used only inside this file: could be un-exported",
-                names.len()
-            ),
-            0.15,
-            0.8,
-            v.impact(file),
-            json!({"exports": names, "count": names.len()}),
-            vec!["referenced within the file; not dead code"],
-            Vec::new(),
+            Draft {
+                detector: "export-only-local",
+                subject: key,
+                id_parts: &[&names.join(",")],
+                title: format!(
+                    "{} export(s) used only inside this file: could be un-exported",
+                    names.len()
+                ),
+                severity: 0.15,
+                confidence: 0.8,
+                impact: v.impact(file),
+                evidence: json!({"exports": names, "count": names.len()}),
+                controls: vec!["referenced within the file; not dead code"],
+                verify: Vec::new(),
+            },
         );
     }
     for (file, names) in by_file {
@@ -1061,26 +1095,28 @@ fn detect_unused_exports(c: &mut Ctx) {
         let lazy = dynamic.contains(&file);
         push(
             &mut c.findings,
-            "unused-export",
-            key.clone(),
-            &[&names.join(",")],
-            format!(
-                "{} export(s) with no importer outside the file",
-                names.len()
-            ),
-            0.4 * magnitude(names.len()),
-            if lazy { 0.3 } else { 0.6 },
-            v.impact(file),
-            json!({"exports": names, "count": names.len(), "dynamicallyImported": lazy}),
-            vec![
-                "entry files and everything they re-export treated as public API",
-                "namespace-imported files skipped",
-                "only languages with named-import linking (JS/TS/Python)",
-            ],
-            vec![format!(
-                "octocode lspSearch '{{\"queries\":[{{\"operation\":\"references\",\"path\":\"{key}\",\"symbolName\":\"{}\"}}]}}'",
-                names[0]
-            )],
+            Draft {
+                detector: "unused-export",
+                subject: key.clone(),
+                id_parts: &[&names.join(",")],
+                title: format!(
+                    "{} export(s) with no importer outside the file",
+                    names.len()
+                ),
+                severity: 0.4 * magnitude(names.len()),
+                confidence: if lazy { 0.3 } else { 0.6 },
+                impact: v.impact(file),
+                evidence: json!({"exports": names, "count": names.len(), "dynamicallyImported": lazy}),
+                controls: vec![
+                    "entry files and everything they re-export treated as public API",
+                    "namespace-imported files skipped",
+                    "only languages with named-import linking (JS/TS/Python)",
+                ],
+                verify: vec![format!(
+                    "octocode lspSearch '{{\"queries\":[{{\"operation\":\"references\",\"path\":\"{key}\",\"symbolName\":\"{}\"}}]}}'",
+                    names[0]
+                )],
+            },
         );
     }
 }
@@ -1217,16 +1253,18 @@ fn detect_boundaries(c: &mut Ctx) {
     for (subject, count, evidence, target) in pending {
         push(
             &mut c.findings,
-            "boundary-violation",
-            subject,
-            &[],
-            format!("Deep import into another package's internals ({count} import(s))"),
-            0.45 * magnitude(count),
-            0.6,
-            c.v.impact(target),
-            evidence,
-            vec!["targets that are package entrypoints/exports are allowed"],
-            Vec::new(),
+            Draft {
+                detector: "boundary-violation",
+                subject,
+                id_parts: &[],
+                title: format!("Deep import into another package's internals ({count} import(s))"),
+                severity: 0.45 * magnitude(count),
+                confidence: 0.6,
+                impact: c.v.impact(target),
+                evidence,
+                controls: vec!["targets that are package entrypoints/exports are allowed"],
+                verify: Vec::new(),
+            },
         );
     }
 }
@@ -1259,16 +1297,20 @@ fn detect_unresolved(c: &mut Ctx) {
     for (file, sites) in pending {
         push(
             &mut c.findings,
-            "unresolved-import",
-            file.clone(),
-            &[],
-            format!("{} internal import(s) could not be resolved", sites.len()),
-            0.5 * magnitude(sites.len()),
-            0.8,
-            0.5,
-            json!({"count": sites.len(), "sites": sites}),
-            vec!["relative/crate-internal specifiers only; packages are never unresolved"],
-            vec![format!("octocode graph query diagnostics {}", quote(&file))],
+            Draft {
+                detector: "unresolved-import",
+                subject: file.clone(),
+                id_parts: &[],
+                title: format!("{} internal import(s) could not be resolved", sites.len()),
+                severity: 0.5 * magnitude(sites.len()),
+                confidence: 0.8,
+                impact: 0.5,
+                evidence: json!({"count": sites.len(), "sites": sites}),
+                controls: vec![
+                    "relative/crate-internal specifiers only; packages are never unresolved",
+                ],
+                verify: vec![format!("octocode graph query diagnostics {}", quote(&file))],
+            },
         );
     }
 }
@@ -1338,22 +1380,24 @@ fn detect_hubs(c: &mut Ctx) {
         let dependents = c.v.dependents(file);
         push(
             &mut c.findings,
-            "god-file",
-            c.v.key(file).to_owned(),
-            &[],
-            format!("Hub-like file: {i} importers and {o} imports"),
-            0.5 * magnitude(i * o / 4),
-            0.7,
-            c.v.impact(file),
-            json!({"fanIn": i, "fanOut": o, "medianFanIn": mid_in, "medianFanOut": mid_out, "transitiveDependents": dependents}),
-            vec![
-                "Arcan hub-like thresholds (fan-in/out above median, balanced)",
-                "barrels excluded",
-            ],
-            vec![format!(
-                "octocode graph query symbols {}",
-                quote(c.v.key(file))
-            )],
+            Draft {
+                detector: "god-file",
+                subject: c.v.key(file).to_owned(),
+                id_parts: &[],
+                title: format!("Hub-like file: {i} importers and {o} imports"),
+                severity: 0.5 * magnitude(i * o / 4),
+                confidence: 0.7,
+                impact: c.v.impact(file),
+                evidence: json!({"fanIn": i, "fanOut": o, "medianFanIn": mid_in, "medianFanOut": mid_out, "transitiveDependents": dependents}),
+                controls: vec![
+                    "Arcan hub-like thresholds (fan-in/out above median, balanced)",
+                    "barrels excluded",
+                ],
+                verify: vec![format!(
+                    "octocode graph query symbols {}",
+                    quote(c.v.key(file))
+                )],
+            },
         );
     }
 }
@@ -1380,22 +1424,24 @@ fn detect_critical(c: &mut Ctx) {
         }
         push(
             &mut c.findings,
-            "critical-file",
-            c.v.key(file).to_owned(),
-            &[],
-            format!("High blast radius: {dependents} files depend on it transitively"),
-            0.3,
-            0.9,
-            c.v.impact(file),
-            json!({"pageRank": c.v.rank[file as usize], "transitiveDependents": dependents, "directImporters": c.v.inc[file as usize].len()}),
-            vec![
-                "informational: changes here need wide test coverage",
-                "only the top 2% of imported files by PageRank (1 to 10) are checked",
-            ],
-            vec![format!(
-                "octocode graph query dependents {} --depth 3",
-                quote(c.v.key(file))
-            )],
+            Draft {
+                detector: "critical-file",
+                subject: c.v.key(file).to_owned(),
+                id_parts: &[],
+                title: format!("High blast radius: {dependents} files depend on it transitively"),
+                severity: 0.3,
+                confidence: 0.9,
+                impact: c.v.impact(file),
+                evidence: json!({"pageRank": c.v.rank[file as usize], "transitiveDependents": dependents, "directImporters": c.v.inc[file as usize].len()}),
+                controls: vec![
+                    "informational: changes here need wide test coverage",
+                    "only the top 2% of imported files by PageRank (1 to 10) are checked",
+                ],
+                verify: vec![format!(
+                    "octocode graph query dependents {} --depth 3",
+                    quote(c.v.key(file))
+                )],
+            },
         );
     }
 }
@@ -1408,21 +1454,23 @@ fn detect_spof(c: &mut Ctx) {
         }
         push(
             &mut c.findings,
-            "single-point-of-failure",
-            c.v.key(file).to_owned(),
-            &[],
-            format!(
-                "Only link between two parts of the import graph ({smaller} files on the smaller side)"
-            ),
-            0.4 * magnitude(smaller),
-            0.6,
-            c.v.impact(file),
-            json!({"smallerSide": smaller}),
-            vec!["undirected runtime import projection"],
-            vec![format!(
-                "octocode graph query walk {} --direction both --edge imports --depth 1",
-                quote(c.v.key(file))
-            )],
+            Draft {
+                detector: "single-point-of-failure",
+                subject: c.v.key(file).to_owned(),
+                id_parts: &[],
+                title: format!(
+                    "Only link between two parts of the import graph ({smaller} files on the smaller side)"
+                ),
+                severity: 0.4 * magnitude(smaller),
+                confidence: 0.6,
+                impact: c.v.impact(file),
+                evidence: json!({"smallerSide": smaller}),
+                controls: vec!["undirected runtime import projection"],
+                verify: vec![format!(
+                    "octocode graph query walk {} --direction both --edge imports --depth 1",
+                    quote(c.v.key(file))
+                )],
+            },
         );
     }
 }
@@ -1599,16 +1647,18 @@ fn detect_misplaced(c: &mut Ctx) {
     for (file, dir, count, same, total) in pending {
         push(
             &mut c.findings,
-            "misplaced-file",
-            c.v.key(file).to_owned(),
-            &[],
-            format!("Most of its dependencies live in {dir}"),
-            0.25,
-            0.5,
-            c.v.impact(file),
-            json!({"suggestedDir": dir, "edgesToSuggested": count, "edgesToOwnDir": same, "edges": total}),
-            vec!["index/mod/__init__, entries and barrels excluded"],
-            Vec::new(),
+            Draft {
+                detector: "misplaced-file",
+                subject: c.v.key(file).to_owned(),
+                id_parts: &[],
+                title: format!("Most of its dependencies live in {dir}"),
+                severity: 0.25,
+                confidence: 0.5,
+                impact: c.v.impact(file),
+                evidence: json!({"suggestedDir": dir, "edgesToSuggested": count, "edgesToOwnDir": same, "edges": total}),
+                controls: vec!["index/mod/__init__, entries and barrels excluded"],
+                verify: Vec::new(),
+            },
         );
     }
 }
@@ -1787,10 +1837,15 @@ fn scan_mentions(
                 truncated.store(true, Ordering::Relaxed);
                 return ignore::WalkState::Quit;
             }
-            let Ok(bytes) = std::fs::read(entry.path()) else {
+            let Ok(octocode_engine::text::Source { bytes, .. }) =
+                octocode_engine::text::read_source(entry.path(), MENTION_MAX_FILE)
+            else {
                 return ignore::WalkState::Continue;
             };
-            if bytes.iter().take(8192).any(|byte| *byte == 0) {
+            if matches!(
+                octocode_engine::text::sniff(&bytes),
+                octocode_engine::text::BinaryVerdict::Binary
+            ) {
                 return ignore::WalkState::Continue;
             }
             let rel = entry.path().strip_prefix(root).map_or_else(

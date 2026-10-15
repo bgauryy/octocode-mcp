@@ -1,5 +1,5 @@
 import { formatDuration } from '../shared/format.js';
-import { sanitizeTerminalText } from '../shared/sanitize.js';
+import { visibleControls } from '../shared/sanitize.js';
 import { priorityName, STATES, type BacklogStore, type Item, type Note, type State } from './store.js';
 
 export const STATE_TITLE: Record<State, string> = { ongoing: 'Ongoing', todo: 'Todo', backlog: 'Backlog (triage)', done: 'Done' };
@@ -10,7 +10,7 @@ export const BOARD_ORDER: readonly State[] = STATES;
 function holder(item: Item, self?: string, parents?: ReadonlySet<string>): string {
   if (!item.assignee || item.state !== 'ongoing') return '';
   if (item.assignee === self) return ' (you)';
-  return parents?.has(item.assignee) ? ' (parent)' : ` (@${sanitizeTerminalText(item.assignee)})`;
+  return parents?.has(item.assignee) ? ' (parent)' : ` (@${visibleControls(item.assignee)})`;
 }
 
 /** ` (from B12)` when the item came from another one. */
@@ -19,7 +19,7 @@ const fromText = (item: Item): string => (item.from === undefined ? '' : ` (from
 /** `B14 [ongoing p1] Title #tag (from B12) (you)` */
 export function itemLine(item: Item, self?: string, parents?: ReadonlySet<string>): string {
   const tags = item.tags.map((tag) => ` #${tag}`).join('');
-  return `${item.ref} [${item.state} ${priorityName(item.priority)}] ${sanitizeTerminalText(item.title)}${tags}${fromText(item)}${holder(item, self, parents)}`;
+  return `${item.ref} [${item.state} ${priorityName(item.priority)}] ${visibleControls(item.title)}${tags}${fromText(item)}${holder(item, self, parents)}`;
 }
 
 /** A compact span: `45s`, `12m`, `5h20m`, `3d4h`. */
@@ -42,7 +42,7 @@ function stamp(at: number): string {
 }
 
 /** Who wrote a note or holds an item, from the reader's side: `you`, `your parent`, or the id. */
-const who = (id: string, self?: string, parents?: ReadonlySet<string>) => (id === self ? 'you' : parents?.has(id) ? 'your parent' : sanitizeTerminalText(id));
+const who = (id: string, self?: string, parents?: ReadonlySet<string>) => (id === self ? 'you' : parents?.has(id) ? 'your parent' : visibleControls(id));
 
 /**
  * When things happened to an item, oldest first: `created 2026-10-09 14:00 (3d ago) by agent · claimed 2h ago by you ·
@@ -50,7 +50,7 @@ const who = (id: string, self?: string, parents?: ReadonlySet<string>) => (id ==
  */
 function timeline(item: Item, now: number, self?: string, parents?: ReadonlySet<string>): string[] {
   const holder = item.assignee ? ` by ${who(item.assignee, self, parents)}` : '';
-  const parts = [`created ${stamp(item.createdAt)} (${ago(item.createdAt, now)}) by ${sanitizeTerminalText(item.createdBy)}`];
+  const parts = [`created ${stamp(item.createdAt)} (${ago(item.createdAt, now)}) by ${visibleControls(item.createdBy)}`];
   if (item.startedAt) parts.push(`claimed ${ago(item.startedAt, now)}${item.state === 'done' ? '' : holder}`);
   else if (item.assignee && item.state !== 'done') parts.push(`assignee ${who(item.assignee, self, parents)}`);
   if (item.doneAt) parts.push(`done ${ago(item.doneAt, now)}${item.startedAt && item.startedAt <= item.doneAt ? ` (took ${span(item.doneAt - item.startedAt)})` : ''}${holder}`);
@@ -59,7 +59,7 @@ function timeline(item: Item, now: number, self?: string, parents?: ReadonlySet<
 }
 
 /** A note's text with later lines indented under its bullet (a change note may carry a whole replaced body). */
-const indented = (text: string, indent: string) => sanitizeTerminalText(text).replace(/\n/g, `\n${indent}`);
+const indented = (text: string, indent: string) => visibleControls(text).replace(/\n/g, `\n${indent}`);
 
 /** `- 5m ago you: text` for a note, `- 5m ago you · state todo → ongoing` for a change the store logged. */
 function noteLine(note: Note, now: number, self?: string, parents?: ReadonlySet<string>): string {
@@ -69,10 +69,10 @@ function noteLine(note: Note, now: number, self?: string, parents?: ReadonlySet<
 /** The item's saved fields in reading order, empty ones omitted: Goal, Where, Why, Evidence (one `-` line per entry), Plan. */
 export function itemFields(item: Item): string[] {
   const lines: string[] = [];
-  if (item.goal) lines.push(`Goal: ${sanitizeTerminalText(item.goal)}`);
-  if (item.paths.length) lines.push(`Where: ${item.paths.map((path) => sanitizeTerminalText(path)).join(', ')}`);
+  if (item.goal) lines.push(`Goal: ${visibleControls(item.goal)}`);
+  if (item.paths.length) lines.push(`Where: ${item.paths.map((path) => visibleControls(path)).join(', ')}`);
   if (item.why) lines.push(`Why: ${indented(item.why, '  ')}`);
-  if (item.evidence.length) lines.push('Evidence:', ...item.evidence.map((entry) => `- ${sanitizeTerminalText(entry)}`));
+  if (item.evidence.length) lines.push('Evidence:', ...item.evidence.map((entry) => `- ${visibleControls(entry)}`));
   if (item.plan) lines.push(`Plan: ${indented(item.plan, '  ')}`);
   return lines;
 }
@@ -95,7 +95,7 @@ export function itemDetail(item: Item, notes: Note[], totalNotes: number, now: n
   const meta = [...timeline(item, now, self, parents), options.version ? `version ${item.version}` : ''].filter(Boolean);
   const lines = [itemLine(item, self, parents), ...itemFields(item), meta.join(' · ')];
   if (options.origin) lines.push(`From: ${itemLine(options.origin, self, parents)}`);
-  if (item.body) lines.push('', sanitizeTerminalText(item.body));
+  if (item.body) lines.push('', visibleControls(item.body));
   if (options.derived?.length) lines.push('', `Derived items (${options.derived.length}):`, ...options.derived.map((child) => `- ${itemLine(child, self, parents)}`));
   if (notes.length > 0) {
     const offset = options.noteOffset ?? 0;
@@ -127,7 +127,7 @@ export function exportMarkdown(store: BacklogStore, repoName: string, now: numbe
   const { items } = store.list();
   const lines = [
     `<!-- Generated by Octocode (/backlog export) at ${new Date(now).toISOString()}. A snapshot: edits here are not read back. -->`,
-    `# Backlog — ${sanitizeTerminalText(repoName)}`,
+    `# Backlog — ${visibleControls(repoName)}`,
     '',
   ];
   if (items.length === 0) lines.push('_Empty._', '');
@@ -137,14 +137,14 @@ export function exportMarkdown(store: BacklogStore, repoName: string, now: numbe
     lines.push(`## ${STATE_TITLE[state]} (${rows.length})`, '');
     for (const item of rows) {
       const tags = item.tags.map((tag) => ` #${tag}`).join('');
-      const who = item.assignee ? ` — ${sanitizeTerminalText(item.assignee)}` : '';
-      lines.push(`- **${item.ref}** [${priorityName(item.priority)}] ${sanitizeTerminalText(item.title)}${tags}${fromText(item)}${who}`);
+      const who = item.assignee ? ` — ${visibleControls(item.assignee)}` : '';
+      lines.push(`- **${item.ref}** [${priorityName(item.priority)}] ${visibleControls(item.title)}${tags}${fromText(item)}${who}`);
       lines.push(...itemFields(item).flatMap((field) => field.split('\n')).map((line) => `  ${line}`));
-      const times = [`created ${stamp(item.createdAt)} by ${sanitizeTerminalText(item.createdBy)}`, item.startedAt ? `claimed ${stamp(item.startedAt)}` : '', item.doneAt ? `done ${stamp(item.doneAt)}` : ''];
+      const times = [`created ${stamp(item.createdAt)} by ${visibleControls(item.createdBy)}`, item.startedAt ? `claimed ${stamp(item.startedAt)}` : '', item.doneAt ? `done ${stamp(item.doneAt)}` : ''];
       lines.push(`  _${times.filter(Boolean).join(' · ')}_`);
-      for (const line of item.body ? sanitizeTerminalText(item.body).split('\n') : []) lines.push(`  ${line}`.trimEnd());
+      for (const line of item.body ? visibleControls(item.body).split('\n') : []) lines.push(`  ${line}`.trimEnd());
       for (const note of store.notes(item, -1)) {
-        const stamp = `${new Date(note.at).toISOString().slice(0, 16).replace('T', ' ')} ${sanitizeTerminalText(note.author)}${note.kind === 'change' ? ' ·' : ':'}`;
+        const stamp = `${new Date(note.at).toISOString().slice(0, 16).replace('T', ' ')} ${visibleControls(note.author)}${note.kind === 'change' ? ' ·' : ':'}`;
         lines.push(...`  - ${stamp} ${indented(note.text, '    ')}`.split('\n').map((line) => line.trimEnd()));
       }
     }

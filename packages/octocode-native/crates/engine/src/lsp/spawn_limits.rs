@@ -23,7 +23,9 @@
 #[cfg(windows)]
 use crate::error::Error;
 use crate::error::Result;
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 use std::sync::Arc;
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 use tokio::process::{Child, Command};

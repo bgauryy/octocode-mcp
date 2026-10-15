@@ -1,7 +1,7 @@
 import type { ExtensionUIContext } from '@earendil-works/pi-coding-agent';
 import { ALLOW_ONCE, DENY_NOTE, NOTE_TITLE } from '../permission/ask.js';
-import { AUDIT_NOTIFY_PREFIX, childAuditEntry, type AuditEntry } from '../permission/audit.js';
-import { splitHeader, type PermissionHeader } from '../permission/header.js';
+import { AUDIT_NOTIFY_PREFIX, CHILD_AUDIT_CAP, childAuditEntry, isRoutine, type AuditEntry } from '../permission/audit.js';
+import { redactNonce, splitHeader, type PermissionHeader } from '../permission/header.js';
 import type { ActionClass, AskReason } from '../permission/mode.js';
 import { headerText } from '../shared/fence.js';
 import { withDialog } from '../shared/locks.js';
@@ -34,12 +34,16 @@ export interface RelayPermission {
   relayedAllow(agent: string, action: ActionClass, what: readonly string[]): void;
   /** The child's own audit entry. */
   adopt(entry: AuditEntry): void;
+  /** What the parent did with the child's audit notifications instead of recording them. */
+  relayNote(agent: string, note: string): void;
 }
 
 /** What the parent offers its children: its permission state always, its UI only when a person can be asked. */
 export interface RelayHost {
   permission: RelayPermission;
   ui?: Pick<ExtensionUIContext, 'select' | 'confirm' | 'input' | 'notify'> | undefined;
+  /** Registers the secret given to child `id` with the team, so the user's messages to it are signed; returns what ends that when the child is gone (`Team.vouch`). */
+  vouch?: ((id: string, secret: string) => () => void) | undefined;
 }
 
 /** The child as the parent knows it: from its own spawn, not from anything the child says. */
@@ -50,6 +54,8 @@ interface ChildWho {
 }
 
 interface RelayOptions {
+  /** The secret the parent gave this child (`PERMISSION_NONCE_FILE_ENV`; empty when none could be given): a header or audit entry without it is not the child's permission module's. */
+  nonce: string;
   /** Sends one `extension_ui_response` record to the child. */
   send: (response: Record<string, unknown>) => void;
   /** Called when the child's first dialog opens (`true`) and when its last one closes (`false`). */
@@ -65,6 +71,12 @@ export class ChildRelay {
   readonly #host: RelayHost | undefined;
   readonly #options: RelayOptions;
   readonly #open = new Map<string, AbortController>();
+  /** Routine audit entries recorded for this child (the cap applies to these only), routine ones counted past the cap by action, and notifications refused (no nonce, or not a valid entry). */
+  #adopted = 0;
+  readonly #counted = new Map<string, number>();
+  #refused = 0;
+  /** What the parent's log already says about the last two (routine entries counted, refused). */
+  #noted = { counted: 0, refused: 0 };
   #windowStart = 0;
   #shown = 0;
   #limited = false;
@@ -98,8 +110,8 @@ export class ChildRelay {
     const note = this.#denyNote;
     this.#denyNote = undefined;
     if (method === 'input' && title === NOTE_TITLE && note) return this.#options.send({ type: 'extension_ui_response', id, value: note });
-    if (!ui || method === 'editor' || this.#open.size > 0 || this.#open.has(id)) return this.#cancel(id);
-    const { title: shown, header } = method === 'select' ? splitHeader(title) : { title, header: undefined };
+    if (!ui || method === 'editor' || this.#open.size > 0) return this.#cancel(id);
+    const { title: shown, header } = method === 'select' ? splitHeader(title, this.#options.nonce) : { title, header: undefined };
     if (header && this.#fastPath(id, header, options)) return;
     if (this.#overLimit(ui)) {
       if (method === 'select' && options.includes(DENY_NOTE)) {
@@ -111,11 +123,48 @@ export class ChildRelay {
     void this.#show(ui, id, method, shown, options, event);
   }
 
-  /** The child's audit entry, recorded in the parent's log under the child's name. Anything else notified is ignored. */
+  /**
+   * The child's audit entry, recorded in the parent's log under the child's name. Past the cap only routine entries (allowed,
+   * no ⚠ action, nobody asked) stop being recorded one by one: they are counted by action and the totals go to the log
+   * (`#report`); a destructive call, a denial, an `invariant` refusal, a mode change or a call a person answered is always
+   * recorded. A message that fails the nonce or validation is counted and reported too, never dropped unseen. Any other
+   * notification is none of the relay's business.
+   */
   #audit(message: unknown): void {
     if (typeof message !== 'string' || !message.startsWith(AUDIT_NOTIFY_PREFIX)) return;
-    const entry = childAuditEntry(message, this.#who.id);
-    if (entry) this.#host?.permission.adopt(entry);
+    const entry = childAuditEntry(message, this.#who.id, this.#options.nonce);
+    if (entry && (!isRoutine(entry) || this.#adopted < CHILD_AUDIT_CAP)) {
+      if (isRoutine(entry)) this.#adopted += 1;
+      this.#host?.permission.adopt(entry);
+      return;
+    }
+    if (entry) this.#counted.set(entry.action, (this.#counted.get(entry.action) ?? 0) + 1);
+    else this.#refused += 1;
+    // The first of each kind is written at once; the totals when the child ends (`end`).
+    if ((entry && this.#total === 1) || (!entry && this.#refused === 1)) this.#report();
+  }
+
+  get #total(): number {
+    return [...this.#counted.values()].reduce((sum, count) => sum + count, 0);
+  }
+
+  /** Writes to the parent's log what it did not record of this child's audit notifications since the last time. */
+  #report(): void {
+    const [counted, refused] = [this.#total, this.#refused];
+    const byAction = [...this.#counted].map(([action, count]) => `${action} × ${count}`).join(', ');
+    const lines = [
+      ...(counted > this.#noted.counted
+        ? [`past the cap of ${CHILD_AUDIT_CAP}, routine entries are counted, not recorded: ${counted} (${byAction}); denied, asked and destructive ones still are`]
+        : []),
+      ...(refused > this.#noted.refused ? [`audit notifications refused (no valid nonce, or not a valid entry): ${refused}`] : []),
+    ];
+    this.#noted = { counted, refused };
+    if (lines.length > 0) this.#host?.permission.relayNote(this.#who.id, lines.join('; '));
+  }
+
+  /** The child ended: the log gets the final counts of what was not recorded. */
+  end(): void {
+    this.#report();
   }
 
   /** The parent's own mode already allows the call: answer "Allow once" without a dialog, and audit it. */
@@ -167,7 +216,9 @@ export class ChildRelay {
     const controller = new AbortController();
     this.#open.set(id, controller);
     if (this.#open.size === 1) this.#options.onWaiting?.(true);
-    const heading = `${this.#label()} asks:\n${sanitizeTerminalText(title)}`;
+    // A header the parent rejected is shown whole, but never with the child's secret in it.
+    const shown = (text: string): string => sanitizeTerminalText(redactNonce(text, this.#options.nonce));
+    const heading = `${this.#label()} asks:\n${shown(title)}`;
     const dialogOptions = { signal: controller.signal, ...(typeof event['timeout'] === 'number' ? { timeout: event['timeout'] } : {}) };
     let response: Record<string, unknown> = { cancelled: true };
     try {
@@ -175,17 +226,17 @@ export class ChildRelay {
         if (controller.signal.aborted) return { cancelled: true };
         if (method === 'select') {
           // Labels are drawn sanitized; the answer is the child's own label.
-          const drawn = options.map((option) => sanitizeTerminalText(option));
+          const drawn = options.map(shown);
           const choice = await ui.select(heading, drawn, dialogOptions);
           const index = choice === undefined ? -1 : drawn.indexOf(choice);
           return index < 0 ? { cancelled: true } : { value: options[index] };
         }
         if (method === 'confirm') {
-          const message = typeof event['message'] === 'string' ? sanitizeTerminalText(event['message']) : '';
+          const message = typeof event['message'] === 'string' ? shown(event['message']) : '';
           const confirmed = await ui.confirm(heading, message, dialogOptions);
           return controller.signal.aborted ? { cancelled: true } : { confirmed };
         }
-        const placeholder = typeof event['placeholder'] === 'string' ? sanitizeTerminalText(event['placeholder']) : undefined;
+        const placeholder = typeof event['placeholder'] === 'string' ? shown(event['placeholder']) : undefined;
         const value = await ui.input(heading, placeholder, dialogOptions);
         return value === undefined ? { cancelled: true } : { value };
       }, controller.signal);

@@ -32,15 +32,6 @@ impl WindowState {
         capped: false,
     };
 
-    /// Combined state of two collections served as one list.
-    pub(super) fn merge(self, other: Self) -> Self {
-        Self {
-            skipped: 0,
-            exhausted: self.exhausted && other.exhausted,
-            capped: self.capped || other.capped,
-        }
-    }
-
     /// Page `values` loaded under this state and mark a capped scan.
     pub(super) fn paginate(
         self,
@@ -179,12 +170,12 @@ pub(super) async fn load_window_with(
                 loaded.state.exhausted = true;
                 break;
             }
-            if matched >= need {
-                break;
-            }
             if batch >= spec.max_batches {
                 loaded.state.capped = true;
                 loaded.state.exhausted = true;
+                break;
+            }
+            if matched >= need {
                 break;
             }
             batch += 1;
@@ -241,6 +232,24 @@ async fn load_all_batches(
         loaded.items.extend(items);
     }
     Ok(loaded)
+}
+
+/// A provider list that ended before an authoritative item count is partial,
+/// even when its last (short) batch carries no next link.
+pub(super) fn reconcile_collection_total(
+    page: &mut Value,
+    state: WindowState,
+    listed: usize,
+    total: Option<usize>,
+    reason: &str,
+) -> bool {
+    let missing = state.exhausted && total.is_some_and(|total| listed < total);
+    if missing {
+        page["countScope"] = json!("partial");
+        page["terminalLimit"] = json!(true);
+        page["providerLimit"] = json!({"reason": reason});
+    }
+    missing
 }
 
 /// Reconcile a changed-file page with the PR's own `changed_files` count.
@@ -352,19 +361,12 @@ pub(super) fn lift_page_limits(row: &mut Value, page: &mut Value) {
     {
         return;
     }
-    row["terminalLimit"] = json!(true);
-    if let Some(reason) = page
+    match page
         .pointer("/providerLimit/reason")
         .and_then(Value::as_str)
     {
-        let reasons = row
-            .as_object_mut()
-            .map(|row| row.entry("partialReasons").or_insert_with(|| json!([])));
-        if let Some(Value::Array(reasons)) = reasons
-            && !reasons.iter().any(|known| known == reason)
-        {
-            reasons.push(json!(reason));
-        }
+        Some(reason) => crate::tools::paging::terminal_limit(row, reason, &[]),
+        None => row["terminalLimit"] = json!(true),
     }
 }
 

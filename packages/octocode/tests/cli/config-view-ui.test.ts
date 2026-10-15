@@ -168,7 +168,7 @@ describe('config view browser app', () => {
     const view = await browser(
       {
         files,
-        settings: [{ key: 'version', type: 'schemaVersion', value: 1 }],
+        settings: [{ key: 'network.maxRetries', type: 'number', value: 1 }],
       },
       [],
       async payload => {
@@ -204,7 +204,7 @@ describe('config view browser app', () => {
         homeSettings: { writable: false },
         homeEnv: { writable: false },
       },
-      settings: [{ key: 'version', type: 'schemaVersion', value: 1 }],
+      settings: [{ key: 'network.maxRetries', type: 'number', value: 1 }],
       keys: [
         { key: 'MY_KEY', scope: 'home', set: true },
         { key: 'API', setting: 'classification.api', scope: 'home', set: true },
@@ -384,14 +384,14 @@ describe('config view browser app', () => {
     );
   });
 
-  it('schema version saves as a number and exposes local key storage', async () => {
+  it('a number setting saves as a number and exposes local key storage', async () => {
     const view = await browser({
       files,
       storage: { message: 'Keys use local .env files.' },
       settings: [
         {
-          key: 'version',
-          type: 'schemaVersion',
+          key: 'network.maxRetries',
+          type: 'number',
           value: 1,
           workspaceAllowed: true,
         },

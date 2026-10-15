@@ -11,8 +11,8 @@
 //! (`no_production_literal_names_a_continuation`): the description states
 //! what each lead kind is for, and the response carries `{tool, query}`.
 //! The scan covers every runtime source, the tools included.
-use super::channels::{HINTS_KEY, PAGES_KEY};
 use super::rows::MAX_GUIDANCE_CHARS;
+use crate::tools::id::continuation_channels::{HINTS_KEY, PAGES_KEY};
 use crate::tools::id::{ToolId, error_codes};
 use serde_json::json;
 use std::path::{Path, PathBuf};

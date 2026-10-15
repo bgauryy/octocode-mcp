@@ -1,19 +1,29 @@
 #[cfg(test)]
+mod fidelity_tests;
+#[cfg(test)]
 mod file_language_tests;
 #[cfg(test)]
 mod lead_tests;
+#[cfg(test)]
+mod match_tests;
 mod matches;
 mod memo;
+#[cfg(test)]
+mod outline_tests;
 mod output;
 #[cfg(test)]
 mod paging_tests;
 #[cfg(test)]
 mod policy_tests;
+#[cfg(test)]
+mod rule_tests;
 mod scan_window;
 mod symbols;
 #[cfg(test)]
 mod symbols_tests;
 mod syntax;
+#[cfg(test)]
+mod test_rows;
 
 use serde_json::Value;
 
@@ -50,7 +60,8 @@ pub(super) fn read_parse_source(path: &std::path::Path) -> Result<Option<Vec<u8>
 /// searched literal (a symbol name, a pattern without metavariables) leads
 /// to a text search of it in the same file.
 pub(super) fn source_limit(path: &str, literal: Option<&str>) -> Value {
-    let mut row = serde_json::json!({"status":"error","path":path,"errorCode":"fileTooLarge","error":"Source exceeds the native parser byte limit.","isPartial":true,"terminalLimit":true});
+    let mut row = serde_json::json!({"status":"error","path":path,"errorCode":"fileTooLarge","error":"Source exceeds the native parser byte limit."});
+    crate::tools::paging::terminal_limit(&mut row, "fileTooLarge", &[]);
     if let Some(lead) = literal.and_then(|literal| text_search(path, literal)) {
         row["next"] = serde_json::json!({ "findText": lead });
     }

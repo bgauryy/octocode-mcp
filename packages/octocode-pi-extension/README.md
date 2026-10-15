@@ -122,11 +122,13 @@ Each feature has a full description in [docs/FEATURES.md](docs/FEATURES.md).
 
 ### Integrations
 
-- **Hooks** (opt-in): with `OCTOCODE_HOOKS=1`, Claude Code and Codex command hooks run on Pi events (`PreToolUse`, `PostToolUse`, `SessionStart`, `PreCompact`, `Stop`, `Notification`). Existing Claude hooks work unchanged.
+- **Hooks** (opt-in): with `OCTOCODE_HOOKS=1`, Claude Code and Codex command hooks run on Pi events (`PreToolUse`, `PostToolUse`, `SessionStart`, `PreCompact`, `Stop`, `Notification`, plus Octocode `PreMessageSend` and `PostMessageReceive`). Existing Claude hooks work unchanged.
   - **Blocking:** `PreToolUse` can block a call. A `Stop` hook that returns `{"decision":"block","reason":…}` continues the finished run with that reason. As in Claude Code, it gets `stop_hook_active` and is capped at 8 continuations in a row.
   - **Notification:** `Notification` hooks fire on `permission_prompt`, `elicitation_dialog` and `idle_prompt`, the first two only for dialogs the agent opens during a run; also in RPC mode. They run in the background and never block.
   - **Running:** matching hooks run in parallel, and a hook listed in several files runs once. Hook context over 16 KB is saved whole to a file, not truncated; the context gets its head, tail and path.
   - **Timing:** Pi checks every call of a batch before any of them runs, so a slow `PreToolUse` hook holds up the whole batch. A hook over 5 s is reported once, and `/hooks` shows each command's run count, average and slowest time.
+- **External agents:** `externalAgent` connects to another discovered Pi session or an explicit ACP adapter. `/octocode external`, the API and CLI share the same contract, message hooks and permission policy. See [docs/API.md](docs/API.md#connect-to-external-agents).
+- **Messaging recovery:** separate external connections can run concurrently; each connection guards its own active prompt. Inspect accepted or uncertain work before reconnecting or retrying. [Concurrency and recovery](docs/API.md#concurrency-and-recovery) explains native receipt scope, adapter failure and the difference between internal Team mail and durable cross-host requests.
 - **External API** (opt-in): with `OCTOCODE_API=1`, other programs message the session and follow its events over JSON-RPC. `tool.start` and `tool.end` events carry `depth` (0 for the agent's own calls) and, for calls made by another tool, `parentId`. `tool.end` also carries `durationMs`. `octocode-pi-api watch --top-level` drops the nested calls. See [docs/API.md](docs/API.md).
 - **`askUser`**: the agent asks related questions, with choices or free text, in an inline dialog when a choice depends on you.
 
@@ -163,6 +165,7 @@ Everything lives under `/octocode`; tab completes subcommands. `/agents`, `/sess
 | `/octocode permission [manual\|workspace\|full\|grants [clear]\|log]` | Show or set the permission mode (Shift+Tab in the editor cycles), list or clear session grants, show recent decisions |
 | `/octocode jobs [kill <id>]` | List or stop background bash jobs |
 | `/octocode trust [off]` | Review and trust this project's hooks, agent profiles and skills |
+| `/octocode external <JSON>` | Discover, connect, prompt, cancel or disconnect external agents |
 | `/octocode api [on [http] \| off]` | Start or stop the external API |
 | `/agents [tell <id\|all> <text> \| kill <id> \| merge <id>]` | List the team, message agents, stop or merge a subagent (shortcut for `/octocode agents`) |
 | `/sessions [all \| <words>]` | Find and resume sessions |

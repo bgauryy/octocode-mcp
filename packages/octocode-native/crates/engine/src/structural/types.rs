@@ -114,6 +114,9 @@ pub struct StructuralSearchDetailedResult {
 
 pub struct StructuralSearchDetailedFileResult {
     pub path: String,
+    /// Digest of the complete source bytes already read for this scan.
+    /// None when no complete source identity was available.
+    pub source_sha256: Option<String>,
     pub status: String,
     pub language_id: Option<String>,
     pub skipped_reason: Option<String>,

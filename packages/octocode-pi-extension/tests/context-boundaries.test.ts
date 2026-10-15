@@ -18,10 +18,10 @@ describe('agent context boundaries', () => {
     }
   });
 
-  it('sanitizes incoming message content and sender before projecting it into context', () => {
+  it('shows controls in incoming message content and sender as escapes before projecting them into context', () => {
     const text = messageText({ id: 1, from: 'peer\u001b[2J', to: 'me', text: 'hello\u001b]0;title\u0007\u202e', at: 0, replyRequired: false }, undefined);
-    expect(text).toContain('from agent peer at');
-    expect(text).toContain('\nhello\n');
+    expect(text).toContain('from agent peer\\u{1b}[2J at');
+    expect(text).toContain('\nhello\\u{1b}]0;title\\u{7}\\u{202e}\n');
     expect(text).not.toMatch(/[\u001b\u202e]/);
   });
 

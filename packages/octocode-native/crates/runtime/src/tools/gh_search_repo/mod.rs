@@ -4,9 +4,9 @@ mod provider_tests;
 mod query;
 
 use crate::tools::gh_shared::{
-    GhFailure, SEARCH_RESULT_CAP, SearchReach, add_next, apply_partial, broaden_lead,
-    drop_each_keyword, field_names, pick_rows, reject_window, search_failure, with_search_repair,
-    without,
+    GhFailure, SEARCH_RESULT_CAP, SearchCompleteness, SearchReach, add_next, apply_partial,
+    broaden_lead, drop_each_keyword, field_names, pick_rows, reject_window, search_failure,
+    with_search_repair, without,
 };
 use crate::tools::id::ToolId;
 use crate::tools::num::usize_of;
@@ -45,9 +45,7 @@ pub async fn run<C: ConditionalCache>(
         // The message names the login; no repair lead exists for it.
         match missing_owner {
             Some(owner) => GhFailure {
-                message: format!(
-                    "Owner \"{owner}\" not found: no GitHub user or organization has this login"
-                ),
+                message: crate::tools::gh_shared::owner_not_found_message(owner),
                 hints: Vec::new(),
                 ..failure
             },
@@ -75,138 +73,198 @@ pub(crate) async fn execute<C: ConditionalCache>(
     {
         return exact_repository(provider, query, owner, repo, context).await;
     }
+    crate::tools::gh_shared::reject_boolean_keywords(&query.keywords)?;
     let current = usize_of(query.page);
     let per = page_size(query);
-    let owner_only = owner_only(query);
-    // The owner listing pages through the REST list API, which has no
-    // 1,000-result search window; only search is bounded by it.
-    let (data, listing) = match owner_only {
-        Some(owner) => {
-            let (data, listing) = owner_listing(provider, owner, current, per, context).await?;
-            (data, Some(listing))
-        }
-        None => {
-            reject_window(current, per)?;
-            let data = provider
-                .transport
-                .search_repositories(
-                    &RepositorySearchRequest {
-                        query: query::repositories(query),
-                        sort: (query.sort != GhSearchRepoQuerySort::BestMatch)
-                            .then(|| query.sort.to_string()),
-                        page: current,
-                        per_page: per,
-                    },
-                    context,
-                )
-                .await?;
-            (data, None)
-        }
-    };
-    let reach = SearchReach::new(data.total_count, per);
-    let more = match &listing {
-        Some(listing) => listing.more,
-        None => current < reach.pages,
-    };
-    let provider_incomplete = data.incomplete_results;
-    // An owner listing reports no total (REST pages, no search window).
-    let provider_matched = if listing.is_none() {
-        data.total_count
-    } else {
-        0
-    };
-    let provider_capped = provider_matched > SEARCH_RESULT_CAP;
+    let (data, listing) = fetch_page(provider, query, current, per, context).await?;
+    let page = RepoPage::of(&data, listing.as_ref(), current, per);
     let mut leads = top_leads(data.items.first());
     // Archived repositories are excluded unless the caller set `archived`;
     // a listing that skipped some offers them (the description states the
     // search default once).
-    let archived_skipped = listing.as_ref().map_or(0, |listing| listing.archived);
-    let excluded = query.include_archived != Some(true) && archived_skipped > 0;
-    if excluded {
+    if query.include_archived != Some(true) && page.archived_skipped > 0 {
         leads.insert(
             leads.len().min(1),
             ("includeArchived", include_archived(query)),
         );
     }
     let wanted = wanted_topics(query);
-    let fields = field_names(&query.fields);
     let repositories = data
         .items
         .into_iter()
         .map(|item| repository_row(item, &wanted))
         .collect::<Vec<_>>();
-    let repositories_empty = repositories.is_empty();
     let ignored_language = match &listing {
-        None => ignored_language(provider, query, &repositories, provider_matched, context).await,
+        None => ignored_language(provider, query, &repositories, page.matched, context).await,
         Some(_) => None,
     };
-    // A page past the last has no rows though the search (or the listing's
-    // earlier pages) has some: the shared response stage restarts it.
-    let past_end = repositories_empty
-        && current > 1
-        && match &listing {
-            Some(_) => archived_skipped == 0,
-            None => reach.past_last(current),
-        };
-    let mut value = match &listing {
-        // The REST listing reports no total: `page` is the provider page
-        // cursor and `next.nextPage` follows the real Link header. The
-        // listing is ordered by latest push (the `owner` description says
-        // so); page counters are verbose (core field class).
-        Some(listing) => {
-            let mut pagination = crate::response::pages::PageFacts::open(current, Some(per), more)
-                .out_of_range(past_end)
-                .to_value();
-            pagination["providerPagesRead"] = json!(listing.last_page + 1 - current);
-            json!({"repositories":repositories,"pagination":pagination})
-        }
-        None => json!({"repositories":repositories,"pagination":
-            crate::response::pages::PageFacts::counted(current, per, reach.total)
-                .out_of_range(past_end)
-                .to_value()}),
-    };
-    let next_from = listing
-        .as_ref()
-        .map_or(current, |listing| listing.last_page);
-    add_next(&mut value, ToolId::GhSearchRepo, query, next_from, more);
-    for (name, lead) in leads {
-        value["next"][name] = lead;
-    }
-    apply_partial(
+    let empty = repositories.is_empty();
+    let mut value = page.value(repositories);
+    add_next(
         &mut value,
         ToolId::GhSearchRepo,
         query,
-        provider_incomplete,
-        provider_matched,
-        current,
-        more,
-        "repository",
+        page.next_from,
+        page.more,
     );
-    if archived_skipped > 0 {
-        push_warnings(
-            &mut value,
-            [format!(
-                "{} skipped",
-                crate::response::pages::counted(
-                    u64::try_from(archived_skipped).unwrap_or(u64::MAX),
-                    "archived repository",
-                    "archived repositories"
-                )
-            )],
-        );
+    for (name, lead) in leads {
+        value["next"][name] = lead;
     }
-    if let Some(warning) = ignored_language {
-        push_warnings(&mut value, [warning]);
-    }
-    pick_rows(&mut value, "repositories", REPO_ID, &fields);
-    let output = repository_output(
+    page.disclose(&mut value, query, ignored_language);
+    pick_rows(
+        &mut value,
+        "repositories",
+        REPO_ID,
+        &field_names(&query.fields),
+    );
+    Ok(repository_output(
         value,
         query,
-        repositories_empty && !more && !past_end,
-        provider_incomplete,
-        provider_capped,
-    );
-    Ok(output)
+        empty && !page.more && !page.past_end,
+        page.incomplete,
+        page.matched > SEARCH_RESULT_CAP,
+    ))
+}
+
+/// One page of repositories: an owner's REST listing (no 1,000-result
+/// search window, no total) or a search page.
+async fn fetch_page<C: ConditionalCache>(
+    provider: &GitHubProvider<C>,
+    query: &GhSearchRepoQuery,
+    current: usize,
+    per: usize,
+    context: &RequestContext,
+) -> Result<(RepositorySearchPage, Option<OwnerListing>), ProviderError> {
+    if let Some(owner) = owner_only(query) {
+        let (data, listing) = owner_listing(provider, owner, current, per, context).await?;
+        return Ok((data, Some(listing)));
+    }
+    reject_window(current, per)?;
+    let data = provider
+        .transport
+        .search_repositories(
+            &RepositorySearchRequest {
+                query: query::repositories(query),
+                sort: (query.sort != GhSearchRepoQuerySort::BestMatch)
+                    .then(|| query.sort.to_string()),
+                page: current,
+                per_page: per,
+            },
+            context,
+        )
+        .await?;
+    Ok((data, None))
+}
+
+/// Where one page of repositories stands.
+struct RepoPage {
+    current: usize,
+    per: usize,
+    more: bool,
+    /// The page the next one follows: the last provider page an owner
+    /// listing read, else the requested page.
+    next_from: usize,
+    /// GitHub's own match count; an owner listing reports none.
+    matched: usize,
+    /// The search total within the 1,000-result window.
+    reachable: usize,
+    incomplete: bool,
+    /// An owner listing's REST pages read by this call.
+    provider_pages: Option<usize>,
+    archived_skipped: usize,
+    /// No rows though the search (or the listing's earlier pages) has some:
+    /// the shared response stage restarts it.
+    past_end: bool,
+}
+
+impl RepoPage {
+    fn of(
+        data: &RepositorySearchPage,
+        listing: Option<&OwnerListing>,
+        current: usize,
+        per: usize,
+    ) -> Self {
+        let reach = SearchReach::new(data.total_count, per);
+        let empty = data.items.is_empty() && current > 1;
+        match listing {
+            Some(listing) => Self {
+                current,
+                per,
+                more: listing.more,
+                next_from: listing.last_page,
+                matched: 0,
+                reachable: reach.total,
+                incomplete: data.incomplete_results,
+                provider_pages: Some(listing.pages_read),
+                archived_skipped: listing.archived,
+                past_end: empty && listing.archived == 0,
+            },
+            None => Self {
+                current,
+                per,
+                more: current < reach.pages,
+                next_from: current,
+                matched: data.total_count,
+                reachable: reach.total,
+                incomplete: data.incomplete_results,
+                provider_pages: None,
+                archived_skipped: 0,
+                past_end: empty && reach.past_last(current),
+            },
+        }
+    }
+
+    /// The rows and their `pagination`. The REST listing reports no total:
+    /// `page` is the provider page cursor and `next.nextPage` follows the
+    /// real Link header. The listing is ordered by latest push (the `owner`
+    /// description says so); page counters are verbose (core field class).
+    fn value(&self, repositories: Vec<Value>) -> Value {
+        use crate::response::pages::PageFacts;
+        let pagination = match self.provider_pages {
+            Some(read) => {
+                let mut pagination = PageFacts::open(self.current, Some(self.per), self.more)
+                    .out_of_range(self.past_end)
+                    .to_value();
+                pagination["providerPagesRead"] = json!(read);
+                pagination
+            }
+            None => PageFacts::counted(self.current, self.per, self.reachable)
+                .out_of_range(self.past_end)
+                .to_value(),
+        };
+        json!({"repositories": repositories, "pagination": pagination})
+    }
+
+    /// The provider's partial facts and the page's warnings: archived
+    /// repositories a listing skipped, a language filter GitHub ignored.
+    fn disclose(&self, value: &mut Value, query: &GhSearchRepoQuery, ignored: Option<String>) {
+        apply_partial(
+            value,
+            query,
+            &SearchCompleteness {
+                tool: ToolId::GhSearchRepo,
+                matched: self.matched,
+                incomplete: self.incomplete,
+                page: self.current,
+                has_more: self.more,
+                subject: "repository",
+            },
+        );
+        if self.archived_skipped > 0 {
+            push_warnings(
+                value,
+                [format!(
+                    "{} skipped",
+                    crate::response::pages::counted(
+                        u64::try_from(self.archived_skipped).unwrap_or(u64::MAX),
+                        "archived repository",
+                        "archived repositories"
+                    )
+                )],
+            );
+        }
+        push_warnings(value, ignored);
+    }
 }
 
 /// `owner`+`repo` alone: that repository's row, with its default branch, from the
@@ -342,7 +400,9 @@ fn owner_only(query: &GhSearchRepoQuery) -> Option<&str> {
 /// Search excludes archived repositories by default (`archived:false`); the
 /// listing API cannot, so it filters them and keeps reading provider pages
 /// until a page of kept rows, the end of the listing (no Link next), or the
-/// page budget.
+/// page budget. A page never holds more than `per` rows: a provider page
+/// whose kept rows would overflow it is left whole to the next call (the
+/// cursor resumes at it), so no kept row is cut or shown twice.
 async fn owner_listing<C: ConditionalCache>(
     provider: &GitHubProvider<C>,
     owner: &str,
@@ -353,17 +413,25 @@ async fn owner_listing<C: ConditionalCache>(
     let mut items = Vec::new();
     let mut archived = 0;
     let mut provider_page = current;
+    let mut pages_read = 0;
     let more = loop {
         let (batch, has_next) = provider
             .transport
             .list_owner_repositories(owner, "pushed", provider_page, per, context)
             .await?;
+        pages_read += 1;
         let read = batch.len();
-        let kept = items.len();
-        items.extend(batch.into_iter().filter(|item| !item.archived));
-        archived += read - (items.len() - kept);
-        if !has_next || items.len() >= per || provider_page + 1 - current >= MAX_OWNER_LISTING_PAGES
-        {
+        let kept = batch
+            .into_iter()
+            .filter(|item| !item.archived)
+            .collect::<Vec<_>>();
+        if !items.is_empty() && items.len() + kept.len() > per {
+            provider_page -= 1;
+            break true;
+        }
+        archived += read - kept.len();
+        items.extend(kept);
+        if !has_next || items.len() >= per || pages_read >= MAX_OWNER_LISTING_PAGES {
             break has_next;
         }
         provider_page += 1;
@@ -376,6 +444,7 @@ async fn owner_listing<C: ConditionalCache>(
         },
         OwnerListing {
             last_page: provider_page,
+            pages_read,
             more,
             archived,
         },
@@ -441,8 +510,10 @@ fn broaden_search(query: &GhSearchRepoQuery) -> Option<Value> {
 const MAX_OWNER_LISTING_PAGES: usize = 5;
 
 struct OwnerListing {
-    /// Last provider page read; the next cursor is the page after it.
+    /// Last provider page listed; the next cursor is the page after it.
     last_page: usize,
+    /// Provider pages this call read (a page left to the next call too).
+    pages_read: usize,
     /// The last page carried a Link `rel="next"`.
     more: bool,
     /// Archived repositories skipped on the provider pages read.
@@ -572,43 +643,6 @@ impl crate::tools::output::ToolOutput for Output {
     fn evidence_kind(&self, _query: &serde_json::Value, _data: &serde_json::Value) -> &'static str {
         "provider"
     }
-    fn clasify_items(
-        &self,
-        _source: &crate::tools::clasify::resource::ResourceSource,
-        state: &serde_json::Value,
-    ) -> Option<Vec<crate::tools::clasify::items::Item>> {
-        clasify_repositories(state)
-    }
-}
-
-/// One clasify candidate per repository, read through ghStructure.
-fn clasify_repositories(
-    state: &serde_json::Value,
-) -> Option<Vec<crate::tools::clasify::items::Item>> {
-    use crate::tools::clasify::items;
-    let found = items::page_data(state)?
-        .get("repositories")?
-        .as_array()?
-        .iter()
-        .filter_map(|repository| {
-            let owner = repository.get("owner")?.as_str()?;
-            let repo = repository.get("repo")?.as_str()?;
-            let mut fetch = serde_json::Map::new();
-            fetch.insert("owner".into(), json!(owner));
-            fetch.insert("repo".into(), json!(repo));
-            Some(items::Item {
-                state: items::narrowed(
-                    state,
-                    "/results/0/data/repositories",
-                    vec![repository.clone()],
-                ),
-                read: Some(items::read(ToolId::GhStructure, fetch)),
-                path: None,
-                item: Some(format!("{owner}/{repo}")),
-            })
-        })
-        .collect();
-    Some(found)
 }
 
 #[cfg(test)]

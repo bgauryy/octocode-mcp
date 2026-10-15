@@ -7,7 +7,7 @@ use crate::support::{self, Run as _};
 
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
-use support::{Workspace, call, row_data, row_status};
+use support::{Workspace, call, row_data};
 use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -1325,9 +1325,9 @@ async fn later_review_comment_pages_load_provider_batches_concurrently() {
     )
     .await;
     let elapsed = first_request.get().expect("the PR was read").elapsed();
-    let comments = data["pullRequests"][0]["comments"]
+    let comments = data["pullRequests"][0]["reviewComments"]
         .as_array()
-        .expect("comments");
+        .expect("review comments");
     assert_eq!(comments.len(), 30, "{data}");
     assert_eq!(comments[0]["body"], "note 420", "{data}");
     assert!(

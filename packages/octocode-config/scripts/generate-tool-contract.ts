@@ -87,7 +87,10 @@ async function main(): Promise<void> {
     }
   };
   const stale = [...files].filter(([path, content]) => read(path) !== content).map(([path]) => path);
-  if (!read(rustPath).startsWith(header)) stale.push(rustPath);
+  // The whole Rust file is regenerated and compared: a matching header
+  // (fingerprint + bundle digest) does not prove the body was not edited.
+  // renderRust fails loudly when cargo-typify is missing.
+  if (read(rustPath) !== renderRust(header, bundleJson)) stale.push(rustPath);
   if (stale.length > 0) {
     throw new Error(
       `Generated tool contract is stale (${stale.join(', ')}). Run: yarn contracts:regen`

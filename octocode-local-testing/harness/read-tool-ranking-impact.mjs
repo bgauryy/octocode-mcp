@@ -26,8 +26,8 @@ const protocol = {
   binarySha256: hash(fs.readFileSync(path.join(ROOT, `packages/octocode-native/npm/${process.platform}-${process.arch}/octocode`))),
   addonSha256: hash(fs.readFileSync(path.join(ROOT, `packages/octocode-native/octocode-native.${process.platform}-${process.arch}.node`))),
   budget: { providerRequestsPerTool: 8, providerRequestsTotal: 104, reportedInputTokens: 120000, repeats: 1, retries: 0 },
-  arms: ['noGoals', 'disabled', 'enabled'], variants: ['descriptiveCandidate', 'ordinaryRouteControl'],
-  applicability: 'Only localFetch, localSearch, ghGetFileContent, and ghSearchCode accept goals; run the other tools only in their ordinary arm. Missing semantic arms are inapplicable, not zero-cost savings.',
+  arms: ['noClassifiers', 'disabled', 'enabled'], variants: ['descriptiveCandidate', 'ordinaryRouteControl'],
+  applicability: 'Only localFetch, localSearch, ghGetFileContent, and ghSearchCode accept classifiers; run the other tools only in their ordinary arm. Missing semantic arms are inapplicable, not zero-cost savings.',
   evidence: 'Complete selected responses, all source continuations; no automatic source hydration.',
   metrics: 'Full incurred response tokens; predeclared verification-read response tokens separately (zero if no such read); provider receipts separately. Target-string arrival is a diagnostic, never semantic sufficiency.',
   verification: 'Exact verifier reads are fixed in the case catalog before provider results, repeated in each arm, and counted in full. Their anchors are supplied by the fixture author; they do not measure autonomous routing or avoided reads.',
@@ -88,11 +88,11 @@ try {
     for (const [variant, query] of [['descriptiveCandidate', spec.query], ['ordinaryRouteControl', spec.control]]) {
       const trial = { variant, arms: {} };
       result.trials.push(trial);
-      for (const arm of spec.scope === null ? ['noGoals'] : ['noGoals', 'disabled', 'enabled']) {
+      for (const arm of spec.scope === null ? ['noClassifiers'] : ['noClassifiers', 'disabled', 'enabled']) {
         activeVariant = variant;
         activeArm = arm;
         const materialized = materialize(query, ctx);
-        const input = arm === 'noGoals' ? materialized : { ...materialized, goals: spec.goals };
+        const input = arm === 'noClassifiers' ? materialized : { ...materialized, classifiers: spec.classifiers };
         const overrides = { OCTOCODE_RANKING_MAX_CANDIDATES: '8', OCTOCODE_RANKING_MAX_CHARS: '16384',
           OCTOCODE_RANKING_TIMEOUT_MS: '30000', ...(arm === 'disabled' ? { OCTOCODE_RANKING_ENABLED: 'false' } : {}) };
         const before = providers.length;
@@ -109,7 +109,7 @@ try {
         } catch (error) { trial.arms[arm] = { error: error.stack, providerRequests: providers.length - before }; }
         fs.writeFileSync(path.join(output, 'runs.json'), JSON.stringify({ protocolHash: hash(protocol), rows }, null, 2));
       }
-      const plain = trial.arms.noGoals, ranked = trial.arms.enabled;
+      const plain = trial.arms.noClassifiers, ranked = trial.arms.enabled;
       if (plain.rows && ranked?.rows) {
         trial.sameEvidence = stable([...plain.rows].sort()) === stable([...ranked.rows].sort());
         trial.sameOrder = stable(plain.rows) === stable(ranked.rows);

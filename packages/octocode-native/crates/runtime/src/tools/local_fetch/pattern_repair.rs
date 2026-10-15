@@ -1,6 +1,6 @@
 //! The runnable repair of a read whose regex `matchString` does not compile.
 
-use super::types::{Continuation, LocalFetchQuery, MatchString, ReadRegex};
+use super::types::{FetchCall, LocalFetchQuery, MatchString, ReadRegex};
 
 /// Whether `pattern` compiles under the read's own regex engine.
 fn compiles(pattern: &str, pcre2: bool) -> bool {
@@ -21,7 +21,7 @@ fn repair_item(item: &str, pcre2: bool) -> String {
 /// lookaround) is the same read as `regex:"pcre2"`, the engine that owns them.
 /// Otherwise every item that does not compile is repaired (the items that
 /// compile stay as written).
-pub(super) fn repair(q: &LocalFetchQuery) -> Option<Continuation> {
+pub(super) fn repair(q: &LocalFetchQuery) -> Option<FetchCall> {
     if !q.is_regex() {
         return None;
     }
@@ -33,7 +33,7 @@ pub(super) fn repair(q: &LocalFetchQuery) -> Option<Continuation> {
     if crate::regex_repair::only_pcre2_compiles(items.iter().copied(), pcre2) {
         let mut query = q.clone();
         query.regex = Some(ReadRegex::Pcre2);
-        return Some(Continuation { query });
+        return Some(FetchCall { query });
     }
     let repaired = items
         .iter()
@@ -55,7 +55,7 @@ pub(super) fn repair(q: &LocalFetchQuery) -> Option<Continuation> {
                 .collect::<Option<Vec<_>>>()?,
         ),
     });
-    Some(Continuation { query })
+    Some(FetchCall { query })
 }
 
 #[cfg(test)]

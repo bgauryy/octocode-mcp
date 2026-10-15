@@ -19,7 +19,7 @@ pub enum ExitClass {
     Empty,
     /// The call, or any row of it, rejected the caller's input.
     InvalidInput,
-    /// Nothing succeeded.
+    /// At least one row failed.
     Failed(FailureKind),
 }
 
@@ -28,8 +28,11 @@ impl ToolOutcome {
     pub fn exit_class(&self) -> ExitClass {
         let value = &self.structured_content;
         let rows: &[Value] = value["results"].as_array().map_or(&[], Vec::as_slice);
+        if let Some(class) = clasify_failure(value, self.failure) {
+            return class;
+        }
         if self.all_failed {
-            return clasify_failure(value, self.failure).unwrap_or(match self.failure {
+            return match self.failure {
                 Some(FailureKind::Execution) if all_rows_invalid_input(value) => {
                     ExitClass::InvalidInput
                 }
@@ -37,7 +40,7 @@ impl ToolOutcome {
                 // A refusal with no failure kind (a gate or admission-time
                 // validation) is the caller's request, never success.
                 None => ExitClass::InvalidInput,
-            });
+            };
         }
         // Batch precedence, worst row first: a rejected row (2), a failed
         // row (its shared failure, else execution; a retryable failure is
@@ -87,47 +90,30 @@ pub(crate) fn failure_kind(code: &str) -> FailureKind {
     }
 }
 
-/// A clasify call in which every resource errored: the caller's request when
-/// every error rejects it; when every delegated read failed alike, that read's
-/// failure; else missing sources, throttling, or an execution/provider failure.
+/// Classification rows use their own error envelope. Apply the same worst-row
+/// precedence to mixed and all-failed batches: input rejection first, then a
+/// shared failure kind, otherwise execution failure.
 fn clasify_failure(value: &Value, failure: Option<FailureKind>) -> Option<ExitClass> {
     let queries = value["queries"].as_array().filter(|q| !q.is_empty())?;
-    let mut codes = Vec::new();
-    for query in queries {
-        codes.extend(error_code(query));
-        for resource in query["resources"].as_array().into_iter().flatten() {
-            // Compact output states a single page's `error`/`answers` on the
-            // resource, and hoists one error shared by every page there while
-            // the pages keep their reads: the resource always counts.
-            for page in
-                std::iter::once(resource).chain(resource["pages"].as_array().into_iter().flatten())
-            {
-                codes.extend(error_code(page));
-                codes.extend(
-                    page["answers"]
-                        .as_object()
-                        .into_iter()
-                        .flat_map(|answers| answers.values())
-                        .filter_map(error_code),
-                );
-            }
-        }
-    }
+    let codes: Vec<&str> = queries.iter().filter_map(error_code).collect();
     if codes.is_empty() {
         return None;
     }
-    let all = |class: ErrorClass| codes.iter().all(|code| error_class(code) == class);
-    Some(if all(ErrorClass::InvalidInput) {
-        ExitClass::InvalidInput
-    } else if let Some(failure) = failure {
-        ExitClass::Failed(failure)
-    } else if all(ErrorClass::NotFound) {
-        ExitClass::Failed(FailureKind::NotFound)
-    } else if all(ErrorClass::RateLimited) {
-        ExitClass::Failed(FailureKind::RateLimited)
-    } else {
-        ExitClass::Failed(FailureKind::Execution)
-    })
+    Some(
+        if codes
+            .iter()
+            .any(|code| error_class(code) == ErrorClass::InvalidInput)
+        {
+            ExitClass::InvalidInput
+        } else if let Some(failure) = failure {
+            ExitClass::Failed(failure)
+        } else {
+            ExitClass::Failed(
+                shared_failure(codes.into_iter().map(failure_kind))
+                    .unwrap_or(FailureKind::Execution),
+            )
+        },
+    )
 }
 
 fn error_code(value: &Value) -> Option<&str> {
@@ -146,14 +132,18 @@ fn is_invalid_input_row(row: &Value) -> bool {
 /// The failure of a batch's error rows: their shared failure, else an
 /// execution failure.
 fn failed_rows(rows: &[Value]) -> Option<FailureKind> {
-    let mut kinds = rows
-        .iter()
-        .filter(|row| row["status"] == "error")
-        .map(|row| {
-            row.pointer("/data/errorCode")
-                .and_then(Value::as_str)
-                .map_or(FailureKind::Execution, failure_kind)
-        });
+    shared_failure(
+        rows.iter()
+            .filter(|row| row["status"] == "error")
+            .map(|row| {
+                row.pointer("/data/errorCode")
+                    .and_then(Value::as_str)
+                    .map_or(FailureKind::Execution, failure_kind)
+            }),
+    )
+}
+
+fn shared_failure(mut kinds: impl Iterator<Item = FailureKind>) -> Option<FailureKind> {
     let first = kinds.next()?;
     Some(if kinds.all(|kind| kind == first) {
         first
@@ -182,14 +172,12 @@ mod tests {
     }
 
     #[test]
-    fn clasify_whose_every_read_failed_exits_like_that_read() {
+    fn clasify_whose_every_row_failed_exits_like_its_failure() {
         let not_found = Some(ExitClass::Failed(FailureKind::NotFound));
         let execution = Some(ExitClass::Failed(FailureKind::Execution));
-        let failed = |code: &str| {
-            json!({"queries":[{"id":"q","resources":[{"id":"x","coverage":"error",
-                "pages":[{"error":{"errorCode":code,"error":"m"}}]}]}]})
-        };
-        // localFetch reports a missing file as pathNotFound + NotFound.
+        let failed =
+            |code: &str| json!({"queries":[{"id":"q","error":{"errorCode":code,"error":"m"}}]});
+        // localFetch reports a missing source as pathNotFound + NotFound.
         let missing = failed("pathNotFound");
         assert_eq!(
             clasify_failure(&missing, Some(FailureKind::NotFound)),
@@ -200,40 +188,22 @@ mod tests {
             clasify_failure(&failed("fileAccessFailed"), None),
             execution
         );
-        // Compact output: a single failed page is stated on the resource.
-        let compact = |code: &str| {
-            json!({"queries":[{"id":"q","resources":[{"id":"x","coverage":"error",
-                "answers":{"q":{"error":{"errorCode":code,"error":"m"}}}}]}]})
-        };
         assert_eq!(
-            clasify_failure(&compact("classificationProviderError"), None),
+            clasify_failure(&failed("classificationProviderError"), None),
             execution
-        );
-        assert_eq!(clasify_failure(&compact("pathNotFound"), None), not_found);
-        assert_eq!(
-            clasify_failure(&failed("rateLimited"), Some(FailureKind::RateLimited)),
-            Some(ExitClass::Failed(FailureKind::RateLimited))
         );
         assert_eq!(
             clasify_failure(&failed("rateLimited"), None),
             Some(ExitClass::Failed(FailureKind::RateLimited))
         );
         assert_eq!(
-            clasify_failure(
-                &failed("classificationLocateUnsupported"),
-                Some(FailureKind::NotFound)
-            ),
+            clasify_failure(&failed("invalidInput"), Some(FailureKind::NotFound)),
             Some(ExitClass::InvalidInput),
             "a rejected request stays a caller error"
         );
         assert_eq!(clasify_failure(&json!({"queries":[]}), None), None);
-        // Compact output hoists one shared page error to the resource
-        // while pages keep their `next.read`; the resource error still counts.
-        let hoisted = json!({"queries":[{"id":"q","resources":[{"id":"s",
-            "error":{"errorCode":"classificationQuotaExhausted","error":"m"},
-            "pages":[{"lines":[1,9],"next":{"read":{"tool":"localFetch",
-                "query":{"queries":[{"path":"a.rs"}]}}}}]}]}]});
-        assert_eq!(clasify_failure(&hoisted, None), execution);
+        let answered = json!({"queries":[{"id":"q","answers":{}}]});
+        assert_eq!(clasify_failure(&answered, None), None);
     }
 
     /// A directory given to a file read (or a file to a listing) is
@@ -279,6 +249,15 @@ mod tests {
             );
             let runtime = RuntimeError::new(code, "m");
             assert_eq!(runtime.exit_class(), expected, "runtime {code}");
+            let mixed_clasify = json!({"queries":[
+                {"id":"ok","answers":{"q":{"type":"noul","noul":0.9}}},
+                {"id":"failed","error":{"errorCode":code,"error":"failed"}}
+            ]});
+            assert_eq!(
+                outcome(mixed_clasify, None, false).exit_class(),
+                expected,
+                "mixed clasify {code}"
+            );
         }
         // No suffix or prefix matching: an undeclared spelling has no class.
         for undeclared in ["ast.language.required", "x.input.invalid", "lsp.timeout"] {
@@ -314,6 +293,33 @@ mod tests {
             failure,
             all_failed,
         }
+    }
+
+    #[test]
+    fn mixed_clasify_rows_follow_worst_row_precedence() {
+        let good = json!({"id":"good", "answers":{"ok":{"type":"noul","noul":0.8}}});
+        let bad = |code| json!({"id":"bad", "error":{"errorCode":code,"error":"failed"}});
+        for (code, expected) in [
+            ("notFound", ExitClass::Failed(FailureKind::NotFound)),
+            ("rateLimited", ExitClass::Failed(FailureKind::RateLimited)),
+            ("invalidInput", ExitClass::InvalidInput),
+        ] {
+            for rows in [vec![good.clone(), bad(code)], vec![bad(code), good.clone()]] {
+                assert_eq!(
+                    outcome(json!({"queries":rows}), None, false).exit_class(),
+                    expected
+                );
+            }
+        }
+        assert_eq!(
+            outcome(
+                json!({"queries":[good,bad("notFound"),bad("invalidInput")]}),
+                None,
+                false
+            )
+            .exit_class(),
+            ExitClass::InvalidInput
+        );
     }
 
     #[test]
@@ -446,8 +452,8 @@ mod tests {
                 ExitClass::Success,
             ),
             (
-                json!({"queries":[{"id":"b","results":[],
-                    "next":{"clasify":{"queries":[{"id":"b","resources":[]}]}}}]}),
+                json!({"queries":[{"id":"b","answers":{"q":{"type":"noul","noul":0.4}},
+                    "usage":{"input_tokens":1,"output_tokens":1}}]}),
                 None,
                 false,
                 ExitClass::Success,

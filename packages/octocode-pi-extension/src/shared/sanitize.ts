@@ -2,6 +2,11 @@
  * Text from subagents and MCP servers is untrusted: an escape sequence in it could retitle the terminal, write a
  * clickable link (OSC 8), move the cursor or reorder text with bidi overrides. `sanitizeTerminalText` strips those
  * from text a person reads; `visibleControls` shows them as escapes in text the model reads. Adapted from the native composer's paste sanitiser.
+ *
+ * Which one: text that only a terminal or UI draws (a dialog, a panel row, a label) goes through `sanitizeTerminalText`; any text
+ * that reaches the model (a message body, a fenced body, a tool result) goes through `visibleControls`, which keeps the evidence
+ * and is safe to draw too. `visibleControls` is not injective: a literal `\u{200d}` typed in the text and an escaped ZWJ read the
+ * same. That is accepted: the escape exists so a reader can see that something was there, not to round-trip the text.
  */
 // An unterminated string ends at its line: a stray introducer must not swallow the rest of the text.
 const OSC_SEQUENCE = /(?:\u001b\]|\u009d)[^\n]*?(?:\u0007|\u001b\\|\u009c|(?=\n)|$)/gu;
@@ -14,15 +19,21 @@ const UNSAFE_CONTROLS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/g
 const BIDI_FORMATTING = /[\u061c\u200e\u200f\u202a-\u202e\u2066-\u206f]/gu;
 /**
  * Invisible characters that can smuggle text past a reader: Unicode tags (U+E0000–E007F), zero-width space and
- * non-joiner, word joiner and invisible operators (U+2060–2064), the BOM, and a zero-width joiner unless it joins
- * two emoji (👩‍💻 keeps its ZWJ).
+ * non-joiner, word joiner and invisible operators (U+2060–2064), the soft hyphen (U+00AD), the combining grapheme joiner
+ * (U+034F), the Khmer inherent vowels (U+17B4–17B5), the Mongolian free variation selectors and vowel separator
+ * (U+180B–180E), the braille blank (U+2800), the Hangul fillers (U+3164, U+FFA0), the BOM, a zero-width joiner unless it
+ * joins two emoji (👩‍💻 keeps its ZWJ), and a variation selector (U+FE00–FE0F, U+E0100–E01EF) unless it directly follows
+ * a character it is meant to modify (an emoji, a Han ideograph, a digit, `#` or `*`): a run of them hides data.
  */
-const INVISIBLE = /[\u200b\u200c\u2060-\u2064\ufeff\u{e0000}-\u{e007f}]|(?<!\p{Extended_Pictographic}[\u{1f3fb}-\u{1f3ff}\ufe0f]?)\u200d|\u200d(?!\p{Extended_Pictographic})/gu;
+const INVISIBLE = /[\u00ad\u034f\u17b4\u17b5\u180b-\u180e\u200b\u200c\u2060-\u2064\u2800\u3164\uffa0\ufeff\u{e0000}-\u{e007f}]|(?<![\p{Extended_Pictographic}\p{Script=Han}\p{Nd}#*\u{1f3fb}-\u{1f3ff}])[\ufe00-\ufe0f\u{e0100}-\u{e01ef}]|(?<!\p{Extended_Pictographic}[\u{1f3fb}-\u{1f3ff}\ufe0f]?)\u200d|\u200d(?!\p{Extended_Pictographic})/gu;
 
 /** Anything `sanitizeTerminalText` or `visibleControls` may change: most output holds none of it. */
-const NEEDS_CLEANING = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u061c\u200b-\u200f\u202a-\u202e\u2028\u2029\u2060-\u2064\u2066-\u206f\ufeff\u{e0000}-\u{e007f}]/u;
-/** Every character `visibleControls` makes visible: the controls (CR included), bidi formatting, invisible characters and line/paragraph separators. */
-const HIDDEN = new RegExp(`[\\u0000-\\u0008\\u000b-\\u001f\\u007f-\\u009f\\u2028\\u2029]|${BIDI_FORMATTING.source}|${INVISIBLE.source}`, 'gu');
+const NEEDS_CLEANING = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u00ad\u034f\u061c\u17b4\u17b5\u180b-\u180e\u200b-\u200f\u202a-\u202e\u2028\u2029\u2060-\u2064\u2066-\u206f\u2800\u3164\ufe00-\ufe0f\uffa0\ufeff\u{e0000}-\u{e007f}\u{e0100}-\u{e01ef}]/u;
+/**
+ * Every character `visibleControls` makes visible: the controls (a CR not followed by LF; CRLF stays), bidi formatting,
+ * invisible characters and line/paragraph separators.
+ */
+const HIDDEN = new RegExp(`\\r(?!\\n)|[\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f-\\u009f\\u2028\\u2029]|${BIDI_FORMATTING.source}|${INVISIBLE.source}`, 'gu');
 
 /** Text for the terminal or a UI: control sequences, bidi and invisible characters are removed, and CR and CRLF become LF. */
 export function sanitizeTerminalText(value: string): string {
@@ -39,14 +50,25 @@ export function sanitizeTerminalText(value: string): string {
     .replace(UNSAFE_CONTROLS, '');
 }
 
+/** Well-formed SGR (color and style) sequences: `ESC [ <digits;:> m`. */
+const SGR = /\u001b\[[0-9;:]*m/g;
+
+/**
+ * Removes color and style sequences only, as Pi's bash does for its output: they carry no evidence. Any other control
+ * (cursor moves, titles, a malformed sequence) is left for `visibleControls` to show.
+ */
+export function withoutColors(value: string): string {
+  return value.replace(SGR, '');
+}
+
 /**
  * Text for the model that the terminal can also draw: evidence is kept, not removed. Every control character (ESC and
  * the C1 controls that start a terminal sequence, NUL, DEL), bidi formatting character, invisible character (zero-width,
  * BOM, Unicode tags, a ZWJ that joins no emoji) and line or paragraph separator becomes a visible escape, `\u{200d}`;
- * a carriage return becomes `\r`, so CRLF files and a lone CR stay visible and a CR can never rewrite the line on the
- * terminal. Tabs, newlines and emoji joiners stay. Nothing raw that can steer a terminal or reorder text remains, and
- * the model sees what the file holds (an edit built from the text matches the file). Use `sanitizeTerminalText` for
- * text that only a person reads.
+ * a lone carriage return (one not followed by a line feed) becomes `\r`, so it stays visible and can never rewrite the
+ * line on the terminal. A CRLF pair stays as it is: it is harmless to a terminal, and a CRLF file keeps its size and
+ * its exact text (an edit built from the text matches the file). Tabs, newlines and emoji joiners stay too. Nothing
+ * raw that can steer a terminal or reorder text remains. Use `sanitizeTerminalText` for text that only a person reads.
  */
 export function visibleControls(value: string): string {
   if (!NEEDS_CLEANING.test(value)) return value;
@@ -93,4 +115,9 @@ export function secretProblem(text: string): string | undefined {
 /** `text` with every credential-looking span replaced by `[redacted]`, for text drawn on screen or shared with other sessions. */
 export function redactSecrets(text: string): string {
   return SECRETS.reduce((out, { all }) => out.replace(all, '[redacted]'), text);
+}
+
+/** Apply the same credential policy to JSON evidence without changing its field names or shape. */
+export function redactData<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value, (_key, entry: unknown) => typeof entry === 'string' ? redactSecrets(entry) : entry)) as T;
 }

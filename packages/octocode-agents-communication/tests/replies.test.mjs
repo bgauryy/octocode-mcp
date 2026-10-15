@@ -30,7 +30,7 @@ test('conflicting routes explain how to recover a new direct request without sto
 
 test('replies inherit correlation and remain visible only to participants', t => {
   const f = fixture(t), a = agent(f, 'a'), b = agent(f, 'b'), outsider = agent(f, 'outsider');
-  const rootMessage = send(f, a, { to: b, body: 'Which tools do you have?', conversationId: 'task:42', key: 'question' });
+  const rootMessage = send(f, a, { to: b, body: 'Which tools do you have?', replyRequired: true, conversationId: 'task:42', key: 'question' });
   const reply = { message: rootMessage.id, reply: 'I have code search.' };
   const response = call(f, b, 'complete', reply);
   assert.deepEqual(call(f, b, 'complete', reply), response);
@@ -58,7 +58,7 @@ test('replies inherit correlation and remain visible only to participants', t =>
 
 test('correlation validation is enforced in SQL as well as the CLI', t => {
   const f = fixture(t), a = agent(f, 'a'), b = agent(f, 'b'), outsider = agent(f, 'outsider');
-  const question = send(f, a, { to: b, body: 'question', conversationId: 'case.1' });
+  const question = send(f, a, { to: b, body: 'question', replyRequired: true, conversationId: 'case.1' });
   for (const conversationId of ['', 'x'.repeat(129), 'two words', 'é', 'a\n']) {
     assert.throws(() => send(f, a, { to: b, body: 'invalid', conversationId }));
   }

@@ -14,7 +14,7 @@ class HealthMixin:
 SELECT d.message,d.recipient,s.name,s.vendor,m.wake,m.expiresAt,
 coalesce(x.state,'queued') AS state,x.attemptedAt,x.submittedAt,
 CASE WHEN x.state='uncertain' THEN 'uncertain'
-WHEN m.wake='action' AND m.expiresAt<=?2 THEN 'expiredAction'
+WHEN (m.wake='action' OR m.replyRequired=1) AND m.expiresAt<=?2 THEN 'expiredAction'
 WHEN m.wake='action' AND s.expiresAt<=?2 THEN 'offlineRecipient'
 WHEN x.state='staged' AND (x.attemptedAt<=?3 OR (x.attemptedAt<={orphaned} AND NOT delivery_owner_live(x.recipient))) THEN 'stalledOffer'
 WHEN x.state='submitted' AND m.wake='action' AND x.submittedAt<=?3 THEN 'overdueHandling'
@@ -33,7 +33,7 @@ coalesce(sum(state='uncertain'),0) AS uncertain, coalesce(sum(expiresAt<=?2),0) 
             more, issues = len(issues) > limit, issues[:limit]
         instructions = {
             'uncertain': 'Inspect the recipient and dispatch token before any explicit retry; context may have arrived.',
-            'expiredAction': 'Inspect whether work is still needed; acknowledge a deliberate no-action decision or send a new request with a new key.',
+            'expiredAction': 'Inspect delivery and the recipient before sending a new request with a new key; expired submitted context may already be in progress.',
             'offlineRecipient': 'Check the recipient and its delivery owner; resume deliberately. Do not revive its expired leases.',
             'stalledOffer': 'Inspect the in-flight owner and recipient before recovery; elapsed time is not permission to replay.',
             'overdueHandling': "Check the recipient's progress. Submission is not handling; do not automatically complete or resend."}

@@ -5,6 +5,7 @@ import { Checkpoints } from '../src/files/checkpoint.js';
 import { registerCheckpoints } from '../src/files/checkpoint-command.js';
 import { Subcommands } from '../src/shared/commands.js';
 import { fakeCtx, fakePi } from './fake-pi.js';
+import { sha256 } from '../src/shared/atomic.js';
 import { tmp } from './helpers.js';
 
 describe('/octocode rewind arguments', () => {
@@ -45,5 +46,43 @@ describe('/octocode rewind arguments', () => {
       rewind.mockRestore();
       stderr.mockRestore();
     }
+  });
+});
+
+describe('/octocode rewind when an older change cannot be undone', () => {
+  it('names the partly restored file as a warning, forgets it, and tells the model its content moved', async () => {
+    const cwd = tmp();
+    const file = path.join(cwd, 'a.txt');
+    fs.writeFileSync(file, 'v0');
+    const store = path.join(tmp(), 'cp');
+    const checkpoints = new Checkpoints();
+    checkpoints.open(store);
+    for (const version of ['v1', 'v2']) {
+      checkpoints.beginTurn();
+      const capture = await checkpoints.capture(file);
+      fs.writeFileSync(file, version);
+      await checkpoints.settle(file, capture, true);
+    }
+    // The older change (v0 → v1) cannot be restored: its saved copy is corrupt. The newer one (v1 → v2) can.
+    fs.writeFileSync(path.join(store, 'blobs', sha256('v0')), 'evil');
+    const fake = fakePi();
+    const commands = new Subcommands();
+    const forget = vi.fn();
+    registerCheckpoints(fake.pi, checkpoints, forget, commands);
+    const ctx = fakeCtx({ cwd });
+    await commands.get('rewind')!.handler('2', ctx);
+
+    expect(fs.readFileSync(file, 'utf8')).toBe('v1');
+    expect(forget).toHaveBeenCalledExactlyOnceWith(file);
+    const note = ctx.ui.notes.at(-1)!;
+    expect(note.type).toBe('warning');
+    expect(note.message).toMatch(/Rewound 2 turns: restored 0 files\.\nPartly restored, an older change could not be undone \(its checkpoint is kept, rewind again to retry\): a\.txt\./);
+    expect(note.message).not.toMatch(/Left alone/);
+    expect(fake.sent).toHaveLength(1);
+    expect(fake.sent[0]!.message.customType).toBe('octocode-rewind');
+    expect(fake.sent[0]!.message.content).toContain('Partly restored');
+    expect(fake.sent[0]!.message.content).toContain('read them again before editing');
+    // The failed entry stays so a later rewind can retry once the copy is repaired.
+    expect(checkpoints.turns()).toEqual([1]);
   });
 });

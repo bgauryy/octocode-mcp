@@ -60,24 +60,53 @@ pub fn execute_syntax(
         q.named_only
     ]));
     if q.page() > 1 && q.snapshot() != Some(snapshot.as_str()) {
-        let mut restart = serde_json::to_value(q).unwrap_or_default();
-        if let Some(map) = restart.as_object_mut() {
-            map.remove("snapshot");
-            map.remove("page");
-        }
         return Ok(crate::tools::result::stale_snapshot(
-            crate::tools::result::Continuation::new(ToolId::AstSearch, restart)
-                .confidence("exact")
-                .build(),
+            crate::tools::result::restart_query(
+                ToolId::AstSearch,
+                &crate::tools::result::query_row(q, &[]),
+            ),
         ));
     }
     cancel.check().map_err(ToolError::cancelled)?;
-    let extension = super::parser_override(&p.canonical, q.language().as_deref());
-    let inspect = |offset: u32, limit: u32| {
+    let source = Source {
+        content: &sanitized.content,
+        path: &p.canonical,
+        extension: super::parser_override(&p.canonical, q.language().as_deref()),
+    };
+    let budget = crate::tools::page_windows::page_budget(
+        response_window,
+        &serde_json::to_value(q).unwrap_or_default(),
+    );
+    let (r, more) = read_page(q, &source, budget, cancel)?;
+    Ok(render_tree_page(
+        q,
+        &p.canonical.to_string_lossy(),
+        r,
+        more,
+        &snapshot,
+    ))
+}
+
+/// The parsed file a syntax-tree page is read from.
+struct Source<'a> {
+    content: &'a str,
+    path: &'a std::path::Path,
+    /// The grammar's extension when the request overrides the file's own.
+    extension: Option<String>,
+}
+
+impl Source<'_> {
+    /// The nodes `offset..offset + limit` of the tree, in preorder.
+    fn inspect(
+        &self,
+        q: &AstSearchQuerySyntaxTree,
+        offset: u32,
+        limit: u32,
+    ) -> Result<octocode_engine::structural::SyntaxTreeInspectResult, ToolError> {
         octocode_engine::portable::inspect_syntax_tree_with_extension(
-            &sanitized.content,
-            &p.canonical.to_string_lossy(),
-            extension.as_deref(),
+            self.content,
+            &self.path.to_string_lossy(),
+            self.extension.as_deref(),
             Some(SyntaxTreeInspectOptions {
                 named_only: Some(q.named_only),
                 node_offset: Some(offset),
@@ -85,50 +114,62 @@ pub fn execute_syntax(
             }),
         )
         .map_err(super::native_error)
-    };
-    let page = q.page();
-    let budget = crate::tools::page_windows::page_budget(
-        response_window,
-        &serde_json::to_value(q).unwrap_or_default(),
-    );
-    // An explicit size asks the engine for exactly its page. Otherwise the
-    // page is the nodes that fill the window: each page starts where the one
-    // before ended, so the walk reads nodes from the start until the page's
-    // window is closed by a node that no longer fits.
-    let (r, more) = match q.node_offset().zip(q.page_size()) {
-        Some((offset, size)) => {
-            let r = inspect(offset, size)?;
-            let more = r.next_offset.is_some();
-            (r, more)
-        }
-        None => {
-            let mut walked = inspect(0, NODE_CHUNK)?;
-            let mut windows;
-            loop {
-                let sizes = walked.nodes.iter().map(node_page_chars).collect::<Vec<_>>();
-                windows = crate::tools::page_windows::Paging::of(None, budget).windows(&sizes);
-                let Some(next) = walked
-                    .next_offset
-                    .filter(|_| windows.len() <= usize_of(page) && walked.status == "ok")
-                else {
-                    break;
-                };
-                cancel.check().map_err(ToolError::cancelled)?;
-                let rest = inspect(next, NODE_CHUNK)?;
-                walked.nodes.extend(rest.nodes);
-                walked.next_offset = rest.next_offset;
-                walked.status = rest.status;
-                walked.diagnostics.extend(rest.diagnostics);
-            }
-            let window = windows
-                .get(usize_of(page).saturating_sub(1))
-                .cloned()
-                .unwrap_or(walked.nodes.len()..walked.nodes.len());
-            let more = windows.len() > usize_of(page);
-            walked.nodes = walked.nodes[window].to_vec();
-            (walked, more)
-        }
-    };
+    }
+}
+
+/// Page `q.page()` of the tree and whether nodes are left after it. An
+/// explicit size asks the engine for exactly its page. Otherwise the page is
+/// the nodes that fill the window: each page starts where the one before
+/// ended, so the walk reads nodes from the start until the page's window is
+/// closed by a node that no longer fits.
+fn read_page(
+    q: &AstSearchQuerySyntaxTree,
+    source: &Source<'_>,
+    budget: usize,
+    cancel: &dyn CancellationCheck,
+) -> Result<(octocode_engine::structural::SyntaxTreeInspectResult, bool), ToolError> {
+    if let Some((offset, size)) = q.node_offset().zip(q.page_size()) {
+        let r = source.inspect(q, offset, size)?;
+        let more = r.next_offset.is_some();
+        return Ok((r, more));
+    }
+    let page = usize_of(q.page());
+    let mut walked = source.inspect(q, 0, NODE_CHUNK)?;
+    let mut windows;
+    loop {
+        let sizes = walked.nodes.iter().map(node_page_chars).collect::<Vec<_>>();
+        windows = crate::tools::page_windows::Paging::of(None, budget).windows(&sizes);
+        let Some(next) = walked
+            .next_offset
+            .filter(|_| windows.len() <= page && walked.status == "ok")
+        else {
+            break;
+        };
+        cancel.check().map_err(ToolError::cancelled)?;
+        let rest = source.inspect(q, next, NODE_CHUNK)?;
+        walked.nodes.extend(rest.nodes);
+        walked.next_offset = rest.next_offset;
+        walked.status = rest.status;
+        walked.diagnostics.extend(rest.diagnostics);
+    }
+    let window = windows
+        .get(page.saturating_sub(1))
+        .cloned()
+        .unwrap_or(walked.nodes.len()..walked.nodes.len());
+    let more = windows.len() > page;
+    walked.nodes = walked.nodes[window].to_vec();
+    Ok((walked, more))
+}
+
+/// The row of one read page: its nodes and diagnostics, pagination and the
+/// next page; a failed inspection is an error row.
+fn render_tree_page(
+    q: &AstSearchQuerySyntaxTree,
+    display_path: &str,
+    r: octocode_engine::structural::SyntaxTreeInspectResult,
+    more: bool,
+    snapshot: &str,
+) -> serde_json::Value {
     // Line/column locate every node; byte offsets are verbose (core field
     // class): the verbose stage keeps `returnedBytes` for `debug`.
     let node_bytes = r
@@ -137,8 +178,12 @@ pub fn execute_syntax(
         .map(|n| format!("{}-{}", n.start_byte, n.end_byte))
         .collect::<Vec<_>>();
     let nodes = r.nodes.iter().map(node_page_row).collect::<Vec<_>>();
-    let diagnostics=r.diagnostics.into_iter().map(|d|json!({"code":d.code,"severity":d.severity,"stage":d.stage,"message":d.message,"path":p.canonical.to_string_lossy(),"recovery":crate::tools::ast_rule::diagnostic_recovery(&d.code,d.recovery.as_deref())})).collect::<Vec<_>>();
-    let display_path = p.canonical.to_string_lossy();
+    let codes = r
+        .diagnostics
+        .iter()
+        .map(|d| d.code.clone())
+        .collect::<Vec<_>>();
+    let diagnostics=r.diagnostics.into_iter().map(|d|json!({"code":d.code,"severity":d.severity,"stage":d.stage,"message":d.message,"path":display_path,"recovery":crate::tools::ast_rule::diagnostic_recovery(&d.code,d.recovery.as_deref())})).collect::<Vec<_>>();
     // A failed inspection is an error row that states its error once: the
     // declared code and message of the engine's first diagnostic. It has no
     // page, snapshot or diagnostics to add.
@@ -150,10 +195,9 @@ pub fn execute_syntax(
         let message = first
             .and_then(|diagnostic| diagnostic["message"].as_str())
             .unwrap_or("The syntax tree could not be built.");
-        return Ok(
-            json!({"operation":"syntaxTree","path":display_path,"status":"error","errorCode":code,"error":message}),
-        );
+        return json!({"operation":"syntaxTree","path":display_path,"status":"error","errorCode":code,"error":message});
     }
+    let page = q.page();
     let complete = r.status == "ok" && !more;
     let pagination =
         crate::response::pages::PageFacts::open(usize_of(page), q.page_size().map(usize_of), more)
@@ -173,19 +217,36 @@ pub fn execute_syntax(
             usize_of(page) + 1,
         );
         if let Some(next_page) = next_page {
-            out["pagination"]["nextPage"] = json!(next_page);
-            let mut nq = serde_json::to_value(q).unwrap_or_default();
-            if let Some(map) = nq.as_object_mut() {
-                map.retain(|_, value| !value.is_null());
-            }
+            let mut nq = crate::tools::result::query_row(q, &[]);
             nq["snapshot"] = json!(snapshot);
             nq["page"] = json!(next_page);
             out["next"] = json!({"nextPage":crate::tools::result::Continuation::new(ToolId::AstSearch, nq).confidence("exact").build()})
         }
     } else if r.status == "partial" {
-        out["terminalLimit"] = json!(true)
+        for reason in walk_cuts(&codes) {
+            crate::tools::paging::terminal_limit(&mut out, reason, &[]);
+        }
     }
-    Ok(out)
+    out
+}
+
+/// The `partialReasons` of a partial walk, from its engine diagnostics: a
+/// recovered parse, the walk deadline, the node limit.
+fn walk_cuts(codes: &[String]) -> Vec<&'static str> {
+    let reasons = codes
+        .iter()
+        .filter_map(|code| match code.as_str() {
+            "syntaxTree.parse.recovered" => Some("parseRecovered"),
+            "syntaxTree.budget.deadline" => Some("deadline"),
+            "syntaxTree.budget.nodeLimit" => Some("nodeLimit"),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    if reasons.is_empty() {
+        vec!["walkCut"]
+    } else {
+        reasons
+    }
 }
 /// Nodes read from the engine per call while a window-sized page is cut.
 const NODE_CHUNK: u32 = 100_000;

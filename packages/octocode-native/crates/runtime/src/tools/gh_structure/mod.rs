@@ -209,34 +209,8 @@ pub(crate) async fn execute<C: octocode_github::ConditionalCache>(
     }
     let scope = Scope::of(query)?;
     let (resolved_branch, commit_sha) = resolve_listing_ref(provider, query, context).await?;
-    // A renamed repository is listed, dated and continued under its
-    // canonical name: later requests skip the redirect, and every lead names
-    // the repository as it is now.
-    let renamed = crate::tools::gh_shared::canonical_repo(
-        provider,
-        query.owner.as_str(),
-        query.repo.as_str(),
-        context,
-    )
-    .await;
-    let renamed_warning = renamed.as_ref().map(|to| {
-        crate::tools::gh_shared::renamed_warning(query.owner.as_str(), query.repo.as_str(), to)
-    });
-    let canonical;
-    let query = match &renamed {
-        Some((owner, repo)) => {
-            let decode = |error: &dyn std::fmt::Display| {
-                ProviderError::new(ProviderErrorKind::Decode, error.to_string())
-            };
-            canonical = GhStructureQuery {
-                owner: owner.parse().map_err(|error| decode(&error))?,
-                repo: repo.parse().map_err(|error| decode(&error))?,
-                ..query.clone()
-            };
-            &canonical
-        }
-        None => query,
-    };
+    let (renamed_warning, canonical) = canonical(provider, query, context).await?.unzip();
+    let query = canonical.as_ref().unwrap_or(query);
     let listing = Listing {
         owner: &query.owner,
         repo: &query.repo,
@@ -245,20 +219,7 @@ pub(crate) async fn execute<C: octocode_github::ConditionalCache>(
         max_depth: scope.depth,
     };
     let mut traversal = traverse(provider, &listing, context).await?;
-    if let Some(filter) = &scope.filter {
-        traversal
-            .entries
-            .retain(|entry| filter.iter().any(|glob| glob.matches(&entry.path)));
-    }
-    // Directory by directory, in path order: a page of a deep listing
-    // carries each directory's files with its folders instead of every
-    // folder of the tree before the first file.
-    let parent = |path: &str| path.rsplit_once('/').map_or("", |(dir, _)| dir).to_owned();
-    traversal.entries.sort_by(|left, right| {
-        parent(&left.path)
-            .cmp(&parent(&right.path))
-            .then_with(|| left.path.cmp(&right.path))
-    });
+    scope.select(&mut traversal.entries);
     let page = ListingPage::of(query, &traversal.entries);
     let mut value = json!({
         "files": build_structure(page.entries),
@@ -270,27 +231,7 @@ pub(crate) async fn execute<C: octocode_github::ConditionalCache>(
         value["commitSha"] = json!(commit_sha);
     }
     page.paginate(&mut value);
-    // With `extras: ["details"]` a listing states when each entry last
-    // changed (one GraphQL request per page, so only when asked); a
-    // materialized page hands its files to local tools and stays undated.
-    let mut undated = 0;
-    let mut dates_failed = false;
-    let dated = query.extras.contains(&ExtraKind::Details);
-    if dated && query.materialize != Some(true) {
-        let page_dates = dates::page_dates(
-            provider,
-            &query.owner,
-            &query.repo,
-            &commit_sha,
-            page.entries,
-            context,
-        )
-        .await;
-        undated = page_dates.undated;
-        // A failed dating request is retried by the same page.
-        dates_failed = page_dates.warning.is_some();
-        dates::attach(&mut value, page_dates);
-    }
+    let dating = date_page(provider, query, &commit_sha, &page, context, &mut value).await;
     // Sizes and dates join the names last: dates key bare names.
     attach_fields(&mut value, page.entries);
     let mut output = ToolData::from(Value::Null);
@@ -329,11 +270,11 @@ pub(crate) async fn execute<C: octocode_github::ConditionalCache>(
         &mut value,
         &pinned,
         &page,
-        traversal.failed_subtrees > 0 || dates_failed,
+        traversal.failed_subtrees > 0 || dating.failed,
         query.materialize == Some(true),
         materialize_resume,
     )?;
-    dates::expand(&mut value, &pinned, &page, undated)?;
+    dates::expand(&mut value, &pinned, &page, dating.undated)?;
     // A resumed materialize page (offset > 0) is anchored by `location`:
     // its first call already listed these entries.
     let resumed = query.materialize == Some(true)
@@ -357,6 +298,73 @@ pub(crate) async fn execute<C: octocode_github::ConditionalCache>(
     Ok(output)
 }
 
+/// What dating a listing page left: entries no date reached, and whether
+/// the dating request failed (the same page retries it).
+#[derive(Default)]
+struct PageDating {
+    undated: usize,
+    failed: bool,
+}
+
+/// With `extras: ["details"]` a listing states when each entry last changed
+/// (one GraphQL request per page, so only when asked); a materialized page
+/// hands its files to local tools and stays undated.
+async fn date_page<C: octocode_github::ConditionalCache>(
+    provider: &GitHubProvider<C>,
+    query: &GhStructureQuery,
+    commit_sha: &str,
+    page: &ListingPage<'_>,
+    context: &RequestContext,
+    value: &mut Value,
+) -> PageDating {
+    if !query.extras.contains(&ExtraKind::Details) || query.materialize == Some(true) {
+        return PageDating::default();
+    }
+    let page_dates = dates::page_dates(
+        provider,
+        &query.owner,
+        &query.repo,
+        commit_sha,
+        page.entries,
+        context,
+    )
+    .await;
+    let dating = PageDating {
+        undated: page_dates.undated,
+        failed: page_dates.warning.is_some(),
+    };
+    dates::attach(value, page_dates);
+    dating
+}
+
+/// A renamed repository's one warning and the query under its canonical
+/// name, `None` when the name stands. A listing or refs page is read, dated
+/// and continued under the canonical name: later requests skip the
+/// redirect, and every lead names the repository as it is now.
+async fn canonical<C: octocode_github::ConditionalCache>(
+    provider: &GitHubProvider<C>,
+    query: &GhStructureQuery,
+    context: &RequestContext,
+) -> Result<Option<(String, GhStructureQuery)>, ProviderError> {
+    let (owner, repo) = (query.owner.as_str(), query.repo.as_str());
+    let Some(to) = crate::tools::gh_shared::canonical_repo(provider, owner, repo, context).await
+    else {
+        return Ok(None);
+    };
+    let decode = |error: &dyn std::fmt::Display| {
+        ProviderError::new(ProviderErrorKind::Decode, error.to_string())
+    };
+    let canonical = GhStructureQuery {
+        owner: to.0.parse().map_err(|error| decode(&error))?,
+        repo: to.1.parse().map_err(|error| decode(&error))?,
+        ..query.clone()
+    };
+    Ok(Some((
+        crate::tools::gh_shared::renamed_warning(owner, repo, &to),
+        canonical,
+    )))
+}
+
 /// What one listing covers: the requested directory, the depth, and the
 /// `include` globs (ORed: a path matching any is kept).
 struct Scope {
@@ -366,6 +374,22 @@ struct Scope {
 }
 
 impl Scope {
+    /// The listed entries of `entries`: those the `include` globs keep,
+    /// directory by directory in path order, so a page of a deep listing
+    /// carries each directory's files with its folders instead of every
+    /// folder of the tree before the first file.
+    fn select(&self, entries: &mut Vec<TreeEntry>) {
+        if let Some(filter) = &self.filter {
+            entries.retain(|entry| filter.iter().any(|glob| glob.matches(&entry.path)));
+        }
+        let parent = |path: &str| path.rsplit_once('/').map_or("", |(dir, _)| dir).to_owned();
+        entries.sort_by(|left, right| {
+            parent(&left.path)
+                .cmp(&parent(&right.path))
+                .then_with(|| left.path.cmp(&right.path))
+        });
+    }
+
     fn of(query: &GhStructureQuery) -> Result<Self, ProviderError> {
         let filters = query
             .include
@@ -445,6 +469,7 @@ mod tests {
         let outside = base.path().join("escape.txt");
         let mut writer = MaterializeWriter {
             root: &root,
+            home: base.path(),
             written: 0,
             total_bytes: 0,
             cursor: 0,
@@ -594,6 +619,37 @@ mod tests {
         assert_eq!(
             serde_json::to_value(&traversal.omitted).expect("omitted"),
             json!({"zlib (submodule)": 1})
+        );
+    }
+
+    /// A git tree types a symlink `blob` of mode `120000`: it is named
+    /// beside the skipped entries, never listed or sized as a file, and a
+    /// listing rooted at it is not a file listing.
+    #[test]
+    fn a_git_tree_symlink_is_named_not_listed_as_a_file() {
+        let tree: octocode_github::TreeResponse = serde_json::from_value(json!({
+            "sha":"s","truncated":false,"tree":[
+                {"path":"README.md","type":"blob","mode":"100644","size":1},
+                {"path":"docs","type":"blob","mode":"120000","size":9}
+            ]
+        }))
+        .expect("tree");
+        let traversal = traverse::traversal_from_git_tree(tree.clone(), "", 3);
+        let listed = traversal
+            .entries
+            .iter()
+            .map(|entry| entry.path.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(listed, ["README.md"]);
+        assert_eq!(
+            serde_json::to_value(&traversal.omitted).expect("omitted"),
+            json!({"docs (symlink)": 1})
+        );
+        let link = root_is_directory(&tree, "docs").expect_err("a symlink");
+        assert_eq!(link.reason, None);
+        assert_eq!(
+            link.message.as_ref(),
+            "Path \"docs\" is a symlink, not a directory"
         );
     }
 
@@ -762,6 +818,101 @@ mod tests {
                 assert_eq!(out.data["commitSha"], SHA, "{reference}: {}", out.data);
                 assert_eq!(out.data["refKind"], kind, "{reference}: {}", out.data);
             }
+        }
+
+        /// The branch-listing lead keeps the caller's extras and adds
+        /// `details` (the extra that lists branches); it never replaces them.
+        #[tokio::test]
+        async fn the_branch_listing_lead_adds_details_to_the_callers_extras() {
+            let server = server().await;
+            mount_json(
+                &server,
+                "/api/v3/repos/a/b/tags",
+                200,
+                json!([{"name":"v1","commit":{"sha":SHA}}]),
+            )
+            .await;
+            for (extras, expected) in [
+                (json!(["hints"]), json!(["hints", "details"])),
+                (json!([]), json!(["details"])),
+                (
+                    json!(["stats", "hints"]),
+                    json!(["stats", "hints", "details"]),
+                ),
+            ] {
+                let out = list(
+                    &server,
+                    json!({"owner":"a","repo":"b","operation":"refs","extras":extras}),
+                )
+                .await
+                .expect("refs");
+                assert_eq!(
+                    out.data
+                        .pointer("/next/viewRefs/query/queries/0/extras")
+                        .cloned(),
+                    Some(expected),
+                    "{}",
+                    out.data
+                );
+            }
+        }
+
+        /// A refs page of a renamed repository (GitHub answers 301 to
+        /// `/repositories/<id>`) warns once and leads under the canonical
+        /// name, as a listing does.
+        #[tokio::test]
+        async fn a_refs_page_of_a_renamed_repository_warns_and_leads_canonically() {
+            let server = MockServer::builder().start().await;
+            Mock::given(method("GET"))
+                .and(path("/api/v3/repos/a/b/commits/HEAD"))
+                .respond_with(ResponseTemplate::new(301).insert_header(
+                    "location",
+                    format!("{}/api/v3/repositories/1/commits/HEAD", server.uri()),
+                ))
+                .mount(&server)
+                .await;
+            Mock::given(method("GET"))
+                .and(path("/api/v3/repositories/1/commits/HEAD"))
+                .respond_with(ResponseTemplate::new(200).set_body_string(SHA))
+                .mount(&server)
+                .await;
+            mount_json(
+                &server,
+                "/api/v3/repos/a/b",
+                200,
+                json!({"default_branch":"main","full_name":"c/d"}),
+            )
+            .await;
+            mount_json(
+                &server,
+                "/api/v3/repos/a/b/tags",
+                200,
+                json!([{"name":"v1","commit":{"sha":SHA}}]),
+            )
+            .await;
+            let out = list(
+                &server,
+                json!({"owner":"a","repo":"b","operation":"refs","extras":[]}),
+            )
+            .await
+            .expect("refs");
+            assert_eq!(
+                out.data["warnings"],
+                json!([crate::tools::gh_shared::renamed_warning(
+                    "a",
+                    "b",
+                    &("c".into(), "d".into())
+                )]),
+                "{}",
+                out.data
+            );
+            let lead = &out.data["next"]["viewRefs"]["query"]["queries"][0];
+            assert_eq!(
+                (lead["owner"].as_str(), lead["repo"].as_str()),
+                (Some("c"), Some("d")),
+                "{}",
+                out.data
+            );
         }
 
         async fn list(server: &MockServer, value: Value) -> Result<ToolData, ProviderError> {

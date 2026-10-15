@@ -29,35 +29,25 @@ function annotations(tool: Tool): PiToolAnnotations | undefined {
   return Object.keys(picked).length > 0 ? picked : undefined;
 }
 
-/**
- * The most bytes of one MCP text part that stay in the context whole: 60,000, the 50,000-character page Octocode's
- * server cuts its own output to (`responseLength`, with `next.*` continuations) plus its header and headroom for
- * non-ASCII text. Claude Code persists any result over 50,000 characters. Of 345 MCP text parts in this repository's
- * Pi sessions (p50 5.7 KB, p99 97 KB, max 101 KB) the server's own pages were at most 50,052 bytes, so a cap of exactly
- * 50,000 would spill the server's largest normal page; only the 9 parts over 60,000 (older servers added a JSON text
- * part of up to 101 KB) spill. A longer part is saved whole to the session's `output/` folder and replaced by its
- * head and tail (the tail keeps `next`) and the file's path, so the cap loses no evidence.
- */
-export const TEXT_MAX_BYTES = 60_000;
-/** Lines for the same part: a 50,000-character page measured at most 1,155 lines, so this never decides before the bytes do. */
-const TEXT_MAX_LINES = 3_000;
+/** UTF-16 characters kept whole per MCP text part, allowing headroom around the server's 50,000-character page. */
+export const TEXT_MAX_CHARS = 60_000;
 /** Characters of tool results one assistant message may put in the context whole (Claude Code's per-message budget). */
 export const TURN_MAX_CHARS = 200_000;
 /** The preview a result keeps once its turn is over budget: the head and tail of a result about 1,000 tokens long. */
-const OVER_BUDGET_BYTES = 4_000;
+const OVER_BUDGET_CHARS = 4_000;
 
 /**
  * What the MCP results of one assistant message have put in the context. Pi runs a turn's parallel tool calls
  * together, so each gets whole text only while the turn is under `TURN_MAX_CHARS`: a result that would pass it is cut
- * to what is left (at least `OVER_BUDGET_BYTES`) and the later ones to that preview. Every cut result is saved
+ * to what is left (at least `OVER_BUDGET_CHARS`) and the later ones to that preview. Every cut result is saved
  * whole to a file the preview names, so the budget bounds the context, not the evidence. `reset` at `turn_start`.
  */
 export class TurnBudget {
   private used = 0;
 
-  /** Bytes the next text part may keep: `TEXT_MAX_BYTES` while the turn is far from its budget, then what is left. */
+  /** UTF-16 characters the next text part may keep while the turn is within its budget. */
   limit(): number {
-    return Math.min(TEXT_MAX_BYTES, Math.max(TURN_MAX_CHARS - this.used, OVER_BUDGET_BYTES));
+    return Math.min(TEXT_MAX_CHARS, Math.max(TURN_MAX_CHARS - this.used, OVER_BUDGET_CHARS));
   }
 
   /** Counts `chars` characters the model now reads. */
@@ -73,7 +63,7 @@ export class TurnBudget {
 /**
  * A tool result for Pi. Text and images pass through, embedded text resources become text and other blocks a short
  * placeholder (`toLlmContent`). A server bounds and pages its own output and a cut can hide the continuation inside
- * it, so text is left whole up to `TEXT_MAX_BYTES` (less once the turn's `budget` is nearly used); a longer part is
+ * it, so text is left whole up to `TEXT_MAX_CHARS` (less once the turn's `budget` is nearly used); a longer part is
  * saved whole to the session's `output/` folder and replaced by its head and tail plus the file's path. An oversized
  * image is saved and resized by Pi to `limits` (the active model's image limit, `imageLimits(ctx.model)`); the model sees the fitted image, its original path and the
  * dimension mapping (only the path if resizing fails). Repository, GitHub and registry text is untrusted: terminal control
@@ -86,7 +76,8 @@ export async function toToolResult(tool: string, result: CallToolResult, declare
   const content: AgentToolResult['content'] = [];
   for (const part of sanitizeJson(toLlmContent(result)) as ReturnType<typeof toLlmContent>) {
     if (part.type === 'text') {
-      const text = capOutputToFile(part.text, { label: `mcp ${tool}`, maxBytes: budget?.limit() ?? TEXT_MAX_BYTES, maxLines: TEXT_MAX_LINES });
+      const maxChars = budget?.limit() ?? TEXT_MAX_CHARS;
+      const text = part.text.length <= maxChars ? part.text : capOutputToFile(part.text, { label: `mcp ${tool}`, maxBytes: maxChars, maxLines: maxChars + 1 });
       budget?.charge(text.length);
       content.push({ ...part, text });
     }

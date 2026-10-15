@@ -19,6 +19,18 @@ pub(super) const MAX_KEY_SCAN_BYTES: u64 = 10 * 1024 * 1024;
 pub(super) type ExpectedDigest<'a> =
     dyn Fn(&std::path::Path) -> Option<Option<super::manifest::Digest>> + 'a;
 
+/// What every stage of one page reads besides the scan: the query, the read
+/// policy, the root the rows name paths under, the bytes a stored scan's
+/// checks must read, the secret scanner and the cancel.
+pub(super) struct PageScope<'a, C> {
+    pub(super) query: &'a LocalSearchQuery,
+    pub(super) paths: &'a crate::policy::path::PathPolicy,
+    pub(super) output_root: &'a std::path::Path,
+    pub(super) expected_digest: &'a ExpectedDigest<'a>,
+    pub(super) security: &'a ContentSecurity,
+    pub(super) cancel: &'a C,
+}
+
 /// (path, line, column) of every match whose value secret redaction
 /// changed: the returned text is then not verbatim source, and the row says
 /// so via a `redactedMatches` warning.
@@ -65,17 +77,19 @@ impl Redaction {
 /// replayed when every key-block scan reads the same bytes again (see
 /// [`replay_redaction`]); otherwise every value is redacted afresh. Returns
 /// the redacted rows and the record of this redaction.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn redact_scan(
-    query: &LocalSearchQuery,
+    scope: &PageScope<'_, impl CancellationCheck>,
     parsed: &mut octocode_engine::types::TextSearchResult,
-    output_root: &std::path::Path,
-    expected_digest: &ExpectedDigest<'_>,
-    paths: &crate::policy::path::PathPolicy,
-    security: &ContentSecurity,
-    cancel: &impl CancellationCheck,
     stored: Option<&Redaction>,
 ) -> Result<(Redacted, Redaction), ToolError> {
+    let PageScope {
+        query,
+        paths,
+        output_root,
+        expected_digest,
+        security,
+        cancel,
+    } = *scope;
     if let Some(stored) = stored.filter(|stored| stored.output_root == output_root) {
         cancel.check().map_err(ToolError::cancelled)?;
         if let Some(redacted) =
@@ -308,18 +322,26 @@ pub(super) type Outlines =
 /// [`ENCLOSING_MAX_FILES`] files with rows are outlined from that read into
 /// `outlines`. Returns whether some values were redacted because their
 /// source could not be re-read.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn verify_shown(
-    query: &LocalSearchQuery,
+    scope: &PageScope<'_, impl CancellationCheck>,
     parsed: &mut octocode_engine::types::TextSearchResult,
     layout: &Layout,
-    output_root: &std::path::Path,
-    expected_digest: &ExpectedDigest<'_>,
     redacted: &mut Redacted,
     outlines: &mut Outlines,
-    security: &ContentSecurity,
-    cancel: &impl CancellationCheck,
 ) -> Result<bool, ToolError> {
+    let PageScope {
+        query,
+        output_root,
+        expected_digest,
+        security,
+        cancel,
+        ..
+    } = *scope;
+    let check = ValueCheck {
+        security,
+        match_only: query.result_view == LocalSearchQueryResultView::MatchOnly,
+        cancel,
+    };
     if layout.list {
         for (index, _) in &layout.shown {
             let source = output_root.join(&parsed.files[*index].path);
@@ -353,7 +375,6 @@ pub(super) fn verify_shown(
         let bytes = outlined
             .then(|| crate::tools::source::read_bounded(&source, MAX_PARSE_SIZE).ok())
             .flatten();
-        let match_only = query.result_view == LocalSearchQueryResultView::MatchOnly;
         let expected = expected_digest(&source);
         let verification = match &bytes {
             Some(bytes) => guard_read(
@@ -362,19 +383,9 @@ pub(super) fn verify_shown(
                 || Ok(bytes.as_slice()),
                 expected,
                 rows.clone(),
-                security,
-                match_only,
-                cancel,
+                &check,
             ),
-            None => guard_clipped_secrets(
-                file,
-                &source,
-                expected,
-                rows.clone(),
-                security,
-                match_only,
-                cancel,
-            ),
+            None => guard_clipped_secrets(file, &source, expected, rows.clone(), &check),
         };
         match verification.map_err(ToolError::cancelled)? {
             Verification::Verified => {}
@@ -464,9 +475,7 @@ pub(super) fn guard_clipped_secrets(
     source: &std::path::Path,
     expected: Option<Option<super::manifest::Digest>>,
     shown: std::ops::Range<usize>,
-    security: &ContentSecurity,
-    match_only: bool,
-    cancel: &impl CancellationCheck,
+    check: &ValueCheck<'_, impl CancellationCheck>,
 ) -> Result<Verification, String> {
     guard_read(
         file,
@@ -474,25 +483,34 @@ pub(super) fn guard_clipped_secrets(
         || std::fs::File::open(source),
         expected,
         shown,
-        security,
-        match_only,
-        cancel,
+        check,
     )
+}
+
+/// How shown values are checked against their source: the secret scanner,
+/// whether values are matchOnly spans (an exposed one becomes a bare
+/// placeholder), and the cancel that stops the read.
+pub(super) struct ValueCheck<'a, C> {
+    pub(super) security: &'a ContentSecurity,
+    pub(super) match_only: bool,
+    pub(super) cancel: &'a C,
 }
 
 /// [`guard_clipped_secrets`] over the reader `open` returns, opened only
 /// when a shown value needs its source lines.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn guard_read<R: std::io::Read>(
     file: &mut octocode_engine::types::TextSearchFile,
     source: &std::path::Path,
     open: impl FnOnce() -> std::io::Result<R>,
     expected: Option<Option<super::manifest::Digest>>,
     shown: std::ops::Range<usize>,
-    security: &ContentSecurity,
-    match_only: bool,
-    cancel: &impl CancellationCheck,
+    check: &ValueCheck<'_, impl CancellationCheck>,
 ) -> Result<Verification, String> {
+    let ValueCheck {
+        security,
+        match_only,
+        cancel,
+    } = *check;
     if expected == Some(None) {
         return Ok(Verification::Changed);
     }
@@ -911,9 +929,11 @@ mod verification_tests {
             &source,
             None,
             0..10,
-            &ContentSecurity::new(),
-            true,
-            &NeverCancel,
+            &ValueCheck {
+                security: &ContentSecurity::new(),
+                match_only: true,
+                cancel: &NeverCancel,
+            },
         )
         .expect("not cancelled");
         assert_eq!(verified, Verification::Unverified);
@@ -934,9 +954,11 @@ mod verification_tests {
                 &source,
                 None,
                 0..10,
-                &ContentSecurity::new(),
-                true,
-                &NeverCancel
+                &ValueCheck {
+                    security: &ContentSecurity::new(),
+                    match_only: true,
+                    cancel: &NeverCancel,
+                },
             )
             .expect("not cancelled"),
             Verification::Verified
@@ -960,9 +982,11 @@ mod verification_tests {
                 &source,
                 expected,
                 0..10,
-                &ContentSecurity::new(),
-                false,
-                &NeverCancel,
+                &ValueCheck {
+                    security: &ContentSecurity::new(),
+                    match_only: false,
+                    cancel: &NeverCancel,
+                },
             )
             .expect("not cancelled");
             (outcome, file.matches[0].value.clone())
@@ -989,9 +1013,11 @@ mod verification_tests {
             &source,
             None,
             0..10,
-            &ContentSecurity::new(),
-            false,
-            &NeverCancel,
+            &ValueCheck {
+                security: &ContentSecurity::new(),
+                match_only: false,
+                cancel: &NeverCancel,
+            },
         )
         .expect("not cancelled");
         assert_eq!(verified, Verification::Unverified);
@@ -1015,9 +1041,11 @@ mod verification_tests {
             &source,
             None,
             0..10,
-            &ContentSecurity::new(),
-            false,
-            &Cancelled,
+            &ValueCheck {
+                security: &ContentSecurity::new(),
+                match_only: false,
+                cancel: &Cancelled,
+            },
         )
         .expect_err("cancelled during the stream");
         assert_eq!(reason, "Cancelled");

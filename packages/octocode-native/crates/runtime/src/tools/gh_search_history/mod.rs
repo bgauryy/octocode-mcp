@@ -1,11 +1,7 @@
 //! GitHub history *search* — pull requests, issues, and commits.
 //!
-//! **Cache bypass is intentional.**  This tool uses `&provider.transport`
-//! directly rather than the `GitHubProvider<_, GitHubContentCache>` wrapper, so
-//! none of the `ConditionalCache` ETag / disk-tier machinery applies.  History
-//! search results are inherently mutable (new PRs/issues appear, existing ones
-//! are updated, merged, or closed), so caching them would serve stale state;
-//! the GitHub API's own rate-limit budget is the right throttle here.
+//! The transport revalidates mutable REST listings and caches complete indexed
+//! search pages within its volatile TTL. Incomplete search pages are not cached.
 mod errors;
 mod filters;
 mod leads;
@@ -248,6 +244,7 @@ pub async fn execute(
     security: &impl ContentScan,
 ) -> Result<Value, HistoryFailure> {
     let mut query = HistorySearch::new(query)?;
+    crate::tools::gh_shared::reject_boolean_keywords(&query.keywords())?;
     let page = query.page().unwrap_or(1);
     let per = page_size(&query);
     let searching = query::uses_search(&query);
@@ -554,91 +551,14 @@ fn missing_scope_failure(mut error: ProviderError, query: &HistorySearch) -> His
 /// Output facts the shared response stages ask about.
 pub(crate) struct Output;
 impl crate::tools::output::ToolOutput for Output {
-    fn fallback_hint(&self, _query: &Value) -> &'static str {
-        "Broaden keywords or remove history filters."
+    fn fallback_hint(&self, query: &Value) -> &'static str {
+        if crate::tools::output::has_value(query, "keywords") {
+            "Broaden keywords or remove history filters."
+        } else {
+            "Relax or remove a history filter, or add keywords."
+        }
     }
     fn evidence_kind(&self, _query: &Value, _data: &Value) -> &'static str {
         "provider"
     }
-    fn clasify_items(
-        &self,
-        source: &crate::tools::clasify::resource::ResourceSource,
-        state: &Value,
-    ) -> Option<Vec<crate::tools::clasify::items::Item>> {
-        let crate::tools::clasify::resource::ResourceSource::GhSearchHistory(query) = source else {
-            return None;
-        };
-        clasify_history(state, query)
-    }
-}
-
-/// One clasify candidate per pull request, issue, or commit, read through
-/// ghGetHistoryItem when its repository is known.
-fn clasify_history(
-    state: &Value,
-    query: &GhSearchHistoryQuery,
-) -> Option<Vec<crate::tools::clasify::items::Item>> {
-    use crate::tools::clasify::items;
-    let data = items::page_data(state)?;
-    let (key, operation) = [
-        ("pullRequests", "pullRequest"),
-        ("issues", "issue"),
-        ("commits", "commit"),
-    ]
-    .into_iter()
-    .find(|(key, _)| data.get(*key).is_some_and(Value::is_array))?;
-    let pointer = format!("/results/0/data/{key}");
-    let found = data[key]
-        .as_array()?
-        .iter()
-        .map(|row| {
-            let located = clasify_item_repository(row, query);
-            let mut fetch = serde_json::Map::new();
-            fetch.insert("operation".into(), serde_json::json!(operation));
-            let identity = match (operation, &located) {
-                ("commit", Some((owner, repo))) => {
-                    row.get("commitSha").and_then(Value::as_str).map(|sha| {
-                        fetch.insert("ref".into(), serde_json::json!(sha));
-                        format!(
-                            "{owner}/{repo}@{}",
-                            sha.chars().take(12).collect::<String>()
-                        )
-                    })
-                }
-                (_, Some((owner, repo))) => {
-                    row.get("number").and_then(Value::as_u64).map(|number| {
-                        fetch.insert("number".into(), serde_json::json!(number));
-                        format!("{owner}/{repo}#{number}")
-                    })
-                }
-                _ => None,
-            };
-            let read = identity.as_ref().and(located).map(|(owner, repo)| {
-                fetch.insert("owner".into(), serde_json::json!(owner));
-                fetch.insert("repo".into(), serde_json::json!(repo));
-                items::read(crate::tools::id::ToolId::GhGetHistoryItem, fetch)
-            });
-            items::Item {
-                state: items::narrowed(state, &pointer, vec![row.clone()]),
-                read,
-                path: None,
-                item: identity,
-            }
-        })
-        .collect();
-    Some(found)
-}
-
-/// Owner and repository of a history item: its own fields when a search spans
-/// repositories, else the searched repository.
-fn clasify_item_repository(row: &Value, query: &GhSearchHistoryQuery) -> Option<(String, String)> {
-    let owner = row
-        .get("owner")
-        .and_then(Value::as_str)
-        .or_else(|| query.owner())?;
-    let repo = row
-        .get("repo")
-        .and_then(Value::as_str)
-        .or_else(|| query.repo())?;
-    Some((owner.to_owned(), repo.to_owned()))
 }

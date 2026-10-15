@@ -207,8 +207,133 @@ async fn ghes_content_route_auth_and_decode() {
     assert!(!result.from_cache);
 }
 
+async fn keyed_provider(server: &MockServer) -> GitHubProvider<KeyedCache> {
+    let GitHubProvider { transport, .. } = provider(server).await;
+    GitHubProvider {
+        transport,
+        cache: KeyedCache::default(),
+    }
+}
+
+fn file_at(path: &str, reference: &str) -> ContentRequest {
+    ContentRequest {
+        owner: "a".into(),
+        repo: "b".into(),
+        path: path.into(),
+        reference: Some(reference.into()),
+        force_refresh: false,
+        session_id: None,
+    }
+}
+
+async fn mount_file(server: &MockServer, path_pattern: &str, delay: Duration) {
+    Mock::given(method("GET"))
+        .and(path(path_pattern))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("etag", "\"v1\"")
+                .set_delay(delay)
+                .set_body_json(serde_json::json!({
+                    "type":"file","encoding":"base64","content":STANDARD.encode("body\n")})),
+        )
+        .mount(server)
+        .await;
+}
+
+async fn requests_to(server: &MockServer, route: &str) -> usize {
+    server
+        .received_requests()
+        .await
+        .unwrap_or_default()
+        .iter()
+        .filter(|request| request.url.path().starts_with(route))
+        .count()
+}
+
+/// Identical concurrent reads take turns on one flight: the first fetches,
+/// the others read what it cached.
 #[tokio::test]
-async fn conditional_304_reuses_cached_body() {
+async fn concurrent_identical_reads_send_one_request() {
+    let server = MockServer::builder().start().await;
+    let sha = "1111111111111111111111111111111111111111";
+    mount_file(
+        &server,
+        "/api/v3/repos/a/b/contents/flight.rs",
+        Duration::from_millis(150),
+    )
+    .await;
+    let provider = keyed_provider(&server).await;
+    let context = with_token("secret", Duration::from_secs(5), 1024);
+    let request = file_at("flight.rs", sha);
+    let (first, second) = tokio::join!(
+        provider.get_file_content(&request, &context),
+        provider.get_file_content(&request, &context),
+    );
+    let (first, second) = (first.expect("first"), second.expect("second"));
+    assert_eq!(first.bytes, second.bytes);
+    assert!(
+        first.from_cache != second.from_cache,
+        "one read is the cached one"
+    );
+    assert_eq!(requests_to(&server, "/api/v3/repos/a/b/contents").await, 1);
+}
+
+/// Content at a commit SHA never changes: a cached read is served without
+/// asking GitHub again, whether the caller named the SHA or a branch that
+/// resolved to it (the ref resolution decides freshness).
+#[tokio::test]
+async fn a_cached_read_at_a_resolved_sha_is_not_revalidated() {
+    let server = MockServer::builder().start().await;
+    let sha = "2222222222222222222222222222222222222222";
+    mount_json(
+        &server,
+        "/api/v3/repos/a/b/commits/main",
+        200,
+        serde_json::json!({"sha":sha}),
+    )
+    .await;
+    mount_file(
+        &server,
+        "/api/v3/repos/a/b/contents/pinned.rs",
+        Duration::ZERO,
+    )
+    .await;
+    mount_file(
+        &server,
+        "/api/v3/repos/a/b/contents/branch.rs",
+        Duration::ZERO,
+    )
+    .await;
+    let provider = keyed_provider(&server).await;
+    let context = with_token("secret", Duration::from_secs(5), 1024);
+    for _ in 0..2 {
+        provider
+            .get_file_content(&file_at("pinned.rs", sha), &context)
+            .await
+            .expect("pinned read");
+    }
+    assert_eq!(
+        server.received_requests().await.unwrap_or_default().len(),
+        1
+    );
+    for _ in 0..2 {
+        provider
+            .get_file_content(&file_at("branch.rs", "main"), &context)
+            .await
+            .expect("branch read");
+    }
+    // One ref resolution (memoized) and one content read.
+    assert_eq!(requests_to(&server, "/api/v3/repos/a/b/commits").await, 1);
+    assert_eq!(
+        requests_to(&server, "/api/v3/repos/a/b/contents/branch.rs").await,
+        1
+    );
+}
+
+/// A cached body at the resolved commit is served as is: no conditional
+/// request, no 304 round trip.
+#[tokio::test]
+async fn a_cached_body_is_served_without_a_request() {
     let server = MockServer::builder().start().await;
     let provider = provider(&server).await;
     let sha = "0123456789abcdef0123456789abcdef01234567";
@@ -225,8 +350,9 @@ async fn conditional_304_reuses_cached_body() {
         resolved_ref: sha.into(),
     });
     Mock::given(method("GET"))
-        .and(header("if-none-match", "\"v1\""))
+        .and(path("/api/v3/repos/a/b/contents/x"))
         .respond_with(ResponseTemplate::new(304))
+        .expect(0)
         .mount(&server)
         .await;
     let result = provider
@@ -647,6 +773,79 @@ async fn content_encoding_none_for_large_file_fetches_blob() {
         .await
         .expect("blob fallback");
     assert_eq!(result.bytes, &b"large body"[..]);
+}
+
+#[tokio::test]
+async fn raw_content_keeps_binary_bytes_through_every_acquisition_and_cache_path() {
+    let commit = "0123456789abcdef0123456789abcdef01234567";
+    let blob = "89abcdef0123456789abcdef0123456789abcdef";
+    let bytes = b"\x89PNG\r\n\x1a\n\0binary";
+    for route in ["inline", "blob", "directory"] {
+        let server = MockServer::builder().start().await;
+        let payload = match route {
+            "inline" => {
+                serde_json::json!({"type":"file","encoding":"base64","content":STANDARD.encode(bytes),"sha":blob})
+            }
+            "blob" => {
+                serde_json::json!({"type":"file","encoding":"none","content":"","size":bytes.len(),"sha":blob})
+            }
+            _ => serde_json::json!({"message":"too large"}),
+        };
+        mount_json(
+            &server,
+            "/api/v3/repos/a/b/contents/dir%2Fimage.png",
+            if route == "directory" { 413 } else { 200 },
+            payload,
+        )
+        .await;
+        if route == "directory" {
+            mount_json(
+                &server,
+                "/api/v3/repos/a/b/contents/dir",
+                200,
+                serde_json::json!([{"name":"image.png","type":"file","sha":blob}]),
+            )
+            .await;
+        }
+        if route != "inline" {
+            mount_json(
+                &server,
+                format!("/api/v3/repos/a/b/git/blobs/{blob}"),
+                200,
+                serde_json::json!({"encoding":"base64","content":STANDARD.encode(bytes)}),
+            )
+            .await;
+        }
+        let provider = provider(&server).await;
+        let request = file_at("dir/image.png", commit);
+        let context = with_token("secret", Duration::from_secs(2), 4096);
+        let response = provider
+            .get_file_bytes(&request, &context)
+            .await
+            .expect(route);
+        assert_eq!(response.bytes, &bytes[..], "{route}");
+        assert_eq!(response.resolved_ref, commit);
+        assert!(!response.from_cache);
+        let cached = provider
+            .get_file_bytes(&request, &context)
+            .await
+            .expect("cached bytes");
+        assert_eq!(cached.bytes, response.bytes);
+        assert!(cached.from_cache);
+        let error = provider
+            .get_file_content(&request, &context)
+            .await
+            .expect_err("text reader refuses cached binary");
+        assert_eq!(error.reason, Some(ProviderErrorReason::BinaryFile));
+        assert_eq!(
+            server.received_requests().await.unwrap().len(),
+            match route {
+                "inline" => 1,
+                "blob" => 2,
+                _ => 3,
+            }
+        );
+    }
 }
 
 #[tokio::test]
@@ -2550,4 +2749,94 @@ async fn a_search_partly_withheld_by_saml_names_the_organizations_and_is_not_cac
             history.warnings
         );
     }
+}
+
+/// One logical GraphQL operation spends one physical-attempt budget: HTTP
+/// retries and GraphQL semantic retries draw from the same count, so mixed
+/// failures never send more than `max_attempts` requests.
+#[tokio::test]
+async fn graphql_semantic_and_http_retries_share_one_attempt_budget() {
+    let transient = || {
+        ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": null,
+            "errors": [{"message": "Something went wrong while executing your query. This may be the result of a timeout."}]
+        }))
+    };
+    let server = MockServer::builder().start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/graphql"))
+        .respond_with(Sequence::new(vec![
+            ResponseTemplate::new(503),
+            transient(),
+            ResponseTemplate::new(503),
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({"data": {"viewer": {"login": "me"}}})),
+        ]))
+        .mount(&server)
+        .await;
+    let retry = RetryPolicy {
+        max_attempts: 2,
+        ..short_retry()
+    };
+    let (transport, _) = executor_transport(&server, GitHubBudget::relaxed(), retry);
+    let page = transport
+        .execute_graphql(
+            "query { viewer { login } }",
+            serde_json::json!({}),
+            &with_token("t", Duration::from_secs(5), 1024),
+        )
+        .await
+        .expect("the last answer is returned");
+    assert!(
+        !page.errors.is_empty(),
+        "the budget ran out on the transient error"
+    );
+    assert_eq!(
+        server.received_requests().await.unwrap_or_default().len(),
+        2,
+        "two physical sends for max_attempts = 2"
+    );
+}
+
+/// A cancel during a GraphQL semantic-retry backoff stops the operation
+/// without another send.
+#[tokio::test]
+async fn graphql_semantic_retry_backoff_honors_cancellation() {
+    let server = MockServer::builder().start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/graphql"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": null,
+            "errors": [{"message": "Something went wrong while executing your query. This may be the result of a timeout."}]
+        })))
+        .mount(&server)
+        .await;
+    let retry = RetryPolicy {
+        max_attempts: 3,
+        base_delay: Duration::from_secs(30),
+        ..short_retry()
+    };
+    let (transport, _) = executor_transport(&server, GitHubBudget::relaxed(), retry);
+    let context = with_token("t", Duration::from_secs(60), 1024);
+    let cancel = context.budget.cancellation.clone();
+    let canceller = tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        cancel.cancel();
+    });
+    let started = std::time::Instant::now();
+    let result = transport
+        .execute_graphql(
+            "query { viewer { login } }",
+            serde_json::json!({}),
+            &context,
+        )
+        .await;
+    canceller.await.expect("canceller");
+    // A zero full-jitter draw may retry at once; every later wait is cancelled.
+    assert!(started.elapsed() < Duration::from_secs(10));
+    assert!(server.received_requests().await.unwrap_or_default().len() <= 3);
+    assert_eq!(
+        result.err().map(|error| error.kind),
+        Some(ProviderErrorKind::Cancelled)
+    );
 }

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { formatSize, truncateHead } from '@earendil-works/pi-coding-agent';
 import { shortPath } from '../shared/format.js';
-import { sanitizeTerminalText } from '../shared/sanitize.js';
+import { visibleControls } from '../shared/sanitize.js';
 import { capChars, capOutput, cutText } from '../shared/util.js';
 
 export const REPORT_MAX_BYTES = 8 * 1024;
@@ -83,9 +83,9 @@ export class ReportTracker {
 
   answer(raw: string | undefined, stopReason: unknown, errorMessage?: unknown): void {
     const failed = stopReason === 'error' || stopReason === 'aborted' || stopReason === 'length';
-    this.failure = failed ? capChars(sanitizeTerminalText(String(errorMessage ?? (stopReason === 'length' ? 'Model output limit reached; the report is incomplete' : stopReason))), 500) : undefined;
+    this.failure = failed ? capChars(visibleControls(String(errorMessage ?? (stopReason === 'length' ? 'Model output limit reached; the report is incomplete' : stopReason))), 500) : undefined;
     if (!raw) return;
-    const text = sanitizeTerminalText(raw);
+    const text = visibleControls(raw);
     this.lastText = preview(text);
     if (stopReason === 'toolUse' || failed) {
       this.partialFile = undefined;

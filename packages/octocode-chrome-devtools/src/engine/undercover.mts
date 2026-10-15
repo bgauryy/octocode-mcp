@@ -73,7 +73,80 @@ export async function readHostIdentity(cdp) {
   }
 }
 
-/** The override that presents a host browser without headless markers. */
+type UserAgentOs = {
+  platform: string; // Sec-CH-UA-Platform
+  mobile: boolean;
+  platformVersion: string;
+  architecture: string;
+  bitness: string;
+  model: string;
+};
+
+// The OS a user agent string names, in the shape its client hints report. Null when it names none: nothing can then be matched to it.
+export function userAgentOs(userAgent: string): UserAgentOs | null {
+  const os = (fields: Partial<UserAgentOs>): UserAgentOs => ({
+    platform: '',
+    mobile: false,
+    platformVersion: '',
+    architecture: '',
+    bitness: '',
+    model: '',
+    ...fields,
+  });
+  const android = userAgent.match(/Android (\d+(?:\.\d+)*)(?:; ([^;)]+))?/);
+  if (android)
+    return os({
+      platform: 'Android',
+      mobile: /\bMobile\b/.test(userAgent),
+      platformVersion: android[1],
+      model: android[2]?.trim() ?? '',
+    });
+  const apple = userAgent.match(/\b(iPhone|iPad|iPod)\b/);
+  if (apple)
+    return os({
+      platform: 'iOS',
+      mobile: apple[1] !== 'iPad',
+      platformVersion: (
+        userAgent.match(/OS (\d+(?:_\d+)*) like Mac OS X/)?.[1] ?? ''
+      ).replaceAll('_', '.'),
+    });
+  const windows = userAgent.match(/Windows NT (\d+)\.(\d+)/);
+  if (windows)
+    return os({
+      platform: 'Windows',
+      platformVersion: `${windows[1]}.${windows[2]}.0`,
+      architecture: 'x86',
+      bitness: /Win64|x64|WOW64/.test(userAgent) ? '64' : '32',
+    });
+  if (/\bCrOS\b/.test(userAgent))
+    return os({
+      platform: 'Chrome OS',
+      architecture: 'x86',
+      bitness: '64',
+    });
+  const mac = userAgent.match(/Mac OS X (\d+(?:[_.]\d+)*)/);
+  if (mac || /\bMacintosh\b/.test(userAgent))
+    return os({
+      platform: 'macOS',
+      platformVersion: (mac?.[1] ?? '').replaceAll('_', '.'),
+    });
+  if (/\bLinux\b|\bX11\b/.test(userAgent))
+    return os({
+      platform: 'Linux',
+      architecture: /aarch64|arm/.test(userAgent) ? 'arm' : 'x86',
+      bitness: /i[3-6]86/.test(userAgent) ? '32' : '64',
+    });
+  return null;
+}
+
+/**
+ * The override that presents a host browser without headless markers. A custom user
+ * agent naming another OS than the host keeps its own platform, mobile flag and OS-bound
+ * client hints instead of the host's, so the string and the hints describe one machine.
+ * One naming no known OS drops the hints, which would otherwise describe the host.
+ * navigator.platform stays the host's: Chrome applies that override to pages but not to
+ * workers, so changing it would make a worker disagree with its page.
+ */
 export function hostIdentity({ userAgent, platform, metadata }) {
   const { brands, fullVersionList, ...rest } = metadata;
   const headed = (list = []) =>
@@ -81,14 +154,28 @@ export function hostIdentity({ userAgent, platform, metadata }) {
       brand: brand.replace(/^HeadlessChrome$/, 'Google Chrome'),
       version,
     }));
+  const named = userAgentOs(userAgent);
+  const foreign = named !== null && named.platform !== metadata.platform;
   return {
     userAgent: userAgent.replace(/HeadlessChrome\//, 'Chrome/'),
     platform,
-    userAgentMetadata: {
-      ...rest,
-      brands: headed(brands),
-      fullVersionList: headed(fullVersionList),
-    },
+    userAgentMetadata: named
+      ? {
+          ...rest,
+          ...(foreign && {
+            platform: named.platform,
+            platformVersion: named.platformVersion,
+            architecture: named.architecture,
+            bitness: named.bitness,
+            model: named.model,
+            mobile: named.mobile,
+            wow64: false,
+            formFactors: [named.mobile ? 'Mobile' : 'Desktop'],
+          }),
+          brands: headed(brands),
+          fullVersionList: headed(fullVersionList),
+        }
+      : undefined,
   };
 }
 
@@ -247,8 +334,10 @@ export async function verifyStealth(cdp) {
       'userAgentData matches override (secure contexts)',
       v.uaDataPlatform === null ||
         ((!identity ||
-          v.uaDataPlatform === identity.userAgentMetadata.platform) &&
-          v.uaDataBrands.length > 0 &&
+          v.uaDataPlatform === (identity.userAgentMetadata?.platform ?? '')) &&
+          // A user agent naming no known OS drops the hints, brands included.
+          (v.uaDataBrands.length > 0 ||
+            (identity && !identity.userAgentMetadata)) &&
           !v.uaDataBrands.some(b => /Headless/i.test(b))),
       `got platform=${v.uaDataPlatform} brands=${v.uaDataBrands}`,
     ],

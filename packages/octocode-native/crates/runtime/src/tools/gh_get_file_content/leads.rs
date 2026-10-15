@@ -8,58 +8,15 @@ use crate::tools::id::ToolId;
 use crate::tools::local_fetch::{LocalFetchQuery, MinifyMode};
 use crate::tools::result::{Continuation, query_row};
 
-/// Lines from which a missed literal is located semantically (clasify)
-/// rather than searched for again: the size where the clasify gate starts.
-const LOCATE_FILE_LINES: usize = 1000;
-
-/// The runnable next step of a match that found nothing: in a large file,
-/// a clasify locate of the same file at the same commit (the literal was a
-/// guess); otherwise a ghSearchCode of the repository for the literal (it
-/// may live in another file). A regex has no literal to search.
+/// The runnable next step of a match that found nothing: a ghSearchCode of
+/// the repository for the literal (it may live in another file). A regex
+/// has no literal to search.
 pub(super) fn empty_match_lead(
     query: &GhGetFileContentQuery,
     local: &LocalFetchQuery,
-    total_lines: usize,
-    sha: &str,
 ) -> Option<(&'static str, Value)> {
     let literals = local.match_strings();
     let first = literals.first()?.trim();
-    if total_lines >= LOCATE_FILE_LINES {
-        let ask = format!(
-            "Which lines of {} handle {}?",
-            query.path.as_str(),
-            literals.join(" or ")
-        );
-        let goal: String = query
-            .main_goal
-            .as_ref()
-            .map_or(ask.as_str(), |goal| goal.as_str())
-            .chars()
-            .take(crate::tools::id::query_limits::clasify::MAIN_GOAL_MAX_LENGTH)
-            .collect();
-        let ask: String = ask
-            .chars()
-            .take(crate::tools::id::query_limits::clasify::MAIN_GOAL_MAX_LENGTH)
-            .collect();
-        let resource = json!({
-            "id": "file",
-            "tool": ToolId::GhGetFileContent.as_str(),
-            "query": {"owner": query.owner.as_str(), "repo": query.repo.as_str(), "path": query.path.as_str(), "ref": sha},
-        });
-        return Some((
-            "clasify",
-            Continuation::new(
-                ToolId::Clasify,
-                json!({
-                    "mainGoal": goal,
-                    "resources": [resource],
-                    "questions": [{"id": "target", "type": "locate", "ask": ask}],
-                }),
-            )
-            .confidence("medium")
-            .build(),
-        ));
-    }
     if local.is_regex() || first.is_empty() {
         return None;
     }
@@ -136,7 +93,11 @@ pub(super) fn rewrite_continuations(
         // window paged on from a verbatim whole-file read stays verbatim.
         query.remove("fullContent");
         let selected = query.contains_key("ranges") || query.contains_key("matchString");
-        match if selected { source.minify } else { view } {
+        match if selected && source.clasify_context.is_none() {
+            source.minify.unwrap_or_else(default_minify)
+        } else {
+            view
+        } {
             mode if mode == default_minify() => {
                 query.remove("minify");
             }
@@ -161,9 +122,7 @@ pub(super) fn rewrite_continuations(
     (!object.is_empty()).then_some(value)
 }
 
-/// The view a read gets when it names no `minify` (contract default).
+/// Ordinary GitHub reads use the standard view; classified reads resolve to raw text.
 pub(super) fn default_minify() -> MinifyMode {
-    crate::contracts::query_schema_value(ToolId::GhGetFileContent, None, "minify", "default")
-        .and_then(|value| serde_json::from_value(value.clone()).ok())
-        .unwrap_or(MinifyMode::None)
+    MinifyMode::Standard
 }

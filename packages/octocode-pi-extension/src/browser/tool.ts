@@ -7,20 +7,21 @@ import { answerDialog, dialogNotice, download, uploadFiles } from './actions.js'
 import { browserCallHeader, browserResult } from './render.js';
 import { CONSOLE_KEEP, openBrowser, type BrowserSession, type NetworkEvent } from './cdp.js';
 import { click, drag, elementExpr, fillFields, hover, pressKey, refForText, settle, settleAfterLoad, typeInto, waitForText } from './input.js';
-import { PagePolicy } from './network.js';
+import { keyOf, PagePolicy, portOf } from './network.js';
 import type { BlockedConnection } from './proxy.js';
 import { screenshot } from './screenshot.js';
 import { imageLimits } from '../shared/vision.js';
 import { snapshot } from './snapshot.js';
-import { describeTabs, followNewTab, newTab, selectTab, tabIds } from './tabs.js';
+import { describeTabs, followNewTab, newTab, selectTab, tabIds, type Approval } from './tabs.js';
 import type { Permission } from '../permission/ask.js';
 import { actionWhy, decide } from '../permission/mode.js';
-import { isWithin } from '../shared/home.js';
-import { resultText, timedTool } from '../shared/render.js';
-import { sanitizeTerminalText } from '../shared/sanitize.js';
+import { isWithin, workspaceRoot } from '../shared/home.js';
+import { timedTool } from '../shared/render.js';
+import { visibleControls } from '../shared/sanitize.js';
+import { visibleError } from '../shared/visible-error.js';
 import { capOutputToFile } from '../shared/spill.js';
-import { textResult, withTimeout } from '../shared/util.js';
-import { classifyHost } from '../web/guard.js';
+import { contentText, textResult, withTimeout } from '../shared/util.js';
+import { classifyHost, type HostClass, type HostLookup } from '../web/guard.js';
 
 const ACTIONS = ['info', 'attach', 'navigate', 'snapshot', 'click', 'hover', 'drag', 'type', 'fill', 'press', 'wait', 'tabs', 'tab', 'evaluate', 'screenshot', 'console', 'dialog', 'upload', 'download', 'close'] as const;
 /** Actions that talk to the page, so an open JavaScript dialog must be answered first. */
@@ -28,6 +29,18 @@ const PAGE_ACTIONS = new Set(['click', 'hover', 'drag', 'type', 'fill', 'press',
 /** Default and longest `wait`, in seconds. */
 const WAIT_DEFAULT_S = 10;
 const WAIT_MAX_S = 60;
+
+/** The refusals and reports kept apart in the audit (`BrowserTool.#audited`), most distinct ones, and how soon a repeat count is written. */
+export const AUDIT_KEYS_MAX = 100;
+const AUDIT_FLUSH_MS = 10_000;
+const OVERFLOW_KEY = 'more distinct refusals';
+
+interface Audited {
+  repeats: number;
+  /** The repeat count the audit already holds. */
+  written: number;
+  write: (repeats: number) => void;
+}
 
 type Confirmer = Pick<ExtensionContext, 'hasUI' | 'ui'> & { signal?: AbortSignal | undefined };
 /** Before any tool call supplies a context: nothing to ask, so what needs confirmation is refused. */
@@ -41,57 +54,109 @@ export class BrowserTool {
   #callId: string | undefined;
   /** What the session's pages may request: every request, not only URLs the agent passes. Private hosts only when the agent opened them. */
   readonly #policy: PagePolicy;
-  /** Refusals and reports already in the audit, so a page that repeats one writes it once. */
-  readonly #audited = new Set<string>();
+  /**
+   * Refusals and reports already in the audit, by what tells one from another (kind, host and port, resource type,
+   * reason). A page that repeats one writes it once; the repeats are counted and audited as a summary shortly after
+   * (`AUDIT_FLUSH_MS`) and again when the browser session ends, so a crash loses at most the last interval's counts.
+   * At `AUDIT_KEYS_MAX` distinct entries the others are counted under one entry that says how many more distinct
+   * refusals there were (`OVERFLOW_KEY`), so a page cannot flood the audit and nothing is dropped silently.
+   */
+  readonly #audited = new Map<string, Audited>();
+  #flushTimer: NodeJS.Timeout | undefined;
+  /** Resolves host names for the check on the pages the agent opens, and for what pages request; the `web` tool's resolver by default. */
+  readonly #lookup: HostLookup | undefined;
   /** What the last session lost before it ended (a tab closed for DNS rebinding), told with the next session's first result. */
   #notice: string | undefined;
 
-  /** `permission` asks about the pages the agent opens, private hosts and uploads; its session grants remember the hosts the user allowed. */
-  constructor(readonly permission: Permission) {
-    this.#policy = new PagePolicy({ report: (event) => this.#audit(event) });
+  readonly #flushMs: number;
+
+  /** `permission` asks about the pages the agent opens, private hosts and uploads; its session grants remember the hosts the user allowed. `flushMs`: how soon a repeat count is audited (a seam for tests). */
+  constructor(readonly permission: Permission, options: { lookup?: HostLookup; flushMs?: number } = {}) {
+    this.#lookup = options.lookup;
+    this.#flushMs = options.flushMs ?? AUDIT_FLUSH_MS;
+    this.#policy = new PagePolicy({ report: (event) => this.#audit(event), ...(options.lookup ? { lookup: options.lookup } : {}) });
   }
 
   /**
    * Whether the agent may open `url` (navigate, a new tab, switching to a tab): the page's own ask, one prompt for a
-   * private host. Once allowed, a private target is the one the page may load from, and the launched Chrome's proxy
-   * lets it through.
+   * private host. The host is classified once, there; a private target the permission allowed is the one the page may
+   * load from, and the launched Chrome's proxy lets it through. The approval it returns is recorded for the tab that loads
+   * the page (`approve(tab)`): it lasts for the whole browser session when the user granted `net.private` for the
+   * session, otherwise (Allow once, or a mode that allows it) while that tab stays on the host. A public one is never
+   * approved: if its name answers privately later, the page request, the proxy and the rebinding check refuse it.
    */
-  async open(url: string): Promise<void> {
-    await checkBrowserUrl(url, this.#confirmer, this.permission, this.#callId ?? '');
-    await this.approveTarget(url);
-  }
-
-  /** Lets the page and the proxy reach `url` (host and port) when it is not public: the agent chose it and the permission check allowed it. Never called for a page's own request. */
-  async approveTarget(url: string): Promise<void> {
+  async open(url: string): Promise<Approval> {
+    const { privateGrant } = await checkBrowserUrl(url, this.#confirmer, this.permission, this.#callId ?? '', this.#lookup);
+    if (!privateGrant) return () => undefined;
     const target = new URL(url);
-    if (await this.#policy.approve(target)) this.#session?.chrome?.proxy?.allow(target);
+    return (tab) => this.#policy.approve(target, privateGrant === 'session' ? 'session' : { tab });
   }
 
-  /** One audit entry per refusal or report: a page with many blocked requests to one host is not many entries. */
+  /** One audit entry per distinct refusal or report: a page with many identical blocked requests is one entry and a count, not many entries. */
   #audit(event: NetworkEvent): void {
-    const host = (url: string): string => {
-      try {
-        return new URL(url).host;
-      } catch {
-        return url;
-      }
-    };
-    const key = `${event.kind} ${host(event.url)}`;
-    if (event.kind !== 'rebinding' && this.#audited.has(key)) return;
-    this.#audited.add(key);
-    if (event.kind === 'blocked') this.permission.refused([event.url], `blocked a page request (${event.resourceType}): ${event.reason}`, 'browser');
-    else if (event.kind === 'websocket') this.permission.noted([event.url], `a page WebSocket was not blocked, reported only: ${event.reason}`, { allowed: true, via: 'reported', action: 'invariant', tool: 'browser' });
-    else {
+    if (event.kind === 'rebinding') {
       this.#notice = `The tab was closed: ${event.url} answered from the private address ${event.address} (DNS rebinding).`;
       this.permission.refused([`${event.url} -> ${event.address}`], 'closed the tab: a public name answered from a private address (DNS rebinding)', 'browser');
+    } else if (event.kind === 'blocked') {
+      this.#auditOnce(`blocked ${hostOf(event.url)} ${event.resourceType} ${event.reason}`, (repeats) =>
+        this.permission.refused([event.url], `${repeatNote(repeats)}blocked a page request (${event.resourceType}): ${event.reason}`, 'browser'),
+      );
+    } else {
+      this.#auditOnce(`websocket ${hostOf(event.url)} ${event.reason}`, (repeats) =>
+        this.permission.noted([event.url], `${repeatNote(repeats)}a page WebSocket was not blocked, reported only: ${event.reason}`, { allowed: true, via: 'reported', action: 'invariant', tool: 'browser' }),
+      );
     }
   }
 
   /** A connection the launched Chrome's filtering proxy refused (a page chose a private or unvetted host). */
   #auditProxy(blocked: BlockedConnection): void {
-    if (this.#audited.has(`proxy ${blocked.host}`)) return;
-    this.#audited.add(`proxy ${blocked.host}`);
-    this.permission.refused([blocked.host], `the filtering proxy refused a page connection to ${blocked.reason === 'private' ? 'a local or private address' : 'a host it could not vet'}`, 'browser');
+    this.#auditOnce(`proxy ${blocked.host} ${blocked.reason}`, (repeats) =>
+      this.permission.refused([blocked.host], `${repeatNote(repeats)}the filtering proxy refused a page connection to ${blocked.reason === 'private' ? 'a local or private address' : 'a host it could not vet'}`, 'browser'),
+    );
+  }
+
+  /** Writes `write(0)` the first time `key` is seen; later ones are only counted, for `#flushRepeats`. Past `AUDIT_KEYS_MAX` distinct keys a new one is counted under `OVERFLOW_KEY`. */
+  #auditOnce(key: string, write: (repeats: number) => void): void {
+    const overflow = !this.#audited.has(key) && this.#audited.size >= AUDIT_KEYS_MAX;
+    const name = overflow ? OVERFLOW_KEY : key;
+    const known = this.#audited.get(name);
+    if (known) {
+      known.repeats += 1;
+      this.#scheduleFlush();
+      return;
+    }
+    const writer = overflow
+      ? (repeats: number) => this.permission.refused([`more than ${AUDIT_KEYS_MAX} distinct blocked targets`], `${repeats + 1} more distinct refusals or reports after the first ${AUDIT_KEYS_MAX}, counted here and not listed one by one`, 'browser')
+      : write;
+    this.#audited.set(name, { repeats: 0, written: 0, write: writer });
+    writer(0);
+  }
+
+  /** Audits the counts that grew soon, so a crash or a kill loses little: repeats are cumulative, a later summary replaces an earlier one. */
+  #scheduleFlush(): void {
+    if (this.#flushTimer) return;
+    this.#flushTimer = setTimeout(() => {
+      this.#flushTimer = undefined;
+      this.#flushRepeats();
+    }, this.#flushMs);
+    this.#flushTimer.unref();
+  }
+
+  /** Audits the count of each entry that repeated since it was last written. */
+  #flushRepeats(): void {
+    for (const entry of this.#audited.values()) {
+      if (entry.repeats <= entry.written) continue;
+      entry.written = entry.repeats;
+      entry.write(entry.repeats);
+    }
+  }
+
+  /** Audits what is left and starts afresh: the browser session the entries belong to ended. */
+  #endAudit(): void {
+    clearTimeout(this.#flushTimer);
+    this.#flushTimer = undefined;
+    this.#flushRepeats();
+    this.#audited.clear();
   }
 
   /** Remembers the calling tool's context for confirmations the session's pages trigger while it runs. */
@@ -121,8 +186,6 @@ export class BrowserTool {
 
   async #start(options: { port?: number; reuseTab?: boolean; signal: AbortSignal | undefined }): Promise<BrowserSession> {
     const session = await openBrowser(process.env, { ...options, policy: this.#policy, onBlocked: (blocked) => this.#auditProxy(blocked) });
-    // A Chrome that starts after the agent opened a private page must let the page's own requests through again.
-    for (const url of this.#policy.approved) session.chrome?.proxy?.allow(url);
     if (this.#notice) session.warning = this.#notice;
     this.#notice = undefined;
     this.#session = session;
@@ -136,12 +199,16 @@ export class BrowserTool {
   async close(options: { keepVisible?: boolean } = {}): Promise<void> {
     const session = this.#session;
     this.#session = undefined;
+    // What the browser session allowed and refused ends with it: a new Chrome starts with no approved host.
+    this.#policy.revoke();
+    this.#endAudit();
     if (!session) return;
     const keep = options.keepVisible === true && session.profile !== undefined;
     // A persistent-profile Chrome left open by an earlier run is quit by an explicit close, like one we launched.
     if (!keep && session.profile !== undefined && !session.chrome) await session.connection.send('Browser.close').catch(() => undefined);
     else if (!keep) await session.closeTab?.().catch(() => undefined);
     session.connection.close();
+    session.consoleLog?.close();
     // Detached: Chrome runs in its own process group, so it outlives this process once nothing waits on it.
     if (keep) session.chrome?.process?.unref();
     else await session.chrome?.kill();
@@ -196,10 +263,14 @@ export function registerBrowserTool(pi: ExtensionAPI, browser: BrowserTool): voi
       const { action } = params;
       const callCtx = { ...ctx, signal: signal ?? ctx.signal };
       browser.useContext(callCtx, id);
-      if (isSessionAction(action)) return SESSION_HANDLERS[action](browser, params, signal);
-      const session = await browser.session(signal);
-      if (session.dialog && PAGE_ACTIONS.has(action)) return pageResult(dialogNotice(session.dialog));
-      return PAGE_HANDLERS[action]({ session, page: session.page, params, signal, ctx: callCtx, browser, toolCallId: id });
+      try {
+        if (isSessionAction(action)) return await SESSION_HANDLERS[action](browser, params, signal);
+        const session = await browser.session(signal);
+        if (session.dialog && PAGE_ACTIONS.has(action)) return pageResult(dialogNotice(session.dialog));
+        return await PAGE_HANDLERS[action]({ session, page: session.page, params, signal, ctx: callCtx, browser, toolCallId: id });
+      } catch (error) {
+        throw visibleError(error);
+      }
     },
   }, { exclusive: true }));
   pi.on('session_shutdown', async () => browser.close({ keepVisible: true }));
@@ -266,13 +337,42 @@ function withBlockedNote(session: BrowserSession, text: string): string {
 }
 
 /**
+ * What `checkBrowserUrl` decided: the one classification of the host it made, and, for a non-public host (the only one
+ * that asks `net.private`), how long the permission lasts: `call` (Allow once, or a mode that allows it) or `session`
+ * (a session grant or kind). Absent for a public host.
+ */
+export interface CheckedUrl {
+  host: HostClass;
+  privateGrant?: 'call' | 'session';
+}
+
+/**
+ * The session grant for opening `url`: keyed by host and effective port (80 and 443 when the URL omits it), so a grant
+ * given for `http://localhost` does not cover `https://localhost`. The label names the same host and port.
+ */
+function grantFor(url: URL, prefix = ''): { key: string; label: string } {
+  return { key: `${prefix}${keyOf(url)}`, label: `${url.hostname}:${portOf(url)}` };
+}
+
+const hostOf = (url: string): string => {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+};
+
+/** Leads the audit reason of a summary (a long reason may be cut for display, so the count goes first). */
+const repeatNote = (repeats: number): string => (repeats > 0 ? `(${repeats + 1} times this browser session) ` : '');
+
+/**
  * The check on a page the *agent* opens (navigate, a new tab, switching to a tab); what the page itself requests is
  * refused by `PagePolicy` without asking. Refuses non-http(s) URLs. A private or local host (loopback, LAN, cloud
  * metadata) is a `net.private` permission ask (allowed per host for the session): page content steers the agent, so it
  * must not reach internal services the `web` tool keeps out. A public page is the `browser` ask, and a private one is
  * one prompt carrying both reasons.
  */
-export async function checkBrowserUrl(raw: string, ctx: Confirmer, permission: Permission, toolCallId: string): Promise<void> {
+export async function checkBrowserUrl(raw: string, ctx: Confirmer, permission: Permission, toolCallId: string, lookup?: HostLookup): Promise<CheckedUrl> {
   let url: URL;
   try {
     url = new URL(raw);
@@ -280,12 +380,12 @@ export async function checkBrowserUrl(raw: string, ctx: Confirmer, permission: P
     throw new Error(`Not a URL: ${raw}`);
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error(`The browser opens http(s) URLs only, not ${url.protocol}`);
-  const host = await classifyHost(url);
+  const host = await classifyHost(url, lookup);
   const call = { toolCallId, ...(ctx.signal ? { signal: ctx.signal } : {}) };
   if (host.kind === 'public') {
-    const verdict = await permission.check(ctx, { action: 'browser', title: 'Open this page?', what: [url.href], grant: { key: `host ${url.host}`, label: url.host }, ...call });
+    const verdict = await permission.check(ctx, { action: 'browser', title: 'Open this page?', what: [url.href], grant: grantFor(url, 'host '), ...call });
     if (!verdict.allowed) throw new Error(verdict.message);
-    return;
+    return { host };
   }
   // A name that does not resolve here may still resolve in Chrome (its own DNS, hosts file, proxy) to a private address.
   const what = host.kind === 'private' ? 'a local or private network address' : 'a name that does not resolve here and may reach a local or private address';
@@ -295,10 +395,10 @@ export async function checkBrowserUrl(raw: string, ctx: Confirmer, permission: P
     title: 'Open a private address?',
     what: [`The browser wants to open ${url.host}, ${what}.`],
     ...(alsoAsks ? { reason: actionWhy('browser') } : {}),
-    grant: { key: url.host, label: url.host },
+    grant: grantFor(url),
     ...call,
   });
-  if (verdict.allowed) return;
+  if (verdict.allowed) return { host, privateGrant: verdict.lasts };
   const blocked = host.kind === 'private' ? 'Blocked private or local address' : 'Blocked unresolved host';
   throw new Error(`${blocked}: ${url.host}. ${verdict.message}`);
 }
@@ -309,9 +409,11 @@ export async function checkBrowserUrl(raw: string, ctx: Confirmer, permission: P
  * included) makes it an outside upload too, and one prompt names both reasons.
  */
 export async function checkUploadPaths(files: readonly string[], ctx: Pick<ExtensionContext, 'cwd'> & Confirmer, permission: Permission, toolCallId?: string): Promise<string[]> {
-  const root = realPath(path.resolve(ctx.cwd));
+  // The workspace is the repository root, and none at all when that is the home folder or above it: then every path is outside.
+  const workspace = workspaceRoot(ctx.cwd);
+  const root = workspace === undefined ? undefined : realPath(workspace);
   const paths = files.map((file) => realPath(path.resolve(ctx.cwd, file)));
-  const outside = paths.filter((file) => !isWithin(file, root));
+  const outside = paths.filter((file) => root === undefined || !isWithin(file, root));
   const verdict = await permission.check(ctx, {
     action: 'browser.control',
     ...(outside.length > 0 ? { also: ['upload.outside' as const] } : {}),
@@ -337,7 +439,7 @@ function realPath(file: string): string {
 
 async function navigate({ session, page, params, signal, browser }: PageAction): Promise<ActionResult> {
   if (!params.url) throw new Error('navigate needs url');
-  await browser.open(params.url);
+  (await browser.open(params.url))(session.targetId);
   delete session.blocked;
   // The wait starts before the command so a fast load is not missed; `done` ends it when the command fails, and a
   // dialog (an alert() while loading holds the load event) ends it at once: the snapshot then reports the dialog.
@@ -375,7 +477,8 @@ async function fill(action: PageAction): Promise<ActionResult> {
   const result = await input(action, () => fillFields(page, fields, signal).then((failed) => void failures.push(...failed)));
   if (failures.length === fields.length) throw new Error(`No field was filled:\n${failures.join('\n')}`);
   const head = `Filled ${fields.length - failures.length} of ${fields.length} field(s).${failures.length ? `\nFailed:\n${failures.join('\n')}` : ''}`;
-  return pageResult(`${head}\n\n${resultText(result)}`);
+  // The body is already escaped; it is not run through a second, stripping pass (a CRLF in it stays a CRLF).
+  return pageResult(`${head}\n\n${contentText(result.content)}`);
 }
 
 async function wait({ session, page, params, signal }: PageAction): Promise<ActionResult> {
@@ -389,7 +492,7 @@ async function wait({ session, page, params, signal }: PageAction): Promise<Acti
 async function evaluate({ page, params, signal }: PageAction): Promise<ActionResult> {
   if (!params.expression) throw new Error('evaluate needs expression');
   const value = await page.evaluate(params.expression, signal);
-  return pageResult(capOutputToFile(sanitizeTerminalText(typeof value === 'string' ? value : JSON.stringify(value, null, 2) ?? 'undefined'), { label: 'browser_evaluate' }));
+  return pageResult(capOutputToFile(visibleControls(typeof value === 'string' ? value : JSON.stringify(value, null, 2) ?? 'undefined'), { label: 'browser_evaluate' }));
 }
 
 /** One handler per page action; each validates its own parameters. */
@@ -416,8 +519,7 @@ const PAGE_HANDLERS: Record<PageActionName, (action: PageAction) => Promise<Acti
   wait,
   tabs: async ({ session }) => pageResult(await describeTabs(session)),
   tab: async ({ session, params, signal, browser }) => {
-    if (params.url) await browser.open(params.url);
-    if (params.url) await newTab(session, params.url, signal);
+    if (params.url) await newTab(session, params.url, await browser.open(params.url), signal);
     else await selectTab(session, params.index, (target) => browser.open(target), signal);
     return pageResult(withBlockedNote(session, await snapshot(session, signal)));
   },
@@ -436,17 +538,19 @@ const PAGE_HANDLERS: Record<PageActionName, (action: PageAction) => Promise<Acti
     const { dropped, cleared } = session.consoleLost;
     // The buffer is a limited window; what it no longer holds is gone, so say how much instead of looking complete.
     const lost = [
-      ...(dropped > 0 ? [`[${dropped} earlier console line${dropped === 1 ? '' : 's'} dropped: only the last ${CONSOLE_KEEP} are kept]`] : []),
-      ...(cleared > 0 ? [`[${cleared} line${cleared === 1 ? '' : 's'} from earlier tabs discarded when the tab changed]`] : []),
+      ...(dropped > 0 ? [`[${dropped} earlier console line${dropped === 1 ? '' : 's'} dropped from this view: only the last ${CONSOLE_KEEP} are kept]`] : []),
+      ...(cleared > 0 ? [`[${cleared} line${cleared === 1 ? '' : 's'} from earlier tabs left this view when the tab changed]`] : []),
+      // Dropped lines stay reachable in the log; say where, and what the log itself no longer holds.
+      ...(dropped + cleared > 0 && session.consoleLog ? [`[${session.consoleLog.describe()}; search it or read it by line range]`] : []),
     ];
-    const lines = session.console.length > 0 ? capOutputToFile(sanitizeTerminalText(session.console.join('\n')), { label: 'browser_console' }) : '(no console messages)';
+    const lines = session.console.length > 0 ? capOutputToFile(visibleControls(session.console.join('\n')), { label: 'browser_console' }) : '(no console messages)';
     return pageResult([...lost, lines].join('\n'));
   },
 };
 
-/** Page text (titles, snapshots, dialog messages, evaluate results) is untrusted: strip escape sequences before the model sees it. */
+/** Page text (titles, snapshots, dialog messages, evaluate results) is untrusted: control and invisible characters show as visible escapes (`visibleControls`), never dropped. */
 function pageResult(text: string) {
-  return textResult(sanitizeTerminalText(text));
+  return textResult(visibleControls(text));
 }
 
 /** Waits for `text` before a snapshot (navigate, snapshot); a line saying how long it took. An open dialog (which blocks the page) skips it: the snapshot reports the dialog. */
@@ -464,7 +568,7 @@ async function withSnapshotOnTimeout<T>(session: BrowserSession, signal: AbortSi
     if (signal?.aborted || !(error instanceof Error) || !error.message.startsWith('Timed out after')) throw error;
     // Bounded: a page that stopped answering must not stretch the failed wait.
     const current = await withTimeout(snapshot(session, signal), 3_000, 'snapshot').catch(() => '');
-    throw new Error(sanitizeTerminalText(current ? `${error.message}\n\nCurrent page:\n${current}` : error.message));
+    throw new Error(visibleControls(current ? `${error.message}\n\nCurrent page:\n${current}` : error.message));
   }
 }
 

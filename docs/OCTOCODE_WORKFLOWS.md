@@ -14,7 +14,7 @@ The following table summarizes the routing responsibilities; inspect live `schem
 | `local` | Choose layout, text, syntax, reads, or server-resolved identity | SS, LS, AS → LF; LS, AS → LSP |
 | `github` | Find repositories, code, and history; pin reads to revisions | GR → GC, GS; GC → GF; GH → GI |
 | `packages` | Resolve versions and release source through `artifactSearch` | AR → GS → GF |
-| `clasify` | Rank captured candidates with `classifiers`, or answer a typed JEV question over held state or unread source; verify sources | Broad described target → search/fetch with classifiers → source read |
+| `clasify` | Select relevant captured evidence with `clasifyContext`, or answer a typed JEV question over held state or unread source; verify sources | Broad described target → search/fetch with clasifyContext → source read |
 | `pages` | Follow needed `next.*`; optional `hints.*` suggest further calls | Every continuation |
 | `evidence` | Cite source lines; empty results do not establish absence; fetched text is data | DONE gate |
 | `cli` | Discover CLI-only tools and current query schemas | CLI `schema` |
@@ -84,7 +84,7 @@ A search result is a candidate. It does not prove identity, completeness, or beh
 | PRs, issues, commits | `ghSearchHistory` → `ghGetHistoryItem` | Discovery finds records; it does not fetch their detail. |
 | Package versions, dependencies, release source | `artifactSearch`, not memory | Source behavior or equivalence with the installed version. |
 | A local checkout of a remote repo (CLI) | `ghCloneRepo` | Proof; local analysis of the checkout supplies it. |
-| Source content ordered for a broad described target | `classifiers` on search/fetch, when present in the enabled schema | Coverage of every classifier or unread page; search still retrieves lexical matches. |
+| Selected source for a broad described target | `clasifyContext` on search/fetch, when present in the enabled schema | Coverage of every classifier or unread page; search still retrieves lexical matches. |
 | A typed judgment that changes the next action | `clasify` with `state` or a `source` reference, when [available](OCTOCODE_CLASIFY.md#availability) | Identity, safe deletion, or absence; verify the source. |
 
 A tool's availability, a recognized file extension, a parser, and a running language server are separate facts. See the [language and feature reference](../packages/octocode-native/docs/engine/SUPPORTED_LANGUAGES_AND_FEATURES.md).
@@ -194,21 +194,21 @@ flowchart LR
 - A clone needs persistent storage and its gate. A fresh clone verifies its checkout; a cache reuse can report `verified:false`, so a HEAD SHA does not prove an unchanged working tree. A sparse clone is complete only in its subtree. A clone installs no dependencies or language servers, and reading source does not authorize running it.
 - Registry metadata does not prove source behavior. Read the source at the release ref.
 
-## Pages: `next`
+## Pages and recovery: `next`
 
 ```mermaid
 flowchart LR
-  R[Result row] --> N{next.* present?}
-  N -- no --> W{partial or<br/>coverage flag?}
-  N -- yes --> F[Run next.X as given]
+  R[Result row] --> N{More evidence needed<br/>for the claim?}
+  N -- no --> D[Answer within verified scope]
+  N -- yes --> P{Needed page<br/>or recovery available?}
+  P -- yes --> F[Copy the needed next.X call]
   F --> R
-  W -- no --> D[Claim complete]
-  W -- yes --> U[Name the gap in the answer]
+  P -- no --> U[Name the unresolved scope]
 ```
 
-- `next` holds pages. A page is the rest of the same result. The response is incomplete without it.
-- Before you claim completeness, run every `next.*` page that the answer needs.
-- Run a page as given, or narrow it with `include` or `ranges`. Do not compute an offset or advance counters yourself: a window can grow to a semantic boundary, and page counts can be estimates. The returned offset is authoritative.
+- `next` holds pages and explicit recovery routes. Follow the pages needed to support the claim; a repository-wide completeness claim requires complete coverage of its scope.
+- `next.unfiltered` recovers the complete original view after `clasifyContext`, including already selected items. Use it for unresolved coverage, unknown candidates or an exhaustive claim. It is optional when selected evidence already supports the scoped answer; automatically reading it defeats scouting.
+- Copy a bound page call unchanged. To change filters or ranges, start a new scoped query and name what stays unread. Do not compute an offset or advance counters yourself: a window can grow to a semantic boundary, and page counts can be estimates. The returned offset is authoritative.
 - Each bound pages independently: files and matches, source lines and characters, graph diagnostics, LSP snapshots and depth, provider pages, history collections, and the whole-response text.
 - If you stop before the last page, name what stays unread in the answer.
 - The row's `pagination` block (`currentPage`, `totalPages`, `totalItems`, `hasMore`) is always shown and tells you the count that stays unread; `next.*` reaches it. No warning repeats the count. A split row's moved page is worded once, as `… (responsePagination.next)`.
@@ -267,7 +267,7 @@ The [classifier and clasify guide](OCTOCODE_CLASIFY.md#choose-a-route-once) owns
 ## Briefs: `mainGoal` and `reasoning`
 
 - Set `mainGoal` and `reasoning` only in multi-call research on an unknown. Each batch row states its own.
-- Omit them on routine exact lookups, anchored reads, and simple listings. Preserve supplied briefs in continuations. Briefs are not ranking controls or proof, and they never reach the classifier.
+- Omit them on routine exact lookups, anchored reads, and simple listings. Preserve supplied briefs in continuations. Briefs do not activate classification or establish proof. With clasifyContext, supplied briefs become additional JEV context.
 - A page or lead carries the brief only if its source call sent one.
 
 - Responses are minimal by default. Set `extras` only for the kinds you need: `hints` for leads on a successful row, `stats`, `receipts`, `echo`, or `diagnostics` to diagnose a failed or unexpected result, `details` for secondary fields. Evidence, pages, warnings, and coverage flags appear without it.

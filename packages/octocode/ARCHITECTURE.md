@@ -4,7 +4,7 @@
 
 ## Runtime boundary
 
-`src/cli/index.ts` owns catalog presentation, skill materialization, and the bare TTY install picker. Bare invocation and `schema` compose core presentation with native availability. `config view` starts the bundled local server with a fixed native JSON transport. Other argv is forwarded verbatim—parsing, subcommand help, version, and validation included—to the native binary. `src/cli/native-delegate.ts` resolves the platform binary through `@octocodeai/octocode-native/bin/resolve-binary.cjs` and runs it with inherited stdio and environment, forwarding signals through the native package's `bin/launch-native.cjs`. The `OCTOCODE_NATIVE_BIN` override is a development aid that, like MCP's `OCTOCODE_NATIVE_BINDING`, is ignored in production. There is no TypeScript execution registry or fallback for native-owned commands.
+`src/cli/index.ts` delegates research commands, `schema`, and bare pipe invocation to the native binary, which owns catalog presentation, parsing, help, and validation. The launcher retains skill materialization, its package version display, and the bare TTY install picker. `config view` starts the bundled local server with a fixed native JSON transport. `src/cli/native-delegate.ts` resolves the platform binary through `@octocodeai/octocode-native/bin/resolve-binary.cjs` and runs it with inherited stdio and environment, forwarding signals through the native package's `bin/launch-native.cjs`. The `OCTOCODE_NATIVE_BIN` override is a development aid that, like MCP's `OCTOCODE_NATIVE_BINDING`, is ignored in production. There is no TypeScript execution registry or fallback for native-owned commands.
 
 ```text
 npx octocode → Node launcher → native CLI → Rust ToolRuntime
@@ -16,13 +16,7 @@ The native path is mandatory for public tools. If its platform package cannot be
 
 TypeScript remains only for:
 
-- `schema`, which joins the core public catalog with the native machine
-  `catalog` (availability, fields, fingerprint) after a fail-closed
-  contract-fingerprint check; it presents contracts but does not validate or
-  execute tool requests (`schema --help` is native);
-- a bare `octocode` on a pipe, which prints the `schema` catalog with the
-  core-owned agent instructions scoped to CLI availability (including CLI-only
-  `ghCloneRepo`); on a terminal it prints the native command reference;
+- `--version`, which prints the launcher's package version;
 - `config view`, which lazily loads `src/cli/config-view/server.ts`; fixed native `config --manage` requests carry the expected contract fingerprint before any mutation;
 - `skill`, backed by the shared skill installer; its env readiness asks native `config check` for a GitHub token stored outside the environment;
 - the TTY picker for `install` without `--ide`, which discovers client ids from `native install --list --json` and delegates the selected id back to native.
@@ -43,8 +37,8 @@ Publish native platform packages, the native root, contract/config prerequisites
 ## Rules
 
 - Public tool behavior belongs in Rust.
-- Public contract content belongs in core (delivered via config); `schema` only reconciles it
-  with native availability and the enforcement fingerprint.
+- Public contract content belongs in core. Native `schema` joins the generated,
+  embedded presentation with native availability.
 - The Node launcher delegates or fails closed; it has no TypeScript tool fallback.
 - Keep management-only TypeScript paths explicit and small.
 - Do not add Node-side query batching, provider behavior, security policy, response shaping, or tool-specific error recovery.

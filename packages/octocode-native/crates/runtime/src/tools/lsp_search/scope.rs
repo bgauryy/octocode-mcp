@@ -802,23 +802,20 @@ mod tests {
         assert_eq!(scan(None).await, 4);
     }
 
+    #[cfg(unix)]
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn canonical_paths_are_memoized_per_request() {
         let (_dir, root) = fixture();
         write(&root.join("one/x.ts"), "x\n");
         write(&root.join("two/x.ts"), "x\n");
         let link = root.join("link");
-        #[cfg(unix)]
         std::os::unix::fs::symlink(root.join("one"), &link).expect("link");
-        #[cfg(not(unix))]
-        return;
         let spelled = link.join("x.ts").to_string_lossy().into_owned();
         let first = root.join("one/x.ts").to_string_lossy().into_owned();
         let second = root.join("two/x.ts").to_string_lossy().into_owned();
         let seen = with_canonical_memo(async {
             let before = canonical(&spelled);
             std::fs::remove_file(&link).expect("unlink");
-            #[cfg(unix)]
             std::os::unix::fs::symlink(root.join("two"), &link).expect("relink");
             (before, canonical(&spelled))
         })

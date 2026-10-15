@@ -248,15 +248,6 @@ fn home_root() -> (test_support::Fixture, PathBuf) {
     (root, cache_home)
 }
 
-/// A path policy whose workspace is `root`.
-fn root_policy(root: &Path) -> PathPolicy {
-    PathPolicy::new(PathPolicyConfig {
-        workspace_root: Some(root.to_path_buf()),
-        ..Default::default()
-    })
-    .expect("policy")
-}
-
 fn query() -> GhCloneRepoQuery {
     parse_query(serde_json::json!({
         "owner": "fixture-owner", "repo": "fixture-repo", "ref": "main",
@@ -338,7 +329,7 @@ fn missing_repository_names_the_repository_with_a_recovery_hint() {
 fn clone_rows_continue_into_local_tools_and_name_the_cache_age() {
     let fixture = Fixture::new();
     let (root, cache_home) = home_root();
-    let policy = root_policy(&root.0);
+    let policy = test_support::workspace_policy(&root.0);
     let endpoint = api_github_endpoint();
     let runner = fixture_runner(&fixture);
     let config = CloneConfig::persistent(&cache_home);
@@ -482,7 +473,7 @@ fn denied_cache_home_is_not_created() {
     let root = test_support::Fixture::new();
     let outside = test_support::Fixture::new();
     let cache_home = outside.0.join("home");
-    let policy = root_policy(&root.0);
+    let policy = test_support::workspace_policy(&root.0);
     let endpoint = api_github_endpoint();
     let runner = UnreachableGit;
     let config = CloneConfig::persistent(&cache_home);
@@ -517,7 +508,7 @@ fn policy_denials_use_the_codes_the_local_tools_share() {
 fn withheld_cache_home_is_denied_as_path_policy() {
     let root = test_support::Fixture::new();
     let cache_home = root.0.join(".ssh").join("home");
-    let policy = root_policy(&root.0);
+    let policy = test_support::workspace_policy(&root.0);
     let endpoint = api_github_endpoint();
     let runner = UnreachableGit;
     let config = CloneConfig::persistent(&cache_home);
@@ -532,7 +523,7 @@ fn withheld_cache_home_is_denied_as_path_policy() {
 fn clones_caches_refreshes_sparse_tag_and_commit_without_token_argv() {
     let fixture = Fixture::new();
     let (root, cache_home) = home_root();
-    let policy = root_policy(&root.0);
+    let policy = test_support::workspace_policy(&root.0);
     let endpoint = api_github_endpoint();
     let derived = "https://github.com/fixture-owner/fixture-repo.git";
     let runner = RewriteRunner::new(derived, &fixture.bare_url);
@@ -658,7 +649,7 @@ fn clones_caches_refreshes_sparse_tag_and_commit_without_token_argv() {
         .seen
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    assert!(seen.iter().all(|value| !value.contains("fixture-token")));
+    test_support::checks::assert_absent(&serde_json::json!(*seen), "fixture-token");
     assert!(seen.iter().any(|value| value.contains("[REDACTED]")));
 }
 
@@ -666,7 +657,7 @@ fn clones_caches_refreshes_sparse_tag_and_commit_without_token_argv() {
 fn dirty_checkout_preserves_tracked_untracked_ignored_and_user_metadata_names() {
     let fixture = Fixture::new();
     let (root, cache_home) = home_root();
-    let policy = root_policy(&root.0);
+    let policy = test_support::workspace_policy(&root.0);
     let endpoint = api_github_endpoint();
     let runner = fixture_runner(&fixture);
     let config = CloneConfig::persistent(&cache_home);
@@ -757,7 +748,7 @@ fn refresh_rechecks_user_changes_written_while_fetching() {
     }
     let fixture = Fixture::new();
     let (root, cache_home) = home_root();
-    let policy = root_policy(&root.0);
+    let policy = test_support::workspace_policy(&root.0);
     let endpoint = api_github_endpoint();
     let runner = LateWriteRunner {
         inner: fixture_runner(&fixture),
@@ -791,7 +782,7 @@ fn refresh_rechecks_user_changes_written_while_fetching() {
 fn clone_eviction_preserves_dirty_expired_and_over_budget_checkouts() {
     let fixture = Fixture::new();
     let (root, cache_home) = home_root();
-    let policy = root_policy(&root.0);
+    let policy = test_support::workspace_policy(&root.0);
     let endpoint = api_github_endpoint();
     let runner = fixture_runner(&fixture);
     let mut config = CloneConfig::persistent(&cache_home);
@@ -917,7 +908,7 @@ fn repository_metadata_filename_conflict_never_replaces_an_existing_checkout() {
     }
     let fixture = Fixture::new();
     let (root, cache_home) = home_root();
-    let policy = root_policy(&root.0);
+    let policy = test_support::workspace_policy(&root.0);
     let endpoint = api_github_endpoint();
     let runner = CollisionRunner {
         inner: fixture_runner(&fixture),
@@ -977,7 +968,7 @@ fn repository_metadata_filename_conflict_never_replaces_an_existing_checkout() {
 fn sparse_file_path_checks_out_only_that_file() {
     let fixture = Fixture::new();
     let (root, cache_home) = home_root();
-    let policy = root_policy(&root.0);
+    let policy = test_support::workspace_policy(&root.0);
     let endpoint = api_github_endpoint();
     let runner = fixture_runner(&fixture);
     let config = CloneConfig::persistent(&cache_home);
@@ -1012,7 +1003,7 @@ fn sparse_file_path_checks_out_only_that_file() {
 fn corruption_expiry_stale_lock_and_failed_publication_preserve_cache() {
     let fixture = Fixture::new();
     let (root, cache_home) = home_root();
-    let policy = root_policy(&root.0);
+    let policy = test_support::workspace_policy(&root.0);
     let endpoint = api_github_endpoint();
     let runner = fixture_runner(&fixture);
     let mut config = CloneConfig::persistent(&cache_home);
@@ -1075,7 +1066,7 @@ fn corruption_expiry_stale_lock_and_failed_publication_preserve_cache() {
 fn cache_limits_live_lock_and_failed_sparse_refresh_are_bounded() {
     let fixture = Fixture::new();
     let (root, cache_home) = home_root();
-    let policy = root_policy(&root.0);
+    let policy = test_support::workspace_policy(&root.0);
     let endpoint = api_github_endpoint();
     let runner = fixture_runner(&fixture);
     let mut config = CloneConfig::persistent(&cache_home);
@@ -1139,17 +1130,15 @@ fn cache_limits_live_lock_and_failed_sparse_refresh_are_bounded() {
     assert_eq!(missing.code, "pathNotFound");
     assert!(missing.message.contains("\"missing/path\""), "{missing:?}");
     assert_eq!(missing.hints.len(), 1, "{missing:?}");
-    assert!(
-        !missing.message.contains("ghStructure"),
-        "the hint, not the message, names the recovery: {missing:?}"
-    );
+    // The hint, not the message, names the recovery.
+    test_support::checks::assert_absent(&serde_json::json!(missing.message), "ghStructure");
     assert!(Path::new(&tag.location.local_path).is_dir());
 }
 
 #[test]
 fn missing_branch_endpoint_git_and_portable_paths_fail_closed() {
     let (root, cache_home) = home_root();
-    let policy = root_policy(&root.0);
+    let policy = test_support::workspace_policy(&root.0);
     let endpoint = api_github_endpoint();
     let config = CloneConfig::persistent(&cache_home);
     let missing_git = SystemGit::new(root.0.join("does-not-exist/git"));
@@ -1204,7 +1193,9 @@ fn missing_branch_endpoint_git_and_portable_paths_fail_closed() {
     }
 }
 
+#[cfg(unix)]
 struct FlagCancel(AtomicBool);
+#[cfg(unix)]
 impl CancellationCheck for FlagCancel {
     fn check(&self) -> Result<(), String> {
         if self.0.load(Ordering::SeqCst) {
@@ -1323,17 +1314,13 @@ fn system_git_timeout_and_failure_output_are_bounded_and_redacted() {
     assert_eq!(failed.code, "gitFailed");
     // The child's environment dump names the helper, never the credential:
     // nothing is left to redact.
-    assert!(!failed.message.contains(token), "{}", failed.message);
+    test_support::checks::assert_absent(&serde_json::json!(failed.message), token);
     assert!(
         failed.message.contains("GIT_ASKPASS="),
         "{}",
         failed.message
     );
-    assert!(
-        !failed.message.contains("Authorization"),
-        "{}",
-        failed.message
-    );
+    test_support::checks::assert_absent(&serde_json::json!(failed.message), "Authorization");
 
     // A git error names no checkout stage under the Octocode home.
     let stage = root
@@ -1362,7 +1349,7 @@ fn system_git_timeout_and_failure_output_are_bounded_and_redacted() {
             &control,
         )
         .expect_err("stage fixture");
-    assert!(!staged.message.contains("clone-tmp"), "{}", staged.message);
+    test_support::checks::assert_absent(&serde_json::json!(staged.message), "clone-tmp");
     assert!(
         staged.message.contains("work tree dir"),
         "{}",
@@ -1394,7 +1381,7 @@ fn system_git_timeout_and_failure_output_are_bounded_and_redacted() {
 fn concurrent_requests_publish_once_and_validation_fails_closed() {
     let fixture = Fixture::new();
     let (root, cache_home) = home_root();
-    let policy = Arc::new(root_policy(&root.0));
+    let policy = Arc::new(test_support::workspace_policy(&root.0));
     let endpoint = Arc::new(api_github_endpoint());
     let runner = Arc::new(fixture_runner(&fixture));
     let config = Arc::new(CloneConfig::persistent(&cache_home));
@@ -1462,7 +1449,7 @@ fn repository_symlinks_are_checked_out_as_plain_files() {
         .to_owned();
 
     let (root, cache_home) = home_root();
-    let policy = root_policy(&root.0);
+    let policy = test_support::workspace_policy(&root.0);
     let endpoint = api_github_endpoint();
     let runner = fixture_runner(&fixture);
     let mut config = CloneConfig::persistent(&cache_home);
@@ -1513,7 +1500,7 @@ fn repository_symlinks_are_checked_out_as_plain_files() {
 fn uppercase_commit_refs_share_the_cache_and_mismatched_meta_is_a_miss() {
     let fixture = Fixture::new();
     let (root, cache_home) = home_root();
-    let policy = root_policy(&root.0);
+    let policy = test_support::workspace_policy(&root.0);
     let endpoint = api_github_endpoint();
     let runner = fixture_runner(&fixture);
     let mut config = CloneConfig::persistent(&cache_home);
@@ -1572,7 +1559,7 @@ impl Bench {
     fn new() -> Self {
         let fixture = Fixture::new();
         let (root, cache_home) = home_root();
-        let policy = root_policy(&root.0);
+        let policy = test_support::workspace_policy(&root.0);
         let runner = fixture_runner(&fixture);
         let mut config = CloneConfig::persistent(&cache_home);
         config.cache_ttl = Duration::from_secs(60);
@@ -1728,7 +1715,7 @@ fn multiple_sparse_paths_check_out_every_path() {
     .expect_err("one missing path fails the clone");
     assert_eq!(missing.code, "pathNotFound");
     assert!(missing.message.contains("\"nope\""), "{missing:?}");
-    assert!(!missing.message.contains("\"src\""), "{missing:?}");
+    test_support::checks::assert_absent(&serde_json::json!(missing.message), "\"src\"");
 }
 
 /// `depth` fetches that many commits and keys its own cache entry.
@@ -1846,7 +1833,7 @@ fn git_failures_are_explained_by_the_ref_answer() {
 fn cache_hits_skip_the_git_probe_and_report_the_recorded_size() {
     let fixture = Fixture::new();
     let (root, cache_home) = home_root();
-    let policy = root_policy(&root.0);
+    let policy = test_support::workspace_policy(&root.0);
     let endpoint = api_github_endpoint();
     let runner = fixture_runner(&fixture);
     let config = CloneConfig::persistent(&cache_home);
@@ -1866,10 +1853,8 @@ fn cache_hits_skip_the_git_probe_and_report_the_recorded_size() {
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .clone();
-    assert!(
-        !seen.iter().any(|call| call.contains("--version")),
-        "a cache hit probed git: {seen:?}"
-    );
+    // A cache hit never probes git.
+    test_support::checks::assert_absent(&serde_json::json!(seen), "--version");
 }
 
 /// The native sparse-path rule holds on its own, whatever the contract
@@ -1905,6 +1890,19 @@ fn sparse_path_validation_rejects_traversal_absolute_and_backslash() {
         "docs/C:x",
     ] {
         assert!(is_sparse_path(path), "{path:?} must be accepted");
+        // The contract's lookaround-free `path` pattern admits every path
+        // the native rule accepts: no valid path is refused at the edge.
+        assert!(
+            !rejects_sparse_path(path),
+            "{path:?} rejected by the contract"
+        );
+    }
+    // The pattern alone already refuses traversal, roots and backslashes.
+    for path in ["../escape", "a/../b", "./a", ".", "..", "/abs", "a\\b"] {
+        assert!(
+            rejects_sparse_path(path),
+            "{path:?} admitted by the contract"
+        );
     }
 }
 

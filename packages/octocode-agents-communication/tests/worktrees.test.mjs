@@ -80,7 +80,7 @@ test('linked worktrees discover cross-vendor peers but preserve actual bindings 
 
 test('cross-worktree requests complete with one correlated final reply and both acknowledgements', t => {
   const f = fixture(t);
-  const sent = f.call(f.main, 'send_message', { to: f.b, body: 'Review the topic checkout', key: 'review-topic', conversationId: 'worktree-review' }, f.a);
+  const sent = f.call(f.main, 'send_message', { to: f.b, body: 'Review the topic checkout', key: 'review-topic', replyRequired: true, conversationId: 'worktree-review' }, f.a);
   assert.equal(sent.recipients, 1);
   const received = f.call(f.topic, 'fetch', { incoming: true, type: 'message' }, f.b).items;
   assert.equal(received.length, 1);

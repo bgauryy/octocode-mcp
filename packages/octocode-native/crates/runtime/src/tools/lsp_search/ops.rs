@@ -3,20 +3,27 @@
 //! the document, and resolved the anchor.
 
 use super::LspSearchQuery;
+use super::anchor::Position;
 use super::cancellable;
-use super::failure::{LspFailure, empty, mark_diagnostics_unpublished, mark_partial};
+use super::failure::{
+    LspFailure, empty, mark_diagnostics_unpublished, partial_with_retry, shown_paths,
+    text_search_lead,
+};
 use super::heritage;
 use super::importers::{self, Importers, WindowRequest};
 use super::locations::{
     RECOVERED_ALIAS, items_payload, locations, public_hover, public_range, public_workspace_symbol,
     salted_locations, snapshot_changed,
 };
-use super::recovery::{get_locations, recover_aliases, resolve_definition_chain, snippet_identity};
+use super::recovery::{
+    AliasSearch, get_locations, recover_aliases, resolve_definition_chain, snippet_identity,
+};
 use super::render::as_array;
 use super::render::uri_to_path;
 use super::scope::Scope;
 use super::source::{SourceCache, filter_authorized_items};
-use super::walk::{ImporterRecovery, hierarchy};
+use super::walk::{HierarchyRequest, ImporterRecovery, hierarchy};
+use crate::policy::path::PathPolicy;
 use crate::tools::cancel::CancellationCheck;
 use crate::tools::id::ToolId;
 use octocode_engine::lsp::client::{LocationRequest, NativeLspClient, SnippetReadPolicy};
@@ -60,21 +67,25 @@ fn mark_scan_answer(
     row: &mut Value,
     query: &LspSearchQuery,
     scope: &Scope,
+    paths: &PathPolicy,
     note: String,
     unread: &[String],
 ) {
-    mark_partial(row, query, SERVER_UNANSWERED, &[note]);
+    partial_with_retry(row, query, SERVER_UNANSWERED, &[note]);
     if unread.is_empty() || !row.is_object() {
         return;
     }
-    mark_partial(
+    // The warning and the lead name each file the way the response does.
+    let unread = shown_paths(paths, unread);
+    partial_with_retry(
         row,
         query,
         HERITAGE_UNREAD,
-        &[heritage::describe_unread(unread)],
+        &[heritage::describe_unread(&unread)],
     );
     if let Some(base) = query.symbol_name() {
-        row["next"]["findText"] = super::failure::text_search_lead(base, scope, Some(unread));
+        row["next"]["findText"] =
+            text_search_lead(base, &scope.root, &scope.include, Some(&unread)).build();
     }
 }
 
@@ -98,6 +109,18 @@ pub(super) struct Operation<'a, 'p> {
     pub(super) language_id: Option<&'a str>,
     /// Characters a page of rows may spend (see `page_windows::page_budget`).
     pub(super) budget: usize,
+    pub(super) response_window: Option<usize>,
+}
+
+impl<'a> Operation<'a, '_> {
+    /// The request's zero-based anchor.
+    fn position(&self) -> Position<'a> {
+        Position {
+            path: self.path,
+            line: self.line,
+            character: self.character,
+        }
+    }
 }
 
 impl Operation<'_, '_> {
@@ -166,7 +189,7 @@ impl Operation<'_, '_> {
             .locations("definition", "definitionProvider", found)
             .await;
         if !warnings.is_empty() {
-            super::failure::mark_partial(&mut row, query, "definitionHopFailed", &warnings);
+            super::failure::partial_with_retry(&mut row, query, "definitionHopFailed", &warnings);
         }
         Ok(row)
     }
@@ -190,12 +213,12 @@ impl Operation<'_, '_> {
             self.sources,
             self.snippet_policy,
             self.cancel,
-            query.symbol_name(),
-            include_declaration,
-            self.path,
-            self.line,
-            self.character,
-            &found,
+            AliasSearch {
+                symbol: query.symbol_name(),
+                include_declaration,
+                anchor: self.position(),
+                provider: &found,
+            },
         )
         .await?;
         let alias_scan_capped = recovered.capped;
@@ -215,31 +238,13 @@ impl Operation<'_, '_> {
             return Ok(snapshot_changed(query));
         }
         let later_window = query.importer_page() > 1;
-        let mut from_importers = Vec::new();
-        if let Some(importers) = &importers {
-            for anchor in importers.per_file() {
-                let Ok(extra) = get_locations(
-                    self.client,
-                    self.snippet_policy,
-                    self.cancel,
-                    LocationRequest::References {
-                        include_declaration,
-                    },
-                    &anchor.path,
-                    anchor.line,
-                    anchor.character,
-                )
-                .await
-                else {
-                    self.cancel.check().map_err(LspFailure::cancelled)?;
-                    continue;
-                };
-                from_importers.extend(extra.into_iter().filter(|snippet| {
-                    importers.owns(&super::scope::canonical(&uri_to_path(&snippet.uri)))
-                        && seen.insert(snippet_identity(snippet))
-                }));
+        let from_importers = match &importers {
+            Some(importers) => {
+                self.importer_references(importers, include_declaration, &mut seen)
+                    .await?
             }
-        }
+            None => Vec::new(),
+        };
         // Recovered references are not reported from the anchor:
         // label each so callers can weigh them as such.
         let labelled = |label: &'static str| {
@@ -286,6 +291,7 @@ impl Operation<'_, '_> {
             found,
             importers.as_ref().and_then(Importers::digest),
             self.budget,
+            self.response_window,
         )
         .await;
         if let Some(importers) = &importers {
@@ -300,6 +306,41 @@ impl Operation<'_, '_> {
             super::recovery::disclose_alias_cap(&mut row, query, self.scope);
         }
         Ok(row)
+    }
+
+    /// The references the server reports from each verified importer's
+    /// anchor, in the files that importer window owns, not already `seen`.
+    /// An importer whose request fails is skipped; cancellation is not.
+    async fn importer_references(
+        &self,
+        importers: &Importers,
+        include_declaration: bool,
+        seen: &mut HashSet<String>,
+    ) -> Result<Vec<octocode_engine::lsp::types::JsCodeSnippet>, LspFailure> {
+        let mut found = Vec::new();
+        for anchor in importers.per_file() {
+            let Ok(extra) = get_locations(
+                self.client,
+                self.snippet_policy,
+                self.cancel,
+                LocationRequest::References {
+                    include_declaration,
+                },
+                &anchor.path,
+                anchor.line,
+                anchor.character,
+            )
+            .await
+            else {
+                self.cancel.check().map_err(LspFailure::cancelled)?;
+                continue;
+            };
+            found.extend(extra.into_iter().filter(|snippet| {
+                importers.owns(&super::scope::canonical(&uri_to_path(&snippet.uri)))
+                    && seen.insert(snippet_identity(snippet))
+            }));
+        }
+        Ok(found)
     }
 
     async fn hover(self) -> Result<Value, LspFailure> {
@@ -328,73 +369,105 @@ impl Operation<'_, '_> {
     /// A call or type hierarchy walk; TS/JS incoming walks also verify the
     /// importers the server's level-1 answer does not cover.
     /// `supertypes`/`subtypes` on a server with no type hierarchy: the
-    /// implementation locations (subtypes) or the definitions of the
-    /// declaration's heritage clause (supertypes), labelled by `lsp.source`.
+    /// resolved immediate heritage edges in the shared bounded walker.
+    /// Unverified syntax substitutes remain partial and name their source.
     async fn type_hierarchy_without_server_support(self) -> Result<Value, LspFailure> {
         let query = self.query;
         let kind = query.operation();
-        let (found, source, note, unread) = if kind == "subtypes" {
-            // An implementation answer includes the queried declaration:
-            // that is the type itself, not one of its subtypes.
-            let anchor = super::scope::canonical(self.path);
-            let own = |snippet: &octocode_engine::lsp::types::JsCodeSnippet| {
-                snippet.range.start.line == self.line
-                    && super::scope::canonical(&uri_to_path(&snippet.uri)) == anchor
-            };
+        let expansion = if kind == "subtypes" {
+            super::walk::Expansion::Subtypes
+        } else {
+            super::walk::Expansion::Supertypes
+        };
+        let initial = if kind == "subtypes" {
             match self.implemented(true).await? {
-                Implemented::Server(found) => (
-                    found.into_iter().filter(|snippet| !own(snippet)).collect(),
-                    "implementation",
-                    heritage::describe_implementation(),
-                    Vec::new(),
-                ),
+                Implemented::Server(found) => Some(found),
                 Implemented::Scan {
                     found,
                     note,
                     unread,
-                } => (
-                    found.into_iter().filter(|snippet| !own(snippet)).collect(),
-                    SCAN_SOURCE,
-                    note,
-                    unread,
-                ),
+                } => {
+                    let (scope, paths) = (self.scope, self.sources.policy());
+                    scope.answer(
+                        std::iter::once(self.path)
+                            .chain(found.iter().map(|snippet| snippet.uri.as_str())),
+                    );
+                    let mut row = self.locations(&kind, "implementationProvider", found).await;
+                    row["lsp"]["source"] = json!(SCAN_SOURCE);
+                    mark_scan_answer(&mut row, query, scope, paths, note, &unread);
+                    return Ok(row);
+                }
             }
         } else {
-            let content = self
-                .sources
-                .get(self.path)
-                .await
-                .map(|source| source.content.clone())
-                .unwrap_or_default();
-            let bases = heritage::base_types(&content, self.path, self.line);
-            let mut found = Vec::new();
-            for base in &bases {
-                found.extend(
-                    get_locations(
-                        self.client,
-                        self.snippet_policy,
-                        self.cancel,
-                        LocationRequest::Definition,
-                        self.path,
-                        base.line,
-                        base.character,
-                    )
-                    .await?,
-                );
-            }
-            (found, "heritage", heritage::describe(&bases), Vec::new())
+            None
         };
-        let provider = heritage::fallback_provider(&kind).unwrap_or_default();
-        let scope = self.scope;
-        scope.answer(
-            std::iter::once(self.path).chain(found.iter().map(|snippet| snippet.uri.as_str())),
+        let source = super::fallback_hierarchy::Fallback::new(
+            self.client,
+            self.sources,
+            self.snippet_policy,
+            self.cancel,
         );
-        let mut row = self.locations(&kind, provider, found).await;
-        row["lsp"]["source"] = json!(source);
-        if source == SCAN_SOURCE {
-            mark_scan_answer(&mut row, query, scope, note, &unread);
+        let anchor = Position {
+            path: self.path,
+            line: self.line,
+            character: self.character,
+        };
+        let walk = match source
+            .run(anchor, expansion, query.graph_depth().unwrap_or(1), initial)
+            .await
+        {
+            Ok(walk) => walk,
+            Err(failure) if failure.code == "cancelled" => return Err(failure),
+            Err(failure) => {
+                let mut row = empty(
+                    query,
+                    "noLocations",
+                    "The fallback could not establish the type hierarchy anchor.",
+                    true,
+                );
+                partial_with_retry(
+                    &mut row,
+                    query,
+                    "typeHierarchyExpansionFailed",
+                    &[failure.message],
+                );
+                return Ok(row);
+            }
+        };
+        self.scope.answer(
+            std::iter::once(self.path).chain(
+                walk.edges
+                    .iter()
+                    .filter_map(|edge| edge.node.get("uri").and_then(Value::as_str)),
+            ),
+        );
+        let items = walk
+            .edges
+            .iter()
+            .map(|edge| super::walk::public_edge(expansion, edge, None))
+            .collect::<Vec<_>>();
+        let mut row = items_payload(query, &kind, json!(items), self.budget);
+        row["lsp"]["provider"] = json!(heritage::fallback_provider(&kind));
+        row["lsp"]["source"] = json!(if kind == "subtypes" {
+            "implementation"
         } else {
-            crate::tools::paging::push_warnings(&mut row, [note]);
+            "heritage"
+        });
+        super::walk::mark_partial_expansion(&mut row, query, &walk.failures);
+        super::walk::mark_truncation(&mut row, query, &[(expansion, &walk)]);
+        if source.candidate_limited() {
+            crate::tools::paging::terminal_limit(
+                &mut row,
+                "hierarchyCandidateLimit",
+                &[format!(
+                    "Only the first {} implementation candidates per type were checked for immediate heritage; narrow the scope or inspect the remaining candidates with implementation.",
+                    super::walk::MAX_HIERARCHY_NODES
+                )],
+            );
+            if let Some(name) = query.symbol_name() {
+                row["next"]["findText"] =
+                    text_search_lead(name, &self.scope.root, &self.scope.include, None).build();
+            }
         }
         Ok(row)
     }
@@ -422,7 +495,7 @@ impl Operation<'_, '_> {
                 unread,
             } => (found, Some((note, unread))),
         };
-        let scope = self.scope;
+        let (scope, paths) = (self.scope, self.sources.policy());
         scope.answer(
             std::iter::once(self.path).chain(found.iter().map(|snippet| snippet.uri.as_str())),
         );
@@ -431,7 +504,7 @@ impl Operation<'_, '_> {
             .await;
         if let Some((note, unread)) = scanned {
             row["lsp"]["source"] = json!(SCAN_SOURCE);
-            mark_scan_answer(&mut row, query, scope, note, &unread);
+            mark_scan_answer(&mut row, query, scope, paths, note, &unread);
         }
         Ok(row)
     }
@@ -533,17 +606,15 @@ impl Operation<'_, '_> {
             }),
             None => None,
         };
-        let (mut row, importers) = hierarchy(
-            self.client,
+        let request = HierarchyRequest {
             query,
-            self.sources,
-            self.scope,
-            (self.path, self.line, self.character),
+            scope: self.scope,
+            anchor: self.position(),
             recovery,
-            self.cancel,
-            self.budget,
-        )
-        .await?;
+            budget: self.budget,
+        };
+        let (mut row, importers) =
+            hierarchy(self.client, self.sources, self.cancel, request).await?;
         if let Some(importers) = &importers {
             importers.annotate(&mut row, query, self.scope);
         }
@@ -582,13 +653,13 @@ impl Operation<'_, '_> {
             self.sources,
             self.snippet_policy,
             self.cancel,
-            &symbol,
-            self.scope,
-            self.path,
-            self.line,
-            self.character,
-            known_files,
-            WindowRequest::of(self.query),
+            importers::ImporterSearch {
+                symbol: &symbol,
+                scope: self.scope,
+                declaration: self.position(),
+                known_files,
+                window: WindowRequest::of(self.query),
+            },
         )
         .await
         .map(Some)
@@ -616,7 +687,16 @@ impl Operation<'_, '_> {
         provider: &str,
         found: Vec<octocode_engine::lsp::types::JsCodeSnippet>,
     ) -> Value {
-        locations(self.query, self.sources, kind, provider, found, self.budget).await
+        locations(
+            self.query,
+            self.sources,
+            kind,
+            provider,
+            found,
+            self.budget,
+            self.response_window,
+        )
+        .await
     }
 
     async fn workspace_symbol(self) -> Result<Value, LspFailure> {
@@ -634,6 +714,15 @@ impl Operation<'_, '_> {
             .map(public_workspace_symbol)
             .collect::<Vec<_>>();
         rank_workspace_symbols(&mut symbols, &name);
+        let document_anchor = if self.root_only {
+            symbols
+                .first()
+                .and_then(|symbol| symbol["path"].as_str())
+                .filter(|path| std::path::Path::new(path).is_file())
+        } else {
+            Some(self.path)
+        }
+        .map(str::to_owned);
         let mut row = items_payload(query, "symbols", json!(symbols), self.budget);
         if self.root_only && row.pointer("/kind").and_then(Value::as_str) == Some("empty") {
             // A source directory (`src`) has no markers: name the languages
@@ -682,6 +771,7 @@ impl Operation<'_, '_> {
             };
             row["hints"] = json!([hint]);
         }
+        super::server_coverage::workspace_symbols(&mut row, document_anchor.as_deref());
         Ok(row)
     }
 
@@ -710,9 +800,7 @@ impl Operation<'_, '_> {
             mark_diagnostics_unpublished(&mut row, query, PUSH_DIAGNOSTICS_WAIT_MS);
         }
         if truncated {
-            row["isPartial"] = json!(true);
-            row["terminalLimit"] = json!(true);
-            row["partialReasons"] = json!(["diagnosticsTruncated"]);
+            crate::tools::paging::terminal_limit(&mut row, "diagnosticsTruncated", &[]);
         }
         // Success rows drop `hints` (response hint policy), so this note is a
         // warning: it explains results, it is not a recovery step.
@@ -816,13 +904,12 @@ fn match_tier(candidate: &str, query: &str) -> u8 {
     }
 }
 
+/// The language id of a project-marker extension (`.rs` → `rust`), from the
+/// engine's grammar registry.
 fn language_name(extension: &str) -> &'static str {
-    match extension {
-        ".rs" => "rust",
-        ".go" => "go",
-        ".py" => "python",
-        _ => "typescript",
-    }
+    octocode_engine::signatures::languages::find_entry(extension.trim_start_matches('.'))
+        .and_then(|entry| entry.language_id)
+        .unwrap_or("unknown")
 }
 
 fn capitalized(word: &str) -> String {
@@ -862,7 +949,16 @@ fn binding_rank(kind: &str) -> u8 {
 
 #[cfg(test)]
 mod tests {
-    use super::{binding_rank, match_tier, rank_workspace_symbols};
+    use super::{binding_rank, language_name, match_tier, rank_workspace_symbols};
+
+    /// Every project-marker family a workspace-root search names takes its
+    /// language id from the grammar registry.
+    #[test]
+    fn root_marker_families_are_named_by_language_id() {
+        let named = [".ts", ".rs", ".go", ".py"].map(language_name);
+        assert_eq!(named, ["typescript", "rust", "go", "python"]);
+        assert_eq!(language_name(".unknown-ext"), "unknown");
+    }
 
     /// A heritage answer missing files it could not read says which,
     /// stays partial for them, and leads to a text search over exactly them.
@@ -873,21 +969,40 @@ mod tests {
         }))
         .expect("query");
         let scope = super::Scope::new("/r".into(), Vec::new());
+        let paths = crate::tools::test_support::workspace_policy(std::path::Path::new("/r"));
         let unread = vec!["/r/big.ts".to_owned()];
         let mut row = serde_json::json!({});
-        super::mark_scan_answer(&mut row, &query, &scope, "scan note".into(), &unread);
+        super::mark_scan_answer(
+            &mut row,
+            &query,
+            &scope,
+            &paths,
+            "scan note".into(),
+            &unread,
+        );
         assert_eq!(
             row["partialReasons"],
             serde_json::json!(["serverUnanswered", "heritageUnread"])
         );
         let warnings = row["warnings"].to_string();
-        assert!(warnings.contains("/r/big.ts"), "{warnings}");
+        assert!(
+            warnings.contains("big.ts") && !warnings.contains("/r/"),
+            "{warnings}"
+        );
         let lead = &row["next"]["findText"];
         assert_eq!(lead["tool"], "localSearch", "{row}");
-        assert_eq!(lead["query"]["queries"][0]["path"], "/r/big.ts", "{row}");
+        // The warning and the lead name the file the same way.
+        assert_eq!(lead["query"]["queries"][0]["path"], "big.ts", "{row}");
 
         let mut complete = serde_json::json!({});
-        super::mark_scan_answer(&mut complete, &query, &scope, "scan note".into(), &[]);
+        super::mark_scan_answer(
+            &mut complete,
+            &query,
+            &scope,
+            &paths,
+            "scan note".into(),
+            &[],
+        );
         assert_eq!(
             complete["partialReasons"],
             serde_json::json!(["serverUnanswered"])

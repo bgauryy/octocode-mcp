@@ -17,7 +17,7 @@
 
 use serde_json::{Map, Value, json};
 
-pub use crate::tools::id::continuation_channels::{HINT_TEXT_KEY, HINTS_KEY, PAGES_KEY};
+use crate::tools::id::continuation_channels::{HINT_TEXT_KEY, HINTS_KEY, PAGES_KEY};
 use crate::tools::id::{Channel, ToolId, channel, continuation_channels, kind};
 
 /// Keys that name a row, and notes that lead it: they stay ahead of the
@@ -163,9 +163,12 @@ pub(super) fn shape(
 
 /// A partial object (`isPartial: true`) whose `next` holds no page of this
 /// tool: its leads are the only route to what it withholds, so they are
-/// evidence, not optional guidance. One rule for every tool and lead name.
+/// evidence, not optional guidance. A terminal page (`terminalLimit`)
+/// withholds nothing a lead reaches: its rest is on no page. One rule for
+/// every tool and lead name.
 fn withholds_evidence(object: &Map<String, Value>, tool: ToolId) -> bool {
     object.get("isPartial") == Some(&Value::Bool(true))
+        && object.get("terminalLimit") != Some(&Value::Bool(true))
         && !matches!(object.get(PAGES_KEY), Some(Value::Object(next))
             if next.keys().any(|name| channel(tool, name) == Channel::Page))
 }
@@ -660,10 +663,10 @@ mod tests {
             json!({"tool":"localFetch","query":{"queries":[row.clone(), {"path":"b.rs"}]}}),
         ] {
             let mut structured = json!({"results":[{"index":0,"data":{
-                "next":{"readBlock":lead}
+                "next":{"read":lead}
             }}]});
             split_hints(&mut structured, ToolId::LocalFetch);
-            let kept = &structured["results"][0]["data"]["hints"]["readBlock"]["query"]["queries"];
+            let kept = &structured["results"][0]["data"]["hints"]["read"]["query"]["queries"];
             assert_eq!(kept, &json!([row]), "{structured}");
         }
     }
@@ -870,6 +873,56 @@ mod tests {
                 .values()
                 .all(|call| call["query"]["queries"].as_array().map(Vec::len) == Some(1)),
             "{paged}"
+        );
+    }
+
+    /// A terminal page (`terminalLimit`) is partial because the rest is on
+    /// no page, and no lead reaches it either: its leads are optional like
+    /// any complete row's, so opt-in and the cap apply.
+    #[test]
+    fn a_terminal_page_keeps_the_opt_in_lead_policy() {
+        let rows = json!([{"path":"a"},{"path":"b"}]);
+        let lead = |tool: &str| json!({"tool":tool,"query":{"queries":rows}});
+        let shaped = |terminal: bool| {
+            let mut object = json!({
+                "isPartial":true,
+                "next":{
+                    "findText":lead("localSearch"),
+                    "readDefinition":lead("localFetch"),
+                    "findCallers":lead("lspSearch")
+                }
+            });
+            if terminal {
+                object["terminalLimit"] = json!(true);
+            }
+            let mut object = object.as_object().cloned().expect("object");
+            shape(&mut object, ToolId::LspSearch, false, true);
+            Value::Object(object)
+        };
+        let open = shaped(false);
+        assert_eq!(
+            open["hints"].as_object().map(serde_json::Map::len),
+            Some(3),
+            "{open}"
+        );
+        let terminal = shaped(true);
+        let kept = terminal["hints"]
+            .as_object()
+            .map(|hints| hints.keys().cloned().collect::<Vec<_>>())
+            .unwrap_or_default();
+        assert!(
+            kept.iter()
+                .all(|name| continuation_channels::DEFAULT_LEADS.contains(&name.as_str())),
+            "{terminal}"
+        );
+        assert!(
+            terminal
+                .get("hints")
+                .and_then(Value::as_object)
+                .into_iter()
+                .flat_map(|hints| hints.values())
+                .all(|call| call["query"]["queries"].as_array().map(Vec::len) == Some(1)),
+            "{terminal}"
         );
     }
 

@@ -1,6 +1,4 @@
-use super::types::{
-    CONFIG_FIELDS, CONFIG_SCHEMA_VERSION, ConfigEnumStyle, ConfigFieldKind, ConfigFieldSpec,
-};
+use super::types::{CONFIG_FIELDS, ConfigEnumStyle, ConfigFieldKind, ConfigFieldSpec};
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -78,33 +76,19 @@ pub(super) fn validate_field(
     field: &ConfigFieldSpec,
     value: Option<&Value>,
     errors: &mut Vec<String>,
-    warnings: &mut Vec<String>,
 ) {
-    let Some(value) = value else { return };
-    if value.is_null() && field.kind != ConfigFieldKind::SchemaVersion {
+    // `null` means "use the next source or the generated default".
+    let Some(value) = value.filter(|value| !value.is_null()) else {
         return;
-    }
+    };
     match field.kind {
-        ConfigFieldKind::SchemaVersion => {
-            let version = value
-                .as_i64()
-                .or_else(|| value.as_u64().and_then(|number| i64::try_from(number).ok()));
-            match version {
-                None => errors.push(format!("{}: Must be an integer", field.path)),
-                Some(version) if version > CONFIG_SCHEMA_VERSION => warnings.push(format!(
-                    "{}: Config version {version} is newer than supported version {CONFIG_SCHEMA_VERSION}",
-                    field.path
-                )),
-                Some(_) => {}
-            }
-        }
         ConfigFieldKind::Boolean => {
             if !value.is_boolean() {
                 errors.push(format!("{}: Must be a boolean", field.path));
             }
         }
-        ConfigFieldKind::Number => match value.as_f64() {
-            None => errors.push(format!("{}: Must be a number", field.path)),
+        ConfigFieldKind::Number => match value.as_f64().filter(|number| number.fract() == 0.0) {
+            None => errors.push(format!("{}: Must be an integer", field.path)),
             Some(number)
                 if field.minimum.is_some_and(|minimum| number < minimum)
                     || field.maximum.is_some_and(|maximum| number > maximum) =>
@@ -255,7 +239,6 @@ pub fn config_issues(config: &Value) -> (Vec<ConfigIssue>, Vec<String>) {
             field,
             parent.and_then(|parent| parent.get(field.key)),
             &mut errors,
-            &mut warnings,
         );
         issues.extend(errors.into_iter().map(|message| ConfigIssue {
             path: field.path.to_owned(),

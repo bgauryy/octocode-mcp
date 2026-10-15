@@ -4,7 +4,9 @@ use crate::support::{self, Run as _};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
-use serde_json::{Value, json};
+#[cfg(unix)]
+use serde_json::Value;
+use serde_json::json;
 use support::Workspace;
 use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -13,6 +15,79 @@ fn lines(word: &str) -> String {
     (0..200)
         .map(|index| format!("needle {word} {index}\n"))
         .collect()
+}
+
+#[tokio::test]
+async fn symbol_row_fragments_preserve_every_alias_and_member_once() {
+    let workspace = Workspace::new();
+    let aliases = (0..80)
+        .map(|index| format!("Alias{index:03}_{}", "exported_name_".repeat(10)))
+        .collect::<Vec<_>>();
+    let methods = (0..5)
+        .map(|index| format!("  method{index}(): string {{ return \"member {index}\"; }}\n"))
+        .collect::<String>();
+    let exports = aliases
+        .iter()
+        .map(|name| format!("  Container as {name},\n"))
+        .collect::<String>();
+    let file = workspace.write(
+        "class.ts",
+        format!("export class Container {{\n{methods}}}\nexport {{\n{exports}}};\n"),
+    );
+    let runtime = workspace.runtime(&[]);
+    let mut pending = Some(json!({
+        "queries":[{"operation":"symbols","path":file,"pageSize":1000}],
+        "responseScope":"rows","responseLength":1000
+    }));
+    let mut seen_aliases = Vec::new();
+    let mut seen_members = Vec::new();
+    let mut pages = 0;
+    while let Some(query) = pending.take() {
+        assert!(pages < 100, "symbol row continuation did not terminate");
+        let outcome = runtime
+            .run(
+                format!("symbol-fragment-{pages}"),
+                "astSearch".into(),
+                query,
+            )
+            .await
+            .expect("every symbol fragment satisfies the output contract");
+        let output = &outcome.structured_content;
+        for row in output["results"].as_array().expect("result rows") {
+            for symbol in row["data"]["symbols"].as_array().expect("symbols") {
+                assert_eq!(symbol["symbolName"], "Container");
+                for alias in symbol["exportedAs"].as_array().into_iter().flatten() {
+                    seen_aliases.push(alias.as_str().expect("export alias").to_owned());
+                }
+                for member in symbol["members"].as_array().into_iter().flatten() {
+                    seen_members.push((
+                        member["symbolName"]
+                            .as_str()
+                            .expect("member name")
+                            .to_owned(),
+                        member["line"].as_u64().expect("member source line"),
+                    ));
+                }
+            }
+        }
+        let page = &output["responsePagination"];
+        if page["hasMore"] == true {
+            assert_eq!(page["next"]["tool"], "astSearch");
+            pending = Some(page["next"]["query"].clone());
+        }
+        pages += 1;
+    }
+    assert!(pages > 2, "the fixture must exercise later row fragments");
+    let mut public_names = aliases;
+    public_names.push("Container".to_owned());
+    assert_eq!(seen_aliases, public_names);
+    assert_eq!(
+        seen_members,
+        (0..5)
+            .map(|index| (format!("method{index}"), index + 2))
+            .collect::<Vec<_>>()
+    );
+    runtime.close().await;
 }
 
 /// Unreadable but otherwise unchanged (same size and modification time):
@@ -182,9 +257,29 @@ async fn rows_scope_pages_replay_the_stored_envelope() {
     let pagination = first.structured_content["responsePagination"].clone();
     assert_eq!(pagination["hasMore"], true, "{pagination}");
     let snapshot = pagination["snapshot"].as_str().unwrap().to_owned();
-    assert!(snapshot.starts_with("response-rows-v2"), "{snapshot}");
+    assert!(snapshot.starts_with("response-rows-v4:1200:"), "{snapshot}");
     let next = pagination["next"]["query"].clone();
     assert_eq!(next["responseSnapshot"], snapshot.as_str(), "{pagination}");
+
+    let mut changed_window = next.clone();
+    changed_window["responseLength"] = json!(2400);
+    let restart = runtime
+        .run(
+            "rows-changed-window".into(),
+            "localSearch".into(),
+            changed_window,
+        )
+        .await
+        .expect("changed row plan requests a restart");
+    assert_eq!(
+        restart.structured_content["responsePagination"]["restart"],
+        true
+    );
+    assert_eq!(restart.structured_content["results"], json!([]));
+    assert_eq!(
+        restart.structured_content["responsePagination"]["next"]["query"]["responseOffset"],
+        0
+    );
 
     unreadable(&file, true);
     let second = runtime

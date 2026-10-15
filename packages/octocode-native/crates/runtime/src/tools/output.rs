@@ -95,11 +95,11 @@ pub trait ToolOutput: Sync {
         }
     }
 
-    /// Whether rows carry scan totals (`matchCount`, `matchedLineCount`,
-    /// `filesScanned`) that default rows trim to the ones the page needs and
-    /// `extras:["stats"]` keeps whole. A count that sizes an edit
-    /// (astRewrite's `matchCount`) is no scan total.
-    fn reports_scan_totals(&self) -> bool {
+    /// Whether the row `data` carries scan totals (`matchCount`,
+    /// `matchedLineCount`, `filesScanned`) that default rows trim to the ones
+    /// the page needs and `extras:["stats"]` keeps whole. A count that sizes
+    /// an edit (astRewrite's `matchCount`) is no scan total.
+    fn reports_scan_totals(&self, _data: &serde_json::Map<String, Value>) -> bool {
         false
     }
 
@@ -112,16 +112,11 @@ pub trait ToolOutput: Sync {
     /// without `extras: ["echo"]`): drop what only restates the caller's query.
     fn compact(&self, _data: &mut serde_json::Map<String, Value>, _query: &Value) {}
 
-    /// The candidates clasify judges one at a time on this tool's list page:
-    /// each carries its narrowed state, identity, and the read that fetches
-    /// it. `source` is the parsed read that produced `state`. `None` keeps
-    /// the page whole (no candidate list).
-    fn clasify_items(
-        &self,
-        _source: &crate::tools::clasify::resource::ResourceSource,
-        _state: &Value,
-    ) -> Option<Vec<crate::tools::clasify::items::Item>> {
-        None
+    /// Whether `clasifyContext` selects this tool's rows at the shared response
+    /// boundary, over one sanitized provider page (code search), instead of
+    /// before the tool's own source pagination.
+    fn selects_provider_page(&self) -> bool {
+        false
     }
 }
 

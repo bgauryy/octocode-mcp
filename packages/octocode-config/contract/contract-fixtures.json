@@ -1,35 +1,17 @@
 [
   {
-    "id": "clasify.example-clasify",
+    "id": "clasify.example-evaluate",
     "tool": "clasify",
     "input": {
       "queries": [
         {
-          "id": "docs-location",
-          "mainGoal": "Files that state the retry condition and when retry must stop.",
-          "reasoning": "Find the deciding source span before reading this documentation file.",
-          "resources": [
-            {
-              "id": "guide",
-              "tool": "localFetch",
-              "query": {
-                "path": "docs/guide.md"
-              },
-              "prefilter": [
-                "retry"
-              ]
+          "state": "Create a replacement credential, then restart the service.",
+          "questions": {
+            "restart": {
+              "type": "noul",
+              "instructions": "Does rotating the credential require restarting the service?"
             }
-          ],
-          "questions": [
-            {
-              "type": "locate",
-              "ask": "What condition requires a retry?"
-            },
-            {
-              "type": "locate",
-              "ask": "When must retry stop?"
-            }
-          ]
+          }
         }
       ]
     },
@@ -37,32 +19,32 @@
     "normalized": {
       "queries": [
         {
-          "id": "docs-location",
-          "reasoning": "Find the deciding source span before reading this documentation file.",
-          "mainGoal": "Files that state the retry condition and when retry must stop.",
-          "resources": [
-            {
-              "id": "guide",
-              "tool": "localFetch",
-              "query": {
-                "path": "docs/guide.md"
-              },
-              "maxChars": 1000000,
-              "prefilter": [
-                "retry"
-              ]
+          "questions": {
+            "restart": {
+              "type": "noul",
+              "instructions": "Does rotating the credential require restarting the service?"
             }
-          ],
-          "questions": [
-            {
-              "type": "locate",
-              "ask": "What condition requires a retry?"
-            },
-            {
-              "type": "locate",
-              "ask": "When must retry stop?"
-            }
-          ]
+          },
+          "state": "Create a replacement credential, then restart the service."
+        }
+      ]
+    }
+  },
+  {
+    "id": "clasify.example-models",
+    "tool": "clasify",
+    "input": {
+      "queries": [
+        {
+          "operation": "models"
+        }
+      ]
+    },
+    "accepted": true,
+    "normalized": {
+      "queries": [
+        {
+          "operation": "models"
         }
       ]
     }
@@ -147,8 +129,7 @@
           "owner": "bgauryy",
           "repo": "octocode",
           "path": "packages",
-          "maxDepth": 2,
-          "page": 1
+          "maxDepth": 2
         }
       ]
     }
@@ -173,8 +154,7 @@
           "owner": "facebook",
           "repo": "react",
           "path": "packages/react/src/ReactHooks.js",
-          "matchString": "export function useState",
-          "minify": "standard"
+          "matchString": "export function useState"
         }
       ]
     }
@@ -332,7 +312,7 @@
         {
           "owner": "bgauryy",
           "repo": "octocode",
-          "pageSize": 30,
+          "pageSize": 100,
           "operation": "issue",
           "number": 1,
           "sections": [
@@ -362,7 +342,7 @@
         {
           "owner": "bgauryy",
           "repo": "octocode",
-          "pageSize": 30,
+          "pageSize": 100,
           "operation": "commit",
           "ref": "main"
         }
@@ -389,7 +369,7 @@
         {
           "owner": "bgauryy",
           "repo": "octocode",
-          "pageSize": 30,
+          "pageSize": 100,
           "operation": "compare",
           "base": "main",
           "head": "update-tools"
@@ -441,7 +421,7 @@
             "schema",
             "validation"
           ],
-          "pageSize": 10
+          "pageSize": 50
         }
       ]
     }
@@ -488,7 +468,7 @@
           "keywords": [
             "serde"
           ],
-          "pageSize": 10
+          "pageSize": 50
         }
       ]
     }
@@ -721,7 +701,7 @@
           "path": ".",
           "page": 1,
           "pageSize": 20,
-          "diagnosticPageSize": 25,
+          "diagnosticPageSize": 100,
           "includeTests": true,
           "operation": "deadCode"
         }
@@ -747,7 +727,7 @@
           "path": ".",
           "page": 1,
           "pageSize": 20,
-          "diagnosticPageSize": 25,
+          "diagnosticPageSize": 100,
           "operation": "cycles"
         }
       ]
@@ -772,8 +752,8 @@
         {
           "path": ".",
           "page": 1,
-          "pageSize": 50,
-          "diagnosticPageSize": 25,
+          "pageSize": 100,
+          "diagnosticPageSize": 100,
           "source": "src/index.ts",
           "graphDepth": 2,
           "operation": "dependencies"
@@ -800,8 +780,8 @@
         {
           "path": ".",
           "page": 1,
-          "pageSize": 50,
-          "diagnosticPageSize": 25,
+          "pageSize": 100,
+          "diagnosticPageSize": 100,
           "source": "src/index.ts",
           "graphDepth": 2,
           "operation": "dependents"
@@ -828,8 +808,8 @@
         {
           "path": ".",
           "page": 1,
-          "pageSize": 50,
-          "diagnosticPageSize": 25,
+          "pageSize": 100,
+          "diagnosticPageSize": 100,
           "source": "src/index.ts",
           "target": "src/responses.ts",
           "operation": "path"
@@ -856,7 +836,7 @@
           "path": ".",
           "page": 1,
           "pageSize": 20,
-          "diagnosticPageSize": 25,
+          "diagnosticPageSize": 100,
           "includeTests": true,
           "operation": "reachability"
         }
@@ -1046,36 +1026,60 @@
     }
   },
   {
-    "id": "clasify.scout-remote-file",
+    "id": "clasify.state-primitives",
     "tool": "clasify",
     "input": {
       "queries": [
         {
-          "id": "interceptor-candidate",
-          "mainGoal": "Files that decide request interceptor order.",
-          "reasoning": "No snippet establishes whether the path orders interceptors; the verdict changes what to read.",
-          "resources": [
-            {
-              "id": "axios-core",
-              "tool": "ghGetFileContent",
-              "query": {
-                "owner": "axios",
-                "repo": "axios",
-                "path": "lib/core/Axios.js",
-                "fullContent": true
+          "id": "rotation",
+          "model": "jev-1.13.0",
+          "state": {
+            "document": {
+              "title": "Credential rotation",
+              "text": "Create a replacement credential, update the service configuration, and restart the service."
+            }
+          },
+          "questions": {
+            "restart": {
+              "type": "noul",
+              "instructions": {
+                "question": "Does `document.text` explicitly require `required_action`?",
+                "required_action": "restarting the service"
+              },
+              "criteria": {
+                "true": {
+                  "meaning": "The text explicitly requires a restart."
+                },
+                "false": [
+                  "The text does not establish a restart requirement."
+                ]
               }
-            }
-          ],
-          "questions": [
-            {
-              "type": "relevant",
-              "ask": "What is the request interceptor execution order?"
             },
-            {
-              "type": "sufficient",
-              "ask": "What is the request interceptor execution order?"
+            "route": {
+              "type": "choice",
+              "instructions": "Which rotation procedure does `document.text` describe?",
+              "criteria": {
+                "restart": "Update configuration and restart.",
+                "hot": [
+                  "Rotate without a restart."
+                ],
+                "unknown": null
+              }
+            },
+            "support": {
+              "type": "score",
+              "instructions": "How directly does `document.text` describe rotation?",
+              "criteria": [
+                {
+                  "meaning": "Unrelated."
+                },
+                [
+                  "Mentions rotation without steps."
+                ],
+                "States rotation steps."
+              ]
             }
-          ]
+          }
         }
       ]
     },
@@ -1083,66 +1087,80 @@
     "normalized": {
       "queries": [
         {
-          "id": "interceptor-candidate",
-          "reasoning": "No snippet establishes whether the path orders interceptors; the verdict changes what to read.",
-          "mainGoal": "Files that decide request interceptor order.",
-          "resources": [
-            {
-              "id": "axios-core",
-              "tool": "ghGetFileContent",
-              "query": {
-                "owner": "axios",
-                "repo": "axios",
-                "path": "lib/core/Axios.js",
-                "fullContent": true
+          "id": "rotation",
+          "model": "jev-1.13.0",
+          "questions": {
+            "restart": {
+              "type": "noul",
+              "instructions": {
+                "question": "Does `document.text` explicitly require `required_action`?",
+                "required_action": "restarting the service"
               },
-              "maxChars": 1000000
-            }
-          ],
-          "questions": [
-            {
-              "type": "relevant",
-              "ask": "What is the request interceptor execution order?"
+              "criteria": {
+                "true": {
+                  "meaning": "The text explicitly requires a restart."
+                },
+                "false": [
+                  "The text does not establish a restart requirement."
+                ]
+              }
             },
-            {
-              "type": "sufficient",
-              "ask": "What is the request interceptor execution order?"
+            "route": {
+              "type": "choice",
+              "instructions": "Which rotation procedure does `document.text` describe?",
+              "criteria": {
+                "restart": "Update configuration and restart.",
+                "hot": [
+                  "Rotate without a restart."
+                ],
+                "unknown": null
+              }
+            },
+            "support": {
+              "type": "score",
+              "instructions": "How directly does `document.text` describe rotation?",
+              "criteria": [
+                {
+                  "meaning": "Unrelated."
+                },
+                [
+                  "Mentions rotation without steps."
+                ],
+                "States rotation steps."
+              ]
             }
-          ]
+          },
+          "state": {
+            "document": {
+              "title": "Credential rotation",
+              "text": "Create a replacement credential, update the service configuration, and restart the service."
+            }
+          }
         }
       ]
     }
   },
   {
-    "id": "clasify.scout-search-chunks",
+    "id": "clasify.source-local-file",
     "tool": "clasify",
     "input": {
       "queries": [
         {
-          "id": "local-candidates",
-          "mainGoal": "Files that implement handler registration.",
-          "reasoning": "Judge bounded source chunks before choosing an exact verification read.",
-          "resources": [
-            {
-              "id": "search-results",
-              "tool": "localSearch",
-              "query": {
-                "path": "src",
-                "matchString": "registerHandler",
-                "pageSize": 5
-              }
+          "source": {
+            "tool": "localFetch",
+            "query": {
+              "path": "tests/cache.test.ts",
+              "ranges": [
+                "40-110"
+              ]
             }
-          ],
-          "questions": [
-            {
-              "type": "locate",
-              "ask": "Where is handler registration implemented?"
-            },
-            {
-              "type": "yesno",
-              "ask": "Is this chunk test code or a fixture rather than the production implementation?"
+          },
+          "questions": {
+            "check": {
+              "type": "noul",
+              "instructions": "Does the test assert removal of expiry metadata?"
             }
-          ]
+          }
         }
       ]
     },
@@ -1150,68 +1168,49 @@
     "normalized": {
       "queries": [
         {
-          "id": "local-candidates",
-          "reasoning": "Judge bounded source chunks before choosing an exact verification read.",
-          "mainGoal": "Files that implement handler registration.",
-          "resources": [
-            {
-              "id": "search-results",
-              "tool": "localSearch",
-              "query": {
-                "path": "src",
-                "matchString": "registerHandler",
-                "pageSize": 5
-              },
-              "maxChars": 1000000
+          "questions": {
+            "check": {
+              "type": "noul",
+              "instructions": "Does the test assert removal of expiry metadata?"
             }
-          ],
-          "questions": [
-            {
-              "type": "locate",
-              "ask": "Where is handler registration implemented?"
-            },
-            {
-              "type": "yesno",
-              "ask": "Is this chunk test code or a fixture rather than the production implementation?"
+          },
+          "source": {
+            "tool": "localFetch",
+            "query": {
+              "path": "tests/cache.test.ts",
+              "ranges": [
+                "40-110"
+              ]
             }
-          ]
+          }
         }
       ]
     }
   },
   {
-    "id": "clasify.judge-held-evidence",
+    "id": "clasify.image-local",
     "tool": "clasify",
     "input": {
       "queries": [
         {
-          "id": "draft-evidence-review",
-          "mainGoal": "Evidence that decides whether the guarantee holds.",
-          "reasoning": "Whether the held evidence supports the claim decides keeping or narrowing its wording.",
-          "resources": [
-            {
-              "id": "draft",
-              "value": {
-                "claim": "An abort signal guarantees that a queued task will never start.",
-                "evidence": [
-                  "An abort signal can remove a task while it is waiting.",
-                  "A task that has already started continues after abort."
-                ]
+          "state": "frame",
+          "assets": {
+            "frame": {
+              "type": "image",
+              "source": {
+                "tool": "localFetch",
+                "query": {
+                  "path": "shots/settings.png"
+                }
               }
             }
-          ],
-          "questions": [
-            {
-              "type": "choice",
-              "ask": "Classify how the supplied evidence bears on this exact claim.",
-              "labels": {
-                "supported": "Evidence covers the complete claim.",
-                "contradicted": "Evidence conflicts with the claim.",
-                "conflicting": "Evidence supports and conflicts with the claim.",
-                "insufficient": "A deciding branch or check is missing."
-              }
+          },
+          "questions": {
+            "button": {
+              "type": "box",
+              "instructions": "Locate the Save button in frame."
             }
-          ]
+          }
         }
       ]
     },
@@ -1219,33 +1218,287 @@
     "normalized": {
       "queries": [
         {
-          "id": "draft-evidence-review",
-          "reasoning": "Whether the held evidence supports the claim decides keeping or narrowing its wording.",
-          "mainGoal": "Evidence that decides whether the guarantee holds.",
-          "resources": [
-            {
-              "id": "draft",
-              "value": {
-                "claim": "An abort signal guarantees that a queued task will never start.",
-                "evidence": [
-                  "An abort signal can remove a task while it is waiting.",
-                  "A task that has already started continues after abort."
-                ]
+          "questions": {
+            "button": {
+              "type": "box",
+              "instructions": "Locate the Save button in frame."
+            }
+          },
+          "assets": {
+            "frame": {
+              "type": "image",
+              "source": {
+                "tool": "localFetch",
+                "query": {
+                  "path": "shots/settings.png"
+                }
               }
             }
-          ],
-          "questions": [
-            {
+          },
+          "state": "frame"
+        }
+      ]
+    }
+  },
+  {
+    "id": "clasify.image-github",
+    "tool": "clasify",
+    "input": {
+      "queries": [
+        {
+          "state": "frame",
+          "assets": {
+            "frame": {
+              "type": "image",
+              "source": {
+                "tool": "ghGetFileContent",
+                "query": {
+                  "owner": "o",
+                  "repo": "r",
+                  "path": "shot.jpg",
+                  "ref": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                }
+              }
+            }
+          },
+          "questions": {
+            "button": {
+              "type": "box",
+              "instructions": "Locate the Save button in frame."
+            }
+          }
+        }
+      ]
+    },
+    "accepted": true,
+    "normalized": {
+      "queries": [
+        {
+          "questions": {
+            "button": {
+              "type": "box",
+              "instructions": "Locate the Save button in frame."
+            }
+          },
+          "assets": {
+            "frame": {
+              "type": "image",
+              "source": {
+                "tool": "ghGetFileContent",
+                "query": {
+                  "owner": "o",
+                  "repo": "r",
+                  "path": "shot.jpg",
+                  "ref": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                }
+              }
+            }
+          },
+          "state": "frame"
+        }
+      ]
+    }
+  },
+  {
+    "id": "clasify.image-url",
+    "tool": "clasify",
+    "input": {
+      "queries": [
+        {
+          "state": "frame",
+          "assets": {
+            "frame": {
+              "type": "image",
+              "source": {
+                "url": "https://example.org/shot.png"
+              }
+            }
+          },
+          "questions": {
+            "button": {
+              "type": "box",
+              "instructions": "Locate the Save button in frame."
+            }
+          }
+        }
+      ]
+    },
+    "accepted": true,
+    "normalized": {
+      "queries": [
+        {
+          "questions": {
+            "button": {
+              "type": "box",
+              "instructions": "Locate the Save button in frame."
+            }
+          },
+          "assets": {
+            "frame": {
+              "type": "image",
+              "source": {
+                "url": "https://example.org/shot.png"
+              }
+            }
+          },
+          "state": "frame"
+        }
+      ]
+    }
+  },
+  {
+    "id": "clasify.provider-optional",
+    "tool": "clasify",
+    "input": {
+      "queries": [
+        {
+          "state": [],
+          "longContext": true,
+          "questions": {
+            "noul": {
+              "type": "noul",
+              "instructions": null,
+              "criteria": {
+                "true": null
+              }
+            },
+            "choice": {
               "type": "choice",
-              "ask": "Classify how the supplied evidence bears on this exact claim.",
-              "labels": {
-                "supported": "Evidence covers the complete claim.",
-                "contradicted": "Evidence conflicts with the claim.",
-                "conflicting": "Evidence supports and conflicts with the claim.",
-                "insufficient": "A deciding branch or check is missing."
+              "criteria": {
+                "label": null
+              }
+            },
+            "score": {
+              "type": "score",
+              "criteria": [
+                "Only level"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "accepted": true,
+    "normalized": {
+      "queries": [
+        {
+          "longContext": true,
+          "questions": {
+            "noul": {
+              "type": "noul",
+              "instructions": null,
+              "criteria": {
+                "true": null
+              }
+            },
+            "choice": {
+              "type": "choice",
+              "criteria": {
+                "label": null
+              }
+            },
+            "score": {
+              "type": "score",
+              "criteria": [
+                "Only level"
+              ]
+            }
+          },
+          "state": []
+        }
+      ]
+    }
+  },
+  {
+    "id": "clasify.source-github-file",
+    "tool": "clasify",
+    "input": {
+      "queries": [
+        {
+          "source": {
+            "tool": "ghGetFileContent",
+            "query": {
+              "owner": "axios",
+              "repo": "axios",
+              "path": "lib/core/Axios.js",
+              "ref": "v1.7.0",
+              "fullContent": true
+            }
+          },
+          "questions": {
+            "order": {
+              "type": "choice",
+              "instructions": "In what order does this file run request interceptors relative to their registration?",
+              "criteria": {
+                "registration": "In registration order.",
+                "reverse": "In reverse registration order.",
+                "insufficient": "The selected source does not decide it."
               }
             }
-          ]
+          }
+        }
+      ]
+    },
+    "accepted": true,
+    "normalized": {
+      "queries": [
+        {
+          "questions": {
+            "order": {
+              "type": "choice",
+              "instructions": "In what order does this file run request interceptors relative to their registration?",
+              "criteria": {
+                "registration": "In registration order.",
+                "reverse": "In reverse registration order.",
+                "insufficient": "The selected source does not decide it."
+              }
+            }
+          },
+          "source": {
+            "tool": "ghGetFileContent",
+            "query": {
+              "owner": "axios",
+              "repo": "axios",
+              "path": "lib/core/Axios.js",
+              "ref": "v1.7.0",
+              "fullContent": true
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "clasify.source-url",
+    "tool": "clasify",
+    "input": {
+      "queries": [
+        {
+          "source": {
+            "url": "https://docs.example.org/guide#rotation"
+          },
+          "questions": {
+            "restart_required": {
+              "type": "noul",
+              "instructions": "Does the selected section require restarting the service after rotating its API credential?"
+            }
+          }
+        }
+      ]
+    },
+    "accepted": true,
+    "normalized": {
+      "queries": [
+        {
+          "questions": {
+            "restart_required": {
+              "type": "noul",
+              "instructions": "Does the selected section require restarting the service after rotating its API credential?"
+            }
+          },
+          "source": {
+            "url": "https://docs.example.org/guide#rotation"
+          }
         }
       ]
     }
@@ -1657,7 +1910,7 @@
           "keywords": [
             "parser"
           ],
-          "pageSize": 10
+          "pageSize": 50
         }
       ]
     }
@@ -2022,7 +2275,7 @@
           "qualifiers": "-is:merged is:unmerged",
           "operation": "pullRequest",
           "page": 1,
-          "pageSize": 10
+          "pageSize": 50
         }
       ]
     }
@@ -2057,7 +2310,7 @@
           "qualifiers": "is:draft label:\"good first issue\" -reviewed-by:x",
           "operation": "pullRequest",
           "page": 1,
-          "pageSize": 10
+          "pageSize": 50
         }
       ]
     }
@@ -2090,7 +2343,7 @@
           "qualifiers": "head:feature base:main",
           "operation": "pullRequest",
           "page": 1,
-          "pageSize": 10
+          "pageSize": 50
         }
       ]
     }
@@ -2446,402 +2699,603 @@
     "accepted": false
   },
   {
-    "id": "clasify.cell-limit",
-    "tool": "clasify",
+    "id": "localSearch.clasify-context",
+    "tool": "localSearch",
     "input": {
       "queries": [
         {
-          "mainGoal": "Exercise the clasify parity fixture.",
-          "reasoning": "Freeze the rejection wording native repeats.",
-          "resources": [
-            {
-              "id": "r0",
-              "value": "v0"
-            },
-            {
-              "id": "r1",
-              "value": "v1"
-            },
-            {
-              "id": "r2",
-              "value": "v2"
-            },
-            {
-              "id": "r3",
-              "value": "v3"
-            },
-            {
-              "id": "r4",
-              "value": "v4"
-            },
-            {
-              "id": "r5",
-              "value": "v5"
-            }
-          ],
-          "questions": [
-            {
-              "id": "q0",
-              "type": "yesno",
-              "ask": "Is this relevant?"
-            },
-            {
-              "id": "q1",
-              "type": "yesno",
-              "ask": "Is this relevant?"
-            },
-            {
-              "id": "q2",
-              "type": "yesno",
-              "ask": "Is this relevant?"
-            },
-            {
-              "id": "q3",
-              "type": "yesno",
-              "ask": "Is this relevant?"
-            },
-            {
-              "id": "q4",
-              "type": "yesno",
-              "ask": "Is this relevant?"
-            }
+          "path": "/r",
+          "matchString": "expire",
+          "clasifyContext": {
+            "classifiers": [
+              "What does get return for an expired key in the local-memory cache?"
+            ]
+          }
+        }
+      ]
+    },
+    "accepted": true,
+    "normalized": {
+      "queries": [
+        {
+          "clasifyContext": {
+            "classifiers": [
+              "What does get return for an expired key in the local-memory cache?"
+            ]
+          },
+          "matchString": "expire",
+          "path": "/r",
+          "caseMode": "smart",
+          "multiline": "off",
+          "sort": "relevance",
+          "matchPage": 1,
+          "page": 1,
+          "unique": "off",
+          "resultView": "paginated"
+        }
+      ]
+    }
+  },
+  {
+    "id": "localSearch.removed-classifiers",
+    "tool": "localSearch",
+    "input": {
+      "queries": [
+        {
+          "path": "/r",
+          "matchString": "expire",
+          "classifiers": [
+            "What does get return for an expired key in the local-memory cache?"
           ]
         }
       ]
     },
-    "accepted": false,
-    "messages": [
-      "Resources × questions produces 30 cells; maximum is 25."
-    ]
+    "accepted": false
   },
   {
-    "id": "clasify.cell-limit-questions",
-    "tool": "clasify",
+    "id": "localSearch.removed-ranking",
+    "tool": "localSearch",
     "input": {
       "queries": [
         {
-          "mainGoal": "Exercise the clasify parity fixture.",
-          "reasoning": "Freeze the rejection wording native repeats.",
-          "resources": [
-            {
-              "id": "r0",
-              "value": "v0"
-            },
-            {
-              "id": "r1",
-              "value": "v1"
-            }
-          ],
-          "questions": [
-            {
-              "id": "q0",
-              "type": "yesno",
-              "ask": "Is this relevant?"
-            },
-            {
-              "id": "q1",
-              "type": "yesno",
-              "ask": "Is this relevant?"
-            },
-            {
-              "id": "q2",
-              "type": "yesno",
-              "ask": "Is this relevant?"
-            },
-            {
-              "id": "q3",
-              "type": "yesno",
-              "ask": "Is this relevant?"
-            },
-            {
-              "id": "q4",
-              "type": "yesno",
-              "ask": "Is this relevant?"
-            },
-            {
-              "id": "q5",
-              "type": "yesno",
-              "ask": "Is this relevant?"
-            },
-            {
-              "id": "q6",
-              "type": "yesno",
-              "ask": "Is this relevant?"
-            },
-            {
-              "id": "q7",
-              "type": "yesno",
-              "ask": "Is this relevant?"
-            },
-            {
-              "id": "q8",
-              "type": "yesno",
-              "ask": "Is this relevant?"
-            },
-            {
-              "id": "q9",
-              "type": "yesno",
-              "ask": "Is this relevant?"
-            },
-            {
-              "id": "q10",
-              "type": "yesno",
-              "ask": "Is this relevant?"
-            },
-            {
-              "id": "q11",
-              "type": "yesno",
-              "ask": "Is this relevant?"
-            },
-            {
-              "id": "q12",
-              "type": "yesno",
-              "ask": "Is this relevant?"
-            }
+          "path": "/r",
+          "matchString": "expire",
+          "ranking": "saved-plan"
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "localSearch.removed-goals",
+    "tool": "localSearch",
+    "input": {
+      "queries": [
+        {
+          "path": "/r",
+          "matchString": "expire",
+          "goals": [
+            "What does get return for an expired key in the local-memory cache?"
           ]
         }
       ]
     },
-    "accepted": false,
-    "messages": [
-      "Resources × questions produces 26 cells; maximum is 25."
-    ]
+    "accepted": false
   },
   {
-    "id": "clasify.total-cell-limit",
+    "id": "localFetch.clasify-context",
+    "tool": "localFetch",
+    "input": {
+      "queries": [
+        {
+          "path": "/r/cache.ts",
+          "ranges": [
+            "1-80"
+          ],
+          "clasifyContext": {
+            "classifiers": [
+              "What does get return for an expired key in the local-memory cache?"
+            ]
+          }
+        }
+      ]
+    },
+    "accepted": true,
+    "normalized": {
+      "queries": [
+        {
+          "clasifyContext": {
+            "classifiers": [
+              "What does get return for an expired key in the local-memory cache?"
+            ]
+          },
+          "path": "/r/cache.ts",
+          "ranges": [
+            "1-80"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "localFetch.removed-classifiers",
+    "tool": "localFetch",
+    "input": {
+      "queries": [
+        {
+          "path": "/r/cache.ts",
+          "ranges": [
+            "1-80"
+          ],
+          "classifiers": [
+            "What does get return for an expired key in the local-memory cache?"
+          ]
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "localFetch.removed-ranking",
+    "tool": "localFetch",
+    "input": {
+      "queries": [
+        {
+          "path": "/r/cache.ts",
+          "ranges": [
+            "1-80"
+          ],
+          "ranking": "saved-plan"
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "localFetch.removed-goals",
+    "tool": "localFetch",
+    "input": {
+      "queries": [
+        {
+          "path": "/r/cache.ts",
+          "ranges": [
+            "1-80"
+          ],
+          "goals": [
+            "What does get return for an expired key in the local-memory cache?"
+          ]
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "ghSearchCode.clasify-context",
+    "tool": "ghSearchCode",
+    "input": {
+      "queries": [
+        {
+          "owner": "o",
+          "repo": "r",
+          "keywords": [
+            "expire"
+          ],
+          "clasifyContext": {
+            "classifiers": [
+              "What does get return for an expired key in the local-memory cache?"
+            ]
+          }
+        }
+      ]
+    },
+    "accepted": true,
+    "normalized": {
+      "queries": [
+        {
+          "clasifyContext": {
+            "classifiers": [
+              "What does get return for an expired key in the local-memory cache?"
+            ]
+          },
+          "keywords": [
+            "expire"
+          ],
+          "owner": "o",
+          "repo": "r",
+          "matchIn": "file",
+          "pageSize": 50,
+          "page": 1
+        }
+      ]
+    }
+  },
+  {
+    "id": "ghSearchCode.removed-classifiers",
+    "tool": "ghSearchCode",
+    "input": {
+      "queries": [
+        {
+          "owner": "o",
+          "repo": "r",
+          "keywords": [
+            "expire"
+          ],
+          "classifiers": [
+            "What does get return for an expired key in the local-memory cache?"
+          ]
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "ghSearchCode.removed-ranking",
+    "tool": "ghSearchCode",
+    "input": {
+      "queries": [
+        {
+          "owner": "o",
+          "repo": "r",
+          "keywords": [
+            "expire"
+          ],
+          "ranking": "saved-plan"
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "ghSearchCode.removed-goals",
+    "tool": "ghSearchCode",
+    "input": {
+      "queries": [
+        {
+          "owner": "o",
+          "repo": "r",
+          "keywords": [
+            "expire"
+          ],
+          "goals": [
+            "What does get return for an expired key in the local-memory cache?"
+          ]
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "ghGetFileContent.clasify-context",
+    "tool": "ghGetFileContent",
+    "input": {
+      "queries": [
+        {
+          "owner": "o",
+          "repo": "r",
+          "path": "cache.ts",
+          "ranges": [
+            "1-80"
+          ],
+          "minify": "none",
+          "clasifyContext": {
+            "classifiers": [
+              "What does get return for an expired key in the local-memory cache?"
+            ]
+          }
+        }
+      ]
+    },
+    "accepted": true,
+    "normalized": {
+      "queries": [
+        {
+          "clasifyContext": {
+            "classifiers": [
+              "What does get return for an expired key in the local-memory cache?"
+            ]
+          },
+          "owner": "o",
+          "repo": "r",
+          "path": "cache.ts",
+          "ranges": [
+            "1-80"
+          ],
+          "minify": "none"
+        }
+      ]
+    }
+  },
+  {
+    "id": "ghGetFileContent.removed-classifiers",
+    "tool": "ghGetFileContent",
+    "input": {
+      "queries": [
+        {
+          "owner": "o",
+          "repo": "r",
+          "path": "cache.ts",
+          "ranges": [
+            "1-80"
+          ],
+          "minify": "none",
+          "classifiers": [
+            "What does get return for an expired key in the local-memory cache?"
+          ]
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "ghGetFileContent.removed-ranking",
+    "tool": "ghGetFileContent",
+    "input": {
+      "queries": [
+        {
+          "owner": "o",
+          "repo": "r",
+          "path": "cache.ts",
+          "ranges": [
+            "1-80"
+          ],
+          "minify": "none",
+          "ranking": "saved-plan"
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "ghGetFileContent.removed-goals",
+    "tool": "ghGetFileContent",
+    "input": {
+      "queries": [
+        {
+          "owner": "o",
+          "repo": "r",
+          "path": "cache.ts",
+          "ranges": [
+            "1-80"
+          ],
+          "minify": "none",
+          "goals": [
+            "What does get return for an expired key in the local-memory cache?"
+          ]
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "clasify.unique-query-ids",
     "tool": "clasify",
     "input": {
       "queries": [
         {
           "id": "a",
-          "mainGoal": "Exercise the clasify parity fixture.",
-          "reasoning": "Freeze the rejection wording native repeats.",
-          "resources": [
-            {
-              "id": "r0",
-              "value": "v0"
-            },
-            {
-              "id": "r1",
-              "value": "v1"
-            },
-            {
-              "id": "r2",
-              "value": "v2"
-            },
-            {
-              "id": "r3",
-              "value": "v3"
-            },
-            {
-              "id": "r4",
-              "value": "v4"
+          "state": "held evidence",
+          "questions": {
+            "relevant": {
+              "type": "noul",
+              "instructions": "Is this relevant?"
             }
-          ],
-          "questions": [
-            {
-              "id": "q0",
-              "type": "yesno",
-              "ask": "Is this relevant?"
-            },
-            {
-              "id": "q1",
-              "type": "yesno",
-              "ask": "Is this relevant?"
-            },
-            {
-              "id": "q2",
-              "type": "yesno",
-              "ask": "Is this relevant?"
-            },
-            {
-              "id": "q3",
-              "type": "yesno",
-              "ask": "Is this relevant?"
-            },
-            {
-              "id": "q4",
-              "type": "yesno",
-              "ask": "Is this relevant?"
-            }
-          ]
+          }
         },
         {
-          "id": "b",
-          "mainGoal": "Exercise the clasify parity fixture.",
-          "reasoning": "Freeze the rejection wording native repeats.",
-          "resources": [
-            {
-              "id": "r0",
-              "value": "v0"
-            },
-            {
-              "id": "r1",
-              "value": "v1"
-            },
-            {
-              "id": "r2",
-              "value": "v2"
-            },
-            {
-              "id": "r3",
-              "value": "v3"
-            },
-            {
-              "id": "r4",
-              "value": "v4"
+          "id": "a",
+          "state": "held evidence",
+          "questions": {
+            "relevant": {
+              "type": "noul",
+              "instructions": "Is this relevant?"
             }
-          ],
-          "questions": [
-            {
-              "id": "q0",
-              "type": "yesno",
-              "ask": "Is this relevant?"
-            },
-            {
-              "id": "q1",
-              "type": "yesno",
-              "ask": "Is this relevant?"
-            },
-            {
-              "id": "q2",
-              "type": "yesno",
-              "ask": "Is this relevant?"
-            },
-            {
-              "id": "q3",
-              "type": "yesno",
-              "ask": "Is this relevant?"
-            },
-            {
-              "id": "q4",
-              "type": "yesno",
-              "ask": "Is this relevant?"
-            }
-          ]
-        },
-        {
-          "id": "c",
-          "mainGoal": "Exercise the clasify parity fixture.",
-          "reasoning": "Freeze the rejection wording native repeats.",
-          "resources": [
-            {
-              "id": "r0",
-              "value": "v0"
-            },
-            {
-              "id": "r1",
-              "value": "v1"
-            },
-            {
-              "id": "r2",
-              "value": "v2"
-            },
-            {
-              "id": "r3",
-              "value": "v3"
-            },
-            {
-              "id": "r4",
-              "value": "v4"
-            }
-          ],
-          "questions": [
-            {
-              "id": "q0",
-              "type": "yesno",
-              "ask": "Is this relevant?"
-            },
-            {
-              "id": "q1",
-              "type": "yesno",
-              "ask": "Is this relevant?"
-            },
-            {
-              "id": "q2",
-              "type": "yesno",
-              "ask": "Is this relevant?"
-            },
-            {
-              "id": "q3",
-              "type": "yesno",
-              "ask": "Is this relevant?"
-            },
-            {
-              "id": "q4",
-              "type": "yesno",
-              "ask": "Is this relevant?"
-            }
-          ]
+          }
         }
       ]
     },
     "accepted": false,
     "messages": [
-      "Matrices produce 75 cells in total; maximum is 50."
+      "Duplicate query id: a"
     ]
   },
   {
-    "id": "clasify.prefilter-tool",
+    "id": "clasify.state-and-source",
     "tool": "clasify",
     "input": {
       "queries": [
         {
-          "mainGoal": "Exercise the clasify parity fixture.",
-          "reasoning": "Freeze the rejection wording native repeats.",
-          "resources": [
-            {
-              "id": "hits",
-              "tool": "localSearch",
-              "query": {
-                "mainGoal": "Find candidates.",
-                "reasoning": "Exercise the fixture.",
-                "path": "/r",
-                "matchString": "x"
-              },
-              "prefilter": [
-                "x"
-              ]
+          "state": "held evidence",
+          "questions": {
+            "relevant": {
+              "type": "noul",
+              "instructions": "Is this relevant?"
             }
-          ],
-          "questions": [
-            {
-              "id": "q0",
-              "type": "yesno",
-              "ask": "Is this relevant?"
-            }
-          ]
+          },
+          "source": {
+            "url": "https://docs.example.org/guide"
+          }
         }
       ]
     },
     "accepted": false,
     "messages": [
-      "prefilter applies only to localFetch or ghGetFileContent file reads; remove it or narrow the search itself."
+      "Input matches multiple exclusive schema branches"
     ]
   },
   {
-    "id": "clasify.candidate-evidence-tool",
+    "id": "clasify.state-or-source-required",
     "tool": "clasify",
     "input": {
       "queries": [
         {
-          "mainGoal": "Exercise the clasify parity fixture.",
-          "reasoning": "Freeze the rejection wording native repeats.",
+          "questions": {
+            "relevant": {
+              "type": "noul",
+              "instructions": "Is this relevant?"
+            }
+          }
+        }
+      ]
+    },
+    "accepted": false,
+    "messages": [
+      "Missing required field: state"
+    ]
+  },
+  {
+    "id": "clasify.source-needs-selection",
+    "tool": "clasify",
+    "input": {
+      "queries": [
+        {
+          "source": {
+            "tool": "localFetch",
+            "query": {
+              "path": "/r/a.ts"
+            }
+          },
+          "questions": {
+            "relevant": {
+              "type": "noul",
+              "instructions": "Is this relevant?"
+            }
+          }
+        }
+      ]
+    },
+    "accepted": false,
+    "messages": [
+      "Missing required field: ranges"
+    ]
+  },
+  {
+    "id": "clasify.source-raw-only",
+    "tool": "clasify",
+    "input": {
+      "queries": [
+        {
+          "source": {
+            "tool": "ghGetFileContent",
+            "query": {
+              "owner": "o",
+              "repo": "r",
+              "path": "a.ts",
+              "fullContent": true,
+              "minify": "standard"
+            }
+          },
+          "questions": {
+            "relevant": {
+              "type": "noul",
+              "instructions": "Is this relevant?"
+            }
+          }
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "clasify.source-https-only",
+    "tool": "clasify",
+    "input": {
+      "queries": [
+        {
+          "source": {
+            "url": "http://docs.example.org/guide"
+          },
+          "questions": {
+            "relevant": {
+              "type": "noul",
+              "instructions": "Is this relevant?"
+            }
+          }
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "clasify.unknown-evaluation-field",
+    "tool": "clasify",
+    "input": {
+      "queries": [
+        {
+          "state": "held evidence",
+          "questions": {
+            "relevant": {
+              "type": "noul",
+              "instructions": "Is this relevant?"
+            }
+          },
+          "unknownField": true
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "clasify.source-conflicting-selection",
+    "tool": "clasify",
+    "input": {
+      "queries": [
+        {
+          "source": {
+            "tool": "localFetch",
+            "query": {
+              "path": "/r/a.ts",
+              "ranges": [
+                "1-3"
+              ],
+              "fullContent": true
+            }
+          },
+          "questions": {
+            "relevant": {
+              "type": "noul",
+              "instructions": "Is this relevant?"
+            }
+          }
+        }
+      ]
+    },
+    "accepted": false,
+    "messages": [
+      "Input matches multiple exclusive schema branches"
+    ]
+  },
+  {
+    "id": "clasify.models-rejects-evaluation-fields",
+    "tool": "clasify",
+    "input": {
+      "queries": [
+        {
+          "operation": "models",
+          "state": "held evidence",
+          "questions": {
+            "relevant": {
+              "type": "noul",
+              "instructions": "Is this relevant?"
+            }
+          }
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "clasify.removed-matrix",
+    "tool": "clasify",
+    "input": {
+      "queries": [
+        {
           "resources": [
             {
-              "id": "file",
-              "tool": "localFetch",
-              "query": {
-                "mainGoal": "Read the file.",
-                "reasoning": "Exercise the fixture.",
-                "path": "/r/a.ts"
-              },
-              "candidateEvidence": "search"
+              "value": "held"
             }
           ],
           "questions": [
             {
-              "id": "q0",
               "type": "yesno",
               "ask": "Is this relevant?"
             }
@@ -2849,9 +3303,24 @@
         }
       ]
     },
-    "accepted": false,
-    "messages": [
-      "candidateEvidence requires localSearch or ghSearchCode."
-    ]
+    "accepted": false
+  },
+  {
+    "id": "clasify.removed-yesno",
+    "tool": "clasify",
+    "input": {
+      "queries": [
+        {
+          "state": "held",
+          "questions": {
+            "relevant": {
+              "type": "yesno",
+              "instructions": "Relevant?"
+            }
+          }
+        }
+      ]
+    },
+    "accepted": false
   }
 ]

@@ -236,7 +236,6 @@ mod tests {
             env: vars,
             cwd: "/synthetic/cwd".into(),
             os_home: home.clone(),
-            trusted_project: false,
             global_env: FileInput::Missing {
                 path: home.join(".env"),
             },
@@ -329,7 +328,8 @@ mod tests {
         let clasify = beta.get("clasify").expect("known");
         assert_eq!(clasify.env_vars(), ["OCTOCODE_CLASSIFICATION_API"]);
         assert!(clasify.needs_opt_in());
-        assert!(beta.is_available("astRewrite"));
+        // astRewrite is parked: beta does not enable it.
+        assert!(!beta.is_available("astRewrite"));
         assert!(cli.get("noSuchTool").is_none());
         assert!(!cli.is_available("noSuchTool"));
     }

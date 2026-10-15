@@ -192,16 +192,20 @@ mod tests {
             .expect("metadata")
             .modified()
             .ok();
+        let seen = |size| Seen {
+            path: &child,
+            size,
+            modified,
+        };
+        let stamp = stamps(root.path(), vec![seen(0)]).expect("a directory stamps at size 0");
+        assert!(stamp.unchanged(), "nothing changed since the walk");
+        // Any other size is a change the walk did not read.
+        assert!(stamps(root.path(), vec![seen(1)]).is_none());
+        std::thread::sleep(Duration::from_millis(20));
+        std::fs::write(child.join("new.txt"), "x").expect("newcomer");
         assert!(
-            stamps(
-                root.path(),
-                vec![Seen {
-                    path: &child,
-                    size: 0,
-                    modified
-                }]
-            )
-            .is_some()
+            !stamp.unchanged(),
+            "an entry created in it changes the directory"
         );
     }
 }

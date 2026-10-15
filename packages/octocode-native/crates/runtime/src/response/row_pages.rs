@@ -6,9 +6,9 @@ use serde_json::{Map, Value, json};
 use std::collections::BTreeSet;
 use std::ops::Range;
 
-use super::channels::{HINTS_KEY, PAGES_KEY};
 use super::pager::{ResponsePageOptions, ResponsePagination, restart_pagination};
 use super::pages::Remaining;
+use crate::tools::id::continuation_channels::{HINTS_KEY, PAGES_KEY};
 use crate::tools::stream_page::json_chars;
 
 /// Page-plan size reserved for a row's per-call facts. It depends only on
@@ -47,8 +47,8 @@ fn escape_pointer(key: &str) -> String {
     key.replace('~', "~0").replace('/', "~1")
 }
 
-/// The largest array with at least two elements reachable from `value`
-/// through objects and single-element arrays, as (JSON pointer, size).
+/// The largest evidence array with at least two elements reachable through
+/// objects and single-element arrays. Executable calls remain indivisible.
 fn largest_array(value: &Value, pointer: &str) -> Option<(String, usize)> {
     let mut best: Option<(String, usize)> = None;
     let mut consider = |candidate: Option<(String, usize)>| {
@@ -61,6 +61,9 @@ fn largest_array(value: &Value, pointer: &str) -> Option<(String, usize)> {
     match value {
         Value::Object(map) => {
             for (key, child) in map {
+                if key == PAGES_KEY || key == HINTS_KEY {
+                    continue;
+                }
                 consider(largest_array(
                     child,
                     &format!("{pointer}/{}", escape_pointer(key)),
@@ -551,6 +554,21 @@ impl Slicer {
 /// with the first part, so later slices carry them emptied: each record
 /// once.
 fn empty_secondary_lists(skeleton: &mut Value, pointer: &str) {
+    fn empty_records(value: &mut Value) {
+        match value {
+            Value::Array(items) if items.iter().all(|item| item.is_object() || item.is_array()) => {
+                items.clear();
+            }
+            Value::Object(map) => {
+                for (name, child) in map {
+                    if name != PAGES_KEY && name != HINTS_KEY {
+                        empty_records(child);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
     let mut segments = pointer.trim_start_matches('/').split('/');
     if segments.next() != Some("data") {
         return;
@@ -563,16 +581,13 @@ fn empty_secondary_lists(skeleton: &mut Value, pointer: &str) {
         };
         if let Some(map) = current.as_object_mut() {
             for (name, value) in map.iter_mut() {
-                if *name == key {
+                if *name == key || name == PAGES_KEY || name == HINTS_KEY {
                     continue;
                 }
                 // Records (objects, or tuples such as a runtime cycle's
-                // members), not descriptor lists of scalars.
-                if let Some(items) = value.as_array_mut()
-                    && items.iter().all(|item| item.is_object() || item.is_array())
-                {
-                    items.clear();
-                }
+                // members), including nested lists, not scalar descriptors
+                // or executable continuation queries.
+                empty_records(value);
             }
         }
         node = match current {
@@ -748,7 +763,7 @@ pub(super) fn paginate_rows(
     let mut plan = RowPlan::new(rows, &volatile, row_budget);
     let total = full.encode_utf16().count();
     let snapshot = format!(
-        "response-rows-v2:{}",
+        "response-rows-v4:{budget}:{}",
         crate::digest::sha256(full.as_bytes())
     );
     let requested = options.response_offset.unwrap_or(0);
@@ -757,7 +772,7 @@ pub(super) fn paginate_rows(
         structured.insert("results".into(), Value::Array(Vec::new()));
         // The page asked for, named in the envelope so a restart says why.
         let reason = if changed {
-            "the full response changed or its snapshot is missing; restart from responseOffset=0"
+            "the response or page size changed, or its snapshot is missing; restart from responseOffset=0"
                 .to_owned()
         } else {
             format!(
@@ -1251,6 +1266,60 @@ mod lazy_page_tests {
         }
     }
 
+    #[test]
+    fn changing_the_row_page_budget_requires_a_restart() {
+        let structured = envelope();
+        let full = Value::Object(structured.clone()).to_string();
+        let (_, first) = paginate_rows(
+            structured.clone(),
+            &full,
+            &options(1_000, 0, None),
+            Vec::new(),
+            &[],
+        );
+        assert!(first.has_more);
+        for changed_length in [700, 2_000] {
+            let (page, pagination) = paginate_rows(
+                structured.clone(),
+                &full,
+                &options(changed_length, 1, Some(first.snapshot.clone())),
+                Vec::new(),
+                &[],
+            );
+            assert_eq!(pagination.restart, Some(true), "length {changed_length}");
+            assert_eq!(pagination.changed, Some(true));
+            assert_eq!(pagination.next_char_offset, Some(0));
+            assert_eq!(page["results"], json!([]));
+        }
+    }
+
+    #[test]
+    fn an_earlier_row_plan_version_requires_a_restart() {
+        let structured = envelope();
+        let full = Value::Object(structured.clone()).to_string();
+        let (_, first) = paginate_rows(
+            structured.clone(),
+            &full,
+            &options(1_000, 0, None),
+            Vec::new(),
+            &[],
+        );
+        assert!(first.snapshot.starts_with("response-rows-v4:"));
+        let obsolete = first
+            .snapshot
+            .replacen("response-rows-v4:", "response-rows-v3:", 1);
+        let (page, pagination) = paginate_rows(
+            structured,
+            &full,
+            &options(1_000, 1, Some(obsolete)),
+            Vec::new(),
+            &[],
+        );
+        assert_eq!(pagination.restart, Some(true));
+        assert_eq!(pagination.next_char_offset, Some(0));
+        assert_eq!(page["results"], json!([]));
+    }
+
     /// Every page of `structured` at `length`, following the continuation.
     fn walk(
         structured: &Map<String, Value>,
@@ -1487,6 +1556,89 @@ mod lazy_page_tests {
         for (part, listed) in seen {
             assert_eq!(listed, usize::from(part == 1), "part {part}");
         }
+    }
+
+    #[test]
+    fn nested_secondary_records_are_once_and_executable_queries_stay_intact() {
+        let mut structured = envelope();
+        structured["results"][0]["data"]["coverage"] =
+            json!({"entries": [{"path": "generated/api.ts", "cause": "ignored"}], "sampled": true});
+        let query = json!({"paths": [{"path": "a.rs"}, {"path": "b.rs"}]});
+        structured["results"][0]["data"]["hints"]["inspect"] =
+            json!({"tool": "localFetch", "query": query});
+        structured["results"][0]["data"]["next"]["nextPage"] =
+            json!({"tool": "localSearch", "query": query});
+        let pages = walk(&structured, 1_000);
+        let mut records = Vec::new();
+        let mut queries = Vec::new();
+        for (page, _) in &pages {
+            for row in page["results"].as_array().expect("rows") {
+                if row["index"] != 0 {
+                    continue;
+                }
+                records.extend(
+                    row["data"]["coverage"]["entries"]
+                        .as_array()
+                        .expect("entries")
+                        .clone(),
+                );
+                for channel in ["next", "hints"] {
+                    for (name, call) in row["data"][channel].as_object().into_iter().flatten() {
+                        if name == "inspect" || name == "nextPage" {
+                            queries.push(call["query"].clone());
+                        }
+                    }
+                }
+            }
+        }
+        assert!(pages.len() > 2);
+        assert_eq!(
+            records,
+            vec![json!({"path": "generated/api.ts", "cause": "ignored"})]
+        );
+        assert_eq!(queries, vec![query.clone(), query]);
+    }
+
+    #[test]
+    fn continuation_query_arrays_are_indivisible_when_they_dominate_the_row() {
+        let query = json!({"queries":[{"paths": (0..20)
+            .map(|index| format!("path_{index}_{}", "segment".repeat(40)))
+            .collect::<Vec<_>>()}]});
+        let structured = json!({"results":[{"index":0,"data":{
+            "files":[{"path":"a.rs","matches":[{"line":1},{"line":2}]}],
+            "hints":{"read":{"tool":"localFetch","query":query}},
+            "next":{"nextPage":{"tool":"localSearch","query":query}}
+        }}]})
+        .as_object()
+        .cloned()
+        .expect("envelope");
+        let pages = walk(&structured, 1_000);
+        let mut lines = Vec::new();
+        let mut calls = Vec::new();
+        for (page, _) in &pages {
+            for row in page["results"].as_array().expect("rows") {
+                for file in row["data"]["files"].as_array().into_iter().flatten() {
+                    for item in file["matches"].as_array().into_iter().flatten() {
+                        lines.push(item["line"].clone());
+                    }
+                }
+                for channel in [PAGES_KEY, HINTS_KEY] {
+                    for (name, call) in row["data"][channel].as_object().into_iter().flatten() {
+                        assert!(
+                            call["query"] == query,
+                            "{channel}.{name} query was fragmented"
+                        );
+                        calls.push((channel, name.clone()));
+                    }
+                }
+            }
+        }
+        calls.sort();
+        assert_eq!(
+            calls,
+            vec![(HINTS_KEY, "read".into()), (PAGES_KEY, "nextPage".into())]
+        );
+        assert_eq!(lines, vec![json!(1), json!(2)]);
     }
 
     /// An astTopology `cycles` cycle: `files` module paths, `runtime` runtime

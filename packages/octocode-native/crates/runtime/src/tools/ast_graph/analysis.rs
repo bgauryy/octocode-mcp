@@ -1,6 +1,7 @@
 use super::{algorithms::*, graph::normalize, liveness::*, page::*, types::*};
 use crate::tools::id::ToolId;
 use crate::tools::id::query_limits::ast_topology::{DIAGNOSTIC_PAGE_MAXIMUM, PAGE_MAXIMUM};
+use crate::tools::leads::find_file::find_file;
 use crate::tools::result::Continuation;
 use crate::tools::result::ToolError;
 use crate::{
@@ -31,17 +32,29 @@ pub(crate) fn analyze(
     base.insert("path".into(), json!(display_path));
     base.insert("filesScanned".into(), json!(b.facts.len()));
     insert_supersedes(&mut base, q, &mut warnings);
-    let (items, mut summary, extra_warnings, mut low) = match q.analysis() {
-        GraphAnalysis::Dependencies | GraphAnalysis::Dependents => traversal(b, q)?,
-        GraphAnalysis::Path => path_analysis(b, q)?,
-        GraphAnalysis::Cycles => cycles(b),
-        GraphAnalysis::Reachability => reachability(b, q, &read),
-        GraphAnalysis::DeadCode => dead_code(b, q, &read),
-        GraphAnalysis::Drift => {
-            return Err(ToolError::new(
-                "invalidGraphQuery",
-                "drift is dispatched before analyze",
-            ));
+    let pending_endpoint = unscanned_endpoint(b, q, paths);
+    let (items, mut summary, extra_warnings, mut low) = if let Some(field) = pending_endpoint {
+        (
+            vec![],
+            json!({}),
+            vec![format!(
+                "{field} exists under path but was not parsed before maxFiles; this bounded graph cannot answer the query yet."
+            )],
+            true,
+        )
+    } else {
+        match q.analysis() {
+            GraphAnalysis::Dependencies | GraphAnalysis::Dependents => traversal(b, q)?,
+            GraphAnalysis::Path => path_analysis(b, q)?,
+            GraphAnalysis::Cycles => cycles(b),
+            GraphAnalysis::Reachability => reachability(b, q, &read),
+            GraphAnalysis::DeadCode => dead_code(b, q, &read),
+            GraphAnalysis::Drift => {
+                return Err(ToolError::new(
+                    "invalidGraphQuery",
+                    "drift is dispatched before analyze",
+                ));
+            }
         }
     };
     warnings.extend(extra_warnings);
@@ -75,7 +88,7 @@ pub(crate) fn analyze(
     // A suppressed verdict (no entrypoint resolved) proves nothing either
     // way: a partial answer that names why, never an empty one.
     let suppressed = summary["suppressed"] == true;
-    let answer_empty = !suppressed && answer_is_empty(&items);
+    let answer_empty = pending_endpoint.is_none() && !suppressed && answer_is_empty(&items);
     let (page, pagination) = paginate(items, q);
     base.insert("nodes".into(), Value::Array(page));
     base.insert("pagination".into(), pagination);
@@ -89,7 +102,7 @@ pub(crate) fn analyze(
     let coverage_state = add_coverage(&mut base, b, q, &results_digest);
     let result_page_limit = mark_scope_cuts(&mut base, cuts, q, coverage_state.changed);
     if suppressed {
-        mark_partial(&mut base, "entrypointsUnresolved");
+        crate::tools::paging::mark_partial(&mut base, "entrypointsUnresolved", &[]);
     }
     // A diagnostic page reached from a lead (it carries the snapshot) shows
     // the diagnostics only: its results were delivered by the offering page.
@@ -100,18 +113,13 @@ pub(crate) fn analyze(
     if answer_empty && !diagnostics_only {
         mark_empty(&mut base);
     }
-    if coverage_state.changed {
-        base.insert(
-            "next".into(),
-            json!({"restartDiagnostics": restart_continuation(q)}),
-        );
-    } else {
+    if !coverage_state.changed {
         add_next(
             &mut base,
             q,
             &b.root,
             cuts.widenable() && !diagnostics_only,
-            coverage_state.withheld.as_deref(),
+            &coverage_state,
         );
         if let Some(read) = read_lead(b, q, &base) {
             let mut next = Map::new();
@@ -138,6 +146,28 @@ pub(crate) fn analyze(
     add_completeness(&mut base, cuts, result_state, &gaps.reasons());
     base.insert("operation".into(), json!(q.analysis().as_str()));
     Ok(Value::Object(base))
+}
+
+fn unscanned_endpoint(
+    b: &BuiltGraph,
+    q: &AstTopologyQuery,
+    paths: &PathPolicy,
+) -> Option<&'static str> {
+    if !b.truncated {
+        return None;
+    }
+    for (field, raw) in [("source", q.source()), ("target", q.target())] {
+        let Some(raw) = raw else { continue };
+        let key = node_key(raw, &b.root, &b.nodes);
+        if !b.nodes.contains_key(&key)
+            && paths
+                .validate(b.root.join(key))
+                .is_ok_and(|path| path.canonical.starts_with(&b.root) && path.canonical.is_file())
+        {
+            return Some(field);
+        }
+    }
+    None
 }
 
 /// The resolved root and dynamic-only lists are page-invariant: emit them
@@ -209,6 +239,7 @@ pub(super) fn mark_scope_cuts(
     snapshot_changed: bool,
 ) -> bool {
     let mut reasons = cuts.reasons();
+    let mut warnings = Vec::new();
     let past = |field: &str, current: u32| {
         crate::tools::paging::admitted(ToolId::AstTopology, None, field, current as usize + 1)
             .is_none()
@@ -220,50 +251,34 @@ pub(super) fn mark_scope_cuts(
         && past("diagnosticPage", q.diagnostic_page());
     if result_page_limit {
         reasons.push("pageLimit");
-        push_warning(base, page_ceiling_warning("result", PAGE_MAXIMUM));
+        warnings.push(page_ceiling_warning("result", PAGE_MAXIMUM));
     }
     if diagnostic_page_limit {
         base["coverage"]["diagnosticPagination"]["terminalLimit"] = json!(true);
-        push_warning(
-            base,
-            page_ceiling_warning("diagnostic", DIAGNOSTIC_PAGE_MAXIMUM),
-        );
-    }
-    // A skipped file is named once: `partialReasons` says the scan is
-    // partial and the coverage diagnostics name the file and why.
-    if !reasons.is_empty() {
-        base.insert("isPartial".into(), json!(true));
-        base.insert("partialReasons".into(), json!(reasons));
+        reasons.push("diagnosticPageLimit");
+        warnings.push(page_ceiling_warning("diagnostic", DIAGNOSTIC_PAGE_MAXIMUM));
     }
     let terminal = result_page_limit || diagnostic_page_limit || cuts.terminal(q);
-    if terminal {
-        base.insert("terminalLimit".into(), json!(true));
-    }
+    mark_cuts(base, &reasons, warnings, terminal);
     result_page_limit
 }
 
-/// Mark the row partial for `reason`, after any scope-cut reasons.
-fn mark_partial(base: &mut Map<String, Value>, reason: &str) {
-    base.insert("isPartial".into(), json!(true));
-    match base
-        .entry("partialReasons")
-        .or_insert_with(|| json!([]))
-        .as_array_mut()
-    {
-        Some(reasons) => reasons.push(json!(reason)),
-        None => {
-            base.insert("partialReasons".into(), json!([reason]));
-        }
+/// Marks `base` partial for each cut in `reasons` (a skipped file is named
+/// once: the reason says the scan is partial and the coverage diagnostics
+/// name the file and why), adds each warning once, and ends the row at a
+/// terminal limit when no continuation reaches the rest.
+pub(super) fn mark_cuts(
+    base: &mut Map<String, Value>,
+    reasons: &[&str],
+    warnings: Vec<String>,
+    terminal: bool,
+) {
+    for reason in reasons {
+        crate::tools::paging::mark_partial(&mut *base, reason, &[]);
     }
-}
-
-/// Append one line to the row's `warnings`.
-pub(super) fn push_warning(base: &mut Map<String, Value>, warning: String) {
-    match base.get_mut("warnings").and_then(Value::as_array_mut) {
-        Some(list) => list.push(json!(warning)),
-        None => {
-            base.insert("warnings".into(), json!([warning]));
-        }
+    crate::tools::paging::push_warnings(&mut *base, warnings);
+    if terminal && let Some(reason) = reasons.last() {
+        crate::tools::paging::terminal_limit(base, reason, &[]);
     }
 }
 
@@ -721,7 +736,8 @@ pub(super) fn suffix_candidate<'a>(
 }
 
 /// The missing-file error, with an executable `hints.retrySuffixMatch` on
-/// the suffix candidate when one exists (another query: a lead, not a page).
+/// the suffix candidate when one exists, else a `hints.findFile` listing of
+/// files named like the one asked for (another query: a lead, not a page).
 pub(super) fn missing_file_error(
     q: &AstTopologyQuery,
     field: &str,
@@ -740,6 +756,8 @@ pub(super) fn missing_file_error(
                 .confidence("medium")
                 .build()
         })));
+    } else if let Some(listing) = find_file(q.path().unwrap_or("."), file) {
+        error.next = Some(Box::new(json!({ "findFile": listing })));
     }
     error
 }
@@ -875,7 +893,13 @@ mod tests {
         .cloned()
         .expect("result object");
 
-        add_next(&mut result, &query, Path::new("/repo"), false, None);
+        add_next(
+            &mut result,
+            &query,
+            Path::new("/repo"),
+            false,
+            &CoverageState::default(),
+        );
 
         assert_eq!(result["next"]["nextDiagnosticPage"]["tool"], "astTopology");
         assert_eq!(
@@ -898,7 +922,12 @@ mod tests {
             &query,
             Path::new("/repo"),
             false,
-            Some("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+            &CoverageState {
+                withheld: Some(
+                    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into(),
+                ),
+                ..CoverageState::default()
+            },
         );
         assert!(counts_only["next"].get("nextDiagnosticPage").is_none());
         let offered = &counts_only["next"]["readDiagnostics"]["query"]["queries"][0];
@@ -986,6 +1015,28 @@ mod tests {
             next["retrySuffixMatch"]["query"]["queries"][0]["path"], "packages/pkg",
             "{next}"
         );
+    }
+
+    /// Without a suffix match the error still carries a runnable lead: the
+    /// scanned directory's files named like the one asked for.
+    #[test]
+    fn a_missing_file_without_a_suffix_match_leads_to_a_listing() {
+        let nodes = BTreeMap::from([("src/index.ts".into(), node(&[]))]);
+        let query: AstTopologyQuery = serde_json::from_value(json!({
+            "mainGoal": "test", "reasoning":"test",
+            "operation":"dependents",
+            "path":"packages/pkg",
+            "source":"lib/missing.ts"
+        }))
+        .expect("graph query");
+        let error = missing_file_error(&query, "source", "lib/missing.ts", &nodes);
+        let next = error.next.expect("listing lead");
+        assert!(next.get("retrySuffixMatch").is_none(), "{next}");
+        let row = &next["findFile"]["query"]["queries"][0];
+        assert_eq!(next["findFile"]["tool"], "structureSearch", "{next}");
+        assert_eq!(row["operation"], "files", "{next}");
+        assert_eq!(row["path"], "packages/pkg", "{next}");
+        assert_eq!(row["include"], json!(["missing.*"]), "{next}");
     }
 
     #[test]

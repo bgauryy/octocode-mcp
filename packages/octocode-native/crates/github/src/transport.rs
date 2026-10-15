@@ -357,15 +357,18 @@ impl GitHubTransport {
         variables: Value,
         context: &RequestContext,
     ) -> Result<GraphQlPage, ProviderError> {
+        // One physical-attempt budget for the whole operation: HTTP retries
+        // inside `execute_counted` and the semantic retries below share it.
         let mut attempt: u8 = 0;
         loop {
             let page = self
-                .execute(
+                .execute_counted(
                     RequestSpec::graphql(
                         self.endpoint.graphql(),
                         serde_json::json!({ "query": query, "variables": variables }),
                     ),
                     context,
+                    &mut attempt,
                 )
                 .await?;
             let parsed: GraphQlPage = serde_json::from_slice(&page.body).map_err(|_| {
@@ -426,8 +429,20 @@ impl GitHubTransport {
         spec: RequestSpec,
         context: &RequestContext,
     ) -> Result<ResponsePage, ProviderError> {
+        self.execute_counted(spec, context, &mut 0).await
+    }
+
+    /// [`Self::execute`] drawing on `attempt`, the physical-attempt count of
+    /// an enclosing logical operation: its sends and an outer semantic retry
+    /// share one `max_attempts` budget.
+    async fn execute_counted(
+        &self,
+        spec: RequestSpec,
+        context: &RequestContext,
+        attempt: &mut u8,
+    ) -> Result<ResponsePage, ProviderError> {
         let mut failed = None;
-        let result = self.run_attempts(spec, context, &mut failed).await;
+        let result = self.run_attempts(spec, context, &mut failed, attempt).await;
         if let (Err(error), Some(cause)) = (&result, failed)
             && error.kind != ProviderErrorKind::Cancelled
         {
@@ -444,6 +459,7 @@ impl GitHubTransport {
         spec: RequestSpec,
         context: &RequestContext,
         failed: &mut Option<CircuitCause>,
+        attempt: &mut u8,
     ) -> Result<ResponsePage, ProviderError> {
         if !self.endpoint.permits(&spec.url) {
             return Err(ProviderError::new(
@@ -451,7 +467,9 @@ impl GitHubTransport {
                 "request URL is outside the configured GitHub API origin",
             ));
         }
-        Attempts::new(self, spec, context, failed).run().await
+        Attempts::new(self, spec, context, failed, attempt)
+            .run()
+            .await
     }
 }
 
@@ -475,7 +493,9 @@ struct Attempts<'a> {
     group: Option<Group>,
     spec: RequestSpec,
     redirects: u8,
-    attempt: u8,
+    /// The operation's physical attempts so far (0-based index of the
+    /// next send's predecessor), shared with any outer semantic retry.
+    attempt: &'a mut u8,
     counted_window: bool,
 }
 
@@ -485,6 +505,7 @@ impl<'a> Attempts<'a> {
         spec: RequestSpec,
         context: &'a RequestContext,
         failed: &'a mut Option<CircuitCause>,
+        attempt: &'a mut u8,
     ) -> Self {
         let state = transport.key_state(context.resolved_credential());
         let config = transport.budget.config();
@@ -506,7 +527,7 @@ impl<'a> Attempts<'a> {
             group,
             spec,
             redirects: 0,
-            attempt: 0,
+            attempt,
             counted_window: false,
         }
     }
@@ -615,15 +636,15 @@ impl<'a> Attempts<'a> {
     async fn back_off_transport(&mut self) -> Result<(), ProviderError> {
         *self.failed = Some(CircuitCause::Transport);
         let retry = &self.transport.retry;
-        if self.attempt + 1 < retry.max_attempts {
-            let delay = retry.backoff().next_delay(u32::from(self.attempt));
+        if *self.attempt + 1 < retry.max_attempts {
+            let delay = retry.backoff().next_delay(u32::from(*self.attempt));
             pause(
                 delay,
                 self.context.budget.effective_deadline(),
                 &self.context.budget.cancellation,
             )
             .await?;
-            self.attempt += 1;
+            *self.attempt += 1;
             return Ok(());
         }
         Err(ProviderError::new(
@@ -756,7 +777,7 @@ impl<'a> Attempts<'a> {
                     }));
                 }
                 let retry = &self.transport.retry;
-                let delay = retry.backoff().after(requested, u32::from(self.attempt));
+                let delay = retry.backoff().after(requested, u32::from(*self.attempt));
                 Some(RetryWait {
                     wait: delay,
                     sleep: delay,
@@ -785,7 +806,7 @@ impl<'a> Attempts<'a> {
         } else {
             (retry.max_retry_after, budget.effective_deadline())
         };
-        if self.attempt + 1 >= retry.max_attempts
+        if *self.attempt + 1 >= retry.max_attempts
             || backoff.wait > limit
             || Instant::now() + backoff.wait >= deadline
         {
@@ -797,7 +818,7 @@ impl<'a> Attempts<'a> {
             &budget.cancellation,
         )
         .await?;
-        self.attempt += 1;
+        *self.attempt += 1;
         Ok(())
     }
 }

@@ -2,20 +2,27 @@
 //!
 //! Tests construct `ToolRuntime` from an explicit `ConfigInput` so they do not
 //! mutate process environment or race under `cargo test`.
+#![allow(clippy::panic, reason = "test assertions fail by panicking")]
+
 use octocode_native::config::{ConfigInput, FileInput, RuntimeSurface};
 use octocode_native::runtime::{Channel, RuntimeError, ToolOutcome, ToolRuntime};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use wiremock::{MockServer, Request, Respond, ResponseTemplate};
+use wiremock::MockServer;
 
 // The contract, lead and page-walk checks the unit tests use, and the github
 // crate's wiremock mounts and responders: one copy of each, by path.
 use octocode_native::contracts::{parsed_contract, validate, validate_output};
 #[path = "../../src/tools/test_support/checks.rs"]
+#[allow(dead_code, reason = "the unit tests use the rest of the shared checks")]
 pub mod checks;
 #[path = "../../../github/src/tests/mock_http.rs"]
+#[allow(
+    dead_code,
+    reason = "the github crate's tests use the rest of the shared mocks"
+)]
 pub mod mock_http;
 
 /// Per-fixture token suffix. The GitHub rate-limit budget is process-wide and
@@ -127,6 +134,14 @@ impl Workspace {
             ("OCTOCODE_ENABLE_STATS".into(), "false".into()),
             ("MAX_RETRIES".into(), "0".into()),
             ("REQUEST_TIMEOUT".into(), "5000".into()),
+            // Fixture workspaces trust their own language-server definitions.
+            (
+                octocode_native::config::field::LSP_TRUST_PROJECT_CONFIG
+                    .env_name()
+                    .expect("lsp.trustProjectConfig is bound")
+                    .into(),
+                "true".into(),
+            ),
         ]);
         for (key, value) in extra {
             env.insert((*key).into(), value.clone());
@@ -135,7 +150,6 @@ impl Workspace {
             env,
             cwd: self.workspace.clone(),
             os_home: self.home.clone(),
-            trusted_project: true,
             global_env: FileInput::Missing {
                 path: self.home.join(".env"),
             },
@@ -266,26 +280,6 @@ pub fn envelope(mut input: Value) -> Value {
     Value::Object(envelope)
 }
 
-/// `input` as a whole call: a row becomes `{queries:[row]}`, an input that
-/// already has `queries` passes through. Nothing is added (no brief, no
-/// extras); [`envelope`] adds both.
-pub fn queries(input: Value) -> Value {
-    if input.get("queries").is_some() {
-        input
-    } else {
-        json!({ "queries": [input] })
-    }
-}
-
-/// [`queries`] with every row asking for exactly the output kinds `extras`.
-pub fn with_extras(input: Value, extras: &[&str]) -> Value {
-    let mut input = queries(input);
-    for row in input["queries"].as_array_mut().into_iter().flatten() {
-        row["extras"] = json!(extras);
-    }
-    input
-}
-
 pub fn row_data(outcome: &ToolOutcome) -> &Value {
     outcome
         .structured_content
@@ -329,165 +323,6 @@ pub fn provider_runtime(workspace: &Workspace, server: &MockServer) -> ToolRunti
         ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
         ("REQUEST_TIMEOUT", MOCK_PROVIDER_TIMEOUT_MS.into()),
     ])
-}
-
-/// How a [`Judge`] answers the classification questions of a request.
-#[derive(Clone)]
-pub enum Strategy {
-    /// Locate: each choice question puts `top` on the first passage ID
-    /// (`P###`, sorted) the request offers, the rest shared evenly; each
-    /// existence question answers `exists`.
-    TopPassage { top: f64, exists: f64 },
-    /// Each choice question picks its first offered label (`criteria`) at
-    /// 0.99; every other question answers 0.99.
-    FirstLabel,
-    /// Every question answers `yes` when the request state contains `needle`,
-    /// else `no`.
-    StateContains {
-        needle: &'static str,
-        yes: f64,
-        no: f64,
-    },
-    /// Question `i` (by sorted id) answers the `i`-th number after `SCORES `
-    /// in the request state, 0.5 when there is none.
-    Scores,
-}
-
-/// A stand-in classification provider answering by its [`Strategy`].
-#[derive(Clone)]
-pub struct Judge {
-    pub strategy: Strategy,
-}
-
-impl Respond for Judge {
-    fn respond(&self, request: &Request) -> ResponseTemplate {
-        let body: Value = serde_json::from_slice(&request.body).expect("provider request body");
-        let questions = body["questions"].as_object().expect("grouped questions");
-        let answers = match &self.strategy {
-            Strategy::TopPassage { top, exists } => {
-                let ids = passage_ids(&body);
-                let rest = if ids.len() > 1 {
-                    (1.0 - top) / (ids.len() - 1) as f64
-                } else {
-                    0.0
-                };
-                let probabilities = ids
-                    .iter()
-                    .enumerate()
-                    .map(|(index, id)| (id.clone(), json!(if index == 0 { *top } else { rest })))
-                    .collect::<serde_json::Map<_, _>>();
-                questions
-                    .iter()
-                    .map(|(id, question)| {
-                        let answer = if question["type"] == "choice" {
-                            json!({"type":"choice","choice":ids.first(),"confidence":top,
-                                "probabilities":probabilities})
-                        } else {
-                            json!({"type":"noul","noul":exists})
-                        };
-                        (id.clone(), answer)
-                    })
-                    .collect::<serde_json::Map<_, _>>()
-            }
-            Strategy::FirstLabel => questions
-                .iter()
-                .map(|(id, question)| {
-                    let answer = if question["type"] == "choice" {
-                        let labels = question["criteria"]
-                            .as_object()
-                            .expect("choice labels")
-                            .keys()
-                            .collect::<Vec<_>>();
-                        let rest = if labels.len() > 1 {
-                            0.01 / (labels.len() - 1) as f64
-                        } else {
-                            0.0
-                        };
-                        let probabilities = labels
-                            .iter()
-                            .enumerate()
-                            .map(|(index, label)| {
-                                (
-                                    (*label).clone(),
-                                    json!(if index == 0 { 0.99 } else { rest }),
-                                )
-                            })
-                            .collect::<serde_json::Map<_, _>>();
-                        json!({"type":"choice","choice":labels[0],"confidence":0.99,
-                            "probabilities":probabilities})
-                    } else {
-                        json!({"type":"noul","noul":0.99})
-                    };
-                    (id.clone(), answer)
-                })
-                .collect(),
-            Strategy::StateContains { needle, yes, no } => {
-                let noul = if body["state"].to_string().contains(needle) {
-                    *yes
-                } else {
-                    *no
-                };
-                questions
-                    .keys()
-                    .map(|id| (id.clone(), json!({"type":"noul","noul":noul})))
-                    .collect()
-            }
-            Strategy::Scores => {
-                let text = body["state"].to_string();
-                let scores = text
-                    .split("SCORES ")
-                    .nth(1)
-                    .map(|rest| {
-                        rest.split_whitespace()
-                            .take(2)
-                            .filter_map(|n| {
-                                n.trim_matches(|c: char| !c.is_ascii_digit() && c != '.')
-                                    .parse::<f64>()
-                                    .ok()
-                            })
-                            .collect::<Vec<_>>()
-                    })
-                    .unwrap_or_default();
-                let mut keys = questions.keys().cloned().collect::<Vec<_>>();
-                keys.sort();
-                keys.into_iter()
-                    .enumerate()
-                    .map(|(index, key)| {
-                        let noul = scores.get(index).copied().unwrap_or(0.5);
-                        (key, json!({"type":"noul","noul":noul}))
-                    })
-                    .collect()
-            }
-        };
-        ResponseTemplate::new(200).set_body_json(json!({
-            "model":"resolved",
-            "answers":answers,
-            "usage":{"input_tokens":5,"output_tokens":2}
-        }))
-    }
-}
-
-/// The passage IDs (`P` + three characters, as object keys) a request offers,
-/// sorted.
-fn passage_ids(body: &Value) -> Vec<String> {
-    fn visit(value: &Value, ids: &mut Vec<String>) {
-        match value {
-            Value::Object(map) => {
-                for (key, value) in map {
-                    if key.len() == 4 && key.starts_with('P') && !ids.contains(key) {
-                        ids.push(key.clone());
-                    }
-                    visit(value, ids);
-                }
-            }
-            Value::Array(items) => items.iter().for_each(|item| visit(item, ids)),
-            _ => {}
-        }
-    }
-    let mut ids = Vec::new();
-    visit(body, &mut ids);
-    ids.sort();
-    ids
 }
 
 /// One executed row as an agent sees it: the whole outcome (`Row` derefs to

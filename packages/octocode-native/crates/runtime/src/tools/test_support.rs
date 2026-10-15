@@ -44,15 +44,21 @@ impl Fixture {
 }
 
 /// A tool's raw executor `row` for `query`, shaped and finalized as the
-/// response stage ships it, satisfies the tool's output contract.
-pub(crate) fn assert_row_contract(tool: ToolId, query: &Value, row: &Value) {
+/// response stage ships it: `{results:[row]}` with its public `next`.
+pub(crate) fn published(tool: ToolId, query: &Value, row: &Value) -> Value {
     use crate::response::continuations::{Scope, Sources, finalize};
     let status = row["status"].as_str();
     let shaped = crate::response::rows::result_row(tool, 0, query, row.clone(), status);
     let mut public = serde_json::json!({ "results": [shaped] });
     finalize(&mut public, tool, &Sources::Rows(&[]), &Scope::everything())
         .expect("valid continuations");
-    checks::assert_output_contract(tool.as_str(), &public);
+    public
+}
+
+/// A tool's raw executor `row` for `query`, as [`published`], satisfies the
+/// tool's output contract.
+pub(crate) fn assert_row_contract(tool: ToolId, query: &Value, row: &Value) {
+    checks::assert_output_contract(tool.as_str(), &published(tool, query, row));
 }
 
 /// The path policy of a workspace rooted at `root`.

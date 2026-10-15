@@ -2,6 +2,7 @@ use super::super::HistoryItemRequest;
 use super::super::filter::*;
 use super::super::inventory::*;
 use super::super::promotion::promote_pr_continuations;
+use super::super::rest::Rest;
 use super::super::util::str_at;
 use super::super::window::*;
 use super::hunks::*;
@@ -195,7 +196,7 @@ fn pull_request_patch_hops_continue_the_page_stream() {
         assert!(calls < 100, "cursor did not advance");
         let mut row = json!({});
         let mut pagination = Map::new();
-        shape_pr_files(
+        let shaped = shape_pr_files(
             &mut row,
             &mut pagination,
             files.clone(),
@@ -215,7 +216,7 @@ fn pull_request_patch_hops_continue_the_page_stream() {
             break;
         };
         assert!(patches.get("files").is_none(), "{patches}");
-        assert!(patches["unfinishedFiles"].as_u64() > Some(0), "{patches}");
+        assert!(shaped.unfinished_patches > 0, "{patches}");
         let next = patches["nextOffset"].as_u64().unwrap_or(0) as usize;
         assert!(next > offset, "{patches}");
         offset = next;
@@ -287,7 +288,7 @@ fn patch_pagination_counts_unfinished_files_and_continues_the_same_page() {
         json!({"filename":"next.rs","status":"modified","patch":"x"}),
         json!({"filename":"b.rs","status":"modified","patch":"abcdef"}),
     ];
-    shape_pr_files(
+    let shaped = shape_pr_files(
         &mut row,
         &mut pagination,
         files,
@@ -296,11 +297,12 @@ fn patch_pagination_counts_unfinished_files_and_continues_the_same_page() {
         "all",
         None,
     );
+    assert_eq!(shaped.unfinished_patches, 3, "{pagination:?}");
+    // The page's patch stream: the window and where it continues.
     assert_eq!(
-        pagination["patches"]["unfinishedFiles"], 3,
-        "{pagination:?}"
+        pagination["patches"],
+        json!({"unit":"chars","offset":0,"length":2,"total":11,"hasMore":true,"nextOffset":2})
     );
-    assert_eq!(pagination["patches"]["nextOffset"], 2);
     let request: HistoryItemRequest = HistoryItemRequest::from_row(json!({
         "operation":"pullRequest","mainGoal": "test", "reasoning":"test","owner":"o","repo":"r","number":5,
         "sections":["patches"],"page":2
@@ -309,7 +311,7 @@ fn patch_pagination_counts_unfinished_files_and_continues_the_same_page() {
     let mut out = json!({"pullRequests":[{"contentPagination":{
         "patches": pagination["patches"].clone()
     }}]});
-    promote_pr_continuations(&mut out, &request);
+    promote_pr_continuations(&mut out, &request, &Rest::default());
     let next = &out["next"]["continuePatch"]["query"]["queries"][0];
     assert_eq!(next["sections"], json!(["patches"]), "{out}");
     assert!(next.get("include").is_none(), "{next}");
@@ -777,7 +779,7 @@ fn patch_pages_emit_no_placeholder_rows_and_compact_headers() {
     assert_eq!(page.cursor, Some(10));
     let mut row = json!({});
     let mut pagination = Map::new();
-    shape_pr_files(
+    let shaped = shape_pr_files(
         &mut row,
         &mut pagination,
         files,
@@ -793,7 +795,7 @@ fn patch_pages_emit_no_placeholder_rows_and_compact_headers() {
         json!([{"path":"a.rs","stat":"M +2 -1","patch":"AAAAAAAAAA"}])
     );
     assert_eq!(pagination["patches"]["nextOffset"], 10);
-    assert_eq!(pagination["patches"]["unfinishedFiles"], 2);
+    assert_eq!(shaped.unfinished_patches, 2);
 }
 
 /// The review pick names every source file by churn within

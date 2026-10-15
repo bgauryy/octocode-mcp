@@ -31,10 +31,10 @@ export {
 export const DEFAULT_CONFIG = Object.freeze(DEFAULT_CONFIG_VALUE);
 
 /**
- * The env var bound to a config field (e.g. `classification.api`), as a list
- * of at most one name. Empty for an unknown path or an env-less field.
+ * The env var bound to a config field (e.g. `classification.api`), or
+ * `undefined` for an unknown path or an env-less field.
  */
-export function configFieldEnvNames(fieldPath: string): readonly string[] {
-  const field = CONFIG_FIELDS.find(candidate => candidate.path === fieldPath);
-  return field?.env ? [field.env.name] : [];
+export function configFieldEnvName(fieldPath: string): string | undefined {
+  return CONFIG_FIELDS.find(candidate => candidate.path === fieldPath)?.env
+    ?.name;
 }

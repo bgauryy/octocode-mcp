@@ -100,7 +100,7 @@
     "test": "node ../../node_modules/vitest/vitest.mjs run --coverage",
     "test:acceptance": "cd ../.. && node packages/octocode-mcp/tests/integration/stdio.acceptance.mjs",
     "test:boundary": "node tests/native/node-boundary.mjs",
-    "test:contracts:classification": "cd ../.. && node packages/octocode-mcp/tests/integration/clasify-availability.acceptance.mjs && node packages/octocode-mcp/tests/integration/ranking-execution.acceptance.mjs",
+    "test:contracts:classification": "cd ../.. && node packages/octocode-mcp/tests/integration/clasify-availability.acceptance.mjs && node packages/octocode-mcp/tests/integration/selection-execution.acceptance.mjs",
     "test:contracts:responses": "node ../../node_modules/vitest/vitest.mjs run tests/tools/all-tools.pagination-contract.test.ts",
     "test:contracts:startup": "node ../../node_modules/vitest/vitest.mjs run tests/index.test.ts tests/public.test.ts",
     "test:quiet": "node ../../node_modules/vitest/vitest.mjs run --reporter=dot --silent",

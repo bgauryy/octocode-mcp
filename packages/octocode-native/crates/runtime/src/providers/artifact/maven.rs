@@ -2,11 +2,8 @@ use super::http::{JSON, RegistryClient};
 use super::util::{endpoint, object_for, parse_url, required, rows, string, total};
 use super::{
     ArtifactError, ArtifactItem, ArtifactProviderPage, ArtifactProviderState, ArtifactSearchQuery,
-    ArtifactType,
+    ArtifactType, TerminalLimit,
 };
-#[cfg(test)]
-use url::Url;
-
 /// Compile-once XML/coordinate patterns. `maven-metadata.xml` and POM parsing
 /// run per lookup; compiling these constant patterns on every call (and once
 /// per extracted tag in the old `field` closure) was pure waste.
@@ -35,6 +32,15 @@ mod patterns {
     pattern!(release, r"<release>\s*([^<]+?)\s*</release>");
     pattern!(latest, r"<latest>\s*([^<]+?)\s*</latest>");
     pattern!(version, r"<version>\s*([^<]+?)\s*</version>");
+    pattern!(
+        inherited_blocks,
+        r"(?s)<(dependencyManagement|build|profiles|reporting)>.*?</(dependencyManagement|build|profiles|reporting)>"
+    );
+    pattern!(dependencies, r"(?s)<dependencies>(.*?)</dependencies>");
+    pattern!(dependency, r"(?s)<dependency>(.*?)</dependency>");
+    pattern!(exclusions, r"(?s)<exclusions>.*?</exclusions>");
+    pattern!(scope, r"<scope>\s*([^<]+?)\s*</scope>");
+    pattern!(optional, r"<optional>\s*([^<]+?)\s*</optional>");
 
     /// The bounded set of `<tag>value</tag>` fields extracted from
     /// `maven-metadata.xml`. Unknown tags return `None` (the `regex` crate has
@@ -112,8 +118,7 @@ pub(crate) async fn maven(
             offset: Some(offset + artifacts.len() as u64),
             ..Default::default()
         }),
-        terminal_limit: (more && artifacts.is_empty())
-            .then(|| "Maven returned an empty page before its reported total.".into()),
+        terminal_limit: (more && artifacts.is_empty()).then(|| TerminalLimit::short_page("Maven")),
         artifacts,
         total: count,
         registry: None,
@@ -148,7 +153,7 @@ async fn exact(
     if parts.len() != 2 || parts.iter().any(|part| !valid.is_match(part)) {
         return Err(ArtifactError::new(
             "invalidInput",
-            "Maven packageName must be groupId:artifactId.",
+            format!("packageName \"{package_name}\" is not a Maven groupId:artifactId."),
         ));
     }
     let group = parts[0];
@@ -205,7 +210,15 @@ async fn exact(
         None => field("release").or_else(|| field("latest")),
     };
     if let Some(version) = artifact.version.clone() {
-        artifact.repository = repository_from_pom(&group_path, name, &version, client).await?;
+        let (pom, published_at) = futures_util::join!(
+            read_pom(&group_path, name, &version, client),
+            published_day(&returned_group, &returned_name, &version, client)
+        );
+        if let Some(pom) = pom? {
+            artifact.repository = pom.repository;
+            artifact.dependencies = Some(pom.dependencies);
+        }
+        artifact.published_at = published_at;
         // Maven names no commit; an upstream tag of this release pins the
         // lead (a `-jre`/`-android` classifier is not part of the tag).
         if let Some(repository) = artifact.repository.as_deref() {
@@ -240,10 +253,11 @@ async fn discovery_repositories(artifacts: &mut [ArtifactItem], client: &Registr
     let found = futures_util::future::join_all(artifacts.iter().map(|artifact| async move {
         let (group, name) = artifact.name.split_once(':')?;
         let version = artifact.version.as_deref()?;
-        repository_from_pom(&group_path(group), name, version, client)
+        read_pom(&group_path(group), name, version, client)
             .await
             .ok()
-            .flatten()
+            .flatten()?
+            .repository
     }))
     .await;
     for (artifact, repository) in artifacts.iter_mut().zip(found) {
@@ -261,17 +275,23 @@ fn release_version(version: &str) -> &str {
         .map_or(version, |(release, _)| release)
 }
 
-/// Upstream source link for exact lookups, taken from the versioned POM's
-/// `<scm><url>` with the project-level `<url>` as fallback. Keyword rows stay
-/// link-less: the solr search response carries no scm metadata. Enrichment is
-/// best-effort — a missing POM or suspicious XML skips the link instead of
-/// failing a lookup that already resolved.
-async fn repository_from_pom(
+/// What a version's own POM declares.
+struct Pom {
+    /// Upstream source link: `<scm><url>`, else the project-level `<url>`.
+    repository: Option<String>,
+    /// Required runtime dependencies (see [`required_dependencies`]).
+    dependencies: Vec<String>,
+}
+
+/// The versioned POM's facts. Enrichment is best-effort: a missing POM or
+/// suspicious XML (a DOCTYPE or entity) is `None` instead of failing a
+/// lookup that already resolved.
+async fn read_pom(
     group_path: &str,
     name: &str,
     version: &str,
     client: &RegistryClient<'_>,
-) -> Result<Option<String>, ArtifactError> {
+) -> Result<Option<Pom>, ArtifactError> {
     let encoded_name = super::util::encode_component(name);
     let encoded_version = super::util::encode_component(version);
     let url = parse_url(&format!(
@@ -294,51 +314,98 @@ async fn repository_from_pom(
         .captures(&clean)
         .and_then(|capture| capture.get(1))
         .and_then(|block| first_url(block.as_str()));
-    Ok(scm_url
-        .or_else(|| first_url(&clean))
-        .and_then(|value| super::util::canonical_repository(&value)))
+    Ok(Some(Pom {
+        repository: scm_url
+            .or_else(|| first_url(&clean))
+            .and_then(|value| super::util::canonical_repository(&value)),
+        dependencies: required_dependencies(&clean),
+    }))
+}
+
+/// The project's own `<dependencies>` as `groupId:artifactId[:version]`
+/// (the version as written, absent when a parent or BOM manages it):
+/// compile and runtime scope only, never `<optional>true</optional>`.
+/// Managed, build-plugin, profile and reporting dependencies are not the
+/// project's requirements.
+fn required_dependencies(pom: &str) -> Vec<String> {
+    let project = patterns::inherited_blocks().replace_all(pom, "");
+    let Some(block) = patterns::dependencies()
+        .captures(&project)
+        .and_then(|capture| capture.get(1))
+    else {
+        return Vec::new();
+    };
+    let tag = |pattern: &regex::Regex, text: &str| {
+        pattern
+            .captures(text)
+            .and_then(|capture| capture.get(1))
+            .map(|value| value.as_str().trim().to_owned())
+    };
+    patterns::dependency()
+        .captures_iter(block.as_str())
+        .filter_map(|capture| {
+            let entry = patterns::exclusions().replace_all(capture.get(1)?.as_str(), "");
+            let scope = tag(patterns::scope(), &entry).unwrap_or_else(|| "compile".into());
+            let optional = tag(patterns::optional(), &entry).is_some_and(|value| value == "true");
+            if optional || !matches!(scope.as_str(), "compile" | "runtime") {
+                return None;
+            }
+            let coordinate = format!(
+                "{}:{}",
+                tag(patterns::group_id(), &entry)?,
+                tag(patterns::artifact_id(), &entry)?
+            );
+            Some(match tag(patterns::version(), &entry) {
+                Some(version) => format!("{coordinate}:{version}"),
+                None => coordinate,
+            })
+        })
+        .collect()
+}
+
+/// The day Central received `group:name:version`, from its version search
+/// (`timestamp`, epoch milliseconds). Best-effort: `None` when the search
+/// fails or does not list the version.
+async fn published_day(
+    group: &str,
+    name: &str,
+    version: &str,
+    client: &RegistryClient<'_>,
+) -> Option<String> {
+    let url = endpoint(
+        "https://central.sonatype.com/solrsearch/select",
+        &[
+            (
+                "q",
+                Some(format!(
+                    "g:\"{group}\" AND a:\"{name}\" AND v:\"{version}\""
+                )),
+            ),
+            ("core", Some("gav".into())),
+            ("rows", Some("1".into())),
+            ("wt", Some("json".into())),
+        ],
+    )
+    .ok()?;
+    let response = client
+        .json(ArtifactType::Maven, url, true, None, None, JSON)
+        .await
+        .ok()??;
+    let doc = response.pointer("/response/docs/0")?;
+    (doc.get("v").and_then(serde_json::Value::as_str) == Some(version))
+        .then(|| doc.get("timestamp")?.as_i64())
+        .flatten()
+        .map(super::util::date_from_millis)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::super::types::{StaticHttp, artifact_query, test_budget};
+    use super::super::test_http::{KnownTags, RouteHttp};
+    use super::super::types::{artifact_query, test_budget};
     use super::*;
-    use crate::providers::artifact::http::{
-        ArtifactHttp, ArtifactHttpFuture, ArtifactHttpRequest, ArtifactHttpResponse,
-    };
-    use octocode_github::RequestBudget;
+    use serde_json::json;
 
-    /// Returns pre-set responses in insertion order; further calls 404.
-    struct SequenceMock {
-        responses: Vec<Vec<u8>>,
-        index: std::sync::atomic::AtomicUsize,
-    }
-
-    impl SequenceMock {
-        fn new(responses: Vec<&str>) -> Self {
-            Self {
-                responses: responses
-                    .into_iter()
-                    .map(|v| v.as_bytes().to_vec())
-                    .collect(),
-                index: std::sync::atomic::AtomicUsize::new(0),
-            }
-        }
-    }
-
-    impl ArtifactHttp for SequenceMock {
-        fn get<'a>(
-            &'a self,
-            _req: ArtifactHttpRequest,
-            _budget: &'a RequestBudget,
-        ) -> ArtifactHttpFuture<'a> {
-            let idx = self.index.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            let body = self.responses.get(idx).cloned().unwrap_or_default();
-            let status = if idx < self.responses.len() { 200 } else { 404 };
-            Box::pin(async move { Ok(ArtifactHttpResponse { status, body }) })
-        }
-    }
-
+    const METADATA: &str = "/maven2/com/google/guava/guava/maven-metadata.xml";
     const GUAVA_METADATA: &str = concat!(
         r#"<?xml version="1.0" encoding="UTF-8"?>"#,
         "<metadata>",
@@ -348,17 +415,21 @@ mod tests {
         "</metadata>"
     );
 
+    /// The guava POM path of `version`.
+    fn pom_path(version: &str) -> String {
+        format!("/maven2/com/google/guava/guava/{version}/guava-{version}.pom")
+    }
+
     fn guava_query() -> ArtifactSearchQuery {
         artifact_query(
-            serde_json::json!({"ecosystem": ArtifactType::Maven, "packageName": "com.google.guava:guava".to_string()}),
+            json!({"ecosystem": ArtifactType::Maven, "packageName": "com.google.guava:guava"}),
             None,
         )
     }
 
-    async fn exact_with(responses: Vec<&str>) -> ArtifactItem {
-        let http = SequenceMock::new(responses);
+    async fn exact_with(http: &RouteHttp) -> ArtifactItem {
         let b = test_budget();
-        let client = RegistryClient::uncached(&http, &b);
+        let client = RegistryClient::uncached(http, &b);
         let page = maven(&guava_query(), &ArtifactProviderState::default(), &client)
             .await
             .expect("maven exact");
@@ -366,25 +437,11 @@ mod tests {
         page.artifacts.into_iter().next().expect("one artifact")
     }
 
-    /// Records each request URL and answers with an empty search page.
-    struct CaptureMock(std::sync::Mutex<Vec<Url>>);
-
-    impl ArtifactHttp for CaptureMock {
-        fn get<'a>(
-            &'a self,
-            req: ArtifactHttpRequest,
-            _budget: &'a RequestBudget,
-        ) -> ArtifactHttpFuture<'a> {
-            if let Ok(mut urls) = self.0.lock() {
-                urls.push(req.url.clone());
-            }
-            Box::pin(async move {
-                Ok(ArtifactHttpResponse {
-                    status: 200,
-                    body: br#"{"response":{"numFound":0,"docs":[]}}"#.to_vec(),
-                })
-            })
-        }
+    /// The guava metadata and the latest release's POM.
+    fn guava(pom: &str) -> RouteHttp {
+        RouteHttp::new()
+            .bytes(METADATA, GUAVA_METADATA)
+            .bytes(&pom_path("33.7.1-jre"), pom)
     }
 
     /// Maven Central's Solr search answers HTTP 400 to whitespace-
@@ -397,29 +454,29 @@ mod tests {
     async fn maven_discovery_ands_terms_and_splits_query_syntax() {
         for (keywords, expected) in [
             (
-                serde_json::json!(["markdown parser"]),
+                json!(["markdown parser"]),
                 "(markdown AND parser) OR a:markdown-parser",
             ),
             (
-                serde_json::json!(["jackson", "databind"]),
+                json!(["jackson", "databind"]),
                 "(jackson AND databind) OR a:jackson-databind",
             ),
-            (serde_json::json!(["a:b (c)"]), "(a AND b AND c) OR a:a-b-c"),
-            (serde_json::json!(["spring-boot"]), "spring-boot"),
-            (serde_json::json!(["guava"]), "guava"),
+            (json!(["a:b (c)"]), "(a AND b AND c) OR a:a-b-c"),
+            (json!(["spring-boot"]), "spring-boot"),
+            (json!(["guava"]), "guava"),
         ] {
-            let http = CaptureMock(std::sync::Mutex::new(Vec::new()));
+            let http = RouteHttp::always(json!({"response":{"numFound":0,"docs":[]}}));
             let b = test_budget();
             let client = RegistryClient::uncached(&http, &b);
             let query = artifact_query(
-                serde_json::json!({"ecosystem": ArtifactType::Maven, "keywords": keywords}),
+                json!({"ecosystem": ArtifactType::Maven, "keywords": keywords}),
                 None,
             );
             maven(&query, &ArtifactProviderState::default(), &client)
                 .await
                 .expect("maven search");
-            let urls = http.0.lock().expect("urls");
-            let q = urls[0]
+            let q = http.seen()[0]
+                .url
                 .query_pairs()
                 .find(|(key, _)| key == "q")
                 .map(|(_, value)| value.into_owned());
@@ -436,7 +493,7 @@ mod tests {
             "<url>https://github.com/google/guava.git</url></scm>",
             "</project>"
         );
-        let item = exact_with(vec![GUAVA_METADATA, pom]).await;
+        let item = exact_with(&guava(pom)).await;
         assert_eq!(item.version.as_deref(), Some("33.7.1-jre"));
         assert_eq!(
             item.repository.as_deref(),
@@ -454,19 +511,91 @@ mod tests {
             "<url>https://github.com/google/guava</url>",
             "</project>"
         );
-        let item = exact_with(vec![GUAVA_METADATA, pom]).await;
+        let item = exact_with(&guava(pom)).await;
         assert_eq!(
             item.repository.as_deref(),
             Some("https://github.com/google/guava")
         );
     }
 
+    /// Without the POM nothing it declares is known: no repository and no
+    /// dependency list (absent, not empty).
     #[tokio::test]
     async fn maven_exact_survives_missing_pom() {
-        // Only the metadata response is provided; the POM fetch 404s.
-        let item = exact_with(vec![GUAVA_METADATA]).await;
+        let item = exact_with(&RouteHttp::new().bytes(METADATA, GUAVA_METADATA)).await;
         assert_eq!(item.version.as_deref(), Some("33.7.1-jre"));
         assert_eq!(item.repository, None);
+        assert_eq!(item.dependencies, None);
+        assert_eq!(item.published_at, None);
+    }
+
+    /// An exact row lists the POM's required runtime dependencies as
+    /// declared (`groupId:artifactId[:version]`): compile and runtime scope,
+    /// never optional, test, provided or managed ones, nor a dependency's
+    /// exclusions. Its release day is the one Central's version search
+    /// records; a POM without dependencies declares none.
+    #[tokio::test]
+    async fn maven_exact_lists_required_dependencies_and_the_release_day() {
+        let pom = r#"<project>
+            <parent><groupId>com.google.guava</groupId><artifactId>guava-parent</artifactId><version>33.7.1-jre</version></parent>
+            <dependencyManagement><dependencies>
+              <dependency><groupId>managed</groupId><artifactId>only</artifactId><version>1</version></dependency>
+            </dependencies></dependencyManagement>
+            <dependencies>
+              <dependency><groupId>com.google.guava</groupId><artifactId>failureaccess</artifactId><version>1.0.2</version>
+                <exclusions><exclusion><groupId>x</groupId><artifactId>excluded</artifactId></exclusion></exclusions>
+              </dependency>
+              <dependency><groupId>com.google.code.findbugs</groupId><artifactId>jsr305</artifactId></dependency>
+              <dependency><groupId>org.runtime</groupId><artifactId>rt</artifactId><version>2</version><scope>runtime</scope></dependency>
+              <dependency><groupId>org.opt</groupId><artifactId>opt</artifactId><version>3</version><optional>true</optional></dependency>
+              <dependency><groupId>junit</groupId><artifactId>junit</artifactId><version>4</version><scope>test</scope></dependency>
+              <dependency><groupId>javax</groupId><artifactId>servlet</artifactId><scope>provided</scope></dependency>
+              <!-- <dependency><groupId>commented</groupId><artifactId>out</artifactId></dependency> -->
+            </dependencies>
+            <build><plugins><plugin><dependencies>
+              <dependency><groupId>plugin</groupId><artifactId>dep</artifactId></dependency>
+            </dependencies></plugin></plugins></build>
+        </project>"#;
+        let http = guava(pom).json(
+            "/solrsearch/select",
+            json!({"response": {"docs": [{"v": "33.7.1-jre", "timestamp": 1_734_386_196_686_i64}]}}),
+        );
+        let item = exact_with(&http).await;
+        assert_eq!(
+            item.dependencies,
+            Some(vec![
+                "com.google.guava:failureaccess:1.0.2".to_owned(),
+                "com.google.code.findbugs:jsr305".to_owned(),
+                "org.runtime:rt:2".to_owned(),
+            ])
+        );
+        assert_eq!(item.published_at.as_deref(), Some("2024-12-16"));
+        let version = http
+            .seen()
+            .into_iter()
+            .find(|seen| seen.url.path() == "/solrsearch/select")
+            .and_then(|seen| {
+                seen.url
+                    .query_pairs()
+                    .find(|(key, _)| key == "q")
+                    .map(|(_, value)| value.into_owned())
+            });
+        assert_eq!(
+            version.as_deref(),
+            Some(r#"g:"com.google.guava" AND a:"guava" AND v:"33.7.1-jre""#)
+        );
+
+        let bare = exact_with(&guava(
+            "<project><url>https://github.com/google/guava</url></project>",
+        ))
+        .await;
+        assert_eq!(bare.dependencies, Some(Vec::new()));
+        // A search row for another version is not this release's day.
+        let other = guava("<project/>").json(
+            "/solrsearch/select",
+            json!({"response": {"docs": [{"v": "1.0", "timestamp": 1_734_386_196_686_i64}]}}),
+        );
+        assert_eq!(exact_with(&other).await.published_at, None);
     }
 
     #[tokio::test]
@@ -479,11 +608,14 @@ mod tests {
             "<versioning><release>2.15.2</release></versioning>",
             "</metadata>"
         );
-        let http = StaticHttp(xml.as_bytes().to_vec());
+        let http = RouteHttp::new().bytes(
+            "/maven2/com/fasterxml/jackson/core/jackson-databind/maven-metadata.xml",
+            xml,
+        );
         let b = test_budget();
         let client = RegistryClient::uncached(&http, &b);
         let q = artifact_query(
-            serde_json::json!({"ecosystem": ArtifactType::Maven, "packageName": "com.fasterxml.jackson.core:jackson-databind".to_string()}),
+            json!({"ecosystem": ArtifactType::Maven, "packageName": "com.fasterxml.jackson.core:jackson-databind"}),
             None,
         );
         let page = maven(&q, &ArtifactProviderState::default(), &client)
@@ -493,25 +625,10 @@ mod tests {
         let item = &page.artifacts[0];
         assert_eq!(item.name, "com.fasterxml.jackson.core:jackson-databind");
         assert_eq!(item.version.as_deref(), Some("2.15.2"));
-        assert!(
-            item.registry_url.contains("sonatype.com"),
-            "{}",
-            item.registry_url
+        assert_eq!(
+            item.registry_url,
+            "https://central.sonatype.com/artifact/com.fasterxml.jackson.core/jackson-databind"
         );
-    }
-
-    /// Answers a tag check for one tag only.
-    struct OneTag(&'static str);
-    impl super::super::ReleaseTags for OneTag {
-        fn exists<'a>(
-            &'a self,
-            _owner: &'a str,
-            _repo: &'a str,
-            tag: &'a str,
-        ) -> super::super::TagFuture<'a> {
-            let found = tag == self.0;
-            Box::pin(async move { Some(found) })
-        }
     }
 
     /// An exact Maven version reads that version's POM and pins the
@@ -526,55 +643,68 @@ mod tests {
             "</versions></versioning></metadata>"
         );
         let pom = "<project><url>https://github.com/google/guava</url></project>";
-        let query = artifact_query(
-            serde_json::json!({"ecosystem": ArtifactType::Maven,
-                "packageName": "com.google.guava:guava".to_string(), "version": "33.0.0-jre"}),
-            None,
-        );
-        let http = SequenceMock::new(vec![metadata, pom]);
+        let query = |version: &str| {
+            artifact_query(
+                json!({"ecosystem": ArtifactType::Maven,
+                    "packageName": "com.google.guava:guava", "version": version}),
+                None,
+            )
+        };
+        let http = RouteHttp::new()
+            .bytes(METADATA, metadata)
+            .bytes(&pom_path("33.0.0-jre"), pom);
         let b = test_budget();
-        let tags = OneTag("v33.0.0");
+        let tags = KnownTags::new(vec!["google/guava@v33.0.0"]);
         let client = RegistryClient {
             http: &http,
             budget: &b,
             cache: None,
             tags: Some(&tags),
         };
-        let page = maven(&query, &ArtifactProviderState::default(), &client)
-            .await
-            .expect("exact version");
+        let page = maven(
+            &query("33.0.0-jre"),
+            &ArtifactProviderState::default(),
+            &client,
+        )
+        .await
+        .expect("exact version");
         let item = &page.artifacts[0];
         assert_eq!(item.version.as_deref(), Some("33.0.0-jre"));
         assert_eq!(item.source_ref.as_deref(), Some("v33.0.0"));
         assert!(item.source_tag);
 
-        let missing = artifact_query(
-            serde_json::json!({"ecosystem": ArtifactType::Maven,
-                "packageName": "com.google.guava:guava".to_string(), "version": "33.0.1-jre"}),
-            None,
-        );
-        let http = SequenceMock::new(vec![metadata]);
-        let client = RegistryClient::uncached(&http, &b);
-        let error = maven(&missing, &ArtifactProviderState::default(), &client)
-            .await
-            .expect_err("unlisted version");
+        let error = maven(
+            &query("33.0.1-jre"),
+            &ArtifactProviderState::default(),
+            &client,
+        )
+        .await
+        .expect_err("unlisted version");
         assert_eq!(error.code, "versionNotFound");
+        assert!(
+            error.nearest.iter().any(|version| version == "33.0.0-jre"),
+            "{error:?}"
+        );
         assert_eq!(release_version("33.0.0-android"), "33.0.0");
         assert_eq!(release_version("2.0.0-rc1"), "2.0.0-rc1");
     }
 
+    /// A coordinate that is not `groupId:artifactId` is rejected before any
+    /// request, naming the field.
     #[tokio::test]
     async fn maven_rejects_invalid_coordinate() {
-        let http = StaticHttp(vec![]);
+        let http = RouteHttp::new();
         let b = test_budget();
         let client = RegistryClient::uncached(&http, &b);
         let q = artifact_query(
-            serde_json::json!({"ecosystem": ArtifactType::Maven, "packageName": "not-a-maven-coordinate".to_string()}),
+            json!({"ecosystem": ArtifactType::Maven, "packageName": "not-a-maven-coordinate"}),
             None,
         );
         let err = maven(&q, &ArtifactProviderState::default(), &client)
             .await
             .expect_err("invalid maven coordinate");
         assert_eq!(err.code, "invalidInput");
+        assert!(err.message.starts_with("packageName "), "{err:?}");
+        assert!(http.seen().is_empty());
     }
 }

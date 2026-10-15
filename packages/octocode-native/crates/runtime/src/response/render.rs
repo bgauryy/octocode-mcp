@@ -16,11 +16,10 @@ impl TextFormat {
     /// Map the resolved `output.format` value; the contract admits only
     /// `yaml` and `json`, so anything else keeps the YAML default.
     #[must_use]
-    pub fn from_config(value: &str) -> Self {
-        if value == "json" {
-            Self::Json
-        } else {
-            Self::Yaml
+    pub fn from_config(format: &crate::config::OutputFormat) -> Self {
+        match format {
+            crate::config::OutputFormat::Json => Self::Json,
+            crate::config::OutputFormat::Yaml => Self::Yaml,
         }
     }
 
@@ -806,8 +805,14 @@ mod tests {
                 "{tool}: {yaml}"
             );
         }
-        assert_eq!(TextFormat::from_config("json"), TextFormat::Json);
-        assert_eq!(TextFormat::from_config("yaml"), TextFormat::Yaml);
+        assert_eq!(
+            TextFormat::from_config(&crate::config::OutputFormat::Json),
+            TextFormat::Json
+        );
+        assert_eq!(
+            TextFormat::from_config(&crate::config::OutputFormat::Yaml),
+            TextFormat::Yaml
+        );
     }
 
     /// File bytes in the YAML text channel (content and patch blocks)

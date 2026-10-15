@@ -316,38 +316,18 @@ mod tests {
         assert_eq!(archive_entry(&bytes, "x"), None);
     }
 
-    /// Serves one archive and counts the downloads.
-    struct ArchiveOnce {
-        archive: Vec<u8>,
-        downloads: std::sync::atomic::AtomicUsize,
-    }
-
-    impl super::super::ArtifactHttp for ArchiveOnce {
-        fn get<'a>(
-            &'a self,
-            _request: super::super::http::ArtifactHttpRequest,
-            _budget: &'a octocode_github::RequestBudget,
-        ) -> super::super::http::ArtifactHttpFuture<'a> {
-            self.downloads
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let body = self.archive.clone();
-            Box::pin(
-                async move { Ok(super::super::http::ArtifactHttpResponse { status: 200, body }) },
-            )
-        }
-    }
-
     /// A published crate's VCS info is read from its archive once.
     #[tokio::test]
     async fn crate_vcs_info_is_downloaded_once() {
-        let name = format!("vcs-once-{}", std::process::id());
+        let name = "vcs-once";
         let info =
             br#"{"git":{"sha1":"b6a77c4413f902523646be0d7f5520631df53ff6"},"path_in_vcs":"x"}"#;
         let entry = format!("{name}-1.0.0/.cargo_vcs_info.json");
-        let http = ArchiveOnce {
-            archive: test_archive(&[(entry.as_str(), &info[..], b'0')]),
-            downloads: std::sync::atomic::AtomicUsize::new(0),
-        };
+        let http = super::super::test_http::SequenceHttp::new(vec![test_archive(&[(
+            entry.as_str(),
+            &info[..],
+            b'0',
+        )])]);
         let budget = super::super::types::test_budget();
         let cache = super::super::ArtifactCache::new(None);
         let client = RegistryClient {
@@ -360,8 +340,8 @@ mod tests {
             "b6a77c4413f902523646be0d7f5520631df53ff6".to_owned(),
             Some("x".to_owned()),
         ));
-        assert_eq!(crate_vcs(&name, "1.0.0", &client).await, expected);
-        assert_eq!(crate_vcs(&name, "1.0.0", &client).await, expected);
-        assert_eq!(http.downloads.load(std::sync::atomic::Ordering::Relaxed), 1);
+        assert_eq!(crate_vcs(name, "1.0.0", &client).await, expected);
+        assert_eq!(crate_vcs(name, "1.0.0", &client).await, expected);
+        assert_eq!(http.calls(), 1);
     }
 }

@@ -8,7 +8,7 @@ import type { ModelInputLimits } from '@earendil-works/pi-ai';
  * tool results pile up screenshots and fetched pictures. 1568 is under both and safe for every model, so it is the
  * default; a model's own metadata (`inputLimits.images.resize`) replaces it, and nothing here names a model.
  */
-export const DEFAULT_IMAGE_EDGE = 1568;
+const DEFAULT_IMAGE_EDGE = 1568;
 
 /** What an image put in the model's context is resized to: Pi's `resizeImage` options. */
 export interface ImageLimits {

@@ -40,6 +40,24 @@ pub(crate) fn production_text(source: &str) -> String {
     String::from_utf8(out).unwrap_or_default()
 }
 
+/// `text` with every comment and every string, raw string and character
+/// literal blanked (newlines kept): the code alone, for sweeps that match
+/// code shapes such as imports or lock calls, never prose or fixtures.
+pub(crate) fn code_only(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = bytes.to_vec();
+    let mut at = 0;
+    while at < bytes.len() {
+        let end = skip_token(bytes, at);
+        // Only a comment or a literal spans more than one byte.
+        if end > at + 1 {
+            blank(&mut out, at..end);
+        }
+        at = end.max(at + 1);
+    }
+    String::from_utf8(out).unwrap_or_default()
+}
+
 /// Spaces for every byte of `range` but a newline. A blanked range starts and
 /// ends on ASCII, so it holds whole characters and the text stays UTF-8.
 fn blank(out: &mut [u8], range: std::ops::Range<usize>) {

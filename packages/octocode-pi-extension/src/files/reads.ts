@@ -1,7 +1,7 @@
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { readPaths, resolveToolPath } from '../shared/home.js';
 import { isRecord } from '../shared/util.js';
-import { returnedContent } from './tool.js';
+import { mergeRanges, readView, type LineRange, type ReadView } from './coverage.js';
 
 /**
  * Which files the model's context shows, read from session messages: the base of the file guard's memory across a
@@ -38,6 +38,13 @@ export function contextMessages(ctx: Pick<ExtensionContext, 'sessionManager'>): 
   return ctx.sessionManager.buildSessionProjection().entries.flatMap((entry) => entry.messages.map((message) => ({ id: entry.sourceEntry.id, message })));
 }
 
+/** The text of a result made only of text parts, else undefined: an image is never replaced or cleared (`files/dedupe`, `compaction/clearing`). */
+export function plainText(content: unknown): string | undefined {
+  if (!Array.isArray(content) || content.length === 0) return undefined;
+  const parts = content.map((part) => (isRecord(part) && part['type'] === 'text' && typeof part['text'] === 'string' ? part['text'] : undefined));
+  return parts.every((text) => text !== undefined) ? parts.join('\n') : undefined;
+}
+
 /** The arguments of every tool call in `messages`, by tool call id. */
 export function toolCallArguments(messages: readonly MessageRef[]): Map<string, Record<string, unknown>> {
   const calls = new Map<string, Record<string, unknown>>();
@@ -64,8 +71,10 @@ interface SeenFile {
   workedAt: number | undefined;
   /** The first line that read showed or that change touched, when known. */
   line?: number;
-  /** The read showed a range or a cut view, not the whole file: an edit may follow it, a write or delete may not. */
+  /** The reads showed a range or a cut view, not the whole file: an edit or a delete may follow, a write only when `lines` cover the file. */
   partial?: boolean;
+  /** For a partial view: the lines the reads showed (merged), when known. */
+  lines?: LineRange[];
 }
 
 /** What a read-back after compaction records per file (`details.worked`): the work it stands for. */
@@ -78,10 +87,12 @@ export interface WorkedFile {
 /**
  * The files shown by successful Pi `read` results, applied `file` changes and files restored after a compaction among
  * `messages`, each with its latest result. A `file` change counts because the guard lets the next change follow it without a read.
- * A result in `cleared` (tool call ids), and a repeated read's note (`details.unchangedOf`) that points at one, no longer show the file.
+ * A result in `cleared` (tool call ids) no longer shows the file, nor does a repeated read's note (`details.unchangedOf`)
+ * whose result is cleared or no longer among `messages` (a compaction kept the note but cut what it points at).
  */
 export function seenFiles(messages: readonly MessageRef[], cwd: string, cleared: ReadonlySet<string> = new Set()): Map<string, SeenFile> {
   const calls = toolCallArguments(messages);
+  const shown = new Set(messages.flatMap(({ message }) => (isRecord(message) && message['role'] === 'toolResult' && !cleared.has(String(message['toolCallId'])) ? [String(message['toolCallId'])] : [])));
   const latest = new Map<string, SeenFile>();
   for (const { id, message } of messages) {
     if (isRecord(message) && message['role'] === 'custom' && message['customType'] === RESTORED_FILES_TYPE) {
@@ -100,31 +111,71 @@ export function seenFiles(messages: readonly MessageRef[], cwd: string, cleared:
     }
     if (!isRecord(message) || message['role'] !== 'toolResult' || message['isError'] === true) continue;
     const unchangedOf = isRecord(message['details']) ? message['details']['unchangedOf'] : undefined;
-    if (cleared.has(String(message['toolCallId'])) || (typeof unchangedOf === 'string' && cleared.has(unchangedOf))) continue;
+    if (cleared.has(String(message['toolCallId'])) || (typeof unchangedOf === 'string' && !shown.has(unchangedOf))) continue;
     const tool = String(message['toolName']);
     const args = tool === 'read' ? calls.get(String(message['toolCallId'])) : undefined;
-    const partial = args !== undefined && returnedContent(tool, args, message['content'], message['details']) === undefined;
-    const files = args ? readPaths(tool, args, cwd).map((file) => ({ file, line: typeof args['offset'] === 'number' ? args['offset'] : undefined })) : tool === 'file' ? changedFiles(message['details'], cwd) : [];
+    const view = args ? readView(tool, args, message['content'], message['details']) : undefined;
+    const offset = args && typeof args['offset'] === 'number' ? args['offset'] : undefined;
+    const changed = tool === 'file' ? changedFiles(message['details'], cwd) : [];
+    const files: ChangedFile[] = args ? readPaths(tool, args, cwd).map((file) => ({ file, line: offset })) : changed;
     const at = typeof message['timestamp'] === 'number' ? message['timestamp'] : undefined;
-    for (const { file, line } of files) latest.set(file, { file, id, at, workedAt: at, ...(line ? { line } : {}), ...(partial ? { partial } : {}) });
+    for (const { file, line, edit } of files) {
+      const shown = edit ? afterEdit(latest.get(file), edit, at) : shownBy(latest.get(file), view, at);
+      latest.set(file, { file, id, workedAt: at, ...(line ? { line } : {}), ...shown });
+    }
   }
   return latest;
 }
 
+/**
+ * What the context shows of a file after a result with `view` at `at`: a whole read, an image or a write shows it
+ * all; a range joins the earlier ones, and never takes back a whole view. Merged views date from the earliest result,
+ * so a file changed between them counts as changed.
+ */
+function shownBy(previous: SeenFile | undefined, view: ReadView | undefined, at: number | undefined): Pick<SeenFile, 'at' | 'partial' | 'lines'> {
+  if (!view || view.whole || !previous) return { at, ...(view && !view.whole ? partialView([], view) : {}) };
+  const first = previous.at === undefined || at === undefined ? undefined : Math.min(previous.at, at);
+  return { at: first, ...(previous.partial ? partialView(previous.lines ?? [], view) : {}) };
+}
+
+/**
+ * What the context shows of a file after this tool's own edit (`FileGuard.edited` is the live rule): the edit adds no
+ * view of the file, so a whole view stays whole and a partial one stays partial, with its ranges kept when the line
+ * count did not change and dropped when it did. An edit with no earlier view in the context shows only its diff.
+ */
+function afterEdit(previous: SeenFile | undefined, edit: { lineDelta?: number }, at: number | undefined): Pick<SeenFile, 'at' | 'partial' | 'lines'> {
+  if (previous && !previous.partial) return { at };
+  const kept = edit.lineDelta === 0 ? (previous?.lines ?? []) : [];
+  return { at, partial: true, ...(kept.length > 0 ? { lines: kept } : {}) };
+}
+
+function partialView(lines: readonly LineRange[], view: ReadView): Pick<SeenFile, 'partial' | 'lines'> {
+  const merged = mergeRanges(lines, view.lines);
+  return { partial: true, ...(merged.length > 0 ? { lines: merged } : {}) };
+}
+
+/** A file a result showed: the first line it concerns, and for an applied edit, how its line count moved. */
+interface ChangedFile {
+  file: string;
+  line: number | undefined;
+  edit?: { lineDelta?: number };
+}
+
 /** The files a `file` result changed, each with the first line its diff shows changed (`+12 …` or `-12 …`). */
-function changedFiles(details: unknown, cwd: string): Array<{ file: string; line: number | undefined }> {
+function changedFiles(details: unknown, cwd: string): ChangedFile[] {
   const outcomes = isRecord(details) && Array.isArray(details['outcomes']) ? details['outcomes'] : [];
   return outcomes.flatMap((outcome) => {
     if (!isRecord(outcome) || outcome['ok'] !== true || typeof outcome['path'] !== 'string') return [];
     const changed = typeof outcome['diff'] === 'string' ? /^[+-]\s*(\d+) /m.exec(outcome['diff']) : null;
-    return [{ file: resolveToolPath(cwd, outcome['path']), line: changed ? Number(changed[1]) : undefined }];
+    const lineDelta = typeof outcome['lineDelta'] === 'number' ? outcome['lineDelta'] : undefined;
+    return [{ file: resolveToolPath(cwd, outcome['path']), line: changed ? Number(changed[1]) : undefined, ...(outcome['type'] === 'edit' ? { edit: { ...(lineDelta !== undefined ? { lineDelta } : {}) } } : {}) }];
   });
 }
 
 /** The files the model's current context shows (a cleared result shows none), with when each was last shown, for `FileGuard.restore`. */
-export function contextReads(ctx: Pick<ExtensionContext, 'cwd' | 'sessionManager'>): Array<{ file: string; at: number; partial?: boolean }> {
+export function contextReads(ctx: Pick<ExtensionContext, 'cwd' | 'sessionManager'>): Array<{ file: string; at: number; partial?: boolean; lines?: LineRange[] }> {
   const cleared = new Set(clearedResults(ctx.sessionManager.getBranch()).keys());
   return [...seenFiles(contextMessages(ctx), ctx.cwd, cleared).values()].flatMap((seen) =>
-    seen.at === undefined ? [] : [{ file: seen.file, at: seen.at, ...(seen.partial ? { partial: true } : {}) }],
+    seen.at === undefined ? [] : [{ file: seen.file, at: seen.at, ...(seen.partial ? { partial: true, ...(seen.lines ? { lines: seen.lines } : {}) } : {}) }],
   );
 }

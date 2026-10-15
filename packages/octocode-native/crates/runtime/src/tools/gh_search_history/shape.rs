@@ -2,7 +2,6 @@
 //! partial state.
 use super::{HistoryOperation, HistorySearch, leads, rows};
 use crate::tools::gh_shared::{SEARCH_RESULT_CAP, SearchReach, pick_rows};
-use crate::tools::paging::push_warnings;
 use crate::tools::result::remove_null_fields;
 use octocode_github::HistoryPage;
 use serde_json::{Value, json};
@@ -82,19 +81,17 @@ impl Paging {
         }
     }
     /// The page facts; `totalPages` only beside an exact total (a capped
-    /// one states `partialReasons:["providerResultCap"]` instead).
+    /// one states `partialReasons:["providerResultCap"]` instead). The
+    /// cursor rides `next.nextPage`, bounded by the contract's `page`
+    /// maximum.
     fn pagination(&self, current: usize) -> Value {
         let facts = crate::response::pages::PageFacts::open(current, Some(self.per), self.more)
             .out_of_range(self.past_end);
-        let facts = match self.exact_total() {
+        match self.exact_total() {
             Some(total) => facts.with_total(total),
             None => facts,
-        };
-        let mut page = facts.to_value();
-        if self.more {
-            page["nextPage"] = json!(current + 1);
         }
-        page
+        .to_value()
     }
 }
 
@@ -151,9 +148,6 @@ pub(super) fn shape(
         )
     });
     if let Some(next_page) = next_page.flatten() {
-        if query.operation() == HistoryOperation::Commit {
-            value["pagination"]["nextPage"] = json!(next_page);
-        }
         value["next"]["nextPage"] = leads::next_page(query, next_page, paging.per);
     }
     remove_null_fields(&mut value);
@@ -166,7 +160,7 @@ pub(super) fn shape(
     {
         value["next"]["broadenSearch"] = lead;
     }
-    mark_partial(&mut value, paging, narrow);
+    disclose_provider_limits(&mut value, paging, narrow);
     value
 }
 
@@ -265,9 +259,9 @@ fn commits(query: &HistorySearch, items: Vec<Value>, paging: &Paging) -> Value {
             .collect::<Vec<_>>();
         let mut v = json!({"commits":commits});
         pick_rows(&mut v, "commits", &["commitSha"], &fields);
-        // `shape` adds the reachable `nextPage`. A complete list says so too
-        // (`hasMore:false`): the REST list has no total, so a missing block
-        // would leave the end of the history unstated.
+        // `shape` adds the reachable `next.nextPage`. A complete list says
+        // so too (`hasMore:false`): the REST list has no total, so a missing
+        // block would leave the end of the history unstated.
         v["pagination"] =
             crate::response::pages::PageFacts::open(paging.page, Some(paging.per), paging.more)
                 .out_of_range(paging.past_end)
@@ -296,9 +290,10 @@ pub(super) fn mark_empty(value: &mut Value, more: bool) {
     }
 }
 
-/// A capped or incomplete search is partial; the cap states GitHub's match
-/// count and gets its narrowing lead (`narrowScope`).
-fn mark_partial(value: &mut Value, paging: &Paging, narrow: Option<Value>) {
+/// A capped or incomplete search is partial (the last reachable page ends
+/// at a terminal limit); the cap states GitHub's match count and gets its
+/// narrowing lead (`narrowScope`).
+fn disclose_provider_limits(value: &mut Value, paging: &Paging, narrow: Option<Value>) {
     if !paging.incomplete && !paging.capped {
         return;
     }
@@ -307,22 +302,22 @@ fn mark_partial(value: &mut Value, paging: &Paging, narrow: Option<Value>) {
     } else {
         "providerIncompleteResults"
     };
+    // The reachable `totalItems` is not the match count: state GitHub's.
+    let count = paging.capped.then(|| {
+        format!(
+            "GitHub matched {} results; the first {SEARCH_RESULT_CAP} are reachable.",
+            paging.matched
+        )
+    });
+    let warnings = Vec::from_iter(count);
     if paging.more {
-        crate::tools::paging::mark_partial(value, reason, &[]);
+        crate::tools::paging::mark_partial(value, reason, &warnings);
     } else {
-        crate::tools::paging::terminal_limit(value, reason, &[]);
+        crate::tools::paging::terminal_limit(value, reason, &warnings);
     }
-    if paging.capped {
-        // The reachable `totalItems` is not the match count: state GitHub's.
-        push_warnings(
-            value,
-            [format!(
-                "GitHub matched {} results; the first {SEARCH_RESULT_CAP} are reachable.",
-                paging.matched
-            )],
-        );
-        if let Some(lead) = narrow {
-            value["next"]["narrowScope"] = lead;
-        }
+    if paging.capped
+        && let Some(lead) = narrow
+    {
+        value["next"]["narrowScope"] = lead;
     }
 }

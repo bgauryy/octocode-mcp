@@ -279,11 +279,7 @@ mod tests {
         // Hand-advanced cursors the guard found once it read past each file's
         // first `#[cfg(test)]`, each owed to its tool module's migration onto
         // `admitted`; the list only shrinks.
-        const PENDING: &[&str] = &[
-            // A page re-derived for a smaller page size is never checked
-            // against the contract maximum of `page`.
-            "tools/clasify/run/hydrate.rs",
-        ];
+        const PENDING: &[&str] = &[];
         let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
         let mut dirs = vec![src.clone()];
         let (mut found, mut pending) = (Vec::new(), Vec::new());

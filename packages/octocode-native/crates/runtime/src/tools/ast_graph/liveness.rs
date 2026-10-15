@@ -637,9 +637,8 @@ fn package_leaves(v: &Value) -> Vec<String> {
                     .next_back()
                     .unwrap_or(token)
                     .trim_matches(['\"', '\'']);
-                if [".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".mts", ".cts"]
-                    .iter()
-                    .any(|x| t.ends_with(x))
+                if octocode_engine::text::JS_TS_EXTENSIONS
+                    .contains(&octocode_engine::text::extension_of(t, false, "").as_str())
                 {
                     leaves.push(t.into())
                 }
@@ -757,6 +756,14 @@ pub(super) fn leaves_json(v: &Value, out: &mut Vec<String>) {
         _ => {}
     }
 }
+/// `path` with a built JS extension swapped for the TypeScript source it is
+/// built from first (`x.js` → `x.ts`, `x.mjs` → `x.mts`), when it has one.
+fn ts_twin(path: &str) -> Option<String> {
+    let (base, extension) = path.rsplit_once('.')?;
+    let source = octocode_engine::signatures::languages::js_source_swaps(extension).first()?;
+    Some(format!("{base}.{source}"))
+}
+
 /// The scanned source file for `p`, a path relative to the package
 /// directory `dir` (`.` for the scan root): `p` itself, its TypeScript
 /// twin, or the `src/` file a `dist/`/`build/`/`out/` output is built from.
@@ -773,29 +780,11 @@ pub(super) fn source_equivalent(
         }
     };
     let mut c = vec![p.to_owned()];
-    for (a, b) in [
-        (".js", ".ts"),
-        (".jsx", ".tsx"),
-        (".mjs", ".mts"),
-        (".cjs", ".cts"),
-    ] {
-        if let Some(s) = p.strip_suffix(a) {
-            c.push(format!("{s}{b}"));
-        }
-    }
+    c.extend(ts_twin(p));
     for d in ["dist/", "build/", "out/"] {
         if let Some(rest) = p.strip_prefix(d) {
             c.push(format!("src/{rest}"));
-            for (a, b) in [
-                (".js", ".ts"),
-                (".jsx", ".tsx"),
-                (".mjs", ".mts"),
-                (".cjs", ".cts"),
-            ] {
-                if let Some(s) = rest.strip_suffix(a) {
-                    c.push(format!("src/{s}{b}"));
-                }
-            }
+            c.extend(ts_twin(rest).map(|twin| format!("src/{twin}")));
             c.push("src/index.ts".into());
         }
     }

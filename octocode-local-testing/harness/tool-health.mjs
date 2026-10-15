@@ -40,6 +40,7 @@ import { ROOT, FIXTURES, startServer, expandShared, writeResults } from './mcp-c
 import { properties } from './lead-predicates.mjs';
 import { addBulkPullRequest, startMock } from './tool-health/mock-server.mjs';
 import { CASES } from './tool-health/cases.mjs';
+import { createQueryDefaults } from './query-defaults.mjs';
 import { createDriver, dataOf, rowsOf, statusClass } from './tool-health/driver.mjs';
 
 const started = performance.now();
@@ -60,6 +61,8 @@ const PAGE_LEADS = new Set(contract.continuationChannels.kinds.pages);
 const ERROR_CODES = new Set(Object.keys(contract.errorCodes));
 const CLI_ONLY = new Set(contract.tools.filter(t => t.cliOnly).map(t => t.name));
 const TOOLS = new Set(contract.tools.map(t => t.name));
+/** Parked tools (contract `disabled`) run on no surface, beta included. */
+const PARKED = new Set(contract.tools.filter(t => t.disabled).map(t => t.name));
 
 // ---- contract output validation (ajv is a root dev dependency)
 const require = createRequire(path.join(ROOT, 'package.json'));
@@ -72,6 +75,13 @@ const validateOutput = (tool, json) => {
   if (!validators.has(tool)) validators.set(tool, ajv.compile(contract.tools.find(t => t.name === tool).outputSchema));
   const validate = validators.get(tool);
   return validate(json) ? null : `${validate.errors[0].instancePath || '/'} ${validate.errors[0].message}`;
+};
+/** The canonical input schema's verdict on a whole call: null when it accepts. */
+const inputValidators = new Map();
+const validateInput = (tool, input) => {
+  if (!inputValidators.has(tool)) inputValidators.set(tool, ajv.compile(contract.tools.find(t => t.name === tool).inputSchema));
+  const validate = inputValidators.get(tool);
+  return validate(input) ? null : `${validate.errors[0].instancePath || '/'} ${validate.errors[0].message}`;
 };
 
 // ---- hermetic environment
@@ -131,8 +141,8 @@ async function mcpCall(server, tool, input) {
   return { surface: 'mcp', isError: entry.isError, raw, json, sc: json, text: entry.text, ms: entry.ms };
 }
 
-const firstError = json => { const row = rowsOf(json).find(r => r.status === 'error' || r.error || r.resources?.some(x => x.error)); const d = dataOf(row); const e = d?.resources?.find(x => x.error)?.error ?? d; return e ? `${e.errorCode}: ${String(e.error ?? '').slice(0, 140)}` : ''; };
-const EXIT = { ok: 0, empty: 1, invalid: 2 };
+const firstError = json => { const row = rowsOf(json).find(r => r.status === 'error' || r.error); const e = dataOf(row); return e ? `${e.errorCode}: ${String(e.error ?? '').slice(0, 140)}` : ''; };
+const EXIT = { ok: 0, empty: 1, invalid: 2, tool: 5 };
 const hasHintOrLead = data => {
   const hints = data?.hints;
   const n = hints && typeof hints === 'object' ? Object.entries(hints).filter(([k, v]) => k === 'text' ? v?.length : v?.tool).length : 0;
@@ -190,6 +200,29 @@ const needs = {
 // ---- the driver: static text of both surfaces, accepted query fields
 let driver;
 const queryFields = new Map(contract.tools.map(t => [t.name, properties(t.querySchema)]));
+
+// ---- one parked tool: the CLI refuses its happy and invalid seeds alike with
+// the one disabled error (exit 5) and does nothing; MCP never lists it (the
+// surfaces check). Its case stays for the day it returns.
+async function runParked(name, spec) {
+  const t0 = performance.now();
+  const disabled = { error: `Tool ${name} is not available in this native runtime: it is disabled in this build.`, errorCode: 'toolUnavailable' };
+  const checks = [];
+  const timings = [];
+  const resolve = query => (typeof query === 'function' ? query(ctx) : query);
+  for (const [label, query] of [['happy', spec.happy.query], ['invalid', spec.invalid.query]]) {
+    const res = await cliCall(name, { queries: [resolve(query)] });
+    timings.push({ phase: label, surface: 'cli', ms: res.ms });
+    const ok = res.status === EXIT.tool && JSON.stringify(res.raw) === JSON.stringify(disabled);
+    checks.push({ check: `parked.${label}`, ok, detail: `exit ${res.status} ${res.stdout.slice(0, 200)}` });
+  }
+  const failed = checks.filter(c => !c.ok);
+  return {
+    tool: name, status: failed.length ? 'FAIL' : 'PASS', reason: 'parked (disabled on every surface)', ms: Math.round(performance.now() - t0),
+    slowestMs: Math.max(...timings.map(t => t.ms)), calls: timings.length,
+    firstFailure: failed[0] ? `${failed[0].check}: ${failed[0].detail}` : undefined, checks, timings,
+  };
+}
 
 // ---- one tool
 async function runTool(name, spec) {
@@ -269,11 +302,11 @@ async function runTool(name, spec) {
     if (spec.page.na) na('continuation', spec.page.na);
     if (!skips.length) for (const walk of walks) {
       const tag = walk.label === 'page' ? 'continuation' : `walk.${walk.label}`;
-      record(`${tag}.lead`, PAGE_LEADS.has(walk.lead) || walk.chainKey, `${walk.lead} is ${PAGE_LEADS.has(walk.lead) ? '' : 'not '}a contract page channel`);
+      record(`${tag}.lead`, PAGE_LEADS.has(walk.lead), `${walk.lead} is ${PAGE_LEADS.has(walk.lead) ? '' : 'not '}a contract page channel`);
       const rowsFn = walk.rows ?? spec.channels?.[walk.lead] ?? spec.happy.rows;
       const unpaged = walk.unpaged ? await call(q(walk.unpaged), 'cli') : walk.label === 'page' ? happy.cli : null;
       const expected = walk.expect ? walk.expect(ctx) : unpaged && statusClass(unpaged.json) === 'ok' ? rowsFn(dataOf(rowsOf(unpaged.json)[0]), unpaged.json) : null;
-      const runs = await exploreOn(walk.label, withHints(walk.query), { chainKeys: walk.chainKey ? [walk.lead] : [], rows: (tool, key) => (tool === name && key === walk.lead ? rowsFn : spec.channels?.[key]) });
+      const runs = await exploreOn(walk.label, withHints(walk.query), { rows: (tool, key) => (tool === name && key === walk.lead ? rowsFn : spec.channels?.[key]) });
       for (const s of surfaces) {
         const report = runs[s];
         const chain = report.chains.find(c => c.key === walk.lead && c.from === 'seed');
@@ -343,7 +376,7 @@ async function runTool(name, spec) {
 
     // tool-specific extras (e.g. clone auth and follow-up leads, apply on a copy, disabled clasify)
     phase = 'extra';
-    if (spec.extra) for (const [check, ok, detail] of await spec.extra({ ...ctx, cwd, call, callOn, cliCall: (tool, input, { env: extraEnv, cwd: dir = cwd } = {}) => cliCall(tool, input, { cwd: dir, extraEnv }), q, happy, happyRuns, reports, skips, validateOutput })) record(check, ok, detail);
+    if (spec.extra) for (const [check, ok, detail] of await spec.extra({ ...ctx, cwd, call, callOn, cliCall: (tool, input, { env: extraEnv, cwd: dir = cwd } = {}) => cliCall(tool, input, { cwd: dir, extraEnv }), q, surfaces, happy, happyRuns, reports, skips, validateOutput, validateInput })) record(check, ok, detail);
   } finally {
     server?.close();
   }
@@ -392,8 +425,9 @@ try {
   surfaceServer = await mcpServer('schema', FIXTURE);
   const cliTools = (() => { try { return JSON.parse(schema.stdout).tools.map(t => t.name); } catch { return []; } })();
   const mcpTools = surfaceServer.tools.map(t => t.name);
-  const cliMissing = contractTools.filter(t => !cliTools.includes(t));
-  const mcpExpected = contract.tools.filter(t => !t.cliOnly).map(t => t.name);
+  const cliExpected = contract.tools.filter(t => !t.disabled).map(t => t.name);
+  const cliMissing = cliExpected.filter(t => !cliTools.includes(t));
+  const mcpExpected = contract.tools.filter(t => !t.cliOnly && !t.disabled).map(t => t.name);
   const mcpMissing = mcpExpected.filter(t => !mcpTools.includes(t));
   const mcpExtra = mcpTools.filter(t => !mcpExpected.includes(t));
   report.surfaces = { cliTools, mcpTools, cliMissing, mcpMissing, mcpExtra };
@@ -410,7 +444,7 @@ try {
   collect(surfaceServer.tools);
   try { collect(JSON.parse(schema.stdout)); } catch {}
   await Promise.all(contractTools.map(async t => { const r = await cliArgs(['schema', t]); try { collect(JSON.parse(r.stdout)); } catch {} }));
-  driver = createDriver({ validate: validateOutput, staticText: strings.join('\n'), tools: TOOLS, cliOnly: CLI_ONLY, propsOf: tool => queryFields.get(tool) ?? new Set() });
+  driver = createDriver({ validate: validateOutput, staticText: strings.join('\n'), tools: TOOLS, cliOnly: CLI_ONLY, propsOf: tool => queryFields.get(tool) ?? new Set(), defaultsOf: createQueryDefaults(contract.tools, ajv) });
   surfaceServer.close();
   surfaceServer = null;
 
@@ -423,7 +457,7 @@ try {
     while (queue.length) {
       const [name, spec] = queue.shift();
       let result;
-      try { result = await runTool(name, spec); } catch (error) { result = { tool: name, status: 'FAIL', firstFailure: `harness: ${error.stack?.split('\n').slice(0, 2).join(' ') ?? error}`, checks: [], timings: [] }; }
+      try { result = PARKED.has(name) ? await runParked(name, spec) : await runTool(name, spec); } catch (error) { result = { tool: name, status: 'FAIL', firstFailure: `harness: ${error.stack?.split('\n').slice(0, 2).join(' ') ?? error}`, checks: [], timings: [] }; }
       results.set(name, result);
       const line = `${result.status.padEnd(4)} ${name.padEnd(17)} ${String(result.ms ?? 0).padStart(6)}ms  slowest ${String(result.slowestMs ?? 0).padStart(5)}/${String(result.budgetMs ?? '-').padEnd(5)}ms  ${String(result.calls ?? 0).padStart(3)} calls  ${result.checks.filter(c => c.ok).length}/${result.checks.filter(c => c.ok !== null).length} checks`;
       const failedCount = result.checks.filter(c => c.ok === false).length;

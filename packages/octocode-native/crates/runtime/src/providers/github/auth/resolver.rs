@@ -197,7 +197,8 @@ impl Authentication {
             Ok(Some((_, source))) => {
                 let client_id = Some(login::client_id_for_host(
                     &host,
-                    self.config.env_value("OCTOCODE_GITHUB_CLIENT_ID"),
+                    self.config
+                        .env_value(crate::config::environment::OCTOCODE_GITHUB_CLIENT_ID),
                 ))
                 .filter(|id| !id.is_empty());
                 let refreshed = match client_id {
@@ -206,7 +207,10 @@ impl Authentication {
                     }
                     None => Err(ProviderError::new(
                         ProviderErrorKind::Configuration,
-                        "OCTOCODE_GITHUB_CLIENT_ID is required to refresh GitHub Enterprise credentials",
+                        format!(
+                            "{} is required to refresh GitHub Enterprise credentials",
+                            crate::config::environment::OCTOCODE_GITHUB_CLIENT_ID
+                        ),
                     )),
                 };
                 match refreshed {

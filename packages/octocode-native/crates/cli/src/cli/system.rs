@@ -19,7 +19,7 @@ fn auth_failure(code: &str, message: &str, next_step: Option<&str>, json_out: bo
 
 /// The declared code of a provider failure (`ProviderErrorKind` serializes
 /// to its `errorCodes` name).
-fn provider_code(error: &octocode_native::providers::github::ProviderError) -> String {
+fn provider_code(error: &octocode_github::ProviderError) -> String {
     serde_json::to_value(error.kind)
         .ok()
         .and_then(|value| value.as_str().map(str::to_owned))
@@ -40,10 +40,8 @@ async fn resolve_auth(
     runtime: &ToolRuntime,
     host: &str,
 ) -> Option<octocode_native::providers::github::AuthSelection> {
-    use octocode_native::providers::{
-        RequestBudget,
-        github::{AuthMode, Authentication},
-    };
+    use octocode_github::RequestBudget;
+    use octocode_native::providers::github::{AuthMode, Authentication};
     let auth = Authentication::new(std::sync::Arc::new(runtime.config().clone()));
     let budget = RequestBudget::with_timeout(std::time::Duration::from_secs(5), 0);
     auth.resolve(host, AuthMode::Inspect, &budget)
@@ -167,33 +165,7 @@ pub async fn login(
 
     // Refresh path: exchange the stored refresh token; no device flow, no TTY.
     if refresh {
-        let result = octocode_native::providers::github::login::refresh_auth_token_result_in_store(
-            &host,
-            client_id,
-            &credential_store,
-        )
-        .await;
-        if result.success {
-            let host_label = result.hostname.as_deref().unwrap_or("github.com");
-            if json_out {
-                return write_json(
-                    &json!({
-                        "success": true,
-                        "action": "refresh",
-                        "hostname": host_label,
-                        "username": result.username,
-                    }),
-                    true,
-                );
-            }
-            eprintln!("Refreshed credentials for {host_label}");
-            return 0;
-        }
-        let error = result
-            .error
-            .as_deref()
-            .unwrap_or("The stored credential could not be refreshed.");
-        return auth_failure("authentication", error, Some(LOGIN_NEXT_STEP), json_out);
+        return refresh_login(&host, client_id, &credential_store, json_out).await;
     }
 
     // Already-authenticated short-circuit: a stored OAuth credential for this
@@ -206,25 +178,7 @@ pub async fn login(
     if let Some(existing) = stored.as_ref().filter(|stored| {
         !force && !octocode_native::providers::github::login::is_token_expired(stored)
     }) {
-        let user = if existing.username.is_empty() {
-            host.clone()
-        } else {
-            existing.username.clone()
-        };
-        if json_out {
-            return write_json(
-                &json!({
-                    "success": true,
-                    "action": "none",
-                    "alreadyAuthenticated": true,
-                    "hostname": host,
-                    "username": existing.username,
-                }),
-                true,
-            );
-        }
-        println!("Already authenticated as {user} on {host}. Use `--force` to switch accounts.");
-        return 0;
+        return already_authenticated(existing, &host, json_out);
     }
 
     // Warn when an environment token is set: it takes priority over the stored
@@ -250,13 +204,84 @@ pub async fn login(
         return auth_failure("invalidInput", message, None, json_out);
     }
 
-    // Preserve the old login until the replacement has been authenticated and saved.
-    let endpoints = octocode_native::providers::github::login::LoginEndpoints::from_host(&host);
+    device_login(&host, client_id, &credential_store, json_out).await
+}
+
+/// `auth login --refresh`: exchange the stored refresh token.
+async fn refresh_login(
+    host: &str,
+    client_id: &str,
+    store: &octocode_native::providers::github::CredentialStore,
+    json_out: bool,
+) -> u8 {
+    let result = octocode_native::providers::github::login::refresh_auth_token_result_in_store(
+        host, client_id, store,
+    )
+    .await;
+    if result.success {
+        let host_label = result.hostname.as_deref().unwrap_or("github.com");
+        if json_out {
+            return write_json(
+                &json!({
+                    "success": true,
+                    "action": "refresh",
+                    "hostname": host_label,
+                    "username": result.username,
+                }),
+                true,
+            );
+        }
+        eprintln!("Refreshed credentials for {host_label}");
+        return 0;
+    }
+    let error = result
+        .error
+        .as_deref()
+        .unwrap_or("The stored credential could not be refreshed.");
+    auth_failure("authentication", error, Some(LOGIN_NEXT_STEP), json_out)
+}
+
+/// A live stored OAuth credential for `host`: left in place.
+fn already_authenticated(
+    existing: &octocode_native::providers::github::StoredCredentials,
+    host: &str,
+    json_out: bool,
+) -> u8 {
+    if json_out {
+        return write_json(
+            &json!({
+                "success": true,
+                "action": "none",
+                "alreadyAuthenticated": true,
+                "hostname": host,
+                "username": existing.username,
+            }),
+            true,
+        );
+    }
+    let user = if existing.username.is_empty() {
+        host
+    } else {
+        existing.username.as_str()
+    };
+    println!("Already authenticated as {user} on {host}. Use `--force` to switch accounts.");
+    0
+}
+
+/// The device flow; the old login stays until the replacement has been
+/// authenticated and saved.
+async fn device_login(
+    host: &str,
+    client_id: &str,
+    store: &octocode_native::providers::github::CredentialStore,
+    json_out: bool,
+) -> u8 {
+    let endpoints = octocode_native::providers::github::login::LoginEndpoints::from_host(host);
     match octocode_native::providers::github::login::login_device_flow_in_store(
         &endpoints,
         client_id,
         &tokio_util::sync::CancellationToken::new(),
-        &credential_store,
+        store,
     )
     .await
     {
@@ -294,7 +319,7 @@ pub fn logout(runtime: &ToolRuntime, json_out: bool) -> u8 {
 
 fn logout_with(
     runtime: &ToolRuntime,
-    delete: &dyn Fn(&str) -> Result<(), octocode_native::providers::github::ProviderError>,
+    delete: &dyn Fn(&str) -> Result<(), octocode_github::ProviderError>,
     json_out: bool,
 ) -> u8 {
     let view = runtime.inspect_config();
@@ -340,8 +365,8 @@ pub(super) fn cache(runtime: &ToolRuntime, action: super::commands::CacheAction)
             0
         }
         CacheAction::Clear => {
-            runtime.clear_github_cache();
-            println!("cleared GitHub content cache");
+            runtime.clear_response_caches();
+            println!("cleared the GitHub content and package registry caches");
             0
         }
     }
@@ -350,7 +375,7 @@ pub(super) fn cache(runtime: &ToolRuntime, action: super::commands::CacheAction)
 #[cfg(test)]
 mod auth_tests {
     use super::*;
-    use octocode_native::providers::github::{ProviderError, ProviderErrorKind};
+    use octocode_github::{ProviderError, ProviderErrorKind};
     use octocode_native::runtime::HostOptions;
     use std::{collections::BTreeMap, sync::Mutex};
 

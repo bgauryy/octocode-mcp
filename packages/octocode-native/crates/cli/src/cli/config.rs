@@ -82,7 +82,7 @@ pub fn show(runtime: &ToolRuntime, json_out: bool) -> u8 {
                 },
                 "envFiles": {
                     "global": {"path": view.global_env_path, "exists": view.global_env_path.is_file()},
-                    "project": {"path": view.project_env_path, "exists": view.project_env_path.is_file()},
+                    "project": {"path": view.project_env_path, "exists": view.project_env_exists},
                 },
                 "envKeys": view.loaded_keys,
                 "skippedProtected": view.skipped_protected,
@@ -115,7 +115,7 @@ pub fn show(runtime: &ToolRuntime, json_out: bool) -> u8 {
     println!(
         "  project  {}{}",
         view.project_env_path.display(),
-        found(view.project_env_path.is_file())
+        found(view.project_env_exists)
     );
     let list = |label: &str, keys: &[String]| {
         if !keys.is_empty() {
@@ -156,32 +156,50 @@ pub fn home(runtime: &ToolRuntime, json_out: bool) -> u8 {
     0
 }
 
+/// The environment variable `key` names: a setting path (`classification.api`)
+/// resolves to the variable that sets it; any other key is used as written.
+pub fn env_key(key: &str) -> &str {
+    octocode_native::config::CONFIG_FIELDS
+        .iter()
+        .find(|field| field.path == key)
+        .and_then(|field| field.env_name())
+        .unwrap_or(key)
+}
+
 /// `config get KEY`: the resolved value on stdout (nothing else, so
-/// `$(octocode config get KEY)` captures it); exit 1 when unset.
+/// `$(octocode config get KEY)` captures it); exit 1 when unset. A secret is
+/// masked, with the layer and file that hold it, so a person or agent can
+/// read it there.
 pub fn get(runtime: &ToolRuntime, key: &str, json_out: bool) -> u8 {
     let config = runtime.config();
     let value = config.env_value(key).filter(|value| !value.is_empty());
-    let source = value.map(|_| {
-        if config.dotenv.applied.iter().any(|applied| applied == key) {
-            config
-                .dotenv
-                .sources
-                .get(key)
-                .map_or("global", String::as_str)
+    let origin = value.and(config.env_origins.get(key));
+    let source = value.map(|_| origin.map_or("env", |origin| origin.scope.as_str()));
+    let path = origin.map(|origin| &origin.path);
+    let masked = octocode_native::config::is_secret_key(key);
+    let shown = value.map(|value| {
+        if masked {
+            octocode_engine::security::redaction_placeholder(key)
         } else {
-            "environment"
+            value.to_owned()
         }
     });
     if json_out {
         let code = write_json(
-            &json!({"key": key, "set": value.is_some(), "value": value, "source": source}),
+            &json!({"key": key, "set": value.is_some(), "value": shown, "source": source, "path": path}),
             true,
         );
         if code != 0 {
             return code;
         }
-    } else if let Some(value) = value {
-        println!("{value}");
+    } else if let Some(shown) = shown {
+        match (masked, path) {
+            (false, _) => println!("{shown}"),
+            (true, Some(path)) => {
+                println!("{shown} ({}: {})", source.unwrap_or("env"), path.display());
+            }
+            (true, None) => println!("{shown} (process environment)"),
+        }
     } else {
         eprintln!("{key}: unset");
     }

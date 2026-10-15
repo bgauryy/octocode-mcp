@@ -2130,9 +2130,9 @@
     },
     {
       "id": "C01",
-      "tool": "clasify",
+      "tool": "localFetch",
       "kind": "clasify",
-      "source": "W10 (prefilter locate) / clasify PLAN C1 shape",
+      "source": "W10 (prefilter locate) / clasify PLAN C1 shape; 2026-10-14 RFC jev-goals-and-evidence: Locate removed, re-aimed at localFetch classifiers",
       "question": "Where does the runtime Builder reject a worker thread count of zero? (builder.rs, 2,270 lines)",
       "mainGoal": "Zero worker threads check",
       "truth": {
@@ -2146,31 +2146,16 @@
       "truthSource": "builder.rs:583",
       "octocode": [
         {
-          "tool": "clasify",
+          "tool": "localFetch",
           "args": {
-            "resources": [
-              {
-                "id": "f",
-                "tool": "localFetch",
-                "query": {
-                  "path": "{{T}}/rust/tokio/src/runtime/builder.rs"
-                },
-                "prefilter": [
-                  "worker_threads"
-                ]
-              }
+            "path": "{{T}}/rust/tokio/src/runtime/builder.rs",
+            "classifiers": [
+              "Where the runtime Builder rejects a worker thread count of zero"
             ],
-            "questions": [
-              {
-                "id": "t",
-                "type": "locate",
-                "ask": "Where the runtime Builder rejects a worker thread count of zero"
-              }
-            ]
+            "unit": "lines",
+            "length": 120,
+            "minify": "none"
           }
-        },
-        {
-          "follow": "read"
         }
       ],
       "competitor": [
@@ -2189,9 +2174,9 @@
     },
     {
       "id": "C02",
-      "tool": "clasify",
+      "tool": "localFetch",
       "kind": "clasify",
-      "source": "W3 (semantic locate)",
+      "source": "W3 (semantic locate); 2026-10-14 RFC jev-goals-and-evidence: Locate removed, re-aimed at localFetch classifiers",
       "question": "Where is a task forced to return Pending because its coop budget is exhausted? (coop/mod.rs)",
       "mainGoal": "Where coop forces Pending",
       "truth": {
@@ -2204,31 +2189,16 @@
       "truthSource": "coop/mod.rs 359-361",
       "octocode": [
         {
-          "tool": "clasify",
+          "tool": "localFetch",
           "args": {
-            "resources": [
-              {
-                "id": "f",
-                "tool": "localFetch",
-                "query": {
-                  "path": "{{T}}/rust/tokio/src/task/coop/mod.rs"
-                },
-                "prefilter": [
-                  "Poll::Pending"
-                ]
-              }
+            "path": "{{T}}/rust/tokio/src/task/coop/mod.rs",
+            "classifiers": [
+              "Where a task is forced to return Pending because its cooperative budget is exhausted"
             ],
-            "questions": [
-              {
-                "id": "t",
-                "type": "locate",
-                "ask": "Where a task is forced to return Pending because its cooperative budget is exhausted"
-              }
-            ]
+            "unit": "lines",
+            "length": 120,
+            "minify": "none"
           }
-        },
-        {
-          "follow": "read"
         }
       ],
       "competitor": [
@@ -2247,9 +2217,9 @@
     },
     {
       "id": "C03",
-      "tool": "clasify",
+      "tool": "localFetch",
       "kind": "clasify",
-      "source": "DECISION F5 (described target, no literal; S9 A/B)",
+      "source": "DECISION F5 (described target, no literal; S9 A/B); 2026-10-14 RFC jev-goals-and-evidence: Locate removed, re-aimed at localFetch classifiers",
       "question": "In tokio's current-thread scheduler (current_thread/mod.rs, 925 lines), where does it periodically take tasks woken from other threads ahead of its own local queue so they are not starved?",
       "mainGoal": "Cross-thread task fairness",
       "truth": {
@@ -2262,34 +2232,16 @@
       "truthSource": "current_thread/mod.rs:335-337 `if self.tick % self.global_queue_interval == 0 { handle.next_remote_task()`",
       "octocode": [
         {
-          "tool": "clasify",
+          "tool": "localFetch",
           "args": {
-            "resources": [
-              {
-                "id": "f",
-                "tool": "localFetch",
-                "query": {
-                  "path": "{{T}}/rust/tokio/src/runtime/scheduler/current_thread/mod.rs"
-                }
-              }
+            "path": "{{T}}/rust/tokio/src/runtime/scheduler/current_thread/mod.rs",
+            "classifiers": [
+              "Where the scheduler periodically takes tasks woken from other threads ahead of its local queue so they are not starved"
             ],
-            "questions": [
-              {
-                "id": "t",
-                "type": "locate",
-                "ask": "Where the scheduler periodically takes tasks woken from other threads ahead of its local queue so they are not starved"
-              }
-            ]
+            "unit": "lines",
+            "length": 120,
+            "minify": "none"
           }
-        },
-        {
-          "walk": [
-            "clasify"
-          ],
-          "max": 2
-        },
-        {
-          "follow": "read"
         }
       ],
       "unfiltered": [
@@ -2315,9 +2267,9 @@
     },
     {
       "id": "C04",
-      "tool": "clasify",
+      "tool": "localFetch",
       "kind": "clasify",
-      "source": "DECISION F5 (described target, no literal; S9 A/B)",
+      "source": "DECISION F5 (described target, no literal; S9 A/B); 2026-10-14 RFC jev-goals-and-evidence: Locate removed, re-aimed at localFetch classifiers",
       "question": "In Django's multipart parser (multipartparser.py, 759 lines), where does it reject a request carrying more ordinary (non-file) form fields than the configured maximum?",
       "mainGoal": "Too many form fields check",
       "truth": {
@@ -2330,34 +2282,16 @@
       "truthSource": "multipartparser.py:205-206 `if settings.DATA_UPLOAD_MAX_NUMBER_FIELDS + 2 < num_post_keys: raise TooManyFieldsSent(` (the files limit at 260-263 is the distractor)",
       "octocode": [
         {
-          "tool": "clasify",
+          "tool": "localFetch",
           "args": {
-            "resources": [
-              {
-                "id": "f",
-                "tool": "localFetch",
-                "query": {
-                  "path": "{{T}}/python/django/http/multipartparser.py"
-                }
-              }
+            "path": "{{T}}/python/django/http/multipartparser.py",
+            "classifiers": [
+              "Where a request is rejected for carrying more ordinary non-file form fields than the configured maximum"
             ],
-            "questions": [
-              {
-                "id": "t",
-                "type": "locate",
-                "ask": "Where a request is rejected for carrying more ordinary non-file form fields than the configured maximum"
-              }
-            ]
+            "unit": "lines",
+            "length": 120,
+            "minify": "none"
           }
-        },
-        {
-          "walk": [
-            "clasify"
-          ],
-          "max": 2
-        },
-        {
-          "follow": "read"
         }
       ],
       "unfiltered": [

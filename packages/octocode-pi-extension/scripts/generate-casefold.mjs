@@ -3,7 +3,7 @@
  * Writes `src/team/casefold-table.ts`: the Unicode full case folding that reservation path keys use, taken from the
  * table the octocode-agents-communication package freezes (`unicode16.json`, built from CaseFolding.txt statuses C and
  * F), so a path has the same key in Pi's team and in that package. Run it after the package's table changes:
- *   node scripts/generate-casefold.mjs
+ *   yarn casefold:generate
  * `tests/coordination-contract.test.ts` fails while the file differs from what this renders.
  */
 import fs from 'node:fs';

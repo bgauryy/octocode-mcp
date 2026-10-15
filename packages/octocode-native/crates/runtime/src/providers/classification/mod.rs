@@ -2,17 +2,12 @@
 //!
 //! `clasify` sends evidence to a classification vendor for a typed
 //! judgment. Each vendor's built-in defaults (API host, model, endpoint path,
-//! wire format) and response contract live behind [`ClassificationProvider`],
-//! keyed by the vendor-neutral `classification.type` config selector.
+//! wire format) and response contract live behind [`ClassificationProvider`].
+//! One provider is built in ([`provider`]); no setting selects it.
 //!
-//! # Adding a vendor
-//! 1. Create `providers/classification/<vendor>.rs` implementing this trait.
-//! 2. Expose a `pub static VENDOR: Vendor = Vendor;` singleton.
-//! 3. Add one arm to [`provider_for`].
-//! 4. Add the vendor id to the `classification.type` enum in the config contract.
-//!
-//! Nothing else changes: transport, batch scheduling, context capture, and the
-//! clasify engine are all vendor-agnostic.
+//! Transport, batch scheduling, context capture, and the clasify engine are
+//! vendor-agnostic: a second vendor needs only another impl and a setting to
+//! choose between them.
 pub mod jev;
 
 pub(crate) mod gate;
@@ -48,11 +43,17 @@ pub trait ClassificationProvider: Send + Sync {
     /// Default API root used when `OCTOCODE_CLASSIFICATION_API_HOST` is unset.
     fn default_host(&self) -> &'static str;
 
-    /// Model sent to the vendor (no user-facing override).
+    /// Model used when neither the query nor configuration selects one.
     fn default_model(&self) -> &'static str;
 
     /// Path joined onto the API root to reach the vendor's endpoint.
     fn endpoint_path(&self) -> &'static str;
+
+    /// Read-only model catalog on the same configured API root.
+    fn models_path(&self) -> &'static str;
+
+    /// Provider capability opt-ins required by the prepared request.
+    fn request_headers(&self, images: bool, long_context: bool) -> reqwest::header::HeaderMap;
 
     /// Link to vendor setup docs; shown in `missingConfiguration` errors.
     fn docs_url(&self) -> &'static str;
@@ -60,7 +61,13 @@ pub trait ClassificationProvider: Send + Sync {
     /// Build the JSON body sent for a **single-question** request.
     /// The engine calls this once per state × question cell; the shape is
     /// entirely vendor-defined.
-    fn build_request(&self, state: &Value, question: &Value, model: &str) -> Value;
+    fn build_request(
+        &self,
+        state: &Value,
+        question: &Value,
+        model: &str,
+        assets: Option<&Value>,
+    ) -> Value;
 
     /// Build the JSON body for a **multi-question batch** over the same state.
     /// `questions` is a slice of `(original_index, &question_value)` pairs;
@@ -70,6 +77,7 @@ pub trait ClassificationProvider: Send + Sync {
         state: &Value,
         questions: &[(usize, &Value)],
         model: &str,
+        assets: Option<&Value>,
     ) -> Value;
 
     /// Extract the single answer object from a **non-batch** vendor response.
@@ -87,46 +95,27 @@ pub trait ClassificationProvider: Send + Sync {
         request: &Value,
         response: &Value,
     ) -> Result<(), ProviderContractError>;
+
+    /// Validate model metadata without interpreting model names or dates.
+    fn validate_models(&self, response: &Value) -> Result<(), ProviderContractError>;
 }
 
-/// Resolve the provider for a `classification.type` selector. Unknown values
-/// fall back to the default vendor (`jev`); config validation constrains the
-/// resolved value to the declared enum, so the fallback only guards misuse.
+/// The built-in classification provider.
 #[must_use]
-pub fn provider_for(vendor: &str) -> Option<&'static dyn ClassificationProvider> {
-    // Only `jev` is registered today; add a `match` arm per vendor id here.
-    match vendor {
-        "jev" => Some(&jev::JEV),
-        _ => None,
-    }
+pub fn provider() -> &'static dyn ClassificationProvider {
+    &jev::JEV
 }
 
 #[cfg(test)]
 mod tests {
-    use super::provider_for;
-
     #[test]
-    fn every_vendor_the_config_contract_allows_has_a_provider() {
-        // A vendor added to the contract without an arm here would make
-        // `ToolRuntime::new` refuse that configuration; fail here instead.
-        let field = crate::config::CONFIG_FIELDS
-            .iter()
-            .find(|field| field.path == "classification.type")
-            .expect("classification.type is a config field");
-        assert!(!field.values.is_empty());
-        for vendor in field.values {
-            assert!(
-                provider_for(vendor).is_some(),
-                "{vendor} has no provider arm"
-            );
-        }
-    }
-
-    #[test]
-    fn provider_for_resolves_only_registered_vendors() {
-        assert!(provider_for("jev").is_some());
-        assert!(provider_for("myvendor").is_none());
-        assert!(provider_for("").is_none());
-        assert!(provider_for("JEV").is_none());
+    fn the_built_in_provider_needs_no_setting() {
+        assert!(
+            crate::config::CONFIG_FIELDS
+                .iter()
+                .all(|field| !field.path.starts_with("classification.type")),
+            "no setting selects the provider"
+        );
+        assert!(!super::provider().default_host().is_empty());
     }
 }

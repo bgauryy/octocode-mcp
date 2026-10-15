@@ -25,6 +25,10 @@ flowchart LR
 ```
 Use the editing branch only when you change files.
 
+## Execution and coordination
+
+This package coordinates durable requests, outcomes, evidence and leases through one local database. Pi owns its external execution adapters in `@octocodeai/pi-extension`: `externalAgent`, `/octocode external`, API `external.call` and `octocode-pi-api external` share the same contract. Connect to an exact discovered Pi instance or an explicitly configured ACP executable with its real host vendor. The connection does not join this database or provide remote cloud coordination. Retain returned partial evidence and inspect uncertain execution before new work; never replay a prompt automatically. With Pi hooks enabled, `PreMessageSend` checks team/API/external sends and `PostMessageReceive` observes actual deliveries and replies without answering. Each host retains its own permissions.
+
 ## Discover and choose work
 
 Use `peers` for names, IDs, tasks, branches, worktree paths, and live presence.
@@ -46,7 +50,7 @@ Body, with evidence (paths, IDs, document names):
 Answer what was asked. Do not echo acknowledgements, readiness, FYIs, the transcript, this guide, or the catalog; follow up only for new evidence or an open blocker.
 Use a direct recipient when one owner must act.
 Use `notify_all` only for an announcement every live repository peer needs (sender excluded; passive, no reply, no backfill).
-Use `replyRequired:false` for information and `wake:"passive"` when the recipient needs no new turn; the two are independent.
+Send an FYI with no flags. A request is a question or task you need answered: set `replyRequired:true`; it wakes the recipient. `wake` defaults follow `replyRequired`; set `wake:"action"` to wake the recipient for an urgent FYI, or `wake:"passive"` on a request that is not urgent.
 
 | Received work | Action after handling |
 | --- | --- |
@@ -64,7 +68,7 @@ Delivery acceptance proves neither completed work nor user approval.
 
 Acquire `lock` or atomic `lock_many` before editing. Include the purpose in `reasoning`.
 Only `ok:true` grants a reservation. Retain each lease ID (`lease.id` from `lock`, `leases[].id` from `lock_many`) for renewal and release.
-On conflict, run the returned `next` (`wait:true`) and end your turn; owners are notified, and a "Lease granted" message wakes you holding the lease. Until then keep the request that needs it pending; a progress note does not complete it. On a deadlock refusal, release your held leases first.
+On conflict, run the returned `next` (`wait:true`) and stop affected edits; owners are notified, and a "Lease granted" message arrives when ownership is granted. Configured native delivery wakes an idle host; a raw CLI agent maintains presence and checks `inbox` at task boundaries. Until then keep the request that needs it pending; a progress note does not complete it. On a deadlock refusal, release your held leases first.
 Preserve peer changes. Leases and optional guards cover declared paths; they are not an OS fence.
 If identity, lease renewal, or write coverage fails, stop affected edits and reacquire live ownership.
 Use the binding's lifecycle policy. Managed owners maintain presence and live leases.

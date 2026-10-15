@@ -207,10 +207,10 @@ describe('agent tool with a scripted pi child', () => {
     expect(text).toContain('Started without the team: Team database unavailable: locked');
   });
 
-  it('strips terminal escapes and bidi controls from the child\'s report, error and stderr', async () => {
-    await expect(s.run({ task: 'hostile fail' })).rejects.toThrow(/^Subagent exited with code 3: boom red$/m);
+  it('shows terminal escapes and bidi controls in the child\'s report, error and stderr as visible escapes', async () => {
+    await expect(s.run({ task: 'hostile fail' })).rejects.toThrow('Subagent exited with code 3: \\u{1b}]0;pwned\\u{7}boom\\u{1b}[31m red\\u{202e}');
     const error = (await s.run({ task: 'hostile report' })).content[0].text as string;
-    expect(error).toContain('failed: bad provider\nRetry with a narrower task or do the work yourself. The partial answer is unverified.\n\nPartial answer:\nclick done');
+    expect(error).toContain('failed: bad\\u{1b}]0;title\\u{7} provider\nRetry with a narrower task or do the work yourself. The partial answer is unverified.\n\nPartial answer:\n\\u{1b}]8;;https://evil.example\\u{7}click\\u{1b}]8;;\\u{7} \\u{1b}[2Jdone\\u{202e}');
     expect(error).not.toMatch(/[\u001b\u0007\u202e]/u);
   });
 

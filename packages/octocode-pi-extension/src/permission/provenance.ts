@@ -1,5 +1,5 @@
 import type { ToolAnnotations, ToolCallEvent, ToolResultEvent } from '@earendil-works/pi-coding-agent';
-import { canonicalPath, isWithin, readPaths, repoKey, resolveToolPath, tildePath } from '../shared/home.js';
+import { canonicalPath, isWithin, readPaths, resolveToolPath, tildePath, workspaceRoot } from '../shared/home.js';
 import { secretProblem } from '../shared/sanitize.js';
 import { contentText, isRecord } from '../shared/util.js';
 import { readOnlyMcp, runsLater } from './gate.js';
@@ -55,7 +55,7 @@ interface Source {
 
 interface ProvenanceOptions {
   /** The repository root reads are trusted under (default: the git toplevel of `cwd`). */
-  workspaceRoot?: (cwd: string) => string;
+  workspaceRoot?: (cwd: string) => string | undefined;
   /** A tool's annotations (`pi.getAllTools()`); without them `mcp__*` tools count as open-world and not read-only. */
   annotations?: (toolName: string) => ToolAnnotations | undefined;
   maxShingles?: number;
@@ -157,14 +157,14 @@ class Provenance {
   private head = 0;
   private readonly sources = new Map<number, Source>();
   private nextSource = 1;
-  private readonly workspaceRoot: (cwd: string) => string;
+  private readonly workspaceRoot: (cwd: string) => string | undefined;
   private readonly annotations: (toolName: string) => ToolAnnotations | undefined;
   private readonly maxShingles: number;
   private readonly maxBytes: number;
   private readonly now: () => number;
 
   constructor(options: ProvenanceOptions = {}) {
-    this.workspaceRoot = options.workspaceRoot ?? ((cwd) => repoKey(cwd).root);
+    this.workspaceRoot = options.workspaceRoot ?? workspaceRoot;
     this.annotations = options.annotations ?? (() => undefined);
     this.maxShingles = options.maxShingles ?? MAX_SHINGLES;
     this.maxBytes = options.maxBytesPerResult ?? MAX_BYTES_PER_RESULT;
@@ -230,6 +230,7 @@ class Provenance {
     const { toolName, input } = event;
     if (toolName === 'web') return { kind: 'untrusted', label: `web ${str(input['url']) ?? `search "${str(input['query']) ?? ''}"`}` };
     if (toolName === 'browser') return { kind: 'untrusted', label: `browser ${str(input['url']) ?? str(input['action']) ?? ''}`.trim() };
+    if (toolName === 'externalAgent' && input['action'] === 'prompt') return { kind: 'untrusted', label: `externalAgent ${str(input['id']) ?? ''}`.trim() };
     if (toolName.startsWith('mcp__')) return this.annotations(toolName)?.openWorldHint === false ? undefined : { kind: 'untrusted', label: toolName };
     // Pi's built-in MCP resource reader: a server's text, like any open-world MCP result.
     if (toolName === 'read_mcp_resource') return { kind: 'untrusted', label: `${toolName} ${str(input['uri']) ?? ''}`.trim() };
@@ -242,7 +243,8 @@ class Provenance {
     }
     const target = toolName === 'read' ? readPaths(toolName, input, cwd)[0] : toolName === 'grep' ? resolveToolPath(cwd, str(input['path']) ?? '.') : undefined;
     if (!target) return undefined;
-    return isWithin(canonicalPath(target), canonicalPath(this.workspaceRoot(cwd))) ? undefined : { kind: 'private', label: `${toolName} ${tildePath(target)}` };
+    const root = this.workspaceRoot(cwd);
+    return root !== undefined && isWithin(canonicalPath(target), canonicalPath(root)) ? undefined : { kind: 'private', label: `${toolName} ${tildePath(target)}` };
   }
 
   /**
@@ -251,6 +253,7 @@ class Provenance {
    */
   private consequential(toolName: string, input: Record<string, unknown>, cwd: string): string[] {
     if (SHELL_TOOLS.has(toolName)) return [str(input['command']) ?? ''];
+    if (toolName === 'externalAgent') return input['action'] === 'connect' || input['action'] === 'prompt' ? leaves(input) : [];
     if (toolName === 'file' || toolName === 'edit' || toolName === 'write') {
       const changes = toolName === 'file' ? (Array.isArray(input['queries']) ? input['queries'] : []) : [input];
       return changes.flatMap((change) => {
@@ -265,7 +268,9 @@ class Provenance {
 
   /** `target` is an ordinary workspace file: inside the repository, not run or loaded by later sessions, not executable. */
   private storesData(target: string, cwd: string): boolean {
-    const root = canonicalPath(this.workspaceRoot(cwd));
+    const workspace = this.workspaceRoot(cwd);
+    if (workspace === undefined) return false;
+    const root = canonicalPath(workspace);
     const file = canonicalPath(resolveToolPath(cwd, target));
     return isWithin(file, root) && !runsLater(file, root) && !EXECUTABLE.test(file.slice(root.length));
   }
@@ -273,6 +278,7 @@ class Provenance {
   /** Arguments that leave the machine: the web URL or search query, a browser navigation, a network command. */
   private egress(toolName: string, input: Record<string, unknown>): string[] {
     const url = str(input['url']);
+    if (toolName === 'externalAgent' && input['action'] === 'prompt') return [str(input['text']) ?? ''];
     if (toolName === 'web') return [url, str(input['query'])].filter((value): value is string => value !== undefined);
     if (toolName === 'browser' && url && (input['action'] === 'navigate' || input['action'] === 'tab')) return [url];
     const command = SHELL_TOOLS.has(toolName) ? str(input['command']) : undefined;

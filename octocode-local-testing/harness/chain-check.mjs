@@ -611,7 +611,9 @@ async function liveChecks(tools, contract, tasks) {
 
 // ---------- main ----------
 const contract = JSON.parse(fs.readFileSync(CONTRACT, 'utf8'));
-const ALL_TOOLS = contract.tools.map(t => t.name);
+// A parked (`disabled`) tool runs on no surface, so it has no chain to check;
+// harness/rewrite.mjs proves astRewrite's refusal.
+const ALL_TOOLS = contract.tools.filter(t => !t.disabled).map(t => t.name);
 const TOOLS = opt('tools')?.split(',') ?? ALL_TOOLS;
 const tasks = JSON.parse(fs.readFileSync(path.join(ROOT, 'octocode-local-testing/harness/competitor-tasks.json'), 'utf8')).tasks;
 const generated = new Set([...fs.readFileSync(TOOL_TYPES, 'utf8').matchAll(/pub (?:struct|enum|type) (\w+)/g)].map(m => m[1]));
@@ -685,7 +687,7 @@ for (const t of TOOLS) {
   set('C2', liveAcc?.C2 ?? [], !!liveAcc);
   set('C3', [...zeroText.filter(z => z.startsWith(`${t}.`)), ...(liveAcc?.C3 ?? [])]);
   set('C4', liveAcc?.C4 ?? [], !!liveAcc);
-  set('C5', descriptionLint(t, pub[t].description, ALL_TOOLS, x => publishedFields[x]));
+  set('C5', descriptionLint(t, pub[t].description, ALL_TOOLS, x => publishedFields[x], allNames(contract.tools.find(x => x.name === t)?.outputSchema).names));
 }
 acceptance.C5.surface = { tools: Object.keys(defaultSurface).length, toolsList: Object.values(defaultSurface).reduce((a, b) => a + b, 0) + Math.max(0, Object.keys(defaultSurface).length - 1) + 2, instructions: defaultInstructionsBytes, total: budget.total, perTool: defaultSurface, clasifyAddition, reasons: budget.reasons };
 

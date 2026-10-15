@@ -27,7 +27,7 @@ export interface AgentProfile {
   permissions?: ActionClass[];
   /** Names in `permissions:` that cannot be declared; ignored, and reported when the profiles load. */
   ignoredPermissions?: string[];
-  /** Hash of the profile file's content (set when it is read from a file): a change to it is a new question for the user. */
+  /** Hash of the profile file's content (set when it is read from a file): any change to it (prompt, model, tools, permissions, flags) is a new question for the user. */
   hash?: string;
 }
 
@@ -146,7 +146,8 @@ export async function askSpawn(permission: Permission, ctx: Pick<ExtensionContex
   const reach = profileReach(profile, defaultTools);
   const declared = profile?.permissions ?? [];
   const may = reach.length > 0 ? `may ${reach.map((action) => REACH_TEXT[action]).join(' and ')}` : 'may only read and research';
-  const seen = `${name} ${profile?.hash ?? ''} ${declared.join(',')}`;
+  // One identity for both remembered answers: the profile's name and the hash of its whole content.
+  const seen = `${name} ${profile?.hash ?? ''}`;
   const needsAnswer = declared.length > 0 && !permission.profileSeen(seen);
   const verdict = await permission.check(ctx, {
     action: 'agent.spawn',
@@ -157,8 +158,8 @@ export async function askSpawn(permission: Permission, ctx: Pick<ExtensionContex
       `task: ${task}`,
     ],
     ...(needsAnswer ? { reasons: ['profile.permissions' as const], reason: declared.map((action) => `the profile declares ${action}: ${actionWhy(action)}`).join('\n') } : {}),
-    // Keyed by reach too: a profile edited to reach further later is a new question.
-    grant: { key: `${name} ${reach.join(',')}`, label: `${name} subagents` },
+    // Keyed by the profile's content, and by reach (which also depends on the parent's default tools): an edited profile is a new question.
+    grant: { key: `${seen} ${reach.join(',')}`, label: `${name} subagents` },
     ...(origin.toolCallId ? { toolCallId: origin.toolCallId } : {}),
     ...(origin.goal ? { purpose: origin.goal } : {}),
     cwd: ctx.cwd,

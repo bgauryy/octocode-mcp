@@ -1,40 +1,28 @@
-//! clasify: judge resources (supplied values or delegated reads) against
-//! typed questions. The runtime works on the public input shape everywhere;
-//! [`transport`] alone maps it onto the provider's wire form.
-pub(crate) mod admission;
-pub(crate) mod batch;
-pub(crate) mod cache;
-mod compact;
-pub(crate) mod context;
-pub(crate) mod handoff;
-pub mod items;
-mod locate;
-mod output;
-mod ranking;
-pub mod resource;
-pub(crate) mod run;
-pub(crate) mod stats;
-pub(crate) mod transport;
-
-use self::transport::{ClassificationError, check_budget, check_key, endpoint, post};
-pub(crate) use crate::contracts::tool_types::ClasifyQuery;
-use crate::providers::classification::gate::GateLease;
-use crate::{
-    providers::RequestBudget,
-    tools::id::{ToolId, clasify_policy},
+//! Public `clasify`: typed judgments and model discovery. Evaluation rows
+//! hold keyed `noul`/`choice`/`score`/`box` questions over
+//! exactly one state: the caller's literal `state`, or a `source` captured
+//! completely through the authorized readers ([`source_capture`]). The row
+//! returns the provider's validated answers, the answering model and usage,
+//! and source provenance; never a body. Explicit image assets are captured
+//! internally as original bytes, with immutable local inspection copies.
+//!
+//! Every row evaluates through the shared [`Evaluator`]: one provider client,
+//! judgment cache, single flight, retry policy and accounting for this tool
+//! and retrieval `classifiers` alike.
+use crate::contracts::tool_types::ClasifyQuery;
+use crate::runtime::{ExecutionContext, ExecutionError, domain_dispatch::DomainDispatcher};
+use crate::tools::judgment::{
+    ClassificationError, EvaluationInput, Evaluator, Judged, stats::ClassificationUsage,
 };
-use secrecy::SecretString;
-use serde_json::{Value, json};
-use std::collections::HashSet;
+use crate::tools::result::FailureKind;
+use crate::tools::source_capture::{self, Captured};
+use serde_json::{Map, Value, json};
 
-const MAX_REQUEST_BYTES: usize = 4 * 1024 * 1024;
-
-/// clasify's output facts: rows are resource-major matrices with their own
-/// projection.
+/// clasify's output facts: rows are keyed query results with their own shape.
 pub(crate) struct Output;
 impl crate::tools::output::ToolOutput for Output {
     fn fallback_hint(&self, _query: &Value) -> &'static str {
-        "Inspect resources, typed questions, and OCTOCODE_CLASSIFICATION_API."
+        "Inspect the questions, the state or source, and OCTOCODE_CLASSIFICATION_API."
     }
     fn evidence_kind(&self, _query: &Value, _data: &Value) -> &'static str {
         "provider"
@@ -44,64 +32,14 @@ impl crate::tools::output::ToolOutput for Output {
     }
 }
 
-/// Clasify's resolved provider settings. Clasify is its own product: it
-/// runs through [`ClasifySettings::call`] and never enters the ordinary
-/// results loop.
-#[derive(Clone)]
-pub(crate) struct ClasifySettings {
-    pub(crate) key: Option<SecretString>,
-    pub(crate) base_url: String,
-    pub(crate) endpoint_path: String,
-    pub(crate) model: String,
-    pub(crate) provider: &'static dyn crate::providers::classification::ClassificationProvider,
-    pub(crate) timeout: std::time::Duration,
-    pub(crate) retries: u32,
-    pub(crate) max_concurrency: usize,
+/// The finished `{"queries": rows}` envelope and its call-level facts.
+pub(crate) struct Receipts {
+    pub structured: Value,
+    pub failure: Option<FailureKind>,
 }
 
-impl ClasifySettings {
-    /// Run validated rows: each parses once into the generated
-    /// [`ClasifyQuery`], the tool entry's input.
-    pub(crate) fn call(
-        &self,
-        rows: &[Value],
-        rejected_rows: Vec<(usize, Value)>,
-        dispatcher: &crate::runtime::domain_dispatch::DomainDispatcher,
-        context: &crate::runtime::ExecutionContext,
-        record_usage: impl FnOnce(stats::ClassificationUsage),
-    ) -> Result<run::Receipts, crate::runtime::ExecutionError> {
-        let Some(key) = self.key.as_ref() else {
-            return Err(crate::runtime::ExecutionError::WorkerFailed);
-        };
-        // Contract validation passed, so a row that does not parse means core
-        // and native disagree on the contract.
-        let queries = rows
-            .iter()
-            .map(|row| serde_json::from_value::<ClasifyQuery>(row.clone()))
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|_| crate::runtime::ExecutionError::WorkerFailed)?;
-        run::execute(
-            &queries,
-            rejected_rows,
-            dispatcher,
-            context,
-            self.timeout,
-            run::ProviderConfig {
-                key,
-                base_url: &self.base_url,
-                endpoint_path: &self.endpoint_path,
-                model: &self.model,
-                provider: self.provider,
-                retries: self.retries,
-                max_concurrency: self.max_concurrency,
-            },
-            record_usage,
-        )
-    }
-}
-
-/// Semantic assessment is nondeterministic and billed per evaluation. Query
-/// replay cannot serve a page of the original judgment.
+/// Classification is nondeterministic and billed per evaluation, so a
+/// response window cannot replay a page of the original answers.
 pub(crate) fn reject_response_pagination(
     input: &Value,
 ) -> Result<(), crate::runtime::RuntimeError> {
@@ -111,860 +49,412 @@ pub(crate) fn reject_response_pagination(
     {
         return Err(crate::runtime::RuntimeError::new(
             "unsupportedResponsePagination",
-            "clasify response pagination is unsupported: replay would repeat context execution and inference.",
+            "clasify response pagination is unsupported: replay would repeat source capture and inference.",
         ));
     }
     Ok(())
 }
 
-fn request_error(message: &str) -> ClassificationError {
-    ClassificationError {
-        code: "invalidClassificationRequest".into(),
-        message: message.into(),
-        hints: vec!["Inspect the current clasify query schema.".into()],
-        ..Default::default()
+/// The largest state one row judges (`clasify.semanticPolicy.maxStateChars`).
+pub(crate) fn max_state_chars(long_context: bool) -> usize {
+    if long_context {
+        crate::tools::id::clasify_policy::MAX_LONG_CONTEXT_STATE_CHARS
+    } else {
+        crate::tools::id::clasify_policy::MAX_STATE_CHARS
     }
 }
 
-fn nullable_entry(value: &Value) -> bool {
-    matches!(
-        value,
-        Value::Null | Value::String(_) | Value::Array(_) | Value::Object(_)
-    )
+/// One parsed row: its id, the provider model it asks for, its question keys
+/// and provider questions (in key order), and its state or source.
+struct Row {
+    id: String,
+    model: Option<String>,
+    keys: Vec<String>,
+    questions: Vec<Value>,
+    input: Input,
+    assets: Option<Value>,
+    long_context: bool,
 }
 
-fn entry(value: &Value) -> bool {
-    !value.is_null() && nullable_entry(value)
+enum Input {
+    State(Value),
+    Source(Value),
+    Models,
 }
 
-/// Read tools a clasify resource may delegate to (contract `scoutTools`).
-pub(crate) fn is_context_tool(tool: ToolId) -> bool {
-    clasify_policy::SCOUT_TOOLS.contains(&tool)
-}
-
-/// Search tools that accept `candidateEvidence` (contract `candidateSearchTools`).
-pub(crate) fn is_candidate_search_tool(tool: ToolId) -> bool {
-    clasify_policy::CANDIDATE_SEARCH_TOOLS.contains(&tool)
-}
-
-/// File reads that accept `prefilter` (contract `fileReadTools`).
-pub(crate) fn is_file_read_tool(tool: ToolId) -> bool {
-    clasify_policy::FILE_READ_TOOLS.contains(&tool)
-}
-
-/// Contract `candidateEvidence` enum (`search` | `fileChunks`).
-pub(crate) use crate::contracts::tool_types::ClasifyQueryResourcesItemVariant1CandidateEvidence as CandidateEvidence;
-use crate::contracts::tool_types::{
-    ClasifyQueryQuestionsItem as Question, ClasifyQueryResourcesItem as Resource,
-    ClasifyQueryResourcesItemVariant1Query as ResourceQuery,
-    ClasifyQueryResourcesItemVariant1Tool as ResourceTool,
-};
-
-/// A resource's parsed `candidateEvidence`, when present and known.
-pub(crate) fn candidate_evidence(resource: &Value) -> Option<CandidateEvidence> {
-    resource
-        .get("candidateEvidence")
-        .and_then(Value::as_str)
-        .and_then(|value| value.parse().ok())
-}
-
-/// Whether a public question is a `locate` question.
-pub(crate) fn is_locate(question: &Value) -> bool {
-    question.get("type").and_then(Value::as_str) == Some("locate")
-}
-
-/// The read tool a resource names.
-fn read_tool(tool: ResourceTool) -> ToolId {
-    match tool {
-        ResourceTool::GhSearchRepo => ToolId::GhSearchRepo,
-        ResourceTool::GhSearchCode => ToolId::GhSearchCode,
-        ResourceTool::GhStructure => ToolId::GhStructure,
-        ResourceTool::GhGetFileContent => ToolId::GhGetFileContent,
-        ResourceTool::GhSearchHistory => ToolId::GhSearchHistory,
-        ResourceTool::GhGetHistoryItem => ToolId::GhGetHistoryItem,
-        ResourceTool::ArtifactSearch => ToolId::ArtifactSearch,
-        ResourceTool::LocalSearch => ToolId::LocalSearch,
-        ResourceTool::LocalFetch => ToolId::LocalFetch,
-        ResourceTool::StructureSearch => ToolId::StructureSearch,
-        ResourceTool::AstSearch => ToolId::AstSearch,
-        ResourceTool::AstTopology => ToolId::AstTopology,
-        ResourceTool::LspSearch => ToolId::LspSearch,
-    }
-}
-
-/// Apply `$body` to the `id` every question shape carries.
-macro_rules! question_id_field {
-    ($question:expr, |$id:ident| $body:expr) => {
-        match $question {
-            Question::Variant0 { id: $id, .. } => $body,
-            Question::Variant1 { id: $id, .. } => $body,
-            Question::Variant2 { id: $id, .. } => $body,
-            Question::Variant3 { id: $id, .. } => $body,
-            Question::Variant4 { id: $id, .. } => $body,
-        }
+fn parse(position: usize, row: &Value) -> Result<Row, ExecutionError> {
+    // Contract validation passed: a row that does not parse means core and
+    // native disagree on the contract. The provider receives the validated
+    // row's own values: the typed form would reorder choice labels and map
+    // keys, which are semantic input.
+    let _typed: ClasifyQuery =
+        serde_json::from_value(row.clone()).map_err(|_| ExecutionError::WorkerFailed)?;
+    let questions = row["questions"].as_object();
+    let input = if row["operation"] == "models" {
+        Input::Models
+    } else if row.get("state").is_some() {
+        Input::State(row["state"].clone())
+    } else {
+        Input::Source(row["source"].clone())
     };
+    Ok(Row {
+        id: row["id"]
+            .as_str()
+            .map_or_else(|| format!("q{position}"), str::to_owned),
+        model: row["model"].as_str().map(str::to_owned),
+        keys: questions
+            .into_iter()
+            .flat_map(|questions| questions.keys().cloned())
+            .collect(),
+        questions: questions
+            .into_iter()
+            .flat_map(|questions| questions.values().cloned())
+            .collect(),
+        input,
+        assets: row.get("assets").cloned(),
+        long_context: row["longContext"].as_bool() == Some(true),
+    })
 }
 
-/// The target a `locate` question asks for; `None` for every other type.
-fn locate_ask(question: &Question) -> Option<&str> {
-    match question {
-        Question::Variant0 {
-            type_: crate::contracts::tool_types::ClasifyQueryQuestionsItemVariant0Type::Locate,
-            ask,
-            ..
-        } => Some(ask.as_str()),
-        _ => None,
+/// Evaluate every row; a failed row keeps its own error and never hides a
+/// sibling's answers.
+pub(crate) fn call(
+    evaluator: &Evaluator,
+    rows: &[Value],
+    rejected_rows: Vec<(usize, Value)>,
+    dispatcher: &DomainDispatcher,
+    context: &ExecutionContext,
+) -> Result<Receipts, ExecutionError> {
+    if !evaluator.is_configured() {
+        return Err(ExecutionError::WorkerFailed);
     }
-}
-
-fn asks_locate(question: &Question) -> bool {
-    locate_ask(question).is_some()
-}
-
-fn question_id(question: &Question) -> Option<&str> {
-    question_id_field!(question, |id| id.as_deref().map(String::as_str))
-}
-
-fn resource_id(resource: &Resource) -> Option<&str> {
-    match resource {
-        Resource::Variant0 { id, .. } => id.as_deref().map(String::as_str),
-        Resource::Variant1 { id, .. } => id.as_deref().map(String::as_str),
-    }
-}
-
-/// File-read query fields that already select what to read; without one, a
-/// file resource reads the whole file (`fullContent`).
-const READ_SELECTORS: [&str; 7] = [
-    "fullContent",
-    "ranges",
-    "block",
-    "matchString",
-    "offset",
-    "length",
-    "minify",
-];
-
-/// One validated call's matrices as the runtime runs them: a lead's
-/// `{queries:[row]}` resource query becomes its row, implied fields are
-/// explicit (`fullContent` on a file read with no selector, `fileChunks` on a
-/// search resource), and every matrix, resource, and question has
-/// an `id`.
-/// [`normalize`] over validated rows in the public shape (test fixtures).
-#[cfg(test)]
-pub(crate) fn normalize_rows(rows: &mut [Value]) {
-    let mut queries = rows
+    let parsed = rows
         .iter()
-        .map(|row| serde_json::from_value::<ClasifyQuery>(row.clone()))
-        .collect::<Result<Vec<_>, _>>()
-        .unwrap_or_else(|error| panic!("a fixture matrix parses: {error}"));
-    normalize(&mut queries);
-    for (row, query) in rows.iter_mut().zip(&queries) {
-        *row = serde_json::to_value(query).unwrap_or_else(|error| panic!("{error}"));
-    }
-}
-
-pub(crate) fn normalize(queries: &mut [ClasifyQuery]) {
-    for query in queries.iter_mut() {
-        for resource in &mut query.resources {
-            normalize_resource(resource);
-        }
-    }
-    normalize_ids(queries);
-}
-
-fn normalize_resource(resource: &mut Resource) {
-    let Resource::Variant1 {
-        candidate_evidence,
-        query,
-        tool,
-        ..
-    } = resource
-    else {
-        return;
-    };
-    unwrap_lead_query(query);
-    let tool = read_tool(*tool);
-    if is_file_read_tool(tool)
-        && !READ_SELECTORS
+        .enumerate()
+        .map(|(position, row)| parse(position, row))
+        .collect::<Result<Vec<_>, _>>()?;
+    let budget = evaluator.budget(context.deadline, context.cancellation.clone());
+    let gate = evaluator.gate();
+    let outcomes = std::thread::scope(|scope| {
+        let tasks = parsed
             .iter()
-            .chain(&["queries"])
-            .any(|key| query.extra.contains_key(*key))
-    {
-        query.extra.insert("fullContent".into(), Value::Bool(true));
-    }
-    // Pages, located ranges and `hints.read` cite source lines, so a file
-    // read clasify captures is verbatim unless the caller chose a view. The
-    // compact (`standard`) view does carry source numbers in its gutter
-    // (local_fetch `select_view`, shared by localFetch and ghGetFileContent),
-    // but locate passages count positions from the page's first line
-    // (`locate.rs`: `start + index * passage_lines`) and `page_scope` gives
-    // a transformed view no source scope, so its dropped lines would shift
-    // every located line (a 320-line file judged as 237 compact lines
-    // located line 274 as 195).
-    if is_file_read_tool(tool)
-        && !query.extra.contains_key("minify")
-        && !query.extra.contains_key("queries")
-    {
-        query.extra.insert("minify".into(), Value::from("none"));
-    }
-    // Search candidates are judged on their files by default: snippets scored
-    // a 156-file scout's answer 0.69 in 18 calls, file chunks 0.97 in 4
-    // (2026-10-08). `candidateEvidence:"search"` keeps snippets.
-    if candidate_evidence.is_none() && is_candidate_search_tool(tool) {
-        *candidate_evidence = Some(CandidateEvidence::FileChunks);
-    }
-}
-
-/// A lead query (`{queries:[row]}`) pasted as a resource query reads its one
-/// row. Several rows stay as sent: the read rejects them, since a resource
-/// is one read.
-fn unwrap_lead_query(query: &mut ResourceQuery) {
-    let only_rows = query.owner.is_none()
-        && query.path.is_none()
-        && query.reasoning.is_none()
-        && query.ref_.is_none()
-        && query.repo.is_none()
-        && query.extra.len() == 1;
-    let row = match query.extra.get("queries").and_then(Value::as_array) {
-        Some(rows) if only_rows && rows.len() == 1 && rows[0].is_object() => rows[0].clone(),
-        _ => return,
-    };
-    if let Ok(row) = serde_json::from_value::<ResourceQuery>(row) {
-        *query = row;
-    }
-}
-
-fn next_unused_id(prefix: &str, position: usize, used: &mut HashSet<String>) -> String {
-    let base = format!("{prefix}-{}", position + 1);
-    let mut candidate = base.clone();
-    let mut suffix = 2usize;
-    while used.contains(&candidate) {
-        candidate = format!("{base}-{suffix}");
-        suffix += 1;
-    }
-    used.insert(candidate.clone());
-    candidate
-}
-
-/// Ids for the rows that lack one, unique within `rows`: `read` gets a row's
-/// id and `write` sets a derived one.
-fn fill_ids<T>(
-    rows: &mut [T],
-    prefix: &str,
-    read: impl Fn(&T) -> Option<&str>,
-    write: impl Fn(&mut T, &str),
-) {
-    let mut used = rows
-        .iter()
-        .filter_map(|row| read(row).map(str::to_owned))
-        .collect::<HashSet<_>>();
-    for (position, row) in rows.iter_mut().enumerate() {
-        if read(row).is_none() {
-            write(row, &next_unused_id(prefix, position, &mut used));
-        }
-    }
-}
-
-/// Correlation IDs are presentation metadata, not provider input. Derive them
-/// after contract validation so callers can omit repetitive bookkeeping while
-/// preserving stable keyed output and executable continuations. Derived ids
-/// (`matrix-2`, `resource-1-2`) always satisfy the id pattern.
-fn normalize_ids(queries: &mut [ClasifyQuery]) {
-    fill_ids(
-        queries,
-        "matrix",
-        |query| query.id.as_deref().map(String::as_str),
-        |query, id| query.id = id.parse().ok(),
-    );
-    for query in queries.iter_mut() {
-        fill_ids(
-            &mut query.resources,
-            "resource",
-            resource_id,
-            |resource, value| match resource {
-                Resource::Variant0 { id, .. } => *id = value.parse().ok(),
-                Resource::Variant1 { id, .. } => *id = value.parse().ok(),
-            },
-        );
-        fill_ids(
-            &mut query.questions,
-            "question",
-            question_id,
-            |question, value| question_id_field!(question, |id| *id = value.parse().ok()),
-        );
-    }
-}
-
-/// Context tools whose continuations move within one document. Search and
-/// discovery continuations reach new candidates instead, so clasify captures
-/// only the requested page and returns the rest through `next.clasify`.
-pub(crate) fn pages_within_resource(tool: ToolId) -> bool {
-    matches!(
-        tool,
-        ToolId::LocalFetch | ToolId::GhGetFileContent | ToolId::GhGetHistoryItem
-    )
-}
-
-/// Whether a tool resource can yield the contiguous original-source page that
-/// `locate` tags: an untransformed file read, or search hydrated with
-/// `fileChunks` (a page that is still gapped fails per page at runtime).
-/// Supplied values are left to the runtime page check.
-fn locate_capable(resource: &Resource) -> bool {
-    let Resource::Variant1 {
-        candidate_evidence,
-        query,
-        tool,
-        ..
-    } = resource
-    else {
-        return true;
-    };
-    let tool = read_tool(*tool);
-    if is_file_read_tool(tool) {
-        return query
-            .extra
-            .get("minify")
-            .and_then(Value::as_str)
-            .is_none_or(|minify| minify == "none");
-    }
-    is_candidate_search_tool(tool) && *candidate_evidence == Some(CandidateEvidence::FileChunks)
-}
-
-/// Resolve a matrix's questions once, before capture: each becomes
-/// `{id, question}` where `question` is the provider question, or the public
-/// `locate` question (its provider questions are built per page). Rejects
-/// what the contract schema cannot express: `locate` over resources without
-/// contiguous source lines.
-///
-/// Precondition: `query` passed `contracts::prepare_many_and_validate` and
-/// [`admission::check`] (the engine is clasify's only entry and admits every
-/// row; clasify never mints cursors) and then [`normalize`]. Shape, brief,
-/// id, context, prefilter-tool, and cell-limit rules are therefore not
-/// re-checked here.
-pub(crate) fn preflight(query: &ClasifyQuery) -> Result<Vec<Value>, ClassificationError> {
-    let mut resolved = Vec::with_capacity(query.questions.len());
-    for question in &query.questions {
-        let provider = if let Some(ask) = locate_ask(question) {
-            json!({"type":"locate","ask":ask})
-        } else {
-            let public = serde_json::to_value(question)
-                .map_err(|_| request_error("Questions must be typed question objects."))?;
-            transport::provider_question(&public)?
-        };
-        resolved.push(json!({"id":question_id(question),"question":provider}));
-    }
-    if query.questions.iter().any(asks_locate) {
-        let blocked = query
-            .resources
-            .iter()
-            .filter(|resource| !locate_capable(resource))
-            .filter_map(|resource| {
-                let id = resource_id(resource)?;
-                Some(match resource {
-                    Resource::Variant1 { tool, .. } => {
-                        format!("{id} ({})", read_tool(*tool).as_str())
-                    }
-                    Resource::Variant0 { .. } => id.to_owned(),
+            .map(|row| {
+                let (budget, gate) = (&budget, &gate);
+                scope.spawn(move || {
+                    let _enter = dispatcher.handle.enter();
+                    evaluate_row(evaluator, row, dispatcher, context, budget, gate)
                 })
             })
             .collect::<Vec<_>>();
-        if !blocked.is_empty() {
-            return Err(locate_unsupported(&format!(
-                "resources {} cannot supply them",
-                blocked.join(", ")
-            )));
+        tasks
+            .into_iter()
+            .map(|task| task.join().map_err(|_| ExecutionError::WorkerFailed))
+            .collect::<Vec<_>>()
+    });
+    let mut usage = ClassificationUsage::default();
+    for outcome in outcomes.iter().filter_map(|outcome| outcome.as_ref().ok()) {
+        if let RowOutcome::Judgment { judged, .. } = outcome {
+            usage.add(judged);
         }
     }
-    Ok(resolved)
+    evaluator.record(usage);
+    context.check()?;
+    let outcomes = outcomes.into_iter().collect::<Result<Vec<_>, _>>()?;
+    let mut output = Vec::with_capacity(parsed.len());
+    let mut kinds = Vec::with_capacity(parsed.len());
+    for (row, outcome) in parsed.iter().zip(outcomes) {
+        match outcome {
+            RowOutcome::Judgment {
+                judged,
+                captured,
+                assets,
+            } => {
+                kinds.push(judged.as_ref().err().map(error_kind));
+                output.push(match judged {
+                    Ok(judged) => answered(row, judged, captured, assets),
+                    Err(error) => failed(row, &error),
+                });
+            }
+            RowOutcome::Models(result) => {
+                kinds.push(result.as_ref().err().map(error_kind));
+                output.push(match result {
+                    Ok(mut models) => {
+                        models["id"] = json!(row.id);
+                        models
+                    }
+                    Err(error) => failed(row, &error),
+                });
+            }
+        }
+    }
+    // A call-level kind holds only when every row failed the same way.
+    let failure = if rejected_rows.is_empty() {
+        let first = kinds.first().copied().flatten();
+        first.filter(|kind| kinds.iter().all(|other| *other == Some(*kind)))
+    } else {
+        None
+    };
+    crate::runtime::engine::merge_rejected_rows(&mut output, rejected_rows);
+    let mut structured = json!({ "queries": output });
+    crate::response::rows::sanitize_fields(&mut structured, &dispatcher.security, context)?;
+    Ok(Receipts {
+        structured,
+        failure,
+    })
 }
 
-/// `classificationLocateUnsupported`, raised before capture (a resource that
-/// cannot supply source lines) or per page (a captured page that does not):
-/// one message stem, whichever stage found it. It states the per-call facts
-/// (what cannot supply lines); which resources can is the contract's rule.
-pub(crate) fn locate_unsupported(reason: &str) -> ClassificationError {
-    ClassificationError {
-        code: "classificationLocateUnsupported".into(),
-        message: format!("locate needs contiguous original source lines; {reason}."),
-        ..Default::default()
+enum RowOutcome {
+    Judgment {
+        judged: Result<Judged, ClassificationError>,
+        captured: Option<Box<Captured>>,
+        assets: Option<Value>,
+    },
+    Models(Result<Value, ClassificationError>),
+}
+
+fn rejected(error: ClassificationError) -> RowOutcome {
+    RowOutcome::Judgment {
+        judged: Err(error),
+        captured: None,
+        assets: None,
     }
 }
 
-/// Build the provider request for one state × provider question cell and
-/// serialize it once: the size check and the POST share those bytes.
-/// Delegates wire format to the vendor's [`ClassificationProvider::build_request`].
-fn prepare(
-    state: &Value,
-    question: &Value,
-    model: &str,
-    provider: &dyn crate::providers::classification::ClassificationProvider,
-) -> Result<(Value, bytes::Bytes), ClassificationError> {
-    if !entry(state) {
-        return Err(request_error(
-            "Context value must be a non-empty string, object, or array.",
+fn evaluate_row(
+    evaluator: &Evaluator,
+    row: &Row,
+    dispatcher: &DomainDispatcher,
+    context: &ExecutionContext,
+    budget: &octocode_github::RequestBudget,
+    gate: &crate::providers::classification::gate::GateLease,
+) -> RowOutcome {
+    let max_chars = max_state_chars(row.long_context);
+    let (state, captured) = match &row.input {
+        Input::Models => {
+            return RowOutcome::Models(dispatcher.handle.block_on(evaluator.models(budget, gate)));
+        }
+        Input::State(state) => (state.clone(), None),
+        Input::Source(source) => {
+            match source_capture::capture(source, dispatcher, context, max_chars) {
+                Ok(captured) => (captured.state.clone(), Some(Box::new(captured))),
+                Err(error) => {
+                    return rejected(error);
+                }
+            }
+        }
+    };
+    // Match input admission's serialized Unicode-scalar budget. Captured
+    // identities, line labels and JSON escapes count too; no source is
+    // judged from a silently shortened state.
+    if state.to_string().chars().count() > max_chars {
+        return rejected(ClassificationError::new(
+            if captured.is_some() {
+                "classificationContextTooLarge"
+            } else {
+                "classificationStateTooLarge"
+            },
+            format!(
+                "The serialized state exceeds the {max_chars}-character limit; nothing was judged."
+            ),
+            "Select narrower source ranges or split the state across query rows.",
         ));
     }
-    let request = provider.build_request(state, question, model);
-    let body = serde_json::to_vec(&request)
-        .map_err(|_| request_error("Classification request could not be serialized."))?;
-    if body.len() > MAX_REQUEST_BYTES {
-        return Err(request_error(
-            "Classification request exceeded the 4 MiB limit.",
-        ));
-    }
-    Ok((request, body.into()))
-}
-
-/// Judge one state × provider question with a single request.
-#[allow(clippy::too_many_arguments)]
-pub(crate) async fn judge(
-    state: &Value,
-    question: &Value,
-    key: SecretString,
-    base_url: &str,
-    endpoint_path: &str,
-    model: &str,
-    provider: &dyn crate::providers::classification::ClassificationProvider,
-    budget: RequestBudget,
-    retries: u32,
-    gate: &GateLease,
-) -> Result<Value, ClassificationError> {
-    check_budget(&budget)?;
-    let (request, body) = prepare(state, question, model, provider)?;
-    check_key(&key)?;
-    let (response, provider_calls) = post(
-        body,
-        &key,
-        endpoint(base_url, endpoint_path)?,
-        &budget,
-        retries,
+    let assets = match row
+        .assets
+        .as_ref()
+        .map(|assets| {
+            source_capture::assets::capture(assets, &state, &row.questions, dispatcher, context)
+        })
+        .transpose()
+    {
+        Ok(assets) => assets,
+        Err(error) => return rejected(error),
+    };
+    let judged = dispatcher.handle.block_on(evaluator.evaluate_prepared(
+        EvaluationInput {
+            state: &state,
+            questions: &row.questions,
+            assets: assets.as_ref().map(|assets| &assets.provider),
+            long_context: row.long_context,
+        },
+        row.model.as_deref(),
+        budget,
         gate,
-    )
-    .await?;
-    provider
-        .validate_response(&request, &response)
-        .map_err(|error| ClassificationError {
-            code: error.code().into(),
-            provider_calls,
-            ..ClassificationError::invalid_response(error.message)
-        })?;
-    let answer = provider
-        .extract_answer(&response)
-        .ok_or_else(|| ClassificationError {
-            provider_calls,
-            ..ClassificationError::invalid_response(
-                "Classification provider response is missing the expected answer.",
-            )
-        })?;
-    let mut result = transport::project(
-        question,
-        answer,
-        model,
-        response["model"].as_str().unwrap_or(model),
-        &response["usage"],
-    )
-    .map_err(|mut error| {
-        error.provider_calls = provider_calls;
-        error
-    })?;
-    result["usage"]["provider_calls"] = json!(provider_calls);
-    Ok(result)
+    ));
+    RowOutcome::Judgment {
+        judged,
+        captured,
+        assets: assets.map(|assets| assets.provenance),
+    }
+}
+
+fn answered(
+    row: &Row,
+    judged: Judged,
+    captured: Option<Box<Captured>>,
+    assets: Option<Value>,
+) -> Value {
+    let answers: Map<String, Value> = row.keys.iter().cloned().zip(judged.answers).collect();
+    let mut out = json!({
+        "id": row.id,
+        "model": judged.model,
+        "answers": answers,
+        "usage": {
+            "input_tokens": judged.input_tokens,
+            "output_tokens": judged.output_tokens,
+        },
+    });
+    if judged.replayed {
+        out["replayed"] = json!(true);
+    }
+    if let Some(assets) = assets {
+        out["assets"] = assets;
+    }
+    if let Some(captured) = captured {
+        if let Some(source) = captured.source {
+            out["source"] = source;
+        }
+        out["hints"] = json!({ "read": captured.read });
+    }
+    out
+}
+
+fn failed(row: &Row, error: &ClassificationError) -> Value {
+    let mut failure = json!({
+        "errorCode": error.code,
+        "error": error.message,
+    });
+    if !error.hints.is_empty() {
+        failure["hints"] = json!({ "text": error.hints });
+    }
+    for (name, lead) in &error.leads {
+        failure["hints"][name] = lead.clone();
+    }
+    json!({ "id": row.id, "error": failure })
+}
+
+fn error_kind(error: &ClassificationError) -> FailureKind {
+    error
+        .failure
+        .unwrap_or_else(|| crate::runtime::failure_kind(&error.code))
+}
+
+/// The batch rule the row schema cannot express: query ids stay unique so
+/// every answer row is correlatable. Core authors the wording (parity
+/// fixture `clasify.unique-query-ids`).
+pub(crate) fn admit<'a>(
+    queries: impl IntoIterator<Item = &'a Value>,
+) -> Result<(), crate::contracts::ContractValidationError> {
+    let mut seen = std::collections::HashSet::new();
+    for (index, query) in queries.into_iter().enumerate() {
+        if let Some(id) = query.get("id").and_then(Value::as_str)
+            && !seen.insert(id)
+        {
+            return Err(crate::contracts::ContractValidationError {
+                issues: vec![crate::contracts::ValidationIssue {
+                    rule_id: "clasify.unique-query-ids".into(),
+                    path: vec!["queries".into(), index.to_string(), "id".into()],
+                    message: format!("Duplicate query id: {id}"),
+                    schema: None,
+                    received: None,
+                }],
+            });
+        }
+    }
+    Ok(())
+}
+
+/// The reader a row's source needs: its tool, or localFetch for a URL (its
+/// capture is read back through localFetch).
+fn source_reader(source: &Value) -> &str {
+    source
+        .get("tool")
+        .and_then(Value::as_str)
+        .unwrap_or(crate::tools::id::ToolId::LocalFetch.as_str())
+}
+
+/// One issue for a row whose source reader this runtime does not enable.
+/// MCP rejects the same input through its availability-scoped schema.
+pub(crate) fn unavailable_source_issues(
+    query: &Value,
+    prefix: &[String],
+    availability: &crate::runtime::availability::ToolAvailability,
+) -> Vec<crate::contracts::ValidationIssue> {
+    let mut sources = Vec::new();
+    if let Some(source) = query.get("source") {
+        sources.push((source, vec!["source".to_owned()]));
+    }
+    if let Some(assets) = query["assets"].as_object() {
+        for (key, asset) in assets {
+            sources.push((
+                &asset["source"],
+                vec!["assets".into(), key.clone(), "source".into()],
+            ));
+        }
+    }
+    sources.into_iter().filter_map(|(source, suffix)| {
+    let reader = source_reader(source);
+    if availability.is_available(reader) { return None; }
+    let reason = availability
+        .get(reader)
+        .map_or_else(|| "no such tool.".to_owned(), |entry| entry.reason_text());
+    let mut path = prefix.to_vec();
+    path.extend(suffix);
+    Some(crate::contracts::ValidationIssue {
+        rule_id: "clasify.source-reader-available".into(),
+        path,
+        message: format!(
+            "This source reads through {reader}, which is disabled in this runtime: {reason} Supply the data as state instead."
+        ),
+        schema: None,
+        received: None,
+    })
+    }).collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::{Duration, Instant};
-    use wiremock::{
-        Mock, MockServer, ResponseTemplate,
-        matchers::{body_json, method},
-    };
 
-    /// The public yes/no question tests send.
-    fn question() -> Value {
-        json!({"type":"yesno","ask":"Assess only supplied context"})
-    }
-    /// The provider question `question()` runs as.
-    fn provider_question() -> Value {
-        json!({"type":"noul","instructions":"Assess only supplied context"})
-    }
-    /// One public matrix: `context` is a resource's `value` or
-    /// `tool`+`query`(+`candidateEvidence`) fields.
-    fn semantic_query(context: Value, question: Value) -> Value {
-        let mut resource = context;
-        resource["id"] = json!("resource-1");
-        let mut question = question;
-        question["id"] = json!("relevance.v1");
-        json!({
-            "id":"decision",
-            "reasoning":"Decide whether to inspect the retry branch.",
-            "mainGoal":"Searching for retry handling. Need files that decide a retry.",
-            "resources":[resource],
-            "questions":[question]
-        })
-    }
-    /// Clasify's engine path: contract validation of the public shape,
-    /// [`normalize`], then preflight.
-    fn admitted(query: &Value) -> Result<Vec<Value>, ClassificationError> {
-        let validated =
-            crate::contracts::prepare_many_and_validate("clasify", json!({"queries":[query]}))
-                .and_then(|validated| super::admission::check(&validated).map(|()| validated))
-                .map_err(|error| request_error(&format!("{error:?}")))?;
-        let mut typed = validated
-            .iter()
-            .map(|row| serde_json::from_value::<ClasifyQuery>(row.clone()))
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|error| request_error(&error.to_string()))?;
-        normalize(&mut typed);
-        preflight(&typed[0])
+    #[test]
+    fn duplicate_query_ids_reject_with_the_core_wording() {
+        let rows = [json!({"id":"a"}), json!({"id":"b"}), json!({"id":"a"})];
+        let error = admit(rows.iter()).expect_err("duplicate");
+        assert_eq!(error.issues[0].message, "Duplicate query id: a");
+        assert_eq!(error.issues[0].path, ["queries", "2", "id"]);
+        assert!(admit([json!({"id":"a"}), json!({})].iter()).is_ok());
     }
 
     #[test]
-    fn preflight_accepts_a_continuation_that_carries_the_running_best() {
-        let mut query = semantic_query(json!({"value":"x"}), question());
-        query["carry"] = json!({"t":[{"resourceId":"resource-1","exists":0.9,"line":1,"endLine":8,"probability":0.5}]});
-        assert!(admitted(&query).is_ok());
-        query["carry"] = json!("not a map");
-        assert!(admitted(&query).is_err());
-        query.as_object_mut().unwrap().remove("carry");
-        query["unexpected"] = json!(1);
-        assert!(admitted(&query).is_err());
-    }
-
-    #[test]
-    fn preflight_rejects_prefilter_outside_file_reads() {
-        let search = json!({"tool":"localSearch","query":{"path":"/repo","matchString":"retry"}});
-        let mut query = semantic_query(search, question());
-        query["resources"][0]["prefilter"] = json!(["retry"]);
-        // Contract validation owns the rule (same stage and wording as core).
-        let error = admitted(&query).expect_err("search resources cannot prefilter");
-        assert!(
-            error
-                .message
-                .contains("prefilter applies only to localFetch or ghGetFileContent"),
-            "{}",
-            error.message
-        );
-        let read = json!({"tool":"localFetch","query":{"path":"/repo/a.rs"}});
-        let mut query = semantic_query(read, question());
-        query["resources"][0]["prefilter"] = json!(["retry"]);
-        assert!(admitted(&query).is_ok());
-    }
-
-    fn budget() -> RequestBudget {
-        super::transport::budget(
-            Instant::now() + Duration::from_secs(30),
-            tokio_util::sync::CancellationToken::new(),
-        )
-    }
-
-    fn jev_provider() -> &'static dyn crate::providers::classification::ClassificationProvider {
-        &crate::providers::classification::jev::JEV
-    }
-
-    fn test_gate() -> GateLease {
-        crate::providers::classification::gate::lease("test://clasify-mod", 64)
-    }
-
-    /// The provider request for the admitted `{observation:true}` resource
-    /// carries only the model, the state and the provider question.
-    fn assert_observation_request(
-        query: &Value,
-        resolved: &[Value],
-        provider: &dyn crate::providers::classification::ClassificationProvider,
-    ) {
-        assert_eq!(
-            prepare(
-                &query["resources"][0]["value"],
-                &resolved[0]["question"],
-                "m",
-                provider,
-            )
-            .unwrap()
-            .0,
-            json!({"model":"m","state":{"observation":true},"questions":{"answer":provider_question()}})
-        );
-    }
-
-    #[test]
-    fn optional_briefs_stay_off_the_expanded_question() {
-        let provider = jev_provider();
-        let mut query = semantic_query(json!({"value":{"observation":true}}), question());
-        let resolved = admitted(&query).expect("briefs accepted");
-        assert!(resolved[0]["question"].get("mainGoal").is_none());
-        assert!(resolved[0]["question"].get("reasoning").is_none());
-        assert_observation_request(&query, &resolved, provider);
-        query["carry"] = json!({"t":[{"resourceId":"resource-1","exists":0.9,"line":1,"endLine":8,"probability":0.5}]});
-        assert!(admitted(&query).is_ok());
-        for field in ["reasoning", "mainGoal"] {
-            let mut missing = query.clone();
-            missing.as_object_mut().unwrap().remove(field);
-            assert!(admitted(&missing).is_ok(), "{field} is optional");
-            // A blank brief is dropped before validation.
-            for blank in [json!(""), json!(" \t\n")] {
-                let mut dropped = query.clone();
-                dropped[field] = blank;
-                assert!(admitted(&dropped).is_ok(), "blank {field} is dropped");
+    fn admission_matches_the_core_clasify_fixtures() {
+        let fixtures: Value =
+            serde_json::from_str(crate::contracts::generated::CONTRACT_FIXTURES_JSON)
+                .expect("generated fixture JSON");
+        let mut checked = 0;
+        for fixture in fixtures.as_array().expect("fixture array") {
+            if fixture["tool"] != "clasify" {
+                continue;
             }
-            for invalid in [Value::Null, json!(7), json!("x".repeat(501))] {
-                let mut bad = query.clone();
-                bad[field] = invalid.clone();
-                assert!(admitted(&bad).is_err(), "{field} {invalid}");
+            let validated =
+                crate::contracts::prepare_many_and_validate("clasify", fixture["input"].clone())
+                    .and_then(|rows| admit(rows.iter()));
+            assert_eq!(
+                validated.is_ok(),
+                fixture["accepted"].as_bool().expect("accepted"),
+                "{}: {validated:?}",
+                fixture["id"],
+            );
+            if let Some(expected) = fixture.get("messages") {
+                let messages = validated
+                    .expect_err("a worded fixture is rejected")
+                    .issues
+                    .into_iter()
+                    .map(|issue| Value::String(issue.message))
+                    .collect::<Vec<_>>();
+                assert_eq!(&Value::Array(messages), expected, "{}", fixture["id"]);
             }
+            checked += 1;
         }
-    }
-
-    #[test]
-    fn correlation_ids_are_validated_but_never_sent_to_the_provider() {
-        let provider = jev_provider();
-        let query = semantic_query(json!({"value":{"observation":true}}), question());
-        let resolved = admitted(&query).expect("valid correlation IDs");
-        assert_eq!(resolved[0]["id"], query["questions"][0]["id"]);
-        assert_observation_request(&query, &resolved, provider);
-        let mut null_id = query.clone();
-        null_id["questions"][0]["id"] = Value::Null;
-        let mut invalid_id = query.clone();
-        invalid_id["resources"][0]["id"] = json!("bad id");
-        for invalid in [null_id, invalid_id] {
-            assert!(admitted(&invalid).is_err());
-        }
-        let mut missing = query;
-        missing["questions"][0]
-            .as_object_mut()
-            .unwrap()
-            .remove("id");
-        let derived = admitted(&missing).expect("omitted ids are derived after validation");
-        assert_eq!(derived[0]["id"], "question-1");
-    }
-
-    #[test]
-    fn values_and_read_tool_resources_are_the_only_resources() {
-        for value in [json!(["one"]), json!({"value":"one"}), json!("literal")] {
-            assert!(admitted(&semantic_query(json!({"value":value}), question())).is_ok());
-        }
-        for tool in [
-            "localFetch",
-            "localSearch",
-            "structureSearch",
-            "astSearch",
-            "astTopology",
-            "lspSearch",
-            "ghSearchRepo",
-            "ghSearchCode",
-            "ghStructure",
-            "ghGetFileContent",
-            "ghSearchHistory",
-            "ghGetHistoryItem",
-            "artifactSearch",
-        ] {
-            assert!(admitted(&semantic_query(json!({"tool":tool,"query":{}}), question())).is_ok());
-        }
-        for tool in ["jev", "clasify", "astRewrite", "ghCloneRepo", "unknown"] {
-            assert!(
-                admitted(&semantic_query(json!({"tool":tool,"query":{}}), question())).is_err()
-            );
-        }
-        for context in [
-            json!({"tool":"localSearch","query":{},"candidateEvidence":"search"}),
-            json!({"tool":"localSearch","query":{},"candidateEvidence":"fileChunks"}),
-            json!({"tool":"ghSearchCode","query":{},"candidateEvidence":"search"}),
-            json!({"tool":"ghSearchCode","query":{},"candidateEvidence":"fileChunks"}),
-        ] {
-            assert!(admitted(&semantic_query(context, question())).is_ok());
-        }
-        for context in [
-            json!({"tool":"localFetch","query":{},"candidateEvidence":"fileChunks"}),
-            json!({"tool":"localFetch","query":{},"candidateEvidence":"search"}),
-            json!({"tool":"ghStructure","query":{},"candidateEvidence":"search"}),
-            json!({"tool":"ghSearchRepo","query":{},"candidateEvidence":"fileChunks"}),
-            json!({"tool":"localSearch","query":{},"candidateEvidence":"unknown"}),
-        ] {
-            assert!(admitted(&semantic_query(context, question())).is_err());
-        }
-        for invalid in [
-            semantic_query(json!({"value":true}), question()),
-            semantic_query(
-                json!({"value":null,"tool":"localFetch","query":{}}),
-                question(),
-            ),
-            semantic_query(json!({"value":null}), question()),
-        ] {
-            assert!(admitted(&invalid).is_err());
-        }
-    }
-
-    #[test]
-    fn locate_is_rejected_before_capture_for_resources_without_source_lines() {
-        let locate = json!({"type":"locate","ask":"retry condition"});
-        for context in [
-            json!({"tool":"localFetch","query":{}}),
-            json!({"tool":"localFetch","query":{"minify":"none"}}),
-            json!({"tool":"ghGetFileContent","query":{}}),
-            json!({"tool":"localSearch","query":{},"candidateEvidence":"fileChunks"}),
-            json!({"tool":"ghSearchCode","query":{},"candidateEvidence":"fileChunks"}),
-            // A search resource under locate reads fileChunks by default.
-            json!({"tool":"localSearch","query":{}}),
-            json!({"value":"supplied"}),
-        ] {
-            assert!(admitted(&semantic_query(context, locate.clone())).is_ok());
-        }
-        for context in [
-            json!({"tool":"localFetch","query":{"minify":"standard"}}),
-            json!({"tool":"ghGetFileContent","query":{"minify":"symbols"}}),
-            json!({"tool":"ghSearchCode","query":{},"candidateEvidence":"search"}),
-            json!({"tool":"structureSearch","query":{}}),
-            json!({"tool":"astSearch","query":{}}),
-            json!({"tool":"astTopology","query":{}}),
-            json!({"tool":"lspSearch","query":{}}),
-            json!({"tool":"ghSearchRepo","query":{}}),
-            json!({"tool":"ghStructure","query":{}}),
-            json!({"tool":"ghSearchHistory","query":{}}),
-            json!({"tool":"ghGetHistoryItem","query":{}}),
-            json!({"tool":"artifactSearch","query":{}}),
-        ] {
-            let error = admitted(&semantic_query(context.clone(), locate.clone()))
-                .expect_err("locate needs source lines");
-            assert_eq!(error.code, "classificationLocateUnsupported", "{context}");
-            assert!(error.message.contains("resource-1"));
-            // Per-call facts only: the blocked resource and its tool; the
-            // routing rule is the contract's, not a hint on every failure.
-            let tool = context["tool"].as_str().unwrap_or_default();
-            assert!(
-                error.message.contains(&format!("({tool})")),
-                "{}",
-                error.message
-            );
-            assert!(error.hints.is_empty(), "{:?}", error.hints);
-            assert!(admitted(&semantic_query(context, question())).is_ok());
-        }
-    }
-
-    #[test]
-    fn prepare_rejects_empty_state_and_frames_the_provider_question() {
-        let provider = jev_provider();
-        assert_eq!(
-            prepare(&Value::Null, &provider_question(), "m", provider)
-                .expect_err("null context is invalid")
-                .message,
-            "Context value must be a non-empty string, object, or array."
-        );
-        assert_eq!(
-            prepare(&json!({"x":1}), &provider_question(), "m", provider)
-                .unwrap()
-                .0,
-            json!({"model":"m","state":{"x":1},"questions":{"answer":provider_question()}})
-        );
-        let (request, body) =
-            prepare(&json!({"x":1}), &provider_question(), "m", provider).unwrap();
-        assert_eq!(body, serde_json::to_vec(&request).unwrap());
-    }
-
-    #[tokio::test]
-    async fn each_primitive_is_projected_without_provider_extras() {
-        let provider = jev_provider();
-        for (question, answer) in [
-            (provider_question(), json!({"type":"noul","noul":0.8})),
-            (
-                json!({"type":"choice","instructions":"Pick","criteria":{"a":"First","b":"Second"}}),
-                json!({"type":"choice","choice":"a","confidence":0.8,"probabilities":{"a":0.8,"b":0.2}}),
-            ),
-            (
-                json!({"type":"score","instructions":"Rate","criteria":[{"path":"/literal/criterion"},"Good"]}),
-                json!({"type":"score","score":0.75,"confidence":0.8,"probabilities":{"0":0.25,"1":0.75},"legend":{"0":{"path":"/literal/criterion"},"1":"Good"}}),
-            ),
-        ] {
-            let server = MockServer::builder().start().await;
-            let state = json!({"context":"HIDDEN_BODY"});
-            let mut supplied = answer.clone();
-            supplied["content"] = json!("HIDDEN_BODY");
-            Mock::given(method("POST")).and(body_json(prepare(&state, &question, "m", provider).unwrap().0))
-                .respond_with(ResponseTemplate::new(200).set_body_json(json!({"model":"provider-model","answers":{"answer":supplied},"content":"HIDDEN_BODY","usage":{"input_tokens":10,"output_tokens":1,"content":"HIDDEN_BODY"}})))
-                .expect(1).mount(&server).await;
-            let result = judge(
-                &state,
-                &question,
-                SecretString::from("test-key"),
-                &server.uri(),
-                "v1/systemone",
-                "m",
-                provider,
-                budget(),
-                0,
-                &test_gate(),
-            )
-            .await
-            .unwrap();
-            // The provider's yes/no answer is published as `yesno`.
-            let public = if answer["type"] == "noul" {
-                json!({"type":"yesno","yesno":answer["noul"]})
-            } else {
-                answer.clone()
-            };
-            assert_eq!(
-                result,
-                json!({"requestedModel":"m","resolvedModel":"provider-model","answer":public,"usage":{"input_tokens":10,"output_tokens":1,"provider_calls":1}})
-            );
-            assert!(!result.to_string().contains("HIDDEN_BODY"));
-        }
-    }
-
-    #[tokio::test]
-    async fn invalid_and_cancelled_requests_never_reach_provider() {
-        let server = MockServer::builder().start().await;
-        Mock::given(method("POST"))
-            .respond_with(ResponseTemplate::new(500))
-            .expect(0)
-            .mount(&server)
-            .await;
-        let cancelled = budget();
-        cancelled.cancellation.cancel();
-        assert_eq!(
-            judge(
-                &json!({"state":true}),
-                &provider_question(),
-                SecretString::from("test-key"),
-                &server.uri(),
-                "v1/systemone",
-                "m",
-                jev_provider(),
-                cancelled,
-                0,
-                &test_gate(),
-            )
-            .await
-            .unwrap_err()
-            .code,
-            "cancelled"
-        );
-    }
-
-    #[tokio::test]
-    async fn provider_answer_id_or_type_drift_is_rejected() {
-        for answer in [
-            json!({}),
-            json!({"answer":{"type":"choice"}}),
-            json!({"wrong":{"type":"noul","noul":0.8}}),
-        ] {
-            let server = MockServer::builder().start().await;
-            Mock::given(method("POST")).respond_with(ResponseTemplate::new(200).set_body_json(json!({"model":"m","answers":answer,"usage":{"input_tokens":1,"output_tokens":1}}))).expect(1).mount(&server).await;
-            assert_eq!(
-                judge(
-                    &json!({"state":true}),
-                    &provider_question(),
-                    SecretString::from("test-key"),
-                    &server.uri(),
-                    "v1/systemone",
-                    "m",
-                    jev_provider(),
-                    budget(),
-                    0,
-                    &test_gate(),
-                )
-                .await
-                .unwrap_err()
-                .code,
-                "invalidClassificationResponse"
-            );
-        }
+        assert!(checked >= 10, "clasify fixtures: {checked}");
     }
 }

@@ -45,9 +45,16 @@ function adoptFullOutput(text: string, from: string | undefined, dir: string): {
   return { text: text.split(from).join(shortPath(to)), path: to };
 }
 
-/** The timeout a foreground call runs with: what it asked for, else `DEFAULT_BASH_TIMEOUT`. */
-export function effectiveTimeout(requested: unknown): number {
-  return typeof requested === 'number' && Number.isFinite(requested) && requested > 0 ? requested : DEFAULT_BASH_TIMEOUT;
+/** The longest a foreground command may hold a turn, in seconds; a longer one belongs in the background. */
+export const MAX_FOREGROUND_TIMEOUT = 60 * 60;
+
+/** What the result says when a foreground timeout was cut to `MAX_FOREGROUND_TIMEOUT`. */
+const CLAMP_NOTE = `timeout clamped to ${MAX_FOREGROUND_TIMEOUT} s; use background: true for longer`;
+
+/** The timeout a foreground call runs with: what it asked for (at most `MAX_FOREGROUND_TIMEOUT`), else `DEFAULT_BASH_TIMEOUT`. */
+export function effectiveTimeout(requested: unknown): { seconds: number; clamped: boolean } {
+  if (typeof requested !== 'number' || !Number.isFinite(requested) || requested <= 0) return { seconds: DEFAULT_BASH_TIMEOUT, clamped: false };
+  return requested > MAX_FOREGROUND_TIMEOUT ? { seconds: MAX_FOREGROUND_TIMEOUT, clamped: true } : { seconds: requested, clamped: false };
 }
 
 /** The notice for jobs found running after their Pi died (`reapOrphanJobs`). */
@@ -157,7 +164,7 @@ export function registerBashTool(
     promptGuidelines: [],
     parameters: Type.Object({
       command: Type.String({ description: 'Shell command to execute' }),
-      timeout: Type.Optional(Type.Number({ description: `Timeout in seconds; foreground default ${DEFAULT_BASH_TIMEOUT}s. A background job has none unless given` })),
+      timeout: Type.Optional(Type.Number({ description: `Timeout in seconds; foreground default ${DEFAULT_BASH_TIMEOUT}s, at most ${MAX_FOREGROUND_TIMEOUT}s. A background job has none unless given` })),
       background: Type.Optional(Type.Boolean({ description: 'Start the command and return at once; its exit arrives later as a message. For servers, watchers and long builds' })),
     }),
     async execute(toolCallId, params, signal, onUpdate, ctx) {
@@ -176,7 +183,7 @@ export function registerBashTool(
         ].join('\n');
         return { content: [{ type: 'text' as const, text }], structuredContent: { job: job.id, pid: job.pid, log: job.log }, details: { job: job.id, pid: job.pid, log: job.log } as BashDetails };
       }
-      const timeout = effectiveTimeout(params.timeout);
+      const { seconds: timeout, clamped } = effectiveTimeout(params.timeout);
       // Pi reports the spill file in its updates' details; a timeout or abort throws, and only the updates name it then.
       let spilled: string | undefined;
       let group: number | undefined;
@@ -193,7 +200,8 @@ export function registerBashTool(
           ctx,
         );
         const stray = group === undefined ? undefined : strayNote(group);
-        const result = stray ? { ...raw, content: [{ type: 'text' as const, text: `${contentText(raw.content)}\n\n${stray}` }] } : raw;
+        const notes = [stray, clamped ? `(${CLAMP_NOTE})` : undefined].filter((note) => note !== undefined).join('\n\n');
+        const result = notes ? { ...raw, content: [{ type: 'text' as const, text: `${contentText(raw.content)}\n\n${notes}` }] } : raw;
         const details: BashDetails = { ...result.details };
         if (!details.fullOutputPath) return { ...result, details };
         const moved = adoptFullOutput(contentText(result.content), details.fullOutputPath, jobs.logDir());
@@ -203,8 +211,9 @@ export function registerBashTool(
         return { ...result, ...structured, content: [{ type: 'text' as const, text: moved.text }], details: { ...details, fullOutputPath: moved.path } };
       } catch (error) {
         const message = adoptFullOutput(errorMessage(error), spilled, jobs.logDir()).text;
-        if (!/Command timed out after/.test(message)) throw new Error(message);
-        throw new Error(`${message}.\n${RERUN_HINT} with a longer timeout, or with background: true and check its log; if it waits for input, pass the input or a non-interactive flag.`);
+        if (!/Command timed out after/.test(message)) throw new Error(clamped ? `${message}\n\n(${CLAMP_NOTE})` : message);
+        const how = clamped ? `with background: true and check its log (${CLAMP_NOTE})` : 'with a longer timeout, or with background: true and check its log';
+        throw new Error(`${message}.\n${RERUN_HINT} ${how}; if it waits for input, pass the input or a non-interactive flag.`);
       }
     },
     renderCall(args, theme, context) {

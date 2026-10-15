@@ -29,6 +29,7 @@ function importsOf(file: string): string[] {
 const ALLOWED: Record<string, string[]> = {
   shared: [],
   api: ['shared'],
+  external: ['shared', 'api'],
   ask: ['shared'],
   files: ['shared', 'permission'],
   team: ['shared', 'agentdb'],

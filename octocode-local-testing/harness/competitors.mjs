@@ -34,7 +34,7 @@
 //        [--update-anchor]   explicit re-anchor: merge this run into the pinned anchor (and rolling);
 //                            allowed when only byte-gate checks failed
 //        [--self-test]       run the sensor self-tests (no server)
-// Env:   OCTOCODE_COMPETITOR_CLASIFY=1   run the clasify tasks (paid provider calls)
+// Env:   OCTOCODE_COMPETITOR_CLASIFY=1   run the classifier tasks (localFetch classifiers; paid provider calls)
 //        OCTOCODE_COMPETITOR_GITHUB=0    skip GitHub/network tasks
 //        OCTOCODE_COMPETITOR_NORMALIZE=0 legacy run: octocode-root workspace, question as mainGoal on every call
 //        OCTOCODE_COMPETITOR_STRICT_NEXT=1  fail a row with more than NEXT_ENTRY_CAP next entries
@@ -151,7 +151,7 @@ const clients = new Map();
 async function clientFor(ws) {
   if (!clients.has(ws)) {
     const root = path.join(ROOT, ws);
-    clients.set(ws, await startServer({ cwd: root, env: { OCTOCODE_BETA: 'true', ...(ws ? { WORKSPACE_ROOT: root } : {}) } }));
+    clients.set(ws, await startServer({ cwd: root, env: { OCTOCODE_BETA: 'true', OCTOCODE_RANKING_ENABLED: 'true', ...(ws ? { WORKSPACE_ROOT: root } : {}) } }));
   }
   return clients.get(ws);
 }
@@ -172,7 +172,7 @@ async function mcp(ctx, tool, args) {
 
 function cli(ctx, tool, args) {
   const root = path.join(ROOT, ctx.ws);
-  const run = runCli(tool, args, { cwd: root, maxBuffer: 256 << 20, timeout: 180_000, env: { OCTOCODE_BETA: 'true', ...(ctx.ws ? { WORKSPACE_ROOT: root } : {}) } });
+  const run = runCli(tool, args, { cwd: root, maxBuffer: 256 << 20, timeout: 180_000, env: { OCTOCODE_BETA: 'true', OCTOCODE_RANKING_ENABLED: 'true', ...(ctx.ws ? { WORKSPACE_ROOT: root } : {}) } });
   let sc; try { sc = JSON.parse(run.stdout); } catch {}
   return { surface: 'cli', tool, args, ms: Math.round(run.ms), bytes: run.stdout.length + run.stderr.length, raw: sc, sc, text: run.stdout + run.stderr, isError: run.status !== 0, transport: run.error?.message };
 }
@@ -407,7 +407,7 @@ function maxNextEntries(node) {
 }
 // A paging continuation (it reaches the rest of the same evidence), as
 // opposed to a lead to a different read (read, readPullRequest, viewRepo, …).
-const PAGING_NAME = /page|continue|more|expand|resume|pagination|clasify|^next$/i;
+const PAGING_NAME = /page|continue|more|expand|resume|pagination|^next$/i;
 const PAGING_KEYS = ['page', 'offset', 'matchPage', 'patchPage', 'responseOffset', 'after', 'resume'];
 // A core `pages` name (e.g. nextDiagnosticPage) pages its row whatever its spelling.
 const isPaging = ({ name, hint }, tool = '') => isPageName(name, tool) || PAGING_NAME.test(name) || PAGING_KEYS.some(k => k in hint.query) || (hint.query.queries ?? []).some(q => PAGING_KEYS.some(k => k in q));
@@ -450,7 +450,7 @@ function responseSensors(entry) {
   out.leadBytes = leadBytes(sc, entry.tool);
   const queries = Array.isArray(entry.args?.queries) ? entry.args.queries : [entry.args ?? {}];
   const envelopeNext = hintEntries(envelopeContainer(sc));
-  // Tool rows; a clasify matrix reports per-query rows, else the whole response is one row.
+  // Tool rows; clasify reports per-query rows, else the whole response is one row.
   const rows = Array.isArray(sc.results) ? sc.results : Array.isArray(sc.queries) ? sc.queries : [sc];
   rows.forEach((row, i) => {
     out.nextEntriesMax = Math.max(out.nextEntriesMax, maxNextEntries(row));

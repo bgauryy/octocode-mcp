@@ -1,13 +1,15 @@
 //! Module-boundary guard: a tool module (every `tools/` entry not listed in
-//! [`SHARED_MODULES`]) reaches shared code, never another tool's internals. Two tools that import each other's
-//! modules form a cycle and cannot be changed or tested apart; a primitive
-//! two tools need lives in a shared module both import.
+//! [`SHARED_MODULES`]) reaches shared code, never another tool's internals,
+//! and a shared module reaches no tool at all. Two tools that import each
+//! other's modules form a cycle and cannot be changed or tested apart; a
+//! primitive two tools need lives in a shared module both import.
 //!
-//! The guard reads the production source of every tool module (test files and
-//! everything from an inline `#[cfg(test)] mod` on are skipped: tests may drive
-//! several tools together) and fails on any `crate::tools::<other_tool>`
-//! import not listed in [`ALLOWED_EDGES`]. It also fails on a listed edge that
-//! no longer exists, so the list only shrinks.
+//! The guard resolves every path the production code of each `tools/` module
+//! names (test files and `#[cfg(test)]` items are skipped: tests may drive
+//! several tools together): `use` trees with groups, `self`, `super` and
+//! aliases, and inline `crate::`/`super::`/bound paths. It fails on any edge
+//! into a tool not listed in [`ALLOWED_EDGES`] or [`SHARED_TO_TOOL_PENDING`],
+//! and on a listed edge that no longer exists, so the lists only shrink.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -28,10 +30,14 @@ const SHARED_MODULES: &[(&str, &str)] = &[
     ),
     ("gh_shared", "GitHub failure, paging and history helpers"),
     ("id", "tool identity and generated query limits"),
+    (
+        "judgment",
+        "the one classification evaluator: provider client, judgment cache, single flight, accounting",
+    ),
     ("leads", "follow-up queries one tool offers into another"),
     ("line_spans", "line-span arithmetic"),
     (
-        "ranking",
+        "selection",
         "shared bounded relevance ordering for local search files and fetch windows",
     ),
     ("match_keys", "JSON/TOML key matching"),
@@ -51,6 +57,10 @@ const SHARED_MODULES: &[(&str, &str)] = &[
         "the file a directory listing leads to first, ranked once for remote and local listings",
     ),
     ("source", "bounded source reads"),
+    (
+        "source_capture",
+        "one complete source selection captured through the authorized readers as a classification state",
+    ),
     ("stream_page", "streamed paging"),
     ("symbol_outline", "declaration outline rows"),
     ("test_support", "test fixtures"),
@@ -60,16 +70,6 @@ const SHARED_MODULES: &[(&str, &str)] = &[
 /// (the imported tool never imports back). Remove the entry when the edge is
 /// removed (the guard fails on a stale entry).
 const ALLOWED_EDGES: &[(&str, &str, &str)] = &[
-    ("artifact_search", "clasify", CLASIFY_ITEMS),
-    ("ast_search", "clasify", CLASIFY_ITEMS),
-    ("gh_search_history", "clasify", CLASIFY_ITEMS),
-    ("gh_search_repo", "clasify", CLASIFY_ITEMS),
-    ("lsp_search", "clasify", CLASIFY_ITEMS),
-    (
-        "clasify",
-        "local_fetch",
-        "clasify hydrates a candidate through localFetch's declaration spans",
-    ),
     (
         "gh_get_file_content",
         "local_fetch",
@@ -81,9 +81,6 @@ const ALLOWED_EDGES: &[(&str, &str, &str)] = &[
         "local_search leads size the localFetch reads they offer by its block and page limits",
     ),
 ];
-
-const CLASIFY_ITEMS: &str =
-    "the tool implements clasify's item index (`items`, `resource`) for its own rows";
 
 fn is_test_file(path: &Path) -> bool {
     let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
@@ -113,67 +110,213 @@ fn rust_files(path: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// The production code of a source file
-/// ([`crate::tools::test_support::production_text`]) without its comment
-/// lines, which may name modules they do not import.
-fn production_code(source: &str) -> String {
-    crate::tools::test_support::production_text(source)
-        .lines()
-        .filter(|line| !line.trim_start().starts_with("//"))
-        .flat_map(|line| [line, "\n"])
-        .collect()
+/// One code token the import scanner reads: an identifier, `::`, or one
+/// punctuation character.
+fn tokens(code: &str) -> Vec<&str> {
+    let bytes = code.as_bytes();
+    let mut out = Vec::new();
+    let mut at = 0;
+    while at < bytes.len() {
+        let byte = bytes[at];
+        if byte.is_ascii_whitespace() {
+            at += 1;
+        } else if byte.is_ascii_alphanumeric() || byte == b'_' {
+            let end = bytes[at..]
+                .iter()
+                .position(|b| !(b.is_ascii_alphanumeric() || *b == b'_'))
+                .map_or(bytes.len(), |len| at + len);
+            out.push(&code[at..end]);
+            at = end;
+        } else if bytes[at..].starts_with(b"::") {
+            out.push("::");
+            at += 2;
+        } else {
+            let width = code[at..].chars().next().map_or(1, char::len_utf8);
+            out.push(&code[at..at + width]);
+            at += width;
+        }
+    }
+    out
 }
 
-/// Names `crate::tools::` is followed by: `crate::tools::x::…` and the
-/// top-level items of `crate::tools::{x::…, y, …}`.
-fn imported_modules(source: &str) -> Vec<String> {
-    const PREFIX: &str = "crate::tools::";
-    let ident_end = |text: &str| {
-        text.find(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_'))
-            .unwrap_or(text.len())
+fn is_ident(token: &str) -> bool {
+    token
+        .chars()
+        .next()
+        .is_some_and(|first| first.is_alphabetic() || first == '_')
+}
+
+/// `path` as an absolute module path seen from `module`: `crate::…`,
+/// `self::…`, `super::…` (any depth), or a name a `use` bound. `None` for
+/// a path rooted elsewhere (an extern crate, a local item).
+fn resolve(
+    module: &[String],
+    path: &[String],
+    bindings: &BTreeMap<String, Vec<String>>,
+) -> Option<Vec<String>> {
+    let (first, rest) = path.split_first()?;
+    let mut base = match first.as_str() {
+        "crate" => Vec::new(),
+        "self" => module.to_vec(),
+        "super" => {
+            let up = 1 + rest
+                .iter()
+                .take_while(|segment| *segment == "super")
+                .count();
+            let base = module[..module.len().checked_sub(up)?].to_vec();
+            let mut resolved = base;
+            resolved.extend(rest.iter().skip(up - 1).cloned());
+            return Some(resolved);
+        }
+        name => bindings.get(name)?.clone(),
     };
-    let mut found = Vec::new();
-    let mut rest = source;
-    while let Some(at) = rest.find(PREFIX) {
-        rest = &rest[at + PREFIX.len()..];
-        if let Some(group) = rest.strip_prefix('{') {
-            let mut depth = 1;
-            let mut item_start = true;
-            for (index, ch) in group.char_indices() {
-                match ch {
-                    '{' => depth += 1,
-                    '}' => {
-                        depth -= 1;
-                        if depth == 0 {
-                            break;
-                        }
+    base.extend(rest.iter().cloned());
+    Some(base)
+}
+
+/// One `use` tree from `tokens[*at]` under `prefix`: every leaf as
+/// `(bound name, path)`; a glob binds nothing.
+fn use_tree(
+    tokens: &[&str],
+    at: &mut usize,
+    prefix: Vec<String>,
+    leaves: &mut Vec<(Option<String>, Vec<String>)>,
+) {
+    let mut path = prefix;
+    let grouped = !path.is_empty();
+    while let Some(token) = tokens.get(*at).copied() {
+        match token {
+            "{" => {
+                *at += 1;
+                while tokens.get(*at).is_some_and(|token| *token != "}") {
+                    use_tree(tokens, at, path.clone(), leaves);
+                    if tokens.get(*at) == Some(&",") {
+                        *at += 1;
                     }
-                    ',' if depth == 1 => item_start = true,
-                    ch if item_start && depth == 1 && !ch.is_whitespace() => {
-                        let name = &group[index..];
-                        found.push(name[..ident_end(name)].to_owned());
-                        item_start = false;
-                    }
-                    _ => {}
+                }
+                *at += 1;
+                return;
+            }
+            "*" => {
+                *at += 1;
+                leaves.push((None, path));
+                return;
+            }
+            "self" if grouped && tokens.get(*at + 1) != Some(&"::") => {
+                *at += 1;
+            }
+            token if is_ident(token) => {
+                path.push(token.to_owned());
+                *at += 1;
+                if tokens.get(*at) == Some(&"::") {
+                    *at += 1;
+                    continue;
                 }
             }
-        } else {
-            found.push(rest[..ident_end(rest)].to_owned());
+            _ => return,
         }
+        let bound = if tokens.get(*at) == Some(&"as") {
+            *at += 2;
+            tokens.get(*at - 1).map(|alias| (*alias).to_owned())
+        } else {
+            path.last().cloned()
+        };
+        leaves.push((bound, path));
+        return;
+    }
+}
+
+/// Every absolute module path `code` (production code, no comments or
+/// literals) names from `module`: each `use` leaf (groups, `self`, `super`,
+/// aliases and globs included) and each inline path rooted at `crate`,
+/// `self`, `super` or a `use`-bound name.
+fn named_paths(code: &str, module: &[String]) -> Vec<Vec<String>> {
+    let tokens = tokens(code);
+    let mut bindings = BTreeMap::new();
+    let mut found = Vec::new();
+    let mut in_use = vec![false; tokens.len()];
+    let mut at = 0;
+    while at < tokens.len() {
+        if tokens[at] == "use" && (at == 0 || tokens[at - 1] != "::") {
+            let start = at;
+            at += 1;
+            if tokens.get(at) == Some(&"::") {
+                at += 1;
+            }
+            let mut leaves = Vec::new();
+            use_tree(&tokens, &mut at, Vec::new(), &mut leaves);
+            for (bound, path) in leaves {
+                let resolved = resolve(module, &path, &bindings).unwrap_or(path);
+                if let Some(bound) = bound.filter(|bound| bound != "_") {
+                    bindings.insert(bound, resolved.clone());
+                }
+                found.push(resolved);
+            }
+            in_use[start..at.min(tokens.len())].fill(true);
+        } else {
+            at += 1;
+        }
+    }
+    let mut at = 0;
+    while at < tokens.len() {
+        let starts = !in_use[at]
+            && is_ident(tokens[at])
+            && tokens.get(at + 1) == Some(&"::")
+            && (at == 0 || tokens[at - 1] != "::");
+        if !starts {
+            at += 1;
+            continue;
+        }
+        let mut path = vec![tokens[at].to_owned()];
+        at += 1;
+        while tokens.get(at) == Some(&"::") && tokens.get(at + 1).is_some_and(|t| is_ident(t)) {
+            path.push(tokens[at + 1].to_owned());
+            at += 2;
+        }
+        found.extend(resolve(module, &path, &bindings));
     }
     found
 }
 
-/// Every `(importer, imported)` tool-module pair with one example file.
-fn tool_edges(tools_dir: &Path) -> BTreeMap<(String, String), String> {
+/// The `tools/` modules a production source of `module` reaches.
+fn imported_modules(source: &str, module: &[String]) -> BTreeSet<String> {
+    let code =
+        crate::tools::test_support::code_only(&crate::tools::test_support::production_text(source));
+    named_paths(&code, module)
+        .into_iter()
+        .filter(|path| path.first().is_some_and(|root| root == "tools"))
+        .filter_map(|path| path.get(1).cloned())
+        .collect()
+}
+
+/// The module path of a source file under `tools_dir`: `x/y.rs` is
+/// `tools::x::y`, `x/mod.rs` is `tools::x`.
+fn module_of(tools_dir: &Path, path: &Path) -> Vec<String> {
+    let relative = path.strip_prefix(tools_dir).unwrap_or(path);
+    let mut module = vec!["tools".to_owned()];
+    module.extend(
+        relative
+            .with_extension("")
+            .components()
+            .map(|part| part.as_os_str().to_string_lossy().into_owned()),
+    );
+    if module.last().is_some_and(|last| last == "mod") {
+        module.pop();
+    }
+    module
+}
+
+/// Every `(importer, imported)` pair from a `tools/` module (a tool or a
+/// shared module) to a tool, with one example file.
+fn module_edges(tools_dir: &Path) -> BTreeMap<(String, String), String> {
     let shared: BTreeSet<&str> = SHARED_MODULES.iter().map(|(name, _)| *name).collect();
-    let tool_modules: BTreeSet<String> = std::fs::read_dir(tools_dir)
+    let modules: BTreeSet<String> = std::fs::read_dir(tools_dir)
         .expect("read tools/")
         .filter_map(Result::ok)
         .filter_map(|entry| {
             let path = entry.path();
             let name = path.file_stem()?.to_str()?.to_owned();
-            (name != "mod" && !shared.contains(name.as_str())).then_some(name)
+            (name != "mod" && name != "module_boundaries" && name != "test_support").then_some(name)
         })
         .collect();
     for (name, _) in SHARED_MODULES {
@@ -183,7 +326,7 @@ fn tool_edges(tools_dir: &Path) -> BTreeMap<(String, String), String> {
         );
     }
     let mut edges = BTreeMap::new();
-    for importer in &tool_modules {
+    for importer in &modules {
         let dir = tools_dir.join(importer);
         let file = tools_dir.join(format!("{importer}.rs"));
         let root = if dir.is_dir() { dir } else { file };
@@ -192,8 +335,11 @@ fn tool_edges(tools_dir: &Path) -> BTreeMap<(String, String), String> {
         for path in files {
             let source = std::fs::read_to_string(&path)
                 .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
-            for imported in imported_modules(&production_code(&source)) {
-                if &imported != importer && tool_modules.contains(&imported) {
+            for imported in imported_modules(&source, &module_of(tools_dir, &path)) {
+                if &imported != importer
+                    && modules.contains(&imported)
+                    && !shared.contains(imported.as_str())
+                {
                     let shown = path
                         .strip_prefix(tools_dir)
                         .unwrap_or(&path)
@@ -207,22 +353,36 @@ fn tool_edges(tools_dir: &Path) -> BTreeMap<(String, String), String> {
     edges
 }
 
+/// Shared modules that still reach into a tool, `(shared, tool, why)`: a
+/// shared module is below every tool, so each is a layering debt the owning
+/// migration removes. The guard fails on a new one and on a stale entry.
+const SHARED_TO_TOOL_PENDING: &[(&str, &str, &str)] = &[];
+
 #[test]
 fn tool_modules_import_only_shared_modules() {
     let tools_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/tools");
-    let edges = tool_edges(&tools_dir);
+    let shared: BTreeSet<&str> = SHARED_MODULES.iter().map(|(name, _)| *name).collect();
+    let edges = module_edges(&tools_dir);
     let allowed: BTreeSet<(String, String)> = ALLOWED_EDGES
         .iter()
+        .chain(SHARED_TO_TOOL_PENDING)
         .map(|(from, to, _)| ((*from).to_owned(), (*to).to_owned()))
         .collect();
     let new: Vec<String> = edges
         .iter()
         .filter(|(edge, _)| !allowed.contains(*edge))
-        .map(|((from, to), file)| format!("{from} -> {to} (e.g. tools/{file})"))
+        .map(|((from, to), file)| {
+            let kind = if shared.contains(from.as_str()) {
+                "shared module"
+            } else {
+                "tool"
+            };
+            format!("{kind} {from} -> {to} (e.g. tools/{file})")
+        })
         .collect();
     assert!(
         new.is_empty(),
-        "a tool module imports another tool's internals; move the shared piece to a neutral module (gh_shared, leads, result, …) both import:\n  {}",
+        "a module imports a tool's internals; move the shared piece to a neutral module (gh_shared, leads, result, …) both import:\n  {}",
         new.join("\n  ")
     );
     let stale: Vec<String> = allowed
@@ -232,19 +392,88 @@ fn tool_modules_import_only_shared_modules() {
         .collect();
     assert!(
         stale.is_empty(),
-        "ALLOWED_EDGES lists an edge that no longer exists; remove it:\n  {}",
+        "ALLOWED_EDGES or SHARED_TO_TOOL_PENDING lists an edge that no longer exists; remove it:\n  {}",
         stale.join("\n  ")
     );
 }
 
+/// Every spelling Rust accepts for a path into another module resolves to
+/// it: absolute and grouped `crate` paths, `super` and `self` at any depth,
+/// a bound module and its alias, and inline paths. Comments, literals and
+/// test-only items name nothing.
 #[test]
-fn the_scanner_reads_path_and_group_imports() {
-    let source = "use crate::tools::{id::ToolId, local_fetch::{A, B}, result};\n\
-                  fn f() { crate::tools::gh_shared::x(); }\n\
-                  // crate::tools::lsp_search::ignored\n\
-                  #[cfg(test)]\nmod tests { use crate::tools::clasify::t; }\n";
+fn the_scanner_resolves_every_import_form() {
+    let tools = Path::new("/src/tools");
+    let module = |file: &str| module_of(tools, &tools.join(file));
+    let reached = |file: &str, source: &str| {
+        imported_modules(source, &module(file))
+            .into_iter()
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(module("local_search/mod.rs"), ["tools", "local_search"]);
     assert_eq!(
-        imported_modules(&production_code(source)),
-        ["id", "local_fetch", "result", "gh_shared"]
+        module("local_search/a/b.rs"),
+        ["tools", "local_search", "a", "b"]
     );
+    for (file, source) in [
+        ("local_search/mod.rs", "use super::local_fetch::A;"),
+        ("local_search/mod.rs", "use crate::{tools::local_fetch::A};"),
+        (
+            "local_search/mod.rs",
+            "use crate::tools::{local_fetch::{A, B}};",
+        ),
+        ("local_search/mod.rs", "fn f() { super::local_fetch::x(); }"),
+        (
+            "local_search/mod.rs",
+            "fn f() { crate::tools::local_fetch::x(); }",
+        ),
+        ("local_search/a.rs", "use super::super::local_fetch::A;"),
+        (
+            "local_search/a/b.rs",
+            "use super::super::super::local_fetch::{self};",
+        ),
+        (
+            "local_search/mod.rs",
+            "use crate::tools;\nfn f() { tools::local_fetch::x(); }",
+        ),
+        (
+            "local_search/mod.rs",
+            "use crate::tools as t;\nfn f() { t::local_fetch::x(); }",
+        ),
+        (
+            "local_search/mod.rs",
+            "use crate::{tools::{self as t}};\nfn f() { t::local_fetch::x(); }",
+        ),
+        (
+            "local_search/mod.rs",
+            "pub(crate) use crate::tools::local_fetch::*;",
+        ),
+        (
+            "local_search/a.rs",
+            "use super::super::{local_fetch as fetch};\nfn f() { fetch::x(); }",
+        ),
+    ] {
+        assert_eq!(reached(file, source), ["local_fetch"], "{file}: {source}");
+    }
+    assert_eq!(
+        reached(
+            "local_search/a.rs",
+            "use self::inner::A;\nuse super::helper;"
+        ),
+        ["local_search"]
+    );
+    assert_eq!(
+        reached(
+            "local_search/mod.rs",
+            "use crate::tools::{id::ToolId, local_fetch::{A, B}, result};\n\
+             fn f() { crate::tools::gh_shared::x(); }"
+        ),
+        ["gh_shared", "id", "local_fetch", "result"]
+    );
+    let nothing = "// crate::tools::lsp_search::ignored\n\
+                   /* use super::clasify::x; */\n\
+                   const S: &str = \"crate::tools::clasify::y\";\n\
+                   #[cfg(test)]\nmod tests { use crate::tools::clasify::t; }\n\
+                   #[cfg(test)]\nfn helper() { super::clasify::z(); }\n";
+    assert!(reached("local_search/mod.rs", nothing).is_empty());
 }

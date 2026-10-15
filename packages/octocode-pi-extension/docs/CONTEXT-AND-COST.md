@@ -41,25 +41,27 @@ subagents; `promptCacheTtlMs`) the next request rewrites it anyway, so clearing 
 request is smaller. This is what Claude Code does after 65 minutes idle.
 
 At `before_agent_start` (a user prompt, or a custom message that wakes the session) `clearColdResults`
-(`src/compaction/clearing.ts`) checks the time since the last assistant reply. Past the lifetime, it clears results by
-these rules:
+(`src/compaction/clearing.ts`) checks the time since the cache was last used (`lastCacheUseAt`): the last assistant
+reply, or a later refresh by Pi's warmer (its `cache_warm` usage entry), which restarts the entry's lifetime. Past the
+lifetime, it clears results by these rules:
 
 - **Clearable:** successful, text-only results of `read`, `grep`, `find`, `ls`, `web` and `mcp__octocode__*`: a call
   you can run again. Never `bash`, `file`, `agent`, custom messages, errors, or results with an image.
-- **Kept:** the newest 5 clearable results. The older ones are cleared only when their text totals at least 20,000
-  tokens (`CLEAR_AT_LEAST_TOKENS`, at `CHARS_PER_TOKEN` characters per token).
+- **Kept:** the newest 5 clearable results (a [repeated-read note](#repeated-reads) is not one of them). The older
+  ones are cleared only when their text totals at least 20,000 tokens (`CLEAR_AT_LEAST_TOKENS`, at `CHARS_PER_TOKEN`
+  characters per token).
 - **Nothing is lost:** each result's whole text is first saved to `output/cleared-<tool>-<hash>.txt`. A result that
   cannot be saved stays. The placeholder is
   `[Old tool result cleared after the prompt cache expired. Full output: <path> (sha256 …, N bytes). Read that file, or run the call again.]`.
+  A repeated-read note that points at a cleared result gets the same placeholder, so it never points at text that is gone.
 - **Stable between requests:** the decision is a session entry (`octocode-cleared-results`, never sent to the model).
   The `context` handler applies it to every request in the same way, so the prompt does not change from one request to
   the next, and a resume, reload or fork applies it again from the branch. After a compaction the cleared messages are
-  gone and there is nothing to do.
+  gone and there is nothing to do. A summary compaction lists these saved files in its `<saved-results>` block.
 - **File guard:** a cleared `read` no longer shows the file, so the guard forgets it (`contextReads` skips cleared
   results) and the `file` tool asks for a fresh read before changing that file.
 
-Pi's cache warmer can keep a cache warm past its lifetime; the check cannot see that, so a clear may then cost one cache
-rewrite. The next request after a clear is a normal request on the smaller context.
+The next request after a clear is a normal request on the smaller context.
 
 ### Repeated reads
 
@@ -73,16 +75,16 @@ same text is the proof that the file did not change; nothing is guessed from mod
 - an error or an image.
 
 The note keeps the read's own `details` and adds `unchangedOf` (the earlier call's id). The file guard digests the
-text the read returned before the note replaces it, and a note still counts as a read, until the result it points at is
-cleared.
+text the read returned before the note replaces it, and a note still counts as a read while the result it points at is
+in the context: not once that result is cleared, or cut away by a compaction that kept the note.
 
 ### Spilled outputs
 
 | Output | Kept in context | The rest |
 |---|---|---|
 | Any result bounded by `capOutputToFile` (`src/shared/spill.ts`) | its head (about 70%) and tail (about 30%) within the cap, with `[… N lines omitted …]` between them | the whole text in `output/<label>-….txt`, named by the closing `[Output trimmed: showing … lines (…). Full output: <path>; …]` note |
-| MCP text part (`src/mcp/tools.ts`) | whole up to 60,000 bytes / 3,000 lines (`TEXT_MAX_BYTES`): the 50,000-character page Octocode's server cuts its own output to, plus its header and room for non-ASCII text. Over it, the head and tail within the cap; the tail keeps the `next.*` continuation | spilled as above (the whole part, named in the note) |
-| MCP text parts of one assistant message (`TurnBudget`, reset at `turn_start`) | whole while the turn's MCP text is under 200,000 characters (`TURN_MAX_CHARS`); a part that would pass it keeps what is left (at least 4,000 bytes), later ones a 4,000-byte head and tail | each cut part spilled whole as above |
+| MCP text part (`src/mcp/tools.ts`) | whole up to 60,000 UTF-16 characters (`TEXT_MAX_CHARS`), including multi-byte text and short lines: room for the server's 50,000-character page and its header. Over it, a head and tail preview uses the character allowance as a conservative byte limit; the tail keeps the `next.*` continuation | spilled as above (the whole part, named in the note) |
+| MCP text parts of one assistant message (`TurnBudget`, reset at `turn_start`) | whole while the turn's MCP text is under 200,000 characters (`TURN_MAX_CHARS`); a part that would pass it keeps a head and tail preview within the remaining allowance (at least 4,000); previews use that allowance as a byte limit, while a whole part is measured in characters | each cut part spilled whole as above |
 | MCP image over 600,000 base64 characters (`IMAGE_MAX_CHARS`, `boundImagePart`) | resized by Pi to fit, with `[Image fitted for context. Original saved to <path>.]` | the original in `output/`; when Pi cannot resize it only the path is left: `[image/png image of … left out: too large for the context. Saved to <path>.]` |
 | `web` fetch (`src/web/web.ts`) | the first `maxChars` characters (20,000 by default, up to 50,000) with `[… N more characters cut; the whole page (… lines, links included) is in <path>: …]`; then Pi's 50 KB / 2,000-line cap | the whole page in `output/web-….txt` |
 | `browser` evaluate and console (`src/browser/tool.ts`) | Pi's 50 KB / 2,000 lines | spilled as above |
@@ -149,6 +151,15 @@ handling, update of the previous summary and file lists all apply, plus:
   message (`/skill:name`) is kept as `[skill <name> loaded from <path>]`, not its body. The section is carried
   across compactions, and the model updates only its own part, so the words are never paraphrased and do not count
   against Pi's summary length cap.
+- **Saved results** (`src/compaction/saved-results.ts`). After a summary compaction, the files Octocode saved from the
+  summarized results (trimmed or cleared tool results, fetched pages, screenshots, bash logs, and the log and rotated
+  `.1` file that a finished background job's report names) are listed once in a `<saved-results>` block after the file
+  lists, and kept in the compaction's `details.savedResults` so later summaries carry them. A `<saved-results>` block
+  the model writes itself is removed and replaced by the code-written one. A list over 3,000 characters
+  (`SAVED_RESULTS_INLINE_CHARS`) is written to a file in the session's `output/` folder and the block names that file;
+  if that file cannot be written the list stays in the summary. Pi's own fallback summary lists none of it, but the
+  list is not lost: the next Octocode summary walks back to the newest compaction that carries
+  `details.savedResults` and continues from it.
 - **Exact details on demand.** The summary ends with the session file's path (the full transcript, never compacted)
   and, when `backlog` is active, an instruction to record follow-ups there.
 - **Prompt-cache sharing** (as Claude Code does; `src/compaction/shared-summary.ts`). On the session's own model
@@ -207,7 +218,8 @@ handling, update of the previous summary and file lists all apply, plus:
 - **Running work.** At `session_compact`, a hidden, non-waking message (`octocode-running-work`) lists background
   bash jobs (id, command, log) and background subagents (id, task) started since this session started in this
   process that have not reported yet (about 380 characters of them, then `+N more`), and this session's ongoing
-  backlog items (five, then `+N more`). It is read from the session's own entries: a `bash` result
+  backlog items (five, then `+N more`), each with its goal (cut at 160 characters) and up to three paths; the resume
+  brief uses the same line. It is read from the session's own entries: a `bash` result
   with `details.job` and no `octocode-bash-job` report for its log, and an `agent` result with
   `details.status: 'background'` and no `octocode-agent-result` message for its id.
 - **SessionStart hooks** run again with source `compact` (with `OCTOCODE_HOOKS=1`, as in Claude Code); their context
@@ -231,7 +243,7 @@ contexts in measured sessions (45% of spend over 12 sessions):
 - **Pi older than 1.2.0** starts a run that a background report wakes without `before_agent_start`, so from its
   second request the `octocode` prompt section is patched away (`sections: {octocode: null}`) and the next prompt
   adds it back: two full rewrites per report ([pi#10267](https://github.com/earendil-works/pi/issues/10267), fixed in
-  1.2.0). Octocode warns at start when Pi is older than its peer range.
+  1.2.0). An interactive session warns at start when Pi is older than the package's peer range.
 - **A custom model without the catalog's `compat`.** Without `supportsMidConvoSystemMessages` (and
   `supportsMidConvoToolChanges`), `anthropic-messages` folds every prompt or tool change into the head of the request
   instead of appending it, so a late MCP connect or a tool-set change rewrites the cache. Copy the built-in entry's
@@ -304,7 +316,9 @@ inference ×1.1), fast-mode or batch modifiers.
 
 One money format and one token format (`src/shared/format.ts`) are used everywhere: the footer, the agents panel and
 its header, `coordinate list` and `/agents`, subagent live rows, `Done (…)` lines and background reports, and
-`/sessions`.
+`/sessions`. A subagent's row and background report are labelled by the outcome word its report starts with
+(`Done`, `Partial`, `Blocked`, `Failed`; "reported blocked"); a crash is `Failed`, and a report without the word
+reads `finished`.
 
 | Shown | Meaning |
 |---|---|
@@ -338,7 +352,8 @@ stdin, and stdin closes once the run has settled), so everything above applies i
 retention; its warming is stopped).
 
 - **Cache sharing.** No per-child data (id, name, goal, scratch folder, parent) goes into the system prompt: it rides
-  in the task message. So children of the same profile and options (`collaborate`, `isolate` change the prompt) send
+  in the task message, and the coordination rule (Pi team versus agents-communication) is only in the main session's
+  prompt. So children of the same profile and options (`collaborate`, `isolate` change the prompt) send
   the same tools and system prompt and read each other's
   cached prefix within its lifetime. Each child still pays one write of what differs (on a live check, about 19k
   tokens, roughly $0.10 on Opus 5.5). A child in an isolated worktree has a different working folder in its system
@@ -389,7 +404,8 @@ alone is worth a brief. A log the retention sweep already removed is shown as `l
 - A split turn's prefix is summarized by Pi's turn-prefix prompt, without the handoff sections, only in the
   standalone fallback; the cache-sharing request summarizes everything before the cut in one pass.
 - Pi caps the model's summary at 80% of `compaction.reserveTokens` (13,107 tokens by default) and drops one that hits
-  the cap (then the standalone summary is tried, then Pi's); the user messages are added by code after it, outside the cap.
+  the cap (then the standalone summary is tried, then Pi's); the user messages and the `<saved-results>` list are added
+  by code after it, outside the cap.
 - Idle warming only runs with Pi's `cacheWarming: "idle"`; with the default `"streaming"`, the 1-hour retention is
   what covers pauses.
 - Amounts are list-price estimates.
@@ -405,8 +421,9 @@ alone is worth a brief. A log the retention sweep already removed is shown as `l
 |---|---|
 | `tests/compaction-shared-summary.test.ts` | the cache-sharing summary request (the session's projection, model, thinking and routing id plus one user message), cold-cache placeholders, Pi-shaped result with file lists and usage, the kept-messages boundary, the previous-summary note, every fallback case, the downshift and total-failure paths |
 | `tests/compaction.test.ts`, `compaction-summary.test.ts`, `compaction-restore.test.ts` | file-tool paths added to Pi's file ops, the handoff instructions, user messages kept by code within budgets (skills as pointers), the transcript note, file lists carried from Octocode's summaries, files read back within budgets from the last range worked on, ranked by their original work and counted as read |
+| `tests/compaction-saved-results.test.ts` | saved trim and cleared files named once in the summary, carried across compactions (also past a fallback summary), a long list spilled to a file, a job report's log and rotated part, a model-written block replaced |
 | `tests/compaction-policy.test.ts` | idle continuation, no warming in headless runs, no context edits after a successful turn |
-| `tests/compaction-clearing.test.ts` | cold-cache clearing: nothing while warm or below 20,000 tokens, the newest 5 kept, only re-fetchable tools, each result saved before it is cleared, byte-stable placeholders, the decision kept across a resume, the file guard forgetting cleared reads |
+| `tests/compaction-clearing.test.ts` | cold-cache clearing: nothing while warm or below 20,000 tokens, the newest 5 kept, only re-fetchable tools, each result saved before it is cleared, byte-stable placeholders, the decision kept across a resume, the file guard forgetting cleared reads, a warmer refresh counting as cache use, notes of cleared results taking their placeholder |
 | `tests/read-dedupe.test.ts` | a repeated unchanged read becomes a note; other range, changed text, compacted or cleared earlier result, errors and images keep the content; the guard still counts the note |
 | `tests/compaction-cache.test.ts` | lifetimes, the registry supply, the granted tier, warming, retention |
 | `tests/compaction-images.test.ts` | the staged `413` recovery (tool-result and user images), saved copies of stripped images |

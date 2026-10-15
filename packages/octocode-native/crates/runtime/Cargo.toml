@@ -67,6 +67,9 @@ globset = { workspace = true }
 semver = "1"
 # artifactSearch reads `.cargo_vcs_info.json` from a `.crate` archive (already in the lockfile via the CLI).
 flate2 = { workspace = true }
+# clasify URL sources: the browser-grade HTML parser (MIT OR Apache-2.0) behind section-addressable text.
+html5ever = "0.40"
+imagesize = { version = "0.15", default-features = false, features = ["png", "jpeg"] }
 octocode-engine = { path = "../engine" }
 octocode-github = { path = "../github" }
 tokio = { workspace = true, features = ["fs", "rt-multi-thread", "macros", "sync", "time", "signal", "process", "io-util"] }
@@ -90,7 +93,7 @@ apple-native-keyring-store = { version = "1", features = ["keychain"] }
 zbus-secret-service-keyring-store = { version = "1", features = ["rt-tokio-crypto-rust"] }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_Security"] }
+windows-sys = { workspace = true, features = ["Wdk_Foundation", "Wdk_Storage_FileSystem", "Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_Security"] }
 windows-native-keyring-store = "1"
 
 # Inherits the shared floor from [workspace.lints] (root Cargo.toml). The runtime

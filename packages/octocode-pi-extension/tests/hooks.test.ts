@@ -81,10 +81,10 @@ describe('hook runner', () => {
     expect(interpret('PreToolUse', deny)).toEqual({ block: 'nope', context: 'ctx' });
     expect(interpret('PostToolUse', { ...deny, stdout: '{"decision":"block","reason":"fix lint"}' })).toEqual({ block: 'fix lint' });
     expect(interpret('SessionStart', { ...deny, stdout: 'plain context\n' })).toEqual({ context: 'plain context' });
-    expect(interpret('PreToolUse', { ...deny, code: 2, stderr: '\u001b[31mno\u001b[0m rm\u0007' })).toEqual({ block: 'no rm' });
-    expect(interpret('SessionStart', { ...deny, stdout: JSON.stringify({ hookSpecificOutput: { additionalContext: 'a\u001b]0;title\u0007b' } }) })).toEqual({ context: 'ab' });
+    expect(interpret('PreToolUse', { ...deny, code: 2, stderr: '\u001b[31mno\u001b[0m rm\u0007' })).toEqual({ block: '\\u{1b}[31mno\\u{1b}[0m rm\\u{7}' });
+    expect(interpret('SessionStart', { ...deny, stdout: JSON.stringify({ hookSpecificOutput: { additionalContext: 'a\u001b]0;title\u0007b' } }) })).toEqual({ context: 'a\\u{1b}]0;title\\u{7}b' });
     const ask = (decision: string, reason?: string) => ({ ...deny, stdout: JSON.stringify({ hookSpecificOutput: { permissionDecision: decision, ...(reason ? { permissionDecisionReason: reason } : {}) } }) });
-    expect(interpret('PreToolUse', ask('ask', 'prod \u001b[2Jdeploy'))).toEqual({ ask: 'prod deploy' });
+    expect(interpret('PreToolUse', ask('ask', 'prod \u001b[2Jdeploy'))).toEqual({ ask: 'prod \\u{1b}[2Jdeploy' });
     expect(interpret('PreToolUse', ask('ask'))).toEqual({ ask: expect.stringMatching(/hook asks/) });
     expect(interpret('PostToolUse', ask('ask', 'x'))).toEqual({});
     // A hook's allow is not honoured: it never skips an ask.

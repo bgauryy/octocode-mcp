@@ -247,13 +247,17 @@ export function silentOmissions(sc) {
  * names no tool is a terminal workflow (cite lines, write files).
  * `publishedFields(tool)` → Set.
  */
-export function descriptionLint(tool, description, toolNames, publishedFields) {
+export function descriptionLint(tool, description, toolNames, publishedFields, ownOutputs = new Set()) {
   const reasons = [];
   const desc = String(description ?? '');
+  const note = /<workflow>([^<]+)<\/workflow>/.exec(desc)?.[1] ?? '';
+  const names = (fields, text) => [...(fields ?? [])].some(f => new RegExp(`(?<![\\w.])${f}(?![\\w])`).test(text));
   const neighbors = toolNames.filter(t => t !== tool && new RegExp(`\\b${t}\\b`).test(desc));
-  if (!/<workflow>[^<]+<\/workflow>/.test(desc)) reasons.push('no <workflow> note');
+  if (!note) reasons.push('no <workflow> note');
   if (!neighbors.length) return reasons;
-  else if (!neighbors.some(n => [...(publishedFields(n) ?? [])].some(f => new RegExp(`(?<![\\w.])${f}(?![\\w])`).test(desc)))) reasons.push(`names ${neighbors.join(',')} but none of its fields`);
+  // A note names what to carry: a neighbor's input field, or (core's workflow
+  // grammar) a field this tool returns, inside the note itself.
+  else if (!neighbors.some(n => names(publishedFields(n), desc)) && !names(ownOutputs, note)) reasons.push(`names ${neighbors.join(',')} but none of its fields`);
   return reasons;
 }
 /** Surface budget: total and per-tool quotas ({tool: bytes}). */

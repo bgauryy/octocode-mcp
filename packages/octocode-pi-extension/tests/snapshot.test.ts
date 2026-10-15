@@ -4,7 +4,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { Permission } from '../src/permission/ask.js';
 import type { AuditEntry } from '../src/permission/audit.js';
-import { pruneSnapshots, SNAPSHOT_KEEP_MS, SNAPSHOT_NAMESPACE, takeSnapshot } from '../src/shared/snapshot.js';
+import { pruneSnapshots, takeSnapshot } from '../src/shared/snapshot.js';
 import { fakeCtx, fakePi } from './fake-pi.js';
 import { tmp } from './helpers.js';
 
@@ -24,6 +24,9 @@ function repo(): string {
   fs.writeFileSync(path.join(cwd, 'loose.txt'), 'untracked\n');
   return cwd;
 }
+
+const SNAPSHOT_NAMESPACE = 'refs/octocode/snapshots';
+const SNAPSHOT_KEEP_MS = 7 * 24 * 60 * 60 * 1000;
 
 describe('snapshots', () => {
   it('keeps a ref that restores a deleted tracked file, and leaves the work tree, index and stash alone', async () => {
@@ -107,7 +110,7 @@ describe('a destructive shell call', () => {
   it('says undo: none when the snapshot timed out, and still runs the call', async () => {
     const cwd = repo();
     const full = started('full', cwd, { snapshotMs: 1 });
-    expect(await full.permission.check(full.ctx, request(cwd))).toEqual({ allowed: true, via: 'mode' });
+    expect(await full.permission.check(full.ctx, request(cwd))).toEqual({ allowed: true, via: 'mode', lasts: 'call' });
     expect(full.audit()[0]!.snapshot).toBeUndefined();
     const asked = started('workspace', cwd, { snapshotMs: 1 });
     await asked.permission.check(asked.ctx, request(cwd));

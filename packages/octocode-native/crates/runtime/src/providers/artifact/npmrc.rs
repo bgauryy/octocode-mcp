@@ -267,7 +267,10 @@ mod tests {
                 "{target}"
             );
         }
-        assert!(!format!("{registry:?}").contains("ZmFrZQ=="));
+        crate::tools::test_support::checks::assert_absent(
+            &serde_json::json!(format!("{registry:?}")),
+            "ZmFrZQ==",
+        );
     }
 
     #[test]

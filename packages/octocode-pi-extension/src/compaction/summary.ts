@@ -1,8 +1,10 @@
 import type { Api, Context, Model, SimpleStreamOptions } from '@earendil-works/pi-ai';
 import { compact, type ExtensionAPI, type ExtensionContext, type SessionBeforeCompactEvent, type SessionBeforeCompactResult, type SessionEntry } from '@earendil-works/pi-coding-agent';
+import { clearedResults } from '../files/reads.js';
 import { tildePath } from '../shared/home.js';
 import { CHARS_PER_TOKEN } from '../shared/tokens.js';
-import { cutText, errorMessage, isRecord } from '../shared/util.js';
+import { cutText, errorMessage, escapeRegExp, isRecord } from '../shared/util.js';
+import { carriedSavedResults, SAVED_RESULTS_DETAILS, savedResultPaths, savedResultsBlock, withoutModelSavedResults, withoutSavedResults } from './saved-results.js';
 import { sharedSummary } from './shared-summary.js';
 
 /**
@@ -11,14 +13,15 @@ import { sharedSummary } from './shared-summary.js';
  * the work stopped. Pi gives a hook no way to add to its prompt, so Octocode writes the summary itself: on the
  * session's own model as a request the prompt cache already holds (`shared-summary.ts`), else (a downshift, blocked
  * images, any failure) through Pi's exported `compact()` (same cut point, split-turn handling, iterative update of the
- * previous summary and file lists), with this add-on joined to the user's `/compact` instructions in both. Code, not the model, then appends the user's messages word for word (newest
- * first within a budget, carried across compactions), and the transcript that still holds every detail. Any failure
- * returns nothing, and Pi writes its default summary.
+ * previous summary and file lists), with this add-on joined to the user's `/compact` instructions in both. Code, not the model, then appends the files Octocode saved from the summarized results
+ * (`saved-results.ts`, carried like the file lists), the user's messages word for word (newest first within a budget, carried across
+ * compactions), and the transcript that still holds every detail. Any failure returns nothing, and Pi writes its default summary.
+ * (Pi's default summary has none of these additions.)
  */
 
-/** The user's own messages kept after the summary, newest first, up to about 15k tokens in all... */
+/** The user's own messages kept after the summary, newest first, up to about 15k tokens in all (their words are the one record the summary cannot rebuild)... */
 export const USER_MESSAGES_CHARS = 60_000;
-/** ...each cut in the middle beyond this, with a note that the transcript holds the whole message. */
+/** ...each cut in the middle beyond this (a pasted log must not take the whole budget), with a note that the transcript holds the whole message. */
 export const USER_MESSAGE_CHARS = 6_000;
 
 /**
@@ -31,7 +34,7 @@ export function windowBudget(contextWindow: number | undefined, reserveTokens: n
   return Math.max(0, Math.min(max, Math.floor((contextWindow - reserveTokens) * CHARS_PER_TOKEN * share)));
 }
 
-/** Of the room after the reserve, the kept user messages take at most this share. */
+/** Of the room after the reserve, the kept user messages take at most this share (a tenth: the summary and restored files need the rest). */
 export const USER_MESSAGES_SHARE = 0.1;
 
 const USER_HEADING = '## User Messages (verbatim, oldest first)';
@@ -76,17 +79,15 @@ interface SplitSummary {
 
 /** Splits a summary this module wrote; any other summary is all body. */
 export function splitSummary(summary: string): SplitSummary {
-  let body = summary.replace(new RegExp(`\\n\\n${RECOVERY_HEADING}\\n(?:- [^\\n]*(?:\\n|$))+$`), '');
-  const at = body.lastIndexOf(`\n\n${USER_HEADING}\n`);
-  if (at < 0) return { body, messages: [], omitted: 0 };
-  const section = body.slice(at);
-  body = body.slice(0, at);
+  const recovered = summary.replace(new RegExp(`\\n\\n${RECOVERY_HEADING}\\n(?:- [^\\n]*(?:\\n|$))+$`), '');
+  const at = recovered.lastIndexOf(`\n\n${USER_HEADING}\n`);
+  if (at < 0) return { body: withoutSavedResults(recovered), messages: [], omitted: 0 };
+  const section = recovered.slice(at);
+  const body = withoutSavedResults(recovered.slice(0, at));
   const messages = [...section.matchAll(/<user-message>\n([\s\S]*?)\n<\/user-message>/g)].map((match) => match[1]!);
   const omitted = Number(new RegExp(`^\\n\\n${escapeRegExp(USER_HEADING)}\\nEarlier user messages not kept here: (\\d+)`).exec(section)?.[1] ?? 0);
   return { body, messages, omitted };
 }
-
-const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
  * User text made inert inside the section: its own `<user-message>` tags and a line starting like the section heading
@@ -215,7 +216,10 @@ export async function writeSummary(
     const total = windowBudget(ctx.model?.contextWindow, event.preparation.settings.reserveTokens, USER_MESSAGES_SHARE, USER_MESSAGES_CHARS);
     const messages = userMessagesSection(previous?.messages ?? [], previous?.omitted ?? 0, added, { total, perMessage: Math.min(USER_MESSAGE_CHARS, Math.max(500, Math.floor(total / 4))) });
     const note = transcriptNote(ctx.sessionManager.getSessionFile(), pi.getActiveTools().includes('backlog'));
-    return { compaction: { ...result, summary: `${result.summary}${messages}${note}` } };
+    // Every file saved from the summarized results (and by earlier summaries), named once, like the file lists.
+    const saved = savedResultPaths([...event.preparation.messagesToSummarize, ...event.preparation.turnPrefixMessages], clearedResults(event.branchEntries), carriedSavedResults(event.branchEntries));
+    const details = saved.length > 0 ? { ...(isRecord(result.details) ? result.details : {}), [SAVED_RESULTS_DETAILS]: saved } : result.details;
+    return { compaction: { ...result, summary: `${withoutModelSavedResults(result.summary)}${savedResultsBlock(saved)}${messages}${note}`, details } };
   } catch (error) {
     if (!event.signal.aborted && ctx.hasUI) ctx.ui.notify(`Octocode's compaction summary failed (${errorMessage(error)}); Pi writes its default summary.`, 'warning');
     return undefined;

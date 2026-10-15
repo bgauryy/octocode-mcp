@@ -156,7 +156,6 @@ fn socket_path() -> Option<std::path::PathBuf> {
         octocode_io::env::vars_lossy(),
         cwd.clone(),
         os_home,
-        false,
         RuntimeSurface::Cli,
     );
     let config = resolve_config(&input);
@@ -235,7 +234,11 @@ pub(super) async fn run(socket: &std::path::Path) -> u8 {
 
 #[cfg(not(unix))]
 pub(super) async fn run(_socket: &std::path::Path) -> u8 {
-    super::emit_error("octocode serve needs Unix sockets.", false);
+    super::emit_error(
+        "toolUnavailable",
+        "octocode serve needs Unix sockets.",
+        false,
+    );
     2
 }
 

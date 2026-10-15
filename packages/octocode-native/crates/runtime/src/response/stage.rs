@@ -1,5 +1,5 @@
 //! Public response stage: the one boundary between executed rows and the
-//! envelope a caller receives. Execution (dispatch, reranking inference)
+//! envelope a caller receives. Execution (dispatch, selection inference)
 //! finishes first; this stage owns the order of output-row isolation,
 //! continuation shaping, text rendering, paging, and final
 //! contract validation, identically for CLI JSON and MCP.
@@ -16,7 +16,7 @@ use serde_json::Value;
 
 pub(crate) struct StageInput {
     pub tool: ToolId,
-    /// Sanitized, reranked `{results}` envelope.
+    /// Sanitized `{results}` envelope after evidence selection.
     pub structured: Value,
     /// Normalized input; the pager builds `responsePagination.next` from it.
     pub response_query: Value,
@@ -52,6 +52,7 @@ pub(crate) fn finish(
         allow_auto_paging,
         source_digest,
     } = input;
+    crate::tools::selection_errors::decorate(tool, &mut structured, &response_query);
     // The notes stay with the pager for the pages a split row moves.
     let remaining = super::pages::take_remaining_notes(&mut structured);
     // Hosts show agents this JSON: source reads carry their line numbers in
@@ -161,19 +162,11 @@ pub(crate) fn response_all_failed(structured: &Value) -> bool {
         .get("queries")
         .and_then(Value::as_array)
         .is_some_and(|queries| {
+            // A clasify row failed when it carries an error and no answers.
             !queries.is_empty()
-                && queries.iter().all(|query| {
-                    query["status"] == "error"
-                        || query
-                            .get("resources")
-                            .and_then(Value::as_array)
-                            .is_some_and(|resources| {
-                                !resources.is_empty()
-                                    && resources
-                                        .iter()
-                                        .all(|resource| resource["coverage"]["state"] == "error")
-                            })
-                })
+                && queries
+                    .iter()
+                    .all(|query| query.get("error").is_some() && query.get("answers").is_none())
         })
 }
 
@@ -373,23 +366,17 @@ mod tests {
     }
 
     #[test]
-    fn semantic_error_flag_uses_resource_coverage_without_hiding_partial_success() {
-        for (coverage, expected) in [
-            (vec!["error"], true),
-            (vec!["error", "error"], true),
-            (vec!["error", "partial"], false),
-            (vec!["error", "complete"], false),
-            (vec![], false),
-        ] {
-            let resources = coverage
-                .into_iter()
-                .map(|coverage| json!({"coverage":{"state":coverage}}))
-                .collect::<Vec<_>>();
-            assert_eq!(
-                response_all_failed(&json!({"queries":[{"resources":resources}]})),
-                expected
-            );
-        }
+    fn clasify_all_failed_needs_every_row_to_fail() {
+        let failed = json!({"id":"a","error":{"errorCode":"pathNotFound","error":"gone"}});
+        let answered = json!({"id":"b","answers":{"q":{"type":"noul","noul":0.9}}});
+        assert!(response_all_failed(&json!({"queries":[failed.clone()]})));
+        assert!(response_all_failed(
+            &json!({"queries":[failed.clone(), failed.clone()]})
+        ));
+        assert!(!response_all_failed(
+            &json!({"queries":[failed, answered.clone()]})
+        ));
+        assert!(!response_all_failed(&json!({"queries":[answered]})));
         assert!(!response_all_failed(&json!({"queries":[]})));
     }
 
@@ -518,13 +505,12 @@ mod tests {
     }
 
     #[test]
-    fn clasify_receipts_compact_nested_queries_to_replay_equivalent_fields() {
-        let receipt = json!({"queries":[{"id":"q","resources":[{"id":"r","coverage":{"state":"complete"},
-            "pages":[{"answers":{"a":{"yesno":0.5}}}]}],
-            "next":{"clasify":{"queries":[{"id":"q","mainGoal": "test", "reasoning":"r",
-                "resources":[{"id":"r","tool":"localSearch",
-                    "query":{"path":"/tmp","matchString":"x","mainGoal": "test", "reasoning":"r","caseMode":"smart"}}],
-                "questions":[{"id":"a","type":"yesno","ask":"Does it?"}]}]}}}]});
+    fn clasify_receipts_keep_their_read_lead_executable() {
+        let receipt = json!({"queries":[{"id":"q","model":"jev-1.13.0",
+            "answers":{"a":{"type":"noul","noul":0.5}},
+            "usage":{"input_tokens":3,"output_tokens":1},
+            "hints":{"read":{"tool":"localFetch","query":{"queries":[
+                {"path":"/tmp/a","ranges":["1-2"],"minify":"none"}]}}}}]});
         let mut structured = receipt.clone();
         super::super::continuations::finalize(
             &mut structured,
@@ -550,13 +536,8 @@ mod tests {
         )
         .expect("stage runs")
         .expect("valid envelope");
-        // Only the default `caseMode:"smart"` goes; the replay is unchanged.
-        let mut expected = receipt["queries"].clone();
-        expected[0]["next"]["clasify"]["queries"][0]["resources"][0]["query"]
-            .as_object_mut()
-            .unwrap()
-            .remove("caseMode");
-        assert_eq!(outcome.structured_content["queries"], expected);
+        // The read of exactly what was judged survives the stage unchanged.
+        assert_eq!(outcome.structured_content["queries"], receipt["queries"]);
         assert!(
             outcome.content.is_empty(),
             "non-MCP receipts are not rendered"
@@ -565,8 +546,9 @@ mod tests {
 
     #[test]
     fn mcp_clasify_receipts_render_in_the_configured_text_format() {
-        let receipt = json!({"queries":[{"id":"q","resources":[{"id":"r","coverage":{"state":"complete"},
-            "pages":[{"answers":{"a":{"yesno":0.5}}}]}]}]});
+        let receipt = json!({"queries":[{"id":"q","model":"jev-1.13.0",
+            "answers":{"a":{"type":"noul","noul":0.5}},
+            "usage":{"input_tokens":3,"output_tokens":1}}]});
         let render = |format| {
             finish(
                 StageInput {

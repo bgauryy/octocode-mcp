@@ -58,7 +58,7 @@ External to local is one flow: `artifactSearch` maps a package to its repository
 
 ### 3.2 Optional brief for multi-call research
 - `mainGoal` (the research question) and `reasoning` (why this call advances it) are optional on every tool. A blank brief is dropped.
-- Why: a lookup spends nothing on a brief and cannot fail for a missing one; a research call explains itself in its own row. The brief is metadata: it never drives ranking or reaches the classifier.
+- Why: a lookup spends nothing on a brief and cannot fail for a missing one; a research call explains itself in its own row. When `clasifyContext` is present, the supplied brief also accompanies its atomic questions to JEV and is bound into selection replay.
 - Rules: [OCTOCODE_WORKFLOWS.md](OCTOCODE_WORKFLOWS.md#briefs-maingoal-and-reasoning).
 
 ### 3.3 Context engineering: instructions, descriptions, schemas
@@ -87,7 +87,7 @@ External to local is one flow: `artifactSearch` maps a package to its repository
 
 ### 3.8 Pages, leads, and failure hints
 - Follow-up calls use two channels. Both hold executable queries that run unchanged, and the runtime removes follow-ups the current surface cannot run.
-  - **`next.*` = pages:** more of the same result, or coverage it still lacks. The response is incomplete without them.
+  - **`next.*` = pages and recovery:** follow the pages needed for the claim's scope. `next.unfiltered` is optional recovery of the complete view after classification; it does not make a sufficient selected answer incomplete.
   - **`hints.*` = optional leads:** ready calls named by purpose (`read` the top match, `readPullRequest` the fix, `viewTree` the scope); `hints.text` adds a sentence only for a per-call fact. A lead carries no prose: the tool description says what each lead kind is for. A successful row shows leads only with `extras:["hints"]`, except a few default leads (`includeIgnored`, `countFiles`, `apply`, …).
 - An empty result keeps its leads. It is not an absence claim until scope, spelling, ref, and index limits are checked; the general repairs are stated once in each tool's description.
 - Errors are typed (`invalidInput`, `notFound`, `authentication`, `rateLimited`, …) and carry `retryable: true` only when a retry can help. Each class has its own CLI exit code; see the [CLI guide](../packages/octocode/docs/OCTOCODE_CLI.md#exit-codes).
@@ -100,10 +100,10 @@ External to local is one flow: `artifactSearch` maps a package to its repository
 - **Ranking:** hits in a file rank declaration > deciding statement (assignment, `if`, `return`, `throw`) > code > comment. For an exact identifier, the file that declares it ranks first.
 
 ### 3.10 Classifiers and clasify: selective evidence
-- Optional `classifiers` (self-contained evidence questions) rank source evidence only on `localFetch`, `localSearch`, `ghGetFileContent`, and `ghSearchCode`, within a disclosed selected view or provider page, before the tool returns. Other tools have no ranking controls and keep their ordinary behavior; eligible but incomplete operations can report a skip. Public `clasify` answers JEV `noul`, `choice` and `score` questions over literal state or an internally captured source. Both routes share one evaluator, cache and provider.
-- Choose semantic selection when it can avoid later reads; prefer an adequate cheap exact route. Do not repeat a relevance decision: classifiers already ordered the candidates. A useful typed answer about held evidence is a separate deliverable, not a saving on context already read.
-- Scores order attention, not proof. Verify deciding source, retain unjudged candidates and required continuations, and keep incomplete scope unresolved. No universal score or file-count cutoff determines usefulness.
-- Ranking is disabled by default; its optional fields require ranking enabled and a nonblank classification API credential, independently of beta and public `clasify` visibility. Public `clasify` needs the credential and beta. Setup, outputs and availability: [classifier and clasify guide](OCTOCODE_CLASIFY.md#availability).
+- `clasifyContext:{classifiers:[...],longContext?:boolean}` selects evidence on `localFetch`, `localSearch`, `ghGetFileContent` and `ghSearchCode` before it reaches the host. Optional `mainGoal` and `reasoning` add task context. Search evaluates captured matches; fetch evaluates source chunks. Both use the same evaluator, cache and provider as public `clasify`.
+- The default body contains only selected evidence in source order. The `selection` receipt counts selected, excluded and unknown units within its declared scope. Omitted evidence remains accessible through optional `next.unfiltered`; selection never proves absence outside that assessed scope.
+- Use selection when it can avoid substantial reading. Prefer an adequate exact lookup for small targets. Public `clasify` supplies typed Noul, Choice, Score and Box answers over internally captured text or images, without returning the captured source body.
+- A nonblank classification credential enables context selection without another activation flag. Public `clasify` additionally needs beta. Setup, outputs and availability: [classification guide](OCTOCODE_CLASIFY.md#availability).
 
 ### 3.11 Security: sanitize input and output
 - **Input:** the contract is validated before execution; unknown fields are rejected and nothing is silently clamped. Local paths stay inside the sandbox, and sensitive files are refused even inside allowed roots.

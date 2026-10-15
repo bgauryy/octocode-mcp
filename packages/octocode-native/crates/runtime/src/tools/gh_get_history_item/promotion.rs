@@ -1,8 +1,10 @@
 //! Promotion of a shaped page's cursors (`contentPagination`) to `next.*`
-//! for pull requests and issues.
+//! for pull requests and issues, with the note of what each page leaves.
 use super::patch_hop::*;
 use super::pr_menu::*;
+use super::rest::Rest;
 use super::{HistoryItemRequest, ItemOperation};
+use crate::response::pages::Remaining;
 use crate::tools::gh_shared::ensure_next;
 use serde_json::{Map, Value, json};
 
@@ -16,6 +18,7 @@ pub(super) fn pr_axis(axis: &str) -> Option<(&'static str, &'static str, &'stati
         "commentBody" => ("continueCommentBody", "nextOffset", "offset"),
         "files" => ("nextFilePage", "nextPage", "page"),
         "comments" => ("nextCommentPage", "nextPage", "page"),
+        "reviewComments" => ("nextReviewCommentPage", "nextPage", "page"),
         "reviews" => ("nextReviewPage", "nextPage", "page"),
         "commits" => ("nextCommitPage", "nextPage", "page"),
         _ => return None,
@@ -31,28 +34,30 @@ fn hoist_provider_limit(out: &mut Value, row: &str) {
         .and_then(Value::as_object)
         .and_then(|pages| pages.values().find_map(|page| page.get("providerLimit")))
         .cloned();
-    let Some(limit) = limit else {
+    // A provider limit names its reason (the contract requires it).
+    let Some((limit, reason)) = limit.and_then(|limit| {
+        let reason = limit.get("reason")?.as_str()?.to_owned();
+        Some((limit, reason))
+    }) else {
         return;
     };
-    if let Some(reason) = limit.get("reason").cloned() {
-        match out.get_mut("partialReasons").and_then(Value::as_array_mut) {
-            Some(reasons) if !reasons.contains(&reason) => reasons.push(reason),
-            Some(_) => {}
-            None => out["partialReasons"] = json!([reason]),
-        }
-    }
-    out["isPartial"] = json!(true);
-    out["terminalLimit"] = json!(true);
+    crate::tools::paging::terminal_limit(out, &reason, &[]);
     out["providerLimit"] = limit;
 }
 
-pub(super) fn promote_pr_continuations(out: &mut Value, q: &HistoryItemRequest) {
+/// `next.*` for every unfinished axis of the pull request's page, and the
+/// note of what each leaves ([`Rest`]).
+pub(super) fn promote_pr_continuations(
+    out: &mut Value,
+    q: &HistoryItemRequest,
+    rest: &Rest,
+) -> Vec<Remaining> {
     hoist_provider_limit(out, "/pullRequests/0");
     let Some(pages) = out
         .pointer_mut("/pullRequests/0/contentPagination")
         .and_then(Value::as_object_mut)
     else {
-        return;
+        return Vec::new();
     };
     // A file page with unread patches continues them first: its window
     // that finishes the patches offers the next file page.
@@ -60,16 +65,16 @@ pub(super) fn promote_pr_continuations(out: &mut Value, q: &HistoryItemRequest) 
         .get("patches")
         .is_some_and(|entry| entry.get("hasMore").and_then(Value::as_bool) == Some(true));
     let mut next = Map::new();
+    let mut notes = Vec::new();
     let mut partial = false;
-    for (axis, entry) in pages.iter_mut() {
+    for (axis, entry) in pages.iter() {
         if entry.get("hasMore").and_then(Value::as_bool) != Some(true) {
             continue;
         }
+        partial = true;
         if axis == "files" && patches_open {
-            partial = true;
             continue;
         }
-        partial = true;
         let Some((name, field, key)) = pr_axis(axis) else {
             continue;
         };
@@ -78,52 +83,64 @@ pub(super) fn promote_pr_continuations(out: &mut Value, q: &HistoryItemRequest) 
         };
         let mut nq = base_public_query(q, ItemOperation::PullRequest);
         nq[key] = cursor;
-        // `offset` is a single field shared by the body, review-body,
-        // comment-body and patch windows. A char-window continuation
-        // therefore narrows content to the surface it continues, and page
-        // continuations restart every char window, so one surface's offset
-        // never skews another's.
-        match axis.as_str() {
-            "body" => {
-                // The body has no page: a section page cursor would be inert.
-                nq["content"] = json!({"body":true});
-                remove_key(&mut nq, "page");
-            }
-            "reviewBody" => nq["content"] = json!({"reviews":true}),
-            "commentBody" => {
-                nq["content"] = json!({"comments": q
-                    .content_value()
-                    .and_then(|content| content.get("comments").cloned())
-                    .unwrap_or(json!({"discussion":true}))});
-            }
-            "patches" => {
-                next.insert(name.into(), patch_continuation(nq, entry, q));
-                continue;
-            }
-            _ => {
-                remove_key(&mut nq, "offset");
-                // A collection page continues only its own surface; the other
-                // surfaces were already delivered on this call.
-                let keep: &[&str] = match axis.as_str() {
-                    "files" => &["files", "patches"],
-                    "comments" => &["comments"],
-                    "reviews" => &["reviews"],
-                    "commits" => &["commits"],
-                    _ => &[],
-                };
-                if !keep.is_empty()
-                    && let Some(content) = nq.get_mut("content").and_then(Value::as_object_mut)
-                {
-                    content.retain(|key, _| keep.contains(&key.as_str()));
-                }
-            }
-        }
-        next.insert(name.into(), menu_read(nq));
+        let call = if axis == "patches" {
+            patch_continuation(nq, entry, q)
+        } else {
+            narrow_to_axis(&mut nq, axis, q);
+            menu_read(nq)
+        };
+        next.insert(name.into(), call);
+        notes.extend(rest.note(name, axis, entry));
     }
     if partial {
         out["isPartial"] = json!(true);
         if !next.is_empty() {
             out["next"] = Value::Object(next);
+        }
+    }
+    notes
+}
+
+/// A pull-request continuation of `axis` reads that surface alone. `offset`
+/// is a single field shared by the body, review-body, comment-body and patch
+/// windows: a char-window continuation narrows content to the surface it
+/// continues, and a page continuation restarts every char window, so one
+/// surface's offset never skews another's.
+fn narrow_to_axis(nq: &mut Value, axis: &str, q: &HistoryItemRequest) {
+    match axis {
+        "body" => {
+            // The body has no page: a section page cursor would be inert.
+            nq["content"] = json!({"body":true});
+            remove_key(nq, "page");
+        }
+        "reviewBody" => nq["content"] = json!({"reviews":true}),
+        "commentBody" => {
+            nq["content"] = json!({"comments": q
+                .content_value()
+                .and_then(|content| content.get("comments").cloned())
+                .unwrap_or(json!({"discussion":true}))});
+        }
+        _ => {
+            remove_key(nq, "offset");
+            // A collection page continues only its own surface; the other
+            // surfaces were already delivered on this call. The discussion
+            // and the inline review comments page apart.
+            let (keep, comments): (&[&str], _) = match axis {
+                "files" => (&["files", "patches"], None),
+                "comments" => (&["comments"], Some(json!({"discussion": true}))),
+                "reviewComments" => (&["comments"], Some(json!({"reviewInline": true}))),
+                "reviews" => (&["reviews"], None),
+                "commits" => (&["commits"], None),
+                _ => (&[], None),
+            };
+            if let Some(content) = nq.get_mut("content").and_then(Value::as_object_mut) {
+                if !keep.is_empty() {
+                    content.retain(|key, _| keep.contains(&key.as_str()));
+                }
+                if let Some(comments) = comments {
+                    content.insert("comments".into(), comments);
+                }
+            }
         }
     }
 }
@@ -157,12 +174,18 @@ pub(super) fn attach_raw_body_read(out: &mut Value, q: &HistoryItemRequest, surf
     out["next"]["readRawBody"] = menu_read(nq);
 }
 
-pub(super) fn promote_issue_continuations(out: &mut Value, q: &HistoryItemRequest) {
+/// `next.*` for every unfinished axis of the issue's page, and the note of
+/// what each leaves ([`Rest`]).
+pub(super) fn promote_issue_continuations(
+    out: &mut Value,
+    q: &HistoryItemRequest,
+    rest: &Rest,
+) -> Vec<Remaining> {
     let Some(pages) = out
         .pointer("/issues/0/contentPagination")
         .and_then(Value::as_object)
     else {
-        return;
+        return Vec::new();
     };
     let content_value = q.content_value();
     let comments = || json!({"comments":content_value.as_ref().and_then(|v|v.get("comments").cloned()).unwrap_or(json!({"discussion":true}))});
@@ -181,6 +204,7 @@ pub(super) fn promote_issue_continuations(out: &mut Value, q: &HistoryItemReques
         content
     };
     let mut next = Map::new();
+    let mut notes = Vec::new();
     for (axis, entry) in pages {
         if entry.get("hasMore").and_then(Value::as_bool) != Some(true) {
             continue;
@@ -202,20 +226,22 @@ pub(super) fn promote_issue_continuations(out: &mut Value, q: &HistoryItemReques
         let mut nq = base_public_query(q, ItemOperation::Issue);
         nq[key] = cursor.clone();
         nq["content"] = content;
-        // A comment page cut to the response budget resumes with the page
-        // size that starts a page at its first unshown comment.
-        if let Some(size) = entry.get("nextPageSize") {
-            nq["pageSize"] = size.clone();
-        }
         if axis == "comments" {
+            // A comment page cut to the response budget resumes with the
+            // page size that starts a page at its first unshown comment.
+            if let Some(size) = rest.next_page_size() {
+                nq["pageSize"] = json!(size);
+            }
             nq["offset"] = json!(0);
         }
         next.insert(name.into(), menu_read(nq));
+        notes.extend(rest.note(name, axis, entry));
     }
     if !next.is_empty() {
         out["isPartial"] = json!(true);
         out["next"] = Value::Object(next);
     }
+    notes
 }
 
 #[cfg(test)]

@@ -51,29 +51,12 @@ impl Continuation {
     }
 }
 
-impl Continuation {
-    /// A `{tool, query: row, ...}` call (clasify's resource-read shape) as a
-    /// built continuation; other keys ride along. `None` when `call` is not
-    /// a one-row call of a known tool.
-    pub fn from_row_call(call: &Value) -> Option<Value> {
-        let object = call.as_object()?;
-        let tool = ToolId::from_name(object.get("tool")?.as_str()?)?;
-        let row = object
-            .get("query")
-            .filter(|row| row.get("queries").is_none())?;
-        let mut built = Self::new(tool, row.clone()).build();
-        for (key, value) in object {
-            if key != "tool" && key != "query" {
-                built[key.as_str()] = value.clone();
-            }
-        }
-        Some(built)
-    }
-}
-
 /// Fails loudly on a continuation the tool it names would reject.
 #[cfg(any(test, debug_assertions))]
-#[allow(clippy::panic)]
+#[expect(
+    clippy::panic,
+    reason = "a continuation its target rejects is a runtime defect; debug builds fail loudly"
+)]
 fn assert_valid(tool: ToolId, input: &Value) {
     if let Err(error) = crate::contracts::validate(tool.as_str(), input.clone()) {
         panic!(
@@ -257,6 +240,12 @@ pub struct ToolData {
     pub diagnostics: ToolDiagnostics,
     #[serde(skip)]
     pub status: Option<&'static str>,
+    /// What the row's pages leave to read, counted by the tool from facts its
+    /// public pagination does not state; never an output field. The response
+    /// stage words a note only for a page a split moved
+    /// ([`crate::response::pages::note_remaining`]).
+    #[serde(skip)]
+    pub remaining: Vec<crate::response::pages::Remaining>,
 }
 impl From<Value> for ToolData {
     fn from(data: Value) -> Self {
@@ -264,12 +253,13 @@ impl From<Value> for ToolData {
             data,
             diagnostics: ToolDiagnostics::default(),
             status: None,
+            remaining: Vec::new(),
         }
     }
 }
 
 /// Every query field that names where a walk stands: its pages, offsets and
-/// snapshots, and the saved `ranking` plan they were ordered by. A restart
+/// snapshots, and the saved `selection` plan they were ordered by. A restart
 /// drops them all; the contract guard keeps the list complete.
 pub(crate) const CURSOR_FIELDS: [&str; 10] = [
     "page",
@@ -281,7 +271,7 @@ pub(crate) const CURSOR_FIELDS: [&str; 10] = [
     "materializeOffset",
     "snapshot",
     "diagnosticSnapshot",
-    "ranking",
+    "selection",
 ];
 
 /// The one restart of a row query `row` of `tool`: the same query from its
@@ -348,7 +338,7 @@ mod tests {
     use serde_json::{Value, json};
 
     /// Every query field of every tool that names where a walk stands (a
-    /// page, an offset, a snapshot, a saved ranking) is in the one list a
+    /// page, an offset, a snapshot, a saved selection) is in the one list a
     /// restart drops, and every listed field is some tool's query field.
     #[test]
     fn the_cursor_list_is_every_contract_cursor_field() {
@@ -374,7 +364,7 @@ mod tests {
             }
         }
         let cursor = |field: &str| {
-            matches!(field, "page" | "offset" | "snapshot" | "ranking")
+            matches!(field, "page" | "offset" | "snapshot" | "selection")
                 || ["Page", "Offset", "Snapshot"]
                     .iter()
                     .any(|suffix| field.ends_with(suffix))
@@ -393,11 +383,11 @@ mod tests {
     }
 
     /// A restart is page 1 of the same query: every cursor and the saved
-    /// ranking dropped, a replay (`exact`), executable as built.
+    /// selection dropped, a replay (`exact`), executable as built.
     #[test]
-    fn a_restart_drops_every_cursor_and_the_saved_ranking() {
+    fn a_restart_drops_every_cursor_and_the_saved_selection() {
         let row = json!({"path":"src","matchString":"f","page":3,"matchPage":2,
-            "snapshot":"s1","ranking":"plan","pageSize":5});
+            "snapshot":"s1","selection":"plan","pageSize":5});
         let restart = restart_query(ToolId::LocalSearch, &row);
         assert_eq!(restart["tool"], "localSearch");
         assert_eq!(restart["confidence"], "exact");

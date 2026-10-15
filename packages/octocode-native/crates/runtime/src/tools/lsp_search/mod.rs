@@ -36,6 +36,7 @@ use std::time::Duration;
 
 mod anchor;
 mod failure;
+mod fallback_hierarchy;
 mod heritage;
 mod import_stop;
 mod importers;
@@ -53,7 +54,7 @@ mod source;
 mod walk;
 
 pub use failure::LspFailure;
-use failure::{failure, mark_partial, with_next};
+use failure::{failure, partial_with_retry, with_next};
 pub(crate) use output::Output;
 use render::decode_uri_path;
 use source::{SourceCache, SourceReadError, read_bounded_source_async, snippet_policy};
@@ -630,6 +631,7 @@ async fn run_page(
         character: anchor.character,
         language_id,
         budget: crate::tools::page_windows::page_budget(response_window, &query.to_row()),
+        response_window,
     }
     .run()
     .await?;
@@ -996,7 +998,7 @@ fn annotate(
     if session.open_readiness.as_deref() == Some("timeout")
         && result.get("status") != Some(&"error".into())
     {
-        mark_partial(
+        partial_with_retry(
             result,
             query,
             "languageServerIndexing",

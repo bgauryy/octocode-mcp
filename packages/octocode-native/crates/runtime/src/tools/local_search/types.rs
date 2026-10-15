@@ -233,7 +233,7 @@ pub struct LocalSearchResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pagination: Option<FilePagination>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub ranking: Option<crate::contracts::tool_types::Ranking>,
+    pub selection: Option<crate::contracts::tool_types::Selection>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub hints: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -247,6 +247,8 @@ pub struct LocalSearchResult {
     pub terminal_limit: bool,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub warnings: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub skipped_paths: Option<crate::contracts::tool_types::LocalSearchSkippedPaths>,
     #[serde(skip)]
     pub source_snapshot: Option<String>,
     #[serde(skip)]

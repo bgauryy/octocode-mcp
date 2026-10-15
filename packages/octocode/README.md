@@ -137,7 +137,7 @@ then the global `.env` in the Octocode home (`npx octocode config home`).
 | Key | Purpose |
 |---|---|
 | `GH_TOKEN` / `GITHUB_TOKEN` | GitHub token; overrides `auth login`. |
-| `OCTOCODE_CLASSIFICATION_API` | Credential required for public `clasify` and read-tool goals. |
+| `OCTOCODE_CLASSIFICATION_API` | Credential required for public `clasify` and read-tool `clasifyContext`. |
 | `OCTOCODE_BETA` | Enables `astTopology` and `astRewrite`, and public `clasify` when its credential is configured. |
 | `WORKSPACE_ROOT` | Root that relative local paths resolve against (default: the current directory). |
 

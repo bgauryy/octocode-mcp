@@ -93,22 +93,20 @@ const cases: ReadonlyArray<{
     ],
   },
   {
-    name: 'a flat clasify resource is named as sent',
+    name: 'a removed clasify matrix field is named as sent',
     tool: 'clasify',
     query: {
-      resources: [
-        {
-          tool: 'localFetch',
-          query: { path: 'package.json' },
-          candidateEvidence: 'fileChunks',
-        },
-      ],
-      questions: [{ type: 'yesno', ask: 'Does this define a package?' }],
+      state: { name: 'validation-parity-fixture' },
+      resources: [{ tool: 'localFetch', query: { path: 'package.json' } }],
+      questions: {
+        q: { type: 'noul', instructions: 'Does this define a package?' },
+      },
     },
     says: [
-      'resources.0.candidateEvidence: candidateEvidence requires localSearch or ghSearchCode.',
+      "Remove unknown field 'resources' from queries[0]",
+      "did you mean 'source'?",
     ],
-    never: ['context.candidateEvidence'],
+    never: ['candidateEvidence'],
   },
   {
     name: 'a misspelled lspSearch path',

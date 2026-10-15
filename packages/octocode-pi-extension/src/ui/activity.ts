@@ -69,8 +69,8 @@ export class Activity {
   private phaseAt = 0;
   private readonly tools = new Map<string, RunningTool>();
   private prompt: { title: string; at: number } | undefined;
-  /** The latest consequential call the permission check let through, while its tool runs. */
-  private action: { head: string; text: string; warn: boolean; at: number; more: number } | undefined;
+  /** The latest consequential call the permission check let through, while its tool runs (`id`: that call, when its check was running). */
+  private action: { id?: string; head: string; text: string; warn: boolean; at: number; more: number } | undefined;
   private readonly thought = new Thought();
 
   start(now: number): void {
@@ -111,25 +111,24 @@ export class Activity {
   }
 
   toolEnd(id: string, now: number): void {
-    if (this.tools.delete(id) && this.tools.size === 0) {
-      this.action = undefined;
-      if (this.phase !== 'idle') this.setPhase('model', now);
-    }
+    const ended = this.tools.delete(id);
+    // A call that ends (even one another handler blocked after the permission check) takes its own line with it.
+    if (this.action?.id === id || (ended && this.tools.size === 0)) this.action = undefined;
+    if (ended && this.tools.size === 0 && this.phase !== 'idle') this.setPhase('model', now);
   }
 
   /**
    * A call the permission check let through (`what` is its first target). The line changes at most once per
    * `ACTION_LINE_MS`: a burst inside the window only raises the `+n` count, except a ⚠ call, which always shows itself.
-   * True when the line changed.
    */
-  consequential(action: string, what: string, warn: boolean, now: number): boolean {
+  consequential(action: string, what: string, warn: boolean, now: number): void {
     const held = this.action;
     if (held && now - held.at < ACTION_LINE_MS && !(warn && !held.warn)) {
       held.more += 1;
-      return true;
+      return;
     }
-    this.action = { head: action, text: what, warn, at: now, more: 0 };
-    return true;
+    const checked = [...this.tools].find(([, tool]) => tool.checkingSince !== undefined)?.[0];
+    this.action = { ...(checked === undefined ? {} : { id: checked }), head: action, text: what, warn, at: now, more: 0 };
   }
 
   /** A call's `tool_call` checks started (`active`) or ended. Pi checks the calls of a batch one at a time. */
@@ -293,7 +292,8 @@ export function registerActivity(pi: ExtensionAPI, options: { onChange?: (line: 
   return {
     activity,
     consequential: (action, what, warn) => {
-      if (activity.consequential(action, what, warn, Date.now())) paint();
+      activity.consequential(action, what, warn, Date.now());
+      paint();
     },
     checking: (id, active) => {
       activity.checking(id, active, Date.now());

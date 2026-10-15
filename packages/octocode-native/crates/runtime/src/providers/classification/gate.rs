@@ -23,7 +23,7 @@
 //! before any retry backoff sleep. The gate is transport-neutral: it reports
 //! admission failures as [`GateDenied`] and the transport maps them to public
 //! error codes.
-use crate::providers::RequestBudget;
+use octocode_github::RequestBudget;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
@@ -39,9 +39,8 @@ pub(crate) const CIRCUIT_THRESHOLD: u32 = 5;
 pub(crate) const CIRCUIT_COOLDOWN: Duration = Duration::from_secs(10);
 /// How long a 402 stops every call to the endpoint before one probes again.
 pub(crate) const QUOTA_MEMO: Duration = Duration::from_secs(60);
-/// Bounds mirrored from `classification.maxConcurrency` in the config contract.
-const MIN_LIMIT: usize = 1;
-const MAX_LIMIT: usize = 64;
+/// Gates kept before idle ones are dropped (see [`lease`]).
+const RETAINED_GATES: usize = 64;
 
 /// Why the gate refused to admit a request.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -102,8 +101,14 @@ pub(crate) struct GatePermit {
     share: Arc<CallShare>,
 }
 
+/// `limit` within the config contract's `classification.maxConcurrency`
+/// bounds, so the gate and the setting cannot disagree.
 fn clamp_limit(limit: usize) -> usize {
-    limit.clamp(MIN_LIMIT, MAX_LIMIT)
+    let field = &crate::config::field::CLASSIFICATION_MAX_CONCURRENCY;
+    let bound =
+        |value: Option<f64>, fallback: usize| value.map_or(fallback, |value| value as usize);
+    let minimum = bound(field.minimum, 1).max(1);
+    limit.clamp(minimum, bound(field.maximum, minimum).max(minimum))
 }
 
 /// Largest share of the configured limit one tool call may hold.
@@ -132,6 +137,12 @@ pub(crate) fn lease(key: &str, limit: usize) -> GateLease {
             .get_or_init(Mutex::default)
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
+        if !gates.contains_key(key) && gates.len() >= RETAINED_GATES {
+            // Drop gates nobody holds that remember nothing: no permit out,
+            // no cooldown, open circuit or quota memo still running.
+            let now = Instant::now();
+            gates.retain(|_, gate| Arc::strong_count(gate) > 1 || gate.is_active(now));
+        }
         gates
             .entry(key.to_owned())
             .or_insert_with(|| Arc::new(ClassificationGate::new(limit)))
@@ -164,6 +175,20 @@ impl ClassificationGate {
 
     fn lock(&self) -> MutexGuard<'_, GateState> {
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Whether dropping this gate would lose state: a permit in flight, a
+    /// reduced window still restoring, or a cooldown, open circuit or quota
+    /// memo that has not run out.
+    fn is_active(&self, now: Instant) -> bool {
+        let state = self.lock();
+        let running = |until: Option<Instant>| until.is_some_and(|until| until > now);
+        state.in_flight > 0
+            || state.effective < state.limit
+            || state.consecutive_failures > 0
+            || running(state.not_before)
+            || running(state.open_until)
+            || running(state.quota_until)
     }
 
     fn set_limit(&self, limit: usize) {
@@ -522,5 +547,49 @@ mod tests {
         assert_eq!(lease(key, 3).gate.effective_limit(), 3);
         assert_eq!(lease(key, 0).gate.effective_limit(), 1);
         assert_eq!(lease(key, 500).gate.effective_limit(), 64);
+    }
+
+    /// The gate's bounds are the setting's: core's config contract states
+    /// `classification.maxConcurrency` once.
+    #[test]
+    fn limits_follow_the_config_contract_bounds() {
+        let field = &crate::config::field::CLASSIFICATION_MAX_CONCURRENCY;
+        let (minimum, maximum) = (
+            field.minimum.expect("minimum") as usize,
+            field.maximum.expect("maximum") as usize,
+        );
+        assert_eq!(clamp_limit(0), minimum);
+        assert_eq!(clamp_limit(maximum + 1), maximum);
+        assert_eq!(clamp_limit(minimum + 1), minimum + 1);
+    }
+
+    /// Past the retained count, idle gates are dropped, while one that holds
+    /// a permit or a running cooldown keeps its state.
+    #[tokio::test]
+    async fn only_idle_gates_are_dropped_past_the_retained_count() {
+        let busy = lease("test://retain-busy", 2);
+        let permit = busy
+            .acquire(&budget(Duration::from_secs(5)))
+            .await
+            .expect("permit");
+        drop(busy);
+        let cooling = lease("test://retain-cooling", 2);
+        cooling.gate.lock().not_before = Some(Instant::now() + Duration::from_secs(60));
+        drop(cooling);
+        for index in 0..RETAINED_GATES * 2 {
+            drop(lease(&format!("test://retain-idle-{index}"), 2));
+        }
+        assert_eq!(
+            lease("test://retain-busy", 2).gate.in_flight(),
+            1,
+            "a held permit survives"
+        );
+        assert!(
+            lease("test://retain-cooling", 2)
+                .gate
+                .is_active(Instant::now()),
+            "a running cooldown survives"
+        );
+        drop(permit);
     }
 }
