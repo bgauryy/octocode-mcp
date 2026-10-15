@@ -135,7 +135,7 @@ async fn walk_row_continuations(
 async fn a_default_local_search_walk_fits_the_window_and_reaches_every_hit_once() {
     let workspace = Workspace::new();
     let (root, total) = search_fixture(&workspace, 48);
-    let runtime = workspace.runtime(&[("OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH", WINDOW.to_string())]);
+    let runtime = workspace.runtime(&[]);
     let long_goal = "Find every needle hit across the fixture tree. ".repeat(6);
     for (mcp, goal) in [
         (false, "Walk the hits."),
@@ -188,7 +188,7 @@ async fn every_default_local_search_page_names_the_enclosing_declaration_of_ever
             .map(|dir| dir.to_path_buf());
     }
     let root = root.unwrap().to_string_lossy().into_owned();
-    let runtime = workspace.runtime(&[("OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH", WINDOW.to_string())]);
+    let runtime = workspace.runtime(&[]);
     let mut input = json!({"queries": [search(&root, "Walk the hits.")]});
     let mut seen = 0;
     for calls in 1.. {
@@ -270,7 +270,7 @@ async fn a_default_structure_listing_walk_fits_the_window_and_lists_every_file_o
             .map(|dir| dir.to_path_buf());
     }
     let root = root.unwrap().to_string_lossy().into_owned();
-    let runtime = workspace.runtime(&[("OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH", WINDOW.to_string())]);
+    let runtime = workspace.runtime(&[]);
     for (mcp, detail) in [(false, "basic"), (true, "basic"), (false, "details")] {
         let mut first = json!({"operation": "files", "path": root, "include": ["**/*.rs"],
             "mainGoal": "List every file.", "reasoning": "Walk the listing."});
@@ -342,7 +342,7 @@ async fn a_default_structure_listing_walk_fits_the_window_and_lists_every_file_o
 async fn a_split_page_offers_its_row_continuation_only_after_its_last_part() {
     let workspace = Workspace::new();
     let (root, total) = search_fixture(&workspace, 10);
-    let runtime = workspace.runtime(&[("OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH", WINDOW.to_string())]);
+    let runtime = workspace.runtime(&[]);
     for window in [4_000, 2_500] {
         for mcp in [false, true] {
             let mut input = json!({"queries": [search(&root, "Walk the hits.")],

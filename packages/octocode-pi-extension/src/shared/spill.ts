@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatDimensionNote, formatSize, resizeImage, truncateHead, truncateTail } from '@earendil-works/pi-coding-agent';
-import { sha256 } from './atomic.js';
+import { shortHash } from './atomic.js';
 import { PRIVATE_FILE_MODE, sessionOutputDir } from './home.js';
 import { shortPath } from './format.js';
 import { capOutput, cutText } from './util.js';
@@ -33,24 +33,33 @@ export function saveFullOutput(text: string, label: string): string | undefined 
 }
 
 /**
+ * Writes `content` to `<session folder>/output/<name>` (owner-only) unless a file of that name already holds exactly these
+ * bytes, and returns the absolute path; undefined when it could not be written or the name is taken by other content.
+ * The caller names the file by its content's hash, so the same bytes always land in the same file. Never throws.
+ */
+export function saveNamedContent(content: string | Uint8Array, name: string): string | undefined {
+  try {
+    const file = path.join(sessionOutputDir('output'), name);
+    try {
+      fs.writeFileSync(file, content, { flag: 'wx', mode: PRIVATE_FILE_MODE });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST' || !Buffer.from(content).equals(fs.readFileSync(file))) return undefined;
+    }
+    return file;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Saves `content` to `<session folder>/output/<label>-<sha256 prefix>.<extension>`, named by its content, so the same
  * bytes always land in the same file (saving the same content twice points at one copy). Returns where it is
  * and how to check it, as `<path> (sha256 <prefix>, <n> bytes)`, or undefined when it could not be written. Never throws.
  */
 export function saveContentCopy(content: string | Uint8Array, label: string, extension = 'txt'): string | undefined {
-  try {
-    const hash = sha256(content).slice(0, 16);
-    const bytes = typeof content === 'string' ? Buffer.byteLength(content) : content.byteLength;
-    const file = path.join(sessionOutputDir('output'), `${spillLabel(label)}-${hash}.${extension}`);
-    try {
-      fs.writeFileSync(file, content, { flag: 'wx', mode: PRIVATE_FILE_MODE });
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST' || fs.statSync(file).size !== bytes) return undefined;
-    }
-    return `${shortPath(file)} (sha256 ${hash}, ${bytes} bytes)`;
-  } catch {
-    return undefined;
-  }
+  const hash = shortHash(content);
+  const file = saveNamedContent(content, `${spillLabel(label)}-${hash}.${extension}`);
+  return file && `${shortPath(file)} (sha256 ${hash}, ${typeof content === 'string' ? Buffer.byteLength(content) : content.byteLength} bytes)`;
 }
 
 /**
@@ -105,7 +114,10 @@ export function imageBudget(limits: ImageLimits = imageLimits()): number {
   return Math.min(IMAGE_MAX_CHARS, limits.maxBytes ?? IMAGE_MAX_CHARS);
 }
 
-const IMAGE_EXTENSIONS: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif' };
+const IMAGE_EXTENSIONS: ReadonlyMap<string, string> = new Map([['image/png', 'png'], ['image/jpeg', 'jpg'], ['image/webp', 'webp'], ['image/gif', 'gif']]);
+
+/** The file extension of an image MIME type, or undefined for one this version does not know (callers pick their own fallback). */
+export const imageExtension = (mimeType: string): string | undefined => IMAGE_EXTENSIONS.get(mimeType);
 
 /**
  * Writes a base64 image to `<session folder>/output/<label>-<timestamp>-<n>.<ext>` (owner-only) and returns the
@@ -113,7 +125,7 @@ const IMAGE_EXTENSIONS: Record<string, string> = { 'image/png': 'png', 'image/jp
  */
 export function saveImageFile(base64: string, mimeType: string, label: string): string | undefined {
   try {
-    const file = path.join(sessionOutputDir('output'), `${spillLabel(label)}-${Date.now()}-${++written}.${IMAGE_EXTENSIONS[mimeType] ?? 'img'}`);
+    const file = path.join(sessionOutputDir('output'), `${spillLabel(label)}-${Date.now()}-${++written}.${imageExtension(mimeType) ?? 'img'}`);
     fs.writeFileSync(file, Buffer.from(base64, 'base64'), { flag: 'wx', mode: PRIVATE_FILE_MODE });
     return file;
   } catch {

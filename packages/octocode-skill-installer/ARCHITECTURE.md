@@ -20,10 +20,10 @@ output. Windows uses directory junctions for link mode.
 
 ## Ownership
 
-- `SKILL_PLATFORMS` owns canonical platform names, aliases, global and project
-  relative destination paths, and `auto` compatibility choices.
-- `formatSkillPlatformHelp` derives CLI-facing accepted values and alias guidance
-  from that registry.
+- `SKILL_PLATFORMS` owns platform names, global and project relative
+  destination paths, and the `auto` mode choice.
+- `formatSkillPlatformHelp` and `parseSkillPlatforms` derive the accepted CLI
+  values from that registry.
 - `installBundledSkills` owns validation, dry-run planning, atomic replacement,
   conflict refusal, idempotency, and the shared result schema.
 - Calling CLIs own argument parsing, bundled-skill discovery, human output, and
@@ -50,9 +50,15 @@ output. Windows uses directory junctions for link mode.
 
 ## Platform contract
 
-The canonical platform names are `pi`, `cursor`, `claude`, `codex`, `opencode`,
-`copilot`, and `gemini`. `claude-desktop` normalizes to `claude` because Claude
-Code Desktop reads the same `.claude/skills` locations. `shared`, `common`,
-`agents`, and the legacy `codex-native` spelling normalize to `codex`, whose
-current Agent Skills location is `.agents/skills`. `all` expands to the seven
-distinct destinations, and every destination supports global and project scope.
+| Platform | Global | Project |
+|---|---|---|
+| `pi` | `~/.pi/agent/skills` | `.pi/skills` |
+| `cursor` | `~/.cursor/skills` | `.cursor/skills` |
+| `claude` | `~/.claude/skills` | `.claude/skills` |
+| `codex` | `~/.agents/skills` | `.agents/skills` |
+| `opencode` | `~/.config/opencode/skills` | `.opencode/skills` |
+| `copilot` | `~/.copilot/skills` | `.github/skills` |
+| `gemini` | `~/.gemini/skills` | `.gemini/skills` |
+
+`all` expands to these seven. No aliases are accepted; an unknown value fails
+with the valid list.

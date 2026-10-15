@@ -1,6 +1,6 @@
 # External API
 
-Let other programs message a running Pi session and follow its events. Off by default. See the [README](../README.md) for an overview.
+Let other programs message a running Pi session and follow its events. See the [README](../README.md) for an overview.
 
 Off by default: whoever can reach the API can drive the agent with your permissions. Start Pi with `OCTOCODE_API=1` (socket) and/or `OCTOCODE_API_HTTP=0` (loopback HTTP), or type `/octocode api on`.
 

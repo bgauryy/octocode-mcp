@@ -590,26 +590,14 @@ fn files_at_the_walk_ceiling_page_every_listed_row_and_lead_to_narrow() {
             std::fs::write(dir_path.join(format!("f{file:04}.ts")), "").expect("fixture file");
         }
     }
-    // Not `walk_pages`: a cut page carries `clipped`/`totalAvailable`, which
-    // the core output schema does not declare yet (reported, pending a
-    // contract decision), so this loop follows `nextPage` unvalidated.
-    let mut query = json!({"operation":"files","path":root.0,"extensions":["ts"],"pageSize":1000});
-    let mut pages = Vec::new();
-    loop {
-        let out = run(&root.0, query.clone()).expect("files page");
-        let next = out["next"]["nextPage"]["query"]["queries"][0].clone();
-        pages.push(out);
-        if next.is_null() {
-            break;
-        }
-        query = next;
-        assert!(pages.len() < 20, "runaway paging");
-    }
+    // `walk_pages` fails on a row listed twice and on paging past its cap.
+    let pages = walk_pages(
+        &root.0,
+        json!({"operation":"files","path":root.0,"extensions":["ts"],"pageSize":1000}),
+    );
     let mut seen = std::collections::BTreeSet::new();
     for out in &pages {
-        for row in listed(out) {
-            assert!(seen.insert(row["path"].to_string()), "duplicate {row}");
-        }
+        seen.extend(listed(out).iter().map(|row| row["path"].to_string()));
         if out["pagination"]["hasMore"] == true {
             assert!(
                 out["next"]["nextPage"].is_object(),

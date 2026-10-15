@@ -61,3 +61,13 @@ test('a required request sent passively still expires with a sender notice and a
   assert.equal(notices.length, 1);
   assert.match(notices[0].body, new RegExp(`^Request ${sent.id} expired before bob acknowledged it`));
 });
+
+test('a raw SQL insert that names no reply policy is an FYI, like the tools', t => {
+  const f = fixture(t), alice = f.join('alice'), bob = f.join('bob');
+  const id = Number(f.db.prepare("INSERT INTO messages(sender,target,body,key,expiresAt,reasoning) VALUES(?,?,'Raw note','raw-fyi',?,'Check the column defaults')").run(alice, bob, Date.now() + 60_000).lastInsertRowid);
+  assert.deepEqual({ ...f.row(id) }, { replyRequired: 0, wake: 'passive' });
+  assert.deepEqual(
+    f.db.prepare("SELECT name, dflt_value FROM pragma_table_info('messages') WHERE name IN ('replyRequired','wake') ORDER BY name").all().map(row => ({ ...row })),
+    [{ name: 'replyRequired', dflt_value: '0' }, { name: 'wake', dflt_value: "'passive'" }],
+  );
+});

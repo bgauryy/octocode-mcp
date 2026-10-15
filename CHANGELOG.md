@@ -2,12 +2,59 @@
 
 ## [Unreleased]
 
+### Removed — internal limits are no longer settings (2026-10-15)
+- **Timeouts, retries, waits, page size, caches, concurrency and selection
+  budgets are code constants**, not `.env` or `.octocoderc` settings:
+  request timeout 30 s, 3 retries, 45 s GitHub rate-limit wait, a
+  20,000-character automatic page (`responseLength` per call still goes to
+  50,000), a 24 h / 2 GiB / 50-repository clone cache, 10 classification
+  requests in flight, and 64 candidates / 131,072 characters / 10 s per
+  context selection. The language-server memory cap is host-derived; a
+  per-server `maxMemoryMb` in `lsp-servers.json` still overrides it.
+- **Removed names** (`network.timeout`, `network.maxRetries`,
+  `network.maxRateLimitWait`, `lsp.maxMemoryMb`, `output.pagination`,
+  `storage.cloneCache`, `classification.maxConcurrency`, `.maxCandidates`,
+  `.maxChars`, `.timeoutMs`, and `REQUEST_TIMEOUT`, `MAX_RETRIES`,
+  `OCTOCODE_MAX_RATE_LIMIT_WAIT`, `OCTOCODE_LSP_MAX_MEMORY_MB`,
+  `OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH`, `OCTOCODE_CACHE_TTL_MS`,
+  `OCTOCODE_MAX_CACHE_SIZE`, `OCTOCODE_MAX_CLONES`,
+  `OCTOCODE_CLASSIFICATION_CONCURRENCY`, `_MAX_CANDIDATES`, `_MAX_CHARS`,
+  `_TIMEOUT_MS`) get one `removed_setting` warning each and are ignored;
+  startup never fails on them. `config set` refuses them; `config unset`
+  still deletes them.
+
+### Fixed — security, lossless reads and leads (2026-10-15)
+- **Clone cache checks access on every hit.** A cached `ghCloneRepo`
+  checkout is served only after one `commits/{ref}` call with the caller's
+  own credential succeeds; any failure refuses the hit, so one token can no
+  longer reuse another's private checkout. A host serving several users
+  should still give each its own `OCTOCODE_HOME`.
+- **`fullContent` pages are lossless.** A `ghGetFileContent` (or
+  `localFetch`) `fullContent` read too large for one page continues with
+  `minify:"none"` unless you chose a view; the pages join to the whole file.
+- **`ghGetHistoryItem` PR misses return leads.** A `matchString` that hits
+  no patch line offers `withoutMatchString`, then `readFiles`; an
+  `include`/`status`/`minChanges` scope that matches nothing offers
+  `readFiles`. The prose tips are gone.
+- **`astSearch` `match` takes `languageGlobs`** and warns with a count and
+  example paths when a directory scan skips files no grammar parses.
+- **`localSearch` pages hold more rows with `enclosing` names:** each row is
+  charged its exact name cost instead of a flat reserve (about 1.6× the rows
+  on a single large file); pages stay identical across calls, and an edit to
+  an earlier page's file restarts the walk with `staleSnapshot`.
+- **Language servers:** a missing built-in server's error names its install
+  command; a `tsgo` `workspaceSymbol` answer at its 256-symbol limit warns
+  that the server capped it.
+- **Validation:** a `clasify` input that misses a branch's required selector
+  now reports that branch's error, with selector issues first.
+- **`config view`:** an edit conflict and a contract mismatch (`UNAVAILABLE`)
+  exit 5; invalid input stays exit 2.
+
 ### Changed — configuration (2026-10-14)
-- **A workspace can lower a numeric setting, never raise it.** A workspace
-  `.octocoderc` number above the home `.octocoderc` value (else the default)
-  is ignored with a `workspace_config_raises_limit` warning. A workspace may
-  also narrow `OCTOCODE_ENABLE_LOCAL`, `OCTOCODE_REDACT_EMAILS`,
-  `OCTOCODE_RANKING_ENABLED` and `OCTOCODE_STORAGE_MODE`, never widen them.
+- **A workspace may narrow, never widen, home-only switches:**
+  `OCTOCODE_ENABLE_LOCAL=false`, `OCTOCODE_REDACT_EMAILS=true` and
+  `OCTOCODE_STORAGE_MODE=memory` apply from a workspace `.env` or
+  `.octocoderc`; the widening value is skipped there.
 - **Path settings expand `~`** (`local.allowedPaths`, `local.workspaceRoot`,
   `lsp.configPath`, `lsp.cacheDir`) once, when settings resolve; a relative
   path is rejected with a warning.
@@ -16,7 +63,13 @@
   `classification.type`, `OCTOCODE_CLASSIFICATION_TYPE`).
 - **`config get` masks secrets** and says where the value lives (home,
   workspace or process environment); `--json` adds `source` and `path`.
-- **`astRewrite` is parked:** unavailable on MCP and the CLI (`disabled`).
+- **`astRewrite` is parked:** unavailable on MCP and the CLI (`disabled`),
+  with or without beta.
+- **`clasify` is beta:** it needs `OCTOCODE_BETA=true` and a classification
+  key. The key alone enables `clasifyContext` on `localSearch`, `localFetch`,
+  `ghSearchCode` and `ghGetFileContent`, which keeps only the hits or passages
+  a judge selects; the earlier ranking, `locate`, Scout and `next.clasify`
+  walk are removed.
 
 ### Changed — GitHub reads and leads (2026-10-14)
 - **Identical concurrent GitHub file reads send one request**, and a cached
@@ -53,8 +106,8 @@
 
 ### Changed — CLI paging is success; exit 6 removed
 - **A result with a next page exits 0**, as the MCP server reports it:
-  `pagination.hasMore`, `next.*`, a partial source read and a pending
-  `next.clasify` no longer change the exit code. `graph query` cuts also exit 0.
+  `pagination.hasMore`, `next.*` and a partial source read no longer change
+  the exit code. `graph query` cuts also exit 0.
 - **Exit 6 is gone.** Nothing else used it. A retryable failure (`next.retry`)
   beside answering rows now exits with its failed row's class (`7` rate limited,
   else `5`). Every other code is unchanged: empty `1`, invalid input `2`
@@ -84,41 +137,6 @@
   "no diagnostics".
 - A single `astSearch` symbols page states `pagination.hasMore`.
 
-### Fixed — clasify
-- **Oversized `ranges` reads stay reachable.** A line window too large for
-  `maxChars` now fails with `classificationContextTooLarge` plus a `hints.read`
-  of its exact lines, and a `ranges` read continues past it through
-  `next.clasify` even when nothing else in the call was judged. Covered for
-  `localFetch` and `ghGetFileContent` ranges.
-- **An open walk's `best` says it is page-local.** While `next.clasify`
-  remains, `best` ranks only the pages judged so far; in 4 of 7 measured
-  multi-page targets that first window was a confident near miss. Such a
-  response keeps every `best` row and adds one `hints.text` tip: if the read
-  lacks the answer, run `next.clasify`.
-- **Identifier sentences skip the provider.** A `locate` ask whose only
-  content is one identifier or quoted literal (`find escapeRegExpCharacters`,
-  `where is Type_instantiation_is_excessively_deep_and_possibly_infinite
-  reported`) now short-circuits like a bare identifier: no read, no provider
-  call, a `hints.textSearch` lead. Described asks still run.
-- **No literal hint for context identifiers.** A described ask that only
-  mentions a type (`where does QuerySet filter after a slice`) no longer gets
-  the "Target names `QuerySet` … use localSearch" tip or a `hints.textSearch`
-  for it. The short-circuit and the tip use one classifier.
-- **One literal rule for the large-read handoff.** A paged `localFetch` read
-  whose `mainGoal` is described but mentions an identifier
-  (`Where bulk_update refuses pk changes`) now gets the clasify locate offer;
-  only a literal goal (`find bulk_update`) gets the `textSearch` lead.
-- **`hints.textSearch` reaches every literal.** Several literal targets share
-  one escaped `regex:"rust"` alternation (`step_17|step_23`) instead of a
-  search for the first; a matrix of only literal targets short-circuits even
-  when the literals differ.
-- **Scout leftovers.** `relevant`/`sufficient` over a path list
-  (structureSearch, ghStructure, astTopology) keeps its one list verdict and
-  adds a `hints.text` tip to ask `choice` over the paths. Leads in error hints
-  drop `debug:false`, the brief, and the read's inherited `pageSize`. Every
-  page read of a paged `localFetch` file now pins the same `snapshot`, page 1
-  included.
-
 ### Breaking — configuration
 - **One name per setting.** Removed `ENABLE_LOCAL` (use `OCTOCODE_ENABLE_LOCAL`)
   and `OCTOCODE_JEV_KEY` (use `OCTOCODE_CLASSIFICATION_API`).
@@ -135,8 +153,7 @@
   `off`, `auto`), `lsp.cacheDir`, `lsp.trustProjectConfig` (home-trusted), and
   `lsp.prewarm` (`targeted` default, `all`, `off`; `OCTOCODE_LSP_PREWARM=1` is
   no longer accepted, use `all`).
-- **Moved under `storage`:** `session.enableStats` → `storage.stats`;
-  `cloneCache.ttl` / `maxSize` / `maxClones` → `storage.cloneCache.*` (env names
+- **Moved under `storage`:** `session.enableStats` → `storage.stats` (env name
   unchanged).
 
 ### Breaking — `@octocodeai/config` package
@@ -262,8 +279,9 @@
   consecutive timeout retires it. After a readiness `timeout`, the next call
   waits for readiness again instead of failing until idle eviction.
 - **Warm `lspSearch` across CLI calls.** The first call of a workspace starts a
-  private per-workspace server (`<home>/run`, owner-only socket, 10-minute idle
-  exit); later calls skip the language server cold start (TS hover ~3 s → ~0.1 s).
+  private per-workspace server (owner-only socket under
+  `<temp dir>/octocode-<uid>`, 10-minute idle exit); later calls skip the
+  language server cold start (TS hover ~3 s → ~0.1 s).
 - **`lspSearch` importer pages.** TypeScript/JavaScript `references` and
   `callers` now reach importer candidates past the 24-file cap: the sorted
   candidate list is cut into 24-file windows, `importerPage` selects one, and
@@ -281,43 +299,28 @@
   `stale`, `broken`); a link into a source checkout is the user's and is never
   marked stale; a stored or `gh` GitHub login satisfies the token hint.
 - **Minimal responses by default.** Rows carry the answer, open pagination,
-  `next.*` continuations, warnings, and errors; `debug:true` adds scan stats,
-  provider receipts, snapshots, `cache`, and fields such as `data.lsp`.
+  `next.*` continuations, warnings, and errors; a row's `extras` (`hints`,
+  `details`, `stats`, `receipts`, `echo`, `diagnostics`) opts into the rest.
 - **Leaner text output.** A single-row YAML response drops the
   `results`/`index`/`data` wrapper, path-only search rows render as compact
   strings (`path` or `path (count)`), and `localFetch` numbers lines with an
   `rg -n` style gutter (`279:`). JSON and `structuredContent` keep the envelope.
-- **`followUp` continuations.** Every `next.*` query except `next.clasify`
-  carries `followUp:true` and inherits the brief; each new query row still
-  needs its own `goal` and `reasoning`.
 - **`defaultExcludes`** on `localSearch`, `structureSearch`, and `astSearch`
   controls the built-in dependency/build-output excludes. Sensitive paths stay
-  denied and `.gitignore` still applies without `noIgnore`.
+  denied and `.gitignore` still applies without `includeIgnored`.
 - **PR review.** `ghGetHistoryItem` pull requests list changed files as compact
-  rows (`"M +3 -1 [!flag ]path[ <- old]"`) grouped by directory; `fileFilter`
-  (paths/globs, status, `minChanges`) narrows files and patches; `matchString`
-  returns only matching hunks with `matchContext` (0–10) and a
-  `next.readFullPatches` step; large PRs offer a `next.findInPatches` template
-  (`confidence:"low"`); patch reads carry a slim identity header.
-- **clasify.** A process-local judgment cache with in-flight dedupe, the
-  `sufficient` preset, and a use/skip rule (behavioral target across ≥2 files;
-  skip identifiers, literals, and PR filters). The search handoff carries the
-  three top-ranked files plus a `prefilter`.
+  rows (`"M +3 -1 [!flag ]path[ <- old]"`) grouped by directory; `include`,
+  `status` and `minChanges` narrow files and patches; `matchString` returns
+  only matching hunks with `contextLines` and a `next.readFullPatches` step;
+  patch reads carry a slim identity header.
+- **clasify** answers come from a judgment cache with in-flight dedupe.
 - **Ranking.** Identifier searches rank the declaring file first.
 - **MCP instructions** stay within 2,000 characters; the grammar inventory is
   CLI-only. `structureSearch` defaults to `operation:"tree"`.
-- **Local bench suite** (`octocode-local-testing/bench`, not published):
-  head-to-head validation of local and GitHub tools against expert shell and
-  `gh`, plus a feature-claims audit.
 
 ### Removed
-- **`octocode-clasify` skill merged into `octocode-research`.** Clasify
-  admission, request shapes, question types, Scout/Judge and result handling
-  live in `octocode-research/references/clasify.md`; the bundle now ships 15
-  skills. `skill check` reports installed copies or dangling links of retired
-  skills (exit 1) and `skill check --fix` removes them; `skill install`/`info`
-  of a retired name point to its replacement. Manual cleanup:
-  `octocode skill remove octocode-clasify`.
+- **`octocode-clasify` skill merged into `octocode-research`.** Remove old
+  installs with `octocode skill remove octocode-clasify`.
 - **Awareness retired.** The Awareness package, CLI, repository skill and hook
   registrations are removed, together with its plan projections, work ledger,
   shared memory, automatic history capture and `/rewind`.
@@ -355,17 +358,9 @@
   discussion without the issue body fit more comments, showed some first at a
   later offset (their opening text never read), and its `nextCommentPage`
   skipped them.
-- **clasify list walks judge every candidate:** a repository, history, or
-  package-discovery list whose `maxChars` fits only some candidates resumes
-  `next.clasify` at the first deferred one (a `page`/`pageSize` that starts
-  there) instead of marking the rest `classificationBudgetSpent` and moving on
-  to the next page.
-- **clasify states a GitHub file's source once:** pages that share
-  `source {ref, path}` drop it; the resource states `path` and the new `ref`.
 - **Page totals:** a compare's commit `pagination` states `totalItems` (GitHub's
   `totalCommits`) and `totalPages`; every byte page states
-  `pagination.totalBytes` (before, only `debug:true` showed the total, as
-  `sourceBytes`).
+  `pagination.totalBytes`.
 - **npm release leads are checked:** a `gitHead` GitHub reports missing no
   longer becomes a `viewReleaseSource` lead that fails; the row offers the
   default branch (`viewRepo`, `verification:"defaultBranch"`) and warns with
@@ -394,24 +389,11 @@
   `maxFiles` now offers `expandScan` with `supersedes`; a `drift` that skipped
   files, hit the edge cap or the page ceiling sets `terminalLimit:true`
   instead of looking complete.
-- **clasify `fileChunks` reaches every hit line:** hit lines a `localSearch`
-  page only counted (`moreLinesUnlisted`) are listed by a one-file search
-  before windows are planned, so they get a window (judged, or unjudged with
-  its read) instead of dropping out of a walk that ends terminal. A search that
-  cannot list them yields a `classificationBudgetSpent` page with the count and
-  that search as `hints.read`. Measured repro: 242 of 296 hit lines covered.
-- **clasify snippet reads cover the judged rows:** a `candidateEvidence:"search"`
-  page's `hints.read` covered the densest hit cluster, which could hold none of
-  the rows the page judged (0.96 on lines 107–108, read 489–609). It now
-  covers every shown row: the densest window when it holds them all, else one
-  window per cluster of shown rows.
-- **clasify unjudged windows batched and stated once:** the hit windows a page
-  or byte budget leaves unjudged share one `classificationBudgetSpent` page per
-  file whose `hints.read` names each window once; in default output an error
-  that pages with reads repeat is stated once on the resource (measured: 64
-  identical error objects, 12.2 KB of 38 KB).
-- **clasify judges each hydrated window once:** re-cut overlapping windows no
-  longer judge or list the same window twice (9 duplicates in 86 pages).
+- **Entry scripts run through a symlink:** the local-testing harness, the
+  `skills-dev/octocode-dev` scripts, the agents-communication maintainer
+  scripts and the benchmark helpers compare
+  real paths to detect being run directly, so a symlinked path (macOS `/tmp`
+  included) no longer exits silently without doing anything.
 - **Package registries honour a `Retry-After` HTTP-date:** `artifactSearch`
   now waits for (or, past its retry cap, returns) a registry's
   `Retry-After: <HTTP-date>` instead of retrying on its own backoff; it shares
@@ -494,8 +476,8 @@
   `WORKSPACE_ROOT`, `GITHUB_API_URL`, storage mode, …) are ignored in a
   workspace `.env` or `.octocoderc`.
 - **Secret redaction** covers PEM blocks split across read windows and never
-  lets `matchString` match a secret; `--redact-emails` masks emails in GitHub
-  output.
+  lets `matchString` match a secret; `OCTOCODE_REDACT_EMAILS=true` masks
+  emails in GitHub output.
 - **`local*` tools: clearer path-denial errors ([#450]).** A path outside the
   allowed roots reports `Path '…' is outside allowed directories (allowed: …)`.
   The `Symlink target …` wording is reserved for genuine symlink escapes.
@@ -508,14 +490,10 @@
   data and resolve `head` to a SHA; `artifactSearch` reports a missing package
   as `notFound`; nested TypeScript symbols are listed; `astTopology` never
   claims completeness with unresolved imports.
-- **Docs** corrected against live behavior: allowed roots, the default
-  `minify` (`none`), the 28-extension grammar registry (CUDA is opt-in), the
-  file-and-listing-only GitHub cache, the 16 KiB read budget, `hover.range`
-  (0-based), `OCTOCODE_BETA` gating `astTopology`, and the publish order.
 
 ### Notes
 - The path allow-list remains **on by default** and cannot be disabled — only
   widened (`ALLOWED_PATHS` env or `local.allowedPaths`) or removed entirely with
-  the whole local surface via `ENABLE_LOCAL=false`.
+  the whole local surface via `OCTOCODE_ENABLE_LOCAL=false`.
 
 [#450]: https://github.com/bgauryy/octocode/issues/450

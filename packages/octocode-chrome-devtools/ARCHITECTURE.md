@@ -17,7 +17,7 @@ flowchart LR
 |---|---|
 | `bin/octocode-chrome-devtools.mjs` | Route default MCP, `/cli`, and `/raw`; no browser logic |
 | `src/adapter.ts` | CLI/MCP composition, command registration, whole-input parsing and server lifecycle |
-| `@octocodeai/octocode-core` through `@octocodeai/config/schema` | Browser schemas, descriptions, instructions, output windows and the research catalog; the native sixteen-tool registry stays separate |
+| `@octocodeai/octocode-core` through `@octocodeai/config/schema` | Browser schemas, descriptions, instructions, output windows and the research catalog; the native Octocode tool registry stays separate |
 | `src/command-inputs.ts` | Re-export generated shared-core browser schemas and inferred input types |
 | `src/invocation.ts` | Serialized child execution, deadlines, private stdout/stderr capture and engine shutdown |
 | `src/engine/cli-catalog.mts`, `src/engine/cli.mts` | Command/recipe registry, core arguments and preflight routing |
@@ -31,7 +31,7 @@ flowchart LR
 | `tools/build.mjs` | One bundled adapter runtime, thin CLI/MCP modules, and a refreshed shared config copy |
 | `tests/*suite.mjs`, `tests/unit/` | Hermetic, real-browser, transport and extracted-package regression checks |
 
-MCP and typed CLI use the same spec, delegate to the same core CLI and stop on the same failures. Browser business logic is not duplicated in the interfaces. Plan schema validation remains in the executor; raw CDP params remain open and Chrome validates them. These are package-local browser operations, not additions to the sixteen Octocode native tools.
+MCP and typed CLI use the same spec, delegate to the same core CLI and stop on the same failures. Browser business logic is not duplicated in the interfaces. Plan schema validation remains in the executor; raw CDP params remain open and Chrome validates them. These are package-local browser operations, not native Octocode tools.
 
 Config comes from `@octocodeai/config`: build copies its compiled standalone module into `dist/engine/` for the sandbox and dependency-free archive, as the communication runtime does for Python. No home/env parsing is reimplemented. Only the build refreshes that generated copy.
 

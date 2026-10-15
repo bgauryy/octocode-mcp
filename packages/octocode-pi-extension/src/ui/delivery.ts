@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { plural, statusColor } from '../shared/render.js';
+import { errorMessage } from '../shared/util.js';
 
 type Send = ExtensionAPI['sendMessage'];
 type Message = Parameters<Send>[0];
@@ -81,15 +82,23 @@ export class Delivery {
     // Outside the TUI nothing clears the queue: an aborted run leaves the messages there for the next one.
     if (dropped.length === 0 || ctx.mode !== 'tui') return;
     let kept = 0;
+    const failures: string[] = [];
     for (const message of dropped) {
       try {
         this.send(message, { triggerTurn: false });
         kept += 1;
-      } catch {
-        // The session ended meanwhile.
+      } catch (error) {
+        // The session ended meanwhile: this message is lost, and the notice says so.
+        failures.push(errorMessage(error));
       }
     }
-    if (kept > 0 && ctx.hasUI) ctx.ui.notify(`Interrupt kept ${plural(kept, 'queued message')}: added to the conversation without starting a turn.`, 'info');
+    if (!ctx.hasUI) return;
+    try {
+      if (kept > 0) ctx.ui.notify(`Interrupt kept ${plural(kept, 'queued message')}: added to the conversation without starting a turn.`, 'info');
+      if (failures.length > 0) ctx.ui.notify(`Interrupt lost ${plural(failures.length, 'queued message')}: could not add ${failures.length === 1 ? 'it' : 'them'} to the conversation (${failures[0]}).`, 'warning');
+    } catch {
+      // The session was replaced: nobody is left to tell.
+    }
   }
 
   private reset(ctx: ExtensionContext | undefined): void {

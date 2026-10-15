@@ -265,7 +265,8 @@ mod tests {
     #[test]
     fn evaluator_receives_context_and_long_context_and_keeps_success_after_failure() {
         use crate::runtime::ExecutionContext;
-        use crate::tools::selection::{Candidate, Limits};
+        use crate::runtime::SelectionLimits;
+        use crate::tools::selection::Candidate;
         use std::time::Duration;
         use wiremock::{Mock, MockServer, Request, ResponseTemplate, matchers::method};
 
@@ -335,7 +336,7 @@ mod tests {
                     main_goal: Some(main_goal),
                     reasoning: Some("Find the stopping rule"),
                     long_context: true,
-                    limits: Limits {
+                    limits: SelectionLimits {
                         max_candidates: 2,
                         max_chars: 10_000,
                         timeout: Duration::from_secs(10),

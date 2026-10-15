@@ -102,9 +102,11 @@ impl From<String> for GraphScanError {
 
 /// One `languageGlobs` rule: the parser extension it selects, and its glob
 /// (see [`crate::search::glob`]).
-type ParserOverride = (String, Gitignore);
+pub type ParserOverride = (String, Gitignore);
 
-fn parser_overrides(
+/// Compiles `languageGlobs` rules against `root`; astSearch `match` selects
+/// its parsers with the same rules.
+pub fn parser_overrides(
     root: &Path,
     rules: Option<&[crate::types::GraphLanguageGlob]>,
 ) -> Result<Vec<ParserOverride>, GraphScanError> {
@@ -380,8 +382,79 @@ fn scan_with_budget<T: Send>(
         .map_or(0, |n| n as usize)
         .min(entries.len());
     entries.drain(..skip);
-    let evaluate = |entry: &crate::types::FileSystemEntry| -> Result<Option<GraphFactsScanOutcome<T>>, GraphScanError> {
-        if stop() {
+    let evaluator = EntryEvaluator {
+        overrides: &overrides,
+        max_file_bytes,
+        keep,
+        map,
+        stop,
+    };
+    let started = std::time::Instant::now();
+    let mut kept: Vec<(String, T)> = Vec::new();
+    let mut skipped = Vec::new();
+    let (mut evaluated, mut parsed) = (0, 0);
+    let mut scan_resume = None;
+    for chunk in entries.chunks(crate::scan_budget::SCAN_CHUNK_FILES) {
+        if timed && evaluated > 0 && budget.is_some_and(|budget| started.elapsed() >= budget) {
+            scan_resume = Some(u32::try_from(skip + evaluated).unwrap_or(u32::MAX));
+            break;
+        }
+        evaluated += chunk.len();
+        for outcome in chunk
+            .par_iter()
+            .map(|entry| evaluator.evaluate(entry))
+            .collect::<Result<Vec<_>, GraphScanError>>()?
+            .into_iter()
+            .flatten()
+        {
+            match outcome {
+                GraphFactsScanOutcome::Entry(path, value) => {
+                    parsed += 1;
+                    kept.extend(value.map(|value| (path, value)));
+                }
+                GraphFactsScanOutcome::Skipped(diagnostic) => skipped.push(diagnostic),
+            }
+        }
+    }
+    // The walk cap of an unset `max_files` resumes where the walk stopped.
+    if timed && scan_resume.is_none() && truncated {
+        scan_resume = Some(u32::try_from(skip + evaluated).unwrap_or(u32::MAX));
+    }
+    let truncated = truncated || scan_resume.is_some();
+    kept.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+    skipped.sort_unstable_by(|left, right| left.relative_path.cmp(&right.relative_path));
+    let files_skipped = skipped.len() as u32;
+
+    Ok(GraphFactsMappedScan {
+        kept,
+        parsed,
+        skipped,
+        files_skipped,
+        truncated,
+        scan_resume,
+        pruned_dirs: query.pruned_dirs,
+    })
+}
+
+/// What evaluating one walked file needs: the byte limit, the parser
+/// overrides, and the caller's prefilter, map and stop.
+struct EntryEvaluator<'s, T> {
+    overrides: &'s [ParserOverride],
+    max_file_bytes: u32,
+    keep: &'s (dyn Fn(&str) -> bool + Sync),
+    map: &'s (dyn Fn(&GraphFactsView<'_>) -> Option<T> + Sync),
+    stop: &'s Stop<'s>,
+}
+
+impl<T> EntryEvaluator<'_, T> {
+    /// Reads one walked file and maps its facts, parsed or reused from the
+    /// memo: `None` when `keep` rejects its source, a skip diagnostic when it
+    /// cannot be read, matches several parsers, or yields no facts.
+    fn evaluate(
+        &self,
+        entry: &crate::types::FileSystemEntry,
+    ) -> Result<Option<GraphFactsScanOutcome<T>>, GraphScanError> {
+        if (self.stop)() {
             return Err(GraphScanError::Failed("cancelled".to_owned()));
         }
         let path = Path::new(&entry.path);
@@ -395,10 +468,10 @@ fn scan_with_budget<T: Send>(
             )
         };
         // The walk's size is advisory: the read is bounded on its own.
-        if entry.size.unwrap_or_default() > i64::from(max_file_bytes) {
+        if entry.size.unwrap_or_default() > i64::from(self.max_file_bytes) {
             return too_large();
         }
-        let source = match crate::text::read_source(path, u64::from(max_file_bytes)) {
+        let source = match crate::text::read_source(path, u64::from(self.max_file_bytes)) {
             Ok(source) => source,
             Err(crate::text::ReadError::TooLarge(_)) => return too_large(),
             Err(_) => return outcome("graph.scan.readFailed", "file could not be opened"),
@@ -410,10 +483,11 @@ fn scan_with_budget<T: Send>(
                 "file could not be read as UTF-8 text",
             );
         };
-        if !keep(&content) {
+        if !(self.keep)(&content) {
             return Ok(None);
         }
-        let selected = overrides
+        let selected = self
+            .overrides
             .iter()
             .filter(|(_, matcher)| crate::search::glob::matches(matcher, path, false))
             .map(|(extension, _)| extension.as_str())
@@ -461,7 +535,7 @@ fn scan_with_budget<T: Send>(
             FACTS_MEMO.insert(memo_key, Arc::clone(&parsed));
             parsed
         };
-        let kept = map(&GraphFactsView {
+        let kept = (self.map)(&GraphFactsView {
             relative_path: &relative_path,
             content: &content,
             content_digest: &content_digest,
@@ -470,52 +544,7 @@ fn scan_with_budget<T: Send>(
             reference_counts: &parsed.reference_counts,
         });
         Ok(Some(GraphFactsScanOutcome::Entry(relative_path, kept)))
-    };
-    let started = std::time::Instant::now();
-    let mut kept: Vec<(String, T)> = Vec::new();
-    let mut skipped = Vec::new();
-    let (mut evaluated, mut parsed) = (0, 0);
-    let mut scan_resume = None;
-    for chunk in entries.chunks(crate::scan_budget::SCAN_CHUNK_FILES) {
-        if timed && evaluated > 0 && budget.is_some_and(|budget| started.elapsed() >= budget) {
-            scan_resume = Some(u32::try_from(skip + evaluated).unwrap_or(u32::MAX));
-            break;
-        }
-        evaluated += chunk.len();
-        for outcome in chunk
-            .par_iter()
-            .map(&evaluate)
-            .collect::<Result<Vec<_>, GraphScanError>>()?
-            .into_iter()
-            .flatten()
-        {
-            match outcome {
-                GraphFactsScanOutcome::Entry(path, value) => {
-                    parsed += 1;
-                    kept.extend(value.map(|value| (path, value)));
-                }
-                GraphFactsScanOutcome::Skipped(diagnostic) => skipped.push(diagnostic),
-            }
-        }
     }
-    // The walk cap of an unset `max_files` resumes where the walk stopped.
-    if timed && scan_resume.is_none() && truncated {
-        scan_resume = Some(u32::try_from(skip + evaluated).unwrap_or(u32::MAX));
-    }
-    let truncated = truncated || scan_resume.is_some();
-    kept.sort_unstable_by(|left, right| left.0.cmp(&right.0));
-    skipped.sort_unstable_by(|left, right| left.relative_path.cmp(&right.relative_path));
-    let files_skipped = skipped.len() as u32;
-
-    Ok(GraphFactsMappedScan {
-        kept,
-        parsed,
-        skipped,
-        files_skipped,
-        truncated,
-        scan_resume,
-        pruned_dirs: query.pruned_dirs,
-    })
 }
 
 #[cfg(test)]

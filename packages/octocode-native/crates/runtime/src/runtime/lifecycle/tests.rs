@@ -2,10 +2,10 @@ use super::*;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 fn runtime() -> RequestRuntime {
-    RequestRuntime::new(RuntimeLimits {
+    RequestRuntime::new(RequestLimits {
         concurrency: 1,
         pending: 2,
-        ..RuntimeLimits::default()
+        ..RequestLimits::default()
     })
     .expect("valid limits")
 }
@@ -174,9 +174,9 @@ async fn dropping_caller_cancels_and_releases_blocking_work() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn timeout_is_observed_before_return_and_worker_panic_releases_slot() {
-    let runtime = RequestRuntime::new(RuntimeLimits {
+    let runtime = RequestRuntime::new(RequestLimits {
         timeout: Duration::from_millis(20),
-        ..RuntimeLimits::default()
+        ..RequestLimits::default()
     })
     .expect("valid limits");
     assert_eq!(
@@ -233,18 +233,18 @@ async fn queue_is_bounded_and_queued_cancellation_never_runs_work() {
 #[test]
 fn unrepresentable_timeout_is_rejected_not_a_panic_at_admission() {
     for secs in [u64::MAX, u64::MAX / 2, MAX_TIMEOUT.as_secs() + 1] {
-        let built = RequestRuntime::new(RuntimeLimits {
+        let built = RequestRuntime::new(RequestLimits {
             timeout: Duration::from_secs(secs),
-            ..RuntimeLimits::default()
+            ..RequestLimits::default()
         });
         assert!(
             matches!(built, Err(ExecutionError::InvalidLimits)),
             "{secs}s must be rejected"
         );
     }
-    let longest = RequestRuntime::new(RuntimeLimits {
+    let longest = RequestRuntime::new(RequestLimits {
         timeout: MAX_TIMEOUT,
-        ..RuntimeLimits::default()
+        ..RequestLimits::default()
     })
     .expect("the longest timeout is valid");
     assert!(longest.admit("one".into()).is_ok());

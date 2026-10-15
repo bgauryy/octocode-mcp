@@ -117,11 +117,11 @@ pub(super) struct GitHubServices {
     provider: GitHubProvider<GitHubContentCache>,
     timeout: Duration,
     home: PathBuf,
-    /// Resolved `storage.cloneCache.*` limits for ghCloneRepo.
-    clone_limits: crate::config::CloneCacheConfig,
+    /// The ghCloneRepo cache limits.
+    clone_limits: crate::runtime::CloneLimits,
     /// ghCloneRepo's git, keeping the runtime env's PATH, proxy and CA names.
     git: SystemGit,
-    /// `output.pagination.defaultCharLength`: patch pages are sized to fit it.
+    /// The automatic response page: patch pages are sized to fit it.
     auto_page_chars: usize,
     /// Sanitized full views of recently paged files (scoped to this runtime's
     /// single security policy), so each `next.continueWindow` skips a full rescan.
@@ -161,6 +161,7 @@ impl GitHubServices {
 
     pub fn new(
         config: Arc<ConfigOutput>,
+        limits: &crate::runtime::RuntimeLimits,
         home: PathBuf,
         cache: GitHubContentCache,
     ) -> Result<Self, ProviderError> {
@@ -171,10 +172,8 @@ impl GitHubServices {
         let mut transport = GitHubTransport::new(
             endpoint,
             RetryPolicy {
-                max_attempts: (config.resolved.network.max_retries as u8).saturating_add(1),
-                max_rate_limit_wait: Duration::from_millis(u64::from(
-                    config.resolved.network.max_rate_limit_wait,
-                )),
+                max_attempts: limits.max_retries.saturating_add(1),
+                max_rate_limit_wait: limits.max_rate_limit_wait,
                 ..Default::default()
             },
         )?;
@@ -186,19 +185,16 @@ impl GitHubServices {
             crate::config::is_persistent_storage_enabled(&config.resolved)
                 .then(|| home.join("tmp").join("ratelimit")),
         );
-        let timeout = Duration::from_millis(u64::from(config.resolved.network.timeout));
-        let clone_limits = config.resolved.storage.clone_cache.clone();
-        let auto_page_chars = config.resolved.output.pagination.default_char_length as usize;
         let git = SystemGit::with_env(&config.credential_env());
         let credentials = Authentication::new(config);
         Ok(Self {
             credentials,
             provider: GitHubProvider { transport, cache },
-            timeout,
+            timeout: limits.network_timeout,
             home,
-            clone_limits,
+            clone_limits: limits.clone,
             git,
-            auto_page_chars,
+            auto_page_chars: limits.auto_page_chars,
             sanitized_views: Arc::new(crate::security::scan::SanitizedViewMemo::new()),
         })
     }
@@ -392,8 +388,9 @@ impl GitHubServices {
         Ok(row)
     }
 
-    /// ghCloneRepo runs on git alone; CloneConfig treats the octocode home
-    /// as its cache root and derives the clone, lock, stage and git-home dirs.
+    /// ghCloneRepo clones with git and checks the caller's access before
+    /// serving a cache hit; CloneConfig treats the octocode home as its cache
+    /// root and derives the clone, lock, stage and git-home dirs.
     async fn run_clone(
         &self,
         query: &gh_clone_repo::GhCloneRepoQuery,

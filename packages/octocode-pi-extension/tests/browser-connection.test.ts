@@ -29,6 +29,30 @@ async function twoPages(options: CdpStubOptions = {}) {
 
 const later = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+describe('untilDialog', () => {
+  it('ends at a dialog, and what the work does after that is not an unhandled rejection', async () => {
+    const { stub, a } = await twoPages();
+    const unhandled: unknown[] = [];
+    const record = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', record);
+    try {
+      let fail: (error: Error) => void = () => undefined;
+      const work = new Promise<string>((_resolve, reject) => (fail = reject));
+      const waiting = a.untilDialog(work);
+      stub.pages.get('a')!.emit('Page.javascriptDialogOpening', { type: 'alert', message: 'hi' });
+      await expect(waiting).resolves.toBeUndefined();
+      fail(new Error('page torn down'));
+      await later(50);
+      expect(unhandled).toEqual([]);
+      // Without a dialog the work's own outcome is the result, a failure included.
+      await expect(a.untilDialog(Promise.reject(new Error('boom')))).rejects.toThrow('boom');
+      await expect(a.untilDialog(Promise.resolve('done'))).resolves.toBe('done');
+    } finally {
+      process.off('unhandledRejection', record);
+    }
+  });
+});
+
 describe('the browser connection', () => {
   it('delivers each target\'s events to its own session only', async () => {
     const { stub, a, b } = await twoPages();

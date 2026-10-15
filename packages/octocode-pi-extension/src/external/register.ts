@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
+import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { capOutputToFile } from '../shared/spill.js';
 import { fenceUntrusted } from '../shared/fence.js';
 import { redactData, redactSecrets } from '../shared/sanitize.js';
@@ -37,5 +37,3 @@ export function registerExternal(pi: ExtensionAPI, commands: Subcommands, policy
   });
   return agents;
 }
-
-export type ExternalCall = (params: unknown, ctx: ExtensionContext) => Promise<unknown>;

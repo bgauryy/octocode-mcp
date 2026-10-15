@@ -4,12 +4,7 @@ Load when you query history, memories, events, or record fields.
 
 ## Envelope and IDs
 
-Every entity/event uses `{recordId,path,from,to,type,timestamp,branch?,data}`.
-`path` is the originating canonical worktree. `from` is the exact DB identity.
-`timestamp` is Unix milliseconds. The runtime assigns these fields and `type`.
-`to` is present and nullable for shared records. `branch` is optional.
-`data` is a JSON object with fields selected by type.
-Memory and event data also allow arbitrary JSON fields.
+Every entity and event uses `{recordId,path,from,to,type,timestamp,branch?,data}`, assigned by the runtime. `path` is the originating canonical worktree, `from` the exact DB identity, `timestamp` Unix milliseconds; `to` is present and null for shared records. `data` holds the type's fields; memory and event data also allow arbitrary JSON.
 
 | Identifier | Use |
 | --- | --- |
@@ -17,12 +12,9 @@ Memory and event data also allow arbitrary JSON fields.
 | `data.messageId` | Reply or complete |
 | `data.leaseId` | Lease commands |
 
-`npx -y @octocodeai/octocode-agents-communication /cli schema types --compact --json` lists all types and fields.
-`npx -y @octocodeai/octocode-agents-communication /cli schema type message --json` returns one schema, semantics, and example. These discovery commands take no workspace, database, or session flags in 0.1.0; invoke them directly instead of the bound `comm` helper.
-Current v4 writers emit full coordination and lease snapshots.
-Migrated history retains its original data; absent historical fields are unknown.
-In/out records describe the same worktree agent entering/leaving, with the same name and vendor.
-A crash creates no synthetic out record. Use `peers` for current liveness.
+`npx -y @octocodeai/octocode-agents-communication /cli schema types --compact --json` lists all types and fields; `schema type message --json` returns one schema, its meaning and an example. These discovery commands take no workspace, database or session flags, so call them without the bound `comm` helper.
+
+Current writers emit full coordination and lease snapshots; migrated history keeps its original data, and absent historical fields are unknown. In and out records describe the same worktree agent with the same name and vendor. A crash creates no out record; use `peers` for current liveness.
 
 ## Type summary
 
@@ -63,25 +55,14 @@ agent record '{"type":"memory","key":"api-fact-1","data":{"content":"API keeps t
 agent record '{"type":"event","data":{"name":"review.finished","result":{"checks":["API smoke"],"owner":"api-reviewer"}}}'
 ```
 
-`incoming:true` reads pending mail for the bound recipient.
-Start a new incoming scan from zero at a later boundary. Reads never acknowledge or reply.
-`current:true` selects the current dispatch state/token during delivery investigation.
+`incoming:true` reads pending mail for the bound recipient; start a new scan from zero at a later boundary. Reads never acknowledge or reply. `current:true` selects the current dispatch state and token during delivery investigation.
 
 ## Read complete pages
 
-Call each `next.command` with `next.input` unchanged and the same binding.
-Continue until no next remains, including empty pages with a continuation.
-`after` is exclusive. `through` fixes a scan ceiling so concurrent writes cannot move its endpoint.
-Fetch returns at most 100 records per page with a byte budget.
-An oversized record remains intact with a diagnostic. Preserve all evidence and continuations.
-Oversized hook references have `data.bodyOmitted:true` and `data.next`.
-Follow that body continuation unchanged before acting; a reference is not the full message.
+Call each `next.command` with `next.input` unchanged and the same binding until no `next` remains, including after empty pages. `after` is exclusive; `through` fixes the scan ceiling so concurrent writes cannot move it. A page holds at most 100 records within a 16 KiB target; an oversized record stays intact with a diagnostic. Oversized hook references carry `data.bodyOmitted:true` and `data.next`: follow it before acting, since a reference is not the full message.
 
 ## Write generic records
 
-`record` accepts only `memory` or `event`, with at most 16,384 UTF-8 bytes of JSON data.
-Optional `to`, `branch`, and `key` control visibility, history, and unchanged retries.
-Use dedicated commands for operational records so current state and audit history stay consistent.
-Memory/event writes send no notification. Use messages when another owner must act.
+`record` accepts only `memory` or `event`, with at most 16,384 UTF-8 bytes of JSON data. Optional `to`, `branch` and `key` control visibility, history and unchanged retries. Operational records come only from their dedicated commands. Record writes notify no one; send a message when another owner must act.
 
-For exact database/client rules, read [the database protocol](DB.md).
+Exact database and client rules: [database protocol](DB.md).

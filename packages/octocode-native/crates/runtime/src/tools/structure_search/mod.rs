@@ -692,6 +692,211 @@ fn walked<T: std::any::Any + Send + Sync>(
     walk().map(|walk| (std::sync::Arc::new(walk), false))
 }
 
+/// A listed row as its walk read it: its kind, and the entry with the size
+/// and time the continuation pages' change check compares.
+trait Sourced {
+    fn kind(&self) -> &'static str;
+    fn seen(&self) -> memo::Seen<'_>;
+}
+
+/// One listing walk: its rows in listing order (cut to `maxEntries`) and
+/// what the walk saw beside them.
+struct Walked<R> {
+    rows: Vec<R>,
+    meta: WalkMeta,
+}
+
+/// What a listing walk saw beside its rows.
+struct WalkMeta {
+    /// Listing rows before this window's end (`scanOffset` plus the rows
+    /// this window took): where `next.expandScan` resumes.
+    covered: usize,
+    available: usize,
+    total_discovered: usize,
+    was_capped: bool,
+    /// The walk ran out of time before this root-relative entry.
+    time_cut: Option<String>,
+    /// Files, directories and file bytes of this window's rows, counted
+    /// before directories with their own group fold into its header.
+    files: usize,
+    dirs: usize,
+    bytes: u64,
+    uncovered: Uncovered,
+    warnings: Vec<String>,
+}
+
+impl<R: Sourced + Send + Sync + 'static> memo::Listed for Walked<R> {
+    fn sources(&self) -> Vec<memo::Seen<'_>> {
+        self.rows.iter().map(Sourced::seen).collect()
+    }
+}
+
+impl<R: Sourced> Walked<R> {
+    /// The walk's `rows` (listing order) cut to `requested`, less the
+    /// `scan_offset` rows earlier windows listed (listing order is stable,
+    /// so those are the ones they showed), with what the walk left out.
+    fn finish(
+        native: octocode_engine::types::FileSystemQueryResult,
+        mut rows: Vec<R>,
+        requested: usize,
+        scan_offset: usize,
+        withheld: std::sync::Mutex<crate::policy::discovery::Withheld>,
+        hidden: usize,
+        security: &crate::security::ContentSecurity,
+    ) -> Self {
+        let available = rows.len();
+        rows.truncate(requested);
+        let offset = scan_offset.min(rows.len());
+        rows.drain(..offset);
+        // A non-directory row is a file; bytes are regular files' (a
+        // symlink's own length is no content).
+        let (mut files, mut dirs, mut bytes) = (0, 0, 0);
+        for row in &rows {
+            match row.kind() {
+                "directory" => dirs += 1,
+                kind => {
+                    files += 1;
+                    if kind == "file" {
+                        bytes += row.seen().size;
+                    }
+                }
+            }
+        }
+        let mut warnings = walk_warnings(native.skipped, native.permission_denied);
+        warnings.extend(native.warnings);
+        let meta = WalkMeta {
+            covered: offset + rows.len(),
+            available,
+            total_discovered: native.total_discovered as usize,
+            was_capped: native.was_capped,
+            time_cut: native
+                .time_cut
+                .map(|at| security.sanitize_text(&at, None).content),
+            files,
+            dirs,
+            bytes,
+            uncovered: Uncovered {
+                ignored: native.ignored as usize,
+                withheld: withheld
+                    .into_inner()
+                    .unwrap_or_else(|error| error.into_inner()),
+                hidden,
+                pruned: native.pruned_dirs,
+            },
+            warnings,
+        };
+        Self { rows, meta }
+    }
+
+    /// Where this page cuts the listing. An early-exit walk that found one
+    /// more match than the limit has more; only a full walk knows the total.
+    fn cut(
+        &self,
+        page: usize,
+        pages: usize,
+        requested: usize,
+        early_exit: bool,
+        scan_offset: usize,
+        snapshot: String,
+    ) -> Cut {
+        let meta = &self.meta;
+        let (limit_cut, scan_cut) = if early_exit {
+            (meta.was_capped, false)
+        } else {
+            (meta.available > requested, meta.was_capped)
+        };
+        Cut {
+            page,
+            total_pages: pages.max(1),
+            total: self.rows.len(),
+            requested,
+            available: meta.available,
+            limit_cut,
+            scan_cut,
+            time_cut: meta.time_cut.clone(),
+            early_exit,
+            total_discovered: meta.total_discovered,
+            scan_offset,
+            covered: meta.covered,
+            snapshot,
+        }
+    }
+}
+
+impl WalkMeta {
+    /// The walk's counts, plus how many entries `.gitignore` hid (the path
+    /// policy's withheld entries are a warning on every page), how many dot
+    /// entries were skipped without `includeHidden`, and which directories
+    /// the default prune skipped: their names stay out of the listing, but
+    /// their absence is not silent.
+    fn summary(&self) -> Value {
+        let uncovered = &self.uncovered;
+        let mut summary = json!({"files": self.files, "dirs": self.dirs, "bytes": self.bytes});
+        if uncovered.ignored > 0 {
+            summary["ignored"] = json!(uncovered.ignored);
+        }
+        if uncovered.hidden > 0 {
+            summary["hidden"] = json!(uncovered.hidden);
+        }
+        if let Some(pruned) = uncovered.pruned_names() {
+            summary["pruned"] = json!(pruned);
+        }
+        summary
+    }
+
+    /// The page's warnings past the walk's own and `cut`'s (`warnings`): the
+    /// path policy's withheld entries.
+    fn warn(&self, out: &mut Value, mut warnings: Vec<String>) {
+        warnings.extend(self.uncovered.withheld.notice());
+        if !warnings.is_empty() {
+            out["warnings"] = json!(warnings);
+        }
+    }
+}
+
+/// The walk's skipped-entry warning: how many entries it could not read,
+/// and how many of those for want of permission.
+fn walk_warnings(s: u32, d: u32) -> Vec<String> {
+    if s == 0 {
+        return vec![];
+    }
+    let o = s.saturating_sub(d);
+    vec![if d > 0 && o > 0 {
+        format!("{s} entries skipped ({d} permission denied, {o} other errors)")
+    } else if d > 0 {
+        format!(
+            "{d} {} skipped due to permission denied",
+            if d == 1 { "entry" } else { "entries" }
+        )
+    } else {
+        format!(
+            "{s} {} skipped due to access errors",
+            if s == 1 { "entry" } else { "entries" }
+        )
+    }]
+}
+
+/// [`note_empty`] for an empty listing: `walk` re-walks the same filters
+/// with the skipped paths `relaxed` lets in, within [`PROBE_BUDGET`].
+fn probe_empty<R: Sourced>(
+    out: &mut Value,
+    query: &impl serde::Serialize,
+    at: (&std::path::Path, &crate::policy::path::PathPolicy),
+    seen: &Uncovered,
+    shown: Walk,
+    walk: impl Fn(Walk, Walking<'_>) -> Result<Walked<R>, ToolError>,
+) -> Result<(), ToolError> {
+    let bound = ProbeBound::new(PROBE_BUDGET);
+    note_empty(out, query, at, seen, shown, |relaxed| {
+        let found = walk(relaxed, Walking::Probe(&bound))?;
+        let cut = found.meta.was_capped || bound.cut();
+        Ok(found_entries(
+            found.rows.iter().map(|row| row.seen().path.to_path_buf()),
+            cut,
+        ))
+    })
+}
+
 /// Whether a filtered listing could have listed `path` had the policy
 /// admitted it: a directory may hold matches; a file must pass the name
 /// filters (include globs, extensions, basename regex) as the walk applies

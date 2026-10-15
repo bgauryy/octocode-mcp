@@ -1,4 +1,4 @@
-use super::{ExecutionContext, ExecutionError, RequestRuntime, RuntimeLimits};
+use super::{ExecutionContext, ExecutionError, RequestLimits, RequestRuntime, RuntimeLimits};
 use crate::config::{self, ConfigInput, ConfigOutput, RuntimeSurface};
 use crate::contracts;
 use crate::policy::path::{PathPolicy, PathPolicyConfig};
@@ -59,6 +59,9 @@ pub struct ToolRuntime {
     pub requests: RequestRuntime,
     input: ConfigInput,
     config: Arc<ConfigOutput>,
+    /// Internal limits: code constants ([`RuntimeLimits::DEFAULT`]), never
+    /// configuration.
+    limits: RuntimeLimits,
     paths: Arc<PathPolicy>,
     security: Arc<ContentSecurity>,
     github_cache: super::github_cache::GitHubContentCache,
@@ -443,16 +446,13 @@ impl ToolRuntime {
         }
         // storage.mode=memory must not touch the disk cache at all.
         if config::is_persistent_storage_enabled(&runtime.config.resolved) {
-            super::maintenance::run_if_due(
-                &runtime.config.home,
-                crate::tools::source_capture::url::capture_ttl(&runtime.config.resolved),
-            );
+            super::maintenance::run_if_due(&runtime.config.home, runtime.limits.clone.ttl);
         }
         if let Some(secs) = options.timeout_secs {
             // An embedder's budget replaces the surface default.
-            runtime.requests = RequestRuntime::new(RuntimeLimits {
+            runtime.requests = RequestRuntime::new(RequestLimits {
                 timeout: std::time::Duration::from_secs(secs),
-                ..RuntimeLimits::default()
+                ..RequestLimits::default()
             })
             .map_err(runtime_execution_error)?;
         }
@@ -460,6 +460,13 @@ impl ToolRuntime {
     }
 
     pub fn new(input: ConfigInput) -> Result<Self, RuntimeError> {
+        Self::with_limits(input, RuntimeLimits::DEFAULT)
+    }
+
+    /// Tests only; production uses [`Self::new`]. A runtime whose internal
+    /// limits are `limits` instead of the code constants. Not configuration:
+    /// nothing reads them from the environment or a file.
+    pub fn with_limits(input: ConfigInput, limits: RuntimeLimits) -> Result<Self, RuntimeError> {
         let config = Arc::new(config::resolve_config(&input));
         let local = &config.resolved.local;
         let octocode_home = config.home.clone();
@@ -490,7 +497,7 @@ impl ToolRuntime {
         .map_err(|error| RuntimeError::new("policy", error.message))?;
         let security = ContentSecurity::new();
         let requests =
-            RequestRuntime::new(RuntimeLimits::default()).map_err(runtime_execution_error)?;
+            RequestRuntime::new(RequestLimits::default()).map_err(runtime_execution_error)?;
         // Each response cache owns its directory, so one cache's budget or
         // clear never touches the other's entries.
         let persistent = config::is_persistent_storage_enabled(&config.resolved);
@@ -507,27 +514,19 @@ impl ToolRuntime {
         let lsp_execution_config = Arc::new(crate::tools::lsp_search::LspExecutionConfig {
             config_path: config.resolved.lsp.config_path.clone(),
             trust_project_config: config.resolved.lsp.trust_project_config,
-            // Resolved settings the engine reads by name: `lsp.cacheDir` and
-            // `lsp.maxMemoryMb` may come from `.octocoderc`, not only the
-            // environment, and the resolved value wins either way.
+            // A resolved setting the engine reads by name: `lsp.cacheDir` may
+            // come from `.octocoderc`, not only the environment, and the
+            // resolved value wins either way.
             env: config
                 .effective_env
                 .iter()
                 .filter(|(key, _)| key.starts_with("OCTOCODE_"))
                 .map(|(key, value)| (key.clone(), value.clone()))
                 .chain(
-                    [
-                        (
-                            config::field::LSP_CACHE_DIR,
-                            config.resolved.lsp.cache_dir.clone(),
-                        ),
-                        (
-                            config::field::LSP_MAX_MEMORY_MB,
-                            config.resolved.lsp.max_memory_mb.map(|mb| mb.to_string()),
-                        ),
-                    ]
-                    .into_iter()
-                    .filter_map(|(field, value)| Some((field.env_name()?.to_owned(), value?))),
+                    config::field::LSP_CACHE_DIR
+                        .env_name()
+                        .zip(config.resolved.lsp.cache_dir.clone())
+                        .map(|(name, dir)| (name.to_owned(), dir)),
                 )
                 .collect(),
             octocode_home: Some(octocode_home),
@@ -535,7 +534,7 @@ impl ToolRuntime {
             prewarm_state: std::sync::Arc::default(),
         });
         let classification = crate::providers::classification::provider();
-        let evaluator = evaluator(&config, classification, &config.home, persistent);
+        let evaluator = evaluator(&config, &limits, classification, persistent);
         let availability = Arc::new(super::availability::ToolAvailability::resolve(
             &config,
             input.runtime_surface,
@@ -545,6 +544,7 @@ impl ToolRuntime {
             requests,
             input,
             config,
+            limits,
             classification,
             availability,
             evaluator,
@@ -837,8 +837,7 @@ impl ToolRuntime {
             dispatcher: self.dispatcher(),
             output: OutputSettings {
                 redact_emails: self.config.resolved.output.redact_emails,
-                auto_page_chars: self.config.resolved.output.pagination.default_char_length
-                    as usize,
+                auto_page_chars: self.limits.auto_page_chars,
                 text_format: render::TextFormat::from_config(&self.config.resolved.output.format),
             },
             replayed,
@@ -988,6 +987,7 @@ impl ToolRuntime {
             github_services: self.github_services.clone(),
             github_cache: self.github_cache.clone(),
             config: self.config.clone(),
+            limits: self.limits,
             home: self.config.home.clone(),
             handle: tokio::runtime::Handle::current(),
             lsp_pool: self.lsp_pool.clone(),
@@ -1017,8 +1017,8 @@ fn graph_local_disabled() -> graph_store::GraphOutput {
 /// persist across processes only under persistent storage.
 fn evaluator(
     config: &ConfigOutput,
+    limits: &RuntimeLimits,
     provider: &'static dyn crate::providers::classification::ClassificationProvider,
-    octocode_home: &std::path::Path,
     persistent: bool,
 ) -> crate::tools::judgment::Evaluator {
     crate::tools::judgment::Evaluator::new(
@@ -1039,10 +1039,10 @@ fn evaluator(
             .filter(|model| !model.trim().is_empty())
             .unwrap_or_else(|| provider.default_model().to_owned()),
         provider,
-        Duration::from_millis(u64::from(config.resolved.network.timeout)),
-        config.resolved.network.max_retries,
-        config.resolved.classification.max_concurrency as usize,
-        persistent.then(|| octocode_home.join("tmp").join("judgment")),
+        limits.network_timeout,
+        u32::from(limits.max_retries),
+        limits.classification_concurrency,
+        persistent.then(|| config.home.join("tmp").join("judgment")),
         config::is_stats_enabled(&config.resolved).then(|| config.home.clone()),
     )
 }
@@ -1821,7 +1821,7 @@ mod construction_tests {
     }
 
     /// A file-sourced language-server setting reaches the engine exactly as
-    /// its environment spelling does (`lsp.cacheDir`, `lsp.maxMemoryMb`).
+    /// its environment spelling does (`lsp.cacheDir`).
     #[test]
     fn file_sourced_lsp_settings_reach_the_engine() {
         let home = tempfile::tempdir().expect("home");
@@ -1842,7 +1842,7 @@ mod construction_tests {
             },
             config_file: FileInput::Read {
                 path: home.path().join(".octocoderc"),
-                text: r#"{"lsp":{"maxMemoryMb":512,"cacheDir":"/tmp/lsp-cache"}}"#.into(),
+                text: r#"{"lsp":{"cacheDir":"/tmp/lsp-cache"}}"#.into(),
             },
             project_config_file: FileInput::Missing {
                 path: home.path().join(".octocode/.octocoderc"),
@@ -1851,13 +1851,8 @@ mod construction_tests {
         })
         .expect("runtime");
         let env = &runtime.lsp_execution_config().env;
-        for (field, value) in [
-            (config::field::LSP_MAX_MEMORY_MB, "512"),
-            (config::field::LSP_CACHE_DIR, "/tmp/lsp-cache"),
-        ] {
-            let name = field.env_name().expect("bound");
-            assert_eq!(env.get(name).map(String::as_str), Some(value), "{name}");
-        }
+        let name = config::field::LSP_CACHE_DIR.env_name().expect("bound");
+        assert_eq!(env.get(name).map(String::as_str), Some("/tmp/lsp-cache"));
     }
 
     /// `cache clear` empties both response caches, each in its own

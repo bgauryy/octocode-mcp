@@ -20,8 +20,8 @@ Octocode gives Cursor, Claude, VS Code, Codex, Pi, and any MCP client deep, cite
 
 - **Evidence, not guesses:** every answer cites exact files and lines.
 - **Research loop:** orient → search → read exact evidence → prove identity with LSP.
-- **Lean context:** reads return only the lines you need; 2–3.2× fewer characters than `gh` at equal correctness ([benchmarks](#benchmarks)).
-- **Prioritize evidence:** optional `classifiers` reorder supported search and read results before they return; `clasify` asks an AI judge (Jev) a typed question about held data or unread source, then the agent verifies the source.
+- **Lean context:** reads return only the lines you need ([benchmarks](#benchmarks)).
+- **Filter evidence:** optional `clasifyContext` has an AI judge (Jev) keep only the relevant search hits or passages; the beta `clasify` tool answers typed questions about unread source, then the agent verifies the source.
 - **Next step built in:** every result carries the read or search to run next.
 - **Secure by default:** read-only research, secrets redacted, path guardrails.
 - **Free and open source** under the MIT license.
@@ -60,7 +60,7 @@ Add it to any MCP client:
 ```
 
 - **Claude Code:** `claude mcp add octocode --scope user -- npx -y octocode-mcp@latest`
-- **Any client:** `npx octocode install` detects your installed hosts and writes the config.
+- **Any client:** `npx octocode install` lets you pick the client, then writes its config (`--ide <id>` skips the picker; `--list` shows ids).
 - **Setup details:** [MCP guide](https://github.com/bgauryy/octocode/blob/main/docs/OCTOCODE_MCP.md).
 - **One click:** [<img src="https://cursor.com/deeplink/mcp-install-dark.svg" alt="Install in Cursor" height="20">](https://cursor.com/en/install-mcp?name=octocode&config=eyJjb21tYW5kIjoibnB4IiwidHlwZSI6InN0ZGlvIiwiYXJncyI6WyIteSIsIm9jdG9jb2RlLW1jcEBsYXRlc3QiXX0=) [<img src="https://img.shields.io/badge/VS_Code-Install_Server-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white" alt="Install in VS Code">](https://insiders.vscode.dev/redirect/mcp/install?name=octocode&config=%7B%22command%22%3A%22npx%22%2C%22type%22%3A%22stdio%22%2C%22args%22%3A%5B%22-y%22%2C%22octocode-mcp%40latest%22%5D%7D)
 
@@ -77,7 +77,7 @@ Add it to any MCP client:
 
 ### 3. Or use the CLI
 
-No MCP client? Run `npx octocode`, or install the native binary with Homebrew (no Node): `brew install bgauryy/octocode/octocode`. Your agent reads the tool list it prints and calls each tool as a command ([CLI guide](https://github.com/bgauryy/octocode/blob/main/packages/octocode/docs/OCTOCODE_CLI.md)).
+No MCP client? Run `npx octocode`. Your agent reads the tool list it prints and calls each tool as a command ([CLI guide](https://github.com/bgauryy/octocode/blob/main/packages/octocode/docs/OCTOCODE_CLI.md)).
 
 ### Other hosts
 
@@ -89,7 +89,7 @@ No MCP client? Run `npx octocode`, or install the native binary with Homebrew (n
 
 ## Benchmarks
 
-30 GitHub research questions, each answered 3 times by agents and graded by a blind judge.
+30 GitHub research questions, each answered 3 times by agents and graded by a blind judge (August 2026, Octocode v18 CLI):
 
 ```mermaid
 xychart-beta
@@ -105,15 +105,15 @@ xychart-beta
 | `gh` + Headroom | **2.6× less** | 9.3 / 8.6 |
 | `gh` + RTK | **3.2× less** | 9.3 / 9.4 |
 
-Search and read tools can use optional `classifiers` to rank independent evidence within their disclosed scope; `clasify` returns typed judgments over held data or unread source without returning its body. In two source-verified development cases, the earlier goal ranking reduced response context by 63–78% versus sequential reading; tested exact queries were cheaper in both, and ordering an otherwise unchanged response added host tokens in a later comparison. Classification adds separate provider work, so these are conditional context savings, not net cost savings.
+In October 2026, on the same campaign and agent, Octocode v20 MCP tied correctness with a lean `gh` setup (`--json`/`--jq` plus `grep`/`sed` filters), which used 0.71× Octocode's characters.
 
-Details: [benchmark summary](https://github.com/bgauryy/octocode/blob/main/packages/octocode-benchmark/results/SUMMARY.md) · [classifiers and clasify guide](docs/OCTOCODE_CLASIFY.md) · [selection checks and limitations](packages/octocode-benchmark/results/selective-semantics-2026-10-13.md).
+Details: [benchmark summary](https://github.com/bgauryy/octocode/blob/main/packages/octocode-benchmark/results/SUMMARY.md) · [clasify guide](https://github.com/bgauryy/octocode/blob/main/docs/OCTOCODE_CLASIFY.md).
 
 ---
 
 ## Tools
 
-**16 tools.** Your agent gets 12 tools over MCP and 13 in the CLI; `clasify` joins both when you add its key.
+**16 tools.** Your agent gets 12 tools over MCP and 13 in the CLI (which adds `ghCloneRepo`). Beta (`OCTOCODE_BETA=true`) adds `clasify` to both when a classification key is set, and `astTopology` to the CLI. `astRewrite` is disabled in this build.
 
 | You want to | Tool |
 |---|---|
@@ -129,9 +129,9 @@ Details: [benchmark summary](https://github.com/bgauryy/octocode/blob/main/packa
 | Find pull requests, issues, and commits | `ghSearchHistory` |
 | Read a pull request, issue, or commit | `ghGetHistoryItem` |
 | Check package versions and dependencies | `artifactSearch` |
-| Pick the right file without reading them all | `clasify` |
+| Pick the right file without reading them all (beta) | `clasify` |
 | Clone a repository for deep local work (CLI) | `ghCloneRepo` |
-| Map imports, or rewrite code safely (CLI beta) | `astTopology`, `astRewrite` |
+| Map imports and module topology (CLI beta) | `astTopology` |
 
 Full reference: [Tools](https://github.com/bgauryy/octocode/blob/main/docs/OCTOCODE_TOOLS.md) · [clasify guide](https://github.com/bgauryy/octocode/blob/main/docs/OCTOCODE_CLASIFY.md).
 
@@ -159,7 +159,8 @@ Everything is optional. Set options in the MCP `env` block, the shell, or `~/.oc
 |---|---|
 | `WORKSPACE_ROOT`, `ALLOWED_PATHS` | which local directories tools may read |
 | `TOOLS_TO_RUN`, `DISABLE_TOOLS` | choose which tools your agent sees |
-| `OCTOCODE_CLASSIFICATION_API` | enable `clasify` ([get a key](https://docs.typesafe.ai/introduction)) |
+| `OCTOCODE_CLASSIFICATION_API` | enable `clasifyContext` filtering ([get a key](https://docs.typesafe.ai/introduction)) |
+| `OCTOCODE_BETA` | enable beta tools: `clasify` (with the key above), `astTopology` |
 | `GITHUB_API_URL` | use GitHub Enterprise |
 
 All settings: [CONFIGURATION.md](https://github.com/bgauryy/octocode/blob/main/docs/CONFIGURATION.md).
@@ -168,10 +169,10 @@ All settings: [CONFIGURATION.md](https://github.com/bgauryy/octocode/blob/main/d
 
 ## Security
 
-- Research tools are read-only (only the CLI beta `astRewrite` edits files) and never run shell strings.
+- Research tools are read-only and never run shell strings.
 - Every byte to the model is scanned, and 300+ kinds of secrets are redacted.
 - Local reads stay inside the workspace and `ALLOWED_PATHS`; secret files such as `.env` are blocked.
-- `clasify` and explicitly enabled goal ranking send sanitized evidence to the configured classification provider, only with its key set.
+- `clasifyContext` and `clasify` send sanitized evidence to the classification provider, only when its key is set.
 
 Details: [SECURITY.md](https://github.com/bgauryy/octocode/blob/main/docs/SECURITY.md).
 
@@ -244,6 +245,6 @@ All docs: [documentation hub](https://github.com/bgauryy/octocode/blob/main/docs
 | GitHub auth fails | `npx octocode auth status`, then `npx octocode auth login --refresh` |
 | MCP cannot reach GitHub | run `npx octocode auth login` (or `gh auth login`) once, then restart the MCP server |
 | Path is outside allowed roots | add the directory to `ALLOWED_PATHS` |
-| Node.js errors | use Node.js 24.15+ (24.x); `npx node-doctor` diagnoses the setup |
+| Node.js errors | use Node.js 24.15+ (24.x) |
 
 More fixes: [authentication](https://github.com/bgauryy/octocode/blob/main/docs/AUTHENTICATION.md#troubleshooting) · [configuration](https://github.com/bgauryy/octocode/blob/main/docs/CONFIGURATION.md#troubleshooting).

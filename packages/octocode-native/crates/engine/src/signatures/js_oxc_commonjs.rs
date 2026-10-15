@@ -4,7 +4,8 @@
 use std::collections::{HashMap, HashSet};
 
 use oxc_ast::{AstKind, ast::*};
-use oxc_semantic::SemanticBuilder;
+use oxc_semantic::{Scoping, Semantic, SemanticBuilder, SymbolId};
+use oxc_span::Span;
 
 use super::js_oxc_shared::{SpanPositions, module_export_name};
 use crate::graph::GraphFactCommonJs;
@@ -45,8 +46,38 @@ pub(super) fn collect_common_js_loads(
         .with_build_nodes(true)
         .build(program)
         .semantic;
-    let scoping = semantic.scoping();
-    let nodes = semantic.nodes();
+    let factories = create_require_factories(program);
+    let writes = collect_writes(&semantic);
+    let loaders = collect_loader_constants(&semantic, &factories, &writes);
+    collect_load_sites(&semantic, li, &writes, &loaders)
+}
+
+/// What the module writes: unbound global names, bound symbols, and
+/// `module.require` members, plus the function bodies that may run later.
+struct Writes<'a> {
+    globals: HashSet<&'a str>,
+    symbols: HashSet<SymbolId>,
+    module_members: Vec<Span>,
+    deferred_bodies: Vec<Span>,
+}
+
+/// Const string bindings usable as specifiers, and `createRequire` loaders
+/// with the reason each one cannot be trusted, if any.
+struct LoaderConstants {
+    constants: HashMap<SymbolId, String>,
+    loaders: HashMap<SymbolId, Option<&'static str>>,
+}
+
+fn reference_symbol(scoping: &Scoping, identifier: &IdentifierReference) -> Option<SymbolId> {
+    identifier
+        .reference_id
+        .get()
+        .and_then(|id| scoping.get_reference(id).symbol_id())
+}
+
+/// Pass 1: the local symbols of value imports of `createRequire` from
+/// `module` or `node:module`. Reads the symbol ids the semantic build set.
+fn create_require_factories(program: &Program) -> HashSet<SymbolId> {
     let mut factories = HashSet::new();
     for statement in &program.body {
         let Statement::ImportDeclaration(import) = statement else {
@@ -69,17 +100,17 @@ pub(super) fn collect_common_js_loads(
             }
         }
     }
-    let reference_symbol = |identifier: &IdentifierReference| {
-        identifier
-            .reference_id
-            .get()
-            .and_then(|id| scoping.get_reference(id).symbol_id())
-    };
+    factories
+}
+
+/// Pass 2: every write and every function body, in one walk of the nodes.
+fn collect_writes<'a>(semantic: &Semantic<'a>) -> Writes<'a> {
+    let scoping = semantic.scoping();
     let mut global_writes = HashSet::new();
     let mut symbol_writes = HashSet::new();
     let mut module_member_writes = Vec::new();
     let mut deferred_bodies = Vec::new();
-    for node in nodes.iter() {
+    for node in semantic.nodes().iter() {
         match node.kind() {
             AstKind::Function(function) => deferred_bodies.push(function.span),
             AstKind::ArrowFunctionExpression(function) => deferred_bodies.push(function.span),
@@ -96,7 +127,7 @@ pub(super) fn collect_common_js_loads(
                     };
                     if is_require
                         && matches!(inner(member.object()), Expression::Identifier(identifier)
-                            if identifier.name == "module" && reference_symbol(identifier).is_none())
+                            if identifier.name == "module" && reference_symbol(scoping, identifier).is_none())
                     {
                         module_member_writes.push(assignment.span);
                     }
@@ -118,26 +149,26 @@ pub(super) fn collect_common_js_loads(
             }
         }
     }
-    let is_deferred = |offset| {
-        deferred_bodies
-            .iter()
-            .any(|span| span.start <= offset && offset < span.end)
-    };
-    let deferred_member_write = module_member_writes
-        .iter()
-        .any(|span| is_deferred(span.start));
-    let first_member_write_end = module_member_writes.iter().map(|span| span.end).min();
-    let module_reassigned = |call: &CallExpression| {
-        global_writes.contains("module")
-            || first_member_write_end.is_some_and(|end| {
-                // Assignment RHS calls run before the member write commits. Function
-                // bodies can execute later, so source offsets cannot order them.
-                end <= call.span.start || deferred_member_write || is_deferred(call.span.start)
-            })
-    };
+    Writes {
+        globals: global_writes,
+        symbols: symbol_writes,
+        module_members: module_member_writes,
+        deferred_bodies,
+    }
+}
+
+/// Pass 3: unwritten const string bindings, and const bindings initialized
+/// by a `createRequire` factory call.
+fn collect_loader_constants(
+    semantic: &Semantic<'_>,
+    factories: &HashSet<SymbolId>,
+    writes: &Writes<'_>,
+) -> LoaderConstants {
+    let scoping = semantic.scoping();
+    let symbol_writes = &writes.symbols;
     let mut constants = HashMap::new();
     let mut loaders = HashMap::new();
-    for node in nodes.iter() {
+    for node in semantic.nodes().iter() {
         let AstKind::VariableDeclaration(declaration) = node.kind() else {
             continue;
         };
@@ -166,13 +197,14 @@ pub(super) fn collect_common_js_loads(
             let Expression::Identifier(factory) = inner(&call.callee) else {
                 continue;
             };
-            if reference_symbol(factory).is_some_and(|id| factories.contains(&id)) {
+            if reference_symbol(scoping, factory).is_some_and(|id| factories.contains(&id)) {
                 let local_base = call.arguments.len() == 1
                     && call.arguments[0]
                         .as_expression()
                         .is_some_and(is_import_meta_url);
                 let reason = if symbol_writes.contains(&symbol)
-                    || reference_symbol(factory).is_some_and(|id| symbol_writes.contains(&id))
+                    || reference_symbol(scoping, factory)
+                        .is_some_and(|id| symbol_writes.contains(&id))
                 {
                     Some("loader-reassigned")
                 } else {
@@ -182,16 +214,48 @@ pub(super) fn collect_common_js_loads(
             }
         }
     }
+    LoaderConstants { constants, loaders }
+}
+
+/// Pass 4: one fact per call through an unshadowed `require`,
+/// `module.require`, or a `createRequire` loader.
+fn collect_load_sites(
+    semantic: &Semantic<'_>,
+    li: &SpanPositions,
+    writes: &Writes<'_>,
+    LoaderConstants { constants, loaders }: &LoaderConstants,
+) -> Vec<GraphFactCommonJs> {
+    let scoping = semantic.scoping();
+    let is_deferred = |offset| {
+        writes
+            .deferred_bodies
+            .iter()
+            .any(|span| span.start <= offset && offset < span.end)
+    };
+    let deferred_member_write = writes
+        .module_members
+        .iter()
+        .any(|span| is_deferred(span.start));
+    let first_member_write_end = writes.module_members.iter().map(|span| span.end).min();
+    let module_reassigned = |call: &CallExpression| {
+        writes.globals.contains("module")
+            || first_member_write_end.is_some_and(|end| {
+                // Assignment RHS calls run before the member write commits. Function
+                // bodies can execute later, so source offsets cannot order them.
+                end <= call.span.start || deferred_member_write || is_deferred(call.span.start)
+            })
+    };
     let mut loads = Vec::new();
-    for node in nodes.iter() {
+    for node in semantic.nodes().iter() {
         let AstKind::CallExpression(call) = node.kind() else {
             continue;
         };
         let (binding, loader_reason) = match inner(&call.callee) {
-            Expression::Identifier(identifier) => match reference_symbol(identifier) {
+            Expression::Identifier(identifier) => match reference_symbol(scoping, identifier) {
                 None if identifier.name == "require" => (
                     "unshadowed-global",
-                    global_writes
+                    writes
+                        .globals
                         .contains("require")
                         .then_some("loader-reassigned"),
                 ),
@@ -204,7 +268,7 @@ pub(super) fn collect_common_js_loads(
                 let Some(Expression::Identifier(identifier)) = require_member_object(callee) else {
                     continue;
                 };
-                if identifier.name != "module" || reference_symbol(identifier).is_some() {
+                if identifier.name != "module" || reference_symbol(scoping, identifier).is_some() {
                     continue;
                 }
                 (
@@ -218,7 +282,7 @@ pub(super) fn collect_common_js_loads(
                 .as_expression()
                 .and_then(|argument| match inner(argument) {
                     Expression::StringLiteral(literal) => Some(literal.value.as_str().to_owned()),
-                    Expression::Identifier(identifier) => reference_symbol(identifier)
+                    Expression::Identifier(identifier) => reference_symbol(scoping, identifier)
                         .and_then(|symbol| constants.get(&symbol).cloned()),
                     _ => None,
                 })

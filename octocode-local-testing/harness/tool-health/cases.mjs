@@ -24,7 +24,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { declarations, lspLocations, structureFiles, sourceView, inventoryRows } from '../mcp-client.mjs';
-import { leadsIn } from './driver.mjs';
+import { dataOf, leadsIn, rowsOf } from './driver.mjs';
 import { checkMaterialization } from '../github-materialize.mjs';
 
 const files = data => (data?.files ?? []).flatMap(file => (file.matches ?? []).map(m => `${file.path}:${m.line}`));
@@ -418,15 +418,30 @@ export const CASES = {
       { label: 'source', query: { id: 'source', source: GREETING_SOURCE, questions: CLASIFY_QUESTIONS }, check: data => answerShapes(data) ?? readLeadProblem(data) },
     ],
     invalid: { query: { state: GREETING_STATE, questions: {} } },
-    extra: async ({ cliCall, q, mock }) => {
+    extra: async ({ callOn, surfaces, cliCall, q, mock, validateOutput }) => {
       // The provider saw the selected lines and nothing past them.
       const sent = mock.classificationRequests.map(request => JSON.stringify(request));
       const selected = sent.some(text => text.includes('Tool-health fixture') && text.includes('export interface Greeting'));
       const beyond = sent.some(text => text.includes('healthMarker greeter-1'));
+      const boundaryChecks = [];
+      for (const surface of surfaces) {
+        const criteria = Array.from({ length: 10 }, (_, i) => `level ${i}`);
+        const question = { type: 'score', instructions: 'Rate the supplied state.', criteria };
+        const before = mock.classificationRequests.length;
+        const accepted = await callOn(surface)('clasify', q({ state: GREETING_STATE, questions: { boundary: question } }));
+        const requests = mock.classificationRequests.slice(before);
+        const forwarded = requests.flatMap(request => Object.values(request.questions ?? {}));
+        const answer = dataOf(rowsOf(accepted.json)[0])?.answers?.boundary;
+        boundaryChecks.push([`score.ten.${surface}`, !accepted.isError && !validateOutput('clasify', accepted.raw) && answer?.score === 9 && requests.length === 1 && forwarded.length === 1 && JSON.stringify(forwarded[0].criteria) === JSON.stringify(criteria), `${requests.length} provider POSTs; answer ${JSON.stringify(answer)}`]);
+        const afterAccepted = mock.classificationRequests.length;
+        const rejected = await callOn(surface)('clasify', q({ state: GREETING_STATE, questions: { boundary: { ...question, criteria: [...criteria, 'level 10'] } } }));
+        boundaryChecks.push([`score.eleven.${surface}`, rejected.isError && rejected.json?.errorCode === 'invalidInput' && mock.classificationRequests.length === afterAccepted, `${mock.classificationRequests.length - afterAccepted} provider POSTs; errorCode ${rejected.json?.errorCode}`]);
+      }
       // Disabled path: without a provider key the CLI refuses with a typed error.
       const res = await cliCall('clasify', q({ state: GREETING_STATE, questions: { named: CLASIFY_QUESTIONS.named } }), { env: { ['OCTOCODE_CLASSIFICATION_' + 'API']: '' } });
       const code = res.json?.errorCode ?? res.json?.queries?.[0]?.error?.errorCode;
       return [
+        ...boundaryChecks,
         ['source.selection', selected && !beyond, `${sent.length} provider requests; selection sent ${selected}, lines past the range sent ${beyond}`],
         ['disabled.typed', res.status !== 0 && typeof code === 'string', `exit ${res.status}, errorCode ${code} ${res.stdout.slice(0, 120)}`],
       ];

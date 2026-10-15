@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import fs from 'node:fs/promises';
+import { realpathSync } from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 const median = values => {
   const sorted = [...values].sort((a, b) => a - b);
@@ -33,7 +34,9 @@ export function summarize(run) {
   };
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+// argv[1] keeps a symlinked path while import.meta.url is the real path, so compare real paths.
+const realOrSelf = p => { try { return realpathSync(p); } catch { return path.resolve(p); } };
+if (process.argv[1] && realOrSelf(process.argv[1]) === realOrSelf(fileURLToPath(import.meta.url))) {
   if (!process.argv[2]) throw new Error('Usage: node jev_proposal_poc_summary.mjs <run.json>');
   console.log(JSON.stringify(summarize(JSON.parse(await fs.readFile(process.argv[2], 'utf8'))), null, 2));
 }

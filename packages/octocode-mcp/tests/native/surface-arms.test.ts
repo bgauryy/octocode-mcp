@@ -125,7 +125,7 @@ describe('read-tool selection schema', () => {
           selection || clasifyListed
         );
         expect(server.instructions.includes('clasifyContext')).toBe(selection);
-        expect(server.instructions.includes('clasify screens unread')).toBe(
+        expect(server.instructions.includes('clasify scouts unread')).toBe(
           clasifyListed
         );
         for (const name of TOOLS.filter(

@@ -2,8 +2,9 @@ import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-a
 import { Box, Text } from '@earendil-works/pi-tui';
 import { EventLog } from './events.js';
 import { apiDir, ensurePrivateDir, newInstanceId, newToken, removeRecord, socketPath, writeRecord, type InstanceRecord } from './registry.js';
+import { SendReceipts, type RunResult, type SendReceipt } from './receipts.js';
 import { ApiServer, type Connection } from './server.js';
-import { clampedParam, DEFAULT_EVENT_TYPES, ERR, MAX_FRAME_BYTES, numberParam, PROTOCOL_VERSION, RpcError, stringParam } from './protocol.js';
+import { clampedParam, DEFAULT_EVENT_TYPES, ERR, MAX_FRAME_BYTES, MESSAGE_KEY_MAX, numberParam, PROTOCOL_VERSION, RpcError, stringParam, WAIT_MS } from './protocol.js';
 import { apiClientLabel, fencedBody, fenceUntrusted, headerText, messageHeader } from '../shared/fence.js';
 import { redactData, redactSecrets, visibleControls } from '../shared/sanitize.js';
 import { saveFullOutput } from '../shared/spill.js';
@@ -12,7 +13,7 @@ import { formatClock } from '../shared/format.js';
 import { clip, resultBlock } from '../shared/render.js';
 import { EXTERNAL_MESSAGE_TYPE, type MessageEnvelope } from '../shared/messages.js';
 import { sha256 } from '../shared/atomic.js';
-import { capChars, contentText, errorMessage, isRecord, toolHint } from '../shared/util.js';
+import { capChars, contentText, errorMessage, isRecord, isStaleSessionError, toolHint } from '../shared/util.js';
 
 const API_ENV = 'OCTOCODE_API';
 const API_HTTP_ENV = 'OCTOCODE_API_HTTP';
@@ -21,7 +22,6 @@ const EXTERNAL_AUDIT_TYPE = 'octocode-external';
 /** Senders a client may not claim: the user, the team's own API sender, and (checked per call) any live agent. */
 const RESERVED_SENDERS = new Set(['user', 'external']);
 
-const WAIT_DEFAULT_MS = 600_000;
 const RESULT_MAX_CHARS = 64_000;
 /** `messages.list` page size: the default, and the most one page holds (a larger `limit` gets this many; `earlier` reaches the rest). */
 const HISTORY_PAGE = 20;
@@ -75,10 +75,14 @@ export function optionsFromEnv(env: NodeJS.ProcessEnv = process.env, platform = 
   const port = httpText === undefined || httpText === '' ? undefined : /^\d+$/.test(httpText) ? Number(httpText) : Number.NaN;
   if (port !== undefined && !(port >= 0 && port <= 65_535)) throw new Error(`Octocode API is off: ${API_HTTP_ENV}=${httpText} is not a port (0-65535; 0 picks a free one).`);
   const on = envFlag(env, API_ENV);
-  if (!on && port === undefined) return undefined;
-  const socket = on && platform !== 'win32';
-  // Windows has no Unix sockets here: HTTP on a free port is the only transport.
-  return { socket, http: port ?? (socket ? undefined : 0) };
+  if (!on) return port === undefined ? undefined : { socket: false, http: port };
+  return transportsFor(port, platform);
+}
+
+/** The transports of an API that is switched on: a Unix socket where there are any, and loopback HTTP on `http` (0: a free port) or, where there is no socket, on a free port. */
+export function transportsFor(http: number | undefined, platform = process.platform): ApiOptions {
+  const socket = platform !== 'win32';
+  return { socket, http: http ?? (socket ? undefined : 0) };
 }
 
 /**
@@ -95,23 +99,6 @@ export interface ApiOperations {
   externalCall?(params: unknown, ctx: ExtensionContext): Promise<unknown>;
 }
 
-interface SendReceipt {
-  phase: 'preparing' | 'accepted' | 'uncertain' | 'cancelled' | 'settled';
-  reject(error: Error): void;
-  controller: AbortController;
-  ready: Promise<void>;
-  fingerprint: string;
-  accepted: { id: string; queued: string };
-  settlement: Promise<{ text: string; stopReason?: string }>;
-}
-
-const SEND_RECEIPT_LIMIT = 128;
-
-interface Waiter {
-  resolve(result: { text: string; stopReason?: string }): void;
-  reject(error: Error): void;
-}
-
 /**
  * An external API for one running Pi session: other programs discover it, send it messages, follow what it does and
  * ask it to stop. JSON-RPC 2.0 over a private Unix socket (and optionally authenticated loopback HTTP + SSE), the
@@ -122,15 +109,11 @@ export class OctocodeApi {
   private ctx: ExtensionContext | undefined;
   private server: ApiServer | undefined;
   private record: InstanceRecord | undefined;
-  private dir = apiDir();
-  private readonly waiters = new Set<Waiter>();
+  private dir: string;
   /** The last run's final assistant text, handed to `wait` callers when Pi settles. */
-  private lastResult: { text: string; stopReason?: string } | undefined;
+  private lastResult: RunResult | undefined;
   private counter = 0;
-  private receiptSession: string | undefined;
-  private readonly receipts = new Map<string, SendReceipt>();
-  private readonly preparing = new Set<SendReceipt>();
-  private activeKey: string | undefined;
+  private readonly receipts = new SendReceipts();
   private lastAssistantText = '';
   private pendingDelta = '';
 
@@ -140,7 +123,9 @@ export class OctocodeApi {
     private readonly version: () => string | undefined,
     private readonly env: NodeJS.ProcessEnv = process.env,
     private readonly operations: ApiOperations = {},
-  ) {}
+  ) {
+    this.dir = apiDir(env);
+  }
 
   get running(): boolean {
     return this.server !== undefined;
@@ -185,14 +170,8 @@ export class OctocodeApi {
     pi.on('agent_settled', (event) => {
       if (!this.server) return;
       const result = { ...(this.lastResult ?? { text: '' }), ...(event.aborted ? { stopReason: 'aborted' } : {}) };
-      for (const receipt of this.preparing) this.cancelPreparation(receipt, 'The session ran while the message was being prepared');
-      for (const receipt of this.receipts.values()) if (receipt.phase === 'accepted') receipt.phase = 'settled';
-      this.activeKey = undefined;
+      this.receipts.settle(result);
       log.publish('agent.settled', result);
-      for (const waiter of [...this.waiters]) {
-        this.waiters.delete(waiter);
-        waiter.resolve(result);
-      }
     });
     pi.on('message_end', (event) => {
       if (!this.server) return;
@@ -235,7 +214,7 @@ export class OctocodeApi {
     try {
       const record: InstanceRecord = { id, pid: process.pid, cwd: ctx.cwd, startedAt: Date.now(), protocol: PROTOCOL_VERSION };
       if (options.socket) {
-        record.socket = socketPath(this.dir, id);
+        record.socket = socketPath(this.dir, id, this.env);
         await server.listenUnix(record.socket);
       }
       if (options.http !== undefined) {
@@ -259,13 +238,7 @@ export class OctocodeApi {
     this.lastResult = undefined;
     this.lastAssistantText = '';
     this.pendingDelta = '';
-    for (const waiter of this.waiters) waiter.reject(new RpcError(ERR.unavailable, 'The session ended', { execution: 'accepted' }));
-    this.waiters.clear();
-    for (const receipt of this.preparing) this.cancelPreparation(receipt, 'The session ended');
-    this.preparing.clear();
-    this.receipts.clear();
-    this.receiptSession = undefined;
-    this.activeKey = undefined;
+    this.receipts.end();
     if (record) removeRecord(this.dir, record.id);
     await server?.close();
     this.log.close();
@@ -273,16 +246,7 @@ export class OctocodeApi {
 
   private session(): ExtensionContext {
     if (!this.ctx) throw new RpcError(ERR.unavailable, 'No active session');
-    const current = this.ctx.sessionManager.getSessionId();
-    if (this.receiptSession !== current) {
-      for (const waiter of this.waiters) waiter.reject(new RpcError(ERR.unavailable, 'The session was replaced', { execution: 'accepted' }));
-      this.waiters.clear();
-      for (const receipt of this.preparing) this.cancelPreparation(receipt, 'The session was replaced');
-      this.preparing.clear();
-      this.receipts.clear();
-      this.activeKey = undefined;
-      this.receiptSession = current;
-    }
+    this.receipts.follow(this.ctx.sessionManager.getSessionId());
     return this.ctx;
   }
 
@@ -304,10 +268,12 @@ export class OctocodeApi {
         model: ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : null,
         context: usage ?? null,
         seq: this.log.seq,
-        ...(this.activeKey ? { activeMessageId: this.receipts.get(this.activeKey)?.accepted.id } : {}),
+        ...(this.receipts.activeKey ? { activeMessageId: this.receipts.active()?.accepted.id } : {}),
       };
-    } catch {
-      throw new RpcError(ERR.unavailable, 'The session was replaced', { execution: 'accepted' });
+    } catch (error) {
+      // Pi's own words for a context used after its session was replaced; anything else is a real failure, reported as such.
+      if (isStaleSessionError(error)) throw new RpcError(ERR.unavailable, 'The session was replaced');
+      throw new RpcError(ERR.internal, `The session status could not be read: ${errorMessage(error)}`);
     }
   }
 
@@ -328,18 +294,8 @@ export class OctocodeApi {
       case 'turn.abort': {
         const ctx = this.session();
         this.guardSession(params, ctx);
-        const key = stringParam(params, 'key', { optional: true, max: 128 });
-        if (key !== undefined && (this.activeKey !== key || !this.receipts.has(key))) {
-          throw new RpcError(ERR.unavailable, 'This request does not own the active run');
-        }
-        if (key !== undefined) {
-          const receipt = this.receipts.get(key)!;
-          if (receipt.phase === 'preparing') {
-            this.cancelPreparation(receipt, 'Message preparation was cancelled; nothing was sent');
-            return { aborted: false, cancelledPreparation: true };
-          }
-          if (receipt.phase !== 'accepted') throw new RpcError(ERR.unavailable, 'This request no longer owns the active run');
-        }
+        const key = stringParam(params, 'key', { optional: true, max: MESSAGE_KEY_MAX });
+        if (key !== undefined && this.receipts.abort(key) === 'cancelled') return { aborted: false, cancelledPreparation: true };
         const wasBusy = !ctx.isIdle();
         ctx.abort();
         return { aborted: wasBusy };
@@ -379,15 +335,11 @@ export class OctocodeApi {
   /** `agents.tell`: a long text is the team's to save and point to; a refusal (unknown agent, nobody reachable) is an RPC error. */
   private async tell(params: Record<string, unknown>): Promise<unknown> {
     const to = stringParam(params, 'to')!;
-    const text = this.label(stringParam(params, 'text')!);
+    const text = visibleControls(stringParam(params, 'text')!);
     const result = await this.agents.tell(to, text);
     this.audit({ method: 'agents.tell', to, chars: text.length, accepted: !(result && typeof result === 'object' && 'error' in result) });
     if (result && typeof result === 'object' && typeof (result as { error?: unknown }).error === 'string') throw new RpcError(ERR.invalidParams, (result as { error: string }).error);
     return result;
-  }
-
-  private label(text: string): string {
-    return visibleControls(text);
   }
 
   /** Records an API-started turn in the session (a `octocode-external` entry), so what an outside program caused can be reviewed. */
@@ -414,96 +366,62 @@ export class OctocodeApi {
     this.guardSession(params, ctx);
     const from = this.sender(params);
     const raw = stringParam(params, 'text')!;
-    const whole = this.label(raw);
+    const whole = visibleControls(raw);
     const mode = params['mode'] ?? 'auto';
     if (mode !== 'auto' && mode !== 'steer' && mode !== 'followUp') throw new RpcError(ERR.invalidParams, 'mode must be auto, steer or followUp');
     if (params['requireIdle'] !== undefined && typeof params['requireIdle'] !== 'boolean') throw new RpcError(ERR.invalidParams, 'requireIdle must be a boolean');
     const requireIdle = params['requireIdle'] === true;
     const wait = params['wait'] === true;
-    const timeout = numberParam(params, 'timeoutMs', { min: 1_000, max: 3_600_000 }) ?? WAIT_DEFAULT_MS;
-    const key = stringParam(params, 'key', { optional: true, max: 128 });
+    const timeout = numberParam(params, 'timeoutMs', WAIT_MS) ?? WAIT_MS.default;
+    const key = stringParam(params, 'key', { optional: true, max: MESSAGE_KEY_MAX });
     const fingerprint = sha256(JSON.stringify({ raw, from, mode, requireIdle }));
     const prior = key ? this.receipts.get(key) : undefined;
     if (prior) {
       if (prior.fingerprint !== fingerprint) throw new RpcError(ERR.invalidParams, 'The message key was already used for different input; nothing was sent', { execution: 'not-sent' });
-      if (wait) return { ...prior.accepted, ...(await this.waitReceipt(prior, timeout)) };
+      if (wait) return { ...prior.accepted, ...(await this.receipts.wait(prior, timeout)) };
       await prior.ready;
       return prior.accepted;
     }
-    const busy = !ctx.isIdle() || ctx.hasPendingMessages() || this.activeKey !== undefined || this.preparing.size > 0;
+    const busy = !ctx.isIdle() || ctx.hasPendingMessages() || this.receipts.busy;
     if (requireIdle && busy) throw new RpcError(ERR.unavailable, 'The session is busy; nothing was sent', { execution: 'not-sent' });
-    if (key && this.receipts.size >= SEND_RECEIPT_LIMIT) throw new RpcError(ERR.unavailable, 'This session has reached its message key capacity; existing receipts are retained', { execution: 'not-sent' });
+    this.receipts.assertRoom(key);
     let text: string;
     const id = `x${++this.counter}`;
     const deliverAs = mode === 'followUp' ? 'followUp' : 'steer';
     const at = Date.now();
     const accepted = { id, queued: busy ? deliverAs : 'turn' };
-    let waiter: Waiter | undefined;
-    const settlement = new Promise<{ text: string; stopReason?: string }>((resolve, reject) => {
-      waiter = { resolve, reject };
-    });
-    settlement.catch(() => undefined);
-    let resolveReady!: () => void;
-    let rejectReady!: (error: Error) => void;
-    const ready = new Promise<void>((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
-    ready.catch(() => undefined);
-    const reject = (error: Error): void => { waiter!.reject(error); rejectReady(error); };
-    const receipt: SendReceipt = { phase: 'preparing', controller: new AbortController(), ready, reject, fingerprint, accepted, settlement };
-    this.preparing.add(receipt);
-    if (key) {
-      this.receipts.set(key, receipt);
-      if (!busy) this.activeKey = key;
-    }
+    const { receipt, waiter } = this.receipts.open(fingerprint, accepted, key, busy);
     const message: MessageEnvelope = { channel: 'external', direction: 'inbound', from, to: originalSessionId, text: raw, id };
     const deadline = Date.now() + timeout;
-    const preparingTimer = setTimeout(() => this.cancelPreparation(receipt, 'Message preparation timed out; nothing was sent'), timeout);
+    const preparingTimer = setTimeout(() => this.receipts.cancelPreparation(receipt, 'Message preparation timed out; nothing was sent'), timeout);
     preparingTimer.unref();
     let dispatched = false;
     try {
-      if (this.operations.messageSend) await Promise.race([this.operations.messageSend(message, ctx, receipt.controller.signal), settlement]);
+      if (this.operations.messageSend) await Promise.race([this.operations.messageSend(message, ctx, receipt.controller.signal), receipt.settlement]);
       this.guardPreparedSend(params, ctx, originalSessionId, key, receipt);
       const given = this.agents.deliverable(whole, from);
       if (typeof given !== 'string') throw new RpcError(ERR.unavailable, given.error);
       text = given;
-      this.preparing.delete(receipt);
       clearTimeout(preparingTimer);
-      receipt.phase = 'accepted';
-      if (key || wait) this.waiters.add(waiter!);
-      else waiter!.resolve({ text: '' });
+      this.receipts.accept(receipt, waiter, key !== undefined || wait);
       dispatched = true;
       this.pi.sendMessage(
         { customType: EXTERNAL_MESSAGE_TYPE, content: fenceUntrusted(messageHeader(apiClientLabel(from), at), text), display: true, details: { id, from, at, message } },
         { triggerTurn: true, deliverAs },
       );
-      resolveReady();
+      receipt.resolveReady();
     } catch (error) {
       clearTimeout(preparingTimer);
-      this.preparing.delete(receipt);
-      if (waiter) this.waiters.delete(waiter);
       const execution = dispatched ? 'uncertain' : 'not-sent';
       const failure = new RpcError(ERR.unavailable, `The session could not take the message: ${errorMessage(error)}`, { execution, ...(dispatched ? accepted : {}) });
-      receipt.reject(failure);
-      if (dispatched) receipt.phase = 'uncertain';
-      else {
-        if (key) this.receipts.delete(key);
-        if (this.activeKey === key) this.activeKey = undefined;
-      }
+      this.receipts.fail(receipt, waiter, key, failure, dispatched);
       throw failure;
     }
     this.audit({ method: 'message.send', id, from, mode: deliverAs, queued: accepted.queued, chars: whole.length });
     this.log.publish('external.message', { id, from, text: redactSecrets(capChars(text, 2_000)), queued: accepted.queued });
     if (!wait) return accepted;
-    try { return { ...accepted, ...(await this.waitReceipt(receipt, Math.max(1, deadline - Date.now()))) }; }
-    finally { if (!key && waiter) this.waiters.delete(waiter); }
-  }
-
-  private cancelPreparation(receipt: SendReceipt, message: string): void {
-    if (receipt.phase !== 'preparing') return;
-    receipt.phase = 'cancelled';
-    receipt.controller.abort();
-    receipt.reject(new RpcError(ERR.unavailable, message, { execution: 'not-sent' }));
-    if (this.activeKey && this.receipts.get(this.activeKey) === receipt) this.activeKey = undefined;
-    this.preparing.delete(receipt);
+    try { return { ...accepted, ...(await this.receipts.wait(receipt, Math.max(1, deadline - Date.now()))) }; }
+    finally { if (!key) this.receipts.release(waiter); }
   }
 
   private guardPreparedSend(params: Record<string, unknown>, original: ExtensionContext, sessionId: string, key: string | undefined, receipt: SendReceipt): void {
@@ -511,24 +429,9 @@ export class OctocodeApi {
     this.guardSession(params, ctx);
     if (ctx !== original || ctx.sessionManager.getSessionId() !== sessionId) throw new RpcError(ERR.unavailable, 'The session was replaced; nothing was sent');
     if (receipt.phase !== 'preparing') throw new RpcError(ERR.unavailable, 'Message preparation was cancelled; nothing was sent');
-    if (params['requireIdle'] === true && (!ctx.isIdle() || ctx.hasPendingMessages() || this.activeKey !== key || this.preparing.size > 1)) {
+    if (params['requireIdle'] === true && (!ctx.isIdle() || ctx.hasPendingMessages() || this.receipts.activeKey !== key || this.receipts.preparingCount > 1)) {
       throw new RpcError(ERR.unavailable, 'The session became busy; nothing was sent');
     }
-  }
-
-  private async waitReceipt(receipt: SendReceipt, timeout: number): Promise<{ text: string; stopReason?: string }> {
-    let timer: NodeJS.Timeout | undefined;
-    const expired = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => {
-        if (receipt.phase === 'preparing') {
-          this.cancelPreparation(receipt, 'Message preparation timed out; nothing was sent');
-          reject(new RpcError(ERR.unavailable, 'Message preparation timed out; nothing was sent'));
-        } else reject(new RpcError(ERR.timeout, 'Timed out waiting for the agent to finish; the message was delivered', { ...receipt.accepted, execution: 'accepted' }));
-      }, timeout);
-      timer.unref();
-    });
-    try { return await Promise.race([receipt.settlement, expired]); }
-    finally { clearTimeout(timer); }
   }
 
   /**

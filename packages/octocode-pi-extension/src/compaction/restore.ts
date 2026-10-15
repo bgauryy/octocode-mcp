@@ -6,7 +6,7 @@ import { contextReads, seenFiles, RESTORED_FILES_TYPE, type WorkedFile } from '.
 import type { FileGuard } from '../files/tool.js';
 import { sha256 } from '../shared/atomic.js';
 import { canonicalPath } from '../shared/home.js';
-import { cutText, isRecord } from '../shared/util.js';
+import { cutText, isRecord, isStaleSessionError } from '../shared/util.js';
 
 /**
  * After a compaction, the files the agent was working on are read again from disk and put back in its context, as
@@ -146,8 +146,10 @@ export function deliverRestoredFiles(pi: Pick<ExtensionAPI, 'sendMessage'>, pend
     const partial = restored.files.filter((entry) => !entry.whole).map((entry) => entry.file);
     const details = { id, files: restored.files.map((entry) => entry.file), ...(partial.length > 0 ? { partial } : {}), worked: restored.worked };
     pi.sendMessage({ customType: RESTORED_FILES_TYPE, content: restored.content, display: false, details }, { triggerTurn: false });
-  } catch {
-    return undefined; // The session was replaced.
+  } catch (error) {
+    // Pi's ctx and pi throw this once the session was replaced; any other failure is a real error and goes on.
+    if (isStaleSessionError(error)) return undefined;
+    throw error;
   }
   return { id, files: restored.files };
 }

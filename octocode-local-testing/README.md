@@ -27,6 +27,7 @@ and exits non-zero when any suite fails, errors, times out or reports no checks.
 
 The hermetic environment comes from `test-utils/hermetic-env.ts`, the same definition the
 MCP, CLI and config vitest suites run under (`test-utils/external-effects-guard.ts`).
+Harness scripts also run when invoked through a symlink (`harness/entry-symlink.test.mjs`).
 
 ## Layout
 
@@ -34,23 +35,22 @@ MCP, CLI and config vitest suites run under (`test-utils/external-effects-guard.
 |---|---|
 | `harness/mcp-client.mjs` | Shared stdio MCP client, `next.*` page walker, check recorder |
 | `harness/workflows.mjs` | Regression checks for every fixed defect + continuation hygiene |
-| `harness/local-ranking.mjs` | Local search/fetch `classifiers` ranking edge cases with a loopback classifier: source drift, full evidence, clasify source capture and its read lead, legacy-input rejection, redaction, and replay |
+| `harness/local-ranking.mjs` | Local search/fetch `clasifyContext` selection edge cases with a loopback classifier (the all-tool contract is `read-tool-selection`): query-view schema gating, per-call provider failures, exact candidate/character budgets, matchString/range/CRLF anchors, streamed and oversized sources, plan binding (source path/bytes, settings, view), clasify source capture and its read lead, legacy-input rejection, redaction, stats, and CLI/MCP replay |
 | `harness/read-tool-selection.mjs` | All-13 read-tool applicability plus context selection for `localSearch`, `localFetch`, `ghSearchCode`, and `ghGetFileContent`: selected-only CLI/MCP bodies, complete/partial/unavailable receipts, policy thresholds, paging, unfiltered recovery, optional metadata, long-context headers, sentinels, single-candidate judgment, capability gates, and no hidden hydration |
-| `harness/classification-retry.mjs` | Hermetic CLI/MCP/N-API checks for exact judgment reuse, account isolation, retry limits and usage, failed flights, and source/classifier/account changes during ranked replay |
-| `harness/read-tool-ranking-impact.mjs` | Manually selected, budgeted real-provider comparison on labeled fixtures. Requires `OCTOCODE_LIVE=1`; retains no-benefit, insufficient, and skipped outcomes separately from mechanical acceptance |
+| `harness/classification-retry.mjs` | Hermetic CLI/MCP/N-API checks for exact judgment reuse, account isolation, retry limits and usage, failed flights, and source/classifier/account changes during selection-plan replay |
 | `harness/usage-regressions.mjs` | Input shapes and failures mined from recorded agent sessions, replayed on MCP and the CLI: batch/brief placement, guessed field names, wrong-tool rows, regex repairs, bounded large reads, root-policy hints, warm LSP |
 | `harness/grammar.mjs` | All 12 Tree-sitter grammars and their extensions on small fixtures |
 | `harness/navigate.mjs` | Agent-style ORIENT → SEARCH → READ → PROVE walk per grammar repo, each hop fed only by copied values; hop/byte budget |
 | `harness/tool-health.mjs` | Every contract tool over CLI and MCP on tiny fixtures and a loopback GitHub/registry/classifier mock (`harness/tool-health/`): happy path, full `next.*` walks, every lead explored by `tool-health/driver.mjs` (contract-valid, accepted, key-family predicates, per-call facts only), empty, invalid, CLI/MCP parity. Hermetic, about 15 s, `--deep` about 25 s (`node octocode-local-testing/harness/tool-health.mjs [tool,...] [--deep]` or `dev.mjs test:tools`); results in `results/tool-health.json` |
 | `harness/remote.mjs` | Live canary: GitHub search/read/history, artifactSearch, clasify against the real services; every returned `next.*` page and `hints.*` lead must execute (tool-health covers the same shapes against the mock) |
-| `harness/github.mjs` | GitHub data fidelity against the local clones at the pinned SHA: file bytes/ranges/matchString/byte chunks, code-search precision + verbatim snippets + filters + pagination, tree = `git ls-tree`, commit/compare/PR = `git diff` (with patches, `include` selection and pageSize-1 patch paging), history filters, open-PR head SHAs, ranked `classifiers` reads and code search at the pinned SHA, clasify typed questions over a pinned GitHub source |
+| `harness/github.mjs` | GitHub data fidelity against the local clones at the pinned SHA: file bytes/ranges/matchString/byte chunks, code-search precision + verbatim snippets + filters + pagination, tree = `git ls-tree`, commit/compare/PR = `git diff` (with patches, `include` selection and pageSize-1 patch paging), history filters, open-PR head SHAs, `clasifyContext` selection over reads and code search at the pinned SHA, clasify typed questions over a pinned GitHub source |
 | `harness/review-large.mjs` | A >100-file PR: inventory pages, a late file's patch and its patch windows, against GitHub's REST files API |
 | `harness/lsp-importers.mjs` | CommonJS importer recovery past unrelated comment mentions |
 | `harness/chain-check.mjs` | Contract sensor: per-tool chain steps plus acceptance checks C1-C5 (`harness/acceptance.mjs`, unit-tested by `acceptance.test.mjs`) |
 | `harness/lead-replay.mjs` | Replays every `next.*`/`hints.*` lead of a fixture set and checks it does what its key promises |
 | `harness/artifacts.mjs` | artifactSearch fidelity: 8 registries (npm, PyPI, crates, Maven, NuGet, Go, Packagist, RubyGems) against each registry's own API; `hints.viewRepo` names and opens the same repo |
 | `harness/perf.mjs` | Cache effectiveness: lspSearch page 2 vs page 1, symbols/topology continuation pages and repeated analyses, tokio Rust linking gaps |
-| `harness/clasify.mjs` | Real-provider classification: localFetch `classifiers` on 18 files across 12 grammars and 6 huge repos (declaration in the first ranked page, host-byte savings), ranked localSearch, two classifiers over one file, a lossless ranked walk; clasify noul/choice/score over held state, a localFetch source and a URL capture with their `hints.read`, and a failed source row |
+| `harness/clasify.mjs` | Real-provider classification (runs with `OCTOCODE_BETA=true`): `clasifyContext` must select the target declaration in large unread files and the implementing file in localSearch, two classifiers over one file, a selected walk in source order with `next.unfiltered` recovering every line once, host bytes against a full read; clasify noul/choice/score over held state, a localFetch source and a URL capture with their `hints.read`, and a failed source row |
 | `harness/repo-sweep.mjs` | One big real repo per grammar: every tool, full pagination, cross-tool correlation |
 | `harness/deps-flows.mjs` | Imports/dependencies between files: `astTopology` (CLI) edges proven line-by-line with `localFetch`, cross-checked against `astSearch` import syntax and `lspSearch` identity |
 | `harness/large-files.mjs` | Extremely large files (3 MB checker.ts, 28 MB log, 1-line 1.9 MB bundle, 20k-function file) with pagination walked to the end |

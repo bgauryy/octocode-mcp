@@ -6,8 +6,8 @@ const ctx = (extra: Record<string, unknown> = {}) => ({ args: {}, lastComponent:
 const details = (extra: Partial<RunDetails> = {}): RunDetails => ({ id: 'general-0001', profile: 'general', goal: 'audit auth token refresh', toolCalls: 2, activity: ['→ bash ls', '→ read a.ts'], input: 1_500, cacheRead: 0, output: 500, cost: 0, unpriced: false, startedAt: 0, status: 'done', ...extra });
 
 describe('subagent renderers', () => {
-  it('names the goal in the call row, after the profile', () => {
-    expect(rendered(renderAgentCall({ task: 't', goal: 'audit auth token refresh', profile: 'reviewer', isolate: true } as never, theme, ctx()))).toContain('Agent(reviewer · audit auth token refresh · isolated)');
+  it('names the goal in the call row, without the profile', () => {
+    expect(rendered(renderAgentCall({ task: 't', goal: 'audit auth token refresh', profile: 'reviewer', isolate: true } as never, theme, ctx()))).toContain('Agent(audit auth token refresh · isolated)');
   });
 
   it('summarizes a finished run with and without a duration', () => {
@@ -24,12 +24,13 @@ describe('subagent renderers', () => {
     expect(rendered(renderAgentResult({ content: [{ type: 'text', text: 'blocked: need a decision' }], details: details({ outcome: 'blocked' }) }, { isPartial: false, expanded: false }, theme, ctx()))).toContain('⎿  Blocked (general-0001');
   });
 
-  it('draws the call with the profile and tags, never the prompt', () => {
+  it('draws the call with its goal and tags, never the prompt or the profile', () => {
     const call = rendered(renderAgentCall({ task: 'look\nsecond', profile: 'researcher', background: true }, theme, ctx()));
-    expect(call).toContain('Agent(researcher)');
+    expect(call).toMatch(/^. Agent · background/);
     expect(call).not.toContain('look');
-    expect(rendered(renderAgentCall({ task: 'x', profile: 'implementer', model: 'openai/gpt-5', isolate: true }, theme, ctx()))).toContain('Agent(implementer · openai/gpt-5 · isolated)');
-    expect(rendered(renderAgentCall({ background: true }, theme, ctx()))).toMatch(/Agent\(general\).*background/);
+    expect(call).not.toContain('researcher');
+    expect(rendered(renderAgentCall({ task: 'x', profile: 'implementer', model: 'openai/gpt-5', isolate: true }, theme, ctx()))).toContain('Agent(openai/gpt-5 · isolated)');
+    expect(rendered(renderAgentCall({ background: true }, theme, ctx()))).toMatch(/^. Agent · background/);
   });
 
   it('draws a background start, Pi\'s native duration and a run without details', () => {
@@ -42,7 +43,7 @@ describe('subagent renderers', () => {
     expect(warned(false)).toContain('to expand');
     expect(warned(true)).toContain('Not isolated: no git repo');
     expect(warned(true)).not.toContain('Started general-0001');
-    const finished = rendered(renderAgentResult({ content: [{ type: 'text', text: 'answer' }], details: details({ seconds: 5 }) }, { isPartial: false, expanded: false }, theme, ctx({ durationMs: 90_000 })));
+    const finished = rendered(renderAgentResult({ content: [{ type: 'text', text: 'answer' }], details: details() }, { isPartial: false, expanded: false }, theme, ctx({ durationMs: 90_000 })));
     expect(finished).toContain('Done (general-0001 · 2 tool calls · ↑1.5k ↓500 · 1m30s)');
     const bare = rendered(renderAgentResult({ content: [{ type: 'text', text: 'Subagent failed\ndetail' }], details: undefined }, { isPartial: false, expanded: false }, theme, ctx({ isError: true })));
     expect(bare).toContain('Subagent failed');
@@ -70,9 +71,10 @@ describe('subagent renderers', () => {
     expect(waiting).toContain('waiting for your approval (general-0001 · 2 tool calls');
   });
 
-  it('shows a background report with its name, role and goal, and its full prompt when expanded', () => {
+  it('shows a background report with its name and goal (not its role), and its full prompt when expanded', () => {
     const message = (expanded: boolean) => rendered(renderAgentMessage({ role: 'custom', customType: 'x', content: 'Background subagent general-0001 finished (3s · 1 tool call):\nAll fixed.', details: { id: 'general-0001', status: 'done', summary: 'Done (1 tool call)', durationMs: 3_000, profile: 'researcher', goal: 'fix login flow', task: 'Fix login\nin src/auth.ts' }, display: true, timestamp: 0 } as never, { expanded, outputPad: 1 }, theme as never) as never);
-    expect(message(false)).toContain('Agent(general-0001 · researcher · fix login flow)');
+    expect(message(false)).toContain('Agent(general-0001 · fix login flow)');
+    expect(message(false)).not.toContain('researcher');
     expect(message(false)).not.toContain('Fix login');
     expect(message(false)).toContain('All fixed.');
     expect(message(true)).toMatch(/Prompt\n\s+Fix login\n\s+in src\/auth\.ts\n\s*\n\s+Report\n\s+All fixed\./);

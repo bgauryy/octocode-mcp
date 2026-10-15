@@ -3,10 +3,7 @@ import { clip, plural, timingOf, resultBlock, timedTool, toolHeader } from '../s
 import { Type } from 'typebox';
 import { withDialog } from '../shared/locks.js';
 import { sanitizeTerminalText } from '../shared/sanitize.js';
-import { showAskDialog, type AskQuestion, type AskResult } from './dialog.js';
-
-const OTHER = 'Write an answer';
-const DONE = 'Submit selection';
+import { answerOf, showAskDialog, SUBMIT_PICKS, TYPE_OWN, type AskQuestion, type AskResult } from './dialog.js';
 
 /** RPC hosts have dialogs but no custom TUI components: fall back to select/input per question. */
 async function askWithDialogs(ctx: ExtensionContext, questions: AskQuestion[], signal?: AbortSignal): Promise<AskResult> {
@@ -18,7 +15,7 @@ async function askWithDialogs(ctx: ExtensionContext, questions: AskQuestion[], s
     if (q.options.length === 0) {
       const typed = (await ctx.ui.input(sanitizeTerminalText(q.question), undefined, options))?.trim();
       if (signal?.aborted || !typed) return cancelled();
-      answers.push({ question: q.question, answer: typed, custom: true });
+      answers.push(answerOf(q.question, [], typed));
       continue;
     }
     // Numbered identities distinguish duplicate labels and labels named after UI actions.
@@ -28,25 +25,25 @@ async function askWithDialogs(ctx: ExtensionContext, questions: AskQuestion[], s
     let typed: string | undefined;
     for (;;) {
       const remaining = labels.filter((_, index) => !chosen.has(index));
-      const extra = q.multiSelect && chosen.size > 0 ? [DONE, OTHER] : [OTHER];
+      const extra = q.multiSelect && chosen.size > 0 ? [SUBMIT_PICKS, TYPE_OWN] : [TYPE_OWN];
       const selected = [...chosen].map((index) => q.options[index]!.label).join(', ');
-      const title = q.multiSelect ? `${q.question} (choose one or more, then ${DONE}${selected ? `; selected: ${selected}` : ''})` : q.question;
+      const title = q.multiSelect ? `${q.question} (choose one or more, then ${SUBMIT_PICKS}${selected ? `; selected: ${selected}` : ''})` : q.question;
       const picked = await ctx.ui.select(sanitizeTerminalText(title), [...remaining, ...extra], options);
       if (signal?.aborted || picked === undefined) return cancelled();
-      if (picked === OTHER) {
+      if (picked === TYPE_OWN) {
         // An empty answer is no answer, as in the TUI dialog.
         typed = (await ctx.ui.input(sanitizeTerminalText(q.question), undefined, options))?.trim();
         if (signal?.aborted || !typed) return cancelled();
         break;
       }
-      if (picked === DONE) break;
+      if (picked === SUBMIT_PICKS) break;
       const index = labels.indexOf(picked);
       if (index < 0 || chosen.has(index)) return cancelled();
       chosen.add(index);
       if (!q.multiSelect || chosen.size === labels.length) break;
     }
     const picks = q.options.flatMap((option, index) => chosen.has(index) ? [option.label] : []);
-    answers.push({ question: q.question, answer: [...picks, ...(typed ? [typed] : [])].join(', '), custom: typed !== undefined, ...(typed !== undefined && picks.length ? { picks, typed } : {}) });
+    answers.push(answerOf(q.question, picks, typed));
   }
   return { answers, cancelled: false };
 }

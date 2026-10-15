@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync, symlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import {
   analyzeSources,
   productionTokens,
@@ -88,4 +93,21 @@ test('is deterministic and rejects invalid thresholds and unclosed comments', ()
   assert.deepEqual(scan('let a=1;'), scan('let a=1;'));
   assert.throws(() => analyzeSources([], { minLines: 0 }), /minLines/);
   assert.throws(() => tokensOf('/* incomplete'), /Unclosed/);
+});
+
+test('runs its entry point when called through a symlink', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'audit-link-'));
+  try {
+    const link = join(dir, 'audit-native.mjs');
+    symlinkSync(
+      fileURLToPath(new URL('../scripts/audit-native.mjs', import.meta.url)),
+      link
+    );
+    const run = spawnSync(process.execPath, [link, '--help'], {
+      encoding: 'utf8',
+    });
+    assert.match(run.stdout, /^Usage: node scripts\/audit-native\.mjs/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

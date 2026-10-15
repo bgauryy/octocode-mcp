@@ -8,6 +8,8 @@ import { registerBacklogTool } from './tool.js';
 const BACKLOG_STATUS_KEY = 'octocode-backlog';
 interface RegisterBacklogOptions extends BacklogOptions {
   commands: Subcommands;
+  /** Opens the HTML page (`/backlog html`); the system's default application unless replaced. */
+  open?: (file: string) => Promise<void>;
 }
 
 /**
@@ -15,7 +17,7 @@ interface RegisterBacklogOptions extends BacklogOptions {
  * `commands` is registered) and footer counts in words with the `/backlog` hint that opens the board.
  */
 export function registerBacklog(pi: ExtensionAPI, options: RegisterBacklogOptions): void {
-  const { commands, ...backlogOptions } = options;
+  const { commands, open, ...backlogOptions } = options;
 
   const refresh = (ctx: ExtensionContext) => {
     if (!ctx.hasUI || options.isSubagent) return;
@@ -30,7 +32,7 @@ export function registerBacklog(pi: ExtensionAPI, options: RegisterBacklogOption
   };
 
   registerBacklogTool(pi, { ...backlogOptions, changed: refresh });
-  if (!options.isSubagent) commands.add('backlog', backlogCommand(pi, { ...backlogOptions, changed: refresh }));
+  if (!options.isSubagent) commands.add('backlog', backlogCommand(pi, { ...backlogOptions, ...(open ? { open } : {}), changed: refresh }));
   pi.on('session_start', (_event, ctx) => refresh(ctx));
   // Another session or agent may have changed the board: repaint at the end of every run.
   pi.on('agent_end', (_event, ctx) => refresh(ctx));

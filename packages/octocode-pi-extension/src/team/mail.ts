@@ -1,11 +1,11 @@
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
+import { INTERNAL_MESSAGE_TYPE } from '../shared/messages.js';
 import { userProofValid } from './proof.js';
 import { spillIntact } from './spill.js';
-import { deadLetterText, messageText, USER_SENDER, wakes } from './routing.js';
+import { deadLetterText, messageText, USER_SENDER } from './routing.js';
 import type { DeadLetter, MailDetails, Message } from './model.js';
 import type { TeamStore } from './store.js';
 
-import { INTERNAL_MESSAGE_TYPE } from '../shared/messages.js';
 export const MESSAGE_TYPE = INTERNAL_MESSAGE_TYPE;
 
 /** Puts team mail and team notices in front of this agent's model, one Pi custom message each (`MailDetails`). */
@@ -74,7 +74,7 @@ export class Mail {
 
   private send(batch: Message[], parentId: string | undefined, stopped: boolean): boolean {
     const content = batch.map((message) => messageText(message, { parentId, stopped, fromUser: this.verified(message) })).join('\n\n');
-    return this.inject(content, { messages: batch }, { triggerTurn: batch.some(wakes), deliverAs: 'steer' });
+    return this.inject(content, { messages: batch }, { triggerTurn: batch.some((message) => message.wake), deliverAs: 'steer' });
   }
 
   /**

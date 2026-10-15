@@ -1,5 +1,7 @@
 import { formatDuration } from '../shared/format.js';
 import { visibleControls } from '../shared/sanitize.js';
+import { DAY_MS, HOUR_MS } from '../shared/util.js';
+import { refText } from './row.js';
 import { priorityName, STATES, type BacklogStore, type Item, type Note, type State } from './store.js';
 
 export const STATE_TITLE: Record<State, string> = { ongoing: 'Ongoing', todo: 'Todo', backlog: 'Backlog (triage)', done: 'Done' };
@@ -14,7 +16,7 @@ function holder(item: Item, self?: string, parents?: ReadonlySet<string>): strin
 }
 
 /** ` (from B12)` when the item came from another one. */
-const fromText = (item: Item): string => (item.from === undefined ? '' : ` (from B${item.from})`);
+const fromText = (item: Item): string => (item.from === undefined ? '' : ` (from ${refText(item.from)})`);
 
 /** `B14 [ongoing p1] Title #tag (from B12) (you)` */
 export function itemLine(item: Item, self?: string, parents?: ReadonlySet<string>): string {
@@ -25,10 +27,9 @@ export function itemLine(item: Item, self?: string, parents?: ReadonlySet<string
 /** A compact span: `45s`, `12m`, `5h20m`, `3d4h`. */
 function span(ms: number): string {
   const safe = Math.max(0, ms);
-  const day = 86_400_000;
-  if (safe < day) return formatDuration(safe).replace(/(\d+m)\d+s$/, '$1');
-  const days = Math.floor(safe / day);
-  const hours = Math.floor((safe % day) / 3_600_000);
+  if (safe < DAY_MS) return formatDuration(safe).replace(/(\d+m)\d+s$/, '$1');
+  const days = Math.floor(safe / DAY_MS);
+  const hours = Math.floor((safe % DAY_MS) / HOUR_MS);
   return `${days}d${hours ? `${hours}h` : ''}`;
 }
 
@@ -49,11 +50,11 @@ const who = (id: string, self?: string, parents?: ReadonlySet<string>) => (id ==
  * done 5m ago (took 1h55m) · updated 5m ago`.
  */
 function timeline(item: Item, now: number, self?: string, parents?: ReadonlySet<string>): string[] {
-  const holder = item.assignee ? ` by ${who(item.assignee, self, parents)}` : '';
+  const heldBy = item.assignee ? ` by ${who(item.assignee, self, parents)}` : '';
   const parts = [`created ${stamp(item.createdAt)} (${ago(item.createdAt, now)}) by ${visibleControls(item.createdBy)}`];
-  if (item.startedAt) parts.push(`claimed ${ago(item.startedAt, now)}${item.state === 'done' ? '' : holder}`);
+  if (item.startedAt) parts.push(`claimed ${ago(item.startedAt, now)}${item.state === 'done' ? '' : heldBy}`);
   else if (item.assignee && item.state !== 'done') parts.push(`assignee ${who(item.assignee, self, parents)}`);
-  if (item.doneAt) parts.push(`done ${ago(item.doneAt, now)}${item.startedAt && item.startedAt <= item.doneAt ? ` (took ${span(item.doneAt - item.startedAt)})` : ''}${holder}`);
+  if (item.doneAt) parts.push(`done ${ago(item.doneAt, now)}${item.startedAt && item.startedAt <= item.doneAt ? ` (took ${span(item.doneAt - item.startedAt)})` : ''}${heldBy}`);
   if (item.updatedAt !== item.createdAt) parts.push(`updated ${ago(item.updatedAt, now)}`);
   return parts;
 }
@@ -137,15 +138,15 @@ export function exportMarkdown(store: BacklogStore, repoName: string, now: numbe
     lines.push(`## ${STATE_TITLE[state]} (${rows.length})`, '');
     for (const item of rows) {
       const tags = item.tags.map((tag) => ` #${tag}`).join('');
-      const who = item.assignee ? ` — ${visibleControls(item.assignee)}` : '';
-      lines.push(`- **${item.ref}** [${priorityName(item.priority)}] ${visibleControls(item.title)}${tags}${fromText(item)}${who}`);
+      const owner = item.assignee ? ` — ${visibleControls(item.assignee)}` : '';
+      lines.push(`- **${item.ref}** [${priorityName(item.priority)}] ${visibleControls(item.title)}${tags}${fromText(item)}${owner}`);
       lines.push(...itemFields(item).flatMap((field) => field.split('\n')).map((line) => `  ${line}`));
       const times = [`created ${stamp(item.createdAt)} by ${visibleControls(item.createdBy)}`, item.startedAt ? `claimed ${stamp(item.startedAt)}` : '', item.doneAt ? `done ${stamp(item.doneAt)}` : ''];
       lines.push(`  _${times.filter(Boolean).join(' · ')}_`);
       for (const line of item.body ? visibleControls(item.body).split('\n') : []) lines.push(`  ${line}`.trimEnd());
       for (const note of store.notes(item, -1)) {
-        const stamp = `${new Date(note.at).toISOString().slice(0, 16).replace('T', ' ')} ${visibleControls(note.author)}${note.kind === 'change' ? ' ·' : ':'}`;
-        lines.push(...`  - ${stamp} ${indented(note.text, '    ')}`.split('\n').map((line) => line.trimEnd()));
+        const heading = `${new Date(note.at).toISOString().slice(0, 16).replace('T', ' ')} ${visibleControls(note.author)}${note.kind === 'change' ? ' ·' : ':'}`;
+        lines.push(...`  - ${heading} ${indented(note.text, '    ')}`.split('\n').map((line) => line.trimEnd()));
       }
     }
     lines.push('');

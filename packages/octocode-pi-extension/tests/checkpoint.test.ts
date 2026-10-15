@@ -6,6 +6,7 @@ import { registerCheckpoints } from '../src/files/checkpoint-command.js';
 import { inheritCheckpoints, sessionIdOf } from '../src/files/checkpoint-store.js';
 import { FileGuard, registerFileTool } from '../src/files/tool.js';
 import { sha256 } from '../src/shared/atomic.js';
+import { sessionDir } from '../src/shared/home.js';
 import { tmp } from './helpers.js';
 import { Subcommands } from '../src/shared/commands.js';
 import { fakePermission } from './fake-pi.js';
@@ -380,6 +381,22 @@ describe('checkpoints', () => {
     expect(journalLines(to).map((line) => (JSON.parse(line) as { turn: number }).turn)).toEqual([1, 6]);
   });
 
+  it('counts only the entries whose blob reached the fork', async () => {
+    const root = tmp();
+    const from = path.join(root, 'parent');
+    fs.mkdirSync(path.join(from, 'blobs'), { recursive: true });
+    const present = sha256('v0');
+    const missing = sha256('gone');
+    fs.writeFileSync(path.join(from, 'blobs', present), 'v0');
+    const entry = (turn: number, before: string | null) => ({ turn, anchor: 'u1', path: `/w/f${turn}`, before, after: present, bytes: 2 });
+    fs.writeFileSync(path.join(from, 'journal.jsonl'), [entry(1, present), entry(2, missing), entry(3, null)].map((line) => `${JSON.stringify(line)}\n`).join(''));
+    const to = path.join(root, 'child');
+    // Entry 2 stays in the journal (rewind skips it), but its blob was not carried: it is not counted.
+    expect(await inheritCheckpoints(from, to, ['u1'])).toBe(2);
+    expect(fs.readdirSync(path.join(to, 'blobs'))).toEqual([present]);
+    expect(journalLines(to)).toHaveLength(3);
+  });
+
   it('reads the session id from a Pi session file header', async () => {
     const dir = tmp();
     fs.writeFileSync(path.join(dir, 's.jsonl'), `${JSON.stringify({ type: 'session', id: 'abc' })}\n{}\n`);
@@ -653,6 +670,25 @@ describe('/rewind and the fork offer', () => {
     await child.commands.get('rewind')!.handler('', child.ctx as never);
     expect(child.notices.pop()).toMatch(/Rewound 1 turn: restored 1 file/);
     expect(fs.readFileSync(file, 'utf8')).toBe('one');
+  });
+
+  it('tells the user when a fork could not inherit the parent checkpoints', async () => {
+    process.env['OCTOCODE_HOME'] = tmp();
+    const cwd = tmp();
+    fs.writeFileSync(path.join(cwd, 'a.txt'), 'one');
+    const parent = host(cwd, 'parent/3');
+    await parent.handlers.get('session_start')!({}, parent.ctx);
+    await parent.handlers.get('agent_start')!({}, parent.ctx);
+    await parent.edit('one', 'two');
+    const sessionFile = path.join(tmp(), 'parent.jsonl');
+    fs.writeFileSync(sessionFile, `${JSON.stringify({ type: 'session', id: 'parent/3' })}\n`);
+    // A file where the fork's checkpoint folder belongs: the seed cannot be written.
+    fs.mkdirSync(sessionDir('child/3'), { recursive: true });
+    fs.writeFileSync(path.join(sessionDir('child/3'), 'checkpoints'), 'in the way');
+    const child = host(cwd, 'child/3', { parentSession: sessionFile });
+    child.branch.push({ id: 'a1', type: 'message', message: { role: 'assistant' } });
+    await child.handlers.get('session_start')!({ type: 'session_start', reason: 'startup' }, child.ctx);
+    expect(child.notices).toEqual([expect.stringMatching(/could not carry the checkpoints to this fork \(.+\); \/octocode rewind will not reach the parent's turns/)]);
   });
 
   it('keeps a run in one turn when the user steers mid-run; the next prompt opens the next turn', async () => {

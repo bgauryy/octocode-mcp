@@ -3,6 +3,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { openAgentDb, sharedAgentDb, type AgentDb } from '../agentdb/db.js';
 import { agentDbPath, canonicalPath, repoKey } from '../shared/home.js';
 import { processAlive, sameProcess } from '../shared/process.js';
+import { HOUR_MS } from '../shared/util.js';
 import { EditLog } from './edits.js';
 import { num, type Row } from '../agentdb/rows.js';
 import { ancestorKeys, leaseKey, overlappingRequests } from './lease-key.js';
@@ -29,7 +30,7 @@ export const PARENT_ID_ENV = 'OCTOCODE_PARENT_ID';
 export const PARENT_PID_ENV = 'OCTOCODE_PARENT_PID';
 /** Set in a subagent: the role it was started with (its profile), shown next to its name. */
 export const AGENT_ROLE_ENV = 'OCTOCODE_AGENT_ROLE';
-/** Set in a subagent: its goal, at most five words (`identity.ts`). Stored in the `task` column, which keeps its name so older extensions read the same database. */
+/** Set in a subagent: its goal, at most five words (`identity.ts`). Stored in the `task` column. */
 export const AGENT_GOAL_ENV = 'OCTOCODE_AGENT_GOAL';
 /** Set in a subagent started with `collaborate`: it works with its sibling subagents, not only for its parent. */
 export const AGENT_COLLABORATE_ENV = 'OCTOCODE_AGENT_COLLABORATE';
@@ -42,7 +43,7 @@ export const TEAM_WORKSPACE_ENV = 'OCTOCODE_TEAM_WORKSPACE';
 const STALE_MS = 60_000;
 /** Leases live this long past the owner's last heartbeat, so a crashed owner frees its files quickly. */
 export const LEASE_MS = 90_000;
-const MESSAGE_RETENTION_MS = 24 * 3_600_000;
+const MESSAGE_RETENTION_MS = 24 * HOUR_MS;
 export const INBOX_BATCH_SIZE = 32;
 const PRUNE_INTERVAL_MS = 60_000;
 
@@ -76,6 +77,8 @@ interface ProcessIdentity {
   started?: string | undefined;
 }
 
+const sameIdentity = (a: ProcessIdentity, b: ProcessIdentity): boolean => a.pid === b.pid && (a.started ?? null) === (b.started ?? null);
+
 /**
  * The team workspace for `cwd`: one team per repository (`repoKey(cwd).root`, symlinks resolved), unless
  * `TEAM_WORKSPACE_ENV` names it (a subagent in an isolated worktree joins its parent's team).
@@ -88,9 +91,7 @@ export function teamWorkspace(cwd: string, env: NodeJS.ProcessEnv = process.env)
 
 /**
  * Canonical comparison key of `file` below `workspace`: its components folded as `lease-key.ts` says (the rules the
- * agents-communication package shares), so `Src/A.ts` and `src/a.ts` collide on every platform. Keys written by an
- * earlier build used `toLowerCase`; they differ only for names whose folding is not lower-casing (`ß`, `ς`, ligatures),
- * and a reservation lives at most `LEASE_MS` past its owner's heartbeat, so none outlives the process that wrote it.
+ * agents-communication package shares), so `Src/A.ts` and `src/a.ts` collide on every platform.
  */
 export function pathKey(workspace: string, file: string): string {
   const relative = path.relative(workspace, canonicalPath(path.resolve(workspace, file)));
@@ -218,8 +219,8 @@ export class TeamStore {
   join(member: Member): boolean {
     return this.transaction(() => {
       if (this.insert(member) || this.refresh(member)) return true;
-      const holder = this.db.prepare('SELECT pid, started FROM agents WHERE id = ?').get(member.id) as Row | undefined;
-      if (holder && sameProcess(num(holder['pid']), text(holder['started']))) return false;
+      const holder = this.processOf(member.id);
+      if (holder && sameProcess(holder.pid, holder.started)) return false;
       this.retire(member.id, Date.now());
       return this.insert(member);
     });
@@ -232,12 +233,18 @@ export class TeamStore {
   remove(id: string, now = Date.now(), owner?: ProcessIdentity): boolean {
     return this.transaction(() => {
       if (owner) {
-        const row = this.db.prepare('SELECT pid, started FROM agents WHERE id = ?').get(id) as Row | undefined;
-        if (row && (num(row['pid']) !== owner.pid || (text(row['started']) ?? null) !== (owner.started ?? null))) return false;
+        const row = this.processOf(id);
+        if (row && !sameIdentity(row, owner)) return false;
       }
       this.retire(id, now);
       return true;
     });
+  }
+
+  /** The process the row of `id` names; undefined when it has no row. */
+  private processOf(id: string): ProcessIdentity | undefined {
+    const row = this.db.prepare('SELECT pid, started FROM agents WHERE id = ?').get(id) as Row | undefined;
+    return row ? { pid: num(row['pid']), started: text(row['started']) } : undefined;
   }
 
   /** Deletes the row, releases the leases and dead-letters the unread mail of `id`; the one place a member is dropped. */
@@ -251,19 +258,20 @@ export class TeamStore {
    * Retires every member whose process is gone (`sameProcess`: dead, or a later process that got its pid): the one place
    * a member that did not leave is dropped and its unread mail dead-lettered. A stale member (alive, silent) is kept.
    * Each is judged outside the write lock and retired only if its row still names the process judged, so a member that
-   * joined again under the same name meanwhile is left alone. Returns the ids retired.
+   * joined again under the same name meanwhile is left alone. What was retired is read back with `names`.
    */
-  sweep(now = Date.now()): string[] {
+  sweep(now = Date.now()): void {
     const rows = this.db.prepare('SELECT id, pid, started FROM agents').all() as Row[];
-    const gone = rows.filter((row) => !sameProcess(num(row['pid']), text(row['started'])));
-    return gone.flatMap((row) => (this.reap(String(row['id']), { pid: num(row['pid']), started: text(row['started']) }, now) ? [String(row['id'])] : []));
+    for (const row of rows) {
+      if (!sameProcess(num(row['pid']), text(row['started']))) this.reap(String(row['id']), { pid: num(row['pid']), started: text(row['started']) }, now);
+    }
   }
 
   /** Retires `id` if its row still names `judged` (or is already gone, leaving leases of a member with no row to clean). */
   private reap(id: string, judged: ProcessIdentity | undefined, now: number): boolean {
     return this.transaction(() => {
-      const row = this.db.prepare('SELECT pid, started FROM agents WHERE id = ?').get(id) as Row | undefined;
-      if (row && (judged === undefined || num(row['pid']) !== judged.pid || (text(row['started']) ?? null) !== (judged.started ?? null))) return false;
+      const row = this.processOf(id);
+      if (row && (judged === undefined || !sameIdentity(row, judged))) return false;
       this.retire(id, now);
       return true;
     });
@@ -460,8 +468,7 @@ export class TeamStore {
 
   /** Retires a lease owner that is gone (it has no row, or its process died or was replaced); whether it was. */
   private retireOwner(owner: string, now: number): boolean {
-    const row = this.db.prepare('SELECT pid, started FROM agents WHERE id = ?').get(owner) as Row | undefined;
-    const judged = row ? { pid: num(row['pid']), started: text(row['started']) } : undefined;
+    const judged = this.processOf(owner);
     if (judged && sameProcess(judged.pid, judged.started)) return false;
     return this.reap(owner, judged, now);
   }
@@ -500,18 +507,16 @@ export class TeamStore {
   }
 
   /**
-   * Keep the owner's reservations alive; called with every heartbeat. Returns the leases that had already lapsed
-   * (a peer may have taken the path since): they are released, and the owner must lock them again.
+   * Keep the owner's reservations alive; called with every heartbeat. Leases that had already lapsed (a peer may have
+   * taken the path since) are released, not revived: the owner learns of them from `owned`, which no longer lists
+   * them, and must lock them again.
    */
-  renew(owner: string, now = Date.now()): Lease[] {
-    const lapsed = this.transaction(() => {
-      const lapsed = (this.db.prepare('SELECT * FROM leases WHERE owner = ? AND expires_at <= ? ORDER BY id').all(owner, now) as Row[]).map(toLease);
+  renew(owner: string, now = Date.now()): void {
+    this.transaction(() => {
       this.db.prepare('DELETE FROM leases WHERE owner = ? AND expires_at <= ?').run(owner, now);
       this.db.prepare('UPDATE leases SET expires_at = ? WHERE owner = ?').run(now + LEASE_MS, owner);
-      return lapsed;
     });
     this.prune(now);
-    return lapsed;
   }
 
   /** `kind:key` of every live lease the owner holds in this workspace. */

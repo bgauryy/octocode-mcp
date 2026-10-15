@@ -687,3 +687,117 @@ async fn response_pagination_is_rejected_for_clasify() {
     assert_eq!(error.code, "unsupportedResponsePagination");
     runtime.close().await;
 }
+
+/// A context selection that outlives its deadline (the constant
+/// `RuntimeLimits::selection.timeout`, here 100 ms through the test seam)
+/// discloses the gap instead of returning raw evidence: the receipt is
+/// partial or unavailable, the unjudged evidence stays unknown with no body,
+/// and `next.unfiltered` recovers it without the provider. Replaces the
+/// read-tool-selection harness case that set OCTOCODE_CLASSIFICATION_TIMEOUT_MS.
+#[tokio::test]
+async fn a_selection_past_its_deadline_withholds_bodies_and_recovers() {
+    let server = MockServer::builder().start().await;
+    Mock::given(method("POST"))
+        .respond_with(|request: &Request| {
+            // A decisive answer: every question at its top level.
+            let body: Value = serde_json::from_slice(&request.body).expect("provider body");
+            let answers = body["questions"]
+                .as_object()
+                .expect("questions")
+                .iter()
+                .map(|(id, question)| {
+                    let levels = question["criteria"].as_array().expect("levels");
+                    let top = levels.len() - 1;
+                    let legend = levels
+                        .iter()
+                        .enumerate()
+                        .map(|(index, level)| (index.to_string(), level.clone()))
+                        .collect::<serde_json::Map<_, _>>();
+                    let probabilities = (0..levels.len())
+                        .map(|index| (index.to_string(), json!(if index == top { 1.0 } else { 0.0 })))
+                        .collect::<serde_json::Map<_, _>>();
+                    (id.clone(), json!({"type":"score","score":top as f64,"confidence":1.0,
+                        "legend":legend,"probabilities":probabilities}))
+                })
+                .collect::<serde_json::Map<_, _>>();
+            ResponseTemplate::new(200)
+                .set_body_json(json!({"model":"m","answers":answers,"usage":{"input_tokens":1,"output_tokens":1}}))
+                .set_delay(std::time::Duration::from_millis(400))
+        })
+        .mount(&server)
+        .await;
+    let workspace = Workspace::new();
+    let file = workspace.write(
+        "src/rule.txt",
+        "UNKNOWN_SELECTION_SENTINEL cancellation removes a queued request.\n",
+    );
+    let read = |timeout: std::time::Duration| {
+        let limits = octocode_native::runtime::RuntimeLimits {
+            selection: octocode_native::runtime::SelectionLimits {
+                timeout,
+                ..crate::support::PROVIDER_LIMITS.selection
+            },
+            ..crate::support::PROVIDER_LIMITS
+        };
+        let runtime = workspace.runtime_with(
+            &[
+                ("OCTOCODE_BETA", "true".into()),
+                ("OCTOCODE_CLASSIFICATION_API", "secret".into()),
+                ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
+            ],
+            limits,
+        );
+        let query = json!({"path": file, "clasifyContext":{"classifiers":["Does this state the cancellation rule?"]}});
+        async move {
+            let row = crate::support::run(&runtime, "localFetch", query, &[]).await;
+            runtime.close().await;
+            row.data().clone()
+        }
+    };
+    let late = read(std::time::Duration::from_millis(100)).await;
+    let selection = &late["selection"];
+    assert_eq!(selection["status"], "partial", "{late}");
+    assert_eq!(selection["unknownItems"], 1, "{late}");
+    assert_eq!(selection["selectedItems"], 0, "{late}");
+    assert!(
+        !late.to_string().contains("UNKNOWN_SELECTION_SENTINEL"),
+        "{late}"
+    );
+    let unfiltered = late["next"]["unfiltered"].clone();
+    assert_eq!(unfiltered["tool"], "localFetch", "{late}");
+    let recovery = workspace.runtime(&[]);
+    let recovered = recovery
+        .run(
+            "unfiltered".into(),
+            "localFetch".into(),
+            unfiltered["query"].clone(),
+        )
+        .await
+        .expect("unfiltered recovery");
+    assert!(
+        recovered
+            .structured_content
+            .to_string()
+            .contains("UNKNOWN_SELECTION_SENTINEL"),
+        "{}",
+        recovered.structured_content
+    );
+    recovery.close().await;
+    // The same read under the constant deadline is judged and selected: the
+    // deadline, not the evidence, left it unknown.
+    let judged = read(
+        octocode_native::runtime::RuntimeLimits::DEFAULT
+            .selection
+            .timeout,
+    )
+    .await;
+    assert_eq!(judged["selection"]["status"], "complete", "{judged}");
+    assert_eq!(judged["selection"]["selectedItems"], 1, "{judged}");
+    assert!(
+        judged["content"]
+            .as_str()
+            .unwrap()
+            .contains("UNKNOWN_SELECTION_SENTINEL"),
+        "{judged}"
+    );
+}

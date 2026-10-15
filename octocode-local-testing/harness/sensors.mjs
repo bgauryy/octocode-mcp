@@ -388,4 +388,6 @@ export function selfTest() {
   return failed;
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url) && process.argv.includes('--self-test')) process.exitCode = selfTest() ? 1 : 0;
+// argv[1] keeps a symlinked path while import.meta.url is the real path, so compare real paths.
+const realOrSelf = p => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+if (process.argv[1] && realOrSelf(process.argv[1]) === realOrSelf(fileURLToPath(import.meta.url)) && process.argv.includes('--self-test')) process.exitCode = selfTest() ? 1 : 0;

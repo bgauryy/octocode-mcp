@@ -2,18 +2,23 @@ import { sanitizeTerminalText } from '../shared/sanitize.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { ExtensionAPI, ExtensionCommandContext } from '@earendil-works/pi-coding-agent';
+import { USER_AUTHOR } from '../agentdb/author.js';
 import { atomicWriteFileSync } from '../shared/atomic.js';
+import { openFile } from '../shared/open.js';
 import { errorMessage } from '../shared/util.js';
 import { say, wordCompletions, type Subcommand } from '../shared/commands.js';
 import { workspacePaths } from '../shared/home.js';
 import { openBacklog, type Backlog, type BacklogOptions } from './context.js';
 import { showBoard } from './board.js';
 import { boardText, exportMarkdown, isState, itemDetail, itemFields, itemLine } from './format.js';
-import { parseRef, PRIORITIES, STATES, USER_AUTHOR, type Item, type UpdateInput } from './store.js';
+import { renderBacklogHtml } from './html.js';
+import { refText } from './row.js';
+import { backlogSnapshot } from './snapshot.js';
+import { parseRef, PRIORITIES, STATES, type Item, type UpdateInput } from './store.js';
 
 /** The fields `Edit` changes, one per editor: the text shown for an item, and the store update for the text saved (a list has one entry per line). */
 const EDITABLE: Record<string, { text(item: Item): string; patch(text: string): UpdateInput }> = {
-  Title: { text: (item) => item.title, patch: (text) => ({ title: text.split(/\s+/).filter(Boolean).join(' ') }) },
+  Title: { text: (item) => item.title, patch: (text) => ({ title: text }) },
   Goal: { text: (item) => item.goal, patch: (text) => ({ goal: text }) },
   Body: { text: (item) => item.body, patch: (text) => ({ body: text }) },
   Paths: { text: (item) => item.paths.join('\n'), patch: (text) => ({ paths: text.split('\n') }) },
@@ -25,7 +30,7 @@ const EDITABLE: Record<string, { text(item: Item): string; patch(text: string): 
 /** Preserve the saved goal, location, reasons, evidence and plan in both direct and delegated handoffs. */
 const brief = (item: Item) => {
   const fields = itemFields(item);
-  return `${sanitizeTerminalText(item.title)}${fields.length ? `\n\n${fields.join('\n')}` : ''}${item.body ? `\n\n${sanitizeTerminalText(item.body)}` : ''}${item.from === undefined ? '' : `\n\nIt came from B${item.from}: get that item for context.`}`;
+  return `${sanitizeTerminalText(item.title)}${fields.length ? `\n\n${fields.join('\n')}` : ''}${item.body ? `\n\n${sanitizeTerminalText(item.body)}` : ''}${item.from === undefined ? '' : `\n\nIt came from ${refText(item.from)}: get that item for context.`}`;
 };
 
 const completion = (item: Item) =>
@@ -51,16 +56,25 @@ function detail(backlog: Backlog, item: Item, notes = 10): string {
   return itemDetail(item, backlog.store.notes(item, notes), backlog.store.noteCount(item), Date.now(), options);
 }
 
-/** Writes `<repo>/.octocode/backlog.md` and returns its path. */
-function exportBacklog(backlog: Backlog, cwd: string, now = Date.now()): string {
+/** Writes `content` atomically to `<repo>/.octocode/<name>` (the folder is made when missing) and returns the path. */
+function writeSnapshot(cwd: string, name: string, content: string): string {
   const { dir } = workspacePaths(cwd);
   fs.mkdirSync(dir, { recursive: true });
-  const file = path.join(dir, 'backlog.md');
-  atomicWriteFileSync(file, exportMarkdown(backlog.store, backlog.repoName, now));
+  const file = path.join(dir, name);
+  atomicWriteFileSync(file, content);
   return file;
 }
 
+/** Writes `<repo>/.octocode/backlog.md` and returns its path. */
+const exportBacklog = (backlog: Backlog, cwd: string, now = Date.now()): string => writeSnapshot(cwd, 'backlog.md', exportMarkdown(backlog.store, backlog.repoName, now));
+
+/** Writes `<repo>/.octocode/backlog.html` (every item and note, refused when any text looks like a secret) and returns its path. */
+const exportBacklogHtml = (backlog: Backlog, cwd: string, now = Date.now()): string =>
+  writeSnapshot(cwd, 'backlog.html', renderBacklogHtml(backlogSnapshot(backlog.store, backlog.repoName, now, backlog.session)));
+
 interface CommandDeps extends BacklogOptions {
+  /** Opens a file in the default application; replaceable so a test opens nothing. */
+  open?: (file: string) => Promise<void>;
   /** Repaint the footer counts after a change. */
   changed(ctx: ExtensionCommandContext): void;
 }
@@ -157,7 +171,7 @@ export function backlogCommand(pi: ExtensionAPI, deps: CommandDeps): Subcommand 
         if (index >= 0) applyAndSay(ctx, () => backlog.store.update(item.ref, { priority: index, version: item.version, force: true }, backlog.actor));
       } },
       { label: 'Came from…', run: async () => {
-        const ref = await ctx.ui.input(`${item.ref} came from (empty clears)`, item.from === undefined ? 'B12' : `B${item.from}`);
+        const ref = await ctx.ui.input(`${item.ref} came from (empty clears)`, item.from === undefined ? 'B12' : refText(item.from));
         if (ref !== undefined) applyAndSay(ctx, () => backlog.store.update(item.ref, { from: ref.trim() === '' ? null : ref.trim(), version: item.version, force: true }, backlog.actor));
       } },
       { label: 'Show notes and changes', run: () => say(ctx, detail(backlog, item, 50)) },
@@ -172,6 +186,24 @@ export function backlogCommand(pi: ExtensionAPI, deps: CommandDeps): Subcommand 
       say(ctx, `Exported the backlog to ${exportBacklog(backlog, ctx.cwd)} (a snapshot; edits there are not read back).`);
     } catch (error) {
       say(ctx, `Export failed: ${errorMessage(error)}`, 'error');
+    }
+  };
+
+  /** Writes the HTML page and, with a UI, opens it in the default browser. */
+  const doHtml = async (ctx: ExtensionCommandContext, backlog: Backlog): Promise<void> => {
+    let file: string;
+    try {
+      file = exportBacklogHtml(backlog, ctx.cwd);
+    } catch (error) {
+      return say(ctx, `HTML export failed: ${errorMessage(error)}`, 'error');
+    }
+    const snapshot = 'a snapshot, not live: run /backlog html to refresh it';
+    if (!ctx.hasUI) return say(ctx, `Wrote ${file} (${snapshot}). Open it in a browser.`);
+    try {
+      await (deps.open ?? openFile)(file);
+      say(ctx, `Opened ${file} in your browser (${snapshot}).`);
+    } catch (error) {
+      say(ctx, `Wrote ${file} but could not open it: ${errorMessage(error)}`, 'warning');
     }
   };
 
@@ -192,6 +224,7 @@ export function backlogCommand(pi: ExtensionAPI, deps: CommandDeps): Subcommand 
       if (!choice) return;
       if (choice.action === 'add') await add(ctx, backlog, '');
       else if (choice.action === 'export') doExport(ctx, backlog);
+      else if (choice.action === 'html') await doHtml(ctx, backlog);
       else {
         selected = choice.ref;
         const item = backlog.store.get(choice.ref);
@@ -206,13 +239,15 @@ export function backlogCommand(pi: ExtensionAPI, deps: CommandDeps): Subcommand 
   const selectBoard = async (ctx: ExtensionCommandContext, backlog: Backlog): Promise<void> => {
     const ADD = '+ Add an item';
     const EXPORT = 'Export to .octocode/backlog.md';
+    const HTML = 'Open as HTML';
     for (;;) {
       const items = backlog.store.list().items;
       const lines = items.map((item) => itemLine(item, backlog.session));
-      const choice = await ctx.ui.select(`Backlog — ${backlog.repoName}`, [ADD, ...lines, EXPORT]);
+      const choice = await ctx.ui.select(`Backlog — ${backlog.repoName}`, [ADD, ...lines, EXPORT, HTML]);
       if (choice === undefined) return;
       if (choice === ADD) await add(ctx, backlog, '');
       else if (choice === EXPORT) doExport(ctx, backlog);
+      else if (choice === HTML) await doHtml(ctx, backlog);
       else {
         const item = items[lines.indexOf(choice)];
         if (item && (await actions(ctx, backlog, item.ref))) return;
@@ -232,6 +267,10 @@ export function backlogCommand(pi: ExtensionAPI, deps: CommandDeps): Subcommand 
     export: { args: '', description: 'write .octocode/backlog.md', run: (ctx, backlog, args) => {
       if (args) return say(ctx, 'Usage: /backlog export', 'warning');
       doExport(ctx, backlog);
+    } },
+    html: { args: '', description: 'write .octocode/backlog.html and open it in the browser', run: (ctx, backlog, args) => {
+      if (args) return say(ctx, 'Usage: /backlog html', 'warning');
+      return doHtml(ctx, backlog);
     } },
   };
   const itemActions = [...STATES, 'delete'];

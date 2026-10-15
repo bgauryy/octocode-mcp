@@ -64,7 +64,8 @@ const app = agent({ name: 'external-acp-fixture' })
       await client.notify(methods.client.session.update, {
         sessionId, update: { sessionUpdate: 'agent_message_chunk', content: { type: 'image', mimeType: 'image/png', data: 'aGVsbG8=' } },
       });
-      await chunk(text);
+      // Streamed in pieces, as a real agent does token by token.
+      for (const piece of text.match(/.{1,4}/gs) ?? []) await chunk(piece);
     }
     return { stopReason: 'end_turn', _meta: { fixture: true } };
   })

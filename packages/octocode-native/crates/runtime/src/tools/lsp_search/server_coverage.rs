@@ -58,15 +58,19 @@ pub(super) fn annotate(
 /// Workspace-symbol arrays have no total, cursor, or completeness marker.
 /// Native pagination covers the returned array; it cannot establish that
 /// the provider returned every matching declaration in its project.
-pub(super) fn workspace_symbols(row: &mut Value, anchor: Option<&str>) {
+/// `capped_at` is the server's own result limit when its answer reached it
+/// (only tsgo has one), which is said outright.
+pub(super) fn workspace_symbols(row: &mut Value, anchor: Option<&str>, capped_at: Option<usize>) {
     if row.get("status").and_then(Value::as_str) == Some("error") {
         return;
     }
-    crate::tools::paging::mark_partial(
-        row,
-        "workspaceSymbolCoverageUnknown",
-        &["workspace/symbol supplies no completeness marker or provider continuation; native pages cover only returned symbols. Empty is not workspace absence. documentSymbols inspects one file with different matching semantics.".to_owned()],
-    );
+    let mut warnings = vec!["workspace/symbol supplies no completeness marker or provider continuation; native pages cover only returned symbols. Empty is not workspace absence. documentSymbols inspects one file with different matching semantics.".to_owned()];
+    if let Some(limit) = capped_at {
+        warnings.push(format!(
+            "tsgo returns at most {limit} workspace symbols; this list is capped by the server: narrow symbolName, or route .ts to typescript-language-server in lsp-servers.json."
+        ));
+    }
+    crate::tools::paging::mark_partial(row, "workspaceSymbolCoverageUnknown", &warnings);
     if let Some(path) = anchor {
         // This is an optional lead, moved to hints by continuation shaping;
         // it is not a page that recovers an exhaustive workspace result.
@@ -257,10 +261,10 @@ mod tests {
     fn workspace_coverage_preserves_errors_and_avoids_a_directory_document_hint() {
         let mut stale = json!({"status":"error","errorCode":"staleSnapshot"});
         let before = stale.clone();
-        workspace_symbols(&mut stale, Some("/w/a.ts"));
+        workspace_symbols(&mut stale, Some("/w/a.ts"), None);
         assert_eq!(stale, before);
         let mut empty = json!({"kind":"empty"});
-        workspace_symbols(&mut empty, None);
+        workspace_symbols(&mut empty, None, None);
         assert_eq!(empty["isPartial"], true);
         assert_eq!(
             empty["partialReasons"],

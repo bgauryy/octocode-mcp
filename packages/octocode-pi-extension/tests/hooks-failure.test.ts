@@ -101,3 +101,51 @@ describe('PreToolUse hook failures', () => {
     expect(parseHooks({ hooks: { PreToolUse: [{ hooks: [{ type: 'command', command: 'g', failClosed: 'yes' }] }] } }, 'a').PreToolUse[0]!.hooks[0]).not.toHaveProperty('failClosed');
   });
 });
+
+describe('observer hook dispatch failures', () => {
+  /** A trusted project with `event` hooks; the session id lookup throws after `okCalls` calls, which fails the dispatch itself. */
+  async function failing(event: 'Notification' | 'PostMessageReceive', okCalls: number) {
+    const cwd = tmp('octocode-hookobs-');
+    fs.mkdirSync(path.join(cwd, '.git'));
+    fs.mkdirSync(path.join(cwd, '.codex'));
+    fs.writeFileSync(path.join(cwd, '.codex', 'hooks.json'), JSON.stringify({ hooks: { [event]: [{ hooks: [{ type: 'command', command: 'true' }] }] } }));
+    saveDecision(cwd, fingerprint(projectConfigFiles(cwd)), true);
+    const { pi, fire } = fakePi();
+    const hooks = registerHooks(pi, { OCTOCODE_HOOKS: '1' }, tmp());
+    const notify = vi.fn();
+    let calls = 0;
+    const ctx = {
+      cwd,
+      hasUI: true,
+      ui: { notify, setStatus: () => undefined },
+      isProjectTrusted: () => true,
+      sessionManager: {
+        getSessionId: () => {
+          if (++calls > okCalls) throw new Error('session store unavailable');
+          return 's';
+        },
+        getSessionFile: () => undefined,
+      },
+    };
+    await fire('session_start', { reason: 'startup' }, ctx);
+    calls = 0;
+    return { hooks, notify, ctx };
+  }
+
+  it('warns once when a Notification hook cannot be dispatched', async () => {
+    const { hooks, notify, ctx } = await failing('Notification', 0);
+    hooks.notification({ type: 'idle_prompt', message: 'idle' }, ctx as never);
+    await vi.waitFor(() => expect(notify).toHaveBeenCalledTimes(1));
+    expect(notify).toHaveBeenCalledWith('Notification hooks could not run: session store unavailable', 'warning');
+    hooks.notification({ type: 'idle_prompt', message: 'idle' }, ctx as never);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(notify).toHaveBeenCalledTimes(1);
+  });
+
+  it('warns when a PostMessageReceive hook cannot be dispatched', async () => {
+    // The first lookup (is the message for this session?) works; the dispatch's own lookup fails.
+    const { hooks, notify, ctx } = await failing('PostMessageReceive', 1);
+    await hooks.messageReceive({ channel: 'internal', direction: 'inbound', from: 'a', to: 'b', text: 'hi', id: 'm-1' }, ctx as never);
+    expect(notify).toHaveBeenCalledWith('PostMessageReceive hooks could not run: session store unavailable', 'warning');
+  });
+});

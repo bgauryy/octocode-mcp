@@ -111,8 +111,9 @@ pub(super) fn project(text: &str, chunks: &[Chunk], order: &[usize]) -> (String,
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runtime::SelectionLimits;
     use crate::security::ContentSecurity;
-    use crate::tools::selection::{Decision, JudgeCall, Limits, Runtime, SelectionJudge};
+    use crate::tools::selection::{Decision, JudgeCall, Runtime, SelectionJudge};
     use std::sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -156,7 +157,7 @@ mod tests {
 
     fn budget_runtime(handle: tokio::runtime::Handle, calls: Arc<AtomicUsize>) -> Runtime {
         Runtime {
-            limits: Limits {
+            limits: SelectionLimits {
                 max_candidates: 64,
                 max_chars: 4_096,
                 timeout: Duration::from_secs(5),
@@ -543,7 +544,8 @@ mod tests {
 
     #[test]
     fn complete_long_lines_and_unterminated_tail_are_eligible_in_source_order() {
-        use crate::tools::selection::{Decision, JudgeCall, Limits, Runtime, SelectionJudge};
+        use crate::runtime::SelectionLimits;
+        use crate::tools::selection::{Decision, JudgeCall, Runtime, SelectionJudge};
         use std::time::{Duration, Instant};
         struct Uncalled;
         impl SelectionJudge for Uncalled {
@@ -556,7 +558,7 @@ mod tests {
         }
         let executor = tokio::runtime::Runtime::new().unwrap();
         let runtime = Runtime {
-            limits: Limits {
+            limits: SelectionLimits {
                 max_candidates: 64,
                 max_chars: 131_072,
                 timeout: Duration::from_secs(1),

@@ -160,7 +160,8 @@ describe('who counts as gone', () => {
       expect(store.list(later).map((each) => each.id)).toEqual(['sender']);
       const sent = store.send('sender', ['stalled'], 'are you there?', { replyRequired: true }, later);
       expect(sent.id).toBeGreaterThan(0);
-      expect(store.sweep(later)).toEqual([]);
+      store.sweep(later);
+      expect(store.names().sort()).toEqual(['sender', 'stalled']);
       process.kill(pid, 'SIGCONT');
       // It resumes and beats: visible again with its mail.
       store.save(member('stalled', { pid, ...(started ? { started } : {}), updatedAt: later }));
@@ -180,7 +181,7 @@ describe('who counts as gone', () => {
       const before = rows(store);
       expect(store.list().map((each) => each.id)).toEqual(['alive']);
       expect(rows(store)).toEqual(before);
-      expect(store.sweep()).toEqual(['gone']);
+      store.sweep();
       expect(rows(store)).toEqual([{ id: 'alive' }, { id: 'silent' }]);
     } finally {
       store.close();
@@ -196,7 +197,8 @@ describe('who counts as gone', () => {
       // The recipient's process dies after the mail was stored.
       (store as unknown as { db: { prepare(sql: string): { run(...args: unknown[]): unknown } } }).db.prepare('UPDATE agents SET pid = ? WHERE id = ?').run(deadPid, 'gone');
       expect(store.recent()[0]).toMatchObject({ id, state: 'queued' });
-      expect(store.sweep()).toEqual(['gone']);
+      store.sweep();
+      expect(store.names()).not.toContain('gone');
       expect(store.recent()[0]).toMatchObject({ id, state: 'dead-lettered' });
     } finally {
       store.close();
@@ -209,7 +211,8 @@ describe('who counts as gone', () => {
       // The parent process runs, but it did not start when this row says: the recorded process is gone.
       store.save(member('reused', { pid: process.ppid, started: '1' }));
       store.save(member('real', { ...other() }));
-      expect(store.sweep()).toEqual(['reused']);
+      store.sweep();
+      expect(store.names().sort()).toEqual(['real']);
       expect(store.list().map((each) => each.id)).toEqual(['real']);
     } finally {
       store.close();
@@ -221,7 +224,8 @@ describe('who counts as gone', () => {
     try {
       store.save(member('inky', { pid: deadPid }));
       store.join(member('inky', { goal: 'new owner' }));
-      expect(store.sweep()).toEqual([]);
+      store.sweep();
+      expect(store.names()).toEqual(['inky']);
       expect(store.list()[0]).toMatchObject({ id: 'inky', pid: process.pid });
     } finally {
       store.close();

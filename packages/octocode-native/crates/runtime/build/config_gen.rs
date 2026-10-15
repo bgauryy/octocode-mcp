@@ -81,23 +81,6 @@ fn field_type<'a>(field: &Field<'a>) -> Result<&'a str, Box<dyn Error>> {
     )
 }
 
-fn required_integer(field: &Field<'_>, key: &str) -> Result<i64, Box<dyn Error>> {
-    integer(
-        field
-            .definition
-            .get(key)
-            .ok_or_else(|| invalid(format!("{}.{key} is required", field.path)))?,
-        &format!("{}.{key}", field.path),
-    )
-}
-
-/// `(minimum, maximum)` of a number field: the contract states the minimum and
-/// the span above it.
-fn number_bounds(field: &Field<'_>) -> Result<(i64, i64), Box<dyn Error>> {
-    let minimum = required_integer(field, "minimum")?;
-    Ok((minimum, minimum + required_integer(field, "span")?))
-}
-
 /// A field whose contract default is `null`: unset is a distinct value.
 fn nullable(field: &Field<'_>) -> bool {
     field.definition.get("default").is_some_and(Value::is_null)
@@ -105,12 +88,6 @@ fn nullable(field: &Field<'_>) -> bool {
 
 fn own_default(field: &Field<'_>) -> Result<Value, Box<dyn Error>> {
     match field_type(field)? {
-        "number" if nullable(field) => Ok(Value::Null),
-        "number" => {
-            let (minimum, maximum) = number_bounds(field)?;
-            let offset = required_integer(field, "defaultOffset")?;
-            Ok(Value::from(minimum + offset.min(maximum - minimum)))
-        }
         "enum" => field
             .definition
             .get("values")
@@ -124,18 +101,6 @@ fn own_default(field: &Field<'_>) -> Result<Value, Box<dyn Error>> {
             .cloned()
             .ok_or_else(|| invalid(format!("{}.default is required", field.path))),
     }
-}
-
-/// The smallest unsigned integer type holding a number field's range.
-fn integer_type(field: &Field<'_>) -> Result<&'static str, Box<dyn Error>> {
-    let (minimum, maximum) = number_bounds(field)?;
-    Ok(if minimum < 0 {
-        "i64"
-    } else if maximum <= i64::from(u32::MAX) {
-        "u32"
-    } else {
-        "u64"
-    })
 }
 
 /// The Rust enum an enum field resolves to: its contract `typeName`, else
@@ -168,10 +133,6 @@ fn default_literal(field: &Field<'_>) -> Result<String, Box<dyn Error>> {
         "boolean" => default
             .as_bool()
             .ok_or_else(|| invalid(format!("{}.default must be a boolean", field.path)))?
-            .to_string(),
-        "number" => default
-            .as_i64()
-            .ok_or_else(|| invalid(format!("{}.default must be an integer", field.path)))?
             .to_string(),
         "enum" => format!(
             "{}::{}",
@@ -253,7 +214,6 @@ fn rust_field_type(field: &Field<'_>) -> Result<String, Box<dyn Error>> {
     let nullable = nullable(field);
     let base = match field_type(field)? {
         "boolean" => "bool".to_owned(),
-        "number" => integer_type(field)?.to_owned(),
         "stringArray" => "Vec<String>".to_owned(),
         "string" | "url" | "path" => "String".to_owned(),
         "enum" => enum_type_name(field)?,
@@ -494,7 +454,6 @@ fn render_field_metadata(
             &format!("{}.type", field.path),
         )? {
             "boolean" => "Boolean",
-            "number" => "Number",
             "stringArray" => "StringArray",
             "enum" => "Enum",
             "url" => "Url",
@@ -503,17 +462,6 @@ fn render_field_metadata(
             other => return Err(invalid(format!("unsupported field type {other}"))),
         };
         let default_json = serde_json::to_string(&own_default(field)?)?;
-        let minimum = field
-            .definition
-            .get("minimum")
-            .map(|value| integer(value, &format!("{}.minimum", field.path)))
-            .transpose()?;
-        let maximum = match (minimum, field.definition.get("span")) {
-            (Some(minimum), Some(span)) => {
-                Some(minimum + integer(span, &format!("{}.span", field.path))?)
-            }
-            _ => None,
-        };
         let enum_style = match field.definition.get("enumStyle").and_then(Value::as_str) {
             Some("quotedOr") => "ConfigEnumStyle::QuotedOr",
             Some("list") | None => "ConfigEnumStyle::List",
@@ -526,15 +474,13 @@ fn render_field_metadata(
         )?;
         writeln!(
             output,
-            "    ConfigFieldSpec {{ path: {:?}, section: {:?}, key: {:?}, kind: ConfigFieldKind::{kind_name}, file: {}, resolved: {}, credential: {credential}, env: FIELD_{index}_ENV, default_json: {:?}, minimum: {:?}, maximum: {:?}, values: FIELD_{index}_VALUES, enum_style: {enum_style}, item_path: {} }},",
+            "    ConfigFieldSpec {{ path: {:?}, section: {:?}, key: {:?}, kind: ConfigFieldKind::{kind_name}, file: {}, resolved: {}, credential: {credential}, env: FIELD_{index}_ENV, default_json: {:?}, values: FIELD_{index}_VALUES, enum_style: {enum_style}, item_path: {} }},",
             field.path,
             field.section,
             field.key,
             field.file,
             field.resolved,
             default_json,
-            minimum.map(|value| value as f64),
-            maximum.map(|value| value as f64),
             field.definition.get("itemFormat").and_then(Value::as_str) == Some("path")
         )?;
     }

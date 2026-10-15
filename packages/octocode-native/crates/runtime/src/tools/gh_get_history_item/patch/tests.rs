@@ -1071,7 +1071,7 @@ fn inventory_page_size_fills_the_response_page() {
     assert_eq!(pagination["files"]["hasMore"], false);
 }
 
-/// At `defaultCharLength` 1000 the patch window shrinks with the page,
+/// At an automatic page of 1000 the patch window shrinks with the page,
 /// so a page of patches still fits one automatic response page.
 #[test]
 fn patch_window_derives_from_the_effective_auto_page() {

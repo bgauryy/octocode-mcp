@@ -440,7 +440,7 @@ fn config_management(runtime: &ToolRuntime) -> u8 {
                 &json!({"success": false, "apiVersion": 1, "error": {"code": error.code(), "message": error.to_string()}}),
                 true,
             );
-            2
+            error.exit_code()
         }
     }
 }
@@ -456,9 +456,9 @@ fn config_management_response(
     }
     let catalog = runtime.catalog();
     if request.get("expectedFingerprint") != catalog.get("fingerprint") {
-        return Err(
+        return Err(config::ManageError::Unavailable(
             "Configuration management contracts do not match. Rebuild or update Octocode.".into(),
-        );
+        ));
     }
     let operation = request
         .get("operation")

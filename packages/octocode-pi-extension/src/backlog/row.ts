@@ -24,13 +24,16 @@ export interface Row<State extends string> {
   version: number;
 }
 
+/** An item's number as people write it (`B12`); `none` when it has none. */
+export const refText = (seq: number | undefined) => (seq === undefined ? 'none' : `B${seq}`);
+
 /** A stored list (one entry per line) as entries. */
 const lines = (text: string): string[] => (text ? text.split('\n') : []);
 
 export const toItem = <State extends string>(row: Row<State>) => ({
   rowId: row.id,
   seq: row.seq,
-  ref: `B${row.seq}`,
+  ref: refText(row.seq),
   title: row.title,
   goal: row.goal,
   body: row.body,

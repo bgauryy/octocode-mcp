@@ -5,6 +5,8 @@
 use super::{HistoryItemRequest, execute};
 use crate::security::scan::ContentScan;
 use crate::tools::gh_shared::test_support::{fixture_context, mock_provider, mount_json};
+use crate::tools::id::ToolId;
+use crate::tools::test_support::{checks, published};
 use octocode_github::RetryPolicy;
 use serde_json::{Value, json};
 use std::path::Path;
@@ -337,6 +339,81 @@ async fn pr_unpatched_removed_file_is_searched_at_the_base() {
     let search = &out["next"]["searchUnpatchedFile"]["query"]["queries"][0];
     assert_eq!(search["path"], "src/needle_gone.rs", "{out}");
     assert_eq!(search["ref"], BASE, "{out}");
+}
+
+fn first_query<'a>(out: &'a Value, lead: &str) -> &'a Value {
+    &out["next"][lead]["query"]["queries"][0]
+}
+
+/// A PR `matchString` that hit no patch line is an empty row whose leads run
+/// the fix, with no prose naming them: the same read without the literal (its
+/// scope kept, its `contextLines` dropped), then the whole file inventory. The
+/// published row keeps both ahead of the section menu.
+#[tokio::test]
+async fn pr_match_string_miss_offers_the_unfiltered_read() {
+    let server = MockServer::builder().start().await;
+    mount_pr(
+        &server,
+        json!([{"filename":"src/a.rs","status":"modified","additions":1,"deletions":1,
+            "sha":"1","patch":"@@ -1,2 +1,2 @@\n keep\n-old\n+new"}]),
+    )
+    .await;
+    let query = json!({"operation":"pullRequest","owner":"o","repo":"r","number":1,
+        "include":["src/"],"matchString":"zzqx","contextLines":2});
+    let out = read(&server, query.clone()).await;
+    assert_eq!(out["status"], "empty", "{out}");
+    assert!(out.get("hints").is_none(), "{out}");
+    let lead = &out["next"]["withoutMatchString"];
+    assert_eq!(lead["tool"], "ghGetHistoryItem", "{out}");
+    assert_eq!(lead["confidence"], "exact", "{out}");
+    let unfiltered = first_query(&out, "withoutMatchString");
+    for absent in ["matchString", "contextLines"] {
+        assert!(unfiltered.get(absent).is_none(), "{absent}: {unfiltered}");
+    }
+    assert_eq!(unfiltered["number"], 1, "{unfiltered}");
+    assert_eq!(unfiltered["include"], json!(["src/"]), "{unfiltered}");
+    assert_eq!(unfiltered["sections"], json!(["patches"]), "{unfiltered}");
+    let inventory = first_query(&out, "readFiles");
+    assert_eq!(inventory["number"], 1, "{inventory}");
+    assert_eq!(inventory["sections"], json!(["files"]), "{inventory}");
+    for absent in ["include", "matchString", "contextLines"] {
+        assert!(inventory.get(absent).is_none(), "{absent}: {inventory}");
+    }
+    checks::assert_leads_valid(&out);
+    let published = published(ToolId::GhGetHistoryItem, &query, &out);
+    let names = checks::leads(&published)
+        .into_iter()
+        .map(|lead| lead.name)
+        .collect::<Vec<_>>();
+    assert_eq!(names, ["withoutMatchString", "readFiles"], "{published}");
+}
+
+/// A PR `include` that matched no changed file is an empty row whose lead
+/// reads the whole file inventory to copy a path from; there is no literal
+/// to drop.
+#[tokio::test]
+async fn pr_include_miss_offers_the_file_inventory() {
+    let server = MockServer::builder().start().await;
+    mount_pr(
+        &server,
+        json!([{"filename":"src/a.rs","status":"modified","additions":1,"deletions":1,
+            "sha":"1","patch":"@@ -1,2 +1,2 @@\n keep\n-old\n+new"}]),
+    )
+    .await;
+    let out = read(
+        &server,
+        json!({"operation":"pullRequest","owner":"o","repo":"r","number":1,
+            "sections":["files"],"include":["docs/"]}),
+    )
+    .await;
+    assert_eq!(out["status"], "empty", "{out}");
+    assert!(out.get("hints").is_none(), "{out}");
+    assert!(out["next"].get("withoutMatchString").is_none(), "{out}");
+    let inventory = first_query(&out, "readFiles");
+    assert_eq!(inventory["number"], 1, "{inventory}");
+    assert_eq!(inventory["sections"], json!(["files"]), "{inventory}");
+    assert!(inventory.get("include").is_none(), "{inventory}");
+    checks::assert_leads_valid(&out);
 }
 
 /// A commit's `matchString` keeps the files whose patch holds it (not a

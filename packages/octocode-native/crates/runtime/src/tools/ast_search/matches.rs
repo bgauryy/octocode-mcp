@@ -1,7 +1,7 @@
 pub use crate::contracts::tool_types::{AstSearchQueryMatchPattern, AstSearchQueryMatchRule};
 use crate::tools::ast_rule::{
-    GrammarChoice, choose_grammar, compile_check, has_extension_in, language_extensions,
-    present_grammars,
+    GlobParsers, GrammarChoice, choose_grammar, compile_check, has_extension_in,
+    language_extensions, present_grammars,
 };
 use crate::tools::empty_walk::{FileProbe, Globs, Verdict, Walk, diagnose, lift};
 use crate::tools::id::ToolId;
@@ -40,7 +40,7 @@ fn non_empty(values: &[String]) -> Option<Vec<String>> {
 }
 
 /// Form-independent views in the engine's units.
-impl MatchQuery<'_> {
+impl<'a> MatchQuery<'a> {
     pub fn path(self) -> String {
         either_form!(self, path => path.to_string())
     }
@@ -109,6 +109,9 @@ impl MatchQuery<'_> {
     }
     pub fn language(self) -> Option<String> {
         either_form!(self, language => language.as_ref().map(ToString::to_string))
+    }
+    pub fn language_globs(self) -> Option<&'a std::collections::BTreeMap<String, Vec<String>>> {
+        either_form!(self, language_globs => (!language_globs.is_empty()).then_some(language_globs))
     }
     pub fn sort(self) -> Option<String> {
         either_form!(self, sort => Some(sort.to_string()))
@@ -321,6 +324,8 @@ struct Scope {
     /// The grammar observed when the discovery window holds only one.
     inferred: Option<String>,
     extensions: Option<std::collections::BTreeSet<String>>,
+    /// `languageGlobs`: the parser of files whose names select none.
+    parsers: GlobParsers,
 }
 
 /// One scanned file: display path, matches, diagnostics, engine status.
@@ -349,8 +354,52 @@ struct Scan {
     source_digest: String,
     /// Directory and ignore-file metadata observed during discovery, not source reads.
     discovery_sources: Vec<std::path::PathBuf>,
+    /// Ignore dependencies outside observable memo metadata disable reuse.
+    untracked_ignore_dependencies: bool,
     /// Candidate entries the security path policy withheld from the walk.
     withheld: crate::policy::discovery::Withheld,
+    /// Files the walk passed over because no grammar parses their names.
+    unparsed: Unparsed,
+}
+
+/// Example paths a skipped-file warning names.
+const UNPARSED_EXAMPLES: usize = 3;
+
+/// Files a directory scan left unparsed for want of a grammar: their count
+/// and the first [`UNPARSED_EXAMPLES`] display paths in path order.
+#[derive(Default)]
+struct Unparsed {
+    count: u32,
+    examples: std::collections::BTreeSet<String>,
+}
+
+impl Unparsed {
+    fn record(&mut self, path: String) {
+        self.count = self.count.saturating_add(1);
+        self.examples.insert(path);
+        if self.examples.len() > UNPARSED_EXAMPLES {
+            self.examples.pop_last();
+        }
+    }
+
+    /// The warning that names them and the field that parses them.
+    fn notice(&self) -> Option<String> {
+        let more = if self.count as usize > self.examples.len() {
+            ", …"
+        } else {
+            ""
+        };
+        let names = self.examples.iter().cloned().collect::<Vec<_>>().join(", ");
+        match self.count {
+            0 => None,
+            1 => Some(format!(
+                "1 file skipped: no AST grammar for its name ({names}); set languageGlobs to parse it."
+            )),
+            count => Some(format!(
+                "{count} files skipped: no AST grammar for their names ({names}{more}); set languageGlobs to parse them."
+            )),
+        }
+    }
 }
 
 /// Scans kept for the continuation pages of a multi-page result.
@@ -466,14 +515,18 @@ fn execute_match_inner(
     let scope = resolve_scope(q, paths, cancel)?;
     let continues = q.page() > 1 || q.match_page() > 1;
     let key = scan_key(q, paths);
+    let memo_eligible = memo_scope_eligible(q, &scope);
+    if !memo_eligible && let Some(snapshot) = q.snapshot() {
+        SCANS.evict(&snapshot);
+    }
     // A continuation page reuses the scan its first page stored when nothing
     // it read changed; the snapshot below still decides whether it serves.
     let stored = q
         .snapshot()
-        .filter(|_| continues)
+        .filter(|_| continues && memo_eligible)
         .and_then(|snapshot| SCANS.get(&snapshot, &key))
         .filter(|scan| {
-            if memo_source_unchanged(&scope, scan) {
+            if !scan.untracked_ignore_dependencies && memo_source_unchanged(&scope, scan) {
                 true
             } else {
                 if let Some(snapshot) = q.snapshot() {
@@ -524,8 +577,13 @@ fn execute_match_inner(
         let extensions = scan
             .sources
             .iter()
-            .filter_map(|path| crate::tools::ast_rule::file_grammar(path))
-            .flat_map(|(_, extensions)| extensions)
+            .filter_map(|path| match scope.parsers.extension(path) {
+                Some(extension) => language_extensions(extension),
+                None => {
+                    crate::tools::ast_rule::file_grammar(path).map(|(_, extensions)| extensions)
+                }
+            })
+            .flatten()
             .collect::<std::collections::BTreeSet<_>>();
         if !extensions.is_empty() {
             compile_check(&extensions, q.pattern().as_deref(), q.rule().as_deref())
@@ -556,6 +614,8 @@ fn execute_match_inner(
     };
     let out = render_match_page(q, &scope, &scan, grouped, &snapshot, empty_scope, budget);
     if fresh
+        && !scan.untracked_ignore_dependencies
+        && memo_scope_eligible(q, &scope)
         && out["next"]
             .as_object()
             .is_some_and(|next| next.contains_key("nextPage") || next.contains_key("nextMatchPage"))
@@ -600,15 +660,15 @@ fn resolve_scope(
     let p = paths.validate(q.path()).map_err(super::policy_error)?;
     let meta =
         std::fs::metadata(&p.canonical).map_err(|error| super::io_error(&q.path(), error))?;
-    let extensions = requested.or_else(|| {
-        meta.is_dir().then(|| {
-            octocode_engine::portable::grammar_capabilities()
-                .iter()
-                .filter(|grammar| grammar.structural_search)
-                .flat_map(|grammar| grammar.extensions.iter().cloned())
-                .collect()
-        })
-    });
+    if meta.is_file() && q.language_globs().is_some() {
+        return Err(ToolError::new(
+            "languageDirectoryRequired",
+            "languageGlobs is for directory matches. Use language for a single file.",
+        ));
+    }
+    let parsers = GlobParsers::compile(&p.canonical, q.language_globs())
+        .map_err(|error| ToolError::graph_scan(&error, cancel))?;
+    let extensions = requested.or_else(|| meta.is_dir().then(structural_extensions));
     // Validate against grammar capabilities, not the capped discovery prefix.
     // The literal prefilter may otherwise hide even a globally invalid query.
     if meta.is_dir()
@@ -618,7 +678,7 @@ fn resolve_scope(
             .map_err(|error| ToolError::new(error.code, error.message))?;
     }
     let inferred = if meta.is_dir() && q.language().is_none() {
-        match directory_choice(q, &p.canonical, paths, cancel)? {
+        match directory_choice(q, &p.canonical, &parsers, paths, cancel)? {
             GrammarChoice::One(language) => Some(language),
             GrammarChoice::Several(_) | GrammarChoice::Invalid(_) => None,
             GrammarChoice::Absent => {
@@ -638,7 +698,17 @@ fn resolve_scope(
         language,
         inferred,
         extensions,
+        parsers,
     })
+}
+
+/// Every extension a structural grammar parses.
+fn structural_extensions() -> std::collections::BTreeSet<String> {
+    octocode_engine::portable::grammar_capabilities()
+        .iter()
+        .filter(|grammar| grammar.structural_search)
+        .flat_map(|grammar| grammar.extensions.iter().cloned())
+        .collect()
 }
 
 fn scan_file(
@@ -744,7 +814,15 @@ fn scan_directory(
     cancel: &dyn CancellationCheck,
 ) -> Result<Scan, ToolError> {
     let extensions = scope.extensions.as_ref();
+    // A file parses by its own extension or by the rule that names its parser.
+    let parses = |path: &std::path::Path| {
+        extensions.is_none_or(|extensions| has_extension_in(path, extensions))
+            || scope.parsers.extension(path).is_some()
+    };
+    let grammars = structural_extensions();
+    let unparsed = std::sync::Mutex::new(Unparsed::default());
     let observed = std::sync::Mutex::new(std::collections::BTreeSet::new());
+    let untracked_ignore_dependencies = std::sync::atomic::AtomicBool::new(false);
     let withheld = std::sync::Mutex::new(crate::policy::discovery::Withheld::default());
     let discovery = paths.discovery_walk();
     let r = octocode_engine::structural::search_files(
@@ -752,10 +830,7 @@ fn scan_directory(
             path: scope.canonical.to_string_lossy().into_owned(),
             pattern: q.pattern(),
             rule: q.rule(),
-            include: q.include().or_else(|| {
-                extensions
-                    .map(|extensions| extensions.iter().map(|ext| format!("*.{ext}")).collect())
-            }),
+            include: q.include(),
             exclude: q.exclude(),
             exclude_dir: Some(
                 PruneMode::SyntaxVisible.directories_before_policy(q.default_excludes()),
@@ -780,34 +855,52 @@ fn scan_directory(
                 let mut watched = observed.lock().unwrap_or_else(|error| error.into_inner());
                 watched.insert(path.to_path_buf());
                 if q.include_ignored() != Some(true) {
+                    if repository_marker_present(path) {
+                        untracked_ignore_dependencies
+                            .store(true, std::sync::atomic::Ordering::Relaxed);
+                    }
                     for name in [".gitignore", ".ignore"] {
                         let ignore = path.join(name);
-                        if discovery.permits(&ignore) && ignore.is_file() {
-                            watched.insert(ignore);
+                        match std::fs::symlink_metadata(&ignore) {
+                            Ok(metadata) if metadata.is_file() && discovery.permits(&ignore) => {
+                                watched.insert(ignore);
+                            }
+                            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                            _ => untracked_ignore_dependencies
+                                .store(true, std::sync::atomic::Ordering::Relaxed),
                         }
                     }
                 }
             }
             if !allowed
                 && (q.include_hidden() == Some(true) || !super::is_dot_entry(path))
-                && (is_dir
-                    || extensions.is_none_or(|extensions| has_extension_in(path, extensions)))
+                && (is_dir || parses(path))
             {
                 withheld
                     .lock()
                     .unwrap_or_else(|error| error.into_inner())
                     .record(path, is_dir);
             }
-            // Explicit include globs are intersected with language: files
-            // outside the selected grammar are never candidates.
-            allowed
-                && (q.include().is_none()
-                    || extensions.is_none_or(|extensions| {
-                        !path.is_file() || has_extension_in(path, extensions)
-                    }))
+            let unparsed_file = !parses(path) && path.is_file();
+            // A file no grammar parses is disclosed, not silently dropped; one
+            // only `language` leaves out has a grammar and is the caller's choice.
+            if allowed && unparsed_file && !has_extension_in(path, &grammars) {
+                unparsed
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .record(match_display_path(
+                        &scope.canonical,
+                        &path.to_string_lossy(),
+                    ));
+            }
+            // Grammar filtering is not an explicit include override: ignored
+            // source files remain ignored unless the caller overrides them.
+            allowed && !unparsed_file
         },
         &|path| {
-            if super::cpp_header_override(path, scope.language.as_deref()) {
+            if let Some(extension) = scope.parsers.extension(path) {
+                extension.to_owned()
+            } else if super::cpp_header_override(path, scope.language.as_deref()) {
                 "cpp".to_owned()
             } else {
                 octocode_engine::text::extension_of(&path.to_string_lossy(), true, "")
@@ -834,6 +927,7 @@ fn scan_directory(
     Ok(Scan {
         sources,
         source_digest,
+        untracked_ignore_dependencies: untracked_ignore_dependencies.into_inner(),
         discovery_sources: observed
             .into_inner()
             .unwrap_or_else(|error| error.into_inner())
@@ -859,12 +953,44 @@ fn scan_directory(
         withheld: withheld
             .into_inner()
             .unwrap_or_else(|error| error.into_inner()),
+        unparsed: unparsed
+            .into_inner()
+            .unwrap_or_else(|error| error.into_inner()),
     })
 }
 
 fn directory_source_digest<'a>(files: impl Iterator<Item = (&'a str, Option<&'a str>)>) -> String {
     let identities = files.collect::<std::collections::BTreeMap<_, _>>();
     crate::digest::json_sha256(&json!(identities))
+}
+
+/// External ignore dependencies are not captured by the walked scope's stamps.
+/// Keep their selection fresh by rescanning instead of caching Git/global rules.
+fn memo_scope_eligible(q: MatchQuery<'_>, scope: &Scope) -> bool {
+    if scope.is_file || q.include_ignored() == Some(true) {
+        return true;
+    }
+    scope.canonical.ancestors().enumerate().all(|(depth, dir)| {
+        !repository_marker_present(dir)
+            && (depth == 0
+                || [".ignore", ".gitignore"]
+                    .iter()
+                    .all(|name| !memo_dependency_present(&dir.join(name))))
+    })
+}
+
+fn repository_marker_present(dir: &std::path::Path) -> bool {
+    [".git", ".jj"]
+        .iter()
+        .any(|name| memo_dependency_present(&dir.join(name)))
+}
+
+fn memo_dependency_present(path: &std::path::Path) -> bool {
+    match std::fs::symlink_metadata(path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+        // An unreadable dependency cannot establish that reuse is safe.
+        _ => true,
+    }
 }
 
 #[cfg(unix)]
@@ -970,6 +1096,7 @@ fn match_snapshot(q: MatchQuery<'_>, scope: &Scope, scan: &Scan) -> String {
         q.include_ignored(),
         q.max_depth(),
         scope.language,
+        q.language_globs(),
         q.reverse(),
         // Always present: validation stamps the contract defaults.
         q.sort().as_deref().unwrap_or_default(),
@@ -1210,6 +1337,7 @@ fn render_match_page(
     // Withheld entries are disclosed once, like localSearch's walk.
     let withheld = scan.withheld.notice();
     crate::tools::paging::push_warnings(&mut out, withheld.clone());
+    crate::tools::paging::push_warnings(&mut out, scan.unparsed.notice());
     if groups.is_empty() {
         explain_empty(
             q,
@@ -1884,11 +2012,7 @@ fn skipped_walk(
     let permits = |path: &std::path::Path| discovery.permits(path);
     let stop = || cancel.check().is_err();
     let keep = |path: &std::path::Path| {
-        extensions.contains(&octocode_engine::text::extension_of(
-            &path.to_string_lossy(),
-            true,
-            "",
-        ))
+        has_extension_in(path, extensions) || scope.parsers.extension(path).is_some()
     };
     let probe = FileProbe::new(
         &scope.canonical,
@@ -1934,6 +2058,7 @@ fn skipped_walk(
 fn directory_choice(
     q: MatchQuery<'_>,
     root: &std::path::Path,
+    parsers: &GlobParsers,
     paths: &PathPolicy,
     cancel: &dyn CancellationCheck,
 ) -> Result<GrammarChoice, ToolError> {
@@ -1959,6 +2084,7 @@ fn directory_choice(
             include: &include,
             exclude: &exclude,
         },
+        parsers,
         &|path| discovery.permits(path),
         &|| cancel.check().is_err(),
     )
@@ -1999,14 +2125,15 @@ fn other_language_repair(
     cancel: &dyn CancellationCheck,
 ) -> Option<Value> {
     let requested = q.language()?;
-    let languages = match directory_choice(q, &scope.canonical, paths, cancel).ok()? {
-        GrammarChoice::One(language) => vec![language],
-        GrammarChoice::Several(languages) => languages,
-        GrammarChoice::Invalid(_) | GrammarChoice::Absent => return None,
-    }
-    .into_iter()
-    .filter(|language| *language != requested)
-    .collect::<Vec<_>>();
+    let languages =
+        match directory_choice(q, &scope.canonical, &scope.parsers, paths, cancel).ok()? {
+            GrammarChoice::One(language) => vec![language],
+            GrammarChoice::Several(languages) => languages,
+            GrammarChoice::Invalid(_) | GrammarChoice::Absent => return None,
+        }
+        .into_iter()
+        .filter(|language| *language != requested)
+        .collect::<Vec<_>>();
     (!languages.is_empty()).then(|| language_repair(q, &languages))
 }
 
@@ -2209,193 +2336,10 @@ mod interrupted_rescan_tests {
 }
 
 #[cfg(test)]
-mod source_freshness_tests {
-    use super::*;
-    use crate::tools::cancel::NeverCancel;
-    use crate::tools::test_support::{Fixture, simple_policy};
-
-    fn run(query: &Value, paths: &PathPolicy, security: &ContentSecurity) -> Value {
-        let query: super::super::AstSearchQuery =
-            serde_json::from_value(query.clone()).expect("typed astSearch row");
-        super::super::execute_ast(&query, paths, security, &NeverCancel, None).expect("astSearch")
-    }
-
-    fn query(path: &std::path::Path, rule: bool) -> Value {
-        let mut query =
-            json!({"operation":"match", "path":path, "captureText":true, "matchPageSize":1});
-        if rule {
-            query["rule"] = json!({"kind":"call_expression"});
-        } else {
-            query["pattern"] = json!("target($A)");
-        }
-        query
-    }
-
-    #[test]
-    fn copied_match_pages_reject_same_count_source_edits() {
-        let original = "target(\"v0\");\ntarget(\"v1\");\ntarget(\"v2\");\n";
-        for rule in [false, true] {
-            for directory in [false, true] {
-                for (edited, restore_mtime) in [
-                    (original.replace("v1", "changed"), false),
-                    (original.replace("v1", "w1"), true),
-                    (format!("// new header\n{original}"), false),
-                    (
-                        format!("{original}// changed outside matched nodes\n"),
-                        false,
-                    ),
-                ] {
-                    let root = Fixture::new();
-                    let file = root.0.join("source.ts");
-                    std::fs::write(&file, original).expect("source");
-                    let (paths, security) = simple_policy(&root.0);
-                    let scope = if directory {
-                        root.0.as_path()
-                    } else {
-                        file.as_path()
-                    };
-                    let first = run(&query(scope, rule), &paths, &security);
-                    let next = first["next"]["nextMatchPage"]["query"]["queries"][0].clone();
-                    assert!(next.is_object(), "{first}");
-                    let copied = run(&next, &paths, &security);
-                    assert_eq!(copied["files"][0]["matches"][0]["value"], "target(\"v1\")");
-                    SCANS.evict(first["snapshot"].as_str().expect("snapshot"));
-                    let modified = std::fs::metadata(&file)
-                        .expect("metadata")
-                        .modified()
-                        .expect("mtime");
-                    std::fs::write(&file, edited).expect("edit");
-                    if restore_mtime {
-                        std::fs::OpenOptions::new()
-                            .write(true)
-                            .open(&file)
-                            .expect("open")
-                            .set_times(std::fs::FileTimes::new().set_modified(modified))
-                            .expect("restore mtime");
-                    }
-                    let changed = run(&next, &paths, &security);
-                    assert_eq!(
-                        changed["errorCode"], "staleSnapshot",
-                        "rule={rule}, directory={directory}: {changed}"
-                    );
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn same_runtime_match_memo_rejects_restored_mtime_edits() {
-        for rule in [false, true] {
-            for directory in [false, true] {
-                let root = Fixture::new();
-                let file = root.0.join("source.ts");
-                std::fs::write(&file, "target(\"v0\");\ntarget(\"v1\");\n").expect("source");
-                let (paths, security) = simple_policy(&root.0);
-                std::thread::sleep(
-                    octocode_engine::graph::SourceStamp::SETTLE
-                        + std::time::Duration::from_millis(200),
-                );
-                let scope = if directory {
-                    root.0.as_path()
-                } else {
-                    file.as_path()
-                };
-                let first = run(&query(scope, rule), &paths, &security);
-                let snapshot = first["snapshot"].as_str().expect("snapshot");
-                if cfg!(unix) {
-                    assert!(SCANS.holds(snapshot), "settled scan must exercise the memo");
-                }
-                let next = first["next"]["nextMatchPage"]["query"]["queries"][0].clone();
-                let copied = run(&next, &paths, &security);
-                assert_eq!(copied["files"][0]["matches"][0]["value"], "target(\"v1\")");
-                let modified = std::fs::metadata(&file)
-                    .expect("metadata")
-                    .modified()
-                    .expect("mtime");
-                std::fs::write(&file, "target(\"v0\");\ntarget(\"w1\");\n")
-                    .expect("same size edit");
-                std::fs::OpenOptions::new()
-                    .write(true)
-                    .open(&file)
-                    .expect("open")
-                    .set_times(std::fs::FileTimes::new().set_modified(modified))
-                    .expect("restore mtime");
-                let changed = run(&next, &paths, &security);
-                assert_eq!(
-                    changed["errorCode"], "staleSnapshot",
-                    "rule={rule}, directory={directory}: {changed}"
-                );
-                assert!(!SCANS.holds(snapshot), "changed scan must be evicted");
-            }
-        }
-    }
-}
+mod source_freshness_tests;
 
 #[cfg(test)]
-mod discovery_freshness_tests {
-    use super::*;
-    use crate::tools::cancel::NeverCancel;
-    use crate::tools::test_support::{Fixture, simple_policy};
+mod discovery_freshness_tests;
 
-    fn run(query: &Value, paths: &PathPolicy, security: &ContentSecurity) -> Value {
-        let query: super::super::AstSearchQuery =
-            serde_json::from_value(query.clone()).expect("typed astSearch row");
-        super::super::execute_ast(&query, paths, security, &NeverCancel, None).expect("astSearch")
-    }
-
-    #[test]
-    fn settled_match_memo_observes_empty_directories_and_ignore_edits() {
-        for ignore_name in [None, Some(".ignore"), Some(".gitignore")] {
-            let root = Fixture::new();
-            let nested = root.0.join("nested");
-            std::fs::create_dir(&nested).expect("nested directory");
-            std::fs::write(root.0.join("a.ts"), "target(\"one\");\ntarget(\"two\");\n")
-                .expect("source");
-            if let Some(name) = ignore_name {
-                std::fs::create_dir(root.0.join(".git")).expect("git marker");
-                std::fs::write(root.0.join(name), "nested/\n").expect("ignore rules");
-                std::fs::write(nested.join("b.ts"), "target(\"new\");\n").expect("ignored source");
-            }
-            let (paths, security) = simple_policy(&root.0);
-            std::thread::sleep(
-                octocode_engine::graph::SourceStamp::SETTLE + std::time::Duration::from_millis(200),
-            );
-            let first = run(
-                &json!({"operation":"match", "path":root.0, "pattern":"target($A)", "captureText":true, "matchPageSize":1}),
-                &paths,
-                &security,
-            );
-            assert_eq!(first["matchCount"], 2, "ignore={ignore_name:?}: {first}");
-            let snapshot = first["snapshot"].as_str().expect("snapshot");
-            assert!(
-                SCANS.holds(snapshot),
-                "settled memo must be reusable: {ignore_name:?}"
-            );
-            let next = first["next"]["nextMatchPage"]["query"]["queries"][0].clone();
-            let unchanged = run(&next, &paths, &security);
-            assert_eq!(
-                unchanged["files"][0]["matches"][0]["value"],
-                "target(\"two\")"
-            );
-            assert!(
-                SCANS.holds(snapshot),
-                "unchanged discovery retains the memo"
-            );
-            if let Some(name) = ignore_name {
-                std::fs::write(root.0.join(name), "").expect("unignore existing source");
-            } else {
-                std::fs::write(nested.join("b.ts"), "target(\"new\");\n")
-                    .expect("new nested source");
-            }
-            let changed = run(&next, &paths, &security);
-            assert_eq!(
-                changed["errorCode"], "staleSnapshot",
-                "ignore={ignore_name:?}: {changed}"
-            );
-            assert!(
-                !SCANS.holds(snapshot),
-                "changed discovery evicts the old scan"
-            );
-        }
-    }
-}
+#[cfg(test)]
+mod external_ignore_freshness_tests;

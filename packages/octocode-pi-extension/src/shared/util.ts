@@ -99,6 +99,22 @@ export async function settleWithin(work: Promise<unknown>, ms: number | undefine
   }
 }
 
+/** `promise`, or a rejection with the signal's reason as soon as `signal` aborts (at once when it already has). */
+export async function untilAborted<T>(promise: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+  if (!signal) return promise;
+  let onAbort: () => void = () => undefined;
+  const aborted = new Promise<never>((_, reject) => {
+    onAbort = () => reject(signal.reason);
+    if (signal.aborted) onAbort();
+    else signal.addEventListener('abort', onAbort, { once: true });
+  });
+  try {
+    return await Promise.race([promise, aborted]);
+  } finally {
+    signal.removeEventListener('abort', onAbort);
+  }
+}
+
 export async function withTimeout<T>(work: Promise<T>, ms: number, label: string): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
   const timeout = new Promise<never>((_, reject) => {
@@ -149,18 +165,41 @@ export function contentText(content: unknown, options: { separator?: string; ima
   if (!Array.isArray(content)) return '';
   return content
     .flatMap((part): string[] => {
-      if (!isRecord(part)) return [];
-      if (part['type'] === 'text' && typeof part['text'] === 'string') return [part['text']];
-      return part['type'] === 'image' && options.image !== undefined ? [options.image] : [];
+      const text = partText(part);
+      if (text !== undefined) return [text];
+      return isRecord(part) && part['type'] === 'image' && options.image !== undefined ? [options.image] : [];
     })
     .join(options.separator ?? '\n');
 }
+
+/** The text of a `{type:'text',text}` content part, else undefined (an image, a tool call, anything else). */
+export function partText(part: unknown): string | undefined {
+  return isRecord(part) && part['type'] === 'text' && typeof part['text'] === 'string' ? part['text'] : undefined;
+}
+
+/** `value` when it is an array of strings, else undefined. */
+export const stringList = (value: unknown): string[] | undefined => (Array.isArray(value) && value.every((item) => typeof item === 'string') ? (value as string[]) : undefined);
 
 /** `text` as a regular-expression source that matches it literally. */
 export const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+export const MINUTE_MS = 60_000;
+export const HOUR_MS = 60 * MINUTE_MS;
+export const DAY_MS = 24 * HOUR_MS;
+
+/** A pid that may be signalled: 0, 1 and negative ones name a group, init or every process. */
+export const validPid = (pid: unknown): pid is number => typeof pid === 'number' && Number.isInteger(pid) && pid > 1;
+
+/** Pi's wording for an extension context used after its session was replaced or reloaded. */
+const STALE_SESSION = 'stale after session replacement';
+
+/** Whether `error` says a session context is stale (Pi gives no error class for it). */
+export function isStaleSessionError(error: unknown): boolean {
+  return errorMessage(error).includes(STALE_SESSION);
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {

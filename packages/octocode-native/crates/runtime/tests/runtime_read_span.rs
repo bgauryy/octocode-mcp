@@ -78,7 +78,7 @@ async fn a_batch_of_reads_shares_the_window_and_every_row_returns_content() {
         })
         .collect();
     let small = workspace.write("small.txt", "one\ntwo\n");
-    let runtime = workspace.runtime(&[("OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH", WINDOW.to_string())]);
+    let runtime = workspace.runtime(&[]);
     let mut queries: Vec<Value> = vec![json!({"path": small})];
     queries.extend(
         files
@@ -135,12 +135,87 @@ async fn a_batch_of_reads_shares_the_window_and_every_row_returns_content() {
     runtime.close().await;
 }
 
+/// The automatic response page is a code constant (20,000 characters): a
+/// checkout's `.octocode/.env` or `.octocoderc`, or the home file, naming the
+/// removed setting is reported as `removed_setting` and changes nothing.
+#[tokio::test]
+async fn workspace_config_cannot_change_the_response_window() {
+    let workspace = Workspace::new();
+    let wide: String = (0..200)
+        .map(|line| format!("{line:03} {}\n", "x".repeat(2_000)))
+        .collect();
+    let file = workspace.write("wide.txt", &wide);
+    workspace.write(
+        ".octocode/.env",
+        "OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH=50000\nREQUEST_TIMEOUT=300000\n",
+    );
+    workspace.write(
+        ".octocode/.octocoderc",
+        r#"{"output":{"pagination":{"defaultCharLength":50000}}}"#,
+    );
+    std::fs::write(
+        workspace.home.join(".octocoderc"),
+        r#"{"output":{"pagination":{"defaultCharLength":4000}}}"#,
+    )
+    .expect("home rc");
+    let base = workspace.config(&[]);
+    let input = octocode_native::config::acquire_config_input(
+        base.env,
+        base.cwd,
+        base.os_home,
+        base.runtime_surface,
+    );
+    let runtime = octocode_native::runtime::ToolRuntime::new(input).expect("runtime");
+    let removed: Vec<String> = runtime
+        .config()
+        .diagnostics
+        .iter()
+        .filter(|d| d.code == "removed_setting")
+        .map(|d| {
+            d.field_path
+                .clone()
+                .unwrap_or_else(|| d.message.split(' ').next().unwrap_or_default().to_owned())
+        })
+        .collect();
+    for name in [
+        "OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH",
+        "REQUEST_TIMEOUT",
+        "output.pagination",
+    ] {
+        assert!(
+            removed.iter().any(|seen| seen == name),
+            "{name}: {removed:?}"
+        );
+    }
+    let mcp = runtime
+        .run_mcp(
+            "window".into(),
+            "localFetch".into(),
+            json!({"queries":[{"path": file, "fullContent": true}]}),
+        )
+        .await
+        .expect("read");
+    let envelope = &mcp["structuredContent"];
+    let page = envelope.to_string().encode_utf16().count();
+    assert!(page <= WINDOW + 1_000, "page {page} exceeds the constant");
+    let content = envelope["results"][0]["data"]["content"]
+        .as_str()
+        .expect("content")
+        .encode_utf16()
+        .count();
+    assert!(
+        content > WINDOW / 2,
+        "content {content}: the 4,000 home value applied, not the constant"
+    );
+    runtime.close().await;
+}
+
 #[tokio::test]
 async fn a_batch_that_fits_is_unchanged_and_carries_no_banner() {
     let workspace = Workspace::new();
     let a = workspace.write("a.txt", numbered_file("a", 20));
     let b = workspace.write("b.txt", numbered_file("b", 20));
-    let runtime = workspace.runtime(&[("OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH", WINDOW.to_string())]);
+    let runtime = workspace.runtime(&[]);
     let mcp = runtime
         .run_mcp(
             "fits".into(),

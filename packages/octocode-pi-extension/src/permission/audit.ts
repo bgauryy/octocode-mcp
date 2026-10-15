@@ -50,7 +50,7 @@ export const isRoutine = (entry: AuditEntry): boolean => isCall(entry) && entry.
 const ENTRY_ACTIONS: readonly string[] = [...ACTION_CLASSES, 'call', 'mode', 'invariant', 'rollup'];
 /** Every `via` an entry has: a verdict's route (`mode`, `grant`, `user`, `headless`, `cancelled`), a hook, a typed command, a refusal, a report or a relayed answer. */
 const ENTRY_VIAS = ['mode', 'grant', 'user', 'headless', 'cancelled', 'invariant', 'hook', 'reported', 'typed', RELAY_VIA] as const;
-export type AuditVia = (typeof ENTRY_VIAS)[number];
+type AuditVia = (typeof ENTRY_VIAS)[number];
 
 /** Routine entries the parent records one by one for one subagent; later routine ones are counted by action in the parent's log, every other entry is still recorded (`ChildRelay`). */
 export const CHILD_AUDIT_CAP = 1000;

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -221,4 +221,22 @@ test('fetch-asset plans without saving, downloads only with --approve, and recor
     assert.equal(outside.status, 2);
     assert.equal(outside.json.error.code, 'invalidArguments');
   } finally { server.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('every script runs when called through a symlink, as installed skills are', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'bs-link-'));
+  try {
+    for (const script of ['search.mjs', 'verify-claims.mjs', 'fetch-asset.mjs']) {
+      const link = join(dir, script);
+      symlinkSync(join(scripts, script), link);
+      const r = await new Promise((resolve) => {
+        const child = spawn(process.execPath, [link, '--help']);
+        let stdout = '';
+        child.stdout.on('data', (d) => { stdout += d; });
+        child.on('close', (status) => resolve({ status, stdout }));
+      });
+      assert.equal(r.status, 0, script);
+      assert.match(r.stdout, /^Usage: /, `${script} printed nothing through a symlink`);
+    }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

@@ -783,6 +783,11 @@ impl NativeLspClient {
         crate::lsp::config::serves_requests_concurrently(&self.inner.config)
     }
 
+    /// See [`crate::lsp::config::workspace_symbol_limit`].
+    pub fn workspace_symbol_limit(&self) -> Option<usize> {
+        crate::lsp::config::workspace_symbol_limit(&self.inner.config)
+    }
+
     pub fn has_capability(&self, capability: String) -> bool {
         let capabilities = self
             .inner

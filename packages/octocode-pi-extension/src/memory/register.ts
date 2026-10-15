@@ -2,6 +2,7 @@ import type { BeforeAgentStartEvent, ExtensionAPI, ExtensionContext } from '@ear
 import { sharedAgentDb } from '../agentdb/db.js';
 import type { Permission } from '../permission/ask.js';
 import { repoKey } from '../shared/home.js';
+import { contentText } from '../shared/util.js';
 import type { Subcommands } from '../shared/commands.js';
 import { envFlag, MEMORY_AUTO_ENV } from '../shared/env.js';
 import { projectTrustNow } from '../shared/trust.js';
@@ -22,9 +23,7 @@ export function memoryStore(cwd: string, env: NodeJS.ProcessEnv = process.env): 
 /** Text that started the run. A user prompt is `prompt`; an idle custom message carries its own content. */
 function agentStartQuery(event: BeforeAgentStartEvent): string {
   if (event.messageType === 'custom') {
-    const { content } = event.message;
-    if (typeof content === 'string') return content;
-    return content.flatMap((part) => (part.type === 'text' ? [part.text] : [])).join('\n');
+    return contentText(event.message.content);
   }
   return event.prompt;
 }

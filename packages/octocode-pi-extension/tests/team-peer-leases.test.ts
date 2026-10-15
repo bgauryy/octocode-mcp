@@ -3,8 +3,10 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadSqlite } from '../src/shared/util.js';
-import { peerDbPath } from '../src/shared/home.js';
+import { peerDbPath, peerRegistryDir } from '../src/shared/home.js';
 import { PEER_APPLICATION_ID, PEER_SCHEMA_VERSION, PeerLeases } from '../src/team/peer-leases.js';
+import { PEER_REGISTRY_GRACE_MS, PEER_REGISTRY_VERSION, PeerRegistry } from '../src/team/peer-registry.js';
+import { processStartTime } from '../src/shared/process.js';
 import { Team } from '../src/team/session.js';
 import { registerCollab } from '../src/team/tools.js';
 import { fakeCtx, fakePi } from './fake-pi.js';
@@ -164,6 +166,96 @@ describe('peer leases (agents-communication database, read-only)', () => {
   });
 });
 
+/** One registry entry as the package writes it (`scripts/communication/registry.py`). */
+function entry(dir: string, name: string, fields: Record<string, unknown>): void {
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, `${name}.json`), JSON.stringify({ version: PEER_REGISTRY_VERSION, database: '/db.sqlite', pid: process.pid, started: processStartTime(process.pid) ?? null, updatedAt: NOW, ...fields }));
+}
+/** A pid that is not running. */
+function deadPid(): number {
+  let pid = 2 ** 22 + 11;
+  for (; ; pid++) {
+    try { process.kill(pid, 0); } catch { return pid; }
+  }
+}
+
+describe('registry of the package\'s non-default databases', () => {
+  it('lists the database of an entry whose process runs, or that was written within the lease grace', () => {
+    const dir = path.join(home(), 'active');
+    entry(dir, 'alive', { database: '/alive.sqlite', updatedAt: NOW - 10 * PEER_REGISTRY_GRACE_MS });
+    entry(dir, 'unstarted', { database: '/unstarted.sqlite', started: null, updatedAt: NOW - 10 * PEER_REGISTRY_GRACE_MS });
+    entry(dir, 'recent', { database: '/recent.sqlite', pid: deadPid(), updatedAt: NOW - PEER_REGISTRY_GRACE_MS });
+    entry(dir, 'same-database', { database: '/recent.sqlite', pid: deadPid() });
+    expect(new PeerRegistry(dir).databases(NOW)).toEqual(['/alive.sqlite', '/recent.sqlite', '/unstarted.sqlite']);
+  });
+
+  it('drops an entry whose process is gone, or whose pid another process now holds', () => {
+    const dir = path.join(home(), 'active');
+    const old = NOW - PEER_REGISTRY_GRACE_MS - 1;
+    entry(dir, 'dead', { pid: deadPid(), updatedAt: old });
+    // The system gave the recorded pid to a process that started at another time.
+    if (processStartTime(process.pid) !== undefined) entry(dir, 'reused', { started: '1', updatedAt: old });
+    expect(new PeerRegistry(dir).databases(NOW)).toEqual([]);
+  });
+
+  it('ignores a missing folder, unreadable files, another version and malformed entries', () => {
+    const dir = path.join(home(), 'active');
+    expect(new PeerRegistry(dir).databases(NOW)).toEqual([]);
+    entry(dir, 'version', { version: PEER_REGISTRY_VERSION + 1, database: '/future.sqlite' });
+    entry(dir, 'relative', { database: 'relative.sqlite' });
+    entry(dir, 'pid', { database: '/pid.sqlite', pid: 0 });
+    entry(dir, 'started', { database: '/started.sqlite', started: 5 });
+    entry(dir, 'time', { database: '/time.sqlite', updatedAt: 'now' });
+    entry(dir, 'database', { database: 7 });
+    fs.writeFileSync(path.join(dir, 'broken.json'), '{not json');
+    fs.writeFileSync(path.join(dir, 'null.json'), 'null');
+    fs.writeFileSync(path.join(dir, 'huge.json'), JSON.stringify({ version: PEER_REGISTRY_VERSION, database: '/huge.sqlite', pid: process.pid, started: null, updatedAt: NOW, pad: 'x'.repeat(5000) }));
+    fs.writeFileSync(path.join(dir, 'notes.txt'), 'not an entry');
+    fs.mkdirSync(path.join(dir, 'folder.json'));
+    entry(dir, 'good', { database: '/good.sqlite' });
+    expect(new PeerRegistry(dir).databases(NOW)).toEqual(['/good.sqlite']);
+  });
+
+  it('reads a lease from a registered database, without writing anything, and stops when its entry goes', () => {
+    const root = home();
+    const dir = path.join(root, 'active'), main = path.join(root, 'communication.sqlite'), custom = path.join(root, 'custom.sqlite');
+    peerDb(main, [{ path: '/w/main.ts' }]);
+    peerDb(custom, [{ path: '/w/custom.ts', owner: 's1' }]);
+    const before = fs.readFileSync(custom);
+    const found = peers(main, { registry: dir, self: () => 'pi-2' });
+    expect(found.conflict('/w/main.ts')?.owner).toBe('s1');
+    expect(found.conflict('/w/custom.ts')).toBeUndefined();
+    entry(dir, 'one', { database: custom });
+    entry(dir, 'default', { database: main });
+    // A database registered after the first check is seen on the next one.
+    expect(found.conflict('/w/custom.ts')).toMatchObject({ name: 'cc', vendor: 'claude', path: '/w/custom.ts' });
+    expect(found.conflict('/w/main.ts')?.owner).toBe('s1');
+    expect(fs.readFileSync(custom).equals(before)).toBe(true);
+    fs.rmSync(path.join(dir, 'one.json'));
+    expect(found.conflict('/w/custom.ts')).toBeUndefined();
+    expect(found.conflict('/w/main.ts')?.owner).toBe('s1');
+  });
+
+  it('skips a registered database it cannot read with its own single warning, and still reads the others', () => {
+    const root = home();
+    const dir = path.join(root, 'active'), main = path.join(root, 'communication.sqlite'), custom = path.join(root, 'custom.sqlite'), broken = path.join(root, 'broken.sqlite');
+    peerDb(main, [{ path: '/w/main.ts' }]);
+    peerDb(custom, [{ path: '/w/custom.ts' }]);
+    fs.writeFileSync(broken, 'x'.repeat(2000));
+    entry(dir, 'a-broken', { database: broken });
+    entry(dir, 'b-custom', { database: custom });
+    entry(dir, 'c-missing', { database: path.join(root, 'missing.sqlite') });
+    const warnings: string[] = [];
+    let now = NOW;
+    const found = peers(main, { registry: dir, now: () => now, warn: (text) => (warnings.push(text), true) });
+    expect(found.conflict('/w/custom.ts')?.owner).toBe('s1');
+    now += 31_000;
+    expect(found.conflict('/w/main.ts')?.owner).toBe('s1');
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain(broken);
+  });
+});
+
 describe('peer leases in the team reservation gate', () => {
   function collaborate(git = false) {
     const cwd = home();
@@ -211,7 +303,31 @@ describe('peer leases in the team reservation gate', () => {
   });
 
   const python = process.env['OCTOCODE_PYTHON'] || 'python3';
+
   const runnable = fs.existsSync(path.join(PACKAGE, 'scripts/communication.py')) && spawnSync(python, ['--version']).status === 0;
+
+  it.skipIf(!runnable)('sees a package session started with --database <file> through the registry the package writes, until it expires', () => {
+    const { cwd, team } = collaborate(true);
+    const custom = path.join(tmp(), 'custom.sqlite');
+    const run = (command: string, input: object, session?: string) => {
+      const args = ['-B', path.join(PACKAGE, 'scripts/communication.py'), command, JSON.stringify(input), '--workspace', cwd, '--database', custom, ...(session ? ['--session', session] : [])];
+      const result = spawnSync(python, args, { encoding: 'utf8', env: { ...process.env } });
+      expect(result.status, result.stderr).toBe(0);
+      return JSON.parse(result.stdout) as { id?: string; ok?: boolean };
+    };
+    const target = path.join(cwd, 'src', 'a.ts');
+    expect(team.reservation(target, 'src/a.ts')).toBeUndefined();
+    const { id } = run('join', { name: 'codex-2', vendor: 'codex' });
+    expect(run('lock', { path: 'src/a.ts', reasoning: 'custom database edit' }, id).ok).toBe(true);
+    // The package's CLI process is gone already; its entry still counts for the lease grace.
+    const [file] = fs.readdirSync(peerRegistryDir());
+    const written = JSON.parse(fs.readFileSync(path.join(peerRegistryDir(), file!), 'utf8')) as { version: number; database: string; pid: number; started: string | null; updatedAt: number };
+    expect(written).toMatchObject({ version: PEER_REGISTRY_VERSION, database: custom });
+    expect(team.reservation(target, 'src/a.ts')).toMatch(/^src\/a\.ts is reserved by codex-2 \(codex agent in agents-communication; custom database edit; locked /);
+    expect(team.reservation(path.join(cwd, 'src', 'b.ts'), 'src/b.ts')).toBeUndefined();
+    run('leave', {}, id);
+    expect(team.reservation(target, 'src/a.ts')).toBeUndefined();
+  });
 
   it.skipIf(!runnable)('agrees with the package itself: a lease taken through its CLI refuses a case and Unicode alias', () => {
     const { cwd, team } = collaborate(true);

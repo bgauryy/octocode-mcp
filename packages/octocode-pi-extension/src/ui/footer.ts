@@ -65,8 +65,8 @@ function tilde(cwd: string, home: string | undefined): string {
   return relative === '' ? '~' : relative.startsWith('..') || path.isAbsolute(relative) ? cwd : `~${path.sep}${relative}`;
 }
 
-const oneLine = (text: string) => text.replace(/[\r\n\t\u2028\u2029]/g, ' ').replace(/ +/g, ' ').trim();
-const plainRow = (text: string) => oneLine(sanitizeTerminalText(text));
+const singleLine = (text: string) => text.replace(/[\r\n\t\u2028\u2029]/g, ' ').replace(/ +/g, ' ').trim();
+const plainRow = (text: string) => singleLine(sanitizeTerminalText(text));
 
 /** Joins the left parts with dim dots and pushes the right parts to the edge, shortening and dropping until it fits. */
 function fit(left: Part[], right: Part[], theme: Paint, width: number): string {
@@ -106,7 +106,7 @@ function fit(left: Part[], right: Part[], theme: Paint, width: number): string {
 
 export function footerLines(state: FooterState, branch: string | null, statuses: ReadonlyMap<string, string>, theme: Paint, width: number): string[] {
   // Repainted per frame, so statuses set before a theme switch take the new colours.
-  const status = (key: string) => oneLine(livePaint(statuses.get(key) ?? '', theme));
+  const status = (key: string) => singleLine(livePaint(statuses.get(key) ?? '', theme));
   const model = plainRow(state.model ?? 'no model');
   const shortModel = plainRow(truncateToWidth(model, Math.max(1, Math.floor(width / 3)), '…'));
   const context = state.context;
@@ -156,7 +156,7 @@ export function footerLines(state: FooterState, branch: string | null, statuses:
       { text: state.sessionName ? theme.fg('muted', plainRow(state.sessionName)) : '', priority: 50 },
       { text: tokens, priority: 60 },
       // As Pi's own footer does (sanitizeStatusText): a line break inside a footer row breaks pi-tui's row tracking.
-      ...others.map(([, text]) => ({ text: oneLine(livePaint(text, theme)), priority: 20 })),
+      ...others.map(([, text]) => ({ text: singleLine(livePaint(text, theme)), priority: 20 })),
     ],
     [],
     theme,

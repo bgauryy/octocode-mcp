@@ -4,7 +4,7 @@ How to add settings and credentials without TypeScript/Rust drift. User-facing s
 
 ## Architecture
 
-`packages/octocode-config/config-contract.json` is the only declaration of field policy: file paths and sections, input/resolved types, defaults and inherited defaults, environment names and alias priority, ranges, enums, URL/path semantics, unknown keys, dotenv trust (`all`, `home`, `never`), credential exclusion from `ResolvedConfig`, and descriptions. The TypeScript generator validates it against `config-contract.schema.json` (Ajv); both build paths consume it:
+`packages/octocode-config/config-contract.json` is the only declaration of field policy: file paths and sections, input/resolved types, defaults, one environment variable per setting, enums, URL/path semantics, unknown keys, dotenv trust (`all`, `home`, `never`), credential exclusion from `ResolvedConfig`, removed names, and descriptions. The TypeScript generator validates it against `config-contract.schema.json` (Ajv); both build paths consume it:
 
 ```text
 packages/octocode-config/config-contract.json
@@ -12,7 +12,7 @@ packages/octocode-config/config-contract.json
                  ├─ TypeScript generator
                  │    ├─ src/config/contract.generated.ts
                  │    │    types · defaults · field metadata · env policy
-                 │    └─ docs/generated/CONFIG_SETTINGS.md
+                 │    └─ <repo>/docs/generated/CONFIG_SETTINGS.md
                  │
                  └─ Rust build.rs
                       └─ $OUT_DIR/config_contract.rs
@@ -50,9 +50,15 @@ process environment / MCP client env block
 | `home` | May load from the trusted home `.env`, never a project `.env`. |
 | `never` | Shell/CI/MCP environment only; never loaded from either `.env` file. |
 
+## What is a setting
+
+A setting is something a user chooses: a credential, an endpoint, a feature switch, a tool list, a scope, a storage mode, a model or a presentation format. Internal limits (timeouts, retries, waits, page sizes, cache sizes and TTLs, concurrency, spend caps, memory caps) are code constants in `RuntimeLimits` (`packages/octocode-native/crates/runtime/src/runtime/limits.rs`), never settings: no `.env` or `.octocoderc` can change them, and tests set non-default limits through `ToolRuntime::with_limits`. The contract has no number field type.
+
+To retire a setting, delete its field and add its path and variable to `removed.settings` / `removed.environment` with the reason (the fixed value or the replacement). A removed name is reported once as `removed_setting` and ignored, never a load failure, and `config set` refuses it.
+
 ## Add a normal setting
 
-One edit in `config-contract.json` plus regeneration. Hypothetical example: `output.maxResults`, with `OCTOCODE_MAX_RESULTS`, range 1–500, and default 50:
+One edit in `config-contract.json` plus regeneration. Hypothetical example: `output.compact`, with `OCTOCODE_OUTPUT_COMPACT` and default `false`:
 
 ```json
 {
@@ -62,15 +68,11 @@ One edit in `config-contract.json` plus regeneration. Hypothetical example: `out
       "file": true,
       "resolved": true,
       "fields": {
-        "maxResults": {
-          "type": "number",
-          "minimum": 1,
-          "span": 499,
-          "defaultOffset": 49,
-          "description": "Maximum results emitted in one response.",
-          "env": {
-            "OCTOCODE_MAX_RESULTS": { "priority": 0 }
-          }
+        "compact": {
+          "type": "boolean",
+          "default": false,
+          "description": "Render compact text content.",
+          "env": { "name": "OCTOCODE_OUTPUT_COMPACT" }
         }
       }
     }
@@ -78,43 +80,32 @@ One edit in `config-contract.json` plus regeneration. Hypothetical example: `out
 }
 ```
 
-- Numeric maximum is `minimum + span`; default is `minimum + min(defaultOffset, span)`. Inverted ranges are impossible by construction.
 - Enum defaults are the first value in `values`. Runtime-surface defaults are the first surface.
 
-`generate:config-contract` (§ Generated artifacts and checks) produces `OutputConfigOptions.maxResults?: number`, `RequiredOutputConfig.maxResults: number`, the default, env precedence and parsing, clamping/validation bounds, unknown-key recognition, Rust `OutputConfig.max_results` with resolution/validation metadata, and the settings-reference row and example. Test only the setting's effect that the generic interpreter does not guarantee (for example a downstream feature gate); no language-parity tests that restate the declaration.
+`generate:config-contract` (§ Generated artifacts and checks) produces `RequiredOutputConfig.compact: boolean`, the default, env precedence and parsing, validation, unknown-key recognition, Rust `OutputConfig.compact` with resolution/validation metadata, and the settings-reference row and example. Test only the setting's effect that the generic interpreter does not guarantee (for example a downstream feature gate); no language-parity tests that restate the declaration.
 
 ### Supported field shapes
 
 | `type` | Resolved representation | Relevant properties |
 |---|---|---|
 | `boolean` | boolean / Rust `bool` | `default` |
-| `number` | number / Rust `f64` | `minimum`, `span`, `defaultOffset` |
 | `string` | string or optional string | `default` |
 | `url` | HTTP(S) URL string | `default` |
 | `path` | absolute/home path string | `default` |
 | `stringArray` | string array or nullable array | `default`, optional `itemFormat: "path"` |
-| `enum` | generated literal union / Rust string | `values` |
-| `schemaVersion` | schema version | reserved for the root version field |
+| `enum` | generated literal union / Rust string | `values`, optional `typeName`, `enumStyle` |
 
 A `null` input means “unset; use the next source.” A `null` generated default becomes an optional string or nullable array where appropriate.
 
-### Environment aliases and invalid input
+### Environment binding
 
-Bindings are keyed by variable; lower `priority` wins. Every binding must be in the contract, or source labeling, protection, docs and both resolvers cannot derive it. Give each setting one variable; a second binding is only a temporary migration path (hypothetical example):
-
-```json
-"env": {
-  "OCTOCODE_MAX_RESULTS": { "priority": 0 },
-  "MAX_RESULTS": { "priority": 1 }
-}
-```
+Each setting has at most one `env` binding, `{ "name": "OCTOCODE_…" }`, and no aliases. Every variable must be in the contract, or source labeling, protection, docs and the resolver cannot derive it. An invalid environment value is skipped with a warning, and the next source applies.
 
 | Optional property | Effect |
 |---|---|
+| `dotenv` | `all` (default), `home`, or `never`; see the Dotenv policy table. |
 | `normalize: "trim"` | Trims a string. |
 | `normalize: "lower"` | Trims and lowercases. |
-| `invalid: "skip"` (default) | Ignores an invalid environment value and tries the next source. |
-| `invalid: "default"` | An invalid environment value selects the generated default, not file config. Use only when invalid environment input is intentionally authoritative (as with output format). |
 | `workspaceNarrowsTo: "<value>"` | On a `dotenv: "home"` binding: a workspace `.env` or `.octocoderc` may still set this one narrowing value (as `storage.mode: memory`). |
 
 ### Add a new section
@@ -130,7 +121,7 @@ Declare the section and its fields in the same contract. `file` controls whether
 }
 ```
 
-- Nested sections use dotted names such as `output.pagination`. Declare parent sections too, even with an empty `fields` object.
+- Nested sections use dotted names (`parent.child`). Declare parent sections too, even with an empty `fields` object.
 - `typeName` keeps a public TypeScript name when automatic PascalCase is unsuitable; `rustTypeName` does the same for Rust structs. These are compatibility metadata, not field policy.
 
 ## Add credentials and protected environment keys
@@ -174,7 +165,7 @@ GitHub tokens are Pattern A entries with `tokenPriority`; lower numbers win. The
 "GITHUB_TOKEN": { "dotenv": "all", "tokenPriority": 1 }
 ```
 
-Source beats alias order: process → workspace `.octocode/.env` → global `.env`. A workspace alias beats a global canonical key. Declared alias order breaks ties within one source.
+Source beats name order: process → workspace `.octocode/.env` → global `.env`, so a workspace `GITHUB_TOKEN` beats a global `GH_TOKEN`. `tokenPriority` breaks ties within one source.
 
 ### Pattern B: environment preferred, trusted `.octocoderc` fallback
 
@@ -193,13 +184,7 @@ Source beats alias order: process → workspace `.octocode/.env` → global `.en
       "default": null,
       "credential": true,
       "description": "My Service API key fallback.",
-      "env": {
-        "MY_SERVICE_API_KEY": {
-          "priority": 0,
-          "dotenv": "all",
-          "normalize": "trim"
-        }
-      }
+      "env": { "name": "MY_SERVICE_API_KEY", "dotenv": "all", "normalize": "trim" }
     }
   }
 }
@@ -207,14 +192,13 @@ Source beats alias order: process → workspace `.octocode/.env` → global `.en
 
 - The generic Rust credential adapter applies environment-first file fallback into `effective_env`.
 - The generated input type and generic validators recognize credential fields in `.octocoderc`; generated resolved types exclude them.
-- An existing credential alias from either file prevents the canonical `.octocoderc` fallback from replacing it.
-- Reference: the `classification` section is `resolved: true`. `classification.api` (`dotenv: "all"`) and `classification.apiHost` (`dotenv: "home"`) are credential fields and never enter `ResolvedConfig`; `classification.maxConcurrency` resolves normally.
+- Reference: the `classification` section is `resolved: true`. `classification.api` (`dotenv: "all"`) and `classification.apiHost` (`dotenv: "home"`) are credential fields and never enter `ResolvedConfig`; `classification.model` resolves normally.
 
 Pattern B tests must prove:
 
 1. process environment wins over `.octocoderc`;
 2. `.octocoderc` fills an absent value, and a workspace `.octocoderc` beats the home one;
-3. workspace `.env` wins over global, including across different aliases;
+3. workspace `.env` wins over global;
 4. missing/blank file values fall back, while the explicit process classification opt-out stays disabled;
 5. `Debug`, diagnostics, inspection JSON and `get_config_value` do not contain the secret.
 
@@ -227,7 +211,7 @@ After you build CLI/MCP, run `yarn workspace @octocodeai/config test:tokens:acce
 Settings are read in native code from the resolved config:
 
 ```rust
-let timeout_ms = config.resolved.network.timeout as u64;
+let graphql = config.resolved.github.graphql_enabled;
 let format = &config.resolved.output.format;
 let classification_key = config.env_value("OCTOCODE_CLASSIFICATION_API");
 ```

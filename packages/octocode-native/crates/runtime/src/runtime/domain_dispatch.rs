@@ -25,6 +25,8 @@ pub(crate) struct DomainDispatcher {
     pub(super) github_services: Arc<OnceLock<Result<github::GitHubServices, ProviderError>>>,
     pub(super) github_cache: GitHubContentCache,
     pub config: Arc<ConfigOutput>,
+    /// Internal limits: the runtime's code constants.
+    pub limits: crate::runtime::RuntimeLimits,
     pub home: PathBuf,
     pub handle: tokio::runtime::Handle,
     pub lsp_pool: Arc<octocode_engine::lsp::pool::LspClientPool>,
@@ -53,6 +55,7 @@ impl DomainDispatcher {
             .get_or_init(|| {
                 github::GitHubServices::new(
                     self.config.clone(),
+                    &self.limits,
                     self.home.clone(),
                     self.github_cache.clone(),
                 )
@@ -88,13 +91,8 @@ impl DomainDispatcher {
         &self,
         context: &ExecutionContext,
     ) -> crate::tools::selection::Runtime {
-        let settings = &self.config.resolved.classification;
         crate::tools::selection::Runtime {
-            limits: crate::tools::selection::Limits {
-                max_candidates: settings.max_candidates as usize,
-                max_chars: settings.max_chars as usize,
-                timeout: std::time::Duration::from_millis(settings.timeout_ms as u64),
-            },
+            limits: self.limits.selection,
             available: self.selection_available,
             judge: Arc::new(self.evaluator.clone()),
             handle: self.handle.clone(),
@@ -133,6 +131,7 @@ impl DomainDispatcher {
         match self.github_services.get_or_init(|| {
             github::GitHubServices::new(
                 self.config.clone(),
+                &self.limits,
                 self.home.clone(),
                 self.github_cache.clone(),
             )
@@ -167,6 +166,7 @@ impl DomainDispatcher {
             .get_or_init(|| {
                 github::GitHubServices::new(
                     self.config.clone(),
+                    &self.limits,
                     self.home.clone(),
                     self.github_cache.clone(),
                 )
@@ -174,15 +174,14 @@ impl DomainDispatcher {
             .as_ref()
             .ok();
         let tags = services.map(|services| services.release_tags(context));
-        let network = &self.config.resolved.network;
         let env = self.config.credential_env();
         let call = crate::tools::artifact_search::ArtifactCall {
             deadline: context.deadline,
             cancellation: context.cancellation.clone(),
-            allow_private_registry: network.allow_private_registry,
+            allow_private_registry: self.config.resolved.network.allow_private_registry,
             cache: self.artifact_cache.as_deref(),
-            timeout: std::time::Duration::from_millis(u64::from(network.timeout)),
-            max_retries: network.max_retries as u8,
+            timeout: self.limits.network_timeout,
+            max_retries: self.limits.max_retries,
             tags: tags
                 .as_ref()
                 .map(|tags| tags as &dyn crate::providers::artifact::ReleaseTags),
@@ -278,7 +277,7 @@ impl DomainDispatcher {
         // Streamed listing pages are sized to fit one automatic response
         // window, which every call of a walk shares (an explicit
         // `responseLength` is per call, so it never moves a page cut).
-        let window = self.config.resolved.output.pagination.default_char_length as usize;
+        let window = self.limits.auto_page_chars;
         let context = ExecutionContext {
             response_window: (window > 0).then_some(window),
             ..context.clone()

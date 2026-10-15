@@ -152,7 +152,7 @@ export function lastCacheUseAt(branch: readonly unknown[]): number | undefined {
 }
 
 /** When the session's last reply was requested (its idle start), or undefined without one. */
-export function lastReplyAt(branch: readonly unknown[]): number | undefined {
+function lastReplyAt(branch: readonly unknown[]): number | undefined {
   for (let index = branch.length - 1; index >= 0; index--) {
     const message = (branch[index] as { type?: string; message?: { role?: string; timestamp?: number } }).message;
     if ((branch[index] as { type?: string }).type === 'message' && message?.role === 'assistant' && typeof message.timestamp === 'number') return message.timestamp;

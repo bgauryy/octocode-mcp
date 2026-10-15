@@ -1,8 +1,9 @@
 import type { AgentDb } from '../agentdb/db.js';
+import { readMeta, writeMeta } from '../agentdb/meta.js';
 import type { Row } from '../agentdb/rows.js';
-import { sanitizeTerminalText, secretProblem, storedText } from '../shared/sanitize.js';
+import { storedSecret, storedText } from '../shared/sanitize.js';
 import { clipText } from '../shared/util.js';
-import { ftsQuery, jaccard, memoryLabel, normalizeTitle, stem, terms } from './query.js';
+import { ftsQuery, jaccard, MAX_QUERY_TERMS, memoryLabel, normalizeTitle, stem, terms } from './query.js';
 
 export const MEMORY_KINDS = ['preference', 'fact', 'decision', 'gotcha', 'procedure'] as const;
 export type MemoryKind = (typeof MEMORY_KINDS)[number];
@@ -27,7 +28,7 @@ export interface Memory {
   useCount: number;
 }
 
-/** A search hit: `score` is higher-is-better (negated BM25, or the LIKE fallback's weighted term count). */
+/** A search hit: `score` is higher-is-better (negated BM25, or the LIKE fallback's IDF-weighted column match). */
 interface MemoryHit extends Memory {
   score: number;
 }
@@ -44,12 +45,13 @@ export interface MemoryInput {
 /** A refused write: a secret, a near-duplicate, or a missing/unknown memory. */
 export class MemoryError extends Error {}
 
+/** The refusal for an id that is no memory here: a missing one, or a project memory of another repository (or hidden in an untrusted project). */
+export const noMemory = (id: number): MemoryError => new MemoryError(`No memory ${memoryLabel(id)} here (it may belong to another repository).`);
+
 /** Refuses title, body or keywords that look like a secret. Checked on the sanitized text, the form that is stored: an invisible character must not split a token past it. */
 export function refuseMemorySecrets(input: Pick<MemoryInput, 'title' | 'body' | 'keywords'>): void {
-  for (const text of [input.title, input.body, input.keywords]) {
-    const problem = text ? secretProblem(sanitizeTerminalText(text)) : undefined;
-    if (problem) throw new MemoryError(`Refused: this looks like a secret (${problem}). Never store credentials in memory.`);
-  }
+  const found = storedSecret({ title: input.title, body: input.body, keywords: input.keywords });
+  if (found) throw new MemoryError(`Refused: this looks like a secret (${found.problem}). Never store credentials in memory.`);
 }
 
 /** BM25 column weights for (title, keywords, body), in memories_fts column order. */
@@ -138,7 +140,7 @@ export class MemoryStore {
   search(query: string, scope: ScopeFilter = 'all', limit = 10, exclude: ReadonlySet<number> = new Set()): MemoryHit[] {
     const match = ftsQuery(query);
     if (!match) return [];
-    const hits = this.agentDb.fts ? this.searchFts(match, scope, limit * 3, exclude) : this.searchLike([...new Set(terms(query).map(stem))], scope);
+    const hits = this.agentDb.fts ? this.searchFts(match, scope, limit * 3, exclude) : this.searchLike([...new Set(terms(query, MAX_QUERY_TERMS).map(stem))], scope);
     return hits
       .filter((hit) => !exclude.has(hit.id))
       .map((hit) => (hit.scope === 'project' ? { ...hit, score: hit.score * PROJECT_BOOST } : hit))
@@ -210,7 +212,7 @@ export class MemoryStore {
   /** An edit makes `input.author` the author: an agent edit of a user's memory must not keep the user tag. */
   private update(id: number, input: MemoryInput & { author: string }, now: number): { memory: Memory; created: boolean } {
     const current = this.get(id);
-    if (!current) throw new MemoryError(`No memory ${memoryLabel(id)} here (it may belong to another repository).`);
+    if (!current) throw noMemory(id);
     const title = input.title === undefined ? current.title : storedText(input.title);
     if (!title) throw new MemoryError('A memory needs a title.');
     const scope = input.scope ?? current.scope;
@@ -241,7 +243,7 @@ export class MemoryStore {
 
   delete(id: number): Memory {
     const current = this.get(id);
-    if (!current) throw new MemoryError(`No memory ${memoryLabel(id)} here (it may belong to another repository).`);
+    if (!current) throw noMemory(id);
     this.db.prepare('DELETE FROM memories WHERE id = ?').run(id);
     return current;
   }
@@ -257,12 +259,11 @@ export class MemoryStore {
 
   /** `/octocode memory auto on|off`, shared by every session (the environment can still turn it off). */
   autoSetting(): boolean {
-    const row = this.db.prepare('SELECT value FROM meta WHERE key = ?').get(SETTING_AUTO) as Row | undefined;
-    return row?.['value'] !== 'off';
+    return readMeta(this.db, SETTING_AUTO) !== 'off';
   }
 
   setAutoSetting(on: boolean): void {
-    this.db.prepare('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(SETTING_AUTO, on ? 'on' : 'off');
+    writeMeta(this.db, SETTING_AUTO, on ? 'on' : 'off');
   }
 }
 

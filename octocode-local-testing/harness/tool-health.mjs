@@ -52,7 +52,9 @@ const selected = args.find(a => !a.startsWith('--'))?.split(',');
 const CONCURRENCY = 8;
 /** Non-page leads executed per explored seed, and the page cap of one walk. */
 const MAX_CALLS = DEEP ? 40 : 6;
-const MAX_PAGES = DEEP ? 40 : 12;
+// Pages per walk: a runaway guard, not a size bound. The 3,000-line patch
+// fixture takes about 12 pages at the default 20,000-char page.
+const MAX_PAGES = DEEP ? 40 : 24;
 /** A calm machine's CLI invalid-input round trip; above it the latency budget scales, up to MAX_LOAD_FACTOR. */
 const CALM_CLI_MS = 500;
 const MAX_LOAD_FACTOR = 4;

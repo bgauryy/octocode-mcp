@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync } from 'node:fs';
-import { dirname, join, relative } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync } from 'node:fs';
+import { dirname, join, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { checkSkill, checkStartup, digest, payloadFiles, payloadDigest, python, runRuntime, runtimeInfo } from './artifact-checks.mjs';
 
 export function packRuntime(root, { timeoutMs = 10000 } = {}) {
@@ -34,7 +34,9 @@ export function packRuntime(root, { timeoutMs = 10000 } = {}) {
     const workspace = join(staging, 'workspace'); mkdirSync(workspace);
     const database = join(workspace, 'state.sqlite');
     const flags = ['--workspace', workspace, '--database', database];
-    const call = args => JSON.parse(runRuntime(entry, [...args, ...flags], { timeout: timeoutMs }));
+    // The smoke database registers itself under the Octocode home; keep that out of the real one.
+    const env = { ...process.env, OCTOCODE_HOME: join(staging, 'octocode-home') };
+    const call = args => JSON.parse(runRuntime(entry, [...args, ...flags], { timeout: timeoutMs, env }));
     const agent = call(['join', '{"name":"package-check","vendor":"generic"}']);
     if (!agent.id || call(['peers']).items?.[0]?.id !== agent.id || call(['db', 'info']).compatible !== true) throw Error('Extracted runtime database smoke failed.');
     call(['leave', '--session', agent.id]);
@@ -46,6 +48,8 @@ export function packRuntime(root, { timeoutMs = 10000 } = {}) {
     return { archive, sha256: digest(archive), format: 'portable-python', runtime, runtimeSha256, verifiedPlatform: process.platform, verification, launcher };
   } finally { rmSync(staging, { recursive: true, force: true }); }
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// argv[1] keeps a symlinked path while import.meta.url is the real path, so compare real paths.
+const realOrSelf = p => { try { return realpathSync(p); } catch { return resolve(p); } };
+if (process.argv[1] && realOrSelf(process.argv[1]) === realOrSelf(fileURLToPath(import.meta.url))) {
   console.log(JSON.stringify(packRuntime(dirname(dirname(fileURLToPath(import.meta.url))))));
 }

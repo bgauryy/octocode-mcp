@@ -1,30 +1,13 @@
 # Publishing `@octocodeai/octocode-native`
 
-This package owns one distribution for two artifacts on six platforms:
+This package ships two artifacts on six platforms:
 
-- the native CLI (binary file `octocode`; npm bin `octocode-native`, so the `octocode` command stays the launcher's);
-- `NativeRuntime` addon exposed by `.` and `./runtime`.
+- the native CLI (file `octocode`, `octocode.exe` on Windows; npm bin `octocode-native`, so the `octocode` command stays the launcher's);
+- the `NativeRuntime` addon (`octocode-native.<platform>.node`), exposed by `.` and `./runtime`.
 
-Five internal Rust crates compile into the same two artifacts; no Rust crate is published to a Cargo registry.
+The six internal Rust crates compile into those two artifacts; none is published to a Cargo registry. Release order, version bumps, and gates for the whole release line: [release guide](../../../skills-dev/octocode-dev/docs/RELEASE.md).
 
-## Package map
-
-```text
-packages/octocode-native/
-├── Cargo.toml
-├── crates/runtime/             pure runtime library
-├── crates/cli/                 CLI
-├── crates/runtime-napi/        runtime Node adapter
-├── crates/github/              GitHub protocol services
-├── crates/engine/              reusable primitives (Rust library)
-├── js/                         runtime loader/types
-├── bin/                        Node launchers
-├── npm/<platform>/             two release artifacts per platform
-├── scripts/                    build, copy, size, and version checks
-└── package.json
-```
-
-Supported platform suffixes are:
+## Platforms
 
 | Suffix | Rust target |
 |---|---|
@@ -37,42 +20,20 @@ Supported platform suffixes are:
 
 ## Build
 
-For the current host during development:
-
 ```sh
-yarn workspace @octocodeai/octocode-native build:dev
+yarn workspace @octocodeai/octocode-native build:dev                  # host, dev profile
+yarn workspace @octocodeai/octocode-native build                      # host, release profile
+yarn workspace @octocodeai/octocode-native build:target darwin-arm64  # one platform, release
+yarn workspace @octocodeai/octocode-native build:all                  # all six, concurrently (--jobs N)
 ```
 
-Every build script runs `scripts/build-native.cjs`. It builds both host crates
-in one Cargo invocation, then stages atomically: CLI binaries and the runtime
-addon into `npm/<platform>/`, the addon also into the package root. `build` is
-the same in release mode.
+Every script runs `scripts/build-native.cjs`, which builds both host crates (`octocode-cli`, `octocode-runtime-napi`) in one Cargo invocation with the committed lockfile, then stages atomically: the binary and the addon into `npm/<platform>/`, and the host addon also into the package root, where the local launcher and MCP server load it. Staging replaces each file's inode instead of overwriting it in place, so a running MCP server that has the addon mapped does not crash. Target builds use `target/platforms/<platform>/`; Linux targets cross-link with cargo-zigbuild and zig, Windows with cargo-xwin. The internal library `octocode_runtime_napi` is staged as `octocode-native.<platform>.node`. Darwin staging re-signs the addon ad hoc. When the target is the host, staging loads the addon and runs the binary in a subprocess.
 
-For one release target:
+A cross-built artifact is not runtime proof. CI builds no native artifacts; on a machine of each platform, `npm/<platform>/octocode --version` must print the package version.
 
-```sh
-yarn workspace @octocodeai/octocode-native build:target darwin-arm64
-```
+## Version
 
-The platform argument is one of `darwin-arm64`, `darwin-x64`, `linux-arm64-gnu`, `linux-x64-gnu`, `linux-x64-musl`, `win32-x64-msvc`.
-
-For a complete release matrix (platforms build concurrently, each in
-`target/platforms/<platform>/`; Linux targets cross-link with cargo-zigbuild and
-Windows with cargo-xwin, mirroring napi's `--cross-compile`):
-
-```sh
-yarn workspace @octocodeai/octocode-native build:all
-```
-
-`build:target <platform>` produces and stages all three artifacts using the committed lockfile. The internal runtime adapter library is named `octocode_runtime_napi`; staging preserves the published `octocode-native.<platform>.node` filename. Darwin staging replaces linker-generated ad-hoc addon signatures with fresh ad-hoc signatures. When the target matches the host, staging loads the addon and runs the CLI in a subprocess immediately.
-
-Cross-target presence is not runtime proof. CI builds no native artifacts; runtime proof is `npm/<platform>/octocode --version` (it must print the package version) run on a machine of that platform.
-
-## Version contract
-
-The coordinator, all six platform packages, and all five internal Rust crates use one version. Rust crates inherit `workspace.package.version`; Cargo metadata supplies the membership and resolved versions for validation.
-
-Bump the version before building release artifacts: `version` in `package.json` and every `npm/*/package.json`, the exact `optionalDependencies` pins, and `workspace.package.version` in `Cargo.toml`; then `cargo metadata --offline` updates `Cargo.lock` without regenerating it. A binary built before the bump reports the old version, so build after it. Do not hand-publish mixed root/platform versions: exact optional dependencies intentionally turn a mismatch into a loader failure rather than silently selecting another ABI.
+The root package, the six platform packages, and the Rust workspace (`workspace.package.version` in `Cargo.toml`) share one version, and the root pins each platform package exactly in `optionalDependencies`, so a mismatch fails to load instead of selecting another ABI. Bump and build in the order the [release guide](../../../skills-dev/octocode-dev/docs/RELEASE.md#before-row-2) gives: a binary built before the bump reports the old version.
 
 ## Preflight
 
@@ -84,28 +45,11 @@ yarn workspace @octocodeai/octocode-native verify
 npm pack --dry-run --workspace @octocodeai/octocode-native
 ```
 
-Required evidence:
+Before publishing, confirm that all 12 artifacts exist, the host addon loads, each staged binary prints the package version on its own platform, and the dry-run tarballs hold only release files. Platform packages have no `prepublishOnly` hook. The generated-contract provenance test needs a clean, current Core source receipt; never regenerate it to hide a dirty source tree.
 
-- Rust formatting, clippy, type checks, and tests pass (including GitHub protocol, CLI, and runtime adapter tests);
-- Node runtime tests pass;
-- all 18 artifacts exist;
-- the host addon loads;
-- each staged `npm/<platform>/octocode --version` prints the package version on its matching runner;
-- dry-run tarballs contain only intended release files.
+## Canary and promotion
 
-The generated-contract provenance test also requires a clean, current Core source receipt. Do not regenerate a provenance receipt merely to hide a dirty source tree.
-
-## Publish order
-
-Use a prerelease version and dist-tag first.
-
-1. Publish all six platform packages.
-2. Publish `@octocodeai/octocode-native` at the exact same version.
-3. Install from the registry in clean platform-specific jobs.
-4. Publish canary CLI and MCP consumers with exact native dependencies.
-5. Promote platform packages, then the root package, then consumers.
-
-Example platform loop after all platform artifacts have been collected and verified:
+Publish a prerelease under a dist-tag first: the six platform packages, then the root at the same version, then the consumers.
 
 ```sh
 for platform in darwin-arm64 darwin-x64 linux-arm64-gnu linux-x64-gnu linux-x64-musl win32-x64-msvc; do
@@ -114,22 +58,16 @@ done
 npm publish packages/octocode-native --access public --tag next
 ```
 
-Platform packages have no `prepublishOnly` hook; check the staged binaries yourself before publishing.
-
-## Registry acceptance
-
-On every supported platform, install from the registry rather than from the workspace and verify:
+On every platform, install from the registry, not the workspace, and check:
 
 ```sh
 node -e "const n=require('@octocodeai/octocode-native/runtime'); const r=new n.NativeRuntime(); console.log(r.abiVersion); r.close()"
 npx @octocodeai/octocode-native@next --version
-npx @octocodeai/octocode-native@next catalog
+npx @octocodeai/octocode-native@next schema
 ```
 
-Also run direct CLI, Node launcher, and real stdio MCP smoke paths.
+Also run the Node launcher and a real stdio MCP call. Then promote the platform packages, the root, and the consumers, in that order.
 
 ## Rollback
 
-npm artifacts are immutable. Record previous dist-tags before promotion. If a canary fails, leave `latest` unchanged and publish a corrected prerelease. If a promoted release fails, first restore consumer dist-tags, then restore the native root and platform tags where dependency constraints permit. Keep failed artifacts available for reproduction.
-
-Pre-consolidation `@octocodeai/octocode-engine` versions remain on npm for old consumers, but this repository no longer publishes that package or any engine addon.
+npm artifacts are immutable. Record the dist-tags before promotion. If a canary fails, leave `latest` unchanged and publish a corrected prerelease. If a promoted release fails, restore the consumers' dist-tags first, then the root and platform tags where the exact pins allow. Keep failed artifacts for reproduction.

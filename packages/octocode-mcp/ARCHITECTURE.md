@@ -29,29 +29,29 @@ missing or invalid, startup fails closed.
 
 ## Tool registration
 
-The canonical/native catalog contains sixteen tools. MCP can register thirteen
-read tools when all availability gates pass; it registers only the available
-subset. `ghCloneRepo`, `astTopology` and `astRewrite` are CLI-only (core policy
-`cliOnly`; `OCTOCODE_BETA` gates the last two on the CLI): the native catalog
-marks them `unavailableReason: "cliOnly"` on MCP and rejects direct calls, and
-`clasify` requires a nonblank `OCTOCODE_CLASSIFICATION_API`.
+The native catalog has sixteen tools. On MCP the runtime marks the CLI-only
+`ghCloneRepo` and `astTopology` `unavailableReason: "cliOnly"` and refuses
+direct calls; `astRewrite` is parked (`disabled`) on every surface; `clasify`
+needs `OCTOCODE_BETA` and a nonblank `OCTOCODE_CLASSIFICATION_API`. That leaves
+twelve tools by default and thirteen with `clasify`.
 
-`createNativeMcp()` constructs one `NativeRuntime` and reads its configured
-`catalog()` without contacting the classification provider. A real semantic
-call reports typed provider errors and can succeed later in the same MCP
-session after provider recovery. The adapter omits tools with
-`available: false`; this keeps default-off tools out of MCP discovery. For
-every available tool, it:
+`createNativeMcp()` constructs one `NativeRuntime`, checks its ABI version and
+contract fingerprint, and reads `catalog()` without contacting the
+classification provider. It skips tools with `available: false`. For every
+available tool, it:
 
 1. looks up the matching core-owned tool definition;
 2. registers its title, description, core-authored annotations (such as
    `readOnlyHint`), and core's published input schema as a pass-through
    Standard Schema: the SDK advertises the JSON schema and does not validate;
-   MCP discovery omits output schemas while tool results remain structured;
-3. forwards the raw arguments to `NativeRuntime.executeMcp()`, which normalizes
-   and validates them once against the canonical contract and returns the
-   repair message for a rejected call;
+   `tools/list` carries no output schemas, while results stay structured;
+3. forwards the raw arguments to `NativeRuntime.executeMcp()`, which validates
+   them once against the canonical contract and returns the repair message for
+   a rejected call;
 4. forwards MCP cancellation to `NativeRuntime.cancel()`.
+
+Tools named in `mcp.deferred` (`OCTOCODE_DEFER_TOOLS`) stay available but leave
+`tools/list`; one `run` tool executes them from a `{tool, query}` lead.
 
 A catalog entry without a matching registration schema is a startup error. This
 prevents the advertised native catalog and the MCP surface from drifting.
@@ -74,11 +74,10 @@ host metadata to server registration.
 `startNativeMcp()` connects `StdioServerTransport`. Its returned `close()` method
 is idempotent and closes the native runtime before the transport. The native
 runtime owns request admission, cancellation, worker cleanup, caches, LSP
-clients, and other execution resources. MCP constructs that runtime with a
-300-second execution deadline, matching CLI and staying strictly above the
-configured cold-start-plus-one-request budget: initialize, Java's 120-second
-readiness wait, request retries, retry delays, and transport overhead. The same
-outer cap still bounds multi-request hierarchy traversals.
+clients, and other execution resources, including the 300-second per-request
+execution budget every surface shares. On SIGINT, SIGTERM or stdin end, the
+server cancels in-flight requests and exits after the runtime closes, or after
+a 10-second grace period.
 
 ## Distribution
 

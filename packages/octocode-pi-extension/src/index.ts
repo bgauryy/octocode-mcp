@@ -2,6 +2,7 @@ import { VERSION, type ExtensionAPI, type ExtensionContext, type ToolCallEvent }
 import { minimumPiVersion, versionBelow } from './shared/package.js';
 import { registerApi } from './api/register.js';
 import { registerExternal } from './external/register.js';
+import { externalPermissionDialog } from './external/permission-dialog.js';
 import type { ExternalAgents } from './external/manager.js';
 import type { MessageEnvelope } from './shared/messages.js';
 import { registerAskUser } from './ask/tool.js';
@@ -16,17 +17,16 @@ import { FileGuard, registerFileTool } from './files/tool.js';
 import { registerMcpCommand } from './mcp/command.js';
 import { registerOctocodeMcp } from './mcp/octocode.js';
 import { envFlag, SUBAGENT_ENV } from './shared/env.js';
-import { redactSecrets, visibleControls } from './shared/sanitize.js';
 import { Permission } from './permission/ask.js';
 import { registerPermissionCommand } from './permission/command.js';
 import { permissionGate, type GateVerdict } from './permission/gate.js';
 import { PROFILE_DECLARABLE } from './permission/mode.js';
 import { createProvenance } from './permission/provenance.js';
-import { catastrophicCommand } from './permission/shell.js';
-import { pruneSnapshots } from './shared/snapshot.js';
+import { pruneSnapshots } from './permission/snapshot.js';
+import { userBashGate } from './permission/user-bash.js';
 import { Subcommands } from './shared/commands.js';
 import { projectTrust, registerTrustCommand } from './shared/trust.js';
-import { errorMessage, firstLine, settleWithin } from './shared/util.js';
+import { errorMessage, firstLine, MINUTE_MS, settleWithin } from './shared/util.js';
 import { plural, stopRowTimers } from './shared/render.js';
 import { forgetCheck, recordCheck, withDialog } from './shared/locks.js';
 import { registerSkills } from './skills.js';
@@ -57,10 +57,16 @@ import { windowsTree } from './shared/winhelper.js';
  * and compaction; Octocode adds guarded file edits, the Octocode MCP server (its own
  * MCP client), subagents, web and browser tools, askUser and a focused prompt.
  *
- * Cross-cutting runtime policy is composed here, once, in an order that reads top to bottom: the `tool_call` gate
- * pipeline (invariants, hooks, then the permission mode; every refusal and call is audited), the hold that keeps a headless run open for its background work,
- * and the confirmation before a session switch stops that work. Domains supply the pieces (a gate, a `settle()`, a
- * count); none registers its own handler for these events.
+ * Cross-cutting runtime policy is composed here, in an order that reads top to bottom: the `tool_call` gate pipeline
+ * (invariants, hooks, then the permission mode; every refusal and call is audited; no domain registers its own
+ * `tool_call` handler), the hold that keeps a headless run open for its background work, and the confirmation before a
+ * session switch or fork stops that work. Domains supply the pieces (a gate, a `settle()`, a count). Pi runs an event's
+ * handlers in registration order, and two events also have domain handlers whose order matters:
+ * - `session_before_fork`: the leave confirmation here runs before the checkpoint file-restore offer
+ *   (`files/checkpoint-command`), because it is registered before `registerCheckpoints`.
+ * - `agent_before_settle`: the Stop hook continuation (`hooks/register`) and the too-large retry
+ *   (`compaction/register`) are registered before the headless hold at the end of this function, so a continued or
+ *   retried run is decided before the hold waits for background work.
  *
  * Every user command is a subcommand of `/octocode` (`agents`, `hooks`, `api`, `permission`, `rewind`, `jobs`, …) and is
  * listed by `/octocode help`. The frequent ones also get a top-level shortcut, all aliased here from `SHORTCUTS` (only
@@ -170,21 +176,7 @@ export default function octocode(pi: ExtensionAPI): void {
         });
         if (!checked.allowed) throw new Error(checked.message);
       },
-      permission: (ctx) => async (request, signal) => {
-        const cancelled = { outcome: { outcome: 'cancelled' as const } };
-        if (!interactive(ctx, false) || signal.aborted) return cancelled;
-        const options = request.options.filter((option) => option.kind === 'allow_once' || option.kind === 'reject_once');
-        if (options.length === 0) return cancelled;
-        return withDialog(async () => {
-          if (signal.aborted) return cancelled;
-          const labels = options.map((option, index) => `${index + 1}. ${visibleControls(option.name)}`);
-          const title = `External agent permission\n${visibleControls(redactSecrets(JSON.stringify(request.toolCall, null, 2)))}`;
-          const selected = await ctx.ui.select(title, labels, { signal });
-          if (signal.aborted) return cancelled;
-          const index = selected ? labels.indexOf(selected) : -1;
-          return index < 0 ? cancelled : { outcome: { outcome: 'selected' as const, optionId: options[index]!.optionId } };
-        }, signal);
-      },
+      permission: externalPermissionDialog,
     });
     permission.onRevoke(() => { void external?.reset(); });
   }
@@ -253,38 +245,8 @@ export default function octocode(pi: ExtensionAPI): void {
   });
   pi.on('tool_execution_end', async (event) => forgetCheck(event.toolCallId));
 
-  // The user's own `!cmd`: typing it is consent, so it runs and is recorded. A PreToolUse hook that blocks it still
-  // refuses it, in every mode (audited, naming the hook), as it does an agent's call. In manual and workspace a
-  // destructive command or one a hook asks about still asks, through the same permission check (audited, with its
-  // reason lines); in full it runs. With no UI to ask in, the matrix decides. Pi runs a `!cmd` in its bash shell on every
-  // platform (`executeBash` → `getShellConfig`: Git Bash on Windows, never PowerShell; that is the `powershell` tool's), so
-  // the bash rules classify it.
-  pi.on('user_bash', async (event, ctx) => {
-    const call = { type: 'tool_call', toolCallId: 'user-bash', toolName: 'bash', input: { command: event.command } } as ToolCallEvent;
-    const refusal = (message: string) => ({ result: { output: `Refused: ${visibleControls(message)}`, exitCode: undefined, cancelled: true, truncated: false } });
-    const verdict = await hooks.preToolUse(call, ctx);
-    if (verdict?.block) {
-      const reason = verdict.reason ?? 'Blocked by a PreToolUse hook.';
-      permission.refused([`bash ${JSON.stringify(call.input)}`], reason, 'bash');
-      return refusal(reason);
-    }
-    const hook = verdict?.ask;
-    const destructive = catastrophicCommand(event.command, ctx.cwd) !== undefined;
-    if (!destructive && !hook) {
-      permission.typed(event.command, ctx.cwd);
-      return undefined;
-    }
-    const checked = await permission.check(ctx, {
-      ...(destructive ? { action: 'shell.destructive' as const } : {}),
-      title: destructive ? 'Run this destructive command?' : 'Run this command?',
-      what: [event.command, `cwd: ${ctx.cwd}`],
-      purpose: '',
-      cwd: ctx.cwd,
-      ...(hook ? { reasons: ['hook.ask' as const], reason: hook } : {}),
-      ...(ctx.signal ? { signal: ctx.signal } : {}),
-    });
-    return checked.allowed ? undefined : refusal(checked.message);
-  });
+  // The user's own `!cmd`: the hooks and the permission check decide, as for an agent's `bash` call (`permission/user-bash`).
+  pi.on('user_bash', userBashGate({ permission, preToolUse: hooks.preToolUse }));
 
   // Headless runs (print, JSON, subagents) end with the agent's run, which would lose background work before it reports:
   // hold the run until bash jobs and background subagents finish (their reports arrive as one more turn). An interactive
@@ -296,7 +258,7 @@ export default function octocode(pi: ExtensionAPI): void {
     // No time cap of its own: jobs without a timeout are stopped, timed jobs end at their timeout, and a subagent's
     // watchdog bounds it by its calls' deadlines; an interrupt ends the wait. Job and child handles are unref'd, so a
     // ref'd timer keeps the process alive until their reports arrive.
-    const keepAlive = setInterval(() => undefined, 60_000);
+    const keepAlive = setInterval(() => undefined, MINUTE_MS);
     try {
       await settleWithin(Promise.all([jobs.settle(), agents?.settle()]), undefined, stop);
     } finally {

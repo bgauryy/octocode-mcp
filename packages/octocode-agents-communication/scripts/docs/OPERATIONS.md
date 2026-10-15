@@ -78,13 +78,14 @@ For a native binding, supply its actual current transport, endpoint and native s
 
 An unacknowledged stage remains fenced. An unchanged attach under a live owner leaves its stage intact; a binding change remains blocked. Simply restarting the managed process does not bypass these guards. Completed historical uncertainty remains preserved without appearing as an unacknowledged queue fault in `health`.
 
+### Storage errors
 
 | Error | Cause and recovery |
 | --- | --- |
 | `Workspace repository changed since this path first joined this database` | The path now belongs to another repository (for example after `git init`). Its scope is immutable; bind the path to a new `--database` file. The old store stays readable. |
 | `This database uses WAL; upgrade Python…` | A newer SQLite created the store in WAL mode. Run every writer and hook with that Python through `OCTOCODE_PYTHON`. |
 
-Presence and lease renewal: [host setup](HOST_SETUP.md). Guarded edits stop on
+Presence and lease renewal: [workflow](WORKFLOW.md#presence-and-lease-expiry). Guarded edits stop on
 expired identity, missing coverage or failed renewal ([guards](HOST_LEASE_GUARDS.md)).
 Before restoring, stop delivery owners and confirm no process uses the DB. Rehearse
 recovery at a new path; never overwrite a live store.
@@ -133,6 +134,5 @@ all workers stop. Hot paths use [indexes](DB.md#lookup-indexes).
   full batch was removed. `leave` deletes an identity's leases and subscriptions and releases pending claims; a
   crashed identity keeps subscriptions for `resume`.
 - `db export '{"path":"/absolute/new.sqlite"}'`: verified, non-overwriting full
-  snapshot of all workspaces including committed WAL. It excludes document files; back up their recorded paths separately.
-  New Git documents use `<git-common-dir>/octocode-communication/`; non-Git documents use `<workspace>/.octocode/communication/`. See
-  [DB export](DB.md#cleanup-and-conformance).
+  snapshot of all workspaces including committed WAL. It excludes document files;
+  back up their [recorded paths](DB.md#shared-handoff-documents) separately.

@@ -3,13 +3,12 @@ import type { AgentToolResult, MessageRenderer, Theme, ToolRenderResultOptions }
 import { Box, type Component } from '@earendil-works/pi-tui';
 import { fencedParts } from '../shared/fence.js';
 import { formatCost, formatDuration, formatTokenUsage, shortPath } from '../shared/format.js';
-import { clip, timingOf, plural, resultBlock, toolHeader, type RenderContext } from '../shared/render.js';
-import { sanitizeTerminalText } from '../shared/sanitize.js';
+import { bodyLines, clip, timingOf, plural, resultBlock, toolHeader, type RenderContext } from '../shared/render.js';
 import { contentText, isRecord } from '../shared/util.js';
 import type { ReportStatus } from './report.js';
 
 /**
- * How the `agent` tool and a background subagent's report message are drawn: `● Agent(profile · goal) · 38s`, then live
+ * How the `agent` tool and a background subagent's report message are drawn: `● Agent(goal · model) · 38s`, then live
  * progress while it runs and `⎿ Done (name · 4 tool calls · ↑12k (80% cached) ↓2k · ≈$0.12 · 38s)` with the answer once it finishes. The row
  * stays one short line; the full prompt the agent was given shows in the expanded view, above its progress or report.
  */
@@ -36,7 +35,6 @@ export interface RunDetails {
   cost: number;
   unpriced: boolean;
   startedAt: number;
-  seconds?: number;
   /** waiting: for a free slot; running: foreground, still working; background: returned at once, the report arrives as a message. */
   status: 'waiting' | 'running' | 'background' | 'done' | 'failed';
   /** The child waits for the user's answer to one of its dialogs (shown in this session). */
@@ -56,7 +54,7 @@ export interface RunDetails {
 /** What the background-result message carries for its renderer: the outcome, not parsed back out of the text. */
 export interface ResultDetails {
   id: string;
-  /** Its role and its goal, as the call header shows them (absent in a report saved before they existed). */
+  /** Its role and its goal. */
   profile?: string;
   goal?: string;
   status: 'done' | 'failed' | 'stopped';
@@ -91,15 +89,18 @@ function runStats(details: Progress, ...extra: string[]): string {
   return [details.id, plural(details.toolCalls, 'tool call'), deniedLabel(details), formatTokenUsage(details), formatCost(details), ...extra, modelLabel(details)].filter(Boolean).join(' · ');
 }
 
+export const capitalize = (text: string): string => `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
+
 /** `Done (inky-kraken · 4 tool calls · ↑12k (80% cached) ↓2k · ≈$0.12 · 38s · provider/id)`; `Blocked (…)` when the report says so. */
 export function doneSummary(details: Progress & Pick<RunDetails, 'outcome'>, durationMs: number | undefined): string {
-  const label = details.outcome ? `${details.outcome.charAt(0).toUpperCase()}${details.outcome.slice(1)}` : 'Done';
+  const label = details.outcome ? capitalize(details.outcome) : 'Done';
   return `${label} (${runStats(details, durationMs === undefined ? '' : formatDuration(durationMs, true))})`;
 }
 
 interface AgentArgs {
   task?: string | undefined;
   goal?: string | undefined;
+  /** Not drawn: the row names the run by its goal; `/agents` and `coordinate list` show the role. */
   profile?: string | undefined;
   model?: string | undefined;
   background?: boolean | undefined;
@@ -113,17 +114,18 @@ const argsOf = (context: RenderContext): AgentArgs => (isRecord(context.args) ? 
  * text comes from the model and may carry escape sequences; it is sanitized here.
  */
 function promptPreface(theme: Theme, task: string | undefined, next: string | undefined): string[] {
-  const rows = sanitizeTerminalText(task ?? '').replace(/\t/g, '   ').split('\n');
-  while (rows.length > 0 && rows.at(-1)!.trim() === '') rows.pop();
-  while (rows.length > 0 && rows[0]!.trim() === '') rows.shift();
+  const rows = bodyLines(task ?? '');
   if (rows.length === 0) return [];
   const heading = (text: string) => theme.fg('accent', theme.bold(text));
   return [heading('Prompt'), ...rows.map((row) => theme.fg('muted', row)), ...(next ? ['', heading(next)] : [])];
 }
 
-/** `implementer · audit auth token refresh · gpt-5 · isolated`: what the row says about the run, never the prompt. */
+/** Characters of the goal a row shows. */
+const GOAL_ROW_CHARS = 60;
+
+/** `audit auth token refresh · gpt-5 · isolated`: what the row says about the run, never the prompt or the profile. */
 function runLabel(args: AgentArgs): string {
-  return [args.profile ?? 'general', args.goal ? clip(args.goal, 60) : '', args.model ? clip(args.model, 40) : '', args.isolate ? 'isolated' : ''].filter(Boolean).join(' · ');
+  return [args.goal ? clip(args.goal, GOAL_ROW_CHARS) : '', args.model ? clip(args.model, 40) : '', args.isolate ? 'isolated' : ''].filter(Boolean).join(' · ');
 }
 
 export function renderAgentCall(args: AgentArgs, theme: Theme, context: RenderContext): Component {
@@ -180,7 +182,7 @@ export const renderAgentMessage: MessageRenderer = (message, { expanded, outputP
   const context = { isPartial: false, isError: details.status === 'failed' || stopped, expanded, state: stopped ? { stopped: true } : {} };
   // Pi draws custom messages flush left; pad them like a tool row.
   const box = new Box(outputPad ?? 1, 0);
-  box.addChild(toolHeader(theme, context, 'Agent', [details.id ?? 'background', details.profile, details.goal && clip(details.goal, 60)].filter(Boolean).join(' · '), details.durationMs === undefined ? { meta: 'background' } : { meta: 'background', durationMs: details.durationMs }));
+  box.addChild(toolHeader(theme, context, 'Agent', [details.id ?? 'background', details.goal && clip(details.goal, GOAL_ROW_CHARS)].filter(Boolean).join(' · '), details.durationMs === undefined ? { meta: 'background' } : { meta: 'background', durationMs: details.durationMs }));
   box.addChild(resultBlock(theme, context, { summary: details.summary ?? head, body: report, stopped, prefaceLabel: 'prompt', preface: promptPreface(theme, details.task, report.trim() ? 'Report' : undefined) }));
   return box;
 };

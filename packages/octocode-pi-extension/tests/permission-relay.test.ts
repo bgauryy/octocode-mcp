@@ -4,7 +4,7 @@ import { ALLOW_ONCE, DENY, DENY_NOTE, NEEDS_APPROVAL, Permission } from '../src/
 import { AUDIT_NOTIFY_PREFIX, childAuditEntry, childAuditMessage } from '../src/permission/audit.js';
 import { HEADER_PREFIX, permissionHeader, redactNonce, splitHeader, type PermissionHeader } from '../src/permission/header.js';
 import type { PermissionRequest } from '../src/permission/request.js';
-import { auditLines, oneLine } from '../src/permission/effect.js';
+import { auditLines, foldLines } from '../src/permission/effect.js';
 import { ownNonce, PERMISSION_ENV, PERMISSION_NONCE_FILE_ENV, PERMISSION_RELAY_ENV } from '../src/shared/env.js';
 import { fakeCtx, fakePi } from './fake-pi.js';
 import { tmp } from './helpers.js';
@@ -163,7 +163,7 @@ describe('splitHeader', () => {
   it('accepts the audit form of a target (redacted, one line) and a trailing overflow line', () => {
     const long = ['a'.repeat(300), 'two\nlines', 'c', 'd', 'e', 'f', 'g'];
     const what = [auditLines(long)].flat();
-    const title = `${permissionHeader({ ...header, what })}\nRun it?\n${long.map((line) => `  ${oneLine(line)}`).join('\n')}`;
+    const title = `${permissionHeader({ ...header, what })}\nRun it?\n${long.map((line) => `  ${foldLines(line)}`).join('\n')}`;
     expect(splitHeader(title, NONCE).header?.what).toEqual(what);
   });
 });

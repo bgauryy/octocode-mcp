@@ -31,7 +31,7 @@ pub use types::*;
 
 #[cfg(test)]
 mod tests {
-    use super::dotenv::{apply_env, merged_env, parse_int_env};
+    use super::dotenv::{apply_env, merged_env};
     use super::resolver::resolve_env_token;
     use super::*;
     use serde_json::json;
@@ -118,31 +118,6 @@ mod tests {
             ])
         );
     }
-    /// An integer setting is the whole value or nothing: a prefix of digits
-    /// (`12ms`, `2e9`, `0x10`) or a fraction is not the number the user meant.
-    #[test]
-    fn integer_env_values_are_parsed_strictly() {
-        assert_eq!(
-            [" 42 ", "-7", "+7", "0"].map(|s| parse_int_env(Some(s))),
-            [Some(42), Some(-7), Some(7), Some(0)]
-        );
-        for garbage in [
-            "12.9",
-            "12ms",
-            "0x10",
-            "1e3",
-            "2e9",
-            "30s",
-            "--1",
-            "1 2",
-            "99999999999999999999",
-            "",
-            "  ",
-        ] {
-            assert_eq!(parse_int_env(Some(garbage)), None, "{garbage:?}");
-        }
-        assert_eq!(parse_int_env(None), None);
-    }
     #[test]
     fn config_parser_is_comment_json_not_full_json5() {
         let p = std::path::PathBuf::from("/synthetic/.octocoderc");
@@ -171,20 +146,19 @@ mod tests {
         )
     }
     #[test]
-    fn validation_covers_fractional_ranges_paths_and_warnings() {
+    fn validation_covers_types_paths_and_warnings() {
         let (ok, _) = validation::config_issues(
-            &json!({"network":{"timeout":5000.0,"maxRetries":2},"tools":{"enabled":null}}),
+            &json!({"lsp":{"prewarm":"off","autoInstall":"auto"},"tools":{"enabled":null}}),
         );
         assert!(ok.is_empty());
-        // A fraction is not an integer setting's value.
-        let (fractional, _) =
-            validation::config_issues(&json!({"network":{"timeout":5000.5,"maxRetries":2.5}}));
+        let (mistyped, _) =
+            validation::config_issues(&json!({"lsp":{"prewarm":5,"autoInstall":"sometimes"}}));
         assert_eq!(
-            fractional
+            mistyped
                 .iter()
                 .map(|issue| issue.path.as_str())
                 .collect::<Vec<_>>(),
-            vec!["network.timeout", "network.maxRetries"]
+            vec!["lsp.autoInstall", "lsp.prewarm"]
         );
         let (bad, warnings) = validation::config_issues(
             &json!({"local":{"allowedPaths":["relative","/a/../b"]},"extra":1}),
@@ -196,16 +170,15 @@ mod tests {
     fn all_fields_and_source_quirk_resolve() {
         let env = BTreeMap::from([
             ("OCTOCODE_BETA".into(), "true".into()),
-            ("REQUEST_TIMEOUT".into(), "12ms".into()),
+            ("OCTOCODE_LSP_PREWARM".into(), "sometimes".into()),
         ]);
         let out = resolve_config(&input(env, None));
         assert!(out.resolved.local.beta);
-        // `12ms` is not an integer: the setting keeps its default and says so.
-        assert_eq!(out.resolved.network.timeout, 30000);
-        assert!(
-            out.diagnostics.iter().any(|d| d.code == "invalid_env_value"
-                && d.field_path.as_deref() == Some("network.timeout"))
-        );
+        // `sometimes` is not a prewarm mode: the setting keeps its default and says so.
+        assert_eq!(out.resolved.lsp.prewarm, LspPrewarm::Targeted);
+        assert!(out.diagnostics.iter().any(
+            |d| d.code == "invalid_env_value" && d.field_path.as_deref() == Some("lsp.prewarm")
+        ));
         assert_eq!(out.source, ConfigSource::Env);
         let only = BTreeMap::from([("OCTOCODE_BETA".into(), "true".into())]);
         assert_eq!(
@@ -215,40 +188,18 @@ mod tests {
         )
     }
     #[test]
-    fn classification_max_concurrency_defaults_overrides_and_clamps() {
-        let out = resolve_config(&input(BTreeMap::new(), None));
-        assert_eq!(out.resolved.classification.max_concurrency, 10);
-        for (raw, expected) in [("4", 4), ("0", 1), ("1000", 64), ("nope", 10)] {
-            let env =
-                BTreeMap::from([("OCTOCODE_CLASSIFICATION_CONCURRENCY".into(), raw.to_owned())]);
-            assert_eq!(
-                resolve_config(&input(env, None))
-                    .resolved
-                    .classification
-                    .max_concurrency,
-                expected,
-                "OCTOCODE_CLASSIFICATION_CONCURRENCY={raw}"
-            );
-        }
-        let file = resolve_config(&input(
-            BTreeMap::new(),
-            Some("{\"classification\":{\"maxConcurrency\":3}}"),
-        ));
-        assert_eq!(file.resolved.classification.max_concurrency, 3);
-        assert_eq!(
-            get_config_value(&file.resolved, "classification.maxConcurrency"),
-            Some(json!(3))
-        );
-    }
-    #[test]
     fn invalid_field_is_dropped_alone_with_a_warning() {
         let out = resolve_config(&input(
             BTreeMap::new(),
-            Some("{\"local\":{\"enabled\":\"no\"},\"network\":{\"timeout\":5000}}"),
+            Some("{\"local\":{\"enabled\":\"no\"},\"lsp\":{\"prewarm\":\"off\"}}"),
         ));
         assert_eq!(out.source, ConfigSource::File);
         assert!(out.resolved.local.enabled, "bad field → default");
-        assert_eq!(out.resolved.network.timeout, 5000, "valid sibling kept");
+        assert_eq!(
+            out.resolved.lsp.prewarm,
+            LspPrewarm::Off,
+            "valid sibling kept"
+        );
         assert_eq!(out.diagnostics.len(), 1);
         assert_eq!(out.diagnostics[0].severity, Severity::Warning);
         assert_eq!(
@@ -300,7 +251,7 @@ mod tests {
         fs::create_dir_all(&home).expect("test fixture operation should succeed");
         fs::create_dir_all(cwd.join(".octocode")).expect("test fixture operation should succeed");
         let env = BTreeMap::from([("OCTOCODE_HOME".into(), home.to_string_lossy().into_owned())]);
-        fs::write(home.join(".octocoderc"), "{\"network\":{\"timeout\":5000}}")
+        fs::write(home.join(".octocoderc"), "{\"lsp\":{\"prewarm\":\"off\"}}")
             .expect("test fixture operation should succeed");
         let a = resolve_config(&acquire_config_input(
             env.clone(),
@@ -308,7 +259,7 @@ mod tests {
             root.path().to_path_buf(),
             RuntimeSurface::Cli,
         ));
-        fs::write(home.join(".octocoderc"), "{\"network\":{\"timeout\":6000}}")
+        fs::write(home.join(".octocoderc"), "{\"lsp\":{\"prewarm\":\"all\"}}")
             .expect("test fixture operation should succeed");
         let b = resolve_config(&acquire_config_input(
             env,
@@ -317,8 +268,8 @@ mod tests {
             RuntimeSurface::Cli,
         ));
         assert_eq!(
-            (a.resolved.network.timeout, b.resolved.network.timeout),
-            (5000, 6000)
+            (a.resolved.lsp.prewarm, b.resolved.lsp.prewarm),
+            (LspPrewarm::Off, LspPrewarm::All)
         )
     }
     #[test]
@@ -357,7 +308,7 @@ mod tests {
     }
     #[test]
     fn source_labels_and_dot_lookup_match_reference() {
-        let file = "{\"network\":{\"timeout\":5000}}";
+        let file = "{\"lsp\":{\"prewarm\":\"off\"}}";
         assert_eq!(
             resolve_config(&input(BTreeMap::new(), None)).source,
             ConfigSource::Defaults
@@ -366,12 +317,12 @@ mod tests {
             resolve_config(&input(BTreeMap::new(), Some(file))).source,
             ConfigSource::File
         );
-        let env = BTreeMap::from([("REQUEST_TIMEOUT".into(), "6000".into())]);
+        let env = BTreeMap::from([("OCTOCODE_LSP_PREWARM".into(), "all".into())]);
         let mixed = resolve_config(&input(env.clone(), Some(file)));
         assert_eq!(mixed.source, ConfigSource::Mixed);
         assert_eq!(
-            get_config_value(&mixed.resolved, "network.timeout"),
-            Some(json!(6000))
+            get_config_value(&mixed.resolved, "lsp.prewarm"),
+            Some(json!("all"))
         );
         assert_eq!(get_config_value(&mixed.resolved, "does.not.exist"), None);
         assert_eq!(resolve_config(&input(env, None)).source, ConfigSource::Env)

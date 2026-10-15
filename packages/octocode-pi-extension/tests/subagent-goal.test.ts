@@ -91,12 +91,13 @@ describe('the agent tool\'s goal', () => {
     expect(s.sent[0]!.message.content).toMatch(new RegExp(`^Background subagent ${id} \\(reviewer: ${GOAL}\\) finished \\(`));
     expect(s.sent[0]!.message.details).toMatchObject({ id, goal: GOAL, profile: 'reviewer' });
     const shown = rendered(s.renderers.get('octocode-agent-result')(s.sent[0]!.message, { expanded: false }, theme));
-    expect(shown).toContain(`Agent(${id} · reviewer · ${GOAL})`);
+    expect(shown).toContain(`Agent(${id} · ${GOAL})`);
+    expect(shown.split('\n')[0]).not.toContain('reviewer');
     expect(shown).toContain(`Done (${id} · 1 tool call`);
   });
 
-  it('draws the call as role and goal, and the running result with the name', async () => {
-    expect(rendered(renderAgentCall({ task: 'x', goal: GOAL, profile: 'reviewer' }, theme, {} as never))).toBe(`○ Agent(reviewer · ${GOAL})`);
+  it('draws the call as the goal, without the role, and the running result with the name', async () => {
+    expect(rendered(renderAgentCall({ task: 'x', goal: GOAL, profile: 'reviewer' }, theme, {} as never))).toBe(`○ Agent(${GOAL})`);
     expect(rendered(renderAgentCall({ goal: 'a\u001b[2Jb' }, theme, {} as never))).not.toContain('\u001b');
     const s = setup();
     const partial = rendered(s.agent.renderResult({ content: [{ type: 'text', text: 'working' }], details: { id: 'inky-kraken', profile: 'reviewer', goal: GOAL, toolCalls: 1, activity: [], input: 0, output: 0, startedAt: 0, status: 'running' } }, { isPartial: true, expanded: false }, theme, { isError: false }));

@@ -2,10 +2,10 @@
 // Transparent JEV transport accounting, including availability probes and failures.
 // No source bodies, credentials, answers, or request headers are persisted.
 import { createServer } from 'node:http';
-import { appendFileSync, mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { appendFileSync, mkdirSync, realpathSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const reportedCount = value => Number.isSafeInteger(value) && value >= 0 ? value : null;
@@ -100,7 +100,9 @@ export async function startProxy({ endpoint, key, log, timeoutMs = 30000, allowL
   };
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+// argv[1] keeps a symlinked path while import.meta.url is the real path, so compare real paths.
+const realOrSelf = p => { try { return realpathSync(p); } catch { return resolve(p); } };
+if (process.argv[1] && realOrSelf(process.argv[1]) === realOrSelf(fileURLToPath(import.meta.url))) {
   const index = process.argv.indexOf('--log');
   if (index < 0 || !process.argv[index + 1]) throw new Error('Usage: classification_proxy.mjs --log <path>');
   const host = process.env.OCTOCODE_CLASSIFICATION_API_HOST ?? 'https://api.typesafe.ai';

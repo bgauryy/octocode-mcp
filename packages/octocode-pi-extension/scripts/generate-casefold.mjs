@@ -9,6 +9,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isMain } from './is-main.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 export const SOURCE = path.join(root, '..', 'octocode-agents-communication', 'scripts', 'communication', 'unicode16.json');
@@ -31,7 +32,7 @@ export function renderCasefoldTable(table) {
   ].join('\n');
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (isMain(import.meta.url)) {
   fs.writeFileSync(TARGET, renderCasefoldTable(JSON.parse(fs.readFileSync(SOURCE, 'utf8'))));
   process.stdout.write(`wrote ${path.relative(process.cwd(), TARGET)}\n`);
 }

@@ -1,7 +1,6 @@
 # Host hook event contracts
 
-Nothing changes user-level host settings. Native shell hooks live in host configuration; OPERATING.md frontmatter installs no hooks.
-Installation, merge locations, trust, and a delivery check: [host setup](HOST_SETUP.md#install-messaging-hooks). Use `host-config --vendor claude|codex|grok|cursor` to preview settings; native delivery and hook delivery are alternatives for one identity.
+Nothing here changes user-level host settings; hooks live in host configuration, and the skill installs none. Installation, merge locations, trust and a delivery check: [host setup](HOST_SETUP.md#install-messaging-hooks). Native delivery and hook delivery are alternatives for one identity.
 
 ## Event contracts
 
@@ -26,7 +25,7 @@ Installation, merge locations, trust, and a delivery check: [host setup](HOST_SE
 
 The [server API](https://opencode.ai/docs/server/) accepts `noReply`; in [the inspected source](https://github.com/anomalyco/opencode/blob/16c56fe5ecc3305028d1f0a9cff5806e51c9d480/packages/opencode/src/session/prompt.ts) `createUserMessage` runs before the `noReply` return, so the message is stored without a model turn (passive delivery, like Codex injection). Keep DB stage/confirm/complete around it, never send peer text as a `system` override, and reply through the CLI/DB.
 
-Inspect the server's `/doc` schema first. Only literal-loopback HTTP with an explicit port is accepted; credentials and preflight: [setup](HOST_SETUP.md#setup). The [OpenCode 2 plugin API](https://opencode.ai/v2/docs/build/plugins) (`Plugin.define`) differs from v1: do not copy a v1 `experimental.chat.messages.transform` example. A plugin is optional (identity, presence, usage) when the HTTP server is reachable; without either, raw CLI/SQLite works.
+Inspect the server's `/doc` schema first. Only literal-loopback HTTP with an explicit port is accepted; credentials and preflight: [OpenCode setup](HOST_SETUP.md#connect-an-opencode-recipient). The [OpenCode 2 plugin API](https://opencode.ai/v2/docs/build/plugins) (`Plugin.define`) differs from v1: do not copy a v1 `experimental.chat.messages.transform` example. A plugin is optional (identity, presence, usage) when the HTTP server is reachable; without either, raw CLI/SQLite works.
 
 ## Failure and context policy
 

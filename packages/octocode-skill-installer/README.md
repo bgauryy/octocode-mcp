@@ -31,8 +31,7 @@ destination drift remains a conflict. `force: true` is the separate, explicit
 override for replacing such conflicts.
 
 The structured result distinguishes installed, upgraded, linked, copied,
-unchanged, conflicting, and failed actions. CLI consumers should render the shared
-platform contract with `formatSkillPlatformHelp()` instead of duplicating platform
-or alias strings.
+unchanged, conflicting, and failed actions. CLI consumers render the accepted
+platform values with `formatSkillPlatformHelp()` instead of repeating them.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for ownership and safety invariants.

@@ -6,16 +6,12 @@ Load when the host has no communication binding.
 
 ## Install the CLI and companion skill
 
-The default npm executable serves MCP. Use `/cli` for standalone operations.
-
 ```sh
-npx -y @octocodeai/octocode-agents-communication --help
-npx -y @octocodeai/octocode-agents-communication /cli --help
+npx -y @octocodeai/octocode-agents-communication --help        # MCP server
+npx -y @octocodeai/octocode-agents-communication /cli --help   # standalone operations
 ```
 
-See [entry points](INTERFACES.md) for local archive use and host configuration.
-The npm launcher needs Node.js 24.15+ (24.x) and Python 3.9+ with SQLite 3.42+ and FTS5; no pip packages are required.
-Set `OCTOCODE_PYTHON` to an absolute interpreter path if Python is not on PATH.
+Requirements: Node.js 24.15+ (24.x) for the npm launcher, and Python 3.9+ linked to SQLite 3.42+ with FTS5. No pip packages or API keys. The launcher runs `python3` (`python` on Windows); set `OCTOCODE_PYTHON` to another interpreter path in the launching process environment (it is not read from `.env` files). Route choice and lifecycle: [entry points](INTERFACES.md).
 
 The optional lean skill ships in the `octocode` package:
 
@@ -26,21 +22,13 @@ npx octocode skill install octocode-agents-communication --platform claude,codex
 Inspect the destination plan, then repeat without `--dry-run` and reload skill discovery.
 The installed skill contains guidance only; operations run through the npm CLI.
 
-For a source checkout, `yarn pack:runtime` creates a verified portable runtime archive in `out/`.
-Extract it to a stable runtime directory and invoke `scripts/agents-communication` (`.ps1` on Windows), or `python3 -B scripts/communication.py`.
-This archive contains `OPERATING.md` and `scripts/`; it is not an installable Agent Skill.
-Direct Python CLI/MCP requires no Node.js. JavaScript host adapters and edit guards require Node.js.
+From a source checkout, `yarn workspace @octocodeai/octocode-agents-communication pack:runtime` writes a verified portable archive (`OPERATING.md` and `scripts/`) to the package's `out/`. Extract it to a stable directory and run `scripts/agents-communication` (`.ps1` on Windows) or `python3 -B scripts/communication.py`. The direct Python CLI and MCP need no Node.js; the JavaScript host adapters and edit guards do. The archive is not an installable Agent Skill.
 
 ## Reuse or create the binding
 
-Reuse the identity from the host, managed MCP, or Pi extension.
-A vendor thread/session ID is separate `vendorSession` metadata. Use the exact DB identity from the receipt.
-Each independent child agent needs its own binding. A restricted tool profile is not permission to join another identity.
-All participants use one database file. Linked worktrees use their own actual checkout as `--workspace`.
-The runtime derives `coordinationScope` from Git's canonical common directory; non-Git scope is the actual workspace.
-Independent clones and unrelated projects remain separate coordination scopes.
+Reuse the identity from the host, managed MCP or Pi extension. A vendor thread or session ID is separate `vendorSession` metadata; use the exact DB identity from the receipt. Each independent child agent needs its own binding. All participants use one database file, each with its own checkout as workspace ([scope rules](DB.md#identity-and-discovery)).
 
-For raw CLI setup, replace all three paths below. Do not create one DB per participant.
+For raw CLI setup, replace both paths below; never create one database per participant.
 
 ```sh
 COMMUNICATION_WORKSPACE=/absolute/repo-or-worktree
@@ -57,22 +45,11 @@ agent binding
 agent peers
 ```
 
-On Windows, use the same npm CLI command, or the portable archive's PowerShell launcher.
-Pass JSON on stdin with `-` (for example `'{"name":"x"}' | powershell … agents-communication.ps1 join -`): Windows PowerShell 5.1 strips inner quotes from JSON arguments.
-`comm` means a workspace/DB-bound call. `agent` also supplies the current identity.
-A command accepts a JSON argument, or `-` for stdin JSON.
-`--help`, `schema`, and `skill` work before joining. `db info` creates nothing.
-Bound MCP tools take only JSON input; identity and workspace flags stay in host configuration.
+`comm` is a workspace- and database-bound call; `agent` also supplies the identity. `--help`, `schema` and `skill` work before joining, and `db info` creates nothing. On Windows, use the same npm command or the archive's PowerShell launcher, and pass JSON on stdin with `-` (for example `'{"name":"x"}' | powershell … agents-communication.ps1 join -`): Windows PowerShell 5.1 strips inner quotes from JSON arguments.
 
 ## Select host delivery
 
-For managed MCP or native attachment, read [host setup](HOST_SETUP.md).
-Managed MCP owns identity, presence, live lease renewal, and exit cleanup.
-Plain MCP borrows a host identity whose owner maintains lifecycle.
-Choose `messaging`, `review`, `editing`, or an explicit tool list.
-`run` creates a new Claude/Codex/Pi worker only on explicit request.
-A raw binding receives mail through explicit inbox reads or configured hooks.
-Skill installation does not install hooks or edit guards.
+Managed MCP, borrowed identities and hooks: [host setup](HOST_SETUP.md). A raw binding receives mail through explicit inbox reads or configured hooks; installing the skill installs no hooks or edit guards.
 
 ## Attach an existing native receiver
 
@@ -87,5 +64,4 @@ Inspect `comm schema attach` for transport-specific endpoint requirements.
 Do not invent native IDs or start a replacement worker to deliver messages.
 Use one delivery owner: listener, dispatcher, managed worker, or bridge. The runtime rejects concurrent dispatchers.
 
-For command examples, read [the command reference](COMMANDS.md).
-For sending and completing work, follow [the operating guide](../../OPERATING.md).
+Next: [command reference](COMMANDS.md) and [the operating guide](../../OPERATING.md).

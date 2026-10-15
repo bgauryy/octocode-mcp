@@ -1,19 +1,17 @@
 # Config architecture
 
-`@octocodeai/config` is the zero-runtime-dependency owner of Octocode environment and product-home policy. It is a private workspace package, never published: public packages bundle it at build time (as a `workspace:*` devDependency) and must not reimplement its rules.
+`@octocodeai/config` owns Octocode environment and product-home policy, the configuration contract, and the generated tool contract. It is a private workspace package, never published: public packages bundle it at build time (as a `workspace:*` devDependency) and must not reimplement its rules.
 
 ## Data flow
 
 ```text
-process environment
-      ├── home .env / .octocoderc · workspace .octocode/.env / .octocode/.octocoderc
-      └── workspace .octocode/.env
+process environment + home .env + workspace .octocode/.env
                  │
                  ▼
-      parse → trust policy → environment (TypeScript: `.env` only)
+      parse → protected-key policy → environment   (TypeScript: `.env` only)
                  │
-                 ├── CLI launcher / MCP server (native runtime resolves settings)
-                 └── communication skill (python/octocode_config.py: home only)
+                 ├── CLI launcher / MCP server → native runtime (also reads both .octocoderc files)
+                 └── standalone Python skills  (python/octocode_config.py: home path only)
 ```
 
 ## Declarative contract
@@ -99,12 +97,12 @@ tightening a payload shape is a core schema change, never a hand-written type.
 - Importing the library performs no environment mutation.
 - For each environment key: non-empty process value → workspace `.octocode/.env` → home `.env`. GitHub and classification credentials follow this order.
 - Workspace dotenv loads by default. Node hosts may explicitly opt out with `trusted:false`; native `trustedProject` remains separate permission for executable LSP configuration.
-- Process bootstrap keys remain blocked in both files; every declared product setting accepts both files. A present-but-blank process `OCTOCODE_CLASSIFICATION_API` remains an explicit opt-out.
+- Process bootstrap keys stay blocked in both files. Home-only keys are skipped in a workspace `.env`, except the narrowing values the contract allows. A present-but-blank process `OCTOCODE_CLASSIFICATION_API` stays an explicit opt-out.
 - Credential source priority applies across aliases before alias priority within the same source; token discovery, refresh, and storage remain native responsibilities.
 - Parsing is deterministic and does not execute shell syntax.
 - Consumers receive explicit environment objects where isolation matters.
-- The published package remains zero-runtime-dependency so it can be bundled into public packages and standalone skills without importing another policy owner. Ajv is build/test-only and is absent from `dist`.
+- The root entry uses Node builtins only, so public packages and standalone skills can bundle it without importing another policy owner; only `./schema` and `./mcp` import core. Ajv is build/test-only and is absent from `dist`.
 
 ## Distribution
 
-The package is public and versioned independently. `octocode` bundles it for self-contained delivery; build-only consumers must still declare it so workspace ordering and declaration generation are deterministic.
+Consumers declare it as a devDependency so workspace build ordering and declaration generation stay deterministic, and bundle it into their output.

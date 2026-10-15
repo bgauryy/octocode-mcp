@@ -62,6 +62,7 @@ export function toolDefinitionChars(pi: Pick<ExtensionAPI, 'getActiveTools' | 'g
       return sum + JSON.stringify({ name, description, parameters, promptGuidelines }).length;
     }, 0);
   } catch {
+    // An unserializable definition only lowers the estimate, which paces compaction and blocks nothing.
     return 0;
   }
 }
@@ -79,6 +80,7 @@ export function contextTokens(ctx: Pick<ExtensionContext, 'getContextUsage' | 'g
     const fixed = Math.ceil((ctx.getSystemPrompt().length + toolChars) / CHARS_PER_TOKEN);
     return fixed + messages.reduce((sum, message) => sum + estimateTokens(message), 0);
   } catch {
+    // Unknown size: `needsDownshiftCompaction` then starts no compaction, and the model switch goes on.
     return undefined;
   }
 }

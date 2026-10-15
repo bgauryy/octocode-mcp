@@ -101,7 +101,6 @@ stateDiagram-v2
     Stored --> Handled: manual inbox + complete
     Uncertain --> Ready: explicit inspected retry
     Staged --> Ready: explicit inspected retry
-    Submitted --> Ready: explicit inspected retry
     Ready --> Staged: new attempt token
 ```
 
@@ -119,7 +118,7 @@ Staged/submitted/uncertain attempts are never replayed on timeout ([DB.md](DB.md
 
 ## Delivery scheduling and subscriptions
 
-The wake defaults to `action` when `replyRequired` is true (and for the answer that `complete` sends), else `passive`. Use passive for FYIs. On Claude and Grok, passive mail is delivered at the recipient's next hook or turn, not pushed. Wake schedules; it does not request a reply. `replyRequired` determines the completion contract: required requests need a final answer; FYIs and answers accept acknowledgement without a reply. An unblocking answer can be actionable without requiring another answer. Action stays within the recipient's authorized task.
+The wake defaults to `action` when `replyRequired` is true (and for the answer that `complete` sends), else `passive`. Use passive for FYIs. On Claude and Grok, passive mail is delivered at the recipient's next hook or turn, not pushed. Wake schedules; it does not request a reply. `replyRequired` (carried unchanged by every adapter) determines the completion contract: required requests need a final answer; FYIs and answers accept acknowledgement without a reply. An unblocking answer can be actionable without requiring another answer. Action stays within the recipient's authorized task.
 
 Managed workers wait for eligible action mail, then take bounded pending mail in one turn. Startup carries only the assigned task; queued mail stays unstaged until that turn completes. Passive-only mail starts no inference. Managed Claude/Codex workers check their durable inbox every 100 ms, even during active turns: Claude through an owned Unix inbox socket that marks peer origin, Codex through the same named tool-output items as native delivery. Initial assignments stay user inputs. Attached adapters keep native scheduling (table above); native host policy stays authoritative. Pi defers while busy and suppresses nested wake during a starting turn; identity, heartbeat and passive context never request a turn.
 
@@ -137,8 +136,7 @@ The worker loop is in [OPERATING.md](../../OPERATING.md) and exact lease rules i
 
 ## Storage, context and telemetry
 
-SQLite stores entities, each message text once, recipient state and unified records. New Git documents live under `<git-common-dir>/octocode-communication/`; non-Git documents use `<workspace>/.octocode/communication/`.
-Existing documents retain their recorded paths with integrity-checked metadata ([DB.md](DB.md#shared-handoff-documents)).
+SQLite stores entities, each message text once, recipient state and unified records; documents live on disk ([locations](DB.md#shared-handoff-documents)).
 
 `context` is a bounded, read-only path/branch/expiry lookup with explicit pagination and an incremental cursor. It creates no message, dispatch or completion and never reads bodies for the host. Notes do not replace active questions or handoffs.
 
@@ -157,7 +155,3 @@ Outputs stay actionable and bounded: IDs, counts, owner/intent, state, evidence 
 Bound MCP message calls without `key` derive one from connection identity and JSON-RPC request ID: a same-connection repeat reuses the stored message; changed content fails. Across connections or restarts, reuse an explicit key. Pi derives the key from the host tool-call ID, scoped by sending session, so distinct calls stay distinct even with equal bodies. CLI callers that may retry choose a key before the first send. Automatic keys never deduplicate separately initiated requests.
 
 `run --trace` tool events keep `session`, `callId` and `at`, also for concurrent Codex, Claude and Pi calls; a missing upstream ID stays unknown. Events go to controller stdout and notify no peer; the directory carries collaboration context.
-
-### Reply requirements
-
-Every delivered message carries boolean `replyRequired`; native adapters keep it unchanged. Enforcement: [DB.md](DB.md#reply-requirements).

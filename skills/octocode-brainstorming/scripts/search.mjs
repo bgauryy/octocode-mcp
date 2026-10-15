@@ -4,6 +4,8 @@
  * Results are leads, not evidence: read the page and record a verbatim quote before using a claim.
  * Keys come from the process environment only and are never printed.
  */
+import { realpathSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const PROVIDERS = {
@@ -161,7 +163,9 @@ export async function search(opts, env = process.env) {
   return { providers, results };
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+// Installed skills are often symlinks: argv[1] keeps the link path while import.meta.url is the real path.
+const realOrSelf = (p) => { try { return realpathSync(p); } catch { return resolve(p); } };
+if (process.argv[1] && realOrSelf(process.argv[1]) === realOrSelf(fileURLToPath(import.meta.url))) {
   const opts = parseArgs(process.argv.slice(2));
   const ran = (opts.providers || Object.keys(PROVIDERS)).filter((n) => process.env[PROVIDERS[n].env]?.trim());
   if (!ran.length) fail('missingKey', `no provider key in the environment; set one of ${Object.values(PROVIDERS).map((p) => p.env).join(', ')}`, 1);

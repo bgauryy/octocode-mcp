@@ -143,7 +143,7 @@ impl LspSearchQuery {
     }
     pub(crate) fn graph_depth(&self) -> Option<u32> {
         match self {
-            Self::Anchored(query) => query.graph_depth.map(u32_of_signed),
+            Self::Anchored(query) => query.graph_depth.map(u32_of),
             _ => None,
         }
     }

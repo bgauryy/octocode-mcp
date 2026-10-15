@@ -51,7 +51,10 @@ describe('external ACP backend over SDK stdio', () => {
     const reply = await backend.prompt('hello; $(still literal)', { timeoutMs: 5000 });
     expect(reply.text).toBe('first\nhello; $(still literal)');
     expect(reply.stopReason).toBe('end_turn');
-    expect(reply.updates).toHaveLength(5);
+    // The reply's text chunks merge per run between other updates: text, tool call, image, text, response.
+    const kinds = reply.updates!.map((entry) => (entry as { update?: { sessionUpdate: string; content?: { type: string } }; type?: string }).update ?? { sessionUpdate: (entry as { type: string }).type });
+    expect(kinds.map((kind) => `${kind.sessionUpdate}${kind.content ? `:${kind.content.type}` : ''}`)).toEqual(['agent_message_chunk:text', 'tool_call', 'agent_message_chunk:image', 'agent_message_chunk:text', 'prompt_response']);
+    expect((reply.updates![3] as { update: { content: { text: string } } }).update.content.text).toBe('hello; $(still literal)');
     const serialized = JSON.stringify(reply.updates);
     expect(serialized).not.toMatch(/wrong-session-output|private-thought/);
     expect(serialized).toContain('image/png');

@@ -39,8 +39,10 @@ async fn cli_exit_is_two_when_any_batch_row_is_rejected() {
 #[test]
 fn cli_exit_is_zero_while_response_pages_remain() {
     let workspace = Workspace::new();
+    // 30 files of 2,000-character hits overflow the constant 20,000-character
+    // automatic page.
     let mut file = None;
-    for index in 0..10 {
+    for index in 0..30 {
         file = Some(workspace.write(&format!("src/p{index}.txt"), "needle ".repeat(400) + "\n"));
     }
     let root = file
@@ -49,10 +51,9 @@ fn cli_exit_is_zero_while_response_pages_remain() {
         .unwrap()
         .to_string_lossy()
         .into_owned();
-    let query = search(&root, json!({"pageSize":10,"matchContentLength":2000}));
+    let query = search(&root, json!({"pageSize":30,"matchContentLength":2000}));
     let output = workspace
         .cli()
-        .env("OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH", "2000")
         .args(["localSearch", &json!({"queries":[query]}).to_string()])
         .output()
         .unwrap();

@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import type { AgentDb } from '../agentdb/db.js';
+import { readMeta, writeMeta } from '../agentdb/meta.js';
 import { processStartTime } from '../shared/process.js';
 import { sanitizeTerminalText } from '../shared/sanitize.js';
 
@@ -34,7 +35,7 @@ interface SessionStats {
 }
 
 /** One line of text as shown: terminal controls stripped, whitespace collapsed, at most `max` characters. */
-export function oneLine(text: string, max: number): string {
+export function shownLine(text: string, max: number): string {
   // By code point, so a cut never splits a surrogate pair (an emoji).
   const line = [...sanitizeTerminalText(text).replace(/\s+/g, ' ').trim()];
   return line.length > max ? `${line.slice(0, max - 1).join('')}…` : line.join('');
@@ -53,7 +54,7 @@ const git = (cwd: string, args: string[]) =>
 export async function gitState(cwd: string): Promise<{ branch?: string; head?: string }> {
   try {
     const [head = '', branch = ''] = (await git(cwd, ['rev-parse', 'HEAD', '--abbrev-ref', 'HEAD'])).trim().split('\n');
-    return { ...(branch && branch !== 'HEAD' ? { branch: oneLine(branch, 120) } : {}), ...(/^[0-9a-f]{7,64}$/.test(head) ? { head } : {}) };
+    return { ...(branch && branch !== 'HEAD' ? { branch: shownLine(branch, 120) } : {}), ...(/^[0-9a-f]{7,64}$/.test(head) ? { head } : {}) };
   } catch {
     return {};
   }
@@ -133,18 +134,10 @@ export class SessionIndex {
     this.agent.db.prepare('DELETE FROM sessions WHERE id = ?').run(id);
   }
 
-  meta(key: string): string | undefined {
-    return (this.agent.db.prepare('SELECT value FROM meta WHERE key = ?').get(key) as { value: string } | undefined)?.value;
-  }
-
-  setMeta(key: string, value: string): void {
-    this.agent.db.prepare('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value);
-  }
-
   /** Session dirs other than Pi's default that a session ran from (meta `session_dirs`): the sweep lists their sessions too. */
   sessionDirs(): string[] {
     try {
-      const dirs: unknown = JSON.parse(this.meta(SESSION_DIRS_KEY) ?? '[]');
+      const dirs: unknown = JSON.parse(readMeta(this.agent.db, SESSION_DIRS_KEY) ?? '[]');
       return Array.isArray(dirs) ? dirs.filter((dir): dir is string => typeof dir === 'string') : [];
     } catch {
       return [];
@@ -154,7 +147,7 @@ export class SessionIndex {
   addSessionDir(dir: string): void {
     this.agent.transaction(() => {
       const dirs = this.sessionDirs();
-      if (!dirs.includes(dir)) this.setMeta(SESSION_DIRS_KEY, JSON.stringify([...dirs, dir]));
+      if (!dirs.includes(dir)) writeMeta(this.agent.db, SESSION_DIRS_KEY, JSON.stringify([...dirs, dir]));
     });
   }
 }

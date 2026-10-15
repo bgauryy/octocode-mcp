@@ -1,5 +1,6 @@
 use crate::error::{Error, Result};
 use crate::lsp::commands::{has_path_separator, is_executable_path, is_rejected_shell};
+use crate::lsp::config::install_hint;
 use std::path::Path;
 
 pub fn validate_lsp_server_path(command: String) -> Result<String> {
@@ -42,13 +43,11 @@ pub fn validate_lsp_server_path(command: String) -> Result<String> {
     absolute_string(&resolved)
 }
 
-/// What octocode searched for a server it normally finds by itself.
-fn lookup_note(command: &str) -> &'static str {
-    if command == "typescript-language-server" {
-        ". octocode runs node_modules/typescript-language-server/lib/cli.mjs under node from its own install tree (its file mode, often 644 after a yarn install, is fine) and found none; install typescript-language-server there or put it on PATH"
-    } else {
-        ""
-    }
+/// How to install a missing built-in server; empty for any other command.
+fn lookup_note(command: &str) -> String {
+    install_hint(command)
+        .map(|hint| format!(". {hint}"))
+        .unwrap_or_default()
 }
 
 /// Absolute path as a string, preserving the executable's own filename
@@ -98,7 +97,30 @@ mod tests {
         assert!(note.contains("lib/cli.mjs"), "{note}");
         assert!(note.contains("under node"), "{note}");
         assert!(note.contains("644"), "{note}");
-        assert_eq!(lookup_note("gopls"), "");
+    }
+
+    /// A missing built-in server names the command that installs it; a
+    /// managed server installs through octocode. Only a command octocode
+    /// does not ship a route for gets no note.
+    #[test]
+    fn a_missing_built_in_server_names_its_install_command() {
+        let gopls = lookup_note("gopls");
+        assert!(
+            gopls.contains("go install golang.org/x/tools/gopls@latest"),
+            "{gopls}"
+        );
+        for (command, install) in [
+            ("pylsp", "pip install python-lsp-server"),
+            ("csharp-ls", "dotnet tool install --global csharp-ls"),
+            ("metals", "cs install metals"),
+            ("jdtls", "jdtls"),
+            ("clangd", "octocode lsp-server install clangd"),
+            ("rust-analyzer", "octocode lsp-server install rust-analyzer"),
+        ] {
+            let note = lookup_note(command);
+            assert!(note.contains(install), "{command}: {note}");
+        }
+        assert_eq!(lookup_note("my-own-language-server"), "");
     }
 
     #[test]

@@ -228,13 +228,15 @@ export async function settle(page: Pick<Page, 'on' | 'evaluate'>, signal?: Abort
   } finally {
     off();
   }
-  // A page torn down mid-wait (another navigation) or an open dialog ends the quiet wait early; either is fine here.
+  // A page torn down mid-wait (another navigation) or an open dialog ends the quiet wait early; either is fine here, an abort is not.
   await page
     .evaluate(
       `new Promise((resolve) => { let timer; const done = () => { observer.disconnect(); clearTimeout(cap); resolve(true); }; const observer = new MutationObserver(() => { clearTimeout(timer); timer = setTimeout(done, ${timing.quietMs}); }); observer.observe(document, { subtree: true, childList: true, attributes: true, characterData: true }); timer = setTimeout(done, ${timing.quietMs}); const cap = setTimeout(done, ${timing.domMaxMs}); })`,
       signal,
     )
-    .catch(() => undefined);
+    .catch((error: unknown) => {
+      if (signal?.aborted) throw error;
+    });
 }
 
 /** After a navigation's load event: how long content and requests must stay quiet, and the longest wait. */
@@ -245,17 +247,23 @@ const LOAD_MAX_MS = 6_000;
  * After a navigation has loaded: waits until the page's content (nodes and text, not attribute-only animation) and its
  * network requests have both been quiet for `quietMs`, capped at `maxMs`, so values a script fills in after load
  * (prices, a localized currency, search results) are in the snapshot. Resolves how long it took and whether the page
- * went quiet; never fails.
+ * went quiet. A wait that could not run (the page was torn down, the evaluate failed) is not settled and says so in
+ * `failed`; only an abort throws.
  */
-export async function settleAfterLoad(page: Pick<Page, 'evaluate'>, signal?: AbortSignal, quietMs = LOAD_QUIET_MS, maxMs = LOAD_MAX_MS): Promise<{ settled: boolean; ms: number }> {
+export async function settleAfterLoad(page: Pick<Page, 'evaluate'>, signal?: AbortSignal, quietMs = LOAD_QUIET_MS, maxMs = LOAD_MAX_MS): Promise<{ settled: boolean; failed: boolean; ms: number }> {
   const started = Date.now();
-  const settled = await page
+  let failed = false;
+  const quiet = await page
     .evaluate<boolean>(
       `new Promise((resolve) => { let timer; let perf; const finish = (quiet) => { observer.disconnect(); if (perf) perf.disconnect(); clearTimeout(timer); clearTimeout(cap); resolve(quiet); }; const poke = () => { clearTimeout(timer); timer = setTimeout(() => finish(true), ${quietMs}); }; const observer = new MutationObserver(poke); observer.observe(document, { subtree: true, childList: true, characterData: true }); try { perf = new PerformanceObserver(poke); perf.observe({ type: 'resource' }); } catch {} poke(); const cap = setTimeout(() => finish(false), ${maxMs}); })`,
       signal,
     )
-    .catch(() => true);
-  return { settled: settled !== false, ms: Date.now() - started };
+    .catch((error: unknown) => {
+      if (signal?.aborted) throw error;
+      failed = true;
+      return false;
+    });
+  return { settled: quiet !== false, failed, ms: Date.now() - started };
 }
 
 /** The page text `waitForText` searches: the document, open shadow roots and same-origin frames. */

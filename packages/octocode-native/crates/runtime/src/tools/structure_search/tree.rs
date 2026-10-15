@@ -13,7 +13,6 @@ use serde_json::{Value, json};
 use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 
 use super::Walking;
-use super::files::walk_warnings;
 use crate::contracts::tool_types::StructureSearchQueryTree;
 
 /// Engine-unit views over the generated `tree` query.
@@ -73,43 +72,22 @@ struct TreeRow {
     /// The entry's name and kind, to render it with details on its page.
     name: String,
     kind: &'static str,
-    /// A regular file's size in bytes; `None` for directories and symlinks.
-    size: Option<i64>,
     /// The walked entry, for the continuation pages' change check.
     source: std::path::PathBuf,
     /// Its size and time as the walk read them (the stored walk's stamp).
     seen: (u64, Option<std::time::SystemTime>),
 }
 
-/// A tree walk: its rows in listing order (cut to `maxEntries`) and what
-/// the walk left out.
-struct TreeWalk {
-    rows: Vec<TreeRow>,
-    /// Walk-order rows before this window's end: where `next.expandScan`
-    /// resumes.
-    covered: usize,
-    available: usize,
-    total_discovered: usize,
-    was_capped: bool,
-    /// The walk ran out of time before this root-relative entry.
-    time_cut: Option<String>,
-    files: usize,
-    dirs: usize,
-    bytes: i64,
-    uncovered: super::Uncovered,
-    warnings: Vec<String>,
-}
-
-impl super::memo::Listed for TreeWalk {
-    fn sources(&self) -> Vec<super::memo::Seen<'_>> {
-        self.rows
-            .iter()
-            .map(|row| super::memo::Seen {
-                path: row.source.as_path(),
-                size: row.seen.0,
-                modified: row.seen.1,
-            })
-            .collect()
+impl super::Sourced for TreeRow {
+    fn kind(&self) -> &'static str {
+        self.kind
+    }
+    fn seen(&self) -> super::memo::Seen<'_> {
+        super::memo::Seen {
+            path: &self.source,
+            size: self.seen.0,
+            modified: self.seen.1,
+        }
     }
 }
 
@@ -203,33 +181,27 @@ pub fn execute_tree(
         hidden: q.include_hidden == Some(true),
         default_excludes: q.default_excludes.defaults(),
     };
-    let bound = super::ProbeBound::new(super::PROBE_BUDGET);
-    super::note_empty(
+    super::probe_empty(
         &mut out,
         q,
         (&validated.canonical, paths),
-        &walk.uncovered,
+        &walk.meta.uncovered,
         shown,
-        |relaxed| {
+        |relaxed, walking| {
             let mut relaxed_query = q.clone();
             relaxed_query.include_ignored = Some(relaxed.ignored);
             relaxed_query.include_hidden = Some(relaxed.hidden);
             relaxed_query.default_excludes = Some(DefaultExcludes(relaxed.default_excludes));
             relaxed_query.scan_offset = None;
-            let found = walk_tree(
+            walk_tree(
                 &relaxed_query,
                 &validated.canonical,
                 paths,
                 security,
                 cancel,
                 super::PROBE_HITS,
-                Walking::Probe(&bound),
-            )?;
-            let cut = found.was_capped || bound.cut();
-            Ok(super::found_entries(
-                found.rows.into_iter().map(|row| row.source),
-                cut,
-            ))
+                walking,
+            )
         },
     )?;
     Ok(out)
@@ -247,7 +219,7 @@ fn walk_tree(
     cancel: &dyn CancellationCheck,
     requested: usize,
     walking: Walking<'_>,
-) -> Result<TreeWalk, ToolError> {
+) -> Result<super::Walked<TreeRow>, ToolError> {
     let bound = walking.probe();
     // Leave out what localSearch leaves out: ignored entries (unless
     // includeIgnored, counted by the walk) and paths the path policy denies
@@ -312,52 +284,23 @@ fn walk_tree(
     )
     .map_err(|error| super::walk_error(error, q.path.as_str(), cancel))?;
     cancel.check().map_err(ToolError::cancelled)?;
-    let mut rows = tree_rows(&native.entries, security);
-    let available = rows.len();
-    rows.truncate(requested);
-    // An expanded scan lists only the walk-order rows past the window
-    // earlier pages listed.
-    let offset = q.scan_offset().min(rows.len());
-    rows.drain(..offset);
-    let covered = offset + rows.len();
-    // The summary totals this listing's rows, like `files`; bytes are
-    // regular files' (a symlink's own length is no content).
-    let (files, dirs, bytes) = rows.iter().fold((0, 0, 0), |(f, d, b), row| {
-        if row.kind == "directory" {
-            (f, d + 1, b)
-        } else {
-            (f + 1, d, b + row.size.unwrap_or(0))
-        }
-    });
+    let rows = tree_rows(&native.entries, security);
+    let mut walk = super::Walked::finish(
+        native,
+        rows,
+        requested,
+        q.scan_offset(),
+        withheld,
+        hidden.into_inner(),
+        security,
+    );
     // One group per directory: `path`'s own entries first, then each
     // directory in walk order (component-wise path order), entries in walk
     // order within it. The sort is stable.
-    rows.sort_by(|a, b| std::path::Path::new(&a.dir).cmp(std::path::Path::new(&b.dir)));
-    drop_grouped_dirs(&mut rows);
-    let mut warnings = walk_warnings(native.skipped, native.permission_denied);
-    warnings.extend(native.warnings);
-    Ok(TreeWalk {
-        rows,
-        covered,
-        available,
-        total_discovered: native.total_discovered as usize,
-        was_capped: native.was_capped,
-        time_cut: native
-            .time_cut
-            .map(|at| security.sanitize_text(&at, None).content),
-        files,
-        dirs,
-        bytes,
-        uncovered: super::Uncovered {
-            ignored: native.ignored as usize,
-            withheld: withheld
-                .into_inner()
-                .unwrap_or_else(|error| error.into_inner()),
-            hidden: hidden.into_inner(),
-            pruned: native.pruned_dirs,
-        },
-        warnings,
-    })
+    walk.rows
+        .sort_by(|a, b| std::path::Path::new(&a.dir).cmp(std::path::Path::new(&b.dir)));
+    drop_grouped_dirs(&mut walk.rows);
+    Ok(walk)
 }
 
 /// Outline rows in walk order.
@@ -370,16 +313,12 @@ fn tree_rows(
         .map(|entry| {
             let relative = security.sanitize_text(&entry.relative_path, None).content;
             let (dir, name) = relative.rsplit_once('/').unwrap_or(("", &relative));
-            let mut file_size = None;
             // A symlink counts as a non-directory entry, as `files` counts
             // it; its size is the link's own.
             let kind = match entry.entry_type.as_str() {
                 "directory" => "directory",
                 "symlink" => "symlink",
-                _ => {
-                    file_size = Some(entry.size.unwrap_or(0));
-                    "file"
-                }
+                _ => "file",
             };
             // Every non-directory entry names its size, a symlink its own.
             let size = (kind != "directory").then(|| entry.size.unwrap_or(0));
@@ -389,7 +328,6 @@ fn tree_rows(
                 entry: text,
                 name: name.to_owned(),
                 kind,
-                size: file_size,
                 source: std::path::PathBuf::from(&entry.path),
                 seen: {
                     let seen = super::memo::Seen::walked(std::path::Path::new(&entry.path), entry);
@@ -439,7 +377,7 @@ fn tree_costs(rows: &[TreeRow], prefix: &str, detail: bool) -> Vec<super::RowCos
 /// The response for this page of a walk.
 fn tree_page(
     q: &StructureSearchQueryTree,
-    walk: &TreeWalk,
+    walk: &super::Walked<TreeRow>,
     pages: &[std::ops::Range<usize>],
     snapshot: String,
     (root, prefix): (&std::path::Path, &str),
@@ -448,21 +386,14 @@ fn tree_page(
 ) -> Result<Value, ToolError> {
     let page = q.page().max(1);
     let total = walk.rows.len();
-    let cut = super::Cut {
+    let cut = walk.cut(
         page,
-        total_pages: pages.len().max(1),
-        total,
+        pages.len(),
         requested,
-        available: walk.available,
-        limit_cut: walk.available > requested,
-        scan_cut: walk.was_capped,
-        time_cut: walk.time_cut.clone(),
-        early_exit: false,
-        total_discovered: walk.total_discovered,
-        scan_offset: q.scan_offset(),
-        covered: walk.covered,
-        snapshot: snapshot.clone(),
-    };
+        false,
+        q.scan_offset(),
+        snapshot.clone(),
+    );
     // Details are read for this page's files only, like `files` does.
     let shown_rows = pages
         .get(page - 1)
@@ -497,7 +428,7 @@ fn tree_page(
         "snapshot": snapshot,
     });
     // A walk cut by time proved nothing about what it did not scan.
-    if total == 0 && walk.time_cut.is_none() {
+    if total == 0 && walk.meta.time_cut.is_none() {
         out["status"] = json!("empty");
     }
     // The walk's summary and its retries describe the whole listing: page 1
@@ -505,9 +436,9 @@ fn tree_page(
     if page == 1 {
         // Skipped dot entries matter when the listing is filtered or empty;
         // an unfiltered outline names their count in the summary.
-        let report_hidden = walk.uncovered.hidden > 0 && total > 0 && q.filtered();
-        out["summary"] = summary(walk);
-        super::lead_to_ignored(&mut out, q, &walk.uncovered);
+        let report_hidden = walk.meta.uncovered.hidden > 0 && total > 0 && q.filtered();
+        out["summary"] = walk.meta.summary();
+        super::lead_to_ignored(&mut out, q, &walk.meta.uncovered);
         if report_hidden {
             out["next"]["includeHidden"] =
                 super::continuation(q, json!({"includeHidden":true,"page":1,"snapshot":null}));
@@ -527,15 +458,12 @@ fn tree_page(
         }
         out["pagination"] = facts.to_value();
     }
-    let mut warnings = walk.warnings.clone();
+    let mut warnings = walk.meta.warnings.clone();
     warnings.extend(crate::policy::include::parent_glob_warning(
         &q.include, &q.exclude,
     ));
     cut.finish(&mut out, q, &mut warnings);
-    warnings.extend(walk.uncovered.withheld.notice());
-    if !warnings.is_empty() {
-        out["warnings"] = json!(warnings);
-    }
+    walk.meta.warn(&mut out, warnings);
     Ok(out)
 }
 
@@ -547,8 +475,9 @@ fn tree_read(rows: &[TreeRow], root: &std::path::Path) -> Option<Value> {
     let (relative, _) = rows
         .iter()
         .filter(|row| {
-            row.size
-                .is_some_and(|size| size <= super::files::READ_LEAD_MAX_BYTES)
+            row.kind == "file"
+                && i64::try_from(row.seen.0)
+                    .is_ok_and(|size| size <= super::files::READ_LEAD_MAX_BYTES)
         })
         .filter_map(|row| {
             let name = super::display_name(&row.source);
@@ -573,24 +502,4 @@ fn tree_read(rows: &[TreeRow], root: &std::path::Path) -> Option<Value> {
         crate::tools::result::Continuation::new(crate::tools::id::ToolId::LocalFetch, query)
             .build(),
     )
-}
-
-/// The walk's counts, plus how many entries `.gitignore` hid (the path
-/// policy's withheld entries are a warning on every page), how many dot
-/// entries were skipped without `includeHidden` (reported when the listing
-/// is filtered or empty), and which directories the default prune skipped:
-/// their names stay out of the listing, but their absence is not silent.
-fn summary(walk: &TreeWalk) -> Value {
-    let uncovered = &walk.uncovered;
-    let mut summary = json!({"files": walk.files, "dirs": walk.dirs, "bytes": walk.bytes});
-    if uncovered.ignored > 0 {
-        summary["ignored"] = json!(uncovered.ignored);
-    }
-    if uncovered.hidden > 0 {
-        summary["hidden"] = json!(uncovered.hidden);
-    }
-    if let Some(pruned) = uncovered.pruned_names() {
-        summary["pruned"] = json!(pruned);
-    }
-    summary
 }

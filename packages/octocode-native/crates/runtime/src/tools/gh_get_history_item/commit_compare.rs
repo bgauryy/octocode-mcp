@@ -6,7 +6,7 @@ use super::patch::page::shape_files;
 use super::patch_hop::{
     DiffCursors, attach_diff_continuations, commit_pull_request_lead, commit_query,
 };
-use super::pr_menu::{ChangeSides, change_reads, remove_key};
+use super::pr_menu::{ChangeSides, change_reads, without_match_string};
 use super::rest::Rest;
 use super::util::{array, str_at, string, usize_at};
 use super::window::{
@@ -288,13 +288,9 @@ fn commit_leads(
             out,
             [match_removed_all_warning(needle, page.listed_on_page)],
         );
-        let mut unfiltered = commit_query(query, &commit.sha, false);
-        remove_key(&mut unfiltered, "matchString");
         leads.push((
             "withoutMatchString",
-            Continuation::new(ToolId::GhGetHistoryItem, unfiltered)
-                .confidence("exact")
-                .build(),
+            without_match_string(commit_query(query, &commit.sha, false)),
         ));
     }
     let pull_request = commit_pull_request_lead(commit.message, &commit.sha, query);

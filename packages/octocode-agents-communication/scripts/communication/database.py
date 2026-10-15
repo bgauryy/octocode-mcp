@@ -89,7 +89,7 @@ def compatible(db, info=None):
 
 def validate(db, info=None):
     if not compatible(db, info):
-        raise ValueError('Incompatible agents-communication database. For recognized v1/v2/v3/v4 use db migrate {"backup":"/absolute/new-backup.sqlite"} after stopping old clients; otherwise use a fresh database. Existing data is not modified.')
+        raise ValueError('Incompatible agents-communication database. For recognized v1/v2/v3/v4/v5 use db migrate {"backup":"/absolute/new-backup.sqlite"} after stopping old clients; otherwise use a fresh database. Existing data is not modified.')
 
 
 def path(database=None):

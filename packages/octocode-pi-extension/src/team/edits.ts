@@ -1,6 +1,7 @@
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { canonicalPath } from '../shared/home.js';
+import { DAY_MS, MINUTE_MS } from '../shared/util.js';
 import { num, type Row } from '../agentdb/rows.js';
 
 /** Who changed which file, kept a day in the team database, for `coordinate changes`. */
@@ -16,8 +17,8 @@ export interface Change {
 }
 
 /** How long a change is kept; a longer `coordinate changes` window cannot be answered. */
-export const EDIT_RETENTION_MINUTES = 24 * 60;
-const EDIT_RETENTION_MS = EDIT_RETENTION_MINUTES * 60_000;
+export const EDIT_RETENTION_MINUTES = DAY_MS / MINUTE_MS;
+const EDIT_RETENTION_MS = DAY_MS;
 
 export class EditLog {
   constructor(

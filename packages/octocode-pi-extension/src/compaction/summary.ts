@@ -3,7 +3,7 @@ import { compact, type ExtensionAPI, type ExtensionContext, type SessionBeforeCo
 import { clearedResults } from '../files/reads.js';
 import { tildePath } from '../shared/home.js';
 import { CHARS_PER_TOKEN } from '../shared/tokens.js';
-import { cutText, errorMessage, escapeRegExp, isRecord } from '../shared/util.js';
+import { contentText, cutText, errorMessage, escapeRegExp, isRecord } from '../shared/util.js';
 import { carriedSavedResults, SAVED_RESULTS_DETAILS, savedResultPaths, savedResultsBlock, withoutModelSavedResults, withoutSavedResults } from './saved-results.js';
 import { sharedSummary } from './shared-summary.js';
 
@@ -109,13 +109,8 @@ const SKILL_BLOCK = /<skill name="([^"\n]*)" location="([^"\n]*)">\n[\s\S]*?\n<\
  */
 export function userText(message: unknown): string | undefined {
   if (!isRecord(message) || message['role'] !== 'user') return undefined;
-  const content = message['content'];
-  const parts = typeof content === 'string' ? [content] : Array.isArray(content) ? content.flatMap((part) => {
-    if (!isRecord(part)) return [];
-    if (part['type'] === 'text' && typeof part['text'] === 'string') return [part['text']];
-    return part['type'] === 'image' ? ['[image attached]'] : [];
-  }) : [];
-  return parts.length > 0 ? parts.join('\n').replace(SKILL_BLOCK, (_, name: string, location: string) => `[skill ${name} loaded from ${location}]`) : undefined;
+  const text = contentText(message['content'], { image: '[image attached]' });
+  return text === '' ? undefined : text.replace(SKILL_BLOCK, (_, name: string, location: string) => `[skill ${name} loaded from ${location}]`);
 }
 
 /** One message cut in the middle to `max` characters, with a note that the transcript has it whole. */
@@ -173,7 +168,7 @@ export function summarizerView<T>(messages: readonly T[]): T[] {
   return messages.map((message) => {
     if (!isRecord(message) || message['role'] !== 'toolResult' || !Array.isArray(message['content'])) return message;
     const content = message['content'] as unknown[];
-    const text = content.flatMap((part) => (isRecord(part) && part['type'] === 'text' && typeof part['text'] === 'string' ? [part['text']] : [])).join('\n');
+    const text = contentText(content);
     if (text.length <= SUMMARIZER_RESULT_CHARS) return message;
     const gap = (left: number) => `\n[… ${left} characters in the middle left out for the summary; the transcript has them]\n`;
     const room = SUMMARIZER_RESULT_CHARS - SUMMARIZER_HEAD_CHARS - gap(text.length).length;
@@ -183,6 +178,11 @@ export function summarizerView<T>(messages: readonly T[]): T[] {
     const others = content.filter((part) => !(isRecord(part) && part['type'] === 'text'));
     return { ...message, content: [{ type: 'text', text: kept }, ...others] } as T;
   });
+}
+
+/** The cache-sharing request was unusable: the summary is written as a standalone request, which bills the whole input. */
+function notifyStandalone(ctx: Pick<ExtensionContext, 'hasUI' | 'ui'>, reason: string): void {
+  if (ctx.hasUI) ctx.ui.notify(`Octocode could not write the compaction summary from the prompt cache (${reason}); it uses a standalone request that pays for the whole input.`, 'warning');
 }
 
 /** Octocode's compaction result, or undefined to let Pi write its default summary. */
@@ -209,7 +209,7 @@ export async function writeSummary(
     };
     // On the session's own model the summary is asked for inside the session's request, which the prompt cache already
     // holds; on another (a downshift) or when that fails, as a standalone request that pays for the whole input.
-    const result = (summaryModel === undefined ? await sharedSummary(pi, event, ctx, model, instructions) : undefined)
+    const result = (summaryModel === undefined ? await sharedSummary(pi, event, ctx, model, instructions, (reason) => notifyStandalone(ctx, reason)) : undefined)
       ?? (await compact(preparation, model, undefined, undefined, instructions, event.signal, pi.getThinkingLevel(), stream));
     const added = [...event.preparation.messagesToSummarize, ...event.preparation.turnPrefixMessages].flatMap((message) => userText(message) ?? []);
     // Sized for the window the summary lands in (this session's model; after a downshift, the smaller one).

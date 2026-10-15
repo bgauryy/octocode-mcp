@@ -3,6 +3,7 @@
 use super::{KeyFacts, KeyState, now_ms, pause};
 use crate::ProviderError;
 use std::{
+    collections::BTreeMap,
     fs::TryLockError,
     path::{Path, PathBuf},
     sync::Arc,
@@ -64,16 +65,23 @@ impl KeyFacts {
             let entry = self.last_start_ms.entry(group).or_default();
             *entry = (*entry).max(stamp);
         }
-        let mut window: Vec<u64> = self
-            .code_search_ms
-            .iter()
-            .chain(other.code_search_ms.iter())
-            .copied()
-            .filter(|stamp| stamp.saturating_add(60_000) > now_ms)
+        // The views overlap, but distinct reservations can share a millisecond.
+        // Keep the larger count per timestamp without counting mirrored slots twice.
+        let mut window = BTreeMap::<u64, [usize; 2]>::new();
+        for (side, stamps) in [&self.code_search_ms, &other.code_search_ms]
+            .into_iter()
+            .enumerate()
+        {
+            for &stamp in stamps {
+                if stamp.saturating_add(60_000) > now_ms {
+                    window.entry(stamp).or_default()[side] += 1;
+                }
+            }
+        }
+        self.code_search_ms = window
+            .into_iter()
+            .flat_map(|(stamp, [local, peer])| std::iter::repeat_n(stamp, local.max(peer)))
             .collect();
-        window.sort_unstable();
-        window.dedup();
-        self.code_search_ms = window.into();
     }
 
     /// Only facts that can block a future request are persisted.
@@ -330,6 +338,67 @@ fn lock_file_blocking(path: &Path, deadline: Instant) -> Option<octocode_io::loc
 #[cfg(test)]
 mod tests {
     use super::super::*;
+
+    #[test]
+    fn code_search_window_merge_preserves_same_millisecond_reservations() {
+        let now = 1_000_000;
+        let stamp = now - 1;
+        for (local, peer, count) in [
+            (vec![stamp, stamp], vec![stamp, stamp], 2),
+            (vec![stamp, stamp], vec![stamp], 2),
+            (vec![stamp], vec![stamp, stamp], 2),
+            (vec![stamp, stamp], vec![stamp, stamp, stamp], 3),
+            (vec![stamp, stamp, stamp], vec![stamp, stamp], 3),
+        ] {
+            let mut facts = KeyFacts {
+                code_search_ms: local.into(),
+                ..KeyFacts::default()
+            };
+            facts.merge(
+                KeyFacts {
+                    code_search_ms: peer.into(),
+                    ..KeyFacts::default()
+                },
+                now,
+            );
+            assert_eq!(facts.code_search_ms, vec![stamp; count]);
+            let plan = SlotPlan::new(
+                Group::CodeSearch,
+                &ExecutorConfig {
+                    code_search_per_minute: 2,
+                    ..ExecutorConfig::relaxed()
+                },
+                true,
+                Duration::from_secs(1),
+                Instant::now() + Duration::from_secs(10),
+            );
+            assert!(
+                plan.refusal(plan.start(&facts, now), Subject::Request)
+                    .is_some()
+            );
+        }
+    }
+
+    #[test]
+    fn code_search_window_merge_is_idempotent_sorted_and_expires_stamps() {
+        let now = 1_000_000;
+        let expired = now - 60_000;
+        let stamp = now - 2;
+        let mut facts = KeyFacts {
+            code_search_ms: vec![now - 1, stamp, stamp, expired].into(),
+            ..KeyFacts::default()
+        };
+        let peer = KeyFacts {
+            code_search_ms: vec![stamp, now - 1, expired - 1].into(),
+            ..KeyFacts::default()
+        };
+        for _ in 0..3 {
+            facts.merge(peer.clone(), now);
+            assert_eq!(facts.code_search_ms, vec![stamp, stamp, now - 1]);
+            facts.merge(facts.clone(), now);
+            assert_eq!(facts.code_search_ms, vec![stamp, stamp, now - 1]);
+        }
+    }
 
     /// A rate-limit fact learned on an async worker never waits for the peer
     /// lock there; it still reaches the file once the peer lets go.

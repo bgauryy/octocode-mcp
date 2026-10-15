@@ -107,17 +107,23 @@ describe('/octocode api', () => {
     expect(notes.at(-1)!.message).toMatch(/EEXIST|ENOTDIR|not a directory/i);
   });
 
-  it('starts from the environment at session start and only warns (with a UI) when that fails', async () => {
+  it('starts from the environment at session start and reports a failure: a warning with a UI, stderr without one', async () => {
     const { wired, ctx, dir } = setup({ OCTOCODE_API: '1', OCTOCODE_API_HTTP: '0' });
     await wired.start(ctx);
-    expect(wired.api.instance?.http).toBeDefined();
+    expect(wired.api.instance?.http?.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+/);
     await wired.stop();
     fs.rmSync(dir, { recursive: true, force: true });
     fs.writeFileSync(dir, 'blocked');
     await wired.start(ctx);
-    expect(ctx.ui.notes.at(-1)?.type).toBe('warning');
+    expect(ctx.ui.notes.at(-1)).toMatchObject({ type: 'warning', message: expect.stringMatching(/EEXIST|ENOTDIR|not a directory/i) });
     const headless = fakeCtx({ cwd: tmp(), hasUI: false });
-    await wired.start(headless);
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      await wired.start(headless);
+      expect(stderr).toHaveBeenCalledWith(expect.stringMatching(/(EEXIST|ENOTDIR|not a directory).*\n$/i));
+    } finally {
+      stderr.mockRestore();
+    }
     expect(headless.ui.notes).toEqual([]);
   });
 
@@ -127,7 +133,9 @@ describe('/octocode api', () => {
     expect(wired.api.instance).toBeUndefined();
     expect(notes.at(-1)).toMatchObject({ type: 'warning', message: expect.stringContaining('OCTOCODE_API_HTTP=abc is not a port') });
     await run('on');
-    expect(wired.api.instance?.socket ?? wired.api.instance?.http).toBeDefined();
+    const bound = wired.api.instance;
+    if (process.platform === 'win32') expect(bound?.http?.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+/);
+    else expect(bound?.socket).toMatch(/\.sock$/);
   });
 
   it('stays off after /octocode api off even when OCTOCODE_API=1', async () => {

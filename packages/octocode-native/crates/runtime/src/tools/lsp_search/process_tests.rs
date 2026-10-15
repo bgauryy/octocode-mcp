@@ -4,7 +4,7 @@
 
 use super::failure::LspFailure;
 use crate::tools::id::ToolId;
-use crate::tools::test_support::checks::{assert_absent, paths_in};
+use crate::tools::test_support::checks::{Page, Walker, assert_absent, paths_in};
 use crate::tools::test_support::{Fixture, assert_row_contract};
 use octocode_engine::error::ErrorKind;
 use octocode_engine::lsp::client::NativeLspClient;
@@ -931,9 +931,10 @@ struct Walked {
     row: serde_json::Value,
 }
 
-/// Run `start`, then every `next.nextPage`, then every
-/// `next.nextImporterPage`, until neither is left. Also returns the
-/// continuations seen, by name, for stale checks.
+/// Run `start` and every page lead its pages offer (`checks::Walker`: each
+/// call once, each match row once, every output and lead within the
+/// contract). A page offers `next.nextPage` or `next.nextImporterPage`,
+/// never both. Also returns those continuations, by name, for stale checks.
 async fn walk_pages(
     pool: &LspClientPool,
     root: &Path,
@@ -943,15 +944,17 @@ async fn walk_pages(
     let paths = crate::tools::test_support::workspace_policy(root);
     let mut pages = Vec::new();
     let mut continuations = Vec::new();
-    let mut next = Some(start);
-    while let Some(row) = next.take() {
-        assert!(pages.len() < 40, "the walk terminates");
+    let mut walker = Walker::new(
+        ToolId::LspSearch.as_str(),
+        serde_json::json!({ "queries": [start] }),
+    );
+    while let Some(call) = walker.next_query() {
+        let row = call["queries"][0].clone();
         let importer_page = row
             .get("importerPage")
             .and_then(serde_json::Value::as_u64)
             .unwrap_or(1);
-        let query_row = row.clone();
-        let query = serde_json::from_value(row).expect("continuation is a valid query");
+        let query = serde_json::from_value(row.clone()).expect("continuation is a valid query");
         let result = super::execute(
             query,
             &crate::tools::cancel::NeverCancel,
@@ -963,25 +966,80 @@ async fn walk_pages(
         .await
         .expect("page");
         assert_ne!(result["status"], "error", "{result}");
-        assert_row_contract(ToolId::LspSearch, &query_row, &result);
         let page = next_row(&result, "nextPage");
         let importer = next_row(&result, "nextImporterPage");
         assert!(
             page.is_none() || importer.is_none(),
             "nextImporterPage only on a window's last location page: {result}"
         );
-        for (name, call) in [("nextPage", &page), ("nextImporterPage", &importer)] {
+        for (name, call) in [("nextPage", page), ("nextImporterPage", importer)] {
             if let Some(call) = call {
-                continuations.push((name.to_owned(), call.clone()));
+                continuations.push((name.to_owned(), call));
             }
         }
-        next = page.or(importer);
+        walker.accept(Page {
+            output: crate::tools::test_support::published(ToolId::LspSearch, &row, &result),
+            rows: match_rows(&result),
+        });
         pages.push(Walked {
             importer_page,
             row: result,
         });
     }
+    walker.finish();
     (pages, continuations)
+}
+
+/// `published` without its `next.retry` lead, which reruns this same call
+/// (checked here, with the output's other leads), so a page walk must not
+/// follow it.
+fn without_rerun(
+    mut published: serde_json::Value,
+    query: &super::LspSearchQuery,
+) -> serde_json::Value {
+    crate::tools::test_support::checks::assert_leads_valid(&published);
+    if let Some(next) = published
+        .pointer_mut("/results/0/data/next")
+        .and_then(serde_json::Value::as_object_mut)
+    {
+        if let Some(retry) = next.remove("retry") {
+            let rerun: super::LspSearchQuery =
+                serde_json::from_value(retry["query"]["queries"][0].clone()).expect("retry query");
+            assert_eq!(rerun.to_row(), query.to_row(), "retry reruns this call");
+        }
+        if next.is_empty() {
+            published["results"][0]["data"]
+                .as_object_mut()
+                .expect("data")
+                .remove("next");
+        }
+    }
+    published
+}
+
+/// One id per match row on a page, grouped under `files` or listed in
+/// `matches`: its file and the whole match.
+fn match_rows(row: &serde_json::Value) -> Vec<String> {
+    let grouped = row
+        .pointer("/files")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .flat_map(|file| {
+            let path = file["path"].as_str().expect("path").to_owned();
+            file["matches"]
+                .as_array()
+                .expect("matches")
+                .iter()
+                .map(move |hit| format!("{path} {hit}"))
+        });
+    let listed = row
+        .pointer("/matches")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(serde_json::Value::to_string);
+    grouped.chain(listed).collect()
 }
 
 /// `(file name, line, column)` of every reference row on a page.
@@ -1575,9 +1633,12 @@ fn fallback_graph_pages(
             let node = declaration(file, *line);
             let name = files.iter().find(|(entry, _)| entry == file).expect("file").1.lines().nth(*line).expect("line").split_whitespace().nth(2).expect("name");
             let path = root.join(file).to_string_lossy().into_owned();
-            let mut query: super::LspSearchQuery = serde_json::from_value(json!({"operation":operation,"path":path,"line":line+1,"symbolName":name,"graphDepth":depth})).expect("query");
+            let start = json!({"operation":operation,"path":path,"line":line+1,"symbolName":name,"graphDepth":depth});
             let mut pages = Vec::new();
-            loop {
+            let mut walker = Walker::new(ToolId::LspSearch.as_str(), json!({"queries":[start]}));
+            while let Some(call) = walker.next_query() {
+                let wire = call["queries"][0].clone();
+                let query: super::LspSearchQuery = serde_json::from_value(wire.clone()).expect("executable query");
                 let mut sources = SourceCache::new(&paths);
                 let policy = snippet_policy(&paths);
                 let scope = super::scope::Scope::new(root.to_string_lossy().into_owned(), vec!["*.ts".into()]);
@@ -1586,14 +1647,15 @@ fn fallback_graph_pages(
                     character: u32::try_from(node["range"]["start"]["character"].as_u64().expect("character")).expect("character"),
                     language_id:Some("typescript"), budget:16_000, response_window:None }.run().await.expect("fallback hierarchy");
                 let row = super::failure::with_next(&query, row);
-                assert_row_contract(ToolId::LspSearch, &serde_json::to_value(&query).expect("wire query"), &row);
-                let next = row.pointer("/next/nextPage/query/queries/0").cloned();
+                if let Some(next) = row.pointer("/next/nextPage/query/queries/0") {
+                    let continued: super::LspSearchQuery = serde_json::from_value(next.clone()).expect("executable nextPage");
+                    assert!(continued.page() > query.page(), "page cursor must advance");
+                }
+                let published = crate::tools::test_support::published(ToolId::LspSearch, &wire, &row);
+                walker.accept(Page { output: without_rerun(published, &query), rows: match_rows(&row) });
                 pages.push(row);
-                let Some(next) = next else { break };
-                let continued: super::LspSearchQuery = serde_json::from_value(next).expect("executable nextPage");
-                assert!(continued.page() > query.page(), "page cursor must advance");
-                query = continued;
             }
+            walker.finish();
             rows.push(pages);
         }
         client.stop().await.expect("fixture server closed");
@@ -2024,14 +2086,16 @@ fn workspace_symbol_provider_coverage_is_unknown_without_losing_semantic_rows() 
             } else {
                 path.clone()
             };
-            let mut query: super::LspSearchQuery = serde_json::from_value(json!({
+            let start = json!({
                 "operation":"workspaceSymbol", "path":anchor, "symbolName":"Shared",
                 "pageSize":page_size
-            }))
-            .expect("query");
+            });
             let mut found = Vec::new();
             let mut page_count = 0;
-            loop {
+            let mut walker = Walker::new(ToolId::LspSearch.as_str(), json!({"queries":[start]}));
+            while let Some(call) = walker.next_query() {
+                let query: super::LspSearchQuery =
+                    serde_json::from_value(call["queries"][0].clone()).expect("query");
                 let mut sources = SourceCache::new(&paths);
                 let policy = snippet_policy(&paths);
                 let scope = super::scope::Scope::new(
@@ -2069,7 +2133,6 @@ fn workspace_symbol_provider_coverage_is_unknown_without_losing_semantic_rows() 
                 assert_eq!(row["pagination"]["totalItems"], 4);
                 let published =
                     crate::tools::test_support::published(ToolId::LspSearch, &query.to_row(), &row);
-                assert_row_contract(ToolId::LspSearch, &query.to_row(), &row);
                 assert!(
                     published
                         .pointer("/results/0/data/next/inspectDocumentSymbols")
@@ -2078,17 +2141,21 @@ fn workspace_symbol_provider_coverage_is_unknown_without_losing_semantic_rows() 
                 );
                 found.extend(row["matches"].as_array().expect("matches").iter().cloned());
                 page_count += 1;
-                let Some(next) = row.pointer("/next/nextPage/query/queries/0") else {
+                if row.pointer("/next/nextPage").is_none() {
                     let hint = &published["results"][0]["data"]["hints"]["inspectDocumentSymbols"];
                     assert_eq!(
                         hint["query"]["queries"][0],
                         json!({"operation":"documentSymbols", "path":path})
                     );
-                    break;
-                };
-                assert!(page_count < 3, "continuation must terminate");
-                query = serde_json::from_value(next.clone()).expect("executable next page");
+                } else {
+                    assert!(page_count < 3, "continuation must terminate");
+                }
+                walker.accept(Page {
+                    output: published,
+                    rows: match_rows(&row),
+                });
             }
+            walker.finish();
             assert_eq!(page_count, if page_size == 2 { 2 } else { 1 });
             assert_eq!(
                 found
@@ -2154,6 +2221,92 @@ fn workspace_symbol_provider_coverage_is_unknown_without_losing_semantic_rows() 
                 partial,
                 "{row}"
             );
+            assert_row_contract(ToolId::LspSearch, &wire, &row);
+        }
+        client.stop().await.expect("fixture server closed");
+    });
+}
+
+/// tsgo answers `workspace/symbol` with at most 256 symbols; an answer of
+/// exactly that many says the server capped it, one short of it does not.
+/// The partial reason stays `workspaceSymbolCoverageUnknown`.
+#[test]
+fn workspace_symbols_at_the_server_limit_say_capped() {
+    use super::ops::Operation;
+    use super::source::{SourceCache, snippet_policy};
+    use crate::tools::cancel::NeverCancel;
+    use serde_json::json;
+    assert!(
+        node_available(),
+        "Node is required for the real LSP fixture"
+    );
+    let (_dir, root, script) = fixture();
+    // Named `tsgo`, so octocode treats it as tsgo; `Cap<n>` answers n rows.
+    let tsgo = root.join("tsgo");
+    let server = FAKE_SERVER
+        .replace("hoverProvider: true", "workspaceSymbolProvider: true")
+        .replace(
+            "  } else if (msg.method === 'textDocument/hover') {\n    process.exit(3);",
+            r#"  } else if (msg.method === 'workspace/symbol') {
+    const count = Number(msg.params.query.slice(3));
+    const uri = require('url').pathToFileURL(require('path').join(process.cwd(), 'a.ts')).href;
+    const symbols = Array.from({length: count}, (_, line) => ({name: msg.params.query + '_' + line, kind: 12,
+      location: {uri, range: {start: {line, character: 0}, end: {line, character: 4}}}}));
+    send({jsonrpc:'2.0', id:msg.id, result:symbols});"#,
+        );
+    std::fs::write(&tsgo, server).expect("fixture server");
+    std::fs::set_permissions(
+        &tsgo,
+        std::fs::metadata(&script).expect("mode").permissions(),
+    )
+    .expect("chmod");
+    let paths = crate::tools::test_support::workspace_policy(&root);
+    let path = root.join("a.ts").to_string_lossy().into_owned();
+    tokio::runtime::Runtime::new().expect("rt").block_on(async {
+        let client = NativeLspClient::new(config(&root, &tsgo, None));
+        assert_eq!(client.workspace_symbol_limit(), Some(256));
+        client.start().await.expect("server starts");
+        for (name, capped) in [("Cap256", true), ("Cap255", false)] {
+            let wire = json!({"operation":"workspaceSymbol", "path":path, "symbolName":name});
+            let query: super::LspSearchQuery = serde_json::from_value(wire.clone()).expect("query");
+            let mut sources = SourceCache::new(&paths);
+            let policy = snippet_policy(&paths);
+            let scope =
+                super::scope::Scope::new(root.to_string_lossy().into_owned(), vec!["*.ts".into()]);
+            let row = Operation {
+                client: &client,
+                query: &query,
+                sources: &mut sources,
+                snippet_policy: &policy,
+                cancel: &NeverCancel,
+                path: &path,
+                scope: &scope,
+                root_only: false,
+                line: 0,
+                character: 0,
+                language_id: Some("typescript"),
+                budget: 16_000,
+                response_window: None,
+            }
+            .run()
+            .await
+            .expect("workspace symbols");
+            let row = super::failure::with_next(&query, row);
+            assert_eq!(
+                row["partialReasons"],
+                json!(["workspaceSymbolCoverageUnknown"]),
+                "{name}"
+            );
+            let says_capped = row["warnings"]
+                .as_array()
+                .expect("warnings")
+                .iter()
+                .any(|warning| {
+                    warning
+                        .as_str()
+                        .is_some_and(|text| text.contains("at most 256 workspace symbols"))
+                });
+            assert_eq!(says_capped, capped, "{name}: {row}");
             assert_row_contract(ToolId::LspSearch, &wire, &row);
         }
         client.stop().await.expect("fixture server closed");

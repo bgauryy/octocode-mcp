@@ -1,10 +1,10 @@
-// Hermetic classification cache, retry, and ranking replay checks on built hosts.
+// Hermetic classification cache, retry, and selection-plan replay checks on built hosts.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { NativeRuntime } from '../../packages/octocode-native/js/runtime.js';
 import { checks, collect, rowData, writeResults } from './mcp-client.mjs';
-import { answer, pages, setup, stable, startServer, success } from './read-tool-ranking/support.mjs';
+import { answer, pages, setup, stable, startServer, success } from './read-tool-selection/support.mjs';
 
 const { check, summary } = checks('classification-retry');
 let mode = 'success';
@@ -22,7 +22,7 @@ const ctx = await setup({ label: 'cache-retry', classificationResponder: async r
 } });
 // Session stats (persistent storage only) are the accounting surface for
 // provider requests: a row carries the provider's usage, not request counts.
-const env = { ...ctx.env, MAX_RETRIES: '1', OCTOCODE_STORAGE_MODE: 'persistent', OCTOCODE_ENABLE_STATS: 'true' };
+const env = { ...ctx.env, OCTOCODE_STORAGE_MODE: 'persistent', OCTOCODE_ENABLE_STATS: 'true' };
 const statsFile = path.join(env.OCTOCODE_HOME, 'stats.json');
 const usageTotals = () => {
   try { return JSON.parse(fs.readFileSync(statsFile, 'utf8')).stats?.clasify ?? {}; } catch { return {}; }
@@ -99,13 +99,12 @@ try {
     stable(row(retried.result)?.usage) === stable({ input_tokens: 10, output_tokens: 2 })
       && retryCharged.calls === 2 && retryCharged.known_usage_calls === 1 && retryCharged.unknown_usage_calls === 1 && retryCharged.input_tokens === 10,
     JSON.stringify({ usage: row(retried.result)?.usage, retryCharged }));
+  // Retries are a runtime constant (3); a varied budget is covered by
+  // transport::tests::the_retry_budget_bounds_attempts_exactly.
   remainingFailures = 10;
-  const beforeNoRetry = ctx.calls();
-  const noRetry = await ctx.cli('clasify', query({ retry: 'disabled' }), { MAX_RETRIES: '0' });
-  check('zero retries makes exactly one failed provider attempt', ctx.calls() - beforeNoRetry === 1 && errors(noRetry).includes('classificationRateLimited'));
   const beforeExhausted = ctx.calls();
-  const exhausted = await ctx.cli('clasify', query({ retry: 'exhausted' }), { MAX_RETRIES: '1' });
-  check('exhausted retry budget stops after the initial attempt plus one retry', ctx.calls() - beforeExhausted === 2 && errors(exhausted).includes('classificationRateLimited'));
+  const exhausted = await ctx.cli('clasify', query({ retry: 'exhausted' }));
+  check('exhausted retry budget stops after the initial attempt plus three retries', ctx.calls() - beforeExhausted === 4 && errors(exhausted).includes('classificationRateLimited'), JSON.stringify({ calls: ctx.calls() - beforeExhausted, errors: errors(exhausted) }));
 
   mode = 'unauthorized';
   const rejected = await call(query({ retry: 'auth' }), '401 terminal');
@@ -148,29 +147,38 @@ try {
     await Promise.all(runtimes.map(runtime => runtime.close()));
   }
 
-  const file = path.join(ctx.fixture, 'ranking-guide.txt');
-  const sourceQuery = { path: file, length: 10, classifiers: ['Find the cancellation rule.'] };
-  const beforeRanking = ctx.calls();
+  // A selected-view plan binds the account, classifiers, research context and
+  // source bytes; every replay must reuse it or fail stale before provider work.
+  const file = path.join(ctx.fixture, 'selection-guide.txt');
+  const sourceQuery = { path: file, unit: 'lines', length: 10, clasifyContext: { classifiers: ['Find the rule that cancels a queued request before its work starts.'] } };
+  const beforeSelection = ctx.calls();
   const initial = await ctx.cli('localFetch', sourceQuery);
   const data = success(initial);
-  check('replay fixture starts from a provider-ranked source', data.ranking?.status === 'ranked' && ctx.calls() > beforeRanking, JSON.stringify(data.ranking));
-  const next = pages(data).find(lead => lead.tool === 'localFetch');
-  assert.ok(next, 'ranked source must emit an executable continuation');
+  const receipt = data.selection;
+  check('replay fixture starts from a provider-selected source', ctx.calls() > beforeSelection
+    && receipt?.scope === 'selectedView' && receipt.selectedItems > 0 && receipt.excludedItems > 0
+    && receipt.selectedItems + receipt.excludedItems + receipt.unknownItems === receipt.totalItems
+    && data.content.includes('SELECTED_SELECTION_SENTINEL') && !data.content.includes('EXCLUDED_SELECTION_SENTINEL'), JSON.stringify(receipt));
+  // next.unfiltered is the ordinary recovery read; the saved plan rides on the window continuation.
+  const next = pages(data).find(lead => lead.kind === 'continueWindow');
+  assert.ok(next?.query.queries[0].selection, 'selected source must emit a plan-bound continuation');
   const beforeReplay = ctx.calls();
   const replay = await ctx.cliArgs([next.tool, JSON.stringify(next.query), '--json']);
-  success(replay);
-  check('saved order replays across processes without another judgment', ctx.calls() === beforeReplay);
+  const replayed = success(replay);
+  check('saved selection replays across processes without another judgment', ctx.calls() === beforeReplay
+    && stable(replayed.selection) === stable(receipt) && !replayed.content.includes('EXCLUDED_SELECTION_SENTINEL'), JSON.stringify(replayed.selection));
 
   const accountChanged = await ctx.cliArgs([next.tool, JSON.stringify(next.query), '--json'], { OCTOCODE_CLASSIFICATION_API: 'fixture-key-rotated' });
-  check('account change rejects old order before provider work', errors(accountChanged).includes('staleSnapshot') && ctx.calls() === beforeReplay);
+  check('account change rejects the saved selection before provider work', errors(accountChanged).includes('staleSnapshot') && ctx.calls() === beforeReplay, JSON.stringify(errors(accountChanged)));
   const newClassifiers = structuredClone(next.query);
-  newClassifiers.queries[0].classifiers = ['Find the bookkeeping rule.'];
+  newClassifiers.queries[0].clasifyContext = { classifiers: ['Find the bookkeeping rule.'] };
   const classifiersChanged = await ctx.cliArgs([next.tool, JSON.stringify(newClassifiers), '--json']);
-  check('classifier change rejects old order before provider work', errors(classifiersChanged).includes('staleSnapshot') && ctx.calls() === beforeReplay);
+  check('classifier change rejects the saved selection before provider work', errors(classifiersChanged).includes('staleSnapshot') && ctx.calls() === beforeReplay, JSON.stringify(errors(classifiersChanged)));
 
   // Replays through a fresh MCP process use the same saved identity.
   const replayMcp = await client.raw(next.tool, next.query);
-  check('MCP also replays the saved order without provider work', !replayMcp.isError && !replayMcp.rowErrors && ctx.calls() === beforeReplay);
+  check('MCP also replays the saved selection without provider work', !replayMcp.isError && !replayMcp.rowErrors && ctx.calls() === beforeReplay
+    && stable(rowData(replayMcp)?.selection) === stable(receipt), JSON.stringify(rowData(replayMcp)?.selection ?? errors(replayMcp)));
   fs.appendFileSync(file, 'The source changed after the saved page.\n');
   const staleCli = await ctx.cliArgs([next.tool, JSON.stringify(next.query), '--json']);
   const staleMcp = await client.raw(next.tool, next.query);

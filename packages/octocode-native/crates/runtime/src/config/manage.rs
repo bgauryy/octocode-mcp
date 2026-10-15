@@ -1,12 +1,10 @@
 //! Management uses generated field metadata and never returns stored secret values.
-use super::resolver::{
-    clamp_of, parse_candidate, workspace_file_allowed, workspace_setting_allowed,
-};
+use super::resolver::{parse_candidate, workspace_file_allowed, workspace_setting_allowed};
 use super::validation::{get_path, validate_field};
 use super::{
     CONFIG_FIELDS, ConfigFieldKind, ConfigFieldSpec, ConfigOutput, SettingSource, config_revision,
     edit_config_json, get_config_value, parse_config_json, parse_env, read_private_config,
-    replace_private_config,
+    removed_reason, replace_private_config,
 };
 use serde_json::{Value, json};
 use std::path::Path;
@@ -15,15 +13,21 @@ fn field_value(field: &ConfigFieldSpec, value: &Value) -> Result<(), String> {
     validate_field(field, Some(value), &mut errors);
     if !errors.is_empty() {
         return Err(format!(
-            "Invalid value for {}; check its type, range, and allowed values.",
+            "Invalid value for {}; check its type and allowed values.",
             field.path
         ));
     }
     Ok(())
 }
+/// Why `name` cannot be saved: the contract removed it. Removing it stays
+/// allowed, so a stale line can be deleted.
+pub(super) fn reject_removed(name: &str) -> Result<(), String> {
+    removed_reason(name).map_or(Ok(()), |reason| {
+        Err(format!("{name} was removed and cannot be set: {reason}"))
+    })
+}
 /// Whether `value` is one a setting's variable may be saved with: one the
-/// resolver accepts and uses as given (a value it would clamp is rejected
-/// here, so a saved value means what it says). Undeclared keys are free-form.
+/// resolver accepts. Undeclared keys are free-form.
 pub fn validate_env_value(key: &str, value: &str) -> Result<(), String> {
     let Some((field, binding)) = CONFIG_FIELDS.iter().find_map(|field| {
         field
@@ -36,12 +40,16 @@ pub fn validate_env_value(key: &str, value: &str) -> Result<(), String> {
     if value.trim().is_empty() {
         return Ok(());
     }
-    let raw = Value::String(value.to_owned());
-    if parse_candidate(field, &raw, true, binding.normalize).is_none()
-        || clamp_of(field, &raw, true).is_some()
+    if parse_candidate(
+        field,
+        &Value::String(value.to_owned()),
+        true,
+        binding.normalize,
+    )
+    .is_none()
     {
         return Err(format!(
-            "Invalid value for {key}; check its type, range, and allowed values."
+            "Invalid value for {key}; check its type and allowed values."
         ));
     }
     Ok(())
@@ -58,19 +66,14 @@ pub fn edit_setting(
     workspace: bool,
 ) -> std::io::Result<bool> {
     let invalid = |message: String| std::io::Error::new(std::io::ErrorKind::InvalidInput, message);
-    let field = CONFIG_FIELDS
-        .iter()
-        .find(|f| f.file && f.path == key)
-        .ok_or_else(|| invalid("Unknown configuration setting.".into()))?;
+    let field = CONFIG_FIELDS.iter().find(|f| f.file && f.path == key);
+    if field.is_none() && removed_reason(key).is_none() {
+        return Err(invalid("Unknown configuration setting.".into()));
+    }
     if let Some(value) = value {
+        reject_removed(key).map_err(invalid)?;
+        let field = field.ok_or_else(|| invalid("Unknown configuration setting.".into()))?;
         field_value(field, value).map_err(invalid)?;
-        if field.kind == ConfigFieldKind::Number && value.as_f64().is_some_and(|v| v.fract() != 0.0)
-        {
-            return Err(invalid(format!(
-                "Invalid value for {}; an integer is required.",
-                field.path
-            )));
-        }
         if workspace && !workspace_setting_allowed(field, value) {
             return Err(invalid(
                 "This setting may only be configured in home scope.".into(),
@@ -275,11 +278,48 @@ mod tests {
     }
     #[test]
     fn strict_environment_types() {
-        assert!(validate_env_value("REQUEST_TIMEOUT", "12ms").is_err());
-        assert!(validate_env_value("REQUEST_TIMEOUT", "4").is_err());
-        assert!(validate_env_value("REQUEST_TIMEOUT", "6000").is_ok());
+        assert!(validate_env_value("OCTOCODE_LSP_PREWARM", "sometimes").is_err());
+        assert!(validate_env_value("OCTOCODE_LSP_PREWARM", "OFF").is_ok());
         assert!(validate_env_value("OCTOCODE_ENABLE_LOCAL", "perhaps").is_err());
         assert!(validate_env_value("CUSTOM_PROVIDER_KEY", "anything").is_ok());
+    }
+    /// A removed name cannot be saved, in either file, and names its reason;
+    /// removing it stays allowed so a stale line can be deleted.
+    #[test]
+    fn removed_names_cannot_be_saved_but_can_be_removed() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let env = root.join(".env");
+        let error =
+            super::super::edit_scoped_env(&env, "REQUEST_TIMEOUT", Some("5000"), false, None)
+                .unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+        assert!(error.to_string().contains("removed"), "{error}");
+        assert!(!env.exists());
+        let rc = root.join(".octocoderc");
+        let text =
+            r#"{"network":{"timeout":5000},"output":{"pagination":{"defaultCharLength":4000}}}"#;
+        std::fs::write(&rc, text).unwrap();
+        for key in ["network.timeout", "output.pagination.defaultCharLength"] {
+            let error = edit_setting(
+                &rc,
+                key,
+                Some(&json!(6000)),
+                &config_revision(Some(text)),
+                false,
+            )
+            .unwrap_err();
+            assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput, "{key}");
+            assert!(error.to_string().contains("removed"), "{key}: {error}");
+        }
+        for key in ["network.timeout", "output.pagination"] {
+            let current = std::fs::read_to_string(&rc).unwrap();
+            assert!(edit_setting(&rc, key, None, &config_revision(Some(&current)), false).unwrap());
+        }
+        assert_eq!(
+            parse_config_json(&std::fs::read_to_string(&rc).unwrap()).unwrap(),
+            json!({})
+        );
     }
     #[test]
     fn inspect_never_discloses_unknown_or_invalid_values() {
@@ -291,10 +331,10 @@ mod tests {
         std::fs::create_dir_all(cwd.join(".octocode")).unwrap();
         std::fs::write(
             home.join(".env"),
-            "CUSTOM_KEY=private-marker\nREQUEST_TIMEOUT=6000\n",
+            "CUSTOM_KEY=private-marker\nOCTOCODE_LSP_PREWARM=off\n",
         )
         .unwrap();
-        std::fs::write(home.join(".octocoderc"),r#"{"classification":{"api":"credential-marker"},"network":{"maxRetries":{"hidden":"invalid-marker"}}}"#).unwrap();
+        std::fs::write(home.join(".octocoderc"),r#"{"classification":{"api":"credential-marker"},"lsp":{"prewarm":{"hidden":"invalid-marker"}}}"#).unwrap();
         let input = super::super::acquire_config_input(
             std::collections::BTreeMap::from([(
                 "OCTOCODE_HOME".into(),
@@ -329,7 +369,7 @@ mod tests {
         std::fs::write(home.join(".env"), "OCTOCODE_ENABLE_LOCAL=true\n").unwrap();
         std::fs::write(
             home.join(".octocoderc"),
-            r#"{"local":{"enabled":false},"network":{"maxRetries":2}}"#,
+            r#"{"local":{"enabled":false},"lsp":{"prewarm":"off"}}"#,
         )
         .unwrap();
         for (raw, source) in [("nope", "homeSettings"), ("true", "process")] {
@@ -353,10 +393,7 @@ mod tests {
                 source
             );
             assert_eq!(
-                settings
-                    .iter()
-                    .find(|s| s["key"] == "network.maxRetries")
-                    .unwrap()["source"],
+                settings.iter().find(|s| s["key"] == "lsp.prewarm").unwrap()["source"],
                 "homeSettings"
             );
         }
@@ -427,11 +464,12 @@ mod tests {
         let path = std::fs::canonicalize(dir.path())
             .unwrap()
             .join(".octocoderc");
-        let text = r#"{"output":{"pagination":{"defaultCharLength":4000}},"network":{"timeout":5000,"maxRetries":2}}"#;
+        let text =
+            r#"{"mcp":{"deferred":["astSearch"]},"lsp":{"prewarm":"off","autoInstall":"auto"}}"#;
         std::fs::write(&path, text).unwrap();
         edit_setting(
             &path,
-            "output.pagination.defaultCharLength",
+            "mcp.deferred",
             None,
             &config_revision(Some(text)),
             false,
@@ -440,14 +478,14 @@ mod tests {
         let text = std::fs::read_to_string(&path).unwrap();
         edit_setting(
             &path,
-            "network.timeout",
+            "lsp.prewarm",
             None,
             &config_revision(Some(&text)),
             false,
         )
         .unwrap();
         let saved = parse_config_json(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        assert_eq!(saved, json!({"network":{"maxRetries":2}}));
+        assert_eq!(saved, json!({"lsp":{"autoInstall":"auto"}}));
     }
     #[test]
     fn stale_revision_cannot_overwrite() {
@@ -455,28 +493,10 @@ mod tests {
         let path = std::fs::canonicalize(dir.path())
             .unwrap()
             .join(".octocoderc");
-        std::fs::write(&path, "{/*keep*/\"network\":{\"timeout\":5000}}").unwrap();
-        assert!(
-            edit_setting(
-                &path,
-                "network.timeout",
-                Some(&json!(6000)),
-                "missing",
-                false
-            )
-            .is_err()
-        );
+        std::fs::write(&path, "{/*keep*/\"lsp\":{\"prewarm\":\"off\"}}").unwrap();
+        assert!(edit_setting(&path, "lsp.prewarm", Some(&json!("all")), "missing", false).is_err());
         let revision = config_revision(read_private_config(&path).unwrap().as_deref());
-        assert!(
-            edit_setting(
-                &path,
-                "network.timeout",
-                Some(&json!(6000)),
-                &revision,
-                false
-            )
-            .unwrap()
-        );
+        assert!(edit_setting(&path, "lsp.prewarm", Some(&json!("all")), &revision, false).unwrap());
         assert!(std::fs::read_to_string(path).unwrap().contains("/*keep*/"));
     }
 }

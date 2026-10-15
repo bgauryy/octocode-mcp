@@ -358,7 +358,6 @@ async fn artifactsearch_memory_storage_mode_bypasses_in_process_cache() {
     let settings = [
         ("OCTOCODE_STORAGE_MODE", "memory".into()),
         ("OCTOCODE_ALLOW_PRIVATE_REGISTRY", "true".into()),
-        ("MAX_RETRIES", "0".into()),
     ];
     let runtime = workspace.runtime(&settings);
 

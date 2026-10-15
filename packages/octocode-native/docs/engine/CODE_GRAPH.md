@@ -15,7 +15,7 @@ The implementation is in `src/graph/model.rs` and `src/graph/diff.rs`. Native gr
 
 ## Ingestion flow
 
-1. AST extraction produces typed declarations, imports, exports, calls, modules, ranges, and source diagnostics for the canonical ten-language, 25-extension grammar registry.
+1. AST extraction produces typed declarations, imports, exports, calls, modules, ranges, and source diagnostics for every language in the [grammar registry](SUPPORTED_LANGUAGES_AND_FEATURES.md#language-matrix).
 2. `CodeGraphBuilder::ingest_facts` adds syntax nodes and evidence.
 3. The native linker adds resolved file relations without replacing extraction evidence.
 4. `CodeGraphBuilder::finish` returns the snapshot.
@@ -117,30 +117,14 @@ Large inputs are bounded:
 - **Bundles under the bound:** a file classified as bundled (minified,
   `sourceMappingURL`, webpack/parcel runtime, build output) keeps its file node
   and imports. Its symbols are dropped and its call sites are not linked.
-- **Measured:** a 3.6 MB esbuild-minified bundle plus a 9 MB unminified file
-  ingest in about 70 ms with 91 MB RSS.
 
-### Validation
+### Known limits
 
-A benchmark (since removed from the repo) measured quality against the source text, not
-against the graph's own output. On 20 repositories covering 12 grammars (47 to
-50k files):
-
-- Ingest is deterministic.
-- 89–100% of sampled import edges and 98–100% of sampled high-confidence call
-  edges verify against the source line they cite.
-- Cycle witness hops verify at 80–100%.
-
-Its seeded-defect run recalled 5/5 planted defects with zero
-negative-control leaks. The controls are a lazy Python import cycle and a Rust
-`mod tests` dev-dependency.
-
-Not yet covered:
-
-- LSP-enriched call identity. Method calls whose receiver type is not
+- No LSP-enriched call identity: method calls whose receiver type is not
   locally evident stay unlinked rather than guessed. The answers that follow
   calls report `coverage.callInternalRecall` so agents can see the gap.
-- Incremental re-ingest of changed files (an unchanged tree is reused whole).
+- No incremental re-ingest: a changed tree is ingested again (an unchanged
+  tree is reused whole).
 - C/C++ unreachable-file precision stays low: headers reach the build through
   `-I` roots and Kbuild/CMake rules, which ingest does not parse.
 - Rust call recall is capped by method chains and function return types;
@@ -175,10 +159,10 @@ cargo test --manifest-path packages/octocode-native/Cargo.toml -p octocode-engin
 cargo test --manifest-path packages/octocode-native/Cargo.toml -p octocode-native tools::ast_graph
 ```
 
-A manual sensor reports file and edge counts, file-topology build time, immutable-snapshot build time, and query time without imposing a flaky CI timing threshold:
+Timing is a criterion benchmark, not a CI threshold. It builds and queries the same frozen graph (`OCTOCODE_GRAPH_BENCH_FILES`, default 20,000 files, and `OCTOCODE_GRAPH_BENCH_FANOUT`, default 4):
 
 ```bash
-cargo test --manifest-path packages/octocode-native/Cargo.toml -p octocode-engine --release --no-default-features --test graph_benchmark measure_frozen_graph_baseline -- --ignored --exact --nocapture
+cargo bench --manifest-path packages/octocode-native/Cargo.toml -p octocode-engine --bench graph
 ```
 
-The release profile keeps debug instrumentation from distorting the receipt. The sensor writes `$TMPDIR/octocode-graph-benchmark.json`. Set `OCTOCODE_GRAPH_BENCH_REPORT` to choose another report path. Set `OCTOCODE_GRAPH_BENCH_FILES` and `OCTOCODE_GRAPH_BENCH_FANOUT` to scale the frozen graph. Compare any proposed graph library against the same correctness fixture and sensor before adoption. Keep `BTreeMap` and full snapshot rebuilds unless a held-out benchmark demonstrates a material correctness, memory, or latency gain from another representation or incremental parsing.
+Measure any proposed graph library or incremental parsing against the same correctness test and benchmark before adopting it.

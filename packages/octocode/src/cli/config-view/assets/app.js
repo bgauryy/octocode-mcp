@@ -5,7 +5,6 @@ let agents = [];
 let tab = 'settings';
 let busy = false;
 let ended = false;
-const numeric = setting => setting.type === 'number';
 const $ = id => document.getElementById(id);
 const scope = () => $('scope').value;
 function node(tag, text, className) {
@@ -89,9 +88,7 @@ function editor(setting) {
     input.value = String(setting.value ?? setting.defaultValue ?? '');
   } else {
     input = node(setting.type === 'stringArray' ? 'textarea' : 'input');
-    if (input.tagName === 'INPUT') input.type = numeric(setting) ? 'number' : 'text';
-    if (setting.minimum !== undefined) input.min = setting.minimum;
-    if (setting.maximum !== undefined) input.max = setting.maximum;
+    if (input.tagName === 'INPUT') input.type = 'text';
     input.value = setting.type === 'stringArray' ? JSON.stringify(setting.value === undefined ? setting.defaultValue ?? null : setting.value) : String(setting.value ?? setting.defaultValue ?? '');
     if (setting.type === 'stringArray') input.placeholder = '["value"] or null to inherit';
   }
@@ -118,8 +115,7 @@ function settingsView() {
     input.disabled = disabled;
     const apply = button('Save', () => {
       try {
-        const value = setting.type === 'boolean' ? input.checked : numeric(setting) ? Number(input.value) : setting.type === 'stringArray' ? JSON.parse(input.value) : input.value;
-        if (numeric(setting) && (input.value === '' || !Number.isFinite(value) || !input.checkValidity())) throw new Error('Enter a valid number within the allowed range.');
+        const value = setting.type === 'boolean' ? input.checked : setting.type === 'stringArray' ? JSON.parse(input.value) : input.value;
         if (setting.type === 'stringArray' && value !== null && (!Array.isArray(value) || value.some(item => typeof item !== 'string'))) throw new Error('Enter a JSON array of strings, or null to inherit.');
         void save({ operation: 'setSetting', key, value, scope: scope(), revision: revision('Settings') });
       } catch (error) { message(error.message, true); }

@@ -174,11 +174,15 @@ describe('team tools on a fake Pi', () => {
   });
 
   it('refuses a lock call whose own paths overlap, and reserves nothing', async () => {
-    const { a } = await pair();
+    const { a, b, cwd } = await pair();
     const coordinate = a.tools.get('coordinate');
     await expect(run(coordinate, { action: 'lock', paths: ['src/', 'src/a.ts'] }, a.ctx)).rejects.toThrow(/Requested paths overlap: src and src\/a\.ts\. Nothing was locked; reserve the tree alone, or each path once\./);
     await expect(run(coordinate, { action: 'lock', paths: ['x.ts', 'X.ts'] }, a.ctx)).rejects.toThrow(/Requested paths overlap/);
-    expect(a.team.members().find((entry) => entry.id === a.team.id)).toBeDefined();
+    // The refusals reserved nothing: the member holds no lease, and a peer is not blocked on any requested path.
+    const me = a.team.members().find((entry) => entry.id === a.team.id);
+    expect(me).toMatchObject({ id: a.team.id });
+    expect(me?.locks ?? []).toEqual([]);
+    for (const file of ['src/a.ts', 'x.ts']) expect(b.team.reservation(path.join(cwd, file), file)).toBeUndefined();
     expect(text(await run(coordinate, { action: 'unlock' }, a.ctx))).toBe('Released 0 reservation(s).');
   });
 

@@ -8,7 +8,7 @@ import { PagePolicy } from '../src/browser/network.js';
 const launch = vi.hoisted(() => vi.fn());
 vi.mock('chrome-launcher', () => ({ launch }));
 
-const { openBrowser, switchTo } = await import('../src/browser/cdp.js');
+const { openBrowser, switchTo } = await import('../src/browser/session.js');
 type Session = Awaited<ReturnType<typeof openBrowser>>;
 
 const stubs: CdpStub[] = [];

@@ -211,6 +211,17 @@ describe('project trust: what is gated', () => {
     expect(projectConfigFiles(deep).map((file) => path.relative(fs.realpathSync(deep), file))).toEqual([path.join('.claude', 'skills', 'a', 'b', 'SKILL.md')]);
   });
 
+  it('does not fingerprint a file it cannot read like an empty one', () => {
+    const cwd = project({ '.claude/settings.json': '' });
+    const file = path.join(cwd, '.claude', 'settings.json');
+    const empty = fingerprint([file]);
+    // A directory where the file was: reading it fails (EISDIR), whatever user runs the test.
+    fs.rmSync(file);
+    fs.mkdirSync(file);
+    expect(fingerprint([file])).not.toBe(empty);
+    expect(fingerprint([file])).toBe(fingerprint([file]));
+  });
+
   it('survives a symlink loop inside a skill dir', () => {
     const cwd = project({ '.claude/skills/a/x.txt': 'x' });
     fs.symlinkSync(path.join(cwd, '.claude', 'skills'), path.join(cwd, '.claude', 'skills', 'a', 'loop'));

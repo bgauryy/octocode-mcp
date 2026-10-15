@@ -311,6 +311,44 @@ pub(super) fn validate_matched(
     })
 }
 
+pub(super) fn verify_candidate(
+    scope: &PageScope<'_, impl CancellationCheck>,
+    file: &mut octocode_engine::types::TextSearchFile,
+    redacted: &mut Redacted,
+) -> Result<bool, ToolError> {
+    scope.cancel.check().map_err(ToolError::cancelled)?;
+    let source = scope.output_root.join(&file.path);
+    validate_matched(scope.paths, &source)?;
+    let before = file
+        .matches
+        .iter()
+        .map(|matched| matched.value.clone())
+        .collect::<Vec<_>>();
+    let rows = 0..file.matches.len();
+    let verification = guard_clipped_secrets(
+        file,
+        &source,
+        (scope.expected_digest)(&source),
+        rows,
+        &ValueCheck {
+            security: scope.security,
+            match_only: scope.query.result_view == LocalSearchQueryResultView::MatchOnly,
+            cancel: scope.cancel,
+        },
+    )
+    .map_err(ToolError::cancelled)?;
+    for (matched, before) in file.matches.iter().zip(before) {
+        if matched.value != before {
+            redacted.insert((file.path.clone(), matched.line, matched.column));
+        }
+    }
+    match verification {
+        Verification::Verified => Ok(true),
+        Verification::Unverified => Ok(false),
+        Verification::Changed => Err(changed_since_scan(scope.query)),
+    }
+}
+
 /// Outlines of the page's first shown files, keyed by source path, parsed
 /// from the bytes their secret check read (`None`: no outline).
 pub(super) type Outlines =
@@ -446,6 +484,54 @@ fn parallel_outlines(
             .collect()
     })
 }
+
+/// Outlines a default page cut charges names by, by file index (see
+/// [`super::leads::ENCLOSING_CUT_FILES`]): the first files with rows in an
+/// outlined language, each read within the parse cap once the read policy
+/// passes it. A file the map lacks (denied or unreadable) reserves per row;
+/// `None` is a file without an outline, whose rows carry no names. A stored
+/// scan's file that no longer hashes to the bytes it matched restarts, as
+/// on the page that shows it, so a continuation never cuts other pages.
+pub(super) fn cut_outlines(
+    scope: &PageScope<'_, impl CancellationCheck>,
+    files: &[octocode_engine::types::TextSearchFile],
+) -> Result<CutOutlines, ToolError> {
+    let query = scope.query;
+    if list_view(query.result_view) || query.match_page_size().is_some() {
+        return Ok(CutOutlines::new());
+    }
+    let mut indexes = std::collections::HashMap::new();
+    let mut reads = Vec::new();
+    let outlined = files.iter().enumerate().filter(|(_, file)| {
+        !file.matches.is_empty()
+            && super::leads::outlined_language(std::path::Path::new(&file.path))
+    });
+    for (index, file) in outlined.take(super::leads::ENCLOSING_CUT_FILES) {
+        scope.cancel.check().map_err(ToolError::cancelled)?;
+        let source = scope.output_root.join(&file.path);
+        if validate_matched(scope.paths, &source).is_err() {
+            continue;
+        }
+        let Ok(bytes) = crate::tools::source::read_bounded(&source, MAX_PARSE_SIZE) else {
+            continue;
+        };
+        if let Some(expected) = (scope.expected_digest)(&source)
+            && expected != Some(<[u8; 32]>::from(Sha256::digest(&bytes)))
+        {
+            return Err(changed_since_scan(query));
+        }
+        indexes.insert(source.clone(), index);
+        reads.push((source, bytes));
+    }
+    Ok(parallel_outlines(reads, scope.security)
+        .into_iter()
+        .filter_map(|(source, outline)| Some((*indexes.get(&source)?, outline)))
+        .collect())
+}
+
+/// Outlines of the files a page cut charges names by, by file index (see
+/// [`cut_outlines`]).
+pub(super) type CutOutlines = std::collections::HashMap<usize, Option<super::enclosing::Outline>>;
 
 /// Remove `…` window markers and `...` truncation suffixes from a value line.
 pub(super) fn strip_clip_markers(line: &str) -> &str {

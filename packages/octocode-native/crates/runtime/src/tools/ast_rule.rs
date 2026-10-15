@@ -22,6 +22,36 @@ pub(crate) fn language_globs(
         .collect()
 }
 
+/// `languageGlobs` compiled against a scan root, by the rules the graph-facts
+/// scan applies: each rule's parser extension and matcher.
+#[derive(Default)]
+pub(crate) struct GlobParsers(Vec<octocode_engine::graph::ParserOverride>);
+
+impl GlobParsers {
+    /// No map compiles to no rules. A malformed glob is `invalidGlob`; a key
+    /// that selects no single grammar is `languageUnsupported`.
+    pub(crate) fn compile(
+        root: &std::path::Path,
+        map: Option<&BTreeMap<String, Vec<String>>>,
+    ) -> Result<Self, octocode_engine::graph::GraphScanError> {
+        let rules = map.map(language_globs);
+        octocode_engine::graph::parser_overrides(root, rules.as_deref()).map(Self)
+    }
+
+    /// The parser extension the rules select for `path`; none when no rule
+    /// matches it, or when rules of different parsers do (the graph scan
+    /// skips such a file as ambiguous).
+    pub(crate) fn extension(&self, path: &std::path::Path) -> Option<&str> {
+        let mut selected = self
+            .0
+            .iter()
+            .filter(|(_, matcher)| octocode_engine::search::glob::matches(matcher, path, false))
+            .map(|(extension, _)| extension.as_str());
+        let first = selected.next()?;
+        selected.all(|other| other == first).then_some(first)
+    }
+}
+
 /// Error code for a pattern or rule that compiles for no grammar.
 pub(crate) const INVALID_PATTERN: &str = "invalidPattern";
 
@@ -176,7 +206,8 @@ pub(crate) fn file_grammar(path: &std::path::Path) -> Option<(String, BTreeSet<S
     Some((label, extensions))
 }
 
-/// Grammars whose extensions occur under `root`, from a bounded walk that
+/// Grammars whose files occur under `root`, by their extension or the
+/// `languageGlobs` rule that names their parser, from a bounded walk that
 /// honors the same discovery policy, ignore rules and excluded directories
 /// as the match scan. Each maps to its full extension set, most files
 /// first (ties by name), so a list of candidates leads with the grammar the
@@ -188,6 +219,7 @@ pub(crate) fn present_grammars(
     walk: crate::tools::empty_walk::Walk,
     max_files: usize,
     globs: crate::tools::empty_walk::Globs<'_>,
+    parsers: &GlobParsers,
     permits: &dyn Fn(&std::path::Path) -> bool,
     stop: &octocode_engine::search::walk::Stop<'_>,
 ) -> Result<Vec<(String, BTreeSet<String>)>, octocode_engine::error::Error> {
@@ -205,8 +237,10 @@ pub(crate) fn present_grammars(
         if files > max_files {
             break;
         }
-        let extension =
-            octocode_engine::text::extension_of(&entry.path().to_string_lossy(), true, "");
+        let extension = parsers.extension(entry.path()).map_or_else(
+            || octocode_engine::text::extension_of(&entry.path().to_string_lossy(), true, ""),
+            str::to_owned,
+        );
         if !extension.is_empty() {
             *seen.entry(extension).or_default() += 1;
         }

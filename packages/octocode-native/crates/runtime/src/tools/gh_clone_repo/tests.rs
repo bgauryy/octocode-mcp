@@ -2,6 +2,7 @@ use super::*;
 use crate::contracts::tool_types::{GhCloneRepoQueryPathArrayItem, GhCloneRepoQueryRef};
 use crate::policy::path::PathPolicyConfig;
 use crate::tools::cancel::NeverCancel;
+use crate::tools::gh_shared::test_support as gh_shared_support;
 use crate::tools::test_support;
 use octocode_github::CredentialSource;
 use std::ffi::OsString;
@@ -1557,23 +1558,35 @@ struct Bench {
 
 impl Bench {
     fn new() -> Self {
+        Self::at(api_github_endpoint())
+    }
+
+    /// A bench whose GitHub API is `endpoint`; git clones the fixture in
+    /// place of the repository URL that endpoint derives.
+    fn at(endpoint: GitHubEndpoint) -> Self {
         let fixture = Fixture::new();
         let (root, cache_home) = home_root();
         let policy = test_support::workspace_policy(&root.0);
-        let runner = fixture_runner(&fixture);
+        let url = repository_url(&endpoint, "fixture-owner", "fixture-repo").expect("clone URL");
+        let runner = RewriteRunner::new(&url, &fixture.bare_url);
         let mut config = CloneConfig::persistent(&cache_home);
         config.cache_ttl = Duration::from_secs(60);
         Self {
             fixture,
             _root: root,
             policy,
-            endpoint: api_github_endpoint(),
+            endpoint,
             runner,
             config,
         }
     }
 
     fn context(&self) -> CloneContext<'_> {
+        self.context_as(None)
+    }
+
+    /// [`Self::context`] for the caller holding `credential`.
+    fn context_as<'a>(&'a self, credential: Option<&'a ResolvedCredential>) -> CloneContext<'a> {
         CloneContext {
             resolved_default_branch: None,
             ..setup(
@@ -1582,7 +1595,7 @@ impl Bench {
                 &self.endpoint,
                 &self.policy,
                 &NeverCancel,
-                None,
+                credential,
             )
         }
     }
@@ -1967,4 +1980,253 @@ fn a_short_sha_ref_is_invalid_input_naming_the_full_sha() {
         CloneFailure::Clone(error) => assert_eq!(error.code, "gitFailed"),
         CloneFailure::Provider(error) => panic!("{error:?}"),
     }
+}
+
+/// Callers of one runtime that share its clone cache: each holds its own
+/// token, as the API and git see it.
+const ALICE: &str = "clone-token-alice";
+const BOB: &str = "clone-token-bob";
+
+fn credential(token: &str) -> ResolvedCredential {
+    ResolvedCredential::new(token, CredentialSource::Override)
+}
+
+/// One ghCloneRepo row run as the holder of `token`, through the runtime's
+/// entry point (`run`), with that token for both the API and git.
+async fn clone_as<C: ConditionalCache>(
+    bench: &Bench,
+    provider: &GitHubProvider<C>,
+    query: &GhCloneRepoQuery,
+    token: &str,
+) -> Result<CloneResult, CloneFailure> {
+    let credential = credential(token);
+    let request = RequestContext::new(
+        octocode_github::RequestBudget::with_timeout(Duration::from_secs(5), 1 << 20),
+        Some(credential.clone()),
+    );
+    run(
+        provider,
+        query,
+        Ok(&request),
+        &bench.context_as(Some(&credential)),
+    )
+    .await
+}
+
+/// `commits/{reference}` of the fixture repository answers `token` with
+/// `response`.
+async fn answer_commit(
+    server: &wiremock::MockServer,
+    reference: &str,
+    token: &str,
+    response: wiremock::ResponseTemplate,
+) {
+    use wiremock::matchers::{header, method, path};
+    wiremock::Mock::given(method("GET"))
+        .and(path(format!(
+            "/api/v3/repos/fixture-owner/fixture-repo/commits/{reference}"
+        )))
+        .and(header("authorization", format!("Bearer {token}").as_str()))
+        .respond_with(response)
+        .mount(server)
+        .await;
+}
+
+fn not_found() -> wiremock::ResponseTemplate {
+    wiremock::ResponseTemplate::new(404).set_body_json(serde_json::json!({"message": "Not Found"}))
+}
+
+/// The API paths `server` was asked for, in order.
+async fn api_calls(server: &wiremock::MockServer) -> Vec<String> {
+    server
+        .received_requests()
+        .await
+        .unwrap_or_default()
+        .iter()
+        .map(|request| request.url.path().to_owned())
+        .collect()
+}
+
+/// A checkout Alice's token cloned is never handed to Bob's token when
+/// GitHub denies Bob the repository: Bob gets the not-found a fresh clone
+/// would give him, no checkout path, and Alice's checkout stays.
+#[tokio::test]
+async fn cache_hit_is_not_served_to_a_caller_without_access() {
+    let server = wiremock::MockServer::builder().start().await;
+    let bench = Bench::at(gh_shared_support::mock_endpoint(&server));
+    let provider = gh_shared_support::one_shot_provider(&server);
+    answer_commit(&server, "main", BOB, not_found()).await;
+
+    let alice = clone_as(&bench, &provider, &query(), ALICE)
+        .await
+        .unwrap_or_else(|_| panic!("Alice clones"));
+    assert!(!alice.location.cached);
+    let clones = bench.clones_seen();
+
+    match clone_as(&bench, &provider, &query(), BOB).await {
+        Ok(served) => panic!("Bob was served Alice's checkout: {served:?}"),
+        Err(CloneFailure::Clone(error)) => {
+            assert_eq!(error.code, "notFound", "{error:?}");
+            assert_eq!(
+                error.message,
+                "Repository not found: fixture-owner/fixture-repo"
+            );
+            test_support::checks::assert_absent(
+                &serde_json::json!(error),
+                &alice.location.local_path,
+            );
+        }
+        Err(CloneFailure::Provider(error)) => panic!("a denied repository is notFound: {error:?}"),
+    }
+    assert_eq!(bench.clones_seen(), clones, "Bob ran no git");
+    assert!(
+        Path::new(&alice.location.local_path)
+            .join("README.md")
+            .is_file(),
+        "Alice's checkout is kept"
+    );
+    // Alice's fresh clone made no API call; Bob's refusal made exactly one.
+    assert_eq!(
+        api_calls(&server).await,
+        ["/api/v3/repos/fixture-owner/fixture-repo/commits/main"]
+    );
+}
+
+/// A caller GitHub grants the repository is served the hit after one
+/// `commits/{ref}` check with their own token, with no re-clone.
+#[tokio::test]
+async fn cache_hit_is_served_after_the_callers_access_check() {
+    let server = wiremock::MockServer::builder().start().await;
+    let bench = Bench::at(gh_shared_support::mock_endpoint(&server));
+    let provider = gh_shared_support::one_shot_provider(&server);
+    let sha = bench.fixture.first_commit.clone();
+    answer_commit(
+        &server,
+        "main",
+        BOB,
+        wiremock::ResponseTemplate::new(200).set_body_string(sha.as_str()),
+    )
+    .await;
+
+    let alice = clone_as(&bench, &provider, &query(), ALICE)
+        .await
+        .unwrap_or_else(|_| panic!("Alice clones"));
+    let clones = bench.clones_seen();
+    let bob = clone_as(&bench, &provider, &query(), BOB)
+        .await
+        .unwrap_or_else(|_| panic!("Bob may read the repository"));
+    assert!(bob.location.cached, "{bob:?}");
+    assert_eq!(bob.location.local_path, alice.location.local_path);
+    assert_eq!(bob.location.commit_sha, sha);
+    assert_eq!(
+        bench.clones_seen(),
+        clones,
+        "an allowed hit is not re-cloned"
+    );
+    assert_eq!(
+        api_calls(&server).await,
+        ["/api/v3/repos/fixture-owner/fixture-repo/commits/main"]
+    );
+}
+
+/// An unbranched request resolved through the default-branch alias checks
+/// access to the branch it would serve.
+#[tokio::test]
+async fn default_branch_alias_requires_access() {
+    let server = wiremock::MockServer::builder().start().await;
+    let bench = Bench::at(gh_shared_support::mock_endpoint(&server));
+    let provider = gh_shared_support::one_shot_provider(&server);
+    answer_commit(&server, "main", BOB, not_found()).await;
+
+    let alice = clone_as(&bench, &provider, &unbranched(), ALICE)
+        .await
+        .unwrap_or_else(|_| panic!("Alice clones the default branch"));
+    assert_eq!(alice.location.resolved_ref, "main");
+    match clone_as(&bench, &provider, &unbranched(), BOB).await {
+        Ok(served) => panic!("Bob was served Alice's checkout: {served:?}"),
+        Err(CloneFailure::Clone(error)) => assert_eq!(error.code, "notFound", "{error:?}"),
+        Err(CloneFailure::Provider(error)) => panic!("a denied repository is notFound: {error:?}"),
+    }
+    assert_eq!(
+        api_calls(&server).await,
+        ["/api/v3/repos/fixture-owner/fixture-repo/commits/main"]
+    );
+}
+
+/// A check that cannot pass refuses the hit: a caller's spent rate limit
+/// never unlocks another caller's checkout.
+#[tokio::test]
+async fn access_check_failure_fails_closed() {
+    let server = wiremock::MockServer::builder().start().await;
+    let bench = Bench::at(gh_shared_support::mock_endpoint(&server));
+    let provider = gh_shared_support::one_shot_provider(&server);
+    let reset = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock")
+        .as_secs()
+        + 3600;
+    answer_commit(
+        &server,
+        "main",
+        BOB,
+        wiremock::ResponseTemplate::new(403)
+            .insert_header("x-ratelimit-remaining", "0")
+            .insert_header("x-ratelimit-reset", reset.to_string().as_str())
+            .insert_header("x-ratelimit-resource", "core")
+            .set_body_json(serde_json::json!({"message": "API rate limit exceeded"})),
+    )
+    .await;
+
+    clone_as(&bench, &provider, &query(), ALICE)
+        .await
+        .unwrap_or_else(|_| panic!("Alice clones"));
+    match clone_as(&bench, &provider, &query(), BOB).await {
+        Ok(served) => panic!("a rate-limited check served the hit: {served:?}"),
+        Err(CloneFailure::Provider(error)) => {
+            assert_eq!(error.kind, octocode_github::ProviderErrorKind::RateLimited);
+        }
+        Err(CloneFailure::Clone(error)) => {
+            panic!("a rate limit keeps its provider error: {error:?}")
+        }
+    }
+}
+
+/// A check that never reaches GitHub refuses the hit too.
+#[tokio::test]
+async fn access_check_network_failure_refuses_the_hit() {
+    // An API endpoint nothing listens on: the port is released before use.
+    let port = std::net::TcpListener::bind("127.0.0.1:0")
+        .and_then(|listener| listener.local_addr())
+        .expect("free port")
+        .port();
+    let endpoint = GitHubEndpoint::new(
+        url::Url::parse(&format!("http://127.0.0.1:{port}/api/v3")).expect("URL"),
+    )
+    .expect("endpoint");
+    let bench = Bench::at(endpoint.clone());
+    let provider = gh_shared_support::one_shot_provider_at(endpoint);
+
+    let alice = clone_as(&bench, &provider, &query(), ALICE)
+        .await
+        .unwrap_or_else(|_| panic!("a fresh clone needs no API call"));
+    assert!(!alice.location.cached);
+    match clone_as(&bench, &provider, &query(), BOB).await {
+        Ok(served) => panic!("an unreachable check served the hit: {served:?}"),
+        Err(CloneFailure::Provider(error)) => assert!(
+            matches!(
+                error.kind,
+                octocode_github::ProviderErrorKind::Transport
+                    | octocode_github::ProviderErrorKind::Timeout
+            ),
+            "{error:?}"
+        ),
+        Err(CloneFailure::Clone(error)) => {
+            panic!("a network failure is a provider error: {error:?}")
+        }
+    }
+    assert!(
+        Path::new(&alice.location.local_path)
+            .join("README.md")
+            .is_file()
+    );
 }

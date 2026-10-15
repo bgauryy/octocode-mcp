@@ -79,10 +79,13 @@ function programName(name: string): string {
   return name.slice(Math.max(name.lastIndexOf('\\'), name.lastIndexOf('/')) + 1).toLowerCase().replace(/\.exe$/, '');
 }
 
+/** `text` without one pair of matching quotes around it. */
+const unquote = (text: string): string => text.replace(/^(['"])(.*)\1$/s, '$2');
+
 /** The text an element stands for: its string value, else its source with one pair of quotes removed. */
 function elementText(element: ScriptElement): string {
   if (element.value !== undefined) return element.value;
-  return element.text.replace(/^(['"])(.*)\1$/s, '$2');
+  return unquote(element.text);
 }
 
 /** Splits `text` at the commas outside quotes and parentheses: how PowerShell writes an array argument (`.\build, C:\Users\me`). */
@@ -114,7 +117,7 @@ function splitList(text: string): string[] {
 }
 
 /** The paths an argument stands for: one string constant, or the elements of an array written as source (`'a', 'b'`), each without its quotes. */
-const textTargets = (text: string): string[] => splitList(text).map((part) => part.replace(/^(['"])(.*)\1$/s, '$2'));
+const textTargets = (text: string): string[] => splitList(text).map(unquote);
 const elementTargets = (element: ScriptElement): string[] => (element.value !== undefined ? [element.value] : textTargets(element.text));
 
 /** `-Name:$false` / `-Name:0` turns a switch off. */
@@ -151,7 +154,7 @@ function resolveDots(path: string): string {
 /** `target` in a comparable form: lower case, `\` separators, no quotes, known variables expanded, no trailing separator or wildcard tail. */
 function normalizedTarget(target: string): { path: string; wildcard: boolean } {
   // `\\?\C:\x` and `\\.\C:\x` are `C:\x` (the prefix would otherwise read as a `?` wildcard).
-  let path = target.trim().replace(/^(['"])(.*)\1$/s, '$2').toLowerCase().replace(/\//g, '\\').replace(/^\\\\[?.]\\(?=[a-z]:)/, '').replace(/\\{2,}(?!$)/g, '\\');
+  let path = unquote(target.trim()).toLowerCase().replace(/\//g, '\\').replace(/^\\\\[?.]\\(?=[a-z]:)/, '').replace(/\\{2,}(?!$)/g, '\\');
   for (const [pattern, value] of VARIABLES) path = path.replace(pattern, value);
   const wildcard = /[*?[]/.test(path);
   // `C:\x\*` and `C:\x\*.*` stand for the folder's content: judged as the folder.
@@ -273,11 +276,11 @@ function shellScript(args: readonly ScriptElement[]): { script: string } | { unp
     const param = SHELL_ALIASES[arg.param.toLowerCase()] ?? resolveParam(arg.param, SHELL_PARAMS);
     if (param === 'file') return null;
     if (param === 'command') {
-      const words = arg.arg === undefined ? args.slice(at + 1).map(elementText) : [arg.arg.replace(/^(['"])(.*)\1$/s, '$2'), ...args.slice(at + 1).map(elementText)];
+      const words = arg.arg === undefined ? args.slice(at + 1).map(elementText) : [unquote(arg.arg), ...args.slice(at + 1).map(elementText)];
       return words.length > 0 ? { script: words.join(' ') } : null;
     }
     if (param === 'encodedcommand') {
-      const encoded = arg.arg !== undefined ? arg.arg.replace(/^(['"])(.*)\1$/s, '$2') : args[at + 1] && args[at + 1]!.param === undefined ? elementText(args[at + 1]!) : '';
+      const encoded = arg.arg !== undefined ? unquote(arg.arg) : args[at + 1] && args[at + 1]!.param === undefined ? elementText(args[at + 1]!) : '';
       const bytes = Buffer.from(encoded, 'base64');
       // Valid base64 of UTF-16: an even byte count that decodes back to the same text.
       return encoded !== '' && bytes.length > 0 && bytes.length % 2 === 0 && bytes.toString('base64').replace(/=+$/, '') === encoded.replace(/=+$/, '') ? { script: bytes.toString('utf16le') } : { unparsed: true };

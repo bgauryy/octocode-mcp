@@ -4,11 +4,12 @@ import path from 'node:path';
 import os from 'node:os';
 import { formatSize } from '@earendil-works/pi-coding-agent';
 import { redactSecrets, sanitizeTerminalText } from '../shared/sanitize.js';
-import type { Snapshot } from '../shared/snapshot.js';
+import type { Snapshot } from './snapshot.js';
+import { plural } from '../shared/render.js';
 import { clipText } from '../shared/util.js';
 import type { PermissionRequest } from './request.js';
 import { actionWhy, decide, type ActionClass, type PermissionMode } from './mode.js';
-import { catastrophicCommand, removalTargets } from './shell.js';
+import { catastrophicCommand, expandHome, removalTargets } from './shell.js';
 
 /**
  * The effect card every prompt leads with: what the call does, how to undo it, why it asks and what is risky about
@@ -32,10 +33,10 @@ interface EffectCard {
 }
 
 /** One line of agent-chosen text: terminal escapes and bidi controls removed, line breaks shown as `⏎`. */
-export const oneLine = (text: string): string => sanitizeTerminalText(text.replace(/\r\n|\r|\n/g, '⏎'));
+export const foldLines = (text: string): string => sanitizeTerminalText(text.replace(/\r\n|\r|\n/g, '⏎'));
 
 /** An audit line: one line, secrets redacted, at most 160 characters. */
-export const auditLine = (text: string): string => clipText(redactSecrets(oneLine(text)), AGENT_TEXT_MAX);
+export const auditLine = (text: string): string => clipText(redactSecrets(foldLines(text)), AGENT_TEXT_MAX);
 
 /** The targets an audit entry names: five, one line each, then how many more. */
 export function auditLines(lines: readonly string[]): string[] {
@@ -83,11 +84,8 @@ function within(value: string | Promise<string>, ms: number): Promise<string> {
   });
 }
 
-const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? '' : 's'}`;
-
 function expand(target: string, cwd: string): string {
-  const home = os.homedir();
-  return path.resolve(cwd, target.replace(/^(?:~|\$HOME|\$\{HOME\})(?=\/|$)/, home));
+  return path.resolve(cwd, expandHome(target, os.homedir()));
 }
 
 /** Files, folders and bytes under `targets`; undefined when the deadline passes first. */
@@ -174,17 +172,17 @@ function reasonLines(request: PermissionRequest, mode: PermissionMode): string[]
   for (const action of request.action ? [request.action, ...(request.also ?? [])] : []) {
     if (decide(mode, action) === 'ask') lines.push(`${actionWhy(action)} (${mode} mode asks)`);
   }
-  if (request.reason) lines.push(...request.reason.split('\n').filter(Boolean).map((line) => clipText(oneLine(line), 400)));
+  if (request.reason) lines.push(...request.reason.split('\n').filter(Boolean).map((line) => clipText(foldLines(line), 400)));
   return lines;
 }
 
 /** The system's lines of the card: effect, undo, why it asks and risk, each led by `▸`, which agent text cannot forge: it is one line (breaks shown as `⏎`) and comes after them. */
 export function systemLines(request: PermissionRequest, mode: PermissionMode, indent = '  '): string[] {
   return [
-    ...(request.effect !== undefined ? [`${indent}▸ effect: ${oneLine(request.effect)}`] : []),
-    ...(request.undo !== undefined ? [`${indent}▸ undo: ${oneLine(request.undo)}`] : []),
+    ...(request.effect !== undefined ? [`${indent}▸ effect: ${foldLines(request.effect)}`] : []),
+    ...(request.undo !== undefined ? [`${indent}▸ undo: ${foldLines(request.undo)}`] : []),
     ...reasonLines(request, mode).map((line) => `${indent}▸ why it asks: ${line}`),
-    ...(request.risk !== undefined ? [`${indent}▸ risk: ${oneLine(request.risk)}`] : []),
+    ...(request.risk !== undefined ? [`${indent}▸ risk: ${foldLines(request.risk)}`] : []),
     ...(request.nested ? [`${indent}▸ issued by a codemode script`] : []),
   ];
 }
@@ -193,7 +191,7 @@ export function systemLines(request: PermissionRequest, mode: PermissionMode, in
 export function cardLines(request: PermissionRequest, mode: PermissionMode, indent = '  '): string[] {
   return [
     ...systemLines(request, mode, indent),
-    ...(request.purpose === '' ? [] : [`${indent}agent says (unverified): ${clipText(oneLine(request.purpose ?? NO_REASON), AGENT_TEXT_MAX)}`]),
+    ...(request.purpose === '' ? [] : [`${indent}agent says (unverified): ${clipText(foldLines(request.purpose ?? NO_REASON), AGENT_TEXT_MAX)}`]),
   ];
 }
 
@@ -201,7 +199,7 @@ export function cardLines(request: PermissionRequest, mode: PermissionMode, inde
 export function lastSentence(text: string): string | undefined {
   const sentences = text.split(/(?<=[.!?:])\s+|\n+/).map((sentence) => sentence.trim()).filter(Boolean);
   const last = sentences.at(-1);
-  return last ? clipText(oneLine(last), AGENT_TEXT_MAX) : undefined;
+  return last ? clipText(foldLines(last), AGENT_TEXT_MAX) : undefined;
 }
 
 interface BranchEntry {

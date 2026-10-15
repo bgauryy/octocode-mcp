@@ -34,8 +34,8 @@ struct UserServerSpec {
     language_id: String,
     #[serde(rename = "initializationOptions")]
     initialization_options: Option<Value>,
-    /// Resident-memory cap for this server's process tree, in MiB; wins over
-    /// the host's `lsp.maxMemoryMb`. `0` disables the cap.
+    /// Resident-memory cap for this server's process tree, in MiB; unset
+    /// takes the host-derived default. `0` disables the cap.
     #[serde(rename = "maxMemoryMb")]
     max_memory_mb: Option<u32>,
     /// Extra environment variables for the server process.
@@ -82,15 +82,6 @@ impl LspDiscoveryOptions {
     /// The verified managed install of `command`, when one exists.
     fn managed_server(&self, command: &str) -> Option<PathBuf> {
         resolve_cached_server(&self.managed_root()?, command, &platform_id())
-    }
-
-    /// The host's resolved `lsp.maxMemoryMb` (`OCTOCODE_LSP_MAX_MEMORY_MB`);
-    /// unset takes the host-derived default.
-    fn max_memory_mb(&self) -> Option<u32> {
-        self.setting("OCTOCODE_LSP_MAX_MEMORY_MB")?
-            .trim()
-            .parse()
-            .ok()
     }
 
     /// The host's resolved `lsp.trustProjectConfig` (or a trusted project).
@@ -265,6 +256,15 @@ pub(crate) fn jdtls_data_dir(octocode_home: &Path, workspace_root: &str) -> Path
 pub fn serves_requests_concurrently(config: &JsLanguageServerConfig) -> bool {
     server_stem(&config.command).as_deref() == Some("tsgo")
 }
+
+/// Most `workspace/symbol` results the server returns for one query, for a
+/// server that drops the rest without saying so: tsgo answers
+/// `min(n, 256)` (typescript-go `internal/ls/symbols.go`).
+pub fn workspace_symbol_limit(config: &JsLanguageServerConfig) -> Option<usize> {
+    (server_stem(&config.command).as_deref() == Some("tsgo")).then_some(TSGO_WORKSPACE_SYMBOL_LIMIT)
+}
+
+const TSGO_WORKSPACE_SYMBOL_LIMIT: usize = 256;
 
 /// Apply per-server safe defaults to a resolved launch configuration, on
 /// every launch path (discovery, runtime, napi). rust-analyzer runs no
@@ -602,7 +602,7 @@ fn config_from_spec(
         language_id: Some(spec.language_id.to_owned()),
         initialization_options: None,
         env: None,
-        max_memory_mb: options.max_memory_mb(),
+        max_memory_mb: None,
     };
     // The built-in Rust route is rust-analyzer even from a managed install
     // whose file name differs.
@@ -992,6 +992,50 @@ fn spec_for_extension(extension: &str) -> Option<ServerSpec> {
     Some(spec)
 }
 
+/// How to get each built-in server above that octocode does not install
+/// itself, by bare command name.
+const INSTALL_HINTS: &[(&str, &str)] = &[
+    (
+        "typescript-language-server",
+        "octocode runs node_modules/typescript-language-server/lib/cli.mjs under node from its own install tree (its file mode, often 644 after a yarn install, is fine) and found none; install typescript-language-server there or put it on PATH",
+    ),
+    (
+        "gopls",
+        "install it with `go install golang.org/x/tools/gopls@latest` and put it on PATH",
+    ),
+    (
+        "pylsp",
+        "install it with `pip install python-lsp-server` (basedpyright or pyright on PATH is preferred) and put it on PATH",
+    ),
+    (
+        "jdtls",
+        "install the Eclipse JDT language server (for example `brew install jdtls`) and put `jdtls` on PATH",
+    ),
+    (
+        "csharp-ls",
+        "install it with `dotnet tool install --global csharp-ls` and put it on PATH",
+    ),
+    (
+        "metals",
+        "install it with `cs install metals` and put it on PATH",
+    ),
+];
+
+/// How to install a built-in server that was not found: a managed server
+/// (clangd, rust-analyzer) installs through octocode, any other built-in
+/// through [`INSTALL_HINTS`]. `None` for a command with no built-in route.
+pub(crate) fn install_hint(command: &str) -> Option<String> {
+    if crate::lsp::managed::manifest().contains_key(command) {
+        return Some(format!(
+            "install it with `octocode lsp-server install {command}` or put it on PATH"
+        ));
+    }
+    INSTALL_HINTS
+        .iter()
+        .find(|(name, _)| *name == command)
+        .map(|(_, hint)| (*hint).to_owned())
+}
+
 fn user_server_for_extension(
     extension: &str,
     workspace_root: &str,
@@ -1026,7 +1070,7 @@ fn user_server_for_extension(
             language_id: Some(server.language_id.clone()),
             initialization_options: server.initialization_options.clone(),
             env: server.env.clone(),
-            max_memory_mb: server.max_memory_mb.or_else(|| options.max_memory_mb()),
+            max_memory_mb: server.max_memory_mb,
         });
     }
     None
@@ -2352,29 +2396,24 @@ mod tests {
         let _ = std::fs::remove_dir_all(home);
     }
 
-    /// The memory cap is one setting: the host's `lsp.maxMemoryMb` (env
-    /// `OCTOCODE_LSP_MAX_MEMORY_MB`) reaches every server, a per-server
-    /// `maxMemoryMb` in `lsp-servers.json` wins over it, and `env` of a user
-    /// entry reaches the server process.
+    /// A built-in server takes the host-derived memory cap; a per-server
+    /// `maxMemoryMb` in `lsp-servers.json` (0 disables it) is the one
+    /// override, and `env` of a user entry reaches the server process.
     #[test]
-    fn the_memory_cap_comes_from_one_setting_with_a_per_server_override() {
+    fn the_memory_cap_is_host_derived_with_a_per_server_override() {
         let home = temp_test_root("octocode-engine-memory-cap-setting");
         std::fs::create_dir_all(&home).expect("create home");
         std::fs::write(
             home.join("lsp-servers.json"),
-            r#"{"languageServers":{".php":{"command":"home-php-server","args":[],"languageId":"php","maxMemoryMb":1500,"env":{"GOMEMLIMIT":"1GiB"}}}}"#,
+            r#"{"languageServers":{".php":{"command":"home-php-server","args":[],"languageId":"php","maxMemoryMb":1500,"env":{"GOMEMLIMIT":"1GiB"}},".lua":{"command":"home-lua-server","args":[],"languageId":"lua","maxMemoryMb":0}}}"#,
         )
         .expect("write user lsp config");
-        let mut options = LspDiscoveryOptions {
+        let options = LspDiscoveryOptions {
             octocode_home: Some(home.clone()),
             ..LspDiscoveryOptions::default()
         };
         let unset = default_server_for_file("a.go", "/workspace", &options).expect("go");
         assert_eq!(unset.max_memory_mb, None, "unset: the host-derived default");
-        options.env =
-            BTreeMap::from([("OCTOCODE_LSP_MAX_MEMORY_MB".to_owned(), "6000".to_owned())]);
-        let set = default_server_for_file("a.go", "/workspace", &options).expect("go");
-        assert_eq!(set.max_memory_mb, Some(6000));
         let user = default_server_for_file("a.php", "/workspace", &options).expect("php");
         assert_eq!(user.max_memory_mb, Some(1500), "per-server wins");
         assert_eq!(
@@ -2384,8 +2423,7 @@ mod tests {
                 .map(String::as_str),
             Some("1GiB")
         );
-        options.env = BTreeMap::from([("OCTOCODE_LSP_MAX_MEMORY_MB".to_owned(), "0".to_owned())]);
-        let disabled = default_server_for_file("a.go", "/workspace", &options).expect("go");
+        let disabled = default_server_for_file("a.lua", "/workspace", &options).expect("lua");
         assert_eq!(disabled.max_memory_mb, Some(0), "0 disables the cap");
         let _ = std::fs::remove_dir_all(home);
     }
@@ -2395,13 +2433,30 @@ mod tests {
     /// import scan. Options the user set win.
     #[test]
     fn typescript_server_gets_headless_options_sized_to_the_cap() {
-        let options = LspDiscoveryOptions {
-            env: BTreeMap::from([("OCTOCODE_LSP_MAX_MEMORY_MB".to_owned(), "8192".to_owned())]),
-            ..LspDiscoveryOptions::default()
+        let capped = |max_memory_mb: Option<u32>| {
+            let mut config = crate::lsp::types::JsLanguageServerConfig {
+                command: "typescript-language-server".to_owned(),
+                args: None,
+                workspace_root: "/workspace".to_owned(),
+                language_id: Some("typescript".to_owned()),
+                initialization_options: None,
+                env: None,
+                max_memory_mb,
+            };
+            crate::lsp::config::apply_server_default_options(&mut config, None);
+            config
         };
-        let ts =
-            super::default_server_for_file_from("a.ts", "/workspace", &options, None).expect("ts");
-        let init = ts.initialization_options.expect("init options");
+        let ts = super::default_server_for_file_from(
+            "a.ts",
+            "/workspace",
+            &LspDiscoveryOptions::default(),
+            None,
+        )
+        .expect("ts");
+        assert!(ts.initialization_options.is_some(), "headless defaults");
+        let init = capped(Some(8192))
+            .initialization_options
+            .expect("init options");
         assert_eq!(init["disableAutomaticTypingAcquisition"], true, "{init}");
         assert_eq!(init["tsserver"]["useSyntaxServer"], "never", "{init}");
         assert_eq!(init["maxTsServerMemory"], 8192 - 512, "{init}");
@@ -2410,13 +2465,9 @@ mod tests {
             "{init}"
         );
         // No cap, no heap bound.
-        let uncapped = LspDiscoveryOptions {
-            env: BTreeMap::from([("OCTOCODE_LSP_MAX_MEMORY_MB".to_owned(), "0".to_owned())]),
-            ..LspDiscoveryOptions::default()
-        };
-        let ts =
-            super::default_server_for_file_from("a.ts", "/workspace", &uncapped, None).expect("ts");
-        assert!(ts.initialization_options.expect("init")["maxTsServerMemory"].is_null());
+        assert!(
+            capped(Some(0)).initialization_options.expect("init")["maxTsServerMemory"].is_null()
+        );
         // A user value wins.
         let mut config = crate::lsp::types::JsLanguageServerConfig {
             command: "typescript-language-server".to_owned(),
@@ -2633,6 +2684,37 @@ mod tests {
             "typescript-language-server"
         )));
         assert!(!serves_requests_concurrently(&config("gopls")));
+    }
+
+    /// tsgo answers `workspace/symbol` with at most 256 symbols
+    /// (typescript-go `internal/ls/symbols.go`); other servers have no
+    /// known cap.
+    #[test]
+    fn only_tsgo_caps_workspace_symbols() {
+        let config = |command: &str| JsLanguageServerConfig {
+            command: command.to_owned(),
+            args: None,
+            workspace_root: "/workspace".to_owned(),
+            language_id: Some("typescript".to_owned()),
+            initialization_options: None,
+            env: None,
+            max_memory_mb: None,
+        };
+        assert_eq!(
+            super::workspace_symbol_limit(&config(
+                "/i/@typescript/native-preview-darwin-arm64/lib/tsgo"
+            )),
+            Some(256)
+        );
+        assert_eq!(
+            super::workspace_symbol_limit(&config("tsgo.cmd")),
+            Some(256)
+        );
+        assert_eq!(
+            super::workspace_symbol_limit(&config("typescript-language-server")),
+            None
+        );
+        assert_eq!(super::workspace_symbol_limit(&config("gopls")), None);
     }
 
     #[test]

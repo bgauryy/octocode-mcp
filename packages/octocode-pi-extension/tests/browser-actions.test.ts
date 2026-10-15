@@ -186,6 +186,26 @@ describe('browser private-address guard', () => {
   }, 20_000);
 });
 
+describe('browser navigate', () => {
+  it('says the page may still be loading when waiting for it to settle failed', async () => {
+    const base = handler();
+    const failing: CdpHandler = (method, params, page) => {
+      if (method === 'Page.navigate') {
+        setTimeout(() => page.emit('Page.loadEventFired'), 5);
+        return { frameId: 'f', loaderId: 'l' };
+      }
+      // The page is torn down under the settle wait (another navigation).
+      if (method === 'Runtime.evaluate' && String(params['expression']).includes('PerformanceObserver')) return { exceptionDetails: { text: 'Execution context was destroyed' } };
+      return base(method, params, page);
+    };
+    const { text } = await setup(failing);
+    const result = await text({ action: 'navigate', url: 'https://93.184.216.34/' });
+    expect(result).toContain('# Stub');
+    expect(result).toContain('the page may still be loading');
+    expect(result).not.toContain('still changing');
+  }, 20_000);
+});
+
 describe('browser download', () => {
   it('turns downloads on in the session\'s private folder, clicks, waits for the file and lists it with its path', async () => {
     const dir = path.join(sessionOutputDir('output'), 'downloads');
@@ -206,12 +226,6 @@ describe('browser download', () => {
     expect(await text({ action: 'download', ref: 2 })).toBe(`Downloads in ${dir}:\n- report.csv · 12 bytes · saved · ${file}`);
     // Turned on once per session.
     expect(cdp.commands.filter((command) => command.method === 'Browser.setDownloadBehavior')).toHaveLength(1);
-  }, 20_000);
-
-  it('falls back to the page-level download switch', async () => {
-    const { cdp, text } = await setup(handler(undefined, (method) => (method === 'Browser.setDownloadBehavior' ? { error: { message: 'not allowed' } } : {})));
-    expect(await text({ action: 'download' })).toContain('No downloads yet');
-    expect(cdp.commands.map((command) => command.method)).toContain('Page.setDownloadBehavior');
   }, 20_000);
 });
 

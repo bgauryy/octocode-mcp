@@ -30,9 +30,10 @@ pub struct ArtifactCall<'a> {
     /// The runtime's registry cache; `None` (non-persistent storage)
     /// bypasses it.
     pub cache: Option<&'a ArtifactCache>,
-    /// `network.timeout`: each call's request budget, within its deadline.
+    /// The runtime's network timeout: each call's request budget, within its
+    /// deadline.
     pub timeout: std::time::Duration,
-    /// `network.maxRetries`: retries of a 5xx or 429 registry answer.
+    /// The runtime's retries of a 5xx or 429 registry answer.
     pub max_retries: u8,
     /// Upstream release-tag checks through the GitHub API.
     pub tags: Option<&'a dyn ReleaseTags>,

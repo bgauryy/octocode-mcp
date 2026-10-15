@@ -270,7 +270,8 @@ export function toolHeader(theme: Theme, context: RenderContext, name: string, s
   return lines(context).set({ left, summary: text ? theme.fg('muted', text) : '', right }, rows);
 }
 
-function bodyLines(text: string): string[] {
+/** `text` as display rows: terminal controls stripped, tabs widened, blank rows at both ends dropped. */
+export function bodyLines(text: string): string[] {
   const rows = sanitizeTerminalText(text).replace(/\t/g, '   ').split('\n');
   while (rows.length > 0 && rows.at(-1)!.trim() === '') rows.pop();
   while (rows.length > 0 && rows[0]!.trim() === '') rows.shift();

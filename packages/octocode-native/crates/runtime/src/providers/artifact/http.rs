@@ -116,7 +116,7 @@ pub trait ArtifactHttp: Send + Sync {
 #[derive(Clone)]
 pub struct SystemArtifactHttp {
     client: reqwest::Client,
-    /// Retries after a 5xx or 429 (`network.maxRetries`).
+    /// Retries after a 5xx or 429 (the runtime's `max_retries`).
     retries: u8,
 }
 
@@ -806,7 +806,7 @@ mod tests {
         );
     }
 
-    /// A 5xx answer is retried `network.maxRetries` times, then returned.
+    /// A 5xx answer is retried `max_retries` times, then returned.
     #[tokio::test]
     async fn server_errors_retry_the_configured_number_of_times() {
         for (retries, requests) in [(0u8, 1usize), (2, 3)] {

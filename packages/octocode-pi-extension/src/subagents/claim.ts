@@ -6,7 +6,7 @@ import type { Team } from '../team/session.js';
 import { currentCatalog } from './catalog.js';
 import { routeModel, type ModelRoute } from './model.js';
 import type { Identity } from './process.js';
-import type { AgentProfile } from './profiles.js';
+import { GENERAL_PROFILE, type AgentProfile } from './profiles.js';
 import { agentScratch, dropEmptyScratch, type ReadReports, type ReportQueue } from './handoff.js';
 import type { Background } from './command.js';
 
@@ -115,15 +115,12 @@ export interface AgentRuns {
   session: number;
 }
 
+/** What a call asks for: its goal (already checked by `checkGoal`), a profile and model to plan with, and whether its subagents work together. */
 interface AgentParams {
-  task: string;
-  /** Already checked (`checkGoal`). */
   goal: string;
   profile?: string;
   model?: string;
-  background?: boolean;
   collaborate?: boolean;
-  isolate?: boolean;
 }
 
 /** A claimed subagent run: who it is, who started it, where it hands files back, and how it gives its slot back. */
@@ -154,7 +151,7 @@ export function planRun(profiles: Map<string, AgentProfile>, params: Pick<AgentP
  * Names the run and claims it, in the slot the caller already took (`runs.slots`); `release` gives the slot back.
  * `avoid`: names to skip besides the team's (existing refs of isolated runs).
  */
-export function claimRun(runs: AgentRuns, plan: RunPlan, params: AgentParams, ctx: Pick<ExtensionContext, 'cwd' | 'sessionManager'>, avoid: Iterable<string> = [], resumed?: Run['identity']): Run {
+export function claimRun(runs: AgentRuns, plan: RunPlan, params: Pick<AgentParams, 'goal' | 'collaborate'>, ctx: Pick<ExtensionContext, 'cwd' | 'sessionManager'>, avoid: Iterable<string> = [], resumed?: Run['identity']): Run {
   const { cwd } = ctx;
   const { profile, route } = plan;
   // Joining gives the child its parent's address for sendMessage; without a usable team database it still runs, alone.
@@ -169,7 +166,7 @@ export function claimRun(runs: AgentRuns, plan: RunPlan, params: AgentParams, ct
   // A resumed run continues as the same agent: name, role, goal, scratch folder and permission.
   const identity: Run['identity'] = resumed ?? {
     id: runs.team.newName([...runs.running.keys(), ...avoid]),
-    role: profile?.name ?? 'general',
+    role: profile?.name ?? GENERAL_PROFILE,
     goal: params.goal,
     parentSession: ctx.sessionManager.getSessionId(),
     ...(parentId ? { parentId } : {}),

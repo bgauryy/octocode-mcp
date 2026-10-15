@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { DAY_MS } from '../shared/util.js';
 
 /**
  * A restore point taken before a destructive shell command: `git stash create` writes a commit of the tracked files'
@@ -11,7 +12,7 @@ const SNAPSHOT_NAMESPACE = 'refs/octocode/snapshots';
 /** Target time for one snapshot; a slower one is abandoned. `git stash create` hashes every changed tracked file, so a large repository needs seconds, and the command waits for its restore point. */
 const SNAPSHOT_TIMEOUT_MS = 5_000;
 /** Snapshots older than this are pruned at session start. */
-const SNAPSHOT_KEEP_MS = 7 * 24 * 60 * 60 * 1000;
+const SNAPSHOT_KEEP_MS = 7 * DAY_MS;
 
 export type Snapshot = { ref: string } | { none: string };
 

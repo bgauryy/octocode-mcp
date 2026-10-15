@@ -7,7 +7,7 @@
 //! `false`, and the exit class says the call did not succeed.
 #![allow(clippy::panic, clippy::unwrap_used)]
 
-use crate::support::{self, MOCK_PROVIDER_TIMEOUT_MS, Workspace};
+use crate::support::{self, PROVIDER_LIMITS, Workspace};
 use octocode_native::runtime::{ExitClass, ToolOutcome};
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path, path_regex};
@@ -136,14 +136,16 @@ async fn every_tool_empty_and_error_row_meets_the_row_contract() {
     let server = github_and_registry().await;
     let workspace = Workspace::new();
     workspace.write("src/a.rs", "fn alpha() -> u32 {\n    1\n}\n");
-    let runtime = workspace.runtime(&[
-        ("GITHUB_API_URL", format!("{}/api/v3", server.uri())),
-        ("OCTOCODE_ALLOW_PRIVATE_REGISTRY", "true".into()),
-        ("OCTOCODE_BETA", "true".into()),
-        ("OCTOCODE_CLASSIFICATION_API", "b2-secret".into()),
-        ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
-        ("REQUEST_TIMEOUT", MOCK_PROVIDER_TIMEOUT_MS.into()),
-    ]);
+    let runtime = workspace.runtime_with(
+        &[
+            ("GITHUB_API_URL", format!("{}/api/v3", server.uri())),
+            ("OCTOCODE_ALLOW_PRIVATE_REGISTRY", "true".into()),
+            ("OCTOCODE_BETA", "true".into()),
+            ("OCTOCODE_CLASSIFICATION_API", "b2-secret".into()),
+            ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
+        ],
+        PROVIDER_LIMITS,
+    );
     let gh = json!({"owner":"a","repo":"b"});
     let missing = json!({"owner":"a","repo":"missing"});
     let with = |base: &Value, extra: Value| {

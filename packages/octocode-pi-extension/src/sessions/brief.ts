@@ -1,5 +1,6 @@
 import type { AgentDb } from '../agentdb/db.js';
-import { oneLine, type SessionExtra } from './store.js';
+import { HOUR_MS, MINUTE_MS } from '../shared/util.js';
+import { shownLine, type SessionExtra } from './store.js';
 import { countedList, workList } from './work.js';
 
 /** Ongoing backlog items named in a brief (the rest are counted): a few lines, never a wall of context. */
@@ -7,11 +8,11 @@ const MAX_ITEMS = 5;
 /** Characters of the list of background work that never reported. */
 const MAX_UNREPORTED_CHARS = 400;
 /** Away longer than this is worth a brief by itself. */
-const LONG_AWAY_MS = 3_600_000;
+const LONG_AWAY_MS = HOUR_MS;
 
 /** `90_000` → `1m`, `7_200_000` → `2h`, three days → `3d`. */
 export function shortDuration(ms: number): string {
-  const minutes = Math.max(0, Math.floor(ms / 60_000));
+  const minutes = Math.max(0, Math.floor(ms / MINUTE_MS));
   if (minutes < 1) return 'moments';
   if (minutes < 60) return `${minutes}m`;
   const hours = Math.floor(minutes / 60);
@@ -54,9 +55,9 @@ export function ongoingItems(agent: AgentDb, repoKey: string, sessionId: string)
     .all(repoKey, sessionId) as Array<{ seq: number; title: string; goal: string; paths: string }>;
   return rows.map((item) => {
     const paths = item.paths ? item.paths.split('\n') : [];
-    const where = paths.length ? `paths: ${[...paths.slice(0, MAX_PATHS).map((path) => oneLine(path, 100)), ...(paths.length > MAX_PATHS ? [`+${paths.length - MAX_PATHS} more`] : [])].join(', ')}` : '';
-    const detail = [item.goal ? `goal: ${oneLine(item.goal, MAX_GOAL_CHARS)}` : '', where].filter(Boolean).join(' — ');
-    return `B${item.seq} ${oneLine(item.title, 100)}${detail ? ` — ${detail}` : ''}`;
+    const where = paths.length ? `paths: ${[...paths.slice(0, MAX_PATHS).map((path) => shownLine(path, 100)), ...(paths.length > MAX_PATHS ? [`+${paths.length - MAX_PATHS} more`] : [])].join(', ')}` : '';
+    const detail = [item.goal ? `goal: ${shownLine(item.goal, MAX_GOAL_CHARS)}` : '', where].filter(Boolean).join(' — ');
+    return `B${item.seq} ${shownLine(item.title, 100)}${detail ? ` — ${detail}` : ''}`;
   });
 }
 

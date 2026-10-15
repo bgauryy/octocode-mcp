@@ -7,7 +7,7 @@ import { isWithin, sessionDir, sessionsRoot } from '../shared/home.js';
 import { contentText, errorMessage } from '../shared/util.js';
 import { shortDuration } from './brief.js';
 import { runningPid } from '../agentdb/liveness.js';
-import { oneLine, type SessionExtra, type SessionIndex } from './store.js';
+import { shownLine, type SessionExtra, type SessionIndex } from './store.js';
 
 /** Most sessions listed. */
 const LIST_LIMIT = 30;
@@ -30,15 +30,15 @@ const live = ({ extra }: ListedSession): boolean => runningPid(extra?.pid, extra
 
 function title({ info, parentPrompt }: ListedSession): string {
   // A fork has no prompt of its own until its first new one: show what it was forked from.
-  return oneLine(info.name || info.firstMessage || (parentPrompt ? `↳ ${parentPrompt}` : '(no prompt yet)'), 60);
+  return shownLine(info.name || info.firstMessage || (parentPrompt ? `↳ ${parentPrompt}` : '(no prompt yet)'), 60);
 }
 
 /** `● name-or-first-prompt · cwd · branch · 2h ago · ≈$1.84 · 7 files · 12 messages · 3f9a2c`, `(current)` for this session. */
 function sessionLine(row: ListedSession, current: string | undefined, all: boolean, now = Date.now()): string {
   const { info, extra } = row;
   const parts = [`${live(row) ? '●' : '○'} ${title(row)}`];
-  if (all) parts.push(oneLine(path.basename(info.cwd) || info.cwd || '?', 40));
-  if (extra?.branch) parts.push(oneLine(extra.branch, 40));
+  if (all) parts.push(shownLine(path.basename(info.cwd) || info.cwd || '?', 40));
+  if (extra?.branch) parts.push(shownLine(extra.branch, 40));
   parts.push(`${shortDuration(now - info.modified.getTime())} ago`);
   if (extra && (extra.cost > 0 || extra.unpriced === 1)) parts.push(formatCost({ cost: extra.cost, unpriced: extra.unpriced === 1 }));
   if (extra && extra.files_changed > 0) parts.push(`${extra.files_changed} file${extra.files_changed === 1 ? '' : 's'}`);
@@ -53,10 +53,10 @@ function details(row: ListedSession, current: string | undefined): string {
     sessionLine(row, current, true),
     `id: ${info.id}`,
     `file: ${info.path}`,
-    `cwd: ${oneLine(info.cwd, 300)}`,
+    `cwd: ${shownLine(info.cwd, 300)}`,
     `started: ${at(info.created)} UTC · last active: ${at(info.modified)} UTC`,
     ...(info.parentSessionPath ? [`forked from: ${info.parentSessionPath}`] : []),
-    ...(info.firstMessage && info.name ? [`first prompt: ${oneLine(info.firstMessage, 300)}`] : []),
+    ...(info.firstMessage && info.name ? [`first prompt: ${shownLine(info.firstMessage, 300)}`] : []),
     `tokens: ${extra?.tokens ?? 0} · live: ${live(row) ? `yes (pid ${runningPid(extra?.pid, extra?.pid_started)})` : 'no'}`,
     `octocode data: ${sessionDir(info.id)}`,
   ].join('\n');
@@ -128,7 +128,7 @@ export function registerSessionsCommand(pi: ExtensionAPI, commands: Subcommands,
       } catch (error) {
         return say(ctx, `Pi could not list its sessions: ${errorMessage(error)}`, 'warning');
       }
-      const scope = all ? 'all directories' : `${oneLine(path.basename(ctx.cwd) || ctx.cwd, 60)}${query ? ` matching "${oneLine(query, 60)}"` : ''}`;
+      const scope = all ? 'all directories' : `${shownLine(path.basename(ctx.cwd) || ctx.cwd, 60)}${query ? ` matching "${shownLine(query, 60)}"` : ''}`;
       if (rows.length === 0) return say(ctx, `No saved sessions for ${scope}.${all ? '' : ' Try /sessions all.'}`);
       const lines = uniqueLines(rows.map((row) => sessionLine(row, current, all)));
       if (!ctx.hasUI) return say(ctx, [`Sessions (${scope}), newest first:`, ...lines.map((line, i) => `${line}\n    ${rows[i]!.info.id}`)].join('\n'));
@@ -165,7 +165,7 @@ async function resume(ctx: ExtensionCommandContext, row: ListedSession, current:
 
 async function rename(pi: ExtensionAPI, ctx: ExtensionCommandContext, row: ListedSession, current: string | undefined): Promise<void> {
   if (row.info.id !== current) return;
-  const name = oneLine((await ctx.ui.input('New session name', row.info.name ?? '')) ?? '', 200);
+  const name = shownLine((await ctx.ui.input('New session name', row.info.name ?? '')) ?? '', 200);
   if (!name) return;
   pi.setSessionName(name);
   ctx.ui.notify(`Renamed to "${name}".`, 'info');

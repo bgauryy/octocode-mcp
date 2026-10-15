@@ -95,7 +95,7 @@ npx octocode auth login --hostname github.mycompany.com
 
 ## Classification key (`clasify`)
 
-The classification API credential lets optional read-tool `clasifyContext` and beta `clasify` send text evidence to the configured provider. Public `clasify` can also send explicitly referenced images. Text is sanitized; image pixels and metadata are sent unchanged. A configured key exposes context selection on available readers; public `clasify` also needs beta. The [availability table](OCTOCODE_CLASIFY.md#availability) owns the full gate combinations.
+The classification key enables read-tool `clasifyContext`; the beta `clasify` tool also needs `OCTOCODE_BETA` ([availability](OCTOCODE_CLASIFY.md#availability)). Get a key from the [provider docs](https://docs.typesafe.ai/introduction); what is sent: [SECURITY.md](SECURITY.md#classification-egress).
 
 | Variable | Purpose |
 |---|---|
@@ -103,9 +103,7 @@ The classification API credential lets optional read-tool `clasifyContext` and b
 | `OCTOCODE_CLASSIFICATION_API_HOST` | Optional API root (default `https://api.typesafe.ai`). HTTPS except on loopback. Home-only |
 
 - Source order: process env → workspace `.env` → home `.env` → `.octocoderc` (`classification.api`). The key never appears in resolved configuration output.
-- **No key:** `clasifyContext` are omitted and MCP does not register `clasify`. CLI help and `npx octocode schema` list only enabled tools; `npx octocode schema clasify` reports unavailable. An allowlist cannot bypass the missing credential.
 - **Kill switch:** a present-but-blank `OCTOCODE_CLASSIFICATION_API=` in the process environment disables both routes, even when a `.env` file has a key.
-- Get a key from the [provider docs](https://docs.typesafe.ai/introduction). What is sent: [SECURITY.md](SECURITY.md#classification-egress). Availability and request usage: [OCTOCODE_CLASIFY.md](OCTOCODE_CLASIFY.md#availability).
 
 ## npm registry credentials
 

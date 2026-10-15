@@ -1,4 +1,5 @@
 import { envChoice, PERMISSION_ENV, PERMISSION_GRANTS_ENV } from '../shared/env.js';
+import { plural } from '../shared/render.js';
 
 /**
  * Permission modes: which agent actions run, which ask the user first. One table decides every class in every mode;
@@ -168,7 +169,7 @@ export interface ActionCount {
 export function chipText(mode: PermissionMode, count?: ActionCount): string {
   if (mode !== 'full' || !count || count.actions === 0) return CHIPS[mode].text;
   const warned = count.warnings > 0 ? ` · ${count.warnings} ⚠` : '';
-  return `⏵⏵ permission: full · ${count.actions} ${count.actions === 1 ? 'action' : 'actions'}${warned} · ${PERMISSION_SHORTCUT_LABEL}`;
+  return `⏵⏵ permission: full · ${plural(count.actions, 'action')}${warned} · ${PERMISSION_SHORTCUT_LABEL}`;
 }
 
 const FULL_CHIP = /⏵⏵ permission: full( · \d+ actions?(?: · \d+ ⚠)?)? · Shift\+Tab/;

@@ -6,6 +6,7 @@ import type { ActionClass, AskReason } from '../permission/mode.js';
 import { headerText } from '../shared/fence.js';
 import { withDialog } from '../shared/locks.js';
 import { sanitizeTerminalText } from '../shared/sanitize.js';
+import { stringList } from '../shared/util.js';
 
 /**
  * A subagent's dialogs, answered by its parent. The child runs in Pi's RPC mode: its `ctx.ui.select`, `confirm` and `input`
@@ -27,7 +28,7 @@ const RELAY_WINDOW_MS = 60_000;
 export const RELAY_LIMIT_NOTE = `Not run: this subagent sent more than ${RELAY_MAX_DIALOGS} approval dialogs within a minute, so the rest of that minute is denied without asking the user. Do not retry now; report it to your parent as a blocker.`;
 
 /** The part of the parent's permission state a relay uses. */
-export interface RelayPermission {
+interface RelayPermission {
   /** The parent's own mode allows every class and no reason asks. */
   allows(classes: readonly ActionClass[], reasons: readonly AskReason[]): boolean;
   /** The parent answered "Allow once" itself. */
@@ -63,7 +64,6 @@ interface RelayOptions {
   now?: () => number;
 }
 
-const strings = (value: unknown): string[] | undefined => (Array.isArray(value) && value.every((item) => typeof item === 'string') ? (value as string[]) : undefined);
 const sameList = (a: readonly string[], b: readonly string[]): boolean => a.length === b.length && a.every((item, index) => item === b[index]);
 
 export class ChildRelay {
@@ -104,7 +104,7 @@ export class ChildRelay {
     const id = event['id'];
     if (!DIALOG_METHODS.has(method) || typeof id !== 'string') return;
     const title = typeof event['title'] === 'string' ? event['title'] : '';
-    const options = strings(event['options']) ?? [];
+    const options = stringList(event['options']) ?? [];
     const ui = this.#host?.ui;
     // The note for a denial the limit made: the child's own deny-with-a-note follow-up asks for it.
     const note = this.#denyNote;

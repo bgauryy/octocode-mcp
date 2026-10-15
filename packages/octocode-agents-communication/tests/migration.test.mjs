@@ -41,7 +41,7 @@ test('v1 migration preserves all evidence and IDs, publishes a verified backup, 
 test('unknown v1 schema is rejected before backup or mutation',t=>{
  const f=fixture(t),db=new DatabaseSync(f.database);db.exec('CREATE TABLE unexpected(id INTEGER)');db.close();
  const before=readFileSync(f.database);
- assert.throws(()=>f.call('db migrate',{backup:join(f.workspace,'backup.sqlite')}),/recognized v1, v2, v3 or v4 schema/);
+ assert.throws(()=>f.call('db migrate',{backup:join(f.workspace,'backup.sqlite')}),/recognized v1, v2, v3, v4 or v5 schema/);
  assert.deepEqual(readFileSync(f.database),before);
 });
 test('conversion failure rolls back v1 schema and rows while retaining the verified backup',t=>{
@@ -69,7 +69,7 @@ test('v2 migration preserves every record and state exactly while new snapshots 
  const before=db.prepare('SELECT * FROM records ORDER BY id').all(),state=db.prepare('SELECT * FROM sessions').all();db.close();
  const call=(name,input={})=>JSON.parse(execFileSync(binary,[...name.split(' '),JSON.stringify(input),'--workspace',workspace,'--database',database,'--session','author'],{encoding:'utf8',stdio:'pipe'}));
  assert.throws(()=>call('fetch'),/Incompatible/);
- const result=call('db migrate',{backup});assert.equal(result.schemaVersion,5);assert.equal(result.sourceSchemaVersion,2);assert.equal(result.records,before.length);
+ const result=call('db migrate',{backup});assert.equal(result.schemaVersion,6);assert.equal(result.sourceSchemaVersion,2);assert.equal(result.records,before.length);
  const migrated=new DatabaseSync(database);t.after(()=>migrated.close());
  assert.deepEqual(migrated.prepare('SELECT * FROM records ORDER BY id').all(),before);
  assert.deepEqual(migrated.prepare('SELECT * FROM sessions').all(),state);
@@ -93,17 +93,55 @@ test('v4 migration adds the lease wait queue and keeps every row and live lease'
  const before=db.prepare('SELECT * FROM records ORDER BY id').all(),leases=db.prepare('SELECT * FROM leases').all();db.close();
  const call=(name,input={},session='waiter')=>JSON.parse(execFileSync(binary,[...name.split(' '),JSON.stringify(input),'--workspace',workspace,'--database',database,'--session',session],{encoding:'utf8',stdio:'pipe'}));
  assert.throws(()=>call('fetch'),/Incompatible/);
- const result=call('db migrate',{backup});assert.equal(result.schemaVersion,5);assert.equal(result.sourceSchemaVersion,4);
+ const result=call('db migrate',{backup});assert.equal(result.schemaVersion,6);assert.equal(result.sourceSchemaVersion,4);
  const migrated=new DatabaseSync(database);t.after(()=>migrated.close());
  assert.deepEqual(migrated.prepare('SELECT * FROM records ORDER BY id').all().slice(0,before.length),before);
  assert.deepEqual(migrated.prepare('SELECT * FROM leases').all(),leases);
  assert.equal(migrated.prepare("SELECT count(*) n FROM sqlite_schema WHERE name IN ('lease_waits','lease_waits_order')").get().n,2);
  assert.equal(call('lock',{path:'a.ts',reasoning:'Queue after migration',wait:true}).queued,true);
 });
+test('v5 migration makes new raw inserts FYIs and leaves every stored message as it was sent',t=>{
+ const workspace=tempWorkspace(t,'communication-v5-migrate-',{real:true}),database=join(workspace,'v5.sqlite'),backup=join(workspace,'backup.sqlite');
+ const db=new DatabaseSync(database);
+ db.exec(readFileSync(new URL('./fixtures/schema-v5.sql',import.meta.url),'utf8'));
+ for(const id of ['author','recipient'])db.prepare('INSERT INTO sessions(id,workspace,name,vendor,expiresAt) VALUES(?,?,?,?,?)').run(id,workspace,id,'generic',Date.now()+600000);
+ const insert=db.prepare("INSERT INTO messages(sender,target,body,key,expiresAt,reasoning) VALUES('author','recipient',?,?,?,'Keep the sent policy')");
+ const old=Number(insert.run('Sent under v5 defaults','v5-default',Date.now()+600000).lastInsertRowid);
+ db.prepare("UPDATE sqlite_sequence SET seq=50 WHERE name='messages'").run();
+ const sent=db.prepare('SELECT * FROM messages').all(),records=db.prepare('SELECT * FROM records ORDER BY id').all();
+ assert.deepEqual({...db.prepare('SELECT replyRequired,wake FROM messages WHERE id=?').get(old)},{replyRequired:1,wake:'action'});db.close();
+ const call=(name,input={},session)=>JSON.parse(execFileSync(binary,[...name.split(' '),JSON.stringify(input),'--workspace',workspace,'--database',database,...(session?['--session',session]:[])],{encoding:'utf8',stdio:'pipe'}));
+ assert.throws(()=>call('fetch',{},'author'),/Incompatible/);
+ const result=call('db migrate',{backup});assert.equal(result.schemaVersion,6);assert.equal(result.sourceSchemaVersion,5);
+ const migrated=new DatabaseSync(database);t.after(()=>migrated.close());
+ assert.deepEqual(migrated.prepare('SELECT * FROM messages').all(),sent,'a stored message keeps its policy');
+ assert.deepEqual(migrated.prepare('SELECT * FROM records ORDER BY id').all().slice(0,records.length),records);
+ assert.deepEqual(migrated.prepare('PRAGMA foreign_key_check').all(),[]);
+ assert.equal(migrated.prepare('PRAGMA integrity_check').get().integrity_check,'ok');
+ const fresh=Number(migrated.prepare("INSERT INTO messages(sender,target,body,key,expiresAt,reasoning) VALUES('author','recipient','Raw insert after migration','v6-default',?,'FYI by default')").run(Date.now()+600000).lastInsertRowid);
+ assert.equal(fresh,51,'ids of deleted messages are never reused');
+ assert.deepEqual({...migrated.prepare('SELECT replyRequired,wake FROM messages WHERE id=?').get(fresh)},{replyRequired:0,wake:'passive'});
+ const backed=new DatabaseSync(backup,{readOnly:true});t.after(()=>backed.close());
+ assert.equal(backed.prepare('PRAGMA user_version').get().user_version,5);
+ assert.equal(JSON.parse(execFileSync(binary,['db','info','--workspace',workspace,'--database',database],{encoding:'utf8',stdio:'pipe'})).compatible,true);
+});
+test('every older schema ends with the same FYI column defaults as a new database',t=>{
+ const fresh=new DatabaseSync(':memory:');t.after(()=>fresh.close());
+ fresh.exec(readFileSync(new URL('../scripts/schema.sql',import.meta.url),'utf8'));
+ const defaults=db=>db.prepare("SELECT name,dflt_value FROM pragma_table_info('messages') WHERE name IN ('replyRequired','wake') ORDER BY name").all().map(row=>({...row}));
+ assert.deepEqual(defaults(fresh),[{name:'replyRequired',dflt_value:'0'},{name:'wake',dflt_value:"'passive'"}]);
+ for(const version of [2,3,4]){
+  const workspace=tempWorkspace(t,`communication-v${version}-defaults-`,{real:true}),database=join(workspace,'old.sqlite'),backup=join(workspace,'backup.sqlite');
+  const old=new DatabaseSync(database);old.exec(readFileSync(new URL(`./fixtures/schema-v${version}.sql`,import.meta.url),'utf8'));old.close();
+  execFileSync(binary,['db','migrate',JSON.stringify({backup}),'--workspace',workspace,'--database',database],{encoding:'utf8',stdio:'pipe'});
+  const migrated=new DatabaseSync(database,{readOnly:true});t.after(()=>migrated.close());
+  assert.deepEqual(defaults(migrated),defaults(fresh),`v${version}`);
+ }
+});
 test('unknown v2 schema is rejected without publishing a backup',t=>{
  const workspace=tempWorkspace(t,'communication-v2-unknown-',{real:true}),database=join(workspace,'v2.sqlite'),backup=join(workspace,'backup.sqlite');
  const db=new DatabaseSync(database);db.exec(readFileSync(new URL('./fixtures/schema-v2.sql',import.meta.url),'utf8'));db.exec('CREATE INDEX unexpected ON sessions(name)');db.close();
  const before=readFileSync(database);
- assert.throws(()=>execFileSync(binary,['db','migrate',JSON.stringify({backup}),'--workspace',workspace,'--database',database],{encoding:'utf8',stdio:'pipe'}),/recognized v1, v2, v3 or v4 schema/);
+ assert.throws(()=>execFileSync(binary,['db','migrate',JSON.stringify({backup}),'--workspace',workspace,'--database',database],{encoding:'utf8',stdio:'pipe'}),/recognized v1, v2, v3, v4 or v5 schema/);
  assert.deepEqual(readFileSync(database),before);assert.equal(existsSync(backup),false);
 });

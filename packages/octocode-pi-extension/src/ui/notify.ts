@@ -23,7 +23,7 @@ type NotifyMethod = 'osc9' | 'osc777' | 'osc99' | 'bel';
 type Focus = 'unknown' | 'focused' | 'unfocused';
 
 /** What fired a notice, in Claude Code's Notification vocabulary. */
-export type NoticeType = 'idle_prompt' | 'permission_prompt' | 'elicitation_dialog';
+type NoticeType = 'idle_prompt' | 'permission_prompt' | 'elicitation_dialog';
 
 export interface Notice {
   type: NoticeType;
@@ -196,9 +196,10 @@ export function registerNotify(pi: ExtensionAPI, options: NotifyOptions = {}): v
     unmark();
   });
   pi.on('agent_end', async (event) => {
-    const last = [...event.messages].reverse().find((message) => message.role === 'assistant');
+    type Message = (typeof event.messages)[number];
+    const last = [...event.messages].reverse().find((message): message is Extract<Message, { role: 'assistant' }> => message.role === 'assistant');
     // An interrupted run (Esc) means the user is right here; an error is worth a notice.
-    if (!last || last.role !== 'assistant' || last.stopReason === 'aborted') return;
+    if (!last || last.stopReason === 'aborted') return;
     lastAnswer = last.stopReason === 'error' ? `Failed: ${last.errorMessage ?? 'the run stopped with an error'}` : contentText(last.content) || 'Ready for input';
   });
   pi.on('agent_settled', async () => {

@@ -8,7 +8,7 @@ error; there is no JavaScript execution fallback.
 
 ## Requirements
 
-- Node.js 24.15+ (24.x)
+- Node.js `^24.15.0`
 - An MCP client with stdio server support
 
 ## Run
@@ -23,10 +23,10 @@ For guided installation into a supported client, use the CLI:
 npx octocode install
 ```
 
-The server registers the configured subset of GitHub, package, local search,
-AST, file-fetch, and LSP tools. GitHub operations require an available
-authentication method. Local capabilities follow the shared Octocode
-configuration and security policy.
+The server registers the available GitHub, package, local, AST, and LSP tools;
+CLI-only and gated tools stay out of `tools/list`
+([tool catalog](../../docs/OCTOCODE_MCP.md#tool-catalog)). GitHub tools need a
+token ([authentication](../../docs/AUTHENTICATION.md)).
 
 ## Distribution
 
@@ -36,8 +36,6 @@ configuration and security policy.
   list is generated from the public catalog (`yarn sync:manifest`);
   `check:manifest` fails `lint` and `build` when it is stale.
 - `server.json` describes the MCP registry package.
-- `README.md` is owned by this package and is never replaced during build or
-  publishing.
 
 ## Development
 

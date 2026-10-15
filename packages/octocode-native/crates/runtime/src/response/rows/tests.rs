@@ -1,6 +1,28 @@
 //! Contract and transport tests for response rows.
 
 #[test]
+fn envelope_unions_keep_each_data_requirement_combination() {
+    let schema = json!({
+        "$defs":{"rows":{"type":"array","items":{"properties":{"data":{
+            "allOf":[
+                {"required":["base"]},
+                {"oneOf":[{"required":["left"]},{"required":["right"]}]}
+            ]
+        }}}}},
+        "anyOf":[
+            {"required":["error","errorCode"]},
+            {"properties":{"results":{"$ref":"#/$defs/rows"}}}
+        ]
+    });
+    let mut variants = data_variants_of(&schema)
+        .into_iter()
+        .map(|fields| fields.into_iter().collect::<Vec<_>>())
+        .collect::<Vec<_>>();
+    variants.sort();
+    assert_eq!(variants, vec![vec!["base", "left"], vec!["base", "right"]]);
+}
+
+#[test]
 fn minimal_rows_keep_every_field_the_contract_requires() {
     let history = contract_data_variants(ToolId::GhSearchHistory);
     assert!(

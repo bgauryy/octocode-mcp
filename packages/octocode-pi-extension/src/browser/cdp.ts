@@ -1,20 +1,17 @@
-import { BROWSER_VISIBLE_ENV, envFlag } from '../shared/env.js';
 import { shortPath } from '../shared/format.js';
+import { isLoopbackHostname } from '../shared/net.js';
 import { cutText, errorMessage, withTimeout } from '../shared/util.js';
-import { abortError, throwIfAborted, unlessAborted } from './abort.js';
+import { abortError } from './abort.js';
 import { ConsoleLog } from './console-log.js';
-import { applyDownloads } from './emulation.js';
-import { browserWebSocketUrl, launchChrome, persistentProfileDir, profileLocked, profilePort, recordProfilePort, type OwnChrome } from './launch.js';
-import type { BlockedConnection } from './proxy.js';
+import { browserWebSocketUrl, devtoolsFetch, type OwnChrome } from './launch.js';
+import type { PageNetworkPolicy } from './policy.js';
+import { isHttpUrl } from '../web/guard.js';
 
 /**
  * Minimal Chrome DevTools Protocol client: one browser-level WebSocket (`CdpConnection`) with a session per page
- * (`CdpPage`). Launches its own Chrome, or, when the user opts in with OCTOCODE_CHROME_PORT, works in a tab of the
- * Chrome listening there (to reuse its logged-in profile).
+ * (`CdpPage`), the `BrowserSession` state those pages share (console, origins, downloads) and the browser's targets. Opening a
+ * session is `session.ts`; checking its requests is `page-network.ts`.
  */
-/** Hosts a DevTools socket may be on: this machine. */
-const DEVTOOLS_HOSTS = new Set(['127.0.0.1', '[::1]', 'localhost']);
-
 /**
  * Refuses a DevTools WebSocket URL that is not the local browser's own, in every mode: a browser on `port` (even an
  * attached one the user started) answers `/json/list` with a `webSocketDebuggerUrl`, and a hostile or confused answer
@@ -30,7 +27,7 @@ export function checkDevtoolsUrl(raw: string, port: number): void {
   }
   const problem =
     url.protocol !== 'ws:' ? `scheme ${url.protocol} is not ws:`
-    : !DEVTOOLS_HOSTS.has(url.hostname) ? `host ${url.hostname} is not this machine`
+    : !isLoopbackHostname(url.hostname) ? `host ${url.hostname} is not this machine`
     : Number(url.port) !== port ? `port ${url.port || '(default)'} is not ${port}`
     : !url.pathname.startsWith('/devtools/') ? `path ${url.pathname} is not under /devtools/`
     : undefined;
@@ -56,7 +53,7 @@ interface Pending {
 type CdpListener = (method: string, params: Record<string, unknown>) => void;
 
 /** What the browser says about a target it attached the session to. */
-export interface TargetInfo {
+interface TargetInfo {
   targetId: string;
   /** `page`, `iframe`, `worker`, `service_worker`, `shared_worker`, `other`, … */
   type: string;
@@ -283,6 +280,7 @@ export class CdpConnection {
 
   /** Ends a session; the browser socket and the other sessions stay. */
   detach(sessionId: string): void {
+    // Best effort: the target may be gone already, and the session is forgotten here either way.
     if (this.#forget(sessionId) && this.open) void this.send('Target.detachFromTarget', { sessionId }).catch(() => undefined);
   }
 
@@ -350,7 +348,6 @@ export class CdpPage {
 
   /** Resolves `work`, or `undefined` as soon as a JavaScript dialog opens (the page then blocks until it is answered). */
   async untilDialog<T>(work: Promise<T>): Promise<T | undefined> {
-    work.catch(() => undefined);
     let off: (() => void) | undefined;
     const opened = new Promise<undefined>((resolve) => {
       off = this.on((method) => method === 'Page.javascriptDialogOpening' && resolve(undefined));
@@ -397,7 +394,7 @@ export interface BrowserSession {
   governed: Map<string, CdpPage>;
   /** The workers and frames in other processes under the policy by target id (a dedicated, shared or service worker, an out-of-process frame). */
   workers: Map<string, CdpPage>;
-  /** Origins of the documents the governed tabs loaded, which is where a service or shared worker of theirs lives (see `relatedToDriven`). */
+  /** Origins of the documents the governed tabs loaded, which is where a service or shared worker of theirs lives (see `relatedToDriven` in `page-network.ts`). */
   origins: Set<string>;
   /** The origin of the page each governed tab shows now, by target id: never forgotten while the tab stays on it (see `noteOrigin`). */
   tabOrigins: Map<string, string>;
@@ -431,34 +428,6 @@ export interface BrowserSession {
   warning?: string;
 }
 
-/** What the page's network traffic showed that the audit should record. */
-export type NetworkEvent =
-  | { kind: 'blocked'; url: string; resourceType: string; reason: string }
-  | { kind: 'rebinding'; url: string; address: string }
-  | { kind: 'websocket'; url: string; reason: string };
-
-/** Who made a request: the tab it belongs to (a tab's own, its frames' and its dedicated workers'), and for a worker that lives per origin the origin it lives at. */
-export interface RequestSource {
-  tab?: string;
-  origin?: string;
-}
-
-/** What a page may reach (see `PagePolicy` in `network.ts`). */
-export interface PageNetworkPolicy {
-  /** Resolves when the page may request `url`; rejects, with the reason, when it may not. */
-  check(url: string, resourceType: string, source: RequestSource): Promise<void>;
-  /** The main frame of tab `tab` committed `url`. */
-  navigated(tab: string, url: string): void;
-  /** Tab `popup` was opened by tab `opener`: it holds the approval the opener holds. */
-  opened(opener: string, popup: string): void;
-  /** Tab `tab` closed. */
-  closed(tab: string): void;
-  /** Whether a response from `address` (and `port`) for `url` shows Chrome connected to an address `check` did not allow. */
-  rebinds(url: string, address: string, port?: number): boolean;
-  /** Whether an approval of the private host `hostname:port` is in force for some tab: what the launched Chrome's filtering proxy lets through. */
-  approves(hostname: string, port: number): boolean;
-  report(event: NetworkEvent): void;
-}
 
 export interface Download {
   name: string;
@@ -474,182 +443,6 @@ export interface PageTarget {
   title?: string;
   url?: string;
 }
-
-interface OpenOptions {
-  /** DevTools port to attach to instead of OCTOCODE_CHROME_PORT. */
-  port?: number;
-  /** Drive the browser's existing page instead of opening a tab (a browser someone else is showing in a window). */
-  reuseTab?: boolean;
-  /** Checks each request of every page the session drives (links, redirects, script navigations, frames, subresources). */
-  policy?: PageNetworkPolicy;
-  /** Called for each connection the launched Chrome's filtering proxy refused. */
-  onBlocked?: (blocked: BlockedConnection) => void;
-  /** The tool call's signal: an abort stops the open at once and releases a Chrome that finishes starting later. */
-  signal?: AbortSignal | undefined;
-}
-
-
-export async function openBrowser(env: NodeJS.ProcessEnv = process.env, options: OpenOptions = {}): Promise<BrowserSession> {
-  const { signal } = options;
-  throwIfAborted(signal);
-  // Someone else's Chrome only on an explicit port: an `attach` call, or the user's OCTOCODE_CHROME_PORT opt-in.
-  const shared = options.port ?? sharedChromePort(env);
-  let chrome: OwnChrome | undefined;
-  let headless: boolean | undefined;
-  let closeTab: (() => Promise<void>) | undefined;
-  let onProfile = false;
-  const profile = !options.port && envFlag(env, BROWSER_VISIBLE_ENV) ? persistentProfileDir(env) : undefined;
-  // Attaching to the user's Chrome: work in a tab of our own instead of taking over one they have open.
-  let port = shared ?? 0;
-  let target = shared === undefined ? undefined : await (options.reuseTab ? firstPage(shared) : newTab(shared)).catch(() => undefined);
-  if (options.reuseTab && !target) throw new Error(`No browser is listening on DevTools port ${port}.`);
-  if (!target && profile) {
-    // Visible mode: the persistent profile's Chrome may still be open from an earlier session (a login hand-off).
-    const running = await profilePort(profile);
-    if (running) {
-      target = await newTab(running);
-      port = running;
-      onProfile = true;
-    } else if (profileLocked(profile)) {
-      throw new Error(`The browser profile ${profile} is open in a Chrome without DevTools. Close that Chrome and retry.`);
-    }
-  }
-  if (target && !options.reuseTab) {
-    const id = target.id;
-    const tabPort = port;
-    closeTab = async () => {
-      await fetch(`http://127.0.0.1:${tabPort}/json/close/${id}`, { signal: AbortSignal.timeout(2_000) });
-    };
-  } else if (!target) {
-    // Visible only on the persistent profile (visible mode, a login hand-off); otherwise nobody watches the window.
-    headless = !profile;
-    const { policy, onBlocked } = options;
-    const launching = launchChrome(headless, profile, { ...(onBlocked ? { onBlocked } : {}), ...(policy ? { approved: (host, port) => policy.approves(host, port) } : {}) });
-    chrome = await unlessAborted(launching, signal, (late) => Promise.resolve(late.kill()).catch(() => undefined));
-    onProfile = profile !== undefined;
-    try {
-      throwIfAborted(signal);
-      // Chrome writes this file only for port 0; chrome-launcher picks a fixed port, so record it (in Chrome's format)
-      // for the next run.
-      if (profile) await recordProfilePort(profile, chrome.port);
-      target = await firstPage(chrome.port);
-    } catch (error) {
-      await chrome.kill();
-      throw error;
-    }
-  }
-  let connection: CdpConnection | undefined;
-  try {
-    throwIfAborted(signal);
-    // Refused before any socket opens, so a hostile target list never gets a connection.
-    checkDevtoolsUrl(target.webSocketDebuggerUrl, chrome?.port ?? port);
-    connection = await CdpConnection.connect(chrome?.port ?? port);
-    const page = await connection.attach(target);
-    const kind = chrome ? 'own' : options.reuseTab ? 'attached' : 'shared';
-    const session = startSession(connection, page, target, { port: chrome?.port ?? port, kind, chrome, headless, closeTab, profile: onProfile ? profile : undefined, policy: options.policy });
-    await preparePage(session, page);
-    // Popups, workers and service workers are not part of the page's session: the browser attaches them and holds each until its network check is on.
-    if (session.policy) await connection.autoAttach();
-    return session;
-  } catch (error) {
-    // Nothing owns the tab or the Chrome yet: release them instead of leaking a process or a tab.
-    connection?.close();
-    await closeTab?.().catch(() => undefined);
-    await chrome?.kill();
-    throw error;
-  }
-}
-
-/** `OCTOCODE_CHROME_PORT` when set: the user's opt-in to share an open Chrome. A value that is not a TCP port is refused, not guessed at. */
-export function sharedChromePort(env: NodeJS.ProcessEnv): number | undefined {
-  const raw = env['OCTOCODE_CHROME_PORT']?.trim();
-  if (!raw) return undefined;
-  const port = /^\d+$/.test(raw) ? Number(raw) : Number.NaN;
-  if (port >= 1 && port <= 65_535) return port;
-  throw new Error(`OCTOCODE_CHROME_PORT=${raw} is not a TCP port (1-65535). Fix or unset it and restart Pi.`);
-}
-
-type SessionParts = Pick<BrowserSession, 'port' | 'kind'> & {
-  chrome?: OwnChrome | undefined;
-  headless?: boolean | undefined;
-  closeTab?: (() => Promise<void>) | undefined;
-  profile?: string | undefined;
-  policy?: PageNetworkPolicy | undefined;
-};
-
-function startSession(connection: CdpConnection, page: CdpPage, target: PageTarget, parts: SessionParts): BrowserSession {
-  const targetId = target.id;
-  const session: BrowserSession = {
-    connection,
-    page,
-    governed: new Map([[targetId, page]]),
-    workers: new Map(),
-    origins: new Set(),
-    tabOrigins: new Map(),
-    targetId,
-    port: parts.port,
-    kind: parts.kind,
-    console: [],
-    consoleLost: { dropped: 0, cleared: 0 },
-    downloads: new Map(),
-  };
-  noteTabOrigin(session, targetId, target.url);
-  if (parts.chrome) session.chrome = parts.chrome;
-  if (parts.headless !== undefined) session.headless = parts.headless;
-  if (parts.closeTab) session.closeTab = parts.closeTab;
-  if (parts.profile) session.profile = parts.profile;
-  if (parts.policy) session.policy = parts.policy;
-  if (session.policy) {
-    guardTargets(session, session.policy);
-    // A tab that closes takes its pinned origin and its private-host approval with it, when it happens, not at the next attach.
-    connection.onEnded(() => pruneClosed(session));
-  }
-  watchNetwork(session, page, targetId);
-  listen(session, page);
-  return session;
-}
-
-/**
- * Setup every page the session drives gets: page and runtime events, the download folder (once `download`
- * turned it on), and, with a network policy, a pause before every request (all resource types) so the policy sees each
- * document, frame, subresource and redirect hop. The cache and service workers are off for the page: a cached response
- * or a service worker's answer is never requested, so it would never be paused.
- */
-async function preparePage(session: BrowserSession, page: CdpPage): Promise<void> {
-  // A tab the session drove before is still attached with all of it on: only the download folder may have been chosen since.
-  const again = prepared.has(page);
-  if (!again) await Promise.all([page.send('Page.enable'), page.send('Runtime.enable')]);
-  if (session.downloadDir) await applyDownloads(page, session.downloadDir);
-  if (session.policy && !again) await applyPolicy(page, 'page');
-  prepared.add(page);
-}
-
-/** The pages `preparePage` finished with: their session stays attached when the session drives another tab, so a return to one needs no second setup. */
-const prepared = new WeakSet<CdpPage>();
-
-/** Targets that load documents: their setup also turns the cache and service workers off (see `preparePage`). */
-const PAGE_TYPES = new Set(['page', 'iframe']);
-
-/**
- * What a target needs for the policy to see every request it makes, sent in order and all at once: Chrome runs a session's
- * commands in the order it got them, so a command sent before `Runtime.runIfWaitingForDebugger` is applied before the target
- * runs, and a held service worker answers none of them until it is released. A dedicated worker has no `Fetch` domain: the
- * session of the page that owns it pauses its requests. The target's own related targets (frames in another process,
- * workers) are attached to as well, each held until its own setup is done.
- */
-function applyPolicy(page: CdpPage, type: string): Promise<unknown> {
-  const sent: Array<Promise<unknown>> = [page.send('Network.enable')];
-  if (PAGE_TYPES.has(type)) sent.push(page.send('Network.setCacheDisabled', { cacheDisabled: true }), page.send('Network.setBypassServiceWorker', { bypass: true }));
-  if (type !== 'worker') sent.push(page.send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] }));
-  sent.push(page.autoAttach());
-  return Promise.all(sent);
-}
-
-/** Targets the policy governs; any other the browser attaches (an extension's page, a worklet) is let run and left alone. */
-const GOVERNED_TYPES = new Set(['page', 'iframe', 'worker', 'shared_worker', 'service_worker']);
-
-/** Workers that live per origin, not per page: the browser attaches them on its own session, so the page that started one is known by its origin. */
-const ORIGIN_TYPES = new Set(['shared_worker', 'service_worker']);
 
 /**
  * Most origins a session remembers, beyond those of the tabs it drives. At the bound the unpinned origin noted longest ago
@@ -678,7 +471,7 @@ export function noteOrigin(session: BrowserSession, url: string | undefined): vo
 }
 
 /** Records that tab `tab` shows `url` now: its origin is noted and pinned, and the origin it showed before is no longer. A page that is not http(s) pins nothing. */
-function noteTabOrigin(session: BrowserSession, tab: string, url: string | undefined): void {
+export function noteTabOrigin(session: BrowserSession, tab: string, url: string | undefined): void {
   const origin = httpOrigin(url);
   if (origin === undefined) session.tabOrigins.delete(tab);
   else session.tabOrigins.set(tab, origin);
@@ -686,17 +479,17 @@ function noteTabOrigin(session: BrowserSession, tab: string, url: string | undef
 }
 
 /** The origin of an http(s) URL; undefined for anything else (an empty or blank target, a URL that does not parse). */
-function httpOrigin(url: string | undefined): string | undefined {
+export function httpOrigin(url: string | undefined): string | undefined {
   try {
-    const { protocol, origin } = new URL(url ?? '');
-    return protocol === 'http:' || protocol === 'https:' ? origin : undefined;
+    const parsed = new URL(url ?? '');
+    return isHttpUrl(parsed) ? parsed.origin : undefined;
   } catch {
     return undefined;
   }
 }
 
 /** Forgets the tabs that closed: their pinned origins and the approvals the policy holds for them. */
-function pruneClosed(session: BrowserSession): void {
+export function pruneClosed(session: BrowserSession): void {
   for (const [id, tab] of session.governed) {
     if (tab.open) continue;
     session.governed.delete(id);
@@ -704,154 +497,6 @@ function pruneClosed(session: BrowserSession): void {
     session.policy?.closed(id);
   }
   for (const [id, worker] of session.workers) if (!worker.open) session.workers.delete(id);
-}
-
-/** Whether the session `sessionId` belongs to a tab, worker or frame the policy governs. */
-function drivenSession(session: BrowserSession, sessionId: string | undefined): boolean {
-  if (sessionId === undefined) return false;
-  for (const pages of [session.governed, session.workers]) for (const page of pages.values()) if (page.sessionId === sessionId && page.open) return true;
-  return false;
-}
-
-/**
- * Whether a target the browser attached belongs to the tabs the session drives: a popup whose opener is governed, a
- * worker or frame whose parent session is governed, a service or shared worker whose origin a governed tab loaded.
- */
-function relatedToDriven(session: BrowserSession, { info, parentSessionId }: AttachedTarget): boolean {
-  if (info.type === 'page') return info.openerId !== undefined && session.governed.has(info.openerId);
-  if (drivenSession(session, parentSessionId)) return true;
-  if (!ORIGIN_TYPES.has(info.type)) return false;
-  try {
-    return session.origins.has(new URL(info.url ?? '').origin);
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Whether the browser may hold targets that are not the session's: a Chrome it did not launch (`attach`,
- * `OCTOCODE_CHROME_PORT`) is the user's own, with tabs and workers of their own that the policy must never touch. The Chrome
- * on the persistent profile is the agent's browser, started by it or by an earlier session.
- */
-const sharesBrowser = (session: BrowserSession): boolean => session.kind !== 'own' && session.profile === undefined;
-
-/**
- * Sets up each target the browser attaches by itself before it runs a line: its network setup is sent while it waits for
- * the debugger, and only then is it let go. That is what puts a popup's first request, a worker's fetches and a service
- * worker's own fetches (which no page session ever pauses) under the policy. The session's own Chrome is covered whole.
- * In the user's Chrome only the targets related to a tab the session drives are (see `relatedToDriven`); every other one is
- * let run at once and detached untouched. A tab the browser opened that the session did not (the user's own tabs, one it is
- * about to attach to itself) is let run and detached. A target whose setup fails is closed.
- */
-function guardTargets(session: BrowserSession, policy: PageNetworkPolicy): void {
-  session.connection.onAttached((attached) => {
-    void guardAttached(session, policy, attached);
-  });
-}
-
-async function guardAttached(session: BrowserSession, policy: PageNetworkPolicy, attached: AttachedTarget): Promise<void> {
-  const { page, info, waiting } = attached;
-  const resume = (): Promise<void> => (waiting ? page.send('Runtime.runIfWaitingForDebugger').then(() => undefined, () => undefined) : Promise.resolve());
-  pruneClosed(session);
-  const governable = GOVERNED_TYPES.has(info.type) && !info.url?.startsWith('chrome-extension:');
-  const mine = governable && (info.type === 'page' ? !session.governed.has(info.targetId) && relatedToDriven(session, attached) : !sharesBrowser(session) || relatedToDriven(session, attached));
-  if (!mine) {
-    await resume();
-    page.close();
-    return;
-  }
-  const tab = info.type === 'page' ? info.targetId : undefined;
-  if (tab && info.openerId) policy.opened(info.openerId, tab);
-  // Registered before the setup: what this target opens next is announced as soon as it runs, and finds its parent governed.
-  (tab ? session.governed : session.workers).set(info.targetId, page);
-  watchNetwork(session, page, tab, tab ? undefined : workerSource(session, attached));
-  // The release goes out right behind the setup; a failed setup is found when its replies are in, and the target is closed.
-  const setup = applyPolicy(page, info.type);
-  const released = resume();
-  try {
-    await setup;
-  } catch (error) {
-    const reason = `could not set up the network check (${errorMessage(error)})`;
-    (tab ? session.governed : session.workers).delete(info.targetId);
-    session.blocked = `${info.url ?? info.type}: ${reason}`;
-    logConsole(session, `[blocked] ${session.blocked}`);
-    policy.report({ kind: 'blocked', url: info.url ?? '', resourceType: info.type, reason });
-    await session.connection.send('Target.closeTarget', { targetId: info.targetId }).catch(() => undefined);
-    return;
-  }
-  await released;
-}
-
-/** Who made the requests of each page the session watches (`watchNetwork`). */
-const sources = new WeakMap<CdpPage, RequestSource>();
-
-/** The page of the session `sessionId`, among the tabs, workers and frames the session governs. */
-function pageOfSession(session: BrowserSession, sessionId: string | undefined): CdpPage | undefined {
-  if (sessionId === undefined) return undefined;
-  for (const pages of [session.governed, session.workers]) for (const page of pages.values()) if (page.sessionId === sessionId) return page;
-  return undefined;
-}
-
-/**
- * Who a worker or frame in another process requests for: the one whose page owns it (a tab's frames and dedicated workers
- * are the tab's own), else, for a service or shared worker, the origin it lives at.
- */
-function workerSource(session: BrowserSession, { info, parentSessionId }: AttachedTarget): RequestSource {
-  const parent = pageOfSession(session, parentSessionId);
-  const inherited = parent && sources.get(parent);
-  if (inherited) return inherited;
-  const origin = ORIGIN_TYPES.has(info.type) ? httpOrigin(info.url) : undefined;
-  return origin === undefined ? {} : { origin };
-}
-
-/** How long a paused request waits for the policy's verdict before it fails: a request nobody answers must not hang the page. */
-const REQUEST_VERDICT_MS = 5_000;
-
-/** Lets a paused request through when the policy allows its URL; fails it otherwise (also when the verdict takes too long) and records why. */
-async function screenRequest(session: BrowserSession, page: CdpPage, policy: PageNetworkPolicy, source: RequestSource, params: Record<string, unknown>): Promise<void> {
-  const requestId = String(params['requestId']);
-  const url = String((params['request'] as { url?: unknown } | undefined)?.url ?? '');
-  const resourceType = String(params['resourceType'] ?? 'Other');
-  try {
-    await withTimeout(policy.check(url, resourceType, source), REQUEST_VERDICT_MS, 'The request check');
-  } catch (error) {
-    const reason = errorMessage(error);
-    session.blocked = `${url}: ${reason}`;
-    logConsole(session, `[blocked] ${session.blocked}`);
-    policy.report({ kind: 'blocked', url, resourceType, reason });
-    await page.send('Fetch.failRequest', { requestId, errorReason: 'BlockedByClient' }).catch(() => undefined);
-    return;
-  }
-  // The request may be gone (the tab navigated elsewhere or closed) by the time the policy answers.
-  await page.send('Fetch.continueRequest', { requestId }).catch(() => undefined);
-}
-
-/**
- * A response that came from a private address for a name the policy had judged public (DNS rebinding): the request
- * already reached it, so its tab (`tab`, the target id) is closed rather than driven further. Not checked behind the filtering proxy: Chrome
- * sees the proxy's address there, and the proxy vets the address itself.
- */
-async function closeRebound(session: BrowserSession, policy: PageNetworkPolicy, url: string, address: string, tab: string | undefined): Promise<void> {
-  policy.report({ kind: 'rebinding', url, address });
-  if (!tab) {
-    // A worker has no tab to close.
-    logConsole(session, `[blocked] ${url} answered from the private address ${address}`);
-    return;
-  }
-  logConsole(session, `[blocked] ${url} answered from the private address ${address}; the tab was closed`);
-  await fetch(`http://127.0.0.1:${session.port}/json/close/${tab}`, { signal: AbortSignal.timeout(2_000) }).catch(() => undefined);
-}
-
-/** A WebSocket the page opened to a host it may not reach. `Fetch` never pauses a handshake, so it is reported, not stopped (a launched Chrome's proxy stops it). */
-async function reportWebSocket(session: BrowserSession, policy: PageNetworkPolicy, source: RequestSource, url: string): Promise<void> {
-  try {
-    await policy.check(url, 'WebSocket', source);
-  } catch (error) {
-    const reason = errorMessage(error);
-    session.warning = `The page opened a WebSocket it may not (${url}): ${reason} It cannot be stopped on this browser; it may already have exchanged data.`;
-    logConsole(session, `[warning] ${session.warning}`);
-    policy.report({ kind: 'websocket', url, reason });
-  }
 }
 
 /** What a session remembers: the console lines kept, and the longest one. */
@@ -863,7 +508,7 @@ const CONSOLE_ENTRY_CHARS = 2_000, DOWNLOADS_KEEP = 100;
  * `session.console` (the count pushed out is in `session.consoleLost`). A line over `CONSOLE_ENTRY_CHARS` is cut there and
  * says how many characters it lost and where the whole line is.
  */
-function logConsole(session: BrowserSession, line: string): void {
+export function logConsole(session: BrowserSession, line: string): void {
   const log = (session.consoleLog ??= new ConsoleLog());
   log.append(line);
   const kept = line.length > CONSOLE_ENTRY_CHARS ? cutText(line, CONSOLE_ENTRY_CHARS, { chars: true }) : line;
@@ -873,118 +518,21 @@ function logConsole(session: BrowserSession, line: string): void {
 }
 
 /** Records a download's state; past `DOWNLOADS_KEEP` the oldest finished one is dropped (a running one only when none is finished). */
-function trackDownload(session: BrowserSession, guid: string, download: Download): void {
+export function trackDownload(session: BrowserSession, guid: string, download: Download): void {
   session.downloads.set(guid, download);
   if (session.downloads.size <= DOWNLOADS_KEEP) return;
   session.downloads.delete(([...session.downloads].find(([key, item]) => key !== guid && item.state !== 'inProgress') ?? [...session.downloads][0]!)[0]);
 }
 
-/**
- * Applies the policy to what a target's session reports: each paused request, a response from an address the policy did not
- * allow, a WebSocket it cannot stop. `tab` is the target id when the target is a tab, which a rebinding closes; `source` says
- * who the requests are for (the tab itself by default).
- */
-function watchNetwork(session: BrowserSession, page: CdpPage, tab: string | undefined, source: RequestSource = tab === undefined ? {} : { tab }): void {
-  const { policy } = session;
-  if (!policy) return;
-  sources.set(page, source);
-  page.on((method, params) => {
-    if (method === 'Fetch.requestPaused') {
-      if (params['resourceType'] === 'Document') noteOrigin(session, String((params['request'] as { url?: unknown } | undefined)?.url ?? ''));
-      void screenRequest(session, page, policy, source, params);
-    } else if (method === 'Page.frameNavigated' && tab !== undefined) {
-      // The tab's main frame committed: its approval for a private host ends when it left that host, and its origin is pinned.
-      const frame = params['frame'] as { url?: unknown; parentId?: unknown } | undefined;
-      if (frame && frame.parentId === undefined && typeof frame.url === 'string') {
-        policy.navigated(tab, frame.url);
-        noteTabOrigin(session, tab, frame.url);
-      }
-    } else if (method === 'Network.responseReceived' && !session.chrome?.proxy) {
-      const response = params['response'] as { url?: unknown; remoteIPAddress?: unknown; remotePort?: unknown } | undefined;
-      const { url, remoteIPAddress: address } = response ?? {};
-      if (typeof url === 'string' && typeof address === 'string' && policy.rebinds(url, address, typeof response?.remotePort === 'number' ? response.remotePort : undefined)) {
-        void closeRebound(session, policy, url, address, tab);
-      }
-    } else if (method === 'Network.webSocketCreated' && !session.chrome?.proxy) {
-      void reportWebSocket(session, policy, source, String(params['url'] ?? ''));
-    }
-  });
-}
-
-/** Tracks the page's dialogs, downloads and console output on the session. */
-function listen(session: BrowserSession, page: CdpPage): void {
-  page.on((method, params) => {
-    // A tab the session moved away from stays attached; only the driven one speaks for the session.
-    if (page !== session.page && (method === 'Page.javascriptDialogOpening' || method === 'Page.javascriptDialogClosed' || method === 'Runtime.consoleAPICalled' || method === 'Runtime.exceptionThrown')) return;
-    if (method === 'Page.javascriptDialogOpening') {
-      session.dialog = { type: String(params['type']), message: String(params['message'] ?? '') };
-    } else if (method === 'Page.javascriptDialogClosed') {
-      delete session.dialog;
-    } else if (method === 'Browser.downloadWillBegin' || method === 'Page.downloadWillBegin') {
-      trackDownload(session, String(params['guid']), { name: String(params['suggestedFilename'] ?? 'download'), state: 'inProgress', bytes: 0 });
-    } else if (method === 'Browser.downloadProgress' || method === 'Page.downloadProgress') {
-      const download = session.downloads.get(String(params['guid']));
-      const file = typeof params['filePath'] === 'string' && params['filePath'] ? { path: params['filePath'] } : {};
-      if (download) trackDownload(session, String(params['guid']), { ...download, ...file, state: params['state'] as Download['state'], bytes: Number(params['receivedBytes'] ?? download.bytes) });
-    } else if (method === 'Runtime.consoleAPICalled') {
-      const args = Array.isArray(params['args']) ? params['args'] : [];
-      const text = args.map((arg) => String((arg as { value?: unknown; description?: string }).value ?? (arg as { description?: string }).description ?? '')).join(' ');
-      logConsole(session, `[${String(params['type'])}] ${text}`);
-    } else if (method === 'Runtime.exceptionThrown') {
-      const details = params['exceptionDetails'] as { text?: string; exception?: { description?: string } } | undefined;
-      logConsole(session, `[exception] ${details?.exception?.description ?? details?.text ?? ''}`);
-    }
-  });
-}
-
 /** The browser's page targets (tabs), in the order Chrome lists them (most recently used first). */
 export async function pageTargets(port: number): Promise<PageTarget[]> {
-  const targets = (await (await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(2_000) })).json()) as Array<Partial<PageTarget> & { type: string }>;
+  const targets = (await (await devtoolsFetch(port, '/json/list', 2_000)).json()) as Array<Partial<PageTarget> & { type: string }>;
   return targets.filter((target): target is PageTarget & { type: string } => target.type === 'page' && typeof target.id === 'string' && typeof target.webSocketDebuggerUrl === 'string');
 }
 
 /** Opens a tab on `url` in the session's browser. */
 export async function openTab(port: number, url: string): Promise<PageTarget> {
-  const response = await fetch(`http://127.0.0.1:${port}/json/new?${encodeURI(url)}`, { method: 'PUT', signal: AbortSignal.timeout(5_000) });
+  const response = await devtoolsFetch(port, `/json/new?${encodeURI(url)}`, 5_000, { method: 'PUT' });
   if (!response.ok) throw new Error(`Chrome on port ${port} refused a new tab (HTTP ${response.status})`);
   return (await response.json()) as PageTarget;
 }
-
-/**
- * Moves the session onto another tab: attaches to it (once), applies (once `download` turned them on) the download folder,
- * starts tracking its dialogs, downloads and console, and brings it to the front. The tab the session leaves stays
- * attached and governed, policy and auto-attach on, so what it or the popups and workers it opens later request is still
- * checked: only the pointer to the driven tab moves. A tab's session ends when the tab closes or the browser session ends.
- * The tab the session opened itself is still the one `close` removes.
- */
-export async function switchTo(session: BrowserSession, target: PageTarget): Promise<void> {
-  pruneClosed(session);
-  // A tab the session drove before, or a popup the browser attached before it ran, is already under the policy and watched: it is driven through that session.
-  const known = session.governed.get(target.id);
-  const page = known ?? (await session.connection.attach(target));
-  if (!known) watchNetwork(session, page, target.id);
-  const first = !prepared.has(page);
-  try {
-    await preparePage(session, page);
-  } catch (error) {
-    if (!known) page.close();
-    throw error;
-  }
-  noteTabOrigin(session, target.id, target.url);
-  session.governed.set(target.id, page);
-  if (first) listen(session, page);
-  session.page = page;
-  session.targetId = target.id;
-  // The buffer is the bound tab's: what an earlier tab logged is discarded, and the count says so.
-  session.consoleLost = { dropped: 0, cleared: session.consoleLost.cleared + session.console.length + session.consoleLost.dropped };
-  session.console = [];
-  // The log keeps the earlier tab's lines; a line marks where the next tab's begin.
-  session.consoleLog?.append(`[tab] console of ${target.url}`);
-  delete session.dialog;
-  await page.send('Page.bringToFront').catch(() => undefined);
-}
-
-const newTab = (port: number): Promise<PageTarget> => openTab(port, 'about:blank');
-
-/** The about:blank page of a Chrome this session launched (a new tab when it lists none). */
-const firstPage = async (port: number): Promise<PageTarget> => (await pageTargets(port))[0] ?? newTab(port);

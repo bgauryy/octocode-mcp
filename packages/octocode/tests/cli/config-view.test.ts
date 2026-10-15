@@ -29,7 +29,7 @@ afterEach(() => {
 describe('native config bridge', () => {
   it('carries the trusted fingerprint in stdin and adds generated editor metadata', async () => {
     const bin = backend(
-      `console.log(JSON.stringify({success:true,apiVersion:1,fingerprint:request.expectedFingerprint,data:{settings:[{key:'network.timeout',value:6000}],operation:request.operation,args:process.argv.slice(2)}}));`
+      `console.log(JSON.stringify({success:true,apiVersion:1,fingerprint:request.expectedFingerprint,data:{settings:[{key:'lsp.prewarm',value:'off'}],operation:request.operation,args:process.argv.slice(2)}}));`
     );
     const data = await requestNativeConfig(bin, {
       operation: 'inspect',
@@ -38,10 +38,10 @@ describe('native config bridge', () => {
     expect(data.args).toEqual(['config', '--manage']);
     expect(data.settings).toEqual([
       expect.objectContaining({
-        key: 'network.timeout',
-        type: 'number',
-        minimum: 5000,
-        value: 6000,
+        key: 'lsp.prewarm',
+        type: 'enum',
+        values: ['targeted', 'all', 'off'],
+        value: 'off',
       }),
     ]);
   });
@@ -68,6 +68,17 @@ describe('native config bridge', () => {
     await expect(
       requestNativeConfig(bin, { operation: 'setSetting' })
     ).rejects.toMatchObject({ code: 'CONFLICT', safe: true });
+  });
+  it.each([
+    ['FORBIDDEN', 'INVALID_INPUT'],
+    ['UNAVAILABLE', 'UNAVAILABLE'],
+  ])('maps a native %s failure to %s', async (nativeCode, code) => {
+    const bin = backend(
+      `console.log(JSON.stringify({success:false,apiVersion:1,error:{code:'${nativeCode}',message:'Native failure.'}}));process.exitCode=5;`
+    );
+    await expect(
+      requestNativeConfig(bin, { operation: 'inspect' })
+    ).rejects.toMatchObject({ code });
   });
   it('aborts without launching a backend when the session has ended', async () => {
     await expect(

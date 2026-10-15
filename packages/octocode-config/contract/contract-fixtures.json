@@ -1523,6 +1523,35 @@
     }
   },
   {
+    "id": "local-fetch.context-without-match",
+    "tool": "localFetch",
+    "input": {
+      "queries": [
+        {
+          "path": "/fixture/a.ts",
+          "contextLines": 0
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "local-fetch.range-context-without-match",
+    "tool": "localFetch",
+    "input": {
+      "queries": [
+        {
+          "path": "/fixture/a.ts",
+          "ranges": [
+            "1-1"
+          ],
+          "contextLines": 3
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
     "id": "local-fetch.blank-meta",
     "tool": "localFetch",
     "input": {
@@ -2162,6 +2191,229 @@
         }
       ]
     }
+  },
+  {
+    "id": "ast-search.unsupported-0",
+    "tool": "astSearch",
+    "input": {
+      "queries": [
+        {
+          "operation": "match",
+          "path": "/r/a.ts",
+          "rule": {
+            "kind": "identifier",
+            "precedes": {
+              "kind": "identifier"
+            }
+          }
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "ast-search.unsupported-1",
+    "tool": "astSearch",
+    "input": {
+      "queries": [
+        {
+          "operation": "match",
+          "path": "/r/a.ts",
+          "rule": {
+            "kind": "identifier",
+            "follows": {
+              "kind": "identifier"
+            }
+          }
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "ast-search.unsupported-2",
+    "tool": "astSearch",
+    "input": {
+      "queries": [
+        {
+          "operation": "match",
+          "path": "/r/a.ts",
+          "rule": {
+            "matches": "helper"
+          }
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "ast-search.unsupported-3",
+    "tool": "astSearch",
+    "input": {
+      "queries": [
+        {
+          "operation": "match",
+          "path": "/r/a.ts",
+          "rule": {
+            "pattern": {
+              "context": "foo($X)",
+              "selector": "call_expression"
+            }
+          }
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "ast-search.unsupported-4",
+    "tool": "astSearch",
+    "input": {
+      "queries": [
+        {
+          "operation": "match",
+          "path": "/r/a.ts",
+          "rule": {
+            "kind": "identifier",
+            "inside": {
+              "kind": "program",
+              "stopBy": "neighbor"
+            }
+          }
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "ast-search.unsupported-5",
+    "tool": "astSearch",
+    "input": {
+      "queries": [
+        {
+          "operation": "match",
+          "path": "/r/a.ts",
+          "rule": {
+            "kind": "identifier",
+            "inside": {
+              "kind": "program",
+              "stopBy": {
+                "kind": "program"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "ast-search.unsupported-nested",
+    "tool": "astSearch",
+    "input": {
+      "queries": [
+        {
+          "operation": "match",
+          "path": "/r/a.ts",
+          "rule": {
+            "all": [
+              {
+                "kind": "identifier",
+                "precedes": {
+                  "kind": "identifier"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "ast-search.unsupported-wrapped",
+    "tool": "astSearch",
+    "input": {
+      "queries": [
+        {
+          "operation": "match",
+          "path": "/r/a.ts",
+          "rule": {
+            "rule": {
+              "kind": "identifier",
+              "precedes": {
+                "kind": "identifier"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "lsp.callers-depth-zero",
+    "tool": "lspSearch",
+    "input": {
+      "queries": [
+        {
+          "path": "/r/a.ts",
+          "operation": "callers",
+          "symbolName": "x",
+          "line": 1,
+          "graphDepth": 0
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "lsp.callees-depth-zero",
+    "tool": "lspSearch",
+    "input": {
+      "queries": [
+        {
+          "path": "/r/a.ts",
+          "operation": "callees",
+          "symbolName": "x",
+          "line": 1,
+          "graphDepth": 0
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "lsp.supertypes-depth-zero",
+    "tool": "lspSearch",
+    "input": {
+      "queries": [
+        {
+          "path": "/r/a.ts",
+          "operation": "supertypes",
+          "symbolName": "x",
+          "line": 1,
+          "graphDepth": 0
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "lsp.subtypes-depth-zero",
+    "tool": "lspSearch",
+    "input": {
+      "queries": [
+        {
+          "path": "/r/a.ts",
+          "operation": "subtypes",
+          "symbolName": "x",
+          "line": 1,
+          "graphDepth": 0
+        }
+      ]
+    },
+    "accepted": false
   },
   {
     "id": "gh-search-code.no-constraint",

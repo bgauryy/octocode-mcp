@@ -83,7 +83,6 @@ try {
           OCTOCODE_HOME: home,
           GITHUB_API_URL: endpoint,
           OCTOCODE_CLASSIFICATION_API_HOST: endpoint,
-          MAX_RETRIES: '0',
           ...(group.tool === 'clasify' ? { OCTOCODE_BETA: '1' } : {}),
           ...(source === 'process' ? { [alias]: 'process-fixture' } : {}),
         };

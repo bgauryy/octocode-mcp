@@ -1,6 +1,7 @@
 import { setTimeout as sleep } from 'node:timers/promises';
 import { cutText } from '../shared/util.js';
-import { openTab, pageTargets, switchTo, type BrowserSession, type PageTarget } from './cdp.js';
+import { httpOrigin, openTab, pageTargets, type BrowserSession, type PageTarget } from './cdp.js';
+import { switchTo } from './session.js';
 
 /** What the agent opening a private page records for the tab that loads it (see `BrowserTool.open`); nothing for a public page. */
 export type Approval = (tab: string) => void;
@@ -26,8 +27,11 @@ export async function describeTabs(session: BrowserSession): Promise<string> {
   return `Tabs (${tabs.length}; * = driven):\n${lines.join('\n')}\ntab with index switches to one; tab with url opens a new one.`;
 }
 
+/** How long a navigation to a new page may take to load (`navigate`'s load event, a new tab's first load). */
+export const NAVIGATE_LOAD_MS = 20_000;
+
 /** Waits (up to `timeoutMs`) until the driven page has finished loading, for a tab that was already loading when found. */
-async function whenLoaded(session: BrowserSession, timeoutMs = 10_000, signal?: AbortSignal): Promise<void> {
+async function whenLoaded(session: BrowserSession, signal?: AbortSignal, timeoutMs = 10_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const state = await session.page.evaluate<string>('document.readyState', signal).catch(() => 'loading');
@@ -46,10 +50,10 @@ export async function selectTab(session: BrowserSession, index: number | undefin
   const tab = index === undefined ? undefined : tabs[index - 1];
   if (!tab) throw new Error(`No tab ${index ?? ''}. ${await describeTabs(session)}`);
   if (tab.id !== session.targetId) {
-    if (tab.url && /^(https?|wss?):/i.test(tab.url)) (await open(tab.url))(tab.id);
+    if (httpOrigin(tab.url)) (await open(tab.url!))(tab.id);
     await switchTo(session, tab);
   }
-  await whenLoaded(session, 10_000, signal);
+  await whenLoaded(session, signal);
 }
 
 /** Opens `url` in a new tab and drives it, `approve` recording what the agent's permission allowed for that tab. The tab opens blank, so the session's policy sees the first load too. */
@@ -59,7 +63,7 @@ export async function newTab(session: BrowserSession, url: string, approve: Appr
   delete session.blocked;
   const result = await session.page.send<{ errorText?: string }>('Page.navigate', { url }, signal);
   if (result.errorText) throw new Error(`Navigation failed: ${result.errorText}${session.blocked ? ` (blocked ${session.blocked})` : ''}`);
-  await whenLoaded(session, 20_000, signal);
+  await whenLoaded(session, signal, NAVIGATE_LOAD_MS);
 }
 
 /** Ids of the tabs open now, to spot a tab an action opens; undefined when the list cannot be read. */
@@ -73,13 +77,13 @@ export async function tabIds(session: BrowserSession): Promise<Set<string> | und
 /**
  * When an action opened a tab (`window.open`, a popup, a link its script sent to a new window), the session moves to
  * it, as a user's attention would; returns the tab, or undefined when none opened. The browser held the popup before it
- * ran until the session's network setup was on it (see `guardTargets` in `cdp.ts`), so its first request was checked too.
+ * ran until the session's network setup was on it (see `guardTargets` in `page-network.ts`), so its first request was checked too.
  */
 export async function followNewTab(session: BrowserSession, before: Set<string> | undefined, signal?: AbortSignal): Promise<PageTarget | undefined> {
   if (!before) return undefined;
   const opened = (await pageTargets(session.port).catch(() => [])).find((target) => !before.has(target.id));
   if (!opened) return undefined;
   await switchTo(session, opened);
-  await whenLoaded(session, 10_000, signal);
+  await whenLoaded(session, signal);
   return opened;
 }

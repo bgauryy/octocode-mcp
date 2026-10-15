@@ -2002,7 +2002,7 @@
     },
     {
       "name": "db migrate",
-      "description": "Explicitly migrate a recognized v1/v2/v3/v4 store to v5 after stopping old clients. Requires an absolute new backup path; verifies a no-clobber snapshot before any schema change, preserves all history and rolls back errors.",
+      "description": "Explicitly migrate a recognized v1/v2/v3/v4/v5 store to v6 after stopping old clients. Requires an absolute new backup path; verifies a no-clobber snapshot before any schema change, preserves all history and rolls back errors.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -3288,5 +3288,5 @@
     ],
     "additionalProperties": false
   },
-  "recordHistory": "dataSchema describes current v5 output. Migrated v1/v2/v3/v4 events retain their original partial payloads; absent historical fields are unknown, not filled from current state."
+  "recordHistory": "dataSchema describes current v6 output. Migrated v1–v5 events retain their original partial payloads; absent historical fields are unknown, not filled from current state."
 }

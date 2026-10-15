@@ -2,10 +2,13 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { ApiCallError, ApiClient } from '../api/client.js';
-import { ERR, PROTOCOL_VERSION } from '../api/protocol.js';
+import { ERR, MESSAGE_KEY_MAX, PROTOCOL_VERSION } from '../api/protocol.js';
 import { apiDir, listInstances } from '../api/registry.js';
 import { isRecord } from '../shared/util.js';
-import type { ExternalBackend, ExternalReply } from './protocol.js';
+import { PROMPT_TIMEOUT_MS, promptTimeoutValid, type ExternalBackend, type ExternalReply } from './protocol.js';
+
+/** How long a status, initialize or abort call to the Pi instance may take. */
+const API_CALL_MS = 10_000;
 
 function canonical(cwd: string): string {
   if (!path.isAbsolute(cwd)) throw new Error('Pi workspace must be an absolute directory');
@@ -40,12 +43,12 @@ export class PiBackend implements ExternalBackend {
       throw new Error('Pi instance HTTP transport is invalid');
     }
     const client = new ApiClient(instance);
-    const initialized = await client.call('initialize', {}, { timeoutMs: 10_000 });
+    const initialized = await client.call('initialize', {}, { timeoutMs: API_CALL_MS });
     if (!isRecord(initialized) || initialized['protocolVersion'] !== PROTOCOL_VERSION || !isRecord(initialized['instance'])) throw new Error('Pi initialization protocol mismatch');
     const peer = initialized['instance'];
     if (peer['id'] !== instance.id || peer['pid'] !== instance.pid || typeof peer['cwd'] !== 'string' || canonical(peer['cwd']) !== cwd) throw new Error('Pi initialization identity or workspace mismatch');
     if (!isRecord(initialized['capabilities']) || initialized['capabilities']['wait'] !== true) throw new Error('Pi instance does not support run settlement');
-    const status = await client.call('status', {}, { timeoutMs: 10_000 });
+    const status = await client.call('status', {}, { timeoutMs: API_CALL_MS });
     if (!isRecord(status) || typeof status['sessionId'] !== 'string' || !status['sessionId'] || typeof status['cwd'] !== 'string' || canonical(status['cwd']) !== cwd) {
       throw new Error('Pi live session or workspace mismatch');
     }
@@ -54,7 +57,7 @@ export class PiBackend implements ExternalBackend {
 
   private async status(options: { timeoutMs?: number; signal?: AbortSignal } = {}): Promise<Record<string, unknown>> {
     if (this.closed) throw new Error('Pi connection is closed');
-    const status = await this.client.call('status', {}, { timeoutMs: 10_000, ...options });
+    const status = await this.client.call('status', {}, { timeoutMs: API_CALL_MS, ...options });
     if (!isRecord(status) || status['sessionId'] !== this.sessionId || typeof status['cwd'] !== 'string' || canonical(status['cwd']) !== this.cwd) {
       throw new Error('The connected Pi session or workspace was replaced');
     }
@@ -66,9 +69,9 @@ export class PiBackend implements ExternalBackend {
     if (this.cancelling) throw new Error('This Pi connection has a cancellation in progress');
     if (this.inFlight) throw new Error('This Pi connection already has a prompt in flight');
     if (!text.trim()) throw new Error('Pi prompt text must be non-empty');
-    if (!Number.isInteger(options.timeoutMs) || options.timeoutMs < 1000 || options.timeoutMs > 600_000) throw new Error('Pi prompt timeoutMs must be from 1000 to 600000');
+    if (!promptTimeoutValid(options.timeoutMs)) throw new Error(`Pi prompt timeoutMs must be from ${PROMPT_TIMEOUT_MS.min} to ${PROMPT_TIMEOUT_MS.max}`);
     const key = options.key ?? randomUUID();
-    if (!key.trim() || key.length > 128) throw new Error('Pi prompt key must have from 1 to 128 characters');
+    if (!key.trim() || key.length > MESSAGE_KEY_MAX) throw new Error(`Pi prompt key must have from 1 to ${MESSAGE_KEY_MAX} characters`);
     if (this.owned && (this.owned.key !== key || this.owned.text !== text)) throw new Error('An earlier Pi request may still be running; retry its unchanged key or cancel it');
     if (options.signal?.aborted) throw new Error('Pi prompt aborted');
     this.inFlight = true;
@@ -81,7 +84,7 @@ export class PiBackend implements ExternalBackend {
     options.signal?.addEventListener('abort', abort, { once: true });
     let attempted = false;
     try {
-      const status = await this.status({ timeoutMs: Math.min(options.timeoutMs, 10_000), signal: controller.signal });
+      const status = await this.status({ timeoutMs: Math.min(options.timeoutMs, API_CALL_MS), signal: controller.signal });
       if (!this.owned && (status['state'] !== 'idle' || status['pending'] !== false || status['activeMessageId'] !== undefined)) throw new Error('Pi session is busy; nothing was sent');
       this.owned = { key, text };
       attempted = true;
@@ -124,7 +127,7 @@ export class PiBackend implements ExternalBackend {
       this.owned = undefined;
       return;
     }
-    await this.client.call('turn.abort', { expectedSessionId: this.sessionId, key: owned.key }, { timeoutMs: 10_000 });
+    await this.client.call('turn.abort', { expectedSessionId: this.sessionId, key: owned.key }, { timeoutMs: API_CALL_MS });
     this.owned = undefined;
   }
 

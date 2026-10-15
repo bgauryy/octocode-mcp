@@ -3,13 +3,13 @@ import { StringEnum } from '@earendil-works/pi-ai';
 import type { ExtensionAPI, ExtensionContext, ToolCallEvent, ToolCallEventResult } from '@earendil-works/pi-coding-agent';
 import { Box, Text } from '@earendil-works/pi-tui';
 import { Type } from 'typebox';
-import { firstLine, isRecord, modelLookup, textResult, unpricedModel } from '../shared/util.js';
+import { contentText, firstLine, isRecord, modelLookup, textResult, unpricedModel } from '../shared/util.js';
 import { storedText } from '../shared/sanitize.js';
 import { formatClock } from '../shared/format.js';
 import { resolveToolPath } from '../shared/home.js';
 import { clip, timingOf, plural, resultBlock, timedTool, toolHeader } from '../shared/render.js';
 import { EDIT_RETENTION_MINUTES } from './edits.js';
-import { describeChanges, describeConflicts, describeMembers, mutatedPaths } from './routing.js';
+import { describeChanges, describeConflicts, describeMembers, mutatedPaths, senderLabel } from './routing.js';
 import { checkGoal, GOAL_DESCRIPTION } from './identity.js';
 import { MESSAGE_TYPE, type Team } from './session.js';
 import type { MailDetails } from './model.js';
@@ -67,7 +67,7 @@ function registerMessageRenderer(pi: ExtensionAPI): void {
     const entries = Array.isArray(mail) ? mail : [{ from: 'agent', text: typeof message.content === 'string' ? message.content : '', at: Date.now() }];
     for (const entry of entries) {
       const sender = entry?.sender;
-      const from = clip(`${String(entry?.from ?? 'agent')}${sender ? ` (${sender.goal ? `${sender.role}: ${sender.goal}` : sender.role})` : ''}`, 100);
+      const from = clip(`${String(entry?.from ?? 'agent')}${sender ? ` (${senderLabel(sender)})` : ''}`, 100);
       const kind = entry?.replyRequired ? ' · reply requested' : '';
       box.addChild(new Text(`${theme.fg('accent', '✉')} ${theme.fg('toolTitle', theme.bold(`from ${from}`))} ${theme.fg('dim', `· ${formatClock(entry?.at ?? Date.now())}${kind}`)}`, 0, 0));
       // resultBlock sanitizes the body.
@@ -151,7 +151,7 @@ function registerCoordinateTool(pi: ExtensionAPI, team: Team, stopAgent: StopAge
       return toolHeader(theme, context, 'Coordinate', summary);
     },
     renderResult(result, _options, theme, context) {
-      const body = result.content.map((part) => (part.type === 'text' ? part.text : '')).join('\n');
+      const body = contentText(result.content);
       const summary = isRecord(result.details) && typeof result.details['summary'] === 'string' ? result.details['summary'] : firstLine(body);
       // The agent list and change log stay folded: the summary counts them and ctrl+o shows them.
       return resultBlock(theme, context, { summary, body: summary === firstLine(body) ? body.split('\n').slice(1).join('\n') : body, max: context.isError ? 3 : 0, ...timingOf(result.details) });
@@ -187,7 +187,7 @@ function registerSendMessageTool(pi: ExtensionAPI, team: Team): void {
       });
       if ('error' in result) throw new Error(result.error);
       if (result.resumed) return textResult(result.resumed, { to: result.sent });
-      if (params.interrupt) return textResult(`Interrupt queued for ${result.sent.join(', ')} as message #${result.id}: a busy subagent stops its current step within a second; one on an older extension build reads it as a plain message.`, { to: result.sent, id: result.id });
+      if (params.interrupt) return textResult(`Interrupt queued for ${result.sent.join(', ')} as message #${result.id}: a busy subagent stops its current step within a second.`, { to: result.sent, id: result.id });
       const departed = result.departed?.length ? ` Not sent to ${result.departed.join(', ')} (left the team).` : '';
       const recipients = result.sent.join(', ');
       const mode = params.replyRequired === true
@@ -202,7 +202,7 @@ function registerSendMessageTool(pi: ExtensionAPI, team: Team): void {
     },
     renderResult(result, _options, theme, context) {
       const details: Record<string, unknown> = isRecord(result.details) ? result.details : {};
-      const text = result.content.map((part) => (part.type === 'text' ? part.text : '')).join('\n');
+      const text = contentText(result.content);
       const sent = Array.isArray(details['to']) ? details['to'].map(String) : [];
       const departed = Array.isArray(details['departed']) && details['departed'].length ? ` · not sent to ${details['departed'].map(String).join(', ')}` : '';
       const summary = typeof details['id'] === 'number' ? `Queued #${details['id']}${sent.length > 1 ? ` to ${plural(sent.length, 'agent')}` : ''}${departed}` : firstLine(text);

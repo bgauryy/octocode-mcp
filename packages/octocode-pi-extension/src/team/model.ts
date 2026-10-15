@@ -12,7 +12,7 @@ export interface Member {
   /** When the process `pid` names started (`processStartTime`), absent where unknown: with the pid it names one process, which a later one that got the pid is not. */
   started?: string;
   status: 'idle' | 'working';
-  /** What it works on, in at most five words (`goal.ts`). The database column keeps its older name, `task`. */
+  /** What it works on, any length (`checkGoal` in `identity.ts` refuses only a missing one). Stored in the `task` column. */
   goal?: string;
   /** The tool it is running right now. */
   activity?: string;
@@ -42,7 +42,7 @@ export interface Message {
   at: number;
   replyRequired: boolean;
   replyTo?: number;
-  /** Whether it may start a turn of an idle recipient; decided when sent (absent for rows stored before v4). */
+  /** Whether it may start a turn of an idle recipient; decided when sent (`TeamStore.send`); absent means it waits. */
   wake?: boolean;
   /** Set when delivered: the sender's role and goal, unless it already left the team. */
   sender?: { role: string; goal?: string };
@@ -155,7 +155,7 @@ export function toMessage(row: Row, to: string): Message {
   return {
     id: num(row['id']), from: String(row['sender']), to, text: String(row['body']), at: num(row['created_at']), replyRequired: row['reply_required'] === 1,
     ...(typeof replyTo === 'number' ? { replyTo } : {}),
-    ...(typeof wake === 'number' ? { wake: wake >= 1 } : {}),
+    wake: num(wake) >= 1,
     ...(wake === 2 ? { interrupt: true } : {}),
     ...(typeof row['proof'] === 'string' ? { proof: row['proof'] } : {}),
     ...(role ? { sender: { role, ...(goal ? { goal } : {}) } } : {}),

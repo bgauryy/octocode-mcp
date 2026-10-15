@@ -1,4 +1,3 @@
-import path from 'node:path';
 import type { Usage } from '@earendil-works/pi-ai';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
@@ -12,11 +11,14 @@ import { timedTool } from '../shared/render.js';
 import { fenceUntrusted, headerText } from '../shared/fence.js';
 import { projectTrustNow } from '../shared/trust.js';
 import type { Permission } from '../permission/ask.js';
-import { deniedLabel, doneSummary, renderAgentCall, renderAgentMessage, renderAgentResult, type RunDetails } from './render.js';
-import { claimRun, joinTeam, lingerSeconds, maxSubagents, planRun, Slots, subagentLimitError, withIdentity, type AgentRuns, type Run } from './claim.js';
-import { buildAgentArgs, runSubagent, SUBAGENT_STOP_GRACE_MS, USER_STOP, type ChildProgress, type Identity } from './process.js';
-import { askSpawn, type AgentProfile } from './profiles.js';
-import { pendingReportsDir, ReadReports, ReportQueue, RESULT_TYPE, savePendingReport, scratchRoot, sweepScratch, takePendingReports, type Report } from './handoff.js';
+import { capitalize, deniedLabel, doneSummary, renderAgentCall, renderAgentMessage, renderAgentResult, type RunDetails } from './render.js';
+import { claimRun, joinTeam, maxSubagents, planRun, Slots, withIdentity, type AgentRuns, type Run } from './claim.js';
+import type { ChildProgress } from './events.js';
+import { LateReports } from './late.js';
+import { Lingering, savedSession } from './linger.js';
+import { buildAgentArgs, runSubagent, SUBAGENT_STOP_GRACE_MS, USER_STOP, type Identity } from './process.js';
+import { askSpawn, GENERAL_PROFILE, type AgentProfile } from './profiles.js';
+import { pendingReportsDir, ReadReports, ReportQueue, RESULT_TYPE, savePendingReport, scratchRoot, sweepScratch, type Report } from './handoff.js';
 import { reportStatus } from './report.js';
 import { saveShot, shotsDir, type Shot } from './screenshots.js';
 import { agentsCommand, stopBackground, type BackgroundRun } from './command.js';
@@ -43,17 +45,11 @@ export interface AgentControl {
 
 /** How long shutdown waits for stopped background subagents: past the SIGTERM grace, after which they are killed. */
 const SHUTDOWN_WAIT_MS = SUBAGENT_STOP_GRACE_MS + 1_000;
-/**
- * After a session starts, how long it keeps looking for reports of runs the previous runtime stopped (a reload): a
- * stop can take two SIGTERM graces (term, then kill) plus saving an isolated run's worktree. Each settled turn looks too.
- */
-const LATE_REPORTS_MS = 4 * SUBAGENT_STOP_GRACE_MS;
 /** Who stopped the runs of a permission change: their reports say so, so the model asks before starting them again. */
 const PERMISSION_STOP = 'a permission change';
 
 type Outcome = Awaited<ReturnType<typeof runSubagent>>;
 type AgentUpdate = (update: { content: Array<{ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }>; details: RunDetails }) => void;
-interface LingeringRun { until: number; run: Run; ctx: ExtensionContext; timer?: NodeJS.Timeout }
 
 /** An isolated run's private worktree; `finish` commits its changes to the agent's ref and removes it, once, and returns the text for the report. */
 class Isolation {
@@ -118,7 +114,8 @@ function tracker(identity: Identity, details: RunDetails, find: ModelLookup) {
       else delete details.thinking;
     }
     if (image) {
-      latest = saveShot(dir, identity.id, (shots += 1), image);
+      shots += 1;
+      latest = saveShot(dir, identity.id, shots, image);
       details.shot = latest.path;
     }
     // `usage` is the run's total so far: the details restart from it. Cached prompt tokens count in ↑.
@@ -134,17 +131,17 @@ function tracker(identity: Identity, details: RunDetails, find: ModelLookup) {
 
 /** The row of a call waiting for a slot: who it will be, and how many run before it. */
 function waitingUpdate(profile: string | undefined, goal: string, running: number): { content: Array<{ type: 'text'; text: string }>; details: RunDetails } {
-  const details: RunDetails = { id: '', profile: profile ?? 'general', goal, toolCalls: 0, activity: [], ...emptyTotals(), startedAt: Date.now(), status: 'waiting' };
+  const details = startDetails({ id: '', profile: profile ?? GENERAL_PROFILE, goal, status: 'waiting' });
   return { content: [{ type: 'text', text: `waiting for a slot (${running} running)` }], details };
 }
+
+/** A run's details before it has spent anything. */
+const startDetails = (fields: Pick<RunDetails, 'id' | 'profile' | 'goal' | 'status'>): RunDetails => ({ ...fields, toolCalls: 0, activity: [], ...emptyTotals(), startedAt: Date.now() });
 
 /** A run's details as it starts. */
 function runDetails(run: Run): RunDetails {
   const { model, fallback } = run.route;
-  return {
-    id: run.identity.id, profile: run.identity.role, goal: run.identity.goal, toolCalls: 0, activity: [], input: 0, cacheRead: 0, output: 0, cost: 0, unpriced: false, startedAt: Date.now(), status: 'running',
-    ...(model ? { model } : {}), ...(fallback ? { fallback } : {}),
-  };
+  return { ...startDetails({ id: run.identity.id, profile: run.identity.role, goal: run.identity.goal, status: 'running' }), ...(model ? { model } : {}), ...(fallback ? { fallback } : {}) };
 }
 
 const withShot = (details: RunDetails, text: string) => (details.shot ? `${text}\n\n(Last screenshot: ${shortPath(details.shot)})` : text);
@@ -172,7 +169,6 @@ function startBackground(
     try {
       const outcome = await launch(controller.signal);
       const note = await finish();
-      details.seconds = Math.round((Date.now() - details.startedAt) / 1000);
       // The outcome word the report starts with; a crashed run is failed whatever it said, and a report without the word is unknown.
       const reported = outcome.error ? 'failed' : reportStatus(outcome.text);
       if (reported) details.outcome = reported;
@@ -196,7 +192,7 @@ function startBackground(
       reports.add({
         // A stop someone asked for is the parent's own word; any other cause (a crash, a stall) quotes the child's output.
         content: by ? `Background subagent ${who} ${reason}${note}${reachable}` : reportMessage(`Background subagent ${who} stopped`, errorMessage(error), [note, reachable]),
-        details: { id: identity.id, status: 'stopped', ...(by ? { requested: true } : { outcome: 'failed' as const }), summary: reason.charAt(0).toUpperCase() + reason.slice(1), durationMs: Date.now() - details.startedAt, ...shown, ...reportSpend(details) },
+        details: { id: identity.id, status: 'stopped', ...(by ? { requested: true } : { outcome: 'failed' as const }), summary: capitalize(reason), durationMs: Date.now() - details.startedAt, ...shown, ...reportSpend(details) },
         wake: !by,
       });
     } finally {
@@ -255,7 +251,6 @@ async function runForeground(
     runs.foreground.delete(identity.id);
   }
   const note = `${await finish()}${warning}`;
-  details.seconds = Math.round((Date.now() - details.startedAt) / 1000);
   if (outcome.error) {
     // An error result rather than a throw, so the child's spent tokens still reach this session's totals.
     details.status = 'failed';
@@ -279,46 +274,30 @@ export function registerAgentTool(pi: ExtensionAPI, getProfiles: () => Map<strin
   };
   const { background } = runs;
   pi.on('tool_result', async (event, ctx) => void (!event.isError && background.size > 0 && runs.read.observe(event.toolName, event.input, ctx.cwd)));
-  // Finished background runs still reachable (OCTOCODE_SUBAGENT_LINGER_SECONDS): a message resumes their saved conversation.
-  const lingering = new Map<string, LingeringRun>();
-  const forgetLinger = (id: string): boolean => {
-    clearTimeout(lingering.get(id)?.timer);
-    return lingering.delete(id);
-  };
-  const resuming = new Set<string>();
   let launching = new AbortController();
   const cancelLaunches = () => {
     launching.abort();
     launching = new AbortController();
   };
-  /** Where a run that will linger saves its conversation (its scratch folder, under its own name); undefined otherwise. */
-  const savedSession = (run: Run, eligible: boolean) =>
-    eligible && lingerSeconds() > 0 && run.identity.scratch ? { dir: path.join(run.identity.scratch, 'session'), id: run.identity.id } : undefined;
-  /** Called when the run reported: it stays reachable for the window, and the report says so. */
-  const lingerFor = (run: Run, ctx: ExtensionContext) => {
-    const session = runs.session;
-    return (): string => {
-      const seconds = lingerSeconds();
-      if (session !== runs.session || seconds === 0) return '';
-      const id = run.identity.id;
-      forgetLinger(id);
-      const entry: LingeringRun = { until: Date.now() + seconds * 1000, run, ctx };
-      lingering.set(id, entry);
-      // Release the saved context when the window ends, even if nobody messages this name again.
-      const expire = () => {
-        const remaining = entry.until - Date.now();
-        if (remaining <= 0) { forgetLinger(id); return; }
-        entry.timer = setTimeout(expire, Math.min(remaining, 2_147_483_647));
-        entry.timer.unref();
-      };
-      expire();
-      return `\n\n${id} stays reachable for ${seconds} s: \`sendMessage\` to it continues this conversation; \`coordinate stop ${id}\` ends that.`;
-    };
-  };
+  /** The caller's signal joined with the one a permission change or shutdown aborts. */
+  const withLaunch = (signal?: AbortSignal) => (signal ? AbortSignal.any([signal, launching.signal]) : launching.signal);
+  // Finished background runs still reachable (OCTOCODE_SUBAGENT_LINGER_SECONDS): a message resumes their saved conversation.
+  const lingering = new Lingering(runs, permission, withLaunch, (run, ctx, { text, message }) => {
+    const details = runDetails(run);
+    const track = tracker(run.identity, details, modelLookup(ctx));
+    const args = buildAgentArgs(run.profile, run.route.model, undefined, undefined, savedSession(run, true));
+    const host = relayHost(ctx);
+    const launch = (signal: AbortSignal) => runSubagent(message, args, ctx.cwd, run.profile, run.identity, signal, track(undefined), undefined, undefined, host);
+    startBackground(runs, run, details, text, launch, () => Promise.resolve('').finally(run.release), ctx.sessionManager.getSessionId(), lingering.window(run, ctx));
+  });
+  const late = new LateReports(runs);
   const stopRuns = async (by: string): Promise<void> => {
     // Wait (bounded) for stopped children to file their reports; a named stop files them without starting a turn.
     for (const id of runs.foreground.keys()) stopBackground(runs.foreground, id, by, 'subagent');
-    const stopping = [...background].map(([id, entry]) => (stopBackground(background, id, by), entry.done));
+    const stopping = [...background].map(([id, entry]) => {
+      stopBackground(background, id, by);
+      return entry.done;
+    });
     await settleWithin(Promise.all(stopping), SHUTDOWN_WAIT_MS);
     runs.reports.flush();
   };
@@ -330,40 +309,23 @@ export function registerAgentTool(pi: ExtensionAPI, getProfiles: () => Map<strin
     cancelLaunches();
     void stopRuns(PERMISSION_STOP);
   });
-  // Reports of background runs that finished after this session last ended (a reload, a stop slower than the shutdown
-  // wait) are saved for it: taken at the start, for a while after it, and after every settled turn.
-  let pendingDir: string | undefined;
-  let lateReports: NodeJS.Timeout | undefined;
-  const takePending = () => {
-    if (pendingDir) for (const report of takePendingReports(pendingDir)) runs.reports.add(report);
-  };
-  pi.on('agent_settled', async () => takePending());
+  pi.on('agent_settled', async () => late.take());
   pi.on('session_shutdown', async (event, ctx) => {
     cancelLaunches();
-    clearInterval(lateReports);
-    pendingDir = undefined;
+    late.stop();
     // Usually done already: index.ts runs it before the team leaves.
     // Reports still waiting in the batch window are saved for the next start, not lost with this runtime.
     runs.reports.persist();
     await stopAll(event.reason);
     // A child still closing keeps its entry (and its slot) until it exits; its report waits for this session's next start.
     runs.session += 1;
-    for (const id of lingering.keys()) forgetLinger(id);
+    lingering.forgetAll();
     panel.stop(ctx);
   });
   // Worktrees left by a Pi process that died: their changes are saved to the agent's ref, then the worktree goes (kept when saving fails).
   pi.on('session_start', async (_event, ctx) => {
     panel.start(ctx);
-    pendingDir = pendingReportsDir(ctx.sessionManager.getSessionId());
-    runs.reports.pendingDir = pendingDir;
-    takePending();
-    const until = Date.now() + LATE_REPORTS_MS;
-    clearInterval(lateReports);
-    lateReports = setInterval(() => {
-      takePending();
-      if (Date.now() >= until) clearInterval(lateReports);
-    }, 1_000);
-    lateReports.unref();
+    late.start(ctx.sessionManager.getSessionId());
     // Off the start path: it lists and deletes directories.
     const root = scratchRoot(ctx.cwd);
     setImmediate(() => void sweepScratch(root));
@@ -394,7 +356,7 @@ export function registerAgentTool(pi: ExtensionAPI, getProfiles: () => Map<strin
       isolate: Type.Optional(Type.Boolean({ description: 'Work in a private git worktree; changes land on refs/octocode/pi/<id>, not in this tree. The report names the ref: ask the user to run `/agents merge <id>` to bring them in' })),
     }),
     async execute(id, params, signal, onUpdate, ctx) {
-      const launchSignal = signal ? AbortSignal.any([signal, launching.signal]) : launching.signal;
+      const launchSignal = withLaunch(signal);
       launchSignal.throwIfAborted();
       const goal = checkGoal(params.goal);
       // Refusals first (unknown profile, unavailable model), then a slot, then the spawn ask: the user is never asked
@@ -442,7 +404,7 @@ export function registerAgentTool(pi: ExtensionAPI, getProfiles: () => Map<strin
           onUpdate?.({ content: [{ type: 'text', text: 'stopping…' }], details: { ...details } });
         };
         if (!params.background) return await runForeground(runs, run, details, (runSignal) => launch(runSignal, onUpdate), finish, warning, launchSignal, stopping);
-        startBackground(runs, run, details, params.task, (runSignal) => launch(runSignal, undefined), finish, ctx.sessionManager.getSessionId(), session ? lingerFor(run, ctx) : undefined);
+        startBackground(runs, run, details, params.task, (runSignal) => launch(runSignal, undefined), finish, ctx.sessionManager.getSessionId(), session ? lingering.window(run, ctx) : undefined);
         handedOff = true;
         details.status = 'background';
         return { content: [{ type: 'text', text: `Started ${run.identity.id} (${run.identity.role}: ${goal}) in the background; its report arrives as a message.${warning}` }], details };
@@ -454,52 +416,10 @@ export function registerAgentTool(pi: ExtensionAPI, getProfiles: () => Map<strin
     renderCall: renderAgentCall,
     renderResult: renderAgentResult,
   }));
-  /** A message to a lingering run, from its parent or the user, resumes it in the background; undefined when it does not linger. */
-  const resume = async (id: string, text: string, from: string, signal?: AbortSignal): Promise<string | undefined> => {
-    const prior = lingering.get(id);
-    if (!prior || (from !== prior.run.identity.parentId && from !== USER_SENDER)) return undefined;
-    if (Date.now() >= prior.until) {
-      forgetLinger(id);
-      return undefined;
-    }
-    if (resuming.has(id)) throw new Error(`${id} is already awaiting permission to resume.`);
-    const launchSignal = signal ? AbortSignal.any([signal, launching.signal]) : launching.signal;
-    launchSignal.throwIfAborted();
-    const { run: last, ctx } = prior;
-    const params = { goal: last.identity.goal, task: text, background: true, ...(last.profile ? { profile: last.profile.name } : {}) };
-    // A message is answered now: over the limit it is refused, not left waiting for a slot.
-    if (!runs.slots.tryTake()) throw new Error(subagentLimitError(runs.running.keys(), maxSubagents()));
-    resuming.add(id);
-    let run: Run | undefined;
-    try {
-      const grants = await askSpawn(permission, ctx, last.profile, text, launchSignal, pi.getSettings().defaultTools, { goal: last.identity.goal });
-      launchSignal.throwIfAborted();
-      if (lingering.get(id) !== prior) throw new Error(`Subagent ${id} is no longer available to resume.`);
-      // Keep the saved conversation and model, but renew authorization from the parent's current policy.
-      const identity = { ...last.identity, relay: ctx.hasUI, permission: { mode: permission.mode, grants: [...new Set([...grants, ...permission.childGrants()])] } };
-      run = claimRun(runs, last, params, ctx, [], identity);
-      const details = runDetails(run);
-      const track = tracker(run.identity, details, modelLookup(ctx));
-      const message = `Follow-up from ${from === USER_SENDER ? 'the user' : 'your parent'}:\n${text}`;
-      const args = buildAgentArgs(run.profile, run.route.model, undefined, undefined, savedSession(run, true));
-      const resumed = run;
-      const host = relayHost(ctx);
-      const launch = (signal: AbortSignal) => runSubagent(message, args, ctx.cwd, resumed.profile, resumed.identity, signal, track(undefined), undefined, undefined, host);
-      startBackground(runs, run, details, text, launch, () => Promise.resolve('').finally(resumed.release), ctx.sessionManager.getSessionId(), lingerFor(run, ctx));
-      forgetLinger(id);
-    } catch (error) {
-      if (run) run.release();
-      else runs.slots.give();
-      throw error;
-    } finally {
-      resuming.delete(id);
-    }
-    return `Resumed ${id} with your message; its reply arrives as a background report.`;
-  };
-  team.setResumer(resume);
+  team.setResumer((id, text, from, signal) => lingering.resume(id, text, from, signal));
   return {
     // A lingering run has nothing running: stopping it ends its window.
-    stop: (id, by) => (forgetLinger(id) ? undefined : stopBackground(background, id, by)),
+    stop: (id, by) => (lingering.forget(id) ? undefined : stopBackground(background, id, by)),
     // Reports still inside their batching window go out now: a held headless run hands them to its next turn.
     settle: () => Promise.all([...background.values()].map((entry) => entry.done)).then(() => runs.reports.flush()),
     background: () => background.size,

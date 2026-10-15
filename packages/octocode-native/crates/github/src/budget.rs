@@ -857,96 +857,20 @@ impl KeyState {
         deadline: Instant,
         cancellation: &CancellationToken,
     ) -> Result<Option<Admission>, ProviderError> {
-        let mut reservation: Option<Reserved> = None;
-        let mut permits = Vec::with_capacity(2);
-        if let Some(group) = group {
-            let plan = SlotPlan::new(group, config, count_code_search, cap, deadline);
-            let window = plan.window;
-            let persisted = matches!(group, Group::Search | Group::CodeSearch | Group::Graphql);
-            let lane = self.groups.get(group.name());
-            let mut queued = None;
-            if plan.takes_slot() {
-                // Peek before the group permit: a wait the current facts
-                // already put past the cap is refused now, not after queueing
-                // behind another request's permit. The admissions queued
-                // ahead in this process take their slots first, so the peek
-                // plans past them. Entering the queue and peeking share one
-                // facts lock, and an admission leaves the queue under the
-                // lock that records its slot, so each one is counted exactly
-                // once. The reserve below stays authoritative: a peer process
-                // can fill the window meanwhile.
-                if persisted {
-                    self.refresh_off_thread().await;
-                }
-                let facts = self.facts();
-                let (entered, ahead) = lane.map(|lane| Queued::enter(lane, window)).unzip();
-                queued = entered;
-                let peeked = plan.start_after(&facts, now_ms(), ahead.unwrap_or_default());
-                drop(facts);
-                if let Some(refusal) = plan.refusal(peeked, Subject::Request) {
-                    return Err(refusal);
-                }
-            }
-            if let Some(lane) = lane {
-                permits.push(acquire(&lane.permit, deadline, cancellation).await?);
-            }
-            if plan.takes_slot() {
-                // Take the start slot (and window slot) from this key's
-                // facts: the spacing after the group's last start, and the
-                // window's oldest stamp when the window is full. One cap,
-                // `cap`, bounds every wait, the code-search window's too.
-                let reserve = |facts: &mut KeyFacts| {
-                    drop(queued);
-                    let now = now_ms();
-                    if window {
-                        while facts
-                            .code_search_ms
-                            .front()
-                            .is_some_and(|stamp| stamp.saturating_add(60_000) <= now)
-                        {
-                            facts.code_search_ms.pop_front();
-                        }
-                    }
-                    let planned = plan.start(facts, now);
-                    if let Some(refusal) = plan.refusal(planned, Subject::Request) {
-                        return Err(refusal);
-                    }
-                    let start = planned.start;
-                    let previous = facts.last_start_ms.insert(group.name().to_owned(), start);
-                    if window {
-                        facts.code_search_ms.push_back(start);
-                    }
-                    Ok((start, previous))
-                };
-                // Mirrored groups reserve under the cross-process file lock,
-                // against every process's slots: reserving from each
-                // process's own view lets two processes take the same slot.
-                let (start, previous) = if persisted {
-                    self.reserve_shared(deadline, cancellation, reserve)
-                        .await??
-                } else {
-                    reserve(&mut self.facts())?
-                };
-                reservation = Some(Reserved {
-                    state: Arc::clone(self),
-                    slot: Some((group, start, previous, window, persisted)),
-                });
-                if let Err(error) = pause(
-                    Duration::from_millis(start.saturating_sub(now_ms())),
+        let (reservation, mut permits) = match group {
+            Some(group) => {
+                self.reserve_group_slot(
+                    group,
+                    config,
+                    count_code_search,
+                    cap,
                     deadline,
                     cancellation,
                 )
-                .await
-                {
-                    // Nothing was sent: hand back the reserved start and window
-                    // slot so they do not throttle later requests.
-                    if let Some(reserved) = reservation.take() {
-                        reserved.release().await;
-                    }
-                    return Err(error);
-                }
+                .await?
             }
-        }
+            None => (None, Vec::with_capacity(1)),
+        };
         let global = acquire(&self.global, deadline, cancellation).await;
         let global = match global {
             Ok(permit) => permit,
@@ -971,6 +895,108 @@ impl KeyState {
         }
         permits.push(global);
         Ok(Some(Admission { _permits: permits }))
+    }
+
+    /// The group half of an admission: the group permit, then the group's
+    /// start slot (and code-search window slot), waited out before it
+    /// returns. The reservation is handed back on an error here and, through
+    /// `Drop`, when the admission future is dropped mid-wait.
+    async fn reserve_group_slot(
+        self: &Arc<Self>,
+        group: Group,
+        config: &ExecutorConfig,
+        count_code_search: bool,
+        cap: Duration,
+        deadline: Instant,
+        cancellation: &CancellationToken,
+    ) -> Result<(Option<Reserved>, Vec<OwnedSemaphorePermit>), ProviderError> {
+        let mut permits = Vec::with_capacity(2);
+        let plan = SlotPlan::new(group, config, count_code_search, cap, deadline);
+        let window = plan.window;
+        let persisted = matches!(group, Group::Search | Group::CodeSearch | Group::Graphql);
+        let lane = self.groups.get(group.name());
+        let mut queued = None;
+        if plan.takes_slot() {
+            // Peek before the group permit: a wait the current facts
+            // already put past the cap is refused now, not after queueing
+            // behind another request's permit. The admissions queued
+            // ahead in this process take their slots first, so the peek
+            // plans past them. Entering the queue and peeking share one
+            // facts lock, and an admission leaves the queue under the
+            // lock that records its slot, so each one is counted exactly
+            // once. The reserve below stays authoritative: a peer process
+            // can fill the window meanwhile.
+            if persisted {
+                self.refresh_off_thread().await;
+            }
+            let facts = self.facts();
+            let (entered, ahead) = lane.map(|lane| Queued::enter(lane, window)).unzip();
+            queued = entered;
+            let peeked = plan.start_after(&facts, now_ms(), ahead.unwrap_or_default());
+            drop(facts);
+            if let Some(refusal) = plan.refusal(peeked, Subject::Request) {
+                return Err(refusal);
+            }
+        }
+        if let Some(lane) = lane {
+            permits.push(acquire(&lane.permit, deadline, cancellation).await?);
+        }
+        if !plan.takes_slot() {
+            return Ok((None, permits));
+        }
+        // Take the start slot (and window slot) from this key's facts: the
+        // spacing after the group's last start, and the window's oldest stamp
+        // when the window is full. One cap, `cap`, bounds every wait, the
+        // code-search window's too.
+        let reserve = |facts: &mut KeyFacts| {
+            drop(queued);
+            let now = now_ms();
+            if window {
+                while facts
+                    .code_search_ms
+                    .front()
+                    .is_some_and(|stamp| stamp.saturating_add(60_000) <= now)
+                {
+                    facts.code_search_ms.pop_front();
+                }
+            }
+            let planned = plan.start(facts, now);
+            if let Some(refusal) = plan.refusal(planned, Subject::Request) {
+                return Err(refusal);
+            }
+            let start = planned.start;
+            let previous = facts.last_start_ms.insert(group.name().to_owned(), start);
+            if window {
+                facts.code_search_ms.push_back(start);
+            }
+            Ok((start, previous))
+        };
+        // Mirrored groups reserve under the cross-process file lock, against
+        // every process's slots: reserving from each process's own view lets
+        // two processes take the same slot.
+        let (start, previous) = if persisted {
+            self.reserve_shared(deadline, cancellation, reserve)
+                .await??
+        } else {
+            reserve(&mut self.facts())?
+        };
+        let reserved = Reserved {
+            state: Arc::clone(self),
+            slot: Some((group, start, previous, window, persisted)),
+        };
+        if let Err(error) = pause(
+            Duration::from_millis(start.saturating_sub(now_ms())),
+            deadline,
+            cancellation,
+        )
+        .await
+        {
+            // Nothing was sent: hand back the reserved start and window slot
+            // so they do not throttle later requests.
+            reserved.release().await;
+            return Err(error);
+        }
+        Ok((Some(reserved), permits))
     }
 
     /// Hand back a reservation in memory and, when mirrored, on disk: the
@@ -1658,6 +1684,39 @@ mod tests {
                 .is_none_or(|start| *start <= now_ms()),
             "no phantom spacing reservation"
         );
+    }
+
+    /// An admission dropped while it waits for its reserved spacing slot
+    /// hands the slot back through `Drop`: the next admission plans its start
+    /// after the last admitted request, not after the dropped one.
+    #[tokio::test]
+    async fn dropped_admission_releases_its_slot() {
+        let spacing = Duration::from_secs(1);
+        let (budget, state) = limited(ExecutorConfig {
+            search_spacing: spacing,
+            ..ExecutorConfig::relaxed()
+        });
+        let token = CancellationToken::new();
+        let admit = || {
+            state.admit(
+                Some(Group::Search),
+                budget.config(),
+                false,
+                spacing,
+                Instant::now() + Duration::from_secs(10),
+                &token,
+            )
+        };
+        drop(admit().await.expect("first start"));
+        let dropped = tokio::time::timeout(Duration::from_millis(100), admit()).await;
+        assert!(
+            dropped.is_err(),
+            "the spacing wait was dropped, not completed"
+        );
+        // A leaked slot would push this start a second spacing out, past the
+        // one-spacing cap, and refuse it.
+        let next = admit().await;
+        assert!(next.is_ok(), "{:?}", next.err());
     }
 
     /// A peer process that holds the state file's lock must not hold this

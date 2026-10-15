@@ -75,10 +75,10 @@ fn resolve(layers: Layers<'_>) -> ConfigOutput {
 #[test]
 fn workspace_file_alone_applies() {
     let out = resolve(Layers {
-        project_rc: Some(r#"{"network":{"timeout":7000}}"#),
+        project_rc: Some(r#"{"lsp":{"prewarm":"off"}}"#),
         ..NONE
     });
-    assert_eq!(out.resolved.network.timeout, 7000);
+    assert_eq!(out.resolved.lsp.prewarm, LspPrewarm::Off);
     assert_eq!(out.source, ConfigSource::File);
     assert_eq!(out.config_path, None);
     assert_eq!(out.project_config_path, Some(WORKSPACE_RC.into()));
@@ -88,10 +88,10 @@ fn workspace_file_alone_applies() {
 #[test]
 fn global_file_alone_still_applies() {
     let out = resolve(Layers {
-        global_rc: Some(r#"{"network":{"timeout":6000}}"#),
+        global_rc: Some(r#"{"lsp":{"prewarm":"all"}}"#),
         ..NONE
     });
-    assert_eq!(out.resolved.network.timeout, 6000);
+    assert_eq!(out.resolved.lsp.prewarm, LspPrewarm::All);
     assert_eq!(out.config_path, Some(GLOBAL_RC.into()));
     assert_eq!(out.project_config_path, None);
 }
@@ -100,14 +100,19 @@ fn global_file_alone_still_applies() {
 fn workspace_overrides_global_per_field_and_global_fills_the_rest() {
     let out = resolve(Layers {
         global_rc: Some(
-            r#"{"network":{"timeout":7000,"maxRetries":1},"output":{"format":"json"}}"#,
+            r#"{"tools":{"enabled":["localSearch"],"disabled":["astSearch"]},"output":{"format":"json"}}"#,
         ),
-        project_rc: Some(r#"{"network":{"timeout":6000}}"#),
+        project_rc: Some(r#"{"tools":{"enabled":["localFetch"]}}"#),
         ..NONE
     });
-    assert_eq!(out.resolved.network.timeout, 6000, "workspace wins");
     assert_eq!(
-        out.resolved.network.max_retries, 1,
+        out.resolved.tools.enabled,
+        Some(vec!["localFetch".to_owned()]),
+        "workspace wins"
+    );
+    assert_eq!(
+        out.resolved.tools.disabled,
+        Some(vec!["astSearch".to_owned()]),
         "sibling field in the same section still comes from global"
     );
     assert_eq!(
@@ -119,26 +124,26 @@ fn workspace_overrides_global_per_field_and_global_fills_the_rest() {
 
 #[test]
 fn every_environment_source_beats_both_files() {
-    let rc = r#"{"network":{"timeout":7000}}"#;
+    let rc = r#"{"lsp":{"prewarm":"all"}}"#;
     for (label, layers) in [
         (
             "process env",
             Layers {
-                env: &[("REQUEST_TIMEOUT", "9000")],
+                env: &[("OCTOCODE_LSP_PREWARM", "off")],
                 ..NONE
             },
         ),
         (
             "workspace .env",
             Layers {
-                project_env: Some("REQUEST_TIMEOUT=9000"),
+                project_env: Some("OCTOCODE_LSP_PREWARM=off"),
                 ..NONE
             },
         ),
         (
             "global .env",
             Layers {
-                global_env: Some("REQUEST_TIMEOUT=9000"),
+                global_env: Some("OCTOCODE_LSP_PREWARM=off"),
                 ..NONE
             },
         ),
@@ -148,7 +153,11 @@ fn every_environment_source_beats_both_files() {
             project_rc: Some(rc),
             ..layers
         });
-        assert_eq!(out.resolved.network.timeout, 9000, "{label} must win");
+        assert_eq!(
+            out.resolved.lsp.prewarm,
+            LspPrewarm::Off,
+            "{label} must win"
+        );
         assert_eq!(out.source, ConfigSource::Mixed, "{label}");
     }
 }
@@ -176,7 +185,7 @@ fn null_falls_through_for_every_config_kind() {
         .iter()
         .filter(|field| field.file && field.resolved)
     {
-        let mut doc = serde_json::json!({"network": {"timeout": 9000}});
+        let mut doc = serde_json::json!({"lsp": {"prewarm": "off"}});
         insert_path(&mut doc, field.path, serde_json::Value::Null);
         let text = doc.to_string();
         let out = resolve(Layers {
@@ -188,8 +197,8 @@ fn null_falls_through_for_every_config_kind() {
         let resolved =
             super::get_config_value(&out.resolved, field.path).unwrap_or(serde_json::Value::Null);
         assert_eq!(resolved, default, "{}", field.path);
-        if field.path != "network.timeout" {
-            assert_eq!(out.resolved.network.timeout, 9000, "{}", field.path);
+        if field.path != "lsp.prewarm" {
+            assert_eq!(out.resolved.lsp.prewarm, LspPrewarm::Off, "{}", field.path);
         }
         assert!(
             out.diagnostics.is_empty(),
@@ -206,13 +215,13 @@ fn null_falls_through_for_every_config_kind() {
 fn a_null_list_keeps_every_other_setting() {
     let out = resolve(Layers {
         global_rc: Some(
-            r#"{"local":{"enabled":false,"allowedPaths":null},"network":{"timeout":9000}}"#,
+            r#"{"local":{"enabled":false,"allowedPaths":null},"lsp":{"prewarm":"off"}}"#,
         ),
         ..NONE
     });
     assert!(!out.resolved.local.enabled);
     assert!(out.resolved.local.allowed_paths.is_empty());
-    assert_eq!(out.resolved.network.timeout, 9000);
+    assert_eq!(out.resolved.lsp.prewarm, LspPrewarm::Off);
     assert!(out.diagnostics.is_empty(), "{:?}", out.diagnostics);
 }
 
@@ -275,21 +284,6 @@ fn workspace_may_still_opt_out_of_storage_persistence() {
 }
 
 #[test]
-fn classification_budgets_use_one_configuration_section() {
-    let out = resolve(Layers {
-        global_rc: Some(
-            r#"{"classification":{"maxCandidates":20,"maxChars":8000,"timeoutMs":5000}}"#,
-        ),
-        project_rc: Some(r#"{"classification":{"maxCandidates":12}}"#),
-        env: &[("OCTOCODE_CLASSIFICATION_MAX_CHARS", "9000")],
-        ..NONE
-    });
-    assert_eq!(out.resolved.classification.max_candidates, 12);
-    assert_eq!(out.resolved.classification.max_chars, 9000);
-    assert_eq!(out.resolved.classification.timeout_ms, 5000);
-}
-
-#[test]
 fn global_layers_still_set_storage_persistence() {
     let out = resolve(Layers {
         global_env: Some("OCTOCODE_STORAGE_MODE=memory"),
@@ -305,11 +299,11 @@ fn global_layers_still_set_storage_persistence() {
 fn unparseable_workspace_file_is_skipped_with_a_warning_and_global_applies() {
     for (label, text) in [("parse error", "{not json"), ("not an object", "[1,2]")] {
         let out = resolve(Layers {
-            global_rc: Some(r#"{"network":{"timeout":6000}}"#),
+            global_rc: Some(r#"{"lsp":{"prewarm":"off"}}"#),
             project_rc: Some(text),
             ..NONE
         });
-        assert_eq!(out.resolved.network.timeout, 6000, "{label}");
+        assert_eq!(out.resolved.lsp.prewarm, LspPrewarm::Off, "{label}");
         assert_eq!(out.source, ConfigSource::Invalid, "{label}");
         assert_eq!(
             out.project_config_path,
@@ -333,12 +327,16 @@ fn schema_error_drops_only_the_bad_field_and_keeps_the_rest_of_the_file() {
     let out = resolve(Layers {
         global_rc: Some(r#"{"local":{"allowedPaths":["/global"]}}"#),
         project_rc: Some(
-            r#"{"network":{"timeout":7000,"maxRetries":"many"},"local":{"allowedPaths":["relative"]}}"#,
+            r#"{"tools":{"enabled":["localSearch"],"disabled":"many"},"local":{"allowedPaths":["relative"]}}"#,
         ),
         ..NONE
     });
-    assert_eq!(out.resolved.network.timeout, 7000, "valid sibling kept");
-    assert_eq!(out.resolved.network.max_retries, 3, "bad field → default");
+    assert_eq!(
+        out.resolved.tools.enabled,
+        Some(vec!["localSearch".to_owned()]),
+        "valid sibling kept"
+    );
+    assert_eq!(out.resolved.tools.disabled, None, "bad field → default");
     assert_eq!(
         out.resolved.local.allowed_paths,
         vec!["/global".to_owned()],
@@ -360,7 +358,7 @@ fn schema_error_drops_only_the_bad_field_and_keeps_the_rest_of_the_file() {
         .collect();
     let mut fields = fields;
     fields.sort();
-    assert_eq!(fields, vec!["local.allowedPaths", "network.maxRetries"]);
+    assert_eq!(fields, vec!["local.allowedPaths", "tools.disabled"]);
     let line = out.diagnostics[0].to_string();
     assert!(
         line.starts_with("octocode: config warning: /synthetic/cwd/.octocode/.octocoderc: "),
@@ -376,7 +374,7 @@ fn non_object_section_drops_that_section_only() {
         ..NONE
     });
     assert_eq!(out.resolved.output.format, OutputFormat::Json);
-    assert_eq!(out.resolved.network.timeout, 30000);
+    assert!(!out.resolved.network.allow_private_registry);
     assert!(
         out.diagnostics
             .iter()
@@ -384,76 +382,18 @@ fn non_object_section_drops_that_section_only() {
     );
 }
 
-/// A number outside its contract range is clamped; the clamp is reported, so
-/// a `REQUEST_TIMEOUT` below the floor is never silently raised.
-#[test]
-fn a_clamped_number_is_reported_with_its_given_and_used_values() {
-    let out = resolve(Layers {
-        env: &[("REQUEST_TIMEOUT", "2000"), ("MAX_RETRIES", "99")],
-        ..NONE
-    });
-    assert_eq!(out.resolved.network.timeout, 5000);
-    let clamp = |path: &str| {
-        out.diagnostics
-            .iter()
-            .find(|d| d.code == "value_clamped" && d.field_path.as_deref() == Some(path))
-            .unwrap_or_else(|| panic!("{path}: {:?}", out.diagnostics))
-    };
-    let timeout = clamp("network.timeout");
-    assert_eq!(timeout.severity, Severity::Warning);
-    assert!(
-        timeout
-            .message
-            .contains("REQUEST_TIMEOUT 2000 is below the minimum 5000; using 5000"),
-        "{}",
-        timeout.message
-    );
-    assert!(
-        clamp("network.maxRetries")
-            .message
-            .contains("above the maximum"),
-    );
-    // An in-range value reports nothing.
-    let ok = resolve(Layers {
-        env: &[("REQUEST_TIMEOUT", "6000")],
-        ..NONE
-    });
-    assert!(ok.diagnostics.iter().all(|d| d.code != "value_clamped"));
-}
-
-/// `2e9` or `30s` is not a number a setting can take: it is reported and the
-/// setting keeps its default, instead of reading as `2` or `30` and clamping.
-#[test]
-fn a_number_with_trailing_text_is_invalid_not_truncated() {
-    let out = resolve(Layers {
-        env: &[("REQUEST_TIMEOUT", "30s"), ("MAX_RETRIES", "2e9")],
-        ..NONE
-    });
-    assert_eq!(out.resolved.network.timeout, 30000);
-    assert_eq!(out.resolved.network.max_retries, 3);
-    for path in ["network.timeout", "network.maxRetries"] {
-        assert!(
-            out.diagnostics
-                .iter()
-                .any(|d| d.code == "invalid_env_value" && d.field_path.as_deref() == Some(path)),
-            "{path}: {:?}",
-            out.diagnostics
-        );
-    }
-    assert!(out.diagnostics.iter().all(|d| d.code != "value_clamped"));
-}
-
 #[test]
 fn invalid_environment_values_warn_with_their_source_and_never_the_value() {
     let out = resolve(Layers {
-        env: &[("REQUEST_TIMEOUT", "private-abc")],
+        env: &[("OCTOCODE_LSP_PREWARM", "private-abc")],
         project_env: Some("OCTOCODE_GITHUB_GRAPHQL=private-maybe"),
         global_env: Some("OCTOCODE_OUTPUT_FORMAT=private-xml"),
-        global_rc: Some(r#"{"network":{"timeout":6000}}"#),
+        global_rc: Some(r#"{"lsp":{"prewarm":"off"}}"#),
         ..NONE
     });
     assert_eq!(
-        out.resolved.network.timeout, 6000,
+        out.resolved.lsp.prewarm,
+        LspPrewarm::Off,
         "invalid env falls to file"
     );
     let by_field = |path: &str| {
@@ -462,14 +402,18 @@ fn invalid_environment_values_warn_with_their_source_and_never_the_value() {
             .find(|d| d.code == "invalid_env_value" && d.field_path.as_deref() == Some(path))
             .unwrap_or_else(|| panic!("{path}: {:?}", out.diagnostics))
     };
-    let timeout = by_field("network.timeout");
-    assert_eq!(timeout.source_path, None);
+    let prewarm = by_field("lsp.prewarm");
+    assert_eq!(prewarm.source_path, None);
     assert!(
-        timeout
+        prewarm
             .message
-            .contains("REQUEST_TIMEOUT (process environment)")
+            .contains("OCTOCODE_LSP_PREWARM (process environment)")
     );
-    assert!(timeout.message.contains("integer"));
+    assert!(
+        prewarm.message.contains("targeted, all, off"),
+        "{}",
+        prewarm.message
+    );
     assert_eq!(
         by_field("github.graphqlEnabled").source_path,
         Some("/synthetic/cwd/.octocode/.env".into())
@@ -487,7 +431,7 @@ fn invalid_environment_values_warn_with_their_source_and_never_the_value() {
 #[test]
 fn blank_environment_values_fall_back_silently() {
     let out = resolve(Layers {
-        env: &[("REQUEST_TIMEOUT", "  ")],
+        env: &[("OCTOCODE_LSP_PREWARM", "  ")],
         ..NONE
     });
     assert!(out.diagnostics.is_empty(), "{:?}", out.diagnostics);
@@ -500,7 +444,7 @@ fn diagnostics_are_never_errors_for_any_file_misconfiguration() {
         "[]",
         "null",
         r#"{"version":"x"}"#,
-        r#"{"network":{"timeout":1.5}}"#,
+        r#"{"github":{"graphqlEnabled":"yes"}}"#,
         r#"{"storage":{"mode":"disk"}}"#,
     ] {
         for out in [
@@ -529,10 +473,10 @@ fn diagnostics_are_never_errors_for_any_file_misconfiguration() {
 fn invalid_global_file_does_not_discard_a_valid_workspace_file() {
     let out = resolve(Layers {
         global_rc: Some("{broken"),
-        project_rc: Some(r#"{"network":{"timeout":7000}}"#),
+        project_rc: Some(r#"{"lsp":{"prewarm":"off"}}"#),
         ..NONE
     });
-    assert_eq!(out.resolved.network.timeout, 7000);
+    assert_eq!(out.resolved.lsp.prewarm, LspPrewarm::Off);
     assert_eq!(out.source, ConfigSource::Invalid);
     assert!(
         out.diagnostics
@@ -559,11 +503,11 @@ fn unreadable_workspace_file_reports_its_path() {
 #[test]
 fn empty_workspace_file_is_valid_and_transparent() {
     let out = resolve(Layers {
-        global_rc: Some(r#"{"network":{"timeout":6000}}"#),
+        global_rc: Some(r#"{"lsp":{"prewarm":"off"}}"#),
         project_rc: Some("  \n"),
         ..NONE
     });
-    assert_eq!(out.resolved.network.timeout, 6000);
+    assert_eq!(out.resolved.lsp.prewarm, LspPrewarm::Off);
     assert_eq!(out.source, ConfigSource::File);
     assert!(out.diagnostics.is_empty());
 }
@@ -696,7 +640,6 @@ fn sample(field: &ConfigFieldSpec) -> serde_json::Value {
     };
     match field.kind {
         ConfigFieldKind::Boolean => json!(!narrows_to("true")),
-        ConfigFieldKind::Number => json!(field.minimum.unwrap_or(1.0) as i64),
         ConfigFieldKind::Url => json!("https://workspace.example"),
         ConfigFieldKind::Path => json!("/workspace-path"),
         ConfigFieldKind::String => json!("workspace-value"),
@@ -864,12 +807,12 @@ fn acquisition_reads_workspace_file_from_cwd_dot_octocode() {
     fs::create_dir_all(cwd.join(".octocode")).expect("workspace");
     fs::write(
         os_home.join(".octocode/.octocoderc"),
-        r#"{"network":{"timeout":7000,"maxRetries":1}}"#,
+        r#"{"tools":{"enabled":["localSearch"],"disabled":["astSearch"]}}"#,
     )
     .expect("global rc");
     fs::write(
         cwd.join(".octocode/.octocoderc"),
-        "{\n  // workspace override\n  \"network\": { \"timeout\": 6000, },\n}\n",
+        "{\n  // workspace override\n  \"tools\": { \"enabled\": [\"localFetch\"], },\n}\n",
     )
     .expect("workspace rc");
     let i = acquire(&[], cwd.clone(), os_home);
@@ -878,8 +821,14 @@ fn acquisition_reads_workspace_file_from_cwd_dot_octocode() {
         &cwd.join(".octocode/.octocoderc")
     );
     let out = resolve_config(&i);
-    assert_eq!(out.resolved.network.timeout, 6000);
-    assert_eq!(out.resolved.network.max_retries, 1);
+    assert_eq!(
+        out.resolved.tools.enabled,
+        Some(vec!["localFetch".to_owned()])
+    );
+    assert_eq!(
+        out.resolved.tools.disabled,
+        Some(vec!["astSearch".to_owned()])
+    );
 }
 
 #[test]
@@ -925,93 +874,6 @@ fn has_diagnostic(out: &ConfigOutput, code: &str, path: &str) -> bool {
     out.diagnostics
         .iter()
         .any(|d| d.code == code && d.field_path.as_deref() == Some(path))
-}
-
-/// `lsp.maxMemoryMb` is a non-negative integer: the same value means the same
-/// thing from a file or the environment, `0` (cap disabled) is distinct from
-/// unset (host-derived cap), and malformed values are reported, never coerced.
-#[test]
-fn lsp_memory_cap_is_a_typed_integer_from_file_and_env_alike() {
-    use serde_json::json;
-    let path = "lsp.maxMemoryMb";
-    assert_eq!(value_of(&resolve(NONE), path), serde_json::Value::Null);
-    for (raw, expected) in [("512", json!(512)), ("0", json!(0)), (" 7 ", json!(7))] {
-        let env = resolve(Layers {
-            global_env: Some(&format!("OCTOCODE_LSP_MAX_MEMORY_MB={raw}")),
-            ..NONE
-        });
-        assert_eq!(value_of(&env, path), expected, "env {raw:?}");
-        assert!(env.diagnostics.is_empty(), "{raw:?}: {:?}", env.diagnostics);
-        let file = resolve(Layers {
-            global_rc: Some(&format!(r#"{{"lsp":{{"maxMemoryMb":{}}}}}"#, raw.trim())),
-            ..NONE
-        });
-        assert_eq!(value_of(&file, path), expected, "file {raw:?}");
-        assert!(
-            file.diagnostics.is_empty(),
-            "{raw:?}: {:?}",
-            file.diagnostics
-        );
-    }
-    for raw in ["abc", "-5", "1.5", "99999999999999999999"] {
-        let env = resolve(Layers {
-            env: &[("OCTOCODE_LSP_MAX_MEMORY_MB", raw)],
-            ..NONE
-        });
-        assert_eq!(value_of(&env, path), serde_json::Value::Null, "env {raw}");
-        assert!(
-            has_diagnostic(&env, "invalid_env_value", path),
-            "env {raw}: {:?}",
-            env.diagnostics
-        );
-    }
-    for raw in [r#""abc""#, "-5", "1.5", "99999999999999999999"] {
-        let file = resolve(Layers {
-            global_rc: Some(&format!(r#"{{"lsp":{{"maxMemoryMb":{raw}}}}}"#)),
-            ..NONE
-        });
-        assert_eq!(value_of(&file, path), serde_json::Value::Null, "file {raw}");
-        assert!(
-            has_diagnostic(&file, "invalid_config", path),
-            "file {raw}: {:?}",
-            file.diagnostics
-        );
-    }
-}
-
-/// A fractional number is not an integer setting, from either layer.
-#[test]
-fn fractional_numbers_are_rejected_in_files_like_in_the_environment() {
-    let file = resolve(Layers {
-        global_rc: Some(r#"{"network":{"maxRetries":2.5,"timeout":6000.0}}"#),
-        ..NONE
-    });
-    assert_eq!(value_of(&file, "network.maxRetries"), serde_json::json!(3));
-    assert_eq!(value_of(&file, "network.timeout"), serde_json::json!(6000));
-    assert!(has_diagnostic(
-        &file,
-        "invalid_config",
-        "network.maxRetries"
-    ));
-    assert!(!has_diagnostic(&file, "invalid_config", "network.timeout"));
-}
-
-/// A negative value is not a member of a non-negative integer setting: it is
-/// reported and ignored, not clamped to the minimum.
-#[test]
-fn negative_environment_numbers_are_invalid_not_clamped() {
-    let out = resolve(Layers {
-        env: &[("MAX_RETRIES", "-1")],
-        global_rc: Some(r#"{"network":{"maxRetries":2}}"#),
-        ..NONE
-    });
-    assert_eq!(value_of(&out, "network.maxRetries"), serde_json::json!(2));
-    assert!(has_diagnostic(
-        &out,
-        "invalid_env_value",
-        "network.maxRetries"
-    ));
-    assert!(out.diagnostics.iter().all(|d| d.code != "value_clamped"));
 }
 
 /// `~` and `~/x` expand once, at resolution, against the OS home the path
@@ -1292,9 +1154,7 @@ fn a_workspace_cannot_widen_local_tools_or_email_redaction() {
 #[test]
 fn removed_settings_are_reported_as_removed() {
     let file = resolve(Layers {
-        global_rc: Some(
-            r#"{"version":1,"classification":{"type":"jev"},"network":{"timeout":6000}}"#,
-        ),
+        global_rc: Some(r#"{"version":1,"classification":{"type":"jev"},"lsp":{"prewarm":"off"}}"#),
         ..NONE
     });
     for path in ["version", "classification.type"] {
@@ -1313,7 +1173,7 @@ fn removed_settings_are_reported_as_removed() {
         "{:?}",
         file.diagnostics
     );
-    assert_eq!(value_of(&file, "network.timeout"), serde_json::json!(6000));
+    assert_eq!(value_of(&file, "lsp.prewarm"), serde_json::json!("off"));
     assert_eq!(value_of(&file, "version"), serde_json::Value::Null);
     assert_eq!(
         value_of(&file, "classification.type"),
@@ -1336,61 +1196,81 @@ fn removed_settings_are_reported_as_removed() {
     assert!(!d.message.contains("jev\""), "{}", d.message);
 }
 
-/// Every numeric setting is a cap (time, retries, size, spend): a workspace
-/// `.octocoderc` may lower what the home file sets (else the default), never
-/// raise it. A raise is dropped with a warning and the home value stands.
+/// Internal limits are code constants, not settings: every layer that still
+/// names one gets exactly one `removed_setting` warning per name, the value
+/// is never applied or clamped, and the variable leaves the effective
+/// environment.
 #[test]
-fn a_workspace_file_may_only_lower_numeric_caps() {
-    let numeric = CONFIG_FIELDS.iter().filter(|field| {
-        field.file
-            && field.kind == ConfigFieldKind::Number
-            && super::resolver::workspace_file_allowed(field)
+fn removed_limits_warn_once_and_never_apply() {
+    let out = resolve(Layers {
+        env: &[("MAX_RETRIES", "0")],
+        project_env: Some("OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH=50000\nREQUEST_TIMEOUT=300000"),
+        global_rc: Some(
+            r#"{"network":{"timeout":5000},"output":{"pagination":{"defaultCharLength":4000}},"storage":{"cloneCache":{"ttl":60000}}}"#,
+        ),
+        project_rc: Some(r#"{"classification":{"maxChars":1048576},"lsp":{"maxMemoryMb":0}}"#),
+        ..NONE
     });
-    let mut checked = 0;
-    for field in numeric {
-        let (Some(minimum), Some(maximum)) = (field.minimum, field.maximum) else {
-            continue;
-        };
-        let rc = |value: f64| {
-            let mut doc = serde_json::json!({});
-            insert_path(&mut doc, field.path, serde_json::json!(value as i64));
-            doc.to_string()
-        };
-        let default: f64 = serde_json::from_str(field.default_json).expect("default");
-        let number = |out: &ConfigOutput| value_of(out, field.path).as_f64();
-        let raises = "workspace_config_raises_limit";
-        // Above the default: dropped, the default stands.
-        if default < maximum {
-            let text = rc(maximum);
-            let out = resolve(Layers {
-                project_rc: Some(&text),
-                ..NONE
-            });
-            assert_eq!(number(&out), Some(default), "{}", field.path);
-            assert!(has_diagnostic(&out, raises, field.path), "{}", field.path);
-        }
-        // Below the default: applied, no warning.
-        if default > minimum {
-            let text = rc(minimum);
-            let out = resolve(Layers {
-                project_rc: Some(&text),
-                ..NONE
-            });
-            assert_eq!(number(&out), Some(minimum), "{}", field.path);
-            assert!(!has_diagnostic(&out, raises, field.path), "{}", field.path);
-        }
-        // Above the home file's value: the home value stands.
-        if minimum < maximum {
-            let (home, workspace) = (rc(minimum), rc(maximum));
-            let out = resolve(Layers {
-                global_rc: Some(&home),
-                project_rc: Some(&workspace),
-                ..NONE
-            });
-            assert_eq!(number(&out), Some(minimum), "{}", field.path);
-            assert!(has_diagnostic(&out, raises, field.path), "{}", field.path);
-        }
-        checked += 1;
+    let removed = |name: &str| {
+        out.diagnostics
+            .iter()
+            .filter(|d| {
+                d.code == REMOVED_SETTING_CODE
+                    && (d.field_path.as_deref() == Some(name)
+                        || (d.field_path.is_none() && d.message.starts_with(name)))
+            })
+            .count()
+    };
+    for name in [
+        "MAX_RETRIES",
+        "OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH",
+        "REQUEST_TIMEOUT",
+        "network.timeout",
+        "output.pagination",
+        "storage.cloneCache",
+        "classification.maxChars",
+        "lsp.maxMemoryMb",
+    ] {
+        assert_eq!(removed(name), 1, "{name}: {:?}", out.diagnostics);
     }
-    assert!(checked > 5, "the contract has numeric caps: {checked}");
+    for d in &out.diagnostics {
+        assert_eq!(d.severity, Severity::Warning, "{d}");
+        assert!(
+            d.code == REMOVED_SETTING_CODE,
+            "only removal warnings, no unknown key, clamp or invalid value: {d}"
+        );
+        assert!(!d.to_string().contains("50000"), "value leaked: {d}");
+    }
+    let workspace_env = out
+        .diagnostics
+        .iter()
+        .find(|d| d.message.starts_with("REQUEST_TIMEOUT"))
+        .expect("workspace .env removal");
+    assert_eq!(
+        workspace_env.source_path.as_deref(),
+        Some(std::path::Path::new("/synthetic/cwd/.octocode/.env"))
+    );
+    for name in [
+        "MAX_RETRIES",
+        "OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH",
+        "REQUEST_TIMEOUT",
+    ] {
+        assert_eq!(out.env_value(name), None, "{name} stays out of the env");
+        assert!(!out.dotenv.keys.iter().any(|key| key == name), "{name}");
+    }
+    let resolved = serde_json::to_value(&out.resolved).expect("resolved");
+    for path in [
+        "network.timeout",
+        "network.maxRetries",
+        "output.pagination",
+        "storage.cloneCache",
+        "classification.maxChars",
+        "lsp.maxMemoryMb",
+    ] {
+        assert_eq!(
+            super::validation::get_path(&resolved, path),
+            None,
+            "{path} is not a resolved setting"
+        );
+    }
 }

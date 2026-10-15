@@ -15,7 +15,7 @@ import { clearedResults, contextMessages, plainText, toolCallArguments } from '.
 const DEDUPED_TOOLS: ReadonlySet<string> = new Set(['read', `${OCTOCODE_TOOL_PREFIX}localFetch`]);
 
 /** The note that stands for a repeated result of `toolName` called with `input`. */
-export function unchangedNote(toolName: string, input: Record<string, unknown>): string {
+function unchangedNote(toolName: string, input: Record<string, unknown>): string {
   if (toolName === 'read' && typeof input['path'] === 'string') return `[Unchanged since your earlier read of ${input['path']} (same range); that result is above in your context.]`;
   return `[Unchanged since your earlier ${toolName.slice(OCTOCODE_TOOL_PREFIX.length) || toolName} of the same arguments; that result is above in your context.]`;
 }

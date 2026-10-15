@@ -37,65 +37,30 @@ loadNativeBinding → new NativeRuntime({ surface: 'mcp' }) → ABI version chec
 - Startup fails with `No native tools are available` when no tool is available, for example a `TOOLS_TO_RUN` list of only unknown names.
 - Settings and env tokens resolve once at startup. Stored logins and `gh` resolve per request, so a new `auth login` applies without a restart.
 
-Native validates arguments once, as on the CLI, and an invalid call gets the same repair guidance (nearest field, allowed values, the missing field's fix). Every call is `{queries:[...]}`; a flat row or bare array is rejected. A JSON-encoded (curly quotes or HTML character references such as `&quot;` included) or bare-scalar value for a list-only field, or an exact integer or boolean string for an integer- or boolean-only field, is repaired; fields that also accept a string are never rewritten. In a batch, valid rows run and each invalid row returns its own error.
+Native validates arguments once, as on the CLI, and an invalid call gets the same repair guidance (nearest field, allowed values, the missing field's fix). A call is `{queries:[...]}`; one bare query object runs as one row, and a bare array is rejected. A JSON-encoded (curly quotes or HTML character references such as `&quot;` included) or bare-scalar value for a list-only field, or an exact integer or boolean string for an integer- or boolean-only field, is repaired; fields that also accept a string are never rewritten. In a batch, valid rows run and each invalid row returns its own error.
 
 ## Tool catalog
 
-The discovery catalog has 16 tools. With default settings and no provider key, MCP registers 12. Unavailable tools are left out of `tools/list`, not registered as failing calls.
+The contract has 16 tools. With default settings MCP registers 12; beta plus a classification credential adds `clasify` (13). Unavailable tools are left out of `tools/list`, not registered as failing calls.
 
 | Family | Tools |
 |--------|-------|
 | GitHub | `ghSearchRepo`, `ghSearchCode`, `ghStructure`, `ghGetFileContent`, `ghSearchHistory`, `ghGetHistoryItem`, `ghCloneRepo` (CLI-only) |
-| Local | `localSearch`, `localFetch`, `structureSearch`, `astSearch`, `lspSearch`, `astTopology` and `astRewrite` (both CLI-only) |
+| Local | `localSearch`, `localFetch`, `structureSearch`, `astSearch`, `lspSearch`, `astTopology` (CLI-only beta), `astRewrite` (CLI-only beta, disabled in this build) |
 | Package | `artifactSearch` |
 | Semantic assessment | `clasify` |
 
-- `ghCloneRepo`, `astTopology`, and `astRewrite` are never registered on MCP, with or without `OCTOCODE_BETA`. No MCP description or lead names the two CLI-only beta tools; the shared prompt names them only in its `<cli>` section. Run them as `npx octocode astTopology` / `npx octocode astRewrite` with `OCTOCODE_BETA=true`; `astRewrite` applies only with the complete set of preview hashes.
-- `clasify` needs beta and a nonblank classification API credential; otherwise it is left out. `clasifyContext` on the four supported readers requires the credential, independently of beta and public `clasify` visibility. Provider errors are reported by real calls, and later calls can recover in the same session. See [availability](OCTOCODE_CLASIFY.md#availability).
-- GitHub discovery is three tools with no `operation` field: `ghSearchRepo` (repositories), `ghSearchCode` (indexed code), `ghStructure` (repository tree). Removed compatibility names cannot be re-enabled.
+- `ghCloneRepo`, `astTopology`, and `astRewrite` are never registered on MCP, with or without `OCTOCODE_BETA`, and no MCP description or lead names them. Run `npx octocode ghCloneRepo`, or `npx octocode astTopology` with `OCTOCODE_BETA=true`. `astRewrite` is off on every surface in this build.
+- `clasify` needs beta and a nonblank classification API credential; `clasifyContext` on four readers needs only the credential. See [availability](OCTOCODE_CLASIFY.md#availability).
 - Every tool takes up to 5 `queries` per call. MCP publishes input schemas, titles, and descriptions, not output schemas.
-- Server instructions are one prompt for every surface and tool subset, at most 2,000 characters (`MAX_MCP_INSTRUCTION_CHARS`), because hosts truncate near 2 KB. The grammar inventory and `schema` guidance are CLI-only; MCP clients get schemas through `tools/list`. `npx octocode schema` prints the live CLI catalog.
+- Server instructions are one prompt of at most 2,000 characters, because hosts truncate near 2 KB; only its `<clasify>` line depends on the enabled classification features. The CLI adds a `<cli>` line and the grammar inventory; MCP clients get schemas through `tools/list`.
+- With `mcp.deferred` (`OCTOCODE_DEFER_TOOLS`), the listed tools leave `tools/list` and one `run` tool executes them.
 
 ## Configuration
 
-Set per-client settings in the client `env` block; env vars beat `.octocoderc` files. The settings that most often differ per client:
+Set per-client settings in the client `env` block ([example](CONFIGURATION.md#mcp-client-env-block)); env vars beat `.octocoderc` files. Every setting, with defaults and env names: [generated settings](generated/CONFIG_SETTINGS.md). `OCTOCODE_OUTPUT_FORMAT` (`yaml` or `json`) sets the text channel; `structuredContent` is always JSON. Development overrides (`OCTOCODE_NATIVE_BINDING`, `OCTOCODE_ALLOW_CONTRACT_DRIFT`): [DEVELOPMENT.md](../skills-dev/octocode-dev/docs/DEVELOPMENT.md#development-environment-variables).
 
-| Setting | Default | Effect |
-|---------|---------|--------|
-| `GH_TOKEN` / `GITHUB_TOKEN` | — | GitHub API auth |
-| `GITHUB_API_URL` | `https://api.github.com` | GitHub Enterprise endpoint |
-| `OCTOCODE_ENABLE_LOCAL` | `true` | Local filesystem and LSP tools on or off |
-| `TOOLS_TO_RUN` / `DISABLE_TOOLS` | unset | Strict allowlist / removals from the default set |
-| `WORKSPACE_ROOT`, `ALLOWED_PATHS` | — | Bound local path resolution |
-| `OCTOCODE_BETA` | `false` | Enables CLI-only beta tools and, with a classification API credential, public `clasify` on MCP |
-| `OCTOCODE_CLASSIFICATION_API` | unset | Credential required for public `clasify` and read-tool `classifiers` ([availability](OCTOCODE_CLASIFY.md#availability)) |
-| `OCTOCODE_OUTPUT_FORMAT` | `yaml` | Encoding of the MCP text channel (`yaml` or `json`); `structuredContent` is always JSON |
-
-Every other setting: [generated settings](generated/CONFIG_SETTINGS.md). Development overrides (`OCTOCODE_NATIVE_BINDING`, `OCTOCODE_ALLOW_CONTRACT_DRIFT`): [DEVELOPMENT.md](../skills-dev/octocode-dev/docs/DEVELOPMENT.md#development-environment-variables).
-
-The server shares the CLI's cache under the Octocode home and runs the same best-effort 24-hour sweep at start: [Cache storage and lifecycle](CONFIGURATION.md#cache-storage-and-lifecycle), and [Cache behavior](OCTOCODE_TOOLS.md#cache-behavior) for tool-level rules. Opt-in usage stats: [Clasify usage stats](OCTOCODE_CLASIFY.md#usage-stats). Octocode writes no session file.
-
-## Tool names before v18
-
-Names before v18 are not recognized and are ignored without a warning; if no `TOOLS_TO_RUN` name is valid, startup fails. Update `TOOLS_TO_RUN` and `DISABLE_TOOLS`:
-
-| Old name | New name |
-|---|---|
-| `github_search_code` | `ghSearchCode` |
-| `github_fetch_content` | `ghGetFileContent` |
-| `github_view_repo_structure` | `ghStructure` |
-| `github_search_repos` | `ghSearchRepo` |
-| `github_search_pull_requests` | `ghSearchHistory` |
-| `github_clone_repo` | `ghCloneRepo` |
-| `local_analyze_graph` | `astTopology` (CLI-only) |
-| `local_dead_code` | `astTopology` (CLI-only, `operation:"deadCode"`) |
-| `local_fetch_content` | `localFetch` |
-| `local_find_files` | `structureSearch` (`files`) |
-| `local_view_structure` | `structureSearch` (`tree`) |
-| `local_ripgrep` | `localSearch` (lexical `matchString`) |
-| `local_search` | `localSearch` (unchanged) |
-| `lsp` | `lspSearch` |
-| `package_search` | `artifactSearch` |
+The server shares the CLI's cache under the Octocode home and runs the same best-effort 24-hour sweep at start ([cache storage and lifecycle](CONFIGURATION.md#cache-storage-and-lifecycle)). Unknown or removed tool names in `TOOLS_TO_RUN` and `DISABLE_TOOLS` are ignored with an `unknown_tool_name` config warning; if no `TOOLS_TO_RUN` name is valid, startup fails.
 
 ## See also
 

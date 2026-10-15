@@ -164,36 +164,27 @@ fn enclosing_names_leave_room_for_the_rendered_path_prefix() {
         )
         .expect("fixture");
     }
-    let (policy, security) = policy_for(workspace.path());
     // The row reserve exceeds half this window, so the page budget is its
     // floor: half the window.
     let window = 4_000;
     let budget = window / 2;
     let prefix = deep.len() + 1;
-    let mut page = 1;
-    loop {
-        let request = ls_query(
-            serde_json::json!({"path": root.to_string_lossy().into_owned(), "matchString": "needle", "page": page}),
-            None,
+    let start = serde_json::to_value(ls_query(
+        serde_json::json!({"path": root.to_string_lossy().into_owned(), "matchString": "needle"}),
+        None,
+    ))
+    .expect("query");
+    let (walk, bodies) = walk_search(workspace.path(), start, Some(window));
+    for (index, body) in bodies.iter().enumerate() {
+        let files = serde_json::to_string(&body["files"]).expect("files").len();
+        let rendered = files + prefix * body["files"].as_array().map_or(0, Vec::len);
+        assert!(
+            rendered <= budget,
+            "page {}: {rendered} > {budget}",
+            index + 1
         );
-        let result = execute_local_search(
-            &request,
-            &policy,
-            &security,
-            &NeverCancel,
-            None,
-            Some(window),
-        )
-        .expect("search");
-        let files = serde_json::to_string(&result.files).expect("files").len();
-        let rendered = files + prefix * result.files.len();
-        assert!(rendered <= budget, "page {page}: {rendered} > {budget}");
-        let more = result.pagination.as_ref().is_some_and(|p| p.has_more);
-        if !more || page > 20 {
-            break;
-        }
-        page += 1;
     }
+    assert_eq!(walk.rows.len(), 80);
 }
 
 /// A hit in a JSON or TOML file names its key path, one
@@ -1101,50 +1092,22 @@ fn skipped_paths_are_not_repeated_on_the_match_page_axis() {
         fs::write(root.path().join(name), "needle one\nneedle two\n").expect("hits");
     }
     fs::write(root.path().join("generated.lock"), "needle\n").expect("excluded");
-    let (policy, security) = policy_for(root.path());
-    let first = ls_query(
+    let start = serde_json::to_value(ls_query(
         serde_json::json!({"path":root.path(),"matchString":"needle","pageSize":1,"matchPageSize":1,"sort":"path"}),
         None,
-    );
-    let mut pending = std::collections::VecDeque::from([serde_json::json!({"queries":[first]})]);
-    let mut hits = Vec::new();
-    let mut disclosures = 0;
-    let mut calls = 0;
-    while let Some(input) = pending.pop_front() {
-        let prepared = crate::contracts::prepare_many_and_validate("localSearch", input)
-            .expect("canonical copied page");
-        let query = ls_query(prepared[0].clone(), None);
-        let result = execute_local_search(&query, &policy, &security, &NeverCancel, None, None)
-            .expect("search page");
-        let body = serde_json::to_value(&result).expect("result");
-        disclosures += usize::from(body.get("skippedPaths").is_some());
-        for file in &result.files {
-            for hit in file.matches.iter().flatten() {
-                hits.push((file.path.clone(), hit.line));
-            }
-        }
-        crate::tools::test_support::assert_row_contract(
-            crate::tools::id::ToolId::LocalSearch,
-            &prepared[0],
-            &body,
-        );
-        for name in ["nextMatchPage", "nextPage"] {
-            if let Some(query) = body["next"][name].get("query") {
-                pending.push_back(query.clone());
-            }
-        }
-        calls += 1;
-        assert!(calls <= 4, "each branch exactly once");
-    }
-    assert_eq!(calls, 4);
+    ))
+    .expect("query");
+    // Each branch exactly once, every page within the output contract.
+    let (walk, bodies) = walk_search(root.path(), start, None);
+    assert_eq!(walk.queries.len(), 4);
+    let disclosures = bodies
+        .iter()
+        .filter(|body| body.get("skippedPaths").is_some())
+        .count();
     assert_eq!(disclosures, 1);
-    assert_eq!(
-        hits,
-        [
-            ("a.txt".into(), 1),
-            ("a.txt".into(), 2),
-            ("b.txt".into(), 1),
-            ("b.txt".into(), 2)
-        ]
-    );
+    // The walk's breadth-first order follows the lead order; the rows are
+    // each hit once.
+    let mut rows = walk.rows;
+    rows.sort();
+    assert_eq!(rows, ["a.txt:1", "a.txt:2", "b.txt:1", "b.txt:2"]);
 }

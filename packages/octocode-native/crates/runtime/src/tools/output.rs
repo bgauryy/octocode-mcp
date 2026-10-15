@@ -95,14 +95,6 @@ pub trait ToolOutput: Sync {
         }
     }
 
-    /// Whether the row `data` carries scan totals (`matchCount`,
-    /// `matchedLineCount`, `filesScanned`) that default rows trim to the ones
-    /// the page needs and `extras:["stats"]` keeps whole. A count that sizes
-    /// an edit (astRewrite's `matchCount`) is no scan total.
-    fn reports_scan_totals(&self, _data: &serde_json::Map<String, Value>) -> bool {
-        false
-    }
-
     /// How the text channel renders this tool's rows.
     fn text_shape(&self) -> TextShape {
         TextShape::Structured

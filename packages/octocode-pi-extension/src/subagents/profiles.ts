@@ -4,7 +4,7 @@ import path from 'node:path';
 import { parseArgs, parseFrontmatter, SettingsManager, type ExtensionContext } from '@earendil-works/pi-coding-agent';
 import type { Permission } from '../permission/ask.js';
 import { actionNoun, actionWhy, declaredPermissions, type ActionClass } from '../permission/mode.js';
-import { sha256 } from '../shared/atomic.js';
+import { shortHash } from '../shared/atomic.js';
 import { globalPaths, piAgentDir, projectAgentDirs } from '../shared/home.js';
 import { packageRoot } from '../shared/package.js';
 
@@ -30,6 +30,9 @@ export interface AgentProfile {
   /** Hash of the profile file's content (set when it is read from a file): any change to it (prompt, model, tools, permissions, flags) is a new question for the user. */
   hash?: string;
 }
+
+/** The role of a subagent started without a profile. */
+export const GENERAL_PROFILE = 'general';
 
 const BUNDLED_DIR = path.join(packageRoot(), 'subagents');
 
@@ -74,6 +77,7 @@ export function parseProfile(fallbackName: string, text: string): AgentProfile {
   const excludeTools = field('excludeTools');
   const model = field('model');
   const { declared, ignored } = declaredPermissions(frontmatter['permissions']);
+  // Called for its refusal: a bad `tools` selector fails the profile when it is loaded, not when it first runs.
   selectedTools(tools);
   // Switches take YAML booleans only: a quoted "false" is a string, and a string never flips a switch.
   const flag = (key: string) => {
@@ -93,7 +97,7 @@ export function parseProfile(fallbackName: string, text: string): AgentProfile {
     ...(flag('hooks') === true ? { hooks: true as const } : {}),
     ...(declared.length > 0 ? { permissions: declared } : {}),
     ...(ignored.length > 0 ? { ignoredPermissions: ignored } : {}),
-    hash: sha256(text).slice(0, 16),
+    hash: shortHash(text),
   };
 }
 
@@ -142,7 +146,7 @@ const REACH_TEXT: Record<string, string> = { 'file.workspace': 'edit files in th
  * reason. A refusal throws, before anything starts.
  */
 export async function askSpawn(permission: Permission, ctx: Pick<ExtensionContext, 'hasUI' | 'ui' | 'cwd'>, profile: AgentProfile | undefined, task: string, signal?: AbortSignal, defaultTools?: readonly string[], origin: { toolCallId?: string; goal?: string } = {}): Promise<ActionClass[]> {
-  const name = profile?.name ?? 'general';
+  const name = profile?.name ?? GENERAL_PROFILE;
   const reach = profileReach(profile, defaultTools);
   const declared = profile?.permissions ?? [];
   const may = reach.length > 0 ? `may ${reach.map((action) => REACH_TEXT[action]).join(' and ')}` : 'may only read and research';

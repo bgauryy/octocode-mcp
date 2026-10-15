@@ -15,6 +15,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
+import { isMain } from './is-main.mjs';
 
 /** The bundle name `<dir>/current` points to, or undefined before the first build. */
 function readCurrent(dir) {
@@ -76,6 +77,6 @@ export async function bundlePiEntry(dist) {
   return entry;
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (isMain(import.meta.url)) {
   await bundlePiEntry(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist'));
 }

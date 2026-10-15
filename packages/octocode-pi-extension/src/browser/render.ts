@@ -3,6 +3,7 @@ import type { Component } from '@earendil-works/pi-tui';
 import { timingOf, resultBlock, resultText, spillPath, toolHeader } from '../shared/render.js';
 import { redactSecrets } from '../shared/sanitize.js';
 import { firstLine } from '../shared/util.js';
+import { snapshotFileOf } from './snapshot.js';
 
 type RenderContext = Parameters<typeof toolHeader>[1];
 
@@ -27,7 +28,7 @@ export function browserCallHeader(args: BrowserCallArgs, theme: Theme, context: 
 export function browserResult(result: { content: Array<{ type: string; text?: string }>; details?: unknown }, theme: Theme, context: RenderContext): Component {
   const text = resultText(result).replace(/^\[image\]$/m, '').trim();
   const { summary, body } = text ? browserSummary(text) : { summary: 'Screenshot', body: '' };
-  return resultBlock(theme, context, { summary, body, spill: snapshotFile(text) ?? spillPath(text), ...timingOf(result.details) });
+  return resultBlock(theme, context, { summary, body, spill: snapshotFileOf(text) ?? spillPath(text), ...timingOf(result.details) });
 }
 
 /**
@@ -39,9 +40,4 @@ export function browserSummary(text: string): { summary: string; body: string } 
   // A snapshot starts with its title; a result that opens with a note (a wait, a filled-fields count) keeps the note.
   if (lines[0]?.startsWith('# ') && lines[1]?.trim()) return { summary: `${lines[0].slice(2).trim() || '(untitled)'} — ${lines[1].trim()}`, body: lines.slice(2).join('\n') };
   return { summary: lines[0] ?? '', body: lines.slice(1).join('\n') };
-}
-
-/** The file a cut snapshot was saved to (the note `formatSnapshot`'s caller `snapshot` appends). */
-function snapshotFile(text: string): string | undefined {
-  return /\[Full snapshot \(every element and all text\): (.+?); read it by line range or search it\.\]\s*$/.exec(text)?.[1];
 }

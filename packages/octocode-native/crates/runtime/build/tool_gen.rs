@@ -318,6 +318,7 @@ pub(super) fn render_tool_ids(contract: &Value) -> Result<String, Box<dyn Error>
         Vec::new(),
     );
     let mut extras = String::new();
+    let mut scan_totals = String::new();
     let mut github = Vec::new();
     for (index, tool) in tools.iter().enumerate() {
         let path = format!("tools[{index}]");
@@ -365,6 +366,20 @@ pub(super) fn render_tool_ids(contract: &Value) -> Result<String, Box<dyn Error>
         if bool_value(tool.get("disabled"), false, &format!("{path}.disabled"))? {
             disabled.push(format!("ToolId::{variant}"));
         }
+        // `scanTotals`: absent for a tool with no scan totals to trim.
+        let trim = match tool.get("scanTotals") {
+            None => "None",
+            Some(value) => match string(value, &format!("{path}.scanTotals"))? {
+                "always" => "Some(ScanTotals::Always)",
+                "withMatchCount" => "Some(ScanTotals::WithMatchCount)",
+                other => {
+                    return Err(invalid(format!(
+                        "{path}.scanTotals {other:?} is not always|withMatchCount"
+                    )));
+                }
+            },
+        };
+        scan_totals.push_str(&format!("            ToolId::{variant} => {trim},\n"));
         // `extraPaths`: opt-in output paths by `extras` kind.
         let mut kinds = Vec::new();
         for (kind, paths) in tool
@@ -503,10 +518,18 @@ pub(super) fn render_tool_ids(contract: &Value) -> Result<String, Box<dyn Error>
          \x20   /// the row's `extras` names the kind.\n\
          \x20   #[must_use]\n\
          \x20   pub const fn extra_paths(self) -> &'static [(&'static str, &'static [&'static str])] {{\n        match self {{\n{extras}        }}\n    }}\n\n\
+         \x20   /// Which rows of this tool carry scan totals that default output trims\n\
+         \x20   /// (contract `scanTotals`); `None`: the tool has none.\n\
+         \x20   #[must_use]\n\
+         \x20   pub const fn scan_totals(self) -> Option<ScanTotals> {{\n        match self {{\n{scan_totals}        }}\n    }}\n\n\
          \x20   /// The GitHub-family identity, so GitHub routing matches only its own tools.\n\
          \x20   #[must_use]\n\
          \x20   pub const fn github(self) -> Option<GitHubTool> {{\n        match self {{\n{github_arms}            _ => None,\n        }}\n    }}\n\
          }}\n\n\
+         /// Which rows carry scan totals (contract `scanTotals`): every row, or\n\
+         /// only a row that has `matchCount`.\n\
+         #[derive(Clone, Copy, PartialEq, Eq, Debug)]\n\
+         pub enum ScanTotals {{\n    Always,\n    WithMatchCount,\n}}\n\n\
          /// A tool of the contract's `github` family.\n\
          #[derive(Clone, Copy, PartialEq, Eq, Debug)]\n\
          pub enum GitHubTool {{\n{github_decl}}}\n",

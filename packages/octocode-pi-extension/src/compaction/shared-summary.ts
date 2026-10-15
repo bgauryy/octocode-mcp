@@ -1,8 +1,8 @@
-import { contentText, type Api, type Model, type SimpleStreamOptions } from '@earendil-works/pi-ai';
+import { type Api, type Model, type SimpleStreamOptions } from '@earendil-works/pi-ai';
 import { convertToLlm, type CompactionResult, type ExtensionAPI, type ExtensionContext, type SessionBeforeCompactEvent } from '@earendil-works/pi-coding-agent';
 import { clearedResults } from '../files/reads.js';
 import { CHARS_PER_TOKEN } from '../shared/tokens.js';
-import { isRecord } from '../shared/util.js';
+import { clipText, contentText, errorMessage, isRecord } from '../shared/util.js';
 import { applyClearedResults } from './clearing.js';
 
 /**
@@ -55,16 +55,13 @@ const PREVIOUS_SUMMARY_NOTE = `The conversation begins with an earlier summary. 
 /** The longest a quoted start of a message gets. */
 const QUOTE_CHARS = 120;
 
-const quote = (text: string): string => {
-  const line = text.replace(/\s+/g, ' ').trim();
-  return line.length > QUOTE_CHARS ? `${line.slice(0, QUOTE_CHARS)}…` : line;
-};
+const quote = (text: string): string => clipText(text.replace(/\s+/g, ' ').trim(), QUOTE_CHARS);
 
 /** How the message is told apart in words, or undefined when it has nothing to quote. */
 function describeMessage(message: unknown): string | undefined {
   if (!isRecord(message)) return undefined;
   const content = message['content'];
-  const text = typeof content === 'string' ? content : Array.isArray(content) ? contentText(content as never) : '';
+  const text = contentText(content);
   if (message['role'] === 'toolResult') return `result of the ${String(message['toolName'])} tool call`;
   const role = message['role'] === 'user' || message['role'] === 'assistant' ? message['role'] : undefined;
   if (!role) return undefined;
@@ -99,14 +96,16 @@ function fileBlocks({ readFiles, modifiedFiles }: { readFiles: string[]; modifie
 }
 
 /** Pi's cap on a summary: 80% of the reserve, and never beyond what the model can write. */
-export function summaryCapTokens(model: Pick<Model<Api>, 'maxTokens'>, reserveTokens: number): number {
+function summaryCapTokens(model: Pick<Model<Api>, 'maxTokens'>, reserveTokens: number): number {
   return Math.min(Math.floor(0.8 * reserveTokens), model.maxTokens > 0 ? model.maxTokens : Number.POSITIVE_INFINITY);
 }
 
 /**
  * Octocode's compaction result from the cache-sharing request, or undefined when it cannot be used: images are blocked
  * (the request would carry them), the call or the projection failed, or the reply stopped early, is empty, calls a tool
- * or is longer than the cap. `instructions` are the user's `/compact` focus and Octocode's own.
+ * or is longer than the cap. `instructions` are the user's `/compact` focus and Octocode's own. `unusable` gets the reason
+ * for every failure but blocked images (the user's own setting), so the caller can say why it falls back to a request
+ * that bills the whole input.
  */
 export async function sharedSummary(
   pi: Pick<ExtensionAPI, 'getThinkingLevel' | 'getSettings'>,
@@ -114,6 +113,7 @@ export async function sharedSummary(
   ctx: Pick<ExtensionContext, 'modelRegistry' | 'sessionManager'>,
   model: Model<Api>,
   instructions: string,
+  unusable: (reason: string) => void = () => undefined,
 ): Promise<CompactionResult | undefined> {
   try {
     const settings = pi.getSettings();
@@ -136,12 +136,16 @@ export async function sharedSummary(
       maxTokens: cap,
     };
     const response = await ctx.modelRegistry.streamSimple(model, { messages: [...convertToLlm(messages), { role: 'user', content: [{ type: 'text', text: prompt }], timestamp: Date.now() }] }, options).result();
-    if (response.stopReason !== 'stop' || response.content.some((block) => block.type === 'toolCall')) return undefined;
+    if (response.stopReason !== 'stop') return void unusable(`the reply stopped with ${response.stopReason}`);
+    if (response.content.some((block) => block.type === 'toolCall')) return void unusable('the reply called a tool');
     const text = contentText(response.content).trim();
-    if (text === '' || text.length / CHARS_PER_TOKEN > cap) return undefined;
+    if (text === '') return void unusable('the reply was empty');
+    if (text.length / CHARS_PER_TOKEN > cap) return void unusable('the reply was longer than the cap');
     const lists = fileLists(preparation.fileOps);
     return { summary: `${text}${fileBlocks(lists)}`, firstKeptEntryId: preparation.firstKeptEntryId, tokensBefore: preparation.tokensBefore, usage: response.usage, details: lists };
-  } catch {
+  } catch (error) {
+    // An abort is the user's own cancel: the standalone request is cancelled too, so there is nothing to explain.
+    if (!event.signal.aborted) unusable(errorMessage(error));
     return undefined;
   }
 }

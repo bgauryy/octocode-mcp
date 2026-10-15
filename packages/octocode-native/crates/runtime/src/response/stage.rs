@@ -27,8 +27,7 @@ pub(crate) struct StageInput {
     /// Encoding of the rendered text channel (`output.format`).
     pub text_format: super::render::TextFormat,
     /// False when a replay would not reproduce the page: clasify, whose
-    /// replay would re-run inference (it pages at the evidence level,
-    /// `next.clasify`).
+    /// replay would re-run inference.
     pub allow_auto_paging: bool,
     pub source_digest: Option<String>,
 }

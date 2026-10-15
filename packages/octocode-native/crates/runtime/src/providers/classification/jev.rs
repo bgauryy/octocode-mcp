@@ -340,9 +340,9 @@ fn validate_wire(request: &Value, response: &Value) -> Result<(), ProviderContra
                 };
                 let (top, bottom, left, right) =
                     (edge("top")?, edge("bottom")?, edge("left")?, edge("right")?);
-                if top > bottom || left > right {
+                if top >= bottom || left >= right {
                     return Err(invalid_response(format!(
-                        "answers.{id}.box edges must be ordered top <= bottom and left <= right"
+                        "answers.{id}.box edges must be ordered top < bottom and left < right"
                     )));
                 }
                 match answer.get("confidence") {
@@ -477,6 +477,8 @@ mod tests {
             ("/answers/region/box/top", json!(-0.1)),
             ("/answers/region/box/bottom", json!(1.1)),
             ("/answers/region/box/top", json!(0.95)),
+            ("/answers/region/box/top", json!(0.9)),
+            ("/answers/region/box/right", json!(0.2)),
             ("/answers/region/box/right", json!(0.1)),
             ("/answers/region/box/left", Value::Null),
             ("/answers/region/box/left", json!("NaN")),

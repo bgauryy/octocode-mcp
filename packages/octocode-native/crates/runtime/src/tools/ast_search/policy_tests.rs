@@ -163,39 +163,32 @@ fn directory_scan_windows_infer_each_files_grammar_without_losing_other_language
     ] {
         root.write(name, source);
     }
-    let mut pending = std::collections::VecDeque::from([json!({
+    let start = json!({
         "operation":"match","path":root.0,"pattern":"hit($A)",
         "maxFiles":1,"pageSize":1,"matchPageSize":1
-    })]);
+    });
     let mut values = Vec::new();
-    let mut calls = 0;
-    while let Some(query) = pending.pop_front() {
-        calls += 1;
-        assert!(calls < 30, "continuations terminate");
+    let walk = checks::walk("astSearch", json!({ "queries": [start] }), |call| {
+        let rows = call["queries"].as_array().expect("rows");
+        assert_eq!(rows.len(), 1, "one row per page lead: {call}");
+        let query = &rows[0];
         assert!(query.get("language").is_none(), "{query}");
-        let out = run(&root.0, query).expect("per-file grammar scan");
+        let out = run(&root.0, query.clone()).expect("per-file grammar scan");
         for file in out["files"].as_array().into_iter().flatten() {
             for found in file["matches"].as_array().into_iter().flatten() {
                 values.push(found["value"].as_str().expect("match").to_owned());
             }
         }
-        for next in out["next"]
-            .as_object()
-            .into_iter()
-            .flat_map(|next| next.iter())
-        {
-            let (name, next) = next;
-            if next["tool"] == "astSearch" && checks::page_channels().contains(name) {
-                pending.extend(
-                    next["query"]["queries"]
-                        .as_array()
-                        .expect("rows")
-                        .iter()
-                        .cloned(),
-                );
-            }
+        checks::Page {
+            output: crate::tools::test_support::published(
+                crate::tools::id::ToolId::AstSearch,
+                query,
+                &out,
+            ),
+            rows: ast_rows(std::slice::from_ref(&out)),
         }
-    }
+    });
+    assert!(walk.queries.len() < 30, "continuations terminate");
     values.sort();
     assert_eq!(
         values,

@@ -1,6 +1,6 @@
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { readPaths, resolveToolPath } from '../shared/home.js';
-import { isRecord } from '../shared/util.js';
+import { isRecord, partText } from '../shared/util.js';
 import { mergeRanges, readView, type LineRange, type ReadView } from './coverage.js';
 
 /**
@@ -41,7 +41,7 @@ export function contextMessages(ctx: Pick<ExtensionContext, 'sessionManager'>): 
 /** The text of a result made only of text parts, else undefined: an image is never replaced or cleared (`files/dedupe`, `compaction/clearing`). */
 export function plainText(content: unknown): string | undefined {
   if (!Array.isArray(content) || content.length === 0) return undefined;
-  const parts = content.map((part) => (isRecord(part) && part['type'] === 'text' && typeof part['text'] === 'string' ? part['text'] : undefined));
+  const parts = content.map(partText);
   return parts.every((text) => text !== undefined) ? parts.join('\n') : undefined;
 }
 
@@ -120,8 +120,8 @@ export function seenFiles(messages: readonly MessageRef[], cwd: string, cleared:
     const files: ChangedFile[] = args ? readPaths(tool, args, cwd).map((file) => ({ file, line: offset })) : changed;
     const at = typeof message['timestamp'] === 'number' ? message['timestamp'] : undefined;
     for (const { file, line, edit } of files) {
-      const shown = edit ? afterEdit(latest.get(file), edit, at) : shownBy(latest.get(file), view, at);
-      latest.set(file, { file, id, workedAt: at, ...(line ? { line } : {}), ...shown });
+      const showing = edit ? afterEdit(latest.get(file), edit, at) : shownBy(latest.get(file), view, at);
+      latest.set(file, { file, id, workedAt: at, ...(line ? { line } : {}), ...showing });
     }
   }
   return latest;

@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
 import { classifyScript, type Classification, type ScriptCommand } from './winclassify.js';
 import { WINDOWS_HELPER_SCRIPT } from './winhelper-script.js';
+import { validPid } from './util.js';
 import { powerShellCandidates } from './winpath.js';
 
 /**
@@ -51,8 +52,6 @@ function parseLine(line: string): Response | undefined {
     return undefined;
   }
 }
-
-const validPid = (pid: unknown): pid is number => typeof pid === 'number' && Number.isInteger(pid) && pid > 1;
 
 /** The helper's `commands` when they have the shape the classifier reads. */
 function scriptCommands(value: unknown): ScriptCommand[] | undefined {

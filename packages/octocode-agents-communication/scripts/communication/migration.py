@@ -15,6 +15,7 @@ V2_SHA256 = '167d9307e2f5d8f8a994f56d798123cbdadeba2ffb72e2da0c684d9b477eeb24'
 V1_SHA256 = '911e1b36522d7737d343f94aecf7f9e22f0fca2dfa7ce1cd3ba7dbab6d97ab7b'
 V3_SHA256 = '7663c97e0ad55d5ef2475924cec0a84f5b08fa613adf344c2b0dae1f6c582983'
 V4_SHA256 = '298c10196beed2c91c690146daf5ded1e521cbb97ff2bab1b925935232ede049'
+V5_SHA256 = '562d823b51cf62ae87ae0e5c5e0d2001962b3dbde5be3b8a0511fda159979aa9'
 RENAMES = {'session.created': 'coordinate.in', 'session.updated': 'coordinate.update',
            'session.profile': 'coordinate.profile', 'message.created': 'message', 'document.created': 'document'}
 
@@ -77,6 +78,23 @@ def upgrade_v1(db):
     return len(audits)
 
 
+def rebuild_messages(db):
+    """Give `messages` the v6 column defaults (an FYI: no reply owed, passive wake). SQLite cannot alter a default, and
+    Python builds with a defensive SQLite refuse the in-place schema edit, so the table is rebuilt: create the new one,
+    copy every row with its id, drop the old one, rename. The rename stores the name quoted, as schema.sql spells it.
+    Needs foreign keys off and the caller's triggers dropped; the caller recreates the indexes and checks the fingerprint."""
+    create = next(statement for statement in statements(database.SQL) if statement.lstrip().startswith('CREATE TABLE "messages"'))
+    db.execute(create.strip().replace('CREATE TABLE "messages"', 'CREATE TABLE messages_v6', 1))
+    columns = ','.join(row[1] for row in db.execute('PRAGMA table_info(messages_v6)').fetchall())
+    sequence = db.execute("SELECT seq FROM sqlite_sequence WHERE name='messages'").fetchone()
+    db.execute('INSERT INTO messages_v6(%s) SELECT %s FROM messages' % (columns, columns))
+    db.execute('DROP TABLE messages')
+    db.execute('ALTER TABLE messages_v6 RENAME TO messages')
+    if sequence:  # ids of deleted messages are never reused
+        db.execute("DELETE FROM sqlite_sequence WHERE name='messages'")
+        db.execute("INSERT INTO sqlite_sequence(name,seq) VALUES('messages',?)", sequence)
+
+
 def migrate(source, backup):
     source, backup = Path(source), Path(backup)
     initial = source.lstat()
@@ -93,9 +111,9 @@ def migrate(source, backup):
     try:
         info = database.metadata(db)
         source_version = info['schemaVersion']
-        source_fingerprint = {1: V1_SHA256, 2: V2_SHA256, 3: V3_SHA256, 4: V4_SHA256}.get(source_version)
+        source_fingerprint = {1: V1_SHA256, 2: V2_SHA256, 3: V3_SHA256, 4: V4_SHA256, 5: V5_SHA256}.get(source_version)
         if info['applicationId'] != 1329678147 or source_fingerprint is None or database.fingerprint(db) != source_fingerprint:
-            raise ValueError('Migration requires a recognized v1, v2, v3 or v4 schema; database is unchanged')
+            raise ValueError('Migration requires a recognized v1, v2, v3, v4 or v5 schema; database is unchanged')
         if info['journalMode'] == 'wal' and not database.wal_safe(sqlite3.sqlite_version_info):
             raise ValueError('Upgrade SQLite to a WAL-safe version before migration')
         if db.execute('PRAGMA integrity_check').fetchone() != ('ok',) or db.execute('PRAGMA foreign_key_check').fetchall():
@@ -132,6 +150,7 @@ def migrate(source, backup):
                 count = upgrade_v1(db)
             else:
                 count = db.execute('SELECT count(*) FROM records').fetchone()[0]
+            rebuild_messages(db)
             # Later versions only add tables and indexes; create each one that is missing.
             for statement in statements(database.SQL):
                 match = re.search(r'^CREATE (?:TABLE|INDEX) "?(\w+)', statement, re.M)

@@ -8,7 +8,7 @@ import { truncateToWidth } from '@earendil-works/pi-tui';
  * light band that sweeps across once on start.
  */
 
-export type Shade = 'stroke' | 'shadow';
+type Shade = 'stroke' | 'shadow';
 
 export interface BannerPaint {
   /** Text in a theme colour token (`accent`, `muted`, `dim`, …). */

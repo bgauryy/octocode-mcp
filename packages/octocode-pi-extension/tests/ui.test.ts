@@ -83,6 +83,10 @@ describe('chrome', () => {
     try {
       const invalidate = vi.fn();
       toolHeader(theme, { executionStarted: true, isPartial: true, state: {}, invalidate }, 'Bash', 'x');
+      // Positive control: while the call runs, its clock asks for a repaint; only agent_end stops it.
+      vi.advanceTimersByTime(1_000);
+      expect(invalidate).toHaveBeenCalled();
+      invalidate.mockClear();
       await fake.emit('agent_end', { messages: [] }, ctx);
       vi.advanceTimersByTime(3_000);
       expect(invalidate).not.toHaveBeenCalled();

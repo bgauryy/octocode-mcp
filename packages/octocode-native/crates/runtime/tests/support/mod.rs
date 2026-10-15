@@ -5,7 +5,7 @@
 #![allow(clippy::panic, reason = "test assertions fail by panicking")]
 
 use octocode_native::config::{ConfigInput, FileInput, RuntimeSurface};
-use octocode_native::runtime::{Channel, RuntimeError, ToolOutcome, ToolRuntime};
+use octocode_native::runtime::{Channel, RuntimeError, RuntimeLimits, ToolOutcome, ToolRuntime};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -32,10 +32,13 @@ pub mod mock_http;
 /// state from leaking into another.
 static FIXTURE_SEQ: AtomicU64 = AtomicU64::new(0);
 
-/// Production default request timeout for HTTP-backed provider fixtures. The
-/// workspace default of 5 seconds keeps unrelated timeout tests fast but is too
-/// narrow during a cold native build with several mock servers active.
-pub const MOCK_PROVIDER_TIMEOUT_MS: &str = "30000";
+/// The internal limits fixtures run under: no retries, and a 5 s network
+/// timeout so a test that reaches an endpoint it did not mock fails fast.
+pub const FIXTURE_LIMITS: RuntimeLimits = RuntimeLimits {
+    max_retries: 0,
+    network_timeout: std::time::Duration::from_secs(5),
+    ..RuntimeLimits::DEFAULT
+};
 
 /// The GitHub API base every fixture starts from: a closed loopback port, so
 /// a test that reaches GitHub without mounting a mock fails fast with a
@@ -132,8 +135,6 @@ impl Workspace {
             ("GITHUB_TOKEN".into(), self.token.clone()),
             ("GITHUB_API_URL".into(), UNMOCKED_GITHUB_API_URL.into()),
             ("OCTOCODE_ENABLE_STATS".into(), "false".into()),
-            ("MAX_RETRIES".into(), "0".into()),
-            ("REQUEST_TIMEOUT".into(), "5000".into()),
             // Fixture workspaces trust their own language-server definitions.
             (
                 octocode_native::config::field::LSP_TRUST_PROJECT_CONFIG
@@ -167,7 +168,13 @@ impl Workspace {
     }
 
     pub fn runtime(&self, extra: &[(&str, String)]) -> ToolRuntime {
-        ToolRuntime::new(self.config(extra)).expect("native runtime")
+        self.runtime_with(extra, FIXTURE_LIMITS)
+    }
+
+    /// [`Self::runtime`] under the internal `limits` (the typed test seam;
+    /// limits are code constants, never configuration).
+    pub fn runtime_with(&self, extra: &[(&str, String)], limits: RuntimeLimits) -> ToolRuntime {
+        ToolRuntime::with_limits(self.config(extra), limits).expect("native runtime")
     }
 }
 
@@ -315,15 +322,26 @@ pub fn query_path(path: &Path, extra: Value) -> Value {
     query
 }
 
-/// Runtime whose classification provider is the mock `server`.
+/// Runtime whose classification provider is the mock `server`, at the
+/// production network timeout: the fixture's 5 s is too narrow during a cold
+/// native build with several mock servers active.
 pub fn provider_runtime(workspace: &Workspace, server: &MockServer) -> ToolRuntime {
-    workspace.runtime(&[
-        ("OCTOCODE_BETA", "true".into()),
-        ("OCTOCODE_CLASSIFICATION_API", "secret".into()),
-        ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
-        ("REQUEST_TIMEOUT", MOCK_PROVIDER_TIMEOUT_MS.into()),
-    ])
+    workspace.runtime_with(
+        &[
+            ("OCTOCODE_BETA", "true".into()),
+            ("OCTOCODE_CLASSIFICATION_API", "secret".into()),
+            ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
+        ],
+        PROVIDER_LIMITS,
+    )
 }
+
+/// [`FIXTURE_LIMITS`] at the production network timeout, for HTTP-backed
+/// provider fixtures.
+pub const PROVIDER_LIMITS: RuntimeLimits = RuntimeLimits {
+    network_timeout: RuntimeLimits::DEFAULT.network_timeout,
+    ..FIXTURE_LIMITS
+};
 
 /// One executed row as an agent sees it: the whole outcome (`Row` derefs to
 /// it), and its first result row's `status` and `data`.

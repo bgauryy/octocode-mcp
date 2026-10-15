@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { sha256 } from '../shared/atomic.js';
-import { PRIVATE_FILE_MODE, sessionOutputDir } from '../shared/home.js';
+import { saveNamedContent } from '../shared/spill.js';
 
 /**
  * The file a long message is saved to (`spilledMessage`): `message-<sha256 of its content>.txt` in the session's private
@@ -15,20 +15,7 @@ const FILE_NAME = /^message-([0-9a-f]{64})\.txt$/;
 const POINTER = /\n\[Full message \(\d+ characters\): (.+)\]$/;
 
 /** Saves `content` under its hash and returns the path, or undefined when it could not be written. Never throws. */
-export function saveMessageFile(content: string): string | undefined {
-  try {
-    const file = path.join(sessionOutputDir('output'), `message-${sha256(content)}.txt`);
-    try {
-      fs.writeFileSync(file, content, { flag: 'wx', mode: PRIVATE_FILE_MODE });
-    } catch (error) {
-      // The same message saved before: a file under this name must hold it.
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST' || fs.readFileSync(file, 'utf8') !== content) return undefined;
-    }
-    return file;
-  } catch {
-    return undefined;
-  }
-}
+export const saveMessageFile = (content: string): string | undefined => saveNamedContent(content, `message-${sha256(content)}.txt`);
 
 /**
  * Whether the saved file a delivered message points at still holds what was saved: true for a message with no pointer; false

@@ -1,6 +1,4 @@
-use super::dotenv::{
-    apply_env, merged_env, parse_boolean_env, parse_int_env, parse_string_array_env,
-};
+use super::dotenv::{MergedEnv, apply_env, merged_env, parse_boolean_env, parse_string_array_env};
 use super::loader::load_config;
 use super::types::*;
 use super::validation::{config_issues, get_path, is_http_url, is_local_path};
@@ -13,43 +11,6 @@ fn normalize_string(value: &str, normalize: Option<ConfigNormalize>) -> String {
     match normalize {
         Some(ConfigNormalize::Lower) => trimmed.to_ascii_lowercase(),
         Some(ConfigNormalize::Trim) | None => trimmed.to_owned(),
-    }
-}
-
-/// The integer a number setting was given, before its range applies. A
-/// fraction, a non-number, or (for a non-negative setting) a negative value is
-/// not a member of the setting's type, from a file or the environment alike.
-fn given_number(field: &ConfigFieldSpec, raw: &Value, from_environment: bool) -> Option<f64> {
-    let value = if from_environment {
-        parse_int_env(raw.as_str()).map(|value| value as f64)
-    } else {
-        raw.as_f64().filter(|value| value.fract() == 0.0)
-    }?;
-    (value >= 0.0 || field.minimum.is_some_and(|minimum| minimum < 0.0)).then_some(value)
-}
-
-/// A number setting a value outside its range clamps to: the value as given
-/// and the bound it was raised or lowered to.
-pub(super) fn clamp_of(
-    field: &ConfigFieldSpec,
-    raw: &Value,
-    from_environment: bool,
-) -> Option<(f64, f64)> {
-    if field.kind != ConfigFieldKind::Number {
-        return None;
-    }
-    let given = given_number(field, raw, from_environment)?;
-    let (minimum, maximum) = (field.minimum?, field.maximum?);
-    let used = given.max(minimum).min(maximum);
-    (used != given).then_some((given, used))
-}
-
-/// The integer JSON value of a number in range.
-fn integer_value(value: f64) -> Value {
-    if value < 0.0 {
-        Value::from(value as i64)
-    } else {
-        Value::from(value as u64)
     }
 }
 
@@ -69,10 +30,6 @@ pub(super) fn parse_candidate(
                 raw.as_bool()
             }?;
             Some(Value::Bool(value))
-        }
-        ConfigFieldKind::Number => {
-            let value = given_number(field, raw, from_environment)?;
-            Some(integer_value(value.max(field.minimum?).min(field.maximum?)))
         }
         ConfigFieldKind::StringArray => {
             let value = if from_environment {
@@ -170,7 +127,6 @@ pub(crate) fn resolve_sections(
         environment,
         Path::new("/synthetic-home"),
         &mut |_, _| {},
-        &mut |_, _, _, _| {},
         &mut |error| errors.push(error),
     );
     if errors.is_empty() {
@@ -181,10 +137,7 @@ pub(crate) fn resolve_sections(
 }
 
 /// `on_invalid_env(field, variable)` fires for a nonblank environment value
-/// that the field rejects; the value is skipped, never fatal.
-/// `on_clamped(field, name, given, used)` fires when the environment value that
-/// wins is outside the field's range and is clamped to `used` (a file value out
-/// of range is rejected by layer validation, not clamped). `on_type_error`
+/// that the field rejects; the value is skipped, never fatal. `on_type_error`
 /// reports a selected value the generated type rejects: that field keeps its
 /// contract default and every other field resolves as usual.
 fn resolve_fields(
@@ -192,7 +145,6 @@ fn resolve_fields(
     environment: &BTreeMap<String, String>,
     os_home: &Path,
     on_invalid_env: &mut dyn FnMut(&ConfigFieldSpec, &str),
-    on_clamped: &mut dyn FnMut(&ConfigFieldSpec, &str, f64, f64),
     on_type_error: &mut dyn FnMut(String),
 ) -> (ResolvedConfig, BTreeMap<&'static str, Pick>) {
     let mut resolved = ResolvedConfig::default();
@@ -204,9 +156,6 @@ fn resolve_fields(
         {
             let raw = Value::String(raw.clone());
             if let Some(value) = parse_candidate(field, &raw, true, binding.normalize) {
-                if let Some((given, used)) = clamp_of(field, &raw, true) {
-                    on_clamped(field, binding.name, given, used);
-                }
                 selected = Some((value, Pick::Env));
             } else if raw.as_str().is_some_and(|raw| !raw.trim().is_empty()) {
                 on_invalid_env(field, binding.name);
@@ -348,11 +297,6 @@ enum LayerState {
 fn expected_kind(field: &ConfigFieldSpec) -> String {
     match field.kind {
         ConfigFieldKind::Boolean => "boolean (true/false/1/0)".into(),
-        ConfigFieldKind::Number => format!(
-            "integer ({:.0}–{:.0})",
-            field.minimum.unwrap_or_default(),
-            field.maximum.unwrap_or_default()
-        ),
         ConfigFieldKind::String => "nonblank string".into(),
         ConfigFieldKind::Url => "http(s) URL".into(),
         ConfigFieldKind::Path => "absolute or ~ path without ..".into(),
@@ -449,47 +393,32 @@ fn load_layer(
     (Some(value), LayerState::Valid)
 }
 
-/// Every numeric setting is a cap (time, retries, size, spend): a workspace
-/// file may lower the value the home file sets (else the generated default),
-/// never raise it. A raise is dropped with a warning, so the home value
-/// stands.
-fn drop_workspace_raises(
-    project: &mut Value,
-    home: Option<&Value>,
-    source_path: &std::path::Path,
-    diagnostics: &mut Vec<ConfigDiagnostic>,
-) {
-    let number = |field: &ConfigFieldSpec, file: &Value| {
-        get_path(file, field.path)
-            .and_then(|raw| parse_candidate(field, raw, false, None))
-            .and_then(|value| value.as_f64())
-    };
-    for field in CONFIG_FIELDS
+/// Removed variables are reported once each, by the layer that names them
+/// (the process environment first), and dropped from every layer, so no
+/// reader, child process or `config get` sees their values.
+fn drop_removed_env(
+    merged: &mut MergedEnv,
+    effective: &mut BTreeMap<String, String>,
+    input: &ConfigInput,
+) -> Vec<ConfigDiagnostic> {
+    REMOVED_ENV_KEYS
         .iter()
-        .filter(|field| field.file && field.kind == ConfigFieldKind::Number)
-    {
-        let Some(workspace) = number(field, project) else {
-            continue;
-        };
-        let Some(limit) = home.and_then(|home| number(field, home)).or_else(|| {
-            serde_json::from_str::<Value>(field.default_json)
-                .ok()
-                .and_then(|value| value.as_f64())
-        }) else {
-            continue;
-        };
-        if workspace > limit && remove_path(project, field.path) {
-            diagnostics.push(warning(
-                WORKSPACE_RAISES_LIMIT_CODE,
-                Some(field.path),
-                format!(
-                    "{} in a workspace config file may only lower the home value ({limit}); the raise to {workspace} is ignored",
-                    field.path
-                ),
-                source_path,
-            ));
-        }
-    }
+        .filter_map(|(name, reason)| {
+            let process = effective.remove(*name).is_some();
+            let file = merged.map.remove(*name).is_some();
+            let source = merged.sources.remove(*name);
+            (process || file).then(|| ConfigDiagnostic {
+                severity: Severity::Warning,
+                code: REMOVED_SETTING_CODE.into(),
+                field_path: None,
+                message: format!("{name} was removed and is ignored: {reason}"),
+                source_path: (!process).then(|| match source.as_deref() {
+                    Some("project") => input.project_env.path().clone(),
+                    _ => input.global_env.path().clone(),
+                }),
+            })
+        })
+        .collect()
 }
 
 /// Edit distance between two names, case-insensitively.
@@ -619,26 +548,6 @@ impl EnvFiles<'_> {
         }
     }
 
-    fn clamped(
-        &self,
-        field: &ConfigFieldSpec,
-        name: &str,
-        given: f64,
-        used: f64,
-    ) -> ConfigDiagnostic {
-        let bound = if given < used { "minimum" } else { "maximum" };
-        ConfigDiagnostic {
-            severity: Severity::Warning,
-            code: "value_clamped".into(),
-            field_path: Some(field.path.into()),
-            message: format!(
-                "{name} {given:.0} is {} the {bound} {used:.0}; using {used:.0}",
-                if given < used { "below" } else { "above" },
-            ),
-            source_path: self.source(name),
-        }
-    }
-
     /// Where each resolved setting came from.
     fn setting_sources(
         &self,
@@ -724,21 +633,14 @@ pub fn resolve_config(input: &ConfigInput) -> ConfigOutput {
             _ => None,
         }
     }
-    let merged = merged_env(text(&input.global_env), text(&input.project_env));
+    let mut merged = merged_env(text(&input.global_env), text(&input.project_env));
     let mut effective = input.env.clone();
+    let removed_env = drop_removed_env(&mut merged, &mut effective, input);
     let dotenv = apply_env(merged, &mut effective);
     let mut diagnostics = vec![];
-    let (mut project_file, project_state) =
+    let (project_file, project_state) =
         load_layer(&input.project_config_file, true, &mut diagnostics);
     let (global_file, global_state) = load_layer(&input.config_file, false, &mut diagnostics);
-    if let Some(project) = project_file.as_mut() {
-        drop_workspace_raises(
-            project,
-            global_file.as_ref(),
-            input.project_config_file.path(),
-            &mut diagnostics,
-        );
-    }
     let layers: Vec<(&Value, &PathBuf, ConfigScope)> = project_file
         .iter()
         .map(|file| {
@@ -764,17 +666,7 @@ pub fn resolve_config(input: &ConfigInput) -> ConfigOutput {
         .iter()
         .any(|key| effective.contains_key(*key));
     let source = config_source([project_state, global_state], has_env);
-    for (name, reason) in REMOVED_ENV_KEYS {
-        if effective.contains_key(*name) {
-            diagnostics.push(ConfigDiagnostic {
-                severity: Severity::Warning,
-                code: REMOVED_SETTING_CODE.into(),
-                field_path: None,
-                message: format!("{name} was removed and is ignored: {reason}"),
-                source_path: env_files.source(name),
-            });
-        }
-    }
+    diagnostics.extend(removed_env);
     drop_invalid_credential_env(
         &env_files,
         &mut effective,
@@ -783,16 +675,12 @@ pub fn resolve_config(input: &ConfigInput) -> ConfigOutput {
     );
     apply_credential_file_fallbacks(&layers, &mut effective, &mut env_origins);
     let mut env_warnings = vec![];
-    let mut clamp_warnings = vec![];
     let mut type_errors = vec![];
     let (resolved, picks) = resolve_fields(
         &files,
         &effective,
         &input.os_home,
         &mut |field, name| env_warnings.push(env_files.invalid(field, name)),
-        &mut |field, name, given, used| {
-            clamp_warnings.push(env_files.clamped(field, name, given, used));
-        },
         &mut |message| {
             type_errors.push(ConfigDiagnostic {
                 severity: Severity::Error,
@@ -805,7 +693,6 @@ pub fn resolve_config(input: &ConfigInput) -> ConfigOutput {
     );
     diagnostics.extend(type_errors);
     diagnostics.extend(env_warnings);
-    diagnostics.extend(clamp_warnings);
     let setting_sources = env_files.setting_sources(picks, &layers);
     let source_path = |field: &ConfigFieldSpec| -> Option<PathBuf> {
         match setting_sources.get(field.path)? {

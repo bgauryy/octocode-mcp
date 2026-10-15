@@ -2,37 +2,24 @@
 
 use super::*;
 
-/// Follow every `next.nextPage`, then `next.expandScan`, from `query` to
-/// the end of the chain; returns each page's expanded entries and the
-/// number of calls. A page offers at most one of the two.
-/// The pages and widened scans from `query`: each page offers one of the
-/// two, and the last ends the listing without a terminal limit. Returns
-/// every listed entry and the calls made. Not `walk_pages`: a cut window
-/// carries `clipped`/`atLeast`, which the core output schema does not
-/// declare yet (reported, pending a contract decision).
+/// The pages and widened scans from `query` (`walk_pages`): each page offers
+/// at most one of `next.nextPage` and `next.expandScan`, and the page that
+/// offers neither ends the listing without a terminal limit. Returns every
+/// listed entry and the calls made.
 fn walk_chain(root: &std::path::Path, query: Value) -> (Vec<Value>, usize) {
-    let mut rows = Vec::new();
-    let mut next = Some(query);
-    let mut calls = 0;
-    while let Some(query) = next.take() {
-        calls += 1;
-        assert!(calls < 200, "the chain does not end");
-        let out = run(root, query).expect("page");
-        rows.extend(listed(&out));
+    let pages = walk_pages(root, query);
+    for out in &pages {
         let page = out["next"].get("nextPage");
         let expand = out["next"].get("expandScan");
         assert!(
             page.is_none() || expand.is_none(),
             "one continuation per page: {out}"
         );
-        next = page
-            .or(expand)
-            .map(|call| call["query"]["queries"][0].clone());
-        if next.is_none() {
+        if page.is_none() && expand.is_none() {
             assert!(out.get("terminalLimit").is_none(), "{out}");
         }
     }
-    (rows, calls)
+    (pages.iter().flat_map(listed).collect(), pages.len())
 }
 
 fn listed_paths(rows: &[Value]) -> Vec<String> {
@@ -182,26 +169,22 @@ fn an_include_files_walk_lists_every_file_exactly_once() {
         "{}/",
         root.0.file_name().expect("fixture name").to_string_lossy()
     );
-    let mut query = json!({"operation":"files","path":root.0,"include":["**/*.py"],"pageSize":3});
-    let mut seen = Vec::new();
-    for _ in 0..10 {
-        let page = run(&root.0, query.clone()).expect("page");
-        let rows = listed(&page)
-            .into_iter()
-            .map(|row| {
-                let path = row["path"].as_str().expect("path");
-                path.split_once(base.as_str())
-                    .map_or(path, |(_, rest)| rest)
-                    .to_owned()
-            })
-            .collect::<Vec<_>>();
-        assert!(rows.iter().all(|row| !seen.contains(row)), "{page}");
-        seen.extend(rows);
-        match page["next"]["nextPage"]["query"]["queries"].get(0) {
-            Some(next) => query = next.clone(),
-            None => break,
-        }
-    }
+    // `walk_pages` fails on a row listed twice.
+    let pages = walk_pages(
+        &root.0,
+        json!({"operation":"files","path":root.0,"include":["**/*.py"],"pageSize":3}),
+    );
+    assert!(pages.len() > 1, "{pages:?}");
+    let seen = pages
+        .iter()
+        .flat_map(listed)
+        .map(|row| {
+            let path = row["path"].as_str().expect("path");
+            path.split_once(base.as_str())
+                .map_or(path, |(_, rest)| rest)
+                .to_owned()
+        })
+        .collect::<Vec<_>>();
     assert_eq!(
         seen.iter()
             .cloned()
@@ -279,6 +262,52 @@ fn files_summary_dirs_counts_every_walked_directory() {
             "{operation}: every directory shows once: {out}"
         );
     }
+}
+
+/// One root walked whole gives one summary in both views: the same files,
+/// directories and file bytes (a symlink's own length is no content).
+#[test]
+fn files_and_tree_report_the_same_totals() {
+    let root = Fixture::new();
+    root.write("top.rs", "fn top() {}\n");
+    root.write("a/one.txt", "x".repeat(300));
+    root.write("a/b/two.md", "# two\n");
+    root.write("a/b/c/empty.txt", "");
+    root.write(".hidden/dot.cfg", "k=v\n");
+    std::fs::create_dir_all(root.0.join("lonely")).expect("empty dir");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(root.0.join("a/one.txt"), root.0.join("link.txt")).expect("link");
+    let summaries = [
+        json!({"operation":"files","path":root.0,"maxDepth":10}),
+        json!({"operation":"tree","path":root.0,"maxDepth":10,"includeHidden":true}),
+    ]
+    .map(|query| {
+        let out = run(&root.0, query.clone()).expect("listing");
+        assert_ne!(out["status"], "empty", "{query}: {out}");
+        out["summary"].clone()
+    });
+    let totals = |summary: &Value| {
+        (
+            summary["files"].clone(),
+            summary["dirs"].clone(),
+            summary["bytes"].clone(),
+        )
+    };
+    assert_eq!(
+        totals(&summaries[0]),
+        totals(&summaries[1]),
+        "files {} vs tree {}",
+        summaries[0],
+        summaries[1]
+    );
+    let files = if cfg!(unix) { 6 } else { 5 };
+    let bytes = 12 + 300 + 6 + 4;
+    assert_eq!(
+        totals(&summaries[0]),
+        (json!(files), json!(5), json!(bytes)),
+        "{}",
+        summaries[0]
+    );
 }
 
 /// A non-empty listing whose walk left out `.gitignore`d entries leads to

@@ -91,8 +91,8 @@ pub enum Channel {
 }
 
 /// The channel of continuation `name` emitted by `tool`. An entry named
-/// after its own tool resumes that tool's walk (clasify's `next.clasify`);
-/// the same name on another tool is a handoff lead.
+/// after its own tool resumes that tool's walk; the same name on another
+/// tool is a handoff lead.
 #[must_use]
 pub fn channel(tool: ToolId, name: &str) -> Channel {
     let name = kind(name);

@@ -590,7 +590,7 @@ fn minimize_data(data: &mut Map<String, Value>, tool: ToolId, query: &Value, ech
     // included.
     data.retain(|key, value| !super::pages::is_pagination_key(key) || echo || walks_on(value));
     // The stats extra asks for every total.
-    if tool.output().reports_scan_totals(data) && !super::extras::wants(query, ExtraKind::Stats) {
+    if reports_scan_totals(tool, data) && !super::extras::wants(query, ExtraKind::Stats) {
         minimize_search_totals(data);
     }
 }
@@ -610,15 +610,23 @@ fn contract_data_variants(tool: ToolId) -> &'static [std::collections::BTreeSet<
         let Ok(tool) = crate::contracts::tool_contract(tool) else {
             return Vec::new();
         };
-        let schema = &tool["outputSchema"];
-        let defs = &schema["$defs"];
-        let rows = resolve_ref(&schema["properties"]["results"]["items"], defs);
-        let data = resolve_ref(&rows["properties"]["data"], defs);
-        variants_of(data, defs, &Default::default(), 0)
+        data_variants_of(&tool["outputSchema"])
     })
 }
 
-use crate::contracts::resolve_ref;
+use crate::contracts::{property_schemas, resolve_ref};
+
+fn data_variants_of(schema: &Value) -> Vec<std::collections::BTreeSet<String>> {
+    let defs = &schema["$defs"];
+    property_schemas(schema, defs, "results")
+        .into_iter()
+        .flat_map(|results| {
+            let results = resolve_ref(results, defs);
+            property_schemas(&results["items"], defs, "data")
+        })
+        .flat_map(|data| variants_of(data, defs, &Default::default(), 0))
+        .collect()
+}
 
 /// Expand a schema into its required-field variants: `required` and `allOf`
 /// members accumulate; each `anyOf`/`oneOf` branch forks a variant. Nested
@@ -665,14 +673,26 @@ fn variants_of(
     variants
 }
 
+/// Whether the row `data` carries scan totals that default rows trim to the
+/// ones the page needs and `extras:["stats"]` keeps whole: the contract's
+/// `scanTotals` for the tool says which rows. A count that sizes an edit
+/// (astRewrite's `matchCount`) is no scan total.
+fn reports_scan_totals(tool: ToolId, data: &Map<String, Value>) -> bool {
+    use crate::tools::id::ScanTotals;
+    match tool.scan_totals() {
+        Some(ScanTotals::Always) => true,
+        Some(ScanTotals::WithMatchCount) => data.contains_key("matchCount"),
+        None => false,
+    }
+}
+
 /// Search totals, flat on `data`. The occurrence and matched-line totals
 /// stay on every page, so a view never needs a sum over its rows to say how
 /// much matched; the scan scope (`filesScanned`) stays only when nothing
 /// matched (it shows the search ran where intended). Coverage limits
 /// (`partialReasons`, `terminalLimit`), `binarySkipped` and unreadable-path
 /// errors (`fileErrors`) remain public even on the final page: they explain
-/// evidence that was not returned. Which rows carry the totals is the tool's
-/// answer ([`crate::tools::output::ToolOutput::reports_scan_totals`]).
+/// evidence that was not returned.
 fn minimize_search_totals(data: &mut Map<String, Value>) {
     let has_rows = data
         .get("files")

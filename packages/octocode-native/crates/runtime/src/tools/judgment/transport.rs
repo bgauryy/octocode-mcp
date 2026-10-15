@@ -219,12 +219,8 @@ fn rate_limited(
         (None, _) => format!("Classification provider is rate limiting ({source})."),
     };
     let hint = seconds.map_or_else(
-        || "Retry later, or reduce request volume (OCTOCODE_CLASSIFICATION_CONCURRENCY).".to_owned(),
-        |seconds| {
-            format!(
-                "Retry after about {seconds:.0}s, or reduce request volume (OCTOCODE_CLASSIFICATION_CONCURRENCY)."
-            )
-        },
+        || "Retry later.".to_owned(),
+        |seconds| format!("Retry after about {seconds:.0}s."),
     );
     ClassificationError::new("classificationRateLimited", message, &hint)
 }
@@ -789,6 +785,36 @@ mod tests {
                 started.elapsed() >= MIN_RETRY_DELAY,
                 "retry-after-ms: 1 must be floored"
             );
+        }
+    }
+
+    /// The retry budget bounds the attempts exactly: `retries` retries after
+    /// the first attempt, then the throttle is reported. Replaces the
+    /// classification-retry harness cases that varied MAX_RETRIES, now a
+    /// runtime constant (`RuntimeLimits::max_retries`).
+    #[tokio::test]
+    async fn the_retry_budget_bounds_attempts_exactly() {
+        for retries in [0, 1, 3] {
+            let server = MockServer::builder().start().await;
+            Mock::given(method("POST"))
+                .respond_with(ResponseTemplate::new(429).insert_header("retry-after-ms", "1"))
+                .expect(u64::from(retries) + 1)
+                .mount(&server)
+                .await;
+            let error = send(
+                &server.uri(),
+                Duration::from_secs(10),
+                retries,
+                &fresh_gate(4),
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(
+                error.code, "classificationRateLimited",
+                "{retries}: {error:?}"
+            );
+            assert_eq!(error.provider_calls, u64::from(retries) + 1, "{retries}");
+            server.verify().await;
         }
     }
 

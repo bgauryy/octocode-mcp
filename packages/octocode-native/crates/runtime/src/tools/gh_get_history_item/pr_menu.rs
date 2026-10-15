@@ -75,6 +75,16 @@ pub(super) fn menu_read(mut q: Value) -> Value {
     continuation(q)
 }
 
+/// The recovery of a `matchString` that hit no patch line (a pull
+/// request's or a commit's): the same read without the literal and the
+/// `contextLines` that only shape its hits.
+pub(super) fn without_match_string(mut q: Value) -> Value {
+    for key in ["matchString", "contextLines"] {
+        remove_key(&mut q, key);
+    }
+    menu_read(q)
+}
+
 /// Pull-request sections in their published order.
 pub(super) const PR_SECTION_ORDER: [&str; 8] = [
     "body",

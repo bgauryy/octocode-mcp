@@ -71,15 +71,15 @@ pub struct CloneConfig {
     pub max_cache_size_bytes: u64,
     pub max_clone_count: usize,
     pub lock_wait: Duration,
-    /// `network.timeout`: git's network steps are sized from it.
+    /// The runtime's network timeout: git's network steps are sized from it.
     pub network_timeout: Duration,
 }
 
 impl CloneConfig {
-    /// A persistent clone cache under `cache_home` with the config
-    /// contract's `storage.cloneCache.*` and `network.timeout` defaults.
+    /// A persistent clone cache under `cache_home` with the runtime's
+    /// constant clone limits and network timeout.
     pub fn persistent(cache_home: impl Into<PathBuf>) -> Self {
-        let defaults = crate::config::ResolvedConfig::default();
+        let defaults = crate::runtime::RuntimeLimits::DEFAULT;
         Self {
             cache_home: cache_home.into(),
             persistent: true,
@@ -89,24 +89,23 @@ impl CloneConfig {
             lock_wait: Duration::from_secs(5 * 60),
             network_timeout: Duration::ZERO,
         }
-        .with_limits(&defaults.storage.clone_cache)
-        .with_network_timeout(Duration::from_millis(u64::from(defaults.network.timeout)))
+        .with_limits(&defaults.clone)
+        .with_network_timeout(defaults.network_timeout)
     }
 
-    /// Apply the resolved `network.timeout`.
+    /// Apply the runtime's network timeout.
     #[must_use]
     pub fn with_network_timeout(mut self, timeout: Duration) -> Self {
         self.network_timeout = timeout;
         self
     }
 
-    /// Apply the resolved `storage.cloneCache.*` settings. The config contract has
-    /// already validated and clamped them (all minimums are positive).
+    /// Apply the runtime's clone cache limits.
     #[must_use]
-    pub fn with_limits(mut self, limits: &crate::config::CloneCacheConfig) -> Self {
-        self.cache_ttl = Duration::from_millis(u64::from(limits.ttl));
-        self.max_cache_size_bytes = limits.max_size;
-        self.max_clone_count = limits.max_clones as usize;
+    pub fn with_limits(mut self, limits: &crate::runtime::CloneLimits) -> Self {
+        self.cache_ttl = limits.ttl;
+        self.max_cache_size_bytes = limits.max_bytes;
+        self.max_clone_count = limits.max_clones;
         self
     }
 }
@@ -210,9 +209,10 @@ pub enum CloneFailure {
     Provider(ProviderError),
 }
 
-/// Run one ghCloneRepo row. The happy path runs on git alone; only after
-/// git failed does one `commits/{ref}` call name a missing ref or
-/// repository.
+/// Run one ghCloneRepo row. A fresh clone runs on git alone, which
+/// authenticates with the caller's credential; only after git failed does
+/// one `commits/{ref}` call name a missing ref or repository. A cache hit
+/// is served only after the same call passes with the caller's credential.
 pub async fn run<C: ConditionalCache>(
     provider: &GitHubProvider<C>,
     query: &GhCloneRepoQuery,
@@ -221,6 +221,9 @@ pub async fn run<C: ConditionalCache>(
 ) -> Result<CloneResult, CloneFailure> {
     let request = request.map_err(CloneFailure::Provider)?;
     let git = match execute_clone(query, context) {
+        Ok(hit) if hit.location.cached => {
+            return authorize_hit(provider, query, request, hit).await;
+        }
         Ok(result) => return Ok(result),
         Err(error) => error,
     };
@@ -233,6 +236,29 @@ pub async fn run<C: ConditionalCache>(
         .commit_sha(&query.owner, &query.repo, reference, request)
         .await;
     Err(explain_git_failure(query, git, answer))
+}
+
+/// Serve a cache hit only to a caller whose own credential reads the
+/// repository at the served ref. The cache is shared by every credential of
+/// the runtime and its keys name none (a refreshed token must not re-clone),
+/// so a checkout another caller's credential fetched is gated here. Any
+/// failure refuses the hit, a rate limit or outage included: one caller's
+/// spent quota never unlocks another caller's checkout.
+async fn authorize_hit<C: ConditionalCache>(
+    provider: &GitHubProvider<C>,
+    query: &GhCloneRepoQuery,
+    request: &RequestContext,
+    hit: CloneResult,
+) -> Result<CloneResult, CloneFailure> {
+    let reference = hit.location.resolved_ref.as_str();
+    match provider
+        .transport
+        .commit_sha(&query.owner, &query.repo, reference, request)
+        .await
+    {
+        Ok(_) => Ok(hit),
+        Err(api) => Err(api_refusal(query, reference, api).unwrap_or_else(CloneFailure::Provider)),
+    }
 }
 
 const GIT_FAILED: &str = "gitFailed";
@@ -251,10 +277,31 @@ pub(crate) fn explain_git_failure(
         Ok(sha) => return CloneFailure::Clone(abbreviated_sha(query, &sha).unwrap_or(git)),
         Err(api) => api,
     };
+    let reference = query.ref_.as_ref().map_or("HEAD", |value| value.as_str());
+    match api_refusal(query, reference, api) {
+        Ok(failure) => failure,
+        Err(api) => {
+            git.hints.push(format!(
+                "The GitHub API ref check also failed: {}",
+                api.message
+            ));
+            CloneFailure::Clone(git)
+        }
+    }
+}
+
+/// What a failed `commits/{reference}` answer says about the request: a
+/// missing ref or repository is not-found input, a credential the API
+/// rejects keeps its provider error. Any other failure (rate limit, outage,
+/// timeout) says nothing about the request and is returned unclassified.
+fn api_refusal(
+    query: &GhCloneRepoQuery,
+    reference: &str,
+    api: ProviderError,
+) -> Result<CloneFailure, ProviderError> {
     match (api.kind, api.reason) {
         (_, Some(ProviderErrorReason::RefNotFound)) => {
-            let reference = query.ref_.as_ref().map_or("HEAD", |value| value.as_str());
-            CloneFailure::Clone(CloneError {
+            Ok(CloneFailure::Clone(CloneError {
                 hints: vec![
                     "Verify the branch, tag, or SHA (ghStructure lists a ref), or omit ref for the default branch.".into(),
                 ],
@@ -268,19 +315,13 @@ pub(crate) fn explain_git_failure(
                         query.owner, query.repo
                     ),
                 )
-            })
+            }))
         }
-        (ProviderErrorKind::NotFound, _) => CloneFailure::Clone(repository_not_found(query)),
+        (ProviderErrorKind::NotFound, _) => Ok(CloneFailure::Clone(repository_not_found(query))),
         (ProviderErrorKind::Authentication | ProviderErrorKind::Permission, _) => {
-            CloneFailure::Provider(api)
+            Ok(CloneFailure::Provider(api))
         }
-        _ => {
-            git.hints.push(format!(
-                "The GitHub API ref check also failed: {}",
-                api.message
-            ));
-            CloneFailure::Clone(git)
-        }
+        _ => Err(api),
     }
 }
 
@@ -396,9 +437,10 @@ impl Plan<'_> {
         }
     }
 
-    /// The branch a hit can be served for without a GitHub API call: the
-    /// requested ref, else the caller's default branch, else the alias a
-    /// default-branch clone recorded.
+    /// The branch whose cache entry is looked up before any network call:
+    /// the requested ref, else the caller's default branch, else the alias a
+    /// default-branch clone recorded. `run` checks the caller's access to it
+    /// before serving the hit.
     fn known_branch(&self) -> Option<String> {
         let context = self.context;
         self.query
@@ -962,25 +1004,21 @@ mod tests;
 #[cfg(test)]
 mod limit_tests {
     use super::*;
-    use std::collections::BTreeMap;
 
+    /// A persistent cache runs under the runtime's constant limits; a test
+    /// runtime's limits replace them field for field.
     #[test]
-    fn contract_defaults_match_persistent_defaults_and_env_overrides_apply() {
-        let defaults = crate::config::resolve_sections(&[], &BTreeMap::new()).expect("defaults");
+    fn persistent_defaults_are_the_runtime_constants_and_limits_apply() {
         let base = CloneConfig::persistent("/h");
-        let resolved = CloneConfig::persistent("/h").with_limits(&defaults.storage.clone_cache);
-        assert_eq!(resolved.cache_ttl, base.cache_ttl);
-        assert_eq!(resolved.max_cache_size_bytes, base.max_cache_size_bytes);
-        assert_eq!(resolved.max_clone_count, base.max_clone_count);
-
-        let env = BTreeMap::from([
-            ("OCTOCODE_CACHE_TTL_MS".to_owned(), "120000".to_owned()),
-            ("OCTOCODE_MAX_CLONES".to_owned(), "7".to_owned()),
-            // Below the contract minimum: clamped, not silently ignored.
-            ("OCTOCODE_MAX_CACHE_SIZE".to_owned(), "5".to_owned()),
-        ]);
-        let overridden = crate::config::resolve_sections(&[], &env).expect("env");
-        let config = CloneConfig::persistent("/h").with_limits(&overridden.storage.clone_cache);
+        assert_eq!(base.cache_ttl, Duration::from_secs(24 * 60 * 60));
+        assert_eq!(base.max_cache_size_bytes, 2 * 1024 * 1024 * 1024);
+        assert_eq!(base.max_clone_count, 50);
+        assert_eq!(base.network_timeout, Duration::from_secs(30));
+        let config = CloneConfig::persistent("/h").with_limits(&crate::runtime::CloneLimits {
+            ttl: Duration::from_secs(120),
+            max_bytes: 1024 * 1024,
+            max_clones: 7,
+        });
         assert_eq!(config.cache_ttl, Duration::from_secs(120));
         assert_eq!(config.max_clone_count, 7);
         assert_eq!(config.max_cache_size_bytes, 1024 * 1024);

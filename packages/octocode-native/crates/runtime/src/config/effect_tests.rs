@@ -3,7 +3,7 @@
 //! use) and changes what a call through the runtime returns. Flipping the
 //! value flips the outcome, so a setting that stops reaching its reader
 //! fails here.
-use crate::runtime::{Channel, ToolOutcome, ToolRuntime};
+use crate::runtime::{Channel, RuntimeLimits, ToolOutcome, ToolRuntime};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -14,29 +14,37 @@ use super::{ConfigInput, FileInput, RuntimeSurface};
 
 /// A runtime whose home `.octocoderc` holds `rc`, run from `cwd`.
 fn runtime(home: &Path, cwd: &Path, rc: &Value) -> ToolRuntime {
+    runtime_with(home, cwd, rc, RuntimeLimits::DEFAULT)
+}
+
+/// [`runtime`] under the internal `limits` instead of the constants.
+fn runtime_with(home: &Path, cwd: &Path, rc: &Value, limits: RuntimeLimits) -> ToolRuntime {
     let env = BTreeMap::from([(
         super::environment::OCTOCODE_HOME.to_owned(),
         home.to_string_lossy().into_owned(),
     )]);
-    ToolRuntime::new(ConfigInput {
-        env,
-        cwd: cwd.to_path_buf(),
-        os_home: home.to_path_buf(),
-        global_env: FileInput::Missing {
-            path: home.join(".env"),
+    ToolRuntime::with_limits(
+        ConfigInput {
+            env,
+            cwd: cwd.to_path_buf(),
+            os_home: home.to_path_buf(),
+            global_env: FileInput::Missing {
+                path: home.join(".env"),
+            },
+            project_env: FileInput::Missing {
+                path: cwd.join(".octocode/.env"),
+            },
+            config_file: FileInput::Read {
+                path: home.join(".octocoderc"),
+                text: rc.to_string(),
+            },
+            project_config_file: FileInput::Missing {
+                path: cwd.join(".octocode/.octocoderc"),
+            },
+            runtime_surface: RuntimeSurface::Mcp,
         },
-        project_env: FileInput::Missing {
-            path: cwd.join(".octocode/.env"),
-        },
-        config_file: FileInput::Read {
-            path: home.join(".octocoderc"),
-            text: rc.to_string(),
-        },
-        project_config_file: FileInput::Missing {
-            path: cwd.join(".octocode/.octocoderc"),
-        },
-        runtime_surface: RuntimeSurface::Mcp,
-    })
+        limits,
+    )
     .expect("runtime")
 }
 
@@ -142,8 +150,8 @@ async fn redact_emails_masks_github_rows() {
     assert!(redacted.contains("mail "), "the row stays: {redacted}");
 }
 
-/// `network.maxRateLimitWait` decides whether a short provider rate limit is
-/// waited out (the retry answers) or fails fast with `rateLimited`.
+/// The runtime's rate-limit wait decides whether a short provider rate limit
+/// is waited out (the retry answers) or fails fast with `rateLimited`.
 #[tokio::test]
 async fn max_rate_limit_wait_decides_wait_or_fail_fast() {
     let outcome = |wait_ms: u64| async move {
@@ -166,11 +174,12 @@ async fn max_rate_limit_wait_decides_wait_or_fail_fast() {
             .await;
         let home = tempfile::tempdir().expect("home");
         let cwd = tempfile::tempdir().expect("cwd");
-        let rc = json!({
-            "github":{"apiUrl":format!("{}/api/v3", server.uri())},
-            "network":{"maxRateLimitWait":wait_ms}
-        });
-        let runtime = runtime(home.path(), cwd.path(), &rc);
+        let rc = json!({"github":{"apiUrl":format!("{}/api/v3", server.uri())}});
+        let limits = RuntimeLimits {
+            max_rate_limit_wait: std::time::Duration::from_millis(wait_ms),
+            ..RuntimeLimits::DEFAULT
+        };
+        let runtime = runtime_with(home.path(), cwd.path(), &rc, limits);
         let outcome = call(&runtime, "ghSearchRepo", json!({"keywords":["r"]})).await;
         data(&outcome)["errorCode"].clone()
     };

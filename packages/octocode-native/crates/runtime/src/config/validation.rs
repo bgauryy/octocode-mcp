@@ -87,21 +87,6 @@ pub(super) fn validate_field(
                 errors.push(format!("{}: Must be a boolean", field.path));
             }
         }
-        ConfigFieldKind::Number => match value.as_f64().filter(|number| number.fract() == 0.0) {
-            None => errors.push(format!("{}: Must be an integer", field.path)),
-            Some(number)
-                if field.minimum.is_some_and(|minimum| number < minimum)
-                    || field.maximum.is_some_and(|maximum| number > maximum) =>
-            {
-                errors.push(format!(
-                    "{}: Must be between {:.0} and {:.0}",
-                    field.path,
-                    field.minimum.unwrap_or_default(),
-                    field.maximum.unwrap_or_default()
-                ));
-            }
-            Some(_) => {}
-        },
         ConfigFieldKind::StringArray => {
             let Some(values) = value.as_array() else {
                 errors.push(format!("{}: Must be an array", field.path));

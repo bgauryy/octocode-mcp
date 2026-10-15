@@ -158,16 +158,23 @@ fn full_detail_counts_lines_only_for_the_selected_page() {
 
 #[test]
 fn invalid_time_filters_are_rejected_instead_of_skipped() {
-    let root = Fixture::new();
-    std::fs::write(root.0.join("source.rs"), "source\n").expect("source");
+    // Admission rejects malformed duration strings before generated typed
+    // parsing or the walk; a typed executor test cannot construct this query.
     for field in ["modifiedWithin", "modifiedBefore", "accessedWithin"] {
-        let error = run(
-            &root.0,
-            json!({"operation":"files","mainGoal": "test", "reasoning":"test","path":root.0,"time":{field:"banana"}}),
+        let error = crate::contracts::validate_query(
+            "structureSearch",
+            json!({"operation":"files","path":".","time":{field:"banana"}}),
         )
         .expect_err("invalid filter must not broaden the result");
-        assert_eq!(error.code, "invalidInput");
-        assert!(error.message.contains(field), "{}", error.message);
+        assert!(
+            error
+                .issues
+                .iter()
+                .any(|issue| issue.path == ["time", field]),
+            "{field}: {error:?}"
+        );
+        let diagnostic = crate::contracts::format_input_error("structureSearch", &error);
+        assert!(diagnostic.to_string().contains(field), "{diagnostic}");
     }
 }
 

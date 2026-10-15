@@ -67,6 +67,7 @@ export async function uploadFiles(page: Page, ref: number, element: string, path
       if (!opened) throw new Error(`Clicking [${ref}] opened no file chooser; use the file input instead.`);
       await page.send('DOM.setFileInputFiles', { files: paths, backendNodeId: opened['backendNodeId'] }, signal);
     } finally {
+      // Cleanup: the page may be gone, and the outcome of the upload is already decided.
       await page.send('Page.setInterceptFileChooserDialog', { enabled: false }).catch(() => undefined);
     }
   }

@@ -4,7 +4,7 @@
 //! tool call in this process, passes through one [`ClassificationGate`] per
 //! provider endpoint (scheme + host + port + path) and account (key). The gate:
 //!
-//! - bounds in-flight requests to `classification.maxConcurrency`;
+//! - bounds in-flight requests to the runtime's classification concurrency;
 //! - adapts that bound (AIMD): a throttle response (429/503/529) halves the
 //!   effective limit, and every [`RESTORE_AFTER_SUCCESSES`] successes restore
 //!   one permit, never below 1 nor above the configured limit;
@@ -101,14 +101,9 @@ pub(crate) struct GatePermit {
     share: Arc<CallShare>,
 }
 
-/// `limit` within the config contract's `classification.maxConcurrency`
-/// bounds, so the gate and the setting cannot disagree.
+/// A gate always admits at least one request.
 fn clamp_limit(limit: usize) -> usize {
-    let field = &crate::config::field::CLASSIFICATION_MAX_CONCURRENCY;
-    let bound =
-        |value: Option<f64>, fallback: usize| value.map_or(fallback, |value| value as usize);
-    let minimum = bound(field.minimum, 1).max(1);
-    limit.clamp(minimum, bound(field.maximum, minimum).max(minimum))
+    limit.max(1)
 }
 
 /// Largest share of the configured limit one tool call may hold.
@@ -128,8 +123,8 @@ pub(crate) fn endpoint_key(endpoint: &Url) -> String {
 }
 
 /// A lease on the process-wide gate for `key`, with a fresh per-call share.
-/// `limit` is the resolved `classification.maxConcurrency`; a changed value
-/// is applied to the existing gate.
+/// `limit` is the runtime's classification concurrency; a changed value is
+/// applied to the existing gate.
 pub(crate) fn lease(key: &str, limit: usize) -> GateLease {
     static GATES: OnceLock<Mutex<HashMap<String, Arc<ClassificationGate>>>> = OnceLock::new();
     let gate = {
@@ -546,21 +541,7 @@ mod tests {
         assert_eq!(lease(key, 10).gate.effective_limit(), 10);
         assert_eq!(lease(key, 3).gate.effective_limit(), 3);
         assert_eq!(lease(key, 0).gate.effective_limit(), 1);
-        assert_eq!(lease(key, 500).gate.effective_limit(), 64);
-    }
-
-    /// The gate's bounds are the setting's: core's config contract states
-    /// `classification.maxConcurrency` once.
-    #[test]
-    fn limits_follow_the_config_contract_bounds() {
-        let field = &crate::config::field::CLASSIFICATION_MAX_CONCURRENCY;
-        let (minimum, maximum) = (
-            field.minimum.expect("minimum") as usize,
-            field.maximum.expect("maximum") as usize,
-        );
-        assert_eq!(clamp_limit(0), minimum);
-        assert_eq!(clamp_limit(maximum + 1), maximum);
-        assert_eq!(clamp_limit(minimum + 1), minimum + 1);
+        assert_eq!(lease(key, 500).gate.effective_limit(), 500);
     }
 
     /// Past the retained count, idle gates are dropped, while one that holds

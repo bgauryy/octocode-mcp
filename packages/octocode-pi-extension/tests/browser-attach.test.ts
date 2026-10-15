@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { checkDevtoolsUrl, openBrowser } from '../src/browser/cdp.js';
+import { checkDevtoolsUrl } from '../src/browser/cdp.js';
+import { openBrowser } from '../src/browser/session.js';
 
 describe('the DevTools attach check', () => {
   it.each(['ws://127.0.0.1:9222/devtools/page/ABC', 'ws://localhost:9222/devtools/browser/x', 'ws://[::1]:9222/devtools/page/1'])('accepts %s', (url) => {

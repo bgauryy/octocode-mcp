@@ -93,8 +93,6 @@ struct Row {
     display_name: String,
     kind: &'static str,
     path: String,
-    /// A regular file (not a directory or symlink).
-    is_file: bool,
     name: String,
     size: i64,
     modified: f64,
@@ -105,38 +103,16 @@ struct Row {
     seen: (u64, Option<std::time::SystemTime>),
 }
 
-/// A files walk: its rows in listing order (cut to `maxEntries`) and what
-/// the walk left out.
-struct FilesWalk {
-    rows: Vec<Row>,
-    /// Listing rows before this window's end (`scanOffset` plus the rows
-    /// this window took, before grouped directories folded into headers):
-    /// where `next.expandScan` resumes.
-    covered: usize,
-    available: usize,
-    total_discovered: usize,
-    was_capped: bool,
-    /// The walk ran out of time before this root-relative entry.
-    time_cut: Option<String>,
-    /// Files, directories and file bytes of this window's rows, counted
-    /// before directories with their own group fold into its header.
-    files: usize,
-    dirs: usize,
-    bytes: i64,
-    uncovered: super::Uncovered,
-    warnings: Vec<String>,
-}
-
-impl super::memo::Listed for FilesWalk {
-    fn sources(&self) -> Vec<super::memo::Seen<'_>> {
-        self.rows
-            .iter()
-            .map(|row| super::memo::Seen {
-                path: row.source.as_path(),
-                size: row.seen.0,
-                modified: row.seen.1,
-            })
-            .collect()
+impl super::Sourced for Row {
+    fn kind(&self) -> &'static str {
+        self.kind
+    }
+    fn seen(&self) -> super::memo::Seen<'_> {
+        super::memo::Seen {
+            path: &self.source,
+            size: self.seen.0,
+            modified: self.seen.1,
+        }
     }
 }
 
@@ -241,55 +217,34 @@ pub fn execute_files(
         paths,
         cancel,
     )?;
-    note_empty(
-        &mut out,
-        q,
-        &validated.canonical,
-        &walk,
-        paths,
-        security,
-        cancel,
-    )?;
-    Ok(out)
-}
-
-/// [`super::note_empty`] for an empty files listing: the probe re-walks the
-/// same filters with the skipped paths let in, within the probe budget.
-fn note_empty(
-    out: &mut Value,
-    q: &StructureSearchQueryFiles,
-    root: &std::path::Path,
-    walk: &FilesWalk,
-    paths: &PathPolicy,
-    security: &ContentSecurity,
-    cancel: &dyn CancellationCheck,
-) -> Result<(), ToolError> {
     let shown = Walk {
         ignored: q.include_ignored == Some(true),
         hidden: true,
         default_excludes: q.default_excludes.defaults(),
     };
-    let bound = super::ProbeBound::new(super::PROBE_BUDGET);
-    super::note_empty(out, q, (root, paths), &walk.uncovered, shown, |relaxed| {
-        let mut relaxed_query = q.clone();
-        relaxed_query.include_ignored = Some(relaxed.ignored);
-        relaxed_query.default_excludes = Some(DefaultExcludes(relaxed.default_excludes));
-        relaxed_query.scan_offset = None;
-        let found = walk_files(
-            &relaxed_query,
-            root,
-            paths,
-            security,
-            cancel,
-            super::PROBE_HITS,
-            Walking::Probe(&bound),
-        )?;
-        let cut = found.was_capped || bound.cut();
-        Ok(super::found_entries(
-            found.rows.into_iter().map(|row| row.source),
-            cut,
-        ))
-    })
+    super::probe_empty(
+        &mut out,
+        q,
+        (&validated.canonical, paths),
+        &walk.meta.uncovered,
+        shown,
+        |relaxed, walking| {
+            let mut relaxed_query = q.clone();
+            relaxed_query.include_ignored = Some(relaxed.ignored);
+            relaxed_query.default_excludes = Some(DefaultExcludes(relaxed.default_excludes));
+            relaxed_query.scan_offset = None;
+            walk_files(
+                &relaxed_query,
+                &validated.canonical,
+                paths,
+                security,
+                cancel,
+                super::PROBE_HITS,
+                walking,
+            )
+        },
+    )?;
+    Ok(out)
 }
 
 /// Path order is the walk order (name-sorted, depth-first), so the first
@@ -321,9 +276,18 @@ fn query_options(
         regex: q.name_regex.clone(),
         entry_type: q.entry_type(),
         empty: q.empty,
-        modified_within: time.as_ref().and_then(|t| t.modified_within.clone()),
-        modified_before: time.as_ref().and_then(|t| t.modified_before.clone()),
-        accessed_within: time.as_ref().and_then(|t| t.accessed_within.clone()),
+        modified_within: time
+            .as_ref()
+            .and_then(|t| t.modified_within.as_deref())
+            .cloned(),
+        modified_before: time
+            .as_ref()
+            .and_then(|t| t.modified_before.as_deref())
+            .cloned(),
+        accessed_within: time
+            .as_ref()
+            .and_then(|t| t.accessed_within.as_deref())
+            .cloned(),
         size_greater: q
             .size
             .as_ref()
@@ -358,7 +322,7 @@ fn walk_files(
     cancel: &dyn CancellationCheck,
     requested: usize,
     walking: Walking<'_>,
-) -> Result<FilesWalk, ToolError> {
+) -> Result<super::Walked<Row>, ToolError> {
     let bound = walking.probe();
     // Leave out what the tree and localSearch leave out: ignored entries,
     // pruned during the walk (and counted by it) unless `includeIgnored`.
@@ -414,61 +378,29 @@ fn walk_files(
         .map(|e| make_row(e, root, security, &detail, count_lines, paths, cancel))
         .collect::<Result<Vec<_>, ToolError>>()?;
     sort_rows(&mut rows, &sort);
-    let available = rows.len();
-    rows.truncate(requested);
-    // An expanded scan lists only the rows past the window earlier pages
-    // listed: listing order is stable, so the rows before `scanOffset` are
-    // the ones they showed.
-    let offset = q.scan_offset().min(rows.len());
-    rows.drain(..offset);
-    let covered = offset + rows.len();
+    let mut walk = super::Walked::finish(
+        native,
+        rows,
+        requested,
+        q.scan_offset(),
+        withheld,
+        0,
+        security,
+    );
     // Path order groups like `tree`: `path`'s own entries first, then each
     // directory once, in walk order (the sort is stable). Other sorts keep
     // their order, so a directory may open several groups.
     if sort == "path" {
         // The root's own `.` entry leads its bare entries.
-        rows.sort_by_key(|row| {
+        walk.rows.sort_by_key(|row| {
             (
                 std::path::PathBuf::from(&row.dir),
                 !row.entry.starts_with("./"),
             )
         });
     }
-    // Bytes are regular files' (a symlink's own length is no content).
-    let (files, dirs, bytes) = rows.iter().fold((0, 0, 0), |(f, d, b), row| {
-        if row.kind == "directory" {
-            (f, d + 1, b)
-        } else {
-            (f + 1, d, b + if row.is_file { row.size } else { 0 })
-        }
-    });
-    drop_grouped_dirs(&mut rows);
-    Ok(FilesWalk {
-        rows,
-        covered,
-        available,
-        total_discovered: native.total_discovered as usize,
-        was_capped: native.was_capped,
-        time_cut: native
-            .time_cut
-            .map(|at| security.sanitize_text(&at, None).content),
-        files,
-        dirs,
-        bytes,
-        uncovered: super::Uncovered {
-            ignored: native.ignored as usize,
-            withheld: withheld
-                .into_inner()
-                .unwrap_or_else(|error| error.into_inner()),
-            hidden: 0,
-            pruned: native.pruned_dirs,
-        },
-        warnings: {
-            let mut warnings = walk_warnings(native.skipped, native.permission_denied);
-            warnings.extend(native.warnings);
-            warnings
-        },
-    })
+    drop_grouped_dirs(&mut walk.rows);
+    Ok(walk)
 }
 
 /// A directory with its own `{dir, files}` group is named by that group; a
@@ -518,7 +450,7 @@ fn files_costs(rows: &[Row], prefix: &str, deferred_detail: bool) -> Vec<super::
 /// The response for this page of a walk.
 fn files_page(
     q: &StructureSearchQueryFiles,
-    walk: &FilesWalk,
+    walk: &super::Walked<Row>,
     pages: &[std::ops::Range<usize>],
     snapshot: String,
     (root, prefix): (&std::path::Path, &str),
@@ -528,29 +460,14 @@ fn files_page(
 ) -> Result<Value, ToolError> {
     let page = q.page().max(1) as usize;
     let total = walk.rows.len();
-    let early_exit = early_exit(q);
-    // An early-exit walk that found one more match than the limit has more;
-    // only a full walk knows the total.
-    let (limit_cut, scan_cut) = if early_exit {
-        (walk.was_capped, false)
-    } else {
-        (walk.available > requested, walk.was_capped)
-    };
-    let cut = super::Cut {
+    let cut = walk.cut(
         page,
-        total_pages: pages.len().max(1),
-        total,
+        pages.len(),
         requested,
-        available: walk.available,
-        limit_cut,
-        scan_cut,
-        time_cut: walk.time_cut.clone(),
-        early_exit,
-        total_discovered: walk.total_discovered,
-        scan_offset: q.scan_offset(),
-        covered: walk.covered,
-        snapshot: snapshot.clone(),
-    };
+        early_exit(q),
+        q.scan_offset(),
+        snapshot.clone(),
+    );
     let shown = pages.get(page - 1).cloned().unwrap_or(total..total);
     let deferred_detail = q.detail() == "full" && q.sort() != "lines";
     let shown_rows = walk.rows[shown.clone()]
@@ -580,34 +497,24 @@ fn files_page(
     }
     let mut out = json!({"path":super::display_name(root),"snapshot":snapshot,"files":files,"pagination":facts.to_value()});
     // A walk cut by time proved nothing about what it did not scan.
-    if total == 0 && walk.time_cut.is_none() {
+    if total == 0 && walk.meta.time_cut.is_none() {
         out["status"] = json!("empty")
     }
-    let mut warnings = walk.warnings.clone();
+    let mut warnings = walk.meta.warnings.clone();
     warnings.extend(crate::policy::include::parent_glob_warning(
         &q.include, &q.exclude,
     ));
     cut.finish(&mut out, q, &mut warnings);
     if page == 1 {
-        let mut summary = json!({"files": walk.files, "dirs": walk.dirs, "bytes": walk.bytes});
-        if walk.uncovered.ignored > 0 {
-            summary["ignored"] = json!(walk.uncovered.ignored);
-        }
-        if let Some(pruned) = walk.uncovered.pruned_names() {
-            summary["pruned"] = json!(pruned);
-        }
-        out["summary"] = summary;
-        super::lead_to_ignored(&mut out, q, &walk.uncovered);
+        out["summary"] = walk.meta.summary();
+        super::lead_to_ignored(&mut out, q, &walk.meta.uncovered);
     }
     if page == 1
         && let Some(read) = outline_read(&walk.rows[shown], root)
     {
         out["next"]["read"] = read;
     }
-    warnings.extend(walk.uncovered.withheld.notice());
-    if !warnings.is_empty() {
-        out["warnings"] = json!(warnings)
-    }
+    walk.meta.warn(&mut out, warnings);
     Ok(out)
 }
 
@@ -620,7 +527,7 @@ fn files_page(
 fn outline_read(rows: &[Row], root: &std::path::Path) -> Option<Value> {
     let candidates = || {
         rows.iter()
-            .filter(|row| row.is_file && crate::tools::outlines(&row.path))
+            .filter(|row| row.kind == "file" && crate::tools::outlines(&row.path))
     };
     let row = candidates()
         .find(|row| row.size <= READ_LEAD_MAX_BYTES && !generated_or_fixture(&row.path))
@@ -722,7 +629,6 @@ fn make_row(
         display_name: name.to_owned(),
         kind,
         path,
-        is_file: kind == "file",
         name: e.name.clone(),
         size: e.size.unwrap_or(0),
         modified,
@@ -839,11 +745,11 @@ fn validate_time(time: Option<&StructureSearchQueryFilesTime>) -> Result<(), Too
         return Ok(());
     };
     for (key, value) in [
-        ("modifiedWithin", &t.modified_within),
-        ("modifiedBefore", &t.modified_before),
-        ("accessedWithin", &t.accessed_within),
+        ("modifiedWithin", t.modified_within.as_deref()),
+        ("modifiedBefore", t.modified_before.as_deref()),
+        ("accessedWithin", t.accessed_within.as_deref()),
     ] {
-        if let Some(value) = value.as_deref().filter(|value| !valid_duration(value)) {
+        if let Some(value) = value.filter(|value| !valid_duration(value)) {
             return Err(ToolError::new(
                 "invalidInput",
                 format!(
@@ -858,25 +764,6 @@ fn valid_duration(v: &str) -> bool {
     v.len() > 1
         && matches!(v.chars().last(), Some('h' | 'd' | 'w' | 'm'))
         && v[..v.len() - 1].chars().all(|c| c.is_ascii_digit())
-}
-pub(super) fn walk_warnings(s: u32, d: u32) -> Vec<String> {
-    if s == 0 {
-        return vec![];
-    }
-    let o = s.saturating_sub(d);
-    vec![if d > 0 && o > 0 {
-        format!("{s} entries skipped ({d} permission denied, {o} other errors)")
-    } else if d > 0 {
-        format!(
-            "{d} {} skipped due to permission denied",
-            if d == 1 { "entry" } else { "entries" }
-        )
-    } else {
-        format!(
-            "{s} {} skipped due to access errors",
-            if s == 1 { "entry" } else { "entries" }
-        )
-    }]
 }
 #[cfg(test)]
 mod tests {
@@ -966,7 +853,7 @@ mod tests {
                 )?;
                 Ok(super::super::found_entries(
                     found.rows.into_iter().map(|row| row.source),
-                    found.was_capped || bound.cut(),
+                    found.meta.was_capped || bound.cut(),
                 ))
             },
         )

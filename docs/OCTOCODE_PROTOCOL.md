@@ -17,12 +17,12 @@ Context is a coding agent's scarcest resource. Whole files, whole diffs, and raw
 |---|---|---|
 | **Content** (text) | Where does this text occur? What do these exact lines say? | `localSearch`, `localFetch`, `ghSearchCode`, `ghGetFileContent` |
 | **Files** (layout) | Which files exist, how big are they, where should I look? | `structureSearch`, `ghStructure`, `ghSearchRepo` |
-| **Syntax** (AST) | Which declarations or code shapes exist, ignoring comments and strings? | `astSearch`, `astRewrite` (beta, CLI) |
+| **Syntax** (AST) | Which declarations or code shapes exist, ignoring comments and strings? | `astSearch` |
 | **Semantics** (LSP) | Is this the same symbol? Where is it defined, who references or calls it? | `lspSearch` |
 | **Connections** (graph) | Who imports this file? What does it depend on? Is it reachable? | `astTopology` (beta, CLI), LSP call hierarchy |
 | **History** | Which change introduced this, what did the PR do, what differs between two refs? | `ghSearchHistory`, `ghGetHistoryItem` |
 | **Packages** | Which repository and directory hold this package's source? | `artifactSearch` |
-| **Judgment** (optional) | Which captured candidate to read first; a typed decision about held or unread source | `classifiers` on search/fetch, `clasify` |
+| **Judgment** (optional) | Which captured hits or passages are relevant; a typed decision about held or unread source | `clasifyContext` on search/fetch, `clasify` (beta) |
 
 ## 2. The research loop: zoom out, zoom in, prove
 
@@ -62,10 +62,10 @@ External to local is one flow: `artifactSearch` maps a package to its repository
 - Rules: [OCTOCODE_WORKFLOWS.md](OCTOCODE_WORKFLOWS.md#briefs-maingoal-and-reasoning).
 
 ### 3.3 Context engineering: instructions, descriptions, schemas
-- **Instructions:** one prompt for MCP and CLI, one line per section, at most 2,000 characters because hosts truncate longer ones; the `<flow>` line states the whole research loop. The prompt is the same for every tool subset. The lines: [OCTOCODE_WORKFLOWS.md](OCTOCODE_WORKFLOWS.md#research-flow-graph).
+- **Instructions:** one prompt for MCP and CLI, one line per section, at most 2,000 characters because hosts truncate longer ones; the `<flow>` line states the whole research loop. Only the `<clasify>` line depends on what is enabled. The lines: [OCTOCODE_WORKFLOWS.md](OCTOCODE_WORKFLOWS.md#research-flow-graph).
 - **Tool descriptions** follow one grammar: prose (what the tool does, when it is right), an optional `<empty>` (the repair when a result is empty or a literal misses), then one `<workflow>` (where its output goes next). A rule test enforces it; no tool name appears outside `<workflow>`.
 - **Field descriptions** are the one text of each field (its Zod `.describe()`): what the value is, and, for a value another tool's output fills, a `<workflow>` note naming that output (`ref`: a search row's `commitSha` or a PR `headSha`; `line`: a hit's line). Self-explanatory fields carry none. The tools connect through their inputs and outputs, so the flow is read where the value is typed.
-- Core tests keep the instructions plus every default tool definition within 19,899 bytes, the instructions within 1,978.
+- A core test caps the bytes of the instructions plus every default tool definition, with a quota per tool.
 
 ### 3.4 Batching
 - One call carries 1–5 independent queries of the same tool. Rows run concurrently, keep input order, and fail alone. Rules: [OCTOCODE_WORKFLOWS.md](OCTOCODE_WORKFLOWS.md#make-a-call).
@@ -95,8 +95,8 @@ External to local is one flow: `artifactSearch` maps a package to its repository
 - Channels and fields: [TOOL_DATA_CONTRACT.md](TOOL_DATA_CONTRACT.md#executable-continuations).
 
 ### 3.9 Precision layers: AST and LSP
-- **AST (tree-sitter):** structural patterns (`$X.unwrap()`, `new Error($MSG)`) and YAML rules match code shape, never comments or strings. Symbols give exact declaration inventories. `astRewrite` applies a codemod only after a preview, and only if the files are unchanged since then. Languages: [language and feature reference](../packages/octocode-native/docs/engine/SUPPORTED_LANGUAGES_AND_FEATURES.md).
-- **LSP:** real language servers (tsserver, rust-analyzer, pyright, clangd, …) resolve definitions, references, call hierarchy, hover, and diagnostics from 1-based positions taken from a real anchor. A missing server gives a `serverUnavailable` error and a `hints.textSearch` lead.
+- **AST (tree-sitter):** structural patterns (`$X.unwrap()`, `new Error($MSG)`) and YAML rules match code shape, never comments or strings. Symbols give exact declaration inventories. Languages: [language and feature reference](../packages/octocode-native/docs/engine/SUPPORTED_LANGUAGES_AND_FEATURES.md).
+- **LSP:** real language servers (tsgo, typescript-language-server, rust-analyzer, pyright, clangd, …) resolve definitions, references, call hierarchy, hover, and diagnostics from 1-based positions taken from a real anchor. A missing server gives a `serverUnavailable` error and a `findText` lead (a `localSearch` of the name).
 - **Ranking:** hits in a file rank declaration > deciding statement (assignment, `if`, `return`, `throw`) > code > comment. For an exact identifier, the file that declares it ranks first.
 
 ### 3.10 Classifiers and clasify: selective evidence
@@ -108,16 +108,16 @@ External to local is one flow: `artifactSearch` maps a package to its repository
 ### 3.11 Security: sanitize input and output
 - **Input:** the contract is validated before execution; unknown fields are rejected and nothing is silently clamped. Local paths stay inside the sandbox, and sensitive files are refused even inside allowed roots.
 - **Output:** the native secret scanner reads every byte bound for the model, including PEM blocks split across page windows, and replaces values with typed markers. Searches never match inside a secret.
-- **Classification egress:** `clasify` and enabled `classifiers` send sanitized evidence and questions to the configured classifier. Their payloads exclude credentials and continuation tokens. Details: [SECURITY.md](SECURITY.md#classification-egress).
+- **Classification egress:** `clasify` and `clasifyContext` send sanitized evidence and questions to the configured classifier. Their payloads exclude credentials and continuation tokens. Details: [SECURITY.md](SECURITY.md#classification-egress).
 
 ### 3.12 Local caching and GitHub rate limits
 - GitHub file bodies and listings are cached in memory and, with persistent storage, on a disk cache that the CLI and MCP share. Reads at a commit SHA never need revalidation.
-- Rate limits are respected: `retryAfterSeconds` and `resetEpochSeconds` are reported, and a local circuit breaker refuses calls ("request not sent") until the window resets. Details: [CONFIGURATION.md](CONFIGURATION.md#cache-storage-and-lifecycle).
+- Rate limits are respected: a call waits out a short limit window and fails with `rateLimited` and the retry time when the wait would be longer. Cache: [cache storage](CONFIGURATION.md#cache-storage-and-lifecycle); waits: [fixed internal limits](CONFIGURATION.md#fixed-internal-limits).
 
 ### 3.13 The Rust layer: local efficiency
 - One native engine runs text search (an in-process regex walker), parsing and structural matching (tree-sitter), minification, redaction, the LSP client pool, the dependency graph, and the GitHub and registry clients. There is nothing extra to install.
 - MCP loads it in process through napi, so calls are warm. The CLI is a native binary.
-- Concurrent rows share one walk-thread budget, with parse size limits and deadlines on rewrites.
+- Concurrent rows share one walk-thread budget, with parse size limits and scan deadlines.
 
 ## 4. Strengths and limits
 
@@ -128,9 +128,8 @@ Earlier scripted tool-level comparisons measured single tool calls, not agent ou
 | Large PRs | 9.6k against 45k characters over 4 PRs (37–656 files), all answers correct. `gh pr view --json files` stops at 100 files and `gh pr diff` fails above 300; Octocode filters a 656-file PR in one call and flags files sent without a patch. |
 | Honest completeness | It reports GitHub's 300-file compare cap (true count 339) and follows renamed repositories where `gh` returns 0. |
 | Reproducible evidence | Reads return `commitSha`, pages stay pinned to it, and PRs carry `headSha` and `mergeCommitSha`. |
-| Precision | LSP references are exact (`rg -w`: 0.26–0.62). Symbols were exact on 6 of 6 files (regexes and ctags: 0.81–0.98). Codemods matched ast-grep on 5 of 5; sed was wrong on 4 of 5. |
+| Precision | LSP references are exact (`rg -w`: 0.26–0.62). Symbols were exact on 6 of 6 files (regexes and ctags: 0.81–0.98). |
 | Hostile input | 0 of 5 fake secrets leaked (rg: 3 of 3). A 3.2 MB file costs 18k characters, and a 2 MB minified line costs 710. |
-| Semantic selection (removed Locate flow, historical) | Whole-file locate: 10 of 10 (rg: 9 of 10), with 43% fewer files opened. |
 | Local parity with rg | Same accuracy (14 of 15), with about 8% more characters for the citable line gutter. |
 
 | Where plain tools win | Why |

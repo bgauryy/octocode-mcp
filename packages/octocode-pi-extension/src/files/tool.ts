@@ -19,7 +19,7 @@ import { askReview } from './review.js';
 import { timedTool } from '../shared/render.js';
 import { renderFileCall, renderFileResult, type QueryOutcome } from './render.js';
 import { readPaths } from '../shared/home.js';
-import { contentText, elisionMarkers, errorMessage, isRecord } from '../shared/util.js';
+import { contentText, elisionMarkers, errorMessage, escapeRegExp, isRecord } from '../shared/util.js';
 
 /**
  * Octocode's `file` tool: batched edit / write / delete queries, each with a
@@ -111,6 +111,19 @@ function unseenRefusal(display: string, lines: readonly LineRange[], data: Buffe
   return `${display}: a write replaces the whole file, but you have seen ${describeRanges(lines)} of its ${count} lines. Read the rest with \`read\` (offset=${gap}) until every line has been read, or use an edit to change part of it.`;
 }
 
+/**
+ * What the bytes about to change say against what the guard knows (`inspection`, from `FileGuard.inspect`): `changed`
+ * when they differ from what the read saw, and a refusal when a write or delete follows such a change, or a write
+ * replaces lines the reads never showed. An edit over changes is not refused here: its anchors are re-validated.
+ */
+function judgeChange(display: string, mode: 'edit' | 'write' | 'delete', inspection: Inspection, data: Buffer | undefined, checked: string | null): { changed: boolean; refusal?: string } {
+  const { stale, expected, lines } = inspection;
+  const changed = stale === true || (expected !== undefined && expected !== checked);
+  if (changed && mode !== 'edit') return { changed, refusal: staleRefusal(display) };
+  const unseen = lines && data ? unseenRefusal(display, lines, data) : undefined;
+  return unseen ? { changed, refusal: unseen } : { changed };
+}
+
 function rereadRefusal(display: string): string {
   return `${display}: your earlier read of it is no longer in your context. Read it again with \`read\` before modifying it.`;
 }
@@ -200,12 +213,15 @@ export class FileGuard {
    * (or written by this tool) in this session, and not changed on disk or left the context since; a new file is free.
    * A write also needs every line of the file read (in one read or several); an edit does not, because its exact match
    * proves the edited region was seen, and a delete needs only proof that the read was of the current file.
+   * `runQuery` applies the same two steps (`inspect`, then `judgeChange` over the bytes it reads); this runs them for
+   * callers that only ask (the guard's tests).
    */
   check(file: string, mode: 'edit' | 'write' | 'delete', display: string): string | undefined {
-    const { refusal, lines } = this.inspect(file, mode, display);
-    if (refusal || !lines) return refusal;
+    const inspection = this.inspect(file, mode, display);
+    if (inspection.refusal) return inspection.refusal;
     try {
-      return unseenRefusal(display, lines, fs.readFileSync(file));
+      const data = inspection.current ? fs.readFileSync(file) : undefined;
+      return judgeChange(display, mode, inspection, data, data ? sha256(data) : null).refusal;
     } catch {
       return staleRefusal(display);
     }
@@ -342,8 +358,9 @@ async function runQuery(
     if (query.type === 'write' && query.content === undefined) throw new Error('write needs content.');
     const outside = await workspaceRefusal(file, query, ctx, signal, permission, id);
     if (outside) throw new Error(outside);
-    const { refusal, current, expected, stale, lines } = guard.inspect(file, query.type, query.path);
-    if (refusal) throw new Error(refusal);
+    const inspection = guard.inspect(file, query.type, query.path);
+    if (inspection.refusal) throw new Error(inspection.refusal);
+    const { current } = inspection;
     // Checked again right before the write: a peer may reserve the file while the change is prepared (asks, reads, checkpoint).
     const reserved = () => {
       const now = guard.reservedBy?.(file);
@@ -359,10 +376,8 @@ async function runQuery(
     before = data;
     const checked = data ? sha256(data) : null;
     // A write or delete over changed bytes is refused. An edit goes on when every anchor still matches once.
-    const changed = stale === true || (expected !== undefined && expected !== checked);
-    if (changed && query.type !== 'edit') throw new Error(staleRefusal(query.path));
-    const unseen = lines && data ? unseenRefusal(query.path, lines, data) : undefined;
-    if (unseen) throw new Error(unseen);
+    const { changed, refusal: unfit } = judgeChange(query.path, query.type, inspection, data, checked);
+    if (unfit) throw new Error(unfit);
     const lost = changed && data ? lostAnchor(query.path, query.edits ?? [], data.toString('utf8')) : undefined;
     if (lost) throw new Error(lost);
     const copied = copiedElision(query, data?.toString('utf8') ?? '');
@@ -467,8 +482,7 @@ export function copiedElision(query: Pick<FileQuery, 'type' | 'edits' | 'content
 
 /** Pi's messages end with "in <path>." or "to <path>"; the outcome line already names the path. */
 function withoutPath(message: string, file: string): string {
-  const escaped = file.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return message.replace(new RegExp(`\\s+(?:in|to) ${escaped}\\.?$`), '').replace(/^Successfully /, '');
+  return message.replace(new RegExp(`\\s+(?:in|to) ${escapeRegExp(file)}\\.?$`), '').replace(/^Successfully /, '');
 }
 
 export function formatOutcomes(outcomes: QueryOutcome[]): string {

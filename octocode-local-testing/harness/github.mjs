@@ -1,19 +1,19 @@
 // GitHub tools, data fidelity: every returned byte, range, file list, diff
 // stat, and filter is proven against the local clone pinned to the same SHA
 // (`git` is the ground truth, never the tool), plus cross-tool agreement
-// (search → read, commit ↔ PR ↔ compare), ranked `classifiers` reads and
-// searches, and clasify over GitHub sources.
+// (search → read, commit ↔ PR ↔ compare), `clasifyContext` evidence selection
+// over reads and searches, and clasify over GitHub sources.
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { REPOS, checks, clasifyUnavailable, collect, inventoryRows, nextHints, patchNumbersIssue, rawPatch, rowData, sourceView, startServer, writeResults } from './mcp-client.mjs';
 
 const { check, skip, summary } = checks('github');
-// Ranking is a home-only switch; the process environment enables it for section E.
-const client = await startServer({ env: { OCTOCODE_RANKING_ENABLED: 'true' } });
+// Section E's selection needs only the caller's provider key.
+const client = await startServer();
 const noClasify = clasifyUnavailable(client);
-const noClassifiers = client.tools.find(tool => tool.name === 'ghGetFileContent')?.inputSchema?.properties?.queries?.items?.properties?.classifiers
-  ? null : 'classifiers are not advertised (ranking disabled or no provider key)';
+const noClassifiers = client.tools.find(tool => tool.name === 'ghGetFileContent')?.inputSchema?.properties?.queries?.items?.properties?.clasifyContext
+  ? null : 'clasifyContext is not advertised (no classification provider key)';
 const { call, raw } = client;
 
 const git = (dir, ...args) => execFileSync('git', ['-C', path.join(REPOS, dir), ...args], { encoding: 'utf8', maxBuffer: 256 << 20 });
@@ -407,13 +407,13 @@ for (const r of Object.values(pinned)) {
 
 // Large PRs (>100 files, REST oracle): review-large.mjs.
 
-// ── E. classifiers and clasify over GitHub sources (ground truth from the pinned clone) ──
+// ── E. clasifyContext selection and clasify over GitHub sources (ground truth from the pinned clone) ──
 /** ghGetFileContent content as `[lineNumber, text]` pairs (`N<TAB>text` per line). */
 const numberedLines = content => String(content ?? '').split('\n').flatMap(line => {
   const match = /^(\d+)\t(.*)$/.exec(line);
   return match ? [[Number(match[1]), match[2]]] : [];
 });
-if (noClassifiers) skip('classifiers GitHub: ranked reads and search', noClassifiers);
+if (noClassifiers) skip('clasifyContext GitHub: selected reads and search', noClassifiers);
 else {
   const LOCATE = [
     { dir: 'rust', file: 'tokio/src/sync/mpsc/bounded.rs', re: /^pub fn channel</, target: 'The public function that creates a bounded multi-producer channel with a given buffer capacity.' },
@@ -427,24 +427,42 @@ else {
     const lines = localLines(r.dir, t.file);
     const truth = lines.findIndex(l => t.re.test(l)) + 1;
     const bytes = Buffer.byteLength(local(r.dir, t.file));
-    // A raw line window at the pinned commit: the ranked route (minified views skip ranking).
-    const out = await call('ghGetFileContent', { owner: r.owner, repo: r.repo, path: t.file, ref: r.sha, unit: 'lines', length: 120, minify: 'none', classifiers: [t.target] });
-    const data = fileRow(out) ?? {};
-    const delivered = numberedLines(data.content);
-    // Every delivered line is the pinned clone's line (the read is at r.sha).
-    const faithful = delivered.length > 0 && delivered.every(([n, text]) => lines[n - 1] === text);
+    // A raw line window at the pinned commit: selection judges raw line chunks
+    // (minified and byte views are rejected) and keeps source order.
+    const pages = [await call('ghGetFileContent', { owner: r.owner, repo: r.repo, path: t.file, ref: r.sha, unit: 'lines', length: 120, minify: 'none', clasifyContext: { classifiers: [t.target] } })];
+    for (let lead = fileRow(pages[0])?.next?.continueWindow; lead && pages.length < 20; lead = fileRow(pages.at(-1))?.next?.continueWindow) pages.push(await client.follow(lead));
+    const data = fileRow(pages[0]) ?? {};
+    const receipt = data.selection;
+    const delivered = pages.flatMap(page => numberedLines(fileRow(page)?.content));
+    const hostBytes = pages.reduce((sum, page) => sum + page.bytes, 0);
+    // Every delivered line is the pinned clone's line (the read is at r.sha), in source order.
+    const faithful = delivered.length > 0 && delivered.every(([n, text], i) => lines[n - 1] === text && (i === 0 || n > delivered[i - 1][0]));
     const strict = delivered.some(([n]) => n === truth);
-    const next = data.next?.continueWindow?.query?.queries?.[0];
-    rows.push({ file: `${r.repo}/${path.basename(t.file)}`, KB: Math.round(bytes / 1024), truth, ranking: data.ranking?.status ?? '-', strict, faithful, hostKB: (out.bytes / 1024).toFixed(1), saving: `${Math.round(100 - 100 * out.bytes / bytes)}%` });
-    check(`classifiers GitHub ${r.repo}/${path.basename(t.file)}: the first ranked page delivers the declaration, byte-equal to the clone`, data.ranking?.status === 'ranked' && strict && faithful, `ranking=${JSON.stringify(data.ranking)} first=${delivered[0]?.[0]} truth=${truth}`);
-    check(`classifiers GitHub ${r.repo}/${path.basename(t.file)}: the read and its continuation stay on the pinned commit`, (data.commitSha ?? r.sha) === r.sha && (!next || next.ref === r.sha), JSON.stringify({ commitSha: data.commitSha, nextRef: next?.ref }));
+    const leads = pages.map(page => fileRow(page)?.next?.continueWindow?.query?.queries?.[0]).filter(Boolean);
+    const selectionText = receipt ? `${receipt.status} ${receipt.selectedItems}/${receipt.totalItems} selected, ${receipt.unknownItems} unknown` : '-';
+    rows.push({ file: `${r.repo}/${path.basename(t.file)}`, KB: Math.round(bytes / 1024), truth, selection: selectionText, pages: pages.length, strict, faithful, hostKB: (hostBytes / 1024).toFixed(1), saving: `${Math.round(100 - 100 * hostBytes / bytes)}%` });
+    check(`clasifyContext GitHub ${r.repo}/${path.basename(t.file)}: the selected view delivers the declaration, byte-equal to the clone`,
+      pages.every(page => !page.isError && !page.rowErrors) && receipt?.scope === 'selectedView' && receipt.selectedItems > 0 && strict && faithful,
+      `selection=${JSON.stringify(receipt)} first=${delivered[0]?.[0]} truth=${truth}`);
+    check(`clasifyContext GitHub ${r.repo}/${path.basename(t.file)}: the read and its plan-bound continuations stay on the pinned commit`,
+      pages.every(page => (fileRow(page)?.commitSha ?? r.sha) === r.sha) && leads.every(next => next.ref === r.sha && typeof next.selection === 'string'),
+      JSON.stringify({ commitSha: data.commitSha, nextRefs: leads.map(next => next.ref) }));
   }
   console.table(rows);
-  // Code search: an mpsc receiver file ranks first among the provider page's hits.
+  // Code search: selection filters the provider page (unit: files) in provider order;
+  // an mpsc receiver file is selected and next.unfiltered recovers the same page.
   const r = pinned.rust;
-  const found = await search({ operation: 'code', owner: r.owner, repo: r.repo, keywords: ['try_recv'], pageSize: 5, classifiers: ['The public try_recv method of an mpsc receiver (not a test).'] });
+  const found = await search({ operation: 'code', owner: r.owner, repo: r.repo, keywords: ['try_recv'], pageSize: 5, clasifyContext: { classifiers: ['The public try_recv method of an mpsc receiver (not a test).'] } });
+  const receipt = fileRow(found)?.selection;
   const files = (fileRow(found)?.files ?? []).map(f => f.path ?? '');
-  check('classifiers GitHub search: an mpsc receiver file ranks first', fileRow(found)?.ranking?.status === 'ranked' && /mpsc\/(bounded|unbounded|chan)\.rs$/.test(files[0] ?? ''), JSON.stringify({ ranking: fileRow(found)?.ranking, files }).slice(0, 220));
+  check('clasifyContext GitHub search: an mpsc receiver file is selected from the provider page', receipt?.scope === 'providerPage' && receipt.selectedItems === files.length
+    && files.some(file => /mpsc\/(bounded|unbounded|chan)\.rs$/.test(file)), JSON.stringify({ selection: receipt, files }).slice(0, 220));
+  const unfiltered = fileRow(found)?.next?.unfiltered;
+  const recovered = unfiltered && await search(unfiltered.query, unfiltered.tool);
+  const recoveredFiles = (fileRow(recovered)?.files ?? []).map(f => f.path ?? '');
+  check('clasifyContext GitHub search: next.unfiltered re-reads the same provider page without selection', !!unfiltered && unfiltered.query?.queries?.[0]?.clasifyContext === undefined
+    && fileRow(recovered)?.selection === undefined && files.every(file => recoveredFiles.includes(file)) && recoveredFiles.length >= receipt?.totalItems,
+  JSON.stringify({ selected: files, recovered: recoveredFiles }).slice(0, 220));
 }
 if (noClasify) skip('clasify GitHub: typed questions over a pinned source', noClasify);
 else {

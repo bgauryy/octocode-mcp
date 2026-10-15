@@ -48,8 +48,8 @@ export function hookFiles(cwd: string, projectTrusted: boolean, home = os.homedi
   ];
 }
 
-/** Adds the command hooks in one parsed file to `into`. */
-export function parseHooks(value: unknown, source: string, into: HookConfig = emptyHooks()): HookConfig {
+/** Adds the command hooks in one parsed file to `into`; a group whose matcher is not a valid pattern is kept (it matches nothing) and named in `errors`. */
+export function parseHooks(value: unknown, source: string, into: HookConfig = emptyHooks(), errors: string[] = []): HookConfig {
   const hooks = isRecord(value) ? value.hooks : undefined;
   if (!isRecord(hooks)) return into;
   for (const event of HOOK_EVENTS) {
@@ -62,7 +62,10 @@ export function parseHooks(value: unknown, source: string, into: HookConfig = em
         const seconds = typeof hook.timeout === 'number' && hook.timeout > 0 ? Math.min(hook.timeout, MAX_TIMEOUT_S) : DEFAULT_TIMEOUT_S;
         return [{ command: hook.command, timeoutMs: seconds * 1000, source, ...(hook.failClosed === true ? { failClosed: true as const } : {}) }];
       });
-      if (commands.length > 0) into[event].push({ matcher: typeof group.matcher === 'string' ? group.matcher : '', hooks: commands });
+      if (commands.length === 0) continue;
+      const matcher = typeof group.matcher === 'string' ? group.matcher : '';
+      if (!matcherPattern(matcher)) errors.push(`${source}: ${event} matcher "${matcher}" is not a valid pattern, so its hooks never run`);
+      into[event].push({ matcher, hooks: commands });
     }
   }
   return into;
@@ -75,11 +78,13 @@ export function loadHooks(cwd: string, projectTrusted: boolean, home = os.homedi
     let text: string;
     try {
       text = fs.readFileSync(file, 'utf8');
-    } catch {
+    } catch (error) {
+      // A missing file is normal (most users have only some of these); an unreadable one is reported like a bad one.
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') errors.push(`${file}: ${errorMessage(error)}`);
       continue;
     }
     try {
-      parseHooks(JSON.parse(text), file, config);
+      parseHooks(JSON.parse(text), file, config, errors);
     } catch (error) {
       errors.push(`${file}: ${errorMessage(error)}`);
     }
@@ -139,15 +144,20 @@ export function hookCalls(tool: string, input: Record<string, unknown>, cwd: str
   return [{ names: toolAliases(tool), tool_name: tool, tool_input: input }];
 }
 
+/** A matcher as the whole-name pattern it means; undefined when it is not a valid regex (`loadHooks` reports that). */
+function matcherPattern(matcher: string): RegExp | undefined {
+  try {
+    return new RegExp(`^(?:${matcher})$`);
+  } catch {
+    return undefined;
+  }
+}
+
 /** Whether a group's matcher selects any of `names`. An invalid regex matches nothing. */
 export function matches(matcher: string, names: string[]): boolean {
   if (!matcher || matcher === '*') return true;
-  try {
-    const pattern = new RegExp(`^(?:${matcher})$`);
-    return names.some((name) => pattern.test(name));
-  } catch {
-    return false;
-  }
+  const pattern = matcherPattern(matcher);
+  return pattern !== undefined && names.some((name) => pattern.test(name));
 }
 
 /** The hooks matching `names`; the same command configured in several files runs once (as in Claude Code), failing closed if any copy does. */

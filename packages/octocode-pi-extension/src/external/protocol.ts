@@ -1,6 +1,10 @@
 import { Type, type Static } from 'typebox';
 import { Check } from 'typebox/value';
 
+/** The range of a prompt's `timeoutMs`: checked when the call is parsed and again by the backend that runs it. */
+export const PROMPT_TIMEOUT_MS = { min: 1000, max: 600_000 } as const;
+export const promptTimeoutValid = (ms: number): boolean => Number.isInteger(ms) && ms >= PROMPT_TIMEOUT_MS.min && ms <= PROMPT_TIMEOUT_MS.max;
+
 export const ExternalParamsSchema = Type.Object({
   action: Type.Union([Type.Literal('list'), Type.Literal('connect'), Type.Literal('prompt'), Type.Literal('cancel'), Type.Literal('disconnect')]),
   id: Type.Optional(Type.String()),
@@ -24,7 +28,7 @@ export function parseExternalParams(value: unknown): ExternalParams {
     if (typeof field === 'string' && !field.trim()) throw new Error(`${name} must be non-empty.`);
   }
   if (input.vendor && input.vendor.length > 64) throw new Error('vendor must have at most 64 characters.');
-  if (input.timeoutMs !== undefined && (input.timeoutMs < 1000 || input.timeoutMs > 600000)) throw new Error('timeoutMs must be from 1000 to 600000.');
+  if (input.timeoutMs !== undefined && !promptTimeoutValid(input.timeoutMs)) throw new Error(`timeoutMs must be from ${PROMPT_TIMEOUT_MS.min} to ${PROMPT_TIMEOUT_MS.max}.`);
   const fields = input.action === 'list' ? ['action']
     : input.action === 'connect' ? input.transport === 'pi' ? ['action', 'id', 'transport', 'instanceId', 'cwd'] : ['action', 'id', 'transport', 'vendor', 'command', 'args', 'cwd', 'sessionId', 'timeoutMs']
       : input.action === 'prompt' ? ['action', 'id', 'text', 'timeoutMs'] : ['action', 'id'];
@@ -41,7 +45,7 @@ export function parseExternalParams(value: unknown): ExternalParams {
 
 export interface ExternalInfo {
   id: string;
-  transport: 'acp' | 'pi';
+  transport: NonNullable<ExternalParams['transport']>;
   vendor: string;
   cwd: string;
   sessionId: string;

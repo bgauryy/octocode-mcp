@@ -24,17 +24,11 @@ npx -y @octocodeai/octocode-agents-communication /cli schema send_message --json
 npx -y @octocodeai/octocode-agents-communication /cli schema types --compact --json
 ```
 
-Command help describes CLI flags, including identity and workspace controls.
-`schema` describes the underlying operation input, without CLI transport controls.
-The full CLI exposes 50 operations and two record-type discovery routes.
-MCP exposes 18 worker tools; profiles select a smaller subset.
-Administration, host setup, and worker launch stay in the CLI.
+Command help describes CLI flags, including identity and workspace controls; `schema` describes the operation input without them. The CLI exposes 50 operations plus two record-type discovery routes (`schema types`, `schema type`), which take no workspace, database or session flags. MCP exposes 18 worker tools, and `--tools` profiles select a subset; administration, host setup and worker launch stay in the CLI.
 
 ## Supply CLI input
 
-Use typed flags or one JSON object immediately after the command.
-For machine output, add `--json`.
-Nested objects and arrays of objects use JSON flag values.
+Use typed flags (kebab-case: `ttlMs` becomes `--ttl-ms`) or one JSON object immediately after the command, and add `--json` for machine output. Multiword commands also accept one token (`db info` or `db-info`). Nested objects and arrays of objects use JSON flag values.
 Primitive arrays accept repeated flags or one JSON array, including `[]`.
 Presence flags take no value; other boolean flags require `true` or `false`. Follow command help.
 
@@ -63,8 +57,7 @@ Streaming operations emit their own frames; they append no synthetic result afte
 
 ## Select the workspace
 
-For CLI calls, `--workspace-root` selects the invocation checkout. `--workspace` is an alias.
-For default MCP, use `--workspace` in the server launch arguments.
+For CLI calls, `--workspace-root` selects the invocation checkout (`--workspace` is also accepted). The MCP server and the direct Python launcher take `--workspace`.
 The `read_document` operation can select a historical origin checkout with `--origin-workspace`.
 Its JSON input retains the canonical `workspace` field.
 The origin checkout must belong to the same repository scope.
@@ -83,19 +76,6 @@ That connection closes its identity and leases after the call.
 Reuse one identity for related standalone calls.
 See [installation](INSTALLATION.md) for binding and [host setup](HOST_SETUP.md) for delivery ownership.
 
-## Test a local package
-
-From the monorepo root:
-
-```sh
-yarn workspace @octocodeai/octocode-agents-communication build
-node packages/octocode-agents-communication/bin/octocode-agents-communication.mjs /cli --help
-```
-
-For an unpublished archive, use `npx -y --package /absolute/package.tgz octocode-agents-communication /cli --help`.
-The archive includes both Node entry modules and the complete Python runtime.
-It bundles `octocode-mcp-cli`; consumers need no separate installation of that private workspace package.
-
 ## Import the interfaces
 
 ```js
@@ -103,8 +83,4 @@ import { runCommunicationMcp } from '@octocodeai/octocode-agents-communication';
 import { createCommunicationCli, runCommunicationCli } from '@octocodeai/octocode-agents-communication/cli';
 ```
 
-Imports do not start a server or create storage.
-`runCommunicationMcp(argv)` starts the stdio server.
-`runCommunicationCli(argv, io?)` runs one CLI invocation and returns an exit code.
-`createCommunicationCli()` reads the catalog and returns the shared CLI specification.
-Runtime requirements: [installation](INSTALLATION.md).
+Imports start no server and create no storage. `runCommunicationMcp(argv)` starts the stdio server; `runCommunicationCli(argv, io?)` runs one CLI invocation and returns an exit code; `createCommunicationCli()` returns the CLI specification built from the catalog.

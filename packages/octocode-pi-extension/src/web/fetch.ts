@@ -1,12 +1,14 @@
 import { setTimeout as sleep } from 'node:timers/promises';
-import { CrossHostRedirect, NetworkError, publicFetch, type PublicFetchInit } from './guard.js';
+import { CrossHostRedirect, discardBody, NetworkError, publicFetch, type PublicFetchInit } from './guard.js';
 import { formatSize } from '@earendil-works/pi-coding-agent';
+import { untilAborted } from '../shared/util.js';
 import { sniffImageType, type InlineImageType } from '../shared/vision.js';
 import { describeHtml, RENDER_ADVICE } from './html.js';
 
 export const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36';
 const TIMEOUT_MS = 30_000;
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
+const MAX_BODY_MB = MAX_BODY_BYTES / 1024 / 1024;
 /** Transient statuses a fetch retries, how often, the first backoff, and the longest Retry-After worth waiting for. */
 const RETRY_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
 const RETRIES = 2;
@@ -110,16 +112,6 @@ export async function fetchUrl(url: string, signal?: AbortSignal, options: { pri
   }
 }
 
-/** `promise`, or a rejection with the signal's reason as soon as `signal` aborts. */
-function untilAborted<T>(promise: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
-  if (!signal) return promise;
-  return new Promise<T>((resolve, reject) => {
-    const onAbort = () => reject(signal.reason);
-    signal.addEventListener('abort', onAbort, { once: true });
-    promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort));
-  });
-}
-
 /** Fetches one URL and caches its text. */
 async function loadUrl(url: string, signal: AbortSignal, options: { private?: boolean }): Promise<Fetched> {
   let text: Fetched;
@@ -178,7 +170,7 @@ async function fetchWithRetry(url: string, init: PublicFetchInit, options: { pri
     if (!RETRY_STATUSES.has(response.status) || attempt >= RETRIES) return response;
     const wait = retryAfterMs(response.headers.get('retry-after'));
     if (wait !== undefined && wait > RETRY_AFTER_MAX_MS) return response;
-    await response.body?.cancel().catch(() => undefined);
+    await discardBody(response);
     await sleep(wait ?? backoff(attempt), undefined, { signal });
   }
 }
@@ -197,16 +189,15 @@ function httpError(response: Response, url: string): Error {
  */
 async function fetchImage(response: Response, url: string, type: string): Promise<Fetched> {
   const where = response.url || url;
-  const megabytes = MAX_BODY_BYTES / 1024 / 1024;
   const declared = Number(response.headers.get('content-length'));
   if (declared > MAX_BODY_BYTES) {
-    await response.body?.cancel().catch(() => undefined);
-    return `${where} is ${type}, ${formatSize(declared)}, over web's ${megabytes} MB limit${UNREAD_NOTE}`;
+    await discardBody(response);
+    return `${where} is ${type}, ${formatSize(declared)}, over web's ${MAX_BODY_MB} MB limit${UNREAD_NOTE}`;
   }
   const { bytes, truncated } = await readBytesCapped(response).catch((error: unknown) => {
     throw describeFetchError(error, url, 1);
   });
-  if (truncated) return `${where} is ${type}, over web's ${megabytes} MB limit${UNREAD_NOTE}`;
+  if (truncated) return `${where} is ${type}, over web's ${MAX_BODY_MB} MB limit${UNREAD_NOTE}`;
   const mimeType = sniffImageType(bytes);
   if (!mimeType) return `${where} is ${type} by its header, but the body is not a PNG, JPEG, GIF or WebP image${UNREAD_NOTE}`;
   return { url: where, mimeType, bytes };
@@ -217,11 +208,11 @@ async function fetchResource(url: string, signal: AbortSignal | undefined, optio
   const type = response.headers.get('content-type') ?? '';
   if (INLINE_IMAGE_HEADERS.has(mediaType(type))) {
     if (response.ok) return fetchImage(response, url, mediaType(type));
-    await response.body?.cancel().catch(() => undefined);
+    await discardBody(response);
     throw httpError(response, url);
   }
   if (isBinaryType(type)) {
-    await response.body?.cancel().catch(() => undefined);
+    await discardBody(response);
     if (!response.ok) throw httpError(response, url);
     // Decoding binary as UTF-8 would flood the context with garbage.
     return `${response.url} is ${mediaType(type)}, not text${UNREAD_NOTE}`;
@@ -232,9 +223,8 @@ async function fetchResource(url: string, signal: AbortSignal | undefined, optio
   });
   if (!response.ok) throw httpError(response, url);
   const json = type.includes('json');
-  const megabytes = MAX_BODY_BYTES / 1024 / 1024;
   // First, so the note survives the web tool's character cap. Cut JSON does not parse, so it is shown raw.
-  const cut = truncated ? `[Truncated: the response is over ${megabytes} MB; only the first ${megabytes} MB was read${json ? ' and is shown raw, not pretty-printed' : ''}. Download it with bash (curl -o) for the whole body.]\n\n` : '';
+  const cut = truncated ? `[Truncated: the response is over ${MAX_BODY_MB} MB; only the first ${MAX_BODY_MB} MB was read${json ? ' and is shown raw, not pretty-printed' : ''}. Download it with bash (curl -o) for the whole body.]\n\n` : '';
   if (type.includes('html')) return cut + describeHtml(body, response.url || url);
   if (json && !truncated) {
     try {
@@ -247,7 +237,7 @@ async function fetchResource(url: string, signal: AbortSignal | undefined, optio
 }
 
 export function isBinaryType(contentType: string): boolean {
-  const type = contentType.split(';')[0]!.trim().toLowerCase();
+  const type = mediaType(contentType);
   if (!type) return false;
   if (type.startsWith('text/') || /[+/](json|xml|javascript|ecmascript|x-www-form-urlencoded|yaml|toml|x-sh)$/.test(type)) return false;
   return /^(image|audio|video|font)\//.test(type) || /^application\/(pdf|zip|gzip|x-tar|x-7z-compressed|octet-stream|wasm|x-bzip2|vnd\.)/.test(type);

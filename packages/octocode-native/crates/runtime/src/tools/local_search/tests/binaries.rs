@@ -801,48 +801,47 @@ fn a_workspace_relative_replay_of_an_absolute_search_walks_every_page_once() {
         (canonical.join("checker.ts"), "checker.ts"),
         (canonical.clone(), "."),
     ] {
-        let mut request = ls_query(
+        let start = serde_json::to_value(ls_query(
             serde_json::json!({"path": path.to_string_lossy().into_owned(), "matchString": "function ", "matchPageSize": 100}),
             None,
-        );
-        let mut seen = std::collections::BTreeSet::new();
-        let mut pages = 0;
-        loop {
-            pages += 1;
-            assert!(pages < 50, "walk does not end");
-            let result = execute_local_search(
-                &request,
-                &policy,
-                &security,
-                &NeverCancel,
-                None,
-                Some(20_000),
-            )
-            .unwrap_or_else(|error| panic!("page {pages} of {relative}: {error:?}"));
-            for file in &result.files {
-                for row in file.matches.iter().flatten() {
-                    assert!(
-                        seen.insert((file.path.clone(), row.line)),
-                        "{}:{} twice",
-                        file.path,
-                        row.line
-                    );
+        ))
+        .expect("query");
+        // Every continuation replays with the workspace-relative path.
+        let mut calls = 0;
+        let walk = crate::tools::test_support::checks::walk(
+            "localSearch",
+            serde_json::json!({"queries": [start]}),
+            |call| {
+                let mut row = call["queries"][0].clone();
+                if calls > 0 {
+                    row["path"] = serde_json::json!(relative);
                 }
-            }
-            let Some(next) = result.next.as_ref().and_then(|next| {
-                next.get("nextMatchPage")
-                    .or_else(|| next.get("nextPage"))
-                    .cloned()
-            }) else {
-                break;
-            };
-            let mut query = next["query"]["queries"][0].clone();
-            query["path"] = serde_json::json!(relative);
-            request = serde_json::from_value(query).expect("continuation query");
-        }
-        assert!(pages > 1, "{relative}: expected several pages");
+                calls += 1;
+                let request: LocalSearchQuery =
+                    serde_json::from_value(row.clone()).expect("continuation query");
+                let result = execute_local_search(
+                    &request,
+                    &policy,
+                    &security,
+                    &NeverCancel,
+                    None,
+                    Some(20_000),
+                )
+                .unwrap_or_else(|error| panic!("{row} of {relative}: {error:?}"));
+                let body = serde_json::to_value(&result).expect("result");
+                crate::tools::test_support::checks::Page {
+                    output: crate::tools::test_support::published(
+                        crate::tools::id::ToolId::LocalSearch,
+                        &row,
+                        &body,
+                    ),
+                    rows: row_ids(&body),
+                }
+            },
+        );
+        assert!(walk.queries.len() > 1, "{relative}: expected several pages");
         let expected = if relative == "." { 401 } else { 400 };
-        assert_eq!(seen.len(), expected, "{relative}");
+        assert_eq!(walk.rows.len(), expected, "{relative}");
     }
 }
 

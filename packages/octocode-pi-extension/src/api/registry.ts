@@ -80,10 +80,10 @@ const SOCKET_DIR = /^octocode-\d+-[A-Za-z0-9]{6}$/;
  * next to the record when that fits and otherwise in a folder `mkdtemp` makes in the temp directory (mode 0700, and
  * its name is unguessable): a fixed name there could be taken by another local user before this process binds it.
  */
-export function socketPath(dir: string, id: string): string {
+export function socketPath(dir: string, id: string, env: NodeJS.ProcessEnv = process.env): string {
   const preferred = path.join(dir, `${id}.sock`);
   if (Buffer.byteLength(preferred) <= 100) return preferred;
-  const folder = fs.mkdtempSync(path.join(fs.realpathSync(process.env['TMPDIR'] ?? '/tmp'), `octocode-${process.getuid?.() ?? 0}-`));
+  const folder = fs.mkdtempSync(path.join(fs.realpathSync(env['TMPDIR'] ?? '/tmp'), `octocode-${process.getuid?.() ?? 0}-`));
   return path.join(folder, `${id}.sock`);
 }
 

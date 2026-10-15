@@ -805,7 +805,7 @@ fn selected_line_walk_keeps_byte_fallback_and_every_source_byte() {
     fs::write(&file, &source).expect("fixture");
     let executor = tokio::runtime::Runtime::new().expect("runtime");
     let selection = crate::tools::selection::Runtime {
-        limits: crate::tools::selection::Limits {
+        limits: crate::runtime::SelectionLimits {
             max_candidates: 64,
             max_chars: 131_072,
             timeout: Duration::from_secs(10),

@@ -1,13 +1,12 @@
 import type { ExtensionContext, Theme } from '@earendil-works/pi-coding-agent';
 import { truncateToWidth, visibleWidth, type Component } from '@earendil-works/pi-tui';
 import { formatCost, formatDuration, formatTokenUsage } from '../shared/format.js';
-import { clip, statusColor } from '../shared/render.js';
+import { clip, plural, statusColor } from '../shared/render.js';
 import type { Team } from './session.js';
 import { GOAL_SHOWN_CHARS } from './identity.js';
 import type { Member, Traffic } from './model.js';
 
-/** Static text only: the rows are pure in (members, width, now), so repainting never moves the transcript. */
-
+/** The panel widget's key. The widget is static text only: its rows are pure in (members, width, now), so repainting never moves the transcript. */
 const WIDGET_KEY = 'octocode-agents';
 const STATUS_KEY = 'octocode-team';
 /** Footer count of background subagents the panel does not show (the team database is off, or they have not joined yet). */
@@ -25,22 +24,26 @@ const MODEL_MAX = 28;
 
 type Cell = { text: string; color: Parameters<Theme['fg']>[0]; right?: boolean };
 /**
- * Optional columns, dropped left to right when the terminal is too narrow (tokens first); name, goal, state and activity
- * always stay.
+ * Optional columns, dropped left to right when the terminal is too narrow (flags first). Name, goal, model, state, elapsed
+ * time and tokens always stay; when they do not fit either, the goal is shortened.
  */
-const OPTIONAL = ['tokens', 'cost', 'tools', 'flags', 'age', 'model', 'role'] as const;
-type Column = 'glyph' | 'name' | 'goal' | 'state' | (typeof OPTIONAL)[number];
-const ORDER: Column[] = ['glyph', 'name', 'role', 'goal', 'model', 'state', 'age', 'tools', 'tokens', 'cost', 'flags'];
+const OPTIONAL = ['flags', 'tools', 'cost'] as const;
+type Column = 'glyph' | 'name' | 'goal' | 'model' | 'state' | 'age' | 'tokens' | (typeof OPTIONAL)[number];
+const ORDER: Column[] = ['glyph', 'name', 'goal', 'model', 'state', 'age', 'tokens', 'tools', 'cost', 'flags'];
 const SEPARATOR = ' · ';
+/** The goal is shortened down to this many columns before anything else on the row is cut. */
+const GOAL_MIN = 12;
+/** Columns kept for the current activity before optional columns are dropped. */
+const ACTIVITY_MIN = 20;
 
 /** `anthropic/claude-opus-4-5` → `claude-opus-4-5`: the provider adds width, not meaning, in a one-line row. */
 const modelLabel = (model: string | undefined) => safe(model?.slice(model.lastIndexOf('/') + 1), MODEL_MAX);
 
-const plural = (count: number, one: string, many = `${one}s`) => `${count} ${count === 1 ? one : many}`;
 
 /**
- * One agent's cells. The row says who it is (name and role), what it is for (goal), which model it runs, its state,
- * and what it does right now; its tokens (with the cached share) and estimated cost when the width allows.
+ * One agent's cells. The row says who it is (name), what it is for (goal), which model it runs, its state, how long it
+ * has run, its tokens (with the cached share), and what it does right now; its tools, estimated cost and flags when the
+ * width allows.
  */
 function cells(member: Member, depth: number, now: number): Record<Column, Cell> & { detail: string } {
   const working = member.status === 'working';
@@ -49,7 +52,6 @@ function cells(member: Member, depth: number, now: number): Record<Column, Cell>
   return {
     glyph: { text: working ? '●' : '○', color: working ? 'accent' : 'dim' },
     name: { text: `${depth > 0 ? `${'  '.repeat(depth - 1)} └ ` : ''}${safe(member.id, 64)}`, color: working ? 'text' : 'muted' },
-    role: { text: safe(member.role, 24), color: 'muted' },
     goal: { text: safe(member.goal, GOAL_SHOWN_CHARS), color: working ? 'text' : 'muted' },
     model: { text: modelLabel(member.model), color: 'muted' },
     state: { text: working ? 'working' : 'idle', color: working ? 'accent' : 'dim' },
@@ -62,14 +64,28 @@ function cells(member: Member, depth: number, now: number): Record<Column, Cell>
   };
 }
 
+/** `text` cut to at most `width` terminal columns, ending in `…` when cut (plain text: no escape codes added). */
+function fitWidth(text: string, width: number): string {
+  if (visibleWidth(text) <= width) return text;
+  let chars = width;
+  let cut = clip(text, chars);
+  while (chars > 1 && visibleWidth(cut) > width) cut = clip(text, --chars);
+  return cut;
+}
+
 /** Rows with every column padded to its widest cell, so state, time and stats line up down the list. */
 function memberRows(tree: Array<{ member: Member; depth: number }>, now: number, theme: Theme, width: number): string[] {
   const rows = tree.map(({ member, depth }) => cells(member, depth, now));
-  const widthOf = (column: Column) => Math.max(...rows.map((row) => visibleWidth(row[column].text)));
+  const goalWidth = Math.max(...rows.map((row) => visibleWidth(row.goal.text)));
+  let goalCap = goalWidth;
+  const widthOf = (column: Column) => (column === 'goal' ? Math.min(goalWidth, goalCap) : Math.max(...rows.map((row) => visibleWidth(row[column].text))));
   let columns = ORDER.filter((column) => widthOf(column) > 0);
-  // Keep at least 20 columns for the activity: drop optional columns until it fits.
   const used = () => 1 + columns.reduce((sum, column) => sum + widthOf(column) + (column === 'glyph' ? 1 : SEPARATOR.length), 0);
-  for (const column of OPTIONAL) if (used() + 20 > width) columns = columns.filter((kept) => kept !== column);
+  // Keep room for the activity: drop optional columns until it fits.
+  for (const column of OPTIONAL) if (used() + ACTIVITY_MIN > width) columns = columns.filter((kept) => kept !== column);
+  // Still too wide for the columns that always stay: shorten the goal rather than cut tokens, time or model.
+  if (used() > width) goalCap = Math.max(GOAL_MIN, goalWidth - (used() - width));
+  for (const row of rows) row.goal.text = fitWidth(row.goal.text, goalCap);
   return rows.map((row) => {
     // Trailing empty cells (no cost yet, nothing waiting) leave no dangling separator.
     const last = columns.reduce((found, column, index) => (row[column].text !== '' ? index : found), -1);

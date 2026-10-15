@@ -522,3 +522,25 @@ describe('external API', () => {
     expect(log.subscribe(() => undefined, { since: 5 }).gap).toBe(true);
   });
 });
+
+describe('status of a session that cannot be read', () => {
+  it('says the session was replaced only for Pi\'s stale-context error, and reports any other failure as it is', async () => {
+    const t = await boot();
+    const usage = vi.spyOn((t.api as unknown as { ctx: { getContextUsage(): unknown } }).ctx, 'getContextUsage');
+    usage.mockImplementationOnce(() => {
+      throw new Error('This extension ctx is stale after session replacement or reload.');
+    });
+    const replaced = await t.client.call('status').catch((error: unknown) => error);
+    expect(replaced).toBeInstanceOf(ApiCallError);
+    expect(replaced).toMatchObject({ code: -32000, message: 'The session was replaced' });
+    // Nothing was sent or accepted by a status read: no execution claim.
+    expect((replaced as ApiCallError).data).toBeUndefined();
+
+    usage.mockImplementationOnce(() => {
+      throw new Error('disk on fire');
+    });
+    await expect(t.client.call('status')).rejects.toMatchObject({ code: -32603, message: 'The session status could not be read: disk on fire' });
+    expect(await t.client.call('status')).toMatchObject({ state: 'idle' });
+  });
+});
+

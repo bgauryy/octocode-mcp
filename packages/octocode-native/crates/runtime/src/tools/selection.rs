@@ -2,7 +2,7 @@
 //! The plan records disjoint selected/excluded partitions; unjudged evidence is
 //! unknown. Replays need source identity and cardinality, not provider calls.
 use crate::contracts::tool_types::{Selection, SelectionScope, SelectionStatus, SelectionUnit};
-use crate::runtime::ExecutionContext;
+use crate::runtime::{ExecutionContext, SelectionLimits};
 use crate::tools::id::ToolId;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
@@ -13,16 +13,9 @@ use std::time::{Duration, Instant};
 /// Format 4 replaces complete permutations with source-ordered partitions.
 const VERSION: u8 = 4;
 
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct Limits {
-    pub max_candidates: usize,
-    pub max_chars: usize,
-    pub timeout: Duration,
-}
-
 #[derive(Clone)]
 pub(crate) struct Runtime {
-    pub limits: Limits,
+    pub limits: SelectionLimits,
     pub available: bool,
     pub judge: std::sync::Arc<dyn SelectionJudge>,
     pub handle: tokio::runtime::Handle,
@@ -52,7 +45,7 @@ pub(crate) struct JudgeCall<'a> {
     pub main_goal: Option<&'a str>,
     pub reasoning: Option<&'a str>,
     pub long_context: bool,
-    pub limits: Limits,
+    pub limits: SelectionLimits,
     pub handle: &'a tokio::runtime::Handle,
     pub context: &'a ExecutionContext,
 }
@@ -246,6 +239,9 @@ pub(crate) fn apply_sanitized_rows(
             data["next"] = json!({});
         }
         data["next"]["unfiltered"] = unfiltered(tool, query);
+        if tool == ToolId::GhSearchCode {
+            crate::tools::gh_shared::finish_code_selection(data, query);
+        }
         let response_row = if queries.len() == 1 {
             Some(&mut *response_query)
         } else {
@@ -446,7 +442,7 @@ impl Plan {
 pub(crate) fn binding(
     query: &Value,
     source: &str,
-    limits: Limits,
+    limits: SelectionLimits,
     runtime: Option<&Runtime>,
 ) -> String {
     let mut selected = query.clone();
@@ -514,7 +510,7 @@ pub(crate) fn select_scoped(
     unit: SelectionUnit,
 ) -> Result<Outcome, Failure> {
     let limits = runtime.map_or(
-        Limits {
+        SelectionLimits {
             max_candidates: 0,
             max_chars: 0,
             timeout: Duration::ZERO,
@@ -670,7 +666,7 @@ mod tests {
 
     #[test]
     fn context_selection_binds_optional_research_context() {
-        let limits = Limits {
+        let limits = SelectionLimits {
             max_candidates: 4,
             max_chars: 100,
             timeout: Duration::from_secs(1),
@@ -692,7 +688,7 @@ mod tests {
 
     #[test]
     fn selected_output_paging_controls_do_not_change_assessment_binding() {
-        let limits = Limits {
+        let limits = SelectionLimits {
             max_candidates: 4,
             max_chars: 100,
             timeout: Duration::from_secs(1),
@@ -713,6 +709,38 @@ mod tests {
             binding(&query, "same-source", limits, None),
             binding(&continued, "same-source", limits, None)
         );
+    }
+
+    /// A plan binds the limits it was judged under: another candidate,
+    /// character or deadline budget is a different binding, so its replay is
+    /// stale. Replaces the local-ranking harness case that varied the removed
+    /// OCTOCODE_CLASSIFICATION_* budget variables per process.
+    #[test]
+    fn changed_selection_limits_invalidate_the_plan_binding() {
+        let limits = crate::runtime::RuntimeLimits::DEFAULT.selection;
+        let query = json!({"clasifyContext":{"classifiers":["Find retry termination"]}});
+        let base = binding(&query, "source", limits, None);
+        assert_eq!(base, binding(&query, "source", limits, None));
+        for changed in [
+            SelectionLimits {
+                max_candidates: 2,
+                ..limits
+            },
+            SelectionLimits {
+                max_chars: 4_096,
+                ..limits
+            },
+            SelectionLimits {
+                timeout: Duration::from_secs(9),
+                ..limits
+            },
+        ] {
+            assert_ne!(
+                base,
+                binding(&query, "source", changed, None),
+                "{changed:?}"
+            );
+        }
     }
 
     #[test]
@@ -951,7 +979,7 @@ mod tests {
         handle: tokio::runtime::Handle,
     ) -> Runtime {
         Runtime {
-            limits: Limits {
+            limits: SelectionLimits {
                 max_candidates: 64,
                 max_chars: 131_072,
                 timeout: Duration::from_secs(5),
@@ -1398,7 +1426,7 @@ mod tests {
 
     #[test]
     fn binding_uses_canonical_source_identity_across_path_spellings() {
-        let limits = Limits {
+        let limits = SelectionLimits {
             max_candidates: 0,
             max_chars: 0,
             timeout: Duration::ZERO,
@@ -1503,7 +1531,7 @@ mod tests {
 
     #[test]
     fn token_preserves_disjoint_partitions_and_rejects_drift() {
-        let limits = Limits {
+        let limits = SelectionLimits {
             max_candidates: 2,
             max_chars: 100,
             timeout: Duration::from_secs(1),
@@ -1615,7 +1643,7 @@ mod tests {
         let cancellation = tokio_util::sync::CancellationToken::new();
         cancellation.cancel();
         let runtime = Runtime {
-            limits: Limits {
+            limits: SelectionLimits {
                 max_candidates: 2,
                 max_chars: 100,
                 timeout: Duration::from_secs(1),

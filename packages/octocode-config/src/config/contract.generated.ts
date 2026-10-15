@@ -26,9 +26,6 @@ export interface RequiredMcpConfig {
 }
 
 export interface RequiredNetworkConfig {
-  timeout: number;
-  maxRetries: number;
-  maxRateLimitWait: number;
   allowPrivateRegistry: boolean;
 }
 
@@ -36,7 +33,6 @@ export interface RequiredLspConfig {
   configPath: string | undefined;
   autoInstall: "prompt" | "off" | "auto";
   cacheDir: string | undefined;
-  maxMemoryMb: number | null;
   trustProjectConfig: boolean;
   prewarm: "targeted" | "all" | "off";
 }
@@ -44,31 +40,15 @@ export interface RequiredLspConfig {
 export interface RequiredOutputConfig {
   format: OutputFormat;
   redactEmails: boolean;
-  pagination: RequiredOutputPaginationConfig;
-}
-
-export interface RequiredOutputPaginationConfig {
-  defaultCharLength: number;
 }
 
 export interface RequiredStorageConfig {
   mode: StorageMode;
   stats: boolean;
-  cloneCache: RequiredStorageCloneCacheConfig;
-}
-
-export interface RequiredStorageCloneCacheConfig {
-  ttl: number;
-  maxSize: number;
-  maxClones: number;
 }
 
 export interface RequiredClassificationConfig {
   model: string | undefined;
-  maxConcurrency: number;
-  maxCandidates: number;
-  maxChars: number;
-  timeoutMs: number;
 }
 
 export interface ResolvedConfigData {
@@ -83,7 +63,7 @@ export interface ResolvedConfigData {
   classification: RequiredClassificationConfig;
 }
 
-export type ConfigFieldKind = 'boolean' | 'number' | 'string' | 'url' | 'path' | 'stringArray' | 'enum';
+export type ConfigFieldKind = 'boolean' | 'string' | 'url' | 'path' | 'stringArray' | 'enum';
 export interface ConfigEnvBinding {
   name: string;
   dotenv?: 'all' | 'home' | 'never';
@@ -103,8 +83,6 @@ export interface ConfigFieldSpec {
   /** The one variable that sets this field, if any. */
   env?: ConfigEnvBinding;
   defaultValue: unknown;
-  minimum?: number;
-  maximum?: number;
   values?: readonly string[];
   enumStyle?: 'list' | 'quotedOr';
   itemFormat?: 'path';
@@ -248,55 +226,6 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "defaultValue": null
   },
   {
-    "path": "network.timeout",
-    "section": "network",
-    "key": "timeout",
-    "type": "number",
-    "file": true,
-    "resolved": true,
-    "credential": false,
-    "description": "Request timeout in milliseconds.",
-    "env": {
-      "name": "REQUEST_TIMEOUT"
-    },
-    "defaultValue": 30000,
-    "minimum": 5000,
-    "maximum": 300000
-  },
-  {
-    "path": "network.maxRetries",
-    "section": "network",
-    "key": "maxRetries",
-    "type": "number",
-    "file": true,
-    "resolved": true,
-    "credential": false,
-    "description": "Maximum retries after a failed request.",
-    "env": {
-      "name": "MAX_RETRIES"
-    },
-    "defaultValue": 3,
-    "minimum": 0,
-    "maximum": 10
-  },
-  {
-    "path": "network.maxRateLimitWait",
-    "section": "network",
-    "key": "maxRateLimitWait",
-    "type": "number",
-    "file": true,
-    "resolved": true,
-    "credential": false,
-    "description": "Longest GitHub rate-limit wait in milliseconds (primary or secondary limit, code-search window) before a call fails with retryAfter.",
-    "notes": "Waiting does not count against network.timeout; the tool call's own deadline still bounds it. The default stays under the 60 s tool-call timeout some MCP hosts apply.",
-    "env": {
-      "name": "OCTOCODE_MAX_RATE_LIMIT_WAIT"
-    },
-    "defaultValue": 45000,
-    "minimum": 0,
-    "maximum": 300000
-  },
-  {
     "path": "network.allowPrivateRegistry",
     "section": "network",
     "key": "allowPrivateRegistry",
@@ -364,23 +293,6 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
       "normalize": "trim"
     },
     "defaultValue": null
-  },
-  {
-    "path": "lsp.maxMemoryMb",
-    "section": "lsp",
-    "key": "maxMemoryMb",
-    "type": "number",
-    "file": true,
-    "resolved": true,
-    "credential": false,
-    "description": "Resident-memory cap per language server process tree, in MiB. Unset: 25% of host RAM, between 4096 and 8192. 0 disables the cap. A server over the cap is stopped and lspSearch reports serverCrashed (not retryable).",
-    "env": {
-      "name": "OCTOCODE_LSP_MAX_MEMORY_MB",
-      "dotenv": "home"
-    },
-    "defaultValue": null,
-    "minimum": 0,
-    "maximum": 4294967295
   },
   {
     "path": "lsp.trustProjectConfig",
@@ -453,22 +365,6 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "defaultValue": false
   },
   {
-    "path": "output.pagination.defaultCharLength",
-    "section": "output.pagination",
-    "key": "defaultCharLength",
-    "type": "number",
-    "file": true,
-    "resolved": true,
-    "credential": false,
-    "description": "Automatic pagination character budget.",
-    "env": {
-      "name": "OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH"
-    },
-    "defaultValue": 50000,
-    "minimum": 1000,
-    "maximum": 50000
-  },
-  {
     "path": "storage.mode",
     "section": "storage",
     "key": "mode",
@@ -503,54 +399,6 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
       "name": "OCTOCODE_ENABLE_STATS"
     },
     "defaultValue": false
-  },
-  {
-    "path": "storage.cloneCache.ttl",
-    "section": "storage.cloneCache",
-    "key": "ttl",
-    "type": "number",
-    "file": true,
-    "resolved": true,
-    "credential": false,
-    "description": "Milliseconds a ghCloneRepo checkout stays fresh before it is re-fetched.",
-    "env": {
-      "name": "OCTOCODE_CACHE_TTL_MS"
-    },
-    "defaultValue": 86400000,
-    "minimum": 60000,
-    "maximum": 2592000000
-  },
-  {
-    "path": "storage.cloneCache.maxSize",
-    "section": "storage.cloneCache",
-    "key": "maxSize",
-    "type": "number",
-    "file": true,
-    "resolved": true,
-    "credential": false,
-    "description": "Byte cap for the on-disk ghCloneRepo cache; least-recently-used checkouts are evicted above it.",
-    "env": {
-      "name": "OCTOCODE_MAX_CACHE_SIZE"
-    },
-    "defaultValue": 2147483648,
-    "minimum": 1048576,
-    "maximum": 1099511627776
-  },
-  {
-    "path": "storage.cloneCache.maxClones",
-    "section": "storage.cloneCache",
-    "key": "maxClones",
-    "type": "number",
-    "file": true,
-    "resolved": true,
-    "credential": false,
-    "description": "Maximum repositories the ghCloneRepo cache keeps.",
-    "env": {
-      "name": "OCTOCODE_MAX_CLONES"
-    },
-    "defaultValue": 50,
-    "minimum": 1,
-    "maximum": 1000
   },
   {
     "path": "classification.api",
@@ -602,77 +450,13 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
       "normalize": "trim"
     },
     "defaultValue": null
-  },
-  {
-    "path": "classification.maxConcurrency",
-    "section": "classification",
-    "key": "maxConcurrency",
-    "type": "number",
-    "file": true,
-    "resolved": true,
-    "credential": false,
-    "description": "Process-wide maximum in-flight classification provider requests per provider endpoint.",
-    "env": {
-      "name": "OCTOCODE_CLASSIFICATION_CONCURRENCY"
-    },
-    "defaultValue": 10,
-    "minimum": 1,
-    "maximum": 64
-  },
-  {
-    "path": "classification.maxCandidates",
-    "section": "classification",
-    "key": "maxCandidates",
-    "type": "number",
-    "file": true,
-    "resolved": true,
-    "credential": false,
-    "description": "Maximum complete evidence units assessed per context selection operation; unassessed units remain unknown and recoverable.",
-    "env": {
-      "name": "OCTOCODE_CLASSIFICATION_MAX_CANDIDATES"
-    },
-    "defaultValue": 64,
-    "minimum": 1,
-    "maximum": 256
-  },
-  {
-    "path": "classification.maxChars",
-    "section": "classification",
-    "key": "maxChars",
-    "type": "number",
-    "file": true,
-    "resolved": true,
-    "credential": false,
-    "description": "Maximum total characters in serialized sanitized candidate states per context selection operation, including source metadata; excludes question instructions and request envelopes.",
-    "env": {
-      "name": "OCTOCODE_CLASSIFICATION_MAX_CHARS"
-    },
-    "defaultValue": 131072,
-    "minimum": 1024,
-    "maximum": 1048576
-  },
-  {
-    "path": "classification.timeoutMs",
-    "section": "classification",
-    "key": "timeoutMs",
-    "type": "number",
-    "file": true,
-    "resolved": true,
-    "credential": false,
-    "description": "Context selection deadline in milliseconds, bounded by the enclosing request deadline.",
-    "env": {
-      "name": "OCTOCODE_CLASSIFICATION_TIMEOUT_MS"
-    },
-    "defaultValue": 10000,
-    "minimum": 100,
-    "maximum": 60000
   }
 ];
 export const RUNTIME_SURFACES = ["mcp","cli"] as const;
 export type RuntimeSurface = (typeof RUNTIME_SURFACES)[number];
 export const ENV_TOKEN_VARS = ["GH_TOKEN","GITHUB_TOKEN"] as const;
-export const PROTECTED_KEY_NAMES = ["PATH","HOME","SHELL","USER","LOGNAME","PWD","TMPDIR","NODE_OPTIONS","PYTHON","OCTOCODE_GITHUB_CLIENT_ID","OCTOCODE_HOME","OCTOCODE_AST_REWRITE_STATE_DIR","OCTOCODE_CARGO","GITHUB_API_URL","OCTOCODE_ENABLE_LOCAL","OCTOCODE_BETA","ALLOWED_PATHS","WORKSPACE_ROOT","OCTOCODE_ALLOW_PRIVATE_REGISTRY","OCTOCODE_LSP_CONFIG","OCTOCODE_LSP_AUTO_INSTALL","OCTOCODE_LSP_CACHE_DIR","OCTOCODE_LSP_MAX_MEMORY_MB","OCTOCODE_TRUST_PROJECT_LSP_CONFIG","OCTOCODE_REDACT_EMAILS","OCTOCODE_STORAGE_MODE","OCTOCODE_CLASSIFICATION_API_HOST"] as const;
-export const HOME_TRUSTED_ENV_KEYS = ["OCTOCODE_GITHUB_CLIENT_ID","OCTOCODE_AST_REWRITE_STATE_DIR","OCTOCODE_CARGO","GITHUB_API_URL","OCTOCODE_ENABLE_LOCAL","OCTOCODE_BETA","ALLOWED_PATHS","WORKSPACE_ROOT","OCTOCODE_ALLOW_PRIVATE_REGISTRY","OCTOCODE_LSP_CONFIG","OCTOCODE_LSP_AUTO_INSTALL","OCTOCODE_LSP_CACHE_DIR","OCTOCODE_LSP_MAX_MEMORY_MB","OCTOCODE_TRUST_PROJECT_LSP_CONFIG","OCTOCODE_REDACT_EMAILS","OCTOCODE_STORAGE_MODE","OCTOCODE_CLASSIFICATION_API_HOST"] as const;
+export const PROTECTED_KEY_NAMES = ["PATH","HOME","SHELL","USER","LOGNAME","PWD","TMPDIR","NODE_OPTIONS","PYTHON","OCTOCODE_GITHUB_CLIENT_ID","OCTOCODE_HOME","OCTOCODE_AST_REWRITE_STATE_DIR","OCTOCODE_CARGO","GITHUB_API_URL","OCTOCODE_ENABLE_LOCAL","OCTOCODE_BETA","ALLOWED_PATHS","WORKSPACE_ROOT","OCTOCODE_ALLOW_PRIVATE_REGISTRY","OCTOCODE_LSP_CONFIG","OCTOCODE_LSP_AUTO_INSTALL","OCTOCODE_LSP_CACHE_DIR","OCTOCODE_TRUST_PROJECT_LSP_CONFIG","OCTOCODE_REDACT_EMAILS","OCTOCODE_STORAGE_MODE","OCTOCODE_CLASSIFICATION_API_HOST"] as const;
+export const HOME_TRUSTED_ENV_KEYS = ["OCTOCODE_GITHUB_CLIENT_ID","OCTOCODE_AST_REWRITE_STATE_DIR","OCTOCODE_CARGO","GITHUB_API_URL","OCTOCODE_ENABLE_LOCAL","OCTOCODE_BETA","ALLOWED_PATHS","WORKSPACE_ROOT","OCTOCODE_ALLOW_PRIVATE_REGISTRY","OCTOCODE_LSP_CONFIG","OCTOCODE_LSP_AUTO_INSTALL","OCTOCODE_LSP_CACHE_DIR","OCTOCODE_TRUST_PROJECT_LSP_CONFIG","OCTOCODE_REDACT_EMAILS","OCTOCODE_STORAGE_MODE","OCTOCODE_CLASSIFICATION_API_HOST"] as const;
 /** Home-trusted switches a workspace may set only to this narrowing value. */
 export const WORKSPACE_NARROW_ONLY_ENV: Readonly<Record<string, string>> = {"OCTOCODE_ENABLE_LOCAL":"false","OCTOCODE_REDACT_EMAILS":"true","OCTOCODE_STORAGE_MODE":"memory"};
-export const DEFAULT_CONFIG_VALUE: ResolvedConfigData = { "github": { "apiUrl": "https://api.github.com", "graphqlEnabled": true }, "local": { "enabled": true, "beta": false, "allowedPaths": [], "workspaceRoot": undefined }, "tools": { "enabled": null, "disabled": null }, "mcp": { "deferred": null }, "network": { "timeout": 30000, "maxRetries": 3, "maxRateLimitWait": 45000, "allowPrivateRegistry": false }, "lsp": { "configPath": undefined, "autoInstall": "prompt", "cacheDir": undefined, "maxMemoryMb": null, "trustProjectConfig": false, "prewarm": "targeted" }, "output": { "format": "yaml", "redactEmails": false, "pagination": { "defaultCharLength": 50000 } }, "storage": { "mode": "persistent", "stats": false, "cloneCache": { "ttl": 86400000, "maxSize": 2147483648, "maxClones": 50 } }, "classification": { "model": undefined, "maxConcurrency": 10, "maxCandidates": 64, "maxChars": 131072, "timeoutMs": 10000 } };
+export const DEFAULT_CONFIG_VALUE: ResolvedConfigData = { "github": { "apiUrl": "https://api.github.com", "graphqlEnabled": true }, "local": { "enabled": true, "beta": false, "allowedPaths": [], "workspaceRoot": undefined }, "tools": { "enabled": null, "disabled": null }, "mcp": { "deferred": null }, "network": { "allowPrivateRegistry": false }, "lsp": { "configPath": undefined, "autoInstall": "prompt", "cacheDir": undefined, "trustProjectConfig": false, "prewarm": "targeted" }, "output": { "format": "yaml", "redactEmails": false }, "storage": { "mode": "persistent", "stats": false }, "classification": { "model": undefined } };

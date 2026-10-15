@@ -171,19 +171,6 @@ mod tests {
         crate::contracts::resolve_ref(schema, &root["$defs"])
     }
 
-    /// Every schema a field name may resolve to below `schema`.
-    fn property<'a>(schema: &'a Value, root: &'a Value, name: &str, out: &mut Vec<&'a Value>) {
-        let schema = resolve(schema, root);
-        if let Some(found) = schema["properties"].get(name) {
-            out.push(found);
-        }
-        for key in ["anyOf", "oneOf", "allOf"] {
-            for branch in schema[key].as_array().into_iter().flatten() {
-                property(branch, root, name, out);
-            }
-        }
-    }
-
     /// The first concrete value a schema accepts: required properties filled,
     /// the first enum value, the first non-null type.
     fn sample(schema: &Value, root: &Value) -> Value {
@@ -222,8 +209,10 @@ mod tests {
 
     /// Places a sample value at `path` (contract form below `results[]`).
     fn inject(row: &mut Value, path: &str, root: &Value) {
-        let rows = &root["properties"]["results"]["items"];
-        let mut schemas = vec![rows];
+        let mut schemas = crate::contracts::property_schemas(root, &root["$defs"], "results")
+            .into_iter()
+            .map(|results| &resolve(results, root)["items"])
+            .collect::<Vec<_>>();
         let mut targets = vec![&mut *row];
         let parts = path.split('.').collect::<Vec<_>>();
         for (index, part) in parts.iter().enumerate() {
@@ -232,7 +221,11 @@ mod tests {
                 .map_or((*part, false), |name| (name, true));
             let mut found = Vec::new();
             for schema in &schemas {
-                property(schema, root, name, &mut found);
+                found.extend(crate::contracts::property_schemas(
+                    schema,
+                    &root["$defs"],
+                    name,
+                ));
             }
             assert!(!found.is_empty(), "{path}: no schema for {name}");
             let last = index + 1 == parts.len();

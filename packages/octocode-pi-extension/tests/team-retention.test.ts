@@ -90,7 +90,9 @@ describe('team leave', () => {
       s.team.join();
       vi.spyOn(TeamStore.prototype, 'remove').mockImplementationOnce(() => { throw new Error('database is locked'); });
       expect(() => s.team.start(s.ctx)).not.toThrow();
-      expect(s.team.join().id).toBeDefined();
+      const joined = s.team.join().id;
+      expect(joined).toMatch(/^[a-z]+(-[a-z]+)+(-\d+)?$/);
+      expect(s.team.members().map((entry) => entry.id)).toContain(joined);
     } finally { vi.restoreAllMocks(); s.close(); }
   });
 });

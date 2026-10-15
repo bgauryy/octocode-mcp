@@ -1,6 +1,6 @@
 #![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 //! Original image bytes stay inside the runtime/provider boundary.
-use crate::support::{MOCK_PROVIDER_TIMEOUT_MS, Run as _, Workspace};
+use crate::support::{PROVIDER_LIMITS, Run as _, Workspace};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use octocode_native::runtime::ToolRuntime;
 use serde_json::{Value, json};
@@ -18,7 +18,7 @@ impl Respond for DelayedAnswer {
 }
 
 fn png() -> Vec<u8> {
-    STANDARD.decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a/o8AAAAASUVORK5CYII=").unwrap()
+    STANDARD.decode("iVBORw0KGgoAAAANSUhEUgAAARgAAAEYCAAAAACi5bZQAAABXElEQVR42u3QAQ0AAAwCIPuX1gJP8EEEUk5RIEaMGDFixIgRI0aMGMSIESNGjBgxYsSIEYMYMWLEiBEjRowYMWIQI0aMGDFixIgRI0YMYsSIESNGjBgxYsSIEYMYMWLEiBEjRowYMWIQI0aMGDFixIgRI0YMYsSIESNGjBgxYsSIQYwYMWLEiBEjRowYMYgRI0aMGDFixIgRI0YMYsSIESNGjBgxYsSIQYwYMWLEiBEjRowYMYgRI0aMGDFixIgRIwYxYsSIESNGjBgxYsSIQYwYMWLEiBEjRowYMYgRI0aMGDFixIgRIwYxYsSIESNGjBgxYsQgRowYMWLEiBEjRowYxIgRI0aMGDFixIgRIwYxYsSIESNGjBgxYsQgRowYMWLEiBEjRowYxIgRI0aMGDFixIgRgxgxYsSIESNGjBgxYsQoECNGjBgxYsSIESNGDGLEiBEjRowYMWK+G5X/H6AJTpTJAAAAAElFTkSuQmCC").unwrap()
 }
 
 #[derive(Clone)]
@@ -50,7 +50,6 @@ fn runtime(workspace: &Workspace, server: &MockServer, extra: &[(&str, String)])
         ("OCTOCODE_BETA", "true".into()),
         ("OCTOCODE_CLASSIFICATION_API", "secret".into()),
         ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
-        ("REQUEST_TIMEOUT", MOCK_PROVIDER_TIMEOUT_MS.into()),
         (
             "ALLOWED_PATHS",
             format!(
@@ -61,7 +60,7 @@ fn runtime(workspace: &Workspace, server: &MockServer, extra: &[(&str, String)])
         ),
     ];
     env.extend(extra.iter().cloned());
-    workspace.runtime(&env)
+    workspace.runtime_with(&env, PROVIDER_LIMITS)
 }
 
 fn row(path: &str) -> Value {
@@ -152,7 +151,7 @@ async fn unread_local_image_is_byte_exact_hidden_and_saved_with_box() {
     let asset = &result["assets"]["image_a"];
     assert_eq!(
         (asset["width"].as_u64(), asset["height"].as_u64()),
-        (Some(1), Some(1))
+        (Some(280), Some(280))
     );
     assert_eq!(asset["format"], "png");
     assert_eq!(

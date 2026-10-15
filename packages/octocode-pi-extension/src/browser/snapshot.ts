@@ -109,12 +109,23 @@ export async function snapshot(session: BrowserSession, signal?: AbortSignal, op
   const previous = lastSnapshot.get(session);
   lastSnapshot.set(session, data);
   if (options.changesOnly && previous && previous.url === data.url && previous.title === data.title) return formatChanges(previous, data);
-  const full = formatSnapshot(data);
+  const { text: full, cut } = layoutSnapshot(data, SNAPSHOT_MAX_CHARS, ELEMENTS_MAX_CHARS);
   // A cut snapshot is saved whole, so the rest of the elements and text are a file read away.
-  if (!full.includes('more characters cut') && !full.includes('more elements;')) return full;
+  if (!cut) return full;
   // Page text is untrusted and the model reads the file with `read`: control and invisible characters stay as visible escapes, never dropped.
   const file = saveFullOutput(visibleControls(formatSnapshot(data, Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER)), 'browser-snapshot');
-  return `${full}\n${file ? `[Full snapshot (every element and all text): ${shortPath(file)}; read it by line range or search it.]` : '[The full snapshot could not be saved; the elements and text cut above are not reachable from this result.]'}`;
+  return `${full}\n${file ? snapshotFileNote(shortPath(file)) : '[The full snapshot could not be saved; the elements and text cut above are not reachable from this result.]'}`;
+}
+
+const SNAPSHOT_NOTE = { head: '[Full snapshot (every element and all text): ', tail: '; read it by line range or search it.]' } as const;
+/** The note that names the file holding a cut snapshot whole; `snapshotFileOf` reads the path back out of it. */
+const snapshotFileNote = (file: string): string => `${SNAPSHOT_NOTE.head}${file}${SNAPSHOT_NOTE.tail}`;
+
+/** The file a result's closing snapshot note names, or undefined when the result has none. */
+export function snapshotFileOf(text: string): string | undefined {
+  const trimmed = text.trimEnd();
+  const start = trimmed.lastIndexOf(SNAPSHOT_NOTE.head);
+  return start < 0 || !trimmed.endsWith(SNAPSHOT_NOTE.tail) ? undefined : trimmed.slice(start + SNAPSHOT_NOTE.head.length, -SNAPSHOT_NOTE.tail.length);
 }
 
 /** Most new page text an action result shows; the rest is one snapshot away. */
@@ -164,6 +175,11 @@ const FOOTER_MAX_CHARS = 800;
 
 /** Title, URL, the numbered elements (first, capped) and the page text in what is left of `max` characters. */
 export function formatSnapshot(data: SnapshotData, max = SNAPSHOT_MAX_CHARS, elementsMax = ELEMENTS_MAX_CHARS): string {
+  return layoutSnapshot(data, max, elementsMax).text;
+}
+
+/** `formatSnapshot`, and whether it left out elements or text (the whole snapshot is then worth saving). */
+function layoutSnapshot(data: SnapshotData, max: number, elementsMax: number): { text: string; cut: boolean } {
   const head = `# ${data.title}\n${data.url}${data.locale ? `\nLocale: ${data.locale}` : ''}\n\n## Elements\n`;
   const elementBudget = Math.min(elementsMax, max - head.length);
   const kept: string[] = [];
@@ -178,5 +194,6 @@ export function formatSnapshot(data: SnapshotData, max = SNAPSHOT_MAX_CHARS, ele
   const elements = `${kept.join('\n') || '(none)'}${hidden > 0 ? `\n[… ${hidden} more elements; click by number still works]` : ''}${footer}`;
   const cut = data.textTotal !== undefined && data.textTotal > data.text.length ? ` (first ${data.text.length} of ${data.textTotal} characters; scroll or wait for a specific text to reach the rest)` : '';
   const top = `${head}${elements}\n\n## Text${cut}\n`;
-  return `${top}${capChars(data.text, Math.max(0, max - top.length))}`;
+  const text = capChars(data.text, Math.max(0, max - top.length));
+  return { text: `${top}${text}`, cut: hidden > 0 || text !== data.text };
 }

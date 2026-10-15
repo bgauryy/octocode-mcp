@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LEASE_IDLE_MS } from '../src/team/held.js';
 import { MESSAGE_TYPE, parentProcessGone, Team, USER_SENDER } from '../src/team/session.js';
 import { registerCollab } from '../src/team/tools.js';
-import { leaseAge, resolveTarget, sessionTree, wakes } from '../src/team/routing.js';
+import { leaseAge, resolveTarget, sessionTree } from '../src/team/routing.js';
 import type { Member } from '../src/team/model.js';
 import { LEASE_MS, TeamStore } from '../src/team/store.js';
 import { trafficRow, widgetLines } from '../src/team/panel.js';
@@ -27,6 +27,9 @@ const open = (cwd: string, file: string) => {
   stores.push(store);
   return store;
 };
+
+/** Fake timers and clock for a test that waits for the ticker to do nothing: `advanceTimersByTimeAsync` runs its ticks without waiting in real time. */
+const fakeClock = () => vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] });
 
 const teams: Array<{ team: Team; ctx: ReturnType<typeof fakeCtx> }> = [];
 function agent(dbFile: string, cwd: string, env: Record<string, string> = {}, hasUI = true, idle = true) {
@@ -51,7 +54,7 @@ describe('message wake rule', () => {
     store.save(row('a'));
     store.save(row('b'));
     const question = store.send('a', ['b'], 'which file?', { replyRequired: true }).id!;
-    expect(wakes(store.pending('b')[0]!)).toBe(true);
+    expect(store.pending('b')[0]!.wake).toBe(true);
     const answer = store.send('b', ['a'], 'src/x.ts', { replyRequired: false, replyTo: question }).id!;
     expect(store.pending('a').find((message) => message.id === answer)).toMatchObject({ wake: true });
     // A reply to an FYI (the answer asked for nothing) does not wake its recipient.
@@ -115,6 +118,7 @@ const seen = (who: ReturnType<typeof agent>, entry: { message: any }) =>
 
 describe('delivery acknowledgement', () => {
   it('records a message delivered only once the model sees it', async () => {
+    fakeClock();
     const cwd = repo();
     const db = path.join(tmp(), 'team.sqlite');
     const a = agent(db, cwd);
@@ -131,7 +135,7 @@ describe('delivery acknowledgement', () => {
     // Never handed over twice, and later model calls (the message stays in the conversation) record nothing again.
     const ack = vi.spyOn(TeamStore.prototype, 'ack');
     await seen(b, teamMail(b.sent)[0]!);
-    await new Promise((resolve) => setTimeout(resolve, 1_200));
+    await vi.advanceTimersByTimeAsync(2_000);
     expect(teamMail(b.sent)).toHaveLength(1);
     expect(ack).not.toHaveBeenCalled();
     ack.mockRestore();
@@ -396,6 +400,7 @@ describe('headless subagent exit', () => {
   });
 
   it('takes no message while idle, so mail that arrives after its last turn is a dead letter, not acked unread', async () => {
+    fakeClock();
     const cwd = repo();
     const db = path.join(tmp(), 'team.sqlite');
     const parent = agent(db, cwd);
@@ -403,7 +408,7 @@ describe('headless subagent exit', () => {
     const child = agent(db, cwd, { OCTOCODE_AGENT_ID: 'general-333333', OCTOCODE_PARENT_ID: parentId }, false, true);
     child.team.join();
     const { id } = (await parent.team.send('general-333333', 'one more thing', { replyRequired: false })) as { id: number };
-    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    await vi.advanceTimersByTimeAsync(2_000);
     expect(teamMail(child.sent)).toEqual([]);
     await child.emit('agent_settled', {}, child.ctx);
     await vi.waitFor(() => expect(parent.sent.some((entry) => String(entry.message.content).startsWith(`Message #${id} to general-333333`))).toBe(true), { timeout: 8_000 });
@@ -536,6 +541,7 @@ describe('delivery edge cases', () => {
   });
 
   it('tells the user once when an idle agent was handed a waking message and Pi started no turn', async () => {
+    fakeClock();
     const cwd = repo();
     const db = path.join(tmp(), 'team.sqlite');
     const sender = agent(db, cwd);
@@ -546,19 +552,15 @@ describe('delivery edge cases', () => {
     await vi.waitFor(() => expect(mailOf(idle.sent)).toHaveLength(1), { timeout: 3_000 });
     expect(idle.ctx.ui.notes).toEqual([]);
     // Ten seconds pass and the model was never called with it (no model, or no sign-in).
-    const later = Date.now() + 11_000;
-    const now = vi.spyOn(Date, 'now').mockImplementation(() => later);
-    try {
-      await vi.waitFor(() => expect(idle.ctx.ui.notes).toHaveLength(1), { timeout: 3_000 });
-      expect(idle.ctx.ui.notes[0]).toMatchObject({ type: 'warning', message: expect.stringContaining('did not run one') });
-      await new Promise((resolve) => setTimeout(resolve, 1_300));
-      expect(idle.ctx.ui.notes).toHaveLength(1);
-    } finally {
-      now.mockRestore();
-    }
+    vi.setSystemTime(Date.now() + 11_000);
+    await vi.waitFor(() => expect(idle.ctx.ui.notes).toHaveLength(1), { timeout: 3_000 });
+    expect(idle.ctx.ui.notes[0]).toMatchObject({ type: 'warning', message: expect.stringContaining('did not run one') });
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(idle.ctx.ui.notes).toHaveLength(1);
   }, 15_000);
 
   it('does not warn when the model was called with the message', async () => {
+    fakeClock();
     const cwd = repo();
     const db = path.join(tmp(), 'team.sqlite');
     const sender = agent(db, cwd);
@@ -568,14 +570,9 @@ describe('delivery edge cases', () => {
     await sender.team.send(idle.team.id!, 'are you there?', { replyRequired: true });
     await vi.waitFor(() => expect(mailOf(idle.sent)).toHaveLength(1), { timeout: 3_000 });
     await idle.emit('context', { messages: [{ role: 'custom', customType: MESSAGE_TYPE, details: mailOf(idle.sent)[0]!.message.details }] }, idle.ctx);
-    const later = Date.now() + 11_000;
-    const shifted = vi.spyOn(Date, 'now').mockImplementation(() => later);
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 1_300));
-      expect(idle.ctx.ui.notes).toEqual([]);
-    } finally {
-      shifted.mockRestore();
-    }
+    vi.setSystemTime(Date.now() + 11_000);
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(idle.ctx.ui.notes).toEqual([]);
   }, 15_000);
 
   it('hands over new messages after the team database was emptied under a live session', async () => {

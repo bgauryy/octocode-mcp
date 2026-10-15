@@ -97,13 +97,40 @@ for (const [label, tool, query, field, want, never] of [
   check('U13 MCP: the wrapped include runs', !wrapped.isError && !wrapped.rowErrors, wrapped.text.slice(0, 160));
 }
 
-// Large reads are bounded with an exact continuation, on both surfaces.
-for (const [label, query] of [['default', {}], ['fullContent', { fullContent: true }]]) {
-  const mcp = await call('localFetch', { path: LARGE, ...query });
-  const data = rowData(mcp);
-  check(`U14 MCP: localFetch ${label} of a 1,600+ line file stays under 25 KB with next.continueWindow`, mcp.bytes < 25_000 && !!data?.next?.continueWindow && data?.pagination?.hasMore === true, `${mcp.bytes}B`);
-  const shell = cli('localFetch', { queries: [{ path: LARGE, ...query }] });
-  check(`U14 CLI: localFetch ${label} exits 0 under 25 KB`, shell.exit === 0 && shell.bytes < 25_000, `${shell.exit} ${shell.bytes}B`);
+// Large reads page inside the configured window with an exact continuation,
+// and the walk returns every line once; fullContent pages too, never one dump.
+// The window is the runtime's constant automatic page
+// (RuntimeLimits::DEFAULT.auto_page_chars); a workspace setting cannot move it.
+{
+  const limits = fs.readFileSync(path.join(ROOT, 'packages/octocode-native/crates/runtime/src/runtime/limits.rs'), 'utf8');
+  const WINDOW = Number(/auto_page_chars: ([\d_]+),/.exec(limits)[1].replaceAll('_', ''));
+  const lineNumbers = text => [...String(text ?? '').matchAll(/^(\d+)\t/gm)].map(m => Number(m[1]));
+  for (const [label, query] of [['default', {}], ['fullContent', { fullContent: true }]]) {
+    const mcp = await call('localFetch', { path: LARGE, ...query });
+    const data = rowData(mcp);
+    check(`U14 MCP: localFetch ${label} of a file over the ${WINDOW}-char window pages within it with next.continueWindow`, mcp.bytes <= WINDOW && !!data?.next?.continueWindow && data?.pagination?.hasMore === true, `${mcp.bytes}B`);
+    if (label === 'fullContent') {
+      const seen = [...lineNumbers(data?.content)];
+      let next = data?.next?.continueWindow;
+      let pages = 1;
+      let maxBytes = mcp.bytes;
+      while (next && pages < 20) {
+        const page = await call(next.tool, next.query.queries[0]);
+        const row = rowData(page);
+        seen.push(...lineNumbers(row?.content));
+        maxBytes = Math.max(maxBytes, page.bytes);
+        next = row?.next?.continueWindow;
+        pages += 1;
+      }
+      const total = data?.totalLines;
+      const exact = seen.length === total && new Set(seen).size === total && seen.every((n, i) => n === i + 1);
+      check('U14 MCP: the fullContent walk returns every line once, each page within the window', !next && pages > 1 && exact && maxBytes <= WINDOW, `pages=${pages} lines=${seen.length}/${total} max=${maxBytes}B`);
+    }
+    // The CLI pages inside the same constant window.
+    const shell = cli('localFetch', { queries: [{ path: LARGE, ...query }] });
+    const shellRow = shell.json?.results?.[0]?.data;
+    check(`U14 CLI: localFetch ${label} at the ${WINDOW}-char window exits 0 under 25 KB with next.continueWindow`, shell.exit === 0 && shell.bytes < 25_000 && !!shellRow?.next?.continueWindow, `${shell.exit} ${shell.bytes}B`);
+  }
 }
 
 // Paths outside the roots: the hint names the trusted place to widen them.
@@ -171,7 +198,7 @@ for (const [label, query] of [['default', {}], ['fullContent', { fullContent: tr
 // A page larger than the window used to split into row parts whose later
 // part had no continuation, and the row walk silently skipped its rows.
 {
-  const env = { OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH: '20000' };
+  const env = {};
   const walker = await startServer({ env });
   const rowWalk = async (surface, tool, query, rowsOf, totalOf) => {
     let input = { queries: [query] };

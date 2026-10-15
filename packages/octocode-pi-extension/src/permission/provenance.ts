@@ -1,7 +1,8 @@
 import type { ToolAnnotations, ToolCallEvent, ToolResultEvent } from '@earendil-works/pi-coding-agent';
 import { canonicalPath, isWithin, readPaths, resolveToolPath, tildePath, workspaceRoot } from '../shared/home.js';
+import { isMcpTool } from '../shared/octocode-tools.js';
 import { secretProblem } from '../shared/sanitize.js';
-import { contentText, isRecord } from '../shared/util.js';
+import { contentText, isRecord, MINUTE_MS } from '../shared/util.js';
 import { readOnlyMcp, runsLater } from './gate.js';
 import { commandNames, SHELL_TOOLS } from './shell.js';
 
@@ -15,7 +16,7 @@ const EXECUTABLE = /\.(?:sh|bash|zsh|fish|ksh|ps1|psm1|bat|cmd|command)$|(?:^|\/
 const SHELL_HINT = '; to save quoted material, write it as data with the `file` tool, not a shell command';
 
 /**
- * A CaMeL-inspired provenance tripwire (plan §3): tool outputs are tagged by where they came from, and a later call
+ * A CaMeL-inspired provenance tripwire: tool outputs are tagged by where they came from, and a later call
  * whose arguments repeat them is flagged. `untrusted` output (web, browser, open-world MCP, network commands) reaching a
  * consequential argument (a shell command, file content, a mutating MCP call, a memory) and `private` output (reads
  * outside the workspace, secret-looking lines) reaching an egress argument (a URL, a network command) are hits.
@@ -124,7 +125,7 @@ function tokens(text: string): number[] {
 }
 
 function ago(ms: number): string {
-  const minutes = Math.floor(ms / 60_000);
+  const minutes = Math.floor(ms / MINUTE_MS);
   if (minutes < 1) return 'just now';
   return minutes < 60 ? `${minutes} min ago` : `${Math.floor(minutes / 60)} h ago`;
 }
@@ -231,7 +232,7 @@ class Provenance {
     if (toolName === 'web') return { kind: 'untrusted', label: `web ${str(input['url']) ?? `search "${str(input['query']) ?? ''}"`}` };
     if (toolName === 'browser') return { kind: 'untrusted', label: `browser ${str(input['url']) ?? str(input['action']) ?? ''}`.trim() };
     if (toolName === 'externalAgent' && input['action'] === 'prompt') return { kind: 'untrusted', label: `externalAgent ${str(input['id']) ?? ''}`.trim() };
-    if (toolName.startsWith('mcp__')) return this.annotations(toolName)?.openWorldHint === false ? undefined : { kind: 'untrusted', label: toolName };
+    if (isMcpTool(toolName)) return this.annotations(toolName)?.openWorldHint === false ? undefined : { kind: 'untrusted', label: toolName };
     // Pi's built-in MCP resource reader: a server's text, like any open-world MCP result.
     if (toolName === 'read_mcp_resource') return { kind: 'untrusted', label: `${toolName} ${str(input['uri']) ?? ''}`.trim() };
     if (SHELL_TOOLS.has(toolName)) {
@@ -262,7 +263,7 @@ class Provenance {
       });
     }
     if (toolName === 'memory') return input['op'] === 'set' ? leaves(input) : [];
-    if (toolName.startsWith('mcp__')) return readOnlyMcp(this.annotations(toolName)) ? [] : leaves(input);
+    if (isMcpTool(toolName)) return readOnlyMcp(this.annotations(toolName)) ? [] : leaves(input);
     return [];
   }
 

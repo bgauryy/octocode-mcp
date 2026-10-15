@@ -2,7 +2,8 @@ import http from 'node:http';
 import net from 'node:net';
 import type { Duplex } from 'node:stream';
 import { errorMessage } from '../shared/util.js';
-import { classifyHost, defaultLookup, type HostLookup } from '../web/guard.js';
+import { bareHostname, classifyHost, defaultLookup, type HostLookup } from '../web/guard.js';
+import { hostKey, portOf } from './network.js';
 
 /**
  * The filtering proxy a launched Chrome is pointed at (`--proxy-server`). Chrome sends every request, WebSocket upgrade
@@ -46,12 +47,8 @@ export interface FilteringProxy {
 }
 
 const CONNECT_TIMEOUT_MS = 30_000;
-const DEFAULT_PORTS: Readonly<Record<string, number>> = { 'http:': 80, 'ws:': 80, 'https:': 443, 'wss:': 443 };
 /** Headers that describe one hop, not the message. */
 const HOP_BY_HOP = new Set(['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'proxy-connection', 'te', 'trailer', 'transfer-encoding', 'upgrade']);
-
-const bare = (hostname: string): string => hostname.replace(/^\[|\]$/g, '');
-const hostKey = (hostname: string, port: number): string => `${bare(hostname)}:${port}`;
 
 interface Target {
   url: URL;
@@ -61,7 +58,7 @@ interface Target {
 
 /** `url` (any scheme with a default port) as a target; the URL parser normalizes numeric hosts like `0x7f.1` and `2130706433`. */
 function targetOf(url: URL): Target {
-  return { url, hostname: bare(url.hostname), port: url.port ? Number(url.port) : (DEFAULT_PORTS[url.protocol] ?? 0) };
+  return { url, hostname: bareHostname(url.hostname), port: portOf(url) };
 }
 
 /** The `host:port` of a CONNECT request line, or undefined when it is not one. */
@@ -95,7 +92,7 @@ function upstreamFromEnv(env: NodeJS.ProcessEnv, names: readonly string[]): Upst
     }
     if (url.protocol !== 'http:') throw new Error(`${name} must be an http:// proxy, not ${url.protocol}//; the browser's filtering proxy chains to http proxies only. Fix or unset it and restart Pi.`);
     const credentials = url.username ? `${decodeURIComponent(url.username)}:${decodeURIComponent(url.password)}` : undefined;
-    return { host: bare(url.hostname), port: Number(url.port || 80), ...(credentials !== undefined && { auth: `Basic ${Buffer.from(credentials).toString('base64')}` }) };
+    return { host: bareHostname(url.hostname), port: Number(url.port || 80), ...(credentials !== undefined && { auth: `Basic ${Buffer.from(credentials).toString('base64')}` }) };
   }
   return undefined;
 }

@@ -5,13 +5,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { SettingsManager, getAgentDir, getShellConfig, type ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { atomicWriteFileSync } from '../shared/atomic.js';
-import { claimSuffix, parseClaim } from '../shared/claims.js';
+import { claimSuffix, releaseDeadClaims } from '../shared/claims.js';
 import { PRIVATE_FILE_MODE, privateDir, sessionOutputDir, sessionsRoot } from '../shared/home.js';
 import { formatDuration, shortPath } from '../shared/format.js';
 import { adoptTree, groupAlive, groupStartTimes, killTree, prepareTree, processAlive, processMatch, processStartTime, sameProcess, stopTree } from '../shared/process.js';
 import { RotatingLog } from '../shared/rotating-log.js';
 import { visibleControls, withoutColors } from '../shared/sanitize.js';
-import { cutText, errorMessage, firstLine } from '../shared/util.js';
+import { cutText, errorMessage, firstLine, validPid } from '../shared/util.js';
 
 /**
  * Background shell jobs for the `bash` tool (bash.ts): each runs in its own process group, with the user's Pi shell,
@@ -180,8 +180,7 @@ const recordFile = (log: string): string => log.replace(/\.log$/, '') + RECORD_S
 function parseRecord(text: string): JobRecord | undefined {
   try {
     const record = JSON.parse(text) as JobRecord;
-    const pid = (value: unknown) => Number.isInteger(value) && (value as number) > 1;
-    return pid(record.pid) && pid(record.owner?.pid) && typeof record.log === 'string' ? record : undefined;
+    return validPid(record.pid) && validPid(record.owner?.pid) && typeof record.log === 'string' ? record : undefined;
   } catch {
     return undefined;
   }
@@ -201,31 +200,21 @@ const foreign = (record: JobRecord): boolean => record.host !== undefined && rec
 /**
  * Names in a `bash/` folder that belong to jobs whose Pi still runs (or runs on another host, which cannot be judged
  * here): their owner records and logs (with a rotated `.1`), which the session sweep must not age out. The record is
- * written once at the job's start, so its age says nothing about the job. Never rejects.
+ * written once at the job's start, so its age says nothing about the job. A record that cannot be read is kept, with the
+ * log its name points at (`recordFile`): a job that cannot be judged is not one to sweep. A record that reads but does
+ * not parse is garbage and ages out. Never rejects.
  */
 export async function liveJobFiles(dir: string): Promise<Set<string>> {
   const live = new Set<string>();
   const names = await fs.promises.readdir(dir).catch((): string[] => []);
   for (const name of names.filter((each) => each.endsWith(RECORD_SUFFIX))) {
-    const record = parseRecord(await fs.promises.readFile(path.join(dir, name), 'utf8').catch(() => ''));
-    if (!record || (!foreign(record) && !sameProcess(record.owner.pid, record.owner.started))) continue;
-    const log = path.basename(record.log);
+    const text = await fs.promises.readFile(path.join(dir, name), 'utf8').catch(() => undefined);
+    const record = text === undefined ? undefined : parseRecord(text);
+    if (text !== undefined && (!record || (!foreign(record) && !sameProcess(record.owner.pid, record.owner.started)))) continue;
+    const log = record ? path.basename(record.log) : `${name.slice(0, -RECORD_SUFFIX.length)}.log`;
     for (const each of [name, log, `${log}.1`]) live.add(each);
   }
   return live;
-}
-
-/** Gives back records whose reaper died mid-way (a claim whose pid and start time no longer name a running process), so this reap claims them again. */
-function releaseDeadClaims(dir: string, names: readonly string[]): void {
-  for (const name of names) {
-    const claim = parseClaim(name, CLAIM_MARKER);
-    if (!claim || !claim.original.endsWith(RECORD_SUFFIX) || claim.running) continue;
-    try {
-      fs.renameSync(path.join(dir, name), path.join(dir, claim.original));
-    } catch {
-      // Another Pi released it first.
-    }
-  }
 }
 
 /** Every session's `bash/` folder (most do not exist; the reader skips those). */
@@ -253,7 +242,7 @@ export async function reapOrphanJobs(dirs: readonly string[]): Promise<OrphanJob
   const entries: Array<{ file: string; record: JobRecord | undefined }> = [];
   for (const dir of dirs) {
     try {
-      releaseDeadClaims(dir, fs.readdirSync(dir));
+      releaseDeadClaims(dir, fs.readdirSync(dir), CLAIM_MARKER, (original) => original.endsWith(RECORD_SUFFIX));
       for (const name of fs.readdirSync(dir)) if (name.endsWith(RECORD_SUFFIX)) entries.push({ file: path.join(dir, name), record: readRecord(path.join(dir, name)) });
     } catch {
       continue;

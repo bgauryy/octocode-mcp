@@ -31,7 +31,7 @@ try {
     if(hash(await fs.readFile(file))!==hash(item.source)) throw new Error('Source snapshot changed');
     const totalLines=item.source.match(/[^\n]*\n|[^\n]+$/g).length;
     const fixture=path.dirname(file);
-    const localEnv={...env,WORKSPACE_ROOT:fixture,ALLOWED_PATHS:fixture,OCTOCODE_ENABLE_LOCAL:'true',OCTOCODE_ENABLE_STATS:'false',OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH:'20000',DISABLE_TOOLS:'',TOOLS_TO_RUN:''};
+    const localEnv={...env,WORKSPACE_ROOT:fixture,ALLOWED_PATHS:fixture,OCTOCODE_ENABLE_LOCAL:'true',OCTOCODE_ENABLE_STATS:'false',DISABLE_TOOLS:'',TOOLS_TO_RUN:''};
     for(const surrounding of [0,8,16]) {
       const record={case:row.case,arm:row.arm,surrounding,responses:[...classification],inheritedProviderCalls:row.providerCalls};
       try {

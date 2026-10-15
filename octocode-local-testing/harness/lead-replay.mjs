@@ -283,10 +283,22 @@ function judge(lead, source, entry, shown, { walked = false } = {}) {
   return outcomeOf(entry);
 }
 
-// Default countMatches pagination must keep its query scope and return every
+// Count views fill the response window by default (pageSize: "files/count
+// views fill the configured response window"): 101 short rows are one
+// complete page with no continuation.
+{
+  const query = { path: PREL, matchString: 'needleCountPages', resultView: 'countMatches', extras: H };
+  const entry = await exec('localSearch', { queries: [query] }, 'countMatches default window');
+  const data = entry.sc?.results?.[0]?.data;
+  const files = new Set((data?.files ?? []).map(file => path.resolve(ROOT, file.path)));
+  const nextPage = leadsOf(entry.sc).find(l => l.key === 'nextPage');
+  check('countMatches default view returns all 101 files on one page', !outcomeOf(entry).error && files.size === 101 && (data?.files ?? []).length === 101 && !nextPage && data?.pagination?.hasMore !== true, `files=${files.size} next=${!!nextPage} pagination=${JSON.stringify(data?.pagination ?? null)}`);
+}
+
+// Explicit countMatches pagination must keep its query scope and return every
 // file once, including the file beyond the first 100-file page.
 {
-  const firstQuery = { path: PREL, matchString: 'needleCountPages', resultView: 'countMatches', extras: H };
+  const firstQuery = { path: PREL, matchString: 'needleCountPages', resultView: 'countMatches', pageSize: 100, extras: H };
   let source = { label: 'ls countMatches full union', tool: 'localSearch', args: { queries: [firstQuery] }, entry: await exec('localSearch', { queries: [firstQuery] }, 'countMatches full union'), depth: 0 };
   const expected = new Set(Array.from({ length: 101 }, (_, i) => path.join(PABS, `f${String(i).padStart(3, '0')}.ts`)));
   const seenFiles = new Set();
@@ -312,7 +324,7 @@ function judge(lead, source, entry, shown, { walked = false } = {}) {
     const sourceQuery = rowOf(source.args);
     const leadQuery = rowOf(next.query);
     const unchanged = scopeChanges(sourceScopeForPage(source, next, sourceQuery, leadQuery), leadQuery, { root: ROOT });
-    check('countMatches default nextPage keeps scope', unchanged.length === 0, unchanged.join('; '));
+    check('countMatches nextPage keeps scope', unchanged.length === 0, unchanged.join('; '));
     if (pageCount === 1) {
       check('countMatches wrong pageSize still changes scope', scopeChanges(sourceScopeForPage(source, next, sourceQuery, { ...leadQuery, pageSize: 99 }), { ...leadQuery, pageSize: 99 }, { root: ROOT }).some(s => s.startsWith('pageSize:')), 'pageSize 99 must not inherit the reported 100');
       check('countMatches wrong path still changes scope', scopeChanges(sourceScopeForPage(source, next, sourceQuery, { ...leadQuery, path: WREL }), { ...leadQuery, path: WREL }, { root: ROOT }).some(s => s.startsWith('path:')), 'path change must remain visible');

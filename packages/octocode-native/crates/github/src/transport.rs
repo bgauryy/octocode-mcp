@@ -39,7 +39,7 @@ pub struct RetryPolicy {
     pub max_attempts: u8,
     pub base_delay: Duration,
     pub max_retry_after: Duration,
-    /// The runtime sets `network.maxRateLimitWait`; the transport's own
+    /// The runtime sets its constant rate-limit wait; the transport's own
     /// default is the retry-after cap.
     pub max_rate_limit_wait: Duration,
 }

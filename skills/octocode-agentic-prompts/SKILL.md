@@ -1,6 +1,6 @@
 ---
 name: octocode-agentic-prompts
-description: "Load this skill first whenever you write or fix a system prompt, a subagent brief, an AGENTS.md or CLAUDE.md rule, or a tool description, or an agent ignores its instructions. Use when an instruction an agent reads needs writing or produces the wrong action: system prompts, subagent briefs, agent rules in AGENTS.md or CLAUDE.md, tool and MCP descriptions, and handoffs that conflict, sprawl, or get ignored; good for tracing which rule the agent actually sees, resolving conflicts, and cutting excess context. Not for skill structure, skill descriptions, or packaging (octocode-skills) or explanatory docs for human readers (octocode-documentation)."
+description: "Load this skill first whenever you write or fix a system prompt, a subagent brief, an AGENTS.md or CLAUDE.md rule, or a tool description, or an agent ignores its instructions, even when the ask is to check whether smaller models understand a protocol or tool schema. Use when an instruction an agent reads needs writing or produces the wrong action: system prompts, subagent briefs, agent rules in AGENTS.md or CLAUDE.md, tool and MCP descriptions, and handoffs that conflict, sprawl, or get ignored; good for tracing which rule the agent actually sees, resolving conflicts, cutting excess context, and interviewing small models to find protocol gaps. Not for skill structure, skill descriptions, or packaging (octocode-skills) or explanatory docs for human readers (octocode-documentation)."
 ---
 
 # Octocode Agentic Prompts
@@ -36,7 +36,7 @@ flowchart LR
 
 ## Verify
 
-Before and after the change, run realistic requests and edge cases: action clear, rules agree, output fits its consumer, recovery keeps scope. Reliability, activation, tool-selection, or savings claims need a behavioral eval (`octocode-eval-benchmark`); editorial rewrites may finish unmeasured. Report only checks that ran.
+Before and after the change, run realistic requests and edge cases: action clear, rules agree, output fits its consumer, recovery keeps scope. When smaller or faster models must follow a protocol or tool surface, run the [agentic interview](references/interview.md) loop to find gaps first. Reliability, activation, tool-selection, or savings claims need a behavioral eval (`octocode-eval-benchmark`); editorial rewrites may finish unmeasured. Report only checks that ran.
 
 ## Resources
 
@@ -47,6 +47,8 @@ Before and after the change, run realistic requests and edge cases: action clear
 | Delegation, handoffs, base prompts, cross-app payloads | [Agents](references/agents.md) | Frozen base, Zod packet |
 | Rigid, repeated, or ad-hoc shapes | [Protocols](references/protocols.md) | Catalog, rewrite steps |
 | Overflow, compaction, cost, caching, untrusted text | [Context](references/context.md) | Cut vs keep, data vs authority |
+| Small models must follow a protocol or tool surface | [Interview](references/interview.md) | Study, cold predict, execute, fix loop |
+| Grading interview cold calls | [interview-grade.mjs](scripts/interview-grade.mjs) | Replays calls, valid-cold rate |
 | Saving or listing reports | [render-report.mjs](scripts/render-report.mjs) | [output.md](output.md) |
 
 ## Related skills

@@ -111,7 +111,7 @@ describe('PROTECTED_KEYS', () => {
     ]) {
       expect(PROTECTED_KEYS.has(k), `${k} should be protected`).toBe(true);
     }
-    expect(PROTECTED_KEYS.has('REQUEST_TIMEOUT')).toBe(false);
+    expect(PROTECTED_KEYS.has('OCTOCODE_LSP_PREWARM')).toBe(false);
   });
 
   it('does not protect tool API keys (they go in .env)', () => {
@@ -140,8 +140,6 @@ describe('PROTECTED_KEYS', () => {
       // sandbox, or pick or download executables.
       'OCTOCODE_LSP_AUTO_INSTALL',
       'OCTOCODE_LSP_CACHE_DIR',
-      // Home-only: a workspace .env must not raise the language-server memory cap.
-      'OCTOCODE_LSP_MAX_MEMORY_MB',
       'OCTOCODE_TRUST_PROJECT_LSP_CONFIG',
       // Storage mode decides what persists on disk: home-trusted only.
       'OCTOCODE_STORAGE_MODE',
@@ -449,24 +447,14 @@ describe('DEFAULT_CONFIG', () => {
     expect(DEFAULT_CONFIG.github.apiUrl).toBe('https://api.github.com');
     expect(DEFAULT_CONFIG.local.enabled).toBe(true);
     expect(DEFAULT_CONFIG.local.beta).toBe(false);
-    expect(DEFAULT_CONFIG.network.timeout).toBe(30000);
     expect(DEFAULT_CONFIG.network.allowPrivateRegistry).toBe(false);
     expect(DEFAULT_CONFIG.output.redactEmails).toBe(false);
   });
 
-  it('timeout bounds are sane', () => {
-    const timeout = CONFIG_FIELDS.find(field => field.path === 'network.timeout')!;
-    expect(timeout.minimum).toBeLessThan(timeout.maximum!);
-    expect(DEFAULT_CONFIG.network.timeout).toBeGreaterThanOrEqual(timeout.minimum!);
-    expect(DEFAULT_CONFIG.network.timeout).toBeLessThanOrEqual(timeout.maximum!);
-  });
-
-  it('an optional integer setting defaults to unset, not zero', () => {
-    expect(DEFAULT_CONFIG.lsp.maxMemoryMb).toBeNull();
-    const field = CONFIG_FIELDS.find(field => field.path === 'lsp.maxMemoryMb')!;
-    expect(field).toEqual(
-      expect.objectContaining({ type: 'number', minimum: 0, defaultValue: null })
-    );
+  it('an optional path setting defaults to unset', () => {
+    expect(DEFAULT_CONFIG.lsp.cacheDir).toBeUndefined();
+    const field = CONFIG_FIELDS.find(field => field.path === 'lsp.cacheDir')!;
+    expect(field).toEqual(expect.objectContaining({ type: 'path', defaultValue: null }));
   });
 });
 

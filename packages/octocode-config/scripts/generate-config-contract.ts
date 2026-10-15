@@ -21,7 +21,7 @@ type EnvBinding = {
   workspaceNarrowsTo?: string;
 };
 type Field = {
-  type: 'boolean' | 'number' | 'string' | 'url' | 'path' | 'stringArray' | 'enum';
+  type: 'boolean' | 'string' | 'url' | 'path' | 'stringArray' | 'enum';
   description: string;
   notes?: string;
   env?: EnvBinding;
@@ -31,9 +31,6 @@ type Field = {
   itemFormat?: 'path';
   typeName?: string;
   enumStyle?: 'list' | 'quotedOr';
-  minimum?: number;
-  span?: number;
-  defaultOffset?: number;
   values?: string[];
 };
 type Section = {
@@ -124,18 +121,7 @@ function setPath(root: JsonObject, path: string, value: unknown): void {
 }
 
 function ownDefault(field: FlatField): unknown {
-  switch (field.type) {
-    case 'number': {
-      if (field.default === null) return null;
-      const minimum = field.minimum!;
-      const maximum = minimum + field.span!;
-      return minimum + Math.min(field.defaultOffset!, maximum - minimum);
-    }
-    case 'enum':
-      return field.values![0];
-    default:
-      return structuredClone(field.default);
-  }
+  return field.type === 'enum' ? field.values![0] : structuredClone(field.default);
 }
 
 function buildDefaults(fields: FlatField[]): JsonObject {
@@ -167,8 +153,6 @@ function enumType(field: Field): string {
 
 function resolvedFieldType(field: Field): string {
   switch (field.type) {
-    case 'number':
-      return field.default === null ? 'number | null' : 'number';
     case 'boolean':
       return 'boolean';
     case 'stringArray':
@@ -290,8 +274,6 @@ function render(contract: Contract): string {
     notes: field.notes,
     env: field.env,
     defaultValue: ownDefault(field),
-    minimum: field.minimum,
-    maximum: field.minimum !== undefined ? field.minimum + field.span! : undefined,
     values: field.values,
     enumStyle: field.enumStyle,
     itemFormat: field.itemFormat,
@@ -302,7 +284,7 @@ function render(contract: Contract): string {
 
 ${renderInterfaces(contract)}
 
-export type ConfigFieldKind = 'boolean' | 'number' | 'string' | 'url' | 'path' | 'stringArray' | 'enum';
+export type ConfigFieldKind = 'boolean' | 'string' | 'url' | 'path' | 'stringArray' | 'enum';
 export interface ConfigEnvBinding {
   name: string;
   dotenv?: 'all' | 'home' | 'never';
@@ -322,8 +304,6 @@ export interface ConfigFieldSpec {
   /** The one variable that sets this field, if any. */
   env?: ConfigEnvBinding;
   defaultValue: unknown;
-  minimum?: number;
-  maximum?: number;
   values?: readonly string[];
   enumStyle?: 'list' | 'quotedOr';
   itemFormat?: 'path';
@@ -364,9 +344,6 @@ function markdownDefault(field: FlatField): string {
 }
 
 function markdownType(field: FlatField): string {
-  if (field.type === 'number') {
-    return `integer (${field.minimum}–${field.minimum! + field.span!})`;
-  }
   if (field.type === 'enum') return field.values!.map(value => `\`${value}\``).join(' or ');
   if (field.type === 'stringArray') return 'string array';
   return field.type;

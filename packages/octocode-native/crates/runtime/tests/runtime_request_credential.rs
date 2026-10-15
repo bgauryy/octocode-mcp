@@ -166,7 +166,7 @@ async fn rejected_request_token_never_falls_back_or_echoes() {
         ("PATH", workspace.fake_gh_path()),
     ]);
     config.runtime_surface = octocode_native::config::RuntimeSurface::Mcp;
-    let runtime = ToolRuntime::new(config).unwrap();
+    let runtime = ToolRuntime::with_limits(config, crate::support::FIXTURE_LIMITS).unwrap();
 
     for _ in 0..2 {
         let admission = runtime

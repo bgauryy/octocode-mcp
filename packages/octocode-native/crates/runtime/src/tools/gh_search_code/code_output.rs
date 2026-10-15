@@ -501,11 +501,14 @@ pub(super) struct PageReads {
 /// fragments; fragment `matchIndices` are verbose (core field class); a repo-scoped
 /// page names owner/repo once. The top read is a line range of the top
 /// resolved hit, else `fragment_read` kept inside the verified source scope.
-/// Hit lines are read for content matches unless a `fields` pick leaves
-/// them out (then the page is paths, with no line reads).
+/// Content classification needs the normal hit evidence even when the host
+/// requests only paths. Ordinary path projections still avoid line reads.
 fn reads_lines(query: &GhSearchCodeQuery) -> bool {
     query.match_in == GhSearchCodeQueryMatchIn::File
-        && (query.fields.is_empty() || picks(query, "lines") || picks(query, "matchCount"))
+        && (query.clasify_context.is_some()
+            || query.fields.is_empty()
+            || picks(query, "lines")
+            || picks(query, "matchCount"))
 }
 
 /// A `fields` pick names `field`.

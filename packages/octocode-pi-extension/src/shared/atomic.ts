@@ -19,6 +19,9 @@ export function sha256(data: string | Uint8Array, encoding: 'hex' | 'base64url' 
   return createHash('sha256').update(data).digest(encoding);
 }
 
+/** The first 16 hex digits of the SHA-256: a short name for content. */
+export const shortHash = (data: string | Uint8Array): string => sha256(data).slice(0, 16);
+
 /** The SHA-256 of a regular file, streamed (a large file is never held whole), or undefined when it does not exist (or is not a file). */
 export async function sha256File(file: string): Promise<string | undefined> {
   try {

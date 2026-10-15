@@ -15,6 +15,7 @@ from .dispatch import DeliveryMixin, now
 from .peers import PeersMixin
 from .expiry import ExpiryMixin, RESERVED_KEY_PREFIXES
 from .workspace import coordination_scope, stored_scope, scope_workspaces
+from .registry import register
 
 PAGE_BYTES = 16 * 1024
 
@@ -72,6 +73,8 @@ class Store(LeaseMixin, RecordsMixin, HealthMixin, CompletionMixin, DocumentsMix
         self.db = globals()['database'].open(self.database, read_only, create)
         self.database_identity = self.database.stat()
         self.writer = not read_only
+        # A non-default database is announced where tools that read only the default one can find it.
+        self.registration = register(self.database) if self.writer else None
         self.idle_inbox = None
 
     def close(self):
@@ -141,6 +144,8 @@ class Store(LeaseMixin, RecordsMixin, HealthMixin, CompletionMixin, DocumentsMix
 
     def call(self, session, name, input):
         self.check_database()
+        if self.registration:
+            self.registration.touch()
         catalog.command(name, input)
         if name in ('fetch', 'record'):
             return getattr(self, name)(session, input)

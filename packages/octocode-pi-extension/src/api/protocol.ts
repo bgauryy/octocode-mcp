@@ -40,6 +40,16 @@ export class RpcError extends Error {
 
 export const MAX_FRAME_BYTES = 1_048_576;
 
+/** The longest idempotency `key` of a `message.send`. */
+export const MESSAGE_KEY_MAX = 128;
+/** `message.send`'s `timeoutMs`: how long a call that waits for the turn may wait (bounds and default). */
+export const WAIT_MS = { min: 1_000, max: 3_600_000, default: 600_000 } as const;
+/** How much longer than the server's wait a client waits for the answer, by default and at most (the server's own wait is the cap). */
+export const CLIENT_MARGIN_MS = { default: 10_000, max: 60_000 } as const;
+/** An `externalAgent` prompt's `timeoutMs` when none is given, and how much longer the CLI waits for the call that runs it. */
+export const EXTERNAL_PROMPT_DEFAULT_MS = 120_000;
+export const EXTERNAL_CALL_MARGIN_MS = 15_000;
+
 /** Parse one frame into a request; returns an error response when it is not a valid JSON-RPC request. */
 export function parseRequest(text: string): RpcRequest | RpcResponse {
   let value: unknown;

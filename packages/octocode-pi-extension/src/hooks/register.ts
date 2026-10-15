@@ -145,38 +145,19 @@ function hooksReport(enabled: boolean, config: HookConfig, errors: string[], cwd
 /** Records a `PreToolUse` hook that gave no answer (`allowed`: the call went ahead) in the permission audit. */
 type HookFailureSink = (what: readonly string[], note: string, allowed: boolean) => void;
 
-export function registerHooks(pi: ExtensionAPI, env: NodeJS.ProcessEnv = process.env, home?: string, onFailure?: HookFailureSink): HooksView {
-  let config: HookConfig = emptyHooks();
-  let errors: string[] = [];
-  const enabled = hooksEnabled(env);
-  const timings = new Map<string, HookTiming>();
-  const view: HooksView = {
-    summary: () => (enabled ? `on, ${hookCount(config)} commands` : `off (${HOOKS_ENV}=1 to enable)`),
-    report: (cwd) => hooksReport(enabled, config, errors, cwd, home, timings),
-    preToolUse: async () => undefined,
-    notification: () => undefined,
-    messageSend: async () => undefined,
-    messageReceive: async () => undefined,
-  };
-  // Registered even when hooks are off: a resumed session may hold Stop feedback from an earlier run.
-  registerStopRenderer(pi);
-  if (!enabled) return view;
-  let pending: string[] = [];
-  /** SessionStart hook commands still running: the next prompt waits for their context, session start does not. */
-  let starting: Promise<void> | undefined;
-  /** Ends the current session's SessionStart hooks (on shutdown or the next session start), so none outlive it. */
-  let startAbort = new AbortController();
-  let messageAbort = new AbortController();
-  let messageSessionId: string | undefined;
-  const received = new Set<string>();
-  let receivedObjects = new WeakSet<MessageEnvelope>();
+/** What every event handler shares: the loaded config (replaced on each session start) and the repository root. */
+interface HookSession {
+  config: HookConfig;
+  errors: string[];
   /** The repository root for CLAUDE_PROJECT_DIR, found once per session and only when a hook actually runs. */
-  let root: string | undefined;
-  /** Stop-hook continuations in a row (reset by a prompt or a tool call). */
-  let stopContinues = 0;
-  /** A failed SessionStart dispatch is reported once per Pi process, not on every session start. */
-  let startWarned = false;
+  root: string | undefined;
+}
 
+type Dispatch = (ctx: ExtensionContext, event: HookEvent, names: string[], input: () => Record<string, unknown>, signal?: AbortSignal) => Promise<HookVerdict>;
+type ReportFailure = (ctx: ExtensionContext, event: HookEvent, error: unknown) => void;
+
+/** The shared hook runner: `dispatch` runs the hooks of one event, `reportFailure` says once per event that a dispatch itself failed. */
+function createDispatcher(session: HookSession, timings: Map<string, HookTiming>, onFailure: HookFailureSink | undefined): { dispatch: Dispatch; reportFailure: ReportFailure } {
   /** Commands already reported as slow, so each is reported once per Pi process. */
   const slowWarned = new Set<string>();
   const timeHook = async (ctx: ExtensionContext, event: HookEvent, hook: HookCommand, run: () => ReturnType<typeof runHook>): ReturnType<typeof runHook> => {
@@ -217,12 +198,12 @@ export function registerHooks(pi: ExtensionAPI, env: NodeJS.ProcessEnv = process
    * config order. Most tool calls match no hook, so the input (which may join a large tool result) is built only when
    * one does.
    */
-  const dispatch = async (ctx: ExtensionContext, event: HookEvent, names: string[], input: () => Record<string, unknown>, signal: AbortSignal | undefined = ctx.signal): Promise<HookVerdict> => {
-    const hooks = commandsFor(config, event, names);
+  const dispatch: Dispatch = async (ctx, event, names, input, signal = ctx.signal) => {
+    const hooks = commandsFor(session.config, event, names);
     if (hooks.length === 0) return {};
-    root ??= repoKey(ctx.cwd).root;
+    session.root ??= repoKey(ctx.cwd).root;
     const payload: Record<string, unknown> = { session_id: ctx.sessionManager.getSessionId(), transcript_path: ctx.sessionManager.getSessionFile() ?? '', cwd: ctx.cwd, hook_event_name: event, ...input() };
-    const env = { CLAUDE_PROJECT_DIR: root };
+    const env = { CLAUDE_PROJECT_DIR: session.root };
     const verdicts = await Promise.all(
       hooks.map(async (hook) => {
         const run = await timeHook(ctx, event, hook, () => runHook(hook, payload, ctx.cwd, env, signal));
@@ -241,6 +222,32 @@ export function registerHooks(pi: ExtensionAPI, env: NodeJS.ProcessEnv = process
     return { ...(block ? { block: capContext(block) } : {}), ...(context ? { context: capContext(context) } : {}), ...(ask ? { ask: capContext(ask) } : {}) };
   };
 
+  /** A dispatch that itself failed (not a hook's verdict): reported once per event per Pi process, with a UI. */
+  const dispatchWarned = new Set<HookEvent>();
+  const reportFailure: ReportFailure = (ctx, event, error) => {
+    if (dispatchWarned.has(event)) return;
+    dispatchWarned.add(event);
+    try {
+      if (ctx.hasUI) ctx.ui.notify(`${event} hooks could not run: ${sanitizeTerminalText(errorMessage(error))}`, 'warning');
+    } catch {
+      // The session was replaced.
+    }
+  };
+
+  return { dispatch, reportFailure };
+}
+
+/**
+ * SessionStart (also after a compaction, source `compact`): loads the hook config on each session start, runs the
+ * SessionStart hooks, and hands their context to the next prompt.
+ */
+function registerSessionStartHooks(pi: ExtensionAPI, session: HookSession, { dispatch, reportFailure }: { dispatch: Dispatch; reportFailure: ReportFailure }, home: string | undefined): void {
+  let pending: string[] = [];
+  /** SessionStart hook commands still running: the next prompt waits for their context, session start does not. */
+  let starting: Promise<void> | undefined;
+  /** Ends the current session's SessionStart hooks (on shutdown or the next session start), so none outlive it. */
+  let startAbort = new AbortController();
+
   /**
    * Starts the SessionStart hooks matching `source`. Hook commands can be slow (they spawn processes): they run
    * without holding up the event. A result that arrives after the session was replaced belongs to the old one and is
@@ -258,9 +265,7 @@ export function registerHooks(pi: ExtensionAPI, env: NodeJS.ProcessEnv = process
         if (verdict.context && !abort.signal.aborted) pending.push(verdict.context);
       })
       .catch((error: unknown) => {
-        if (startWarned || abort.signal.aborted) return;
-        startWarned = true;
-        if (ctx.hasUI) ctx.ui.notify(`SessionStart hooks could not run: ${sanitizeTerminalText(errorMessage(error))}`, 'warning');
+        if (!abort.signal.aborted) reportFailure(ctx, 'SessionStart', error);
       });
     const run: Promise<void> = (previous ? Promise.all([previous, hooks]) : hooks).then(() => undefined).finally(() => {
       if (starting === run) starting = undefined;
@@ -269,36 +274,20 @@ export function registerHooks(pi: ExtensionAPI, env: NodeJS.ProcessEnv = process
   };
 
   pi.on('session_start', async (event, ctx) => {
-    messageAbort.abort();
-    messageAbort = new AbortController();
-    messageSessionId = undefined;
-    received.clear();
-    receivedObjects = new WeakSet();
-    try {
-      messageSessionId = ctx.sessionManager.getSessionId();
-      for (const entry of ctx.sessionManager.getBranch?.() ?? []) {
-        const message = entry.type === 'message' ? entry.message : entry.type === 'custom_message' ? { role: 'custom', ...entry } : undefined;
-        for (const envelope of receivedMessages(message)) {
-          const key = messageKey(envelope);
-          if (key) received.add(key);
-        }
-      }
-    } catch { messageAbort.abort(); }
     const loaded = loadHooks(ctx.cwd, await projectTrust(ctx), home);
-    config = loaded.config;
-    errors = loaded.errors;
+    session.config = loaded.config;
+    session.errors = loaded.errors;
+    session.root = undefined;
     pending = [];
-    root = undefined;
     if (loaded.errors.length > 0 && ctx.hasUI) ctx.ui.notify(`Ignoring invalid hook config: ${loaded.errors.join('; ')}`, 'warning');
     startHooks(ctx, START_SOURCE[event.reason] ?? 'startup', true);
   });
   // Claude Code runs SessionStart again (source `compact`) after a compaction: its context comes with the next prompt.
   pi.on('session_compact', async (_event, ctx) => startHooks(ctx, 'compact', false));
-  pi.on('session_shutdown', async () => { startAbort.abort(); messageAbort.abort(); });
+  pi.on('session_shutdown', async () => startAbort.abort());
 
   // SessionStart context reaches the model once, with the next prompt, as data rather than instructions.
   pi.on('before_agent_start', async (_event, ctx) => {
-    stopContinues = 0;
     // The first prompt waits a bounded time for their context; a slower hook's context comes with the next prompt.
     if (starting) {
       // Shown only while the prompt actually waits: `starting` clears itself once the hooks finish.
@@ -314,19 +303,51 @@ export function registerHooks(pi: ExtensionAPI, env: NodeJS.ProcessEnv = process
     pending = [];
     return { message: { customType: CONTEXT_TYPE, content, display: false } };
   });
+}
 
-  // A `file` call is one dispatch per query (Edit / Write / Delete with Claude's input shape), all in parallel; any
-  // block blocks the call.
-  view.preToolUse = async (event, ctx) => {
-    const calls = hookCalls(event.toolName, event.input, ctx.cwd);
-    const verdicts = await Promise.all(calls.map((call) => dispatch(ctx, 'PreToolUse', call.names, () => ({ tool_name: call.tool_name, pi_tool_name: event.toolName, tool_input: call.tool_input }))));
-    const block = verdicts.find((verdict) => verdict.block)?.block;
-    if (block) return { block: true, reason: `Blocked by a PreToolUse hook: ${block}` };
-    const ask = verdicts.map((verdict) => verdict.ask).filter(Boolean).join('\n\n');
-    return ask ? { ask: capContext(ask) } : undefined;
-  };
+/**
+ * A `file` call is one dispatch per query (Edit / Write / Delete with Claude's input shape), all in parallel; any
+ * block blocks the call.
+ */
+const preToolUseGate = (dispatch: Dispatch): HooksView['preToolUse'] => async (event, ctx) => {
+  const calls = hookCalls(event.toolName, event.input, ctx.cwd);
+  const verdicts = await Promise.all(calls.map((call) => dispatch(ctx, 'PreToolUse', call.names, () => ({ tool_name: call.tool_name, pi_tool_name: event.toolName, tool_input: call.tool_input }))));
+  const block = verdicts.find((verdict) => verdict.block)?.block;
+  if (block) return { block: true, reason: `Blocked by a PreToolUse hook: ${block}` };
+  const ask = verdicts.map((verdict) => verdict.ask).filter(Boolean).join('\n\n');
+  return ask ? { ask: capContext(ask) } : undefined;
+};
 
-  view.messageSend = async (message, ctx) => {
+/**
+ * PreMessageSend gates a send; PostMessageReceive observes delivery. Tracks which session the messages belong to and
+ * which were already seen (a resumed session replays its history), so each received message dispatches once.
+ */
+function registerMessageHooks(pi: ExtensionAPI, { dispatch, reportFailure }: { dispatch: Dispatch; reportFailure: ReportFailure }): Pick<HooksView, 'messageSend' | 'messageReceive'> {
+  let messageAbort = new AbortController();
+  let messageSessionId: string | undefined;
+  const received = new Set<string>();
+  let receivedObjects = new WeakSet<MessageEnvelope>();
+
+  pi.on('session_start', async (_event, ctx) => {
+    messageAbort.abort();
+    messageAbort = new AbortController();
+    messageSessionId = undefined;
+    received.clear();
+    receivedObjects = new WeakSet();
+    try {
+      messageSessionId = ctx.sessionManager.getSessionId();
+      for (const entry of ctx.sessionManager.getBranch?.() ?? []) {
+        const message = entry.type === 'message' ? entry.message : entry.type === 'custom_message' ? { role: 'custom', ...entry } : undefined;
+        for (const envelope of receivedMessages(message)) {
+          const key = messageKey(envelope);
+          if (key) received.add(key);
+        }
+      }
+    } catch { messageAbort.abort(); }
+  });
+  pi.on('session_shutdown', async () => messageAbort.abort());
+
+  const messageSend: HooksView['messageSend'] = async (message, ctx) => {
     if (ctx.sessionManager.getSessionId() !== messageSessionId) throw new Error('The message belongs to a different session.');
     const signal = ctx.signal ? AbortSignal.any([messageAbort.signal, ctx.signal]) : messageAbort.signal;
     signal.throwIfAborted();
@@ -335,7 +356,7 @@ export function registerHooks(pi: ExtensionAPI, env: NodeJS.ProcessEnv = process
     return verdict.block ? { block: `Blocked by a PreMessageSend hook: ${verdict.block}` } : verdict.ask ? { ask: verdict.ask } : undefined;
   };
 
-  view.messageReceive = async (message, ctx) => {
+  const messageReceive: HooksView['messageReceive'] = async (message, ctx) => {
     const signal = messageAbort.signal;
     if (signal.aborted) return;
     try { if (ctx.sessionManager.getSessionId() !== messageSessionId) return; }
@@ -345,7 +366,9 @@ export function registerHooks(pi: ExtensionAPI, env: NodeJS.ProcessEnv = process
     if (key) received.add(key);
     else receivedObjects.add(message);
     // Observers never change the message or add a reply, even if a hook prints a gate verdict.
-    await dispatch(ctx, 'PostMessageReceive', messageNames(message), () => ({ message }), signal).catch(() => undefined);
+    await dispatch(ctx, 'PostMessageReceive', messageNames(message), () => ({ message }), signal).catch((error: unknown) => {
+      if (!signal.aborted) reportFailure(ctx, 'PostMessageReceive', error);
+    });
   };
 
   pi.on('context', async (event, ctx) => {
@@ -353,25 +376,37 @@ export function registerHooks(pi: ExtensionAPI, env: NodeJS.ProcessEnv = process
     for (const message of event.messages) {
       for (const envelope of receivedMessages(message)) {
         if (signal.aborted) return undefined;
-        await view.messageReceive(envelope, ctx);
+        await messageReceive(envelope, ctx);
       }
     }
     return undefined;
   });
 
-  view.notification = (notice, ctx) => {
-    const input = { message: notice.message, ...(notice.title ? { title: notice.title } : {}), notification_type: notice.type };
-    // Background: its own signal, so aborting the run (ctx.signal) does not cancel it; the hook timeout still applies.
-    void dispatch(ctx, 'Notification', [notice.type], () => input, new AbortController().signal).catch(() => undefined);
-  };
+  return { messageSend, messageReceive };
+}
 
-  // Stop: when the agent would settle after a completed run, a blocking hook sends it on with the reason (Claude
-  // Code's loop guards: `stop_hook_active` while continuing, at most 8 continuations in a row unless a tool runs).
+/** Background: its own signal, so aborting the run (ctx.signal) does not cancel it; the hook timeout still applies. */
+const notificationHook = ({ dispatch, reportFailure }: { dispatch: Dispatch; reportFailure: ReportFailure }): HooksView['notification'] => (notice, ctx) => {
+  const input = { message: notice.message, ...(notice.title ? { title: notice.title } : {}), notification_type: notice.type };
+  void dispatch(ctx, 'Notification', [notice.type], () => input, new AbortController().signal).catch((error: unknown) => reportFailure(ctx, 'Notification', error));
+};
+
+/**
+ * Stop: when the agent would settle after a completed run, a blocking hook sends it on with the reason (Claude
+ * Code's loop guards: `stop_hook_active` while continuing, at most 8 continuations in a row unless a tool runs).
+ */
+function registerStopHook(pi: ExtensionAPI, session: HookSession, dispatch: Dispatch): void {
+  /** Stop-hook continuations in a row (reset by a prompt or a tool call). */
+  let stopContinues = 0;
+  pi.on('before_agent_start', async () => {
+    stopContinues = 0;
+    return undefined;
+  });
   pi.on('tool_execution_start', async (event) => {
     if (!event.parentToolCallId) stopContinues = 0;
   });
   pi.on('agent_before_settle', async (event, ctx) => {
-    const stops = commandsFor(config, 'Stop', []);
+    const stops = commandsFor(session.config, 'Stop', []);
     if (event.outcome !== 'completed' || stops.length === 0) return undefined;
     const last = [...event.context.llmMessages].reverse().find((message) => message.role === 'assistant');
     // Pi removed its working indicator at `agent_end`; the footer status shows the hooks still running.
@@ -381,7 +416,10 @@ export function registerHooks(pi: ExtensionAPI, env: NodeJS.ProcessEnv = process
     // Pi replaces the boundary's entries with a handler's: keep what earlier handlers proposed.
     return { entries: [...event.entries, { type: 'custom_message' as const, customType: STOP_TYPE, content: `${STOP_PREFIX}${verdict.block}`, display: true }], continue: true };
   });
+}
 
+/** PostToolUse: feedback from the hooks is appended to the tool result the model reads. */
+function registerPostToolUseHook(pi: ExtensionAPI, dispatch: Dispatch): void {
   pi.on('tool_result', async (event, ctx) => {
     if (event.isError) return undefined;
     const outcomes = event.toolName === 'file' && isRecord(event.details) && Array.isArray(event.details['outcomes']) ? event.details['outcomes'] : undefined;
@@ -394,17 +432,44 @@ export function registerHooks(pi: ExtensionAPI, env: NodeJS.ProcessEnv = process
     }
     return feedback.length > 0 ? { content: [...event.content, { type: 'text' as const, text: `\n[PostToolUse hook] ${capContext(feedback.join('\n\n'))}` }] } : undefined;
   });
+}
 
+/** PreCompact: side effects only. */
+function registerPreCompactHook(pi: ExtensionAPI, dispatch: Dispatch): void {
   pi.on('session_before_compact', async (event, ctx) => {
-
     const trigger = event.reason === 'manual' ? 'manual' : 'auto';
     await dispatch(ctx, 'PreCompact', [trigger], () => ({ trigger, custom_instructions: event.customInstructions ?? '' }));
     return undefined;
   });
+}
+
+export function registerHooks(pi: ExtensionAPI, env: NodeJS.ProcessEnv = process.env, home?: string, onFailure?: HookFailureSink): HooksView {
+  const session: HookSession = { config: emptyHooks(), errors: [], root: undefined };
+  const enabled = hooksEnabled(env);
+  const timings = new Map<string, HookTiming>();
+  const view: HooksView = {
+    summary: () => (enabled ? `on, ${hookCount(session.config)} commands` : `off (${HOOKS_ENV}=1 to enable)`),
+    report: (cwd) => hooksReport(enabled, session.config, session.errors, cwd, home, timings),
+    preToolUse: async () => undefined,
+    notification: () => undefined,
+    messageSend: async () => undefined,
+    messageReceive: async () => undefined,
+  };
+  // Registered even when hooks are off: a resumed session may hold Stop feedback from an earlier run.
+  registerStopRenderer(pi);
+  if (!enabled) return view;
+  const runner = createDispatcher(session, timings, onFailure);
+  // The message handlers go first: their session_start reset runs before the hook files load.
+  Object.assign(view, registerMessageHooks(pi, runner));
+  registerStopHook(pi, session, runner.dispatch);
+  registerSessionStartHooks(pi, session, runner, home);
+  view.preToolUse = preToolUseGate(runner.dispatch);
+  view.notification = notificationHook(runner);
+  registerPostToolUseHook(pi, runner.dispatch);
+  registerPreCompactHook(pi, runner.dispatch);
   return view;
 }
 
-/** `/octocode hooks` (or `/hooks`): whether hooks run, what loaded, and which files to edit. */
 /** `⚑ Stop hook`, then the hook's feedback: untrusted text, sanitized and previewed by resultBlock, never drawn as Markdown. */
 function registerStopRenderer(pi: ExtensionAPI): void {
   pi.registerMessageRenderer(STOP_TYPE, (message, { expanded, outputPad }, theme) => {
@@ -416,6 +481,7 @@ function registerStopRenderer(pi: ExtensionAPI): void {
   });
 }
 
+/** `/octocode hooks` (or `/hooks`): whether hooks run, what loaded, and which files to edit. */
 export function registerHooksCommand(commands: Subcommands, hooks: HooksView): void {
   commands.add('hooks', {
     description: 'hooks — hooks on/off, loaded commands and the files to configure',

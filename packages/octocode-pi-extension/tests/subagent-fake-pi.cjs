@@ -184,6 +184,8 @@ if (task.split('\n\n## You')[0].includes('linger')) {
   end = 'hold';
   ignoreClose = true;
   process.on('SIGTERM', () => undefined);
+  // Tells the parent the child ignores SIGTERM now: a stop sent before this would end it at once.
+  emit({ type: 'tool_execution_start', toolName: 'bash', args: { command: 'stubborn' } });
   setTimeout(() => undefined, 60_000);
 } else if (task.startsWith('answer then stalled shutdown')) {
   emit(say('COMPLETED REPORT'));

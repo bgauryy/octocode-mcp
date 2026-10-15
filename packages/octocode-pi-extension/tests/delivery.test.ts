@@ -98,7 +98,7 @@ describe('Delivery', () => {
     expect(tui.ctx.ui.statuses.get(QUEUED_STATUS)).toBeUndefined();
   });
 
-  it('keeps going when re-sending fails because the session ended', async () => {
+  it('counts the messages it could not re-add and says they were lost', async () => {
     const t = setup();
     await t.emit('session_start', {}, t.ctx);
     await t.emit('agent_start', {}, t.ctx);
@@ -107,6 +107,42 @@ describe('Delivery', () => {
       throw new Error('stale');
     };
     await t.emit('agent_settled', {}, t.ctx);
-    expect(t.ctx.ui.notes).toEqual([]);
+    expect(t.ctx.ui.notes).toEqual([{ message: 'Interrupt lost 1 queued message: could not add it to the conversation (stale).', type: 'warning' }]);
+    expect(t.delivery.pending).toBe(0);
+  });
+
+  it('reports kept and lost messages separately when only some re-adds fail', async () => {
+    const t = setup();
+    await t.emit('session_start', {}, t.ctx);
+    await t.emit('agent_start', {}, t.ctx);
+    t.pi.sendMessage(report('a'), { deliverAs: 'steer' });
+    t.pi.sendMessage(report('b'), { deliverAs: 'steer' });
+    t.pi.sendMessage(report('c'), { deliverAs: 'steer' });
+    const push = t.sent.push.bind(t.sent);
+    t.sent.push = (entry) => {
+      if (String(entry.message.content).includes('report b')) throw new Error('closed');
+      return push(entry);
+    };
+    await t.emit('agent_settled', {}, t.ctx);
+    // The three queued sends, then the re-adds: `report b` throws and is not recorded.
+    expect(t.sent.map((entry) => entry.message.content)).toEqual(['report a', 'report b', 'report c', 'report a', 'report c']);
+    expect(t.ctx.ui.notes).toEqual([
+      { message: expect.stringContaining('kept 2 queued messages'), type: 'info' },
+      { message: 'Interrupt lost 1 queued message: could not add it to the conversation (closed).', type: 'warning' },
+    ]);
+  });
+
+  it('stays quiet about the interrupt when the session already ended and its UI is gone', async () => {
+    const t = setup();
+    await t.emit('session_start', {}, t.ctx);
+    await t.emit('agent_start', {}, t.ctx);
+    t.pi.sendMessage(report('a'), { deliverAs: 'steer' });
+    t.sent.push = () => {
+      throw new Error('stale');
+    };
+    t.ctx.ui.notify = () => {
+      throw new Error('stale ctx');
+    };
+    await expect(t.emit('agent_settled', {}, t.ctx)).resolves.not.toThrow();
   });
 });

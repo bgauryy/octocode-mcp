@@ -659,6 +659,7 @@ fn infer_language(
                 include: &include,
                 exclude: &exclude,
             },
+            &ast_rule::GlobParsers::default(),
             &|path| discovery.permits(path),
             &|| cancellation.check().is_err(),
         )

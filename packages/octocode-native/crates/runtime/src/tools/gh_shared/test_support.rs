@@ -19,9 +19,16 @@ pub(crate) use mock_http::{Delayed, mount_json};
 /// other's search spacing (the process-wide budget is the github crate's
 /// subject).
 pub(crate) fn mock_provider(server: &MockServer, retry: RetryPolicy) -> GitHubProvider<NoCache> {
-    let endpoint =
-        GitHubEndpoint::new(url::Url::parse(&format!("{}/api/v3", server.uri())).expect("URL"))
-            .expect("endpoint");
+    provider_at(mock_endpoint(server), retry)
+}
+
+/// The GitHub Enterprise-style API endpoint `server` serves.
+pub(crate) fn mock_endpoint(server: &MockServer) -> GitHubEndpoint {
+    GitHubEndpoint::new(url::Url::parse(&format!("{}/api/v3", server.uri())).expect("URL"))
+        .expect("endpoint")
+}
+
+fn provider_at(endpoint: GitHubEndpoint, retry: RetryPolicy) -> GitHubProvider<NoCache> {
     GitHubProvider {
         transport: GitHubTransport::with_budget(endpoint, retry, GitHubBudget::relaxed())
             .expect("transport"),
@@ -32,8 +39,13 @@ pub(crate) fn mock_provider(server: &MockServer, retry: RetryPolicy) -> GitHubPr
 /// [`mock_provider`] that sends each request once: a failure surfaces as it
 /// happened instead of after retries.
 pub(crate) fn one_shot_provider(server: &MockServer) -> GitHubProvider<NoCache> {
-    mock_provider(
-        server,
+    one_shot_provider_at(mock_endpoint(server))
+}
+
+/// [`one_shot_provider`] for any `endpoint`, such as one nothing listens on.
+pub(crate) fn one_shot_provider_at(endpoint: GitHubEndpoint) -> GitHubProvider<NoCache> {
+    provider_at(
+        endpoint,
         RetryPolicy {
             max_attempts: 1,
             ..Default::default()

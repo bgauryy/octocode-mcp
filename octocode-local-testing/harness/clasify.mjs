@@ -1,26 +1,28 @@
 // Classification against the real provider (live suite, paid calls).
 //
-// Retrieval `classifiers`: localFetch over large unread files must deliver the
-// target declaration in its first ranked page (ground truth from the source
-// bytes, never from the model), localSearch must rank the implementing file
-// first, two classifiers over one file must both land in the first page, and a
-// ranked continuation walk must deliver every line exactly once.
+// Retrieval `clasifyContext` selection (source order is kept; unselected and
+// unjudged evidence is withheld): localFetch over large unread files must select
+// the target declaration (ground truth from the source bytes, never from the
+// model), localSearch must select the implementing file, localFetch over a huge
+// file must select the target among its match windows, two classifiers over one
+// file must both select their declarations, and a selected continuation walk
+// must stay in source order while next.unfiltered recovers every line once.
 //
 // Public `clasify`: typed noul/choice/score answers over held `state`, over a
 // localFetch `source` (with an executable `hints.read`), over a URL capture,
 // and an unreadable source failing its row instead of answering.
 //
-// Measures host-visible bytes (first ranked page) against a direct full read.
+// Measures host-visible bytes (the selected view) against a direct full read.
 import fs from 'node:fs';
 import path from 'node:path';
 import { FIXTURES, REPOS, checks, collect, rowData, startServer, writeResults } from './mcp-client.mjs';
 
 const { check, skip, summary } = checks('clasify');
-// Ranking is a home-only switch; the process environment enables it for this suite.
-const client = await startServer({ env: { OCTOCODE_RANKING_ENABLED: 'true', OCTOCODE_BETA: 'true' } });
+// Selection needs only the caller's provider key; beta exposes public clasify.
+const client = await startServer({ env: { OCTOCODE_BETA: 'true' } });
 const { raw, call, follow } = client;
 const queryFields = name => client.tools.find(tool => tool.name === name)?.inputSchema?.properties?.queries?.items?.properties ?? {};
-const noClassifiers = queryFields('localFetch').classifiers ? null : 'classifiers are not advertised (ranking disabled or no provider key)';
+const noClassifiers = queryFields('localFetch').clasifyContext ? null : 'clasifyContext is not advertised (no classification provider key)';
 const noClasify = client.tools.some(tool => tool.name === 'clasify') ? null : 'clasify is not registered (no provider key or beta off)';
 
 /** The first line of `dir/file` matching `regex` (ground truth never comes from the model). */
@@ -58,8 +60,26 @@ const LOCATE = [
   { name: 'elasticsearch InternalEngine.index', dir: 'huge-java', glob: 'server/src/main/java/org/elasticsearch/index/engine/InternalEngine.java', regex: 'public IndexResult index\\(Index index\\)', target: 'The engine method that indexes one document operation.' },
   { name: 'pytorch autograd Engine::execute', dir: 'huge-cpp', glob: 'torch/csrc/autograd/engine.cpp', regex: '^auto Engine::execute\\(', target: 'The autograd engine method that executes the backward graph from given root edges.' },
 ];
-// A raw line window: the ranked route (minified, byte and fullContent views skip ranking).
+// A raw line window: selection judges raw line chunks (minified and byte views are rejected).
 const PAGE = { unit: 'lines', length: 120, minify: 'none' };
+const MAX_SELECTED_PAGES = 20;
+
+/** A selected view: the first page plus its plan-bound continueWindow pages (never next.unfiltered). */
+async function selectedView(first) {
+  const pages = [first];
+  for (let lead = rowData(first)?.next?.continueWindow; lead && pages.length < MAX_SELECTED_PAGES; lead = rowData(pages.at(-1))?.next?.continueWindow) pages.push(await follow(lead));
+  const lines = pages.flatMap(page => numbered(rowData(page)?.content));
+  return {
+    pages, lines, bytes: pages.reduce((sum, page) => sum + page.bytes, 0),
+    receipt: rowData(first)?.selection,
+    complete: !rowData(pages.at(-1))?.next?.continueWindow,
+    ok: pages.every(page => !page.isError && !page.rowErrors),
+  };
+}
+/** The receipt summary a table row or failure detail shows. */
+const receiptText = receipt => receipt ? `${receipt.status} ${receipt.selectedItems}/${receipt.totalItems} selected, ${receipt.unknownItems} unknown${receipt.reason ? ` (${receipt.reason})` : ''}` : '-';
+/** Selected lines keep source order with no duplicate anchors. */
+const sourceOrdered = lines => lines.every(([n], i) => i === 0 || n > lines[i - 1][0]);
 
 const table = [];
 if (noClassifiers) skip('classifiers: localFetch, localSearch and walk checks', noClassifiers);
@@ -69,71 +89,77 @@ else {
     if (!check(`${t.name}: ground truth found`, truth, `${t.dir}/${t.glob}`)) continue;
     const size = fs.statSync(truth.file).size;
     const started = Date.now();
-    const first = await call('localFetch', { path: truth.file, classifiers: [t.target], ...PAGE });
-    const data = rowData(first) ?? {};
-    const lines = numbered(data.content);
+    const view = await selectedView(await call('localFetch', { path: truth.file, clasifyContext: { classifiers: [t.target] }, ...PAGE }));
     const declRe = new RegExp(t.regex);
-    // Strict: the first ranked page delivers the declaration line itself.
-    const strict = lines.some(([n, text]) => n === truth.line && declRe.test(text));
+    // Strict: the selected view delivers the declaration line itself at its source anchor.
+    const strict = view.lines.some(([n, text]) => n === truth.line && declRe.test(text));
     table.push({
-      target: t.name, fileKB: Math.round(size / 1024), truth: truth.line, ranking: data.ranking?.status ?? '-', reason: data.ranking?.reason ?? '',
-      firstLine: lines[0]?.[0] ?? '-', strict, hostKB: (first.bytes / 1024).toFixed(1), saving: `${Math.round(100 - (100 * first.bytes) / size)}%`, s: ((Date.now() - started) / 1000).toFixed(0),
+      target: t.name, fileKB: Math.round(size / 1024), truth: truth.line, selection: receiptText(view.receipt),
+      pages: view.pages.length, strict, hostKB: (view.bytes / 1024).toFixed(1), saving: `${Math.round(100 - (100 * view.bytes) / size)}%`, s: ((Date.now() - started) / 1000).toFixed(0),
     });
-    check(`${t.name}: the first ranked page delivers the declaration (line ${truth.line})`, !first.isError && strict, `ranking=${JSON.stringify(data.ranking)} first=${lines[0]?.[0]}`);
+    check(`${t.name}: the selected view delivers the declaration (line ${truth.line}) in source order`, view.ok && view.complete && strict && sourceOrdered(view.lines), `selection=${receiptText(view.receipt)} pages=${view.pages.length} first=${view.lines[0]?.[0]}`);
     // Small files are read directly; only assert leverage at ≥64KB.
-    if (size >= 64 * 1024) check(`${t.name}: first-page host bytes < 10% of a full read`, first.bytes < size * 0.1, `${first.bytes}B vs ${size}B`);
+    if (size >= 64 * 1024) check(`${t.name}: selected-view host bytes < 10% of a full read`, view.bytes < size * 0.1, `${view.bytes}B vs ${size}B`);
   }
   console.table(table);
-  console.log(`classifiers first-page declaration: ${table.filter(r => r.strict).length}/${table.length}`);
+  console.log(`clasifyContext selected declaration: ${table.filter(r => r.strict).length}/${table.length}`);
 
-  // Search: the implementing file ranks first among the hits.
+  // Search: the implementing file is among the selected files (selection unit: files).
+  // A content view is required; file-list and count views reject clasifyContext.
   const scheduler = path.join(REPOS, 'huge-go/pkg/scheduler');
-  if (!fs.existsSync(scheduler)) skip('classifiers localSearch: schedule_one.go ranks first', `missing ${scheduler}`);
+  if (!fs.existsSync(scheduler)) skip('clasifyContext localSearch: schedule_one.go is selected', `missing ${scheduler}`);
   else {
-    const out = await call('localSearch', {
-      path: scheduler, matchString: 'func (sched *Scheduler)', resultView: 'files', pageSize: 3,
-      classifiers: ['The implementation of scheduling one pod: the main per-pod scheduling cycle.'],
-    });
-    const data = rowData(out) ?? {};
-    const files = (data.files ?? []).map(f => f.path ?? '');
-    check('classifiers localSearch: schedule_one.go ranks first among search hits', data.ranking?.status === 'ranked' && files[0]?.endsWith('schedule_one.go'), JSON.stringify({ ranking: data.ranking, files }).slice(0, 200));
+    const pages = [await call('localSearch', {
+      path: scheduler, matchString: 'func (sched *Scheduler)', pageSize: 3, matchPageSize: 1,
+      clasifyContext: { classifiers: ['The implementation of scheduling one pod: the main per-pod scheduling cycle.'] },
+    })];
+    for (let lead = rowData(pages[0])?.next?.nextPage; lead && pages.length < MAX_SELECTED_PAGES; lead = rowData(pages.at(-1))?.next?.nextPage) pages.push(await follow(lead));
+    const receipt = rowData(pages[0])?.selection;
+    const files = pages.flatMap(page => (rowData(page)?.files ?? []).map(f => f.path ?? ''));
+    check('clasifyContext localSearch: schedule_one.go is selected and other hits are withheld', pages.every(p => !p.isError && !p.rowErrors)
+      && files.some(file => file.endsWith('schedule_one.go')) && receipt?.selectedItems === new Set(files).size && receipt.selectedItems < receipt.totalItems,
+    JSON.stringify({ selection: receipt, files }).slice(0, 240));
   }
 
-  // Huge single file (3MB checker.ts): match evidence is ranked before delivery.
+  // Huge single file (3MB checker.ts): localSearch selects whole files, so the
+  // in-file narrowing is localFetch's: matchString windows are judged before delivery.
   {
     const truth = groundTruth('typescript', 'tsc/testdata/fixtures/compiler/checker.ts', 'function isTypeAssignableTo\\(');
-    if (!truth) skip('huge file: ranked matches', 'missing checker.ts');
+    if (!truth) skip('huge file: selected match windows', 'missing checker.ts');
     else {
-      const out = await call('localSearch', {
-        path: truth.file, matchString: 'assignable', caseMode: 'insensitive', matchPageSize: 20,
-        classifiers: ['The function that checks whether a source type is assignable to a target type.'],
+      const first = await call('localFetch', {
+        path: truth.file, matchString: 'assignable', caseMode: 'insensitive', contextLines: 2, ...PAGE,
+        clasifyContext: { classifiers: ['The function that checks whether a source type is assignable to a target type.'] },
       });
-      const matches = collect(rowData(out), o => typeof o.line === 'number' && typeof o.value === 'string').map(m => m.line);
-      check(`huge file (3MB checker.ts): the first ranked match page holds line ${truth.line}`, !out.isError && matches.includes(truth.line), JSON.stringify({ ranking: rowData(out)?.ranking, lines: matches.slice(0, 10) }));
-      check('huge file: first ranked page stays under 1% of a full read', out.bytes < fs.statSync(truth.file).size * 0.01, `${out.bytes}B`);
+      const view = await selectedView(first);
+      check(`huge file (3MB checker.ts): the selected match windows hold line ${truth.line}`, view.ok && view.lines.some(([n]) => n === truth.line) && sourceOrdered(view.lines),
+        JSON.stringify({ selection: view.receipt, pages: view.pages.length, lines: view.lines.slice(0, 10).map(([n]) => n) }));
+      check('huge file: the first selected page stays under 1% of a full read', first.bytes < fs.statSync(truth.file).size * 0.01, `${first.bytes}B`);
     }
   }
 
-  // Two classifiers over one file: each one's best unit is in the first page.
+  // Two classifiers over one file: either classifier's direct evidence is selected.
   {
     const cron = groundTruth('c', 'src/server.c', '^int serverCron\\(');
     const proc = groundTruth('c', 'src/server.c', '^int processCommand\\(');
     if (!cron || !proc) skip('two classifiers: both declarations', 'missing redis server.c');
     else {
-      const out = await call('localFetch', {
+      const view = await selectedView(await call('localFetch', {
         path: cron.file, ...PAGE,
-        classifiers: [
-          'The periodic timer function that runs background housekeeping tasks many times per second.',
-          'The function that validates a client command and decides whether to execute or queue it.',
-        ],
-      });
-      const delivered = new Set(numbered(rowData(out)?.content).map(([n]) => n));
-      check('two classifiers: both declarations are in the first ranked page', delivered.has(cron.line) && delivered.has(proc.line), JSON.stringify({ ranking: rowData(out)?.ranking, cron: cron.line, proc: proc.line }));
+        clasifyContext: {
+          classifiers: [
+            'The periodic timer function that runs background housekeeping tasks many times per second.',
+            'The function that validates a client command and decides whether to execute or queue it.',
+          ],
+        },
+      }));
+      const delivered = new Set(view.lines.map(([n]) => n));
+      check('two classifiers: both declarations are in the selected view', view.ok && delivered.has(cron.line) && delivered.has(proc.line) && sourceOrdered(view.lines), JSON.stringify({ selection: view.receipt, pages: view.pages.length, cron: cron.line, proc: proc.line }));
     }
   }
 
-  // Lossless replay: a ranked continuation walk delivers every line exactly once,
-  // its first page holds the deciding line, and it terminates.
+  // Selected replay: the plan-bound walk keeps source order, holds the deciding
+  // line, withholds the filler, and terminates; next.unfiltered recovers every line once.
   {
     // Under the workspace (the server's allowed root): the OS temp dir is outside it.
     const scratch = path.join(FIXTURES, 'scratch');
@@ -144,13 +170,22 @@ else {
       const lines = Array.from({ length: 429 }, (_, i) => `Line ${i + 1}: operational documentation filler explaining ordinary housekeeping and source ownership.`);
       lines[172] = 'Retry only after a transient upstream timeout; stop retrying after three attempts.';
       fs.writeFileSync(file, lines.join('\n') + '\n');
-      const pages = [await call('localFetch', { path: file, classifiers: ['When must a retry stop?'], unit: 'lines', length: 100, minify: 'none' })];
-      for (let lead = rowData(pages[0])?.next?.continueWindow; lead && pages.length < 20; lead = rowData(pages.at(-1))?.next?.continueWindow) pages.push(await follow(lead));
-      const seen = pages.flatMap(p => numbered(rowData(p)?.content).map(([n]) => n));
+      const first = await call('localFetch', { path: file, clasifyContext: { classifiers: ['When must a retry stop?'] }, unit: 'lines', length: 100, minify: 'none' });
+      const view = await selectedView(first);
+      const r = view.receipt;
+      check('walk: every selected page succeeds', view.ok, view.pages.filter(p => p.isError || p.rowErrors).map(p => p.text.slice(0, 80)).join(' | '));
+      check('walk: the selected view holds the deciding line', view.lines.some(([n]) => n === 173), receiptText(r));
+      check('walk: selected pages keep source order, carry one receipt, terminate, and withhold the filler', view.complete && sourceOrdered(view.lines)
+        && r?.selectedItems + r?.excludedItems + r?.unknownItems === r?.totalItems && r.selectedItems < r.totalItems && view.lines.length < 429
+        && view.pages.every(page => JSON.stringify(rowData(page)?.selection) === JSON.stringify(r)), `${view.pages.length} pages, ${view.lines.length} lines, ${receiptText(r)}`);
+      const unfiltered = rowData(first)?.next?.unfiltered;
+      const recovered = unfiltered ? [await follow(unfiltered)] : [];
+      for (let lead = recovered[0] && rowData(recovered[0])?.next?.continueWindow; lead && recovered.length < 20; lead = rowData(recovered.at(-1))?.next?.continueWindow) recovered.push(await follow(lead));
+      const seen = recovered.flatMap(p => numbered(rowData(p)?.content).map(([n]) => n));
       const once = seen.length === 429 && new Set(seen).size === 429 && seen.every(n => n >= 1 && n <= 429);
-      check('walk: every ranked page succeeds', pages.every(p => !p.isError && !p.rowErrors), pages.filter(p => p.isError || p.rowErrors).map(p => p.text.slice(0, 80)).join(' | '));
-      check('walk: the first ranked page holds the deciding line', numbered(rowData(pages[0])?.content).some(([n]) => n === 173), JSON.stringify(rowData(pages[0])?.ranking));
-      check('walk: continuation terminates and delivers lines 1-429 exactly once', once && !rowData(pages.at(-1))?.next?.continueWindow, `${pages.length} pages, ${seen.length} lines, ${new Set(seen).size} distinct`);
+      check('walk: next.unfiltered drops the plan and recovers lines 1-429 exactly once', !!unfiltered && unfiltered.query?.queries?.[0]?.clasifyContext === undefined
+        && recovered.every(p => !p.isError && !p.rowErrors && rowData(p)?.selection === undefined) && once && !rowData(recovered.at(-1))?.next?.continueWindow,
+      `${recovered.length} pages, ${seen.length} lines, ${new Set(seen).size} distinct`);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

@@ -107,7 +107,9 @@ fn pagination_omits_nullable_next_page_at_the_terminal_page() {
 #[test]
 fn semantic_pagination_continuations_cover_the_full_result_fixture() {
     let expected = (0..7)
-        .map(|index| serde_json::json!({"name": format!("symbol-{index}")}))
+        .map(|index| {
+            serde_json::json!({"symbolName": format!("symbol-{index}"), "path": "/repo/src/lib.rs"})
+        })
         .collect::<Vec<_>>();
     let mut query: LspSearchQuery = serde_json::from_value(serde_json::json!({
         "operation": "documentSymbols", "mainGoal": "test", "reasoning": "test",
@@ -120,31 +122,52 @@ fn semantic_pagination_continuations_cover_the_full_result_fixture() {
     query = requery(&query, serde_json::json!({"snapshot": snapshot}));
     let mut actual = Vec::new();
 
-    loop {
-        let (page, pagination) = counted_page(
-            &expected,
-            query.page().unwrap_or(1),
-            query.page_size().expect("explicit pageSize"),
-        );
-        actual.extend(page);
-        let response = with_next(
-            &query,
-            serde_json::json!({
-                "snapshot": snapshot,
-                "pagination": pagination
-            }),
-        );
-        if response["pagination"]["hasMore"] != true {
-            assert!(response.get("next").is_none());
-            break;
-        }
-        let continuation = &response["next"]["nextPage"];
-        assert_eq!(continuation["tool"], "lspSearch");
-        query = serde_json::from_value(continuation["query"]["queries"][0].clone())
-            .expect("executable continuation query");
-        assert_eq!(query.snapshot(), Some(snapshot.as_str()));
-    }
+    let walk = crate::tools::test_support::checks::walk(
+        "lspSearch",
+        serde_json::json!({"queries": [query.to_row()]}),
+        |call| {
+            let query: LspSearchQuery = serde_json::from_value(call["queries"][0].clone())
+                .expect("executable continuation query");
+            assert_eq!(query.snapshot(), Some(snapshot.as_str()));
+            let (page, pagination) = counted_page(
+                &expected,
+                query.page().unwrap_or(1),
+                query.page_size().expect("explicit pageSize"),
+            );
+            let response = with_next(
+                &query,
+                serde_json::json!({
+                    "snapshot": snapshot,
+                    "matches": page,
+                    "pagination": pagination
+                }),
+            );
+            if response["pagination"]["hasMore"] != true {
+                assert!(response.get("next").is_none());
+            } else {
+                assert_eq!(response["next"]["nextPage"]["tool"], "lspSearch");
+            }
+            let rows = page
+                .iter()
+                .map(|item| item["symbolName"].as_str().expect("name").to_owned())
+                .collect();
+            actual.extend(page);
+            // The top-level snapshot only feeds `with_next` here; a tool row
+            // carries it in `pagination`, which `with_next` moves to the call.
+            let mut row = response;
+            row.as_object_mut().expect("row").remove("snapshot");
+            crate::tools::test_support::checks::Page {
+                output: crate::tools::test_support::published(
+                    crate::tools::id::ToolId::LspSearch,
+                    &query.to_row(),
+                    &row,
+                ),
+                rows,
+            }
+        },
+    );
 
+    assert_eq!(walk.queries.len(), 3);
     assert_eq!(actual, expected);
 }
 
@@ -1338,9 +1361,13 @@ async fn compact_reference_terminal_fit_preserves_controls_and_cursor_identity()
         snippets: &[Value],
         windows: &[usize],
     ) -> Vec<Value> {
-        let mut query = initial.clone();
+        use crate::tools::test_support::checks::{Page, Walker};
+        let tool = crate::tools::id::ToolId::LspSearch;
+        let mut walker = Walker::new(tool.as_str(), json!({"queries":[initial.to_row()]}));
         let mut pages = Vec::new();
-        loop {
+        while let Some(call) = walker.next_query() {
+            let query: LspSearchQuery =
+                serde_json::from_value(call["queries"][0].clone()).expect("executable nextPage");
             let window = windows[pages.len().min(windows.len() - 1)];
             let budget = crate::tools::page_windows::page_budget(Some(window), &query.to_row());
             let row = locations(
@@ -1354,17 +1381,17 @@ async fn compact_reference_terminal_fit_preserves_controls_and_cursor_identity()
             )
             .await;
             let row = with_next(&query, row);
-            crate::tools::test_support::assert_row_contract(
-                crate::tools::id::ToolId::LspSearch,
-                &query.to_row(),
-                &row,
-            );
-            let next = row.pointer("/next/nextPage/query/queries/0").cloned();
+            walker.accept(Page {
+                output: crate::tools::test_support::published(tool, &query.to_row(), &row),
+                rows: identities(std::slice::from_ref(&row))
+                    .iter()
+                    .map(u64::to_string)
+                    .collect(),
+            });
             pages.push(row);
             assert!(pages.len() <= snippets.len(), "finite exact-once walk");
-            let Some(next) = next else { break };
-            query = serde_json::from_value(next).expect("executable nextPage");
         }
+        walker.finish();
         pages
     }
     fn identities(pages: &[Value]) -> Vec<u64> {

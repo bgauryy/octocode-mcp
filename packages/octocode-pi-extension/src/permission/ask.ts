@@ -4,12 +4,12 @@ import { interactive } from '../shared/interactive.js';
 import { withDialog } from '../shared/locks.js';
 import { statusColor } from '../shared/render.js';
 import { redactSecrets, visibleControls } from '../shared/sanitize.js';
-import { takeSnapshot, type Snapshot } from '../shared/snapshot.js';
+import { takeSnapshot, type Snapshot } from './snapshot.js';
 import { clipText } from '../shared/util.js';
 import type { PermissionRequest } from './request.js';
 import { AuditLog, childAuditMessage, RELAY_VIA, WARN_ACTIONS, type AuditEntry } from './audit.js';
 import { permissionHeader } from './header.js';
-import { auditLine, auditLines, cardLines, oneLine, computeCard, NO_REASON, transcriptPurpose } from './effect.js';
+import { auditLine, auditLines, cardLines, foldLines, computeCard, NO_REASON, transcriptPurpose } from './effect.js';
 import { ACTION_CLASSES, actionNoun, asksIn, chipText, CHIPS, decide, kindOf, modeAllowing, modeAllowingReasons, parseGrants, PERMISSION_ID, reasonAsks, startMode, UNGRANTABLE, type ActionClass, type ActionCount, type AskReason, type PermissionMode } from './mode.js';
 
 /**
@@ -372,7 +372,7 @@ export class Permission {
    * breaks shown as `⏎`, so agent text cannot forge a `▸` line and nothing runs that was not on screen.
    */
   #describe(request: PermissionRequest): string {
-    return [request.title, ...request.what.map((line) => `  ${oneLine(line)}`), ...cardLines(request, this.#mode)].join('\n');
+    return [request.title, ...request.what.map((line) => `  ${foldLines(line)}`), ...cardLines(request, this.#mode)].join('\n');
   }
 
   #headless(request: PermissionRequest): string {

@@ -882,10 +882,7 @@ async fn issue_comment_body_hops_list_only_unfinished_bodies() {
         .mount(&server)
         .await;
     let workspace = Workspace::new();
-    let runtime = workspace.runtime(&[
-        ("GITHUB_API_URL", format!("{}/api/v3", server.uri())),
-        ("OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH", "20000".into()),
-    ]);
+    let runtime = workspace.runtime(&[("GITHUB_API_URL", format!("{}/api/v3", server.uri()))]);
     let first = json!({"queries":[{"operation":"issue","owner":"a","repo":"b","number":7,
         "sections":["body","comments"],"length":6000,"extras":["stats"]}]});
     let mut queue = std::collections::VecDeque::from([first]);
@@ -1376,10 +1373,7 @@ async fn issue_comment_walk_reads_every_comment_and_counts_the_rest() {
         .mount(&server)
         .await;
     let workspace = Workspace::new();
-    let runtime = workspace.runtime(&[
-        ("GITHUB_API_URL", format!("{}/api/v3", server.uri())),
-        ("OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH", "20000".into()),
-    ]);
+    let runtime = workspace.runtime(&[("GITHUB_API_URL", format!("{}/api/v3", server.uri()))]);
     let mut query = json!({"operation":"issue","owner":"a","repo":"b","number":7,"sections":["comments"],"extras":[]});
     let mut ids = Vec::new();
     let mut calls = 0;

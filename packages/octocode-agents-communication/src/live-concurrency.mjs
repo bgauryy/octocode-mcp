@@ -191,7 +191,9 @@ export async function liveConcurrency(options) {
   return result;
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// argv[1] keeps a symlinked path while import.meta.url is the real path, so compare real paths.
+const realOrSelf = p => { try { return realpathSync(p); } catch { return resolve(p); } };
+if (process.argv[1] && realOrSelf(process.argv[1]) === realOrSelf(fileURLToPath(import.meta.url))) {
   const options = {};
   for (let index = 2; index < process.argv.length; index++) {
     const flag = process.argv[index];

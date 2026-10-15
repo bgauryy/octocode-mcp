@@ -4,7 +4,7 @@
  * Fetches each cited page once, normalizes typography, checks the quote (ellipsis-separated fragments in order),
  * and reports title and publish dates. Only `verified` claims may be used as evidence.
  */
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { dirname, extname, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -172,7 +172,9 @@ function readLedger(path) {
   } catch (error) { fail('invalidArguments', `ledger is not JSON or JSONL: ${error.message}`, 2); }
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+// Installed skills are often symlinks: argv[1] keeps the link path while import.meta.url is the real path.
+const realOrSelf = (p) => { try { return realpathSync(p); } catch { return resolve(p); } };
+if (process.argv[1] && realOrSelf(process.argv[1]) === realOrSelf(fileURLToPath(import.meta.url))) {
   const args = process.argv.slice(2);
   if (args.includes('--help') || args.includes('-h')) { console.log(USAGE); process.exit(0); }
   const opts = { ledger: null, out: null, concurrency: 4 };

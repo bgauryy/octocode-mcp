@@ -168,7 +168,7 @@ describe('config view browser app', () => {
     const view = await browser(
       {
         files,
-        settings: [{ key: 'network.maxRetries', type: 'number', value: 1 }],
+        settings: [{ key: 'local.enabled', type: 'boolean', value: true }],
       },
       [],
       async payload => {
@@ -204,7 +204,7 @@ describe('config view browser app', () => {
         homeSettings: { writable: false },
         homeEnv: { writable: false },
       },
-      settings: [{ key: 'network.maxRetries', type: 'number', value: 1 }],
+      settings: [{ key: 'local.enabled', type: 'boolean', value: true }],
       keys: [
         { key: 'MY_KEY', scope: 'home', set: true },
         { key: 'API', setting: 'classification.api', scope: 'home', set: true },
@@ -384,15 +384,15 @@ describe('config view browser app', () => {
     );
   });
 
-  it('a number setting saves as a number and exposes local key storage', async () => {
+  it('a boolean setting saves as a boolean and exposes local key storage', async () => {
     const view = await browser({
       files,
       storage: { message: 'Keys use local .env files.' },
       settings: [
         {
-          key: 'network.maxRetries',
-          type: 'number',
-          value: 1,
+          key: 'local.enabled',
+          type: 'boolean',
+          value: true,
           workspaceAllowed: true,
         },
       ],
@@ -404,7 +404,7 @@ describe('config view browser app', () => {
     await view.click('Save');
     assert.equal(
       view.requests.find(request => request.operation === 'setSetting')!.value,
-      1
+      true
     );
   });
 

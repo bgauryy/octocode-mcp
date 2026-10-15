@@ -24,8 +24,11 @@ export function deadLetterText(letter: DeadLetter): string {
   return visibleControls(`Message #${letter.id} to ${who} was not read: ${letter.recipients.length === 1 ? `${who} left` : 'they left'} the team first. Its text began: "${cutText(letter.text.split('\n')[0]!, 120, { chars: true })}"`);
 }
 
-/** ` (reviewer: audit auth token refresh)`: what the sender is and works on, so the reader knows who it hears from. */
-const senderTag = (sender: Message['sender']): string => (sender ? ` (${headerText(sender.goal ? `${sender.role}: ${sender.goal}` : sender.role)})` : '');
+/** `reviewer: audit auth token refresh`: what the sender is and works on, as written. Each reader escapes it for its own channel. */
+export const senderLabel = (sender: NonNullable<Message['sender']>): string => (sender.goal ? `${sender.role}: ${sender.goal}` : sender.role);
+
+/** ` (reviewer: audit auth token refresh)`, so the reader knows who it hears from; empty without a sender. */
+const senderTag = (sender: Message['sender']): string => (sender ? ` (${headerText(senderLabel(sender))})` : '');
 
 /**
  * A delivered message as the recipient reads it: the text of anyone but the user sits in a fence (see `fenceUntrusted`)
@@ -70,13 +73,6 @@ export function interruptRefusal(members: Member[], targets: Member[], from: str
   const ours = target.parentId !== undefined && scope !== undefined && sessionTree(members, scope).has(target.id);
   return ours ? undefined : `An interrupt stops only a subagent of this session; ${target.id} is not one. Nothing was sent.`;
 }
-
-/**
- * Whether a message wakes an idle recipient: a question, the answer to its own open question, the user or an API
- * client (decided when sent, see TeamStore.send). An FYI, or a reply to a reply, waits for the next turn instead of
- * spending one. Rows stored before that decision existed fall back to the sender and reply flag.
- */
-export const wakes = (message: Message): boolean => message.wake ?? (message.replyRequired || outside(message.from));
 
 /** A path to lock as the file tools resolve it: relative from the session's cwd (not the repository root), `~` from home. */
 export function resolveLockPath(cwd: string | undefined, entry: string): string {

@@ -8,10 +8,10 @@ Each topic has one owner doc; other docs link to it instead of repeating it. The
 | [OCTOCODE_WORKFLOWS.md](OCTOCODE_WORKFLOWS.md) | Research routing: which tool first, what each result proves, one diagram per flow |
 | [OCTOCODE_TOOLS.md](OCTOCODE_TOOLS.md) | Every tool's fields, defaults, limits, results, and continuations |
 | [TOOL_DATA_CONTRACT.md](TOOL_DATA_CONTRACT.md) | The shared request and result envelope: rows, result shapes, `next.*` pages, `hints.*` leads, handoffs |
-| [OCTOCODE_CLASIFY.md](OCTOCODE_CLASIFY.md) | `classifiers` on search/fetch and `clasify` JEV judgments: choose a route, verify evidence, and measure avoided reads |
+| [OCTOCODE_CLASIFY.md](OCTOCODE_CLASIFY.md) | `clasifyContext` on search and fetch, and the beta `clasify` tool: choose a route, read the answers, limits and gates |
 | [OCTOCODE_MCP.md](OCTOCODE_MCP.md) | The MCP server: client setup, registered tools, instructions, lifecycle |
 | [OCTOCODE_CLI.md](../packages/octocode/docs/OCTOCODE_CLI.md) | The CLI: commands, flags, output, exit codes |
-| [CONFIGURATION.md](CONFIGURATION.md) | Config files, precedence, storage and caches, feature gates, troubleshooting |
+| [CONFIGURATION.md](CONFIGURATION.md) | Config files, precedence, storage and caches, feature gates, fixed internal limits, troubleshooting |
 | [generated/CONFIG_SETTINGS.md](generated/CONFIG_SETTINGS.md) | Generated table of every setting, env var, default, and range |
 | [AUTHENTICATION.md](AUTHENTICATION.md) | GitHub tokens, OAuth, `gh` passthrough, Enterprise, the `clasify` key, npm credentials |
 | [SECURITY.md](SECURITY.md) | Input validation, secret redaction, filesystem policy, credentials, egress |

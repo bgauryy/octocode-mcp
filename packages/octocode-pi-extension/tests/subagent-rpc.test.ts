@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import octocode from '../src/index.js';
-import { ABORT_SETTLE_MS, runSubagent, USER_STOP, type ChildProgress } from '../src/subagents/process.js';
+import type { ChildProgress } from '../src/subagents/events.js';
+import { ABORT_SETTLE_MS, runSubagent, USER_STOP } from '../src/subagents/process.js';
 import { fakeCtx, fakePi } from './fake-pi.js';
 import { tmp } from './helpers.js';
 

@@ -1,135 +1,105 @@
 # Octocode CLI
 
-The Octocode CLI is the terminal interface over the same research engine used by
-the Octocode MCP server. One binary — `npx octocode` — exposes every research
-tool under its canonical tool name, plus a small set of system commands.
+`npx octocode` runs every Octocode research tool from a terminal, under the same
+tool names, query contracts, security policy and native runtime as the MCP
+server. There are no per-tool flags or aliases: a command is a tool name plus
+one JSON query.
 
 ```text
 npx octocode <toolName> '<json>'   ──► native Rust runtime ──► GitHub, local, packages, LSP
-octocode-mcp tool call         ──► native Rust runtime ──► (same tools, same contracts)
+octocode-mcp tool call             ──► native Rust runtime ──► (same tools, same contracts)
 ```
 
-CLI and MCP share logic, schemas, security, sanitization, and tool execution.
-They are not separate implementations, and the CLI has no per-tool flag
-wrappers or aliases: the tool name and the JSON query are the entire interface.
+Tool fields, defaults and results: [tools reference](https://github.com/bgauryy/octocode/blob/main/docs/OCTOCODE_TOOLS.md).
+Which tool to call when: [workflows](https://github.com/bgauryy/octocode/blob/main/docs/OCTOCODE_WORKFLOWS.md).
+Settings: [configuration](https://github.com/bgauryy/octocode/blob/main/docs/CONFIGURATION.md).
 
 ## Commands
 
-### Tools — one command per tool
-
-Each tool command takes one JSON query: positional, `--input <file>`, or
-`--input -` (stdin). On a terminal it prints the same readable text MCP clients
-get; on a pipe it prints single-line JSON. `--json` forces JSON on a terminal.
-Errors follow the output: the `{"error":"…"}` JSON envelope on stdout in JSON
-mode, text on stderr otherwise.
+### Tools
 
 | Command | Purpose |
 |---|---|
-| `localSearch` | Text/regex search across local files. |
-| `localFetch` | Read a local file: pagination, line ranges, match filtering, minification. |
-| `structureSearch` | Directory outlines and file discovery by name or metadata. |
-| `astSearch` | Structural (ast-grep) search, declarations, and syntax trees. |
-| `astTopology` | Beta (`OCTOCODE_BETA=true`): dependency graph analysis for paths, cycles, reachability, dead code, and drift. |
-| `astRewrite` | Beta (`OCTOCODE_BETA=true`): structural find-and-replace; previews before writing. |
-| `lspSearch` | Definitions, references, hover, call/type hierarchy, diagnostics. |
-| `ghSearchRepo` | GitHub repository search. |
-| `ghSearchCode` | GitHub indexed code search. |
-| `ghStructure` | GitHub repository tree browsing. |
-| `ghGetFileContent` | Read a GitHub file without cloning. |
-| `ghSearchHistory` | Search PRs, issues, and commits. |
-| `ghGetHistoryItem` | Read one PR, issue, commit, or comparison. |
-| `ghCloneRepo` | Clone a repository into the local cache for offline analysis. |
-| `artifactSearch` | Package lookup/discovery across 8 registries. |
-| `clasify` | Answer keyed JEV `noul`, `choice`, or `score` questions over literal `state` or one `source` (a `localFetch`/`ghGetFileContent` selection or an HTTPS `url`), up to 5 rows in `queries[]`. Requires a classification key (`OCTOCODE_CLASSIFICATION_API`). |
+| `localSearch` | Literal or regex matches in local files. |
+| `localFetch` | Read a known local file or an exact source region. |
+| `structureSearch` | Outline directories, or find files by name or metadata. |
+| `astSearch` | Declarations, syntax trees, or structural (ast-grep) matches. |
+| `lspSearch` | Callers, references, same-name symbols, types, or diagnostics. |
+| `ghSearchRepo` | Discover GitHub repositories by keywords, owner, or filters. |
+| `ghSearchCode` | Default-branch code or file paths in a GitHub owner or repo. |
+| `ghStructure` | A GitHub repository's tree, refs, or languages. |
+| `ghGetFileContent` | Read a known GitHub file or exact source region. |
+| `ghSearchHistory` | Find pull requests, issues, or commits. |
+| `ghGetHistoryItem` | Read one pull request, issue, commit, or comparison. |
+| `ghCloneRepo` | Cache a shallow GitHub checkout for local analysis (CLI only; needs persistent storage). |
+| `artifactSearch` | Package versions, dependencies, or upstream release source. |
+| `astTopology` | Beta, CLI only: dependency and reachability topology. |
+| `clasify` | Beta: typed answers about unread text, images, or held data. Also needs `OCTOCODE_CLASSIFICATION_API` ([clasify](https://github.com/bgauryy/octocode/blob/main/docs/OCTOCODE_CLASIFY.md)). |
+
+Beta means `OCTOCODE_BETA=true` (or `local.beta: true`). `astRewrite` is parked
+in this build: no surface lists or runs it, with or without beta.
 
 ### System
 
 | Command | Purpose |
 |---|---|
-| `schema [tool]` | No name: compact catalog of every enabled tool with fields and agent instructions. With a name: the full input contract (default `--view full`). `--view variants` lists each operation with its required fields and an example; `--view query` prints the row MCP lists, and `--select operation=VALUE` (`--view query` only) prints that operation's row. Indented on a terminal, one line on a pipe. Output validation schemas remain internal. |
-| `config` | Config file paths, `.env` paths, loaded key names, and config warnings (`--json`). `config home` (home path), `config get KEY` (resolved value; exit 1 = unset), `config set KEY VALUE` (or `set KEY --stdin`), `config unset KEY`, `config check KEY` (exit 0 = set, 1 = unset), `config view` (local settings UI). Only `config get` prints a value. |
-| `auth` | GitHub auth: `status` (`--json`), `login` (device flow; `--refresh`, `--force`, `--hostname`, `--json`), `logout` (`--json`). See [`auth`](#auth--github-authentication). |
-| `install` | Write or check MCP client configuration for supported IDEs and agent hosts. |
-| `skill` | List, install, check, inspect, or remove bundled Octocode Agent Skills. Runs in the npm launcher; the native binary forwards `skill` to it. |
-| `graph` | `graph ingest <path>` builds a persisted code graph under `<workspace>/.octocode/graph/`; `graph query <op>` answers bounded questions from it. See [`graph`](#graph--persisted-code-graph). |
-| `help` | Print help for any command. |
+| `schema [tool]` | No name: the enabled tools with fields and agent instructions. With a name: that tool's input contract and `availability`. See [Schema discovery](#schema-discovery). |
+| `config` | Config and `.env` paths, loaded key names, and config warnings. Subcommands: `home`, `get`, `set`, `unset`, `check`, `view`. See [`config`](#config--settings-and-keys). |
+| `auth` | GitHub sign-in: `status`, `login`, `logout`. See [`auth`](#auth--github-authentication). |
+| `install` | Add the MCP server to an agent client. See [`install`](#install--mcp-client-setup). |
+| `skill` | Install, check, or remove bundled Agent Skills. See [`skill`](#skill--agent-skills). |
+| `graph` | Build and query a persisted code graph. See [`graph`](#graph--persisted-code-graph). |
+| `help` | Help for any command. |
 
-Hidden maintenance commands (still available, not part of the agent surface):
-`cache <status|clear>` and `lsp-server <list|install|uninstall|clean|status>`.
+Hidden maintenance commands: `cache status|clear` (cache directory, recent
+evictions; `clear` deletes cached GitHub and registry responses) and
+`lsp-server list|install|uninstall|clean|status` (see [`lsp-server`](#lsp-server--language-servers)).
 
-Use `npx octocode <command> --help` for the live command help. A tool's help
-(`npx octocode localFetch --help`, or `npx octocode help localFetch`) ends with its
-required fields, by variant when the tool has several, and one runnable example.
-`npx octocode skill <subcommand> --help` shows that subcommand's usage and flags.
-
-`npx octocode schema` (and a bare `npx octocode` on a pipe) carries agent instructions in the catalog's `instructions` field. A bare `npx octocode` on a terminal, `--help`, `-h`, and `help` print the command reference. Instructions are the shared MCP contract text, the same on every runtime; which tools run here is each catalog row's availability (`clasify` lists only with a classification key).
+`npx octocode <command> --help` is the live reference. A tool's help ends with
+its required fields, per variant, and one runnable example. A bare
+`npx octocode` prints the command reference on a terminal and the tool catalog
+with agent instructions on a pipe.
 
 ## Quick start
 
 ```bash
-npx octocode --help
 npx octocode auth status --json
 npx octocode schema
-npx octocode schema localSearch
-npx octocode structureSearch '{"queries":[{"operation":"tree","path":"/ABS/repo/src"}]}'
-npx octocode localSearch '{"queries":[{"path":"/ABS/repo/src","matchString":"createServer","resultView":"matchOnly"}]}'
-npx octocode localFetch '{"queries":[{"path":"./src/index.ts","fullContent":true}]}'
-npx octocode skill list
-npx octocode skill install octocode-research --platform pi --global
+npx octocode structureSearch '{"queries":[{"operation":"tree","path":"src"}]}'
+npx octocode localSearch '{"queries":[{"path":"src","matchString":"createServer"}]}'
+npx octocode localFetch '{"queries":[{"path":"src/index.ts","fullContent":true}]}'
 ```
 
 Replace `npx octocode` with `octocode` when the package is installed globally.
 
-Choose the tool first, then load its schema only if it is unfamiliar or missing
-from context. Use the query view for calls; select a known operation to omit
-unrelated branches. The full view contains one complete input schema for the request envelope; the query view contains one standalone query schema. Output schemas remain internal.
+### Queries
+
+- A tool takes `{"queries":[…]}` with 1 to 5 rows, or one bare query object.
+  A bare JSON array is rejected.
+- Pass the query inline, from a file (`--input FILE`), or from stdin
+  (`--input -`). Use a file for long queries to avoid shell quoting.
+- Relative local paths resolve from the current directory; results report
+  paths relative to the top-level `root`. Pass absolute paths when a script's
+  working directory is not the repository root.
+- `mainGoal` and `reasoning` are optional; add them only in multi-call research.
+- `next.*` continuations complete the result: run them, or name what stays
+  unread. Optional `hints.*` leads appear only with `"extras":["hints"]`.
+  The contract: [tool data contract](https://github.com/bgauryy/octocode/blob/main/docs/TOOL_DATA_CONTRACT.md).
+
+### Schema discovery
 
 ```bash
-npx octocode schema <name> --view variants                  # branch names, selectors, examples
-npx octocode schema <name> --view query                     # self-contained query schema
+npx octocode schema                                          # enabled tools, fields, instructions
+npx octocode schema <tool>                                   # variants, usage, full query schema, availability
+npx octocode schema <tool> --view variants                   # branch names, required fields, examples
+npx octocode schema <tool> --view query                      # self-contained query schema
 npx octocode schema ghSearchHistory --view query --select operation=commit
-npx octocode schema <name> --view full                      # default: descriptions, examples, rules
 ```
 
-For local tools, use absolute paths in agent or script calls. Relative paths
-resolve from the command cwd, which may differ from the repository root.
-
-| Category | Default enabled tools |
-|---|---|
-| GitHub | `ghSearchRepo` · `ghSearchCode` · `ghStructure` · `ghGetFileContent` · `ghSearchHistory` · `ghGetHistoryItem` |
-| Local Code | `localSearch` · `structureSearch` · `astSearch` · `localFetch` · `lspSearch` |
-| Package | `artifactSearch` |
-
-`ghCloneRepo` is available in the CLI with persistent storage. `astRewrite` and
-`astTopology` are CLI-only beta tools (MCP never registers them) and require
-`OCTOCODE_BETA=true` or `local.beta:true`. `clasify` is available when a classification key resolves
-(`OCTOCODE_CLASSIFICATION_API`; a present-but-blank value disables it). All four remain discoverable in the
-CLI catalog with availability metadata (`availability.enabled` and the gating
-`envVar`). MCP omits unavailable tools and never registers `ghCloneRepo` or
-`astRewrite`.
-
-### Research loop
-
-```text
-map cheaply → search narrowly → read exact evidence → follow symbols or history
-```
-
-```bash
-npx octocode structureSearch '{"queries":[{"operation":"tree","path":"/ABS/repo/crates/runtime/src","mainGoal":"Where is ToolRuntime built and used?","reasoning":"Map the crate before searching."}]}'
-npx octocode localSearch '{"queries":[{"path":"/ABS/repo/crates/runtime/src","matchString":"ToolRuntime","resultView":"matchOnly","mainGoal":"Where is ToolRuntime built and used?","reasoning":"Find the defining file."}]}'
-npx octocode localFetch '{"queries":[{"path":"/ABS/repo/crates/runtime/src/runtime/engine.rs","matchString":"ToolRuntime","mainGoal":"Where is ToolRuntime built and used?","reasoning":"Read the definition."}]}'
-npx octocode lspSearch '{"queries":[{"path":"/ABS/repo/crates/runtime/src/runtime/engine.rs","operation":"references","symbolName":"ToolRuntime","line":69,"mainGoal":"Where is ToolRuntime built and used?","reasoning":"Trace its callers."}]}'
-```
-
-The brief is optional. Add `mainGoal` (the research question the query serves)
-and `reasoning` (why the query advances it) only in multi-call research on an
-unknown; omit both on simple lookups. A blank brief field is dropped.
-Responses split follow-ups into two channels: `next` holds pages and coverage
-continuations (the result is incomplete until you run them), and `hints` holds
-optional leads, plus `hints.text` for a per-call fact no lead states. A `next` page or `hints` lead
-carries the brief only when the producing query sent one. Queries accept a single object, a JSON
-array, or `{"queries":[…]}` for a batch (up to 5). Large queries avoid shell
-quoting with `--input <file>`.
+The catalog lists only tools that run here. `schema <tool>` also answers for a
+gated tool and reports `availability.enabled` with the `envVar` that turns it
+on. Calling a gated tool exits `5` with `missingConfiguration` naming the
+missing setting. Output is indented on a terminal and one line on a pipe.
 
 ---
 
@@ -161,194 +131,91 @@ removes cached GitHub responses. See
 
 ## `graph` — persisted code graph
 
-Parse a repository **once**, then answer structural questions in milliseconds
-without re-reading source. Local tools must be enabled. `npx octocode graph --help`
-prints this workflow for agents.
+Parse a repository once, then answer structural questions in milliseconds
+without re-reading source. Local tools must be enabled. `npx octocode graph
+--help`, `graph ingest --help` and `graph query --help` are the full reference
+(node ids, output, exit codes, storage, every flag).
 
 ```bash
-npx octocode graph ingest .                         # build a snapshot
+npx octocode graph ingest .                         # build a snapshot (an unchanged tree is reused)
 npx octocode graph query stats                      # size, languages, hubs, gaps
 npx octocode graph query find createServer          # locate a node id
 npx octocode graph query callers 'src/server.ts#createServer'
-npx octocode graph query impact --since origin/main # blast radius + tests to run
+npx octocode graph query impact --since origin/main # blast radius and tests to run
 npx octocode graph query issues                     # ranked possible problems
 npx octocode graph query stale                      # changed since ingest? re-ingest
 ```
-
-### Which op answers what
 
 | Question | Op |
 |---|---|
 | What is in this repo? | `stats`, `hubs`, `symbols <file>` |
 | Where is X? | `find <text> [--kind file\|symbol\|package]`, `node <ref>` |
-| What does X use or who uses X? | `deps <ref>`, `dependents <ref>`, `callers <ref>`, `callees <ref>` |
-| How are A and B connected? | `path <a> <b> [--direction both]`, `walk <ref> --depth n` |
+| What does X use, or who uses X? | `deps`, `dependents`, `callers`, `callees` |
+| How are A and B connected? | `path <a> <b>`, `walk <ref> --depth n` |
 | What breaks if X changes? | `impact <ref>`, `impact --changed a,b`, `impact --since <rev>` |
-| What looks wrong? | `issues [--detector a,b] [--min-score x] [--baseline <snapshot>]`, `cycles`, `diagnostics` |
+| What looks wrong? | `issues`, `cycles`, `diagnostics` |
 | Is the snapshot current? | `stale` |
 
-On files, `deps` and `dependents` follow imports; on symbols, they follow calls.
-`--edge contains,imports,uses,calls,inherits` overrides either default.
+- Node ids: `src/a.ts` (file), `src/a.ts#Class.method` (symbol), `pkg:react`
+  (package). An ambiguous reference exits `2` and lists `candidates`.
+- A cut list adds `truncated` and `next`, a paste-ready command; exit stays `0`.
+- Answers that follow calls carry `coverage.callInternalRecall`. Below 0.9 they
+  add a `warning`: treat those caller lists as a lower bound.
+- Results are leads from syntax. Confirm identity with `lspSearch` before
+  deleting or renaming. Reflection, dynamic dispatch and FFI edges are invisible.
 
-### References, output, and exit codes
-
-- **Node ids:** `src/a.ts` (file), `src/a.ts#Class.method` (symbol), and
-  `pkg:react` (package). An `@<line>` suffix appears only when a name repeats.
-  Absolute paths, bare names, and `Class.method` also resolve where the
-  language names methods by receiver (a Go method id has no receiver: use its
-  bare name). An ambiguous
-  reference exits 2 and lists `candidates`.
-- **Output:** readable text on a terminal; one JSON object on a pipe or with
-  `--json`. Lists carry `total`
-  and `results`. A cut adds `truncated` and `next`, a paste-ready command. Use
-  `--limit` and `--offset` to page.
-- **Exit codes:** `0` ok · `1` empty · `2` bad input or ambiguous · `3` no graph
-  or node · `5` error. A cut result is still `0`: run `next`.
-- **Snapshots:** `ingest` writes
-  `<workspace>/.octocode/graph/<UTC time>-<scope>/{graph.bin,manifest.json}`
-  and updates `latest`. It keeps 3 snapshots per scope (`--keep`). The
-  workspace is `--workspace`, else the nearest `.git` ancestor inside the
-  allowed roots (`WORKSPACE_ROOT`, else the current directory). `--graph <id,
-  id substring, or dir>` picks an older snapshot.
-- **Unchanged trees are reused:** when the file set and every file's content
-  digest match the latest snapshot of the same scope, `ingest` returns it with
-  `reused: true` instead of re-parsing. `--force` rebuilds.
-- **Coverage:** answers that follow calls (`callers`, `callees`, `impact`,
-  `path`, and `walk`/`deps`/`dependents` over calls) include `coverage`. It
-  carries the language's `callInternalRecall`: the share of call sites naming
-  code in this repo that were linked. Below 0.9 it adds a `warning`, so treat
-  those caller lists as a lower bound.
-
-### What ingest understands
-
-- **Nodes and edges:** file, symbol, and package nodes. `contains`, `imports`,
-  `uses` (named import → declaration, through re-exports), `calls` (including
-  JSX `renders`, decorators, and `new`), and `inherits` (`extends` and
-  `implements`).
-- **Resolution:**
-  - JS/TS: tsconfig/jsconfig `paths`, `baseUrl`, and `extends`; workspace
-    packages, with `exports`/`imports` maps and `dist` mapped back to `src`.
-  - Rust: Cargo crates.
-  - Go: go.mod modules.
-  - Python: src-layout packages and submodules.
-  - C/C++: include roots, `compile_commands.json`, and unique path-suffix matches.
-- **Evidence:** every call edge records `via` and a `confidence`:
-  - `local`, `import`, `namespace`: the name is bound in this file.
-  - `type-qualified`: `Type.method` / `Type::method` resolved through the type.
-  - `same-package` / `import-scope`: an ambiguous name settled by the caller's
-    package or its imports.
-  - `unique-name`: the only declaration with that name (low confidence).
-
-  Calls qualified by an external package (`serde_json::…`, `fs.…`) never link
-  to internal code. Method calls on a value of unknown type stay unlinked
-  rather than guessed. The ingest receipt reports `calls.unresolvedByReason`
-  and `callInternalRecall`. Confirm identity with `lspSearch` before deleting
-  or renaming.
-- **Project model:**
-  - File roles: `test`, `generated`, `bundled`, `vendored`, `declaration`,
-    `config`, `entry`, `unparsed`.
-  - Entrypoints: manifests (`dist` mapped to `src`), framework routes,
-    `main`s, shebang scripts, and C translation units.
-  - Components: package.json, Cargo.toml, go.mod, and pyproject. Package
-    imports are tagged `external`, `-dev`, `-builtin`, `-hoisted`, `-test`,
-    `-undeclared`, or `-unknown`.
-- **Large files:**
-  - Files over 1 MB are not parsed. They stay as `unparsed` file nodes, and
-    relative imports of them still link (`via: unparsed-target`).
-  - Minified or bundled files under the bound keep their file node and imports
-    but no symbols, and their call sites are not linked.
-  - A 3.6 MB minified bundle plus a 9 MB file ingest in about 70 ms at 91 MB RSS.
-- `.gitignore` is honored. Hidden directories are never scanned.
+How ingest links calls, the snapshot format, and size bounds:
+[code graph architecture](https://github.com/bgauryy/octocode/blob/main/packages/octocode-native/docs/engine/CODE_GRAPH.md).
 
 ### `issues` — ranked hypotheses
 
-Each finding carries `evidence`, the false-positive `controls` that were
-applied, `verify` commands, and a `score`, computed as severity × confidence ×
-(0.5 + 0.5 × PageRank percentile).
+Each finding carries `evidence`, the false-positive `controls` applied,
+`verify` commands, and a `score` (severity × confidence × (0.5 + 0.5 × PageRank
+percentile)).
 
 | Group | Detectors |
 |---|---|
-| Structure | `cycle` (runtime imports; witness plus Eades–Lin–Smyth `suggestedCuts`) · `dir-cycle` · `unreachable-file` · `test-only` · `unused-export` (JS/TS/Python) · `export-only-local` (exported but used only in its own file: could be un-exported) |
+| Structure | `cycle` (runtime imports; witness plus `suggestedCuts`) · `dir-cycle` · `unreachable-file` · `test-only` · `unused-export` (JS/TS/Python) · `export-only-local` (exported but used only in its own file) |
 | Dependencies | `undeclared-dependency` (including hoisted phantoms) · `dev-dependency-in-production` · `boundary-violation` (deep imports between npm packages) · `unresolved-import` |
-| Architecture | `god-file` (Arcan hub-like) · `critical-file` (PageRank) · `single-point-of-failure` (articulation points) · `unstable-dependency` · `main-sequence` · `misplaced-file` |
+| Architecture | `god-file` · `critical-file` (PageRank) · `single-point-of-failure` (articulation points) · `unstable-dependency` · `main-sequence` · `misplaced-file` |
 
-- **Liveness is optimistic and violations are pessimistic.** Any edge keeps
-  code alive. Only runtime imports between authored files prove cycles, hubs,
-  or layering; type-only, dynamic, and Python function-level imports never do.
-- **Some code is not judged at file level.** Go, JVM, and .NET files share
-  package scope, so file-level checks are skipped for them. Python libraries
-  have no private modules, so reachability is skipped too. Generated, bundled,
-  vendored, and unparsed files are never subjects.
-- **Tiers (vulture-style):** each finding has a `tier`.
-  - `100`: nothing references it anywhere.
-  - `90`: no graph or text reference.
-  - `60`: referenced only by text, such as a path string in a worker, config,
-    or script (`evidence.mentionedIn`).
-
-  The default view shows 90 and above; `--min-tier 60` shows everything.
-  `summary.hiddenBelowTier` counts the rest. Dead-code findings are re-tiered by
-  one `.gitignore`-aware scan of the repository's text (Meta SCARF's
-  "mentioned anywhere" check).
-- **Extra output:** `summary.health` reports Lakos NCCD. `summary.detectorMs`
-  reports per-detector cost. `--baseline <snapshot>` labels findings
-  `new`/`existing` and lists `resolvedFindings`.
+- Any edge keeps code alive. Only runtime imports between authored files prove
+  cycles, hubs, or layering; type-only, dynamic, and Python function-level
+  imports never do.
+- Go, JVM and .NET files share package scope, so file-level checks skip them.
+  Python libraries skip reachability. Generated, bundled, vendored and unparsed
+  files are never subjects.
+- Each finding has a `tier`: `100` nothing references it, `90` no graph or text
+  reference, `60` referenced only by text (`evidence.mentionedIn`). The default
+  shows 90 and above; `--min-tier 60` shows all, and `summary.hiddenBelowTier`
+  counts the rest.
+- `--baseline <snapshot>` labels findings `new` or `existing` and lists
+  `resolvedFindings`. `summary.health` reports Lakos NCCD.
 
 ### `impact` — blast radius
 
-- **A changed file** affects every importer, transitively. This matches Jest
-  `--findRelatedTests` and Nx `affected`.
-- **A changed symbol** affects only the `calls`, `uses`, and `inherits` edges
-  bound to it, plus importers that bind no name. These results report
-  `precision: "symbol"`.
-- **Depth:** 3 by default (`summary.maxDepth`; widen with `--depth`).
-- **Barrels:** barrel files (re-export only) pass changes through by symbol,
-  so importers of a barrel are affected only for the names they bind.
-- **Rows:** `depth`, `risk` (`direct` / `likely` / `transitive`),
-  `packageDistance`, `confidence`, and `typesOnly`.
-- **Summary:**
-  - `willBreak` (depth 1), `likely` (depth 2), `shouldTest` (depth 3 and beyond)
-  - `affectedEntrypoints`, `testsToRun`, `components`
-  - `testFunctions`: test functions reached, including Rust `mod tests`
-    functions and pytest `test_*` functions inside production files
-- **Config changes:** a manifest, lockfile, or tsconfig/pyproject/go.mod change
-  affects everything below its directory. `allAffected` means a root-level
-  change.
+- A changed file affects every importer, transitively. A changed symbol affects
+  only the `calls`, `uses` and `inherits` edges bound to it, plus importers that
+  bind no name (`precision: "symbol"`). Barrel files pass changes through by
+  symbol.
+- Depth defaults to 3 (`--depth` widens it). Rows carry `depth`, `risk`
+  (`direct`, `likely`, `transitive`), `packageDistance`, `confidence` and
+  `typesOnly`.
+- The summary lists `willBreak` (depth 1), `likely` (depth 2), `shouldTest`
+  (depth 3+), `affectedEntrypoints`, `testsToRun`, `components`, and
+  `testFunctions` (including Rust `mod tests` and pytest `test_*` functions).
+- A manifest, lockfile, or tsconfig/pyproject/go.mod change affects everything
+  below its directory; `allAffected` marks a root-level change.
 
-### Recipes: hunting bugs with the graph
-
-These reverse-engineering walks (IDA/Ghidra xrefs, CodeQL-style source-to-sink
-reachability) map onto the existing ops:
+### Recipes
 
 | Goal | Walk |
 |---|---|
-| Who can reach a dangerous operation? | Find the wrapper that deletes, spawns, or writes, then run `impact <wrapper>`. `affectedEntrypoints` is the attack surface. Wrappers with `testCount: 0` are untested destructive paths. |
-| Unbounded recursion | `cycles --edge calls`. Check each SCC that walks untrusted input for a depth bound. |
-| Choke points | `issues --detector single-point-of-failure,critical-file`. Validation belongs at the choke point. |
-| Is this cycle real? | `path <a> <b>` shows the witness. `issues --detector cycle` gives `suggestedCuts`. |
+| Who can reach a dangerous operation? | `impact <wrapper>` on the function that deletes, spawns or writes. `affectedEntrypoints` is the attack surface. |
+| Unbounded recursion | `cycles --edge calls`; check each SCC that walks untrusted input for a depth bound. |
+| Choke points | `issues --detector single-point-of-failure,critical-file`. |
+| Is this cycle real? | `path <a> <b>` shows the witness; `issues --detector cycle` gives `suggestedCuts`. |
 | Dead or orphaned code | `issues --detector unreachable-file,unused-export`, then `dependents <ref> --edge imports,uses,calls` before deleting. |
-
-Each result is a lead, not proof. Read the cited line, then confirm identity
-with `lspSearch`. The graph cannot see edges created through reflection,
-dynamic dispatch, or FFI.
-
-### Performance
-
-Release build, measured with the graph benchmark (since removed from the repo):
-
-| Repo | Files | Ingest | Snapshot | `issues` (wall) |
-|---|---|---|---|---|
-| excalidraw (TSX) | 694 | 0.3 s | 1.6 MB | 28 ms |
-| django | 3,041 | 1.6 s | 10 MB | 52 ms |
-| TypeScript compiler | 31,420 | 9.4 s | 52 MB | 0.27 s |
-| rust-lang/rust | 38,197 | 12.7 s | 66 MB | 0.26 s |
-| Linux (capped at 50k files) | 49,887 | 67 s | 797 MB | 3.0 s |
-
-Other results:
-
-- Ingest is deterministic: re-ingesting produces a byte-identical `graph.bin`.
-- Sampled import and high-confidence call edges verify against their source
-  lines at 89–100%.
-- Seeded defects are recalled 5/5, with zero negative-control leaks.
 
 ---
 
@@ -358,16 +225,15 @@ Other results:
 npx octocode install --ide cursor
 npx octocode install --ide claude-code --check
 npx octocode install --ide claude-desktop --force
-npx octocode install --ide cursor --dry-run   # preview the change; --json for the entry
+npx octocode install --ide cursor --dry-run   # preview; --json for the entry
 ```
 
-Supported clients (`install --list`): Cursor, Claude Desktop, Claude Code,
-Windsurf, Zed, VS Code Cline/Roo/Continue, OpenCode, Trae, Antigravity, Codex,
-Gemini CLI, Goose, Kiro. Use the exact id from `--list`; a partial id such as
-`claude` is rejected with the ids it names (`claude-code`, `claude-desktop`).
-Other flags: `--method npx|bunx|pnpm`, `--enable-local true|false`,
-`--rollback <file.bak>`. Run
-`npx octocode install --help` for the full list.
+`install --list` prints the client ids: Cursor, Claude Desktop, Claude Code,
+Windsurf, Trae, Antigravity, VS Code Cline/Roo/Continue, Zed, OpenCode, Gemini
+CLI, Kiro, Codex, Goose. Use an exact id; a partial id such as `claude` is
+rejected with the ids it could mean. Other flags: `--method npx|bunx|pnpm`,
+`--enable-local true|false`, `--pass-env`, `--rollback <file.bak>`. Without
+`--ide` on a terminal, a picker asks for the client.
 
 ---
 
@@ -375,55 +241,67 @@ Other flags: `--method npx|bunx|pnpm`, `--enable-local true|false`,
 
 ```bash
 npx octocode auth status --json     # authenticated, username, tokenSource
-npx octocode auth login             # OAuth device flow (interactive terminal)
+npx octocode auth login             # OAuth device flow (--hostname for GitHub Enterprise)
 npx octocode auth login --refresh   # exchange the stored refresh token
 npx octocode auth logout            # delete stored Octocode credentials
 ```
 
-Humans: run `auth login` once. Agents and CI: set a token variable
-(`GH_TOKEN` or `GITHUB_TOKEN`) in the environment; it takes
-priority over stored logins. Resolution order, storage, refresh, GitHub
-Enterprise, and troubleshooting are in
-[Authentication](https://github.com/bgauryy/octocode/blob/main/docs/AUTHENTICATION.md).
+Humans run `auth login` once. Agents and CI set `GH_TOKEN` or `GITHUB_TOKEN`,
+which take priority over stored logins. Resolution order, storage, refresh and
+GitHub Enterprise: [authentication](https://github.com/bgauryy/octocode/blob/main/docs/AUTHENTICATION.md).
 
 ---
 
-## `lsp-server` — language server management (maintenance)
+## `config` — settings and keys
 
 ```bash
-npx octocode lsp-server list
-npx octocode lsp-server status src/main.rs
+npx octocode config --json                                # paths, key names, warnings
+npx octocode config home                                  # Octocode home directory
+npx octocode config get OCTOCODE_BETA                     # resolved value; exit 1 when unset
+npx octocode config set OCTOCODE_BETA true                # or a setting path: config set local.beta true
+npx octocode config set OCTOCODE_CLASSIFICATION_API --stdin
+npx octocode config check OCTOCODE_CLASSIFICATION_API     # exit 0 set, 1 unset; never prints the value
+npx octocode config unset OCTOCODE_BETA
+npx octocode config view                                  # local settings page
+```
+
+- `set`, `unset` and `check` take an environment key or its setting path
+  (`classification.api`); `set` and `unset` edit the global `.env` only. They
+  keep unrelated lines, lock and replace the file atomically, and never print
+  values.
+- `set` refuses a [removed setting](https://github.com/bgauryy/octocode/blob/main/docs/generated/CONFIG_SETTINGS.md#removed-settings)
+  with `invalidInput` (exit `2`). Internal limits such as timeouts, retries and
+  page sizes are not settings.
+- `get` masks secrets as `[REDACTED-<KEY>]` and names where the value lives.
+  `check --json` on an unset GitHub token key adds `githubTokenSource`, the
+  credential GitHub calls use instead.
+- Process variables and a workspace `.octocode/.env` still override a global
+  value. Precedence, home-only keys, and every setting:
+  [configuration](https://github.com/bgauryy/octocode/blob/main/docs/CONFIGURATION.md).
+
+---
+
+## `lsp-server` — language servers
+
+```bash
+npx octocode lsp-server list                 # managed downloads and install status
+npx octocode lsp-server status src/main.rs   # which language and server a file resolves to
 npx octocode lsp-server install rust-analyzer
 npx octocode lsp-server install --all
 ```
 
-Use when `lspSearch` reports an LSP server is unavailable.
-
-`lsp-server list` reports only the managed-download servers and their install
-status. Use `lsp-server status FILE_PATH` to see which language and server a
-file resolves to (overrides, project-local executables, packaged servers,
-ecosystem locations, or managed downloads).
-
-Managed installation supports `rust-analyzer` and `clangd`. Built-in routes
-cover 11 families: JavaScript, TypeScript, Python, Rust, Go, Java, C, C++, CUDA,
-C#, and Scala. CUDA uses `clangd`. Assembly parsing is first-class, but semantic
-navigation requires an explicit trusted `.octocode/lsp-servers.json` entry
-because there is no truthful generic built-in Assembly server route. Other
-extensions likewise require explicit trusted configuration.
+Use it when `lspSearch` reports a server is unavailable. Managed downloads
+cover `rust-analyzer` and `clangd`. Built-in routes and custom servers:
+[language servers](https://github.com/bgauryy/octocode/blob/main/docs/OCTOCODE_TOOLS.md#language-servers).
 
 ---
 
 ## `skill` — agent skills
 
-The `octocode` package bundles the complete canonical Octocode skill suite from
-this repo's `skills/` directory at build/publish time. Install can use a bundled
-skill or `--add <local-path>` (a directory containing `SKILL.md`). It atomically materializes a durable
-copy under `$OCTOCODE_HOME/skills/<name>`, then optionally links agent-specific
-skill directories to that copy. Links never target an npm or `npx` cache.
-The npm launcher owns `skill`: the native binary forwards every `skill`
-argument to the `octocode` launcher on PATH, so both report the same flags and
-status. It fails with exit 1 and a `npx -y octocode skill …` rerun command when
-that launcher is missing or resolves back to a native binary.
+The `octocode` package bundles the public skills from this repo's `skills/`
+directory. `install` copies a skill into the durable store
+`$OCTOCODE_HOME/skills/<name>` atomically, then links each selected platform's
+skill directory to that copy. Links never target an npm or `npx` cache.
 
 ```bash
 npx octocode skill list
@@ -436,247 +314,73 @@ npx octocode skill check --json
 npx octocode skill remove octocode-research --platform pi
 ```
 
-Useful flags:
-
 | Flag | Meaning |
 |---|---|
-| `--platform pi,cursor,claude,codex,opencode,copilot,gemini,all` | Select agent skill directories (`codex` is the shared `.agents/skills` location). `all` selects all seven. |
-| `--global` | Install selected platform links in user scope. Use exactly one scope with `--platform`. |
-| `--project-dir <dir>` | Install selected platform links in project scope. |
-| `--add <path>` | Install a skill from a local directory (or its `SKILL.md`). Not combinable with `--all`. |
-| `--path <dir>` | Use a custom canonical skill root instead of `$OCTOCODE_HOME/skills`. Not combinable with `--platform`. |
-| `--mode symlink\|copy\|auto` | Install strategy. `symlink` is the default; `copy` is an explicit portability fallback. |
-| `--force` | Replace existing canonical or destination content that differs. Existing content is preserved by default. |
-| `--upgrade` | Refresh changed bundled content in the canonical store. Managed copies refresh only when they still match the previous canonical content; arbitrary destination drift remains a conflict. |
-| `--dry-run` | Preview actions without writing (with `check --fix`, preview the fixes). |
-| `--fix` | `check` only: refresh the canonical copy and relink broken or stale locations; a repair that fails prints its error and exits 1. Never adds platforms (or the workspace, unless `--workspace`) and never replaces a fresh link. |
-| `--workspace` | `check` only: also check the workspace `<cwd>/.agents/skills` directory. |
-| `--no-env` | `check` only: skip skill environment-readiness checks. |
+| `--platform pi,cursor,claude,codex,opencode,copilot,gemini,all` | Agent skill directories (`codex` is the shared `.agents/skills` location). `all` selects all seven. |
+| `--global` / `--project-dir <dir>` | Link scope; use exactly one with `--platform`. |
+| `--add <path>` | Install a local skill directory (or its `SKILL.md`). Not combinable with `--all`. |
+| `--path <dir>` | Use a custom store instead of `$OCTOCODE_HOME/skills`. Not combinable with `--platform`. |
+| `--mode symlink\|copy\|auto` | Install strategy; `symlink` is the default, `copy` a portability fallback. |
+| `--force` | install: replace differing content (kept by default). remove: also delete real directories. |
+| `--upgrade` | Refresh changed bundled content in the store. A copy refreshes only while it still matches the previous content; other drift stays a conflict. |
+| `--dry-run` | Preview `install`, `remove`, or `check --fix` without writing. |
+| `--fix` | `check`: refresh stale or broken installs in place; never adds platforms. A failed repair exits 1. |
+| `--workspace` | `check`: also check `<cwd>/.agents/skills`. |
+| `--no-env` | `check`: skip environment readiness. |
 
-Skill actions use the subcommands above; removed flag forms are rejected with
-the canonical command syntax.
+`skill list` marks installs that differ from the bundled copy `[stale]` and
+broken links `[broken]`. `skill check` reports `ok`, `stale`, `broken` or
+`not-installed`, plus readiness: `needs-config` (a required setting is missing)
+or `partial` (an optional setting would unlock more). A GitHub token from
+`auth login` or a `gh` login counts as set. `check` exits 1 on stale, broken or
+needs-config.
 
-`skill list` marks installs whose content differs from the bundled copy as
-`[stale]` (and broken links as `[broken]`). `skill check` reports per-skill
-`ok` / `stale` / `broken` / `not-installed` plus env readiness: `needs-config`
-means a required setting is missing; `partial` means the skill works but an
-optional setting would unlock more. A GitHub token stored by
-`npx octocode auth login` or a `gh` login counts as set; the native runtime
-reports it. `check` exits 1 on stale, broken, or needs-config; run
-`skill check --fix` to repair installs.
+The npm launcher owns `skill`. The native binary forwards `skill` to the
+`octocode` launcher on `PATH`, and exits 1 with an `npx -y octocode skill …`
+rerun command when that launcher is missing.
 
 ---
 
-## Recommended workflows
+## Output and exit codes
 
-### Orient in a local codebase
-
-```bash
-npx octocode structureSearch '{"queries":[{"operation":"tree","path":"/ABS/repo/src"}]}'
-npx octocode localSearch '{"queries":[{"path":"/ABS/repo/src","matchString":"parseArgs","resultView":"matchOnly"}]}'
-npx octocode localFetch '{"queries":[{"path":"/ABS/repo/src/cli/parser.ts","matchString":"parseArgs"}]}'
-```
-
-### Structure, blast radius, and risks (code graph)
-
-```bash
-npx octocode graph ingest /ABS/repo
-npx octocode graph query dependents src/config.ts --depth 2   # who is affected
-npx octocode graph query impact --since origin/main            # changed files -> tests to run
-npx octocode graph query issues --min-score 0.3                # triage, then verify each lead
-npx octocode lspSearch '{"queries":[{"operation":"references","path":"/ABS/repo/src/config.ts","symbolName":"load","line":12}]}'
-```
-
-Use the graph for repo-wide structure (imports, callers, cycles, reachability,
-blast radius). Use `lspSearch` to prove symbol identity before a destructive
-change.
-
-### Remote repo to local proof
-
-GitHub code search can return zero rows when a provider has not indexed a repo.
-Treat that as a provider gap, not proof of absence.
-
-```bash
-npx octocode ghStructure '{"queries":[{"owner":"vercel","repo":"next.js","path":"packages/next"}]}'
-npx octocode ghCloneRepo '{"queries":[{"owner":"vercel","repo":"next.js","path":"packages/next"}]}'
-npx octocode localSearch '{"queries":[{"path":"<clone localPath>/src","matchString":"useState","resultView":"matchOnly"}]}'
-```
-
-### Symbols and references
-
-Get line anchors first, then trace the symbol:
-
-```bash
-npx octocode lspSearch '{"queries":[{"path":"/ABS/repo/src/index.ts","operation":"documentSymbols"}]}'
-npx octocode lspSearch '{"queries":[{"path":"/ABS/repo/src/index.ts","operation":"references","symbolName":"runCLI","line":42}]}'
-```
-
-### Package to source
-
-```bash
-npx octocode artifactSearch '{"queries":[{"ecosystem":"npm","packageName":"zod"}]}'
-npx octocode ghSearchCode '{"queries":[{"keywords":["ZodObject"],"owner":"colinhacks","repo":"zod"}]}'
-```
-
-### Pull requests and history
-
-```bash
-npx octocode ghSearchHistory '{"queries":[{"operation":"pullRequest","owner":"bgauryy","repo":"octocode","state":"merged","pageSize":10}]}'
-npx octocode ghGetHistoryItem '{"queries":[{"operation":"pullRequest","owner":"bgauryy","repo":"octocode","number":123,"sections":["patches","comments"]}]}'
-npx octocode ghSearchHistory '{"queries":[{"operation":"commit","owner":"bgauryy","repo":"octocode","path":"packages/octocode/src","since":"2024-01-01T00:00:00Z"}]}'
-npx octocode ghGetHistoryItem '{"queries":[{"operation":"compare","owner":"bgauryy","repo":"octocode","base":"8.0.0","head":"9.1.0"}]}'
-```
-
-### Agent or script mode
-
-```bash
-npx octocode schema
-npx octocode schema localSearch --view query
-npx octocode localSearch '{"queries":[{"path":"/ABS/repo/src","matchString":"runCLI","resultView":"matchOnly"}]}'
-npx octocode clasify --input request.json
-```
-
-The CLI keeps `clasify` discoverable when the provider key is absent. Called
-without a key, it exits `5` with a `missingConfiguration` error that names
-`OCTOCODE_CLASSIFICATION_API`. MCP instead omits the
-tool from discovery until a key resolves.
-
----
-
-## Global configuration
-
-`npx octocode config` prints the home, the global and project `.octocoderc` and
-`.env` paths (with whether each exists), the loaded key names, and config
-warnings such as unknown keys. The global `.env` is `<HOME>/.octocode/.env`, or
-the `.env` under `OCTOCODE_HOME` when overridden.
-
-```bash
-npx octocode config --json
-npx octocode config home
-npx octocode config get OCTOCODE_BETA
-npx octocode config set OCTOCODE_BETA true
-npx octocode config set OCTOCODE_CLASSIFICATION_API --stdin
-npx octocode config check OCTOCODE_CLASSIFICATION_API --json
-npx octocode config unset OCTOCODE_BETA --json
-```
-
-`home` prints the Octocode home directory on one line (`--json`: `{"home"}`).
-`get KEY` prints the key's resolved value on one line and nothing else, so a
-script or skill can capture it with `$(npx octocode config get KEY)`; it resolves
-like the runtime does (process environment, then a trusted workspace `.env`,
-then the global `.env`) and exits `1` with nothing on stdout when the key is
-unset. `--json` returns `key`, `set`, `value`, and `source` (`environment`,
-`project`, or `global`). `get` prints secrets too: run it inside a script, not
-where an agent transcript or log records stdout.
-
-`set` replaces every assignment for the named key with one assignment.
-`--stdin` reads a single line, up to 64 KiB, without placing the value in
-command arguments. `unset` is idempotent and only removes the global assignment.
-Both preserve unrelated lines and comments, use a file lock and atomic replacement,
-and never print values. On Unix, written files have owner-only permissions.
-Symlinked config files and keys blocked by the shared dotenv policy are rejected.
-
-Changes apply to subsequent commands. Existing process variables and applicable
-project configuration can still override the global value; removing a global key
-does not remove those overrides. `config check KEY --json` returns a `set`
-boolean and exits `1` when unset; for an unset GitHub token key it also names
-`githubTokenSource`, the credential GitHub calls use instead. The global mutation response reports `key`,
-`action`, `path`, and `changed`.
-
----
-
-## Output, flags, and exit codes
-
-### Common flags
-
-| Flag | Meaning |
-|---|---|
-| `--help` | Show command help. |
-| `--version` | Show CLI version. |
-| `--input <file>` / `--input -` | Read a tool's JSON query from a file, or from stdin. |
-| `--json` | Tool and `graph` commands: JSON on a terminal too (pipes always get JSON). System commands: JSON output and JSON errors. |
-
-Output follows the terminal: tools and `graph` print readable text, and `schema`
-indented JSON, on a terminal; all three print single-line JSON on a pipe. Errors follow the
-output: the `{"error":"…"}` envelope on stdout in JSON mode (a tool call's
-error adds `details` when there are repair steps and `errorCode`, e.g.
-`invalidInput` for a rejected query), text on stderr otherwise. A mistyped command on a pipe also gets the envelope, with the names
-it is close to. Exit codes are the same in both modes. `NO_COLOR` disables color.
+Tools and `graph` print readable text on a terminal and one JSON line on a pipe;
+`--json` forces JSON on a terminal. Errors follow the output: the
+`{"error":"…","errorCode":"…"}` envelope on stdout in JSON mode (plus `details`
+when there are repair steps), text on stderr otherwise. A mistyped command gets
+the same envelope. `NO_COLOR` disables color.
 
 ### Exit codes
 
 | Code | Meaning |
 |---:|---|
-| `0` | Successful execution, including a typed empty semantic payload. |
-| `1` | Empty result / no matches. |
-| `2` | Invalid input or unsupported flags, including any batch row rejected as `invalidInput` while other rows ran. |
-| `3` | A command or tool execution failed with a classified not-found error. |
+| `0` | Success, including a typed empty payload and a result with more pages. |
+| `1` | Every row empty / no matches. |
+| `2` | Invalid input or flags, including any batch row rejected as `invalidInput`. |
+| `3` | Not found. |
 | `4` | Authentication or permission failure. |
-| `5` | Tool or API execution error. |
-| `7` | Rate limited: a failed row's error is throttling, and no other failure outranks it. |
+| `5` | Execution error, including an unavailable tool, a missing native runtime, and a `config view` edit conflict or contract mismatch. |
+| `7` | Rate limited. |
 | `130` | Interrupted (Ctrl-C). |
 
-A batch exits with its worst row, in this order: a row rejected as
-`invalidInput` (`2`); a failed row (`status:"error"`, including `staleSnapshot`),
-which exits with the class of its error code (`3`, `4`, `5`, or `7`), or `5` when
-failed rows disagree (a retryable failure, which carries `next.retry`, is a
-failed row like any other); every row empty (`1`); else `0`. An answering row
-never hides a failed one.
+A batch exits with its worst row: a rejected row (`2`); then a failed row
+(`status:"error"`), with the class of its error code (`3`, `4`, `5` or `7`; `5`
+when failed rows disagree); then every row empty (`1`); else `0`. An answering
+row never hides a failed one.
 
-Paging is success. A result with a `next.*` or
-`responsePagination` continuation, `pagination.hasMore`, or a partial source
-read exits `0`, exactly as the MCP server reports it (it has no exit codes):
-read `pagination.hasMore` and `next.*` to learn whether to continue. A script
-tells "read the next page" (exit `0`, `next.*` present) from "start over"
-(`staleSnapshot`: `5`, with `next.restart`). A `snapshot` no search issued is
-malformed input (`invalidInput`, `2`), not stale. Exit `0` therefore means no
-row failed; still read `results[].status` for which rows are empty or partial.
-There is no exit `6`.
-
-### Environment variables
-
-The CLI and MCP server read the same settings. The ones most often set for
-the CLI:
-
-| Variable | Meaning |
-|---|---|
-| `GH_TOKEN` / `GITHUB_TOKEN` | GitHub token, in that priority order. See [Authentication](https://github.com/bgauryy/octocode/blob/main/docs/AUTHENTICATION.md). |
-| `OCTOCODE_HOME` | Override Octocode data and cache location. |
-| `OCTOCODE_ENABLE_LOCAL` | Enable local filesystem tools. Defaults to `true`. |
-| `TOOLS_TO_RUN` | Strict allowlist for CLI and MCP tools. A nonempty allowlist replaces the default set. |
-| `DISABLE_TOOLS` | Remove named tools from the default set when `TOOLS_TO_RUN` is unset. |
-| `OCTOCODE_BETA` | Enable the beta tools `astTopology` and `astRewrite`. |
-| `OCTOCODE_REDACT_EMAILS` | Mask email addresses in GitHub output (also `output.redactEmails`). |
-| `NO_COLOR` | Disable terminal color. |
-
-Unknown or removed tool names in `TOOLS_TO_RUN` / `DISABLE_TOOLS` are ignored,
-not aliased. Every other setting is in the
-[configuration reference](https://github.com/bgauryy/octocode/blob/main/docs/CONFIGURATION.md).
+Paging is success: a result with `next.*`, `pagination.hasMore` or a partial
+read exits `0`, as MCP (which has no exit codes) reports it. A stale snapshot
+(`staleSnapshot`) exits `5` with `next.restart`: start over rather than page.
+Exit `0` means no row failed; read `results[].status` for empty or partial rows.
 
 ---
 
 ## How the CLI aligns with MCP
 
-| CLI surface | MCP alignment |
-|---|---|
-| `<toolName> '<json>'` | Direct terminal access to the same named tools exposed through MCP, with identical query contracts. |
-| `schema <name>` | The schema contract for that tool. Do not guess fields. |
-| `schema` | The full tool catalog with availability. MCP clients see only the available tools, minus the CLI-only `ghCloneRepo`, `astTopology`, and `astRewrite`. |
-| `install --ide <client>` | Writes MCP client configuration so editors and assistants can call `octocode-mcp`. |
-| `auth` | Manages credentials used by both CLI and MCP flows. |
-| `skill` | Installs bundled Agent Skills locally; no MCP transport required. |
-
-The code boundary is intentionally thin:
-- `@octocodeai/octocode-core` authors tool schemas, descriptions, and instructions; `@octocodeai/config` delivers them (plus generated types) to every interface.
-- `@octocodeai/octocode-native` embeds that contract and owns validation and execution logic.
-- `octocode` launches the native binary in a terminal.
-- `octocode-mcp` registers the same tools for MCP clients.
-
----
-
-## Further reading
-
-- [Authentication](https://github.com/bgauryy/octocode/blob/main/docs/AUTHENTICATION.md)
-- [Configuration](https://github.com/bgauryy/octocode/blob/main/docs/CONFIGURATION.md)
-- [MCP server](https://github.com/bgauryy/octocode/blob/main/docs/OCTOCODE_MCP.md)
-- [All tools](https://github.com/bgauryy/octocode/blob/main/docs/OCTOCODE_TOOLS.md)
+- Tool commands run the same named tools as MCP, with identical query contracts.
+- MCP lists only available tools and never the CLI-only `ghCloneRepo` and
+  `astTopology`.
+- `install` writes the client entry that runs `octocode-mcp`; `auth` manages
+  the credentials both use; `skill` needs no MCP transport.
+- `@octocodeai/octocode-core` authors schemas and instructions,
+  `@octocodeai/config` delivers them, `@octocodeai/octocode-native` validates
+  and runs them, and `octocode` and `octocode-mcp` are thin launchers.

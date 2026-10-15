@@ -40,12 +40,7 @@ a per-query cost. See the [local dashboard](results/gated-jev-local.html) and
 ## Package layout
 
 ```
-compare/
-  arms/               one brief per arm + the shared runner brief
-  bin/                run_campaign.sh · run_arm.sh · judge_pair.sh · campaign_summary.py ·
-                      matrix_summary.py · preflight.sh · transcript_to_log.py · guard/gh · ghc
-  github-questions/   the shared question set
-  local-questions-v2/ 40 local questions and pinned repository manifests; private rubrics stay outside solver access
+compare/              arm briefs, the harness (bin/) and question sets; see compare/README.md
 skills/octocode-benchmark/
   SKILL.md            the flow
   references/         method, dashboard publishing, the judge's rubric
@@ -54,7 +49,8 @@ results/              campaign write-ups, results/runs/*.json, MATRIX.md, index.
 campaigns/            raw runs, transcripts and verdicts (gitignored)
 ```
 
-`yarn verify` lints the scripts and runs the harness tests.
+`yarn verify` lints the scripts and runs the harness tests. [compare/README.md](compare/README.md) describes each
+harness script and question set.
 
 The harness supports Claude, Pi and Codex runners. Codex Terra comparisons can meter JEV
 requests, including startup probes and failed requests, without saving request bodies or

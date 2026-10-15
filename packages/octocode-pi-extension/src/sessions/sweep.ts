@@ -2,17 +2,18 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { SessionManager } from '@earendil-works/pi-coding-agent';
 import { runningPid } from '../agentdb/liveness.js';
+import { readMeta, writeMeta } from '../agentdb/meta.js';
 import { liveJobFiles } from '../files/bash-jobs.js';
 import { CLEANUP_DAYS_ENV, envInt } from '../shared/env.js';
-import { PID_SESSION_PREFIX, sessionDirName, sessionsRoot, sweepStaleOutputs } from '../shared/home.js';
+import { PID_SESSION_PREFIX, sessionDirName, sessionsRoot } from '../shared/home.js';
+import { sweepStaleOutputs } from '../shared/sweep.js';
+import { DAY_MS, HOUR_MS } from '../shared/util.js';
 import { processAlive } from '../shared/process.js';
 import { shotsDir } from '../subagents/screenshots.js';
 import type { SessionIndex } from './store.js';
 
-const HOUR = 3_600_000;
-const DAY = 24 * HOUR;
 /** The sweep runs at most this often across all sessions (meta `last_sweep`). */
-const SWEEP_EVERY_MS = 6 * HOUR;
+const SWEEP_EVERY_MS = 6 * HOUR_MS;
 /**
  * Spilled output, bash logs, idle checkpoints of a kept session, subagent screenshots, and the folders of sessions Pi
  * no longer lists (deleted, a pid folder, a `--no-session` subagent's, whose spilled files its parent's report may
@@ -81,17 +82,17 @@ export async function sweepSessions(
   const removed: string[] = [];
   const days = envInt(env, CLEANUP_DAYS_ENV, OUTPUT_DAYS, { min: 0 });
   if (days === 0) return removed;
-  const outputMs = days * DAY;
+  const outputMs = days * DAY_MS;
   try {
-    const last = Number(index.meta('last_sweep') ?? 0);
+    const last = Number(readMeta(index.agent.db, 'last_sweep') ?? 0);
     if (!options.force && now - last < SWEEP_EVERY_MS) return removed;
     // Claimed before the work, so concurrent session starts do not sweep twice; a failed listing gives the claim back.
-    index.setMeta('last_sweep', String(now));
+    writeMeta(index.agent.db, 'last_sweep', String(now));
     let ids: Set<string>;
     try {
       ids = await (options.listed ?? piSessionIds)(index.sessionDirs());
     } catch {
-      index.setMeta('last_sweep', String(last));
+      writeMeta(index.agent.db, 'last_sweep', String(last));
       return removed;
     }
     const listed = new Set([...ids].flatMap(folderName));

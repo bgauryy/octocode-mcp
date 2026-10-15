@@ -159,6 +159,94 @@ async fn models_use_authenticated_get_retry_and_validate_the_catalog() {
 }
 
 #[tokio::test]
+async fn split_media_requests_keep_only_assets_referenced_by_each_question() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/systemone"))
+        .respond_with(|request: &Request| {
+            let body = request.body_json::<Value>().unwrap();
+            assert_eq!(body["questions"].as_object().unwrap().len(), 1);
+            let question = &body["questions"]["answer"];
+            let mut expected = serde_json::Map::new();
+            if body["state"]["shared"] == "image-shared" {
+                expected.insert(
+                    "image-shared".into(),
+                    json!({"type":"image","format":"png","data_base64":"shared-bytes"}),
+                );
+            }
+            match question["instructions"]["kind"].as_str().unwrap() {
+                "instruction" => {
+                    expected.insert(
+                        "image-instruction".into(),
+                        json!({"type":"image","format":"png","data_base64":"instruction-bytes"}),
+                    );
+                }
+                "criterion" => {
+                    expected.insert(
+                        "image-criterion".into(),
+                        json!({"type":"image","format":"png","data_base64":"criterion-bytes"}),
+                    );
+                }
+                "text" => {}
+                other => panic!("Unexpected question: {other}"),
+            }
+            let expected_assets = (!expected.is_empty()).then_some(Value::Object(expected));
+            if body.get("assets") != expected_assets.as_ref() {
+                return ResponseTemplate::new(400).set_body_json(
+                    json!({"error":"Every asset must be referenced in this request"}),
+                );
+            }
+            assert_eq!(
+                request.headers.contains_key("typesafe-danger-zone-images"),
+                expected_assets.is_some()
+            );
+            response(request)
+        })
+        .expect(6)
+        .mount(&server)
+        .await;
+    let evaluator = evaluator(&server);
+    let padding = "x".repeat(45 * 1024);
+    let questions = [
+        json!({"type":"noul","instructions":{"kind":"instruction","target":"Inspect image-instruction here.","padding":padding}}),
+        json!({"type":"noul","instructions":{"kind":"criterion"},"criteria":{"true":{"examples":["image-criterion"],"padding":padding}}}),
+        json!({"type":"noul","instructions":{"kind":"text","padding":padding}}),
+    ];
+    for shared in [false, true] {
+        let state = if shared {
+            json!({"shared":"image-shared"})
+        } else {
+            json!("No shared image")
+        };
+        let mut assets = json!({
+            "image-instruction":{"type":"image","format":"png","data_base64":"instruction-bytes"},
+            "image-criterion":{"type":"image","format":"png","data_base64":"criterion-bytes"}
+        });
+        if shared {
+            assets["image-shared"] =
+                json!({"type":"image","format":"png","data_base64":"shared-bytes"});
+        }
+        let judged = evaluator
+            .evaluate_prepared(
+                EvaluationInput {
+                    state: &state,
+                    questions: &questions,
+                    assets: Some(&assets),
+                    long_context: false,
+                },
+                None,
+                &evaluation_budget(&evaluator),
+                &evaluator.gate(),
+            )
+            .await
+            .expect("split requests must not send assets used only by sibling questions");
+        assert_eq!(judged.provider_calls, 3);
+        assert_eq!(judged.answers.len(), 3);
+        assert_eq!((judged.input_tokens, judged.output_tokens), (30, 6));
+    }
+}
+
+#[tokio::test]
 async fn failed_split_evaluation_counts_all_completed_usage() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -313,7 +401,8 @@ async fn concurrent_failed_evaluations_share_attempts_without_double_counting_us
 #[test]
 fn selection_preserves_sibling_decisions_and_accounts_for_every_request() {
     use crate::runtime::ExecutionContext;
-    use crate::tools::selection::{self, Candidate, Limits};
+    use crate::runtime::SelectionLimits;
+    use crate::tools::selection::{self, Candidate};
     let executor = tokio::runtime::Runtime::new().unwrap();
     let server = executor.block_on(MockServer::start());
     executor.block_on(async {
@@ -335,7 +424,7 @@ fn selection_preserves_sibling_decisions_and_accounts_for_every_request() {
     let mut evaluator = evaluator(&server);
     evaluator.stats_home = Some(home.path().to_owned());
     let runtime = selection::Runtime {
-        limits: Limits {
+        limits: SelectionLimits {
             max_candidates: 10,
             max_chars: 32_000,
             timeout: Duration::from_secs(10),

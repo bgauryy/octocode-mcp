@@ -7,7 +7,6 @@ use std::path::PathBuf;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ConfigFieldKind {
     Boolean,
-    Number,
     String,
     Url,
     Path,
@@ -41,8 +40,6 @@ pub struct ConfigFieldSpec {
     /// The one environment variable that sets this field, if any.
     pub env: Option<ConfigEnvBinding>,
     pub default_json: &'static str,
-    pub minimum: Option<f64>,
-    pub maximum: Option<f64>,
     pub values: &'static [&'static str],
     pub enum_style: ConfigEnumStyle,
     pub item_path: bool,
@@ -120,9 +117,22 @@ pub const UNKNOWN_CONFIG_CODE: &str = "unknown_or_future_config";
 pub const REMOVED_SETTING_CODE: &str = "removed_setting";
 /// Diagnostic code of a tool-list entry no tool has.
 pub const UNKNOWN_TOOL_NAME_CODE: &str = "unknown_tool_name";
-/// Diagnostic code of a workspace file value above the home cap it may only
-/// lower.
-pub const WORKSPACE_RAISES_LIMIT_CODE: &str = "workspace_config_raises_limit";
+
+/// Why the contract removed `name`: a removed variable, or a removed setting
+/// path or a path inside a removed section (`output.pagination.x`).
+#[must_use]
+pub fn removed_reason(name: &str) -> Option<&'static str> {
+    REMOVED_ENV_KEYS
+        .iter()
+        .chain(REMOVED_SETTINGS)
+        .find(|(removed, _)| {
+            name == *removed
+                || name
+                    .strip_prefix(removed)
+                    .is_some_and(|rest| rest.starts_with('.'))
+        })
+        .map(|(_, reason)| *reason)
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ConfigDiagnostic {

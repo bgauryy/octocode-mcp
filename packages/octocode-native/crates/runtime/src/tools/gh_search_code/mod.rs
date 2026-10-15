@@ -7,11 +7,14 @@ mod lines;
 mod provider_tests;
 mod query;
 mod ranking;
+#[cfg(test)]
+mod selection_tests;
 
 use crate::security::scan::ContentScan;
 use crate::tools::gh_shared::{
-    GhFailure, SearchCompleteness, SearchReach, add_next, apply_partial, field_names, pick_rows,
-    push_warning_front, reject_window, search_failure, with_ref_recovery, with_search_repair,
+    CODE_ROW_ID, GhFailure, SearchCompleteness, SearchReach, add_next, apply_partial, field_names,
+    pick_rows, push_warning_front, reject_window, search_failure, with_ref_recovery,
+    with_search_repair,
 };
 use crate::tools::id::ToolId;
 use crate::tools::num::usize_of;
@@ -24,21 +27,6 @@ use octocode_github::{
 use serde_json::json;
 
 pub use crate::contracts::tool_types::{GhSearchCodeQuery, GhSearchCodeQueryMatchIn};
-
-/// What a `fields` pick always keeps of a code row: its identity (path, and
-/// repository on owner-wide pages) and the facts that qualify its lines
-/// (where else the same evidence sits, how many hits exist, whether the
-/// lines were read at the ref, and the commit they were read at).
-const CODE_ROW_ID: &[&str] = &[
-    "owner",
-    "repo",
-    "path",
-    "alsoAt",
-    "matchCount",
-    "atRef",
-    "lineResolved",
-    "commitSha",
-];
 
 /// Run one ghSearchCode row.
 pub async fn run<C: ConditionalCache>(
@@ -168,9 +156,13 @@ pub(crate) async fn execute<C: ConditionalCache>(
     let reads = code_output::shape_files(&mut value, &mut items, query, resolution);
     code_output::merge_identical(&mut items);
     code_output::hoist_shared(&mut value, &mut items);
-    let fields = field_names(&query.fields);
     value["files"] = json!(items);
-    pick_rows(&mut value, "files", CODE_ROW_ID, &fields);
+    // The shared sanitizer and selector need the captured hit evidence.
+    // A classified response applies the caller's projection after selection.
+    if query.clasify_context.is_none() {
+        let fields = field_names(&query.fields);
+        pick_rows(&mut value, "files", CODE_ROW_ID, &fields);
+    }
     if data.pages > 1 || past_end {
         value["pagination"] = crate::response::pages::PageFacts::open(current, Some(per), more)
             .with_total(data.total)

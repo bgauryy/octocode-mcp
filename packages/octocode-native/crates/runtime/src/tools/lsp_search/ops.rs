@@ -707,6 +707,12 @@ impl Operation<'_, '_> {
             .ok_or_else(|| LspFailure::invalid_query("workspaceSymbol requires symbolName"))?;
         let symbols =
             cancellable(self.cancel, self.client.workspace_symbol(name.clone())).await??;
+        // The server's own cap is judged on its raw answer, before the
+        // read policy drops any rows.
+        let capped_at = self
+            .client
+            .workspace_symbol_limit()
+            .filter(|limit| symbols.as_array().map_or(0, Vec::len) == *limit);
         // workspace/symbol URIs are server-controlled and span the whole
         // project; drop any that fall outside the read policy before emitting.
         let mut symbols = as_array(&filter_authorized_items(symbols, self.sources.policy()))
@@ -771,7 +777,7 @@ impl Operation<'_, '_> {
             };
             row["hints"] = json!([hint]);
         }
-        super::server_coverage::workspace_symbols(&mut row, document_anchor.as_deref());
+        super::server_coverage::workspace_symbols(&mut row, document_anchor.as_deref(), capped_at);
         Ok(row)
     }
 

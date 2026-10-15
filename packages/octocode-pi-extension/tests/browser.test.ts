@@ -13,7 +13,7 @@ vi.mock('node:dns/promises', () => ({ lookup: async () => [{ address: '93.184.21
 const { BrowserTool, registerBrowserTool } = await import('../src/browser/tool.js');
 const { browserSummary } = await import('../src/browser/render.js');
 const { pressKey, settle, settleAfterLoad, waitForText } = await import('../src/browser/input.js');
-const { openBrowser } = await import('../src/browser/cdp.js');
+const { openBrowser } = await import('../src/browser/session.js');
 
 type Result = { content: Array<{ type: string; text?: string; data?: string }> };
 type Tool = {
@@ -516,18 +516,34 @@ describe('settle', () => {
     expect(page.count()).toBe(0);
     await expect(settle({ ...events(), evaluate: async () => Promise.reject(new Error('context destroyed')) }, undefined, timing)).resolves.toBeUndefined();
   });
+
+  it('rejects when aborted during the final DOM wait', async () => {
+    const controller = new AbortController();
+    const aborting = (_expression: string, signal?: AbortSignal) =>
+      new Promise<never>((_resolve, reject) => signal?.addEventListener('abort', () => reject(signal.reason), { once: true }));
+    const waiting = settle({ ...events(), evaluate: aborting as never }, controller.signal, timing);
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    controller.abort(new Error('stop'));
+    await expect(waiting).rejects.toThrow('stop');
+  });
 });
 
 describe('settleAfterLoad', () => {
-  it('waits in the page for quiet content and requests, reports a timeout, and survives a torn-down page', async () => {
+  it('waits in the page for quiet content and requests, and reports a timeout', async () => {
     const expressions: string[] = [];
     const quiet = await settleAfterLoad({ evaluate: async (expression: string) => (expressions.push(expression), true) as never }, undefined, 500, 6_000);
-    expect(quiet.settled).toBe(true);
+    expect(quiet).toMatchObject({ settled: true, failed: false });
     expect(expressions[0]).toContain('MutationObserver');
     expect(expressions[0]).toContain("perf.observe({ type: 'resource' })");
     expect(expressions[0]).toMatch(/setTimeout\(\(\) => finish\(false\), 6000\)/);
-    expect((await settleAfterLoad({ evaluate: async () => false as never })).settled).toBe(false);
-    expect((await settleAfterLoad({ evaluate: async () => Promise.reject(new Error('context destroyed')) })).settled).toBe(true);
+    expect(await settleAfterLoad({ evaluate: async () => false as never })).toMatchObject({ settled: false, failed: false });
+  });
+
+  it('reports a wait that could not run as not settled, and rethrows an abort', async () => {
+    expect(await settleAfterLoad({ evaluate: async () => Promise.reject(new Error('context destroyed')) })).toMatchObject({ settled: false, failed: true });
+    const controller = new AbortController();
+    controller.abort(new Error('stop'));
+    await expect(settleAfterLoad({ evaluate: async () => Promise.reject(controller.signal.reason) }, controller.signal)).rejects.toThrow('stop');
   });
 });
 

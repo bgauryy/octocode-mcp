@@ -244,19 +244,17 @@ describe('isolated subagent worktrees', () => {
     expect(git(dir, 'for-each-ref', 'refs/octocode').trim()).toBe('');
   });
 
-  it.skipIf(process.platform === 'win32')('prunes a worktree whose owner pid now belongs to a later process, and reads older pid-only records', async () => {
+  it.skipIf(process.platform === 'win32')('prunes a worktree whose owner pid now belongs to a later process', async () => {
     const dir = repo();
     const home = tmp();
     const reused = await createWorktree(dir, 'reused-1', home);
     const meta = `${reused.path}.json`;
     // The pid runs, but it started later than the owner that recorded it.
     fs.writeFileSync(meta, JSON.stringify({ ...JSON.parse(fs.readFileSync(meta, 'utf8')), owners: [{ pid: process.pid, started: 'Thu Jan 1 00:00:00 1970' }] }));
-    const legacy = await createWorktree(dir, 'legacy-1', home);
-    const { owners: _owners, ...rest } = JSON.parse(fs.readFileSync(`${legacy.path}.json`, 'utf8'));
-    fs.writeFileSync(`${legacy.path}.json`, JSON.stringify({ ...rest, pids: [process.pid] }));
+    const live = await createWorktree(dir, 'live-1', home);
     expect((await pruneWorktrees(dir, home)).saved.map((entry) => entry.agentId)).toEqual(['reused-1']);
-    expect(fs.existsSync(legacy.path)).toBe(true);
-    await finishWorktree(legacy);
+    expect(fs.existsSync(live.path)).toBe(true);
+    await finishWorktree(live);
   });
 
   it('keeps a worktree while its recorded subagent pid is alive, even after the parent died', async () => {
@@ -270,8 +268,6 @@ describe('isolated subagent worktrees', () => {
     try {
       recordWorktreePid(worktree, child.pid!);
       expect(JSON.parse(fs.readFileSync(meta, 'utf8')).owners.map((each: { pid: number }) => each.pid)).toEqual([dead, child.pid]);
-      // Bare pids too, so an older version pruning the same folder still sees the owners.
-      expect(JSON.parse(fs.readFileSync(meta, 'utf8')).pids).toEqual([dead, child.pid]);
       expect(await pruneWorktrees(dir, home)).toEqual({ saved: [], kept: [] });
       expect(fs.existsSync(worktree.path)).toBe(true);
     } finally {
@@ -302,6 +298,27 @@ describe('isolated subagent worktrees', () => {
     expect(result.ref).toBe('refs/octocode/pi/broken-1');
     expect(git(dir, 'show', 'refs/octocode/pi/broken-1:src/new.txt')).toBe('untracked work');
     expect(fs.existsSync(worktree.path)).toBe(false);
+  });
+
+  it('reports git\'s own failure when the ref cannot be written, instead of calling the name taken, and keeps the worktree', async () => {
+    const dir = repo();
+    const home = tmp();
+    const worktree = await createWorktree(dir, 'locked-1', home);
+    fs.writeFileSync(path.join(worktree.path, 'src', 'a.txt'), 'precious\n');
+    // A held ref lock makes update-ref fail while the ref itself does not exist.
+    const refDir = path.join(dir, '.git', 'refs', 'octocode', 'pi');
+    fs.mkdirSync(refDir, { recursive: true });
+    const lock = path.join(refDir, 'locked-1.lock');
+    fs.writeFileSync(lock, '');
+    const failure = await finishWorktree(worktree).then(() => undefined, (error: Error) => error);
+    expect(failure?.message).toMatch(/Could not save the subagent's changes under refs\/octocode\/pi\/locked-1: .*\.lock/);
+    expect(failure?.message).not.toContain('are taken');
+    expect(failure?.message).toContain(`worktree is kept at ${worktree.path}`);
+    expect(fs.readFileSync(path.join(worktree.path, 'src', 'a.txt'), 'utf8')).toBe('precious\n');
+    expect(git(dir, 'for-each-ref', '--format=%(refname)', 'refs/octocode/pi/')).toBe('');
+
+    fs.rmSync(lock);
+    expect((await finishWorktree(worktree)).ref).toBe('refs/octocode/pi/locked-1');
   });
 
   it('keeps an orphan it cannot save and reports it, with the actual ref names of saved ones', async () => {

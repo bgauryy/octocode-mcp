@@ -720,48 +720,34 @@ fn a_default_walk_reaches_every_row_once_in_budget_sized_pages() {
             .collect::<String>();
         fs::write(root.path().join(format!("f{n:02}.txt")), body).expect("fixture");
     }
-    let (policy, security) = policy_for(root.path());
-    let mut request = ls_query(
+    let start = serde_json::to_value(ls_query(
         serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "needle"}),
         None,
-    );
-    let mut seen = std::collections::BTreeSet::new();
-    let mut pages = 0;
-    loop {
-        let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
-            .expect("page");
-        let body = serde_json::to_value(&result).expect("serialize");
-        pages += 1;
+    ))
+    .expect("query");
+    let (walk, bodies) = walk_search(root.path(), start, None);
+    for (index, body) in bodies.iter().enumerate() {
         let chars = crate::tools::stream_page::json_chars(&body["files"]);
         assert!(
             chars <= crate::tools::page_windows::page_budget(None, &serde_json::json!({})),
-            "page {pages}: {chars} chars"
+            "page {}: {chars} chars",
+            index + 1
         );
-        for file in body["files"].as_array().expect("files") {
-            for row in file["matches"].as_array().expect("rows") {
-                let key = (
-                    file["path"].as_str().expect("path").to_owned(),
-                    row["line"].as_u64().expect("line"),
-                );
-                assert!(seen.insert(key), "row shown twice on page {pages}");
-            }
-        }
         assert!(
             body["next"].get("nextMatchPage").is_none(),
             "{}",
             body["next"]
         );
-        let Some(next) = body["next"].get("nextPage") else {
-            break;
-        };
-        assert!(
-            next["query"]["queries"][0].get("pageSize").is_none(),
-            "{next}"
-        );
-        request = serde_json::from_value(next["query"]["queries"][0].clone())
-            .expect("continuation query");
+        if let Some(next) = body["next"].get("nextPage") {
+            assert!(
+                next["query"]["queries"][0].get("pageSize").is_none(),
+                "{next}"
+            );
+        }
     }
-    assert_eq!(seen.len(), 30 * rows_per_file);
+    // Each row once, every continuation run unchanged.
+    assert_eq!(walk.rows.len(), 30 * rows_per_file);
+    let pages = bodies.len();
     // About 30 × 60 rows of ~100 bytes: the overview page plus
     // total/budget pages, not one page per ten rows of each file.
     assert!((7..=11).contains(&pages), "{pages} pages");
@@ -1474,4 +1460,124 @@ fn leading_nul_binaries_are_counted_with_a_listing_continuation() {
     }
     assert!(listed.contains("logo.png"), "{listed}");
     assert!(!listed.contains("a.txt"), "{listed}");
+}
+
+#[test]
+fn classification_candidates_never_receive_clipped_secrets_even_when_excluded() {
+    use crate::runtime::SelectionLimits;
+    use crate::tools::selection::{Decision, JudgeCall, Runtime, SelectionJudge};
+    use serde_json::{Value, json};
+    use std::sync::{Arc, Mutex};
+    use std::time::{Duration, Instant};
+
+    struct RecordingJudge(Arc<Mutex<Vec<Value>>>);
+    impl SelectionJudge for RecordingJudge {
+        fn identity(&self) -> Value {
+            json!({"test":"record-safe-candidates"})
+        }
+        fn select(&self, call: JudgeCall<'_>) -> Result<Vec<(usize, Decision)>, String> {
+            let mut recorded = self.0.lock().expect("recorded states");
+            Ok(call
+                .admitted
+                .iter()
+                .map(|&index| {
+                    let state = call.candidates[index]
+                        .state
+                        .as_ref()
+                        .expect("prepared state");
+                    recorded.push(state.clone());
+                    let decision = if state["path"]
+                        .as_str()
+                        .expect("candidate path")
+                        .ends_with("keep.txt")
+                    {
+                        Decision::Selected
+                    } else {
+                        Decision::Excluded
+                    };
+                    (index, decision)
+                })
+                .collect())
+        }
+    }
+
+    let root = tempfile::tempdir().expect("fixture");
+    let token = format!("{}{}", "ghp_", "1234567890abcdefghijklmnopqrstuvwxyz");
+    let body = format!("token: {token} end\nplain needle line\n");
+    for name in ["keep.txt", "drop.txt"] {
+        fs::write(root.path().join(name), &body).expect("fixture");
+    }
+    let (policy, security) = policy_for(root.path());
+    let executor = tokio::runtime::Runtime::new().expect("runtime");
+    for fields in [
+        json!({"matchString":"ghp_[0-9a-z]{20}|needle", "regex":"rust", "resultView":"matchOnly"}),
+        json!({"matchString":"token|needle", "regex":"rust", "matchContentLength":30}),
+    ] {
+        let recorded = Arc::new(Mutex::new(Vec::new()));
+        let selection = Runtime {
+            limits: SelectionLimits {
+                max_candidates: 64,
+                max_chars: 131_072,
+                timeout: Duration::from_secs(5),
+            },
+            available: true,
+            judge: Arc::new(RecordingJudge(recorded.clone())),
+            handle: executor.handle().clone(),
+            context: crate::runtime::ExecutionContext {
+                cancellation: tokio_util::sync::CancellationToken::new(),
+                deadline: Instant::now() + Duration::from_secs(5),
+                walk_threads: None,
+                response_window: None,
+                github_credential: None,
+            },
+        };
+        let request = ls_query(
+            json!({
+                "path": root.path(),
+                "clasifyContext": {"classifiers":["Does this contain needle?"]}
+            }),
+            Some(&ls_query(fields, None)),
+        );
+        let result = execute_local_search_selected(
+            &request,
+            &policy,
+            &security,
+            &NeverCancel,
+            None,
+            None,
+            Some(&selection),
+        )
+        .expect("selected search");
+        let recorded = recorded.lock().expect("recorded states");
+        assert_eq!(
+            recorded.len(),
+            2,
+            "selected and excluded candidates were judged"
+        );
+        for state in recorded.iter() {
+            let text = state["matches"].to_string();
+            assert!(text.contains("needle"), "clean evidence remains available");
+            assert!(
+                text.contains("[REDACTED"),
+                "secret overlap was redacted before judgment"
+            );
+            for fragment in ["1234567890", "klmnopqrstuvwxyz"] {
+                assert!(
+                    !text.contains(fragment),
+                    "provider received a secret fragment"
+                );
+            }
+        }
+        let receipt = result.selection.expect("selection receipt");
+        assert_eq!(
+            (
+                receipt.selected_items,
+                receipt.excluded_items,
+                receipt.unknown_items
+            ),
+            (1, 1, 0)
+        );
+        assert_eq!(result.files.len(), 1);
+        assert_eq!(result.files[0].path, "keep.txt");
+    }
 }

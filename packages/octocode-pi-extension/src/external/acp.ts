@@ -6,7 +6,7 @@ import {
   type ClientConnection, type RequestPermissionRequest, type RequestPermissionResponse, type SessionNotification,
 } from '@agentclientprotocol/sdk';
 import { adoptTree, KILL_GRACE_MS, prepareTree, stopTree } from '../shared/process.js';
-import { errorMessage } from '../shared/util.js';
+import { errorMessage, untilAborted } from '../shared/util.js';
 import type { ExternalBackend, ExternalReply } from './protocol.js';
 
 export interface AcpConnectInput {
@@ -33,15 +33,10 @@ function timeoutSignal(timeoutMs: number): AbortSignal {
   return AbortSignal.timeout(timeoutMs);
 }
 
-async function until<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
-  let onAbort: () => void = () => undefined;
-  const aborted = new Promise<never>((_, reject) => {
-    onAbort = () => reject(signal.reason);
-    if (signal.aborted) onAbort();
-    else signal.addEventListener('abort', onAbort, { once: true });
-  });
-  try { return await Promise.race([operation, aborted]); }
-  finally { signal.removeEventListener('abort', onAbort); }
+/** A text chunk notification with its text blanked: two chunks with the same value differ only in their text. */
+function withoutText(notification: SessionNotification): string {
+  const { update } = notification;
+  return JSON.stringify(update.sessionUpdate === 'agent_message_chunk' && update.content.type === 'text' ? { ...notification, update: { ...update, content: { ...update.content, text: '' } } } : notification);
 }
 
 interface Turn {
@@ -80,7 +75,7 @@ export class AcpBackend implements ExternalBackend {
     const cwd = realpathSync(input.cwd);
     if (!statSync(cwd).isDirectory()) throw new Error('ACP cwd must be a directory.');
     if (!input.command.trim() || !input.vendor.trim()) throw new Error('ACP requires an executable and the real host vendor.');
-    await until(prepareTree(), startup);
+    await untilAborted(prepareTree(), startup);
     startup.throwIfAborted();
     const child = spawn(input.command, input.args ?? [], { cwd, stdio: ['pipe', 'pipe', 'pipe'], detached: process.platform !== 'win32', windowsHide: true });
     adoptTree(child.pid);
@@ -94,17 +89,17 @@ export class AcpBackend implements ExternalBackend {
         .connect(stream);
       backend.connection = connection;
       connection.signal.addEventListener('abort', () => { void backend.shutdown(new Error('ACP connection closed.')); }, { once: true });
-      const initialization = await until(connection.agent.request(methods.agent.initialize, {
+      const initialization = await untilAborted(connection.agent.request(methods.agent.initialize, {
         protocolVersion: PROTOCOL_VERSION, clientCapabilities: {},
       }), AbortSignal.any([startup, backend.lifetime.signal]));
       if (initialization.protocolVersion !== PROTOCOL_VERSION) throw new Error(`Unsupported ACP protocol version ${initialization.protocolVersion}.`);
       if (input.sessionId) {
         phase = 'session/load';
         if (!initialization.agentCapabilities?.loadSession) throw new Error('ACP agent does not advertise session/load; existing session was not replaced.');
-        await until(connection.agent.request(methods.agent.session.load, { sessionId: input.sessionId, cwd, mcpServers: [] }), startup);
+        await untilAborted(connection.agent.request(methods.agent.session.load, { sessionId: input.sessionId, cwd, mcpServers: [] }), startup);
       } else {
         phase = 'session/new';
-        const session = await until(connection.agent.request(methods.agent.session.new, { cwd, mcpServers: [] }), startup);
+        const session = await untilAborted(connection.agent.request(methods.agent.session.new, { cwd, mcpServers: [] }), startup);
         if (!session.sessionId) throw new Error('ACP agent returned an empty session ID.');
         backend.currentSessionId = session.sessionId;
       }
@@ -126,7 +121,7 @@ export class AcpBackend implements ExternalBackend {
     const turn: Turn = { controller, signal, chunks: [], updates: [] };
     this.active = turn;
     try {
-      const response = await until(this.connection.agent.request(methods.agent.session.prompt, {
+      const response = await untilAborted(this.connection.agent.request(methods.agent.session.prompt, {
         sessionId: this.sessionId, prompt: [{ type: 'text', text }],
       }, { cancellationSignal: signal }), signal);
       turn.updates.push({ type: 'prompt_response', response });
@@ -141,12 +136,25 @@ export class AcpBackend implements ExternalBackend {
     }
   }
 
+  /**
+   * Keeps every non-thought update of the active turn in order. Consecutive text chunks of the reply (an agent streams
+   * it token by token) merge into one update, so the list carries the text once per run between other updates instead
+   * of one JSON envelope per token; nothing is dropped.
+   */
   private update(notification: SessionNotification): void {
     const turn = this.active;
     if (!turn || notification.sessionId !== this.sessionId || turn.signal.aborted || notification.update.sessionUpdate === 'agent_thought_chunk') return;
-    turn.updates.push(notification);
     const update = notification.update;
-    if (update.sessionUpdate === 'agent_message_chunk' && update.content.type === 'text') turn.chunks.push(update.content.text);
+    if (update.sessionUpdate !== 'agent_message_chunk' || update.content.type !== 'text') {
+      turn.updates.push(notification);
+      return;
+    }
+    turn.chunks.push(update.content.text);
+    const last = turn.updates.at(-1) as SessionNotification | undefined;
+    const run = last?.update.sessionUpdate === 'agent_message_chunk' && last.update.content.type === 'text' ? last.update.content : undefined;
+    // Only chunks that differ in nothing but their text merge, so no per-chunk field (an id, annotations, `_meta`) is lost.
+    if (run && last && withoutText(last) === withoutText(notification)) run.text += update.content.text;
+    else turn.updates.push({ ...notification, update: { ...update, content: { ...update.content } } });
   }
 
   private async requestPermission(request: RequestPermissionRequest, requestSignal: AbortSignal): Promise<RequestPermissionResponse> {
@@ -156,7 +164,7 @@ export class AcpBackend implements ExternalBackend {
     const signal = AbortSignal.any([requestSignal, turn.signal]);
     try {
       signal.throwIfAborted();
-      const response = await until(this.permission(request, signal), signal);
+      const response = await untilAborted(this.permission(request, signal), signal);
       signal.throwIfAborted();
       const outcome = response.outcome;
       if (outcome.outcome === 'selected' && !request.options.some((option) => option.optionId === outcome.optionId)) {
@@ -179,7 +187,7 @@ export class AcpBackend implements ExternalBackend {
     this.cancelling = Promise.resolve().then(async () => {
       try {
         if (this.connection && !this.connection.signal.aborted) {
-          await until(this.connection.agent.notify(methods.agent.session.cancel, { sessionId: this.sessionId }), timeoutSignal(KILL_GRACE_MS));
+          await untilAborted(this.connection.agent.notify(methods.agent.session.cancel, { sessionId: this.sessionId }), timeoutSignal(KILL_GRACE_MS));
         }
       } catch { /* Closing the owned process is authoritative when cooperative cancellation cannot be sent. */ }
       await this.shutdown(reason);

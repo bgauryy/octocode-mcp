@@ -270,7 +270,7 @@ try {
           row.name
         );
         assert.equal(
-          instructions.includes('clasify screens unread'),
+          instructions.includes('clasify scouts unread'),
           row.clasify,
           row.name
         );

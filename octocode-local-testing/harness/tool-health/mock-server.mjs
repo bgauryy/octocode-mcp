@@ -8,6 +8,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 
 const sha = text => createHash('sha1').update(text).digest('hex');
@@ -547,7 +548,9 @@ export async function startMock({ fixtureDir, tmpDir, token, configureModel, cla
 }
 
 // `node mock-server.mjs <fixtureDir> [port]`: run standalone for debugging.
-if (import.meta.url === `file://${process.argv[1]}`) {
+// argv[1] keeps a symlinked path while import.meta.url is the real path, so compare real paths.
+const realOrSelf = p => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+if (process.argv[1] && realOrSelf(process.argv[1]) === realOrSelf(fileURLToPath(import.meta.url))) {
   const mock = await startMock({ fixtureDir: path.resolve(process.argv[2] ?? '.') });
   console.log(mock.url);
   let shown = 0;

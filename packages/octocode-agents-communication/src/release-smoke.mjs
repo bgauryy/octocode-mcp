@@ -20,6 +20,8 @@ const run = (file, args, options = {}) => execFileSync(file, args, {
 const runtime = runtimeInfo();
 const target = `${process.platform}-${process.arch}-python${runtime.versionInfo.slice(0, 2).join('.')}`;
 const temporary = realpathSync(mkdtempSync(join(tmpdir(), 'communication-release-')));
+// A session on a smoke database registers itself under the Octocode home; keep that out of the real one.
+process.env.OCTOCODE_HOME = join(temporary, 'octocode-home');
 const result = {
   passed: false, startedAt: new Date().toISOString(), target, platform: process.platform,
   node: process.version, runtime,

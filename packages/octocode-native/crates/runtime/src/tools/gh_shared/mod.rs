@@ -681,6 +681,82 @@ pub(crate) fn tree_recovery(at: &RepoPath<'_>, max_depth: Option<i64>, confidenc
         .build()
 }
 
+/// What a `fields` pick always keeps of a code row: its identity (path, and
+/// repository on owner-wide pages) and the facts that qualify its lines
+/// (where else the same evidence sits, how many hits exist, whether the
+/// lines were read at the ref, and the commit they were read at).
+pub(crate) const CODE_ROW_ID: &[&str] = &[
+    "owner",
+    "repo",
+    "path",
+    "alsoAt",
+    "matchCount",
+    "atRef",
+    "lineResolved",
+    "commitSha",
+];
+
+/// Finish a classified provider page after shared sanitization and selection.
+/// Read leads may only name selected evidence; `unfiltered` remains the explicit
+/// route to the original page. Output fields never change the judged evidence.
+pub(crate) fn finish_code_selection(value: &mut Value, query: &Value) {
+    let mut selected = std::collections::HashSet::new();
+    for file in value["files"].as_array().into_iter().flatten() {
+        let identity = |key: &str| {
+            file[key]
+                .as_str()
+                .or_else(|| value[key].as_str())
+                .or_else(|| query[key].as_str())
+                .unwrap_or_default()
+                .to_owned()
+        };
+        let (owner, repo) = (identity("owner"), identity("repo"));
+        for path in file["path"].as_str().into_iter().chain(
+            file["alsoAt"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str),
+        ) {
+            selected.insert((owner.clone(), repo.clone(), path.to_owned()));
+        }
+    }
+    for group in ["next", "hints"] {
+        if let Some(leads) = value.get_mut(group).and_then(Value::as_object_mut) {
+            leads.retain(|_, lead| {
+                if lead["tool"] != ToolId::GhGetFileContent.as_str() {
+                    return true;
+                }
+                let Some(rows) = lead
+                    .pointer_mut("/query/queries")
+                    .and_then(Value::as_array_mut)
+                else {
+                    return false;
+                };
+                rows.retain(|read| {
+                    let (Some(owner), Some(repo), Some(path)) = (
+                        read["owner"].as_str(),
+                        read["repo"].as_str(),
+                        read["path"].as_str(),
+                    ) else {
+                        return false;
+                    };
+                    selected.contains(&(owner.to_owned(), repo.to_owned(), path.to_owned()))
+                });
+                !rows.is_empty()
+            });
+        }
+    }
+    let fields = query["fields"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    pick_rows(value, "files", CODE_ROW_ID, &fields);
+}
+
 /// `fields` row pick (gh `--json a,b`): the row's `id` keys, then the
 /// picked keys in request order, so a picked row stays readable (its
 /// number, sha, owner+repo or path). No pick, or a row that is not an

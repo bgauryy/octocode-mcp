@@ -1,6 +1,6 @@
 # Octocode configuration
 
-Configures feature gates, storage, caches, timeouts, config files, and environment precedence for the Octocode toolkit. Configuration controls whether a capability is available; it does not change a tool's input schema. Every setting, its env var, default, and range: [generated settings](generated/CONFIG_SETTINGS.md). Credentials: [AUTHENTICATION.md](AUTHENTICATION.md). Tool fields: [OCTOCODE_TOOLS.md](OCTOCODE_TOOLS.md). Server lifecycle: [OCTOCODE_MCP.md](OCTOCODE_MCP.md). Path, secret, and command boundaries: [SECURITY.md](SECURITY.md).
+Config files, environment precedence, storage, caches, and feature gates for the Octocode toolkit. Configuration holds keys and on/off or feature settings only; internal limits are [fixed](#fixed-internal-limits). It controls whether a capability is available, not a tool's input schema. Every setting, its env var, default, and range: [generated settings](generated/CONFIG_SETTINGS.md). Credentials: [AUTHENTICATION.md](AUTHENTICATION.md). Tool fields: [OCTOCODE_TOOLS.md](OCTOCODE_TOOLS.md). Server lifecycle: [OCTOCODE_MCP.md](OCTOCODE_MCP.md). Path, secret, and command boundaries: [SECURITY.md](SECURITY.md).
 
 ## Quick setup
 
@@ -30,6 +30,8 @@ The **Octocode home** is one folder shared by the CLI, the MCP server, the VS Co
 | `tmp/materialize/v2/` | cache | Files `ghStructure` materialized at an immutable commit SHA. A manifest beside each commit directory lists the files; a directory without its manifest is cleared, never reused. |
 | `tmp/ratelimit/` | cache | Last-known GitHub rate-limit state, shared across processes. |
 | `tmp/clone-locks/`, `tmp/clone-tmp/`, `tmp/git-home/` | cache | Per-repository clone locks, staging, and an isolated git home. |
+
+One home holds one user's caches. A clone cache hit is served only after the caller's own credential passes a GitHub check, but the local tools can read any checkout under `tmp/clone/`. On a host that serves several users or tokens, give each tenant its own `OCTOCODE_HOME`.
 
 Clone git runs without your git config. It keeps `PATH`, the proxy variables (`HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY`, `NO_PROXY`, either case), and CA bundles (`SSL_CERT_FILE`, `SSL_CERT_DIR`, `GIT_SSL_CAINFO`, `GIT_SSL_CAPATH`, `CURL_CA_BUNDLE`) from the runtime environment; a project `.env` cannot set them.
 
@@ -65,10 +67,10 @@ EXA_API_KEY=...           # neural/category search — https://dashboard.exa.ai/
 ```
 
 - A non-empty key in the shell or MCP client environment wins over both files. The workspace file wins over the global file; missing or blank workspace values fall back to global.
-- CLI and MCP load both files. Node helpers load the supplied workspace by default; an embedding host can opt out with `trusted: false`. Native `trustedProject` controls executable language-server configuration, not dotenv loading.
+- CLI and MCP load both files.
 - **Home-only keys** are skipped in a workspace `.env` and listed under `skippedProtected` in `npx octocode config --json`, including when the home `.env` sets the same key. The list is generated from the contract: [home-only environment variables](generated/CONFIG_SETTINGS.md#home-only-environment-variables). GitHub tokens and the classification key are accepted in either file.
 - A workspace may **narrow** some home-only switches, never widen them: `OCTOCODE_STORAGE_MODE=memory` (opt the project out of persistence), `OCTOCODE_ENABLE_LOCAL=false`, `OCTOCODE_REDACT_EMAILS=true` apply from a workspace `.env` or `.octocoderc`; the widening value is skipped there (`skippedProtected` for `.env`, a `workspace_config_protected` warning for `.octocoderc`).
-- Every number is a cap (time, retries, size, spend). A workspace `.octocoderc` may lower one below what the home `.octocoderc` sets (else the default), never raise it: a raise is ignored with a `workspace_config_raises_limit` warning and the home value applies.
+- Internal limits (timeouts, retries, waits, page size, caches, concurrency, selection budgets) are not settings: no `.env` or `.octocoderc` can change them. See [fixed internal limits](#fixed-internal-limits).
 - Empty values normally allow fallback. A present-but-blank `OCTOCODE_CLASSIFICATION_API` disables classification and blocks file fallback.
 - Both files always block these OS and runtime keys; set them in the shell, CI, or the MCP `env` block: `PATH`, `HOME`, `SHELL`, `USER`, `LOGNAME`, `PWD`, `TMPDIR`, `NODE_OPTIONS`, `PYTHON`, `OCTOCODE_HOME`.
 - Credential aliases resolve by source first, then by [alias priority](AUTHENTICATION.md#token-environment-variables). Metadata shows names and source files, never values. Keep credential files out of version control.
@@ -89,14 +91,13 @@ A JSONC file for Octocode's own behavior: `~/.octocode/.octocoderc` (or `$OCTOCO
 ```
 
 - Layering is per field: a workspace value replaces only that field. Arrays replace, never concatenate. `null` means "use the next source or the generated default" for every setting, lists included; it never resets a lower layer and never affects another setting.
-- Numbers are integers: a fraction (`2.5`), a negative value, or a value outside the range is rejected with a warning (an environment value outside the range is clamped instead, with a `value_clamped` warning). `lsp.maxMemoryMb` is unset by default (a host-derived cap); `0` disables the cap.
 - Path settings (`local.allowedPaths`, `local.workspaceRoot`, `lsp.configPath`, `lsp.cacheDir`) must be absolute or start with `~`; `~` expands to your OS home once, when settings resolve. A relative path is rejected with a warning.
 - Both files rank below every environment source, including the global `.env`. Every setting has an env var; see [generated settings](generated/CONFIG_SETTINGS.md).
 - The workspace file loads without a trust flag, like the workspace `.env`. A field bound to a home-only key (for example `local.allowedPaths`, `local.beta`, `github.apiUrl`) is ignored there, with a warning.
 - When the working directory is your OS home, `<project>/.octocode` is the Octocode home: its `.octocoderc` and `.env` are read once, as the home layer.
 - An unknown key warns with its full path, so a typo like `local.enableLocl` is visible.
 - `tools.enabled` / `TOOLS_TO_RUN` is a strict allowlist (e.g. `["ghSearchCode","localSearch"]`); `tools.disabled` / `DISABLE_TOOLS` removes names from the default set. A name no tool has (in these lists or `mcp.deferred`) is ignored with an `unknown_tool_name` warning that suggests the nearest tool name. An allowlist cannot bypass the [classification and beta gates](OCTOCODE_CLASIFY.md#availability).
-- A [removed setting](generated/CONFIG_SETTINGS.md#removed-settings) (`version`, `classification.type`, `OCTOCODE_CLASSIFICATION_TYPE`) is ignored with a `removed_setting` warning.
+- A [removed setting](generated/CONFIG_SETTINGS.md#removed-settings) (for example `network.timeout`, `REQUEST_TIMEOUT`, `output.pagination`, `OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH`, `classification.type`) is ignored with one `removed_setting` warning naming the fixed value; startup never fails on it. `npx octocode config set` refuses a removed name; `config unset` still deletes it.
 
 ### How settings override each other
 
@@ -116,23 +117,21 @@ Precedence is per field: the first source with a valid value wins. Env vars alwa
 A bad value is skipped and reported once per process on **stderr** (stdout carries CLI results and MCP JSON-RPC), with the file or variable and the reason:
 
 ```
-octocode: config warning: /repo/.octocode/.octocoderc: network.maxRetries: Must be an integer; value ignored [invalid_config]
+octocode: config warning: /repo/.octocode/.octocoderc: lsp.prewarm: Must be one of: targeted, all, off; value ignored [invalid_config]
 octocode: config warning: /repo/.octocode/.octocoderc: Failed to parse config file: …; the whole file is ignored [config_load_error]
-octocode: config warning: /Users/me/.octocode/.env: REQUEST_TIMEOUT is not a valid integer (5000–300000) for network.timeout; value ignored [invalid_env_value]
-octocode: config warning: REQUEST_TIMEOUT 2000 is below the minimum 5000; using 5000 [value_clamped]
+octocode: config warning: /Users/me/.octocode/.env: OCTOCODE_GITHUB_GRAPHQL is not a valid boolean (true/false/1/0) for github.graphqlEnabled; value ignored [invalid_env_value]
+octocode: config warning: /Users/me/.octocode/.env: REQUEST_TIMEOUT was removed and is ignored: Request timeout is fixed at 30 s; unset the variable. [removed_setting]
 ```
 
 | Problem | Effect |
 |---|---|
 | Unreadable file, invalid JSON, or non-object root | That file is ignored; other layers apply. |
-| Invalid field (type, fraction, range, relative path, non-http URL, unknown enum) | That field falls back to the next layer or the default. |
-| An environment number outside its range (for example `REQUEST_TIMEOUT` below 5000) | The nearest bound applies, and the clamp is reported (`value_clamped`). A negative or fractional environment number is invalid instead. |
+| Invalid field (type, relative path, non-http URL, unknown enum) | That field falls back to the next layer or the default. |
 | A section that is not an object (`"network": 5`) | That section is dropped. |
 | Unknown key | Warning only. |
 | Invalid nonblank env value (including `OCTOCODE_CLASSIFICATION_API_HOST`) | Skipped, without printing the value; the next layer applies. |
 | Unknown tool name in a tool list | Warning (`unknown_tool_name`), with the nearest tool name. |
-| A workspace `.octocoderc` number above the home value | Ignored with a warning (`workspace_config_raises_limit`); the home value applies. |
-| Removed setting or variable | Warning (`removed_setting`). |
+| Removed setting or variable (in any `.env`, `.octocoderc`, or the MCP `env` block) | One warning per name (`removed_setting`); the value is ignored and never reaches the runtime. |
 
 Warnings print on tool calls and `npx octocode config`, not on `npx octocode schema`. `npx octocode config` lists both `.octocoderc` files and their top-level keys; `--json` adds the `diagnostics` array.
 
@@ -142,7 +141,7 @@ Warnings print on tool calls and `npx octocode config`, not on `npx octocode sch
 
 **Save to** picks the scope. **Home** writes `~/.octocode/.octocoderc` and `.env` for every project. **Workspace** writes `<project>/.octocode/.octocoderc` and `.env`, where `<project>` is the directory where you ran the command; it overrides home. Each save writes immediately and reloads the page data.
 
-- **Settings:** search by key (`output.format`). Booleans are checkboxes, choices are lists, numbers must be in range, lists are JSON string arrays (`["localSearch","localFetch"]`, or `null` to inherit), text and paths are plain text. **Save** writes the scope; **Use inherited value** removes it from that scope only. **Effective value** and **Effective source** show what applies and from which file. If a home save does not change the effective value, look for a workspace or env override. Home-only settings (`local.allowedPaths`, `local.beta`, `github.apiUrl`, `lsp.configPath`) are disabled in Workspace scope, and `storage.mode` accepts only `memory` there.
+- **Settings:** search by key (`output.format`). Booleans are checkboxes, choices are lists, lists are JSON string arrays (`["localSearch","localFetch"]`, or `null` to inherit), text and paths are plain text. **Save** writes the scope; **Use inherited value** removes it from that scope only. **Effective value** and **Effective source** show what applies and from which file. If a home save does not change the effective value, look for a workspace or env override. Home-only settings (`local.allowedPaths`, `local.beta`, `github.apiUrl`, `lsp.configPath`) are disabled in Workspace scope, and `storage.mode` accepts only `memory` there.
 - **Keys:** enter a **Key name** (letters, digits, `_`; not starting with a digit) and a one-line **New value**, then **Save key**. The key shows as **Set**; the value is never shown again. **Replace** and **Remove** edit it. Workspace scope refuses home-only keys (`ALLOWED_PATHS`, `WORKSPACE_ROOT`, `GITHUB_API_URL`, `OCTOCODE_BETA`, `OCTOCODE_LSP_CONFIG`, …) but accepts GitHub tokens and `OCTOCODE_CLASSIFICATION_API`. A credential stored in `.octocoderc` (`classification.api`) shows **Stored setting**.
 - **Agents:** one card per MCP client file, for example Cursor `~/.cursor/mcp.json` or Claude Code `~/.claude.json`, with scope `home`, `workspace`, or `local`. **Install** (with **Launch with** `npx`, `bunx`, or `pnpm`) adds the entry; **Save agent key** / **Remove key** edit its env; clearing **Enabled** and **Save / update** turns it off; **Remove Octocode** deletes only the Octocode entry. Restart the agent after an edit; client env values can override the shared Octocode files.
 
@@ -151,7 +150,7 @@ Agent discovery checks supported client paths and the current workspace, not oth
 | Save error | Fix |
 |---|---|
 | *Configuration changed* / *Agent config changed* | Another process edited the file; the page reloads it. Review and save again. |
-| *Invalid value for …* | Wrong type, out of range, or not an allowed choice. |
+| *Invalid value for …* | Wrong type or not an allowed choice. |
 | *may only be configured in home scope* / *cannot be loaded from this .env scope* | Select **Home**, or set the variable in the launching environment. |
 | *Values must be a single line* | Remove line breaks. |
 
@@ -164,7 +163,7 @@ The page uses bundled assets and an authenticated server on `127.0.0.1` at a tem
 Any env var can go in the client config instead of a shell profile:
 
 ```json
-{"mcpServers":{"octocode":{"command":"npx","args":["-y","octocode-mcp@latest"],"env":{"GITHUB_TOKEN":"ghp_...","REQUEST_TIMEOUT":"60000"}}}}
+{"mcpServers":{"octocode":{"command":"npx","args":["-y","octocode-mcp@latest"],"env":{"GITHUB_TOKEN":"ghp_...","OCTOCODE_LSP_PREWARM":"off"}}}}
 ```
 
 `npx octocode install --ide cursor` writes this entry; `install --list` prints every client id ([CLI `install`](../packages/octocode/docs/OCTOCODE_CLI.md#install--mcp-client-setup)).
@@ -173,19 +172,30 @@ Any env var can go in the client config instead of a shell profile:
 
 Defaults, ranges, enums, and env mappings: [generated settings](generated/CONFIG_SETTINGS.md). Notes that the table does not carry:
 
-- **Storage:** `storage.stats` and the `ghCloneRepo` cache (`storage.cloneCache.ttl`, `.maxSize`, `.maxClones`) are overridden by `storage.mode: "memory"`.
-- **Language servers:** `~/.octocode/lsp-servers.json` (or the `lsp.configPath` / `OCTOCODE_LSP_CONFIG` file) maps an extension to a server, replacing the built-in one: `{"languageServers":{".ts":{"command":"tsgo","args":["--lsp","-stdio"],"languageId":"typescript"}}}`. Assembly servers come only from this file. `lsp.trustProjectConfig` also trusts a project `.octocode/lsp-servers.json`; `lsp.autoInstall` governs `npx octocode lsp-server install`; `lsp.cacheDir` moves managed installs; `lsp.maxMemoryMb` caps each server tree's resident memory; `lsp.prewarm` controls background starts. See [LSP server lifecycle](../packages/octocode-native/docs/engine/LSP_SERVER_LIFECYCLE.md).
-- **Fixed internally:** response-cache sizes and per-surface tool-call timeouts (the CLI allows longer for LSP cold starts). Network timeout and retries use `REQUEST_TIMEOUT` / `MAX_RETRIES`.
-- **GitHub rate limits:** a call waits out a primary or secondary limit, search spacing, or a full code-search window (10 searches a minute) for up to `network.maxRateLimitWait` (`OCTOCODE_MAX_RATE_LIMIT_WAIT`) and then sends; a longer wait fails at once with `rateLimited` and `retryAfter`. Waiting does not spend `network.timeout`, but the tool call's own deadline still bounds it. Processes sharing a token reserve search slots under one lock on `tmp/ratelimit/`, so they never take the same slot. Lower the wait when an MCP host gives tool calls less time than it plus the request (some hosts allow 60 s).
-- **Classification gate:** one process-wide gate per provider endpoint allows `OCTOCODE_CLASSIFICATION_CONCURRENCY` (`classification.maxConcurrency`) requests in flight; one tool call may use up to three quarters. Throttling (429/503/529) halves the gate, `Retry-After` pauses every caller, and the gate recovers gradually.
+- **Storage:** `storage.stats` and the `ghCloneRepo` cache are overridden by `storage.mode: "memory"`.
+- **Language servers:** `~/.octocode/lsp-servers.json` (or the `lsp.configPath` / `OCTOCODE_LSP_CONFIG` file) maps an extension to a server, replacing the built-in one: `{"languageServers":{".ts":{"command":"tsgo","args":["--lsp","-stdio"],"languageId":"typescript"}}}`. Assembly servers come only from this file. `lsp.trustProjectConfig` also trusts a project `.octocode/lsp-servers.json`; `lsp.autoInstall` governs `npx octocode lsp-server install`; `lsp.cacheDir` moves managed installs; a per-server `maxMemoryMb` in `lsp-servers.json` overrides the host-derived memory cap (`0` disables it); `lsp.prewarm` controls background starts. See [LSP server lifecycle](../packages/octocode-native/docs/engine/LSP_SERVER_LIFECYCLE.md).
+- **Classification:** `OCTOCODE_CLASSIFICATION_API` exposes `clasifyContext` on four readers; public `clasify` also needs beta. Gates, fields and recovery: [clasify guide](OCTOCODE_CLASIFY.md#availability).
 
-## Context selection
+### Fixed internal limits
 
-A configured classification API credential exposes `clasifyContext` on localFetch, localSearch, ghGetFileContent and ghSearchCode. Supplying context activates internal selection; ordinary queries make no JEV request. Public `clasify` additionally requires beta, independently of inline selection. See [availability](OCTOCODE_CLASIFY.md#availability).
+These are code constants, not settings (one owner: `RuntimeLimits` in `packages/octocode-native/crates/runtime/src/runtime/limits.rs`). Their old setting names are [removed](generated/CONFIG_SETTINGS.md#removed-settings).
 
-`classification.maxCandidates`, `classification.maxChars` and `classification.timeoutMs` bound selection work. Unassessed units remain unknown and recoverable through `next.unfiltered`; they never spill into the default evidence body. Defaults, ranges and environment names live in the [generated settings reference](generated/CONFIG_SETTINGS.md). The old ranking configuration and activation switch are removed, without aliases.
+| Limit | Value |
+|---|---|
+| Network request timeout | 30 s |
+| Retries after a failed request | 3 |
+| Longest GitHub rate-limit wait | 45 s |
+| Automatic response page | 20,000 characters (`responseLength` per call, up to 50,000) |
+| `ghCloneRepo` cache | 24 h freshness (also URL-capture retention), 2 GiB, 50 repositories |
+| Classification requests in flight per endpoint | 10 |
+| Context selection per operation | 64 candidates, 131,072 characters, 10 s |
+| Language-server memory | 25% of host RAM, between 4096 and 8192 MiB (per-server `maxMemoryMb` overrides) |
 
-See the [selection guide](OCTOCODE_CLASIFY.md#classifiers-on-search-and-fetch) for question shape, source scope and recovery. Classification saves host work only when avoided reading exceeds its added context and tool cost.
+Response-cache sizes and per-surface tool-call timeouts (the CLI allows longer for LSP cold starts) are fixed too.
+
+- **GitHub rate limits:** a call waits out a primary or secondary limit, search spacing, or a full code-search window (10 searches a minute) for up to 45 s and then sends; a longer wait fails at once with `rateLimited` and `retryAfter`. Waiting does not spend the request timeout, but the tool call's own deadline still bounds it, and 45 s stays under the 60 s tool-call timeout some MCP hosts apply. Processes sharing a token reserve search slots under one lock on `tmp/ratelimit/`, so they never take the same slot.
+- **Classification gate:** one process-wide gate per provider endpoint allows 10 requests in flight; one tool call may use up to three quarters. Throttling (429/503/529) halves the gate, `Retry-After` pauses every caller, and the gate recovers gradually.
+- **Context selection:** units the budget leaves unassessed stay unknown and recoverable through `next.unfiltered`; they never spill into the default evidence body.
 
 ## GitHub Enterprise
 
@@ -199,18 +209,19 @@ Start with `npx octocode auth status --json` (token source, identity), `npx octo
 |---|---|
 | Token, login, Enterprise, or `clasify` key problem | [AUTHENTICATION.md troubleshooting](AUTHENTICATION.md#troubleshooting) |
 | `ghCloneRepo` unavailable | Use the CLI with `OCTOCODE_STORAGE_MODE=persistent`; MCP never exposes cloning. |
-| `astRewrite` or `astTopology` unavailable | Beta and CLI-only: set `OCTOCODE_BETA=true` or `local.beta: true` (shell or home config) and run `npx octocode <tool>`. MCP never registers them. |
+| `astTopology` unavailable | Beta and CLI-only: set `OCTOCODE_BETA=true` or `local.beta: true` (shell or home config) and run `npx octocode astTopology`. MCP never registers it. |
+| `astRewrite` unavailable | Disabled in this build on every surface; no setting turns it on. |
 | Local tools off | Neither `OCTOCODE_ENABLE_LOCAL` nor `local.enabled` may be `false`. |
 | A tool is missing | `npx octocode schema <name>`; check `TOOLS_TO_RUN` / `tools.enabled` and `DISABLE_TOOLS` / `tools.disabled`. |
-| Slow or timeouts | Raise `REQUEST_TIMEOUT` (max `300000` ms). |
-| `rateLimited` on GitHub tools | Wait for `retryAfter`, or raise `OCTOCODE_MAX_RATE_LIMIT_WAIT` so calls wait longer before failing. |
+| Slow or timeouts | The 30 s request timeout is fixed; narrow the query (path, `include`, `pageSize`) or check the network or GitHub Enterprise host. |
+| `rateLimited` on GitHub tools | Wait for `retryAfter`, then rerun the call. |
 | `clasify` returns `classificationQuotaExhausted` | The provider account has no credit (HTTP 402); add credit and rerun. |
-| `clasify` returns `classificationRateLimited` | Wait for the reported retry time, or lower `OCTOCODE_CLASSIFICATION_CONCURRENCY` when agents share a key. |
+| `clasify` returns `classificationRateLimited` | Wait for the reported retry time; agents sharing a key share its rate limit. |
 | A skill's web search is unavailable | Follow that skill's provider instructions; the catalog has no general web-search tool. |
 | `stats.json` never written | Set `storage.stats: true` or `OCTOCODE_ENABLE_STATS=1`. |
 | `.env` key ignored | A home-only key in a workspace `.env`, or the shell or MCP `env` already sets it; see `npx octocode config --json` → `skippedProtected`. |
 | `.env` key not loading | Check the process working directory, then restart. |
-| Settings not applied | Restart the MCP server or agent session; check stderr or `config --json` → `diagnostics`; confirm the working directory is the workspace you edited. |
+| Settings not applied | Restart the MCP server or agent session; check stderr or `config --json` → `diagnostics` (a `removed_setting` names a key that no longer exists); confirm the working directory is the workspace you edited. |
 
 ## See also
 

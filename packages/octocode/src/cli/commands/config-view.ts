@@ -102,7 +102,7 @@ export async function requestNativeConfig(
       if (code !== 0 || response.success !== true) {
         const nativeError = response.error as
           { code?: unknown; message?: unknown } | undefined;
-        const allowed = ['CONFLICT', 'INVALID_INPUT', 'FORBIDDEN'];
+        const allowed = ['CONFLICT', 'INVALID_INPUT', 'UNAVAILABLE'];
         const nativeCode =
           typeof nativeError?.code === 'string' &&
           allowed.includes(nativeError.code)

@@ -141,8 +141,6 @@ const env = {
   WORKSPACE_ROOT: dir,
   ALLOWED_PATHS: dir,
   OCTOCODE_ENABLE_STATS: 'false',
-  MAX_RETRIES: '0',
-  REQUEST_TIMEOUT: '10000',
   GITHUB_API_URL: `http://127.0.0.1:${server.address().port}/api/v3`,
 };
 const cli = (...args) =>

@@ -252,7 +252,9 @@ export async function runNativeReliability(output = process.env.PI_NATIVE_RELIAB
   return report;
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// argv[1] keeps a symlinked path while import.meta.url is the real path, so compare real paths.
+const realOrSelf = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+if (process.argv[1] && realOrSelf(process.argv[1]) === realOrSelf(fileURLToPath(import.meta.url))) {
   const report = await runNativeReliability(process.argv[2]);
   console.log(JSON.stringify({ cases: report.cases.map(({ name, passed }) => ({ name, passed })), cleanup: report.cleanup, bundleSha256: report.bundleSha256 }));
 }

@@ -28,43 +28,27 @@ This reference is generated from [`packages/octocode-config/config-contract.json
     "deferred": null
   },
   "network": {
-    "timeout": 30000,
-    "maxRetries": 3,
-    "maxRateLimitWait": 45000,
     "allowPrivateRegistry": false
   },
   "lsp": {
     "configPath": null,
     "autoInstall": "prompt",
     "cacheDir": null,
-    "maxMemoryMb": null,
     "trustProjectConfig": false,
     "prewarm": "targeted"
   },
   "output": {
     "format": "yaml",
-    "redactEmails": false,
-    "pagination": {
-      "defaultCharLength": 50000
-    }
+    "redactEmails": false
   },
   "storage": {
     "mode": "persistent",
-    "stats": false,
-    "cloneCache": {
-      "ttl": 86400000,
-      "maxSize": 2147483648,
-      "maxClones": 50
-    }
+    "stats": false
   },
   "classification": {
     "api": null,
     "apiHost": null,
-    "model": null,
-    "maxConcurrency": 10,
-    "maxCandidates": 64,
-    "maxChars": 131072,
-    "timeoutMs": 10000
+    "model": null
   }
 }
 ```
@@ -84,31 +68,19 @@ Environment values take precedence over `.octocoderc`. Each setting has at most 
 | `tools.enabled` | `TOOLS_TO_RUN` | unset | string array | Strict tool allowlist replacing the default tool set. |
 | `tools.disabled` | `DISABLE_TOOLS` | unset | string array | Tools removed from the default tool set. |
 | `mcp.deferred` | `OCTOCODE_DEFER_TOOLS` | unset | string array | Available tools left out of tools/list; one run({tool, query}) tool executes them and next/hints leads that name them. |
-| `network.timeout` | `REQUEST_TIMEOUT` | `30000` | integer (5000–300000) | Request timeout in milliseconds. |
-| `network.maxRetries` | `MAX_RETRIES` | `3` | integer (0–10) | Maximum retries after a failed request. |
-| `network.maxRateLimitWait` | `OCTOCODE_MAX_RATE_LIMIT_WAIT` | `45000` | integer (0–300000) | Longest GitHub rate-limit wait in milliseconds (primary or secondary limit, code-search window) before a call fails with retryAfter. Waiting does not count against network.timeout; the tool call's own deadline still bounds it. The default stays under the 60 s tool-call timeout some MCP hosts apply. |
 | `network.allowPrivateRegistry` | `OCTOCODE_ALLOW_PRIVATE_REGISTRY` | `false` | boolean | Allow private, loopback, or link-local artifact registries. Security-sensitive SSRF escape hatch; opt in only for trusted enterprise registries. OCTOCODE_ALLOW_PRIVATE_REGISTRY: shell or trusted home .env |
 | `lsp.configPath` | `OCTOCODE_LSP_CONFIG` | unset | path | Optional path to a custom lsp-servers.json. OCTOCODE_LSP_CONFIG: shell or trusted home .env |
 | `lsp.autoInstall` | `OCTOCODE_LSP_AUTO_INSTALL` | `"prompt"` | `prompt` or `off` or `auto` | Whether `octocode lsp-server install` may download a managed language server: prompt (ask), off, or auto. OCTOCODE_LSP_AUTO_INSTALL: shell or trusted home .env |
 | `lsp.cacheDir` | `OCTOCODE_LSP_CACHE_DIR` | unset | path | Directory for managed language-server installs; default <octocode home>/lsp. OCTOCODE_LSP_CACHE_DIR: shell or trusted home .env |
-| `lsp.maxMemoryMb` | `OCTOCODE_LSP_MAX_MEMORY_MB` | 25% of host RAM, between 4096 and 8192 | integer (0–4294967295) | Resident-memory cap per language server process tree, in MiB. Unset: 25% of host RAM, between 4096 and 8192. 0 disables the cap. A server over the cap is stopped and lspSearch reports serverCrashed (not retryable). OCTOCODE_LSP_MAX_MEMORY_MB: shell or trusted home .env |
 | `lsp.trustProjectConfig` | `OCTOCODE_TRUST_PROJECT_LSP_CONFIG` | `false` | boolean | Trust a project .octocode/lsp-servers.json. Security-sensitive: a trusted project config can launch server binaries. OCTOCODE_TRUST_PROJECT_LSP_CONFIG: shell or trusted home .env |
 | `lsp.prewarm` | `OCTOCODE_LSP_PREWARM` | `"targeted"` | `targeted` or `all` or `off` | Language-server prewarm: targeted starts the server an offered lspSearch call names; all also warms the file a read or search names; off disables it. |
 | `output.format` | `OCTOCODE_OUTPUT_FORMAT` | `"yaml"` | `yaml` or `json` | Encoding of rendered text content (the MCP text channel): yaml or json. Structured content and CLI stdout are always JSON. |
 | `output.redactEmails` | `OCTOCODE_REDACT_EMAILS` | `false` | boolean | Mask email addresses such as GitHub commit authors. OCTOCODE_REDACT_EMAILS: shell or trusted home .env |
-| `output.pagination.defaultCharLength` | `OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH` | `50000` | integer (1000–50000) | Automatic pagination character budget. |
 | `storage.mode` | `OCTOCODE_STORAGE_MODE` | `"persistent"` | `persistent` or `memory` | Whether caches and runtime state may persist on disk. OCTOCODE_STORAGE_MODE: shell or trusted home .env |
 | `storage.stats` | `OCTOCODE_ENABLE_STATS` | `false` | boolean | Write stats.json on flush; stats remain in memory either way. |
-| `storage.cloneCache.ttl` | `OCTOCODE_CACHE_TTL_MS` | `86400000` | integer (60000–2592000000) | Milliseconds a ghCloneRepo checkout stays fresh before it is re-fetched. |
-| `storage.cloneCache.maxSize` | `OCTOCODE_MAX_CACHE_SIZE` | `2147483648` | integer (1048576–1099511627776) | Byte cap for the on-disk ghCloneRepo cache; least-recently-used checkouts are evicted above it. |
-| `storage.cloneCache.maxClones` | `OCTOCODE_MAX_CLONES` | `50` | integer (1–1000) | Maximum repositories the ghCloneRepo cache keeps. |
 | `classification.api` | `OCTOCODE_CLASSIFICATION_API` | unset | string | Classification provider API key, required for read-tool classifiers and the beta clasify tool. Credential values are omitted from resolved configuration and diagnostics. Credential-only; excluded from ResolvedConfig. |
 | `classification.apiHost` | `OCTOCODE_CLASSIFICATION_API_HOST` | built-in provider default (https://api.typesafe.ai) | url | Optional override of the classification provider's default API root. Requires HTTP or HTTPS at config validation; provider policy may require HTTPS except loopback. OCTOCODE_CLASSIFICATION_API_HOST: shell or trusted home .env Credential-only; excluded from ResolvedConfig. |
 | `classification.model` | `OCTOCODE_CLASSIFICATION_MODEL` | built-in provider default (jev-latest) | string | Classification model for read-tool classifiers and clasify; a clasify row's model overrides it. Pin an exact model (for example jev-1.13.0) for reproducible results; an alias can change behind cached answers until they expire. |
-| `classification.maxConcurrency` | `OCTOCODE_CLASSIFICATION_CONCURRENCY` | `10` | integer (1–64) | Process-wide maximum in-flight classification provider requests per provider endpoint. |
-| `classification.maxCandidates` | `OCTOCODE_CLASSIFICATION_MAX_CANDIDATES` | `64` | integer (1–256) | Maximum complete evidence units assessed per context selection operation; unassessed units remain unknown and recoverable. |
-| `classification.maxChars` | `OCTOCODE_CLASSIFICATION_MAX_CHARS` | `131072` | integer (1024–1048576) | Maximum total characters in serialized sanitized candidate states per context selection operation, including source metadata; excludes question instructions and request envelopes. |
-| `classification.timeoutMs` | `OCTOCODE_CLASSIFICATION_TIMEOUT_MS` | `10000` | integer (100–60000) | Context selection deadline in milliseconds, bounded by the enclosing request deadline. |
 
 ## GitHub token priority
 
@@ -146,7 +118,6 @@ A workspace `.octocode/.env` cannot set these; the value is skipped and listed u
 | `OCTOCODE_LSP_CONFIG` | — |
 | `OCTOCODE_LSP_AUTO_INSTALL` | — |
 | `OCTOCODE_LSP_CACHE_DIR` | — |
-| `OCTOCODE_LSP_MAX_MEMORY_MB` | — |
 | `OCTOCODE_TRUST_PROJECT_LSP_CONFIG` | — |
 | `OCTOCODE_REDACT_EMAILS` | `true` |
 | `OCTOCODE_STORAGE_MODE` | `memory` |
@@ -160,4 +131,26 @@ A removed name is reported once as a `removed_setting` warning and otherwise ign
 |---|---|---|
 | `version` | `.octocoderc` | The configuration file no longer declares a schema version; delete the key. |
 | `classification.type` | `.octocoderc` | The classification provider is built in; delete the key. |
+| `network.timeout` | `.octocoderc` | Request timeout is fixed at 30 s; delete the key. |
+| `network.maxRetries` | `.octocoderc` | Retries are fixed at 3; delete the key. |
+| `network.maxRateLimitWait` | `.octocoderc` | The GitHub rate-limit wait is fixed at 45 s; delete the key. |
+| `lsp.maxMemoryMb` | `.octocoderc` | The language-server memory cap is host-derived (25% of RAM, 4096–8192 MiB); set maxMemoryMb per server in lsp-servers.json instead, and delete the key. |
+| `output.pagination` | `.octocoderc` | The automatic response page is fixed at 20,000 characters; pass responseLength per call instead, and delete the section. |
+| `storage.cloneCache` | `.octocoderc` | The clone cache is fixed at a 24 h TTL, 2 GiB and 50 repositories; delete the section. |
+| `classification.maxConcurrency` | `.octocoderc` | Classification concurrency is fixed at 10 in-flight requests per endpoint; delete the key. |
+| `classification.maxCandidates` | `.octocoderc` | Context selection is fixed at 64 candidates per operation; delete the key. |
+| `classification.maxChars` | `.octocoderc` | Context selection is fixed at 131,072 characters per operation; delete the key. |
+| `classification.timeoutMs` | `.octocoderc` | The context selection deadline is fixed at 10 s; delete the key. |
 | `OCTOCODE_CLASSIFICATION_TYPE` | environment | The classification provider is built in; unset the variable. |
+| `REQUEST_TIMEOUT` | environment | Request timeout is fixed at 30 s; unset the variable. |
+| `MAX_RETRIES` | environment | Retries are fixed at 3; unset the variable. |
+| `OCTOCODE_MAX_RATE_LIMIT_WAIT` | environment | The GitHub rate-limit wait is fixed at 45 s; unset the variable. |
+| `OCTOCODE_LSP_MAX_MEMORY_MB` | environment | The language-server memory cap is host-derived (25% of RAM, 4096–8192 MiB); set maxMemoryMb per server in lsp-servers.json instead, and unset the variable. |
+| `OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH` | environment | The automatic response page is fixed at 20,000 characters; pass responseLength per call instead, and unset the variable. |
+| `OCTOCODE_CACHE_TTL_MS` | environment | The clone cache TTL is fixed at 24 h; unset the variable. |
+| `OCTOCODE_MAX_CACHE_SIZE` | environment | The clone cache size is fixed at 2 GiB; unset the variable. |
+| `OCTOCODE_MAX_CLONES` | environment | The clone cache keeps at most 50 repositories; unset the variable. |
+| `OCTOCODE_CLASSIFICATION_CONCURRENCY` | environment | Classification concurrency is fixed at 10 in-flight requests per endpoint; unset the variable. |
+| `OCTOCODE_CLASSIFICATION_MAX_CANDIDATES` | environment | Context selection is fixed at 64 candidates per operation; unset the variable. |
+| `OCTOCODE_CLASSIFICATION_MAX_CHARS` | environment | Context selection is fixed at 131,072 characters per operation; unset the variable. |
+| `OCTOCODE_CLASSIFICATION_TIMEOUT_MS` | environment | The context selection deadline is fixed at 10 s; unset the variable. |

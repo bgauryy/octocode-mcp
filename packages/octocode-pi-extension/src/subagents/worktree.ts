@@ -2,8 +2,8 @@ import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { atomicWriteFileSync, sha256 } from '../shared/atomic.js';
-import { claimSuffix, parseClaim } from '../shared/claims.js';
+import { atomicWriteFileSync, shortHash } from '../shared/atomic.js';
+import { claimSuffix, releaseDeadClaims } from '../shared/claims.js';
 import { HOME_NAMES, octocodeHome, repoKey } from '../shared/home.js';
 import { processStartTime, sameProcess } from '../shared/process.js';
 import { errorMessage } from '../shared/util.js';
@@ -57,7 +57,7 @@ interface WorktreeResult {
 }
 
 export function worktreesDir(repo: string, home = octocodeHome()): string {
-  return path.join(home, HOME_NAMES.worktrees, sha256(repo).slice(0, 16));
+  return path.join(home, HOME_NAMES.worktrees, shortHash(repo));
 }
 
 /** The repository root, the same `repoKey` root the team workspace uses, so both always agree. */
@@ -80,7 +80,7 @@ export async function createWorktree(cwd: string, agentId: string, home = octoco
   // Never reuse a kept worktree's id: overwriting (then removing) its record would hide it from prune and reports.
   if (fs.existsSync(worktree) || fs.existsSync(`${worktree}.json`)) throw new Error(`A worktree for ${agentId} already exists at ${worktree}; start the agent again for a new id.`);
   // The owner record lets a later session prune worktrees whose parent process died.
-  atomicWriteFileSync(`${worktree}.json`, JSON.stringify({ ...ownerFields([owner(process.pid)]), repo, base, createdAt: Date.now() }));
+  atomicWriteFileSync(`${worktree}.json`, JSON.stringify({ owners: [owner(process.pid)], repo, base, createdAt: Date.now() }));
   try {
     await git(repo, ['worktree', 'add', '--detach', worktree, base]);
   } catch (error) {
@@ -104,7 +104,7 @@ export function recordWorktreePid(worktree: Pick<Worktree, 'path'>, pid: number)
   const meta = `${worktree.path}.json`;
   try {
     const record = JSON.parse(fs.readFileSync(meta, 'utf8')) as Record<string, unknown>;
-    atomicWriteFileSync(meta, JSON.stringify({ ...record, ...ownerFields([...ownersOf(record).filter((each) => each.pid !== pid), owner(pid)]) }));
+    atomicWriteFileSync(meta, JSON.stringify({ ...record, owners: [...ownersOf(record).filter((each) => each.pid !== pid), owner(pid)] }));
   } catch {
     // The record is gone: the worktree was already finished.
   }
@@ -118,12 +118,9 @@ const owner = (pid: number): Owner => {
   return started ? { pid, started } : { pid };
 };
 
-/** A record's owner fields: `owners` with start times, plus bare `pids` so an older version pruning the same folder still sees them. */
-const ownerFields = (owners: Owner[]) => ({ owners, pids: owners.map((each) => each.pid) });
-
-/** The owners in a record; a record from an older version lists only bare `pids`, judged by the pid alone. */
-function ownersOf(record: { owners?: unknown; pids?: unknown }): Owner[] {
-  const listed = Array.isArray(record.owners) ? record.owners : Array.isArray(record.pids) ? record.pids.map((pid: unknown) => ({ pid })) : [];
+/** The owners in a record; an owner without a start time (unknown where it ran) is judged by the pid alone. */
+function ownersOf(record: { owners?: unknown }): Owner[] {
+  const listed = Array.isArray(record.owners) ? record.owners : [];
   return listed.flatMap((each: unknown) => {
     if (typeof each !== 'object' || each === null) return [];
     const { pid, started } = each as { pid?: unknown; started?: unknown };
@@ -180,12 +177,22 @@ async function recoverBase(repo: string, head: string): Promise<string> {
   return base;
 }
 
-/** Creates `ref` (or `ref-2`, `ref-3`, … when taken) at `head`; never overwrites an unmerged ref of an earlier agent with the same id. */
+/**
+ * Creates `ref` (or `ref-2`, `ref-3`, … when taken) at `head`; never overwrites an unmerged ref of an earlier agent with the same id.
+ * Only a candidate that exists makes it try the next name: any other git failure (a lock, permissions, a damaged repository) is reported with git's own message.
+ */
 async function saveRef(repo: string, ref: string, head: string): Promise<string> {
   for (let n = 1; n <= 100; n++) {
     const candidate = n === 1 ? ref : `${ref}-${n}`;
-    // An empty old value makes update-ref fail when the ref already exists.
-    if ((await quiet(git(repo, ['update-ref', candidate, head, '']))) !== undefined) return candidate;
+    try {
+      // An empty old value makes update-ref fail when the ref already exists.
+      await git(repo, ['update-ref', candidate, head, '']);
+      return candidate;
+    } catch (error) {
+      if ((await quiet(git(repo, ['rev-parse', '--verify', '--quiet', candidate]))) === undefined) {
+        throw new Error(`Could not save the subagent's changes under ${candidate}: ${errorMessage(error)}`);
+      }
+    }
   }
   throw new Error(`Could not save the subagent's changes: ${ref} and its fallbacks are taken.`);
 }
@@ -246,19 +253,6 @@ interface PruneReport {
 /** An owner record being pruned is renamed `<agent>.json.pruning-<pid>-<start time>` by the session that claimed it (`shared/claims.ts`). */
 const CLAIM_MARKER = '.pruning-';
 
-/** Returns the owner records of prunes whose session died mid-way (its pid and start time no longer name a running process), so this prune can claim them again. */
-function releaseDeadClaims(dir: string): void {
-  for (const entry of fs.readdirSync(dir)) {
-    const claim = parseClaim(entry, CLAIM_MARKER);
-    if (!claim || claim.running) continue;
-    try {
-      fs.renameSync(path.join(dir, entry), path.join(dir, claim.original));
-    } catch {
-      // Another session released it first.
-    }
-  }
-}
-
 /**
  * Removes worktrees of this repository whose owning Pi processes (parent and subagent) are all gone. Their changes are
  * first committed to the agent's ref; a worktree whose changes cannot be saved is kept and reported, so a crash never
@@ -286,11 +280,11 @@ const pruning = new Map<string, Promise<PruneReport>>();
 async function pruneDir(repo: string, dir: string): Promise<PruneReport> {
   const report: PruneReport = { saved: [], kept: [] };
   if (!fs.existsSync(dir)) return report;
-  releaseDeadClaims(dir);
+  releaseDeadClaims(dir, fs.readdirSync(dir), CLAIM_MARKER);
   for (const entry of fs.readdirSync(dir)) {
     if (!entry.endsWith('.json')) continue;
     const agentId = entry.slice(0, -'.json'.length);
-    let record: { owners?: unknown; pids?: unknown; base?: unknown } = {};
+    let record: { owners?: unknown; base?: unknown } = {};
     try {
       record = JSON.parse(fs.readFileSync(path.join(dir, entry), 'utf8')) as typeof record;
     } catch {

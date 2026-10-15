@@ -13,8 +13,8 @@ pub(crate) use validate::{levenshtein, qualifier_terms};
 use crate::tools::id::ToolId;
 pub use prepare::{ContractInputError, prepare};
 pub(crate) use schema_facts::query_schema_value;
+pub(crate) use schema_facts::{property_schemas, resolve_ref, restorable_fields};
 pub use schema_facts::{query_schema_max, query_schema_number};
-pub(crate) use schema_facts::{resolve_ref, restorable_fields};
 pub(crate) use validate::validate_output_in_place;
 pub use validate::{
     ContractValidationError, ValidationIssue, format_input_error, normalize_input, tool_error,

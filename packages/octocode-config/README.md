@@ -1,10 +1,13 @@
 # Octocode config
 
-`@octocodeai/config` is the zero-runtime-dependency owner of Octocode
-home-directory resolution, `.env` policy, and the configuration contract
-(`config-contract.json`), shared by the Octocode CLI launcher, MCP server,
-extensions, and standalone skills. Settings are resolved by the native runtime
-from the same contract; `npx octocode config` shows what it resolved.
+`@octocodeai/config` is the private workspace package that owns Octocode
+home-directory resolution, `.env` policy, the configuration contract
+(`config-contract.json`), and the generated tool contract. The CLI launcher, MCP
+server, extensions, and standalone skills bundle it. The native runtime resolves
+settings from the same contract; `npx octocode config` shows the result.
+
+The root entry uses Node builtins only. The `./schema` and `./mcp` subpaths
+re-export `@octocodeai/octocode-core` for interfaces.
 
 ## Public API
 
@@ -17,25 +20,20 @@ Do not reimplement these rules in a consuming package.
 
 ## Environment fallback
 
-For each key, non-empty process values win over workspace
-`.octocode/.env`, which wins over the home `.env` (default `~/.octocode/.env`).
-GitHub and classification credentials can use both files. Protected infrastructure
-keys remain blocked; a present-but-blank `OCTOCODE_CLASSIFICATION_API` disables
-classification without taking a file fallback.
-
 ```ts
 import { getOctocodeHome, propagateOctocodeEnv } from '@octocodeai/config';
 
 const env = { ...process.env };
 propagateOctocodeEnv({
   home: getOctocodeHome(env),
-  cwd: process.cwd(),
+  cwd: process.cwd(), // loads <cwd>/.octocode/.env; pass trusted: false to skip it
   env,
 });
 ```
 
-Workspace loading defaults to on when `cwd` is supplied. Node embedders may explicitly opt out with `trusted: false`. Standalone CLI and MCP load workspace and global files; native `trustedProject` controls executable LSP configuration separately. Diagnostics report
-key names and source files without credential values. Credential aliases first choose the highest-priority source, then their declared alias order within that source. A workspace alias can override a global canonical key.
+The result lists key names and source files, never values. Precedence,
+home-only keys, and the blank-classification-key opt-out are in the
+[configuration reference](../../docs/CONFIGURATION.md#env--environment-fallback).
 
 ## Development
 

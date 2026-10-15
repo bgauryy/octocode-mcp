@@ -1,25 +1,21 @@
 # Host setup and administration
 
-Load when configuring identity, delivery, tool profiles, edit guards, or storage.
-Use [installation](INSTALLATION.md) for bundle setup and [the operating guide](../../OPERATING.md) for coordination.
-Use [commands](COMMANDS.md) for every command with an example, and [records](RECORDS.md) for type lookup.
-
-`<command> '<json>' --workspace <repo> --database <db> --session <id>`; `-` reads stdin. Before unfamiliar CLI calls, read `<command> --help` or `schema <command>`; don't guess JSON fields. Bare `schema` includes full protocol/SQL; workers expose a subset.
-Records: `schema types --compact` inventories all fields; `schema type <type>` gives schema, event meaning, routing and a validated example. These discovery commands open no database.
+Load when configuring identity, delivery, tool profiles, edit guards or storage. Bundle setup: [installation](INSTALLATION.md); coordination: [the operating guide](../../OPERATING.md); examples: [commands](COMMANDS.md); record types: [records](RECORDS.md). Before an unfamiliar call, read `<command> --help` or `schema <command>`; don't guess JSON fields.
 
 ## Setup
 
-The default npm command serves MCP. Its `/cli` route exposes standalone operations.
-For npm host configuration, use the [README MCP example](../../README.md#connect-through-mcp).
-The direct Python launcher still requires its explicit `mcp` command, as shown below.
-See [entry points](INTERFACES.md) for the difference between borrowed and managed identity.
-MCP uses stdio: the host launches the command below; JSON-RPC on stdout, diagnostics on stderr. One bound process per agent.
-For standalone MCP, launch `scripts/agents-communication mcp --managed --tools messaging --name <agent> --vendor <host> --workspace <repo> --database <db>`: it owns identity, presence, live lease renewal and exit cleanup; read `inbox` at task boundaries. It does not wake idle hosts. With a host-owned identity/delivery owner, use plain `mcp --session <id>`.
-Reuse bindings; else `join`, `attach` real host endpoints/IDs. Use one delivery owner. `listen` maintains presence and native delivery; otherwise heartbeat every 15s (60s presence). `OCTOCODE_COMMUNICATION_HEARTBEAT_MS` (50–60000) shortens managed loop periods for tests only; presence and lease TTLs never change. Heartbeats require live presence. They renew live owned leases only with `renewLeases:true`; expired identity requires `resume` and fresh leases.
+MCP runs over stdio with one bound process per agent: JSON-RPC on stdout, diagnostics on stderr. For npm, use the [README MCP example](../../README.md#connect-through-mcp). The portable Python launcher needs the explicit `mcp` command:
 
-Managed MCP and `run` workers use `heartbeat {"renewLeases":true}` every 15 seconds. The Pi inbox adapter checks periodically (roughly 15–25 seconds with idle backoff, plus CLI latency): live owned leases extend to at least 60 seconds from that tick, longer leases stay unchanged, and expired leases are never revived. They advertise managed renewal to the worker. Use the default 60-second lease TTL; a custom TTL shorter than a host tick can expire before renewal and must be reacquired. A plain listener or externally bound MCP does not promise lease renewal; its owner must arrange it explicitly. `leave` on completion; `run` only when requested.
-Choose `--tools messaging` for coordination, `review` for shared evidence, or `editing` for leases too; explicit comma lists also work. Report supported/configured edit guards; enable them for editing. Guards cover only reported operations, never arbitrary shell/OS writes.
-`host-config --help` previews Claude/Codex/Grok/Cursor hooks; Pi uses its extension. Context hooks cannot wake idle hosts. `completion-check` allows one recovery turn, never automatically completes work. Verify health/arrival before retrying: retries may duplicate context.
+```sh
+scripts/agents-communication mcp --managed --tools messaging --name <agent> --vendor <host> \
+  --workspace <repo> --database <db>
+```
+
+`--managed` owns identity, presence, live lease renewal and exit cleanup; read `inbox` at task boundaries, since it wakes no idle host. With a host-owned identity and delivery owner, use `mcp --session <id>` instead ([borrowed versus managed](INTERFACES.md#own-the-lifecycle)). Without MCP, reuse a binding or `join`, then `attach` real host endpoints and IDs, with one delivery owner per identity. Presence and renewal by owner: [workflow](WORKFLOW.md#presence-and-lease-expiry). `OCTOCODE_COMMUNICATION_HEARTBEAT_MS` (50–60000) shortens managed loop periods for tests only; presence and lease TTLs never change.
+
+`--tools` takes `messaging`, `review`, `editing` or a comma-separated list. Enable a guard for editing ([lease guards](HOST_LEASE_GUARDS.md)); guards cover only their structured operations, never shell or OS writes. `host-config --help` previews Claude, Codex, Grok and Cursor hooks; Pi uses its extension. `completion-check` allows one recovery turn and never completes work. Verify health and arrival before retrying: retries can duplicate context.
+
+Managed workers receive the operating guide once (profiles without `lock` or `lock_many` omit its editing section). Their binding names the workspace, repository scope, branch, tools, lifecycle owner and instruction version. When no actionable work remains, the worker ends its turn; the host waits for mail and starts the next one, so model sleep or polling never maintains delivery.
 
 ## Connect an OpenCode recipient
 
@@ -79,13 +75,4 @@ Claude/Codex child events can carry the parent's session ID. The messaging hook 
 - `hooks/opencode-lease-guard.mjs`: `createOpenCodeLeaseGuard({binary,workspace,database,sessions})` returns an OpenCode plugin guarding write/edit.
 - `hooks/lease-check.mjs`: shared `check_write` admission for the guards; never run it on its own.
 
-Linked Git worktrees communicate through the same local DB and canonical Git common-directory scope.
-Each agent keeps its actual workspace; native endpoints and file leases use that checkout.
-Independent clones and unrelated projects remain isolated. SQLite stores state; evidence documents remain separate files. `db export` excludes files; back them up separately. Codex native delivery is supported, but this bundle has no Codex edit guard.
-
-For recovery and health, use [operations](OPERATIONS.md); for delivery semantics use [the service protocol](SERVICE_PROTOCOL.md).
-
-
-Managed workers receive the operating guide once. Profiles without `lock` or `lock_many` omit the editing section and flowchart.
-Their binding identifies the actual workspace, repository scope, branch, available tools, lifecycle owner, and instruction version/hash.
-When no actionable work remains, the worker ends its turn. The host waits for mail and starts the next turn; model sleep or polling does not maintain delivery.
+`db export` excludes evidence documents; back them up separately ([operations](OPERATIONS.md#retention)). Delivery semantics: [service protocol](SERVICE_PROTOCOL.md).

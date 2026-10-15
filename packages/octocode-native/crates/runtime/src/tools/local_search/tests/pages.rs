@@ -1560,39 +1560,156 @@ fn a_small_complete_result_hands_off_a_read_of_its_top_file() {
 fn default_search_pages_fill_the_window_instead_of_stopping_at_an_overview() {
     let root = tempfile::tempdir().expect("fixture");
     fs::write(root.path().join("hot.txt"), "needle\n".repeat(1_200)).expect("fixture");
-    let (policy, security) = policy_for(root.path());
-    let mut query = ls_query(
+    let start = serde_json::to_value(ls_query(
         serde_json::json!({"path":root.path(),"matchString":"needle"}),
         None,
+    ))
+    .expect("query");
+    let (walk, bodies) = walk_search(root.path(), start, None);
+    let first = bodies[0]["files"][0]["matches"]
+        .as_array()
+        .expect("matches");
+    assert!(
+        first.len() > 100,
+        "first page stopped before filling budget: {}",
+        first.len()
     );
-    let mut seen = std::collections::BTreeSet::new();
-    let mut pages = 0;
-    loop {
-        let result = execute_local_search(&query, &policy, &security, &NeverCancel, None, None)
-            .expect("page");
-        let body = serde_json::to_value(result).expect("result");
-        let rows = body["files"][0]["matches"].as_array().expect("matches");
-        if pages == 0 {
-            assert!(
-                rows.len() > 100,
-                "first page stopped before filling budget: {}",
-                rows.len()
-            );
-        }
-        for row in rows {
-            assert!(seen.insert(row["line"].as_u64().expect("line")));
-        }
-        pages += 1;
-        let Some(next) = body["next"].get("nextPage") else {
-            break;
-        };
-        let wire = next["query"]["queries"][0].clone();
-        crate::contracts::prepare_many_and_validate("localSearch", next["query"].clone())
-            .expect("canonical continuation");
-        query = serde_json::from_value(wire).expect("query");
+    // The walk delivered each row once and checked every continuation
+    // against the input contract.
+    assert_eq!(walk.rows.len(), 1_200);
+    assert!(walk.queries.len() < 5, "{} pages", walk.queries.len());
+}
+
+/// A generated Rust file of `functions` functions with five `let ` lines
+/// each: an engine-like hot file whose hits all sit inside declarations.
+fn let_heavy_rust(prefix: &str, functions: usize) -> String {
+    (0..functions)
+        .map(|n| {
+            format!(
+                "pub fn {prefix}_{n:03}(input: &Request) -> Result<Response, Error> {{\n    let header = input.header();\n    let body = parse_body(&header)?;\n    let validated = validate(body)?;\n    let mapped = map_fields(&validated);\n    let response = Response::new(mapped);\n    Ok(response)\n}}\n\n"
+            )
+        })
+        .collect()
+}
+
+/// Rows page 1 of `let_heavy_rust("handle_request", 200)` held when every
+/// hit row reserved a flat 93 chars for its `enclosing` name.
+const FLAT_RESERVE_FIRST_PAGE_ROWS: usize = 154;
+
+/// A default page charges each hit row the `enclosing` name it carries (the
+/// full name on a declaration's first row of the page, `enclosingLine` on
+/// its later rows) instead of a flat reserve, so a page of a hot file fills
+/// the window and still stays within the page budget.
+#[test]
+fn default_pages_fill_the_window_with_enclosing_names() {
+    let root = tempfile::tempdir().expect("fixture");
+    fs::write(
+        root.path().join("engine.rs"),
+        let_heavy_rust("handle_request", 200),
+    )
+    .expect("fixture");
+    let (policy, security) = policy_for(root.path());
+    let query = ls_query(
+        serde_json::json!({"path": root.path(), "matchString": "let "}),
+        None,
+    );
+    let budget =
+        crate::tools::local_search::executor::scan_query(&query, &policy, &NeverCancel, None, None)
+            .expect("scan")
+            .page_budget;
+    let result =
+        execute_local_search(&query, &policy, &security, &NeverCancel, None, None).expect("page 1");
+    let rows = result.files[0].matches.as_ref().expect("rows");
+    assert!(
+        rows.len() * 10 >= FLAT_RESERVE_FIRST_PAGE_ROWS * 13,
+        "{} rows on page 1, flat reserve held {FLAT_RESERVE_FIRST_PAGE_ROWS}",
+        rows.len()
+    );
+    let chars = crate::tools::stream_page::json_chars(&result.files);
+    assert!(chars <= budget, "page 1: {chars} chars > {budget}");
+    assert!(
+        rows.iter()
+            .all(|row| row.enclosing.is_some() || row.enclosing_line.is_some()),
+        "every row is named"
+    );
+}
+
+/// Page cuts are a pure function of the collected files and their outlines:
+/// page k asked for directly shows the rows the walk's page k showed, the
+/// walk shows every hit row once, and every page stays within its budget,
+/// past the files the cut outlines too.
+#[test]
+fn pages_are_identical_across_calls() {
+    let root = tempfile::tempdir().expect("fixture");
+    fs::write(
+        root.path().join("engine.rs"),
+        let_heavy_rust("handle_request", 120),
+    )
+    .expect("fixture");
+    for n in 0..70 {
+        fs::write(
+            root.path().join(format!("module_{n:02}.rs")),
+            let_heavy_rust(&format!("module_{n:02}_handler"), 2),
+        )
+        .expect("fixture");
     }
-    assert_eq!(seen.len(), 1_200);
-    assert!(pages < 5, "{pages} pages");
+    let fields = serde_json::json!({"path": root.path(), "matchString": "let "});
+    let start = serde_json::to_value(ls_query(fields.clone(), None)).expect("query");
+    let (walk, bodies) = walk_search(root.path(), start, None);
+    assert_eq!(walk.rows.len(), 120 * 5 + 70 * 2 * 5);
+    assert!(bodies.len() > 2, "{} pages", bodies.len());
+    let (policy, security) = policy_for(root.path());
+    for (index, walked) in bodies.iter().enumerate() {
+        let page = ls_query(
+            serde_json::json!({"page": index + 1}),
+            Some(&ls_query(fields.clone(), None)),
+        );
+        let budget = crate::tools::local_search::executor::scan_query(
+            &page,
+            &policy,
+            &NeverCancel,
+            None,
+            None,
+        )
+        .expect("scan")
+        .page_budget;
+        let direct = execute_local_search(&page, &policy, &security, &NeverCancel, None, None)
+            .expect("direct page");
+        let direct = serde_json::to_value(&direct).expect("result");
+        assert_eq!(direct["files"], walked["files"], "page {}", index + 1);
+        let chars = crate::tools::stream_page::json_chars(&walked["files"]);
+        assert!(chars <= budget, "page {}: {chars} > {budget}", index + 1);
+    }
+}
+
+/// A page's cut prices the names of earlier pages' files from their current
+/// outlines, so a stamp-preserving edit to a file that only an earlier page
+/// shows restarts the walk instead of cutting other pages.
+#[test]
+fn an_edit_to_an_earlier_pages_file_restarts_the_walk() {
+    let root = tempfile::tempdir().expect("fixture");
+    let small = root.path().join("small.rs");
+    fs::write(&small, let_heavy_rust("alpha", 1)).expect("fixture");
+    fs::write(
+        root.path().join("engine.rs"),
+        let_heavy_rust("handle_request", 200),
+    )
+    .expect("fixture");
+    let (policy, security) = policy_for(root.path());
+    let request = ls_query(
+        serde_json::json!({"path": root.path(), "matchString": "let "}),
+        None,
+    );
+    let (first, _, page_two) = first_page(&request, &policy, &security);
+    assert!(first.files.iter().any(|file| file.path == "small.rs"));
+    let served = execute_local_search(&page_two, &policy, &security, &NeverCancel, None, None)
+        .expect("page 2");
+    assert!(served.files.iter().all(|file| file.path != "small.rs"));
+    rewrite_keeping_stamp(&small, &let_heavy_rust("omega", 1));
+    match execute_local_search(&page_two, &policy, &security, &NeverCancel, None, None) {
+        Ok(result) => panic!("page cut from changed outlines: {}", values(&result)),
+        Err(error) => assert_eq!(error.code, "staleSnapshot"),
+    }
 }
 
 #[test]
@@ -1634,32 +1751,21 @@ fn adaptive_path_pages_copy_their_query_and_cover_each_count_once() {
         )
         .expect("fixture");
     }
-    let (policy, security) = policy_for(root.path());
-    let mut query = ls_query(
+    let start = serde_json::to_value(ls_query(
         serde_json::json!({"path":root.path(),"matchString":"needle","resultView":"countLines"}),
         None,
-    );
-    let mut seen = std::collections::BTreeSet::new();
-    let mut pages = 0;
-    loop {
-        let result =
-            execute_local_search(&query, &policy, &security, &NeverCancel, None, Some(6_000))
-                .expect("page");
-        let body = serde_json::to_value(result).expect("result");
-        let files = body["files"].as_array().expect("files");
-        for file in files {
+    ))
+    .expect("query");
+    let (walk, bodies) = walk_search(root.path(), start, Some(6_000));
+    for body in &bodies {
+        for file in body["files"].as_array().expect("files") {
             assert_eq!(file["matchedLineCount"], 2);
-            assert!(seen.insert(file["path"].as_str().expect("path").to_owned()));
         }
-        pages += 1;
-        let Some(next) = body["next"].get("nextPage") else {
-            break;
-        };
-        assert!(next["query"]["queries"][0].get("pageSize").is_none());
-        crate::contracts::prepare_many_and_validate("localSearch", next["query"].clone())
-            .expect("canonical continuation");
-        query = serde_json::from_value(next["query"]["queries"][0].clone()).expect("query");
+        if let Some(next) = body["next"].get("nextPage") {
+            assert!(next["query"]["queries"][0].get("pageSize").is_none());
+        }
     }
-    assert_eq!(seen.len(), 300);
-    assert!(pages > 1);
+    // Each path once, every continuation within the input contract.
+    assert_eq!(walk.rows.len(), 300);
+    assert!(bodies.len() > 1);
 }

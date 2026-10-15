@@ -98,13 +98,22 @@ export function isBlockedIp(ip: string): boolean {
 /** What a URL's host reaches: only public addresses (listed), any non-public one, or nothing that resolves here. */
 export type HostClass = { kind: 'public'; addresses: string[] } | { kind: 'private' } | { kind: 'unresolved'; error: unknown };
 
+/** Releases the connection of a response whose body is not read. */
+export const discardBody = (response: Response): Promise<void> => (response.body?.cancel() ?? Promise.resolve()).catch(() => undefined);
+
+/** Whether `url` is an http(s) URL: the only schemes the web and browser tools reach. */
+export const isHttpUrl = (url: URL): boolean => url.protocol === 'http:' || url.protocol === 'https:';
+
+/** A URL's hostname as a name or address: the brackets `URL` keeps around an IPv6 literal are dropped. */
+export const bareHostname = (hostname: string): string => hostname.replace(/^\[|\]$/g, '');
+
 /**
  * Classifies `url`'s host by its literal address or every address it resolves to (loopback, private, link-local cloud
  * metadata, … count as private). A name that does not resolve here is `unresolved`: another resolver (a browser's
  * own DNS, a hosts entry, a proxy) may still take it somewhere private.
  */
 export async function classifyHost(url: URL, lookup: HostLookup = defaultLookup): Promise<HostClass> {
-  const hostname = url.hostname.replace(/^\[|\]$/g, '');
+  const hostname = bareHostname(url.hostname);
   if (net.isIP(hostname)) return isBlockedIp(hostname) ? { kind: 'private' } : { kind: 'public', addresses: [hostname] };
   let records: Array<{ address: string }>;
   try {
@@ -147,11 +156,11 @@ export async function publicFetch(url: string, init: PublicFetchInit, options: {
   if (init.body !== undefined && init.redirect !== 'error') throw new Error("a request with a body must use redirect: 'error'");
   let target = new URL(url);
   for (let hop = 0; ; hop += 1) {
-    if (target.protocol !== 'http:' && target.protocol !== 'https:') throw new Error(`web fetches http(s) URLs only, not ${target.protocol}`);
+    if (!isHttpUrl(target)) throw new Error(`web fetches http(s) URLs only, not ${target.protocol}`);
     const response = await send(target, init, hop === 0 && options.firstHopPrivate ? undefined : await publicAddresses(target, options.lookup));
     const location = response.headers.get('location');
     if (response.status < 300 || response.status >= 400 || location === null) return response;
-    await response.body?.cancel().catch(() => undefined);
+    await discardBody(response);
     if (init.redirect === 'error') throw new Error(`${target.host} answered with a redirect (HTTP ${response.status}); it is not followed`);
     if (hop >= MAX_REDIRECTS) throw new Error(`Too many redirects fetching ${url}`);
     const next = new URL(location, target);

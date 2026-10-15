@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
+import { EXTERNAL_PROMPT_DEFAULT_MS } from '../api/protocol.js';
 import { apiDir, listInstances } from '../api/registry.js';
 import type { MessageEnvelope } from '../shared/messages.js';
 import { errorMessage } from '../shared/util.js';
@@ -75,7 +76,7 @@ export class ExternalAgents {
       await this.policy.authorize({ ...input, cwd: entry.info.cwd, transport: entry.info.transport, vendor: entry.info.vendor, sessionId: entry.info.sessionId }, ctx, promptSignal);
       promptSignal.throwIfAborted();
       let reply;
-      try { reply = await entry.backend.prompt(input.text!, { timeoutMs: input.timeoutMs ?? 120_000, signal: promptSignal, key: id }); }
+      try { reply = await entry.backend.prompt(input.text!, { timeoutMs: input.timeoutMs ?? EXTERNAL_PROMPT_DEFAULT_MS, signal: promptSignal, key: id }); }
       catch (error) {
         if (entry.info.transport === 'acp' && this.connections.get(entry.info.id) === entry) {
           this.connections.delete(entry.info.id);

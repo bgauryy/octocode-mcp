@@ -176,7 +176,9 @@ async fn artifact_search_npm_userconfig_never_comes_from_the_workspace_env() {
         path: workspace.workspace.join(".octocode/.env"),
         text: format!("NPM_CONFIG_USERCONFIG={}\n", planted.display()),
     };
-    let runtime = octocode_native::runtime::ToolRuntime::new(input).expect("runtime");
+    let runtime =
+        octocode_native::runtime::ToolRuntime::with_limits(input, crate::support::FIXTURE_LIMITS)
+            .expect("runtime");
     let outcome = call(
         &runtime,
         "artifactSearch",

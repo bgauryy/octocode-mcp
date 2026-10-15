@@ -1,3 +1,4 @@
+import { USER_AUTHOR } from '../agentdb/author.js';
 import { clipText, isRecord } from '../shared/util.js';
 import { MAX_QUERY_TERMS, memoryLabel, stem, terms } from './query.js';
 import { memoryTags, type Memory, type MemoryStore, type ScopeFilter } from './store.js';
@@ -115,9 +116,6 @@ export function selectInjection(store: MemoryStore, options: { query: string; sc
   }
   return ids.length > 0 ? { content: [MEMORY_HEADER, ...lines].join('\n'), ids, updated } : undefined;
 }
-
-/** The only author a reader may take as the user's own words; every other author (the agent, or none recorded) is agent-written. */
-const USER_AUTHOR = 'user';
 
 /**
  * One memory on one line within `LINE_MAX`: its label, tags, `(agent-written)` unless the user wrote it, the title,

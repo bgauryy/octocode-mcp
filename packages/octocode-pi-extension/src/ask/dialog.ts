@@ -30,8 +30,14 @@ export interface AskResult {
   reason?: 'unavailable' | 'aborted';
 }
 
-const TYPE_OWN = 'Write an answer';
-const SUBMIT_PICKS = 'Submit selection';
+/** The answer to `question` from the options picked (`picks`, in order) and the text typed in; a write-in makes it custom. */
+export function answerOf(question: string, picks: string[], typed?: string): AskAnswer {
+  return { question, answer: [...picks, ...(typed ? [typed] : [])].join(', '), custom: typed !== undefined, ...(typed !== undefined && picks.length ? { picks, typed } : {}) };
+}
+
+/** The write-in row and the multi-select submit row, in this dialog and in the RPC fallback (`tool.ts`). */
+export const TYPE_OWN = 'Write an answer';
+export const SUBMIT_PICKS = 'Submit selection';
 
 type DialogTheme = Parameters<Parameters<ExtensionContext['ui']['custom']>[0]>[1];
 
@@ -147,7 +153,7 @@ class AskDialog {
     if (!text) return this.refresh();
     this.drafts.set(this.tab, text);
     const picked = [...(this.toggled.get(this.tab) ?? [])].sort((a, b) => a - b).map((index) => q.options[index]!.label);
-    this.answer(this.tab, { question: q.question, answer: [...picked, text].join(', '), custom: true, ...(picked.length ? { picks: picked, typed: text } : {}) });
+    this.answer(this.tab, answerOf(q.question, picked, text));
   }
 
   private moveTab(step: number): void {
@@ -206,7 +212,7 @@ class AskDialog {
       this.editor.setText(this.drafts.get(this.tab) ?? '');
       return this.refresh();
     }
-    if (!q.multiSelect) return this.answer(this.tab, { question: q.question, answer: q.options[this.cursor]!.label, custom: false });
+    if (!q.multiSelect) return this.answer(this.tab, answerOf(q.question, [q.options[this.cursor]!.label]));
     // Multi-select: Enter on an option toggles it; only the Submit row answers.
     if (this.cursor < q.options.length) {
       this.toggle();
@@ -218,7 +224,7 @@ class AskDialog {
       return this.refresh();
     }
     const labels = [...set].sort((a, b) => a - b).map((index) => q.options[index]!.label);
-    this.answer(this.tab, { question: q.question, answer: labels.join(', '), custom: false });
+    this.answer(this.tab, answerOf(q.question, labels));
   }
 
   render(width: number): string[] {

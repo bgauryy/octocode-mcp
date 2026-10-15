@@ -47,13 +47,6 @@ pub(crate) fn capture_root(home: &Path) -> PathBuf {
     home.join("tmp").join("capture").join("url")
 }
 
-/// How long a URL capture is kept: the clone cache retention
-/// (`storage.cloneCache.ttl`). Each capture publishes it as `expiresAt`;
-/// the daily cache sweep removes captures older than it.
-pub(crate) fn capture_ttl(resolved: &crate::config::ResolvedConfig) -> Duration {
-    Duration::from_millis(u64::from(resolved.storage.clone_cache.ttl))
-}
-
 pub(crate) fn capture(
     address: &str,
     dispatcher: &DomainDispatcher,
@@ -439,7 +432,9 @@ impl<'a> Store<'a> {
         }
         Self::at(
             capture_root(&dispatcher.home),
-            capture_ttl(&dispatcher.config.resolved),
+            // The clone cache retention: each capture publishes it as
+            // `expiresAt`; the daily cache sweep removes captures older.
+            dispatcher.limits.clone.ttl,
             &dispatcher.paths,
         )
     }

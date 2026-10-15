@@ -7,6 +7,5 @@ interface CdpSender {
 
 /** Saves the page's downloads to `dir` and reports their progress as events. */
 export async function applyDownloads(page: CdpSender, dir: string, signal?: AbortSignal): Promise<void> {
-  // Browser.* is the current spelling; older Chrome builds only answer the page-level one.
-  await page.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: dir, eventsEnabled: true }, signal).catch(() => page.send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: dir }, signal));
+  await page.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: dir, eventsEnabled: true }, signal);
 }

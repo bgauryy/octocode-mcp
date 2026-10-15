@@ -1,15 +1,8 @@
 # CLI command reference
 
-Load when you need a command example. Use the shell bindings from [installation](INSTALLATION.md). Reuse a host binding when one exists.
+Load when you need a command example. `comm` and `agent` are the shell helpers from [installation](INSTALLATION.md#reuse-or-create-the-binding): `comm` adds workspace and database flags, `agent` also adds `--session`. Reuse a host binding when one exists. Typed flags, stdin and multiword forms: [entry points](INTERFACES.md#supply-cli-input).
 
-`comm` invokes `npx -y @octocodeai/octocode-agents-communication /cli` with workspace and database flags.
-`agent` adds the current `--session`. The default npm entry starts MCP instead.
-Typed flags use kebab-case names: `ttlMs` becomes `--ttl-ms`. Use `--help --json` for the complete CLI schema.
-Multiword commands also accept one token: `db info` becomes `db-info`, and `inbox wait` becomes `inbox-wait`.
-The CLI adds `schema-types` and `schema-type` for record-type discovery.
-See [entry points](INTERFACES.md) for stdin, arrays, booleans, and workspace selection.
-
-Each row is runnable after replacing IDs, paths, and placeholders; the JSON is input. For every optional field and validation rule, use `comm schema COMMAND` (multiword: `comm schema 'db export'`) or `comm COMMAND --help`.
+Each example runs after you replace IDs, paths and placeholders. For every optional field and validation rule, use `comm schema COMMAND` (multiword: `comm schema 'db export'`) or `comm COMMAND --help`.
 
 | Command | When to use it | Example |
 | --- | --- | --- |
@@ -59,7 +52,7 @@ Each row is runnable after replacing IDs, paths, and placeholders; the JSON is i
 | `db export` | Snapshot the entire DB/WAL to a new absolute file; documents need separate backup. | `comm db export '{"path":"/absolute/new-backup.sqlite"}'` |
 | `db retention` | Inspect aged-record counts/pages across workspaces; deletes nothing. | `comm db retention '{"limit":100}'` |
 | `db compact` | Explicit storage maintenance with VACUUM; retains all records. | `comm db compact` |
-| `db migrate` | Upgrade recognized v1/v2/v3/v4 storage to v5 with a new backup, after stopping old clients. | `comm db migrate '{"backup":"/absolute/new-pre-migration.sqlite"}'` |
+| `db migrate` | Upgrade recognized v1/v2/v3/v4/v5 storage to v6 with a new backup, after stopping old clients. | `comm db migrate '{"backup":"/absolute/new-pre-migration.sqlite"}'` |
 | `skill` | Read the detailed operating guide through the CLI. | `comm skill` |
 | `schema` | Discover the catalog or one command; record types use unbound `schema types` / `schema type`. | `comm schema send_message` |
 | `schema tools` | Inspect tool definitions for a profile or explicit list. | `comm schema tools --tools messaging` |

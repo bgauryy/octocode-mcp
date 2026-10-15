@@ -112,6 +112,20 @@ export function secretProblem(text: string): string | undefined {
   return hit ? `it looks like it contains ${hit.what}; never store secrets — refer to where the secret lives instead` : undefined;
 }
 
+/**
+ * The first of `fields` (a text, or lines joined by a space; empty and missing ones are skipped) that looks like it holds a
+ * credential, as `{ name, problem }`; undefined when none does. Checked on the sanitized text, the form that is stored, so
+ * an invisible character cannot split a token past the check. A store throws its own error from it.
+ */
+export function storedSecret(fields: Record<string, string | readonly string[] | undefined>): { name: string; problem: string } | undefined {
+  for (const [name, value] of Object.entries(fields)) {
+    const text = typeof value === 'string' ? value : value?.join(' ');
+    const problem = text ? secretProblem(sanitizeTerminalText(text)) : undefined;
+    if (problem) return { name, problem };
+  }
+  return undefined;
+}
+
 /** `text` with every credential-looking span replaced by `[redacted]`, for text drawn on screen or shared with other sessions. */
 export function redactSecrets(text: string): string {
   return SECRETS.reduce((out, { all }) => out.replace(all, '[redacted]'), text);

@@ -20,5 +20,5 @@
 - Generated source stores server text in `JSON.stringify` literals.
 - The command word is the MCP tool name when it is one argv word of letters, digits, `.`, `_`, and `-`. `help` and `version` get a suffixed token. `tools/call` and MCP export use the original name.
 - Command help shows the description, the display title, the usage line, the flags, the output schema, and the annotation hints the server sent. Fidelity notes stay off that screen. A result object prints as `key: value` lines or a table. The screen keeps every leaf and every content field. `--json` prints that result. It keeps content together with structured content when the server sent both.
-- A tool absent from `tools/list` is absent from the CLI. `octocode-mcp` omits the CLI-only tools `ghCloneRepo` and `astRewrite`.
+- A tool absent from `tools/list` is absent from the CLI.
 - `runCli` returns a status code. It does not exit the process.

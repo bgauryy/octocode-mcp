@@ -4,6 +4,7 @@ import { canonicalPath, isWithin, octocodeHome, resolveToolPath, workspaceRoot }
 import type { Permission } from './ask.js';
 import type { PermissionRequest } from './request.js';
 import type { AskReason } from './mode.js';
+import { isMcpTool } from '../shared/octocode-tools.js';
 import type { Classification } from '../shared/winclassify.js';
 import { classifyPowerShell } from '../shared/winhelper.js';
 import { catastrophicCommand, SHELL_TOOLS, simpleCommand } from './shell.js';
@@ -118,15 +119,15 @@ function classOf(tool: string, input: Record<string, unknown>, cwd: string, anno
     // A page action is granted per kind: the gate cannot see the page's host.
     return { action: 'browser', title: 'Act on the page?', what: [`${action} ${args(input)}`], grant: { key: `page ${action}`, label: `browser ${action} on any page` } };
   }
-  if (tool.startsWith('mcp__')) {
+  if (isMcpTool(tool)) {
     const hint = annotations(tool);
     if (readOnlyMcp(hint)) return undefined;
     // Only an explicit `destructiveHint: true` is destructive (asks each time, in workspace too). MCP's own default calls an
     // unannotated tool destructive; treating it so would ask on every call with no session grant (FEATURES: known limits).
-    const destructive = hint?.destructiveHint === true;
+    const marked = hint?.destructiveHint === true;
     return {
-      action: destructive ? 'mcp.destructive' : 'mcp.write',
-      title: destructive ? 'Run this destructive MCP tool?' : 'Run this MCP tool?',
+      action: marked ? 'mcp.destructive' : 'mcp.write',
+      title: marked ? 'Run this destructive MCP tool?' : 'Run this MCP tool?',
       what: [tool, args(input)],
       grant: { key: tool, label: tool },
     };

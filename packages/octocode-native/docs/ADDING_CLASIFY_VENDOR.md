@@ -1,140 +1,38 @@
 # Adding a clasify vendor
 
-The `clasify` tool's transport, batch scheduler, context capture, and paging
-engine are all vendor-agnostic. One provider is built in and no setting
-selects it. Adding a second classification API takes **four steps**, the last
-of which reintroduces a selection setting — no changes to those layers.
+The classification transport, batching, cache, endpoint gate, and source capture are vendor-agnostic. One provider (Jev) is built in and no setting selects it. A second vendor needs one new trait implementation and a setting that chooses between the two; nothing else changes.
 
-Reference implementation: [`jev.rs`](../crates/runtime/src/providers/classification/jev.rs)
+Reference implementation: [`jev.rs`](../crates/runtime/src/providers/classification/jev.rs). The trait and each method's contract: [`mod.rs`](../crates/runtime/src/providers/classification/mod.rs).
 
----
+## 1. Implement the provider
 
-## 1 — Create the vendor file
+Create `crates/runtime/src/providers/classification/<vendor>.rs` with a static value that implements `ClassificationProvider`:
 
-```
-crates/runtime/src/providers/classification/<vendor>.rs
-```
+| Method | Supplies |
+|---|---|
+| `default_host`, `default_model`, `endpoint_path`, `models_path`, `docs_url` | Built-in defaults: API root (used when `OCTOCODE_CLASSIFICATION_API_HOST` is unset), model, classify and model-catalog paths, and the setup link shown in `missingConfiguration` errors |
+| `request_headers` | Capability opt-ins for image input and long context |
+| `build_request`, `build_batch_request` | The JSON body for one question, or for several questions over the same state (with optional image assets) |
+| `extract_answer`, `batch_answer_key` | Where the answer sits in a single or batch response |
+| `validate_response`, `validate_models` | Shape checks that return `ProviderContractError`; `request: true` marks a request-side violation, and vendor names never reach the public error codes |
 
-Implement `ClassificationProvider` for your vendor.
-Every method is documented in [`mod.rs`](../crates/runtime/src/providers/classification/mod.rs).
+Register it with `pub mod <vendor>;` in `providers/classification/mod.rs`.
 
-```rust
-// crates/runtime/src/providers/classification/myvendor.rs
-use super::{ClassificationProvider, ProviderContractError};
-use serde_json::{Value, json};
+## 2. Add a selection setting
 
-pub struct MyVendor;
-pub static MY_VENDOR: MyVendor = MyVendor;
+`provider()` in `mod.rs` returns the one built-in provider. Declare an `enum` field (for example `classification.vendor`) with both vendor ids in `packages/octocode-config/config-contract.json`, then run `yarn workspace @octocodeai/config generate:config-contract`. The native build generates a Rust enum for it; `provider()` matches on that enum with no default arm, so an unknown value is impossible by construction. Don't reuse `classification.type`: it stays under `removed` in the contract. Adding a setting: [ADDING_CONFIG.md](../../../skills-dev/octocode-dev/docs/ADDING_CONFIG.md).
 
-impl ClassificationProvider for MyVendor {
-    fn default_host(&self) -> &'static str { "https://api.myvendor.ai" }
-    fn default_model(&self) -> &'static str { "myvendor-v1" }
-    fn endpoint_path(&self) -> &'static str { "v1/classify" }
-    fn docs_url(&self) -> &'static str { "https://docs.myvendor.ai/getting-started" }
+## 3. Test it
 
-    // ── Wire format ──────────────────────────────────────────────────────────
-    // Shape the JSON body however your API expects.
+Add an integration test that runs `clasify` against a mock of the vendor API; `crates/runtime/tests/runtime_clasify.rs` shows the Jev fixture pattern.
 
-    fn build_request(&self, state: &Value, question: &Value, model: &str) -> Value {
-        json!({ "model": model, "context": state, "query": question })
-    }
+## What stays unchanged
 
-    fn build_batch_request(
-        &self,
-        state: &Value,
-        questions: &[(usize, &Value)],
-        model: &str,
-    ) -> Value {
-        let qs: serde_json::Map<String, Value> = questions
-            .iter()
-            .map(|(i, q)| (format!("q{i}"), (*q).clone()))
-            .collect();
-        json!({ "model": model, "context": state, "queries": qs })
-    }
-
-    // ── Response extraction ──────────────────────────────────────────────────
-    // Tell the engine where to find the answer in the vendor's response body.
-
-    fn extract_answer<'a>(&self, response: &'a Value) -> Option<&'a Value> {
-        response.get("result")
-    }
-
-    fn batch_answer_key(&self, index: usize) -> String {
-        format!("q{index}")
-    }
-
-    // ── Validation ───────────────────────────────────────────────────────────
-    // Reject malformed or request-incompatible responses. `request: true`
-    // marks a request-side violation; vendor names never reach error codes.
-
-    fn validate_response(
-        &self,
-        _request: &Value,
-        response: &Value,
-    ) -> Result<(), ProviderContractError> {
-        if response.get("result").is_some() {
-            Ok(())
-        } else {
-            Err(ProviderContractError {
-                request: false,
-                message: "response.result is missing".to_owned(),
-            })
-        }
-    }
-}
-```
-
----
-
-## 2 — Register the module
-
-In `crates/runtime/src/providers/classification/mod.rs`, add:
-
-```rust
-pub mod myvendor;
-```
-
----
-
-## 3 — Choose between providers
-
-`provider()` in the same file returns the one built-in provider. With two,
-replace it with a selection over a typed setting (step 4); an unknown value must
-be impossible by construction (a generated enum), never a silent default.
-
----
-
-## 4 — Add a selection setting to the config contract
-
-Declare an `enum` field (for example `classification.vendor`) in
-`packages/octocode-config/config-contract.json` with both vendor ids, then
-regenerate with `yarn workspace @octocodeai/config generate:config-contract`.
-The native build generates a Rust enum for it; match on that enum in
-`provider()`. The retired `classification.type` name stays listed under
-`removed` in the contract, so do not reuse it.
-
----
-
-## Done — what you get for free
-
-| Layer | File | What it does |
-|---|---|---|
-| Transport | `tools/clasify/transport.rs` | HTTP POST, retries, budget, error codes |
-| Single call | `tools/clasify/mod.rs` | Preflight → `build_request` → `extract_answer` → project |
-| Batching | `tools/clasify/batch.rs` | Groups questions → `build_batch_request` → `batch_answer_key` |
-| Paging | `tools/clasify/run/mod.rs` | Resource-major paging, concurrency semaphore |
-| Context | `tools/clasify/context.rs` | Context capture, receipt, continuation logic |
-
-None of those files need touching.  The only vendor-specific code lives in your
-new `providers/classification/myvendor.rs`.
-
----
-
-## Checklist
-
-- [ ] `crates/runtime/src/providers/classification/myvendor.rs` created
-- [ ] `pub mod myvendor;` added to `mod.rs`
-- [ ] `provider()` selects by a generated enum setting (no default arm)
-- [ ] The selection setting added to the config contract and generated outputs regenerated
-- [ ] At least one integration test exercises `clasify` with a mock of your API
-      (see `crates/runtime/tests/runtime_clasify.rs` for the existing Jev fixture pattern)
+| Layer | Code |
+|---|---|
+| HTTP transport, retries, budget, error codes | `tools/judgment/transport.rs` |
+| Question batching | `tools/judgment/batch.rs` |
+| Judgment cache | `tools/judgment/cache.rs` |
+| Per-endpoint concurrency gate | `providers/classification/gate.rs` |
+| Source capture (files, GitHub, URLs, images) | `tools/source_capture/` |
+| The `clasify` tool | `tools/clasify/mod.rs` |

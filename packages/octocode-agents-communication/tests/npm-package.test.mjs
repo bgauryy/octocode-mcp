@@ -45,7 +45,7 @@ test('npm archive runs through npx outside the repository with CLI and MCP commu
   const receiver = launch('join', '--name', 'mcp-receiver', '--vendor', 'generic', ...flags);
   const client = await connectStdio({ command: process.execPath, args: [
     join(installed, 'bin/octocode-agents-communication.mjs'), '--session', receiver.id, ...flags,
-  ] });
+  ], env: { ...process.env } });  // the private Octocode home of helpers.mjs, so the server registers its database there
   try {
     const tools = await client.listTools();
     assert.equal(tools.tools.length, 18);

@@ -272,6 +272,13 @@ pub struct FileSystemQueryOptions {
     /// reports where in [`FileSystemQueryResult::time_cut`]. `None` walks
     /// to the end.
     pub time_budget: Option<std::time::Duration>,
+    /// Resume position: the leading entries (walk order, as
+    /// [`FileSystemQueryResult::walk_position`] counts them) an earlier walk
+    /// of the same query already inspected. The walk replays them without
+    /// listing or counting them (it still reads directories to find where
+    /// they end), and `time_budget` starts after them, so a resumed walk
+    /// always inspects new entries.
+    pub skip_entries: Option<u32>,
 }
 
 #[derive(Debug, Clone)]
@@ -313,6 +320,9 @@ pub struct FileSystemQueryResult {
     /// depth-first, so every entry before it in that order was inspected and
     /// every entry from it on was not. `None`: the walk was not cut by time.
     pub time_cut: Option<String>,
+    /// Entries the walk inspected, in walk order, `skip_entries` included:
+    /// the `skip_entries` that resumes at the first uninspected entry.
+    pub walk_position: u32,
 }
 
 // ── graph scan types ─────────────────────────────────────────────────────────

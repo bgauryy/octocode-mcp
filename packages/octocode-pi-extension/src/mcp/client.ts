@@ -31,6 +31,8 @@ interface ServerOptions {
   onTools: (tools: Tool[], instructions: string | undefined) => void;
   /** The first failure to connect since the last success or restart. */
   onFailure: (message: string) => void;
+  /** A re-list after `tools/list_changed` failed: the tools the model has may be out of date. Once per run of failures. */
+  onRefreshFailure?: (message: string) => void;
   /** Bound on `initialize`, `tools/list` and each `tools/call`. */
   requestTimeoutMs?: number;
 }
@@ -61,8 +63,15 @@ export class OctocodeServer {
   /** Bumped by every close, so a connect that finishes after one discards itself. */
   private generation = 0;
   private listRevision = 0;
+  /** A failed re-list was reported and none succeeded since. */
+  private refreshReported = false;
 
   constructor(private readonly options: ServerOptions) {}
+
+  /** The bound on `initialize`, `tools/list` and each `tools/call`. */
+  private get requestTimeoutMs(): number {
+    return this.options.requestTimeoutMs ?? REQUEST_TIMEOUT_MS;
+  }
 
   get instructions(): string | undefined {
     return this.instructionsText;
@@ -136,7 +145,7 @@ export class OctocodeServer {
       throw new Error(`Octocode MCP server is not available${this.error ? `: ${this.error}` : ''}. Restart it with /octocode mcp restart.`);
     }
     try {
-      return await this.client.callTool(name, args, { ...(signal ? { signal } : {}), timeoutMs: this.options.requestTimeoutMs ?? REQUEST_TIMEOUT_MS });
+      return await this.client.callTool(name, args, { ...(signal ? { signal } : {}), timeoutMs: this.requestTimeoutMs });
     } catch (error) {
       if (error instanceof McpConnectionClosedError) throw new Error(`Octocode MCP server stopped during the call${this.error ? `: ${this.error}` : ''}. The next call starts it again.`);
       throw error;
@@ -169,7 +178,7 @@ export class OctocodeServer {
   private async open(cwd: string): Promise<boolean> {
     const generation = ++this.generation;
     this.state = 'connecting';
-    const timeoutMs = this.options.requestTimeoutMs ?? REQUEST_TIMEOUT_MS;
+    const timeoutMs = this.requestTimeoutMs;
     const transport = new StdioTransport({ ...this.options.launch(cwd), stderr: 'pipe' });
     const client = new McpClient({ ...this.options.clientInfo, requestTimeoutMs: timeoutMs });
     this.starting = client;
@@ -217,12 +226,16 @@ export class OctocodeServer {
   private async relist(client: McpClient): Promise<void> {
     const revision = ++this.listRevision;
     try {
-      const tools = await client.listTools({ timeoutMs: this.options.requestTimeoutMs ?? REQUEST_TIMEOUT_MS });
+      const tools = await client.listTools({ timeoutMs: this.requestTimeoutMs });
       if (client !== this.client || revision !== this.listRevision) return;
       this.tools = tools;
+      this.refreshReported = false;
       this.options.onTools(tools, client.instructions);
-    } catch {
-      // The previous list stays; a call to a withdrawn tool gets the server's own error.
+    } catch (error) {
+      // The previous list stays (a call to a withdrawn tool gets the server's own error), but tools the server added are missing.
+      if (client !== this.client || this.refreshReported) return;
+      this.refreshReported = true;
+      this.options.onRefreshFailure?.(errorMessage(error));
     }
   }
 

@@ -2,8 +2,8 @@
 //! default, so a page fills the response window like localSearch and
 //! structureSearch) or by a caller's explicit item count. The budget
 //! ([`page_budget`]) is the one page sizing owner: a default-layout page is
-//! cut so the whole response row fits the configured response window
-//! (`output.pagination.defaultCharLength`); otherwise the response pager
+//! cut so the whole response row fits the runtime's automatic response window
+//! (`auto_page_chars`); otherwise the response pager
 //! splits the page into row parts and every page walk costs extra calls.
 //!
 //! The result set is the same on every page of a walk (a snapshot pins it),

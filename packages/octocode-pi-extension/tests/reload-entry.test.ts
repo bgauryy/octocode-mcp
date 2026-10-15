@@ -10,6 +10,9 @@ const require = createRequire(import.meta.url);
 
 type Factory = (pi: { value?: string }) => Promise<void>;
 
+/** Deadline for a test that runs real esbuild builds: 2-4 s alone, more while the whole suite runs in parallel. */
+const BUILD_TIMEOUT_MS = 20_000;
+
 /** The generated entry, loaded once: Pi evaluates an extension module once per process and calls its factory again on every `/reload`. */
 function loadEntry(file: string): Factory {
   return require(file) as Factory;
@@ -36,7 +39,7 @@ describe('the Pi entry', () => {
     const second: { value?: string } = {};
     await factory(second);
     expect(second.value).toBe('second build');
-  });
+  }, BUILD_TIMEOUT_MS);
 
   it('keeps the current and the previous bundle, swaps the pointer atomically and prunes the rest', async () => {
     const { bundlePiEntry } = (await import('../scripts/bundle-pi.mjs')) as { bundlePiEntry: (dist: string) => Promise<string> };
@@ -61,7 +64,7 @@ describe('the Pi entry', () => {
     expect(bundles()).toEqual([second, third].sort());
     expect(fs.existsSync(path.join(folder, 'current.tmp'))).toBe(false);
     for (const name of bundles()) expect(fs.existsSync(path.join(folder, name))).toBe(true);
-  });
+  }, BUILD_TIMEOUT_MS);
 
   // Pi's own loader in a child process: load, rebuild, clear its cache as /reload does, load again.
   const viaPi = (target: 'entry' | 'index'): string[] => {

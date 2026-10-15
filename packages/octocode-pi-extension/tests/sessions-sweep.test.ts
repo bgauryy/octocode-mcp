@@ -203,6 +203,20 @@ describe('session sweep', () => {
     expect(fs.readdirSync(bash).sort()).toEqual(['bash-1-1.job.json', 'bash-1-1.log', 'bash-1-1.log.1', 'bash-3-1.job.json', 'bash-3-1.log', 'bash-3-1.log.1']);
   });
 
+  it('keeps a job record that cannot be read, with its log, and ages out one that reads but is not a record', async () => {
+    const index = new SessionIndex(sharedAgentDb());
+    const bash = path.join(folder('kept', ['bash']), 'bash');
+    // A directory under a record's name cannot be read as a file: the job cannot be judged, so it is not swept.
+    fs.mkdirSync(path.join(bash, 'bash-4-1.job.json'));
+    fs.writeFileSync(path.join(bash, 'bash-4-1.log'), 'x');
+    fs.writeFileSync(path.join(bash, 'bash-4-1.log.1'), 'x');
+    fs.writeFileSync(path.join(bash, 'bash-5-1.job.json'), 'not json');
+    fs.writeFileSync(path.join(bash, 'bash-5-1.log'), 'x');
+    age(bash, 31 * DAY);
+    await sweepSessions(index, 'current', { listed: async () => new Set(['kept']), force: true });
+    expect(fs.readdirSync(bash).sort()).toEqual(['bash-4-1.job.json', 'bash-4-1.log', 'bash-4-1.log.1']);
+  });
+
   it('removes old subagent screenshots, following OCTOCODE_CLEANUP_DAYS', async () => {
     const index = new SessionIndex(sharedAgentDb());
     const dir = shotsDir();

@@ -5,7 +5,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { CONFIG_DIR_NAME, getAgentDir, type ExtensionAPI, type ExtensionContext, type ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { MCP_ENV, envFlag } from '../shared/env.js';
 import { octocodeHome } from '../shared/home.js';
-import { packageRoot } from '../shared/package.js';
+import { findManifest, packageRoot } from '../shared/package.js';
 import { OCTOCODE_SERVER, OCTOCODE_TOOL_PREFIX } from '../shared/octocode-tools.js';
 import { visibleControls } from '../shared/sanitize.js';
 import type { Tool } from '@earendil-works/pi-mcp';
@@ -19,10 +19,13 @@ import { octocodeToolDefinition, TurnBudget } from './tools.js';
  * `mcp.json` (`~/.pi/agent/mcp.json`, `.pi/mcp.json`) takes precedence, which is how users override or disable it: then
  * Pi's MCP owns the server and this extension starts nothing.
  */
+/** The npm package of the server this extension runs. */
+const MCP_PACKAGE = 'octocode-mcp';
+
 /** The `octocode-mcp` range this package's `package.json` depends on (the one source of the version this extension runs). */
 function octocodeMcpRange(): string {
   const manifest = JSON.parse(fs.readFileSync(path.join(packageRoot(), 'package.json'), 'utf8')) as { dependencies?: Record<string, string> };
-  const range = manifest.dependencies?.['octocode-mcp'];
+  const range = manifest.dependencies?.[MCP_PACKAGE];
   if (!range) throw new Error('package.json has no octocode-mcp dependency');
   return range;
 }
@@ -32,7 +35,7 @@ function octocodeMcpRange(): string {
  * updating the extension and the npx fallback fetch the same newest compatible server; in this monorepo `dev setup`
  * resolves the dependency to the workspace build (`packages/octocode-mcp`).
  */
-export const OCTOCODE_MCP_SPEC = `octocode-mcp@${octocodeMcpRange()}`;
+export const OCTOCODE_MCP_SPEC = `${MCP_PACKAGE}@${octocodeMcpRange()}`;
 
 /** The server process: the installed octocode-mcp bin under this Node, else the newest npm release through npx. */
 export function octocodeLaunch(cwd: string, env: NodeJS.ProcessEnv = process.env, entry = octocodeMcpEntry()): Launch {
@@ -107,6 +110,7 @@ export class OctocodeMcp {
       clientInfo: { name: 'octocode-pi-extension', version: options.version ?? '0' },
       onTools: (tools, instructions) => this.register(tools, instructions),
       onFailure: (message) => this.notifyFailure(message),
+      onRefreshFailure: (message) => this.notify(`Octocode MCP could not refresh its tool list: ${message}\nTools it added since may be missing this session. See /octocode mcp.`),
     });
   }
 
@@ -197,10 +201,14 @@ export class OctocodeMcp {
   }
 
   private notifyFailure(message: string): void {
+    this.notify(`Octocode MCP failed to start: ${message}\nThe model has no Octocode tools this session. See /octocode mcp.`);
+  }
+
+  private notify(text: string): void {
     const ctx = this.ctx;
     if (!ctx?.hasUI) return;
     try {
-      ctx.ui.notify(`Octocode MCP failed to start: ${message}\nThe model has no Octocode tools this session. See /octocode mcp.`, 'warning');
+      ctx.ui.notify(text, 'warning');
     } catch {
       // The session ended before the server gave up.
     }
@@ -222,15 +230,9 @@ export function registerOctocodeMcp(pi: ExtensionAPI, version?: string): Octocod
 /** Absolute path of the bundled octocode-mcp bin (its `exports` hide package.json, so walk up from the entry). */
 function octocodeMcpEntry(): string | undefined {
   try {
-    let dir = path.dirname(fileURLToPath(import.meta.resolve('octocode-mcp')));
-    for (let depth = 0; depth < 4; depth++, dir = path.dirname(dir)) {
-      const manifestPath = path.join(dir, 'package.json');
-      if (!fs.existsSync(manifestPath)) continue;
-      const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as { name?: string; bin?: string | Record<string, string> };
-      if (manifest.name !== 'octocode-mcp') continue;
-      const bin = typeof manifest.bin === 'string' ? manifest.bin : manifest.bin?.['octocode-mcp'];
-      return bin ? path.join(dir, bin) : undefined;
-    }
+    const found = findManifest(path.dirname(fileURLToPath(import.meta.resolve(MCP_PACKAGE))), MCP_PACKAGE, 4);
+    const bin = typeof found?.manifest.bin === 'string' ? found.manifest.bin : found?.manifest.bin?.[MCP_PACKAGE];
+    return found && bin ? path.join(found.dir, bin) : undefined;
   } catch {
     // Not installed next to the extension.
   }

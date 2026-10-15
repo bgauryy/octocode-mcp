@@ -121,9 +121,10 @@ Dogfood the local CLI, MCP server and skills, and turn what you learn into impro
 them over shell reads: `localSearch` instead of `rg`/`grep`, `localFetch` instead of `cat`/`sed`,
 `structureSearch` instead of `ls`/`find`, and `astSearch`/`lspSearch` for symbols. Follow every
 `next.*` page or name what stays unread; `hints.*` are optional leads. Graph and AST edges are
-candidates: confirm callers with `lspSearch` before claiming code is unused. Record findings,
-good and bad, in `.octocode/GOTCHAS.md`; when a tool has a bad default, a misleading hint or a
-missing continuation, report it there instead of working around it silently.
+candidates: confirm callers with `lspSearch` before claiming code is unused. Record verified
+defects, open decisions and known limitations in [ISSUES.md](ISSUES.md); when a tool has a bad
+default, a misleading hint or a missing continuation, report it there instead of working around it
+silently, and delete the entry once it is fixed.
 
 ## Release
 

@@ -37,7 +37,7 @@ export function saveShot(dir: string, agentId: string, index: number, image: { d
   const extension = image.mimeType.includes('jpeg') ? 'jpg' : 'png';
   const file = path.join(dir, `${agentId}-${index}.${extension}`);
   fs.writeFileSync(file, Buffer.from(image.data, 'base64'), { mode: PRIVATE_FILE_MODE });
-  fs.chmodSync(file, PRIVATE_FILE_MODE); // a file from before this was owner-only keeps its old mode on overwrite
+  fs.chmodSync(file, PRIVATE_FILE_MODE); // `mode` applies only when the file is created: an overwritten one is tightened too
   const files = fs
     .readdirSync(dir)
     // Another Pi process may prune the shared folder meanwhile: a vanished file simply sorts last.

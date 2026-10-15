@@ -1,5 +1,5 @@
 import { sameSecret } from '../shared/env.js';
-import { isRecord } from '../shared/util.js';
+import { isRecord, stringList } from '../shared/util.js';
 import { auditLine } from './effect.js';
 import { ACTION_CLASSES, ASK_REASONS, type ActionClass, type AskReason } from './mode.js';
 
@@ -28,9 +28,8 @@ export interface PermissionHeader {
 
 export const permissionHeader = (header: PermissionHeader): string => `${HEADER_PREFIX}${JSON.stringify(header)}`;
 
-const strings = (value: unknown): string[] | undefined => (Array.isArray(value) && value.every((item) => typeof item === 'string') ? (value as string[]) : undefined);
 const subset = <T extends string>(value: unknown, allowed: readonly T[]): T[] | undefined => {
-  const items = strings(value);
+  const items = stringList(value);
   return items && items.every((item) => (allowed as readonly string[]).includes(item)) ? (items as T[]) : undefined;
 };
 
@@ -55,8 +54,8 @@ export function splitHeader(title: string, nonce: string): { title: string; head
   const action = ACTION_CLASSES.find((each) => each === raw['action']);
   const also = subset(raw['also'], ACTION_CLASSES);
   const reasons = subset(raw['reasons'], ASK_REASONS);
-  const options = strings(raw['options']);
-  const what = strings(raw['what']);
+  const options = stringList(raw['options']);
+  const what = stringList(raw['what']);
   if (!action || !also || !reasons || !options || !what || !showsTargets(rest, what)) return { title };
   return { title: rest, header: { action, also, reasons, options, what, nonce } };
 }

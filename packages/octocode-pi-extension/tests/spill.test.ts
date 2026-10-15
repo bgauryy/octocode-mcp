@@ -3,7 +3,9 @@ import { PhotonImage } from '@silvia-odwyer/photon-node';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { setCurrentSession } from '../src/shared/home.js';
-import { IMAGE_MAX_CHARS, boundImagePart, capOutputToFile, saveFullOutput, saveImageFile, spillLabel } from '../src/shared/spill.js';
+import { sha256 } from '../src/shared/atomic.js';
+import { IMAGE_MAX_CHARS, boundImagePart, capOutputToFile, imageExtension, saveFullOutput, saveImageFile, saveNamedContent, spillLabel } from '../src/shared/spill.js';
+import { saveMessageFile, spillIntact } from '../src/team/spill.js';
 import { noisyPng, pixelSize, tmp } from './helpers.js';
 
 let home: string;
@@ -143,6 +145,14 @@ describe('image bounds', () => {
     expect(path.extname(saveImageFile('AA', 'image/x-weird', 'x')!)).toBe('.img');
   });
 
+  it('looks the extension up by own keys only: Object.prototype members are not image types', () => {
+    for (const mime of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+      expect(imageExtension(mime)).toBeUndefined();
+      expect(path.extname(saveImageFile('AA', mime, 'x')!)).toBe('.img');
+    }
+    expect(imageExtension('image/gif')).toBe('gif');
+  });
+
   it('passes an image within the budget through as the same object', async () => {
     const part = { type: 'image' as const, data: 'A'.repeat(IMAGE_MAX_CHARS), mimeType: 'image/png' };
     expect((await boundImagePart(part, 'x'))[0]).toBe(part);
@@ -156,5 +166,32 @@ describe('image bounds', () => {
     expect(file).toBeDefined();
     expect(fs.readFileSync(file!).length).toBe(Buffer.from(data, 'base64').length);
     expect((out as { text: string }).text).toContain('image/png');
+  });
+});
+
+describe('named content files', () => {
+  it('writes once under the given name, accepts the same bytes again, and refuses other bytes under a taken name', () => {
+    const first = saveNamedContent('one', 'fixed.txt')!;
+    expect(path.dirname(first)).toBe(path.join(home, 'agent', 'pi', 'sessions', `_pid-${process.pid}`, 'output'));
+    expect(saveNamedContent('one', 'fixed.txt')).toBe(first);
+    expect(saveNamedContent(Buffer.from('one'), 'fixed.txt')).toBe(first);
+    expect(saveNamedContent('two', 'fixed.txt')).toBeUndefined();
+    expect(fs.readFileSync(first, 'utf8')).toBe('one');
+    if (process.platform !== 'win32') expect(fs.statSync(first).mode & 0o777).toBe(0o600);
+  });
+
+  it('saves a team message under its full 64-hex hash, and a recipient verifies it by that name', () => {
+    const text = 'a long message\n'.repeat(500);
+    const file = saveMessageFile(text)!;
+    expect(path.basename(file)).toBe(`message-${sha256(text)}.txt`);
+    expect(path.basename(file)).toMatch(/^message-[0-9a-f]{64}\.txt$/);
+    // Saved again, the same file; a message that points at it verifies, and one whose file changed does not.
+    expect(saveMessageFile(text)).toBe(file);
+    const pointed = `head\n[Full message (${text.length} characters): ${file}]`;
+    expect(spillIntact(pointed)).toBe(true);
+    fs.writeFileSync(file, 'changed');
+    expect(spillIntact(pointed)).toBe(false);
+    expect(saveMessageFile(text)).toBeUndefined();
+    expect(spillIntact(`head\n[Full message (3 characters): ${path.join(path.dirname(file), 'other.txt')}]`)).toBe(false);
   });
 });

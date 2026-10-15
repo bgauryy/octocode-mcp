@@ -2,11 +2,12 @@
 // Development mechanism comparison. Chunk planning stays inside this driver;
 // the public clasify calls receive references, never pasted unread source.
 import fs from 'node:fs/promises';
+import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { propagateOctocodeEnv } from '@octocodeai/config';
 import { hermeticEnv } from '../../../../test-utils/hermetic-env.ts';
 import { invoke, mergeRanges, sourceCoverage } from './jev_question_poc.mjs';
@@ -89,7 +90,7 @@ async function main() {
   if (!args.includes('--run') && !args.includes('--out')) throw new Error('Output directory required');
   const fixture = path.join(out, 'fixtures'), isolated = hermeticEnv(process.env, 'jev-chunk-instruction');
   const env = { ...isolated, OCTOCODE_BETA: 'true', OCTOCODE_CLASSIFICATION_API: 'loopback-only', OCTOCODE_ENABLE_LOCAL: 'true', OCTOCODE_STORAGE_MODE: 'memory', OCTOCODE_ENABLE_STATS: 'false',
-    OCTOCODE_CLASSIFICATION_CONCURRENCY: '1', OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH: '20000', OCTOCODE_LSP_PREWARM: 'off', MAX_RETRIES: '0', WORKSPACE_ROOT: fixture, ALLOWED_PATHS: fixture, DISABLE_TOOLS: '', TOOLS_TO_RUN: '' };
+    OCTOCODE_LSP_PREWARM: 'off', WORKSPACE_ROOT: fixture, ALLOWED_PATHS: fixture, DISABLE_TOOLS: '', TOOLS_TO_RUN: '' };
   const save = () => fs.writeFile(path.join(out, 'run.json'), JSON.stringify(run, null, 2), { mode: 0o600 });
   const { resolveNativeBinaryPath } = createRequire(CLI)('@octocodeai/octocode-native/bin/resolve-binary.cjs');
   const native = resolveNativeBinaryPath(); let run;
@@ -223,4 +224,6 @@ async function main() {
   console.log(JSON.stringify({ out, ...run.totals }));
   if (run.totals.errors || stopped || !run.provenance.nativeUnchanged || !run.provenance.fixturesUnchanged) process.exitCode = 1;
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) main().catch(error => { console.error(error.message); process.exitCode = 1; });
+// argv[1] keeps a symlinked path while import.meta.url is the real path, so compare real paths.
+const realOrSelf = p => { try { return realpathSync(p); } catch { return path.resolve(p); } };
+if (process.argv[1] && realOrSelf(process.argv[1]) === realOrSelf(fileURLToPath(import.meta.url))) main().catch(error => { console.error(error.message); process.exitCode = 1; });

@@ -262,11 +262,14 @@ async fn pr_inventory_picks_the_largest_source_patch_and_keeps_all_patches() {
     let data = run(&server, json!({"sections":["files"], "extras": ["hints"]})).await;
     let menu = &data["hints"];
     let selected = &menu["readSelectedPatches"];
+    // Source files only. Files that fit one call's patch budget come first:
+    // at the default 20,000-char page the 335-line patch does not fit, so the
+    // 15-line one leads and the larger follows through `continuePatch`.
     assert_eq!(
         selected["query"]["queries"][0]["include"],
         json!([
-            "src/server/webStandardStreamableHttp.ts",
-            "src/server/sseKeepAlive.ts"
+            "src/server/sseKeepAlive.ts",
+            "src/server/webStandardStreamableHttp.ts"
         ]),
         "{menu}"
     );
@@ -577,11 +580,21 @@ async fn match_string_returns_matching_hunks_and_offers_the_whole_patch() {
     assert_eq!(none_row["headSha"], SHA, "{none}");
     assert_eq!(none_row["state"], "merged", "{none}");
     assert!(none_row.get("title").is_none(), "{none}");
-    // A matchString that hits no patch line is an empty read that says so,
-    // not a summary that looks like an ignored filter.
+    // A matchString that hits no patch line is an empty read, not a summary
+    // that looks like an ignored filter; its leads run the fix: the same
+    // read without the literal, then the file inventory.
     assert_eq!(status, "empty", "{none}");
-    let hint = none["hints"]["text"][0].as_str().unwrap_or("");
-    assert!(hint.contains("matchString"), "{none}");
+    assert!(none["hints"].get("text").is_none(), "{none}");
+    let unfiltered = &none["hints"]["withoutMatchString"]["query"]["queries"][0];
+    assert!(unfiltered.get("matchString").is_none(), "{none}");
+    assert_eq!(unfiltered["sections"], json!(["patches"]), "{none}");
+    assert_eq!(unfiltered["minify"], "none", "{none}");
+    assert_eq!(
+        none["hints"]["readFiles"]["query"]["queries"][0]["sections"],
+        json!(["files"]),
+        "{none}"
+    );
+    support::checks::assert_leads_valid(&none);
     let only_hits = run(
         &server,
         json!({"sections":["patches"], "matchString": "esbuild",
@@ -934,10 +947,7 @@ async fn explicit_response_page_sizes_patch_walk_windows() {
     )
     .await;
     let workspace = Workspace::new();
-    let runtime = workspace.runtime(&[
-        ("GITHUB_API_URL", format!("{}/api/v3", server.uri())),
-        ("OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH", "20000".into()),
-    ]);
+    let runtime = workspace.runtime(&[("GITHUB_API_URL", format!("{}/api/v3", server.uri()))]);
     let walk = |page: Option<u64>, char_length: Option<u64>| {
         let runtime = &runtime;
         async move {
@@ -1127,10 +1137,11 @@ async fn include_scopes_a_body_and_patch_read() {
     assert_eq!(paths, ["src/a.rs", "src/c.rs"], "{flat}");
 }
 
-/// An `include` scope that matches no changed file says so (with a
-/// wrong path and got a silent empty row).
+/// An `include` scope that matches no changed file is an empty row (a
+/// wrong path once got a silent one) whose lead reads the whole file
+/// inventory to copy a path from.
 #[tokio::test]
-async fn files_scope_matching_nothing_is_an_empty_row_with_a_hint() {
+async fn files_scope_matching_nothing_is_an_empty_row_with_an_inventory_lead() {
     let server = MockServer::builder().start().await;
     mount_pr(&server, 1).await;
     mount_file_batches(
@@ -1159,13 +1170,12 @@ async fn files_scope_matching_nothing_is_an_empty_row_with_a_hint() {
         data.get("errorCode").is_none(),
         "an empty row carries no errorCode: {data}"
     );
-    assert!(
-        data["hints"]["text"][0]
-            .as_str()
-            .unwrap_or("")
-            .contains("include"),
-        "{data}"
-    );
+    assert!(data["hints"].get("text").is_none(), "{data}");
+    assert!(data["hints"].get("withoutMatchString").is_none(), "{data}");
+    let inventory = &data["hints"]["readFiles"]["query"]["queries"][0];
+    assert_eq!(inventory["sections"], json!(["files"]), "{data}");
+    assert!(inventory.get("include").is_none(), "{data}");
+    support::checks::assert_leads_valid(data);
     runtime.close().await;
 }
 
@@ -1230,8 +1240,8 @@ async fn read_at_merge_picks_the_code_file_of_the_whole_pr_not_the_first_window(
 }
 
 /// A `matchString` that hits no patch line says so: alone it is an empty
-/// row with a recovery tip; beside a body read it is a warning on the row,
-/// never a silent summary.
+/// row whose leads read without it and read the file inventory; beside a
+/// body read it is a warning on the row, never a silent summary.
 #[tokio::test]
 async fn match_string_with_zero_hits_says_so() {
     let server = MockServer::builder().start().await;
@@ -1251,8 +1261,18 @@ async fn match_string_with_zero_hits_says_so() {
     )
     .await;
     assert_eq!(status, "empty", "{alone}");
-    let tip = alone["hints"]["text"].to_string();
-    assert!(tip.contains("matchString"), "{alone}");
+    assert!(alone["hints"].get("text").is_none(), "{alone}");
+    let unfiltered = &alone["hints"]["withoutMatchString"]["query"]["queries"][0];
+    assert!(unfiltered.get("matchString").is_none(), "{alone}");
+    assert_eq!(unfiltered["number"], 9, "{alone}");
+    // The literal alone searched every patch; the read without it reads them.
+    assert_eq!(unfiltered["sections"], json!(["patches"]), "{alone}");
+    assert_eq!(
+        alone["hints"]["readFiles"]["query"]["queries"][0]["sections"],
+        json!(["files"]),
+        "{alone}"
+    );
+    support::checks::assert_leads_valid(&alone);
     let with_body = run(
         &server,
         json!({"sections": ["body", "patches"], "matchString": "absentNeedle", "extras": []}),
@@ -1479,10 +1499,7 @@ async fn default_large_pr_patch_walk_reaches_every_patch_once() {
     )
     .await;
     let workspace = Workspace::new();
-    let runtime = workspace.runtime(&[
-        ("GITHUB_API_URL", format!("{}/api/v3", server.uri())),
-        ("OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH", "20000".into()),
-    ]);
+    let runtime = workspace.runtime(&[("GITHUB_API_URL", format!("{}/api/v3", server.uri()))]);
     let mut envelope = json!({"queries": [{"operation": "pullRequest", "owner": "a",
         "repo": "b", "number": 9, "sections": ["patches"]}]});
     let mut read = std::collections::BTreeMap::<String, String>::new();
@@ -1640,11 +1657,8 @@ async fn history_b_large_pr_lead_walk_is_lossless_at_the_first_page_size() {
     )
     .await;
     let workspace = Workspace::new();
-    // A 20k configured page: 15k patch windows on every call.
-    let runtime = workspace.runtime(&[
-        ("GITHUB_API_URL", format!("{}/api/v3", server.uri())),
-        ("OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH", "20000".into()),
-    ]);
+    // The constant 20k page: 15k patch windows on every call.
+    let runtime = workspace.runtime(&[("GITHUB_API_URL", format!("{}/api/v3", server.uri()))]);
     let mut envelope = json!({"queries": [{"operation": "pullRequest", "owner": "a",
         "repo": "b", "number": 9, "sections": ["patches"]}]});
     let mut read = std::collections::BTreeMap::<String, String>::new();
@@ -1751,10 +1765,7 @@ async fn overflowing_patch_hop_pages_by_rows_and_loses_nothing() {
         .collect::<std::collections::BTreeMap<_, _>>();
     mount_file_batches(&server, vec![first, second], Duration::ZERO).await;
     let workspace = Workspace::new();
-    let runtime = workspace.runtime(&[
-        ("GITHUB_API_URL", format!("{}/api/v3", server.uri())),
-        ("OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH", "20000".into()),
-    ]);
+    let runtime = workspace.runtime(&[("GITHUB_API_URL", format!("{}/api/v3", server.uri()))]);
     let mut envelope = json!({"queries": [{"operation": "pullRequest", "owner": "a",
         "repo": "b", "number": 9, "sections": ["patches"]}]});
     let mut read = std::collections::BTreeMap::<String, String>::new();

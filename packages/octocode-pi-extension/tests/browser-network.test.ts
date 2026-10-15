@@ -16,7 +16,7 @@ const launch = vi.hoisted(() => vi.fn());
 vi.mock('chrome-launcher', () => ({ launch }));
 
 const { AUDIT_KEYS_MAX, BrowserTool, registerBrowserTool } = await import('../src/browser/tool.js');
-const { openBrowser } = await import('../src/browser/cdp.js');
+const { openBrowser } = await import('../src/browser/session.js');
 
 const PRIVATE_HOSTS = ['http://169.254.169.254/latest/meta-data', 'http://10.0.0.1/admin', 'http://[::1]:8080/', 'http://127.0.0.1:9/secret', 'http://192.168.1.1/'];
 
@@ -517,6 +517,28 @@ describe('browser page requests', () => {
     session.page.close();
   }, 20_000);
 
+  it.each([
+    ['the request fails', () => Promise.reject(new Error('connection refused'))],
+    ['Chrome refuses', () => Promise.resolve(new Response('no', { status: 500 }))],
+  ])('does not log the tab as closed when %s', async (_name, closeReply) => {
+    const cdp = await startCdpStub({ handle: pageHandler() });
+    stubs.push(cdp);
+    const policy = { check: async () => undefined, rebinds: () => true, report: vi.fn(), navigated: () => undefined, opened: () => undefined, closed: () => undefined, approves: () => false };
+    const session = await openBrowser({}, { port: cdp.port, reuseTab: true, policy });
+    const real = globalThis.fetch;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => (String(input).includes('/json/close/') ? closeReply() : real(input, init)));
+    try {
+      [...cdp.pages.values()].at(-1)!.emit('Network.responseReceived', { response: { url: 'https://cdn.example/c', remoteIPAddress: '10.0.0.5', remotePort: 443 } });
+      await vi.waitFor(() => expect(session.console.some((line) => line.includes('answered from the private address 10.0.0.5'))).toBe(true));
+      expect(session.console.at(-1)).toContain('the tab could not be closed');
+      expect(session.console.join('\n')).not.toContain('the tab was closed');
+      expect(policy.report).toHaveBeenCalledWith({ kind: 'rebinding', url: 'https://cdn.example/c', address: '10.0.0.5' });
+    } finally {
+      fetchSpy.mockRestore();
+      session.page.close();
+    }
+  });
+
   it('closes the tab and audits a public name that answers from a private address', async () => {
     const { cdp, browser, audit } = await setup();
     const session = await browser.session();
@@ -530,9 +552,9 @@ describe('browser page requests', () => {
 
     page.emit('Network.responseReceived', { response: { url: 'https://cdn.example/c', remoteIPAddress: '10.0.0.5', remotePort: 443 } });
     await vi.waitFor(() => expect(cdp.requests).toContain(`GET /json/close/${session.targetId}`));
-    expect(session.console.some((line) => line.includes('answered from the private address 10.0.0.5; the tab was closed'))).toBe(true);
+    await vi.waitFor(() => expect(session.console.some((line) => line.includes('answered from the private address 10.0.0.5; the tab was closed'))).toBe(true));
     expect(audit().at(-1)).toMatchObject({ action: 'invariant', allowed: false });
-    expect(audit().at(-1)!.note).toMatch(/closed the tab: a public name answered from a private address \(DNS rebinding\)/);
+    expect(audit().at(-1)!.note).toMatch(/closing the tab: a public name answered from a private address \(DNS rebinding\)/);
   });
 
   it('reports a WebSocket to a private host, as audit entry and warning, without blocking it', async () => {

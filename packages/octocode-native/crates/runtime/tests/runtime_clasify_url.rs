@@ -4,7 +4,7 @@
 //! fragments, redirects, size limits and the capture's read lead are unit
 //! tests over an injected fetcher (`source_capture::url`).
 
-use crate::support::{MOCK_PROVIDER_TIMEOUT_MS, Run as _, Workspace};
+use crate::support::{PROVIDER_LIMITS, Run as _, Workspace};
 use octocode_native::runtime::ToolRuntime;
 use serde_json::{Value, json};
 use wiremock::MockServer;
@@ -15,10 +15,9 @@ fn runtime(workspace: &Workspace, server: &MockServer, extra: &[(&str, String)])
         ("OCTOCODE_BETA", "true".to_owned()),
         ("OCTOCODE_CLASSIFICATION_API", "secret".to_owned()),
         ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
-        ("REQUEST_TIMEOUT", MOCK_PROVIDER_TIMEOUT_MS.to_owned()),
     ];
     env.extend(extra.iter().cloned());
-    workspace.runtime(&env)
+    workspace.runtime_with(&env, PROVIDER_LIMITS)
 }
 
 /// The workspace plus the URL capture directory, as `ALLOWED_PATHS` grants.

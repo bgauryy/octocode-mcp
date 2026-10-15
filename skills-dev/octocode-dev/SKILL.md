@@ -56,7 +56,7 @@ Root `package.json` keeps only `build:native:all`, `lint:fix`, `test:quiet`, `co
 | Publish guard | `$DEV prepublish` (`--fix`, `--dry-run`); CI build: `$DEV build:ci` |
 | One package | `yarn workspace <pkg> <script>` |
 
-When a script flag or path rule is unclear, read `scripts/README.md`. Scripts:
+When a script flag or path rule is unclear, read [the script guide](scripts/README.md). Scripts:
 
 | When | Script |
 |---|---|
@@ -71,9 +71,9 @@ When a script flag or path rule is unclear, read `scripts/README.md`. Scripts:
 ## Audit a tool end to end
 
 1. Map: run `scripts/tool-inventory.mjs <tool>`. Locate every layer with `references/surface-map.md`.
-2. Work the lanes in order; load each reference only while you work it: contract → implementation → output.
+2. Work the lanes in order; load each reference only while you work it: [contract](references/contract-audit.md) → [implementation](references/implementation-audit.md) → [output](references/output-audit.md).
 3. When a finding is confirmed, fix the owning layer and verify with `references/fix-and-verify.md`.
-4. Write one report from `assets/audit-report.md`. Give each finding `path:line`, severity, evidence, fix, and the verification command and result. The path is in `## Output`.
+4. Write one report from `assets/audit-report.md`. Give each finding `path:line`, severity, evidence, fix, and the verification command and result. The path is in [the output format](output.md).
 
 A multi-tool audit may run one subagent per tool. Give each the tool name, this skill path, and the report template.
 
@@ -85,5 +85,5 @@ A multi-tool audit may run one subagent per tool. Give each the tool name, this 
 - Report the exact commands and results. Name anything not verified.
 
 ## Output
-One result in chat: the commands and what they returned. A plain task writes no file.
-An audit writes one report at `<repo>/.octocode/octocode-dev/<tool>-<date>.md`.
+
+Follow [the output format](output.md).

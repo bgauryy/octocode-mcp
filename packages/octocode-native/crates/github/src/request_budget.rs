@@ -37,7 +37,7 @@ impl From<BudgetStop> for ProviderError {
 /// Clones share the time credited to rate-limit waits.
 #[derive(Clone, Debug)]
 pub struct RequestBudget {
-    /// When the request time (`network.timeout`) runs out.
+    /// When the request time (the runtime's network timeout) runs out.
     pub deadline: Instant,
     pub cancellation: CancellationToken,
     pub max_body_bytes: usize,

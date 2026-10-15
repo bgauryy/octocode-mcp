@@ -363,7 +363,7 @@ mod tests {
                 let instructions = value["instructions"].as_str().expect("instructions");
                 assert_eq!(instructions.contains("<clasify>"), selection || clasify);
                 assert_eq!(instructions.contains("clasifyContext"), selection);
-                assert_eq!(instructions.contains("clasify screens unread"), clasify);
+                assert_eq!(instructions.contains("clasify scouts unread"), clasify);
             }
         }
     }

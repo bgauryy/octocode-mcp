@@ -10,6 +10,7 @@ pub(crate) mod git_head;
 mod github;
 mod github_cache;
 mod lifecycle;
+mod limits;
 mod maintenance;
 mod row_indices;
 mod source_identity;
@@ -20,6 +21,7 @@ pub use engine::{Channel, HostOptions, RuntimeError, ToolOutcome, ToolRuntime};
 pub use exit::ExitClass;
 pub(crate) use exit::failure_kind;
 pub use lifecycle::{
-    DEFAULT_TIMEOUT, ExecutionContext, ExecutionError, RequestAdmission, RequestRuntime,
-    RuntimeLimits,
+    DEFAULT_TIMEOUT, ExecutionContext, ExecutionError, RequestAdmission, RequestLimits,
+    RequestRuntime,
 };
+pub use limits::{CloneLimits, RuntimeLimits, SelectionLimits};

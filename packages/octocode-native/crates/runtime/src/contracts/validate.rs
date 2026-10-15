@@ -5,6 +5,12 @@ mod github_search;
 mod history;
 mod local_search;
 mod lsp;
+#[cfg(test)]
+mod normalizer_tests;
+#[cfg(test)]
+mod numeric_tests;
+#[cfg(test)]
+mod pattern_tests;
 mod qualifiers;
 mod shape;
 pub(crate) use qualifiers::qualifier_terms;
@@ -19,7 +25,7 @@ use github_search::{GithubSearchKind, validate_github_search_queries};
 use history::{validate_history_keyword_scope, validate_history_repository_scope};
 use local_search::validate_local_search_queries;
 use lsp::{validate_lsp_queries, validate_operation_controls};
-use schema::validate_schema;
+use schema::{validate_input_schema, validate_schema};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fmt::{Display, Formatter};
@@ -453,8 +459,8 @@ fn contract_tool(tool_name: &str) -> Result<&'static Value, ContractValidationEr
         .map_err(|error| internal(error.to_string()))
 }
 
-/// Validates and applies JSON-Schema defaults from the generated canonical
-/// contract. Runtime-only relation rules are applied after structural parsing.
+/// Validates the canonical input, applying schema defaults and integer number
+/// representations before typed decoding. Relation rules follow structural parsing.
 pub fn validate(tool_name: &str, mut input: Value) -> Result<Value, ContractValidationError> {
     let tool = contract_tool(tool_name)?;
     apply_normalization_rules(&tool["rules"], &mut input)?;
@@ -466,9 +472,9 @@ pub fn validate(tool_name: &str, mut input: Value) -> Result<Value, ContractVali
         for (index, query) in queries.iter_mut().enumerate() {
             let mut path = vec!["queries".to_owned(), index.to_string()];
             let parsed =
-                validate_schema(&tool["querySchema"], &tool["querySchema"], query, &mut path)
+                validate_input_schema(&tool["querySchema"], &tool["querySchema"], query, &mut path)
                     .and_then(|()| {
-                        validate_schema(&tool["inputSchema"], item_schema, query, &mut path)
+                        validate_input_schema(&tool["inputSchema"], item_schema, query, &mut path)
                     });
             if let Err(error) = parsed {
                 issues.extend(error.issues);
@@ -491,7 +497,7 @@ pub fn validate(tool_name: &str, mut input: Value) -> Result<Value, ContractVali
         issues.dedup();
         return Err(ContractValidationError { issues });
     }
-    validate_schema(
+    validate_input_schema(
         &tool["inputSchema"],
         &tool["inputSchema"],
         &mut input,
@@ -673,6 +679,8 @@ fn declares_defaults(tool_name: &str, schema: &Value) -> bool {
     found
 }
 
+type RowNormalizer = fn(&mut Value, &Value) -> Result<(), ContractValidationError>;
+
 fn apply_normalization_rules(
     rules: &Value,
     input: &mut Value,
@@ -682,7 +690,7 @@ fn apply_normalization_rules(
         .ok_or_else(|| internal("rules must be an array".into()))?;
     for rule in rules.iter().filter(|rule| rule["phase"] == "normalize") {
         let opcode = rule["opcode"].as_str();
-        let row_normalizer: Option<fn(&mut Value, &Value)> = match opcode {
+        let row_normalizer: Option<RowNormalizer> = match opcode {
             Some("trim_fields") => Some(trim_fields),
             Some("drop_blank_fields") => Some(drop_blank_fields),
             _ => None,
@@ -690,7 +698,7 @@ fn apply_normalization_rules(
         if let Some(normalize) = row_normalizer {
             if let Some(queries) = input.get_mut("queries").and_then(Value::as_array_mut) {
                 for query in queries {
-                    normalize(query, &rule["args"]);
+                    normalize(query, &rule["args"])?;
                 }
             }
             continue;
@@ -713,42 +721,57 @@ fn apply_normalization_rules(
     Ok(())
 }
 
-fn trim_fields(query: &mut Value, args: &Value) {
+/// The declared normalizers use JavaScript String.trim semantics, as core does.
+fn ecma_trim(text: &str) -> Result<&str, ContractValidationError> {
+    static SPACE: std::sync::LazyLock<Result<regress::Regex, String>> =
+        std::sync::LazyLock::new(|| {
+            regress::Regex::new(r"^\s$").map_err(|error| error.to_string())
+        });
+    let space = SPACE
+        .as_ref()
+        .map_err(|error| internal(format!("Invalid ECMAScript whitespace pattern: {error}")))?;
+    Ok(text.trim_matches(|character: char| {
+        let mut utf8 = [0; 4];
+        space.find(character.encode_utf8(&mut utf8)).is_some()
+    }))
+}
+
+fn trim_fields(query: &mut Value, args: &Value) -> Result<(), ContractValidationError> {
     let Some(fields) = args["fields"].as_array() else {
-        return;
+        return Ok(());
     };
     for field in fields.iter().filter_map(Value::as_str) {
         if let Some(array_field) = field.strip_suffix("[]") {
             if let Some(values) = query.get_mut(array_field).and_then(Value::as_array_mut) {
                 for value in values {
                     if let Some(text) = value.as_str() {
-                        *value = Value::String(text.trim().to_owned());
+                        *value = Value::String(ecma_trim(text)?.to_owned());
                     }
                 }
             }
         } else if let Some(value) = query.get_mut(field)
             && let Some(text) = value.as_str()
         {
-            *value = Value::String(text.trim().to_owned());
+            *value = Value::String(ecma_trim(text)?.to_owned());
         }
     }
+    Ok(())
 }
 
 /// Removes optional string fields that hold only whitespace: they carry no
 /// information, so dropping them is lossless.
-fn drop_blank_fields(query: &mut Value, args: &Value) {
+fn drop_blank_fields(query: &mut Value, args: &Value) -> Result<(), ContractValidationError> {
     let (Some(fields), Some(row)) = (args["fields"].as_array(), query.as_object_mut()) else {
-        return;
+        return Ok(());
     };
     for field in fields.iter().filter_map(Value::as_str) {
-        if row
-            .get(field)
-            .and_then(Value::as_str)
-            .is_some_and(|text| text.trim().is_empty())
+        if let Some(text) = row.get(field).and_then(Value::as_str)
+            && ecma_trim(text)?.is_empty()
         {
             row.remove(field);
         }
     }
+    Ok(())
 }
 
 fn apply_validation_rules(rules: &Value, input: &Value) -> Result<(), ContractValidationError> {
@@ -1266,8 +1289,10 @@ mod tests {
             "astSearch",
             json!({"operation":"symbols","path":"/r","include":["*.ts"]}),
         );
+        // `include` belongs to the match operation: adding a pattern to a
+        // symbols query would not make it valid, so the operation is named.
         assert!(
-            symbols.contains("it applies only with pattern or rule."),
+            symbols.contains("it applies only with operation:\"match\"."),
             "{symbols}"
         );
         assert!(!symbols.contains("localSearch"), "in-tool field: {symbols}");
@@ -1310,6 +1335,27 @@ mod tests {
             formatted,
             json!({"error":"Remove 'pageSize' from queries[0]: it applies only with keywords."})
         );
+    }
+
+    #[test]
+    fn names_operations_when_no_branch_shares_the_query_mode() {
+        let query = json!({
+            "mainGoal":"g","reasoning":"r","operation":"issue",
+            "owner":"o","repo":"r","number":1,"matchString":"thanks"
+        });
+        let error = validate("ghGetHistoryItem", json!({ "queries": [query] }))
+            .expect_err("issues take no matchString");
+        let formatted = format_input_error("ghGetHistoryItem", &error);
+        let message = formatted["error"].as_str().unwrap_or_default();
+        assert!(
+            message.starts_with(
+                "Remove 'matchString' from queries[0]: it applies only with operation one of"
+            ),
+            "{formatted}"
+        );
+        for operation in ["pullRequest", "commit", "compare"] {
+            assert!(message.contains(operation), "{formatted}");
+        }
     }
 
     #[test]

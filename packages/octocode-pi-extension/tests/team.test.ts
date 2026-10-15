@@ -46,7 +46,8 @@ describe('team database', () => {
     expect(store.list().map((m) => m.id)).toEqual(['main-aaaaaa', 'researcher-bbbbbb']);
     // A read changes nothing: the dead one's lease is still held until the sweep.
     expect(store.leases().map((lease) => lease.owner)).toEqual(['gone-cccccc']);
-    expect(store.sweep()).toEqual(['gone-cccccc']);
+    store.sweep();
+    expect(store.names().sort()).toEqual(['main-aaaaaa', 'researcher-bbbbbb', 'silent-dddddd']);
     expect(store.leases()).toEqual([]);
     // The silent one is hidden, not dropped: its process runs.
     expect((store as unknown as { reachable(): Set<string> }).reachable().has('silent-dddddd')).toBe(true);
@@ -95,15 +96,19 @@ describe('team database', () => {
     expect(store.recent()[0]).toMatchObject({ id: partial.id, to: ['b-0002'], state: 'queued' });
   });
 
-  it('reports leases that lapsed before renewal and drops them', () => {
+  it('renews live leases and drops ones that lapsed before renewal, so `owned` stops listing them', () => {
     const store = open(repo(), path.join(tmp(), 'team.sqlite'));
     const now = Date.now();
     store.lock('one', [{ path: 'src/a.ts', kind: 'file', reason: 'x' }, { path: 'docs/', kind: 'tree', reason: 'x' }], now);
-    expect(store.renew('one', now + 1_000)).toEqual([]);
+    store.renew('one', now + 1_000);
+    // Renewed from the heartbeat: both are live for a full lease again.
+    expect(store.owned('one', now + 1_000 + LEASE_MS - 1).size).toBe(2);
     const later = now + 1_000 + LEASE_MS + 1;
-    expect(store.renew('one', later).map((lease) => lease.path).sort()).toEqual(['docs', 'src/a.ts']);
+    store.renew('one', later);
+    // Dropped, not revived: not even a reader looking back at a moment they were live finds them.
+    expect(store.owned('one', now + 2_000).size).toBe(0);
     expect(store.owned('one', later).size).toBe(0);
-    expect(store.renew('one', later)).toEqual([]);
+    expect(store.conflict('src/a.ts', 'two', 'file', later)).toBeUndefined();
   });
 
   it('reserves files and trees all-or-nothing on component boundaries, case-insensitively', () => {
@@ -285,8 +290,8 @@ describe('Team', () => {
 
       // Reservations: the child's edit is refused while the parent holds the file.
       expect(main.lock(['src/a.ts'], 'refactor')).toMatchObject({ ok: true });
-      expect(child.blockedBy(path.join(cwd, 'src', 'a.ts'))?.owner).toBe(parent.id);
-      expect(main.blockedBy(path.join(cwd, 'src', 'a.ts'))).toBeUndefined();
+      expect(child.reservation(path.join(cwd, 'src', 'a.ts'), 'src/a.ts')).toContain(`reserved by ${parent.id}`);
+      expect(main.reservation(path.join(cwd, 'src', 'a.ts'), 'src/a.ts')).toBeUndefined();
       expect(child.lock(['src/a.ts'], 'also')).toMatchObject({ ok: false });
       expect(mutatedPaths('file', { queries: [{ path: 'src/a.ts', type: 'edit' }] })).toEqual(['src/a.ts']);
       expect(mutatedPaths('write', { path: 'x' })).toEqual(['x']);
@@ -298,7 +303,7 @@ describe('Team', () => {
       expect(guard.check(path.join(cwd, 'src', 'a.ts'), 'edit', 'src/a.ts')).toContain(`reserved by ${parent.id}`);
       expect(guard.check(path.join(cwd, 'src', 'free.ts'), 'write', 'src/free.ts')).toBeUndefined();
       main.unlock();
-      expect(child.blockedBy(path.join(cwd, 'src', 'a.ts'))).toBeUndefined();
+      expect(child.reservation(path.join(cwd, 'src', 'a.ts'), 'src/a.ts')).toBeUndefined();
 
       expect((await main.send('ghost', 'hi'))).toHaveProperty('error');
       expect((await main.send('researcher-1234', 'from the user', { from: 'user', replyRequired: false }))).toMatchObject({ sent: ['researcher-1234'] });

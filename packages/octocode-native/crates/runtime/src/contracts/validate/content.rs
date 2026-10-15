@@ -41,6 +41,12 @@ pub(super) fn validate(input: &Value, extraction: bool) -> Result<(), ContractVa
             );
         } else {
             add(
+                query.get("contextLines").is_some() && !matched,
+                "content.context-selector",
+                "contextLines",
+                "contextLines requires matchString; omit it for other reads.",
+            );
+            add(
                 full && ["offset", "length", "unit"]
                     .iter()
                     .any(|field| query.get(field).is_some()),

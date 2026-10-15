@@ -154,8 +154,7 @@ async fn github(status: u16, headers: &[(&str, &str)]) -> (Workspace, MockServer
     let mut command = workspace.cli();
     command
         .env("GITHUB_API_URL", format!("{}/api/v3", server.uri()))
-        .env("GITHUB_TOKEN", &workspace.token)
-        .env("REQUEST_TIMEOUT", support::MOCK_PROVIDER_TIMEOUT_MS);
+        .env("GITHUB_TOKEN", &workspace.token);
     let input = json!({"queries":[{"owner":"a","repo":"b","path":"x.rs",
         "ref":"0123456789abcdef0123456789abcdef01234567","forceRefresh":true}]});
     let output = tokio::task::spawn_blocking(move || run(command, "ghGetFileContent", &input))
@@ -198,8 +197,7 @@ fn clasify_command(workspace: &Workspace, server: &MockServer) -> Command {
     command
         .env("OCTOCODE_BETA", "true")
         .env("OCTOCODE_CLASSIFICATION_API", "secret")
-        .env("OCTOCODE_CLASSIFICATION_API_HOST", server.uri())
-        .env("REQUEST_TIMEOUT", support::MOCK_PROVIDER_TIMEOUT_MS);
+        .env("OCTOCODE_CLASSIFICATION_API_HOST", server.uri());
     command
 }
 

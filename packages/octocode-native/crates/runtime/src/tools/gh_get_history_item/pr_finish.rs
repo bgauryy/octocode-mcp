@@ -4,6 +4,7 @@
 use super::HistoryItemRequest;
 use super::patch::hunks::match_context;
 use super::patch_hop::attach_full_patch_continuation;
+use super::pr_menu::{fresh_pr_query, menu_read, remove_key, without_match_string};
 use super::promotion::{attach_raw_body_read, promote_pr_continuations};
 use super::pull_request::{ContentWants, FileOutcome, PrPlan, ShapedPr};
 use super::text::history_body_view;
@@ -16,8 +17,9 @@ use crate::tools::paging::{mark_partial, push_warnings};
 use crate::tools::result::{ToolData, remove_nulls};
 use serde_json::{Map, Value, json};
 
-/// A scope or literal that matched nothing: an empty row with a recovery
-/// tip, or, when other sections hold evidence, a warning.
+/// A scope or literal that matched nothing: an empty row whose leads run the
+/// recovery ([`unmatched_leads`]), or, when other sections hold evidence, a
+/// warning.
 fn mark_unmatched(
     out: &mut Value,
     query: &HistoryItemRequest,
@@ -25,29 +27,47 @@ fn mark_unmatched(
     files: &FileOutcome,
     other_evidence: bool,
 ) -> Option<String> {
-    let mut needle_missed = None;
-    if files.scope_unmatched && files.unsearched.is_empty() {
-        match query.match_string().filter(|_| plan.needle.is_some()) {
-            Some(literal) if plan.scope.is_none() && other_evidence => {
-                needle_missed = Some(format!(
-                    "matchString {literal:?} hit no patch line in the PR's changed files."
-                ));
-            }
-            Some(_) => {
-                out["status"] = json!("empty");
-                out["hints"] = json!([
-                    "matchString hit no patch line; check its spelling, drop it, or read the inventory (sections:[\"files\"])."
-                ]);
-            }
-            None => {
-                out["status"] = json!("empty");
-                out["hints"] = json!([
-                    "No changed file matched include/status/minChanges; read the inventory (sections:[\"files\"]) and copy a path."
-                ]);
-            }
-        }
+    if !files.scope_unmatched || !files.unsearched.is_empty() {
+        return None;
     }
-    needle_missed
+    let literal = query.match_string().filter(|_| plan.needle.is_some());
+    if let Some(literal) = literal
+        && plan.scope.is_none()
+        && other_evidence
+    {
+        return Some(format!(
+            "matchString {literal:?} hit no patch line in the PR's changed files."
+        ));
+    }
+    out["status"] = json!("empty");
+    ensure_next(out);
+    if let Some(next) = out["next"].as_object_mut() {
+        next.extend(unmatched_leads(query, literal.is_some()));
+    }
+    None
+}
+
+/// The reads that recover a pull-request read whose literal or file scope
+/// matched no changed file, in rank order: the same read without the
+/// `matchString` (when the literal missed), then the whole file inventory
+/// (`include`/`status`/`minChanges` dropped) to copy a path from.
+fn unmatched_leads(query: &HistoryItemRequest, literal_missed: bool) -> Map<String, Value> {
+    let target = fresh_pr_query(query);
+    let mut leads = Map::new();
+    if literal_missed {
+        let mut same = target.clone();
+        if let Some(content) = query.content_value() {
+            same["content"] = content;
+        }
+        leads.insert("withoutMatchString".into(), without_match_string(same));
+    }
+    let mut inventory = target;
+    for key in ["include", "status", "minChanges", "contextLines"] {
+        remove_key(&mut inventory, key);
+    }
+    inventory["content"] = json!({"files": true});
+    leads.insert("readFiles".into(), menu_read(inventory));
+    leads
 }
 
 pub(super) fn finish_pr(

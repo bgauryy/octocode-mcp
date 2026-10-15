@@ -74,10 +74,10 @@ Load when reading script output, searching a session, mapping a site, or extract
 
 ## Find evidence in unread text (classifiers, clasify)
 
-- Admission and result rules: the `octocode-research` classifiers/clasify gate.
+- Admission and result rules belong to `octocode-research`; inspect the tool's live schema before calling it.
 - Reuse the saved capture; narrow files by metadata, titles, URLs, and literal search; drop empty and duplicate captures.
 - Log, HAR, or minified JSON: extract records as text first, keeping the original (positions are not DOM coordinates); read small ones directly.
-- Which passages to read: `localSearch` over the capture directory with a literal and `classifiers` (one self-contained question each) when ranking is enabled; read the returned passages.
+- Which passages to read: `localSearch` over the capture directory with a literal; add `clasifyContext:{classifiers:[...]}` when an evidence question can choose the next passages to read.
 - A typed judgment about one capture file: `clasify` with a `source` reference; save large requests as `.octocode/octocode-scraping/tmp/clasify-request.json`.
 
 ```json
@@ -93,5 +93,5 @@ Load when reading script output, searching a session, mapping a site, or extract
 }]}
 ```
 
-- Run: `npx -y octocode clasify --input .octocode/octocode-scraping/tmp/clasify-request.json` (MCP `clasify` takes the same JSON but hides when its provider is down). A capture over the state limit fails its row: select `ranges`.
+- Run: `npx -y octocode clasify --input .octocode/octocode-scraping/tmp/clasify-request.json` (MCP `clasify` takes the same JSON when available; inspect the live catalog). A capture over the state limit fails its row: select `ranges`.
 - Before citing, run the row's `hints.read` (the exact text judged) or read the deciding lines with `localFetch`; verify the deciding source. A low answer never proves whole-site absence.

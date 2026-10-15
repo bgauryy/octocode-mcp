@@ -190,13 +190,16 @@ interface Place {
 /** `path` with the platform separator written as `/`. */
 const posix = (file: string): string => file.split(path.sep).join('/');
 
+/** `target` with a leading `~`, `$HOME` or `${HOME}` replaced by `home`. */
+export const expandHome = (target: string, home: string): string => target.replace(/^(?:~|\$HOME|\$\{HOME\})(?=\/|$)/, home);
+
 /**
  * Where a target lands with `~`, `$HOME` and `${HOME}` expanded and `.`/`..` resolved against the shell's folder; a
  * trailing `/*` glob counts as its folder. Undefined when it cannot be placed: relative with no folder known, or built
  * from another variable.
  */
 function locate(target: string, { home, cwd }: Place): string | undefined {
-  const expanded = unhide(target).replace(/^(?:~|\$HOME|\$\{HOME\})(?=\/|$)/, home);
+  const expanded = expandHome(unhide(target), home);
   if (/\$/.test(expanded)) return undefined;
   const absolute = expanded.startsWith('/') ? expanded : cwd?.startsWith('/') ? path.posix.resolve(cwd, expanded) : undefined;
   if (absolute === undefined) return undefined;

@@ -980,10 +980,22 @@ pub(super) const ENCLOSING_MAX_FILES: usize = DEFAULT_SNIPPET_PAGE_SIZE as usize
 /// Serialized chars an `enclosing` field adds besides its value: `,"enclosing":`.
 pub(super) const ENCLOSING_FIELD_CHARS: usize = 13;
 
-/// What a page cut reserves per hit row for its `enclosing` name: the field,
-/// the object's keys, a kind, two line numbers and a typical symbol name. A
+/// Serialized chars an `enclosingLine` field adds besides its number:
+/// `,"enclosingLine":`.
+pub(super) const ENCLOSING_LINE_FIELD_CHARS: usize = 17;
+
+/// What a page cut reserves per hit row of a file it did not outline (see
+/// [`ENCLOSING_CUT_FILES`]) for its `enclosing` name: the field, the
+/// object's keys, a kind, two line numbers and a typical symbol name. A
 /// longer name still goes on its row; the page runs that much over budget.
 pub(super) const ENCLOSING_RESERVE_CHARS: usize = ENCLOSING_FIELD_CHARS + 80;
+
+/// Files with rows in an outlined language that a default page cut outlines,
+/// in page order, so it charges each of their hit rows the exact name it
+/// carries. A fixed count, not a time bound: every call outlines the same
+/// files and cuts the same pages. Rows of later files reserve
+/// [`ENCLOSING_RESERVE_CHARS`] each.
+pub(super) const ENCLOSING_CUT_FILES: usize = 64;
 
 /// The current outline of a shown file, or `None` when it is too large,
 /// unreadable, unsupported, or no longer the bytes a stored scan matched.
@@ -1100,7 +1112,7 @@ pub(super) fn row_lines(row: &SearchMatch) -> Vec<u32> {
 /// Name the enclosing declaration of every hit row of a page's first
 /// [`ENCLOSING_MAX_FILES`] files (`enclosing` on the first row inside a
 /// declaration, `enclosingLine` on the later ones) and find the first shown hit that declares `symbol`. Each file is
-/// parsed once. The page cut reserved the names' size, so a name is never
+/// parsed once. The page cut charged the names' size, so a name is never
 /// traded for budget; a default page never shows more files than this, and
 /// rows past the parse bounds of a caller-sized page or a file over 1 MiB are
 /// counted in the returned note, never dropped silently.

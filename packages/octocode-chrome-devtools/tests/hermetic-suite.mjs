@@ -20,6 +20,7 @@ const checks = [
   'unit/helper-inputs.test.mjs',
   'unit/plan.test.mjs',
   'unit/detached-ref.test.mjs',
+  'unit/post-action-wait.test.mjs',
   'unit/evidence.test.mjs',
   'unit/agent.test.mjs',
   'unit/capture.test.mjs',

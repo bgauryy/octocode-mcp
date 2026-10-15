@@ -253,14 +253,13 @@ mod tests {
     use super::*;
     #[test]
     fn comments_and_siblings_survive() {
-        let s =
-            "{ // keep\n\"network\":{\"timeout\":5000,/*sibling*/\"maxRetries\":2,},\"other\":3}";
+        let s = "{ // keep\n\"lsp\":{\"prewarm\":\"off\",/*sibling*/\"autoInstall\":\"auto\",},\"other\":3}";
         let out =
-            edit_config_json(s, &["network", "timeout"], Some(&serde_json::json!(6000))).unwrap();
+            edit_config_json(s, &["lsp", "prewarm"], Some(&serde_json::json!("all"))).unwrap();
         assert!(out.contains("/*sibling*/"));
         assert!(out.contains("// keep"));
-        assert_eq!(parse_config_json(&out).unwrap()["network"]["timeout"], 6000);
-        let out = edit_config_json(&out, &["network", "maxRetries"], None).unwrap();
+        assert_eq!(parse_config_json(&out).unwrap()["lsp"]["prewarm"], "all");
+        let out = edit_config_json(&out, &["lsp", "autoInstall"], None).unwrap();
         assert!(out.contains("/*sibling*/"));
         assert_eq!(parse_config_json(&out).unwrap()["other"], 3);
     }
@@ -273,13 +272,13 @@ mod tests {
     fn new_nested_member() {
         let out = edit_config_json(
             "{/*keep*/}",
-            &["output", "pagination", "defaultCharLength"],
+            &["section", "child", "leaf"],
             Some(&serde_json::json!(4000)),
         )
         .unwrap();
         assert!(out.contains("/*keep*/"));
         assert_eq!(
-            parse_config_json(&out).unwrap()["output"]["pagination"]["defaultCharLength"],
+            parse_config_json(&out).unwrap()["section"]["child"]["leaf"],
             4000
         );
     }

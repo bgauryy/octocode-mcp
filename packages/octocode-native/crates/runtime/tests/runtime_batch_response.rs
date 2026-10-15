@@ -102,7 +102,13 @@ async fn oversized_cli_output_pages_by_whole_rows_with_an_executable_continuatio
         .unwrap()
         .to_string_lossy()
         .into_owned();
-    let runtime = workspace.runtime(&[("OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH", "4000".into())]);
+    let runtime = workspace.runtime_with(
+        &[],
+        octocode_native::runtime::RuntimeLimits {
+            auto_page_chars: 4000,
+            ..support::FIXTURE_LIMITS
+        },
+    );
     let first = runtime
         .run(
             "auto-page".into(),
@@ -159,7 +165,13 @@ async fn small_output_is_not_paginated_and_mcp_auto_pages_by_whole_rows() {
     let workspace = Workspace::new();
     let file = workspace.write("src/a.txt", "needle\n");
     let root = file.parent().unwrap().to_string_lossy().into_owned();
-    let runtime = workspace.runtime(&[("OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH", "2000".into())]);
+    let runtime = workspace.runtime_with(
+        &[],
+        octocode_native::runtime::RuntimeLimits {
+            auto_page_chars: 2000,
+            ..support::FIXTURE_LIMITS
+        },
+    );
     let small = runtime
         .run(
             "small".into(),

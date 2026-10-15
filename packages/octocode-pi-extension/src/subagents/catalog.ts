@@ -3,7 +3,7 @@ import path from 'node:path';
 import { atomicWriteFile } from '../shared/atomic.js';
 import { globalPaths, privateDir } from '../shared/home.js';
 import { envFlag } from '../shared/env.js';
-import { isRecord } from '../shared/util.js';
+import { DAY_MS, HOUR_MS, isRecord } from '../shared/util.js';
 
 /**
  * Model metadata from models.dev (https://models.dev, MIT), an open catalog of model capabilities, limits and
@@ -14,7 +14,7 @@ import { isRecord } from '../shared/util.js';
 
 const CATALOG_URL = 'https://models.dev/api.json';
 /** How long a fetched index is fresh. */
-export const CATALOG_TTL_MS = 24 * 60 * 60_000;
+export const CATALOG_TTL_MS = DAY_MS;
 const FETCH_TIMEOUT_MS = 10_000;
 
 /** What Octocode reads from one models.dev model entry (prices per million tokens). */
@@ -32,7 +32,6 @@ export interface CatalogModel {
   reasoning?: boolean;
   input?: string[];
   context?: number;
-  output?: number;
   cost?: { input: number; output: number };
 }
 
@@ -50,25 +49,29 @@ export interface Catalog {
 const num = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : undefined);
 const str = (value: unknown) => (typeof value === 'string' && value.trim() !== '' ? value : undefined);
 
+/** `{ [key]: value }`, or nothing when the value is missing, so an absent field is not written. */
+function field<K extends keyof CatalogModel>(key: K, value: CatalogModel[K] | undefined): Partial<CatalogModel> {
+  return value === undefined ? {} : { [key]: value };
+}
+
 function entry(raw: Record<string, unknown>): CatalogModel {
   const limit = isRecord(raw['limit']) ? raw['limit'] : {};
   const cost = isRecord(raw['cost']) ? raw['cost'] : undefined;
   const input = isRecord(raw['modalities']) && Array.isArray(raw['modalities']['input']) ? raw['modalities']['input'].filter((item): item is string => typeof item === 'string') : undefined;
   const price = cost && num(cost['input']) !== undefined && num(cost['output']) !== undefined ? { input: num(cost['input'])!, output: num(cost['output'])! } : undefined;
-  const model: CatalogModel = {
-    ...(str(raw['description']) ? { description: str(raw['description'])! } : {}),
-    ...(str(raw['family']) ? { family: str(raw['family'])! } : {}),
-    ...(str(raw['release_date']) ? { released: str(raw['release_date'])! } : {}),
-    ...(str(raw['status']) ? { status: str(raw['status'])! } : {}),
-    ...(str(raw['canonical_model_id'])?.includes('/') ? { lab: str(raw['canonical_model_id'])!.split('/')[0]! } : {}),
+  const canonical = str(raw['canonical_model_id']);
+  return {
+    ...field('description', str(raw['description'])),
+    ...field('family', str(raw['family'])),
+    ...field('released', str(raw['release_date'])),
+    ...field('status', str(raw['status'])),
+    ...field('lab', canonical?.includes('/') ? canonical.split('/')[0] : undefined),
     ...(typeof raw['tool_call'] === 'boolean' ? { toolCall: raw['tool_call'] } : {}),
     ...(typeof raw['reasoning'] === 'boolean' ? { reasoning: raw['reasoning'] } : {}),
-    ...(input ? { input } : {}),
-    ...(num(limit['context']) ? { context: num(limit['context'])! } : {}),
-    ...(num(limit['output']) ? { output: num(limit['output'])! } : {}),
-    ...(price ? { cost: price } : {}),
+    ...field('input', input),
+    ...field('context', num(limit['context']) || undefined),
+    ...field('cost', price),
   };
-  return model;
 }
 
 /** The index of models.dev's `api.json` (providers, each with its models). */
@@ -136,7 +139,7 @@ export function readCatalog(file = catalogFile()): Catalog | undefined {
 
 let refreshing: Promise<Catalog | undefined> | undefined;
 /** After a failed fetch (offline, blocked), no new attempt for this long. */
-const RETRY_AFTER_MS = 60 * 60_000;
+const RETRY_AFTER_MS = HOUR_MS;
 let failedAt: number | undefined;
 
 /**

@@ -56,8 +56,6 @@ export function registerCompaction(pi: ExtensionAPI, guard: FileGuard, isSubagen
     return { entries: [...event.entries, ...recovery] };
   });
   pi.on('agent_before_settle', async (event) => (tooLarge.shouldRetry(event.outcome) ? { continue: true } : undefined));
-  // The file lists know only Pi's read/write/edit and drop a hook summary's lists: both are added first, so Pi's
-  // default summary (when Octocode's fails) has them too.
   // The files worked on in the summarized part, most recent first, come back after the compaction.
   let restoreCandidates: WorkedFile[] = [];
   let restoreBudget = RESTORE_TOTAL_CHARS;
@@ -71,6 +69,8 @@ export function registerCompaction(pi: ExtensionAPI, guard: FileGuard, isSubagen
     restoreCandidates = recentFiles(event.preparation, ctx.cwd);
     // Sized for the window the context lands in (after a downshift, the smaller model's), with Pi's reserve for it.
     restoreBudget = windowBudget(ctx.model?.contextWindow, event.preparation.settings.reserveTokens, RESTORE_SHARE, RESTORE_TOTAL_CHARS);
+    // The file lists know only Pi's read/write/edit and drop a hook summary's lists: both are added first, so Pi's
+    // default summary (when Octocode's fails) has them too.
     addFileToolOps(event.preparation);
     carryFileLists(event.preparation, event.branchEntries);
     const from = downshiftFrom;

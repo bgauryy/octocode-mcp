@@ -82,17 +82,8 @@ const dialogs = new Queue(() => {
  * once, so its own aborted dialog returns without showing.
  */
 export function withDialog<R>(run: () => Promise<R>, signal?: AbortSignal): Promise<R> {
-  return dialogs.run(async () => {
-    open += 1;
-    try {
-      return await run();
-    } finally {
-      open -= 1;
-    }
-  }, signal);
+  return dialogs.run(run, signal);
 }
-
-let open = 0;
 
 /** How many interactions wait for another one's dialog to close. */
 export const dialogsWaiting = (): number => dialogs.waiting;

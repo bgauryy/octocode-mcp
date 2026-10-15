@@ -114,31 +114,6 @@
         }
       ]
     },
-    "numberField": {
-      "allOf": [
-        { "$ref": "#/$defs/commonField" },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["type", "description", "minimum", "span"],
-          "oneOf": [
-            { "required": ["defaultOffset"] },
-            { "required": ["default"] }
-          ],
-          "properties": {
-            "type": { "const": "number" },
-            "description": true,
-            "notes": true,
-            "env": true,
-            "minimum": { "type": "integer" },
-            "span": { "type": "integer", "minimum": 0 },
-            "defaultOffset": { "type": "integer", "minimum": 0 },
-            "default": { "type": "null" },
-            "displayDefault": true
-          }
-        }
-      ]
-    },
     "stringField": {
       "allOf": [
         { "$ref": "#/$defs/commonField" },
@@ -210,7 +185,6 @@
     "field": {
       "oneOf": [
         { "$ref": "#/$defs/booleanField" },
-        { "$ref": "#/$defs/numberField" },
         { "$ref": "#/$defs/stringField" },
         { "$ref": "#/$defs/stringArrayField" },
         { "$ref": "#/$defs/enumField" }

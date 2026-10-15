@@ -116,6 +116,9 @@ pub fn replace_private_config(
     Ok((true, saved_backup))
 }
 pub fn validate_env_edit(key: &str, value: Option<&str>, workspace: bool) -> io::Result<()> {
+    if value.is_some() {
+        super::manage::reject_removed(key).map_err(|e| invalid(&e))?;
+    }
     if key.is_empty()
         || !key
             .bytes()

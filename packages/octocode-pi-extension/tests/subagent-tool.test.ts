@@ -153,9 +153,9 @@ describe('agent tool with a scripted pi child', () => {
     const failed = rendered(s.agent.renderResult({ content: [{ type: 'text', text: 'Subagent x failed\ndetail' }] }, { isPartial: false, expanded: false }, theme, { isError: true }));
     // The text already says it failed: no `Error:` in front of it.
     expect(failed).toBe('  ⎿  Subagent x failed\n     detail');
-    expect(rendered(s.agent.renderCall({ task: 'look\nmore', profile: 'researcher' }, theme, {}))).toBe('○ Agent(researcher)');
-    expect(rendered(s.agent.renderCall({ task: 'bg', background: true }, theme, { executionStarted: true, isPartial: false, isError: false }))).toMatch(/^● Agent\(general\) · background/);
-    expect(rendered(s.agent.renderCall({}, theme, {}))).toBe('○ Agent(general)');
+    expect(rendered(s.agent.renderCall({ task: 'look\nmore', profile: 'researcher', goal: 'map the auth flow' }, theme, {}))).toBe('○ Agent(map the auth flow)');
+    expect(rendered(s.agent.renderCall({ task: 'bg', background: true }, theme, { executionStarted: true, isPartial: false, isError: false }))).toMatch(/^● Agent · background/);
+    expect(rendered(s.agent.renderCall({}, theme, {}))).toBe('○ Agent');
   });
 
   it('routes the model: profile preference, parent provider first, fallback to the parent\'s model, strict explicit', async () => {
@@ -260,7 +260,7 @@ describe('agent tool with a scripted pi child', () => {
     } finally {
       delete process.env[MAX_SUBAGENTS_ENV];
     }
-    await expect(s.run({ task: 'report' })).resolves.toBeDefined();
+    await expect(s.run({ task: 'report' })).resolves.toMatchObject({ details: { status: 'done' } });
   });
 
   it('runs in the background, delivers the answer as a message, and /agents kill stops one', async () => {
@@ -278,7 +278,7 @@ describe('agent tool with a scripted pi child', () => {
     expect(answer.message.details).not.toHaveProperty('outcome');
     expect(answer.message.details).toMatchObject({ status: 'done', summary: expect.stringMatching(/^Done \([a-z]+-[a-z]+ · 1 tool call · ↑100 ↓20 · ≈\$0\.01 · /) });
     const shown = rendered(renderer(answer.message, { expanded: false }, theme));
-    expect(shown).toMatch(/^ ● Agent\([a-z]+-[a-z]+ · general · check things\) · background · \S+\n {3}⎿ {2}Done \([a-z]+-[a-z]+ · 1 tool call/);
+    expect(shown).toMatch(/^ ● Agent\([a-z]+-[a-z]+ · check things\) · background · \S+\n {3}⎿ {2}Done \([a-z]+-[a-z]+ · 1 tool call/);
     expect(shown).toContain('report');
 
     await s.run({ task: 'error in background', background: true });
@@ -582,22 +582,35 @@ describe('runSubagent', () => {
 });
 
 describe('subagent watchdog and exits', () => {
-  // Settles a run with `abort` (and its reason) once `ms` passed, saying whether the watchdog had already ended it.
-  const stopAfter = async (run: Promise<unknown>, controller: AbortController, ms: number, reason?: unknown) => {
-    let ended = false;
-    void run.then(() => (ended = true), () => (ended = true));
-    await new Promise((resolve) => setTimeout(resolve, ms));
-    const before = ended;
-    controller.abort(reason);
-    return before;
+  /**
+   * Starts `task`, waits until the child shows it is busy (its first progress), lets `ms` pass on a fake clock for the
+   * watchdog (its interval and `Date`; the child and its pipes stay real), then aborts and returns how the run ended.
+   * A watchdog stop rejects with "Subagent stopped", so the outcome says whether it fired before the abort.
+   */
+  const runThenAbort = async (task: string, id: string, ms: number, limits: { idleMs: number; busyMs: number }) => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+    try {
+      const controller = new AbortController();
+      let busy!: () => void;
+      const started = new Promise<void>((resolve) => void (busy = resolve));
+      const run = runSubagent(task, [], tmp(), undefined, { id }, controller.signal, () => busy(), undefined, limits);
+      const outcome = Promise.allSettled([run]);
+      await started;
+      await vi.advanceTimersByTimeAsync(ms);
+      vi.useRealTimers();
+      controller.abort();
+      return (await outcome)[0]!;
+    } finally {
+      vi.useRealTimers();
+    }
   };
 
   it('treats a child settling after its answer as busy: no watchdog stop, and the answer stays', async () => {
-    const controller = new AbortController();
-    const run = runSubagent('answer then stalled shutdown', [], tmp(), undefined, { id: 'a-shutdown' }, controller.signal, () => undefined, undefined, { idleMs: 300, busyMs: 60_000 });
-    expect(await stopAfter(run, controller, 1_200)).toBe(false);
-    // The answer was complete before the abort: it is kept, and says the run did not settle.
-    await expect(run).resolves.toMatchObject({ text: 'COMPLETED REPORT', error: 'Subagent cancelled before its run settled' });
+    // Four idle limits pass while it settles. The answer was complete before the abort: it is kept, and says the run did not settle.
+    expect(await runThenAbort('answer then stalled shutdown', 'a-shutdown', 1_200, { idleMs: 300, busyMs: 60_000 })).toMatchObject({
+      status: 'fulfilled',
+      value: { text: 'COMPLETED REPORT', error: 'Subagent cancelled before its run settled' },
+    });
   });
 
   it('kills a child that emits nothing for the idle limit and says what it last did', async () => {
@@ -606,10 +619,7 @@ describe('subagent watchdog and exits', () => {
   });
 
   it('never stops a child for a silent running tool (the tool has its own deadline) nor for its run time', async () => {
-    const controller = new AbortController();
-    const run = runSubagent('slow tool', [], tmp(), undefined, { id: 'a-slow' }, controller.signal, () => undefined, undefined, { idleMs: 300, busyMs: 60_000 });
-    expect(await stopAfter(run, controller, 1_500)).toBe(false);
-    await expect(run).rejects.toThrow('Subagent cancelled');
+    expect(await runThenAbort('slow tool', 'a-slow', 1_500, { idleMs: 300, busyMs: 60_000 })).toMatchObject({ status: 'rejected', reason: { message: 'Subagent cancelled' } });
   });
 
   it('stops a busy child once a call runs past its own deadline (busyMs when it declares none)', async () => {
@@ -619,8 +629,11 @@ describe('subagent watchdog and exits', () => {
 
   it.skipIf(process.platform === 'win32')('gives a stop the user asked for a short grace: a child ignoring SIGTERM is killed in about a second', async () => {
     const controller = new AbortController();
-    const run = runSubagent('stubborn', [], tmp(), undefined, { id: 'a-stubborn' }, controller.signal, () => undefined);
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    let ignoring!: () => void;
+    const ignores = new Promise<void>((resolve) => void (ignoring = resolve));
+    const run = runSubagent('stubborn', [], tmp(), undefined, { id: 'a-stubborn' }, controller.signal, () => ignoring());
+    // The child reported that it ignores SIGTERM: only now is a stop a test of the grace.
+    await ignores;
     const started = Date.now();
     controller.abort(USER_STOP);
     await expect(run).rejects.toThrow('Subagent cancelled');

@@ -1,3 +1,4 @@
+import { DAY_MS } from '../shared/util.js';
 import { listedCost, lookup, type Catalog } from './catalog.js';
 
 /** A model the parent can use, as Pi's model registry lists it (prices per million tokens). */
@@ -40,7 +41,7 @@ interface Facts {
 const MEDIUM_MAX_SHARE = 0.8;
 const MEDIUM_MIN_SHARE = 0.15;
 /** Candidates released this long before the parent are an older generation, used only when nothing newer qualifies. */
-const STALE_AFTER_MS = 548 * 24 * 60 * 60_000;
+const STALE_AFTER_MS = 548 * DAY_MS;
 
 /** Pi's metadata, with what it lacks from models.dev. Price: three input tokens to one output, as agent turns spend. */
 function facts(ref: ModelRef, catalog: Catalog | undefined): Facts {

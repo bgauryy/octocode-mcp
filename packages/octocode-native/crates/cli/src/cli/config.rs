@@ -4,13 +4,16 @@ use serde_json::json;
 use std::io;
 
 /// A failed `config --manage` request. The code tells the config view how to
-/// recover: `CONFLICT` refreshes the inspected files before retrying.
+/// recover: `CONFLICT` refreshes the inspected files before retrying, and
+/// `UNAVAILABLE` means this build cannot serve the view's contract.
 #[derive(Debug, PartialEq, Eq)]
 pub enum ManageError {
     /// A malformed request or a rejected value.
     InvalidInput(String),
     /// The file changed or is locked since it was inspected.
     Conflict(String),
+    /// The view's contract fingerprint does not match this build.
+    Unavailable(String),
 }
 
 impl ManageError {
@@ -18,6 +21,16 @@ impl ManageError {
         match self {
             Self::InvalidInput(_) => "INVALID_INPUT",
             Self::Conflict(_) => "CONFLICT",
+            Self::Unavailable(_) => "UNAVAILABLE",
+        }
+    }
+
+    /// The CLI exit class: bad input is 2; a conflict or contract drift is a
+    /// retryable execution failure, 5.
+    pub fn exit_code(&self) -> u8 {
+        match self {
+            Self::InvalidInput(_) => 2,
+            Self::Conflict(_) | Self::Unavailable(_) => 5,
         }
     }
 
@@ -38,7 +51,9 @@ impl ManageError {
 impl std::fmt::Display for ManageError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::InvalidInput(message) | Self::Conflict(message) => f.write_str(message),
+            Self::InvalidInput(message) | Self::Conflict(message) | Self::Unavailable(message) => {
+                f.write_str(message)
+            }
         }
     }
 }

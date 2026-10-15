@@ -26,13 +26,13 @@ Everything else—`config` (except `view`), `auth`, `lsp-server`, tool invocatio
 ## Build and packaging
 
 - `build.mjs` bundles `src/index.ts` to `out/octocode.js` as an ESM launcher.
-- `@octocodeai/octocode-native` is a runtime dependency; its optional platform packages supply the native binary and N-API addon.
+- `@octocodeai/octocode-native` is a runtime dependency; its optional platform packages supply the native binary and N-API addon. `@typescript/native-preview` is a runtime dependency so `lspSearch` finds a packaged `tsgo`.
 - `@octocodeai/config` (a private workspace package) and `@octocodeai/octocode-core` are bundled at build time and supply public contracts and instructions; the skill installer is inlined the same way. Core is bundled rather than external because esbuild code splitting cannot link named imports through config's `export *` from an external module.
 - `src/cli/config-view/` holds the temporary authenticated loopback server; its browser assets (`assets/`) are inlined as strings through `?raw` imports (Vite in tests, the `raw-text` esbuild plugin in `build.mjs`). Native owns paths, field policy, secret redaction, agent adapters, and file writes.
 - The build fails when a bare external import is not declared.
 - `__APP_VERSION__` is injected from `package.json`.
 
-Publish native platform packages, the native root, contract/config prerequisites, and then this launcher. Exercise the built Node launcher against the packaged native binary before publishing.
+Publishing order and checks: [release guide](../../skills-dev/octocode-dev/docs/RELEASE.md).
 
 ## Rules
 
@@ -43,5 +43,3 @@ Publish native platform packages, the native root, contract/config prerequisites
 - Keep management-only TypeScript paths explicit and small.
 - Do not add Node-side query batching, provider behavior, security policy, response shaping, or tool-specific error recovery.
 - Validate both the direct native CLI and the built Node launcher, including CLI/MCP structured-result parity.
-
-Global `.env` mutation (`config set KEY VALUE` or `config set KEY --stdin`) is native: it uses the native config module’s shared parser and protection policy, prints only mutation metadata, and replaces the file atomically under a lock.

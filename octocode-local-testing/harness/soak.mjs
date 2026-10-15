@@ -466,7 +466,9 @@ function selfCheck() {
   return summary().failed.length ? 1 : 0;
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === SELF) {
+// argv[1] keeps a symlinked path while import.meta.url is the real path, so compare real paths.
+const realOrSelf = p => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+if (process.argv[1] && realOrSelf(process.argv[1]) === realOrSelf(SELF)) {
   process.exitCode = flag('self-check') ? selfCheck() : O.cli ? await cliSoak() : await mcpSoak();
   // startServer leaves SIGINT/SIGTERM listeners and timers behind; the verdict is final.
   const code = process.exitCode;

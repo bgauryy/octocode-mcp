@@ -1,7 +1,8 @@
 import http from 'node:http';
 import net from 'node:net';
-import { MAX_FRAME_BYTES, type ApiEvent } from './protocol.js';
+import { CLIENT_MARGIN_MS, MAX_FRAME_BYTES, WAIT_MS, type ApiEvent } from './protocol.js';
 import type { InstanceRecord } from './registry.js';
+import { isLoopbackHostname } from '../shared/net.js';
 import { isRecord } from '../shared/util.js';
 
 /** A failed call, carrying the JSON-RPC code. */
@@ -30,8 +31,9 @@ export class ApiClient {
   constructor(private readonly instance: Pick<InstanceRecord, 'socket' | 'http'>) {}
 
   async call<T = unknown>(method: string, params: Record<string, unknown> = {}, options: ApiCallOptions = {}): Promise<T> {
-    const timeoutMs = options.timeoutMs ?? 610_000;
-    if (!Number.isFinite(timeoutMs) || timeoutMs < 1 || timeoutMs > 3_660_000) throw new Error('API timeoutMs must be from 1 to 3660000');
+    const timeoutMs = options.timeoutMs ?? WAIT_MS.default + CLIENT_MARGIN_MS.default;
+    const maxMs = WAIT_MS.max + CLIENT_MARGIN_MS.max;
+    if (!Number.isFinite(timeoutMs) || timeoutMs < 1 || timeoutMs > maxMs) throw new Error(`API timeoutMs must be from 1 to ${maxMs}`);
     if (options.signal?.aborted) throw new Error('API call aborted');
     const request = { jsonrpc: '2.0', id: ++this.next, method, params };
     const payload = JSON.stringify(request);
@@ -91,7 +93,7 @@ export class ApiClient {
     if (!target) return Promise.reject(new Error('The instance has neither a socket nor an HTTP endpoint'));
     let url: URL;
     try { url = new URL(target.url); } catch { return Promise.reject(new Error('Invalid API HTTP endpoint')); }
-    if (url.protocol !== 'http:' || !['127.0.0.1', '[::1]', 'localhost'].includes(url.hostname) || url.username || url.password || url.search || url.hash || url.pathname !== '/') {
+    if (url.protocol !== 'http:' || !isLoopbackHostname(url.hostname) || url.username || url.password || url.search || url.hash || url.pathname !== '/') {
       return Promise.reject(new Error('API HTTP endpoint must be an authenticated loopback origin'));
     }
     url.pathname = '/rpc';

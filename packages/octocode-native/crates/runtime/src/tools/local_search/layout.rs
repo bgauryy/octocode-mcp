@@ -3,6 +3,7 @@
 
 use super::executor::*;
 use super::types::*;
+use super::verify::CutOutlines;
 use super::{cursor::*, leads::*, rows::*};
 use crate::policy::path::PathPolicy;
 use crate::tools::id::ToolId;
@@ -52,18 +53,21 @@ impl Layout {
     /// continuations would cost more than the rows they hide. A page never
     /// holds more files than its page size, so its enclosing names cover it.
     /// A caller cap always wins; default pages fill their byte budget.
+    /// `outlines` price the rows' enclosing names (see [`PageCosts::name`]).
     pub(super) fn cut(
         query: &LocalSearchQuery,
         paths: &PathPolicy,
         output_root: &std::path::Path,
         parsed: &mut octocode_engine::types::TextSearchResult,
         page_budget: usize,
+        outlines: CutOutlines,
     ) -> Self {
         let view = query.result_view;
         let list = list_view(view);
         let match_only = view == LocalSearchQueryResultView::MatchOnly;
         let context_lines = query.context_lines().unwrap_or(DEFAULT_CONTEXT_LINES);
-        let costs = PageCosts::new(query, paths, output_root, context_lines);
+        let costs = PageCosts::new(query, paths, output_root, context_lines)
+            .with_owners(&parsed.files, outlines);
         let hits_total: usize = if list {
             0
         } else {
@@ -72,14 +76,22 @@ impl Layout {
         let show_all = !list
             && query.match_page_size().is_none()
             && parsed.files.len() <= default_page_size(view) as usize
-            && fits_within(&parsed.files, page_budget, |file| {
-                costs.file(file)
-                    + file
-                        .matches
-                        .iter()
-                        .map(|m| costs.row(m) + costs.enclosing(file))
-                        .sum::<usize>()
-            })
+            && {
+                let mut names = PageNames::default();
+                fits_within(&parsed.files, page_budget, |index, file| {
+                    costs.file(file)
+                        + file
+                            .matches
+                            .iter()
+                            .map(|m| {
+                                let name = costs.name(index, file, m);
+                                let price = names.price(index, name);
+                                names.add(index, name);
+                                costs.row(m) + price
+                            })
+                            .sum::<usize>()
+                })
+            }
             && parsed
                 .files
                 .iter()
@@ -185,7 +197,8 @@ impl Layout {
             page_budget,
             StreamCosts {
                 file: &|file| costs.file(file),
-                row: &|file, row| costs.row(row) + costs.enclosing(file),
+                row: &|row| costs.row(row),
+                name: &|index, row| costs.name(index, &files[index], &files[index].matches[row]),
                 expansion_rows: &|rows| expansion_rows(rows, costs),
             },
         );
@@ -282,8 +295,65 @@ pub(super) struct PageCosts {
     pub(super) multiline: bool,
     pub(super) read_chars: usize,
     /// Rows are shown, so each hit row of an outlined language carries its
-    /// `enclosing` name: the page reserves it before the cut.
-    pub(super) names: bool,
+    /// `enclosing` name: the cut charges it (see [`PageCosts::name`]).
+    pub(super) shows_names: bool,
+    /// The name each hit line of a file the cut outlined carries, by file
+    /// index then line (a line outside every declaration has none).
+    owners: std::collections::HashMap<usize, std::collections::HashMap<u32, Owner>>,
+}
+
+/// A hit row's enclosing declaration as the page cut prices it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct Owner {
+    /// Its name line: what later rows inside it refer to.
+    pub(super) line: u32,
+    /// `,"enclosing":{…}`, on the first row of the page inside it.
+    pub(super) full: usize,
+}
+
+impl Owner {
+    /// `,"enclosingLine":N`, on each later row of the page inside it.
+    pub(super) fn reference(self) -> usize {
+        ENCLOSING_LINE_FIELD_CHARS + self.line.checked_ilog10().map_or(1, |log| log as usize + 1)
+    }
+}
+
+/// What a hit row's enclosing name adds to a page.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum RowName {
+    /// The row carries no name.
+    None,
+    /// A row of a file the cut did not outline:
+    /// [`ENCLOSING_RESERVE_CHARS`].
+    Reserved,
+    /// The full name on the page's first row inside `Owner`, a reference on
+    /// the rest.
+    Owned(Owner),
+}
+
+/// Prices hit rows' enclosing names on one page: each declaration's first
+/// row pays its full name, later rows a reference (as
+/// [`annotate_enclosing`] names them).
+#[derive(Default)]
+pub(super) struct PageNames(std::collections::HashSet<(usize, u32)>);
+
+impl PageNames {
+    /// What `name`, on a row of file `index`, adds to this page.
+    pub(super) fn price(&self, index: usize, name: RowName) -> usize {
+        match name {
+            RowName::None => 0,
+            RowName::Reserved => ENCLOSING_RESERVE_CHARS,
+            RowName::Owned(owner) if self.0.contains(&(index, owner.line)) => owner.reference(),
+            RowName::Owned(owner) => owner.full,
+        }
+    }
+
+    /// Put `name`, on a row of file `index`, on this page.
+    pub(super) fn add(&mut self, index: usize, name: RowName) {
+        if let RowName::Owned(owner) = name {
+            self.0.insert((index, owner.line));
+        }
+    }
 }
 
 impl PageCosts {
@@ -305,12 +375,52 @@ impl PageCosts {
             match_only,
             expand_context: if match_only { 0 } else { context_lines },
             multiline: query.multiline != LocalSearchQueryMultiline::Off,
-            names: !list_view(query.result_view),
+            shows_names: !list_view(query.result_view),
+            owners: std::collections::HashMap::new(),
             read_chars: expansion_read_chars(
                 query,
                 query.multiline != LocalSearchQueryMultiline::Off,
             ),
         }
+    }
+
+    /// These costs with the owner of every hit line of each outlined file.
+    /// A row's owner is the one [`annotate_enclosing`] names it by, except
+    /// that a declaration search names only its declaring rows (and a merged
+    /// context block only its first line's owner): charging every hit row
+    /// bounds those pages from above.
+    pub(super) fn with_owners(
+        mut self,
+        files: &[octocode_engine::types::TextSearchFile],
+        outlines: CutOutlines,
+    ) -> Self {
+        self.owners = outlines
+            .into_iter()
+            .filter_map(|(index, outline)| {
+                let file = files.get(index)?;
+                let owners = outline
+                    .map(|outline| {
+                        file.matches
+                            .iter()
+                            .filter_map(|matched| {
+                                let owner = outline.label(outline.owner(matched.line)?)?;
+                                let full = ENCLOSING_FIELD_CHARS
+                                    + crate::tools::stream_page::json_chars(&owner);
+                                Some((
+                                    matched.line,
+                                    Owner {
+                                        line: owner.line,
+                                        full,
+                                    },
+                                ))
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                Some((index, owners))
+            })
+            .collect();
+        self
     }
 
     pub(super) fn clipped(&self, matched: &octocode_engine::types::TextSearchMatch) -> bool {
@@ -330,12 +440,24 @@ impl PageCosts {
         }
     }
 
-    /// What a hit row of `file` reserves for its `enclosing` name.
-    pub(super) fn enclosing(&self, file: &octocode_engine::types::TextSearchFile) -> usize {
-        if self.names && outlined_language(std::path::Path::new(&file.path)) {
-            ENCLOSING_RESERVE_CHARS
-        } else {
-            0
+    /// The enclosing name a hit row of file `index` carries (priced by
+    /// [`PageNames`]): its owner in a file the cut outlined, a reserve in
+    /// another outlined-language file, else none.
+    pub(super) fn name(
+        &self,
+        index: usize,
+        file: &octocode_engine::types::TextSearchFile,
+        matched: &octocode_engine::types::TextSearchMatch,
+    ) -> RowName {
+        if !self.shows_names {
+            return RowName::None;
+        }
+        match self.owners.get(&index) {
+            Some(owners) => owners
+                .get(&matched.line)
+                .map_or(RowName::None, |owner| RowName::Owned(*owner)),
+            None if outlined_language(std::path::Path::new(&file.path)) => RowName::Reserved,
+            None => RowName::None,
         }
     }
 
@@ -440,15 +562,16 @@ pub(super) fn pagination_chars(file: &octocode_engine::types::TextSearchFile) ->
     ",\"pagination\":".len() + crate::tools::stream_page::json_chars(&empty) + more_lines
 }
 
-/// Whether every file entry, with all its rows, fits `budget` chars.
+/// Whether every file entry (by index), with all its rows, fits `budget`
+/// chars.
 pub(super) fn fits_within(
     files: &[octocode_engine::types::TextSearchFile],
     budget: usize,
-    entry_chars: impl Fn(&octocode_engine::types::TextSearchFile) -> usize,
+    mut entry_chars: impl FnMut(usize, &octocode_engine::types::TextSearchFile) -> usize,
 ) -> bool {
     let mut used = 0usize;
-    files.iter().all(|file| {
-        used = used.saturating_add(entry_chars(file));
+    files.iter().enumerate().all(|(index, file)| {
+        used = used.saturating_add(entry_chars(index, file));
         used <= budget
     })
 }
@@ -457,11 +580,10 @@ pub(super) fn fits_within(
 pub(super) struct StreamCosts<'a> {
     /// A file entry around its rows.
     pub(super) file: &'a dyn Fn(&octocode_engine::types::TextSearchFile) -> usize,
-    /// One match row of a file, with what it reserves for its name.
-    pub(super) row: &'a dyn Fn(
-        &octocode_engine::types::TextSearchFile,
-        &octocode_engine::types::TextSearchMatch,
-    ) -> usize,
+    /// One match row.
+    pub(super) row: &'a dyn Fn(&octocode_engine::types::TextSearchMatch) -> usize,
+    /// The enclosing name a row (by file index and rank) carries.
+    pub(super) name: &'a dyn Fn(usize, usize) -> RowName,
     /// The `expandValues` rows one file's rows on a page need.
     pub(super) expansion_rows:
         &'a dyn Fn(&mut dyn Iterator<Item = &octocode_engine::types::TextSearchMatch>) -> usize,
@@ -523,6 +645,8 @@ pub(super) fn stream_pages(
     let mut slot = std::collections::HashMap::<usize, usize>::new();
     // Files whose `pagination` this page already counts.
     let mut paged = std::collections::HashSet::<usize>::new();
+    // Declarations the page already names in full.
+    let mut names = PageNames::default();
     let mut used = 0usize;
     let max_reads = max_expansion_rows();
     // `expandValues` rows the page's clipped values need.
@@ -537,8 +661,10 @@ pub(super) fn stream_pages(
         };
         for row in entries {
             let more_after = row.is_some_and(|row| row + 1 < file.matches.len());
-            let cost = |page_has_file: bool, page_counts_pagination: bool| {
-                row.map_or(0, |row| (costs.row)(file, &file.matches[row]))
+            let name = row.map_or(RowName::None, |row| (costs.name)(index, row));
+            let cost = |page_has_file: bool, page_counts_pagination: bool, name_chars: usize| {
+                row.map_or(0, |row| (costs.row)(&file.matches[row]))
+                    + name_chars
                     + if page_has_file { 0 } else { (costs.file)(file) }
                     + if more_after && !page_counts_pagination {
                         pagination_chars(file)
@@ -547,7 +673,8 @@ pub(super) fn stream_pages(
                     }
             };
             let has_file = slot.contains_key(&index);
-            let over_budget = used + cost(has_file, paged.contains(&index)) > budget;
+            let over_budget =
+                used + cost(has_file, paged.contains(&index), names.price(index, name)) > budget;
             // The reads this row adds to its file's on the page: only a
             // clipped row adds one.
             let added_reads = |page: &PageRows, slot: &std::collections::HashMap<usize, usize>| {
@@ -569,11 +696,13 @@ pub(super) fn stream_pages(
                 pages.push(std::mem::take(&mut page));
                 slot.clear();
                 paged.clear();
+                names = PageNames::default();
                 used = 0;
                 reads = 0;
             }
             let has_file = slot.contains_key(&index);
-            used += cost(has_file, paged.contains(&index));
+            used += cost(has_file, paged.contains(&index), names.price(index, name));
+            names.add(index, name);
             reads += added_reads(&page, &slot);
             if more_after {
                 paged.insert(index);

@@ -380,8 +380,8 @@ pub(super) fn mark_capped(page: &mut Value, capped: bool) {
 }
 
 /// Patch characters one call carries across a page's files by default,
-/// derived from the effective automatic response page
-/// (`output.pagination.defaultCharLength`, 1k–50k). Rendered text prints
+/// derived from the effective automatic response page (the runtime's
+/// `auto_page_chars`, or a call's `responseLength`). Rendered text prints
 /// patches verbatim (no escaping), so the default window takes 4/5 of the
 /// page less a fixed reserve for the row header and metadata, never below
 /// 2/5 of it: a default window plus row metadata fits one response page.
@@ -396,13 +396,12 @@ pub(super) const PATCH_DEFAULT_SHARE: (usize, usize) = (4, 5);
 
 pub(super) const PATCH_DEFAULT_RESERVE: usize = 5_000;
 
-/// Page assumed when the runtime did not supply one (direct callers, tests).
-pub(super) const FALLBACK_AUTO_PAGE: usize = 20_000;
-
+/// The page a call carries: the runtime's, else (direct callers, tests) the
+/// constant automatic page.
 pub(super) fn auto_page(auto_page: Option<usize>) -> usize {
     auto_page
         .filter(|page| *page > 0)
-        .unwrap_or(FALLBACK_AUTO_PAGE)
+        .unwrap_or(crate::runtime::RuntimeLimits::DEFAULT.auto_page_chars)
 }
 
 /// The default window of a `matchString` view: the page share without the

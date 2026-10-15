@@ -1,6 +1,6 @@
 # LSP lifecycle and provisioning
 
-For the public query contract, see [`lspSearch`](../../../../docs/OCTOCODE_TOOLS.md#lspsearch). For grammar and feature coverage, see [Supported languages and features](SUPPORTED_LANGUAGES_AND_FEATURES.md).
+How the engine finds, starts, pools, and bounds language servers. The public query contract and user-facing routing are in [`lspSearch`](../../../../docs/OCTOCODE_TOOLS.md#lspsearch); the LSP settings are in [CONFIGURATION.md](../../../../docs/CONFIGURATION.md); grammar coverage is in [Supported languages and features](SUPPORTED_LANGUAGES_AND_FEATURES.md).
 
 ## Semantic boundary
 
@@ -18,8 +18,8 @@ The Rust engine owns command discovery and launch configuration. For a known ext
 
 1. an explicit `lsp.configPath` / `$OCTOCODE_LSP_CONFIG` entry;
 2. `<workspace>/.octocode/lsp-servers.json` only when `lsp.trustProjectConfig` (`OCTOCODE_TRUST_PROJECT_LSP_CONFIG=true`) is set;
-3. `~/.octocode/lsp-servers.json`;
-4. a known command on `PATH`, in the managed cache or an ecosystem location, or (TypeScript only, see below) in a `node_modules` tree.
+3. `<octocode home>/lsp-servers.json`;
+4. the built-in route: a native `tsgo` for TypeScript, an installed pyright-family server for Python, a managed install, or the known command on `PATH` (for `typescript-language-server`, also a `node_modules` tree; see below).
 
 Project configuration is untrusted by default because it controls executable startup. Generic interpreter eval forms such as `node -e` or `python -c` are rejected even when project configuration is trusted. Absolute commands must exist, be regular executable files, and must not be shell wrappers.
 
@@ -46,20 +46,20 @@ rust-analyzer starts headless: whenever the resolved server is rust-analyzer, `i
 clangd, jdtls, and Metals also start headless, on every launch path, with user arguments and options winning:
 
 - **clangd** gets `--background-index=false` (no `.cache/clangd/` index written into the repository), `--clang-tidy=false`, `--log=error`, and `--pch-storage=memory`. A flag the user already passes, by name, is not added again.
-- **jdtls** gets `-data <octocode home>/lsp-workspaces/jdtls/<sha256(workspace)[..16]>` (octocode home is `OCTOCODE_HOME` when absolute, else `~/.octocode`), so its workspace data never lands in the repository, unless the user passes `-data`. Its `initializationOptions.settings` default to `java.autobuild.enabled:false` and `java.import.generatesMetadataFilesAtProjectRoot:false`.
+- **jdtls** gets `-data <octocode home>/lsp-workspaces/jdtls/<sha256(workspace)[..16]>`, so its workspace data never lands in the repository, unless the user passes `-data`. Its `initializationOptions.settings` default to `java.autobuild.enabled:false` and `java.import.generatesMetadataFilesAtProjectRoot:false`.
 - **Metals** gets `initializationOptions` `isHttpEnabled:false` and `statusBarProvider:"off"`. Metals may still create `.metals/` and `.bloop/` in the workspace; that is its documented project layout.
 
-TypeScript: when `typescript-language-server` is not on `PATH`, the engine runs `node <cli.mjs>` from the first `node_modules/typescript-language-server/lib/cli.mjs` it finds, in this order: an explicit `cli.mjs` command path; octocode's own install tree (ancestors of the running executable); the workspace's `node_modules` tree, **only** when the workspace is trusted; the invocation directory's `node_modules` tree. The workspace is trusted when `lsp.trustProjectConfig` is set (or the caller's trusted project config) or when it is the directory octocode was started in, or inside it — the user's own project. An arbitrary scanned checkout (a clone under the clone cache, say) cannot supply the executable. An invocation directory that is `/` or the home directory never trusts the checkouts under it.
+TypeScript and JavaScript routing is documented once, in [TypeScript backends](../../../../docs/OCTOCODE_TOOLS.md#typescript-backends). Engine specifics:
 
-Known routing does not imply that a server is installed. The engine npm package no longer bundles JavaScript language servers. Install servers in the workspace or toolchain, expose them on `PATH`, add an `lsp-servers.json` entry, or use native managed provisioning where supported.
+- The install tree that supplies the bundled `tsgo` (`@typescript/native-preview`, a dependency of `octocode-mcp` and `octocode`, pinned exactly because it is a nightly prerelease) and the `typescript-language-server` fallback is found from the loaded module (`lsp/module_path.rs`: the N-API addon or the CLI binary), not from `current_exe()`, which is `node` under MCP.
+- A workspace's own `tsgo` is used only with `lsp.trustProjectConfig`. Its `typescript-language-server` is also used when the workspace is the directory Octocode started in, or inside it; a start directory that is `/` or the home directory trusts nothing under it. An untrusted checkout (a clone, say) never supplies either.
+- When the chosen `tsgo` fails to start, the request falls back to `typescript-language-server` and the answer says so; an `lsp-servers.json` entry gets no substitute.
+- tsgo answers independent requests in parallel, so importer verification sends up to 8 files at once to it; `typescript-language-server` gets one request at a time.
+- `typescript-language-server` runs as `node <lib/cli.mjs>`, so the file needs no execute bit (package managers often install it mode 644). When it cannot start, the error names where the engine looked.
 
-TypeScript files (not JavaScript: tsgo drops constructor functions and `this` expandos) go to a native `tsgo` whenever one can be found, whatever the trust state: the trusted workspace's own `node_modules/.bin/tsgo`, else the `@typescript/native-preview` package in octocode's own install tree (the ancestors of the running addon or executable, isolated or hoisted, with its per-platform executable package). `octocode-mcp` and `octocode` depend on that package, pinned exactly because it is a nightly prerelease. A scanned, untrusted checkout never supplies a `tsgo`. When no `tsgo` is found, or the one found fails to start, the request falls back to `typescript-language-server`, and the answer says so. A `lsp-servers.json` entry for `.ts` always wins and gets no substitute. tsgo answers independent requests in parallel, so importer verification pipelines up to 8 files at once on it; `typescript-language-server` is asked one request at a time.
+Octocode bundles no other language server. A known route does not mean the server is installed: install it in the workspace or toolchain, put it on `PATH`, add an `lsp-servers.json` entry, or use managed provisioning where supported.
 
-If `typescript-language-server` cannot be started, the error names where it looked and that `lib/cli.mjs` must be readable (a package manager may install it mode 644; octocode runs it under `node`, so it needs no execute bit).
-
-### Subtypes and implementations without an answer in time
-
-`subtypes` on a server with no `typeHierarchyProvider` asks `textDocument/implementation`; `implementation` on a type declaration (class, interface, struct, trait) asks it directly. A syntax scan of the files that spell the name (declarations whose `extends`/`implements` clause names it) starts at the same time and costs no extra wait. The server's rows win when they arrive: while the scan is running, and for up to 5 s after it finishes. If the request fails (timeout, crash, rejected) or is still silent after that grace, the scan's rows are the answer, labelled `lsp.source: "native-graph-facts"`, partial (`serverUnanswered`) with `next.retry`, and a note that they are unverified (the base is matched by name, not resolved to the declaration) and direct only. Files the scan could not read are named (`heritageUnread`, with a `next.findText` lead). A server answer is labelled `lsp.source: "implementation"`; for `subtypes` it does not tell direct from transitive subtypes. `implementation` on a member (function, method, field) has no scan, so its timeout stays an error. On the VS Code corpus (`octocode-local-testing/repos/huge-ts`) `implementation` of `IDisposable` exceeds the 30 s request timeout on both tsgo and typescript-language-server, cold or warm; the scan answers in about 12 to 17 s.
+`subtypes` and `implementation` on a type race the server against a syntax scan of the files that name it, with a 5 s grace for the server after the scan ends; behavior and labels are in [the tools reference](../../../../docs/OCTOCODE_TOOLS.md#subtypes-and-implementations-without-an-answer-in-time).
 
 ## Managed provisioning
 
@@ -68,11 +68,12 @@ The native CLI owns a pinned managed manifest for `rust-analyzer` and `clangd`:
 ```bash
 npx octocode lsp-server list
 npx octocode lsp-server status path/to/file.ts
-npx octocode lsp-server install rust-analyzer --yes
-npx octocode lsp-server install clangd --yes
+npx octocode lsp-server install rust-analyzer clangd   # --yes forces a re-download
+npx octocode lsp-server uninstall clangd
+npx octocode lsp-server clean --yes
 ```
 
-Managed installation is explicit. `lsp.autoInstall` (`OCTOCODE_LSP_AUTO_INSTALL`: `prompt` by default, `off`, or `auto`) controls whether an install command may fetch without additional confirmation, and `lsp.cacheDir` (`OCTOCODE_LSP_CACHE_DIR`) moves the managed installs from `<octocode home>/lsp`; normal `lspSearch` execution does not download executables.
+Installation is explicit: `lspSearch` never downloads an executable. `lsp.autoInstall` decides whether an install command may download without asking (`--force` skips that policy for one run), and `lsp.cacheDir` moves the installs from `<octocode home>/lsp`.
 
 Provisioning permits only allowed HTTPS hosts, follows the same restriction across redirects, requires a pinned SHA-256, supports bounded `none`, `gz`, and `zip` extraction, uses per-target locks, and atomically publishes a completion-marked executable. Unsupported platforms fail with an installation hint.
 
@@ -92,7 +93,7 @@ A configuration maps file extensions to launch specs:
 }
 ```
 
-`command` and `languageId` are required. `args` defaults to an empty array and `initializationOptions` is passed to `initialize`. The example restores an explicit user-owned route for a language with no built-in route; it does not make PHP first-class. A custom entry overrides built-in routing for that extension but does not bypass executable validation.
+`command` and `languageId` are required. `args` defaults to an empty array and `initializationOptions` is passed to `initialize`. The example adds a route for a language with no built-in route; it does not add a grammar. A custom entry overrides built-in routing for that extension but does not bypass executable validation.
 
 ## Pool ownership
 
@@ -111,7 +112,7 @@ Long-lived MCP sessions reuse warm servers. The CLI shares them through `octocod
 
 ## Resource containment
 
-Language-server frames, writes, notifications, stderr, cancellation, and process teardown are bounded. Spawned servers run under a child-memory cap: a quarter of host RAM, between 4 and 8 GiB by default. The `lsp.maxMemoryMb` setting (`OCTOCODE_LSP_MAX_MEMORY_MB`) or a `maxMemoryMb` entry in `lsp-servers.json` overrides it; `0` disables it. No tool input reaches it. The cap bounds memory the server tree uses, not address space it only reserves. On macOS and Linux an RSS watchdog samples the resident memory of the server and all its descendants every 2 s; over the cap it fails the connection with a typed `ResourceExhausted` error (`language server exceeded memory cap (… MiB resident > … MiB)`) and SIGKILLs the whole tree. The pool then replaces the server on the next acquisition. `lspSearch` reports it as a final `serverCrashed` row (not retryable) that leads to an unverified text search of the symbol. Windows keeps a Job Object with `JOB_OBJECT_LIMIT_JOB_MEMORY` (committed memory) and kill-on-close behavior. Other Unix targets have no watchdog and apply `RLIMIT_AS` before `exec` as their only bound.
+Language-server frames, writes, notifications, stderr, cancellation, and process teardown are bounded. Spawned servers run under a child-memory cap: a quarter of host RAM, between 4 and 8 GiB by default. A `maxMemoryMb` entry in `lsp-servers.json` overrides it per server; `0` disables it. No tool input reaches it. The cap bounds memory the server tree uses, not address space it only reserves. On macOS and Linux an RSS watchdog samples the resident memory of the server and all its descendants every 2 s; over the cap it fails the connection with a typed `ResourceExhausted` error (`language server exceeded memory cap (… MiB resident > … MiB)`) and SIGKILLs the whole tree. The pool then replaces the server on the next acquisition. `lspSearch` reports it as a final `serverCrashed` row (not retryable) that leads to an unverified text search of the symbol. Windows keeps a Job Object with `JOB_OBJECT_LIMIT_JOB_MEMORY` (committed memory) and kill-on-close behavior. Other Unix targets have no watchdog and apply `RLIMIT_AS` before `exec` as their only bound.
 
 `RLIMIT_AS` is not used on macOS or Linux. It limits reserved virtual address space, and servers reserve far more than they touch: a JVM (jdtls) reserves its maximum heap (a quarter of host RAM by default) plus class space and code cache, V8 reserves WebAssembly memory cages, and Go and glibc reserve arenas. A 4 GiB address-space cap stops such servers from starting on large hosts while they use a fraction of it. On macOS it cannot be lowered at all (Darwin processes inherit virtual mappings that exceed the cap before `exec`, so `pre_exec` fails every spawn with `EINVAL`).
 

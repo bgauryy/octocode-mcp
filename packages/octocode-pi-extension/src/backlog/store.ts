@@ -1,8 +1,10 @@
 import type { AgentDb } from '../agentdb/db.js';
+import { USER_AUTHOR } from '../agentdb/author.js';
 import { sessionRunningPid } from '../agentdb/liveness.js';
-import { sanitizeTerminalText, secretProblem, storedText, visibleControls } from '../shared/sanitize.js';
+import { readMeta, writeMeta } from '../agentdb/meta.js';
+import { storedSecret, storedText, visibleControls } from '../shared/sanitize.js';
 import { cutText } from '../shared/util.js';
-import { toItem, type Row } from './row.js';
+import { refText, toItem, type Row } from './row.js';
 
 /**
  * The per-repository backlog in the shared agent database (`backlog`, `backlog_notes`; schema in src/agentdb). Items are
@@ -83,7 +85,6 @@ const SELECT = 'SELECT b.*, f.seq AS from_seq FROM backlog b LEFT JOIN backlog f
 
 const tagText = (tags: readonly string[]) => (tags.length ? tags.map((tag) => `#${tag}`).join(' ') : 'none');
 const listText = (entries: readonly string[]) => (entries.length ? entries.join(', ') : 'none');
-const refText = (seq: number | undefined) => (seq === undefined ? 'none' : `B${seq}`);
 
 /** A text field's change: the old text is kept in full, so a replacement loses nothing. */
 const replaced = (name: string, before: string) => (before ? `${name} replaced; it was:\n${before}` : `${name} added`);
@@ -105,6 +106,9 @@ function changeText(before: Item, after: Item): string {
   if (after.body !== before.body) parts.push(replaced('body', before.body));
   return parts.join(' · ');
 }
+
+/** A title as stored: one line (a title is a one-line summary; a newline would break lists, the board and the export). */
+const storedTitle = (title: string | undefined): string => storedText(title).replace(/\s+/g, ' ');
 
 /** `B12`, `b12`, `#12` or `12` → 12. */
 export function parseRef(ref: string): number | undefined {
@@ -128,15 +132,9 @@ function cleanList(entries: readonly string[]): string[] {
  * sanitized text, the form that is stored, so an invisible character cannot split a token past the check.
  */
 export function refuseSecrets(fields: Record<string, string | readonly string[] | undefined>): void {
-  for (const [name, value] of Object.entries(fields)) {
-    if (value === undefined) continue;
-    const problem = secretProblem(sanitizeTerminalText(typeof value === 'string' ? value : value.join(' ')));
-    if (problem) throw new BacklogError(`Not stored: the ${name} ${problem.replace(/^it /, '')}.`);
-  }
+  const found = storedSecret(fields);
+  if (found) throw new BacklogError(`Not stored: the ${found.name} ${found.problem.replace(/^it /, '')}.`);
 }
-
-/** Who the store records for what a person does (`/backlog`), as opposed to an agent (`agent`, `agent:<id>`). */
-export const USER_AUTHOR = 'user';
 
 export const priorityName = (priority: number): Priority => PRIORITIES[priority] ?? 'p2';
 
@@ -260,6 +258,7 @@ export class BacklogStore {
     return counts;
   }
 
+  /** The newest `limit` notes after skipping `offset` of them, oldest first; a negative `limit` is every note. */
   notes(item: Item, limit = 10, offset = 0): Note[] {
     const rows = this.db.prepare('SELECT at, author, kind, text FROM backlog_notes WHERE item = ? ORDER BY at DESC, id DESC LIMIT ? OFFSET ?').all(item.rowId, limit, offset) as unknown as Note[];
     return rows.reverse().map((row) => ({ at: row.at, author: row.author, kind: row.kind, text: row.text }));
@@ -270,7 +269,7 @@ export class BacklogStore {
   }
 
   add(input: AddInput): Item {
-    const title = storedText(input.title);
+    const title = storedTitle(input.title);
     if (!title) throw new BacklogError('An item needs a title.');
     // A person may jot a bare title; whatever an agent adds says how to tell it is done.
     if (input.createdBy !== USER_AUTHOR && !storedText(input.goal)) throw new BacklogError('add needs a goal: the done criterion, a check someone else can run.');
@@ -279,10 +278,10 @@ export class BacklogStore {
     return agentDb.transaction(() => {
       // Numbers are never reused, even after the newest item is deleted: the high-water mark lives in `meta`.
       const key = `backlog_seq:${this.repo}`;
-      const mark = Number((agentDb.db.prepare('SELECT value FROM meta WHERE key = ?').get(key) as { value: string } | undefined)?.value ?? 0);
+      const mark = Number(readMeta(agentDb.db, key) ?? 0);
       const max = (agentDb.db.prepare('SELECT MAX(seq) AS n FROM backlog WHERE repo_key = ?').get(this.repo) as { n: number | null }).n ?? 0;
       const seq = Math.max(mark, max) + 1;
-      agentDb.db.prepare('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, String(seq));
+      writeMeta(agentDb.db, key, String(seq));
       const from = input.from === undefined ? null : this.origin(input.from);
       const at = this.now();
       const state = input.state ?? 'backlog';
@@ -313,7 +312,7 @@ export class BacklogStore {
           from,
         );
       const item = this.get(seq)!;
-      if (item.from !== undefined) this.log(item, at, input.createdBy, 'change', `created from B${item.from}`);
+      if (item.from !== undefined) this.log(item, at, input.createdBy, 'change', `created from ${refText(item.from)}`);
       return item;
     });
   }
@@ -345,7 +344,7 @@ export class BacklogStore {
       } else if (input.state === 'backlog' || input.state === 'todo') assignee = undefined;
       const note = input.note === undefined ? '' : storedText(input.note);
       const at = this.now();
-      const title = input.title === undefined ? item.title : storedText(input.title);
+      const title = input.title === undefined ? item.title : storedTitle(input.title);
       if (!title) throw new BacklogError('An item needs a title.');
       const doneAt = state === 'done' ? (item.state === 'done' ? (item.doneAt ?? at) : at) : null;
       // A claim (or a takeover) starts the clock; releasing the item clears it; done keeps it, so the cycle time stays.
@@ -397,7 +396,7 @@ export class BacklogStore {
       // The items that came from it keep a trace of the link in their change log.
       const at = this.now();
       for (const child of this.derived(item)) {
-        agentDb.db.prepare('UPDATE backlog SET from_item = NULL, version = version + 1 WHERE id = ?').run(child.rowId);
+        agentDb.db.prepare('UPDATE backlog SET from_item = NULL, updated_at = ?, version = version + 1 WHERE id = ?').run(at, child.rowId);
         this.log(child, at, actor?.id ?? USER_AUTHOR, 'change', `from ${item.ref} → none (${item.ref} "${item.title}" was removed)`);
       }
       agentDb.db.prepare('DELETE FROM backlog WHERE id = ?').run(item.rowId);

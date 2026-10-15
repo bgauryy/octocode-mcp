@@ -225,7 +225,7 @@ test('v3 migration preserves every row and old document path while merging linke
   const backup = join(f.main, 'before-v4.sqlite');
   const result = f.call(f.main, 'db migrate', { backup });
   assert.equal(result.sourceSchemaVersion, 3);
-  assert.equal(result.schemaVersion, 5);
+  assert.equal(result.schemaVersion, 6);
   const migrated = new DatabaseSync(f.database, { readOnly: true });
   const previous = new DatabaseSync(backup, { readOnly: true });
   t.after(() => { migrated.close(); previous.close(); });

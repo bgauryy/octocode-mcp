@@ -20,6 +20,8 @@ One release line ships in lockstep at one version `<v>` (rows 2–5). Core keeps
 
 Order: 1 → `prepublish --fix` + `yarn install` → 2 → 3 → 4 → 5 → 6, 7, 8, 9. Each row depends on the rows above it existing on npm. The Pi extension publishes only after row 4.
 
+Row 8 has not shipped yet: the tap still serves the old Node-based 2.0.0 formula, so user docs do not offer `brew install` until it does.
+
 **Own cadence, not part of the lockstep release:**
 
 | Package | Channel | Note |

@@ -5,14 +5,16 @@ import { StringEnum } from '@earendil-works/pi-ai';
 import { Type, type Static } from 'typebox';
 import { answerDialog, dialogNotice, download, uploadFiles } from './actions.js';
 import { browserCallHeader, browserResult } from './render.js';
-import { CONSOLE_KEEP, openBrowser, type BrowserSession, type NetworkEvent } from './cdp.js';
+import { CONSOLE_KEEP, type BrowserSession } from './cdp.js';
 import { click, drag, elementExpr, fillFields, hover, pressKey, refForText, settle, settleAfterLoad, typeInto, waitForText } from './input.js';
-import { keyOf, PagePolicy, portOf } from './network.js';
+import { blockedHost, httpOnlyRefusal, keyOf, PagePolicy, parseUrl, portOf } from './network.js';
+import type { NetworkEvent } from './policy.js';
 import type { BlockedConnection } from './proxy.js';
+import { openBrowser } from './session.js';
 import { screenshot } from './screenshot.js';
 import { imageLimits } from '../shared/vision.js';
 import { snapshot } from './snapshot.js';
-import { describeTabs, followNewTab, newTab, selectTab, tabIds, type Approval } from './tabs.js';
+import { describeTabs, followNewTab, NAVIGATE_LOAD_MS, newTab, selectTab, tabIds, type Approval } from './tabs.js';
 import type { Permission } from '../permission/ask.js';
 import { actionWhy, decide } from '../permission/mode.js';
 import { isWithin, workspaceRoot } from '../shared/home.js';
@@ -21,7 +23,7 @@ import { visibleControls } from '../shared/sanitize.js';
 import { visibleError } from '../shared/visible-error.js';
 import { capOutputToFile } from '../shared/spill.js';
 import { contentText, textResult, withTimeout } from '../shared/util.js';
-import { classifyHost, type HostClass, type HostLookup } from '../web/guard.js';
+import { classifyHost, isHttpUrl, type HostClass, type HostLookup } from '../web/guard.js';
 
 const ACTIONS = ['info', 'attach', 'navigate', 'snapshot', 'click', 'hover', 'drag', 'type', 'fill', 'press', 'wait', 'tabs', 'tab', 'evaluate', 'screenshot', 'console', 'dialog', 'upload', 'download', 'close'] as const;
 /** Actions that talk to the page, so an open JavaScript dialog must be answered first. */
@@ -95,8 +97,9 @@ export class BrowserTool {
   /** One audit entry per distinct refusal or report: a page with many identical blocked requests is one entry and a count, not many entries. */
   #audit(event: NetworkEvent): void {
     if (event.kind === 'rebinding') {
-      this.#notice = `The tab was closed: ${event.url} answered from the private address ${event.address} (DNS rebinding).`;
-      this.permission.refused([`${event.url} -> ${event.address}`], 'closed the tab: a public name answered from a private address (DNS rebinding)', 'browser');
+      // Reported before the close is attempted; the console log says whether it succeeded (`page-network.ts`, closeRebound).
+      this.#notice = `Closing the tab: ${event.url} answered from the private address ${event.address} (DNS rebinding).`;
+      this.permission.refused([`${event.url} -> ${event.address}`], 'closing the tab: a public name answered from a private address (DNS rebinding)', 'browser');
     } else if (event.kind === 'blocked') {
       this.#auditOnce(`blocked ${hostOf(event.url)} ${event.resourceType} ${event.reason}`, (repeats) =>
         this.permission.refused([event.url], `${repeatNote(repeats)}blocked a page request (${event.resourceType}): ${event.reason}`, 'browser'),
@@ -373,13 +376,8 @@ const repeatNote = (repeats: number): string => (repeats > 0 ? `(${repeats + 1} 
  * one prompt carrying both reasons.
  */
 export async function checkBrowserUrl(raw: string, ctx: Confirmer, permission: Permission, toolCallId: string, lookup?: HostLookup): Promise<CheckedUrl> {
-  let url: URL;
-  try {
-    url = new URL(raw);
-  } catch {
-    throw new Error(`Not a URL: ${raw}`);
-  }
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error(`The browser opens http(s) URLs only, not ${url.protocol}`);
+  const url = parseUrl(raw);
+  if (!isHttpUrl(url)) throw new Error(httpOnlyRefusal(url));
   const host = await classifyHost(url, lookup);
   const call = { toolCallId, ...(ctx.signal ? { signal: ctx.signal } : {}) };
   if (host.kind === 'public') {
@@ -399,8 +397,7 @@ export async function checkBrowserUrl(raw: string, ctx: Confirmer, permission: P
     ...call,
   });
   if (verdict.allowed) return { host, privateGrant: verdict.lasts };
-  const blocked = host.kind === 'private' ? 'Blocked private or local address' : 'Blocked unresolved host';
-  throw new Error(`${blocked}: ${url.host}. ${verdict.message}`);
+  throw new Error(`${blockedHost(host)}: ${url.host}. ${verdict.message}`);
 }
 
 /**
@@ -411,8 +408,8 @@ export async function checkBrowserUrl(raw: string, ctx: Confirmer, permission: P
 export async function checkUploadPaths(files: readonly string[], ctx: Pick<ExtensionContext, 'cwd'> & Confirmer, permission: Permission, toolCallId?: string): Promise<string[]> {
   // The workspace is the repository root, and none at all when that is the home folder or above it: then every path is outside.
   const workspace = workspaceRoot(ctx.cwd);
-  const root = workspace === undefined ? undefined : realPath(workspace);
-  const paths = files.map((file) => realPath(path.resolve(ctx.cwd, file)));
+  const root = workspace === undefined ? undefined : resolvedTarget(workspace);
+  const paths = files.map((file) => resolvedTarget(path.resolve(ctx.cwd, file)));
   const outside = paths.filter((file) => root === undefined || !isWithin(file, root));
   const verdict = await permission.check(ctx, {
     action: 'browser.control',
@@ -428,12 +425,12 @@ export async function checkUploadPaths(files: readonly string[], ctx: Pick<Exten
 }
 
 /** `file` with symlinks resolved; a missing tail (a file that does not exist yet) is kept under its real parent. */
-function realPath(file: string): string {
+function resolvedTarget(file: string): string {
   try {
     return fs.realpathSync(file);
   } catch {
     const parent = path.dirname(file);
-    return parent === file ? file : path.join(realPath(parent), path.basename(file));
+    return parent === file ? file : path.join(resolvedTarget(parent), path.basename(file));
   }
 }
 
@@ -444,7 +441,8 @@ async function navigate({ session, page, params, signal, browser }: PageAction):
   // The wait starts before the command so a fast load is not missed; `done` ends it when the command fails, and a
   // dialog (an alert() while loading holds the load event) ends it at once: the snapshot then reports the dialog.
   const done = new AbortController();
-  const loaded = page.untilDialog(page.waitFor('Page.loadEventFired', 20_000, signal ? AbortSignal.any([signal, done.signal]) : done.signal));
+  const loaded = page.untilDialog(page.waitFor('Page.loadEventFired', NAVIGATE_LOAD_MS, signal ? AbortSignal.any([signal, done.signal]) : done.signal));
+  // Handled here so a navigate that throws before awaiting it leaves no unhandled rejection; the await below still sees it.
   loaded.catch(() => undefined);
   try {
     const result = await page.send<{ errorText?: string; loaderId?: string }>('Page.navigate', { url: params.url }, signal);
@@ -455,9 +453,13 @@ async function navigate({ session, page, params, signal, browser }: PageAction):
     done.abort();
   }
   // The load event fires before most apps fetch and render their data (prices, localized currency).
-  const settled = session.dialog ? true : ((await page.untilDialog(settleAfterLoad(page, signal)))?.settled ?? true);
+  // An open dialog (before or during the wait) leaves nothing to settle: the snapshot reports it.
+  const load = session.dialog ? undefined : await page.untilDialog(settleAfterLoad(page, signal));
   const waited = params.text ? await waitUntil(session, params.text, params.timeout, signal) : '';
-  const note = settled || params.text ? '' : '\n\nNote: the page was still changing 6s after loading; values may still update. Use wait (text) or snapshot again for content that loads late.';
+  const note =
+    !load || load.settled || params.text ? ''
+    : load.failed ? '\n\nNote: the page may still be loading (waiting for it to settle failed). Use wait (text) or snapshot again for content that loads late.'
+    : '\n\nNote: the page was still changing 6s after loading; values may still update. Use wait (text) or snapshot again for content that loads late.';
   return pageResult(withBlockedNote(session, `${waited}${await snapshot(session, signal)}${note}`));
 }
 

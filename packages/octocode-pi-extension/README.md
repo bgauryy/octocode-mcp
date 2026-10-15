@@ -42,7 +42,7 @@ Octocode MCP     Octocode skills     .octocode home + workspace
 | **Agent model** | The octocode-agents-communication model: agents, messages, deliveries and file leases | Backs `coordinate`, `sendMessage`, the `/agents` panel and subagent hand-offs. Inside a Pi team the agent uses `coordinate`, `sendMessage` and `agent`; the agents-communication tools are only for agents outside Pi (Claude Code, Codex, other hosts), and Pi honors their file locks. |
 | **Subagent profiles** | Markdown profiles: bundled `implementer`, `researcher`, `reviewer`, `webHeadless`, `webLive` | Each sets a `model` purpose (`small`, `medium`) resolved among your models, or a model id (see [CONFIGURATION](docs/CONFIGURATION.md#subagent-profiles)). Add your own in `~/.octocode/agents/` or `<repo>/.octocode/agents/` (Pi's `~/.pi/agent/agents/` and `.pi/agents/` work too). |
 | **Octocode home** (`~/.octocode`, `OCTOCODE_HOME`) | User config: `skills/`, `agents/`, `hooks.json`. Runtime state in `agent/pi/`: the agent database `octocode.db` (sessions, backlog, memory, team), per-session output, bash logs and checkpoints | One SQLite file shared by every Pi session on the machine, so the backlog, memory and team are visible across sessions and subagents. |
-| **Workspace** (`<repo>/.octocode`) | Project config: `skills/`, `agents/`, `hooks.json` (trusted projects only), plus `tmp/` for subagent hand-off docs and `backlog.md` exports | Resolved from the repository root, so a session started in a subfolder sees the same files. |
+| **Workspace** (`<repo>/.octocode`) | Project config: `skills/`, `agents/`, `hooks.json` (trusted projects only), plus `tmp/` for subagent hand-off docs and `backlog.md` / `backlog.html` exports | Resolved from the repository root, so a session started in a subfolder sees the same files. |
 
 See [CONFIGURATION.md](docs/CONFIGURATION.md#where-files-go) for every path and variable.
 
@@ -59,7 +59,7 @@ See [CONFIGURATION.md](docs/CONFIGURATION.md#where-files-go) for every path and 
 
 3. Ask a research question, for example `Where is the session token refreshed, and who calls it?` The agent searches with the `mcp__octocode__*` tools, reads only the lines it needs, and cites `path:line`.
 
-4. For GitHub research, export a token before you start Pi (for example `GITHUB_TOKEN`). The Octocode MCP server inherits Pi's environment.
+4. For GitHub research, sign in with `gh auth login` or export `GITHUB_TOKEN` before you start Pi; the Octocode MCP server inherits Pi's environment. See [Octocode authentication](https://github.com/bgauryy/octocode/blob/main/docs/AUTHENTICATION.md).
 
 ## How Octocode extends Pi
 
@@ -67,7 +67,7 @@ Octocode uses Pi's extension API and keeps Pi's behavior where Pi already does t
 
 | Pi feature | What Octocode adds | Pi API used |
 |---|---|---|
-| MCP | Registers the Octocode research server: local code search, file reading, structure and AST search, LSP callers, references and types, GitHub repo, code, PR and history search, packages. Every tool is declared from the first request (no `tool_search` step), and results reach the model whole up to 60 KB per text part and 200,000 characters of MCP text per assistant message (longer text and images over 600 KB are saved to files, with the path in the result). `/octocode mcp` shows its state; other servers, `/mcp` and OAuth stay Pi's. | `registerTool`, `session_start`, `before_agent_start` |
+| MCP | Registers the Octocode research server's tools from the first request (no `tool_search` step). Results reach the model whole within a per-part and per-message budget; anything longer is saved to a file the result names ([Spilled outputs](docs/CONTEXT-AND-COST.md#spilled-outputs)). `/octocode mcp` shows its state; other servers, `/mcp` and OAuth stay Pi's. | `registerTool`, `session_start`, `before_agent_start` |
 | System prompt | A short `octocode` section: investigate before changing, verify for real, prefer Octocode MCP for research, when to delegate. Pi's tool list, `AGENTS.md` context and skills are unchanged. | `before_agent_start` prompt sections |
 | `edit` / `write` | One `file` tool batches edits, writes and deletes, each with a reasoning line, on Pi's own edit and write engines. It refuses stale edits and writes atomically. It replaces `edit` and `write` once per session, unless you name them in `--tools` or `defaultTools`. | `createEditToolDefinition`, `createWriteToolDefinition` |
 | `bash` | Pi's own bash with your `shellPath` and `shellCommandPrefix`, plus a 15-minute default deadline, background jobs and a flag on common destructive commands (a prompt in `manual` and `workspace`, a ⚠ line in the log in `full`; not a security boundary). | `createBashToolDefinition`, `tool_call` |
@@ -75,7 +75,7 @@ Octocode uses Pi's extension API and keeps Pi's behavior where Pi already does t
 | Sessions | `/sessions` lists Pi's sessions with branch, estimated cost and files changed, and resumes them with a short brief. Pi's `/resume` and session names are untouched. | `SessionManager.list`, `switchSession` |
 | Skills | Also loads skills from `~/.claude/skills`, `~/.codex/skills` and `~/.octocode/skills`, plus project skills in trusted projects. Claude.ai `synced/` skills under `~/.claude/skills` are skipped: they need connectors Pi does not have. | `resources_discover` |
 | Project trust | Gates Claude Code and Codex hooks, project agent profiles and project skills behind `/octocode trust`, because Pi's trust covers only Pi's own files. | `isProjectTrusted` |
-| UI | Octocode replaces Pi's header with the gradient "OCTOCODE CODE" banner (one light sweep at startup) and its footer with a two-line one (model, permission mode, thinking, context bar, running agents, background subagents, bash jobs, queued messages `✉ n queued`, `tok/s`, estimated cost `≈$2.28`; cwd, branch, session name, tokens `↑1.2M (94% cached) ↓35k`, other statuses; usage from a model without pricing in `models.json` shows `n/a` and warns once, never as free), and adds a gradient spinner, a `✻ Thinking…` label for hidden thinking, an `octocode · <dir>` title, a working line that names the running step, a desktop notification and title `●` when an answer is ready while the terminal is in the background, an agents panel while subagents run, one-at-a-time queueing for its dialogs, and compact renderers for its tools. | `setHeader`, `setFooter`, `setWorkingIndicator`, `setHiddenThinkingLabel`, `setStatus`, `setWorkingMessage`, `setWidget`, `setTitle`, `ui_prompt_start`, tool renderers |
+| UI | A banner header, a two-line footer (model, permission mode, context, agents, jobs, tokens, estimated cost), a working line that names the running step, an agents panel, answer-ready notifications, one-at-a-time dialogs and compact tool renderers. See [UI](docs/FEATURES.md#ui). | `setHeader`, `setFooter`, `setWorkingIndicator`, `setHiddenThinkingLabel`, `setStatus`, `setWorkingMessage`, `setWidget`, `setTitle`, `ui_prompt_start`, tool renderers |
 
 ## Features
 
@@ -83,54 +83,40 @@ Each feature has a full description in [docs/FEATURES.md](docs/FEATURES.md).
 
 ### Research and code
 
-- **Octocode MCP**: every research tool the server registers (local search and reads, AST, LSP, GitHub, packages), named `mcp__octocode__*` and declared as the server describes it; `/octocode mcp` shows the server's state. Its instructions join the prompt whole.
-- **`file` tool**: batched edit, write and delete with a reasoning line per change. A change to a file that moved on disk since the agent read it is refused until it reads the file again. Writes are atomic and keep the file mode.
-- **Checkpoints**: before `file` changes a path, its bytes are saved. `/octocode rewind [turns]` restores files the agent changed, but never overwrites files you changed since.
-- **Permission modes**: sessions start in `full`: nothing asks, and every action is recorded (`/octocode permission log`; the footer counts them as `full · 12 actions · 1 ⚠`, the ⚠ for destructive shell commands, browser control and private-address access). `workspace` runs work inside the repository and asks before leaving it, before destructive commands, private addresses and browser control, and before files that run in later sessions (git hooks, `.husky`, CI workflows, `.pi/`, `.claude/`, …); `manual` also asks before file changes, shell, web, browser, MCP writes and subagents (its `file` review has Apply all, Review one by one, or Reject all). Each prompt opens with the effect, how to undo it and why it asks. A hook's ask and a provenance hit ask in `manual` and `workspace` and run in `full`. Shift+Tab in the editor cycles full → workspace → manual; export `OCTOCODE_PERMISSION` to start elsewhere. Without a UI every ask is denied; a subagent's prompts are relayed to your session's UI. A short list of invariants refuses in every mode (the Octocode home, team reservations, stale reads, page requests to private addresses). Modes are not a sandbox: see [Permissions](docs/FEATURES.md#permissions).
-- **Bash**: streaming output, a deadline, and `background: true` jobs whose exit status and log tail arrive later as a message. `/octocode jobs` lists and stops them.
+- **Octocode MCP**: every research tool the server lists, named `mcp__octocode__*`, with the server's instructions in the prompt. See [MCP](docs/CONFIGURATION.md#mcp).
+- **`file` tool**: batched edit, write and delete with a reasoning line per change. A change to a file that changed on disk since the agent read it is refused until it reads the file again. Writes are atomic and keep the file mode.
+- **Checkpoints**: `/octocode rewind [turns]` restores files the agent changed, never files you changed since.
+- **Permission modes**: `full` (the default: nothing asks, every action is recorded), `workspace` (asks before leaving the repository and before destructive or persistent actions) and `manual` (also asks before file changes, shell, web, browser, MCP writes and subagents). Shift+Tab in the editor cycles them; `OCTOCODE_PERMISSION` sets the start mode. A short list of invariants refuses in every mode. Modes are not a sandbox: see [Permissions](docs/FEATURES.md#permissions).
+- **Bash**: streaming output, a deadline, and `background: true` jobs whose result arrives later as a message. `/octocode jobs` lists and stops them.
 
 ### Delegation and teamwork
 
-- **Subagents**: the `agent` tool runs a task in a fresh Pi process, up to 3 at once (more calls wait for a slot). Each call states a `goal` label (about 48 characters show); the agent gets a short name such as `inky-kraken`, shown with its role and goal in the panel, `/agents` and its reports. Bundled profiles: `researcher`, `reviewer`, `implementer`, `webHeadless` and `webLive`. Coding profiles (`implementer`, `reviewer`) prefer Sonnet and exploration profiles (`researcher`, `webHeadless`, `webLive`) prefer Haiku; a profile's `model` that your providers do not offer falls back to the parent's model. A report starts with an outcome word (`done`, `partial`, `blocked` or `failed`) that the row and the background header show.
-- **Background subagents**: `background: true` returns at once. The report arrives as a message when the subagent finishes, so the agent never polls.
-- **Isolation**: `isolate: true` runs a subagent in a private git worktree and commits its changes to `refs/octocode/pi/<name>`. `/agents merge <name>` merges them.
-- **Team**: agents in one repository see each other with `coordinate`, reserve files before editing, and message each other with `sendMessage`. An idle agent wakes only for a message that needs a reply. `file`, `edit` and `write` are also refused on a path that an agent in another tool holds in the agents-communication database (read-only for Pi). Lock keys fold case by Unicode rules, so `Straße.ts` and `STRASSE.ts` are one file.
+- **Subagents**: the `agent` tool runs a task in a fresh Pi process, a few at once. Each run gets a short name (`inky-kraken`), its profile as role and the call's `goal`, shown in `/agents` and its report; the panel under the editor shows each run's name, goal, model, elapsed time and tokens (with the cached share). Bundled profiles: `researcher`, `reviewer`, `implementer`, `webHeadless` and `webLive`; each names a model purpose (`small` or `medium`) resolved among your models. A report starts with an outcome word (`done`, `partial`, `blocked` or `failed`).
+- **Background subagents**: `background: true` returns at once; the report arrives as a message, so the agent never polls.
+- **Isolation**: `isolate: true` runs a subagent in a private git worktree and commits its changes to `refs/octocode/pi/<name>`; `/agents merge <name>` merges them.
+- **Team**: agents in one repository see each other with `coordinate`, reserve files before editing, and message each other with `sendMessage`. `file`, `edit` and `write` also honor file locks that agents in other tools hold through octocode-agents-communication.
 
 ### Backlog, memory and sessions
 
-- **Backlog**: a task board per repository (`backlog` → `todo` → `ongoing` → `done`). The agent tracks work that outlives a turn, links splits and follow-ups to the item they came from, and every change is logged. An item carries a goal (done-when; the agent must give one), where, why, evidence and a plan; `/backlog` opens the board and `/backlog do <id>` hands an item to the agent.
-- **Memory**: durable notes (preferences, facts, decisions, gotchas, procedures) per repository or global, with full-text search. Relevant notes are injected before each prompt, labelled as data.
-- **Session resume**: `/sessions` lists this repository's sessions. Resuming one adds a brief when the branch moved, backlog items are ongoing (each shown with its goal and paths), or you were away over an hour.
+- **Backlog**: a task board per repository (`backlog` → `todo` → `ongoing` → `done`) for work that outlives a turn. `/backlog` opens it; `/backlog do <id>` hands an item to the agent.
+- **Memory**: durable notes per repository or global, with full-text search. Relevant notes are injected before each prompt, labelled as data.
+- **Session resume**: `/sessions` lists this repository's sessions and resumes one with a short brief of what changed.
 
 ### Working in the TUI
 
-- **Working line**: names the current step: `Waiting for model` (once the first token takes over 2 s), `Thinking: <the latest finished sentence of its thinking>`, `Writing`, `Running bash yarn test`, `Running localSearch useState in src +2`, `Running agent <goal>`, `Running 5 tools: bash · web ×2 +2`, `Checking bash …` while pre-run checks and PreToolUse hooks run, or `Waiting for you: <question>` during a dialog. After 2 s it adds the elapsed time; the line stays within 70 columns. The agents panel shows the same line as the agent's activity, so a subagent's thinking is visible there too, and a running `agent` row lists its latest steps: tool calls (`→ read a.ts`), the gist of each thought (`✻ …`), its narration (`› …`) and what it is thinking now.
-- **Parallel tool calls**: tools batched in one message run in parallel. `file`, `browser`, `memory` and `backlog` keep their own calls in order with a per-tool lock and `askUser` waits in the shared dialog queue, so MCP searches and bash in the same batch never wait behind them.
-- **One dialog at a time**: Pi shows one extension dialog at a time, and a second one would leave the first unanswered forever ([pi#6978](https://github.com/earendil-works/pi/issues/6978)). Octocode queues every dialog it opens (`askUser`, permission asks including the file review, trust confirms, `/octocode` pickers). The working line shows `(+N queued)` while others wait, and a cancelled call leaves the queue.
-- **Wait times in tool rows**: a row shows `waiting` until its checks, approval or lock end. The newest running row shows a live clock that matches its final run time; older running rows show none (the working line has the elapsed time). A row whose call waited more than 250 ms before it ran shows `checks 1.2s` (its own reservation, shell-guard, PreToolUse and permission checks) or `queued 2.0s` (other calls' checks or the tool's lock), next to its run time. Collapsed, a batched call lists 3 queries, then `+N more`.
-- **Queued messages survive Esc**: messages that arrive while the agent works (subagent reports, background bash reports, teammate messages) show as `✉ n queued`. Pi's Esc clears its queue but restores only your typed text, so Octocode adds the cleared messages back to the conversation without starting a turn and says so. This applies in the TUI only.
-- **Answer-ready notifications**: when an answer finishes or the agent opens a dialog during a run while the terminal is in the background, Octocode sends a desktop notification and puts `●` in the terminal title until you return.
-  - It sends OSC 9 for iTerm2, OSC 777 for Ghostty and WezTerm, OSC 99 for Kitty and the bell elsewhere, wrapped for tmux.
-  - It knows the terminal is in the background from the terminal's focus reports. In fullscreen mode it uses idle time instead: a run of at least 30 s with no key pressed for 30 s.
-  - Subagents, aborted runs and print, JSON and RPC modes never send these terminal signals.
-  - Set `OCTOCODE_NOTIFY=always` to notify while focused, or `off` to never notify.
+The working line names the running step, tool rows show their wait and run times, dialogs queue one at a time, queued messages survive Esc, and a desktop notification fires when an answer is ready while the terminal is in the background. Tools batched in one message run in parallel; `file`, `browser`, `memory` and `backlog` keep their own calls in order. See [UI](docs/FEATURES.md#ui).
 
 ### Web
 
-- **`web`**: fetches a page as readable text, or searches the web (Tavily, Serper, Exa or Brave with an API key; DuckDuckGo and Bing without). A private, loopback or cloud-metadata address is a `net.private` ask.
-- **`browser`**: drives Chrome over DevTools for JavaScript pages, forms, uploads and screenshots. The main session hands it to the `webHeadless` / `webLive` subagents instead of paying its schema on every request (name it in `--tools` to keep it). Every request a page makes is checked: one to a private address is refused without a prompt. Private targets the agent chooses, script evaluation and uploads ask first (see [Permissions](docs/FEATURES.md#permissions)). It never attaches to your Chrome unless you opt in.
+- **`web`**: fetches a page as readable text, or searches the web (API providers with a key, keyless pages otherwise).
+- **`browser`**: drives Chrome over DevTools for JavaScript pages, forms, uploads and screenshots. The main session leaves it to the `webHeadless` and `webLive` subagents unless you name it in `--tools`. Requests to private addresses are checked; see [Web and browser](docs/FEATURES.md#web-and-browser).
 
 ### Integrations
 
-- **Hooks** (opt-in): with `OCTOCODE_HOOKS=1`, Claude Code and Codex command hooks run on Pi events (`PreToolUse`, `PostToolUse`, `SessionStart`, `PreCompact`, `Stop`, `Notification`, plus Octocode `PreMessageSend` and `PostMessageReceive`). Existing Claude hooks work unchanged.
-  - **Blocking:** `PreToolUse` can block a call. A `Stop` hook that returns `{"decision":"block","reason":…}` continues the finished run with that reason. As in Claude Code, it gets `stop_hook_active` and is capped at 8 continuations in a row.
-  - **Notification:** `Notification` hooks fire on `permission_prompt`, `elicitation_dialog` and `idle_prompt`, the first two only for dialogs the agent opens during a run; also in RPC mode. They run in the background and never block.
-  - **Running:** matching hooks run in parallel, and a hook listed in several files runs once. Hook context over 16 KB is saved whole to a file, not truncated; the context gets its head, tail and path.
-  - **Timing:** Pi checks every call of a batch before any of them runs, so a slow `PreToolUse` hook holds up the whole batch. A hook over 5 s is reported once, and `/hooks` shows each command's run count, average and slowest time.
-- **External agents:** `externalAgent` connects to another discovered Pi session or an explicit ACP adapter. `/octocode external`, the API and CLI share the same contract, message hooks and permission policy. See [docs/API.md](docs/API.md#connect-to-external-agents).
-- **Messaging recovery:** separate external connections can run concurrently; each connection guards its own active prompt. Inspect accepted or uncertain work before reconnecting or retrying. [Concurrency and recovery](docs/API.md#concurrency-and-recovery) explains native receipt scope, adapter failure and the difference between internal Team mail and durable cross-host requests.
-- **External API** (opt-in): with `OCTOCODE_API=1`, other programs message the session and follow its events over JSON-RPC. `tool.start` and `tool.end` events carry `depth` (0 for the agent's own calls) and, for calls made by another tool, `parentId`. `tool.end` also carries `durationMs`. `octocode-pi-api watch --top-level` drops the nested calls. See [docs/API.md](docs/API.md).
-- **`askUser`**: the agent asks related questions, with choices or free text, in an inline dialog when a choice depends on you.
+- **Hooks** (opt-in, `OCTOCODE_HOOKS=1`): Claude Code and Codex command hooks run on Pi events. See [Hooks](docs/FEATURES.md#hooks-opt-in).
+- **External agents**: `externalAgent` connects to another Pi session or an ACP adapter. See [API.md](docs/API.md#connect-to-external-agents).
+- **External API** (opt-in, `OCTOCODE_API=1`): other programs message the session and follow its events over JSON-RPC. See [API.md](docs/API.md).
+- **`askUser`**: the agent asks related questions, with choices or free text, when a decision depends on you.
 
 ## Tools the agent gets
 
@@ -167,13 +153,13 @@ Everything lives under `/octocode`; tab completes subcommands. `/agents`, `/sess
 | `/octocode trust [off]` | Review and trust this project's hooks, agent profiles and skills |
 | `/octocode external <JSON>` | Discover, connect, prompt, cancel or disconnect external agents |
 | `/octocode api [on [http] \| off]` | Start or stop the external API |
-| `/agents [tell <id\|all> <text> \| kill <id> \| merge <id>]` | List the team, message agents, stop or merge a subagent (shortcut for `/octocode agents`) |
+| `/agents [tell <id\|all> <text> \| interrupt <id> <text> \| kill <id> \| merge <id>]` | List the team, message or redirect agents, stop or merge a subagent (shortcut for `/octocode agents`) |
 | `/sessions [all \| <words>]` | Find and resume sessions |
-| `/backlog [add <title> \| <id> [state] \| do <id> \| export]` | Open, edit or work the board |
+| `/backlog [add <title> \| <id> [state] \| do <id> \| export \| html]` | Open, edit or work the board; `html` opens it as a page in your browser |
 | `/memory [search <words> \| add [title] \| auto on\|off \| last]` | Browse, search and add memories |
 | `/hooks` | Loaded hooks, the files to edit, and each hook's runs, average and slowest time |
 
-Shift+Tab in the main editor cycles `full` → `workspace` → `manual` → `full`; the footer shows the mode and shortcut. Octocode uses Pi's custom-editor API because Pi reserves that key for thinking. Use `/thinking <level>` for thinking, or assign `app.thinking.cycle` another key in Pi's `keybindings.json`. Pi's `/hotkeys` still lists its configured thinking binding; `/octocode help` and the footer describe the Octocode override. Tab completion and dialog keys keep their usual behavior.
+Shift+Tab in the main editor cycles the permission mode instead of Pi's thinking level; use `/thinking <level>`, or bind `app.thinking.cycle` to another key in Pi's `keybindings.json`.
 
 Without a UI (print or JSON mode), these commands write text to stderr instead of opening a picker.
 
@@ -199,24 +185,9 @@ Without a UI (print or JSON mode), these commands write text to stderr instead o
 
 ## Configuration
 
-Most users need nothing. Common settings:
+Most users need nothing. The variables people set most are `OCTOCODE_PERMISSION` (start mode), `OCTOCODE_HOOKS=1`, `OCTOCODE_API=1`, `OCTOCODE_MCP=0`, `OCTOCODE_MAX_SUBAGENTS`, `OCTOCODE_NOTIFY` and the web search keys. Every variable, file location, trust rule, hook and profile format is in [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 
-| Variable | Effect |
-|---|---|
-| `GITHUB_TOKEN` | GitHub access for Octocode MCP |
-| `OCTOCODE_HOOKS=1` | Run Claude Code and Codex hooks |
-| `OCTOCODE_PERMISSION=manual\|workspace\|full` | Start mode (default `full`) |
-| `OCTOCODE_NOTIFY=off\|always` | Answer-ready notifications (default: only when the terminal is in the background) |
-| `OCTOCODE_NOTIFY_METHOD=osc9\|osc777\|osc99\|bel` | Force a notification method (default: picked from the terminal) |
-| `OCTOCODE_API=1` | Serve the external JSON-RPC API on a Unix socket |
-| `OCTOCODE_MAX_SUBAGENTS` | Subagents allowed at once (default 3) |
-| `OCTOCODE_MCP=0` | Don't start the Octocode MCP server |
-| `TAVILY_API_KEY`, `SERPER_API_KEY`, `EXA_API_KEY`, `BRAVE_API_KEY` | Web search providers |
-| `OCTOCODE_HOME` | Where Octocode keeps config and state (default `~/.octocode`) |
-
-Other MCP servers are configured with Pi: `pi mcp add`, `~/.pi/agent/mcp.json` or `.pi/mcp.json`. A server named `octocode` there overrides the bundled one. The Octocode tools don't need Pi's MCP; with `pi --no-extensions`, add `-e builtin:mcp -e builtin:tool-search` only to keep your other servers and tool search.
-
-Every variable, file location, trust rule, hook and profile format is in [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
+Other MCP servers are configured with Pi (`pi mcp add`, `~/.pi/agent/mcp.json` or `.pi/mcp.json`); a server named `octocode` there overrides the bundled one.
 
 ## Documentation
 
@@ -236,7 +207,4 @@ yarn workspace @octocodeai/pi-extension test    # unit and end-to-end tests
 pi --no-extensions -e packages/octocode-pi-extension/dist/pi-entry.cjs -e builtin:mcp -e builtin:tool-search
 ```
 
-After `yarn build`, `/reload` in a running Pi loads the new code (see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)). A Pi
-started before this change loaded `dist/index.js` directly and needs one restart.
-
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the source layout.
+After `yarn build`, `/reload` in a running Pi loads the new code. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) has the source layout.

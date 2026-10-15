@@ -13,7 +13,7 @@ use tokio_util::sync::CancellationToken;
 pub const MAX_TIMEOUT: Duration = Duration::from_secs(24 * 60 * 60);
 
 #[derive(Clone, Debug)]
-pub struct RuntimeLimits {
+pub struct RequestLimits {
     pub concurrency: usize,
     pub pending: usize,
     pub timeout: Duration,
@@ -25,7 +25,7 @@ pub struct RuntimeLimits {
 /// `HostOptions::timeout_secs` overrides it for an embedder.
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(300);
 
-impl Default for RuntimeLimits {
+impl Default for RequestLimits {
     fn default() -> Self {
         Self {
             concurrency: 4,
@@ -88,7 +88,7 @@ pub struct ExecutionContext {
     /// the batch budget when several queries walk at once. `None` = all cores.
     pub walk_threads: Option<u32>,
     /// This row's share of the response page (an explicit `responseLength`,
-    /// else `output.pagination.defaultCharLength`) that a streamed page must
+    /// else the runtime's `auto_page_chars`) that a streamed page must
     /// fit, set by the engine per row. `None` = no window; pages take their
     /// default size.
     pub response_window: Option<usize>,
@@ -120,7 +120,7 @@ struct Inner {
     state: Mutex<State>,
     slots: Arc<Semaphore>,
     drained: Notify,
-    limits: RuntimeLimits,
+    limits: RequestLimits,
 }
 
 #[derive(Clone)]
@@ -165,7 +165,7 @@ impl Drop for RequestGuard {
 }
 
 impl RequestRuntime {
-    pub fn new(limits: RuntimeLimits) -> Result<Self, ExecutionError> {
+    pub fn new(limits: RequestLimits) -> Result<Self, ExecutionError> {
         if limits.concurrency == 0
             || limits.pending < limits.concurrency
             || limits.timeout.is_zero()

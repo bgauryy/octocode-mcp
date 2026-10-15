@@ -3,7 +3,7 @@ import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-a
 import { Type } from 'typebox';
 import { clip, timingOf, plural, resultBlock, timedTool, toolHeader } from '../shared/render.js';
 import { storedText, visibleControls } from '../shared/sanitize.js';
-import { textResult } from '../shared/util.js';
+import { contentText, textResult } from '../shared/util.js';
 import { openBacklog, type Backlog, type BacklogOptions } from './context.js';
 import { itemDetail, itemLine } from './format.js';
 import { PRIORITIES, refuseSecrets, STATES, type Item, type State } from './store.js';
@@ -100,7 +100,7 @@ export function registerBacklogTool(pi: ExtensionAPI, options: BacklogOptions & 
       return toolHeader(theme, context, 'Backlog', target);
     },
     renderResult(result, _options, theme, context) {
-      const text = result.content.map((part) => (part.type === 'text' ? part.text : '')).join('\n');
+      const text = contentText(result.content);
       const details = (result.details ?? {}) as BacklogToolDetails;
       const summary = context.isError ? (text.split('\n', 1)[0] ?? '') : backlogSummary(context.args?.op, details, text);
       const firstIsSummary = context.isError || (context.args?.op !== 'list' && context.args?.op !== 'get');

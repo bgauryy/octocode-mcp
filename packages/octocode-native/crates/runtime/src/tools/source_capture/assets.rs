@@ -191,21 +191,37 @@ fn dimensions(bytes: &[u8]) -> Result<(&'static str, usize, usize), Classificati
     };
     let size = imagesize::blob_size(bytes)
         .map_err(|_| invalid("The image header is incomplete or invalid."))?;
-    if size.width == 0 || size.height == 0 {
-        return Err(invalid("Image dimensions must be nonzero."));
-    }
-    if size.width > policy::MAX_IMAGE_DIMENSION
-        || size.height > policy::MAX_IMAGE_DIMENSION
-        || size
-            .width
-            .checked_mul(size.height)
-            .is_none_or(|pixels| pixels > policy::MAX_IMAGE_PIXELS)
-    {
-        return Err(too_large(
-            "The image dimensions exceed the per-image pixel limit.",
-        ));
-    }
+    validate_dimensions(size.width, size.height)?;
     Ok((format, size.width, size.height))
+}
+
+fn validate_dimensions(width: usize, height: usize) -> Result<(), ClassificationError> {
+    let bounds = || {
+        format!(
+            "Image width and height must each be {}..={} pixels, and image area {}..={} pixels; received {width}x{height}.",
+            policy::MIN_IMAGE_DIMENSION,
+            policy::MAX_IMAGE_DIMENSION,
+            policy::MIN_IMAGE_PIXELS,
+            policy::MAX_IMAGE_PIXELS,
+        )
+    };
+    if width == 0 || height == 0 {
+        return Err(invalid(&bounds()));
+    }
+    let pixels = width.checked_mul(height);
+    if width > policy::MAX_IMAGE_DIMENSION
+        || height > policy::MAX_IMAGE_DIMENSION
+        || pixels.is_none_or(|pixels| pixels > policy::MAX_IMAGE_PIXELS)
+    {
+        return Err(too_large(&bounds()));
+    }
+    if width < policy::MIN_IMAGE_DIMENSION
+        || height < policy::MIN_IMAGE_DIMENSION
+        || pixels.is_some_and(|pixels| pixels < policy::MIN_IMAGE_PIXELS)
+    {
+        return Err(invalid(&bounds()));
+    }
+    Ok(())
 }
 
 fn check(context: &ExecutionContext) -> Result<(), ClassificationError> {
@@ -277,9 +293,70 @@ mod tests {
             );
         }
         assert_eq!(
-            dimensions(&header(4096, 4096)).unwrap(),
-            ("png", 4096, 4096)
+            dimensions(&header(1568, 1568)).unwrap(),
+            ("png", 1568, 1568)
         );
+    }
+
+    #[test]
+    fn dimensions_reject_each_axis_below_the_minimum() {
+        for (width, height) in [(255, 308), (308, 255)] {
+            let error = dimensions(&header(width, height)).unwrap_err();
+            assert_eq!(
+                error.code, "invalidClassificationContext",
+                "{width}x{height}"
+            );
+            assert!(error.message.contains("256..=1568"));
+            assert!(error.message.contains("78400..=2458624"));
+        }
+    }
+
+    #[test]
+    fn dimensions_reject_area_below_the_minimum() {
+        for (width, height) in [(256, 256), (256, 306), (279, 281)] {
+            assert_eq!(
+                dimensions(&header(width, height)).unwrap_err().code,
+                "invalidClassificationContext",
+                "{width}x{height}"
+            );
+        }
+    }
+
+    #[test]
+    fn dimensions_accept_inclusive_dimension_and_area_edges() {
+        for (width, height) in [
+            (280, 280),
+            (256, 307),
+            (307, 256),
+            (1568, 256),
+            (1568, 1568),
+        ] {
+            assert_eq!(
+                dimensions(&header(width, height)).unwrap(),
+                ("png", width as usize, height as usize)
+            );
+        }
+    }
+
+    #[test]
+    fn dimensions_reject_maximum_dimension_and_area_overages() {
+        for (width, height) in [(1569, 256), (256, 1569), (1569, 1568)] {
+            assert_eq!(
+                dimensions(&header(width, height)).unwrap_err().code,
+                "classificationContextTooLarge",
+                "{width}x{height}"
+            );
+        }
+    }
+
+    #[test]
+    fn dimensions_reject_checked_pixel_area_overflow() {
+        for (width, height) in [(usize::MAX, 2), (2, usize::MAX)] {
+            assert_eq!(
+                validate_dimensions(width, height).unwrap_err().code,
+                "classificationContextTooLarge"
+            );
+        }
     }
 
     #[test]

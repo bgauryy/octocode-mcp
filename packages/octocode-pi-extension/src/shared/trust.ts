@@ -46,7 +46,7 @@ export function projectConfigFiles(cwd: string): string[] {
  * by another path (a worktree's file as its parent repository's).
  */
 export function fingerprint(files: string[], as: (file: string) => string = (file) => file): string {
-  return sha256(files.map((file) => `${as(file)}\0${readText(file)}`).join('\0\0'));
+  return sha256(files.map((file) => `${as(file)}\0${readForFingerprint(file)}`).join('\0\0'));
 }
 
 /**
@@ -76,7 +76,7 @@ function skillFiles(dir: string, root: boolean, seen: Set<string>): string[] {
 }
 
 /** One dialog line: escape sequences stripped and newlines folded, so a value cannot draw or fake another line. */
-const oneLine = (text: string): string => sanitizeTerminalText(text).replace(/\s*\n\s*/g, ' ⏎ ');
+const dialogLine = (text: string): string => sanitizeTerminalText(text).replace(/\s*\n\s*/g, ' ⏎ ');
 
 /**
  * What trusting would run: each file, with every `command`/`args`/`url` found in JSON configs (never cut) and the
@@ -86,11 +86,11 @@ export function describeProjectConfig(cwd: string, files = projectConfigFiles(cw
   const lines: string[] = [];
   let plain = 0;
   for (const file of files) {
-    const shown = oneLine(path.relative(realPath(cwd), file) || file);
+    const shown = dialogLine(path.relative(realPath(cwd), file) || file);
     // A profile that declares permissions is listed with them, and never folded into the count of plain files.
     const runs = file.endsWith('.json') ? commandsIn(parseJson(readText(file))) : file.endsWith('.md') ? permissionsIn(readText(file)) : [];
     if (runs.length === 0 && ++plain > MAX_PLAIN_FILES) continue;
-    lines.push(`- ${shown}${runs.length ? ':' : ''}`, ...runs.map((run) => `    ${oneLine(run)}`));
+    lines.push(`- ${shown}${runs.length ? ':' : ''}`, ...runs.map((run) => `    ${dialogLine(run)}`));
   }
   if (plain > MAX_PLAIN_FILES) lines.push(`… ${plain - MAX_PLAIN_FILES} more file(s) without commands`);
   return lines.join('\n');
@@ -369,6 +369,15 @@ function readText(file: string): string {
     return fs.readFileSync(file, 'utf8');
   } catch {
     return '';
+  }
+}
+
+/** A file's text for the fingerprint; an unreadable file (permissions, a race) gets a marker, so it never hashes like an empty one. */
+function readForFingerprint(file: string): string {
+  try {
+    return fs.readFileSync(file, 'utf8');
+  } catch {
+    return '\0unreadable';
   }
 }
 

@@ -1,4 +1,5 @@
 import { execFileSync, spawn } from 'node:child_process';
+import { validPid } from './util.js';
 import { windowsTree } from './winhelper.js';
 import { system32Executable } from './winpath.js';
 
@@ -15,9 +16,6 @@ export function processAlive(pid: unknown): boolean {
     return (error as NodeJS.ErrnoException).code === 'EPERM';
   }
 }
-
-/** A pid that may be signalled: 0, 1 and negative ones name a group, init or every process. */
-const validPid = (pid: number | undefined): pid is number => Number.isInteger(pid) && pid! > 1;
 
 /** This process's parent when the module loaded. */
 const loadedPpid = process.ppid;
@@ -91,25 +89,37 @@ export function sameProcess(pid: unknown, started: string | null | undefined): b
 }
 
 /**
+ * The live members of process group `pgid` (POSIX, one `ps` call) with `column` (`lstart` or `command`) as trimmed text;
+ * a zombie has exited already and is left out. Undefined on Windows (no groups), for an unsignalable pid or when `ps` fails.
+ */
+function groupRows(pgid: number | undefined, column: 'lstart' | 'command'): Array<{ pid: number; rest: string }> | undefined {
+  if (!validPid(pgid) || process.platform === 'win32') return undefined;
+  let table: string;
+  try {
+    table = execFileSync('ps', ['-A', '-o', `pid=,pgid=,stat=,${column}=`], { encoding: 'utf8', timeout: 2000, stdio: ['ignore', 'pipe', 'ignore'], env: PS_UTC_ENV() });
+  } catch {
+    return undefined;
+  }
+  const rows: Array<{ pid: number; rest: string }> = [];
+  for (const line of table.split('\n')) {
+    const match = /^\s*(\d+)\s+(\d+)\s+(\S+)\s+(.*)$/.exec(line);
+    if (match && Number(match[2]) === pgid && !match[3]!.startsWith('Z')) rows.push({ pid: Number(match[1]), rest: match[4]!.trim() });
+  }
+  return rows;
+}
+
+/**
  * Start times (`processStartTime` values) of the live members of the process group `pgid` (POSIX, one `ps` call), or
  * undefined when `ps` fails or a member's start cannot be read: unknown is not the same as no member.
  */
 export function groupStartTimes(pgid: number): Array<{ pid: number; started: string }> | undefined {
-  if (!validPid(pgid) || process.platform === 'win32') return undefined;
-  let table: string;
-  try {
-    table = execFileSync('ps', ['-A', '-o', 'pid=,pgid=,stat=,lstart='], { encoding: 'utf8', timeout: 2000, stdio: ['ignore', 'pipe', 'ignore'], env: PS_UTC_ENV() });
-  } catch {
-    return undefined;
-  }
+  const rows = groupRows(pgid, 'lstart');
+  if (rows === undefined) return undefined;
   const members: Array<{ pid: number; started: string }> = [];
-  for (const line of table.split('\n')) {
-    const match = /^\s*(\d+)\s+(\d+)\s+(\S+)\s+(.*)$/.exec(line);
-    // A zombie (`Z`) has exited already.
-    if (!match || Number(match[2]) !== pgid || match[3]!.startsWith('Z')) continue;
-    const started = utcSeconds(match[4]!);
+  for (const row of rows) {
+    const started = utcSeconds(row.rest);
     if (started === undefined) return undefined;
-    members.push({ pid: Number(match[1]), started });
+    members.push({ pid: row.pid, started });
   }
   return members;
 }
@@ -191,20 +201,7 @@ export function groupAlive(pid: number | undefined): boolean {
  * (no groups) or when `ps` fails.
  */
 export function groupMembers(pgid: number | undefined): Array<{ pid: number; command: string }> {
-  if (!validPid(pgid) || process.platform === 'win32') return [];
-  let table: string;
-  try {
-    table = execFileSync('ps', ['-A', '-o', 'pid=,pgid=,stat=,command='], { encoding: 'utf8', timeout: 2000, stdio: ['ignore', 'pipe', 'ignore'], env: { ...process.env, LC_ALL: 'C' } });
-  } catch {
-    return [];
-  }
-  const members: Array<{ pid: number; command: string }> = [];
-  for (const line of table.split('\n')) {
-    const match = /^\s*(\d+)\s+(\d+)\s+(\S+)\s+(.*)$/.exec(line);
-    // A zombie (`Z`) has exited already; only its parent's reaping is left.
-    if (match && Number(match[2]) === pgid && !match[3]!.startsWith('Z')) members.push({ pid: Number(match[1]), command: match[4]!.trim() });
-  }
-  return members;
+  return (groupRows(pgid, 'command') ?? []).map((row) => ({ pid: row.pid, command: row.rest }));
 }
 
 /** How often `stopTree` checks whether the tree is gone. */

@@ -35,7 +35,7 @@
   "tools": [
     {
       "name": "clasify",
-      "description": "Judge unread text/images or held state; returns JEV answers, no bodies (beta: requires OCTOCODE_BETA and OCTOCODE_CLASSIFICATION_API)"
+      "description": "Classify unread text/images or held data; answers without source bodies (beta: requires OCTOCODE_BETA and OCTOCODE_CLASSIFICATION_API)"
     },
     {
       "name": "ghSearchRepo",
@@ -47,7 +47,7 @@
     },
     {
       "name": "ghStructure",
-      "description": "Browse a known GitHub repository's directory tree"
+      "description": "Browse a GitHub repository's tree, refs, or languages"
     },
     {
       "name": "ghGetFileContent",

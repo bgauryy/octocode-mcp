@@ -16,7 +16,7 @@ fn selection_runtime(handle: tokio::runtime::Handle) -> crate::tools::selection:
         }
     }
     crate::tools::selection::Runtime {
-        limits: crate::tools::selection::Limits {
+        limits: crate::runtime::SelectionLimits {
             max_candidates: 64,
             max_chars: 131_072,
             timeout: std::time::Duration::from_secs(5),
@@ -230,7 +230,7 @@ fn selection_provider_sees_workspace_relative_path_and_complete_evidence() {
     let policy = workspace_policy(&t.0);
     let executor = tokio::runtime::Runtime::new().expect("runtime");
     let selection = crate::tools::selection::Runtime {
-        limits: crate::tools::selection::Limits {
+        limits: crate::runtime::SelectionLimits {
             max_candidates: 64,
             max_chars: 131_072,
             timeout: Duration::from_secs(2),

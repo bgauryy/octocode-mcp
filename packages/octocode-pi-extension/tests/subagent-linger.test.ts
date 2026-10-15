@@ -49,7 +49,8 @@ describe('a lingering background subagent', () => {
       await t.control.settle();
       expect(t.reports()[0]).toContain('reachable for 1 s');
       await vi.advanceTimersByTimeAsync(1000);
-      expect(t.control.stop(id, 'parent')).toBeDefined();
+      // The window ended: nothing lingers and nothing runs, so the stop is refused by name.
+      expect(t.control.stop(id, 'parent')).toBe(`No background subagent "${id}". None is running.`);
       expect(await t.team.send(id, 'linger expired', { replyRequired: false })).toEqual({ error: expect.stringMatching(/has finished/) });
     } finally {
       await t.control.stopAll();
@@ -153,8 +154,9 @@ describe('a lingering background subagent', () => {
     const t = setup('full');
     try {
       const updates: Array<{ content: Array<{ text: string }>; details: { stopping?: boolean } }> = [];
-      const running = t.f.tools.get('agent').execute('call-fg', { task: 'hang', goal: 'foreground' }, undefined, (update: never) => updates.push(update), t.ctx);
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      const running = t.f.tools.get('agent').execute('call-fg', { task: 'slow foreground', goal: 'foreground' }, undefined, (update: never) => updates.push(update), t.ctx);
+      // The child ran its first tool: it is up, and the foreground run is registered to be stopped.
+      await vi.waitFor(() => expect(updates.length).toBeGreaterThan(0), { timeout: 10_000 });
       t.permission.setMode('manual', t.ctx);
       await expect(running).rejects.toThrow(/was stopped by a permission change\. Ask the user before starting it again\./);
       expect(updates.some((update) => update.details.stopping === true && update.content[0]!.text === 'stopping…')).toBe(true);

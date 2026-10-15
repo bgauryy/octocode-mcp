@@ -5,7 +5,6 @@ import { MESSAGE_TYPE, Team, USER_SENDER } from '../src/team/session.js';
 import { registerCollab } from '../src/team/tools.js';
 import { TeamStore } from '../src/team/store.js';
 import { agentsCommand } from '../src/subagents/command.js';
-import { wakes } from '../src/team/routing.js';
 import octocode from '../src/index.js';
 import { fakeCtx, fakePi } from './fake-pi.js';
 import { tmp } from './helpers.js';
@@ -75,7 +74,6 @@ describe('interrupt', () => {
     store.send(parentId, [child.team.id!], 'stop', { replyRequired: false, interrupt: true });
     const [message] = store.pending(child.team.id!);
     expect(message).toMatchObject({ interrupt: true, wake: true });
-    expect(wakes(message!)).toBe(true);
   });
 
   it('reaches only subagents the sender started, or any subagent when the user sends it', async () => {
@@ -212,7 +210,7 @@ describe('interrupt', () => {
     const send = parent.tools.get('sendMessage');
     expect(Object.keys(send.parameters.properties)).toContain('interrupt');
     const result = await send.execute('c', { to: child.team.id, message: 'stop', interrupt: true }, undefined, undefined, parent.ctx);
-    expect(result.content[0].text).toMatch(/^Interrupt queued for general-777777 as message #\d+:.*older extension build/);
+    expect(result.content[0].text).toMatch(/^Interrupt queued for general-777777 as message #\d+:.*within a second\.$/);
     const command = agentsCommand(parent.team, new Map());
     await command.handler(`interrupt ${child.team.id} switch to the docs task`, parent.ctx);
     expect(parent.ctx.ui.notes.at(-1)).toEqual({ message: 'Interrupt queued for general-777777', type: 'info' });

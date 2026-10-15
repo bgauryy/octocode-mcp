@@ -4,9 +4,10 @@ import { createBashToolDefinition, type ExtensionAPI, type ExtensionContext } fr
 import { Type } from 'typebox';
 import { say, wordCompletions, type Subcommands } from '../shared/commands.js';
 import { SUBAGENT_ENV, envFlag } from '../shared/env.js';
-import { PRIVATE_FILE_MODE, moveFile } from '../shared/home.js';
+import { PRIVATE_FILE_MODE } from '../shared/home.js';
 import { formatDuration, shortPath } from '../shared/format.js';
 import { plural, statusColor, timedTool, toolHeader } from '../shared/render.js';
+import { moveFile } from '../shared/sweep.js';
 import { renderBashResult, renderJobMessage, RERUN_HINT, type BashDetails } from './render.js';
 import { contentText, errorMessage, firstLine, isRecord } from '../shared/util.js';
 import { BashJobs, JOB_TYPE, jobReport, reapOrphanJobs, shellEnv, shellSettings, type BashJob, type JobExit, type OrphanJob, type ShellSettings } from './bash-jobs.js';

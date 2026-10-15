@@ -2,8 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { launch, type LaunchedChrome } from 'chrome-launcher';
 import { atomicWriteFileSync } from '../shared/atomic.js';
-import { HOME_NAMES, outputDir, PRIVATE_FILE_MODE, sweepDeadOutputs } from '../shared/home.js';
+import { HOME_NAMES, outputDir, PRIVATE_FILE_MODE } from '../shared/home.js';
 import { processAlive } from '../shared/process.js';
+import { sweepDeadOutputs } from '../shared/sweep.js';
 import { isRecord } from '../shared/util.js';
 import { startFilteringProxy, type FilteringProxy, type FilteringProxyOptions } from './proxy.js';
 
@@ -112,9 +113,16 @@ export async function recordProfilePort(profile: string, port: number): Promise<
   fs.writeFileSync(path.join(profile, 'DevToolsActivePort'), `${port}\n${await browserPath(port, 5_000)}\n`);
 }
 
+/** A request to the DevTools HTTP endpoint (`/json/...`) of the browser on `port`, always on this machine. */
+export const devtoolsFetch = (port: number, endpoint: string, timeoutMs: number, init: RequestInit = {}): Promise<Response> =>
+  fetch(`http://127.0.0.1:${port}${endpoint}`, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+
+/** Closes the tab `id` of the browser on `port`; whether the browser said it did (the tab may be gone already). */
+export const closeTarget = (port: number, id: string): Promise<boolean> => devtoolsFetch(port, `/json/close/${id}`, 2_000).then((response) => response.ok, () => false);
+
 /** The browser-level DevTools WebSocket URL of the browser on `port`, from `/json/version`: the one socket a session drives every page through. */
 export async function browserWebSocketUrl(port: number, timeoutMs: number): Promise<string> {
-  const response = await fetch(`http://127.0.0.1:${port}/json/version`, { signal: AbortSignal.timeout(timeoutMs) });
+  const response = await devtoolsFetch(port, '/json/version', timeoutMs);
   const { webSocketDebuggerUrl } = (await response.json()) as { webSocketDebuggerUrl?: unknown };
   if (typeof webSocketDebuggerUrl !== 'string') throw new Error(`Chrome on port ${port} reports no browser DevTools URL`);
   return webSocketDebuggerUrl;

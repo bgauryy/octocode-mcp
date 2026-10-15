@@ -4,7 +4,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { Permission } from '../src/permission/ask.js';
 import type { AuditEntry } from '../src/permission/audit.js';
-import { pruneSnapshots, takeSnapshot } from '../src/shared/snapshot.js';
+import { pruneSnapshots, takeSnapshot } from '../src/permission/snapshot.js';
 import { fakeCtx, fakePi } from './fake-pi.js';
 import { tmp } from './helpers.js';
 

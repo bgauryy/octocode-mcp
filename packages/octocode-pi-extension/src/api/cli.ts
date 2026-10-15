@@ -1,6 +1,8 @@
 #!/usr/bin/env node
+import { parseArgs, pickInstance } from './args.js';
 import { ApiClient } from './client.js';
-import { apiDir, listInstances, type InstanceRecord } from './registry.js';
+import { EXTERNAL_CALL_MARGIN_MS, EXTERNAL_PROMPT_DEFAULT_MS } from './protocol.js';
+import { apiDir, listInstances } from './registry.js';
 import { errorMessage } from '../shared/util.js';
 
 const USAGE = `octocode-pi-api — talk to running Octocode Pi sessions (start them with OCTOCODE_API=1)
@@ -15,24 +17,9 @@ const USAGE = `octocode-pi-api — talk to running Octocode Pi sessions (start t
 --to defaults to the only running instance (or the one in the current directory).
 --top-level drops tool events of calls other tools made (those with parentId).`;
 
-const BOOLEAN_FLAGS = new Set(['wait', 'top-level']);
-
-function pick(instances: InstanceRecord[], id: string | undefined): InstanceRecord {
-  const found = id ? instances.filter((entry) => entry.id === id) : instances.length > 1 ? instances.filter((entry) => entry.cwd === process.cwd()) : instances;
-  if (found.length !== 1) throw new Error(found.length === 0 ? 'No running instance matches. Start Pi with OCTOCODE_API=1.' : `Several instances match; pass --to <id>: ${found.map((entry) => entry.id).join(', ')}`);
-  return found[0]!;
-}
-
 async function main(argv: string[]): Promise<void> {
   const [command, ...rest] = argv;
-  const flags = new Map<string, string | true>();
-  const words: string[] = [];
-  for (let index = 0; index < rest.length; index += 1) {
-    const arg = rest[index]!;
-    if (!arg.startsWith('--')) words.push(arg);
-    else if (BOOLEAN_FLAGS.has(arg.slice(2))) flags.set(arg.slice(2), true);
-    else flags.set(arg.slice(2), rest[++index] ?? '');
-  }
+  const { flags, words } = parseArgs(rest);
   const instances = listInstances(apiDir());
   if (command === 'list') {
     for (const entry of instances) console.log(`${entry.id}\tpid ${entry.pid}\t${entry.cwd}`);
@@ -43,13 +30,13 @@ async function main(argv: string[]): Promise<void> {
     process.exitCode = command ? 1 : 0;
     return;
   }
-  const client = new ApiClient(pick(instances, flags.get('to') as string | undefined));
+  const client = new ApiClient(pickInstance(instances, flags.get('to') as string | undefined, process.cwd()));
   if (command === 'status') console.log(JSON.stringify(await client.call('status'), null, 2));
   else if (command === 'external') {
     const input: unknown = JSON.parse(words.join(' '));
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('external requires one JSON object');
     const timeout = (input as Record<string, unknown>)['timeoutMs'];
-    const timeoutMs = typeof timeout === 'number' ? timeout + 15_000 : 135_000;
+    const timeoutMs = typeof timeout === 'number' ? timeout + EXTERNAL_CALL_MARGIN_MS : EXTERNAL_PROMPT_DEFAULT_MS + EXTERNAL_CALL_MARGIN_MS;
     console.log(JSON.stringify(await client.call('external.call', input as Record<string, unknown>, { timeoutMs }), null, 2));
   }
   else if (command === 'abort') console.log(JSON.stringify(await client.call('turn.abort')));

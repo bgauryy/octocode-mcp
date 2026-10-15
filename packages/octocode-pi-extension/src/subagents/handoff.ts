@@ -3,8 +3,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { atomicWriteFileSync } from '../shared/atomic.js';
-import { claimSuffix, parseClaim } from '../shared/claims.js';
-import { privateDir, readPaths, sessionDir, sweepStaleOutputs, workspacePaths, workspaceScratchDir } from '../shared/home.js';
+import { claimSuffix, releaseDeadClaims } from '../shared/claims.js';
+import { privateDir, readPaths, sessionDir, workspacePaths, workspaceScratchDir } from '../shared/home.js';
+import { sweepStaleOutputs } from '../shared/sweep.js';
+import { DAY_MS } from '../shared/util.js';
 import { processStartTime, sameProcess } from '../shared/process.js';
 import type { ResultDetails } from './render.js';
 import { teamWorkspace } from '../team/store.js';
@@ -18,7 +20,7 @@ import { teamWorkspace } from '../team/store.js';
 export const RESULT_TYPE = 'octocode-agent-result';
 
 /** Subagent scratch folders untouched this long are removed when a session starts. */
-const SCRATCH_MAX_AGE_MS = 7 * 24 * 60 * 60_000;
+const SCRATCH_MAX_AGE_MS = 7 * DAY_MS;
 
 /** `<workspace>/.octocode/tmp/agents`: one folder per subagent for the files it hands back. */
 export const scratchRoot = (cwd: string) => path.join(workspacePaths(cwd).tmp, 'agents');
@@ -40,7 +42,7 @@ export function agentScratch(cwd: string, id: string): string | undefined {
   }
 }
 
-/** Whether the process that owns a scratch folder still runs. An owner file with only a pid (older) is judged by the pid. */
+/** Whether the process that owns a scratch folder still runs. An owner file with only a pid (start time unknown) is judged by the pid. */
 function ownerRunning(dir: string): boolean {
   try {
     const [pid, ...started] = fs.readFileSync(path.join(dir, OWNER_FILE), 'utf8').trim().split(' ');
@@ -90,7 +92,7 @@ const CLAIM_MARKER = '.claim-';
 /** The pending files behind the reports `takePendingReports` returned: where each is claimed, and the name it goes back to. */
 const claims = new WeakMap<Report, { claim: string; file: string }>();
 
-/** Saves a report nobody could receive; never throws (a report that cannot be saved is lost, as before). */
+/** Saves a report nobody could receive; never throws (a report that cannot be saved is lost). */
 export function savePendingReport(dir: string, id: string, report: Report): void {
   try {
     privateDir(dir);
@@ -101,19 +103,6 @@ export function savePendingReport(dir: string, id: string, report: Report): void
   }
 }
 
-/** Gives back claims whose process is gone (pid and start time), so the take below claims them again. */
-function releaseDeadClaims(dir: string, names: readonly string[]): void {
-  for (const name of names) {
-    const claim = parseClaim(name, CLAIM_MARKER);
-    if (!claim || !claim.original.endsWith('.json') || claim.running) continue;
-    try {
-      fs.renameSync(path.join(dir, name), path.join(dir, claim.original));
-    } catch {
-      // Another process gave it back first.
-    }
-  }
-}
-
 /**
  * The saved reports, oldest first, each claimed by a rename so two processes never take one. The claim stays until
  * `ReportQueue` delivers the report (deleted) or fails to (renamed back); a report saved twice is delivered once.
@@ -121,7 +110,7 @@ function releaseDeadClaims(dir: string, names: readonly string[]): void {
 export function takePendingReports(dir: string): Report[] {
   let names: string[];
   try {
-    releaseDeadClaims(dir, fs.readdirSync(dir));
+    releaseDeadClaims(dir, fs.readdirSync(dir), CLAIM_MARKER, (original) => original.endsWith('.json'));
     names = fs.readdirSync(dir).filter((name) => name.endsWith('.json')).sort();
   } catch {
     return [];

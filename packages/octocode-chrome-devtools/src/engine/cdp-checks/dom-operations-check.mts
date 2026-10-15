@@ -846,7 +846,7 @@ export function createDomOperations(options: Record<string, any> = {}) {
       texts.push(root.nodeType === 9 ? root.body?.innerText || '' : root.textContent || '');
       for (const frame of root.querySelectorAll('iframe,frame')) { try { if (frame.contentDocument) read(frame.contentDocument); } catch {} }
     };
-    read(this?.getRootNode?.() || document);
+    read(this?.isConnected === false ? this.ownerDocument || document : this?.getRootNode?.() || document);
     return ${JSON.stringify(wanted)}.find(w => texts.some(t => t.includes(w))) || null;
   }`;
     while (Date.now() - start < WAIT_MS) {

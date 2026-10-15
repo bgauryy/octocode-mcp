@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 // Fixed routing policies over public, revision-pinned source; no simulated host decisions.
 import fs from 'node:fs/promises';
+import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { propagateOctocodeEnv } from '@octocodeai/config';
 import { hermeticEnv } from '../../../../test-utils/hermetic-env.ts';
 import { invoke } from './jev_question_poc.mjs';
@@ -134,8 +135,8 @@ async function main() {
     await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
     const env = { ...isolated, GH_TOKEN: github, OCTOCODE_CLASSIFICATION_API: 'loopback-only', OCTOCODE_CLASSIFICATION_API_HOST: `http://127.0.0.1:${server.address().port}`,
       OCTOCODE_BETA: 'true', OCTOCODE_RANKING_ENABLED: 'true', OCTOCODE_ENABLE_LOCAL: 'true', OCTOCODE_ENABLE_STATS: 'false', OCTOCODE_STORAGE_MODE: 'memory',
-      OCTOCODE_RANKING_MAX_CANDIDATES: '64', OCTOCODE_RANKING_MAX_CHARS: '131072', OCTOCODE_RANKING_TIMEOUT_MS: '20000', OCTOCODE_CLASSIFICATION_CONCURRENCY: '1',
-      OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH: '20000', OCTOCODE_LSP_PREWARM: 'off', MAX_RETRIES: '0', WORKSPACE_ROOT: fixture, ALLOWED_PATHS: fixture, DISABLE_TOOLS: '', TOOLS_TO_RUN: '' };
+      OCTOCODE_RANKING_MAX_CANDIDATES: '64', OCTOCODE_RANKING_MAX_CHARS: '131072', OCTOCODE_RANKING_TIMEOUT_MS: '20000',
+      OCTOCODE_LSP_PREWARM: 'off', WORKSPACE_ROOT: fixture, ALLOWED_PATHS: fixture, DISABLE_TOOLS: '', TOOLS_TO_RUN: '' };
     for (const name of ['HTTPS_PROXY', 'HTTP_PROXY', 'ALL_PROXY', 'https_proxy', 'http_proxy', 'all_proxy']) delete env[name];
     const gh = { owner: 'django', repo: 'django', ref: REF };
     const call = async (tool, input, into) => { const response = await invoke(tool, input, fixture, env); into.push(response); ensure(response); return response.json; };
@@ -209,4 +210,6 @@ async function main() {
   if (stopped || run.totals.errors || !run.provenance.nativeUnchanged || !run.provenance.fixturesUnchanged) process.exitCode = 1;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) main().catch(error => { console.error(error.message); process.exitCode = 1; });
+// argv[1] keeps a symlinked path while import.meta.url is the real path, so compare real paths.
+const realOrSelf = p => { try { return realpathSync(p); } catch { return path.resolve(p); } };
+if (process.argv[1] && realOrSelf(process.argv[1]) === realOrSelf(fileURLToPath(import.meta.url))) main().catch(error => { console.error(error.message); process.exitCode = 1; });

@@ -1,8 +1,10 @@
 import Ajv2020 from 'ajv/dist/2020.js';
 import { rustBundle } from '../scripts/tool-contract/rust.ts';
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
@@ -140,5 +142,19 @@ describe('generated tool types', () => {
     const output = { results: [] } satisfies Partial<ToolOutput<'localFetch'>>;
     expect(input.queries[0]?.path).toBe('/tmp/a.ts');
     expect(output.results).toEqual([]);
+  });
+
+  it('runs the generator when called through a symlink', () => {
+    // --check is read-only; an empty PATH hides cargo-typify, so a run that reaches main() fails loudly.
+    const dir = mkdtempSync(join(tmpdir(), 'contract-link-'));
+    try {
+      const link = join(dir, 'generate-tool-contract.ts');
+      symlinkSync(resolve(packageRoot, 'scripts/generate-tool-contract.ts'), link);
+      const run = spawnSync(process.execPath, [link, '--check'], { encoding: 'utf8', env: { PATH: '' } });
+      expect(run.stderr).toMatch(/cargo-typify .*is required/);
+      expect(run.status).not.toBe(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

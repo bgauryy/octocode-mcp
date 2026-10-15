@@ -6,6 +6,11 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
+// Every runtime these tests start inherits a private Octocode home: a session on a test database registers itself under
+// the home (scripts/docs/DB.md#active-database-registry), and a real home must not see temporary databases.
+process.env.OCTOCODE_HOME = mkdtempSync(join(tmpdir(), 'communication-home-'));
+process.on('exit', () => rmSync(process.env.OCTOCODE_HOME, { recursive: true, force: true }));
+
 const python = childProcess.execFileSync(process.env.OCTOCODE_PYTHON || (process.platform === 'win32' ? 'python' : 'python3'), ['-c', 'import sys; print(sys.executable)'], { encoding: 'utf8' }).trim();
 function invocationFor(executable, args) {
   if (existsSync(executable) && realpathSync(executable).endsWith('/tests/vendor-fixture.sh')) return { command: '/bin/sh', args: [executable, ...args] };

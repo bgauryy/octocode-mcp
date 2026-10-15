@@ -7,9 +7,10 @@
 ```text
 VS Code command / activation
           │
-          ├── GitHub OAuth ──▶ VS Code secret storage
+          ├── GitHub sign-in ──▶ VS Code authentication session
           │                         │
-          │                         └── token environment for managed MCP process
+          │                         ├── GH_TOKEN for the managed MCP process
+          │                         └── GH_TOKEN in each client's octocode env block
           │
           ├── client detection ──▶ validated MCP configuration mutation
           │
@@ -18,16 +19,15 @@ VS Code command / activation
 
 ## Ownership
 
-- `extension.ts` owns activation, command registration, status presentation, and disposal.
-- Authentication modules own GitHub OAuth and secret-storage interaction.
-- Installer modules own supported-client discovery and configuration updates.
+- `extension.ts` owns activation, command registration, GitHub sign-in through the VS Code authentication API, status presentation, and disposal.
+- `configPaths.ts` owns supported-client discovery; `mcpConfig.ts` owns configuration updates and token placement.
 - `mcpProcess.ts` owns the child process and stdio lifecycle.
 - `octocode-mcp` and `@octocodeai/octocode-native` own all research behavior.
 
 ## Invariants
 
-- Tokens are stored through VS Code secret storage and passed through environment variables, never written into generated MCP configuration.
-- Child processes use argument arrays rather than shell interpolation.
+- The token reaches the MCP server only as `GH_TOKEN`: in the child environment, and in the `env` block of the Octocode entry it writes (owner-only files, written atomically). Older `GITHUB_TOKEN`/`OCTOCODE_TOKEN` entries are removed.
+- The child is `npx -y octocode-mcp@latest` with fixed arguments; Windows runs it through the shell.
 - Configuration writes preserve unrelated client entries and are scoped to explicitly supported targets.
 - Activation and repeated install commands are idempotent.
 - Process shutdown releases listeners and child resources.

@@ -27,8 +27,8 @@ node packages/octocode/out/octocode.js schema
 node packages/octocode/out/octocode.js schema localFetch --view query
 ```
 
-- The catalog has 16 tools, with 12 enabled by default in MCP: `clasify` needs a classification key, and `ghCloneRepo` and the beta tools `astTopology` and `astRewrite` are CLI-only (the beta tools also need `OCTOCODE_BETA` or `local.beta`).
-- MCP omits `clasify` when no key resolves (`OCTOCODE_CLASSIFICATION_API` or `.octocoderc` `classification.api`) or when `OCTOCODE_CLASSIFICATION_API` is blank. Local-tool, clone, storage, and allowlist settings also gate tools.
+- The catalog has 16 tools, with 12 enabled by default in MCP. `ghCloneRepo` is CLI-only; beta (`OCTOCODE_BETA` or `local.beta`) adds `clasify` (which also needs a classification key) and the CLI-only `astTopology`; `astRewrite` is parked (contract `disabled`) on every surface.
+- `clasify` is omitted when no key resolves (`OCTOCODE_CLASSIFICATION_API` or `.octocoderc` `classification.api`), when `OCTOCODE_CLASSIFICATION_API` is blank, or when beta is off. Local-tool, clone, storage, and allowlist settings also gate tools.
 - Record effective configuration and unavailable capabilities per run; enabling a tool installs no language server and grants no provider access. Test CLI and MCP when registration, schema projection, formatting, or continuation rendering changes.
 
 ## Shared acceptance requirements
@@ -78,7 +78,7 @@ node packages/octocode/out/octocode.js schema localFetch --view query
 | `structureSearch` | `tree` and `files` with name and metadata filters. | Pagination, snapshots, depth bounds, exclusions. |
 | `astSearch` | `match`, `syntaxTree`, `symbols`. | Pattern/rule exclusivity, language selection; captures, nodes, results; parser and scan limits. |
 | `astTopology` | All seven graph analyses. | Results and diagnostics; unresolved edges and coverage limits; corroborated deletion candidates. |
-| `astRewrite` | Preview, stale snapshots, hash guards, apply on an isolated fixture. | Overlap guidance, transaction recovery, changed bytes, unchanged files. |
+| `astRewrite` (parked) | When re-enabled: preview, stale snapshots, hash guards, apply on an isolated fixture. | Overlap guidance, transaction recovery, changed bytes, unchanged files. |
 | `lspSearch` | Document, workspace, anchored, hierarchy operations. | Distinguish no server, unsupported capability, failed anchor, valid empty; provenance; snapshots. |
 | `ghSearchRepo`, `ghSearchCode`, `ghStructure` | Exercise code, repository, and tree variants (one tool each); reject branch selection for indexed code search. | Candidate matches, immutable tree identity, metadata pages, indexing uncertainty, provider-limit diagnostics. |
 | `ghGetFileContent` | Exact, compact, full, paginated views. | Local/remote parity; pinned refs, repeated-outline prevention, redaction, directory-input rejection. |

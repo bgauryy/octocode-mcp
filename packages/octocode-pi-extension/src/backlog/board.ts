@@ -1,11 +1,12 @@
 import { sanitizeTerminalText } from '../shared/sanitize.js';
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { Key, matchesKey, truncateToWidth } from '@earendil-works/pi-tui';
+import { refText } from './row.js';
 import { priorityName, type Item as BacklogItem, type State as BacklogState } from './store.js';
 import { BOARD_ORDER as ORDER, STATE_TITLE as HEADINGS } from './format.js';
 
 /** What the user picked on the board; the command runs it and reopens the board unless it handed work to the agent. */
-type BoardChoice = { action: 'open' | 'do'; ref: string } | { action: 'add' } | { action: 'export' };
+type BoardChoice = { action: 'open' | 'do'; ref: string } | { action: 'add' } | { action: 'export' } | { action: 'html' };
 
 interface BoardSource {
   title: string;
@@ -30,7 +31,7 @@ export function boardRows(items: BacklogItem[]): BacklogItem[] {
 /**
  * The board: a section per state (backlog, todo, ongoing, done, top to bottom) with counts, ↑↓ select, ←→ move the
  * selected item to the section above/below,
- * Enter item actions, `a` add, `d` do it now, `e` export, Esc close.
+ * Enter item actions, `a` add, `d` do it now, `e` export, `h` open as HTML, Esc close.
  */
 export function showBoard(ctx: ExtensionContext, source: BoardSource, selectRef?: string): Promise<BoardChoice | undefined> {
   return ctx.ui.custom<BoardChoice | undefined>((tui, theme, _keybindings, done) => {
@@ -67,6 +68,7 @@ export function showBoard(ctx: ExtensionContext, source: BoardSource, selectRef?
         if (current) return done({ action: 'open', ref: current.ref });
       } else if (data === 'a') return done({ action: 'add' });
       else if (data === 'e') return done({ action: 'export' });
+      else if (data === 'h') return done({ action: 'html' });
       else if (data === 'd') {
         if (current) return done({ action: 'do', ref: current.ref });
       } else return;
@@ -94,7 +96,7 @@ export function showBoard(ctx: ExtensionContext, source: BoardSource, selectRef?
           if (selected) selectedLine = listed.length;
           const owner = item.state === 'ongoing' && item.assignee ? (item.assignee === source.self ? ' (you)' : ` (@${sanitizeTerminalText(item.assignee)})`) : '';
           const tags = item.tags.length ? ` ${item.tags.map((tag) => `#${tag}`).join(' ')}` : '';
-          const from = item.from === undefined ? '' : ` ←B${item.from}`;
+          const from = item.from === undefined ? '' : ` ←${refText(item.from)}`;
           const text = `${item.ref} ${priorityName(item.priority)} ${sanitizeTerminalText(item.title)}${theme.fg('dim', `${tags}${from}${owner}`)}`;
           listed.push(selected ? `${theme.fg('accent', ' › ')}${theme.fg('accent', text)}` : `   ${text}`);
         }
@@ -105,7 +107,7 @@ export function showBoard(ctx: ExtensionContext, source: BoardSource, selectRef?
       for (const line of listed.slice(start, start + room)) push(line);
       lines.push('');
       if (flash) push(` ${theme.fg('warning', sanitizeTerminalText(flash))}`);
-      push(` ${theme.fg('dim', '↑↓ select · ←→ move up/down a state · Enter actions · a add · d do it now · e export · Esc close')}`);
+      push(` ${theme.fg('dim', '↑↓ select · ←→ move up/down a state · Enter actions · a add · d do it now · e export · h html · Esc close')}`);
       push(theme.fg('accent', '─'.repeat(w)));
       cache = lines;
       return lines;

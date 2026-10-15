@@ -65,6 +65,16 @@ describe('file restore after compaction', () => {
     expect(restored.files.length).toBeLessThan(5);
   });
 
+  it('returns nothing when the session was replaced, and lets any other failure through', () => {
+    const dir = tmp();
+    const file = path.join(dir, 'w.ts');
+    fs.writeFileSync(file, 'export {};\n');
+    const ctx = { cwd: dir, sessionManager: { getBranch: () => [], buildSessionProjection: () => ({ entries: [] }) } };
+    const deliver = (error: Error) => deliverRestoredFiles({ sendMessage: () => { throw error; } } as never, [{ file, workedAt: 3 }], ctx as never, RESTORE_TOTAL_CHARS);
+    expect(deliver(new Error('This extension ctx is stale after session replacement or reload. Do not use a captured pi or command ctx.'))).toBeUndefined();
+    expect(() => deliver(new Error('disk full'))).toThrow('disk full');
+  });
+
   it('sends the files as a hidden message and records them only once a model call carries it', () => {
     const dir = tmp();
     const file = path.join(dir, 'w.ts');

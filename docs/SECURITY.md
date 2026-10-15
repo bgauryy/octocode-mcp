@@ -20,9 +20,9 @@ Credentials are acquired after request admission and pinned for the request life
 
 ## Content sanitization
 
-One ordered secret-pattern set and native scanner cover cloud, AI-provider, version-control, package-registry, database, payment, communications, private-key, bearer-token, and connection-string formats. File-context patterns apply only to matching path classes, to reduce false positives.
+One ordered secret-pattern set and native scanner cover cloud, AI-provider, version-control, package-registry, database, payment, communications, private-key, bearer-token, and connection-string formats (300+ patterns). File-context patterns apply only to matching path classes, to reduce false positives.
 
-The runtime scans untrusted provider and filesystem content before rendering. Detected values become typed redaction markers with warnings. Oversized values are replaced whole, never partly exposed. A final recursive pass sanitizes nested strings and keeps continuation and location structures executable. Email masking in GitHub output is opt-in: `--redact-emails`, `OCTOCODE_REDACT_EMAILS=true`, or `output.redactEmails`.
+The runtime scans untrusted provider and filesystem content before rendering. Detected values become typed redaction markers with warnings. Oversized values are replaced whole, never partly exposed. A final recursive pass sanitizes nested strings and keeps continuation and location structures executable. Email masking in GitHub output is opt-in: `OCTOCODE_REDACT_EMAILS=true` or `output.redactEmails`.
 
 ### Classification egress
 
@@ -32,12 +32,12 @@ The runtime scans untrusted provider and filesystem content before rendering. De
 - one state: the caller's literal `state`, or the complete selected source captured through the authorized reader and sanitized like a direct tool call;
 - optional explicitly referenced PNG/JPEG assets, captured internally and sent as their original bytes. Image pixels and metadata are not text-scanned or redacted.
 
-For inline context selection, supplied `mainGoal` and `reasoning` are part of the provider instructions; ordinary calls without `clasifyContext` send no JEV request. Text and image source locators pass the input security policy before capture; credential-looking locators are rejected. Text secrets are redacted before sending. A URL source is fetched over HTTPS only, under the address policy at connection and every redirect, with bounded size and redirects; no GitHub or other stored credential is sent to that origin. Treat classifier questions, clasify questions and selected evidence as disclosed to that provider. Shared path policy applies to both routes. Text sanitation applies to text evidence; images are sent only when explicitly named in `assets`. Image bytes stay out of tool responses, which contain capture identity and a saved inspection path instead. The model catalog operation sends no evidence.
+Treat questions and selected evidence as disclosed to that provider. Ordinary calls without `clasifyContext` send no request, and the model catalog operation sends no evidence. Source and image locators pass the input and path policy before capture; credential-looking locators are rejected. A URL source is fetched over HTTPS only, under the address policy at connection and every redirect, with bounded size and redirects, and no stored credential is sent to that origin. Image bytes stay out of tool responses, which return capture identity and a saved inspection path instead.
 
 ## Filesystem policy
 
 - Allowed roots are the workspace root (`WORKSPACE_ROOT` / `local.workspaceRoot`, else the process cwd), `ALLOWED_PATHS` / `local.allowedPaths`, and `OCTOCODE_HOME`. The OS home is **not** allowed unless one of these covers it.
-- Relative paths resolve against the process working directory, not `WORKSPACE_ROOT`; pass absolute paths.
+- Relative paths resolve against the workspace root.
 - Relative traversal and paths outside the allowed roots fail with `outsideAllowedRoots` on every local tool.
 - System directories such as `/etc` stay denied even when listed in `ALLOWED_PATHS`.
 - Sensitive names are withheld by file name and by content, never by a folder's name: a `src/private/` or `secrets/` source folder is read, searched and listed like any other. Discovery prunes and every read denies credential-store directories (`.ssh`, `.aws`, `.kube`, `.gnupg`, …) and credential-named files: environment files (`.env*`), private keys and certificates (`*.pem`, `id_rsa*`), keystores, credential files, shell history, browser login stores, infrastructure state and wallets. A file such as `secrets/prod.env` or `private/key.pem` stays withheld by its own name; any other file's secret-shaped text is redacted by the content scanner.
@@ -46,11 +46,11 @@ For inline context selection, supplied `mainGoal` and `reasoning` are part of th
 
 Denial messages name the path as requested or relative to `~`; outside-root denials list the allowed roots.
 
-`OCTOCODE_ENABLE_LOCAL=false` disables local tools. `OCTOCODE_BETA=true` (or `local.beta: true`; shell or home config only; default off) gates the CLI-only `astTopology` and `astRewrite`, including the `astRewrite` hash-guarded apply path. MCP never exposes them.
+`OCTOCODE_ENABLE_LOCAL=false` disables local tools. `OCTOCODE_BETA=true` (or `local.beta: true`; shell or home config only; default off) gates beta tools, including the CLI-only `astTopology`.
 
 ## Structural rewrite safety
 
-`astRewrite` uses embedded engine primitives; it launches no rewrite executable. Preview is read-only. Apply needs the configuration gate and exact preview identities, and keeps canonical-root and path-policy checks, per-root exclusion locks, before/after hashes and unchanged-source guards, explicit match selection, postcondition checks, staged multi-file transactions, crash journals with rollback, and cancellation checks between bounded steps. Public file paths are relative to the preview root; an apply resolves them against that root before revalidation.
+`astRewrite` is the only tool that writes files, and it is disabled in this build on every surface. It uses embedded engine primitives and launches no rewrite executable. Preview is read-only. Apply needs beta and exact preview identities, and keeps canonical-root and path-policy checks, per-root exclusion locks, before/after hashes and unchanged-source guards, explicit match selection, postcondition checks, staged multi-file transactions, crash journals with rollback, and cancellation checks between bounded steps. Public file paths are relative to the preview root; an apply resolves them against that root before revalidation.
 
 ## External processes
 

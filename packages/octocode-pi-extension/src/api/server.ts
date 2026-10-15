@@ -5,12 +5,12 @@ import net from 'node:net';
 import type { EventLog } from './events.js';
 import { removeSocket } from './registry.js';
 import { ERR, failure, isResponse, MAX_FRAME_BYTES, parseRequest, RpcError, success, type ApiEvent, type RpcRequest, type RpcResponse } from './protocol.js';
+import { isLoopbackHostname } from '../shared/net.js';
 import { errorMessage } from '../shared/util.js';
 
 const MAX_CONNECTIONS = 16;
 /** A client that lets this much output queue up is not reading; drop it instead of buffering without limit. */
 const MAX_QUEUED_BYTES = 4 * 1_048_576;
-const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
 
 /** What a method handler may do for the connection it was called on. */
 export interface Connection {
@@ -147,7 +147,7 @@ export class ApiServer {
 
   private authorized(req: http.IncomingMessage): boolean {
     const host = (req.headers.host ?? '').replace(/:\d+$/, '');
-    if (!LOOPBACK_HOSTS.has(host) || req.headers.origin !== undefined) return false;
+    if (!isLoopbackHostname(host) || req.headers.origin !== undefined) return false;
     const supplied = Buffer.from((req.headers.authorization ?? '').replace(/^Bearer /i, ''));
     const expected = Buffer.from(this.token);
     return supplied.length === expected.length && crypto.timingSafeEqual(supplied, expected);

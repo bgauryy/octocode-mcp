@@ -4,20 +4,20 @@ import type { MessageEnvelope } from '../shared/messages.js';
 import { addReply, cutText, errorMessage } from '../shared/util.js';
 import { fenceUntrusted, headerText } from '../shared/fence.js';
 import { storedText, visibleControls } from '../shared/sanitize.js';
-import { dbFailure, interruptRefusal, leaseAge, MESSAGE_MAX_CHARS, outside, resolveLockPath, resolveTarget, USER_SENDER, wakes } from './routing.js';
+import { dbFailure, interruptRefusal, leaseAge, MESSAGE_MAX_CHARS, outside, resolveLockPath, resolveTarget, USER_SENDER } from './routing.js';
 import { AGENT_ID_ENV, PARENT_ID_ENV, PARENT_PID_ENV, pathKey, TeamStore } from './store.js';
 import { envFlag, ownNonce, SUBAGENT_ENV } from '../shared/env.js';
 import { interactive } from '../shared/interactive.js';
 import { parentGone, sameProcess, terminateSelf } from '../shared/process.js';
-import type { Lease, LeaseRequest, Member, Message, SendOptions } from './model.js';
-import { Mail, mailIds } from './mail.js';
+import type { Lease, LeaseRequest, Member, SendOptions } from './model.js';
+import { Mail } from './mail.js';
 import { userProof } from './proof.js';
 import { HeldLeases, LEASE_IDLE_MS } from './held.js';
-import { Inbox } from './inbox.js';
+import { Delivery } from './delivery.js';
 import { PeerLeases, type PeerLease } from './peer-leases.js';
 import type { EditLog } from './edits.js';
 import { AgentDbError } from '../agentdb/db.js';
-import { agentDbPath, peerDbPath } from '../shared/home.js';
+import { agentDbPath, peerDbPath, peerRegistryDir } from '../shared/home.js';
 import { saveMessageFile } from './spill.js';
 import { agentName, LINE_MAX, newMember } from './identity.js';
 import { TeamTicker, type TeamView } from './ticker.js';
@@ -27,16 +27,12 @@ export { MESSAGE_TYPE } from './mail.js';
 export { EXTERNAL_SENDER, MESSAGE_MAX_CHARS, USER_SENDER } from './routing.js';
 /** Refresh the agent's row at least this often so peers can tell it is alive (and its leases stay valid). */
 const HEARTBEAT_MS = 5_000;
-/** Consecutive failed ticks (about 30s) before the agent hears that the team database is unavailable. */
-const FAILED_TICKS_NOTICE = 30;
 /** How often a subagent checks that the Pi process that started it still runs. */
 const PARENT_CHECK_MS = 1_000;
 /** Every this many parent checks the start time is compared too: a reused pid is noticed within that many seconds, and the event loop is not stalled by a `ps` every second. */
 const PARENT_START_EVERY = 15;
 /** Names drawn in turn when other processes keep taking them. */
 const JOIN_ATTEMPTS = 8;
-/** An idle agent handed a waking message that the model has not been called with after this long was not started by Pi (no model, or no sign-in). */
-const WAKE_STUCK_MS = 10_000;
 
 /**
  * Whether the process named by `OCTOCODE_PARENT_PID` (`<pid> <start time>`, the start time when known) is gone. A
@@ -60,7 +56,7 @@ export class Team {
   /** The one ticker: delivery and heartbeats while joined, a cached view for watchers (the panel). */
   private readonly ticker = new TeamTicker({
     joined: () => this.me !== undefined,
-    beat: () => this.deliverPending(),
+    beat: () => this.delivery.deliver(this.db),
     dbFile: () => {
       const file = agentDbPath(this.env);
       return this.ctx && (this.db || fs.existsSync(file)) ? file : undefined;
@@ -81,18 +77,13 @@ export class Team {
   private savedAt = 0;
   /** Why the database cannot be used at all (a foreign file); shown in /agents and the footer. */
   private schemaProblem: string | undefined;
-  private failedTicks = 0;
   /** When this agent last worked (or joined): an idle owner's reservations lapse `LEASE_IDLE_MS` (`held.ts`) after it. */
   private activeAt = 0;
   private readonly held = new HeldLeases();
   /** The agents-communication package's path leases (read-only), opened on the first guarded write. */
   private peers: PeerLeases | undefined;
-  private readonly inbox = new Inbox();
   private readonly mail: Mail;
-  /** When an idle agent was handed a waking message that has not reached the model yet; undefined when none is outstanding. */
-  private wakeHandedAt: number | undefined;
-  /** The user was told about the current stuck wake. */
-  private wakeReported = false;
+  private readonly delivery: Delivery;
   /** A subagent's check that its parent still runs: on from the session start, whether or not it joins the team. */
   private parentWatch: NodeJS.Timeout | undefined;
   /** Subagents this session started that have finished: id → where their report went, for a later message to them. */
@@ -109,7 +100,16 @@ export class Team {
     this.finished.set(id, receipt);
     if (this.finished.size > 128) this.finished.delete(this.finished.keys().next().value!);
   }
-  constructor(pi: ExtensionAPI, private readonly env: NodeJS.ProcessEnv = process.env) { this.mail = new Mail(pi, () => ownNonce(this.env)); }
+  constructor(pi: ExtensionAPI, private readonly env: NodeJS.ProcessEnv = process.env) {
+    this.mail = new Mail(pi, () => ownNonce(this.env));
+    this.delivery = new Delivery({
+      id: () => this.me?.id,
+      parentId: () => this.parentId,
+      ctx: () => this.ctx,
+      headless: () => this.headless(),
+      heartbeat: (db) => this.heartbeat(db),
+    }, this.mail);
+  }
 
   /** Secrets of the subagents this session started, by agent id (`vouch`): what signs a message the user types for one. */
   private readonly secrets = new Map<string, string>();
@@ -193,7 +193,7 @@ export class Team {
     return agentName([...live, ...this.finished.keys(), ...inUse, ...(this.me ? [this.me.id] : [])]);
   }
 
-  /** Join (or refresh) as this process. Idempotent; `goal` replaces the one-line goal (validated by the caller, see `goal.ts`). */
+  /** Join (or refresh) as this process. Idempotent; `goal` replaces the one-line goal (validated by the caller with `checkGoal`, `identity.ts`). */
   join(goal?: string): Member {
     const db = this.store(); // throws before the session starts
     const ctx = this.ctx!;
@@ -230,10 +230,8 @@ export class Team {
     this.me = undefined;
     this.ticker.sync();
     this.held.clear();
-    this.inbox.reset(this.db, me?.id);
+    this.delivery.reset(this.db, me?.id);
     this.mail.reset();
-    this.wakeHandedAt = undefined;
-    this.wakeReported = false;
     // Only a row that still names this process: a name another process holds now is not ours to remove.
     if (me && this.db) this.db.remove(me.id, Date.now(), me);
   }
@@ -404,7 +402,7 @@ export class Team {
 
   /** The package reads its home from the process environment, so this does too (not the team's injected `env`, which only carries a subagent's identity). */
   private peerLeases(): PeerLeases {
-    return (this.peers ??= new PeerLeases(peerDbPath(), { self: () => this.ctx?.sessionManager.getSessionId(), warn: (text) => this.mail.notice(text) }));
+    return (this.peers ??= new PeerLeases(peerDbPath(), { registry: peerRegistryDir(), self: () => this.ctx?.sessionManager.getSessionId(), warn: (text) => this.mail.notice(text) }));
   }
 
   /** A reservation of ours covering `file` that is no longer live in the database (now tracked as lapsed), if any. */
@@ -412,11 +410,6 @@ export class Team {
     const me = this.me;
     if (!me || !this.held.any) return undefined;
     return this.held.lapsedCover(pathKey(db.workspace, file), () => db.owned(me.id));
-  }
-
-  /** The live lease of another agent that covers this file, if any. */
-  blockedBy(file: string): Lease | undefined {
-    return this.check(file).lease;
   }
 
   /** Why the file may not be changed (another agent's reservation, in this team or in agents-communication; our lapsed one; or an unreadable team database), or undefined. */
@@ -457,15 +450,7 @@ export class Team {
 
   /** Pi is about to call the model with `messages`: team mail among them is now delivered. */
   onContext(messages: ReadonlyArray<{ role?: string; customType?: string; details?: unknown }>): void {
-    const me = this.inbox.awaitingContext ? this.me?.id : undefined;
-    const db = this.db;
-    const ids = me && db ? messages.flatMap((message) => mailIds(message, me)) : [];
-    if (!me || !db || ids.length === 0) return;
-    try {
-      db.quick(() => this.inbox.seen(db, me, ids));
-    } catch {
-      // Busy database: the inbox keeps the ids and records them on the next tick.
-    }
+    this.delivery.seen(this.db, messages);
   }
 
   /** A top-level tool call started (parallel calls each count; calls a tool makes itself do not). */
@@ -511,55 +496,11 @@ export class Team {
     if (lost.length > 0) this.mail.notice(`Your reservation on ${lost.join(', ')} lapsed${why}; lock it again before editing.`);
   }
 
-  /** Two-phase delivery: hand what is waiting to Pi (the inbox records it once the model sees it), then the heartbeat. */
-  private deliverPending(): void {
-    if (!this.me || !this.db) return;
-    const db = this.db;
-    try {
-      db.quick(() => this.deliverNow(db));
-      this.failedTicks = 0;
-    } catch (error) {
-      // A locked or closed database is retried on the next tick; say so once if it lasts long enough for leases to lapse.
-      if (++this.failedTicks === FAILED_TICKS_NOTICE) this.mail.notice(`Team database unavailable (${errorMessage(error)}): your reservations may lapse and messages wait until it recovers.`);
-    }
-  }
-
-  /** Hands a batch to Pi; notes when it should wake an idle agent, to tell whether Pi started that turn (`checkWake`). */
-  private handOver(batch: Message[]): boolean {
-    const handed = this.mail.deliver(batch, this.parentId, this.ctx);
-    if (handed && this.wakeHandedAt === undefined && this.ctx?.isIdle() && batch.some(wakes)) this.wakeHandedAt = Date.now();
-    return handed;
-  }
-
-  /**
-   * Pi swallows a refused turn start (no model selected, no sign-in): the message then stays handed but unseen until the
-   * agent leaves, when it becomes a dead letter. An idle agent that still has not reached the model with a waking message
-   * after `WAKE_STUCK_MS` is reported to its user once, so the cause (`/model`, `/login`) is not a silent wait.
-   */
-  private checkWake(): void {
-    if (this.wakeHandedAt === undefined) return;
-    const ctx = this.ctx;
-    if (!this.inbox.awaitingContext || !ctx || !ctx.isIdle()) {
-      // The model saw it, or a turn is running: nothing is stuck.
-      this.wakeHandedAt = undefined;
-      this.wakeReported = false;
-      return;
-    }
-    if (this.wakeReported || Date.now() - this.wakeHandedAt < WAKE_STUCK_MS) return;
-    this.wakeReported = true;
-    if (ctx.hasUI) ctx.ui.notify('A team message should have started a turn, but Pi did not run one (select a model with /model and sign in with /login). The message stays queued; its sender is told it went unread if this session ends first.', 'warning');
-  }
-
-  private deliverNow(db: TeamStore): void {
-    if (!this.me) return;
-    // A settlement send can fail while Pi changes state. An interactive session stays alive to retry held mail.
-    if (!this.headless() && this.ctx?.isIdle()) this.mail.settled();
-    // An idle subagent without a UI has had its last turn: mail waits, and becomes a dead letter when it leaves.
-    if (!(this.headless() && this.ctx?.isIdle())) this.inbox.deliver(db, this.me.id, (batch) => this.handOver(batch));
-    this.checkWake();
-    if (!this.statusChanged && Date.now() - this.savedAt < HEARTBEAT_MS) return;
+  /** Writes the heartbeat when a status changed or `HEARTBEAT_MS` passed since the last; whether it did. */
+  private heartbeat(db: TeamStore): boolean {
+    if (!this.statusChanged && Date.now() - this.savedAt < HEARTBEAT_MS) return false;
     this.flush(db);
-    this.mail.reportDeadLetters(db, this.me.id);
+    return true;
   }
 }
 

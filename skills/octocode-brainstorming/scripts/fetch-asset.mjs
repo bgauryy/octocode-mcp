@@ -6,7 +6,7 @@
  * cap are accepted.
  */
 import { createHash } from 'node:crypto';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { basename, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { guardedFetch, urlProblem as guardProblem } from './lib/net-guard.mjs';
@@ -103,7 +103,9 @@ async function download(plan, assetsDir, maxBytes, manifest) {
   return { url: plan.url, finalUrl: res.finalUrl, file, contentType: type, bytes: data.length, sha256, fetchedAt: new Date().toISOString() };
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+// Installed skills are often symlinks: argv[1] keeps the link path while import.meta.url is the real path.
+const realOrSelf = (p) => { try { return realpathSync(p); } catch { return resolve(p); } };
+if (process.argv[1] && realOrSelf(process.argv[1]) === realOrSelf(fileURLToPath(import.meta.url))) {
   const args = process.argv.slice(2);
   if (args.includes('--help') || args.includes('-h')) { console.log(USAGE); process.exit(0); }
   const opts = { urls: [], runDir: null, maxMb: 25, approve: false };

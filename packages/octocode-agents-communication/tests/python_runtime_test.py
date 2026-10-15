@@ -1,4 +1,6 @@
 """Portability boundaries not covered by the process-level protocol fixtures."""
+import json
+import os
 import sqlite3
 import sys
 import tempfile
@@ -7,7 +9,10 @@ from pathlib import Path
 from contextlib import contextmanager
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-from communication import database
+# A session on a test database registers itself under the Octocode home; keep that out of the real one.
+HOME = tempfile.mkdtemp(prefix='communication-home-')
+os.environ['OCTOCODE_HOME'] = HOME
+from communication import database, registry
 from communication.paths import lease_key
 from communication.store import Store
 
@@ -64,7 +69,79 @@ class PythonRuntimeTests(unittest.TestCase):
                 db.close()
 
     def test_schema_fingerprint_preserves_database_protocol(self):
-        self.assertEqual(database.schema()['schemaSha256'], '562d823b51cf62ae87ae0e5c5e0d2001962b3dbde5be3b8a0511fda159979aa9')
+        self.assertEqual(database.schema()['schemaSha256'], 'aaba31166352d06e9572372476dfc7ca9a7c0084ab004d80984addc2d3c66851')
+
+    def entries(self):
+        folder = registry.directory()
+        return {file.name: json.loads(file.read_text()) for file in sorted(folder.glob('*.json'))} if folder.exists() else {}
+
+    def clear_registry(self):
+        for file in registry.directory().glob('*') if registry.directory().exists() else []:
+            file.unlink()
+
+    def test_non_default_database_is_registered_with_pid_and_start_time(self):
+        self.clear_registry()
+        with tempfile.TemporaryDirectory() as directory:
+            database_file = Path(directory) / 'db'
+            store = Store(database_file, directory, create=True)
+            try:
+                entry = self.entries()[str(os.getpid()) + '.json']
+                self.assertEqual(set(entry), {'version', 'database', 'pid', 'started', 'updatedAt'})
+                self.assertEqual((entry['version'], entry['database'], entry['pid']), (1, str(database_file), os.getpid()))
+                self.assertTrue(entry['started'] is None or entry['started'].isdigit())
+                if os.name != 'nt':
+                    self.assertEqual(entry['started'], registry.process_started(os.getpid()))
+                self.assertLessEqual(abs(entry['updatedAt'] - registry.now_ms()), 5000)
+                self.assertEqual((registry.directory().stat().st_mode & 0o777, next(registry.directory().glob('*.json')).stat().st_mode & 0o777), (0o700, 0o600))
+            finally:
+                store.db.close()
+
+    def test_default_and_read_only_sessions_register_nothing(self):
+        self.clear_registry()
+        default = registry.database_path()
+        self.assertIsNone(registry.register(default))
+        with tempfile.TemporaryDirectory() as directory:
+            database_file = Path(directory) / 'db'
+            Store(database_file, directory, create=True).db.close()
+            self.clear_registry()
+            store = Store(database_file, directory, read_only=True)
+            try:
+                self.assertEqual(self.entries(), {})
+            finally:
+                store.db.close()
+
+    def test_registration_refreshes_only_when_stale_and_prunes_dead_entries(self):
+        self.clear_registry()
+        folder = registry.directory()
+        folder.mkdir(parents=True, exist_ok=True)
+        now = registry.now_ms()
+        dead = 2 ** 22 + 7
+        while registry.process_alive(dead):
+            dead += 1
+        grace = registry.GRACE_MS
+        write = lambda name, entry: (folder / name).write_text(entry if isinstance(entry, str) else json.dumps(entry))
+        write('dead-old.json', {'version': 1, 'database': '/x', 'pid': dead, 'started': None, 'updatedAt': now - grace - 1})
+        write('dead-recent.json', {'version': 1, 'database': '/y', 'pid': dead, 'started': None, 'updatedAt': now - grace + 5000})
+        write('reused-pid.json', {'version': 1, 'database': '/z', 'pid': os.getpid(), 'started': '1', 'updatedAt': now - grace - 1})
+        write('broken.json', '{not json')
+        write('alive-old.json', {'version': 1, 'database': '/w', 'pid': os.getppid(), 'started': registry.process_started(os.getppid()), 'updatedAt': now - grace - 1})
+        with tempfile.TemporaryDirectory() as directory:
+            registration = registry.register(Path(directory) / 'db')
+            try:
+                self.assertEqual(sorted(self.entries()), sorted(['dead-recent.json', 'alive-old.json', str(os.getpid()) + '.json'] + (['reused-pid.json'] if os.name == 'nt' else [])))
+                self.assertFalse((folder / 'dead-old.json').exists())
+                if os.name != 'nt':  # start times are unknown on Windows, where the pid alone decides
+                    self.assertFalse((folder / 'reused-pid.json').exists())
+                self.assertFalse((folder / 'broken.json').exists())
+                written = registration.written
+                registration.touch()
+                self.assertEqual(registration.written, written, 'a fresh entry is not rewritten')
+                registration.written -= registry.REFRESH_MS
+                registration.touch()
+                self.assertGreaterEqual(registration.written, written)
+                self.assertGreaterEqual(self.entries()[str(os.getpid()) + '.json']['updatedAt'], written)
+            finally:
+                self.clear_registry()
 
     def test_leave_releases_pending_claims_without_acknowledging_mail(self):
         with tempfile.TemporaryDirectory() as directory:

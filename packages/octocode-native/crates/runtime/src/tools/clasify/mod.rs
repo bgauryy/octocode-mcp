@@ -116,6 +116,27 @@ fn parse(position: usize, row: &Value) -> Result<Row, ExecutionError> {
     })
 }
 
+fn parse_rows(rows: &[Value]) -> Result<Vec<Row>, ExecutionError> {
+    let mut reserved = rows
+        .iter()
+        .filter_map(|row| row["id"].as_str().map(str::to_owned))
+        .collect::<std::collections::HashSet<_>>();
+    rows.iter()
+        .enumerate()
+        .map(|(position, row)| {
+            let mut parsed = parse(position, row)?;
+            if row.get("id").is_none() {
+                let mut next = position;
+                while !reserved.insert(parsed.id.clone()) {
+                    next += 1;
+                    parsed.id = format!("q{next}");
+                }
+            }
+            Ok(parsed)
+        })
+        .collect()
+}
+
 /// Evaluate every row; a failed row keeps its own error and never hides a
 /// sibling's answers.
 pub(crate) fn call(
@@ -128,11 +149,7 @@ pub(crate) fn call(
     if !evaluator.is_configured() {
         return Err(ExecutionError::WorkerFailed);
     }
-    let parsed = rows
-        .iter()
-        .enumerate()
-        .map(|(position, row)| parse(position, row))
-        .collect::<Result<Vec<_>, _>>()?;
+    let parsed = parse_rows(rows)?;
     let budget = evaluator.budget(context.deadline, context.cancellation.clone());
     let gate = evaluator.gate();
     let outcomes = std::thread::scope(|scope| {
@@ -415,6 +432,60 @@ pub(crate) fn unavailable_source_issues(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn parsed_ids(rows: &[Value]) -> Vec<String> {
+        parse_rows(rows)
+            .expect("valid rows")
+            .into_iter()
+            .map(|row| row.id)
+            .collect()
+    }
+
+    #[test]
+    fn auto_ids_do_not_collide_with_earlier_explicit_ids() {
+        assert_eq!(
+            parsed_ids(&[
+                json!({"operation":"models", "id":"q1"}),
+                json!({"operation":"models"}),
+            ]),
+            ["q1", "q2"]
+        );
+    }
+
+    #[test]
+    fn auto_ids_reserve_later_explicit_ids() {
+        assert_eq!(
+            parsed_ids(&[
+                json!({"operation":"models"}),
+                json!({"operation":"models", "id":"q0"}),
+            ]),
+            ["q1", "q0"]
+        );
+    }
+
+    #[test]
+    fn auto_ids_skip_already_generated_ids() {
+        assert_eq!(
+            parsed_ids(&[
+                json!({"operation":"models", "id":"q1"}),
+                json!({"operation":"models"}),
+                json!({"operation":"models"}),
+            ]),
+            ["q1", "q2", "q3"]
+        );
+    }
+
+    #[test]
+    fn auto_ids_keep_free_positional_ids_and_explicit_names() {
+        assert_eq!(
+            parsed_ids(&[
+                json!({"operation":"models"}),
+                json!({"operation":"models", "id":"chosen"}),
+                json!({"operation":"models"}),
+            ]),
+            ["q0", "chosen", "q2"]
+        );
+    }
 
     #[test]
     fn duplicate_query_ids_reject_with_the_core_wording() {

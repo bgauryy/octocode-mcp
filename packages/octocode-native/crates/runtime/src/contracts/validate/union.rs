@@ -1,5 +1,7 @@
 //! Canonical union branch selection, matching validation/unionIssues.ts.
+#[cfg(test)]
 use super::schema::validate_schema;
+use super::schema::{ValidationMode, validate_with_mode};
 use super::{ContractValidationError, ValidationIssue, issue};
 use serde_json::Value;
 use std::cell::Cell;
@@ -17,6 +19,10 @@ const SELECTORS: &[&str] = &[
     "packageName",
     "keywords",
 ];
+
+/// Fields that name a branch outright: a branch rejecting one is never the
+/// closest match, and their issues lead the chosen branch's errors.
+const DISCRIMINATORS: &[&str] = &["tool", "operation", "type", "ecosystem"];
 
 thread_local! {
     /// Depth of speculative validation on this thread: a branch tried only
@@ -61,12 +67,13 @@ pub(super) fn validate(
     exclusive: bool,
     value: &mut Value,
     path: &[String],
+    mode: ValidationMode,
 ) -> Result<(), ContractValidationError> {
     #[cfg(test)]
     if REFERENCE_ONLY.with(Cell::get) {
-        return reference(root, branches, exclusive, value, path);
+        return reference(root, branches, exclusive, value, path, mode);
     }
-    if accept(root, branches, exclusive, value, path) {
+    if accept(root, branches, exclusive, value, path, mode) {
         return Ok(());
     }
     if speculative() {
@@ -78,7 +85,7 @@ pub(super) fn validate(
             "No schema branch accepts the value",
         ));
     }
-    reference(root, branches, exclusive, value, path)
+    reference(root, branches, exclusive, value, path, mode)
 }
 
 /// The acceptance `reference` reaches, without its failure diagnosis.
@@ -91,6 +98,7 @@ fn accept(
     exclusive: bool,
     value: &mut Value,
     path: &[String],
+    mode: ValidationMode,
 ) -> bool {
     let _speculation = Speculation::enter();
     let mut accepted = None;
@@ -99,7 +107,7 @@ fn accept(
         .filter(|branch| !certainly_rejects(root, branch, value))
     {
         let mut candidate = value.clone();
-        if validate_schema(root, branch, &mut candidate, &mut path.to_vec()).is_err() {
+        if validate_with_mode(root, branch, &mut candidate, &mut path.to_vec(), mode).is_err() {
             continue;
         }
         if accepted.is_some() {
@@ -185,13 +193,14 @@ fn reference(
     exclusive: bool,
     value: &mut Value,
     path: &[String],
+    mode: ValidationMode,
 ) -> Result<(), ContractValidationError> {
     let mut success = None;
     let mut successes = 0;
     let mut failures = Vec::new();
     for branch in branches {
         let mut candidate = value.clone();
-        match validate_schema(root, branch, &mut candidate, &mut path.to_vec()) {
+        match validate_with_mode(root, branch, &mut candidate, &mut path.to_vec(), mode) {
             Ok(()) => {
                 successes += 1;
                 if success.is_none() {
@@ -261,9 +270,33 @@ fn reference(
     annotate_sibling_branch_fields(&mut selected, root, branches, value);
     annotate_sibling_selectors(&mut selected, root, branches, value, path);
     annotate_forbidden_fields(&mut selected, root, branches, value, path);
+    // A wrong or missing selector is the first repair: the other issues are
+    // relative to the branch it picked. The sort is stable.
+    let depth = path.len();
+    selected.sort_by_key(|item| {
+        let leads = item.path.len() == depth + 1
+            && (matches!(item.rule_id.as_str(), "schema.const" | "schema.enum")
+                || missing_literal(item, depth))
+            && item.path.get(depth).is_some_and(|name| {
+                DISCRIMINATORS.contains(&name.as_str()) || SELECTORS.contains(&name.as_str())
+            });
+        !leads
+    });
     // Branch scoring may group key errors for parity, but the selected branch
     // must retain individual paths and schemas for precise diagnostics.
     Err(ContractValidationError { issues: selected })
+}
+
+/// A missing required field that the schema pins to literals
+/// (`operation:"models"`): core Zod reports it as `invalid_value`, a selector
+/// rejection, not a missing value.
+fn missing_literal(issue: &ValidationIssue, depth: usize) -> bool {
+    issue.rule_id == "schema.required"
+        && issue.path.len() == depth + 1
+        && issue
+            .schema
+            .as_ref()
+            .is_some_and(|schema| schema.get("const").is_some() || schema.get("enum").is_some())
 }
 
 /// The failed branches whose selector fields (`operation`, `ecosystem`, …) all
@@ -430,14 +463,19 @@ fn mixed_forms(
 fn score(issues: &[ValidationIssue], depth: usize) -> [usize; 4] {
     // A branch that does not declare a named discriminator (`tool`, `type`, …)
     // rejects it as strongly as a branch that pins it to other literals.
+    // A branch missing a required literal (`operation:"models"`) rejects it
+    // too, as core Zod's `invalid_value` does.
+    let rejects = |issue: &ValidationIssue| {
+        matches!(
+            issue.rule_id.as_str(),
+            "schema.const" | "schema.enum" | "schema.unknown-field"
+        )
+    };
     let invalid = |names: &[&str]| {
         issues
             .iter()
             .filter(|issue| {
-                matches!(
-                    issue.rule_id.as_str(),
-                    "schema.const" | "schema.enum" | "schema.unknown-field"
-                ) && issue.path.len() == depth + 1
+                ((rejects(issue) && issue.path.len() == depth + 1) || missing_literal(issue, depth))
                     && issue
                         .path
                         .get(depth)
@@ -448,20 +486,18 @@ fn score(issues: &[ValidationIssue], depth: usize) -> [usize; 4] {
     let rejected = issues
         .iter()
         .filter(|issue| {
-            matches!(
-                issue.rule_id.as_str(),
-                "schema.const" | "schema.enum" | "schema.unknown-field"
-            ) && issue
-                .path
-                .get(depth)
-                .is_some_and(|name| SELECTORS.contains(&name.as_str()))
+            (rejects(issue) || missing_literal(issue, depth))
+                && issue
+                    .path
+                    .get(depth)
+                    .is_some_and(|name| SELECTORS.contains(&name.as_str()))
         })
         .count();
     let count = group_unknown_fields(issues.to_vec()).len();
     [
         // A continuation names its tool: a branch for another tool is never
         // the closest match, however few field issues it reports.
-        invalid(&["tool", "operation", "type", "ecosystem"]),
+        invalid(DISCRIMINATORS),
         invalid(&["resultView"]),
         rejected,
         count,
@@ -502,7 +538,15 @@ fn annotate_sibling_branch_fields(
                     .is_some()
             })
             .collect::<Vec<_>>();
-        let requires = sibling_missing_fields(&declaring, value, field)
+        // Missing fields only repair a branch in the query's own mode; when no
+        // declaring branch shares its selectors, name the selectors instead
+        // (`matchString` on an issue → the operations that accept it).
+        let same_mode = declaring
+            .iter()
+            .copied()
+            .filter(|branch| selectors_accept(branch, value))
+            .collect::<Vec<_>>();
+        let requires = sibling_missing_fields(&same_mode, value, field)
             .or_else(|| sibling_selector_values(&declaring, value));
         if let (Some(requires), Some(schema)) = (
             requires,
@@ -595,6 +639,21 @@ fn sibling_selector_values(declaring: &[&Value], value: &Value) -> Option<Vec<Va
 }
 
 /// The literal values a `const` or `enum` selector accepts.
+/// Whether every literal selector of `branch` accepts the query's value.
+fn selectors_accept(branch: &Value, value: &Value) -> bool {
+    branch
+        .get("properties")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flatten()
+        .all(
+            |(name, schema)| match (selector_literals(schema), value.get(name)) {
+                (Some(literals), Some(actual)) => literals.contains(&actual),
+                _ => true,
+            },
+        )
+}
+
 fn selector_literals(schema: &Value) -> Option<Vec<&Value>> {
     if let Some(literal) = schema.get("const") {
         return Some(vec![literal]);
@@ -975,6 +1034,9 @@ mod tests {
             if output.get("thrown").is_some() {
                 continue;
             }
+            crate::contracts::validate_output(tool, &output).unwrap_or_else(|error| {
+                panic!("{name}: unmodified {tool} output was rejected: {error:?}")
+            });
             let mut variants = vec![output.clone()];
             for (row_index, row) in output["results"]
                 .as_array()
@@ -1113,6 +1175,49 @@ mod tests {
             .join(" | ");
         for operation in ["pullRequest", "issue", "commit", "compare"] {
             assert!(message.contains(operation), "{operation}: {message}");
+        }
+    }
+
+    fn clasify_issues(query: Value) -> Vec<super::ValidationIssue> {
+        prepare_many_and_validate("clasify", json!({"queries":[query]}))
+            .expect_err("invalid clasify query")
+            .issues
+    }
+
+    /// A branch missing its required `operation` literal is rejected like one
+    /// pinning it to another literal (core Zod: `invalid_value`), so the
+    /// default form's own errors lead.
+    #[test]
+    fn a_missing_required_selector_rejects_its_branch() {
+        let issues = clasify_issues(json!({
+            "questions":["q"],
+            "source":{"tool":"ghGetFileContent","query":{"path":"a.ts","ranges":["1-2"]}}
+        }));
+        assert_eq!(issues[0].path, ["queries", "0", "questions"], "{issues:?}");
+        assert!(
+            !issues
+                .iter()
+                .any(|issue| issue.path.last().is_some_and(|field| field == "operation")),
+            "{issues:?}"
+        );
+    }
+
+    /// A wrong discriminator is the first repair, ahead of the fields of the
+    /// branch it was compared with.
+    #[test]
+    fn selector_issues_lead_the_chosen_branch() {
+        let issues = clasify_issues(json!({
+            "questions":{"check":{"type":"noul"}},
+            "source":{"tool":"astSearch","query":{"path":"a.ts"}}
+        }));
+        assert_eq!(
+            issues[0].path,
+            ["queries", "0", "source", "tool"],
+            "{issues:?}"
+        );
+        assert_eq!(issues[0].rule_id, "schema.enum", "{issues:?}");
+        for tool in ["localFetch", "ghGetFileContent"] {
+            assert!(issues[0].message.contains(tool), "{tool}: {issues:?}");
         }
     }
 

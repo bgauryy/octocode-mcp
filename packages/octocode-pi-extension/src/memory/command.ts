@@ -1,4 +1,5 @@
 import type { ExtensionCommandContext } from '@earendil-works/pi-coding-agent';
+import { USER_AUTHOR } from '../agentdb/author.js';
 import { say, wordCompletions, type Subcommands } from '../shared/commands.js';
 import { errorMessage } from '../shared/util.js';
 import { lastInjection } from './inject.js';
@@ -114,12 +115,12 @@ async function add(ctx: ExtensionCommandContext, store: MemoryStore, text: strin
   if (!ctx.hasUI) {
     if (!text) return say(ctx, 'Usage: /memory add <title> [— body]', 'warning');
     const [title = '', ...body] = text.split(/\s+[—-]{1,2}\s+/);
-    const { memory } = store.set({ title, body: body.join(' — '), author: 'user', sourceSession });
+    const { memory } = store.set({ title, body: body.join(' — '), author: USER_AUTHOR, sourceSession });
     return say(ctx, `Saved ${memoryLine(memory, 60)}`, 'info');
   }
   const edited = await ctx.ui.editor('New memory', memoryTemplate({ title: text, kind: 'fact', keywords: '', scope: 'project', body: '', pinned: false }));
   if (edited === undefined) return;
-  const { memory } = store.set({ ...parseTemplate(edited), author: 'user', sourceSession });
+  const { memory } = store.set({ ...parseTemplate(edited), author: USER_AUTHOR, sourceSession });
   say(ctx, `Saved ${memoryLine(memory, 60)}`, 'info');
 }
 
@@ -163,7 +164,7 @@ async function act(ctx: ExtensionCommandContext, store: MemoryStore, memory: Mem
     input = parseTemplate(edited);
   } else if (action === 'Pin' || action === 'Unpin') input = { pinned: action === 'Pin' };
   else input = { scope: memory.scope === 'project' ? 'global' : 'project' };
-  const { memory: updated } = store.set({ ...input, id: memory.id, author: 'user' });
+  const { memory: updated } = store.set({ ...input, id: memory.id, author: USER_AUTHOR });
   say(ctx, `Updated ${memoryLine(updated, 60)}`, 'info');
   return updated;
 }

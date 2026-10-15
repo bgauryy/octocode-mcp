@@ -12,7 +12,7 @@ vi.mock('chrome-launcher', () => ({ launch }));
 vi.mock('node:dns/promises', () => ({ lookup: async () => [{ address: '93.184.216.34', family: 4 }] }));
 
 const { BrowserTool, registerBrowserTool } = await import('../src/browser/tool.js');
-const { sharedChromePort } = await import('../src/browser/cdp.js');
+const { sharedChromePort } = await import('../src/browser/session.js');
 const { sessionOutputDir } = await import('../src/shared/home.js');
 
 type Result = { content: Array<{ type: string; text?: string }> };

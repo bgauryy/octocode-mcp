@@ -89,6 +89,78 @@ fn an_extensionless_file_without_language_names_no_extension() {
     assert_eq!(out["isPartial"], true, "{out}");
 }
 
+/// One file per way a name can select a grammar: an own extension, none, a
+/// custom suffix after a grammar's, and a suffix no grammar claims.
+const NAMED_FILES: [&str; 4] = ["a.ts", "noext", "d.tsx.tmpl", "e.typescript"];
+
+fn matched_paths(out: &Value) -> Vec<&str> {
+    out["files"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|row| row["path"].as_str())
+        .collect()
+}
+
+/// `languageGlobs` names the parser of directory files whose names select
+/// none: a directory `match` parses every one of them, and only a single
+/// file takes `language` instead.
+#[test]
+fn match_parses_files_named_by_language_globs() {
+    let root = Fixture::new();
+    for name in NAMED_FILES {
+        root.write(name, SCRIPT);
+    }
+    let globs = json!({"typescript":["noext","*.tmpl","*.typescript"]});
+    let out = run(
+        &root.0,
+        json!({"operation":"match","path":root.0,"rule":"kind: function_declaration","languageGlobs":globs}),
+    )
+    .expect("match");
+    assert_eq!(out["matchCount"], 4, "{out}");
+    let paths = matched_paths(&out);
+    for name in NAMED_FILES {
+        assert!(
+            paths.iter().any(|path| path.ends_with(&format!("/{name}"))),
+            "{name}: {out}"
+        );
+    }
+    assert!(out.get("warnings").is_none(), "{out}");
+    assert!(out.get("isPartial").is_none(), "{out}");
+
+    let error = run(
+        &root.0,
+        json!({"operation":"match","path":root.0.join("noext"),"rule":"kind: function_declaration","languageGlobs":globs}),
+    )
+    .expect_err("a single file takes language");
+    assert_eq!(error.code, "languageDirectoryRequired", "{}", error.message);
+}
+
+/// Without `languageGlobs`, the files no grammar parses are named in one
+/// warning, with the field that parses them; the parsed scope stays whole.
+#[test]
+fn match_reports_files_skipped_without_a_grammar() {
+    let root = Fixture::new();
+    for name in NAMED_FILES {
+        root.write(name, SCRIPT);
+    }
+    let out = run(
+        &root.0,
+        json!({"operation":"match","path":root.0,"rule":"kind: function_declaration"}),
+    )
+    .expect("match");
+    assert_eq!(out["matchCount"], 1, "{out}");
+    let warnings = out["warnings"].as_array().expect("warnings");
+    assert_eq!(warnings.len(), 1, "{out}");
+    let warning = warnings[0].as_str().expect("warning text");
+    assert!(warning.starts_with("3 files skipped"), "{warning}");
+    for name in ["noext", "d.tsx.tmpl", "e.typescript"] {
+        assert!(warning.contains(name), "{name}: {warning}");
+    }
+    assert!(warning.contains("set languageGlobs"), "{warning}");
+    assert!(out.get("isPartial").is_none(), "{out}");
+}
+
 /// Symbols of a file no extractor reads is `symbolsUnsupported` whether it
 /// has an unknown extension or none, never an empty outline; the hint leads
 /// to `language` / `languageGlobs`.

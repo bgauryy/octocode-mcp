@@ -3,7 +3,7 @@ import { tildePath } from '../shared/home.js';
 import { clipText, isRecord } from '../shared/util.js';
 import { JOB_TYPE } from '../files/bash-jobs.js';
 import { RESULT_TYPE } from '../subagents/handoff.js';
-import { oneLine } from './store.js';
+import { shownLine } from './store.js';
 
 /**
  * Background work recorded in a session's entries: `bash` calls with `background: true` (result `details.job` and
@@ -55,9 +55,9 @@ export function unreportedWork(entries: readonly unknown[], since?: number): Bac
     const input = args.get(String(message['toolCallId'])) ?? {};
     if (message['toolName'] === 'bash' && typeof details['job'] === 'string') {
       const log = typeof details['log'] === 'string' ? details['log'] : undefined;
-      started.set(jobKey(details['job'], log), { kind: 'bash', id: details['job'], label: oneLine(String(input['command'] ?? ''), LABEL_CHARS), ...(log ? { log } : {}) });
+      started.set(jobKey(details['job'], log), { kind: 'bash', id: details['job'], label: shownLine(String(input['command'] ?? ''), LABEL_CHARS), ...(log ? { log } : {}) });
     } else if (message['toolName'] === 'agent' && details['status'] === 'background' && typeof details['id'] === 'string') {
-      started.set(`agent:${details['id']}`, { kind: 'agent', id: details['id'], label: oneLine(String(input['task'] ?? ''), LABEL_CHARS) });
+      started.set(`agent:${details['id']}`, { kind: 'agent', id: details['id'], label: shownLine(String(input['task'] ?? ''), LABEL_CHARS) });
     }
   }
   return [...started].filter(([key]) => !reported.has(key)).map(([, work]) => work);

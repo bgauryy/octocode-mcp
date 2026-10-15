@@ -146,6 +146,61 @@ fn follow_expansions(result: &LocalSearchResult, policy: &PathPolicy) -> (usize,
     (reads, content)
 }
 
+/// Runs `start` (a localSearch query row) in the workspace `root`, and every
+/// page lead its pages offer, under `checks::walk`: each call once, each row
+/// once, every page and its leads within the contract. Rows are `path:line`
+/// (`path` on list views). Returns the walk and each page's result, in walk
+/// order.
+fn walk_search(
+    root: &std::path::Path,
+    start: serde_json::Value,
+    window: Option<usize>,
+) -> (
+    crate::tools::test_support::checks::Walk,
+    Vec<serde_json::Value>,
+) {
+    let (policy, security) = policy_for(root);
+    let mut bodies = Vec::new();
+    let walk = crate::tools::test_support::checks::walk(
+        "localSearch",
+        serde_json::json!({"queries": [start]}),
+        |call| {
+            let row = &call["queries"][0];
+            let query: LocalSearchQuery =
+                serde_json::from_value(row.clone()).expect("localSearch row");
+            let result =
+                execute_local_search(&query, &policy, &security, &NeverCancel, None, window)
+                    .unwrap_or_else(|error| panic!("{row}: {error:?}"));
+            let body = serde_json::to_value(&result).expect("result");
+            let page = crate::tools::test_support::checks::Page {
+                output: crate::tools::test_support::published(
+                    crate::tools::id::ToolId::LocalSearch,
+                    row,
+                    &body,
+                ),
+                rows: row_ids(&body),
+            };
+            bodies.push(body);
+            page
+        },
+    );
+    (walk, bodies)
+}
+
+/// Each shown row of a page as `path:line`, or `path` for a file without
+/// rows.
+fn row_ids(body: &serde_json::Value) -> Vec<String> {
+    let mut ids = Vec::new();
+    for file in body["files"].as_array().into_iter().flatten() {
+        let path = file["path"].as_str().expect("path");
+        match file["matches"].as_array() {
+            Some(rows) => ids.extend(rows.iter().map(|row| format!("{path}:{}", row["line"]))),
+            None => ids.push(path.to_owned()),
+        }
+    }
+    ids
+}
+
 mod binaries;
 mod pages;
 mod scope;
@@ -164,7 +219,8 @@ fn select_all_search(
     walk_threads: Option<u32>,
     response_window: Option<usize>,
 ) -> Result<LocalSearchResult, crate::tools::result::ToolError> {
-    use crate::tools::selection::{Decision, JudgeCall, Limits, Runtime, SelectionJudge};
+    use crate::runtime::SelectionLimits;
+    use crate::tools::selection::{Decision, JudgeCall, Runtime, SelectionJudge};
     struct All;
     impl SelectionJudge for All {
         fn identity(&self) -> serde_json::Value {
@@ -180,7 +236,7 @@ fn select_all_search(
     }
     let executor = tokio::runtime::Runtime::new().expect("runtime");
     let selection = Runtime {
-        limits: Limits {
+        limits: SelectionLimits {
             max_candidates: 64,
             max_chars: 131_072,
             timeout: std::time::Duration::from_secs(5),

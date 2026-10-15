@@ -460,8 +460,9 @@ pub(super) fn shape_page(
     } = *scope;
     let (mut redacted, redaction) = redact_scan(scope, parsed, stored_redaction)?;
     order_files(query, &mut parsed.files);
-    let selection = select_files(query, parsed, selection, identity)?;
-    let layout = Layout::cut(query, paths, output_root, parsed, page_budget);
+    let selection = select_files(scope, parsed, selection, identity, &mut redacted)?;
+    let outlines = cut_outlines(scope, &parsed.files)?;
+    let layout = Layout::cut(query, paths, output_root, parsed, page_budget, outlines);
     for (index, _) in &layout.shown {
         validate_matched(paths, &output_root.join(&parsed.files[*index].path))?;
     }
@@ -479,11 +480,13 @@ pub(super) fn shape_page(
 
 /// Select matched-file evidence before paging; replay requires its bound plan.
 fn select_files(
-    query: &LocalSearchQuery,
+    scope: &PageScope<'_, impl CancellationCheck>,
     parsed: &mut octocode_engine::types::TextSearchResult,
     selection: Option<&crate::tools::selection::Runtime>,
     identity: &str,
+    redacted: &mut Redacted,
 ) -> Result<Option<crate::tools::selection::Outcome>, ToolError> {
+    let query = scope.query;
     if query.clasify_context.is_none() {
         return match query.selection {
             Some(_) => Err(stale_snapshot(query)),
@@ -525,16 +528,16 @@ fn select_files(
     );
     let candidates = parsed
         .files
-        .iter()
+        .iter_mut()
         .map(|file| {
-            if needs_states {
-                let state = json!({"path": file.path, "matches": file.matches.iter().map(|hit| json!({"line":hit.line,"value":hit.value})).collect::<Vec<_>>()});
-                crate::tools::selection::Candidate::new(Some(state))
+            let state = if needs_states && verify_candidate(scope, file, redacted)? {
+                Some(json!({"path": file.path, "matches": file.matches.iter().map(|hit| json!({"line":hit.line,"value":hit.value})).collect::<Vec<_>>()}))
             } else {
-                crate::tools::selection::Candidate::new(None)
-            }
+                None
+            };
+            Ok(crate::tools::selection::Candidate::new(state))
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, ToolError>>()?;
     let query_json = normalized_query(query, streamed_layout(query));
     let outcome = crate::tools::selection::select(
         selection,

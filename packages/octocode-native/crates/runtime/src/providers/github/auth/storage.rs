@@ -43,17 +43,20 @@ fn platform_entry(host: &str) -> Result<keyring_core::Entry, ProviderError> {
 
 pub fn load_stored_credentials(host: &str) -> Result<Option<StoredCredentials>, ProviderError> {
     let host = normalize_host(host);
-    let Some(blob) = load_platform_password(&host)? else {
-        return Ok(None);
-    };
-    if let Ok(stored) = serde_json::from_str::<StoredCredentials>(&blob) {
-        return Ok(Some(stored));
+    Ok(load_platform_password(&host)?.and_then(|blob| parse_stored_blob(host, &blob)))
+}
+
+/// A keychain blob as credentials: the stored JSON record, or a legacy plain
+/// token (an OAuth token with no username). A blank blob is no credential.
+fn parse_stored_blob(host: String, blob: &str) -> Option<StoredCredentials> {
+    if let Ok(stored) = serde_json::from_str::<StoredCredentials>(blob) {
+        return Some(stored);
     }
     let token = blob.trim();
     if token.is_empty() {
-        return Ok(None);
+        return None;
     }
-    Ok(Some(StoredCredentials {
+    Some(StoredCredentials {
         hostname: host,
         username: String::new(),
         token: OAuthToken {
@@ -67,7 +70,7 @@ pub fn load_stored_credentials(host: &str) -> Result<Option<StoredCredentials>, 
         git_protocol: "https".into(),
         created_at: String::new(),
         updated_at: String::new(),
-    }))
+    })
 }
 
 fn load_platform_password(host: &str) -> Result<Option<String>, ProviderError> {
@@ -160,5 +163,39 @@ mod tests {
         .unwrap();
         assert!(!format!("{stored:?}").contains("synthetic-"));
         assert!(!format!("{:?}", stored.token).contains("synthetic-"));
+    }
+
+    #[test]
+    fn legacy_plain_token_blob_parses_as_oauth_credentials() {
+        let stored = StoredCredentials {
+            hostname: "example.test".into(),
+            username: "fixture-user".into(),
+            token: OAuthToken {
+                token: "synthetic-token".into(),
+                token_type: "oauth".into(),
+                scopes: Some(vec!["repo".into()]),
+                refresh_token: None,
+                expires_at: None,
+                refresh_token_expires_at: None,
+            },
+            git_protocol: "ssh".into(),
+            created_at: "2026-01-01".into(),
+            updated_at: "2026-01-02".into(),
+        };
+        let blob = serde_json::to_string(&stored).unwrap();
+        assert_eq!(
+            parse_stored_blob("other.test".into(), &blob),
+            Some(stored.clone()),
+            "a JSON blob is returned as stored"
+        );
+
+        let legacy = parse_stored_blob("example.test".into(), "  gho_x \n").unwrap();
+        assert_eq!(legacy.hostname, "example.test");
+        assert_eq!(legacy.username, "");
+        assert_eq!(legacy.token.token, "gho_x");
+        assert_eq!(legacy.token.token_type, "oauth");
+        assert_eq!(legacy.git_protocol, "https");
+
+        assert_eq!(parse_stored_blob("example.test".into(), "   "), None);
     }
 }

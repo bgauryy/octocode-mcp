@@ -1,6 +1,6 @@
 import net from 'node:net';
-import { classifyHost, isBlockedIp, type HostClass, type HostLookup } from '../web/guard.js';
-import type { NetworkEvent, PageNetworkPolicy, RequestSource } from './cdp.js';
+import { bareHostname, classifyHost, isBlockedIp, isHttpUrl, type HostClass, type HostLookup } from '../web/guard.js';
+import type { NetworkEvent, PageNetworkPolicy, RequestSource } from './policy.js';
 
 /**
  * What a page may reach. The agent chooses targets (`navigate`, `open`, `tab`) through the permission matrix; anything
@@ -28,10 +28,32 @@ const VERDICT_TTL_MS = 30_000;
 export const VERDICTS_MAX = 500;
 
 const DEFAULT_PORTS: Readonly<Record<string, number>> = { 'http:': 80, 'ws:': 80, 'https:': 443, 'wss:': 443 };
-const bare = (hostname: string): string => hostname.replace(/^\[|\]$/g, '');
 export const portOf = (url: URL): number => (url.port ? Number(url.port) : (DEFAULT_PORTS[url.protocol] ?? 0));
-/** `hostname:port`, the port being the effective one (80 and 443 when the URL omits it): what an approval, a grant and the proxy's allowance are keyed by. */
-export const keyOf = (url: URL): string => `${bare(url.hostname)}:${portOf(url)}`;
+/** `hostname:port` with brackets off an IPv6 literal: what an approval, a grant and the proxy's allowance are keyed by (see `keyOf`). */
+export const hostKey = (hostname: string, port: number): string => `${bareHostname(hostname)}:${port}`;
+/** `hostKey` of a URL, the port being the effective one (80 and 443 when the URL omits it). */
+export const keyOf = (url: URL): string => hostKey(url.hostname, portOf(url));
+/** `keyOf` of a URL given as text; undefined when it is not one (an empty target, say). */
+const keyOfText = (raw: string): string | undefined => {
+  try {
+    return keyOf(new URL(raw));
+  } catch {
+    return undefined;
+  }
+};
+
+/** `raw` as a URL, or the refusal that says it is not one. */
+export function parseUrl(raw: string): URL {
+  try {
+    return new URL(raw);
+  } catch {
+    throw new Error(`Not a URL: ${raw}`);
+  }
+}
+/** The refusal for a URL the browser would open that is not http(s). */
+export const httpOnlyRefusal = (url: URL): string => `The browser opens http(s) URLs only, not ${url.protocol}`;
+/** What a host that is not public is refused as (`private`: a non-public address; `unresolved`: a name nothing here could vet). */
+export const blockedHost = (host: Exclude<HostClass, { kind: 'public' }>): string => (host.kind === 'private' ? 'Blocked private or local address' : 'Blocked unresolved host');
 
 interface PagePolicyOptions {
   /** Where refusals and reports go (the permission audit). */
@@ -85,11 +107,8 @@ export class PagePolicy implements PageNetworkPolicy {
   navigated(tab: string, url: string): void {
     const key = this.#tabs.get(tab);
     if (key === undefined) return;
-    try {
-      if (keyOf(new URL(url)) === key) return;
-    } catch {
-      // Not a URL (about:blank is one; an empty target is not): not the approved host.
-    }
+    // Not a URL (about:blank is one; an empty target is not): not the approved host.
+    if (keyOfText(url) === key) return;
     this.#tabs.delete(tab);
   }
 
@@ -106,7 +125,7 @@ export class PagePolicy implements PageNetworkPolicy {
 
   /** Whether some approval covers `hostname:port` for any tab: what the launched Chrome's proxy, which cannot tell tabs apart, lets through. */
   approves(hostname: string, port: number): boolean {
-    return this.#holds(`${bare(hostname)}:${port}`);
+    return this.#holds(hostKey(hostname, port));
   }
 
   #holds(key: string): boolean {
@@ -117,33 +136,22 @@ export class PagePolicy implements PageNetworkPolicy {
   #permits(key: string, source: RequestSource): boolean {
     if (this.#approved.has(key)) return true;
     if (source.tab !== undefined && this.#tabs.get(source.tab) === key) return true;
-    if (source.origin === undefined) return false;
-    try {
-      return keyOf(new URL(source.origin)) === key && this.#holds(key);
-    } catch {
-      return false;
-    }
+    return source.origin !== undefined && keyOfText(source.origin) === key && this.#holds(key);
   }
 
   /** Resolves when a page may request `url`; rejects, saying why, when it may not. A host's verdict is reused for a short time. */
   async check(raw: string, resourceType: string, source: RequestSource = {}): Promise<void> {
-    let url: URL;
-    try {
-      url = new URL(raw);
-    } catch {
-      throw new Error(`Not a URL: ${raw}`);
-    }
-    const web = url.protocol === 'http:' || url.protocol === 'https:' || url.protocol === 'ws:' || url.protocol === 'wss:';
+    const url = parseUrl(raw);
+    const web = Object.hasOwn(DEFAULT_PORTS, url.protocol);
     if (!web) {
       // data:, blob: and the like reach nothing; a document that is not http(s) (file:, javascript:) is still refused.
-      if (resourceType === 'Document') throw new Error(`The browser opens http(s) URLs only, not ${url.protocol}`);
+      if (resourceType === 'Document') throw new Error(httpOnlyRefusal(url));
       return;
     }
     if (this.#permits(keyOf(url), source)) return;
     const host = await this.#classify(url);
     if (host.kind === 'public') return;
-    const refusal = host.kind === 'private' ? 'Blocked private or local address' : 'Blocked unresolved host';
-    throw new Error(`${refusal}: ${url.host}. A page cannot open it; only an address the agent opens itself can be reached.`);
+    throw new Error(`${blockedHost(host)}: ${url.host}. A page cannot open it; only an address the agent opens itself can be reached.`);
   }
 
   /**
@@ -158,13 +166,13 @@ export class PagePolicy implements PageNetworkPolicy {
     } catch {
       return false;
     }
-    if ((url.protocol !== 'http:' && url.protocol !== 'https:') || net.isIP(bare(url.hostname)) || this.#holds(keyOf(url))) return false;
+    if (!isHttpUrl(url) || net.isIP(bareHostname(url.hostname)) || this.#holds(keyOf(url))) return false;
     if (port !== undefined && port !== portOf(url)) return false;
-    return isBlockedIp(bare(address));
+    return isBlockedIp(bareHostname(address));
   }
 
   #classify(url: URL): Promise<HostClass> {
-    const name = bare(url.hostname).toLowerCase();
+    const name = bareHostname(url.hostname).toLowerCase();
     const known = this.#verdicts.get(name);
     if (known && this.#now() - known.at < VERDICT_TTL_MS) return known.host;
     const now = this.#now();

@@ -849,7 +849,7 @@ mod tests {
             github_credential: None,
         };
         let selection = crate::tools::selection::Runtime {
-            limits: crate::tools::selection::Limits {
+            limits: crate::runtime::SelectionLimits {
                 max_candidates: 64,
                 max_chars: 131_072,
                 timeout: Duration::from_secs(5),
@@ -930,7 +930,7 @@ mod tests {
             context: context.clone(),
             regex: crate::tools::local_fetch::LocalFetchRegex,
             selection: crate::tools::selection::Runtime {
-                limits: crate::tools::selection::Limits {
+                limits: crate::runtime::SelectionLimits {
                     max_candidates: 64,
                     max_chars: 131_072,
                     timeout: Duration::from_secs(5),

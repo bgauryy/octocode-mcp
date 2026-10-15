@@ -1,6 +1,7 @@
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { kindOption } from '../permission/ask.js';
-import { oneLine } from '../permission/effect.js';
+import { foldLines } from '../permission/effect.js';
+import { plural } from '../shared/render.js';
 import { sanitizeTerminalText } from '../shared/sanitize.js';
 import { clipText } from '../shared/util.js';
 
@@ -20,6 +21,9 @@ interface ChangeQuery {
 // Model-supplied paths, reasoning and file text reach Pi's dialogs: strip terminal escapes first.
 const clipLine = (line: string, max = 110) => clipText(sanitizeTerminalText(line), max);
 
+/** What the agent says a change is for, as the dialogs label it. */
+const agentSays = (reasoning: string): string => `agent says (unverified): ${clipLine(foldLines(reasoning), 160)}`;
+
 function snippet(text: string, sign: '-' | '+', maxLines = 3): string[] {
   const lines = text.replace(/\n$/, '').split('\n');
   return [...lines.slice(0, maxLines).map((line) => `${sign} ${clipLine(line)}`), ...(lines.length > maxLines ? [`${sign} … ${lines.length - maxLines} more line(s)`] : [])];
@@ -28,12 +32,12 @@ function snippet(text: string, sign: '-' | '+', maxLines = 3): string[] {
 /** What a change does, for the review dialog: what, a bounded preview of the text involved, then what the agent says about it (unverified, last). */
 export function describeChange(query: ChangeQuery): string[] {
   const head = `${query.type} ${sanitizeTerminalText(query.path)}`;
-  const says = `  agent says (unverified): ${clipLine(oneLine(query.reasoning), 160)}`;
+  const says = `  ${agentSays(query.reasoning)}`;
   if (query.type === 'delete') return [head, '  removes the file', says];
   if (query.type === 'write') return [head, ...snippet(query.content ?? '', '+', 5).map((line) => `  ${line}`), says];
   const edits = query.edits ?? [];
   return [
-    `${head} · ${edits.length} edit${edits.length === 1 ? '' : 's'}`,
+    `${head} · ${plural(edits.length, 'edit')}`,
     ...edits.slice(0, 3).flatMap((edit) => [...snippet(edit.oldText, '-', 2), ...snippet(edit.newText, '+', 2)].map((line) => `  ${line}`)),
     ...(edits.length > 3 ? [`  … ${edits.length - 3} more edit(s)`] : []),
     says,
@@ -60,8 +64,8 @@ export async function askReview(ctx: Pick<ExtensionContext, 'ui'>, queries: Chan
   const options = signal ? { signal } : undefined;
   // What changes first, then the system's reason lines (the same card every prompt leads with), then what the agent says.
   const list = queries.map((query, index) => sanitizeTerminalText(`${index + 1}. ${query.type} ${query.path}`)).join('\n');
-  const says = queries.map((query, index) => `  ${index + 1}. agent says (unverified): ${clipLine(oneLine(query.reasoning), 160)}`).join('\n');
-  const choice = await ctx.ui.select(`Apply ${queries.length} file change${queries.length === 1 ? '' : 's'}?\n${[list, ...reasonLines, says].join('\n')}`, [APPLY_ALL, APPLY_SESSION, ...(queries.length > 1 ? [ONE_BY_ONE] : []), REJECT_ALL, REJECT_ALL_NOTE], options);
+  const says = queries.map((query, index) => `  ${index + 1}. ${agentSays(query.reasoning)}`).join('\n');
+  const choice = await ctx.ui.select(`Apply ${plural(queries.length, 'file change')}?\n${[list, ...reasonLines, says].join('\n')}`, [APPLY_ALL, APPLY_SESSION, ...(queries.length > 1 ? [ONE_BY_ONE] : []), REJECT_ALL, REJECT_ALL_NOTE], options);
   if (choice === undefined || signal?.aborted) return 'cancelled';
   if (choice === APPLY_ALL) return new Map();
   if (choice === APPLY_SESSION) return 'session';
@@ -73,7 +77,8 @@ export async function askReview(ctx: Pick<ExtensionContext, 'ui'>, queries: Chan
   if (choice !== ONE_BY_ONE) return 'cancelled';
   const rejected = new Map<number, string | undefined>();
   for (const [index, query] of queries.entries()) {
-    const decision = await ctx.ui.select(`Change ${index + 1} of ${queries.length}\n${[describeChange(query)[0], ...reasonLines, ...describeChange(query).slice(1)].join('\n')}`, [APPLY, REJECT, REJECT_NOTE], options);
+    const [head, ...details] = describeChange(query);
+    const decision = await ctx.ui.select(`Change ${index + 1} of ${queries.length}\n${[head, ...reasonLines, ...details].join('\n')}`, [APPLY, REJECT, REJECT_NOTE], options);
     if (decision === undefined || signal?.aborted) return 'cancelled';
     if (decision === APPLY) continue;
     if (decision === REJECT) rejected.set(index, undefined);

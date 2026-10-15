@@ -14,9 +14,8 @@ import { lastCacheUseAt } from './cache.js';
  * Clearing a result while the cache is warm makes the next request rewrite the whole cache entry. After an idle gap
  * longer than the entry's lifetime the next request rewrites it anyway, so clearing then costs nothing and shrinks every
  * later request. So at the start of a run, when the cache was last used (the last reply, or a refresh by Pi's warmer)
- * longer ago than its lifetime, the old results of
- * tools whose output can be fetched again are replaced by a placeholder, keeping the newest `KEEP_RECENT_RESULTS`, and
- * only when that frees at least `CLEAR_AT_LEAST_TOKENS`. A repeated-read note (`files/dedupe`) that points at a cleared
+ * longer ago than its lifetime, the old results of tools whose output can be fetched again are replaced by a
+ * placeholder, keeping the newest `KEEP_RECENT_RESULTS`, and only when that frees at least `CLEAR_AT_LEAST_TOKENS`. A repeated-read note (`files/dedupe`) that points at a cleared
  * result gets the same placeholder, so it never points "above" at text that is gone.
  *
  * Nothing is lost: each result's whole text is saved first and the placeholder names the file; a result that cannot
@@ -35,7 +34,7 @@ const CLEARABLE_TOOLS: ReadonlySet<string> = new Set(['read', 'grep', 'find', 'l
 const PLACEHOLDER_START = '[Old tool result cleared';
 
 /** What stands for a cleared result; `saved` is where `saveContentCopy` put its whole text. */
-export function clearedPlaceholder(saved: string): string {
+function clearedPlaceholder(saved: string): string {
   return `${PLACEHOLDER_START} after the prompt cache expired. Full output: ${saved}. Read that file, or run the call again.]`;
 }
 

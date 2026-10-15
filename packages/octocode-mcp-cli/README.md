@@ -66,7 +66,7 @@ node examples/octocode-cli.ts localSearch --help
 node examples/octocode-cli.ts localSearch --queries '[{"matchString":"value","path":"packages/octocode-mcp-cli/src/help.ts"}]'
 ```
 
-Build `octocode-mcp` before the example. The script reads `packages/octocode-mcp/dist/index.js` and exits 2 when that file is missing. A tool absent from `tools/list` is absent here. The server omits the CLI-only tools `ghCloneRepo` and `astRewrite`. This library does not import `octocode` or `octocode-mcp`.
+Build `octocode-mcp` before the example. The script reads `packages/octocode-mcp/dist/index.js` and exits 2 when that file is missing. A tool absent from `tools/list` (CLI-only, gated, or deferred) is absent here. This library does not import `octocode` or `octocode-mcp`.
 
 ## Reference servers
 
@@ -110,8 +110,6 @@ const cli = defineCli({
 process.exitCode = await runCli(cli, process.argv.slice(2));
 ```
 
-`withCommands(cli, [extra])` appends commands. `help` and `version` stay reserved. `defineCli` rejects a second command with the same name.
-
 ## Help contract
 
 | Invocation | Stdout | Exit |
@@ -131,7 +129,9 @@ The usage line lists required flags first, then optional flags in brackets. A st
 
 Screen sections are `USAGE`, `COMMANDS`, `FLAGS`, `OUTPUT`, `HINTS`, `EXAMPLES`, and `LEARN MORE`. Bare output omits the global flags. The command index uses the display title and the first sentence. Command help keeps the full description. `OUTPUT` and `HINTS` appear only when the command has an output schema or an annotation hint. Fidelity notes stay on the command object and stay off this screen. Zod commands and MCP tools share this screen.
 
-`cliFromMcp` pages `tools/list` until `nextCursor` is absent. The command word is the tool name, including dots. `title`, then `annotations.title`, is the display label. The input schema supplies the flags. The output schema is the OUTPUT section. Annotation hints the server sent appear under HINTS. A record prints as `key: value`. A list of records prints as a table. A nested value prints under its key. The screen prints every leaf in full, including trailing spaces in a table cell. Text content prints in full. Every other content block prints as JSON with its fields, including image data, audio data, resource text, and resource blob. When the server sends structured content and content, the human screen prints both. `--json` keeps both on successful calls, including `_meta`. A tool error writes its content to stderr and exits 1. Error structured content and metadata are not preserved by the current error path.
+`cliFromMcp` pages `tools/list` until `nextCursor` is absent. The command word is the tool name, including dots. `title`, then `annotations.title`, is the display label. The input schema supplies the flags. The output schema is the OUTPUT section. Annotation hints the server sent appear under HINTS. A record prints as `key: value`. A list of records prints as a table. A nested value prints under its key. The screen prints every leaf in full, including trailing spaces in a table cell. Text content prints in full. Every other content block prints as JSON with its fields, including image data, audio data, resource text, and resource blob. When the server sends structured content and content, the human screen prints both. `--json` keeps both on successful calls, including `_meta`. A tool error writes its content to stderr and exits 1.
+
+Command examples are validated against the complete input schema, including conditional requirements. A schema that cannot produce a valid sample has no generated example; it still exposes its full flags and JSON schema. Authored JSON Schema `examples` take priority. Array flags accept repeated values or a JSON array, including an empty array. `undefined` handler results emit no output, so streaming handlers do not append an extra frame. Errors with an integer `exitCode` between 1 and 255 preserve that status. Standard JSON Schema formats are validated by `ajv-formats`.
 
 `emitTypeScript(spec, filePath)` writes the imported commands to one module. Descriptions and instructions are `JSON.stringify` literals. Add further commands in a separate file.
 
@@ -148,7 +148,3 @@ Use the upstream MCP client directly when those round-trip fields matter.
 ## Ownership
 
 See [ARCHITECTURE.md](ARCHITECTURE.md).
-
-### Help and execution behavior
-
-Command examples are validated against the complete input schema, including conditional requirements. A schema that cannot produce a valid sample has no generated example; it still exposes its full flags and JSON schema. Authored JSON Schema `examples` take priority. Array flags accept repeated values or a JSON array, including an empty array. `undefined` handler results emit no output, so streaming handlers do not append an extra frame. Errors with an integer `exitCode` between 1 and 255 preserve that status. Standard JSON Schema formats are validated by `ajv-formats`.

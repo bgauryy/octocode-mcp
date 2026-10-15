@@ -57,6 +57,26 @@ describe('hooks config', () => {
     expect(loadHooks(tmp(), false, home).errors[0]).toContain('settings.json');
   });
 
+  it('skips a missing hook file but reports one that exists and cannot be read', () => {
+    const home = tmp();
+    fs.mkdirSync(path.join(home, '.claude'));
+    // A directory where the file belongs: reading it fails with EISDIR, not ENOENT.
+    fs.mkdirSync(path.join(home, '.claude', 'settings.json'));
+    const { errors } = loadHooks(tmp(), false, home);
+    expect(errors).toEqual([expect.stringContaining(path.join(home, '.claude', 'settings.json'))]);
+    expect(errors[0]).toMatch(/EISDIR/);
+    expect(loadHooks(tmp(), false, tmp()).errors).toEqual([]);
+  });
+
+  it('reports a matcher that is not a valid pattern when the file loads, and the group matches nothing', () => {
+    const home = tmp();
+    fs.mkdirSync(path.join(home, '.claude'));
+    fs.writeFileSync(path.join(home, '.claude', 'settings.json'), JSON.stringify({ hooks: { PreToolUse: command('x', 'Bash(') } }));
+    const { config, errors } = loadHooks(tmp(), false, home);
+    expect(errors).toEqual([`${path.join(home, '.claude', 'settings.json')}: PreToolUse matcher "Bash(" is not a valid pattern, so its hooks never run`]);
+    expect(commandsFor(config, 'PreToolUse', toolAliases('bash'))).toEqual([]);
+  });
+
   it('matches Claude tool names against Pi tools', () => {
     expect(matches('Bash', toolAliases('bash'))).toBe(true);
     expect(matches('Edit|Write', toolAliases('file'))).toBe(true);

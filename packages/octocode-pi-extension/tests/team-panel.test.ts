@@ -38,22 +38,28 @@ describe('agents panel', () => {
     const lines = widgetLines(team, 'main-aaaaaa', NOW, theme, 200);
     expect(lines[0]).toBe(' agents  2 working · 1 idle · ≈$0.04');
     const squash = (line: string | undefined) => line!.replace(/ +/g, ' ');
-    expect(squash(lines[1])).toBe(' ● researcher-3fa9 · researcher · Find where tools register · claude-opus-4-5 · working · 2m14s · 12 tools · ↑12k ↓3k · ≈$0.04 localSearch registerTool');
-    // A grandchild sits under its parent, indented; one without a goal leaves its cell empty.
-    expect(squash(lines[2])).toBe(' ● └ general-77aa · general · · claude-haiku-4-5 · working · 5s · 1 tool bash yarn test');
-    expect(squash(lines[3])).toBe(' ○ reviewer-a1b2 · reviewer · Review the diff · gpt-5 · idle · 45s · 3 tools · ↑4k ↓1k · · ✉ 1 waiting 1 lock');
+    expect(squash(lines[1])).toBe(' ● researcher-3fa9 · Find where tools register · claude-opus-4-5 · working · 2m14s · ↑12k ↓3k · 12 tools · ≈$0.04 localSearch registerTool');
+    // A grandchild sits under its parent, indented; one without a goal leaves its cell empty, one without usage its tokens.
+    expect(squash(lines[2])).toBe(' ● └ general-77aa · · claude-haiku-4-5 · working · 5s · · 1 tool bash yarn test');
+    expect(squash(lines[3])).toBe(' ○ reviewer-a1b2 · Review the diff · gpt-5 · idle · 45s · ↑4k ↓1k · 3 tools · · ✉ 1 waiting 1 lock');
+    // The role (the profile, `researcher`) is not a column: the name and goal say who and what.
+    expect(lines.slice(1).join('\n')).not.toMatch(/· (researcher|reviewer|general) ·/);
     // Provider prefixes stay out of the panel.
     expect(lines.join('\n')).not.toMatch(/anthropic\//);
   });
 
-  it('drops the stats columns before the activity on narrow terminals', () => {
-    const narrow = widgetLines(team, 'main-aaaaaa', NOW, theme, 70);
-    expect(narrow.every((line) => visibleWidth(line) <= 70)).toBe(true);
-    expect(narrow[1]).not.toContain('$0.04');
-    expect(narrow[1]).not.toContain('↑');
-    expect(narrow[1]).not.toContain('12 tools');
-    expect(narrow[1]).toContain('working');
-    expect(narrow[1]).toContain('localSearch');
+  it('drops cost, tools and flags first, then shortens the goal, keeping model, time and tokens on narrow terminals', () => {
+    const medium = widgetLines(team, 'main-aaaaaa', NOW, theme, 120);
+    expect(medium.every((line) => visibleWidth(line) <= 120)).toBe(true);
+    expect(medium[1]).not.toContain('$0.04');
+    expect(medium[1]).not.toContain('12 tools');
+    expect(medium[1]).toContain('Find where tools register');
+    expect(medium[1]).toContain('localSearch');
+    const narrow = widgetLines(team, 'main-aaaaaa', NOW, theme, 90);
+    expect(narrow.every((line) => visibleWidth(line) <= 90)).toBe(true);
+    for (const kept of ['claude-opus-4-5', 'working', '2m14s', '↑12k ↓3k']) expect(narrow[1]).toContain(kept);
+    expect(narrow[1]).not.toContain('Find where tools register');
+    expect(narrow[1]).toMatch(/Find where[^·]*…/);
   });
 
   it('shows the cached share and marks a model without pricing in the row and the header', () => {
@@ -61,8 +67,8 @@ describe('agents panel', () => {
     const free = member('general-77aa', { parentId: 'main-aaaaaa', toolCalls: 1, input: 4_000, output: 500, unpriced: true });
     const lines = widgetLines([member('main-aaaaaa'), priced, free], 'main-aaaaaa', NOW, theme, 200).map((line) => line.replace(/ +/g, ' '));
     expect(lines[0]).toBe(' agents 2 idle · ≈$2.28 + n/a');
-    expect(lines[1]).toBe(' ○ researcher-3fa9 · researcher · idle · 1m · 2 tools · ↑1.2M (94% cached) ↓35k · ≈$2.28');
-    expect(lines[2]).toBe(' ○ general-77aa · general · idle · 1m · 1 tool · ↑4k ↓500 · cost n/a');
+    expect(lines[1]).toBe(' ○ researcher-3fa9 · idle · 1m · ↑1.2M (94% cached) ↓35k · 2 tools · ≈$2.28');
+    expect(lines[2]).toBe(' ○ general-77aa · idle · 1m · ↑4k ↓500 · 1 tool · cost n/a');
   });
 
   it('keeps every line within a narrow width, the "+N more" line too', () => {

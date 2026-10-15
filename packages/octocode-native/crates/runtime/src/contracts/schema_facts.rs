@@ -38,6 +38,32 @@ pub(crate) fn resolve_ref<'a>(mut schema: &'a Value, defs: &'a Value) -> &'a Val
     schema
 }
 
+/// Find a property's declared schemas through local references and composition
+/// branches. Return each whole property schema: callers retain its own required,
+/// allOf and union semantics. A branch without the property contributes nothing.
+pub(crate) fn property_schemas<'a>(
+    schema: &'a Value,
+    defs: &'a Value,
+    name: &str,
+) -> Vec<&'a Value> {
+    let mut found = Vec::new();
+    let mut pending = vec![schema];
+    let mut seen = HashSet::new();
+    while let Some(schema) = pending.pop() {
+        let schema = resolve_ref(schema, defs);
+        if !seen.insert(std::ptr::from_ref(schema)) {
+            continue;
+        }
+        if let Some(property) = schema["properties"].get(name) {
+            found.push(property);
+        }
+        for key in ["allOf", "oneOf", "anyOf"] {
+            pending.extend(schema[key].as_array().into_iter().flatten().rev());
+        }
+    }
+    found
+}
+
 /// Query-schema variants of one tool, built on first use from that tool's
 /// contract entry only (see [`super::tool_contract`]).
 fn variants(tool: ToolId) -> Option<&'static [Variant]> {
@@ -185,6 +211,35 @@ pub fn query_schema_max(tool: ToolId, operation: Option<&str>, field: &str) -> u
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn property_navigation_preserves_schemas_and_stops_reference_cycles() {
+        let root = serde_json::json!({
+            "$defs": {
+                "success": {"allOf":[
+                    {"properties":{"results":{"type":"array","items":{"$ref":"#/$defs/row"}}}},
+                    {"$ref":"#/$defs/success"}
+                ]},
+                "row": {"oneOf":[
+                    {"properties":{"data":{"allOf":[{"required":["base"]},{"oneOf":[{"required":["left"]},{"required":["right"]}]}]}}},
+                    {"properties":{"data":{"required":["error"]}}}
+                ]}
+            },
+            "anyOf":[{"required":["error"]},{"$ref":"#/$defs/success"}]
+        });
+        let defs = &root["$defs"];
+        let results = property_schemas(&root, defs, "results");
+        assert_eq!(results.len(), 1);
+        let data = property_schemas(&results[0]["items"], defs, "data");
+        assert_eq!(data.len(), 2);
+        assert_eq!(data[0]["allOf"][0]["required"], serde_json::json!(["base"]));
+        assert_eq!(
+            data[0]["allOf"][1]["oneOf"].as_array().map(Vec::len),
+            Some(2)
+        );
+        assert_eq!(data[1]["required"], serde_json::json!(["error"]));
+        assert!(property_schemas(&root, defs, "missing").is_empty());
+    }
 
     #[test]
     fn reads_resolved_and_variant_scoped_facts() {

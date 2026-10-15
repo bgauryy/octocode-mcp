@@ -121,7 +121,6 @@ describe('session extras', () => {
     entries.push({ type: 'message', id: 'u1', message: { role: 'user' } });
     await fire('agent_end', { type: 'agent_end', messages: [] }, ctx);
     expect(names).toEqual([]);
-    expect(fire).toBeDefined();
   });
 
   it('records the git branch and HEAD without blocking the event', async () => {

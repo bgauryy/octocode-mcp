@@ -4,9 +4,9 @@ import { Type } from 'typebox';
 import { clip, timingOf, plural, resultBlock, timedTool, toolHeader } from '../shared/render.js';
 import type { Permission } from '../permission/ask.js';
 import { projectTrustNow } from '../shared/trust.js';
-import { textResult } from '../shared/util.js';
+import { contentText, DAY_MS, textResult } from '../shared/util.js';
 import { memoryLabel, parseMemoryId } from './query.js';
-import { MEMORY_KINDS, MemoryError, memoryLine, refuseMemorySecrets, type Memory, type MemoryStore } from './store.js';
+import { MEMORY_KINDS, MemoryError, memoryLine, noMemory, refuseMemorySecrets, type Memory, type MemoryStore } from './store.js';
 
 const DEFAULT_LIMIT = 10;
 
@@ -53,7 +53,7 @@ type MemoryParams = {
 
 /** The full view of one memory, for `get`. */
 export function describeMemory(memory: Memory, now = Date.now()): string {
-  const days = (at: number) => `${Math.max(0, Math.round((now - at) / 86_400_000))}d ago`;
+  const days = (at: number) => `${Math.max(0, Math.round((now - at) / DAY_MS))}d ago`;
   return [
     memoryLine(memory, 0),
     ...(memory.keywords ? [`keywords: ${memory.keywords}`] : []),
@@ -131,7 +131,7 @@ export function registerMemoryTool(pi: ExtensionAPI, storeFor: (ctx: ExtensionCo
         case 'get': {
           const found = store.get(needId());
           const memory = found && (trusted || found.scope === 'global') ? found : undefined;
-          if (!memory) throw new MemoryError(`No memory M${id} here (it may belong to another repository).`);
+          if (!memory) throw noMemory(needId());
           return textResult(describeMemory(memory), { ids: [memory.id] });
         }
         case 'list': {
@@ -143,10 +143,9 @@ export function registerMemoryTool(pi: ExtensionAPI, storeFor: (ctx: ExtensionCo
         case 'set':
         case 'delete': {
           if (options.isSubagent) throw new Error('Memory is read-only in a subagent: report it to your parent instead.');
-          const found = id === undefined ? undefined : store.get(id);
+          const current = id === undefined ? undefined : store.get(id);
           // Reads hide project memories in an untrusted project; changing one by id must not reveal or touch it either.
-          if (found && !trusted && found.scope !== 'global') throw new MemoryError(`No memory M${id} here (it may belong to another repository).`);
-          const current = found;
+          if (current && !trusted && current.scope !== 'global') throw noMemory(current.id);
           if (params.op === 'delete') {
             if (current) guardWide(current.scope === 'global' || current.pinned, `deleting ${memoryLabel(current.id)}`);
             const removed = store.delete(needId());
@@ -183,7 +182,7 @@ export function registerMemoryTool(pi: ExtensionAPI, storeFor: (ctx: ExtensionCo
       return toolHeader(theme, context, 'Memory', [String(args.op ?? ''), shown].filter(Boolean).join(' '));
     },
     renderResult(result, _options, theme, context) {
-      const text = result.content.map((part) => (part.type === 'text' ? part.text : '')).join('\n');
+      const text = contentText(result.content);
       const details = (result.details ?? {}) as { ids?: number[]; total?: number };
       const op = context.args?.op;
       const count = details.ids?.length ?? 0;

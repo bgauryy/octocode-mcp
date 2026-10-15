@@ -1,6 +1,6 @@
 import type { ContextEditEntryDraft } from '@earendil-works/pi-coding-agent';
-import { saveContentCopy } from '../shared/spill.js';
-import { isRecord } from '../shared/util.js';
+import { imageExtension, saveContentCopy } from '../shared/spill.js';
+import { isRecord, partText } from '../shared/util.js';
 
 /**
  * Message parts and images for recovery from a request rejected as too large. Images cost few tokens but many request
@@ -15,7 +15,6 @@ export interface ContextEntry {
 
 /** Provider and gateway errors that reject a request for its byte size (not its tokens). */
 const TOO_LARGE_ERROR = /^\s*413\b|\b(?:status|http)\D{0,12}413\b|request_too_large|request entity too large|payload too large|request exceeds the maximum size|too much media/i;
-const IMAGE_EXTENSIONS: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp' };
 
 /**
  * Saves every image of a message to the session output folder, named by content: each as `<path> (sha256 …, n bytes)`,
@@ -25,7 +24,7 @@ function saveImages(message: unknown): string[] | undefined {
   const copies: string[] = [];
   for (const part of parts(message)) {
     if (!isRecord(part) || part['type'] !== 'image') continue;
-    const copy = typeof part['data'] === 'string' ? saveContentCopy(Buffer.from(part['data'], 'base64'), 'omitted-image', IMAGE_EXTENSIONS[String(part['mimeType'])] ?? 'bin') : undefined;
+    const copy = typeof part['data'] === 'string' ? saveContentCopy(Buffer.from(part['data'], 'base64'), 'omitted-image', imageExtension(String(part['mimeType'])) ?? 'bin') : undefined;
     if (!copy) return undefined;
     copies.push(copy);
   }
@@ -42,7 +41,7 @@ export function parts(message: unknown): unknown[] {
 }
 
 function texts(message: unknown): string[] {
-  return parts(message).flatMap((part) => (isRecord(part) && part['type'] === 'text' && typeof part['text'] === 'string' ? [part['text']] : []));
+  return parts(message).flatMap((part) => partText(part) ?? []);
 }
 
 function hasImage(message: unknown): boolean {

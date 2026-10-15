@@ -1,6 +1,6 @@
 import { errorMessage, isRecord } from '../shared/util.js';
 import { USER_AGENT, combineSignals, language, readCapped } from './fetch.js';
-import { publicFetch, type PublicFetchInit } from './guard.js';
+import { isHttpUrl, publicFetch, type PublicFetchInit } from './guard.js';
 import { decodeEntities, htmlToText } from './html.js';
 
 interface SearchHit {
@@ -58,8 +58,7 @@ export function parseBing(html: string, max: number): SearchHit[] {
 function httpUrl(candidate: string | null | undefined): string | undefined {
   if (!candidate) return undefined;
   try {
-    const { protocol } = new URL(candidate);
-    return protocol === 'http:' || protocol === 'https:' ? candidate : undefined;
+    return isHttpUrl(new URL(candidate)) ? candidate : undefined;
   } catch {
     return undefined;
   }

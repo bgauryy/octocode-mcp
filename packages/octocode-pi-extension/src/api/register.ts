@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
-import { OctocodeApi, optionsFromEnv, type AgentDirectory, type ApiOperations } from './bridge.js';
+import { OctocodeApi, optionsFromEnv, transportsFor, type AgentDirectory, type ApiOperations } from './bridge.js';
 import { say, wordCompletions, type Subcommands } from '../shared/commands.js';
+import { sanitizeTerminalText } from '../shared/sanitize.js';
 import { errorMessage } from '../shared/util.js';
 
 /** Wire the external API into Pi: event publishing, lifecycle and `/octocode api`. Subagents never expose one. */
@@ -17,7 +18,7 @@ export function registerApi(pi: ExtensionAPI, commands: Subcommands, agents: Age
       const [action, flag] = line.split(/\s+/);
       try {
         if (action === 'on') {
-          await api.start(ctx, { socket: process.platform !== 'win32', ...(flag === 'http' || process.platform === 'win32' ? { http: 0 } : {}) });
+          await api.start(ctx, transportsFor(flag === 'http' ? 0 : undefined));
         } else if (action === 'off') {
           await api.stop();
           // stop() unbinds the session; bind again so a later `api on` works.
@@ -53,7 +54,10 @@ export function registerApi(pi: ExtensionAPI, commands: Subcommands, agents: Age
       } catch (error) {
         failure = error;
       }
-      if (failure !== undefined && ctx.hasUI) ctx.ui.notify(errorMessage(failure), 'warning');
+      if (failure === undefined) return;
+      // Print and JSON modes have no UI to notify: the reason goes to stderr (see `say`) so a headless run knows why the API is off.
+      if (ctx.hasUI) ctx.ui.notify(errorMessage(failure), 'warning');
+      else process.stderr.write(`${sanitizeTerminalText(errorMessage(failure))}\n`);
     },
     stop: () => api.stop(),
   };

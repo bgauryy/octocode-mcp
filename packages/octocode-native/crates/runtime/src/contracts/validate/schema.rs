@@ -6,9 +6,15 @@
 //! parent module; union-branch selection lives in `super::union`.
 
 use super::{ContractValidationError, ValidationIssue, issue, schema_issue, shape, union};
-use regex::Regex;
+use regress::Regex;
 use serde_json::Value;
 use url::Url;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum ValidationMode {
+    Input,
+    Output,
+}
 
 pub(super) fn validate_schema(
     root: &Value,
@@ -16,7 +22,51 @@ pub(super) fn validate_schema(
     value: &mut Value,
     path: &mut Vec<String>,
 ) -> Result<(), ContractValidationError> {
-    validate_schema_with_ref_depth(root, schema, value, path, 0)
+    validate_with_mode(root, schema, value, path, ValidationMode::Output)
+}
+
+pub(super) fn validate_input_schema(
+    root: &Value,
+    schema: &Value,
+    value: &mut Value,
+    path: &mut Vec<String>,
+) -> Result<(), ContractValidationError> {
+    validate_with_mode(root, schema, value, path, ValidationMode::Input)
+}
+
+pub(super) fn validate_with_mode(
+    root: &Value,
+    schema: &Value,
+    value: &mut Value,
+    path: &mut Vec<String>,
+    mode: ValidationMode,
+) -> Result<(), ContractValidationError> {
+    validate_schema_with_ref_depth(root, schema, value, path, 0, mode)
+}
+
+/// JSON integers include 1.0 and 1e0; generated integer types need an integer
+/// representation. Only input positions declaring an integer normalize it.
+fn normalize_integer(schema: &Value, value: &mut Value) {
+    let integer = match schema.get("type") {
+        Some(Value::String(kind)) => kind == "integer",
+        Some(Value::Array(kinds)) => {
+            kinds.iter().any(|kind| kind == "integer") && !kinds.iter().any(|kind| kind == "number")
+        }
+        _ => false,
+    };
+    if !integer || !value.is_f64() {
+        return;
+    }
+    let Some(number) = value.as_f64().filter(|n| n.is_finite() && n.fract() == 0.0) else {
+        return;
+    };
+    // The rounded u64::MAX is 2^64: keep the upper bound exclusive so the
+    // cast cannot saturate. The negative i64 bound is exactly representable.
+    if number >= 0.0 && number < u64::MAX as f64 {
+        *value = Value::from(number as u64);
+    } else if number >= i64::MIN as f64 && number < 0.0 {
+        *value = Value::from(number as i64);
+    }
 }
 
 fn validate_schema_with_ref_depth(
@@ -25,7 +75,11 @@ fn validate_schema_with_ref_depth(
     value: &mut Value,
     path: &mut Vec<String>,
     ref_depth: usize,
+    mode: ValidationMode,
 ) -> Result<(), ContractValidationError> {
+    if mode == ValidationMode::Input {
+        normalize_integer(schema, value);
+    }
     if let Some(forbidden) = schema.get("not") {
         // Only acceptance matters here: probe speculatively, and an empty
         // schema accepts every value without a copy.
@@ -35,7 +89,7 @@ fn validate_schema_with_ref_depth(
             || {
                 let _speculation = union::Speculation::enter();
                 let mut candidate = value.clone();
-                validate_schema(root, forbidden, &mut candidate, &mut path.clone()).is_ok()
+                validate_with_mode(root, forbidden, &mut candidate, &mut path.clone(), mode).is_ok()
             };
         if accepted {
             // `{"not":{}}` forbids the field outright in this variant.
@@ -64,13 +118,13 @@ fn validate_schema_with_ref_depth(
                 )
             })?;
         // Every reference in a chain can carry constraints of its own.
-        validate_schema_with_ref_depth(root, target, value, path, ref_depth + 1)?;
+        validate_schema_with_ref_depth(root, target, value, path, ref_depth + 1, mode)?;
     }
     for (keyword, exclusive) in [("oneOf", true), ("anyOf", false)] {
         if let Some(branches) = schema.get(keyword).and_then(Value::as_array) {
             // A matching branch does not waive the enclosing object's fields,
             // required properties, or any other sibling constraints.
-            union::validate(root, branches, exclusive, value, path)?;
+            union::validate(root, branches, exclusive, value, path, mode)?;
         }
     }
 
@@ -150,8 +204,8 @@ fn validate_schema_with_ref_depth(
         None => Some(value_type(value)),
     };
     match kind {
-        Some("object") => validate_object(root, schema, value, path),
-        Some("array") => validate_array(root, schema, value, path),
+        Some("object") => validate_object(root, schema, value, path, mode),
+        Some("array") => validate_array(root, schema, value, path, mode),
         Some("string") => validate_string(schema, value, path),
         Some("integer") => validate_number(schema, value, path, true),
         Some("number") => validate_number(schema, value, path, false),
@@ -206,6 +260,7 @@ fn validate_object(
     schema: &Value,
     value: &mut Value,
     path: &mut Vec<String>,
+    mode: ValidationMode,
 ) -> Result<(), ContractValidationError> {
     // The received value is quoted only in an error: no copy on success.
     let object = match value {
@@ -237,7 +292,9 @@ fn validate_object(
             let mut name = Value::String(key.clone());
             let mut name_path = path.clone();
             name_path.push(key.clone());
-            if let Err(error) = validate_schema(root, name_schema, &mut name, &mut name_path) {
+            if let Err(error) =
+                validate_with_mode(root, name_schema, &mut name, &mut name_path, mode)
+            {
                 issues.extend(error.issues);
             }
         }
@@ -274,7 +331,7 @@ fn validate_object(
                 continue;
             }
             path.push(key.clone());
-            let result = validate_schema(root, additional, field, path);
+            let result = validate_with_mode(root, additional, field, path, mode);
             path.pop();
             if let Err(error) = result {
                 issues.extend(error.issues);
@@ -326,7 +383,7 @@ fn validate_object(
         for (name, field_schema) in properties {
             if let Some(field) = object.get_mut(name) {
                 path.push(name.clone());
-                let result = validate_schema(root, field_schema, field, path);
+                let result = validate_with_mode(root, field_schema, field, path, mode);
                 path.pop();
                 if let Err(error) = result {
                     issues.extend(error.issues);
@@ -349,6 +406,7 @@ fn validate_array(
     schema: &Value,
     value: &mut Value,
     path: &mut Vec<String>,
+    mode: ValidationMode,
 ) -> Result<(), ContractValidationError> {
     let array = match value {
         Value::Array(array) => array,
@@ -380,7 +438,7 @@ fn validate_array(
     if let Some(items) = schema.get("items") {
         for (index, item) in array.iter_mut().enumerate() {
             path.push(index.to_string());
-            let result = validate_schema(root, items, item, path);
+            let result = validate_with_mode(root, items, item, path, mode);
             path.pop();
             if let Err(error) = result {
                 issues.extend(error.issues);
@@ -430,11 +488,11 @@ fn validate_string(
     if let Some(pattern) = schema.get("pattern").and_then(Value::as_str) {
         let regex = compiled_pattern(pattern)
             .map_err(|error| issue("schema.unsupported-pattern", path.to_vec(), error))?;
-        if !regex.is_match(string) {
+        if regex.find(string).is_none() {
             let message = if line_range {
                 line_range_message(value, path)
             } else {
-                pattern_message(string, path, &regex, schema)
+                pattern_message(string, path, pattern, &regex, schema)
             };
             return Err(issue("schema.pattern", path.to_vec(), message));
         }
@@ -446,9 +504,8 @@ fn validate_string(
 }
 
 /// Compiled schema patterns, keyed by source. Patterns come from the embedded
-/// contract (a small fixed set), so the cache stays bounded. Callers share one
-/// `Regex` (and its match-state pool) instead of cloning it per value, and a
-/// hit allocates nothing.
+/// contract (a small fixed set), so the cache stays bounded. The ECMAScript
+/// engine matches generated wire types; cache hits reuse the compiled pattern.
 type PatternCache = std::collections::HashMap<String, Result<std::sync::Arc<Regex>, String>>;
 
 fn pattern_cache() -> &'static std::sync::Mutex<PatternCache> {
@@ -474,14 +531,20 @@ fn compiled_pattern(pattern: &str) -> Result<std::sync::Arc<Regex>, String> {
 /// (a blank brief is dropped before validation), a search `qualifiers`
 /// string fails on one term, and any other value fails against the form its
 /// field note shows: name the fix instead of the regex.
-fn pattern_message(value: &str, path: &[String], regex: &Regex, schema: &Value) -> String {
+fn pattern_message(
+    value: &str,
+    path: &[String],
+    pattern: &str,
+    regex: &Regex,
+    schema: &Value,
+) -> String {
     if path.last().map(String::as_str) == Some("qualifiers")
         && let Some(term) = super::qualifiers::qualifier_terms(value)
             .into_iter()
-            .find(|term| !regex.is_match(&quoted_term(term)))
+            .find(|term| regex.find(&quoted_term(term)).is_none())
     {
         return match term.strip_prefix('-') {
-            Some(positive) if regex.is_match(&quoted_term(positive)) => format!(
+            Some(positive) if regex.find(&quoted_term(positive)).is_some() => format!(
                 "\"{term}\": negation is not supported for this filter; drop the leading -."
             ),
             _ => format!(
@@ -494,7 +557,7 @@ fn pattern_message(value: &str, path: &[String], regex: &Regex, schema: &Value) 
         let shown: String = value.chars().take(80).collect();
         return match schema.get("description").and_then(Value::as_str) {
             Some(note) => format!("\"{shown}\" does not match the expected form: {note}"),
-            None => format!("\"{shown}\" does not match {}", regex.as_str()),
+            None => format!("\"{shown}\" does not match {}", pattern),
         };
     }
     "is empty; give non-blank text.".into()

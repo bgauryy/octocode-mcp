@@ -39,7 +39,7 @@ impl ResponsePageOptions {
             || self.response_snapshot.is_some()
     }
 
-    /// Apply the configured `output.pagination.defaultCharLength` budget when
+    /// Apply the runtime's automatic page budget (`auto_page_chars`) when
     /// the caller did not page explicitly. Implicit pages are whole rows so
     /// both text and structuredContent carry the page: MCP clients that read
     /// only structuredContent would otherwise see an emptied `results`.

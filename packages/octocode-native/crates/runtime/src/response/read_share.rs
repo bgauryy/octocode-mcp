@@ -215,10 +215,16 @@ pub(crate) fn share_window(
             }
             // A whole-file read pages as the same view without
             // `fullContent`, which window controls cannot accompany.
+            // `fullContent` implies the verbatim view, so a read with no
+            // named view pins it: a tool whose default view is minified
+            // (ghGetFileContent) would otherwise drop lines.
             if let Some(fields) = query.as_object_mut()
                 && fields.remove("fullContent") == Some(Value::Bool(true))
             {
                 fields.insert("offset".into(), Value::from(0));
+                fields
+                    .entry("minify")
+                    .or_insert_with(|| Value::from("none"));
             }
             query["unit"] = Value::from("lines");
             query["length"] = Value::from(lines);
@@ -608,5 +614,38 @@ mod tests {
         ];
         let cuts = plan(ToolId::GhGetFileContent, &queries, &rows, 20_000);
         assert_eq!(cuts.iter().map(|cut| cut.0).collect::<Vec<_>>(), vec![0, 1]);
+    }
+
+    /// `fullContent` implies the verbatim view; the shortened read that drops
+    /// it keeps that view unless the caller named one.
+    #[test]
+    fn dropping_full_content_pins_the_verbatim_view() {
+        for (tool, minify, expected) in [
+            (ToolId::GhGetFileContent, None, "none"),
+            (ToolId::GhGetFileContent, Some("standard"), "standard"),
+            (ToolId::GhGetFileContent, Some("symbols"), "symbols"),
+            (ToolId::LocalFetch, None, "none"),
+            (ToolId::LocalFetch, Some("standard"), "standard"),
+        ] {
+            let mut original = query(json!({"fullContent":true}));
+            if let Some(minify) = minify {
+                original["minify"] = json!(minify);
+            }
+            let mut seen = Vec::new();
+            share_window(
+                tool,
+                std::slice::from_ref(&original),
+                vec![local_row(900, 60)],
+                Some(20_000),
+                |shortened| {
+                    seen = shortened.to_vec();
+                    Ok(Vec::new())
+                },
+            )
+            .expect("shortened");
+            assert_eq!(seen.len(), 1, "{tool:?} {minify:?}");
+            assert!(seen[0].get("fullContent").is_none(), "{}", seen[0]);
+            assert_eq!(seen[0]["minify"], expected, "{tool:?} {}", seen[0]);
+        }
     }
 }

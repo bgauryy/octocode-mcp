@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { realpathSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
 import { resolve, relative, join, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -293,9 +294,17 @@ export async function scan(root, options = {}) {
   };
 }
 
+// argv[1] keeps a symlinked path while import.meta.url is the real path.
+const realOrSelf = p => {
+  try {
+    return realpathSync(p);
+  } catch {
+    return resolve(p);
+  }
+};
 if (
   process.argv[1] &&
-  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+  realOrSelf(process.argv[1]) === realOrSelf(fileURLToPath(import.meta.url))
 ) {
   try {
     const args = process.argv.slice(2);

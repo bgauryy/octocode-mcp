@@ -42,7 +42,7 @@ const HERMETIC = {
   'tool-health': script('tool-health'),
 };
 const LIVE_SUITES = { remote: script('remote'), github: script('github'), 'review-large': script('review-large'), artifacts: script('artifacts'), clasify: script('clasify') };
-const BENCH = { perf: script('perf'), competitors: script('competitors'), kpi: script('kpi'), soak: script('soak'), 'ranking-impact': script('read-tool-ranking-impact') };
+const BENCH = { perf: script('perf'), competitors: script('competitors'), kpi: script('kpi'), soak: script('soak') };
 const ALL = { ...HERMETIC, ...LIVE_SUITES, ...BENCH };
 
 const named = process.argv[2]?.split(',');

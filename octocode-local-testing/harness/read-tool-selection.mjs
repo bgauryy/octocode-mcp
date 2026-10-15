@@ -626,24 +626,12 @@ try {
       }
     );
 
-    await check(
-      spec.tool,
-      'candidate budget marks the unjudged tail unknown without leaking it',
-      async () => {
-        const limited = await walk(ctx, spec, classifiedQuery, {
-          overrides: { OCTOCODE_CLASSIFICATION_MAX_CANDIDATES: '1' },
-        });
-        const rs = receipts(spec, limited);
-        assert.ok(rs.some(row => row.status === 'partial'));
-        assert.ok(rs.some(row => row.unknownItems > 0));
-        assert.ok(
-          !limited.rows.join('\n').includes('UNKNOWN_SELECTION_SENTINEL')
-        );
-        await assertRecovery(spec, limited, baseline, {
-          overrides: { OCTOCODE_CLASSIFICATION_MAX_CANDIDATES: '1' },
-        });
-      }
-    );
+    // Candidate and character budgets are runtime constants: the unjudged
+    // tail stays unknown and recoverable in selection::tests
+    // (candidate_budget_counts_serialized_characters_in_source_order,
+    // partial_receipts_distinguish_ineligible_evidence_from_budgets) and
+    // local_fetch::selection::tests::exhausted_state_budget_withholds_bodies_and_unfiltered_recovers_every_line;
+    // the per-tool unknown-tail recovery path runs in the provider-failure case above.
 
     await check(
       spec.tool,
@@ -833,44 +821,8 @@ try {
       }
     );
 
-    await check(
-      'localFetch',
-      'classification maxChars and timeout budgets preserve recovery without raw fallback',
-      async () => {
-        const full = materialize(spec.query, ctx);
-        const baseline = await walk(ctx, spec, full);
-        for (const [label, mode, overrides] of [
-          ['maxChars', 'score', { OCTOCODE_CLASSIFICATION_MAX_CHARS: '1' }],
-          [
-            'timeoutMs',
-            'timeout',
-            { OCTOCODE_CLASSIFICATION_TIMEOUT_MS: '100' },
-          ],
-        ]) {
-          ctx.state.mode = mode;
-          const run = await walk(
-            ctx,
-            spec,
-            { ...full, ...contextFor(spec) },
-            { overrides }
-          );
-          const rs = receipts(spec, run);
-          assert.ok(
-            rs.some(row => ['partial', 'unavailable'].includes(row.status)),
-            `${label} is disclosed`
-          );
-          assert.ok(
-            rs.some(row => row.unknownItems > 0),
-            `${label} preserves unjudged candidates as unknown`
-          );
-          assert.ok(
-            !run.rows.join('\n').includes('UNKNOWN_SELECTION_SENTINEL'),
-            `${label} does not leak unknown bodies`
-          );
-          await assertRecovery(spec, run, baseline, { overrides });
-        }
-      }
-    );
+    // The selection deadline is a runtime constant: a read past it discloses
+    // the gap and recovers in runtime_clasify::a_selection_past_its_deadline_withholds_bodies_and_recovers.
 
     await check(
       'localFetch',

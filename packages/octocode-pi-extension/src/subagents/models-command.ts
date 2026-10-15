@@ -1,6 +1,7 @@
 import type { ExtensionCommandContext } from '@earendil-works/pi-coding-agent';
 import { say, type Subcommands } from '../shared/commands.js';
 import { MODELS_DEV_ENV, catalogFile, listedCost, loadCatalog, lookup, modelsDevEnabled, readCatalog, type Catalog } from './catalog.js';
+import { formatTokens } from '../shared/format.js';
 import { sanitizeTerminalText } from '../shared/sanitize.js';
 import { clipText } from '../shared/util.js';
 import { MODEL_TIERS, isModelTier, resolveTier, routeModel, type ModelRef } from './model.js';
@@ -12,7 +13,7 @@ import type { AgentProfile } from './profiles.js';
  */
 
 const perMillion = (value: number) => `$${value < 1 ? value.toFixed(2) : value.toFixed(value % 1 === 0 ? 0 : 2)}`;
-const window = (tokens: number | undefined) => (tokens ? (tokens >= 1_000_000 ? `${Number((tokens / 1_000_000).toFixed(1))}M` : `${Math.round(tokens / 1000)}k`) : '?');
+const contextSize = (tokens: number | undefined) => (tokens ? formatTokens(tokens) : '?');
 /** A remote description, made safe for the terminal and kept to one short line. */
 const describe = (text: string) => {
   const clean = sanitizeTerminalText(text).replace(/\s+/g, ' ').trim();
@@ -30,7 +31,7 @@ export function describeModels(available: readonly ModelRef[], parent: ModelRef 
     const price = cost ? `${perMillion(cost.input)}/${perMillion(cost.output)}` : 'price ?';
     const mark = parent && name(model) === name(parent) ? '● ' : '  ';
     const description = known?.description ? ` — ${describe(known.description)}` : '';
-    return { parent: mark !== '  ', sort: cost ? 3 * cost.input + cost.output : Infinity, line: `${mark}${name(model)} · ${price} per M in/out · ${window(model.contextWindow || known?.context)} · ${caps}${description}` };
+    return { parent: mark !== '  ', sort: cost ? 3 * cost.input + cost.output : Infinity, line: `${mark}${name(model)} · ${price} per M in/out · ${contextSize(model.contextWindow || known?.context)} · ${caps}${description}` };
   });
   rows.sort((a, b) => a.sort - b.sort);
   const parentPriced = rows.some((row) => row.parent && row.sort !== Infinity) || (parent !== undefined && resolveTier('small', [...available, parent], parent, catalog) !== undefined);

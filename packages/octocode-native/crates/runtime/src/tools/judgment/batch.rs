@@ -121,10 +121,24 @@ pub(crate) async fn answer(
     // One request per question, concurrently; the gate bounds them.
     let singles = stream::iter(questions.iter())
         .map(|question| async move {
-            let request = provider.build_request(input.state, question, model, input.assets);
+            let assets = input.assets.and_then(Value::as_object).and_then(|assets| {
+                let referenced = crate::tools::source_capture::assets::referenced;
+                let selected = assets
+                    .iter()
+                    .filter(|(key, _)| referenced(input.state, key) || referenced(question, key))
+                    .map(|(key, value)| (key.clone(), value.clone()))
+                    .collect::<serde_json::Map<String, Value>>();
+                (!selected.is_empty()).then_some(Value::Object(selected))
+            });
+            let single = EvaluationInput {
+                questions: std::slice::from_ref(question),
+                assets: assets.as_ref(),
+                ..input
+            };
+            let request = provider.build_request(single.state, question, model, single.assets);
             let body = serde_json::to_vec(&request)
                 .map_err(|_| request_error("Classification request could not be serialized."))?;
-            if body.len() > max_request_bytes(input) {
+            if body.len() > max_request_bytes(single) {
                 return Err(ClassificationError::new(
                     "classificationStateTooLarge",
                     "One classification request exceeded the configured serialized body limit.",
@@ -132,7 +146,7 @@ pub(crate) async fn answer(
                 ));
             }
             let (response, calls) =
-                send(&request, body.into(), input, connection, budget, gate).await?;
+                send(&request, body.into(), single, connection, budget, gate).await?;
             let answer =
                 provider
                     .extract_answer(&response)

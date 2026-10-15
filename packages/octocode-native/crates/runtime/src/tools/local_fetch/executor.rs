@@ -1997,9 +1997,8 @@ mod line_page_scan_tests {
     #[test]
     fn fetch_partition_binding_rejects_same_count_legacy_replay() {
         use crate::contracts::tool_types::SelectionUnit;
-        use crate::tools::selection::{
-            Candidate, Decision, JudgeCall, Limits, Runtime, SelectionJudge,
-        };
+        use crate::runtime::SelectionLimits;
+        use crate::tools::selection::{Candidate, Decision, JudgeCall, Runtime, SelectionJudge};
         use serde_json::json;
         use std::sync::{
             Arc,
@@ -2034,7 +2033,7 @@ mod line_page_scan_tests {
         let executor = tokio::runtime::Runtime::new().expect("runtime");
         let calls = Arc::new(AtomicUsize::new(0));
         let runtime = Runtime {
-            limits: Limits {
+            limits: SelectionLimits {
                 max_candidates: 64,
                 max_chars: 20_000,
                 timeout: Duration::from_secs(5),

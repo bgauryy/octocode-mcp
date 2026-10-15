@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { PRIVATE_FILE_MODE as mode, privateDir } from '../shared/home.js';
-import { atomicWriteFile, atomicWriteFileSync, sha256, tempSibling } from '../shared/atomic.js';
+import { atomicWriteFile, atomicWriteFileSync, sha256, sha256File, tempSibling } from '../shared/atomic.js';
 import { journalOf, readJournal, serialize, type CheckpointEntry } from './checkpoint-store.js';
 
 /**
@@ -42,14 +42,6 @@ export interface RewindResult {
   skipped: string[];
 }
 
-async function digestOf(file: string): Promise<string | undefined> {
-  try {
-    return sha256(await fs.promises.readFile(file));
-  } catch {
-    return undefined;
-  }
-}
-
 function errorCode(error: unknown): string | undefined {
   return (error as NodeJS.ErrnoException | undefined)?.code;
 }
@@ -61,7 +53,7 @@ function errorCode(error: unknown): string | undefined {
 async function removeIfUnchanged(file: string, expected: string): Promise<void> {
   const aside = tempSibling(file);
   await fs.promises.rename(file, aside);
-  if ((await digestOf(aside)) === expected) {
+  if ((await sha256File(aside)) === expected) {
     await fs.promises.rm(aside, { force: true });
     return;
   }
@@ -103,7 +95,12 @@ export class Checkpoints {
 
   /** Turns with checkpoints, newest first. */
   turns(): number[] {
-    return [...new Set(this.entries.map((entry) => entry.turn))].sort((a, b) => b - a);
+    return this.turnsWhere(() => true);
+  }
+
+  /** Distinct turns of the entries `keep` accepts, newest first. */
+  private turnsWhere(keep: (entry: CheckpointEntry) => boolean): number[] {
+    return [...new Set(this.entries.filter(keep).map((entry) => entry.turn))].sort((a, b) => b - a);
   }
 
   /**
@@ -112,8 +109,7 @@ export class Checkpoints {
    */
   turnsOn(branch: string[]): number[] {
     const on = new Set(branch);
-    const turns = this.entries.filter((entry) => entry.anchor === undefined || on.has(entry.anchor)).map((entry) => entry.turn);
-    return [...new Set(turns)].sort((a, b) => b - a);
+    return this.turnsWhere((entry) => entry.anchor === undefined || on.has(entry.anchor));
   }
 
   /** Distinct files each anchor's settled turns changed, by anchor entry id. */
@@ -187,7 +183,7 @@ export class Checkpoints {
       return;
     }
     if (ok && after !== undefined) entry.after = after;
-    else if (ok || entry.after === undefined) entry.after = (await digestOf(file)) ?? null;
+    else if (ok || entry.after === undefined) entry.after = (await sha256File(file)) ?? null;
     if (this.prune()) {
       await this.collect();
       await this.rewrite();
@@ -198,15 +194,13 @@ export class Checkpoints {
   turnsFrom(branch: string[], entryId: string): number[] {
     const start = branch.indexOf(entryId);
     if (start < 0) return [];
-    const turns = this.entries.filter((entry) => entry.anchor !== undefined && branch.indexOf(entry.anchor) >= start).map((entry) => entry.turn);
-    return [...new Set(turns)].sort((a, b) => b - a);
+    return this.turnsWhere((entry) => entry.anchor !== undefined && branch.indexOf(entry.anchor) >= start);
   }
 
   /** Turns anchored on `branch` at an entry outside `keep` (what leaving the branch for `keep` abandons), newest first. */
   turnsLeaving(branch: string[], keep: ReadonlySet<string>): number[] {
     const on = new Set(branch);
-    const turns = this.entries.filter((entry) => entry.anchor !== undefined && on.has(entry.anchor) && !keep.has(entry.anchor)).map((entry) => entry.turn);
-    return [...new Set(turns)].sort((a, b) => b - a);
+    return this.turnsWhere((entry) => entry.anchor !== undefined && on.has(entry.anchor) && !keep.has(entry.anchor));
   }
 
   /**
@@ -237,7 +231,7 @@ export class Checkpoints {
 
   /** Restore one entry if the file is still as the agent left it; whether it was restored. */
   private async undo(entry: CheckpointEntry): Promise<boolean> {
-    const current = (await digestOf(entry.path)) ?? null;
+    const current = (await sha256File(entry.path)) ?? null;
     if (current !== entry.after) return false;
     try {
       await this.restore(entry, current);

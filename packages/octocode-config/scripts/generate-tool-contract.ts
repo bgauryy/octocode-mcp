@@ -14,7 +14,8 @@
 // is the whole change. Outputs are committed and never hand-edited; `--check`
 // (no cargo needed) fails when any is stale.
 import { createHash } from 'node:crypto';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   buildEnforcementContractIr,
@@ -98,4 +99,12 @@ async function main(): Promise<void> {
   }
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) await main();
+// argv[1] keeps a symlinked path while import.meta.url is the real path.
+const realOrSelf = (p: string): string => {
+  try {
+    return realpathSync(p);
+  } catch {
+    return resolve(p);
+  }
+};
+if (process.argv[1] && realOrSelf(process.argv[1]) === realOrSelf(fileURLToPath(import.meta.url))) await main();

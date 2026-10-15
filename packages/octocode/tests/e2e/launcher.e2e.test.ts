@@ -71,7 +71,7 @@ describe.skipIf(!ready)('launcher → native binary e2e', () => {
       expect(JSON.parse(schema.stdout).instructions).toBe(instructions);
       expect(instructions.includes('<clasify>')).toBe(Boolean(key));
       expect(instructions.includes('clasifyContext')).toBe(Boolean(key));
-      expect(instructions).not.toContain('clasify screens unread');
+      expect(instructions).not.toContain('clasify scouts unread');
       expect(
         JSON.parse(schema.stdout).tools.map(
           (tool: { name: string }) => tool.name

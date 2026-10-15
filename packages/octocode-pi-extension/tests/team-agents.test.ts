@@ -97,18 +97,17 @@ describe('what the team shows about an agent', () => {
     member('deep-nautilus', 'reviewer', { parentId: 'salty-squid', joinedAt: NOW - 45_000, goal: 'review parser changes' }),
   ];
 
-  it('draws the panel row as name · role · goal · model · state, within the width', () => {
+  it('draws the panel row as name · goal · model · state · time, within the width', () => {
     const lines = widgetLines(team, 'salty-squid', NOW, theme, 150);
-    expect(lines[1]).toBe(' ● inky-kraken   · implementer · audit auth token refresh · claude-opus-5-5 · working · 8m38s · 56 tools · ≈$2.28 · 20 locks  Thinking');
-    expect(lines[2]).toBe(' ○ deep-nautilus · reviewer    · review parser changes    ·                 · idle    ·   45s ·  0 tools');
+    expect(lines[1]).toBe(' ● inky-kraken   · audit auth token refresh · claude-opus-5-5 · working · 8m38s · 56 tools · ≈$2.28 · 20 locks  Thinking');
+    expect(lines[2]).toBe(' ○ deep-nautilus · review parser changes    ·                 · idle    ·   45s ·  0 tools');
     for (const width of [150, 100, 70, 40]) for (const line of widgetLines(team, 'salty-squid', NOW, theme, width)) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
   });
 
-  it('keeps name, goal and state when the terminal is narrow, dropping role and stats first', () => {
+  it('keeps name, model, state and time when the terminal is narrow, dropping stats and shortening the goal first', () => {
     const narrow = widgetLines(team, 'salty-squid', NOW, theme, 70)[1]!;
-    expect(narrow).toContain('inky-kraken');
-    expect(narrow).toContain('audit auth token refresh');
-    expect(narrow).toContain('working');
+    for (const kept of ['inky-kraken', 'claude-opus-5-5', 'working', '8m38s']) expect(narrow).toContain(kept);
+    expect(narrow).toMatch(/audit auth[^·]*…/);
     expect(narrow).not.toContain('implementer');
     expect(narrow).not.toContain('≈$2.28');
   });

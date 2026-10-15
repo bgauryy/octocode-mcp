@@ -4,6 +4,7 @@ import { sessionDir } from '../shared/home.js';
 import { say, wordCompletions, type Subcommands } from '../shared/commands.js';
 import { withDialog } from '../shared/locks.js';
 import { plural } from '../shared/render.js';
+import { errorMessage } from '../shared/util.js';
 import { inheritCheckpoints, sessionIdOf } from './checkpoint-store.js';
 import type { Checkpoints, RewindResult } from './checkpoint.js';
 
@@ -61,7 +62,9 @@ export function registerCheckpoints(pi: ExtensionAPI, checkpoints: Checkpoints, 
     const parent = parentFile ? await sessionIdOf(parentFile) : undefined;
     if (parent && parent !== id) {
       const branch = ctx.sessionManager.getBranch().map((entry) => entry.id);
-      await inheritCheckpoints(checkpointDir(parent), dir, branch).catch(() => 0);
+      await inheritCheckpoints(checkpointDir(parent), dir, branch).catch((error: unknown) => {
+        if (ctx.hasUI) ctx.ui.notify(`Octocode could not carry the checkpoints to this fork (${errorMessage(error)}); /octocode rewind will not reach the parent's turns.`, 'warning');
+      });
     }
     checkpoints.open(dir);
   });

@@ -38,7 +38,7 @@ describe('CLI presentation embedded by the native binary', () => {
       expect(instructions[name]!.includes('clasifyContext'), name).toBe(
         selection
       );
-      expect(instructions[name]!.includes('clasify screens unread'), name).toBe(
+      expect(instructions[name]!.includes('clasify scouts unread'), name).toBe(
         clasify
       );
     }

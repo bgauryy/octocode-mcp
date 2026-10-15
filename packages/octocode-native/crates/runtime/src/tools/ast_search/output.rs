@@ -5,10 +5,6 @@ use serde_json::Value;
 
 pub(crate) struct Output;
 impl ToolOutput for Output {
-    /// A row carries scan totals only beside `matchCount`.
-    fn reports_scan_totals(&self, data: &serde_json::Map<String, Value>) -> bool {
-        data.contains_key("matchCount")
-    }
     fn fallback_hint(&self, query: &Value) -> &'static str {
         // A pattern must parse as one complete node of the target grammar.
         if query["operation"] == "match" && query["pattern"].is_string() {

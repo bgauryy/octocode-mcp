@@ -3,7 +3,7 @@
 // `octocode-mcp`).
 //
 //   node package-build.mjs docs <outDir>   copy repo docs/ to <cwd>/<outDir>/docs
-import { cpSync, existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { builtinModules } from 'node:module';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -66,7 +66,9 @@ export function bundleDocs(packageRoot, outDir) {
   return outputDocs;
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// Installed skills are often symlinks: argv[1] keeps the link path while import.meta.url is the real path.
+const realOrSelf = (p) => { try { return realpathSync(p); } catch { return resolve(p); } };
+if (process.argv[1] && realOrSelf(process.argv[1]) === realOrSelf(fileURLToPath(import.meta.url))) {
   const [command, outDir] = process.argv.slice(2);
   if (command !== 'docs' || !outDir) {
     console.error('Usage: node package-build.mjs docs <outDir>');

@@ -4,6 +4,7 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -68,8 +69,16 @@ export function build() {
   );
 }
 
+// argv[1] keeps a symlinked path while import.meta.url is the real path.
+const realOrSelf = (p: string): string => {
+  try {
+    return realpathSync(p);
+  } catch {
+    return resolve(p);
+  }
+};
 if (
   process.argv[1] &&
-  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+  realOrSelf(process.argv[1]) === realOrSelf(fileURLToPath(import.meta.url))
 )
   build();

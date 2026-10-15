@@ -1,5 +1,5 @@
 PRAGMA application_id=1329678147;
-PRAGMA user_version=5;
+PRAGMA user_version=6;
 
 CREATE TABLE workspaces (
   workspace TEXT PRIMARY KEY, coordinationScope TEXT NOT NULL
@@ -38,11 +38,11 @@ CREATE TABLE lease_waits (
   leaseTtlMs INTEGER NOT NULL CHECK(leaseTtlMs BETWEEN 1000 AND 600000),
   createdAt INTEGER NOT NULL, expiresAt INTEGER NOT NULL CHECK(expiresAt>createdAt));
 
-CREATE TABLE messages (
+CREATE TABLE "messages" (
   id INTEGER PRIMARY KEY AUTOINCREMENT, sender TEXT NOT NULL REFERENCES sessions(id),
   target TEXT NOT NULL, topic TEXT, body TEXT NOT NULL, key TEXT NOT NULL,
-  replyRequired INTEGER NOT NULL DEFAULT 1 CHECK(replyRequired IN (0,1)),
-  expiresAt INTEGER NOT NULL, reasoning TEXT NOT NULL, wake TEXT NOT NULL DEFAULT 'action' CHECK(wake IN ('action','passive')), conversationId TEXT
+  replyRequired INTEGER NOT NULL DEFAULT 0 CHECK(replyRequired IN (0,1)),
+  expiresAt INTEGER NOT NULL, reasoning TEXT NOT NULL, wake TEXT NOT NULL DEFAULT 'passive' CHECK(wake IN ('action','passive')), conversationId TEXT
   CHECK(conversationId IS NULL OR (typeof(conversationId)='text' AND length(conversationId) BETWEEN 1 AND 128 AND conversationId NOT GLOB '*[^A-Za-z0-9._:-]*')), replyTo INTEGER REFERENCES messages(id)
   CHECK(replyTo IS NULL OR (typeof(replyTo)='integer' AND replyTo BETWEEN 1 AND 9007199254740991)), ttlMs INTEGER NOT NULL DEFAULT 3600000
   CHECK(typeof(ttlMs)='integer' AND ttlMs BETWEEN 1000 AND 86400000), UNIQUE(sender, key)

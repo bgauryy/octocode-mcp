@@ -355,7 +355,9 @@ async fn github_clone_is_cli_only() {
 
     let mut input = workspace.config(&[]);
     input.runtime_surface = octocode_native::config::RuntimeSurface::Mcp;
-    let mcp = octocode_native::runtime::ToolRuntime::new(input).expect("MCP runtime");
+    let mcp =
+        octocode_native::runtime::ToolRuntime::with_limits(input, crate::support::FIXTURE_LIMITS)
+            .expect("MCP runtime");
     assert!(!mcp.is_available("ghCloneRepo"));
     let error = call(&mcp, "ghCloneRepo", json!({"owner":"a","repo":"b"}))
         .await
@@ -1101,56 +1103,157 @@ async fn gh_file_error_keeps_provider_diagnostics_for_the_diagnostics_extra() {
     runtime.close().await;
 }
 
-/// Whole-file pages respect a configured 40k host window and deliver every
-/// source line exactly once through copied continuations.
-#[tokio::test]
-async fn gh_full_content_pages_stay_under_the_configured_window_and_cover_the_file() {
+/// A source whose standard (minified) view differs from the bytes: line
+/// comments, a block comment and blank lines among long code lines.
+fn source_with_comments_and_blank_lines() -> String {
+    (0..6000)
+        .map(|n| match n % 10 {
+            0 => "\n".to_owned(),
+            3 => format!("// comment number {n} explains the next function\n"),
+            6 => format!("/* block comment {n} */\n"),
+            _ => format!("fn function_number_{n}(value: usize) -> usize {{ value * {n} }}\n"),
+        })
+        .collect()
+}
+
+/// Mount `text` as `src/big.rs` at `sha` and start a runtime under `window`.
+async fn big_file_runtime(
+    text: &str,
+    sha: &str,
+    window: usize,
+) -> (MockServer, Workspace, octocode_native::runtime::ToolRuntime) {
     let server = MockServer::builder().start().await;
-    let sha = "0123456789abcdef0123456789abcdef01234567";
-    let text = (0..6000)
-        .map(|n| format!("fn function_number_{n}(value: usize) -> usize {{ value * {n} }}\n"))
-        .collect::<String>();
     Mock::given(method("GET"))
         .and(path("/api/v3/repos/a/b/contents/src%2Fbig.rs"))
         .and(query_param("ref", sha))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "type": "file", "encoding": "base64", "content": STANDARD.encode(&text),
+            "type": "file", "encoding": "base64", "content": STANDARD.encode(text),
             "size": text.len(), "sha": "f".repeat(40), "path": "src/big.rs"
         })))
         .mount(&server)
         .await;
     let workspace = Workspace::new();
-    let window = 40_000;
-    let runtime = workspace.runtime(&[
-        ("GITHUB_API_URL", format!("{}/api/v3", server.uri())),
-        ("OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH", window.to_string()),
-    ]);
-    let start = support::envelope(
-        json!({"owner":"a","repo":"b","path":"src/big.rs","ref":sha,"fullContent":true,"extras":[]}),
+    let runtime = workspace.runtime_with(
+        &[("GITHUB_API_URL", format!("{}/api/v3", server.uri()))],
+        octocode_native::runtime::RuntimeLimits {
+            auto_page_chars: window,
+            ..support::FIXTURE_LIMITS
+        },
     );
-    let walk = support::walk(&runtime, "ghGetFileContent", start, |output| {
-        let chars = output.to_string().encode_utf16().count();
-        assert!(chars <= window, "a page is {chars} chars");
-        let content = output["results"][0]["data"]["content"]
-            .as_str()
-            .unwrap_or_default();
-        content
-            .lines()
-            .filter_map(|line| line.split("function_number_").nth(1))
-            .filter_map(|rest| rest.split('(').next())
-            .map(str::to_owned)
-            .collect()
-    })
-    .await;
-    assert!(walk.queries.len() > 1, "one page held the whole file");
-    let mut lines = walk
-        .rows
+    (server, workspace, runtime)
+}
+
+/// Whole-file pages respect the default and a configured 40k host window and
+/// deliver the source byte for byte, every line exactly once, through copied
+/// continuations: comments and blank lines are kept, because `fullContent`
+/// is the verbatim view and every continuation pins `minify:"none"`.
+#[tokio::test]
+async fn gh_full_content_pages_stay_under_the_configured_window_and_cover_the_file() {
+    let sha = "0123456789abcdef0123456789abcdef01234567";
+    let text = source_with_comments_and_blank_lines();
+    let total = text.lines().count();
+    for window in [support::FIXTURE_LIMITS.auto_page_chars, 40_000] {
+        let (_server, _workspace, runtime) = big_file_runtime(&text, sha, window).await;
+        let start = support::envelope(
+            json!({"owner":"a","repo":"b","path":"src/big.rs","ref":sha,"fullContent":true,"extras":[]}),
+        );
+        let walk = support::walk(&runtime, "ghGetFileContent", start, |output| {
+            let chars = output.to_string().encode_utf16().count();
+            assert!(chars <= window, "a page is {chars} chars");
+            // Numbered records `N\t<text>`: the walk fails on a record
+            // delivered twice.
+            output["results"][0]["data"]["content"]
+                .as_str()
+                .unwrap_or_default()
+                .lines()
+                .filter(|record| *record != "--")
+                .map(str::to_owned)
+                .collect()
+        })
+        .await;
+        assert!(walk.queries.len() > 1, "one page held the whole file");
+        let mut joined = String::new();
+        for (index, record) in walk.rows.iter().enumerate() {
+            let (number, line) = record
+                .split_once('\t')
+                .unwrap_or_else(|| panic!("unnumbered record {record:?}"));
+            assert_eq!(number.parse::<usize>().ok(), Some(index + 1), "{record:?}");
+            joined.push_str(line);
+            joined.push('\n');
+        }
+        assert_eq!(walk.rows.len(), total, "every line once at window {window}");
+        assert!(joined == text, "byte-for-byte source at window {window}");
+        for continuation in &walk.queries[1..] {
+            let row = &continuation["queries"][0];
+            assert_eq!(row["minify"], "none", "{continuation}");
+            assert!(row.get("fullContent").is_none(), "{continuation}");
+        }
+        runtime.close().await;
+    }
+}
+
+/// A view the caller names explicitly survives the window's shortened
+/// whole-file reread: the paged walk carries the caller's `minify` in every
+/// continuation and joins to the same text as one unpaged read. (`standard`
+/// is the default view, which a whole-file read already resolves to
+/// verbatim, so the explicit view here is the outline.)
+#[tokio::test]
+async fn gh_full_content_paging_keeps_an_explicit_view() {
+    let sha = "0123456789abcdef0123456789abcdef01234567";
+    let text = source_with_comments_and_blank_lines();
+    let read_all = |window: usize| {
+        let text = text.clone();
+        async move {
+            let (_server, _workspace, runtime) = big_file_runtime(&text, sha, window).await;
+            let pages = std::sync::Mutex::new(Vec::new());
+            let start = support::envelope(json!({
+                "owner":"a","repo":"b","path":"src/big.rs","ref":sha,
+                "fullContent":true,"minify":"symbols","extras":[]
+            }));
+            let walk = support::walk(&runtime, "ghGetFileContent", start, |output| {
+                let data = &output["results"][0]["data"];
+                assert_eq!(data["contentView"], "symbols", "{data}");
+                pages
+                    .lock()
+                    .expect("pages")
+                    .push(data["content"].as_str().unwrap_or_default().to_owned());
+                Vec::new()
+            })
+            .await;
+            runtime.close().await;
+            (walk.queries, pages.into_inner().expect("pages"))
+        }
+    };
+    let (_, whole) = read_all(10_000_000).await;
+    assert_eq!(whole.len(), 1, "a large window reads the view in one page");
+    let (queries, pages) = read_all(support::FIXTURE_LIMITS.auto_page_chars).await;
+    assert!(queries.len() > 1, "one page held the whole view");
+    for continuation in &queries[1..] {
+        assert_eq!(
+            continuation["queries"][0]["minify"], "symbols",
+            "{continuation}"
+        );
+    }
+    let joined: String = pages
         .iter()
-        .map(|line| line.parse::<usize>().expect("line number"))
-        .collect::<Vec<_>>();
-    lines.sort_unstable();
-    assert_eq!(lines, (0..6000).collect::<Vec<_>>(), "every line once");
-    runtime.close().await;
+        .map(|page| {
+            if page.ends_with('\n') {
+                page.clone()
+            } else {
+                format!("{page}\n")
+            }
+        })
+        .collect();
+    let whole = if whole[0].ends_with('\n') {
+        whole[0].clone()
+    } else {
+        format!("{}\n", whole[0])
+    };
+    assert!(!whole.contains("// comment"), "the outline drops comments");
+    assert!(
+        joined == whole,
+        "the paged outline equals the unpaged outline"
+    );
 }
 
 /// Through the whole response stage, a code search pinned to a non-default

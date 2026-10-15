@@ -8,16 +8,18 @@ Other dev docs: [ADDING_CONFIG.md](ADDING_CONFIG.md) (new settings), [TOOL_QUALI
 
 ```text
 octocode CLI launcher ─┐
-octocode-mcp (stdio) ──┼──▶ octocode-native (Rust ToolRuntime: validate → execute → secure → shape)
-octocode-mcp-vscode ───┘          ├──▶ embedded contract from @octocodeai/config (generated from octocode-core)
-                                  └──▶ configuration resolved in Rust, same rules as @octocodeai/config
+octocode-mcp (stdio) ──┴──▶ octocode-native (Rust ToolRuntime: validate → execute → secure → shape)
+                               ├──▶ embedded contract from @octocodeai/config (generated from octocode-core)
+                               └──▶ configuration resolved in Rust, same rules as @octocodeai/config
+
+octocode-mcp-vscode ──▶ editor MCP setup and GitHub sign-in/token sync
 ```
 
 `octocode-native` is the one owner of public tool validation, providers, security, batching, pagination, response shaping, and cancellation. Interfaces register, delegate, render, or offer interactive selection.
 
 ## Native crates
 
-The package map is in `<repo>/AGENTS.md`. Native Cargo crates under `crates/`:
+The package map is in `<repo>/AGENTS.md`. Native Cargo crates under `packages/octocode-native/crates/`:
 
 | Crate dir | Cargo name | Owns |
 |---|---|---|
@@ -51,7 +53,8 @@ Where each part of [the protocol](../../../docs/OCTOCODE_PROTOCOL.md) lives. Nat
 | LSP | `crates/engine/src/lsp/`, `crates/runtime/src/tools/lsp_search/` |
 | Dependency graph | `crates/engine/src/graph/`, `crates/runtime/src/tools/ast_graph/` |
 | GitHub client, rate-limit breaker, cache | `crates/github/src/` (`budget.rs`), `crates/runtime/src/runtime/github.rs`, `github_cache.rs` |
-| `clasify` | `crates/runtime/src/tools/clasify/` (including `run/` and `cache.rs`) |
+| `clasify` and context selection | `crates/runtime/src/tools/clasify/`, `tools/judgment/` (evaluator, cache, transport), `tools/selection.rs`, `providers/classification/` |
+| Internal limits (timeouts, retries, page size, caches) | `crates/runtime/src/runtime/limits.rs` |
 | End-to-end harness | `octocode-local-testing/harness/` |
 
 ## Contract pipeline
@@ -91,14 +94,16 @@ Run from the repo root. Repo-wide tasks run through `node skills-dev/octocode-de
 `$DEV test:tools` (`octocode-local-testing/harness/tool-health.mjs`) is the quick end-to-end alarm for every tool in the contract. It first runs the driver's self-test (`harness/tool-health/driver.test.mjs`), then runs each tool through the built CLI (`--json`) and the MCP stdio server and checks:
 
 - **happy**: the primary operation exits 0, returns rows with the key fields, and validates against the contract `outputSchema`;
-- **continuation**: walking the `next.*` page lead to its end gives non-empty pages, every row exactly once, and exactly the unpaged rows; `walks` cover a tool's other page channels (PR file pages and patch windows, the clasify locate walk, astTopology deadCode pages);
+- **continuation**: walking the `next.*` page lead to its end gives non-empty pages, every row exactly once, and exactly the unpaged rows; `walks` cover a tool's other page channels (PR patch windows, astTopology deadCode pages);
 - **explore**: every seed is explored by `harness/tool-health/driver.mjs`. Every `next.*` and `hints.*` lead runs once, and every response must validate against its tool's `outputSchema`. A lead must be accepted and satisfy its key family's predicates (`harness/lead-predicates.mjs`, shared with `lead-replay`). A lead that cycles back to a query on its own path, or repeats another lead of the same response, fails;
 - **facts**: hint and warning sentences of 30+ characters must not repeat tool descriptions or server instructions, and must not repeat in every call of a tool across different query shapes;
 - **empty**: exit 1 with a hint or lead on both surfaces;
 - **invalid**: a typed contract `errorCode`, exit 2;
 - **parity**: the CLI and MCP evidence, page leads, status class and explored query graph match (`hints` are surface guidance and leads to CLI-only tools are excluded, since MCP omits those tools);
 - **latency**: every call fits the tool's budget; all timings are recorded;
-- **extra**: tool-specific checks, such as clone auth and the clone's local follow-up leads, and astRewrite `apply` on a temp copy writing exactly the previewed diff.
+- **extra**: tool-specific checks, such as clone auth and the clone's local follow-up leads.
+
+A parked tool (contract `disabled`, currently `astRewrite`) is checked only for its `toolUnavailable` error on the CLI and its absence from MCP.
 
 It is hermetic: a temp `OCTOCODE_HOME`/`HOME`, no user token, fixtures in `octocode-local-testing/fixtures/tool-health/` (or a per-tool temp copy with extra files), and a loopback mock (`harness/tool-health/mock-server.mjs`) for GitHub REST (`GITHUB_API_URL`), git smart HTTP, an npm registry (`registryUrl` with `OCTOCODE_ALLOW_PRIVATE_REGISTRY`) and the classification provider (`OCTOCODE_CLASSIFICATION_API_HOST`). Every proxy variable points at a dead loopback port, so a request that would leave the machine fails the run. Each tool and surface gets its own fake GitHub token and its own MCP server. The runtime paces GitHub searches per token, so all tools run in parallel; a run takes about 15 s. `--deep` adds seeds for more operations and allows more leads per seed (about 25 s). A contract tool without a case fails the run. Cases live in `harness/tool-health/cases.mjs`.
 

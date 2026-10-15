@@ -1,13 +1,13 @@
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
-import { EXTERNAL_SENDER, messageText, USER_SENDER, wakes } from '../src/team/routing.js';
+import { EXTERNAL_SENDER, messageText, USER_SENDER } from '../src/team/routing.js';
 import type { Member, Message } from '../src/team/model.js';
 import { userProof, userProofValid } from '../src/team/proof.js';
 import { TeamStore } from '../src/team/store.js';
 import { tmp } from './helpers.js';
 
-const message = (over: Partial<Message> = {}): Message => ({ id: 7, from: 'researcher-1234', to: 'main-aaaaaa', text: 'hi', at: 0, replyRequired: false, ...over });
+const message = (over: Partial<Message> = {}): Message => ({ id: 7, from: 'researcher-1234', to: 'main-aaaaaa', text: 'hi', at: 0, replyRequired: false, wake: false, ...over });
 
 describe('team message delivery', () => {
   it('checks recipient liveness inside the transaction that stores the message', () => {
@@ -63,15 +63,15 @@ describe('team message delivery', () => {
     } finally { store.close(); }
   });
 
-  it('wakes an idle agent only for a question, an answer to its own question, the user or an API client', () => {
-    expect(wakes(message())).toBe(false);
-    expect(wakes(message({ replyRequired: true }))).toBe(true);
-    // An answer wakes only when the store marked it as the answer to the recipient's own open question.
-    expect(wakes(message({ replyTo: 3 }))).toBe(false);
-    expect(wakes(message({ replyTo: 3, wake: true }))).toBe(true);
-    expect(wakes(message({ replyTo: 3, wake: false }))).toBe(false);
-    expect(wakes(message({ from: USER_SENDER }))).toBe(true);
-    expect(wakes(message({ from: EXTERNAL_SENDER }))).toBe(true);
+  it('stores a wake only for a question, an answer to the sender\'s open question, or a flagged sender', () => {
+    const store = TeamStore.open(tmp(), path.join(tmp(), 'team.sqlite'));
+    try {
+      for (const id of ['a-0001', 'b-0002']) store.save({ id, role: 'a', pid: process.pid, status: 'idle', joinedAt: 1_000, updatedAt: Date.now(), toolCalls: 0, input: 0, cacheRead: 0, output: 0, cost: 0, unpriced: false });
+      const wakeOf = (id: number) => store.pending('b-0002').find((entry) => entry.id === id)!.wake;
+      expect(wakeOf(store.send('a-0001', ['b-0002'], 'fyi', { replyRequired: false }).id!)).toBe(false);
+      expect(wakeOf(store.send('a-0001', ['b-0002'], 'question', { replyRequired: true }).id!)).toBe(true);
+      expect(wakeOf(store.send(USER_SENDER, ['b-0002'], 'from the user', { replyRequired: false, wake: true }).id!)).toBe(true);
+    } finally { store.close(); }
   });
 
   it('labels the sender, never passing an API client off as the user, and says how to reply', () => {

@@ -5,29 +5,22 @@ Load for TTLs, topics, retry behavior, or worked examples. Message rules live in
 ## Identity and ownership
 
 Use `peers` for names, IDs, declared tasks, branches, worktrees, and current presence. Live peer names are unique per repository scope, so `to` takes a name (`api-reviewer`) or an exact ID. A taken name at `join` or `resume` gets the first free `-2`, `-3` suffix; a rename to a live peer's name is rejected.
-Use `context` for repository-shared live notes, or `fetch` for historical findings.
-Each note carries its origin worktree and branch; matching relative paths do not imply identical checkout contents.
-Git `activity` shows changes in the current checkout, not ownership.
-Statuses are `available`, `busy`, `blocked`, and `unknown`.
-After switching branches, use `heartbeat {"branch":"new-name"}`; use `{"branch":null}` to clear it.
-Use `lease.id` (`lock`) or each `leases[].id` (`lock_many`) as `leaseId` for renewal and release. A send receipt's `id` is its message ID.
-File leases cover exact files. Tree leases cover a subtree in that worktree.
-A conflict returns `next` with the same input plus `wait:true`. Running it queues you (one wait per identity, 10 minutes) and notifies the owners. A queued wait holds no lease but reserves its paths in first-come order: a direct `lock` or a later wait on an overlapping path conflicts with it and queues behind it, so a third agent cannot take a path as it frees. When every path frees, the runtime grants the lease and sends you an action-wake `Lease granted: <path> (lease N)` message. Keep the request that needs the lease pending meanwhile. `check_paths` reports leases only, not queued reservations.
-`check_paths` reads overlap candidates without acquiring ownership.
-`check_write` verifies concrete create/edit/delete paths and both sides of a rename.
+Use `context` for repository-shared live notes (each carries its origin worktree and branch) and `fetch` for history. Git `activity` shows changes in the current checkout, not ownership. Statuses are `available`, `busy`, `blocked` and `unknown`. After switching branches, run `heartbeat {"branch":"new-name"}` (`null` clears it).
+
+Use `lease.id` (`lock`) or each `leases[].id` (`lock_many`) as `leaseId` for renewal and release; a send receipt's `id` is its message ID. File leases cover exact files, tree leases a subtree in that worktree. A conflict returns `next` with the same input plus `wait:true`. Running it queues you (one wait per identity, 10 minutes) and notifies the owners. A queued wait holds no lease but reserves its paths in first-come order: a direct `lock` or a later wait on an overlapping path conflicts with it and queues behind it, so a third agent cannot take a path as it frees. When every path frees, the runtime grants the lease and sends you an action-wake `Lease granted: <path> (lease N)` message. Keep the request that needs the lease pending meanwhile. `check_paths` reads overlapping leases (not queued reservations) and acquires nothing; `check_write` verifies your coverage for concrete create, edit and delete paths and both sides of a rename.
 
 ## Presence and lease expiry
 
-Presence and default leases last 60 seconds. Lease TTL ranges from 1 second to 10 minutes.
-Managed MCP and managed workers renew presence and live leases about every 15 seconds.
-Pi targets 15 seconds; idle backoff can delay a tick to about 25 seconds plus CLI latency.
-Raw CLI agents maintain presence explicitly with `heartbeat {"renewLeases":true}` while working. Presence lasts 60s by default; pass `ttlMs` (60000–600000, the lease cap) to cover a long turn. `renewLeases` extends live leases to the same horizon.
-A listener maintains presence and delivery; it does not promise lease renewal.
-Renew before expiry. Renewal never revives an expired lease.
-If identity expires, resume the same vendor identity and reacquire fresh leases.
-`inbox wait` is read-only and never renews presence.
-Heartbeat before a raw wait, then keep the wait shorter than remaining presence.
-Use a maintained binding for longer waits.
+Presence and default leases last 60 seconds; lease TTL ranges from 1 second to 10 minutes.
+
+| Owner | Presence and lease renewal |
+| --- | --- |
+| Managed MCP, managed `run` worker | `heartbeat {"renewLeases":true}` every 15 seconds |
+| Pi inbox adapter | Targets 15 seconds; idle backoff can stretch a tick to about 25 seconds plus CLI latency. Live leases extend to at least 60 seconds from the tick |
+| `listen` | Presence and delivery only; no lease renewal |
+| Raw CLI | Explicit `heartbeat {"renewLeases":true}` while working; `ttlMs` (60000–600000) covers a long turn and `renewLeases` extends live leases to the same horizon |
+
+Renew before expiry: renewal never revives an expired lease, and an expired identity must `resume` (same vendor) and reacquire leases. A custom lease TTL shorter than the owner's tick can expire before renewal. `inbox wait` (up to 60 seconds) is read-only and never renews presence: heartbeat first and keep the wait shorter than remaining presence.
 
 ## Request, progress, and final answer
 
@@ -38,7 +31,7 @@ A request (`replyRequired:true` or `wake:"action"`) that expires unacknowledged 
 `Receive → retrieve full body → perform requested work → complete with outcome and reply → sender acknowledges answer`.
 
 ```sh
-agent send_message '{"to":"api-reviewer","body":"Situation: src/api.ts changed the response type. Background: clients pin v2. Assessment: compatibility unverified. Request: review and list risks.","reasoning":"Resolve API review before handoff; done when risks are listed","key":"api-review-1","conversationId":"api-review"}'
+agent send_message '{"to":"api-reviewer","body":"Situation: src/api.ts changed the response type. Background: clients pin v2. Assessment: compatibility unverified. Request: review and list risks.","reasoning":"Resolve API review before handoff; done when risks are listed","replyRequired":true,"key":"api-review-1","conversationId":"api-review"}'
 agent inbox
 agent fetch '{"incoming":true,"type":"message","limit":20}'
 # Use data.messageId from fetch, after checking the requested work:
@@ -69,12 +62,6 @@ Send `{topic:"api",body,reasoning}` to current subscribers.
 Use `notify_all` for current active peers, excluding the sender.
 Topic and broadcast defaults are passive with no required reply.
 Recipients are fixed at send time. Later joiners receive no old fanout.
-`share_document` accepts up to 1 MiB UTF-8. Use `-` for large stdin JSON.
-Names are immutable. Choose a new name for a revision; retain the name and verify read pages.
-If migrated documents share a name, pass `read_document.workspace` to select the original worktree.
-Use the returned continuation unchanged so later pages retain that origin.
-Usage scopes are alternatives: do not sum overlapping request, turn, or cumulative counts.
-Absent usage counts are unknown, not zero.
+`share_document` accepts up to 1 MiB UTF-8; pass large JSON on stdin with `-`. Names are immutable: choose a new name for a revision. If historical documents share a name, pass `read_document.workspace` (CLI `--origin-workspace`) to select the original worktree; continuations keep that origin. Usage scopes (request, turn, cumulative) are alternatives, never summed; absent counts are unknown, not zero.
 
-For all command forms, read [the command reference](COMMANDS.md).
-For uncertain delivery or backups, read [operations](OPERATIONS.md).
+Command forms: [command reference](COMMANDS.md). Uncertain delivery and backups: [operations](OPERATIONS.md).

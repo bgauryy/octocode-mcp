@@ -175,7 +175,7 @@ for (const [label, query] of [
 
 // ── structureSearch over the whole clone set ───────────────────────────────
 {
-  const first = await call('structureSearch', { operation: 'files', path: REPOS, extensions: ['ts', 'go', 'py', 'rs', 'java', 'c', 'cpp', 'hpp', 'cs', 'scala', 'asm'], extras: ['details'], sort: 'size', maxEntries: 20, defaultExcludes: false, exclude: ['.git', 'node_modules', 'target'] }, {}, 'biggest files'); // repos/* is gitignored
+  const first = await call('structureSearch', { operation: 'files', path: REPOS, extensions: ['ts', 'go', 'py', 'rs', 'java', 'c', 'cpp', 'hpp', 'cs', 'scala', 'asm'], extras: ['details'], sort: 'size', maxEntries: 20, defaultExcludes: false, includeIgnored: true, exclude: ['.git', 'node_modules', 'target'] }, {}, 'biggest files'); // repos/* is gitignored
   bounded(first, 'structureSearch biggest files');
   const files = structureFiles(rowData(first)?.files, rowData(first)?.path).filter(o => typeof o.path === 'string' && typeof o.size === 'number');
   const sorted = files.every((f, i) => i === 0 || files[i - 1].size >= f.size);
