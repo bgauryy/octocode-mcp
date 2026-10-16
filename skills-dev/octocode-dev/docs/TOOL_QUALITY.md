@@ -13,10 +13,10 @@ How to evaluate the tools in the Octocode catalog.
 Every acceptance run covers the shared contract and the tool-specific behavior:
 
 - a `{ queries: [...] }` envelope (for `clasify` too) with 1–5 same-tool rows, as advertised by MCP discovery and the canonical input schema; native admission also accepts a bare query object as one row on CLI, raw MCP, and the direct addon; a bare array is rejected;
-- optional `mainGoal` and `reasoning` on every row: a row without them validates, a blank one is dropped, a top-level brief is not inherited, and `next.*` pages and `hints.*` leads carry the producing query's brief only when it sent one;
+- optional `mainGoal` and `reasoning` on every row: a row without them validates, a blank one is dropped, a top-level brief is not inherited, and selection replay retains its original classification context;
 - zero-based result `index` alignment and isolated row errors;
 - `schema` `variants` and `rules`;
-- collection, content, and whole-response continuations in `next` (pages only), optional `hints` leads and `hints.text` tips, and typed terminal limits.
+- collection, content, and whole-response continuations and required recovery in `next`, optional guidance strings in `hints`, and typed terminal limits.
 
 ## Inspect the surface being tested
 

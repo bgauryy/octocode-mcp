@@ -81,6 +81,7 @@ Pi execution adapters live in `@octocodeai/pi-extension`: when available, `exter
 
 - `octocode-agentic-prompts`: unclear handoff wording or ownership.
 - `octocode-research`: a handoff needs independent code evidence.
+- For workflow actor selection, sequencing, and evidence merging: [octocode-workflows composition](../octocode-workflows/references/composition.md).
 
 ## Output
 

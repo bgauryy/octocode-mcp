@@ -8,14 +8,87 @@ use std::path::Path;
 
 const TARGET_CHARS: usize = 2_048;
 
+/// Where a source's declarations put chunk edges: the windows of bounded
+/// declarations (each one chunk), and the lines where any declaration
+/// starts (with its documentation) or ends.
+#[derive(Default)]
+struct Edges {
+    windows: Vec<Range<usize>>,
+    starts: std::collections::HashSet<usize>,
+    ends: std::collections::HashSet<usize>,
+}
+
+fn declaration_edges(text: &str, path: &Path, max_chars: usize) -> Edges {
+    let Some(declarations) =
+        crate::tools::declarations_cache::all_declarations(text, &path.to_string_lossy())
+    else {
+        return Edges::default();
+    };
+    let mut prefix = vec![0usize];
+    for line in text.split_inclusive('\n') {
+        prefix.push(
+            prefix
+                .last()
+                .copied()
+                .unwrap_or_default()
+                .saturating_add(line.chars().count()),
+        );
+    }
+    let first_line = |declaration: &crate::tools::declarations_cache::Declared| {
+        declaration
+            .doc_start
+            .unwrap_or(declaration.start)
+            .min(declaration.start)
+    };
+    let starts = declarations.iter().map(first_line).collect();
+    let ends = declarations
+        .iter()
+        .map(|declaration| declaration.end)
+        .collect();
+    let mut ranges = declarations
+        .iter()
+        .filter(|declaration| {
+            matches!(
+                declaration.kind.as_str(),
+                "function" | "method" | "constructor" | "property"
+            )
+        })
+        .filter_map(|declaration| {
+            let start = first_line(declaration);
+            (start > 0
+                && declaration.end >= start
+                && declaration.end < prefix.len()
+                && prefix[declaration.end] - prefix[start - 1] <= max_chars)
+                .then_some(start..declaration.end + 1)
+        })
+        .collect::<Vec<_>>();
+    ranges.sort_by(|a, b| a.start.cmp(&b.start).then_with(|| b.end.cmp(&a.end)));
+    let mut windows: Vec<Range<usize>> = Vec::new();
+    for range in ranges {
+        if windows.last().is_none_or(|last| last.end <= range.start) {
+            windows.push(range);
+        }
+    }
+    Edges {
+        windows,
+        starts,
+        ends,
+    }
+}
+
 pub(super) struct Chunk {
     bytes: Range<usize>,
     lines: Vec<usize>,
 }
 
+/// The candidate chunks of view `text`. `source_lines` maps each view line
+/// to its source line when the view was extracted from `source` (ranges,
+/// matches); chunk edges follow the source's declarations either way.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn chunks(
     text: &str,
     source_lines: Option<&[usize]>,
+    source: Option<&str>,
     path: &Path,
     provider_path: &str,
     security: &impl ContentScan,
@@ -34,6 +107,28 @@ pub(super) fn chunks(
             }],
         );
     }
+    // A candidate keeps a bounded declaration and its documentation whole.
+    // Oversized containers leave their nested declarations available; other
+    // source keeps complete line windows, which end where a declaration
+    // starts or ends once half full.
+    let outline = if source_lines.is_none() {
+        Some(text)
+    } else {
+        source
+    };
+    let edges = outline.map_or_else(Edges::default, |outline| {
+        declaration_edges(
+            outline,
+            path,
+            runtime.map_or(
+                crate::runtime::RuntimeLimits::DEFAULT.selection.max_chars,
+                |runtime| runtime.limits.max_chars,
+            ),
+        )
+    });
+    let declarations = &edges.windows;
+    let mut declaration_index = 0;
+    let mut previous_declaration = None;
     let mut chunks = Vec::new();
     let mut start = 0;
     let mut count = 0usize;
@@ -45,10 +140,27 @@ pub(super) fn chunks(
         let line = source_lines.map_or(index + 1, |map| map[index]);
         let contiguous =
             last_source_line.is_none_or(|last: usize| last.checked_add(1) == Some(line));
+        while declarations
+            .get(declaration_index)
+            .is_some_and(|range| range.end <= line)
+        {
+            declaration_index += 1;
+        }
+        let declaration = declarations
+            .get(declaration_index)
+            .filter(|range| range.contains(&line))
+            .map(|_| declaration_index);
+        let declaration_break = declaration != previous_declaration;
+        let outline_edge = declaration.is_none()
+            && count >= TARGET_CHARS / 2
+            && (edges.starts.contains(&line)
+                || last_source_line.is_some_and(|last| edges.ends.contains(&last)));
         if last_source_line.is_some()
             && (line == super::extraction::OMISSION_LINE
                 || !contiguous
-                || count.saturating_add(chars) > TARGET_CHARS)
+                || declaration_break
+                || outline_edge
+                || (declaration.is_none() && count.saturating_add(chars) > TARGET_CHARS))
         {
             chunks.push(Chunk {
                 bytes: start..offset,
@@ -64,6 +176,7 @@ pub(super) fn chunks(
             last_source_line = Some(line);
         }
         offset += record.len();
+        previous_declaration = declaration;
     }
     if last_source_line.is_some() {
         chunks.push(Chunk {
@@ -97,15 +210,203 @@ pub(super) fn chunks(
     (candidates, chunks)
 }
 
+/// A selected view's plan and the source lines of its unknown chunks.
+pub(crate) struct Chosen {
+    pub(crate) outcome: crate::tools::selection::Outcome,
+    /// `ranges` entries (`"a-b"`, merged) covering every unknown chunk.
+    unknown_ranges: Vec<String>,
+    /// The ranges read fewer source lines than the whole view holds.
+    narrower: bool,
+}
+
+impl Chosen {
+    pub(super) fn new(outcome: crate::tools::selection::Outcome, chunks: &[Chunk]) -> Self {
+        let judged = outcome
+            .selected
+            .iter()
+            .chain(&outcome.excluded)
+            .copied()
+            .collect::<std::collections::HashSet<_>>();
+        let mut view_lines = std::collections::BTreeSet::new();
+        let mut unknown = std::collections::BTreeSet::new();
+        for (ordinal, chunk) in chunks.iter().enumerate() {
+            let lines = chunk
+                .lines
+                .iter()
+                .copied()
+                .filter(|&line| line != super::extraction::OMISSION_LINE);
+            if !outcome.considers(ordinal) || judged.contains(&ordinal) {
+                view_lines.extend(lines);
+            } else {
+                for line in lines {
+                    view_lines.insert(line);
+                    unknown.insert(line);
+                }
+            }
+        }
+        let unknown_lines = unknown.len();
+        Self {
+            outcome,
+            unknown_ranges: crate::tools::line_spans::runs(unknown)
+                .into_iter()
+                .map(|(start, end)| format!("{start}-{end}"))
+                .collect(),
+            narrower: unknown_lines < view_lines.len(),
+        }
+    }
+
+    /// The token of `next.nextCandidatePage`, when the budget left chunks
+    /// unjudged.
+    pub(super) fn next_candidates(&self) -> Option<&str> {
+        self.outcome
+            .next_candidates(crate::tools::id::ToolId::LocalFetch)
+    }
+
+    /// The first-page note on chunks the candidate budget left unjudged.
+    pub(super) fn disclosure(&self) -> Option<String> {
+        self.next_candidates()?;
+        let total = self.outcome.receipt.total_items;
+        let unjudged = self.outcome.unjudged.len();
+        let judged = usize::try_from(total).unwrap_or(0).saturating_sub(unjudged);
+        Some(format!(
+            "clasifyContext judged {judged} of {total} chunks (candidate budget); {unjudged} were not judged: the next candidate page judges them."
+        ))
+    }
+
+    /// Exactly the unknown chunks as plain `ranges` reads of `query`'s file,
+    /// each row as many ranges as a row takes, when some chunks were judged
+    /// and the ranges read less than the whole view. Empty otherwise.
+    pub(super) fn unknown_reads(&self, query: &serde_json::Value) -> Vec<serde_json::Value> {
+        let receipt = &self.outcome.receipt;
+        let cap = crate::contracts::query_schema_number(
+            crate::tools::id::ToolId::LocalFetch,
+            None,
+            "ranges",
+            "maxItems",
+        )
+        .and_then(|n| usize::try_from(n).ok())
+        .filter(|cap| *cap > 0);
+        let Some(cap) = cap else {
+            return Vec::new();
+        };
+        if self.unknown_ranges.is_empty()
+            || !self.narrower
+            || receipt.unknown_items >= receipt.total_items
+        {
+            return Vec::new();
+        }
+        let mut row = crate::tools::selection::unfiltered_row(query, &[]);
+        let Some(fields) = row.as_object_mut() else {
+            return Vec::new();
+        };
+        // The unknown chunks are source lines: read them as lines, not as
+        // the selection (hits, context, declarations, whole file) they came from.
+        for field in [
+            "matchString",
+            "contextLines",
+            "regex",
+            "caseMode",
+            "block",
+            "fullContent",
+        ] {
+            fields.remove(field);
+        }
+        self.unknown_ranges
+            .chunks(cap)
+            .map(|ranges| {
+                let mut read = row.clone();
+                read["ranges"] = json!(ranges);
+                read
+            })
+            .collect()
+    }
+
+    /// Chars a classified page carries beside its text: the plan token its
+    /// next page names, the receipt, the unfiltered and candidate-page
+    /// leads (each a copy of `query`). The page's text leaves room for
+    /// them, so the row stays within the response window it was cut for.
+    pub(super) fn row_chars(&self, query: &serde_json::Value) -> usize {
+        use crate::tools::stream_page::json_chars;
+        let whole = crate::tools::selection::unfiltered_row(query, &[]);
+        let unknown = self
+            .unknown_reads(query)
+            .iter()
+            .map(json_chars)
+            .sum::<usize>();
+        let candidates = self
+            .next_candidates()
+            .map_or(0, |token| json_chars(query) + json_chars(&json!(token)));
+        let receipt = serde_json::to_value(&self.outcome.receipt)
+            .as_ref()
+            .map_or(0, json_chars);
+        // `"selection":`, `"unfiltered":{"tool":…,"query":{"queries":[…]}}`
+        // and the like around the values.
+        const KEYS: usize = 100;
+        let calls = 2 + usize::from(candidates > 0) + self.unknown_reads(query).len();
+        json_chars(&json!(self.outcome.token))
+            + receipt
+            + unknown
+            + candidates
+            + json_chars(&whole)
+            + KEYS * calls
+    }
+}
+
+/// The selected chunks in `order` as one view, and the source line of each
+/// view line. Selected chunks that are not adjacent in the source are
+/// separated by one marker naming the lines between them (mapped to
+/// [`super::extraction::OMISSION_LINE`]), as disjoint ranges are; a
+/// chunk's own leading marker described a gap beside a chunk not shown, so
+/// it gives way to that one.
 pub(super) fn project(text: &str, chunks: &[Chunk], order: &[usize]) -> (String, Vec<usize>) {
+    use super::extraction::OMISSION_LINE;
     let mut selected = String::with_capacity(text.len());
     let mut lines = Vec::new();
+    let mut last: Option<usize> = None;
+    let mut previous: Option<usize> = None;
     for &ordinal in order {
         let chunk = &chunks[ordinal];
-        selected.push_str(&text[chunk.bytes.clone()]);
-        lines.extend_from_slice(&chunk.lines);
+        let body = &text[chunk.bytes.clone()];
+        let mut records = body.split_inclusive('\n').zip(&chunk.lines).peekable();
+        // A leading marker names the gap after the chunk before this one:
+        // it stays when that chunk is shown too.
+        if ordinal > 0 && previous != Some(ordinal - 1) {
+            while records
+                .next_if(|(_, line)| **line == OMISSION_LINE)
+                .is_some()
+            {}
+        }
+        previous = Some(ordinal);
+        let first = records.peek().map(|(_, line)| **line);
+        let kept_marker = first == Some(OMISSION_LINE);
+        let first = first.filter(|_| !kept_marker);
+        if let (Some(last), Some(first)) = (last, first)
+            && first > last + 1
+        {
+            if !selected.is_empty() && !selected.ends_with('\n') {
+                selected.push('\n');
+            }
+            selected.push_str(&unselected_marker(last + 1, first - 1));
+            lines.push(OMISSION_LINE);
+        }
+        for (record, &line) in records {
+            selected.push_str(record);
+            lines.push(line);
+            if line != OMISSION_LINE {
+                last = Some(line);
+            }
+        }
     }
     (selected, lines)
+}
+
+/// Separates selected chunks that are not adjacent in the source.
+fn unselected_marker(start: usize, end: usize) -> String {
+    if start == end {
+        format!("... [line {start} not selected] ...\n")
+    } else {
+        format!("... [lines {start}-{end} not selected] ...\n")
+    }
 }
 
 #[cfg(test)]
@@ -127,7 +428,7 @@ mod tests {
             json!({"test":"budget"})
         }
 
-        fn select(&self, call: JudgeCall<'_>) -> Result<Vec<(usize, Decision)>, String> {
+        fn select(&self, call: JudgeCall<'_>) -> crate::tools::selection::Judgments {
             self.0.fetch_add(1, Ordering::SeqCst);
             let sent_chars = call
                 .admitted
@@ -193,6 +494,7 @@ mod tests {
             let (candidates, windows) = chunks(
                 &text,
                 Some(&[1, 0, 10]),
+                None,
                 Path::new("source.txt"),
                 "source.txt",
                 &ContentSecurity::new(),
@@ -258,6 +560,7 @@ mod tests {
         let (candidates, _) = chunks(
             &extracted.text,
             Some(source_lines),
+            None,
             Path::new("source.txt"),
             "source.txt",
             &ContentSecurity::new(),
@@ -320,12 +623,135 @@ mod tests {
     }
 
     #[test]
+    fn nested_declarations_in_large_containers_keep_docs_and_every_source_byte() {
+        let executor = tokio::runtime::Runtime::new().unwrap();
+        let mut runtime = budget_runtime(executor.handle().clone(), Arc::new(AtomicUsize::new(0)));
+        runtime.limits.max_chars = 4_096;
+        let prefix = "  consume();\n".repeat(400);
+        let inner = "  /// Retry the connection.\n  fn retry() {\n    connect();\n  }\n";
+        let text = format!("fn container() {{\n{prefix}{inner}}}\n");
+        let (_, windows) = chunks(
+            &text,
+            None,
+            None,
+            Path::new("source.rs"),
+            "source.rs",
+            &ContentSecurity::new(),
+            Some(&runtime),
+            None,
+            None,
+        );
+        assert!(
+            windows
+                .iter()
+                .any(|window| &text[window.bytes.clone()] == inner)
+        );
+        let ordinals = (0..windows.len()).collect::<Vec<_>>();
+        let (recovered, anchors) = project(&text, &windows, &ordinals);
+        assert_eq!(recovered, text);
+        assert_eq!(anchors, (1..=text.lines().count()).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn unsupported_syntax_and_oversized_declarations_keep_complete_line_windows() {
+        let executor = tokio::runtime::Runtime::new().unwrap();
+        let runtime = budget_runtime(executor.handle().clone(), Arc::new(AtomicUsize::new(0)));
+        for path in ["source.txt", "source.rs"] {
+            let text = format!("fn large() {{\n{}}}\n", "    consume();\n".repeat(600));
+            let (_, windows) = chunks(
+                &text,
+                None,
+                None,
+                Path::new(path),
+                path,
+                &ContentSecurity::new(),
+                Some(&runtime),
+                None,
+                None,
+            );
+            assert!(windows.len() > 2);
+            assert!(
+                windows
+                    .iter()
+                    .all(|window| text[window.bytes.clone()].chars().count() <= TARGET_CHARS)
+            );
+            assert_eq!(
+                project(&text, &windows, &(0..windows.len()).collect::<Vec<_>>()).0,
+                text
+            );
+        }
+    }
+
+    #[test]
+    fn declaration_body_stays_with_its_header_and_neighbor_is_separate() {
+        let executor = tokio::runtime::Runtime::new().unwrap();
+        let mut runtime = budget_runtime(executor.handle().clone(), Arc::new(AtomicUsize::new(0)));
+        runtime.limits.max_chars = 16_384;
+        let body = "    consume(value);\n".repeat(150);
+        let first = format!("fn process(value: u32) {{\n{body}}}\n");
+        let text = format!("{first}fn other() {{}}\n");
+        let (_, windows) = chunks(
+            &text,
+            None,
+            None,
+            Path::new("source.rs"),
+            "source.rs",
+            &ContentSecurity::new(),
+            Some(&runtime),
+            None,
+            None,
+        );
+        assert_eq!(&text[windows[0].bytes.clone()], first);
+        assert_eq!(windows.len(), 2);
+        assert_eq!(project(&text, &windows, &[0, 1]).0, text);
+    }
+
+    #[test]
+    fn whole_file_windows_end_before_a_declaration_once_half_full() {
+        let executor = tokio::runtime::Runtime::new().unwrap();
+        let runtime = budget_runtime(executor.handle().clone(), Arc::new(AtomicUsize::new(0)));
+        // Two functions of ~1,500 chars each: a 2,048-char window would cut
+        // the second one in its middle without snapping.
+        let body = |name: &str| {
+            let lines = (0..30)
+                .map(|i| format!("    let {name}_{i} = {i}; // {}\n", "x".repeat(20)))
+                .collect::<String>();
+            format!("fn {name}() {{\n{lines}}}\n")
+        };
+        let text = format!("{}{}", body("first"), body("second"));
+        let second_start = text
+            .lines()
+            .position(|line| line.starts_with("fn second"))
+            .unwrap()
+            + 1;
+        let (_, windows) = chunks(
+            &text,
+            None,
+            None,
+            Path::new("source.rs"),
+            "source.rs",
+            &ContentSecurity::new(),
+            Some(&runtime),
+            None,
+            None,
+        );
+        assert!(
+            windows
+                .iter()
+                .any(|window| window.lines.first() == Some(&second_start)),
+            "a window starts at the second declaration: {:?}",
+            windows.iter().map(|w| w.lines.first()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
     fn incomplete_source_maps_never_invent_candidate_coordinates() {
         let executor = tokio::runtime::Runtime::new().unwrap();
         let runtime = budget_runtime(executor.handle().clone(), Arc::new(AtomicUsize::new(0)));
         let (candidates, _) = chunks(
             "first\nsecond\n",
             Some(&[7]),
+            None,
             Path::new("source.txt"),
             "source.txt",
             &ContentSecurity::new(),
@@ -355,6 +781,7 @@ mod tests {
         let text = format!("{}\n", "x".repeat(2_047)).repeat(3);
         let (candidates, windows) = chunks(
             &text,
+            None,
             None,
             Path::new("source.txt"),
             "source.txt",
@@ -398,6 +825,7 @@ mod tests {
         let query = json!({"clasifyContext":{"classifiers":["Find x"]}});
         let (candidates, windows) = chunks(
             &text,
+            None,
             None,
             Path::new("source.txt"),
             "source.txt",
@@ -457,6 +885,7 @@ mod tests {
         let (replayed_candidates, _) = chunks(
             &text,
             None,
+            None,
             Path::new("source.txt"),
             "source.txt",
             &ContentSecurity::new(),
@@ -488,7 +917,7 @@ mod tests {
         let runtime = budget_runtime(executor.handle().clone(), calls.clone());
         let text = "x\n".repeat(4_096);
         let query: LocalFetchQuery = serde_json::from_value(json!({
-            "path":"source.txt", "ranges":["1-4096"], "minify":"none",
+            "path":"source.txt", "ranges":["1-4096"],
             "unit":"lines", "length":333, "clasifyContext":{"classifiers":["Find x"]}
         }))
         .unwrap();
@@ -545,14 +974,14 @@ mod tests {
     #[test]
     fn complete_long_lines_and_unterminated_tail_are_eligible_in_source_order() {
         use crate::runtime::SelectionLimits;
-        use crate::tools::selection::{Decision, JudgeCall, Runtime, SelectionJudge};
+        use crate::tools::selection::{JudgeCall, Runtime, SelectionJudge};
         use std::time::{Duration, Instant};
         struct Uncalled;
         impl SelectionJudge for Uncalled {
             fn identity(&self) -> serde_json::Value {
                 json!({"test":"chunks"})
             }
-            fn select(&self, _: JudgeCall<'_>) -> Result<Vec<(usize, Decision)>, String> {
+            fn select(&self, _: JudgeCall<'_>) -> crate::tools::selection::Judgments {
                 panic!("capture only")
             }
         }
@@ -577,6 +1006,7 @@ mod tests {
         let text = format!("{}\nshort\ntail", "a".repeat(4_096));
         let (candidates, windows) = chunks(
             &text,
+            None,
             None,
             Path::new("source.txt"),
             "source.txt",
@@ -606,6 +1036,7 @@ mod tests {
         let (candidates, chunks) = chunks(
             &text,
             None,
+            None,
             Path::new("source.txt"),
             "source.txt",
             &ContentSecurity::new(),
@@ -617,8 +1048,11 @@ mod tests {
         assert!(candidates[0].state.is_none());
         assert!(candidates[2].state.is_none());
         let (ordered, anchors) = project(&text, &chunks, &[0, 2]);
-        assert_eq!(anchors, vec![1, 3]);
-        assert_eq!(ordered, format!("{}\nlast", "a".repeat(2_047)));
+        assert_eq!(anchors, vec![1, 0, 3], "a marker separates the gap");
+        assert_eq!(
+            ordered,
+            format!("{}\n... [line 2 not selected] ...\nlast", "a".repeat(2_047))
+        );
     }
     #[test]
     fn context_selection_omits_unrelated_bodies_and_exposes_recovery() {
@@ -629,7 +1063,7 @@ mod tests {
             fn identity(&self) -> serde_json::Value {
                 json!({"test":"selection"})
             }
-            fn select(&self, call: JudgeCall<'_>) -> Result<Vec<(usize, Decision)>, String> {
+            fn select(&self, call: JudgeCall<'_>) -> crate::tools::selection::Judgments {
                 Ok(call
                     .admitted
                     .iter()
@@ -658,7 +1092,7 @@ mod tests {
             "x".repeat(2_030)
         );
         let query: LocalFetchQuery = serde_json::from_value(json!({
-            "path":"source.txt", "minify":"none", "length":100,
+            "path":"source.txt", "length":100,
             "clasifyContext":{"classifiers":["When do retries stop?"]},
             "mainGoal":"Explain retry termination", "reasoning":"Find the stopping condition"
         }))
@@ -685,5 +1119,360 @@ mod tests {
             value.pointer("/next/unfiltered").is_some(),
             "Withheld evidence must be explicitly recoverable"
         );
+    }
+
+    /// Judges a chunk by its words: `keep` selected, `drop` excluded, else
+    /// unknown; `fail` fails every candidate at the provider.
+    struct WordJudge {
+        fail: bool,
+    }
+
+    impl SelectionJudge for WordJudge {
+        fn identity(&self) -> serde_json::Value {
+            json!({"test":"words"})
+        }
+
+        fn select(&self, call: JudgeCall<'_>) -> crate::tools::selection::Judgments {
+            if self.fail {
+                return Err(crate::tools::selection::JudgeFailure::Provider(
+                    crate::tools::selection::ProviderError {
+                        code: "classificationProviderError".into(),
+                        message: "Classification provider returned HTTP 401 Unauthorized".into(),
+                        hints: vec!["Check OCTOCODE_CLASSIFICATION_API and account access.".into()],
+                    },
+                ));
+            }
+            Ok(call
+                .admitted
+                .iter()
+                .map(|&ordinal| {
+                    let text = call.candidates[ordinal]
+                        .state
+                        .as_ref()
+                        .map(|state| state["content"].to_string())
+                        .unwrap_or_default();
+                    let decision = if text.contains("keep") {
+                        Decision::Selected
+                    } else if text.contains("drop") {
+                        Decision::Excluded
+                    } else {
+                        Decision::Unknown
+                    };
+                    (ordinal, decision)
+                })
+                .collect())
+        }
+    }
+
+    fn word_read(fail: bool) -> crate::tools::local_fetch::LocalFetchResult {
+        use crate::tools::cancel::NeverCancel;
+        use crate::tools::local_fetch::{LocalFetchQuery, LocalFetchRegex, SourceFacts};
+        let executor = tokio::runtime::Runtime::new().unwrap();
+        let mut runtime = budget_runtime(executor.handle().clone(), Arc::new(AtomicUsize::new(0)));
+        runtime.judge = Arc::new(WordJudge { fail });
+        runtime.limits.max_chars = 100_000;
+        // One line per chunk: two lines never fit one 2,048-character window.
+        let text = ["keep", "drop", "maybe", "maybe", "keep"]
+            .iter()
+            .map(|word| format!("{word} {}\n", "x".repeat(1_500)))
+            .collect::<String>();
+        let query: LocalFetchQuery = serde_json::from_value(json!({
+            "path":"source.txt", "fullContent":true,
+            "clasifyContext":{"classifiers":["Is it kept?"]}
+        }))
+        .unwrap();
+        super::super::executor::process_fetched_content_selected(
+            &query,
+            text.as_bytes(),
+            Path::new("source.txt"),
+            "source.txt",
+            &SourceFacts::default(),
+            &ContentSecurity::new(),
+            &NeverCancel,
+            &LocalFetchRegex,
+            Some(&runtime),
+        )
+    }
+
+    /// A classified page leaves room in its window for what rides beside
+    /// its text (plan token, receipt, both unfiltered leads): the same read
+    /// cut for the same window returns less text than an unclassified one,
+    /// by at least those chars.
+    #[test]
+    fn a_classified_page_leaves_room_for_its_selection_fields() {
+        use crate::tools::cancel::NeverCancel;
+        use crate::tools::local_fetch::{LocalFetchQuery, LocalFetchRegex, SourceFacts};
+        let executor = tokio::runtime::Runtime::new().unwrap();
+        let mut runtime = budget_runtime(executor.handle().clone(), Arc::new(AtomicUsize::new(0)));
+        runtime.judge = Arc::new(WordJudge { fail: false });
+        runtime.limits.max_chars = 1_000_000;
+        let text = (0..400)
+            .map(|n| {
+                let word = if n % 7 == 3 { "maybe" } else { "keep" };
+                format!("{word} {n} {}\n", "y".repeat(60))
+            })
+            .collect::<String>();
+        let facts = SourceFacts {
+            window: Some(8_000),
+            ..SourceFacts::default()
+        };
+        let read = |classified: bool| {
+            let mut query = json!({"path":"source.txt", "fullContent":true});
+            if classified {
+                query["clasifyContext"] = json!({"classifiers":["Is it kept?"]});
+            }
+            let query: LocalFetchQuery = serde_json::from_value(query).unwrap();
+            super::super::executor::process_fetched_content_selected(
+                &query,
+                text.as_bytes(),
+                Path::new("source.txt"),
+                "source.txt",
+                &facts,
+                &ContentSecurity::new(),
+                &NeverCancel,
+                &LocalFetchRegex,
+                classified.then_some(&runtime),
+            )
+        };
+        let plain = read(false);
+        let classified = read(true);
+        assert!(classified.selection.is_some(), "{classified:?}");
+        let chars = |result: &crate::tools::local_fetch::LocalFetchResult| {
+            result.content.as_deref().map_or(0, str::len)
+        };
+        let beside = serde_json::to_value(&classified)
+            .map(|wire| {
+                let mut extras = 0;
+                for key in ["selection", "next"] {
+                    extras += crate::tools::stream_page::json_chars(&wire[key]);
+                }
+                extras
+            })
+            .unwrap_or(0);
+        assert!(beside > 0);
+        assert!(
+            chars(&classified) + beside <= chars(&plain) + 400,
+            "classified {} + beside {beside} vs plain {}",
+            chars(&classified),
+            chars(&plain)
+        );
+    }
+
+    #[test]
+    fn unfiltered_reads_exactly_the_unknown_chunks_beside_the_whole_view() {
+        let result = word_read(false);
+        let receipt = result.selection.as_ref().expect("receipt");
+        assert_eq!(
+            (
+                receipt.selected_items,
+                receipt.excluded_items,
+                receipt.unknown_items
+            ),
+            (2, 1, 2)
+        );
+        let next = result.next.expect("recovery");
+        let unknown = next.unfiltered.expect("unknown chunks").query;
+        assert_eq!(
+            serde_json::to_value(&unknown.ranges).unwrap(),
+            json!(["3-4"])
+        );
+        assert!(unknown.clasify_context.is_none() && unknown.full_content.is_none());
+        let whole = next.unfiltered2.expect("whole view").query;
+        assert!(whole.clasify_context.is_none());
+        assert_eq!(whole.full_content, Some(true));
+        assert!(whole.ranges.is_empty());
+    }
+
+    /// A classified read of `text` under a word judge, `max` candidates
+    /// per call.
+    fn budgeted_read(
+        text: &str,
+        query: &serde_json::Value,
+        max: usize,
+    ) -> crate::tools::local_fetch::LocalFetchResult {
+        use crate::tools::cancel::NeverCancel;
+        use crate::tools::local_fetch::{LocalFetchQuery, LocalFetchRegex, SourceFacts};
+        let executor = tokio::runtime::Runtime::new().unwrap();
+        let mut runtime = budget_runtime(executor.handle().clone(), Arc::new(AtomicUsize::new(0)));
+        runtime.judge = Arc::new(WordJudge { fail: false });
+        runtime.limits.max_chars = 1_000_000;
+        runtime.limits.max_candidates = max;
+        let query: LocalFetchQuery = serde_json::from_value(query.clone()).unwrap();
+        super::super::executor::process_fetched_content_selected(
+            &query,
+            text.as_bytes(),
+            Path::new("source.txt"),
+            "source.txt",
+            &SourceFacts::default(),
+            &ContentSecurity::new(),
+            &NeverCancel,
+            &LocalFetchRegex,
+            Some(&runtime),
+        )
+    }
+
+    /// One line per chunk: two lines never fit one 2,048-character window.
+    fn word_lines(words: &[&str]) -> String {
+        words
+            .iter()
+            .map(|word| format!("{word} {}\n", "x".repeat(1_500)))
+            .collect()
+    }
+
+    /// Chunks past the candidate budget are judged by `nextCandidatePage`,
+    /// the same classified read; the first page says how many were judged.
+    /// Following the chain judges every chunk once and selects exactly what
+    /// one unbudgeted read selects.
+    #[test]
+    fn a_chain_of_candidate_pages_judges_every_chunk_once() {
+        let words = [
+            "keep", "drop", "maybe", "keep", "drop", "keep", "maybe", "keep",
+        ];
+        let text = word_lines(&words);
+        let query = json!({"path":"source.txt", "fullContent":true,
+            "clasifyContext":{"classifiers":["Is it kept?"]}});
+        let unbudgeted = budgeted_read(&text, &query, 64);
+        let mut result = budgeted_read(&text, &query, 3);
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|w| w.contains("judged 3 of 8 chunks") && w.contains("5 were not judged")),
+            "{:?}",
+            result.warnings
+        );
+        let (mut totals, mut selected) = (Vec::new(), String::new());
+        loop {
+            assert_eq!(result.error_code, None, "{result:?}");
+            let receipt = result.selection.as_ref().expect("receipt");
+            totals.push(receipt.total_items);
+            selected.push_str(result.content.as_deref().unwrap_or_default());
+            let next = result.next.clone().expect("leads");
+            let Some(page) = next.next_candidate_page else {
+                break;
+            };
+            assert!(page.query.clasify_context.is_some() && page.query.selection.is_some());
+            assert!(totals.len() < 5, "the chain ends");
+            result = budgeted_read(&text, &serde_json::to_value(&page.query).unwrap(), 3);
+        }
+        assert_eq!(totals, [8, 5, 2]);
+        let kept = |content: &str| {
+            let mut lines = content
+                .lines()
+                .filter(|line| !line.starts_with("..."))
+                .map(str::to_owned)
+                .collect::<Vec<_>>();
+            lines.sort();
+            lines
+        };
+        assert_eq!(
+            kept(&selected),
+            kept(unbudgeted.content.as_deref().unwrap()),
+            "every selected chunk once"
+        );
+    }
+
+    /// Unknown chunks past one row's `ranges` are not dropped: `unfiltered`
+    /// reads the first ranges and `unfiltered3`, … read the rest.
+    #[test]
+    fn every_unknown_range_has_a_read_past_one_row() {
+        let words = (0..30)
+            .map(|i| if i % 2 == 0 { "maybe" } else { "keep" })
+            .collect::<Vec<_>>();
+        let text = word_lines(&words);
+        let query = json!({"path":"source.txt", "fullContent":true,
+            "clasifyContext":{"classifiers":["Is it kept?"]}});
+        let result = budgeted_read(&text, &query, 64);
+        let next = serde_json::to_value(result.next.expect("leads")).unwrap();
+        let mut ranges = Vec::new();
+        for name in ["unfiltered", "unfiltered3", "unfiltered4"] {
+            for row in next[name]["query"]["queries"]
+                .as_array()
+                .into_iter()
+                .flatten()
+            {
+                ranges.extend(row["ranges"].as_array().unwrap().iter().cloned());
+            }
+        }
+        let expected = (0..30)
+            .step_by(2)
+            .map(|i| json!(format!("{}-{}", i + 1, i + 1)))
+            .collect::<Vec<_>>();
+        assert_eq!(ranges, expected, "{next}");
+        assert_eq!(
+            next["unfiltered2"]["query"]["queries"][0]["fullContent"],
+            true
+        );
+    }
+
+    #[test]
+    fn a_first_classified_call_with_an_offset_is_refused_input_not_a_stale_cursor() {
+        use crate::tools::cancel::NeverCancel;
+        use crate::tools::local_fetch::{LocalFetchQuery, LocalFetchRegex, SourceFacts};
+        let executor = tokio::runtime::Runtime::new().unwrap();
+        let runtime = budget_runtime(executor.handle().clone(), Arc::new(AtomicUsize::new(0)));
+        let query: LocalFetchQuery = serde_json::from_value(json!({
+            "path":"source.txt", "offset":3, "length":5, "unit":"lines",
+            "clasifyContext":{"classifiers":["Is it kept?"]}
+        }))
+        .unwrap();
+        let result = super::super::executor::process_fetched_content_selected(
+            &query,
+            "a\nb\nc\nd\ne\nf\n".as_bytes(),
+            Path::new("source.txt"),
+            "source.txt",
+            &SourceFacts::default(),
+            &ContentSecurity::new(),
+            &NeverCancel,
+            &LocalFetchRegex,
+            Some(&runtime),
+        );
+        assert_eq!(
+            result.error_code.as_deref(),
+            Some("invalidInput"),
+            "{result:?}"
+        );
+        let recovery = result
+            .next
+            .expect("recovery")
+            .unfiltered
+            .expect("unfiltered")
+            .query;
+        // The caller's window stays: only the classifier is dropped.
+        assert!(recovery.clasify_context.is_none(), "{recovery:?}");
+        assert_eq!((recovery.offset, recovery.unit), (query.offset, query.unit));
+    }
+
+    #[test]
+    fn a_provider_failing_every_chunk_fails_the_read_with_its_typed_error() {
+        let result = word_read(true);
+        assert_eq!(
+            result.error_code.as_deref(),
+            Some("classificationProviderError")
+        );
+        assert!(
+            result
+                .hints
+                .iter()
+                .any(|hint| hint.contains("OCTOCODE_CLASSIFICATION_API"))
+        );
+        let receipt = result.selection.as_ref().expect("receipt");
+        assert_eq!(
+            receipt.status,
+            crate::contracts::tool_types::SelectionStatus::Unavailable
+        );
+        assert_eq!(
+            receipt.reason.as_deref(),
+            Some("classificationProviderError")
+        );
+        assert_eq!(receipt.unknown_items, 5);
+        assert!(result.content.is_none(), "no unjudged body as a fallback");
+        let recovery = result
+            .next
+            .expect("recovery")
+            .unfiltered
+            .expect("unfiltered")
+            .query;
+        assert!(recovery.clasify_context.is_none());
     }
 }

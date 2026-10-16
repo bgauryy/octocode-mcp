@@ -196,7 +196,9 @@ async fn issue_closing_references_past_the_read_limit_are_disclosed() {
         "{data}"
     );
     assert!(
-        data["hints"]["readPullRequest"].get("confidence").is_none(),
+        crate::support::checks::hint(data, "readPullRequest")
+            .get("confidence")
+            .is_none(),
         "leads carry no confidence: {data}"
     );
     runtime.close().await;
@@ -363,6 +365,15 @@ async fn pull_request_commit_details_load_concurrently_in_order() {
             .contains(&format!("{}.rs", shas[2])),
         "each commit keeps its own files: {data}"
     );
+    // commitFiles lists paths (inventory rows), never patches, and nests no
+    // continuation inside a commit.
+    let first = &data["pullRequests"][0]["commits"][0];
+    assert_eq!(
+        first["files"],
+        json!([format!("M +1 -0 {}.rs", shas[0])]),
+        "{data}"
+    );
+    assert!(first.get("next").is_none(), "{data}");
     // All four reads are in flight before the first 400 ms answer lands;
     // one at a time they would arrive 400 ms apart.
     let arrivals = arrivals

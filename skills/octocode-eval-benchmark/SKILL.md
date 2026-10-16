@@ -41,6 +41,7 @@ description: "Load this skill first whenever the user asks whether a change, pro
 - `octocode-research`: behavior and data behind a measurement.
 - `octocode-agentic-prompts`: instruction fixes after an observed failure.
 - `octocode-skills`: skill structure, descriptions; activation tests stay here.
+- For an orchestrated multi-actor evaluation: [octocode-workflows composition](../octocode-workflows/references/composition.md).
 
 ## Output
 

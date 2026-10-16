@@ -94,4 +94,4 @@ Load when reading script output, searching a session, mapping a site, or extract
 ```
 
 - Run: `npx -y octocode clasify --input .octocode/octocode-scraping/tmp/clasify-request.json` (MCP `clasify` takes the same JSON when available; inspect the live catalog). A capture over the state limit fails its row: select `ranges`.
-- Before citing, run the row's `hints.read` (the exact text judged) or read the deciding lines with `localFetch`; verify the deciding source. A low answer never proves whole-site absence.
+- Before citing, run the row's `read` in `hints` (the exact text judged) or read the deciding lines with `localFetch`; verify the deciding source. A low answer never proves whole-site absence.

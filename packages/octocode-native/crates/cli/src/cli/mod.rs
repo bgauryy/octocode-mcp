@@ -1,13 +1,14 @@
 mod commands;
 mod config;
+mod config_view;
 mod graph;
-mod launcher;
 mod lsp_provision;
 mod mcp_clients;
 mod mcp_install;
 mod mcp_manage;
 mod schema;
 mod serve;
+mod skill;
 mod system;
 use clap::{CommandFactory, FromArgMatches, Parser};
 use commands::{AuthCommand, Command, ConfigCommand, ToolArgs};
@@ -114,10 +115,12 @@ where
     T: Into<std::ffi::OsString> + Clone,
 {
     let mut argv: Vec<std::ffi::OsString> = argv.into_iter().map(Into::into).collect();
-    // A bare `octocode` on a pipe is an agent asking what it can do: the
-    // catalog. A terminal still gets the help text.
+    // A bare `octocode` on a pipe is an agent asking what it can do. A
+    // terminal is the ordinary clap help path (stdout and a successful exit).
     if argv.len() == 1 && machine_output(false) {
         argv.push("schema".into());
+    } else if argv.len() == 1 {
+        argv.push("--help".into());
     }
     match Args::command()
         .try_get_matches_from(&argv)
@@ -294,11 +297,7 @@ pub async fn run(args: Args) -> u8 {
                 }),
             ..
         } => {
-            let mut args = vec!["--idle-timeout".to_owned(), idle_timeout.to_string()];
-            if no_open {
-                args.push("--no-open".to_owned());
-            }
-            return launcher::CONFIG_VIEW.run(&args);
+            return config_view::run(no_open, idle_timeout, json_out).await;
         }
         Command::Serve { socket } => return serve::run(&socket).await,
         Command::Tool(tool) => return run_tool(tool, json_out).await,
@@ -397,7 +396,7 @@ async fn dispatch(command: Command, runtime: &ToolRuntime, json_out: bool) -> u8
             AuthCommand::Logout => system::logout(runtime, json_out),
         },
         Command::Graph { command } => graph::graph(runtime, command, json_out),
-        Command::Skill { args } => launcher::SKILL.run(&args),
+        Command::Skill { command } => skill::run(runtime, command, json_out).await,
         Command::Install(args) => mcp_install::run(mcp_install::InstallArgs {
             json: json_out,
             ..args

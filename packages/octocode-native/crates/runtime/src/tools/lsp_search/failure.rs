@@ -188,7 +188,7 @@ pub(super) fn failure_hint(query: &LspSearchQuery, code: &str) -> Option<&'stati
             "Use astSearch symbols/match or localSearch for candidates, then localFetch exact source."
         }
         "capabilityUnavailable"
-            if matches!(query.operation().as_str(), "supertypes" | "subtypes") =>
+            if matches!(query.op(), super::Op::Supertypes | super::Op::Subtypes) =>
         {
             "This server cannot prove type hierarchy; inspect declarations with astSearch and confirm exact source."
         }
@@ -221,7 +221,6 @@ pub(super) fn empty_hint(category: &str, operation: &str) -> Option<&'static str
         "noProject" => {
             "Use localSearch or astSearch here, or run lspSearch where its project file (Cargo.toml, package.json) is present."
         }
-        "unsupportedOperation" => "Choose an operation advertised by the lspSearch schema.",
         "noDiagnostics" => return None,
         "diagnosticsNotPublished" => {
             "Retry once the server has analyzed the file, or run the project's type-check/build for authoritative errors."
@@ -303,30 +302,65 @@ pub(super) fn empty(
         "reason": reason,
         "lsp": { "serverAvailable": server_available },
     });
-    if let Some(hint) = empty_hint(category, &query.operation()) {
+    if let Some(hint) = empty_hint(category, query.operation()) {
         row["hints"] = json!([hint]);
     }
     // A workspaceRoot-only query has no file: the row names none.
     if let Some(path) = query.path() {
         row["path"] = json!(path);
+        // Incoming rows get the evidence-based include disclosure instead
+        // (see `server_coverage`).
         if category == "noLocations"
             && path.ends_with(".rs")
-            && !runs_build_scripts(query)
+            && !super::inferred_project::is_incoming(query.operation())
+            && let Some(includes) = super::server_coverage::package_includes(&uri_to_path(path))
             && let Some(hints) = row["hints"].as_array_mut()
         {
-            hints.push(json!(BUILD_SCRIPT_TIP));
+            if !includes.outside.is_empty() {
+                hints.push(json!(OUTSIDE_INCLUDE_TIP));
+            }
+            if !includes.generated.is_empty() && !runs_build_scripts(query) {
+                hints.push(json!(BUILD_SCRIPT_TIP));
+                // With an outside include as well, the name may be defined
+                // there: the ~2 GB rerun is no repair to lead with.
+                if includes.outside.is_empty() {
+                    row["next"]["includeBuildScripts"] = build_scripts_rerun(query);
+                }
+            }
         }
     }
     row
 }
 
-/// rust-analyzer runs without build scripts by default, so a name a build
-/// script generates (`include!(concat!(env!("OUT_DIR"), …))`) has no
-/// location until they run.
+/// rust-analyzer runs without build scripts by default, so in a package
+/// with one, a name the script generates (`include!(concat!(env!("OUT_DIR"),
+/// …))`) has no location until they run.
 const BUILD_SCRIPT_TIP: &str = "A name a build script generates (include! of OUT_DIR) resolves only with rustContext {buildScripts:true}.";
 
+/// rust-analyzer loads only the package's own directory: what a file
+/// `include!`d from outside it defines never resolves.
+const OUTSIDE_INCLUDE_TIP: &str = "A name defined in source this package include!s from outside its directory never resolves in rust-analyzer: read it with localSearch.";
+
+/// The same query with rust-analyzer running the crate's build scripts
+/// (`rustContext.buildScripts: true`, the rest of its Rust context kept),
+/// from the walk's first page.
+pub(super) fn build_scripts_rerun(query: &LspSearchQuery) -> Value {
+    let mut rerun = query.to_row();
+    if let Some(fields) = rerun.as_object_mut() {
+        fields.retain(|key, value| {
+            !value.is_null() && !crate::tools::result::CURSOR_FIELDS.contains(&key.as_str())
+        });
+    }
+    let mut context = query.rust_context().unwrap_or_else(|| json!({}));
+    context["buildScripts"] = json!(true);
+    rerun["rustContext"] = context;
+    crate::tools::result::Continuation::new(crate::tools::id::ToolId::LspSearch, rerun)
+        .confidence("medium")
+        .build()
+}
+
 /// Whether the request already runs build scripts (`rustContext.buildScripts`).
-fn runs_build_scripts(query: &LspSearchQuery) -> bool {
+pub(super) fn runs_build_scripts(query: &LspSearchQuery) -> bool {
     query
         .rust_context()
         .is_some_and(|context| context["buildScripts"] == true)
@@ -393,6 +427,91 @@ pub(super) fn partial_with_retry(
     }
     crate::tools::paging::mark_partial(row, reason, warnings);
     row["next"]["retry"] = continuation(query_value(query));
+}
+
+/// Partial reason of a references or callers row whose alias recovery lost
+/// a server request.
+pub(super) const ALIAS_RECOVERY_FAILED: &str = "aliasRecoveryFailed";
+/// Partial reason of a references or callers row whose verified-importer
+/// recovery lost a server request.
+pub(super) const IMPORTER_REQUEST_FAILED: &str = "importerRequestFailed";
+
+/// Server requests a recovery stage could not complete. A recovery stage
+/// asks the server again from other anchors (aliases, importers); a request
+/// that fails there is a gap in the answer, so each one is recorded here and
+/// disclosed on the row, never skipped silently. Cancellation is not a
+/// failure: it ends the request.
+#[derive(Debug, Default)]
+pub(super) struct RequestFailures {
+    /// Distinct messages with how many requests hit each, in first-seen order.
+    distinct: Vec<(String, usize)>,
+}
+
+impl RequestFailures {
+    /// Record `failure`, or return it when it is a cancellation.
+    pub(super) fn record(&mut self, failure: LspFailure) -> Result<(), LspFailure> {
+        if failure.code == "cancelled" {
+            return Err(failure);
+        }
+        self.push(format!("{} ({})", failure.message, failure.code), 1);
+        Ok(())
+    }
+
+    /// Record an engine request error.
+    pub(super) fn record_engine(&mut self, error: &EngineError) -> Result<(), LspFailure> {
+        self.record(LspFailure::from_engine(error))
+    }
+
+    fn push(&mut self, message: String, hits: usize) {
+        match self.distinct.iter_mut().find(|(seen, _)| *seen == message) {
+            Some((_, count)) => *count += hits,
+            None => self.distinct.push((message, hits)),
+        }
+    }
+
+    pub(super) fn extend(&mut self, other: Self) {
+        for (message, hits) in other.distinct {
+            self.push(message, hits);
+        }
+    }
+
+    fn total(&self) -> usize {
+        self.distinct.iter().map(|(_, count)| count).sum()
+    }
+
+    /// Mark `row` partial with `reason`: how many `stage` requests failed
+    /// and the most frequent error, plus a retry of the row's query.
+    pub(super) fn disclose(
+        &self,
+        row: &mut Value,
+        query: &LspSearchQuery,
+        reason: &str,
+        stage: &str,
+    ) {
+        let Some((message, count)) =
+            self.distinct
+                .iter()
+                .fold(None::<&(String, usize)>, |top, entry| match top {
+                    Some(top) if top.1 >= entry.1 => Some(top),
+                    _ => Some(entry),
+                })
+        else {
+            return;
+        };
+        let total = self.total();
+        let requests = if total == 1 { "request" } else { "requests" };
+        let warning = if self.distinct.len() == 1 {
+            format!(
+                "{stage}: {total} server {requests} failed: {message}; the locations they would add are missing."
+            )
+        } else {
+            format!(
+                "{stage}: {total} server {requests} failed ({} distinct errors; most frequent, {count}×: {message}); the locations they would add are missing.",
+                self.distinct.len()
+            )
+        };
+        partial_with_retry(row, query, reason, &[warning]);
+    }
 }
 
 pub(super) fn with_next(query: &LspSearchQuery, mut value: Value) -> Value {
@@ -558,13 +677,33 @@ pub(super) fn anchor_recovery(value: &mut Value, query: &LspSearchQuery, source:
         return;
     };
     let hint = query.anchor_line().filter(|line| *line > 0);
+    if let (Some(source), Some(line)) = (source, hint)
+        && order_hint_recovery(value, query, source, name, line)
+    {
+        return;
+    }
     // The name itself elsewhere in the file (a stale `line`) first,
-    // declarations before uses; then near-miss spellings.
-    let exact = source
+    // declarations before uses; then near-miss spellings. A line the grammar
+    // places the name only in comments or strings is no anchor, and the
+    // failing line itself would repeat this query.
+    let mentions = source
         .map(|source| name_lines(source, name, hint))
         .unwrap_or_default();
+    let code = source.and_then(|source| {
+        octocode_engine::lsp::resolver::code_occurrence_lines(&path, source, name)
+    });
+    let exact = mentions
+        .iter()
+        .copied()
+        .filter(|line| {
+            hint.is_none_or(|hint| *line != hint as usize)
+                && code
+                    .as_ref()
+                    .is_none_or(|lines| lines.contains(&(line - 1)))
+        })
+        .collect::<Vec<_>>();
     let near = source
-        .map(|source| near_names(source, name, hint))
+        .map(|source| near_names(&path, source, name, hint))
         .unwrap_or_default();
     let leads = exact
         .iter()
@@ -573,10 +712,19 @@ pub(super) fn anchor_recovery(value: &mut Value, query: &LspSearchQuery, source:
             near.iter()
                 .map(|(word, line)| (word.clone(), *line, "medium")),
         )
-        .take(MAX_ANCHOR_LEADS)
+        .take(crate::tools::result::rows_per_call(ToolId::LspSearch))
         .collect::<Vec<_>>();
     if let Some(object) = value["next"].as_object_mut() {
         object.remove("read");
+    }
+    // Named here, but never as an anchorable symbol: the symbol, if any, is
+    // declared elsewhere, so the lead searches the workspace for it.
+    if leads.is_empty() && !mentions.is_empty() {
+        value["next"]["findSimilar"] =
+            crate::tools::result::Continuation::new(ToolId::LspSearch, workspace_symbol(query))
+                .confidence("medium")
+                .build();
+        return;
     }
     if leads.is_empty()
         && let Some(line) = hint
@@ -617,7 +765,7 @@ pub(super) fn anchor_recovery(value: &mut Value, query: &LspSearchQuery, source:
             .build();
     }
     // Candidates the leads already carry are not repeated; only lines and
-    // names beyond the lead cap are stated.
+    // names beyond one admitted batch are stated.
     let offered = leads.len();
     let mut notes = Vec::new();
     let uncovered_exact = exact.iter().skip(offered).collect::<Vec<_>>();
@@ -646,9 +794,64 @@ pub(super) fn anchor_recovery(value: &mut Value, query: &LspSearchQuery, source:
     }
 }
 
-/// Re-anchor leads one unresolved anchor offers: the hint channel's lead
-/// cap, so no offered lead is dropped after the text skipped its line.
-const MAX_ANCHOR_LEADS: usize = crate::tools::id::continuation_channels::MAX_HINT_LEADS;
+/// A `workspaceSymbol` search for the query's name from the same file and
+/// server: the fields that operation takes, nothing anchor-specific.
+fn workspace_symbol(query: &LspSearchQuery) -> Value {
+    let mut search = json!({"operation": "workspaceSymbol"});
+    let asked = query_value(query);
+    for key in ["path", "symbolName", "workspaceRoot", "rustContext"] {
+        if let Some(value) = asked.get(key).filter(|value| !value.is_null()) {
+            search[key] = value.clone();
+        }
+    }
+    search
+}
+
+/// An `orderHint` past the occurrences its line holds: the one lead is the
+/// same anchor at the last occurrence (`orderHint` is zero-based), not
+/// other lines of the file. `false` when the line does not spell the name
+/// (the anchor is stale: the general recovery applies).
+fn order_hint_recovery(
+    value: &mut Value,
+    query: &LspSearchQuery,
+    source: &str,
+    name: &str,
+    line: u32,
+) -> bool {
+    let Some(order_hint) = query.order_hint() else {
+        return false;
+    };
+    let is_word = |c: char| c.is_alphanumeric() || c == '_' || c == '$';
+    let Some(text) = source.lines().nth(line as usize - 1) else {
+        return false;
+    };
+    let count = text
+        .match_indices(name)
+        .filter(|(at, _)| {
+            !text[..*at].chars().next_back().is_some_and(is_word)
+                && !text[at + name.len()..].chars().next().is_some_and(is_word)
+        })
+        .count();
+    let Some(last) = u32::try_from(count)
+        .ok()
+        .and_then(|count| count.checked_sub(1))
+    else {
+        return false;
+    };
+    if order_hint <= last {
+        return false;
+    }
+    let mut retry = query_value(query);
+    retry["orderHint"] = json!(last);
+    if let Some(object) = value["next"].as_object_mut() {
+        object.remove("read");
+    }
+    value["next"]["findSimilar"] =
+        crate::tools::result::Continuation::new(ToolId::LspSearch, retry)
+            .confidence("high")
+            .build();
+    true
+}
 
 /// Declaration keywords that may precede a declared name on its line.
 const DECLARATION_WORDS: &[&str] = &[
@@ -674,8 +877,8 @@ const DECLARATION_WORDS: &[&str] = &[
 
 /// One-based lines that spell `name` as a word: declaration lines first
 /// (a declaration keyword just before the name), then the rest, each
-/// group nearest `hint` first. The first [`MAX_ANCHOR_LEADS`] become leads;
-/// the rest are stated as line numbers.
+/// group nearest `hint` first. One admitted batch becomes suggestions;
+/// remaining candidates are stated as line numbers.
 fn name_lines(source: &str, name: &str, hint: Option<u32>) -> Vec<usize> {
     if name.trim().is_empty() {
         return Vec::new();
@@ -708,8 +911,9 @@ fn name_lines(source: &str, name: &str, hint: Option<u32>) -> Vec<usize> {
 }
 
 /// Up to three distinct identifiers within a small edit distance of `name`,
-/// nearest `line` first (the whole file without a hint).
-fn near_names(source: &str, name: &str, hint: Option<u32>) -> Vec<(String, usize)> {
+/// nearest `line` first (the whole file without a hint). A word the
+/// grammar places only in comments or strings is no symbol to anchor on.
+fn near_names(path: &str, source: &str, name: &str, hint: Option<u32>) -> Vec<(String, usize)> {
     let hint = hint.map(|line| line as usize);
     let limit = (name.chars().count() / 4).max(1);
     let mut found: Vec<(usize, usize, String, usize)> = Vec::new();
@@ -732,22 +936,29 @@ fn near_names(source: &str, name: &str, hint: Option<u32>) -> Vec<(String, usize
     found.sort();
     found
         .into_iter()
+        .filter(|(_, _, word, line)| {
+            octocode_engine::lsp::resolver::code_occurrence_lines(path, source, word)
+                .is_none_or(|lines| lines.contains(&(line - 1)))
+        })
         .take(3)
         .map(|(_, _, word, line)| (word, line))
         .collect()
 }
 
-/// Partial reasons about *files* the server's project may not see. When
-/// every file that spells the name is in the answer (`textOnlyFiles == 0`),
-/// such a reason is moot and is not flagged. Site-level reasons (dynamic
-/// dispatch, cfg-gated code) can hide sites inside listed files, so file
-/// agreement never clears them.
-pub(super) const FILE_LEVEL_REASONS: [&str; 5] = [
+/// Partial reasons about *files* the server's project may not see (or, for
+/// dynamic dispatch, files it could not tie to the symbol). When every file
+/// that spells the name is in the answer (`textOnlyFiles == 0`), such a
+/// reason is moot and is not flagged. Cfg-gated code can hide sites inside
+/// listed files, so file agreement never clears it.
+pub(super) const FILE_LEVEL_REASONS: [&str; 8] = [
     "inferredProject",
     "importerScanCapped",
     "importerScanFailed",
     "aliasScanCapped",
     "noCompileDatabase",
+    super::server_coverage::BUILD_SCRIPTS_REASON,
+    super::server_coverage::OUTSIDE_INCLUDE_REASON,
+    super::server_coverage::DYNAMIC_REASON,
 ];
 /// File-level reasons that are fixed per-request caps (a terminal limit).
 /// The importer cap is not one: `next.nextImporterPage` verifies the next
@@ -770,6 +981,16 @@ pub(super) fn flag_partial(
     let name = query.symbol_name().filter(|name| !name.trim().is_empty());
     let text_only = name.and_then(|name| scope.text_only_files(name));
     let agrees = text_only.as_ref().is_some_and(Vec::is_empty);
+    // The lead also reads the anchor file when it uses the name on lines
+    // the answer misses; it is answered, so it is not counted.
+    let lead_files = text_only.clone().map(|mut files| {
+        if let Some(anchor) = name.and_then(|name| scope.anchor_gap(name))
+            && !files.contains(&anchor)
+        {
+            files.push(anchor);
+        }
+        files
+    });
     if let Some(payload) = row.as_object_mut() {
         if let Some(files) = &text_only {
             payload.entry("coverage").or_insert_with(|| json!({}))["textOnlyFiles"] =
@@ -797,7 +1018,7 @@ pub(super) fn flag_partial(
                 crate::tools::paging::mark_partial(row, reason, &warnings);
             }
             row["next"]["findText"] =
-                text_search_lead(name, &scope.root, &scope.include, text_only.as_deref()).build();
+                text_search_lead(name, &scope.root, &scope.include, lead_files.as_deref()).build();
         }
         // A position anchor has no name to search for: coverage reason and
         // warning only.
@@ -918,6 +1139,7 @@ mod tests {
                     &policy,
                     &ContentSecurity::new(),
                     &NeverCancel,
+                    None,
                     None,
                     None,
                 )

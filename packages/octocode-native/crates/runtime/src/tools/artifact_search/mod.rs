@@ -149,7 +149,10 @@ fn respond(
             }
         }
     }
-    paging::push_warnings(&mut data, missing_ref_warnings(&artifacts));
+    paging::push_warnings(
+        &mut data,
+        artifacts.iter().filter_map(leads::source_warning),
+    );
     if let Some(limit) = terminal_limit {
         paging::terminal_limit(&mut data, limit.reason, &[limit.warning]);
     }
@@ -181,58 +184,93 @@ fn shape_rows(query: &ArtifactSearchQuery, artifacts: &mut [ArtifactItem]) {
 }
 
 /// A discovery page's facts, from the shared page facts: the page, its size,
-/// whether more exist and the registry's total when it counts one (a
-/// registry total is no page count: deep pages can be unreachable), and the
-/// next page, which carries the whole query. A next page past the contract's
-/// `page` maximum, or one the registry cannot serve, is no lead: the row
-/// ends at that terminal limit instead.
+/// whether a reachable page follows and the registry's total when it counts
+/// one, and the next page, which carries the whole query. A registry total
+/// past the reachable rows is no page count: the first page states the
+/// reach once (a static notice) and the last reachable page ends the row at
+/// that terminal limit (`hasMore:false`), with no next page.
 fn discovery_page(query: &ArtifactSearchQuery, data: &mut Value, more: bool, total: Option<u64>) {
     let current = query.page();
+    let mut next_query = query.clone();
+    next_query.set_page(current.saturating_add(1));
+    let unreachable = more.then(|| page_out_of_range(&next_query)).flatten();
     let facts = crate::response::pages::PageFacts::open(
         usize::try_from(current).unwrap_or(usize::MAX),
         Some(query.page_size()),
-        more,
+        more && unreachable.is_none(),
     );
     let facts = match total.and_then(|total| usize::try_from(total).ok()) {
         Some(total) => facts.with_items(total),
         None => facts,
     };
     data["pagination"] = facts.to_value();
+    let last = last_reachable_page(query);
+    let reach = last.saturating_mul(query.page_size() as u64);
+    let capped_total = total.filter(|total| *total > reach);
+    let artifact_type = query.artifact_type();
+    if let Some(limit) = unreachable {
+        let warning = capped_total.map_or(limit.warning, |total| {
+            format!(
+                "{artifact_type} matched {total} results; paging reaches only the first {reach}, which end on this page."
+            )
+        });
+        paging::terminal_limit(data, limit.reason, &[warning]);
+        return;
+    }
     if !more {
         return;
     }
-    let next = usize::try_from(current.saturating_add(1)).unwrap_or(usize::MAX);
-    let Some(next) = paging::next_cursor(data, ToolId::ArtifactSearch, None, "page", next) else {
-        return;
-    };
-    let mut next_query = query.clone();
-    next_query.set_page(u64::try_from(next).unwrap_or(u64::MAX));
-    if let Some(limit) = page_out_of_range(&next_query) {
-        paging::terminal_limit(data, limit.reason, &[limit.warning]);
+    let next = usize::try_from(next_query.page()).unwrap_or(usize::MAX);
+    // The contract's last page: the row ends at that terminal limit.
+    if paging::next_cursor(data, ToolId::ArtifactSearch, None, "page", next).is_none() {
+        data["pagination"]["hasMore"] = json!(false);
         return;
     }
     if let Ok(next_query) = serde_json::to_value(next_query) {
         data["next"]["nextPage"] = Continuation::new(ToolId::ArtifactSearch, next_query).build();
     }
+    if let Some(total) = capped_total {
+        paging::mark_partial(data, "providerResultCap", &[]);
+        paging::push_notice(
+            data,
+            format!(
+                "{artifact_type} matched {total} results; paging reaches only the first {reach} (through page {last})."
+            ),
+        );
+    }
 }
 
-/// One warning per row whose registry release commit GitHub does not have.
-fn missing_ref_warnings(artifacts: &[ArtifactItem]) -> Vec<String> {
-    artifacts
-        .iter()
-        .filter_map(|artifact| {
-            let reference = artifact.missing_ref.as_deref()?;
-            let repository = artifact.repository.as_deref().unwrap_or("its repository");
-            let repository = repository
-                .strip_prefix("https://github.com/")
-                .unwrap_or(repository);
-            Some(format!(
-                "{} {}: release commit {reference} is not in {repository} (unpushed or rewritten).",
-                artifact.name,
-                artifact.version.as_deref().unwrap_or("")
-            ))
-        })
-        .collect()
+/// The deepest discovery page `query`'s page size reaches: the last the
+/// contract's `page` maximum admits whose registry position is in the
+/// paging range.
+pub(crate) fn last_reachable_page(query: &ArtifactSearchQuery) -> u64 {
+    let reaches = |page: u64| {
+        let mut probe = query.clone();
+        probe.set_page(page);
+        page_out_of_range(&probe).is_none()
+    };
+    let maximum = crate::tools::id::query_limits::artifact_search::PAGE_MAXIMUM as u64;
+    // Reach is monotone in the page: `low` reaches, `high` bounds the search.
+    let (mut low, mut high) = (1, maximum);
+    while low < high {
+        let middle = low + (high - low).div_ceil(2);
+        if reaches(middle) {
+            low = middle;
+        } else {
+            high = middle - 1;
+        }
+    }
+    low
+}
+
+/// A repaired row's `page` past the deepest page its query reaches,
+/// lowered to that page: the schema's `maximum` admits pages no search of
+/// this size reaches. `None` when the row is no discovery query or its page
+/// is reachable.
+pub(crate) fn reachable_page(row: &serde_json::Value) -> Option<u64> {
+    let query: ArtifactSearchQuery = serde_json::from_value(row.clone()).ok()?;
+    let last = last_reachable_page(&query);
+    (query.page() > last).then_some(last)
 }
 
 /// A row whose `repository` URL is a GitHub repository names its `owner` and
@@ -590,6 +628,56 @@ mod page_tests {
         assert_eq!(run(5_000).await.code, "invalidInput");
         assert_ne!(run(2).await.code, "invalidInput");
     }
+
+    /// A page past the paging range names the bound and repairs to the
+    /// last page its page size reaches, which the provider then serves:
+    /// npm search serves `from` up to 5,000 (a deeper one restarts at its
+    /// first rows), so 100-row pages reach page 51.
+    #[tokio::test]
+    async fn a_page_past_the_paging_range_repairs_to_the_last_reachable_page() {
+        let dead = Instant::now() - Duration::from_secs(1);
+        let query = json!({"ecosystem":"npm","keywords":["schema","validation"],
+            "page":200,"pageSize":100});
+        let error = execute(typed(&query), call(dead, false))
+            .await
+            .expect_err("past the paging range");
+        assert_eq!(error.code, "invalidInput", "{error:?}");
+        assert!(
+            error.message.contains("page 200 starts past result 5000"),
+            "{error:?}"
+        );
+        let next = error.next.expect("a repair lead");
+        assert_eq!(next.as_object().map(|next| next.len()), Some(1), "{next}");
+        let row = &next["repair"]["query"]["queries"][0];
+        assert_eq!(
+            row,
+            &json!({"ecosystem":"npm","keywords":["schema","validation"],
+                "page":51,"pageSize":100}),
+            "{next}"
+        );
+        let mut last = typed(&query);
+        last.set_page(51);
+        assert!(page_out_of_range(&last).is_none());
+        last.set_page(52);
+        assert!(page_out_of_range(&last).is_some());
+    }
+
+    /// The deepest reachable page: the registry position's bound at large
+    /// page sizes, the contract's `page` maximum at small ones.
+    #[test]
+    fn the_last_reachable_page_follows_the_page_size() {
+        for (ecosystem, page_size, last) in [
+            ("npm", 100, 51),
+            ("npm", 10, 501),
+            ("npm", 1, 1000),
+            ("maven", 100, 101),
+            ("crates", 100, 1000),
+        ] {
+            let query = typed(&json!({"ecosystem":ecosystem,"keywords":["x"],
+                "pageSize":page_size}));
+            assert_eq!(last_reachable_page(&query), last, "{ecosystem} {page_size}");
+        }
+    }
 }
 
 #[cfg(test)]
@@ -773,7 +861,7 @@ mod npm_auth_tests {
         assert_eq!(
             data["warnings"],
             json!([format!(
-                "typescript 7.0.2: release commit {sha} is not in microsoft/TypeScript (unpushed or rewritten)."
+                "typescript 7.0.2: release commit {sha} is not in microsoft/TypeScript (unpushed or rewritten); its source on the default branch may be another version."
             )]),
             "{data}"
         );
@@ -901,6 +989,7 @@ mod npm_auth_tests {
             .await
             .expect("discovery succeeds");
         assert!(data["next"].get("nextPage").is_none(), "{data}");
+        assert_eq!(data["pagination"]["hasMore"], false, "{data}");
         assert_eq!(data["terminalLimit"], true, "{data}");
         assert_eq!(
             data["partialReasons"],
@@ -912,32 +1001,39 @@ mod npm_auth_tests {
     }
 
     /// A next page the registry cannot serve (its first result past the
-    /// deepest offset a discovery pages) is no lead either: the row ends at
-    /// the registry's result cap, naming that page.
+    /// deepest offset a discovery pages) is no lead either: the last
+    /// reachable page has no more (`hasMore:false`) and ends the row at the
+    /// registry's result cap, naming the reach without a hidden field.
     #[tokio::test]
     async fn a_next_page_past_the_registry_reach_states_a_terminal_limit() {
         let server = npm_window(100_000, 100_000).await;
         let deadline = Instant::now() + std::time::Duration::from_secs(300);
-        let inside = execute(npm_page(&server, 100, 100), call(deadline, true))
+        let inside = execute(npm_page(&server, 50, 100), call(deadline, true))
             .await
             .expect("discovery succeeds");
         assert_eq!(
-            inside["next"]["nextPage"]["query"]["queries"][0]["page"], 101,
+            inside["next"]["nextPage"]["query"]["queries"][0]["page"], 51,
             "{inside}"
         );
-        let data = execute(npm_page(&server, 101, 100), call(deadline, true))
+        let data = execute(npm_page(&server, 51, 100), call(deadline, true))
             .await
             .expect("discovery succeeds");
-        assert_eq!(data["artifacts"][0]["name"], "p10000", "{data}");
+        assert_eq!(data["artifacts"][0]["name"], "p5000", "{data}");
         assert!(data["next"].get("nextPage").is_none(), "{data}");
+        assert_eq!(data["pagination"]["hasMore"], false, "{data}");
         assert_eq!(data["terminalLimit"], true, "{data}");
         assert_eq!(
             data["partialReasons"],
             json!(["providerResultCap"]),
             "{data}"
         );
-        let warning = data["warnings"][0].as_str().unwrap_or_default();
-        assert!(warning.contains("page 102 at pageSize 100"), "{data}");
+        assert_eq!(
+            data["warnings"],
+            json!([
+                "npm matched 100000 results; paging reaches only the first 5100, which end on this page."
+            ]),
+            "{data}"
+        );
         crate::contracts::validate_output(
             ToolId::ArtifactSearch.as_str(),
             &json!({"results": [{"index": 0, "data": data}]}),
@@ -977,6 +1073,49 @@ mod npm_auth_tests {
             data["next"]["nextPage"]["query"]["queries"][0]["pageSize"], 2,
             "{data}"
         );
+        // Every row of this total is reachable: nothing is partial.
+        assert!(data.get("isPartial").is_none(), "{data}");
+    }
+
+    /// A registry total past the reachable rows is said once: the total
+    /// stays the registry's, every continuing page keeps the typed
+    /// `providerResultCap` marker, and the reach is a static notice (the
+    /// response says it on the first page only).
+    #[tokio::test]
+    async fn a_total_past_the_reach_states_the_reachable_window() {
+        let server = npm_window(146_295, 146_295).await;
+        let deadline = Instant::now() + std::time::Duration::from_secs(300);
+        let data = execute(npm_page(&server, 1, 100), call(deadline, true))
+            .await
+            .expect("discovery succeeds");
+        assert_eq!(data["pagination"]["totalItems"], 146_295, "{data}");
+        assert!(data["next"]["nextPage"].is_object(), "{data}");
+        assert!(data.get("terminalLimit").is_none(), "{data}");
+        assert_eq!(data["isPartial"], true, "{data}");
+        assert_eq!(
+            data["partialReasons"],
+            json!(["providerResultCap"]),
+            "{data}"
+        );
+        assert!(data.get("warnings").is_none(), "{data}");
+        assert_eq!(
+            data[crate::tools::paging::NOTICES],
+            json!([
+                "npm matched 146295 results; paging reaches only the first 5100 (through page 51)."
+            ]),
+            "{data}"
+        );
+        // The response stage places the notice (here: in `warnings`).
+        let mut placed = json!({"results": [{"index": 0, "data": data}]});
+        crate::response::notices::place(&mut placed, "results");
+        assert_eq!(
+            placed["results"][0]["data"]["warnings"],
+            json!([
+                "npm matched 146295 results; paging reaches only the first 5100 (through page 51)."
+            ])
+        );
+        crate::contracts::validate_output(ToolId::ArtifactSearch.as_str(), &placed)
+            .expect("contract-valid capped page");
     }
 
     #[tokio::test]

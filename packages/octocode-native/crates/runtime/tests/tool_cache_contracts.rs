@@ -76,7 +76,7 @@ async fn ghgetfilecontent_second_call_sets_cache_flag() {
 
     let workspace = Workspace::new();
     let settings = [("GITHUB_API_URL", format!("{}/api/v3", server.uri()))];
-    let query = json!({"owner":"o","repo":"r","path":"file.rs","ref":sha,"minify":"none"});
+    let query = json!({"owner":"o","repo":"r","path":"file.rs","ref":sha});
 
     let runtime = workspace.runtime(&settings);
 

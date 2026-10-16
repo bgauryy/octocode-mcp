@@ -122,7 +122,7 @@ pub fn is_remaining(tool: ToolId, name: &str) -> bool {
 /// features) without leaving evidence out.
 #[must_use]
 pub fn is_enrichment(name: &str) -> bool {
-    continuation_channels::ENRICHMENT_NAMES.contains(&name)
+    continuation_channels::ENRICHMENT_NAMES.contains(&kind(name))
 }
 
 /// A page that starts the result over on the current source.

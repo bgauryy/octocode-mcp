@@ -5,13 +5,14 @@ mod layout;
 mod leads;
 mod manifest;
 mod output;
+mod packed;
 mod regex_repair;
 mod rows;
+mod selection;
 pub(crate) use output::Output;
 mod types;
 mod verify;
 pub use executor::execute_local_search;
-pub(crate) use executor::execute_local_search_selected;
 pub use types::*;
 
 #[cfg(test)]

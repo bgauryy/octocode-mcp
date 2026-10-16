@@ -6,7 +6,7 @@
     "{{T}} = octocode-local-testing/repos, {{ROOT}} = repo root; shell commands get $T, $ROOT and $CT (scratch dir). Normalized runs (default) root a local task at its corpus repo (`workspace`, else the one {{T}}/<corpus> its recipe names): the MCP server gets WORKSPACE_ROOT there, the shell runs there, and both sides' corpus-prefixed paths become repo-relative. OCTOCODE_COMPETITOR_NORMALIZE=0 keeps the octocode root for both.",
     "Local truth was read from the pinned corpora (see repos/README.md); GitHub truth from gh api / npm / registry JSON at pinned SHAs, numbers and versions on 2026-10-02.",
     "Truth checks (same for both sides): hits = (file suffix, line) pairs that must appear; range = every line start..end present; ranges = list of range; exactHits / exactFiles = set equality; count = distinct (file, line) pairs; files = file suffixes that must appear; fileCount = distinct files; exactOnce (pairs|files) = no (file, line) pair or file row arrives twice across pages; text = regexes over model-visible text.",
-    "Octocode steps: tool+args (one MCP query), tool+queries (batched rows in one call), cli (CLI-only tools), follow (copy the named next.* page or hints.* lead verbatim), walk (follow every listed next.* page verbatim until exhausted); a step's envelope adds call-level options (e.g. responseLength) to its calls. {{prev:a.b}} reads the previous response; {{hint:name.query.queries.0.x}} reads a continuation row field.",
+    "Octocode steps: tool+args (one MCP query), tool+queries (batched rows in one call), cli (CLI-only tools), follow (copy the named next.* page or decoded hints suggestion verbatim), walk (follow every listed next.* page verbatim until exhausted); a step's envelope adds call-level options (e.g. responseLength) to its calls. {{prev:a.b}} reads the previous response; {{hint:name.query.queries.0.x}} reads a continuation row field. A whole placeholder preserves its JSON type; interpolation inside a longer string produces text.",
     "Shell parse modes: rg (path:line:text or bare paths), numbered (line[:\\t- ]text, with file), sed (unnumbered from start, with file), files (one path per line), filecolon (path: text), diff (diff --git headers), ghsearch (owner/repo:path: text), text (no line evidence).",
     "Briefs are optional: research tasks (several dependent calls on an unknown) carry `mainGoal` (about 25 chars, like real agent briefs) plus a short shared reasoning; single-call lookups and page walks send none. Legacy runs brief every call with the question.",
     "Shell arms: `competitor` is the expert recipe (may use field picks and known ranges); `unfiltered` is the first try without answer knowledge (no jq/--json field picks, no pre-known line ranges; whole-file reads for described targets). Tasks without `unfiltered` report the expert recipe in both columns."
@@ -2132,7 +2132,7 @@
       "id": "C01",
       "tool": "localFetch",
       "kind": "clasify",
-      "source": "W10 (prefilter locate) / clasify PLAN C1 shape; 2026-10-14 RFC jev-goals-and-evidence: Locate removed, re-aimed at localFetch classifiers",
+      "source": "W10 (prefilter locate) / clasify PLAN C1 shape; 2026-10-14 RFC jev-goals-and-evidence: Locate removed, re-aimed at localFetch clasifyContext",
       "question": "Where does the runtime Builder reject a worker thread count of zero? (builder.rs, 2,270 lines)",
       "mainGoal": "Zero worker threads check",
       "truth": {
@@ -2149,12 +2149,13 @@
           "tool": "localFetch",
           "args": {
             "path": "{{T}}/rust/tokio/src/runtime/builder.rs",
-            "classifiers": [
-              "Where the runtime Builder rejects a worker thread count of zero"
-            ],
             "unit": "lines",
             "length": 120,
-            "minify": "none"
+            "clasifyContext": {
+              "classifiers": [
+                "Where the runtime Builder rejects a worker thread count of zero"
+              ]
+            }
           }
         }
       ],
@@ -2176,7 +2177,7 @@
       "id": "C02",
       "tool": "localFetch",
       "kind": "clasify",
-      "source": "W3 (semantic locate); 2026-10-14 RFC jev-goals-and-evidence: Locate removed, re-aimed at localFetch classifiers",
+      "source": "W3 (semantic locate); 2026-10-14 RFC jev-goals-and-evidence: Locate removed, re-aimed at localFetch clasifyContext",
       "question": "Where is a task forced to return Pending because its coop budget is exhausted? (coop/mod.rs)",
       "mainGoal": "Where coop forces Pending",
       "truth": {
@@ -2192,12 +2193,13 @@
           "tool": "localFetch",
           "args": {
             "path": "{{T}}/rust/tokio/src/task/coop/mod.rs",
-            "classifiers": [
-              "Where a task is forced to return Pending because its cooperative budget is exhausted"
-            ],
             "unit": "lines",
             "length": 120,
-            "minify": "none"
+            "clasifyContext": {
+              "classifiers": [
+                "Where a task is forced to return Pending because its cooperative budget is exhausted"
+              ]
+            }
           }
         }
       ],
@@ -2219,7 +2221,7 @@
       "id": "C03",
       "tool": "localFetch",
       "kind": "clasify",
-      "source": "DECISION F5 (described target, no literal; S9 A/B); 2026-10-14 RFC jev-goals-and-evidence: Locate removed, re-aimed at localFetch classifiers",
+      "source": "DECISION F5 (described target, no literal; S9 A/B); 2026-10-14 RFC jev-goals-and-evidence: Locate removed, re-aimed at localFetch clasifyContext",
       "question": "In tokio's current-thread scheduler (current_thread/mod.rs, 925 lines), where does it periodically take tasks woken from other threads ahead of its own local queue so they are not starved?",
       "mainGoal": "Cross-thread task fairness",
       "truth": {
@@ -2235,12 +2237,13 @@
           "tool": "localFetch",
           "args": {
             "path": "{{T}}/rust/tokio/src/runtime/scheduler/current_thread/mod.rs",
-            "classifiers": [
-              "Where the scheduler periodically takes tasks woken from other threads ahead of its local queue so they are not starved"
-            ],
             "unit": "lines",
             "length": 120,
-            "minify": "none"
+            "clasifyContext": {
+              "classifiers": [
+                "Where the scheduler periodically takes tasks woken from other threads ahead of its local queue so they are not starved"
+              ]
+            }
           }
         }
       ],
@@ -2269,7 +2272,7 @@
       "id": "C04",
       "tool": "localFetch",
       "kind": "clasify",
-      "source": "DECISION F5 (described target, no literal; S9 A/B); 2026-10-14 RFC jev-goals-and-evidence: Locate removed, re-aimed at localFetch classifiers",
+      "source": "DECISION F5 (described target, no literal; S9 A/B); 2026-10-14 RFC jev-goals-and-evidence: Locate removed, re-aimed at localFetch clasifyContext",
       "question": "In Django's multipart parser (multipartparser.py, 759 lines), where does it reject a request carrying more ordinary (non-file) form fields than the configured maximum?",
       "mainGoal": "Too many form fields check",
       "truth": {
@@ -2285,12 +2288,13 @@
           "tool": "localFetch",
           "args": {
             "path": "{{T}}/python/django/http/multipartparser.py",
-            "classifiers": [
-              "Where a request is rejected for carrying more ordinary non-file form fields than the configured maximum"
-            ],
             "unit": "lines",
             "length": 120,
-            "minify": "none"
+            "clasifyContext": {
+              "classifiers": [
+                "Where a request is rejected for carrying more ordinary non-file form fields than the configured maximum"
+              ]
+            }
           }
         }
       ],

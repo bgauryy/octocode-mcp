@@ -34,26 +34,15 @@ fn settled_match_memo_observes_empty_directories_and_ignore_edits() {
         );
         assert_eq!(first["matchCount"], 2, "ignore={ignore_name:?}: {first}");
         let snapshot = first["snapshot"].as_str().expect("snapshot");
-        let eligible = ignore_name != Some(".gitignore");
-        assert_eq!(
-            SCANS.holds(snapshot),
-            eligible,
-            "only the repository fixture deliberately rescans: {ignore_name:?}"
-        );
+        // A repository scan is stored like any other: its rules are watched.
+        assert!(SCANS.holds(snapshot), "stored: {ignore_name:?}");
         let next = first["next"]["nextMatchPage"]["query"]["queries"][0].clone();
         let unchanged = run(&next, &paths, &security);
         assert_eq!(
             unchanged["files"][0]["matches"][0]["value"],
             "target(\"two\")"
         );
-        assert_eq!(SCANS.holds(snapshot), eligible, "unchanged memo policy");
-        if !eligible {
-            assert_eq!(
-                unchanged,
-                run(&next, &paths, &security),
-                "fresh copied parity"
-            );
-        }
+        assert!(SCANS.holds(snapshot), "an unchanged page reuses it");
         if let Some(name) = ignore_name {
             std::fs::write(root.0.join(name), "").expect("unignore existing source");
         } else {

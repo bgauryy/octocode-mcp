@@ -209,7 +209,6 @@ fn setup<'a>(
         config,
         endpoint,
         credential,
-        resolved_default_branch: Some("main"),
         cancellation,
         deadline: Instant::now() + Duration::from_secs(30),
         path_policy: policy,
@@ -567,16 +566,17 @@ fn clones_caches_refreshes_sparse_tag_and_commit_without_token_argv() {
         "tampered\n"
     );
     fs::write(&readme, "fixture\n").expect("restore owned fixture");
-    let defaulted = execute_clone(
+    // `run` pins every row to a ref first: without one there is nothing to
+    // check out.
+    let unpinned = execute_clone(
         &GhCloneRepoQuery {
             ref_: None,
             ..query()
         },
         &context,
     )
-    .expect("provider-resolved default branch");
-    assert_eq!(defaulted.location.resolved_ref, "main");
-    assert!(defaulted.location.cached);
+    .expect_err("an unpinned row");
+    assert_eq!(unpinned.code, "invalidInput");
 
     let second = fixture.push_second();
     let refreshed = execute_clone(
@@ -1143,7 +1143,7 @@ fn missing_branch_endpoint_git_and_portable_paths_fail_closed() {
     let endpoint = api_github_endpoint();
     let config = CloneConfig::persistent(&cache_home);
     let missing_git = SystemGit::new(root.0.join("does-not-exist/git"));
-    let mut context = setup(
+    let context = setup(
         &missing_git,
         &config,
         &endpoint,
@@ -1151,19 +1151,6 @@ fn missing_branch_endpoint_git_and_portable_paths_fail_closed() {
         &NeverCancel,
         None,
     );
-    context.resolved_default_branch = None;
-    let error = execute_clone(
-        &GhCloneRepoQuery {
-            ref_: None,
-            ..query()
-        },
-        &context,
-    )
-    .expect_err("missing git");
-    // An unresolved default branch is git's to resolve; without git the
-    // request fails as git-unavailable, never as an unresolved branch.
-    assert_eq!(error.code, "gitUnavailable");
-    context.resolved_default_branch = Some("main");
     let error = execute_clone(&query(), &context).expect_err("missing git");
     assert_eq!(error.code, "gitUnavailable");
 
@@ -1171,7 +1158,8 @@ fn missing_branch_endpoint_git_and_portable_paths_fail_closed() {
     let loopback = GitHubEndpoint::new(url::Url::parse("http://127.0.0.1/api/v3").expect("URL"))
         .expect("provider endpoint");
     assert_eq!(
-        repository_url(&loopback, "owner", "repo").expect("loopback clone URL"),
+        repository_url(&web_root(&loopback).expect("root"), "owner", "repo")
+            .expect("loopback clone URL"),
         "http://127.0.0.1/owner/repo.git"
     );
     assert!(
@@ -1183,7 +1171,12 @@ fn missing_branch_endpoint_git_and_portable_paths_fail_closed() {
         GitHubEndpoint::new(url::Url::parse("https://example.test/prefix/api/v3").expect("URL"))
             .expect("GHES endpoint");
     assert_eq!(
-        repository_url(&encoded, "owner name", "repo#name").expect("encoded URL"),
+        repository_url(
+            &web_root(&encoded).expect("root"),
+            "owner name",
+            "repo#name"
+        )
+        .expect("encoded URL"),
         "https://example.test/prefix/owner%20name/repo%23name.git"
     );
     for sparse_path in [r"..\escape", r"src\portable"] {
@@ -1402,7 +1395,6 @@ fn concurrent_requests_publish_once_and_validation_fails_closed() {
                     config: &config,
                     endpoint: &endpoint,
                     credential: None,
-                    resolved_default_branch: Some("main"),
                     cancellation: &NeverCancel,
                     deadline: Instant::now() + Duration::from_secs(30),
                     path_policy: &policy,
@@ -1567,7 +1559,12 @@ impl Bench {
         let fixture = Fixture::new();
         let (root, cache_home) = home_root();
         let policy = test_support::workspace_policy(&root.0);
-        let url = repository_url(&endpoint, "fixture-owner", "fixture-repo").expect("clone URL");
+        let url = repository_url(
+            &web_root(&endpoint).expect("root"),
+            "fixture-owner",
+            "fixture-repo",
+        )
+        .expect("clone URL");
         let runner = RewriteRunner::new(&url, &fixture.bare_url);
         let mut config = CloneConfig::persistent(&cache_home);
         config.cache_ttl = Duration::from_secs(60);
@@ -1588,7 +1585,6 @@ impl Bench {
     /// [`Self::context`] for the caller holding `credential`.
     fn context_as<'a>(&'a self, credential: Option<&'a ResolvedCredential>) -> CloneContext<'a> {
         CloneContext {
-            resolved_default_branch: None,
             ..setup(
                 &self.runner,
                 &self.config,
@@ -1616,47 +1612,6 @@ fn unbranched() -> GhCloneRepoQuery {
         ref_: None,
         ..query()
     }
-}
-
-/// An unbranched clone lets git resolve the default branch, and the
-/// next unbranched call is a cache hit through the recorded alias — neither
-/// needs the repository metadata API.
-#[test]
-fn unbranched_clone_resolves_the_default_branch_with_git_and_hits_by_alias() {
-    let bench = Bench::new();
-    let context = bench.context();
-    let fresh = execute_clone(&unbranched(), &context).expect("default-branch clone");
-    assert_eq!(fresh.location.resolved_ref, "main");
-    assert!(!fresh.location.cached);
-    assert_eq!(fresh.location.commit_sha, bench.fixture.first_commit);
-    let network = bench.clones_seen();
-    assert_eq!(network, 1, "one git clone");
-
-    let hit = execute_clone(&unbranched(), &context).expect("aliased hit");
-    assert!(
-        hit.location.cached,
-        "the alias finds the default-branch entry"
-    );
-    assert_eq!(hit.location.local_path, fresh.location.local_path);
-    assert_eq!(bench.clones_seen(), network, "a hit runs no network git");
-
-    // The explicit branch shares the entry.
-    let named = execute_clone(&query(), &context).expect("named hit");
-    assert!(named.location.cached);
-    assert_eq!(named.location.local_path, fresh.location.local_path);
-
-    // forceRefresh ignores the alias and re-resolves through git.
-    let second = bench.fixture.push_second();
-    let refreshed = execute_clone(
-        &GhCloneRepoQuery {
-            force_refresh: Some(true),
-            ..unbranched()
-        },
-        &context,
-    )
-    .expect("refresh");
-    assert!(!refreshed.location.cached);
-    assert_eq!(refreshed.location.commit_sha, second);
 }
 
 /// Several sparse paths check out together; a file among them switches
@@ -1758,19 +1713,13 @@ fn history_depth_fetches_that_many_commits() {
     assert_eq!(count(&deep.location.local_path), "2");
 }
 
-/// After git failed, the one `commits/{ref}` answer explains why: a missing
-/// ref or repository is not-found input (exit 3) naming what is missing, a
-/// rejected credential keeps its provider error, and an API failure or an
-/// existing ref leaves the git error with the API answer as a hint.
+/// The pinning `commits/{ref}` answer refuses a row before git runs: a
+/// missing ref or repository is not-found input (exit 3) naming what is
+/// missing, a rejected credential keeps its provider error, and any other
+/// failure (an outage) is returned unclassified for the provider error.
 #[test]
-fn git_failures_are_explained_by_the_ref_answer() {
+fn api_refusals_name_what_is_missing() {
     use octocode_github::{ProviderError, ProviderErrorKind, ProviderErrorReason};
-    let git = || CloneError {
-        code: "gitFailed".into(),
-        message: "git clone failed: fatal: Remote branch nope not found".into(),
-        hints: vec!["Check network access to the git remote.".into()],
-        next: None,
-    };
     let tagged = parse_query(serde_json::json!({
         "owner": "o", "repo": "r", "ref": "nope", "mainGoal": "test", "reasoning": "r"
     }));
@@ -1784,8 +1733,8 @@ fn git_failures_are_explained_by_the_ref_answer() {
         "No commit found for SHA: nope",
     )
     .with_reason(ProviderErrorReason::RefNotFound);
-    match explain_git_failure(&tagged, git(), Err(missing_ref)) {
-        CloneFailure::Clone(error) => {
+    match api_refusal(&tagged, "nope", missing_ref) {
+        Ok(CloneFailure::Clone(error)) => {
             assert_eq!(error.code, "notFound", "{error:?}");
             assert!(error.message.contains("\"nope\""), "{error:?}");
             assert!(error.hints[0].contains("ghStructure"), "{error:?}");
@@ -1797,12 +1746,12 @@ fn git_failures_are_explained_by_the_ref_answer() {
                 "{error:?}"
             );
         }
-        CloneFailure::Provider(error) => panic!("a missing ref is input: {error:?}"),
+        other => panic!("a missing ref is input: {other:?}"),
     }
     let missing_repo = api(ProviderErrorKind::NotFound, 404, "Not Found")
         .with_reason(ProviderErrorReason::RepositoryNotFound);
-    match explain_git_failure(&tagged, git(), Err(missing_repo)) {
-        CloneFailure::Clone(error) => {
+    match api_refusal(&tagged, "nope", missing_repo) {
+        Ok(CloneFailure::Clone(error)) => {
             assert_eq!(error.code, "notFound");
             assert_eq!(error.message, "Repository not found: o/r");
             assert_eq!(
@@ -1811,32 +1760,25 @@ fn git_failures_are_explained_by_the_ref_answer() {
                 "{error:?}"
             );
         }
-        CloneFailure::Provider(error) => panic!("a missing repository is input: {error:?}"),
+        other => panic!("a missing repository is input: {other:?}"),
     }
     for kind in [
         ProviderErrorKind::Authentication,
         ProviderErrorKind::Permission,
     ] {
         assert!(matches!(
-            explain_git_failure(&tagged, git(), Err(api(kind, 401, "denied"))),
-            CloneFailure::Provider(_)
+            api_refusal(&tagged, "nope", api(kind, 401, "denied")),
+            Ok(CloneFailure::Provider(_))
         ));
     }
-    match explain_git_failure(
-        &tagged,
-        git(),
-        Err(api(ProviderErrorKind::Server, 503, "unavailable")),
-    ) {
-        CloneFailure::Clone(error) => {
-            assert_eq!(error.code, "gitFailed");
-            assert!(error.hints.iter().any(|hint| hint.contains("unavailable")));
-        }
-        CloneFailure::Provider(error) => panic!("an outage never masks git: {error:?}"),
-    }
-    match explain_git_failure(&tagged, git(), Ok("0".repeat(40))) {
-        CloneFailure::Clone(error) => assert_eq!(error.code, "gitFailed"),
-        CloneFailure::Provider(error) => panic!("{error:?}"),
-    }
+    assert!(
+        api_refusal(
+            &tagged,
+            "nope",
+            api(ProviderErrorKind::Server, 503, "unavailable")
+        )
+        .is_err()
+    );
 }
 
 /// A cache hit costs no git availability probe and no checkout walk: a
@@ -1919,69 +1861,6 @@ fn sparse_path_validation_rejects_traversal_absolute_and_backslash() {
     }
 }
 
-/// A default-branch clone that resolves to a branch already cached by an
-/// explicit `ref` reuses that entry instead of replacing it.
-#[test]
-fn unbranched_clone_reuses_the_entry_an_explicit_ref_cached() {
-    let bench = Bench::new();
-    let context = bench.context();
-    let named = execute_clone(&query(), &context).expect("named clone");
-    assert!(!named.location.cached);
-    let marker = Path::new(&named.location.local_path).join(".git/octocode-entry-marker");
-    fs::write(&marker, "kept").expect("marker");
-
-    let default = execute_clone(&unbranched(), &context).expect("default-branch clone");
-    assert!(default.location.cached, "{default:?}");
-    assert_eq!(default.location.resolved_ref, "main");
-    assert_eq!(default.location.local_path, named.location.local_path);
-    assert_eq!(default.location.commit_sha, named.location.commit_sha);
-    assert!(marker.is_file(), "the cached entry was not replaced");
-
-    // The alias is recorded, so the next default-branch call runs no git.
-    let network = bench.clones_seen();
-    let again = execute_clone(&unbranched(), &context).expect("aliased hit");
-    assert!(again.location.cached);
-    assert_eq!(bench.clones_seen(), network);
-}
-
-/// An abbreviated SHA is input git cannot clone: when `commits/{ref}`
-/// resolves it, the error names the full SHA and offers the clone at it.
-#[test]
-fn a_short_sha_ref_is_invalid_input_naming_the_full_sha() {
-    let full = "666df7c1234567890abcdef1234567890abcdef0";
-    let short = parse_query(serde_json::json!({
-        "owner": "o", "repo": "r", "ref": "666DF7C", "mainGoal": "test", "reasoning": "r"
-    }));
-    let git = CloneError::new(
-        "gitFailed",
-        "git clone failed: fatal: Remote branch 666DF7C not found",
-    );
-    match explain_git_failure(&short, git, Ok(full.to_owned())) {
-        CloneFailure::Clone(error) => {
-            assert_eq!(error.code, "invalidInput", "{error:?}");
-            assert!(error.message.contains(full), "{error:?}");
-            assert!(error.message.contains("\"666DF7C\""), "{error:?}");
-            let retry = &error.next.as_ref().expect("retry lead")["cloneFullSha"];
-            assert_eq!(retry["tool"], "ghCloneRepo", "{error:?}");
-            assert_eq!(retry["query"]["queries"][0]["ref"], full, "{error:?}");
-            assert_eq!(retry["query"]["queries"][0]["repo"], "r", "{error:?}");
-        }
-        CloneFailure::Provider(error) => panic!("{error:?}"),
-    }
-    // A branch the API resolves still leaves the git error standing.
-    let branch = parse_query(serde_json::json!({
-        "owner": "o", "repo": "r", "ref": "feature", "mainGoal": "test", "reasoning": "r"
-    }));
-    match explain_git_failure(
-        &branch,
-        CloneError::new("gitFailed", "x"),
-        Ok(full.to_owned()),
-    ) {
-        CloneFailure::Clone(error) => assert_eq!(error.code, "gitFailed"),
-        CloneFailure::Provider(error) => panic!("{error:?}"),
-    }
-}
-
 /// Callers of one runtime that share its clone cache: each holds its own
 /// token, as the API and git see it.
 const ALICE: &str = "clone-token-alice";
@@ -2047,6 +1926,12 @@ async fn api_calls(server: &wiremock::MockServer) -> Vec<String> {
         .collect()
 }
 
+fn commit(sha: &str) -> wiremock::ResponseTemplate {
+    wiremock::ResponseTemplate::new(200).set_body_string(sha)
+}
+
+const COMMITS_MAIN: &str = "/api/v3/repos/fixture-owner/fixture-repo/commits/main";
+
 /// A checkout Alice's token cloned is never handed to Bob's token when
 /// GitHub denies Bob the repository: Bob gets the not-found a fresh clone
 /// would give him, no checkout path, and Alice's checkout stays.
@@ -2055,12 +1940,14 @@ async fn cache_hit_is_not_served_to_a_caller_without_access() {
     let server = wiremock::MockServer::builder().start().await;
     let bench = Bench::at(gh_shared_support::mock_endpoint(&server));
     let provider = gh_shared_support::one_shot_provider(&server);
+    answer_commit(&server, "main", ALICE, commit(&bench.fixture.first_commit)).await;
     answer_commit(&server, "main", BOB, not_found()).await;
 
     let alice = clone_as(&bench, &provider, &query(), ALICE)
         .await
         .unwrap_or_else(|_| panic!("Alice clones"));
     assert!(!alice.location.cached);
+    assert_eq!(alice.location.resolved_ref, "main");
     let clones = bench.clones_seen();
 
     match clone_as(&bench, &provider, &query(), BOB).await {
@@ -2085,28 +1972,20 @@ async fn cache_hit_is_not_served_to_a_caller_without_access() {
             .is_file(),
         "Alice's checkout is kept"
     );
-    // Alice's fresh clone made no API call; Bob's refusal made exactly one.
-    assert_eq!(
-        api_calls(&server).await,
-        ["/api/v3/repos/fixture-owner/fixture-repo/commits/main"]
-    );
+    // Each caller pins the commit once, with their own token.
+    assert_eq!(api_calls(&server).await, [COMMITS_MAIN, COMMITS_MAIN]);
 }
 
 /// A caller GitHub grants the repository is served the hit after one
-/// `commits/{ref}` check with their own token, with no re-clone.
+/// `commits/{ref}` read with their own token, with no re-clone.
 #[tokio::test]
 async fn cache_hit_is_served_after_the_callers_access_check() {
     let server = wiremock::MockServer::builder().start().await;
     let bench = Bench::at(gh_shared_support::mock_endpoint(&server));
     let provider = gh_shared_support::one_shot_provider(&server);
     let sha = bench.fixture.first_commit.clone();
-    answer_commit(
-        &server,
-        "main",
-        BOB,
-        wiremock::ResponseTemplate::new(200).set_body_string(sha.as_str()),
-    )
-    .await;
+    answer_commit(&server, "main", ALICE, commit(&sha)).await;
+    answer_commit(&server, "main", BOB, commit(&sha)).await;
 
     let alice = clone_as(&bench, &provider, &query(), ALICE)
         .await
@@ -2123,19 +2002,161 @@ async fn cache_hit_is_served_after_the_callers_access_check() {
         clones,
         "an allowed hit is not re-cloned"
     );
-    assert_eq!(
-        api_calls(&server).await,
-        ["/api/v3/repos/fixture-owner/fixture-repo/commits/main"]
-    );
+    assert_eq!(api_calls(&server).await, [COMMITS_MAIN, COMMITS_MAIN]);
 }
 
-/// An unbranched request resolved through the default-branch alias checks
-/// access to the branch it would serve.
+/// A branch that moved since its checkout is checked out again at its new
+/// commit, never served stale; the same commit named by its SHA shares the
+/// branch's checkout.
 #[tokio::test]
-async fn default_branch_alias_requires_access() {
+async fn checkouts_are_keyed_by_the_commit_the_ref_names_now() {
     let server = wiremock::MockServer::builder().start().await;
     let bench = Bench::at(gh_shared_support::mock_endpoint(&server));
     let provider = gh_shared_support::one_shot_provider(&server);
+    let first = bench.fixture.first_commit.clone();
+    answer_commit(&server, "main", ALICE, commit(&first)).await;
+    answer_commit(&server, &first, ALICE, commit(&first)).await;
+    let before = clone_as(&bench, &provider, &query(), ALICE)
+        .await
+        .unwrap_or_else(|_| panic!("first clone"));
+    let by_sha = clone_as(
+        &bench,
+        &provider,
+        &GhCloneRepoQuery {
+            ref_: Some(reference(&first)),
+            ..query()
+        },
+        ALICE,
+    )
+    .await
+    .unwrap_or_else(|_| panic!("clone by SHA"));
+    assert!(by_sha.location.cached, "{by_sha:?}");
+    assert_eq!(by_sha.location.local_path, before.location.local_path);
+    assert_eq!(by_sha.location.resolved_ref, first);
+
+    let second = bench.fixture.push_second();
+    server.reset().await;
+    answer_commit(&server, "main", ALICE, commit(&second)).await;
+    let after = clone_as(&bench, &provider, &query(), ALICE)
+        .await
+        .unwrap_or_else(|_| panic!("moved branch"));
+    assert!(
+        !after.location.cached,
+        "a moved branch is re-cloned: {after:?}"
+    );
+    assert_eq!(after.location.commit_sha, second);
+    assert_ne!(after.location.local_path, before.location.local_path);
+}
+
+/// An unbranched request pins the default branch the repository names, and
+/// a renamed repository is checked out under its canonical name: the old
+/// name's request follows GitHub's redirect.
+#[tokio::test]
+async fn the_default_branch_and_canonical_name_pin_the_checkout() {
+    use wiremock::matchers::{method, path};
+    let server = wiremock::MockServer::builder().start().await;
+    let bench = Bench::at(gh_shared_support::mock_endpoint(&server));
+    let provider = gh_shared_support::one_shot_provider(&server);
+    let redirect = |to: &str| {
+        wiremock::ResponseTemplate::new(301).insert_header(
+            "location",
+            format!("{}/api/v3/repositories/1{to}", server.uri()),
+        )
+    };
+    for (from, to) in [("", ""), ("/commits/main", "/commits/main")] {
+        wiremock::Mock::given(method("GET"))
+            .and(path(format!("/api/v3/repos/old-owner/fixture-repo{from}")))
+            .respond_with(redirect(to))
+            .mount(&server)
+            .await;
+    }
+    wiremock::Mock::given(method("GET"))
+        .and(path("/api/v3/repositories/1"))
+        .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(
+            serde_json::json!({"default_branch":"main","full_name":"fixture-owner/fixture-repo"}),
+        ))
+        .mount(&server)
+        .await;
+    wiremock::Mock::given(method("GET"))
+        .and(path("/api/v3/repositories/1/commits/main"))
+        .respond_with(commit(&bench.fixture.first_commit))
+        .mount(&server)
+        .await;
+    let renamed = GhCloneRepoQuery {
+        owner: "old-owner".parse().expect("owner"),
+        ..unbranched()
+    };
+    let cloned = clone_as(&bench, &provider, &renamed, ALICE)
+        .await
+        .unwrap_or_else(|failure| panic!("renamed clone: {failure:?}"));
+    assert_eq!(cloned.location.resolved_ref, "main");
+    assert_eq!(cloned.location.commit_sha, bench.fixture.first_commit);
+    assert!(
+        cloned.location.local_path.contains("fixture-owner"),
+        "{cloned:?}"
+    );
+    assert_eq!(
+        cloned.warnings,
+        [
+            "Repository old-owner/fixture-repo was renamed to fixture-owner/fixture-repo; leads use the canonical name."
+        ],
+        "the rename is stated, as the other GitHub tools state it"
+    );
+}
+
+/// GitHub owner and repository names are case-insensitive: a request that
+/// spells them in another case shares the checkout of the same commit.
+#[tokio::test]
+async fn owner_and_repo_case_variants_share_one_checkout() {
+    use wiremock::matchers::{method, path};
+    let server = wiremock::MockServer::builder().start().await;
+    let bench = Bench::at(gh_shared_support::mock_endpoint(&server));
+    let provider = gh_shared_support::one_shot_provider(&server);
+    let first = bench.fixture.first_commit.clone();
+    answer_commit(&server, "main", ALICE, commit(&first)).await;
+    wiremock::Mock::given(method("GET"))
+        .and(path(
+            "/api/v3/repos/Fixture-Owner/FIXTURE-REPO/commits/main",
+        ))
+        .respond_with(commit(&first))
+        .mount(&server)
+        .await;
+    let lower = clone_as(&bench, &provider, &query(), ALICE)
+        .await
+        .unwrap_or_else(|failure| panic!("first clone: {failure:?}"));
+    let upper = clone_as(
+        &bench,
+        &provider,
+        &GhCloneRepoQuery {
+            owner: "Fixture-Owner".parse().expect("owner"),
+            repo: "FIXTURE-REPO".parse().expect("repo"),
+            ..query()
+        },
+        ALICE,
+    )
+    .await
+    .unwrap_or_else(|failure| panic!("case variant: {failure:?}"));
+    assert!(upper.location.cached, "{upper:?}");
+    assert_eq!(upper.location.local_path, lower.location.local_path);
+    assert!(upper.warnings.is_empty(), "{upper:?}");
+}
+
+/// An unbranched request checks the caller's access to the default branch
+/// it would serve.
+#[tokio::test]
+async fn the_default_branch_requires_access() {
+    use wiremock::matchers::{method, path};
+    let server = wiremock::MockServer::builder().start().await;
+    let bench = Bench::at(gh_shared_support::mock_endpoint(&server));
+    let provider = gh_shared_support::one_shot_provider(&server);
+    wiremock::Mock::given(method("GET"))
+        .and(path("/api/v3/repos/fixture-owner/fixture-repo"))
+        .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(
+            serde_json::json!({"default_branch":"main","full_name":"fixture-owner/fixture-repo"}),
+        ))
+        .mount(&server)
+        .await;
+    answer_commit(&server, "main", ALICE, commit(&bench.fixture.first_commit)).await;
     answer_commit(&server, "main", BOB, not_found()).await;
 
     let alice = clone_as(&bench, &provider, &unbranched(), ALICE)
@@ -2147,10 +2168,6 @@ async fn default_branch_alias_requires_access() {
         Err(CloneFailure::Clone(error)) => assert_eq!(error.code, "notFound", "{error:?}"),
         Err(CloneFailure::Provider(error)) => panic!("a denied repository is notFound: {error:?}"),
     }
-    assert_eq!(
-        api_calls(&server).await,
-        ["/api/v3/repos/fixture-owner/fixture-repo/commits/main"]
-    );
 }
 
 /// A check that cannot pass refuses the hit: a caller's spent rate limit
@@ -2165,6 +2182,7 @@ async fn access_check_failure_fails_closed() {
         .expect("clock")
         .as_secs()
         + 3600;
+    answer_commit(&server, "main", ALICE, commit(&bench.fixture.first_commit)).await;
     answer_commit(
         &server,
         "main",
@@ -2191,9 +2209,9 @@ async fn access_check_failure_fails_closed() {
     }
 }
 
-/// A check that never reaches GitHub refuses the hit too.
+/// An API that never answers refuses the row before git runs.
 #[tokio::test]
-async fn access_check_network_failure_refuses_the_hit() {
+async fn an_unreachable_api_refuses_the_row_before_git() {
     // An API endpoint nothing listens on: the port is released before use.
     let port = std::net::TcpListener::bind("127.0.0.1:0")
         .and_then(|listener| listener.local_addr())
@@ -2205,13 +2223,8 @@ async fn access_check_network_failure_refuses_the_hit() {
     .expect("endpoint");
     let bench = Bench::at(endpoint.clone());
     let provider = gh_shared_support::one_shot_provider_at(endpoint);
-
-    let alice = clone_as(&bench, &provider, &query(), ALICE)
-        .await
-        .unwrap_or_else(|_| panic!("a fresh clone needs no API call"));
-    assert!(!alice.location.cached);
-    match clone_as(&bench, &provider, &query(), BOB).await {
-        Ok(served) => panic!("an unreachable check served the hit: {served:?}"),
+    match clone_as(&bench, &provider, &query(), ALICE).await {
+        Ok(served) => panic!("an unreachable API pinned a clone: {served:?}"),
         Err(CloneFailure::Provider(error)) => assert!(
             matches!(
                 error.kind,
@@ -2224,9 +2237,5 @@ async fn access_check_network_failure_refuses_the_hit() {
             panic!("a network failure is a provider error: {error:?}")
         }
     }
-    assert!(
-        Path::new(&alice.location.local_path)
-            .join("README.md")
-            .is_file()
-    );
+    assert_eq!(bench.clones_seen(), 0, "no git ran");
 }

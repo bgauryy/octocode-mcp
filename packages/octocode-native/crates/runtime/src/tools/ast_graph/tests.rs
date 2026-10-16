@@ -272,6 +272,35 @@ mod expand_scan_tests {
         );
     }
 
+    /// A scan note holds for the whole answer: the first page states it,
+    /// and later pages carry only the cut in their coverage.
+    #[test]
+    fn a_scan_cut_note_is_stated_on_the_first_page_only() {
+        let temp = fixture(&[
+            ("a.ts", "export const a = 1\n"),
+            ("b.ts", "export const b = 1\n"),
+            ("c.ts", "export const c = 1\n"),
+            ("d.ts", "export const d = 1\n"),
+        ]);
+        let root = temp.0.as_path();
+        let first = topology(
+            root,
+            json!({"operation":"reachability","entrypoints":["a.ts"],"maxFiles":3,"pageSize":1}),
+        );
+        let note = |page: &Value| {
+            page["warnings"].as_array().is_some_and(|notes| {
+                notes
+                    .iter()
+                    .any(|note| note.as_str().is_some_and(|note| note.contains("maxFiles")))
+            })
+        };
+        assert!(note(&first), "{first}");
+        let next = first["next"]["nextPage"]["query"]["queries"][0].clone();
+        let second = run(next, root).expect("page 2");
+        assert!(!note(&second), "{second}");
+        assert_eq!(second["coverage"]["state"], "partial", "{second}");
+    }
+
     /// `coverage.state` and `isPartial` are one fact: a payload is never
     /// `isPartial` beside a `complete` coverage. The skipped-file limit is
     /// the `filesSkipped` reason plus `terminalLimit`; the tool description
@@ -809,6 +838,46 @@ mod resolution_scope_tests {
         assert_eq!(cycles["confidence"], "low", "{cycles}");
     }
 
+    /// A found path is proven: only an unlinked import out of a file nearer
+    /// the source than the path's next-to-last step could make a shorter
+    /// one. A direct edge, or a path whose near files linked every import,
+    /// is not low; a path not found keeps every reachable gap.
+    #[test]
+    fn a_found_path_is_low_only_when_a_gap_could_shorten_it() {
+        let temp = fixture(&[
+            (
+                "a.ts",
+                "import { b } from './b';\nimport { g } from './gone';\nexport const a = b + g;\n",
+            ),
+            (
+                "b.ts",
+                "import { c } from './c';\nimport { h } from './lost';\nexport const b = c + h;\n",
+            ),
+            ("c.ts", "import { d } from './d';\nexport const c = d;\n"),
+            ("d.ts", "export const d = 1;\n"),
+            ("e.ts", "export const e = 1;\n"),
+        ]);
+        let root = temp.0.as_path();
+        let path = |source: &str, target: &str| {
+            topology(
+                root,
+                json!({"operation":"path","source":source,"target":target}),
+            )
+        };
+        let direct = path("a.ts", "b.ts");
+        assert_eq!(direct["nodes"][0]["found"], true, "{direct}");
+        assert!(direct.get("confidence").is_none(), "{direct}");
+        // b.ts -> c.ts -> d.ts: only b.ts could shortcut it, and b.ts has a
+        // gap; c.ts -> d.ts from c.ts is direct.
+        assert_eq!(path("b.ts", "d.ts")["confidence"], "low");
+        assert!(path("c.ts", "d.ts").get("confidence").is_none());
+        // a.ts -> b.ts -> c.ts: a.ts's unlinked import could name c.ts.
+        assert_eq!(path("a.ts", "c.ts")["confidence"], "low");
+        let missing = path("a.ts", "e.ts");
+        assert_eq!(missing["nodes"][0]["found"], false, "{missing}");
+        assert_eq!(missing["confidence"], "low", "{missing}");
+    }
+
     #[test]
     fn a_cycle_row_labels_its_group_and_says_its_edges_are_one_witness() {
         let temp = fixture(&[
@@ -822,11 +891,11 @@ mod resolution_scope_tests {
         let out = topology(temp.0.as_path(), json!({"operation":"cycles"}));
         let group = &out["nodes"][0];
         assert_eq!(group["fileCount"], 3, "{out}");
-        assert_eq!(
-            group["runtimeGroups"],
-            json!([{"fileCount":3,"files":["a.ts","b.ts","c.ts"]}]),
-            "{out}"
-        );
+        // The runtime cycle is this static group with the same witness: it
+        // is stated once, by `sameAsStatic`, not copied.
+        assert_eq!(group["sameAsStatic"], true, "{out}");
+        assert!(group.get("runtimeGroups").is_none(), "{out}");
+        assert!(group.get("runtimeCycleEdges").is_none(), "{out}");
         assert!(group.get("runtimeCycles").is_none(), "{out}");
         assert_eq!(
             group["cycleEdgesShown"],
@@ -1280,7 +1349,9 @@ mod answer_scope_tests {
     }
 
     /// An unlinked import whose specifier spells the target, or one inside
-    /// the files a path walks, still lowers the answer.
+    /// the files a traversal reads, still lowers the answer. (A found path
+    /// is lowered only by a gap that could shorten it:
+    /// `a_found_path_is_low_only_when_a_gap_could_shorten_it`.)
     #[test]
     fn unlinked_imports_the_answer_reaches_lower_it() {
         let temp = fixture(&[
@@ -1297,7 +1368,6 @@ mod answer_scope_tests {
         let root = temp.0.as_path();
         for query in [
             json!({"operation":"dependents","source":"src/util.ts"}),
-            json!({"operation":"path","source":"src/index.ts","target":"src/util.ts"}),
             json!({"operation":"dependencies","source":"src/index.ts"}),
         ] {
             let out = topology(root, query);

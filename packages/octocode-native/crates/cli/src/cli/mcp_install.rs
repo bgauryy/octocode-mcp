@@ -5,6 +5,7 @@
 use super::mcp_clients::{self, CLIENTS, ClientSpec, EntryShape};
 use super::mcp_manage::{self, Method, ServerSpec};
 use serde_json::{Value, json};
+use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 
 /// The env name bound to the `local.enabled` config key (`OCTOCODE_ENABLE_LOCAL`).
@@ -78,7 +79,7 @@ pub struct InstallArgs {
     pub rollback: Option<String>,
 }
 
-pub fn run(args: InstallArgs) -> u8 {
+pub fn run(mut args: InstallArgs) -> u8 {
     // Rollback mode: restore the backup an earlier install left beside the config
     if let Some(ref bak_str) = args.rollback {
         let bak = PathBuf::from(bak_str);
@@ -141,6 +142,20 @@ pub fn run(args: InstallArgs) -> u8 {
         }
         return 0;
     }
+    if args.ide.is_none() && !args.json && io::stdin().is_terminal() && io::stdout().is_terminal() {
+        match select_client(&mut io::stdin().lock(), &mut io::stderr().lock()) {
+            Ok(Some(id)) => args.ide = Some(id.to_owned()),
+            Ok(None) => return 0,
+            Err(error) => {
+                super::emit_error(
+                    "executionFailed",
+                    &format!("Cannot select a client: {error}"),
+                    false,
+                );
+                return 5;
+            }
+        }
+    }
     let Some(requested_ide) = args.ide.as_deref().filter(|value| !value.is_empty()) else {
         super::emit_error(
             "invalidInput",
@@ -171,6 +186,43 @@ pub fn run(args: InstallArgs) -> u8 {
             eprintln!("{message}");
             1
         }
+    }
+}
+
+fn select_client(
+    reader: &mut impl BufRead,
+    output: &mut impl Write,
+) -> io::Result<Option<&'static str>> {
+    writeln!(output, "Select an MCP client:")?;
+    for (index, client) in CLIENTS.iter().enumerate() {
+        writeln!(output, "  {}. {}", index + 1, client.id)?;
+    }
+    loop {
+        write!(output, "Client number (Enter to cancel): ")?;
+        output.flush()?;
+        let mut line = Vec::new();
+        std::io::Read::take(&mut *reader, 1025).read_until(b'\n', &mut line)?;
+        if line.len() > 1024 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Selection is too long.",
+            ));
+        }
+        let selection = std::str::from_utf8(&line)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?
+            .trim();
+        if selection.is_empty() {
+            return Ok(None);
+        }
+        if let Some(client) = selection
+            .parse::<usize>()
+            .ok()
+            .and_then(|index| index.checked_sub(1))
+            .and_then(|index| CLIENTS.get(index))
+        {
+            return Ok(Some(client.id));
+        }
+        writeln!(output, "Enter a number from 1 to {}.", CLIENTS.len())?;
     }
 }
 
@@ -496,6 +548,36 @@ mod tests {
             ide: Some("cursor".into()),
             ..super::InstallArgs::default()
         }
+    }
+
+    #[test]
+    fn client_picker_retries_invalid_input_and_uses_the_shared_registry() {
+        let mut input = std::io::Cursor::new(b"0\nnot-a-number\n1\n");
+        let mut output = Vec::new();
+        let selected = super::select_client(&mut input, &mut output).expect("select client");
+        assert_eq!(selected, Some(mcp_clients::CLIENTS[0].id));
+        let text = String::from_utf8(output).expect("UTF-8 output");
+        for client in &mcp_clients::CLIENTS {
+            assert!(text.contains(client.id));
+        }
+        assert_eq!(text.matches("Enter a number from").count(), 2);
+    }
+
+    #[test]
+    fn client_picker_cancels_on_eof_or_empty_input() {
+        for input in [b"".as_slice(), b"\n", b" \r\n"] {
+            assert_eq!(
+                super::select_client(&mut std::io::Cursor::new(input), &mut Vec::new())
+                    .expect("cancel selection"),
+                None
+            );
+        }
+    }
+
+    #[test]
+    fn client_picker_bounds_input() {
+        let input = vec![b'1'; 1025];
+        assert!(super::select_client(&mut std::io::Cursor::new(input), &mut Vec::new()).is_err());
     }
 
     #[test]

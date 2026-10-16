@@ -79,6 +79,7 @@ Add a field or file only for a real consumer.
 - Use `octocode-documentation` when the lobby, README, output guide, or references need clarity, accuracy, or structure review.
 - Use `octocode-research` when repository evidence or external skill sources need verification.
 - Use `octocode-eval-benchmark` when a behavioral or activation claim needs measurement.
+- Use [octocode-workflows composition](../octocode-workflows/references/composition.md) when an orchestrator needs to select and sequence actors; direct skill work stays direct.
 
 ## Output
 

@@ -2,7 +2,7 @@
 // registry's own public API (ground truth); the row's `owner`/`repo` (parsed from its repository URL)
 // and the one source lead (hints.viewReleaseSource, else hints.viewRepo; an extras:["hints"] field)
 // must name and open the same repository.
-import { checks, rowData, startServer, writeResults } from './mcp-client.mjs';
+import { findHint, checks, rowData, startServer, writeResults } from './mcp-client.mjs';
 
 const { check, summary } = checks('artifacts');
 const client = await startServer();
@@ -50,8 +50,8 @@ for (const c of CASES) {
   const data = rowData(out);
   const artifact = data?.artifacts?.[0];
   const toolRepo = githubSlug(artifact?.repository ?? artifact?.homepage ?? artifact?.sourceUrl);
-  const leads = ['viewReleaseSource', 'viewRepo'].filter(name => data?.hints?.[name]);
-  const viewHint = data?.hints?.[leads[0]];
+  const leads = ['viewReleaseSource', 'viewRepo'].filter(name => findHint(data, `hints.${name}`));
+  const viewHint = findHint(data, `hints.${leads[0]}`);
   const view = viewHint?.query?.queries?.[0];
   const viewSlug = view ? `${view.owner}/${view.repo}`.toLowerCase() : null;
   table.push({ ecosystem: c.ecosystem, name: c.name, tool: artifact?.version, registry: truth.version, repo: toolRepo, truthRepo: truth.repo, lead: leads.join('+'), ref: view?.ref ?? '', path: view?.path ?? '' });
@@ -68,7 +68,7 @@ for (const c of CASES) {
     // not repeat the label. A release ref is `provenance`/`tag` when checked, else the registry's unchecked
     // claim `registryRef`; no ref → a `viewRepo` lead and no `sourceRef`.
     const refLabels = ['provenance', 'tag', 'registryRef'];
-    const sourceLeads = ['viewReleaseSource', 'viewRepo'].map(name => data?.hints?.[name]).filter(Boolean);
+    const sourceLeads = ['viewReleaseSource', 'viewRepo'].map(name => findHint(data, `hints.${name}`)).filter(Boolean);
     const labelOk = viewHint.source === undefined && sourceLeads.every(lead => lead.verification === undefined)
       && (view.ref ? refLabels.includes(artifact?.verification) && artifact?.sourceRef === view.ref : leads[0] === 'viewRepo' && artifact?.sourceRef === undefined);
     check(`${c.ecosystem}: the row alone labels its source`, labelOk, JSON.stringify({ leads: sourceLeads.map(l => l.verification), lead: viewHint, sourceRef: artifact?.sourceRef, verification: artifact?.verification }));

@@ -15,22 +15,6 @@ const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'));
 // package, not a partial copy of the native and shared packages.
 const external = packageExternals(pkg);
 
-// Vite's `?raw` convention, so tests and the bundle share one asset import:
-// config-view browser assets ship inlined as strings.
-const rawText = {
-  name: 'raw-text',
-  setup(build) {
-    build.onResolve({ filter: /\?raw$/ }, args => ({
-      path: resolve(args.resolveDir, args.path.slice(0, -'?raw'.length)),
-      namespace: 'raw-text',
-    }));
-    build.onLoad({ filter: /.*/, namespace: 'raw-text' }, args => ({
-      contents: readFileSync(args.path, 'utf8'),
-      loader: 'text',
-    }));
-  },
-};
-
 await rm('out', { recursive: true, force: true });
 
 const monorepoSkillsDir = resolve(__dirname, '..', '..', 'skills');
@@ -52,9 +36,7 @@ const buildResult = await esbuild.build({
   treeShaking: true,
   metafile: true,
   external,
-  plugins: [rawText],
   define: {
-    __APP_VERSION__: JSON.stringify(pkg.version),
     __OCTOCODE_BUNDLED__: 'true',
   },
   logLevel: 'info',

@@ -12,6 +12,7 @@
 //! heritage clause naming a same-package class links to its file. Go
 //! same-package references produce no edge.
 
+use super::linking::Linker;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
 
@@ -104,14 +105,15 @@ impl PackageIndex {
         let mut go_dirs = BTreeSet::new();
         for file in known {
             let dir = dir_of(file).to_owned();
-            if file.ends_with(".go") || file.ends_with(".java") {
+            let linker = Linker::of(file);
+            if matches!(linker, Linker::Go | Linker::Java) {
                 index
                     .files_by_dir
                     .entry(dir.clone())
                     .or_default()
                     .push(file.clone());
             }
-            if file.ends_with(".go") {
+            if linker == Linker::Go {
                 let mut current = dir.as_str();
                 loop {
                     if !go_dirs.insert(current.to_owned()) {
@@ -123,11 +125,7 @@ impl PackageIndex {
                     current = dir_of(current);
                 }
             }
-            if let Some(name) = file
-                .rsplit('/')
-                .next()
-                .filter(|name| name.ends_with(".java"))
-            {
+            if let Some(name) = file.rsplit('/').next().filter(|_| linker == Linker::Java) {
                 index
                     .java_by_name
                     .entry(name.to_owned())
@@ -165,10 +163,15 @@ impl PackageIndex {
         self.go_module_missing
     }
 
-    pub(super) fn resolve(&self, ext: &str, spec: &str, importer: &str) -> PackageLink {
-        match ext {
-            "go" => self.resolve_go(spec),
-            "java" => self.resolve_java(spec, importer),
+    pub(super) fn resolve(
+        &self,
+        lang: super::linking::Linker,
+        spec: &str,
+        importer: &str,
+    ) -> PackageLink {
+        match lang {
+            super::linking::Linker::Go => self.resolve_go(spec),
+            super::linking::Linker::Java => self.resolve_java(spec, importer),
             _ => PackageLink::External,
         }
     }
@@ -176,7 +179,9 @@ impl PackageIndex {
     /// The Java class file `name` in the importer's own package: Java code
     /// uses same-package classes without an import.
     pub(super) fn same_package_class(&self, importer: &str, name: &str) -> Option<&str> {
-        if !importer.ends_with(".java") || !name.starts_with(|c: char| c.is_ascii_uppercase()) {
+        if Linker::of(importer) != Linker::Java
+            || !name.starts_with(|c: char| c.is_ascii_uppercase())
+        {
             return None;
         }
         let dir = dir_of(importer);
@@ -271,7 +276,12 @@ mod tests {
             std::fs::read_to_string(path).ok()
         });
         assert_eq!(
-            files(index.resolve("go", "example.com/app/pkg", "main.go")).len(),
+            files(index.resolve(
+                super::super::linking::Linker::Go,
+                "example.com/app/pkg",
+                "main.go"
+            ))
+            .len(),
             201
         );
     }
@@ -308,19 +318,31 @@ mod tests {
             ],
         );
         assert_eq!(
-            files(index.resolve("go", "example.com/app/tsdb", "main.go")),
+            files(index.resolve(
+                super::super::linking::Linker::Go,
+                "example.com/app/tsdb",
+                "main.go"
+            )),
             vec!["tsdb/db.go", "tsdb/head.go"]
         );
         assert_eq!(
-            files(index.resolve("go", "fmt", "main.go")),
+            files(index.resolve(super::super::linking::Linker::Go, "fmt", "main.go")),
             Vec::<String>::new()
         );
         assert_eq!(
-            files(index.resolve("go", "example.com/app/empty", "main.go")),
+            files(index.resolve(
+                super::super::linking::Linker::Go,
+                "example.com/app/empty",
+                "main.go"
+            )),
             vec!["<internal>"]
         );
         assert_eq!(
-            files(index.resolve("go", "example.com/application", "main.go")),
+            files(index.resolve(
+                super::super::linking::Linker::Go,
+                "example.com/application",
+                "main.go"
+            )),
             Vec::<String>::new()
         );
     }
@@ -334,12 +356,20 @@ mod tests {
         let scanned = index(&sub, &["db.go", "chunkenc/chunk.go"]);
         assert!(!scanned.go_module_missing());
         assert_eq!(
-            files(scanned.resolve("go", "example.com/app/tsdb/chunkenc", "db.go")),
+            files(scanned.resolve(
+                super::super::linking::Linker::Go,
+                "example.com/app/tsdb/chunkenc",
+                "db.go"
+            )),
             vec!["chunkenc/chunk.go"]
         );
         // A module import outside the scanned subtree stays external.
         assert_eq!(
-            files(scanned.resolve("go", "example.com/app/model", "db.go")),
+            files(scanned.resolve(
+                super::super::linking::Linker::Go,
+                "example.com/app/model",
+                "db.go"
+            )),
             Vec::<String>::new()
         );
         // No go.mod anywhere: module imports are unlinkable, not external.
@@ -356,7 +386,11 @@ mod tests {
         std::fs::write(dir.path().join("sub/go.mod"), "module example.com/sub\n").expect("sub mod");
         let index = index(dir.path(), &["main.go", "sub/pkg/a.go"]);
         assert_eq!(
-            files(index.resolve("go", "example.com/sub/pkg", "main.go")),
+            files(index.resolve(
+                super::super::linking::Linker::Go,
+                "example.com/sub/pkg",
+                "main.go"
+            )),
             vec!["sub/pkg/a.go"]
         );
     }
@@ -376,27 +410,44 @@ mod tests {
         );
         let importer = "guava/src/com/g/app/Main.java";
         assert_eq!(
-            files(index.resolve("java", "com.g.collect.ImmutableList", importer)),
-            vec!["guava/src/com/g/collect/ImmutableList.java"]
-        );
-        assert_eq!(
-            files(index.resolve("java", "com.g.collect.ImmutableList.Builder", importer)),
+            files(index.resolve(
+                super::super::linking::Linker::Java,
+                "com.g.collect.ImmutableList",
+                importer
+            )),
             vec!["guava/src/com/g/collect/ImmutableList.java"]
         );
         assert_eq!(
             files(index.resolve(
-                "java",
+                super::super::linking::Linker::Java,
+                "com.g.collect.ImmutableList.Builder",
+                importer
+            )),
+            vec!["guava/src/com/g/collect/ImmutableList.java"]
+        );
+        assert_eq!(
+            files(index.resolve(
+                super::super::linking::Linker::Java,
                 "static com.g.base.Preconditions.checkNotNull",
                 importer
             )),
             vec!["guava/src/com/g/base/Preconditions.java"]
         );
         assert_eq!(
-            files(index.resolve("java", "com.g.collect.*", importer)).len(),
+            files(index.resolve(
+                super::super::linking::Linker::Java,
+                "com.g.collect.*",
+                importer
+            ))
+            .len(),
             2
         );
         assert_eq!(
-            files(index.resolve("java", "java.util.List", importer)),
+            files(index.resolve(
+                super::super::linking::Linker::Java,
+                "java.util.List",
+                importer
+            )),
             Vec::<String>::new()
         );
     }

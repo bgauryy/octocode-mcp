@@ -154,7 +154,7 @@ async function main() {
     };
     // Source equality is an evaluator check, performed before the scored routes.
     for (const item of suite) {
-      const into = []; await walkRead('ghGetFileContent', { ...gh, path: `${item.directory}/${item.file}`, minify: 'none', fullContent: true }, into);
+      const into = []; await walkRead('ghGetFileContent', { ...gh, path: `${item.directory}/${item.file}`, fullContent: true }, into);
       const coverage = evidenceCoverage(into, item, sources, fixture);
       run.preflight.push({ case: item.id, responses: into, coverage });
       if (!coverage.complete || coverage.distinctLines !== sources[`${item.directory}/${item.file}`].trimEnd().split('\n').length) throw new Error('Pinned GitHub/local source mismatch');
@@ -169,7 +169,7 @@ async function main() {
           current = { case: item.id, tool, arm, responses: [] }; const begin = run.ledger.length, time = performance.now();
           try {
             const name = `${item.directory}/${item.file}`;
-            const baseRead = name => ({ ...(isLocal(tool) ? {} : gh), path: isLocal(tool) ? path.resolve(fixture, name) : name, minify: 'none' });
+            const baseRead = name => ({ ...(isLocal(tool) ? {} : gh), path: isLocal(tool) ? path.resolve(fixture, name) : name });
             let query = isSearch(tool)
               ? isLocal(tool) ? { path: path.join(fixture, item.directory), matchString: item.keyword, pageSize: 10, matchPageSize: 5 }
                 : { ...gh, path: item.directory, keywords: [item.keyword], pageSize: 10 }

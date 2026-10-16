@@ -1,5 +1,5 @@
 // astRewrite is parked: the contract disables it on every surface, beta
-// included (ISSUES.md). This suite proves the parked state: MCP does not list
+// included. This suite proves the parked state: MCP does not list
 // it, the CLI refuses every call (preview and apply) with the one disabled
 // error, and nothing is written. The preview/apply checks return with the tool.
 import fs from 'node:fs';

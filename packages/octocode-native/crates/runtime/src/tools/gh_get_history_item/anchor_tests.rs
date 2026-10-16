@@ -51,6 +51,111 @@ fn commit_raw(sha: &str, message: &str) -> Value {
 }
 
 #[tokio::test]
+async fn commit_patch_continuations_preserve_match_context_and_exact_stream() {
+    let server = MockServer::builder().start().await;
+    let patch = std::iter::once("@@ -1,47 +1,50 @@".to_owned())
+        .chain((1..=50).map(|line| {
+            if [10, 25, 40].contains(&line) {
+                format!("+needle{line:02}")
+            } else {
+                format!(" context{line:02}")
+            }
+        }))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut raw = commit_raw(HEAD, "matching patches");
+    raw["files"] = json!([{
+        "filename":"sample.rs","status":"modified","additions":3,"deletions":0,
+        "patch":patch
+    }]);
+    mount_json(
+        &server,
+        format!("/api/v3/repos/o/r/commits/{HEAD}"),
+        200,
+        raw,
+    )
+    .await;
+    for context in [0, 5] {
+        let mut query = json!({"operation":"commit","owner":"o","repo":"r","ref":HEAD,
+            "sections":["patches"],"matchString":"needle","contextLines":context,"length":15000});
+        let whole = read(&server, query.clone()).await;
+        let expected = whole["files"][0]["patch"].as_str().expect("whole patch");
+        query["length"] = json!(32);
+        let mut actual = String::new();
+        let mut pages = 0;
+        loop {
+            pages += 1;
+            assert!(pages < 100, "patch walk must terminate");
+            let data = read(&server, query.clone()).await;
+            assert_history_page_contract(&query, &data);
+            actual.push_str(data["files"][0]["patch"].as_str().expect("patch window"));
+            let Some(next) = data.pointer("/next/continuePatch/query") else {
+                break;
+            };
+            let normalized = crate::contracts::validate("ghGetHistoryItem", next.clone())
+                .expect("executable copied patch continuation");
+            query = normalized["queries"][0].clone();
+            assert_eq!(query["contextLines"], context, "{query}");
+        }
+        assert!(pages > 1, "the fixture must exercise continuation");
+        assert_eq!(actual, expected, "contextLines={context}");
+    }
+}
+
+#[tokio::test]
+async fn commit_file_batches_resolve_a_movable_ref_once_before_paging() {
+    let server = MockServer::builder().start().await;
+    let base_url = server.uri();
+    Mock::given(method("GET"))
+        .and(wiremock::matchers::path_regex("/api/v3/repos/o/r/commits/"))
+        .respond_with(move |request: &wiremock::Request| {
+            let reference = request.url.path().rsplit('/').next().expect("ref");
+            if request.headers.get("accept").is_some_and(|accept| {
+                accept == "application/vnd.github.sha"
+            }) {
+                return ResponseTemplate::new(200).set_body_string(HEAD);
+            }
+            let page = request
+                .url
+                .query_pairs()
+                .find(|(key, _)| key == "page")
+                .map(|(_, value)| value.into_owned())
+                .unwrap_or_else(|| "1".to_owned());
+            let moved = reference == "main" && page != "1";
+            let mut raw = commit_raw(if moved { MERGE_BASE } else { HEAD }, "moving branch");
+            raw["files"] = if page == "1" {
+                json!((0..100).map(|i| changed_file(&format!("old-{i:03}.rs"))).collect::<Vec<_>>())
+            } else {
+                json!([changed_file(if moved { "new-only.rs" } else { "old-last.rs" })])
+            };
+            let mut response = ResponseTemplate::new(200).set_body_json(raw);
+            if page == "1" {
+                response = response.insert_header(
+                    "Link",
+                    format!("<{base_url}/api/v3/repos/o/r/commits/{reference}?page=2&per_page=100>; rel=\"next\""),
+                );
+            }
+            response
+        })
+        .mount(&server)
+        .await;
+    let query = json!({"operation":"commit","owner":"o","repo":"r","ref":"main",
+        "sections":["files"],"include":["old-last.rs"]});
+    let data = read(&server, query.clone()).await;
+    assert_history_page_contract(&query, &data);
+    assert_eq!(data["commitSha"], HEAD, "{data}");
+    assert_eq!(data["files"], json!(["M +1 -1 old-last.rs"]), "{data}");
+    let requests = server.received_requests().await.expect("requests");
+    assert_eq!(requests.len(), 3, "one resolution and two pinned batches");
+    assert!(requests[0].url.path().ends_with("/main"));
+    assert!(
+        requests[1..]
+            .iter()
+            .all(|request| request.url.path().ends_with(HEAD))
+    );
+}
+
+#[tokio::test]
 async fn commit_row_carries_its_sha_and_path_stat_files() {
     let server = MockServer::builder().start().await;
     let mut raw = commit_raw(HEAD, "Fix parser");
@@ -82,6 +187,41 @@ async fn commit_row_carries_its_sha_and_path_stat_files() {
     assert!(patch.contains("10\t keep"), "{patch}");
     assert!(patch.contains("11\t-old"), "{patch}");
     assert!(patch.contains("11\t+new"), "{patch}");
+}
+
+/// A commit's file inventory flags a file GitHub sent without a patch, as
+/// a pull request's does: a binary file's `+0 -0` never reads as an empty
+/// change (react v18.2.0...v19.0.0: favicon.ico, graphvizlib.wasm).
+#[tokio::test]
+async fn commit_inventory_flags_files_without_a_patch() {
+    let server = MockServer::builder().start().await;
+    let mut raw = commit_raw(HEAD, "Add assets");
+    raw["files"] = json!([
+        {"filename":"public/favicon.ico","status":"added","additions":0,"deletions":0,
+            "sha":"4444444444444444444444444444444444444444"},
+        {"filename":"src/old.rs","status":"renamed","additions":0,"deletions":0,
+            "previous_filename":"src/older.rs","sha":"5555555555555555555555555555555555555555"},
+    ]);
+    mount_json(
+        &server,
+        format!("/api/v3/repos/o/r/commits/{HEAD}"),
+        200,
+        raw,
+    )
+    .await;
+    let out = read(
+        &server,
+        json!({"operation":"commit","owner":"o","repo":"r","ref":HEAD}),
+    )
+    .await;
+    assert_eq!(
+        out["files"],
+        json!([
+            "A +0 -0 !binary public/favicon.ico",
+            "R +0 -0 src/old.rs <- src/older.rs"
+        ]),
+        "{out}"
+    );
 }
 
 /// `matchString` with no section named searches the patches (as on a pull
@@ -156,6 +296,7 @@ async fn commit_match_string_that_removes_every_file_says_so() {
     assert!(query.get("matchString").is_none(), "{query}");
     assert_eq!(query["include"], json!(["src/"]), "{query}");
     assert_eq!(query["ref"], HEAD, "{query}");
+    assert_eq!(query["sections"], json!(["files"]), "{query}");
 
     let out = read(
         &server,
@@ -174,6 +315,54 @@ async fn commit_match_string_that_removes_every_file_says_so() {
         "{out}"
     );
     assert!(out["next"].get("withoutMatchString").is_none(), "{out}");
+}
+
+/// A comparison's `matchString` that hits none of its changed files is the
+/// same empty answer a commit's is (react v19.0.0...v19.0.1, "zzqqxx"): a
+/// warning, `status: "empty"`, and the pinned read without the literal,
+/// never a bare `files: []` that reads as "nothing changed".
+#[tokio::test]
+async fn compare_match_string_that_removes_every_file_says_so() {
+    let server = MockServer::builder().start().await;
+    mount_json(
+        &server,
+        format!("/api/v3/repos/o/r/compare/{BASE}...{HEAD}"),
+        200,
+        json!({"ahead_by":1,"behind_by":0,"total_commits":1,
+            "base_commit":{"sha":BASE},"merge_base_commit":{"sha":MERGE_BASE},
+            "commits":[commit_raw(HEAD, "Add feature\n\nWhy: the detail")],
+            "files":[changed_file("src/a.rs"), changed_file("src/b.rs")]}),
+    )
+    .await;
+    let out = read(
+        &server,
+        json!({"operation":"compare","owner":"o","repo":"r","base":BASE,"head":HEAD,
+            "matchString":"zzqqxx_nohit"}),
+    )
+    .await;
+    assert_eq!(out["files"], json!([]), "{out}");
+    assert_eq!(out["status"], "empty", "{out}");
+    assert!(
+        out["warnings"]
+            .to_string()
+            .contains("matchString matched 0 of 2 changed files"),
+        "{out}"
+    );
+    let query = &out["next"]["withoutMatchString"]["query"]["queries"][0];
+    assert_eq!(query["operation"], "compare", "{out}");
+    assert!(query.get("matchString").is_none(), "{query}");
+    assert_eq!(
+        (&query["base"], &query["head"]),
+        (&json!(BASE), &json!(HEAD))
+    );
+    // The literal alone chose the patches: without it, the read lists the
+    // files (as the warning says).
+    assert_eq!(query["sections"], json!(["files"]), "{query}");
+    // The filter removed every file: no lead reads one of them.
+    let next = out["next"].as_object().expect("next");
+    for kind in ["readAtCommit", "readParent", "readCommit"] {
+        assert!(!next.contains_key(kind), "{kind}: {out}");
+    }
 }
 
 #[tokio::test]
@@ -385,7 +574,11 @@ async fn pr_match_string_miss_offers_the_unfiltered_read() {
         .into_iter()
         .map(|lead| lead.name)
         .collect::<Vec<_>>();
-    assert_eq!(names, ["withoutMatchString", "readFiles"], "{published}");
+    assert_eq!(
+        names,
+        ["withoutMatchString", "readFiles", "readDiscussion"],
+        "{published}"
+    );
 }
 
 /// A PR `include` that matched no changed file is an empty row whose lead
@@ -446,6 +639,64 @@ async fn commit_match_string_drops_path_only_hits_and_counts_them() {
             .contains("matchString dropped 1 of 2 changed files"),
         "{out}"
     );
+}
+
+/// A `matchString` filters a commit's and a comparison's changed files
+/// before they are paged, as on a pull request: page N is the N-th page of
+/// files whose patch holds the literal, never a page of all files with the
+/// misses cut out (which reads as "matched 0" while later pages hit).
+#[tokio::test]
+async fn commit_and_compare_match_pages_are_pages_of_hits() {
+    let server = MockServer::builder().start().await;
+    let miss = |name: &str| {
+        json!({"filename":name,"status":"modified","additions":1,"deletions":1,
+            "patch":"@@ -1 +1 @@\n-x\n+y"})
+    };
+    let files = json!([
+        miss("src/a.rs"),
+        changed_file("src/b.rs"),
+        miss("src/c.rs"),
+        changed_file("src/d.rs")
+    ]);
+    let mut raw = commit_raw(HEAD, "Fix parser");
+    raw["files"] = files.clone();
+    mount_json(
+        &server,
+        format!("/api/v3/repos/o/r/commits/{HEAD}"),
+        200,
+        raw,
+    )
+    .await;
+    mount_json(
+        &server,
+        format!("/api/v3/repos/o/r/compare/{BASE}...{HEAD}"),
+        200,
+        json!({"ahead_by":1,"behind_by":0,"total_commits":1,
+            "base_commit":{"sha":BASE},"merge_base_commit":{"sha":MERGE_BASE},
+            "commits":[commit_raw(HEAD, "Fix parser")],"files":files}),
+    )
+    .await;
+    for row in [
+        json!({"operation":"commit","owner":"o","repo":"r","ref":HEAD}),
+        json!({"operation":"compare","owner":"o","repo":"r","base":BASE,"head":HEAD,
+            "sections":["patches"]}),
+    ] {
+        let mut paths = Vec::new();
+        for page in [1, 2] {
+            let mut query = row.clone();
+            query["matchString"] = json!("new");
+            query["pageSize"] = json!(1);
+            query["page"] = json!(page);
+            let out = read(&server, query).await;
+            assert!(out.get("status").is_none(), "page {page}: {out}");
+            let files = out["files"].as_array().cloned().unwrap_or_default();
+            paths.extend(files.iter().map(|file| file["path"].clone()));
+            let pages = &out["contentPagination"]["files"];
+            assert_eq!(pages["totalItems"], 2, "page {page}: {out}");
+            assert_eq!(pages["hasMore"], page == 1, "page {page}: {out}");
+        }
+        assert_eq!(paths, [json!("src/b.rs"), json!("src/d.rs")], "{row}");
+    }
 }
 
 /// A changed file GitHub sent without a patch (too large to diff) was never
@@ -555,14 +806,14 @@ async fn compare_match_string_lists_patchless_files_as_unsearched() {
     assert_eq!(search["ref"], MERGE_BASE, "{out}");
 }
 
-/// A comment page whose minified view dropped text offers the raw re-read
-/// of the same comment kinds: running it lists the comments again.
+/// Comment text is GitHub's verbatim text by default: an HTML comment in a
+/// discussion or inline review comment stays, and no raw re-read is needed.
 #[tokio::test]
-async fn pr_raw_body_read_keeps_the_comment_sections() {
+async fn pr_comment_bodies_are_verbatim_by_default() {
     let server = MockServer::builder().start().await;
     mount_pr(&server, json!([])).await;
     let comment = |id: u64| {
-        json!({"id":id,"user":{"login":"rev"},"body":"See <!-- hidden note --> this",
+        json!({"id":id,"user":{"login":"rev"},"body":"See <!-- hidden note --> this \u{1f6a8}",
             "created_at":"2024-01-01T00:00:00Z"})
     };
     mount_json(
@@ -590,25 +841,15 @@ async fn pr_raw_body_read_keeps_the_comment_sections() {
             "sections":["comments","reviewComments"]}),
     )
     .await;
-    let raw = &out["next"]["readRawBody"]["query"]["queries"][0];
-    assert_eq!(raw["minify"], "none", "{out}");
-    assert_eq!(
-        raw["sections"],
-        json!(["comments", "reviewComments"]),
-        "{out}"
-    );
-    let again = read(&server, raw.clone()).await;
-    // Both sections are re-read: the discussion and the inline review
-    // comments, each under its own key.
+    let row = &out["pullRequests"][0];
     for section in ["comments", "reviewComments"] {
         assert_eq!(
-            again["pullRequests"][0][section]
-                .as_array()
-                .map_or(0, Vec::len),
-            1,
-            "{section}: {again}"
+            row[section][0]["body"], "See <!-- hidden note --> this \u{1f6a8}",
+            "{section}: {out}"
         );
     }
+    assert!(row.get("bodyView").is_none(), "{out}");
+    assert!(out.pointer("/next/readRawBody").is_none(), "{out}");
 }
 
 fn assert_history_page_contract(query: &Value, data: &Value) {
@@ -646,8 +887,14 @@ async fn commit_path_scope_keeps_the_unfiltered_observed_count_separate() {
     assert_eq!(data["files"], json!(["M +1 -1 src/a.rs"]), "{data}");
     assert_eq!(data["changedFilesCount"], 3, "unfiltered observed files");
     assert!(data.get("changedFilesCountScope").is_none(), "{data}");
-    assert_eq!(data["filePagination"]["totalItems"], 1, "scoped files");
-    assert_eq!(data["filePagination"]["countScope"], "complete", "{data}");
+    assert_eq!(
+        data["contentPagination"]["files"]["totalItems"], 1,
+        "scoped files"
+    );
+    assert_eq!(
+        data["contentPagination"]["files"]["countScope"], "complete",
+        "{data}"
+    );
 }
 
 #[tokio::test]
@@ -808,11 +1055,17 @@ async fn commit_file_boundary_is_a_lower_bound_with_or_without_a_final_link() {
             all.iter().collect::<std::collections::HashSet<_>>().len(),
             listed
         );
-        assert_eq!(last["filePagination"]["hasMore"], false, "{last}");
+        assert_eq!(
+            last["contentPagination"]["files"]["hasMore"], false,
+            "{last}"
+        );
         if bounded {
             assert_eq!(last["terminalLimit"], true, "{last}");
             assert_eq!(last["isPartial"], true, "{last}");
-            assert_eq!(last["filePagination"]["countScope"], "partial", "{last}");
+            assert_eq!(
+                last["contentPagination"]["files"]["countScope"], "partial",
+                "{last}"
+            );
             assert_eq!(last["changedFilesCountScope"], "partial", "{last}");
             assert_eq!(
                 last["changedFilesCount"], 3000,
@@ -820,7 +1073,10 @@ async fn commit_file_boundary_is_a_lower_bound_with_or_without_a_final_link() {
             );
         } else {
             assert_ne!(last["terminalLimit"], true, "{last}");
-            assert_eq!(last["filePagination"]["countScope"], "complete", "{last}");
+            assert_eq!(
+                last["contentPagination"]["files"]["countScope"], "complete",
+                "{last}"
+            );
         }
         assert!(last["next"].get("nextFilePage").is_none(), "{last}");
     }

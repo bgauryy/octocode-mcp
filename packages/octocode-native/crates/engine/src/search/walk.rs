@@ -13,7 +13,7 @@
 use std::collections::{HashMap, HashSet};
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, PoisonError, RwLock};
 
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use ignore::{Match, WalkBuilder};
@@ -107,6 +107,61 @@ impl Prune {
             && entry.file_type().is_some_and(|kind| kind.is_dir())
             && self.names(entry.file_name())
     }
+
+    /// This list as a default prune of a walk of `root` (one a caller's own
+    /// exclusions never go through): a directory with a listed name is
+    /// pruned outside a git work tree, and inside one only when git ignores
+    /// it (it or a directory on the way below `root`) or it is a
+    /// repository's own `.git`, which git never tracks. A listed name git
+    /// does not ignore is source the repository keeps (a crate's `build/`
+    /// scripts, rustc's `coverage/` pass), so the walk enters it.
+    pub fn at(self, root: &Path) -> RootedPrune {
+        RootedPrune {
+            names: self,
+            root: Arc::from(root),
+            repository: Arc::default(),
+        }
+    }
+}
+
+/// A [`Prune`] list bound to the root of one walk ([`Prune::at`]). The
+/// repository's ignore rules load when the walk first meets a listed name.
+#[derive(Clone)]
+pub struct RootedPrune {
+    names: Prune,
+    root: Arc<Path>,
+    /// `None` outside a git work tree.
+    repository: Arc<std::sync::OnceLock<Option<IgnoreRules>>>,
+}
+
+impl std::fmt::Debug for RootedPrune {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RootedPrune")
+            .field("names", &self.names)
+            .field("root", &self.root)
+            .finish_non_exhaustive()
+    }
+}
+
+impl RootedPrune {
+    /// Whether the walk prunes `path`, an entry below its root.
+    pub fn prunes(&self, path: &Path, is_dir: bool) -> bool {
+        let Some(name) = path
+            .file_name()
+            .filter(|name| is_dir && self.names.names(name))
+        else {
+            return false;
+        };
+        name == ".git"
+            || self
+                .repository
+                .get_or_init(|| {
+                    let rules = IgnoreRules::new(&self.root);
+                    rules.in_repository().then_some(rules)
+                })
+                .as_ref()
+                .is_none_or(|rules| rules.why(path, true).is_some())
+    }
 }
 
 /// The ignore rule that keeps a path out of a walk.
@@ -183,6 +238,45 @@ fn git_exclude_file(dir: &Path) -> Option<PathBuf> {
     Some(git_dir.join("info").join("exclude"))
 }
 
+/// The files outside a walk of `root` whose contents decide its ignore rules
+/// ([`walk_builder`], [`IgnoreRules`]): the `.gitignore` and `.ignore` of each
+/// directory above `root`, the `info/exclude` of a repository whose `.git`
+/// sits at or above `root` (through a worktree's `gitdir:` pointer and
+/// `commondir`), the global excludes file, and the git config files that may
+/// name it. A listed path may not exist: creating it changes the rules too.
+/// Ignore files at or below `root` are walked entries, and a repository
+/// nested below it keeps its exclude file in its own `.git`, which a walk
+/// meets; a caller stamps those from its walk.
+pub fn external_ignore_inputs(root: &Path) -> Vec<PathBuf> {
+    let real = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+    let mut inputs = Vec::new();
+    for dir in real.ancestors().skip(1) {
+        inputs.push(dir.join(".gitignore"));
+        inputs.push(dir.join(".ignore"));
+    }
+    inputs.extend(real.ancestors().filter_map(git_exclude_file));
+    inputs.extend(ignore::gitignore::gitconfig_excludes_path());
+    let config_home = std::env::var_os("XDG_CONFIG_HOME")
+        .filter(|dir| !dir.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| std::env::home_dir().map(|home| home.join(".config")));
+    let system = std::env::var_os("GIT_CONFIG_SYSTEM")
+        .filter(|path| !path.is_empty())
+        .map_or_else(|| PathBuf::from("/etc/gitconfig"), PathBuf::from);
+    inputs.extend(
+        std::env::var_os("GIT_CONFIG_GLOBAL")
+            .filter(|path| !path.is_empty())
+            .map(PathBuf::from)
+            .into_iter()
+            .chain(std::env::home_dir().map(|home| home.join(".gitconfig")))
+            .chain(config_home.map(|dir| dir.join("git/config")))
+            .chain(Some(system)),
+    );
+    let mut seen = HashSet::new();
+    inputs.retain(|path| seen.insert(path.clone()));
+    inputs
+}
+
 /// [`walk_builder`]'s ignore rules for one path below a walk root: whether
 /// the walk leaves the entry out, and which rule decides it. Directory rules
 /// load lazily and are cached for the life of the value.
@@ -193,15 +287,26 @@ pub struct IgnoreRules {
     real_root: Option<PathBuf>,
     /// The directories above the root, nearest first.
     outer: Vec<Level>,
+    /// Some directory above the root holds `.git`.
+    outer_git: bool,
     global: Gitignore,
-    /// Rules of directories at or below the root, by path.
-    inner: Mutex<HashMap<PathBuf, Arc<Level>>>,
+    /// The rules in force in each directory at or below the root, by path.
+    inner: RwLock<HashMap<PathBuf, Arc<Chain>>>,
+}
+
+/// The rules of one directory at or below the root and of each directory
+/// between it and the root, nearest first: what decides its entries.
+struct Chain {
+    levels: Vec<Arc<Level>>,
+    /// A directory on the chain or above the root holds `.git`: git rules
+    /// apply.
+    any_git: bool,
 }
 
 impl IgnoreRules {
     pub fn new(root: &Path) -> Self {
         let real_root = std::fs::canonicalize(root).ok();
-        let outer = real_root
+        let outer: Vec<Level> = real_root
             .iter()
             .flat_map(|real| real.ancestors().skip(1))
             .map(Level::load)
@@ -210,27 +315,60 @@ impl IgnoreRules {
         Self {
             root: root.to_path_buf(),
             real_root,
+            outer_git: outer.iter().any(|level| level.has_git),
             outer,
             global,
-            inner: Mutex::default(),
+            inner: RwLock::default(),
         }
     }
 
-    fn level(&self, dir: &Path) -> Arc<Level> {
-        let mut inner = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
-        if let Some(level) = inner.get(dir) {
-            return Arc::clone(level);
+    /// The rule chain of `dir` (the root or a directory below it), built
+    /// once per directory: a parallel walk reads it for every entry, so the
+    /// cache is read-locked on the hot path.
+    fn chain(&self, dir: &Path) -> Arc<Chain> {
+        if let Some(chain) = self
+            .inner
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(dir)
+        {
+            return Arc::clone(chain);
         }
-        let level = Arc::new(Level::load(dir));
-        inner.insert(dir.to_path_buf(), Arc::clone(&level));
-        level
+        let mut levels = vec![Arc::new(Level::load(dir))];
+        if let Some(parent) = dir
+            .parent()
+            .filter(|parent| dir != self.root && parent.starts_with(&self.root))
+        {
+            levels.extend(self.chain(parent).levels.iter().cloned());
+        }
+        let any_git = self.outer_git || levels.iter().any(|level| level.has_git);
+        Arc::clone(
+            self.inner
+                .write()
+                .unwrap_or_else(PoisonError::into_inner)
+                .entry(dir.to_path_buf())
+                .or_insert_with(|| Arc::new(Chain { levels, any_git })),
+        )
+    }
+
+    /// Whether the root lies in a git work tree (it or a directory above it
+    /// holds `.git`): only there do `.gitignore` rules apply.
+    pub fn in_repository(&self) -> bool {
+        self.chain(&self.root).any_git
     }
 
     /// Whether a walk under the rules leaves out the entry `path` itself
     /// (its directories above are taken as walked). The root is never left
     /// out, and neither is a path outside it.
     pub fn is_ignored(&self, path: &Path, is_dir: bool) -> bool {
-        self.decide(path, is_dir, |_| ()).is_ignore()
+        self.decide_entry(path, is_dir).is_ignore()
+    }
+
+    /// The walker's ignore verdict on the entry `path` itself (its
+    /// directories above taken as walked): left out, re-included by a `!`
+    /// rule (which also keeps a dot entry), or no rule.
+    pub fn decide_entry(&self, path: &Path, is_dir: bool) -> Match<()> {
+        self.decide(path, is_dir, |_| ())
     }
 
     /// The rule that keeps `path` out of a walk: the rule for the topmost
@@ -293,42 +431,78 @@ impl IgnoreRules {
         if relative.as_os_str().is_empty() {
             return Match::None;
         }
-        let inner: Vec<Arc<Level>> = path
-            .ancestors()
-            .skip(1)
-            .take_while(|dir| dir.starts_with(&self.root))
-            .map(|dir| self.level(dir))
-            .collect();
-        let outer_path = self.real_root.as_ref().map(|real| real.join(relative));
-        let levels = inner.iter().map(|level| (level.as_ref(), path)).chain(
-            outer_path
-                .iter()
-                .flat_map(|outer| self.outer.iter().map(move |level| (level, outer.as_path()))),
-        );
-        let any_git =
-            inner.iter().any(|level| level.has_git) || self.outer.iter().any(|level| level.has_git);
-        let (mut dot_ignore, mut gitignore, mut exclude) = (Match::None, Match::None, Match::None);
+        let Some(chain) = path
+            .parent()
+            .filter(|dir| dir.starts_with(&self.root))
+            .map(|dir| self.chain(dir))
+        else {
+            return Match::None;
+        };
+        let any_git = chain.any_git;
+        let mut verdicts = Verdicts::NONE;
         let mut saw_git = false;
-        for (level, matched) in levels {
-            if dot_ignore.is_none() {
-                dot_ignore = level.dot_ignore.matched(matched, is_dir);
-            }
-            if any_git && !saw_git {
-                if gitignore.is_none() {
-                    gitignore = level.gitignore.matched(matched, is_dir);
-                }
-                if exclude.is_none() {
-                    exclude = level.exclude.matched(matched, is_dir);
-                }
+        for level in &chain.levels {
+            verdicts.consult(level, path, is_dir, any_git && !saw_git);
+            saw_git |= level.has_git;
+        }
+        // The rules above the root match the path along the root's real
+        // path; it is spelled only when a rule there is still consulted.
+        let mut outer_path = None;
+        for level in &self.outer {
+            let git = any_git && !saw_git;
+            let consulted = !level.dot_ignore.is_empty()
+                || (git && !(level.gitignore.is_empty() && level.exclude.is_empty()));
+            if consulted
+                && let Some(matched) = outer_path
+                    .get_or_insert_with(|| self.real_root.as_ref().map(|real| real.join(relative)))
+                    .as_deref()
+            {
+                verdicts.consult(level, matched, is_dir, git);
             }
             saw_git |= level.has_git;
         }
+        let Verdicts {
+            dot_ignore,
+            gitignore,
+            exclude,
+        } = verdicts;
         let global = if any_git {
             self.global.matched(path, is_dir)
         } else {
             Match::None
         };
         dot_ignore.or(gitignore).or(exclude).or(global).map(rule)
+    }
+}
+
+/// The nearest rule of each kind met so far on the way up from an entry.
+struct Verdicts<'a> {
+    dot_ignore: Match<&'a ignore::gitignore::Glob>,
+    gitignore: Match<&'a ignore::gitignore::Glob>,
+    exclude: Match<&'a ignore::gitignore::Glob>,
+}
+
+impl<'a> Verdicts<'a> {
+    const NONE: Self = Self {
+        dot_ignore: Match::None,
+        gitignore: Match::None,
+        exclude: Match::None,
+    };
+
+    /// Consult `level`'s rules for `path` where no nearer rule decided;
+    /// its git rules only when `git` (inside a repository, up to its root).
+    fn consult(&mut self, level: &'a Level, path: &Path, is_dir: bool, git: bool) {
+        if self.dot_ignore.is_none() {
+            self.dot_ignore = level.dot_ignore.matched(path, is_dir);
+        }
+        if git {
+            if self.gitignore.is_none() {
+                self.gitignore = level.gitignore.matched(path, is_dir);
+            }
+            if self.exclude.is_none() {
+                self.exclude = level.exclude.matched(path, is_dir);
+            }
+        }
     }
 }
 
@@ -528,6 +702,56 @@ mod tests {
             above.source.as_deref(),
             Some(root.join(".gitignore").as_path())
         );
+    }
+
+    /// As a default prune ([`Prune::at`]), inside a git work tree a listed
+    /// name is pruned only where git ignores it (it or a directory on the
+    /// way) or it is `.git`; outside one, by its name alone.
+    #[test]
+    fn a_default_prune_inside_a_repository_skips_only_ignored_directories() {
+        let dir = tempfile::tempdir().expect("dir");
+        let root = dir.path();
+        fs::create_dir_all(root.join(".git")).expect("git dir");
+        write(&root.join(".gitignore"), "/target/\nout/\n");
+        let prune = || Prune::new([".git", "build", "target", "coverage"]);
+        let rooted = prune().at(root);
+        for (path, pruned) in [
+            (".git", true),
+            ("build", false),
+            ("src/coverage", false),
+            ("target", true),
+            ("out/build", true),
+        ] {
+            assert_eq!(rooted.prunes(&root.join(path), true), pruned, "{path}");
+        }
+        assert!(
+            !rooted.prunes(&root.join("target"), false),
+            "files are not pruned"
+        );
+        let outside = tempfile::tempdir().expect("dir");
+        let rooted = prune().at(outside.path());
+        assert!(rooted.prunes(&outside.path().join("build"), true));
+        assert!(rooted.prunes(&outside.path().join("src/coverage"), true));
+    }
+
+    /// A root's external ignore inputs: the ignore files of the directories
+    /// above it and the repository's exclude file, never its own walked
+    /// `.gitignore`.
+    #[test]
+    fn external_ignore_inputs_name_the_files_above_the_root() {
+        let repo = fixture();
+        let real = fs::canonicalize(repo.path()).expect("real");
+        let inputs = external_ignore_inputs(&repo.path().join("app"));
+        for expected in [
+            real.join(".gitignore"),
+            real.join(".ignore"),
+            real.join(".git/info/exclude"),
+        ] {
+            assert!(inputs.contains(&expected), "{expected:?}: {inputs:?}");
+        }
+        assert!(!inputs.contains(&real.join("app/.gitignore")), "{inputs:?}");
+        let unique = inputs.iter().collect::<std::collections::HashSet<_>>();
+        assert_eq!(unique.len(), inputs.len(), "{inputs:?}");
     }
 
     #[test]

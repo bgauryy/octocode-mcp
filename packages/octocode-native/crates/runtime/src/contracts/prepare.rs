@@ -1,75 +1,101 @@
-use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
-use std::fmt::{Display, Formatter};
+//! The input's shape before any row is validated: the `{"queries":[...]}`
+//! envelope of object rows. A shape the contract does not take is rejected
+//! with an issue whose rule the repair reads (`validate/repair.rs`), never
+//! reshaped here: a nested envelope's fields would be lost silently.
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ContractInputError {
-    message: String,
-}
+use serde_json::{Value, json};
 
-impl ContractInputError {
-    pub(super) fn new(message: impl Into<String>) -> Self {
-        Self {
-            message: message.into(),
-        }
-    }
-}
+use super::ValidationIssue;
 
-impl Display for ContractInputError {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(&self.message)
-    }
-}
+/// The rejection for any input that is not the `{"queries":[...]}` envelope.
+pub const ENVELOPE_REQUIRED: &str =
+    "Tool input must be {\"queries\":[...]}; put each query object in queries[].";
 
-impl std::error::Error for ContractInputError {}
+/// Rule of a bare array of rows: the repair wraps it as `queries`.
+pub(crate) const ENVELOPE_ARRAY: &str = "envelope.array";
+/// Rule of a row that is itself an envelope: the repair lifts its rows.
+pub(crate) const ENVELOPE_NESTED: &str = "envelope.nested";
+/// Rule of any other shape the envelope does not take (no repair).
+const ENVELOPE_SHAPE: &str = "envelope.shape";
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct PreparedQuery {
-    pub query: Map<String, Value>,
-}
-
-/// Applies canonical meta-field defaults to one query: a bare row, a
-/// one-element array, or a one-row `{queries}` envelope. Shape and relation
-/// validation is a later stage that never rewrites tool fields; bulk input
-/// goes through `prepare_many_and_validate`.
-pub fn prepare(_tool_name: &str, input: Value) -> Result<PreparedQuery, ContractInputError> {
-    let object = match input {
-        Value::Array(mut values) => {
-            if values.len() != 1 {
-                return Err(ContractInputError::new(
-                    "singular preparation received multiple queries; use prepare_many_and_validate",
-                ));
-            }
-            match values.remove(0) {
-                Value::Object(query) => query,
-                _ => return Err(ContractInputError::new("query must be an object")),
-            }
-        }
-        Value::Object(mut object) => match object.remove("queries") {
-            Some(Value::Array(mut values)) => {
-                if values.len() != 1 {
-                    return Err(ContractInputError::new(
-                        "singular preparation received multiple queries; use prepare_many_and_validate",
-                    ));
-                }
-                match values.remove(0) {
-                    Value::Object(q) => q,
-                    _ => return Err(ContractInputError::new("query must be an object")),
-                }
-            }
-            Some(_) => return Err(ContractInputError::new("queries must be an array")),
-            None => object,
-        },
-        _ => {
-            return Err(ContractInputError::new("tool input must be an object"));
-        }
+/// The shape issues of `input` for `tool_name`; empty when it is the
+/// envelope of object rows.
+pub(super) fn envelope_issues(tool_name: &str, input: &Value) -> Vec<ValidationIssue> {
+    let issue =
+        |rule: &str, path: Vec<String>, message: String, schema: Option<Value>| ValidationIssue {
+            rule_id: rule.to_owned(),
+            path,
+            message,
+            schema,
+            received: None,
+        };
+    let Some(rows) = input.as_object().and_then(|object| object.get("queries")) else {
+        let rule = if input.as_array().is_some_and(|rows| !rows.is_empty()) {
+            ENVELOPE_ARRAY
+        } else {
+            ENVELOPE_SHAPE
+        };
+        return vec![issue(rule, Vec::new(), ENVELOPE_REQUIRED.to_owned(), None)];
     };
-    Ok(PreparedQuery { query: object })
+    let Some(rows) = rows.as_array() else {
+        return vec![ValidationIssue {
+            rule_id: "schema.type".into(),
+            path: vec!["queries".to_owned()],
+            message: "queries must be an array of query objects.".into(),
+            schema: super::tool_contract_named(tool_name)
+                .and_then(Result::ok)
+                .and_then(|contract| contract.pointer("/inputSchema/properties/queries").cloned()),
+            received: Some(rows.clone()),
+        }];
+    };
+    let envelope_fields = || {
+        let fields = super::tool_contract_named(tool_name)
+            .and_then(Result::ok)
+            .and_then(|tool| tool["inputSchema"]["properties"].as_object())
+            .map(|properties| {
+                properties
+                    .keys()
+                    .filter(|key| *key != "queries")
+                    .cloned()
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        json!({ "envelopeFields": fields })
+    };
+    rows.iter()
+        .enumerate()
+        .filter_map(|(index, row)| {
+            let nested = match row {
+                Value::Object(row) if row.contains_key("queries") => true,
+                Value::Object(_) => return None,
+                Value::Array(_) => true,
+                _ => false,
+            };
+            let path = vec!["queries".to_owned(), index.to_string()];
+            Some(if nested {
+                let mut path = path;
+                path.push("queries".into());
+                issue(
+                    ENVELOPE_NESTED,
+                    path,
+                    "A row holds its own queries: put those rows directly in queries[] and its other fields (responseLength, …) beside queries. Nothing ran.".to_owned(),
+                    Some(envelope_fields()),
+                )
+            } else {
+                issue(
+                    ENVELOPE_SHAPE,
+                    path,
+                    format!("queries[{index}] must be a query object."),
+                    None,
+                )
+            })
+        })
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::prepare;
+    use super::{ENVELOPE_ARRAY, ENVELOPE_NESTED, ENVELOPE_SHAPE, envelope_issues};
     use serde_json::json;
 
     /// Artifact coordinates are trimmed once, by the contract's own
@@ -90,60 +116,67 @@ mod tests {
 
     #[test]
     fn pure_clasify_preparation_preserves_exactly_the_supplied_values() {
-        let query = json!({"id":"decision","mainGoal": "test", "reasoning":"Decide the next evidence read.","resources":[{"id":"source","context": {"value": {"mainGoal": "source data", "debug": true}}}], "questions":[{"id":"relevant",
+        let query = json!({"id":"decision","mainGoal": "test", "reasoning":"Decide the next evidence read.","state":{"text":"one"}, "questions":{"relevant":{
             "type": "noul", "instructions": "Assess supplied state"
-        }]});
-        for input in [
-            query.clone(),
-            json!([query.clone()]),
-            json!({"queries": [query.clone()]}),
-        ] {
-            let prepared = prepare("clasify", input).expect("pure input");
-            assert_eq!(serde_json::Value::Object(prepared.query), query);
-        }
-    }
-
-    #[test]
-    fn injects_no_extras_and_never_invents_goal_or_reasoning() {
+        }}});
         let prepared =
-            prepare("localFetch", json!({"path":"/tmp/a", "mainGoal":" "})).expect("valid input");
-        assert_eq!(prepared.query["mainGoal"], " ");
-        assert!(prepared.query.get("extras").is_none());
-        assert!(prepared.query.get("debug").is_none());
-        assert!(prepared.query.get("reasoning").is_none());
+            crate::contracts::prepare_many_and_validate("clasify", json!({"queries": [query]}))
+                .expect("pure input");
+        assert_eq!(prepared, [query]);
     }
 
+    /// Only the envelope of object rows passes; every other shape is an
+    /// issue the repair can read, never a silent reshape.
     #[test]
-    fn rejects_empty_invalid_and_multiple_query_arrays() {
-        assert!(prepare("localFetch", json!([])).is_err());
-        assert!(prepare("localFetch", json!([1])).is_err());
-        assert!(
-            prepare(
-                "localFetch",
-                json!({"queries":[{"path":"/a"},{"path":"/b"}]})
-            )
-            .is_err()
+    fn only_the_envelope_of_object_rows_has_no_shape_issue() {
+        let rules = |input| {
+            envelope_issues("localFetch", &input)
+                .into_iter()
+                .map(|issue| (issue.rule_id, issue.path.join(".")))
+                .collect::<Vec<_>>()
+        };
+        assert!(rules(json!({"queries":[{"path":"/a"},{"path":"/b"}]})).is_empty());
+        assert_eq!(
+            rules(json!([{"path":"/a"}])),
+            [(ENVELOPE_ARRAY.to_owned(), String::new())]
+        );
+        for empty in [json!([]), json!("x"), json!({"responseLength": 9})] {
+            assert_eq!(rules(empty), [(ENVELOPE_SHAPE.to_owned(), String::new())]);
+        }
+        assert_eq!(
+            rules(
+                json!({"queries":[{"path":"/a"}, 1, {"queries":[{"path":"/b"}]}, [{"path":"/c"}]]})
+            ),
+            [
+                (ENVELOPE_SHAPE.to_owned(), "queries.1".to_owned()),
+                (ENVELOPE_NESTED.to_owned(), "queries.2.queries".to_owned()),
+                (ENVELOPE_NESTED.to_owned(), "queries.3.queries".to_owned()),
+            ]
         );
     }
 
+    /// A nested envelope is rejected whatever it carries: its sibling
+    /// fields are never dropped silently, and the message names no
+    /// internal function.
     #[test]
-    fn accepts_single_element_arrays_for_cli_and_continuation_compat() {
-        for input in [
-            json!([{"path":"/tmp/a"}]),
-            json!({"queries":[{"path":"/tmp/a"}]}),
+    fn a_nested_envelope_is_rejected_not_unwrapped() {
+        for inner in [
+            json!([{"path":"/a","matchString":"fn "}]),
+            json!([{"path":"/a","matchString":"fn "},{"path":"/b","matchString":"fn "}]),
         ] {
-            let prepared = prepare("localFetch", input).expect("single-element query array");
-            assert_eq!(prepared.query["path"], "/tmp/a");
+            let input = json!({"queries":[{"bogus":1,"responseLength":3000,"queries":inner}]});
+            let error = crate::contracts::prepare_many_and_validate("localSearch", input)
+                .expect_err("nested envelope");
+            assert_eq!(error.issues.len(), 1, "{error:?}");
+            assert_eq!(error.issues[0].rule_id, ENVELOPE_NESTED);
+            assert!(!error.issues[0].message.contains("prepare"), "{error:?}");
+            let fields = &error.issues[0].schema.as_ref().expect("schema")["envelopeFields"];
+            assert!(
+                fields
+                    .as_array()
+                    .is_some_and(|f| f.contains(&json!("responseLength"))),
+                "{fields}"
+            );
         }
-    }
-
-    #[test]
-    fn does_not_rewrite_tool_fields() {
-        let prepared = prepare(
-            "astSearch",
-            json!({"operation":"syntax","path":"/tmp/lib.rs"}),
-        )
-        .expect("envelope only");
-        assert_eq!(prepared.query["operation"], "syntax");
     }
 }

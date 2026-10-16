@@ -19,7 +19,7 @@ const MAX_LINE_CHARS: usize = 200;
 const MAX_SCAN_BYTES: usize = 2 * 1024 * 1024;
 
 /// One file's hits at a resolved commit.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(super) enum FileHits {
     /// The lines holding every keyword, else each keyword's first line
     /// (capped at [`MAX_LINES_PER_FILE`]); `total` counts every keyword line.
@@ -89,7 +89,6 @@ pub(super) async fn resolve_files<C: octocode_github::ConditionalCache>(
                     path: path.clone(),
                     reference: Some(sha.to_owned()),
                     force_refresh: false,
-                    session_id: None,
                 },
                 context,
             )
@@ -136,6 +135,8 @@ pub(super) fn scan(
         raw: text.lines().collect(),
         lowered: text.lines().map(str::to_lowercase).collect(),
         key_blocks: crate::security::private_key_block_line_ranges(&text),
+        declared: crate::tools::declarations_cache::all_declarations(&text, path)
+            .unwrap_or_default(),
         path,
     };
     let hits = blob.hits(&needles, goal);
@@ -193,19 +194,38 @@ struct Listing {
     resume_after: Option<u32>,
 }
 
-/// One scanned blob: its lines, as read and lowercased, and the private-key
-/// blocks no listed line may show.
+/// One scanned blob: its lines, as read and lowercased, the private-key
+/// blocks no listed line may show, and the declarations its grammar
+/// outlines (none for a file type without an outline).
 struct Blob<'a> {
     raw: Vec<&'a str>,
     lowered: Vec<String>,
     key_blocks: Vec<(u32, u32)>,
+    declared: Vec<crate::tools::declarations_cache::Declared>,
     path: &'a str,
 }
 
 impl Blob<'_> {
+    /// The declaration whose name the keyword at byte `at` of line `index`
+    /// is: its name line is the hit line, and the name ends past `at`.
+    fn declares(
+        &self,
+        index: usize,
+        at: usize,
+    ) -> Option<&crate::tools::declarations_cache::Declared> {
+        let lower = &self.lowered[index];
+        self.declared.iter().find(|declared| {
+            declared.line == index + 1
+                && !declared.name.is_empty()
+                && lower
+                    .find(&declared.name.to_lowercase())
+                    .is_some_and(|start| start + declared.name.len() > at)
+        })
+    }
+
     /// Every keyword line, in file order.
     fn hits(&self, needles: &[String], goal: &str) -> Vec<Hit> {
-        let terms = goal_terms(goal, needles);
+        let terms = goal_terms(goal, needles, &self.lowered);
         self.lowered
             .iter()
             .enumerate()
@@ -218,7 +238,13 @@ impl Blob<'_> {
                     index,
                     at,
                     every: needles.iter().all(|needle| lower.contains(needle.as_str())),
-                    score: hit_score(&self.lowered, index, at + needle.len(), &terms),
+                    score: hit_score(
+                        &self.lowered,
+                        index,
+                        at + needle.len(),
+                        self.declares(index, at).is_some(),
+                        &terms,
+                    ),
                 })
             })
             .collect()
@@ -238,16 +264,7 @@ impl Blob<'_> {
         let window = (!any_every && needles.len() > 1)
             .then(|| {
                 covering_window(hits, &self.lowered, needles, |start| {
-                    let hit = &hits[start];
-                    declared_head(
-                        self.raw[hit.index],
-                        &self.lowered,
-                        hit.index,
-                        hit.at,
-                        self.path,
-                        security,
-                    )
-                    .is_some()
+                    self.declared_head(&hits[start], security).is_some()
                 })
             })
             .flatten();
@@ -341,14 +358,32 @@ impl Blob<'_> {
         if self.in_key_block(best) {
             return None;
         }
-        declared_head(
-            self.raw[hit.index],
-            &self.lowered,
-            hit.index,
-            hit.at,
-            self.path,
-            security,
-        )
+        self.declared_head(hit, security)
+    }
+
+    /// The hit line as a `matchString` when its keyword is the name of a
+    /// block declaration the grammar outlines (a `matchString` + `block`
+    /// read then returns the whole declaration), the line is short and
+    /// unique in the file, and scanning leaves it unchanged.
+    fn declared_head(&self, hit: &Hit, security: &impl ContentScan) -> Option<String> {
+        self.declares(hit.index, hit.at)
+            .filter(|declared| declared.end > declared.start)?;
+        let head = self.raw[hit.index].trim();
+        if head.is_empty() || head.chars().count() > MAX_LINE_CHARS {
+            return None;
+        }
+        let needle = head.to_lowercase();
+        if self
+            .lowered
+            .iter()
+            .filter(|other| other.contains(&needle))
+            .count()
+            != 1
+        {
+            return None;
+        }
+        let (clean, _) = security.sanitize(head, Path::new(self.path)).ok()?;
+        (clean == head).then_some(clean)
     }
 }
 
@@ -388,148 +423,62 @@ fn covering_window(
     chosen.map(|(_, window)| window)
 }
 
-/// Keywords that open a named block: the word right before a declared name.
-const BLOCK_KEYWORDS: &[&str] = &[
-    "fn",
-    "def",
-    "func",
-    "function",
-    "class",
-    "struct",
-    "interface",
-    "enum",
-    "trait",
-    "impl",
-    "module",
-    "object",
-    "record",
-];
-
-/// The hit line `index` as a `matchString` when its keyword is the name a
-/// block keyword declares (`def merge_setting(`, `pub fn spawn`), the line
-/// is short and unique in the file, and scanning leaves it unchanged.
-fn declared_head(
-    line: &str,
-    lowered: &[String],
-    index: usize,
-    at: usize,
-    path: &str,
-    security: &impl ContentScan,
-) -> Option<String> {
-    let lower = &lowered[index];
-    if hit_shape(lower, at) == 0 {
-        return None;
-    }
-    let before = lower.get(..at)?.trim_end();
-    let keyword = before
-        .rsplit(|c: char| c.is_whitespace())
-        .next()
-        .unwrap_or_default();
-    // Go methods name their receiver first: `func (r *T) Name(`.
-    let go_method = before.trim_start().starts_with("func (") && before.ends_with(')');
-    // A keyword that itself opens with the block keyword (`def merge_setting`).
-    let leads_with_keyword = lower
-        .get(at..)
-        .and_then(|hit| hit.split_whitespace().next())
-        .is_some_and(|word| BLOCK_KEYWORDS.contains(&word));
-    if !BLOCK_KEYWORDS.contains(&keyword) && !go_method && !leads_with_keyword {
-        return None;
-    }
-    let head = line.trim();
-    if head.is_empty() || head.chars().count() > MAX_LINE_CHARS {
-        return None;
-    }
-    let needle = head.to_lowercase();
-    if lowered
-        .iter()
-        .filter(|other| other.contains(&needle))
-        .count()
-        != 1
-    {
-        return None;
-    }
-    let (clean, _) = security.sanitize(head, Path::new(path)).ok()?;
-    (clean == head).then_some(clean)
-}
-
 /// Lines on each side of a hit searched for the goal's other terms.
 const GOAL_CONTEXT_LINES: usize = 8;
 
-/// Words of a goal that say what to look for, not how to ask.
-const GOAL_STOP_WORDS: &[&str] = &[
-    "the",
-    "and",
-    "for",
-    "with",
-    "from",
-    "that",
-    "this",
-    "into",
-    "find",
-    "where",
-    "what",
-    "which",
-    "how",
-    "does",
-    "show",
-    "used",
-    "uses",
-    "use",
-    "code",
-    "file",
-    "files",
-    "line",
-    "lines",
-    "read",
-    "search",
-    "look",
-    "locate",
-    "repo",
-    "repository",
-    "its",
-    "are",
-    "was",
-    "were",
-    "has",
-    "have",
-    "who",
-    "why",
-    "when",
-];
-
-/// Lowercase goal words (three or more characters) that are not stop words
-/// and not part of a searched keyword: the evidence a hit's neighborhood can
-/// add beyond the keyword itself.
-fn goal_terms(goal: &str, needles: &[String]) -> Vec<String> {
+/// Goal words (three or more characters, lowercase) that are not part of a
+/// searched keyword and are rare in this file: on at most one line in
+/// [`COMMON_TERM_LINES`] (and at least one line allowed). A word on more
+/// lines (`the`, `use`, a type every line names) cannot tell one hit's
+/// neighborhood from another's.
+fn goal_terms(goal: &str, needles: &[String], lowered: &[String]) -> Vec<String> {
     let mut terms: Vec<String> = goal
         .to_lowercase()
         .split(|c: char| !c.is_alphanumeric())
-        .filter(|word| word.chars().count() >= 3 && !GOAL_STOP_WORDS.contains(word))
+        .filter(|word| word.chars().count() >= 3)
         .filter(|word| !needles.iter().any(|needle| needle.contains(word)))
         .map(str::to_owned)
         .collect();
     terms.sort_unstable();
     terms.dedup();
+    let common = (lowered.len() / COMMON_TERM_LINES).max(1);
+    terms.retain(|term| {
+        lowered
+            .iter()
+            .filter(|line| line.contains(term.as_str()))
+            .count()
+            <= common
+    });
     terms
 }
 
-/// How well hit line `index` (keyword ending at byte `after`) fits the goal,
-/// ordered by the hit's own shape first (a literal value assigned to the
-/// keyword, `x = 512` or `x: 512`, 3; any other assignment or declaration 2;
-/// other code 1; a comment 0), then by the goal terms named within
-/// [`GOAL_CONTEXT_LINES`]. Shape leads because neighboring prose names goal
-/// terms near uses and definitions alike.
-fn hit_score(lowered: &[String], index: usize, after: usize, terms: &[String]) -> (usize, usize) {
+/// A goal term on more than one line in this many is too common to locate.
+const COMMON_TERM_LINES: usize = 20;
+
+/// How well hit line `index` (keyword ending at byte `after`; `declares`:
+/// the keyword is a declared name) fits the goal, ordered by the hit's own
+/// shape first (a literal value assigned to the keyword, `x = 512` or
+/// `x: 512`, 3; any other assignment or declaration 2; other code 1; a
+/// comment 0), then by the goal terms named within [`GOAL_CONTEXT_LINES`].
+/// Shape leads because neighboring prose names goal terms near uses and
+/// definitions alike.
+fn hit_score(
+    lowered: &[String],
+    index: usize,
+    after: usize,
+    declares: bool,
+    terms: &[String],
+) -> (usize, usize) {
     let window = &lowered[index.saturating_sub(GOAL_CONTEXT_LINES)
         ..(index + GOAL_CONTEXT_LINES + 1).min(lowered.len())];
     let named = terms
         .iter()
         .filter(|term| window.iter().any(|line| line.contains(term.as_str())))
         .count();
-    (hit_shape(&lowered[index], after), named)
+    (hit_shape(&lowered[index], after, declares), named)
 }
 
-fn hit_shape(lower: &str, after: usize) -> usize {
+fn hit_shape(lower: &str, after: usize, declares: bool) -> usize {
     let code = lower.trim_start();
     if ["//", "#", "/*", "*", "--", "<!--", "\"\"\""]
         .iter()
@@ -558,25 +507,7 @@ fn hit_shape(lower: &str, after: usize) -> usize {
                 .any(|word| value.starts_with(word));
         return if literal { 3 } else { 2 };
     }
-    let before = lower.get(..after).unwrap_or_default();
-    let declared = [
-        "fn ",
-        "def ",
-        "func ",
-        "function ",
-        "class ",
-        "const ",
-        "let ",
-        "var ",
-        "static ",
-        "type ",
-        "struct ",
-        "interface ",
-        "enum ",
-    ]
-    .iter()
-    .any(|word| before.contains(word));
-    if declared { 2 } else { 1 }
+    if declares { 2 } else { 1 }
 }
 
 /// Char index in `line` of byte offset `at` in its lowercase form (lowercasing
@@ -615,13 +546,14 @@ mod tests {
 
     use crate::security::scan::Passthrough;
 
-    /// A hit on a declared name carries its declaration line, so the
-    /// read lead returns the whole block; a call or a repeated line does not.
+    /// A hit on a name the grammar's outline declares carries its
+    /// declaration line, so the read lead returns the whole block; a call,
+    /// a comment or a repeated line does not.
     #[test]
     fn a_declared_hit_names_its_unique_declaration_line() {
-        let declaration = |text: &str, keyword: &str| match scan(
+        let declared_in = |path: &str, text: &str, keyword: &str| match scan(
             text.as_bytes(),
-            "a.py",
+            path,
             &[keyword.into()],
             "",
             &Passthrough,
@@ -629,6 +561,7 @@ mod tests {
             FileHits::Lines { declaration, .. } => declaration,
             other => panic!("{other:?}"),
         };
+        let declaration = |text: &str, keyword: &str| declared_in("a.py", text, keyword);
         let text =
             "x = 1\n\ndef merge_setting(request, session):\n    return 1\n\nmerge_setting(a, b)\n";
         assert_eq!(
@@ -649,11 +582,17 @@ mod tests {
             None
         );
         assert_eq!(
-            declaration(
-                "func (s *Server) ListenAndServe() error {\n}\n",
+            declared_in(
+                "server.go",
+                "package http\n\nfunc (s *Server) ListenAndServe() error {\n\treturn nil\n}\n",
                 "listenandserve"
             ),
             Some("func (s *Server) ListenAndServe() error {".to_owned())
+        );
+        // A parameter named like the keyword is no declaration of it.
+        assert_eq!(
+            declaration("def run(merge_setting):\n    pass\n", "merge_setting"),
+            None
         );
         assert_eq!(
             declaration("# def merge_setting(a):\n", "merge_setting"),
@@ -874,9 +813,13 @@ mod tests {
     #[test]
     fn spread_keywords_anchor_on_the_declaration_window() {
         let mut lines = vec![String::new(); 900];
-        lines[128] = "        self.trust_env = trust_env".into();
+        lines[0] = "class Session:".into();
+        lines[127] = "    def configure(self, env):".into();
+        lines[128] = "        self.trust_env = env".into();
+        lines[490] = "    def reset(self):".into();
         lines[491] = "        self.trust_env = True".into();
-        lines[640] = "        settings = self.merge_environment_settings(".into();
+        lines[639] = "    def request(self, url):".into();
+        lines[640] = "        settings = self.merge_environment_settings(url)".into();
         lines[830] =
             "    def merge_environment_settings(self, url, proxies, stream, verify, cert):".into();
         lines[844] = "        if self.trust_env:".into();

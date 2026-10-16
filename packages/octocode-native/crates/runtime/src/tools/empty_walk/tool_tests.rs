@@ -117,8 +117,9 @@ fn local_search() -> Tool {
         run: |root, query| {
             let (paths, security) = simple_policy(root);
             let query: LocalSearchQuery = serde_json::from_value(query.clone()).expect("query");
-            let result = execute_local_search(&query, &paths, &security, &NeverCancel, None, None)
-                .expect("search");
+            let result =
+                execute_local_search(&query, &paths, &security, &NeverCancel, None, None, None)
+                    .expect("search");
             serde_json::to_value(result).expect("result")
         },
         found: |out| non_empty(out, "files"),
@@ -235,7 +236,7 @@ fn tools() -> Vec<Tool> {
         ast_match(),
         ast_symbols(),
         structure("tree", &FLAGGED),
-        structure("files", &[Cause::Ignored, Cause::DefaultExcluded]),
+        structure("files", &FLAGGED),
         ast_rewrite(),
     ]
 }
@@ -263,12 +264,17 @@ fn lead_query(out: &Value, channel: &str) -> Option<Value> {
         .cloned()
 }
 
-/// `root` with a git marker, a visible markdown file, and the scenario's
-/// skipped directory holding `file`.
+/// `root` with a visible markdown file and the scenario's skipped directory
+/// holding `file`; a git marker and `.gitignore` when the scenario has
+/// ignore rules. Without rules it lies outside any git work tree, where a
+/// default-excluded name is pruned by its name alone (inside one, only
+/// where git ignores it).
 fn repo(scenario: &Scenario, file: &str, text: &str) -> Fixture {
     let root = Fixture::new();
-    std::fs::create_dir(root.0.join(".git")).expect("repository marker");
-    std::fs::write(root.0.join(".gitignore"), scenario.gitignore).expect("gitignore");
+    if !scenario.gitignore.is_empty() {
+        std::fs::create_dir(root.0.join(".git")).expect("repository marker");
+        std::fs::write(root.0.join(".gitignore"), scenario.gitignore).expect("gitignore");
+    }
     std::fs::write(root.0.join("visible.md"), "nothing here\n").expect("visible");
     std::fs::create_dir_all(root.0.join(scenario.dir)).expect("skipped dir");
     std::fs::write(root.0.join(scenario.dir).join(file), text).expect("skipped file");

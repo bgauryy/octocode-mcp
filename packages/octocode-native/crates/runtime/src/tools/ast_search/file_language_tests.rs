@@ -137,7 +137,8 @@ fn match_parses_files_named_by_language_globs() {
 }
 
 /// Without `languageGlobs`, the files no grammar parses are named in one
-/// warning, with the field that parses them; the parsed scope stays whole.
+/// warning by their workspace paths, with the field that maps them to a
+/// grammar; the parsed scope stays whole.
 #[test]
 fn match_reports_files_skipped_without_a_grammar() {
     let root = Fixture::new();
@@ -154,10 +155,12 @@ fn match_reports_files_skipped_without_a_grammar() {
     assert_eq!(warnings.len(), 1, "{out}");
     let warning = warnings[0].as_str().expect("warning text");
     assert!(warning.starts_with("3 files skipped"), "{warning}");
-    for name in ["noext", "d.tsx.tmpl", "e.typescript"] {
-        assert!(warning.contains(name), "{name}: {warning}");
-    }
-    assert!(warning.contains("set languageGlobs"), "{warning}");
+    // Named as row paths read: workspace-relative, so each can be read as is.
+    assert!(
+        warning.contains("(d.tsx.tmpl, e.typescript, noext)"),
+        "{warning}"
+    );
+    assert!(warning.contains("languageGlobs maps"), "{warning}");
     assert!(out.get("isPartial").is_none(), "{out}");
 }
 
@@ -239,7 +242,7 @@ fn an_overridden_outline_is_cached_under_the_parser_it_used() {
     let typescript =
         crate::tools::ast_rule::primary_extension("typescript").expect("typescript extension");
     let cached =
-        crate::tools::declarations_cache::extract_as(SCRIPT, &canonical, Some(&typescript), || {
+        crate::tools::declarations_cache::extract(SCRIPT, &canonical, Some(&typescript), || {
             panic!("the typescript outline is cached")
         });
     assert!(cached.is_some(), "the overridden parse is cached");
@@ -250,8 +253,6 @@ fn an_overridden_outline_is_cached_under_the_parser_it_used() {
         crate::tools::ast_rule::primary_extension("javascript").expect("javascript extension");
     assert_ne!(javascript, typescript);
     let other =
-        crate::tools::declarations_cache::extract_as(SCRIPT, &canonical, Some(&javascript), || {
-            None
-        });
+        crate::tools::declarations_cache::extract(SCRIPT, &canonical, Some(&javascript), || None);
     assert!(other.is_none(), "another override never reuses the entry");
 }

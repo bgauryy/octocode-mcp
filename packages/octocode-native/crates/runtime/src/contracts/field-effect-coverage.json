@@ -84,9 +84,6 @@
           "consumed",
           "forwarded"
         ],
-        "source.query.minify": [
-          "consumed"
-        ],
         "source.query.owner": [
           "forwarded"
         ],
@@ -620,6 +617,10 @@
         "head": [
           "forwarded"
         ],
+        "headSha": [
+          "consumed",
+          "continuation"
+        ],
         "include": [
           "forwarded",
           "output-control"
@@ -635,10 +636,6 @@
           "forwarded"
         ],
         "minChanges": [
-          "forwarded",
-          "output-control"
-        ],
-        "minify": [
           "forwarded",
           "output-control"
         ],
@@ -1057,6 +1054,11 @@
         ],
         "time.modifiedWithin": [
           "consumed"
+        ],
+        "walkOffset": [
+          "consumed",
+          "output-control",
+          "continuation"
         ]
       }
     },
@@ -1111,6 +1113,9 @@
         ],
         "languageGlobs": [
           "validated",
+          "consumed"
+        ],
+        "line": [
           "consumed"
         ],
         "mainGoal": [
@@ -1233,11 +1238,6 @@
           "consumed",
           "output-control"
         ],
-        "diagnosticSnapshot": [
-          "consumed",
-          "output-control",
-          "continuation"
-        ],
         "entrypoints": [
           "consumed"
         ],
@@ -1284,6 +1284,11 @@
         ],
         "rustWorkspace": [
           "consumed"
+        ],
+        "snapshot": [
+          "consumed",
+          "output-control",
+          "continuation"
         ],
         "source": [
           "consumed"
@@ -1546,6 +1551,11 @@
         ]
       },
       "fields": {
+        "candidatePage": [
+          "consumed",
+          "output-control",
+          "continuation"
+        ],
         "contextLines": [
           "consumed",
           "output-control"

@@ -286,7 +286,6 @@ const RETIRED_SCAN_ROOTS = [
   'skills',
   'skills-dev',
   'skills-beta',
-  'ISSUES.md',
   'octocode-local-testing/harness',
   'packages/octocode-benchmark/compare/github-questions',
   'octocode-local-testing/validate/local',

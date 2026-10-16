@@ -63,7 +63,7 @@ struct Position {
 impl Outline {
     /// The outline of `source`; `None` when no extractor supports the file.
     pub(super) fn of(source: &str, canonical_path: &str) -> Option<Self> {
-        let raw = crate::tools::declarations_cache::extract(source, canonical_path, false, || {
+        let raw = crate::tools::declarations_cache::extract(source, canonical_path, None, || {
             octocode_engine::portable::extract_declarations(source, canonical_path)
         })?;
         // Only the declarations' names, kinds and lines are read; every

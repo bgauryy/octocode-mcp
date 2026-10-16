@@ -14,6 +14,11 @@
 //! measured workloads would see.
 //!
 //! Run: `cargo bench -p octocode-native --bench page_replay`.
+//!
+//! Profile the replay path alone: `PAGE_REPLAY_PROFILE=<n>` serves the same
+//! continuation `n` times per workload and skips the other measurements, e.g.
+//! `PAGE_REPLAY_PROFILE=300 samply record <bench binary built with
+//! --profile profiling>`.
 #![allow(clippy::expect_used, reason = "benchmark setup")]
 
 #[allow(
@@ -158,6 +163,18 @@ async fn measure(runtime: &ToolRuntime, workload: &Workload, filler: &str) -> Me
     measured
 }
 
+/// Replay-only loop for a sampling profiler: one page 1, then `repeats`
+/// continuations served from the memo.
+async fn replay_only(runtime: &ToolRuntime, workload: &Workload, repeats: usize) {
+    let first = json!({"queries": workload.queries, "responseLength": RESPONSE_LENGTH});
+    let (page_one, _) = call(runtime, workload.tool, first).await;
+    let next = page_one["responsePagination"]["next"]["query"].clone();
+    for _ in 0..repeats {
+        let (replayed, _) = call(runtime, workload.tool, next.clone()).await;
+        assert_ne!(replayed["responsePagination"]["restart"], true);
+    }
+}
+
 fn median(samples: &[Duration]) -> f64 {
     let mut ms: Vec<f64> = samples.iter().map(|d| d.as_secs_f64() * 1e3).collect();
     ms.sort_by(f64::total_cmp);
@@ -206,6 +223,19 @@ fn main() {
         .enable_all()
         .build()
         .expect("tokio runtime");
+    if let Some(repeats) = std::env::var("PAGE_REPLAY_PROFILE")
+        .ok()
+        .and_then(|value| value.parse().ok())
+    {
+        tokio.block_on(async {
+            let runtime = workspace.runtime(&[]);
+            for workload in workloads(&root, &wide) {
+                replay_only(&runtime, &workload, repeats).await;
+            }
+            runtime.close().await;
+        });
+        return;
+    }
     let results: Vec<Measured> = tokio.block_on(async {
         let runtime = workspace.runtime(&[]);
         let mut results = Vec::new();

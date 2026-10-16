@@ -3,9 +3,9 @@
 // Integration test crate — assertions use unwrap/expect/panic freely.
 #![allow(clippy::expect_used, clippy::panic)]
 
-use crate::support;
+use crate::support::{self, Run as _};
 
-use serde_json::json;
+use serde_json::{Value, json};
 use support::{Workspace, call, inventory_len, row_data, row_status};
 use wiremock::matchers::{method, path, path_regex, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -79,10 +79,13 @@ async fn compare_pages_carry_one_collection_each_and_pin_both_refs() {
     ] {
         assert!(data.get(absent).is_none(), "{absent}: {data}");
     }
-    assert_eq!(data["filePagination"]["countScope"], "partial", "{data}");
+    assert_eq!(
+        data["contentPagination"]["files"]["countScope"], "partial",
+        "{data}"
+    );
     // The files past the cap are reached through the range's commits: a
     // 100-commit page lists them in batch-sized pages.
-    let list = &data["hints"]["listCommits"]["query"]["queries"][0];
+    let list = &crate::support::checks::hint(&data, "listCommits")["query"]["queries"][0];
     assert_eq!(list["sections"], json!(["commits"]), "{data}");
     assert_eq!(list["head"], HEAD_SHA, "{data}");
     assert!(
@@ -101,13 +104,20 @@ async fn compare_pages_carry_one_collection_each_and_pin_both_refs() {
     assert_eq!(data["commits"][0]["messageHeadline"], "c0", "{data}");
     assert!(data["commits"][0].get("message").is_none(), "{data}");
     assert_eq!(
-        data["hints"]["readCommit"]["query"]["queries"][0]["ref"], data["commits"][0]["commitSha"],
+        crate::support::checks::hint(&data, "readCommit")["query"]["queries"][0]["ref"],
+        data["commits"][0]["commitSha"],
         "{data}"
     );
     // The commit list is count-cut with a known total (`totalCommits`):
     // its page states the total and the page count.
-    assert_eq!(data["pagination"]["totalItems"], 150, "{data}");
-    assert_eq!(data["pagination"]["totalPages"], 2, "{data}");
+    assert_eq!(
+        data["contentPagination"]["commits"]["totalItems"], 150,
+        "{data}"
+    );
+    assert_eq!(
+        data["contentPagination"]["commits"]["totalPages"], 2,
+        "{data}"
+    );
     // The comparison answers what changed first: its files lead its commits.
     let order = |key: &str| {
         data.as_object()
@@ -155,6 +165,44 @@ async fn compare_pages_carry_one_collection_each_and_pin_both_refs() {
     let (first_shas, second_shas) = (shas(&data["commits"]), shas(&commits["commits"]));
     assert_eq!(first_shas.len(), 100, "{data}");
     assert!(first_shas.is_disjoint(&second_shas), "{commits}");
+    // The last commit page keeps its page object.
+    assert_eq!(
+        commits["contentPagination"]["commits"],
+        json!({"currentPage":2,"totalPages":2,"pageSize":100,"totalItems":150,"hasMore":false}),
+        "{commits}"
+    );
+    // A commit page past the last is the shared out-of-range outcome, never
+    // a bare `commits:[]` beside `aheadBy:150`.
+    Mock::given(method("GET"))
+        .and(path(format!(
+            "/api/v3/repos/a/b/compare/{BASE_SHA}...{HEAD_SHA}"
+        )))
+        .and(query_param("page", "3"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "status":"ahead","ahead_by":150,"behind_by":0,"total_commits":150,
+            "base_commit":{"sha":BASE_SHA},"merge_base_commit":{"sha":BASE_SHA},
+            "commits":[],"files":[]
+        })))
+        .with_priority(1)
+        .mount(&server)
+        .await;
+    let past = call(
+        &runtime,
+        "ghGetHistoryItem",
+        json!({"operation":"compare","owner":"a","repo":"b","base":BASE_SHA,"head":HEAD_SHA,
+            "pageSize":100,"page":3,"sections":["commits"]}),
+    )
+    .await
+    .expect("commit page past the end");
+    let past_row = &past.structured_content["results"][0];
+    assert_eq!(row_status(&past), "outOfRange", "{past_row}");
+    let past = row_data(&past);
+    assert_eq!(past["reason"], "page 3 of 2", "{past}");
+    assert_eq!(
+        past["contentPagination"]["commits"]["outOfRange"], true,
+        "{past}"
+    );
+    assert!(past["next"]["restart"].is_object(), "{past}");
     // The commits section alone lists the same first page as the summary.
     let section = call(
         &runtime,
@@ -185,7 +233,7 @@ async fn capped_compare_with_a_path_leads_to_the_path_history() {
     .expect("compare");
     let data = row_data(&out).clone();
     assert_eq!(data["files"], json!([]), "{data}");
-    let lead = &data["hints"]["narrowScope"];
+    let lead = &crate::support::checks::hint(&data, "narrowScope");
     assert_eq!(lead["tool"], "ghSearchHistory", "{data}");
     let row = &lead["query"]["queries"][0];
     assert_eq!(row["operation"], "commit", "{data}");
@@ -264,6 +312,78 @@ async fn bad_compare_ref_names_refs_not_a_sha() {
     runtime.close().await;
 }
 
+/// Past GitHub's 300-file compare list the two commits' trees name every
+/// other changed path (react v18.2.0...v19.0.0: 300 of thousands): the
+/// file list is complete, those rows carry no line counts, and no cap
+/// marker or commit-walk lead remains.
+#[tokio::test]
+async fn capped_compare_reaches_every_changed_path_through_the_trees() {
+    let server = MockServer::builder().start().await;
+    mount_capped_compare(&server).await;
+    let entry =
+        |path: &str, sha: &str| json!({"path":path,"type":"blob","mode":"100644","sha":sha});
+    let listed = |sha: &str| {
+        (0..300)
+            .map(|n| entry(&format!("src/f{n:03}.rs"), sha))
+            .collect::<Vec<_>>()
+    };
+    let mut base = listed(&"4".repeat(40));
+    base.push(entry("lib/old.rs", &"5".repeat(40)));
+    base.push(entry("lib/same.rs", &"6".repeat(40)));
+    let mut head = listed(&"3".repeat(40));
+    head.push(entry("lib/new.rs", &"7".repeat(40)));
+    head.push(entry("lib/same.rs", &"6".repeat(40)));
+    for (sha, tree) in [(BASE_SHA, base), (HEAD_SHA, head)] {
+        Mock::given(method("GET"))
+            .and(path(format!("/api/v3/repos/a/b/git/trees/{sha}")))
+            .and(query_param("recursive", "1"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(json!({"sha":sha,"truncated":false,"tree":tree})),
+            )
+            .expect(2)
+            .mount(&server)
+            .await;
+    }
+    let workspace = Workspace::new();
+    let runtime = workspace.runtime(&[("GITHUB_API_URL", format!("{}/api/v3", server.uri()))]);
+    let read = call(
+        &runtime,
+        "ghGetHistoryItem",
+        json!({"operation":"compare","owner":"a","repo":"b","base":"v1","head":"v2",
+               "sections":["files"],"include":["lib/**"],"extras":["hints","stats"]}),
+    )
+    .await
+    .expect("compare past the cap");
+    let data = row_data(&read).clone();
+    assert_eq!(row_status(&read), "success", "{data}");
+    assert_eq!(
+        data["files"],
+        json!([{"lib/": ["A !omitted new.rs", "D !omitted old.rs"]}]),
+        "{data}"
+    );
+    assert!(data.get("partialReasons").is_none(), "{data}");
+    assert!(
+        crate::support::checks::hint(&data, "listCommits").is_null(),
+        "{data}"
+    );
+    assert!(data["warnings"].to_string().contains("trees"), "{data}");
+    // The tree source is stated once: a later page lists its rows without
+    // repeating it.
+    let later = call(
+        &runtime,
+        "ghGetHistoryItem",
+        json!({"operation":"compare","owner":"a","repo":"b","base":BASE_SHA,"head":HEAD_SHA,
+               "sections":["files"],"include":["lib/**"],"pageSize":1,"page":2,"extras":[]}),
+    )
+    .await
+    .expect("later page past the cap");
+    let later = row_data(&later).clone();
+    assert_eq!(later["files"], json!(["D !omitted lib/old.rs"]), "{later}");
+    assert!(later.get("warnings").is_none(), "{later}");
+    runtime.close().await;
+}
+
 /// `include` scopes a comparison's files like a pull request's; past
 /// GitHub's 300-file compare list a scoped path is disclosed as possibly
 /// missing, with the path's commit history as the lead.
@@ -289,9 +409,12 @@ async fn compare_include_scopes_files_and_capped_scope_leads_to_path_history() {
         "{data}"
     );
     assert!(!files.contains("f002.rs"), "{data}");
-    // The top-level count is the comparison's; the scope's is its page's.
-    assert_eq!(data["changedFilesCount"], 300, "{data}");
-    assert_eq!(data["filePagination"]["totalItems"], 101, "{data}");
+    // At GitHub's cap the comparison's count is only a floor: no count is
+    // claimed. An omitted pageSize fills the response page, so the scope's
+    // 101 files are one complete page: listed, with no files page block.
+    assert!(data.get("changedFilesCount").is_none(), "{data}");
+    assert!(data["contentPagination"].get("files").is_none(), "{data}");
+    assert_eq!(files.matches(".rs").count(), 101, "{data}");
     let beyond = call(
         &runtime,
         "ghGetHistoryItem",
@@ -305,9 +428,10 @@ async fn compare_include_scopes_files_and_capped_scope_leads_to_path_history() {
         data["warnings"].to_string().contains("300 changed files"),
         "{data}"
     );
-    let row = &data["hints"]["narrowScope"]["query"]["queries"][0];
+    let row = &crate::support::checks::hint(&data, "narrowScope")["query"]["queries"][0];
     assert_eq!(
-        data["hints"]["narrowScope"]["tool"], "ghSearchHistory",
+        crate::support::checks::hint(&data, "narrowScope")["tool"],
+        "ghSearchHistory",
         "{data}"
     );
     assert_eq!(row["path"], "lib/", "{data}");
@@ -350,10 +474,11 @@ async fn compare_patch_view_reads_head_and_merge_base() {
         "{data}"
     );
     assert_eq!(
-        data["hints"]["readAtCommit"]["query"]["queries"][0]["ref"], HEAD_SHA,
+        crate::support::checks::hint(data, "readAtCommit")["query"]["queries"][0]["ref"],
+        HEAD_SHA,
         "{data}"
     );
-    let parent = &data["hints"]["readParent"]["query"]["queries"][0];
+    let parent = &crate::support::checks::hint(data, "readParent")["query"]["queries"][0];
     assert_eq!(
         parent["ref"], "3333333ccccccccccccccccccccccccccccccccc",
         "{data}"
@@ -403,5 +528,80 @@ async fn compare_match_string_keeps_only_hit_files() {
         patch.contains("needle") && !patch.contains("\n a\n"),
         "{patch}"
     );
+    runtime.close().await;
+}
+
+/// A comparison's budget-sized file page pins its grid: its
+/// `next.nextFilePage`, copied unchanged, continues the same file list alone
+/// or batched with another row, so every walk lists each file exactly once.
+#[tokio::test]
+async fn compare_file_page_continuations_continue_the_same_grid_in_any_batch() {
+    let server = MockServer::builder().start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/repos/a/b/commits/v2"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(HEAD_SHA))
+        .mount(&server)
+        .await;
+    let files = (0..250)
+        .map(|n| json!({"filename":format!("f{n:03}.rs"),"status":"modified","additions":1,"deletions":1,"sha":"3".repeat(40)}))
+        .collect::<Vec<_>>();
+    Mock::given(method("GET"))
+        .and(path_regex(format!(
+            "^/api/v3/repos/a/b/compare/(v1|{BASE_SHA})\\.\\.\\.{HEAD_SHA}$"
+        )))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "status":"ahead","ahead_by":1,"behind_by":0,"total_commits":1,
+            "base_commit":{"sha":BASE_SHA},"merge_base_commit":{"sha":BASE_SHA},
+            "commits":[{"sha":"9".repeat(40),"commit":{"message":"c","author":{"name":"a","date":"2024-01-01T00:00:00Z"}}}],
+            "files":files
+        })))
+        .mount(&server)
+        .await;
+    let workspace = Workspace::new();
+    let runtime = workspace.runtime(&[("GITHUB_API_URL", format!("{}/api/v3", server.uri()))]);
+    let row = json!({"operation":"compare","owner":"a","repo":"b","base":"v1","head":"v2",
+        "mainGoal":"g","reasoning":"r","sections":["files"]});
+    let other = json!({"operation":"compare","owner":"a","repo":"b","base":"v1","head":"v2",
+        "mainGoal":"g","reasoning":"r","sections":["commits"]});
+    let mut calls = 0;
+    for first_batched in [true, false] {
+        let mut seen = Vec::new();
+        let mut next = Some(row.clone());
+        let mut batched = first_batched;
+        while let Some(query) = next {
+            let queries = if batched {
+                json!([query, other.clone()])
+            } else {
+                json!([query])
+            };
+            calls += 1;
+            let outcome = runtime
+                .run(
+                    format!("grid-{calls}"),
+                    "ghGetHistoryItem".into(),
+                    json!({ "queries": queries }),
+                )
+                .await
+                .expect("compare file page");
+            let content = outcome.structured_content;
+            assert!(content.get("responsePagination").is_none(), "{content}");
+            let data = &content["results"][0]["data"];
+            let page = data["files"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .filter_map(|row| row.rsplit(' ').next())
+                .map(str::to_owned)
+                .collect::<Vec<_>>();
+            assert!(!page.is_empty(), "an empty page mid-walk: {data}");
+            seen.extend(page);
+            next = data.pointer("/next/nextFilePage/query/queries/0").cloned();
+            batched = !batched;
+        }
+        let unique = seen.iter().collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(unique.len(), seen.len(), "a file repeated");
+        assert_eq!(seen.len(), 250, "{seen:?}");
+    }
     runtime.close().await;
 }

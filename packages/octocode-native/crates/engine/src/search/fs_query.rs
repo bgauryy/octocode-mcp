@@ -11,10 +11,21 @@ use crate::error::{Error, ErrorKind};
 use crate::text::file_extension::extension_of;
 use crate::types::{FileSystemEntry, FileSystemQueryOptions, FileSystemQueryResult};
 
-/// A walk's policy callback: the path and its directory-entry type (`None`
-/// for the root, or when the platform did not report it). `false` leaves the
-/// entry out, and a directory with everything under it.
-pub type EntryFilter<'a> = dyn Fn(&Path, Option<fs::FileType>) -> bool + 'a;
+/// Whether the walk inspects an entry now or replays one an earlier window
+/// of a resumed walk (`skip_entries`) already inspected. A policy callback
+/// that counts what it leaves out counts only a [`Visit::Fresh`] entry: the
+/// earlier window counted a replayed one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Visit {
+    Fresh,
+    Replayed,
+}
+
+/// A walk's policy callback: the path, its directory-entry type (`None`
+/// for the root, or when the platform did not report it) and whether the
+/// entry is [`Visit::Fresh`]. `false` leaves the entry out, and a directory
+/// with everything under it.
+pub type EntryFilter<'a> = dyn Fn(&Path, Option<fs::FileType>, Visit) -> bool + 'a;
 
 const DEFAULT_LIMIT: usize = 10_000;
 /// Hard ceiling on directory-recursion depth. Symlink cycles are already
@@ -88,7 +99,7 @@ pub(crate) fn query_file_system(
 ) -> Result<FileSystemQueryResult, Error> {
     let query = CompiledQuery::new(options)?;
     let mut state = QueryState::default();
-    if !admit(&query.root, None) {
+    if !admit(&query.root, None, Visit::Fresh) {
         return Err(Error::new("Filesystem query root is denied by path policy"));
     }
     let root_metadata = fs::symlink_metadata(&query.root).map_err(|err| {
@@ -244,7 +255,7 @@ impl CompiledQuery {
         path: &Path,
         file_name: &std::ffi::OsStr,
         is_dir: bool,
-        file_type: Option<fs::FileType>,
+        (file_type, visit): (Option<fs::FileType>, Visit),
         admit: &EntryFilter<'_>,
     ) -> Verdict {
         let name = file_name.to_string_lossy();
@@ -260,7 +271,7 @@ impl CompiledQuery {
         }
         // Authorize before metadata, matching (which can inspect empty
         // directories), discovery counters, or recursive traversal.
-        if !admit(path, file_type) {
+        if !admit(path, file_type, visit) {
             return Verdict::Left;
         }
         if !self.show_hidden && name.starts_with('.') {
@@ -293,8 +304,14 @@ fn walk_children(
     admit: &EntryFilter<'_>,
     stop: &Stop<'_>,
 ) -> Result<(), Error> {
+    // The walk this one resumes read this directory when it inspected the
+    // entry that led here (the root: before its first entry), and counted
+    // what failed to read: counted again, a failure would show twice.
+    let reread = query.skip_entries > 0 && state.position <= query.skip_entries;
     if depth > MAX_RECURSION_DEPTH {
-        state.skipped += 1;
+        if !reread {
+            state.skipped += 1;
+        }
         return Ok(());
     }
     if query.max_depth.is_some_and(|max_depth| depth > max_depth) {
@@ -304,9 +321,11 @@ fn walk_children(
     let read_dir = match fs::read_dir(base) {
         Ok(entries) => entries,
         Err(err) => {
-            state.skipped += 1;
-            if err.kind() == std::io::ErrorKind::PermissionDenied {
-                state.permission_denied += 1;
+            if !reread {
+                state.skipped += 1;
+                if err.kind() == std::io::ErrorKind::PermissionDenied {
+                    state.permission_denied += 1;
+                }
             }
             return Ok(());
         }
@@ -315,22 +334,26 @@ fn walk_children(
     // `fs::read_dir` yields entries in raw OS order (hash order on APFS, etc.),
     // so without sorting the result set — and its silent truncation at the limit
     // — would vary run-to-run. Collect and sort by file name for deterministic,
-    // stable output. Read errors are still surfaced as skips.
-    let mut children: Vec<fs::DirEntry> = Vec::new();
+    // stable output (names are unique in a directory, and each is taken once:
+    // a comparison that asked the entry for its name would allocate it every
+    // time). Read errors are still surfaced as skips.
+    let mut children: Vec<(std::ffi::OsString, fs::DirEntry)> = Vec::new();
     for dir_entry in read_dir {
         match dir_entry {
-            Ok(entry) => children.push(entry),
+            Ok(entry) => children.push((entry.file_name(), entry)),
             Err(err) => {
-                state.skipped += 1;
-                if err.kind() == std::io::ErrorKind::PermissionDenied {
-                    state.permission_denied += 1;
+                if !reread {
+                    state.skipped += 1;
+                    if err.kind() == std::io::ErrorKind::PermissionDenied {
+                        state.permission_denied += 1;
+                    }
                 }
             }
         }
     }
-    children.sort_by_key(fs::DirEntry::file_name);
+    children.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
 
-    for dir_entry in children {
+    for (file_name, dir_entry) in children {
         // Look ahead to one additional matching entry before declaring overflow.
         // Reaching the stored-entry cap alone does not prove the scan is partial.
         if query.stop_at_limit && state.total_discovered as usize > query.limit {
@@ -360,8 +383,6 @@ fn walk_children(
         // platforms; the policy check and the name filters use it, and only
         // an entry those admit is stat'ed for its size and times.
         let file_type = dir_entry.file_type().ok();
-        let file_name = dir_entry.file_name();
-        let name = file_name.to_string_lossy();
         let mut metadata = None;
         let kind = match file_type {
             Some(file_type) => EntryKind::of(file_type),
@@ -376,7 +397,18 @@ fn walk_children(
             },
         };
         let is_directory = kind.is_dir;
-        match query.verdict(&path, &file_name, is_directory, file_type, admit) {
+        // A replayed entry only counts: the walk it resumes listed it or
+        // not, and entered it or not by this same verdict, which only a
+        // directory's entry needs again.
+        if replaying && !(query.recursive && is_directory) {
+            continue;
+        }
+        let visit = if replaying {
+            Visit::Replayed
+        } else {
+            Visit::Fresh
+        };
+        match query.verdict(&path, &file_name, is_directory, (file_type, visit), admit) {
             Verdict::Ignored { counted } => {
                 if counted && !replaying {
                     state.ignored += 1;
@@ -394,7 +426,17 @@ fn walk_children(
             Verdict::Enters => {}
         }
 
-        if !replaying && visit_path(&path, &name, depth, kind, &mut metadata, query, state).is_err()
+        if !replaying
+            && visit_path(
+                &path,
+                &file_name.to_string_lossy(),
+                depth,
+                kind,
+                &mut metadata,
+                query,
+                state,
+            )
+            .is_err()
         {
             continue;
         }
@@ -483,9 +525,13 @@ fn visit_path(
         return Ok(());
     }
 
-    state
-        .entries
-        .push(to_entry(path, depth.saturating_sub(1), metadata, query));
+    state.entries.push(to_entry(
+        path,
+        depth.saturating_sub(1),
+        state.position,
+        metadata,
+        query,
+    ));
     Ok(())
 }
 
@@ -641,6 +687,7 @@ fn is_empty(path: &Path, metadata: &fs::Metadata) -> bool {
 fn to_entry(
     path: &Path,
     output_depth: u32,
+    walk_position: u32,
     metadata: &fs::Metadata,
     query: &CompiledQuery,
 ) -> FileSystemEntry {
@@ -675,6 +722,7 @@ fn to_entry(
         permissions: permission_string(metadata),
         extension: Some(extension_of(&name, false, "")),
         depth: output_depth,
+        walk_position,
     }
 }
 
@@ -794,7 +842,7 @@ mod tests {
     fn query_file_system_inner(
         options: FileSystemQueryOptions,
     ) -> Result<FileSystemQueryResult, String> {
-        query_file_system(options, &|_, _| true, &|| false).map_err(|err| err.reason)
+        query_file_system(options, &|_, _, _| true, &|| false).map_err(|err| err.reason)
     }
 
     fn temp_root(name: &str) -> PathBuf {
@@ -926,6 +974,151 @@ mod tests {
         fs::remove_dir_all(root).expect("cleanup");
     }
 
+    #[test]
+    fn a_listed_entry_names_its_walk_position_and_a_walk_resumed_there_starts_after_it() {
+        let root = temp_root("entry_position");
+        for dir in ["a", "b/inner"] {
+            fs::create_dir_all(root.join(dir)).expect("dir");
+        }
+        for file in ["a/1.ts", "b/inner/2.ts", "b/3.md", "4.ts"] {
+            File::create(root.join(file)).expect("file");
+        }
+        let run = |skip_entries| {
+            query_file_system_inner(FileSystemQueryOptions {
+                path: root.to_string_lossy().to_string(),
+                skip_entries: Some(skip_entries),
+                ..Default::default()
+            })
+            .expect("query")
+        };
+        let whole = run(0);
+        assert!(!whole.entries.is_empty());
+        for entry in &whole.entries {
+            assert_eq!(
+                whole_position(&root, &entry.relative_path),
+                Some(entry.walk_position),
+                "{}",
+                entry.relative_path
+            );
+        }
+        for entry in &whole.entries {
+            let rest = run(entry.walk_position);
+            let expected = whole
+                .entries
+                .iter()
+                .filter(|other| other.walk_position > entry.walk_position)
+                .map(|other| other.relative_path.clone())
+                .collect::<Vec<_>>();
+            let found = rest
+                .entries
+                .iter()
+                .map(|other| other.relative_path.clone())
+                .collect::<Vec<_>>();
+            assert_eq!(found, expected, "after {}", entry.relative_path);
+        }
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    /// The policy callback sees every entry as a fresh one exactly once over
+    /// the windows of a resumed walk, and a replayed entry only as a
+    /// directory (the only entry a replay needs a verdict on).
+    #[test]
+    fn a_resumed_walk_shows_its_policy_callback_each_entry_fresh_once() {
+        let root = temp_root("fresh_once");
+        for dir in ["a", "a/inner", "b", "c/deep"] {
+            fs::create_dir_all(root.join(dir)).expect("dir");
+        }
+        for file in ["a/1.ts", "a/inner/2.ts", "b/3.ts", "c/deep/4.ts", "5.ts"] {
+            File::create(root.join(file)).expect("file");
+        }
+        let calls = |skip_entries: u32| {
+            let seen = std::sync::Mutex::new(Vec::new());
+            let result = query_file_system(
+                FileSystemQueryOptions {
+                    path: root.to_string_lossy().to_string(),
+                    skip_entries: Some(skip_entries),
+                    ..Default::default()
+                },
+                &|path, file_type, visit| {
+                    if path != root {
+                        seen.lock().expect("lock").push((
+                            path.strip_prefix(&root).expect("under root").to_owned(),
+                            file_type.is_some_and(|kind| kind.is_dir()),
+                            visit,
+                        ));
+                    }
+                    true
+                },
+                &|| false,
+            )
+            .expect("query");
+            (seen.into_inner().expect("calls"), result.walk_position)
+        };
+        let (whole, visited) = calls(0);
+        assert_eq!(visited, 10);
+        assert!(whole.iter().all(|(_, _, visit)| *visit == Visit::Fresh));
+        for skip in 0..=visited {
+            let (seen, _) = calls(skip);
+            let fresh = seen
+                .iter()
+                .filter(|(_, _, visit)| *visit == Visit::Fresh)
+                .map(|(path, _, _)| path.clone())
+                .collect::<Vec<_>>();
+            let first_new = whole.len() - fresh.len();
+            let expected = whole[first_new..]
+                .iter()
+                .map(|(path, _, _)| path.clone())
+                .collect::<Vec<_>>();
+            assert_eq!(
+                fresh, expected,
+                "skip {skip}: the fresh entries are the new ones"
+            );
+            assert!(
+                seen.iter()
+                    .filter(|(_, _, visit)| *visit == Visit::Replayed)
+                    .all(|(_, is_dir, _)| *is_dir),
+                "skip {skip}: a replay judges directories only"
+            );
+        }
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    /// An unreadable directory is counted by the window that entered it; a
+    /// window that replays past it does not count it again.
+    #[cfg(unix)]
+    #[test]
+    fn a_resumed_walk_does_not_count_an_unreadable_directory_again() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = temp_root("unreadable");
+        for dir in ["a", "b", "c"] {
+            fs::create_dir_all(root.join(dir)).expect("dir");
+            File::create(root.join(dir).join("f.ts")).expect("file");
+        }
+        let locked = root.join("a");
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).expect("lock");
+        // Root users read it anyway: nothing to prove then.
+        let readable = fs::read_dir(&locked).is_ok();
+        let run = |skip_entries: u32| {
+            query_file_system_inner(FileSystemQueryOptions {
+                path: root.to_string_lossy().to_string(),
+                skip_entries: Some(skip_entries),
+                ..Default::default()
+            })
+            .expect("query")
+        };
+        let whole = run(0);
+        // `a` is the first entry: a walk resumed past it replays its read.
+        let rest = run(1);
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).expect("unlock");
+        if !readable {
+            assert_eq!(whole.skipped, 1);
+            assert_eq!(whole.permission_denied, 1);
+            assert_eq!(rest.skipped, 0, "the window that entered `a` counted it");
+            assert_eq!(rest.permission_denied, 0);
+        }
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
     /// 1-based position of `relative` in the name-sorted depth-first walk of
     /// `root` (every entry counted, directories before their children).
     fn whole_position(root: &Path, relative: &str) -> Option<u32> {
@@ -1014,7 +1207,7 @@ mod tests {
     #[test]
     fn query_errors_carry_their_kind() {
         let kind = |options: FileSystemQueryOptions| {
-            query_file_system(options, &|_, _| true, &|| false)
+            query_file_system(options, &|_, _, _| true, &|| false)
                 .expect_err("rejected")
                 .kind()
                 .clone()
@@ -1067,7 +1260,7 @@ mod tests {
                 path: root.to_string_lossy().to_string(),
                 ..Default::default()
             },
-            &|_, _| true,
+            &|_, _, _| true,
             &|| true,
         )
         .expect_err("stopped");

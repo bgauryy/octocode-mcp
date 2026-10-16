@@ -370,6 +370,7 @@ fn full_content_resumes_numbered_lines_after_one_oversized_line() {
             &NeverCancel,
             &LocalFetchRegex,
             Some(20_000),
+            None,
         );
         assert_eq!(page.error_code, None, "{page:?}");
         let next = page.next.clone().and_then(|next| next.continue_window);
@@ -636,6 +637,59 @@ fn symbols_view_heads_carry_line_ranges() {
     assert!(content.contains("1\timport os"), "{content}");
 }
 
+/// A declaration that starts with annotations or decorators carries its
+/// span on its head row (the class, method or field line); the collapsed
+/// annotation row above it stays a plain row, in Java as in TypeScript.
+#[test]
+fn symbols_view_spans_sit_on_the_head_row_below_annotations() {
+    let t = Fixture::new();
+    let paths = Paths(t.0.clone());
+    let outline = |name: &str, text: &str| {
+        let p = t.0.join(name);
+        fs::write(&p, text).expect("fixture");
+        fetch(&qj(&p, serde_json::json!({"minify": "symbols"})), &paths)
+            .content
+            .expect("content")
+    };
+    let java = outline(
+        "Ann.java",
+        "package x;\n\n@Entity\n@Table(name = \"t\")\npublic class Ann {\n    @Id\n    @GeneratedValue\n    private Long id;\n\n    @Override\n    @Deprecated\n    public String toString() {\n        return \"\";\n    }\n}\n",
+    );
+    for row in [
+        "\n3\t@Entity",
+        "\n5-15\tpublic class Ann {",
+        "\n6\t    @Id",
+        "\n8\t    private Long id;",
+        "\n10\t    @Override",
+        "\n12-14\t    public String toString() {",
+    ] {
+        assert!(java.contains(row), "{row:?} in {java}");
+    }
+    let ts = outline(
+        "dec.ts",
+        "@Injectable()\n@Component({\n  selector: 'x',\n})\nexport class A {\n  @Output()\n  @HostBinding('class.x')\n  changed = 1;\n  method(): void {\n    call();\n  }\n}\n",
+    );
+    for row in [
+        "1\t@Injectable()",
+        "\n5-12\texport class A {",
+        "\n6\t  @Output()",
+        "\n8\t  changed = 1;",
+        "\n9-11\t  method(): void {",
+    ] {
+        assert!(ts.contains(row), "{row:?} in {ts}");
+    }
+    // Every row shows once: no line both inside a span's head and its own row.
+    for text in [&java, &ts] {
+        let mut lines: Vec<&str> = text
+            .lines()
+            .filter_map(|row| row.split_once('\t')?.0.split('-').next())
+            .collect();
+        let all = lines.len();
+        lines.dedup();
+        assert_eq!(lines.len(), all, "{text}");
+    }
+}
+
 /// With a declaration hit present, a call-site hit keeps its window
 /// instead of widening to its caller; the widened declaration is named.
 #[test]
@@ -785,7 +839,7 @@ fn selected_line_walk_keeps_byte_fallback_and_every_source_byte() {
         fn identity(&self) -> Value {
             serde_json::json!({"backend":"source-order-test"})
         }
-        fn select(&self, call: JudgeCall<'_>) -> Result<Vec<(usize, Decision)>, String> {
+        fn select(&self, call: JudgeCall<'_>) -> crate::tools::selection::Judgments {
             Ok(call
                 .admitted
                 .iter()
@@ -827,7 +881,7 @@ fn selected_line_walk_keeps_byte_fallback_and_every_source_byte() {
     );
     let (mut text, mut units, mut pages) = (String::new(), Vec::new(), 0);
     loop {
-        let page = execute_local_fetch_selected(
+        let page = execute_local_fetch(
             &query,
             &paths,
             &Safe,
@@ -955,6 +1009,7 @@ fn paged_regex_read_past_the_match_limit_keeps_its_search_lead() {
         &Safe,
         &NeverCancel,
         &LocalFetchRegex,
+        None,
         None,
     );
     assert!(
@@ -1130,6 +1185,51 @@ fn ranges_with_match_string_grep_inside_the_ranges_only() {
             .as_deref()
             .is_some_and(|e| e.contains("past the file end")),
         "{past:?}"
+    );
+}
+
+/// Ranges that all start past the file end repair to the same read of the
+/// file's last window, as wide as the widest request; a range that reaches
+/// into the file is served and carries no repair.
+#[test]
+fn ranges_past_the_file_end_lead_to_the_last_window() {
+    let t = Fixture::new();
+    let p = t.write("short.txt", "l1\nl2\nl3\nl4\nl5\n");
+    let paths = Paths(t.0.clone());
+    let mut req = q(&p);
+    req.ranges = vec![
+        "90-92".parse().expect("range"),
+        "95-100".parse().expect("range"),
+    ];
+    let past = fetch(&req, &paths);
+    assert!(past.error.is_some(), "{past:?}");
+    let repair = past
+        .next
+        .as_ref()
+        .and_then(|next| next.repair.as_ref())
+        .expect("repair lead");
+    assert_eq!(
+        repair.query.line_ranges(),
+        vec![LineRange { start: 1, end: 5 }],
+        "{past:?}"
+    );
+    let fixed = fetch(&repair.query, &paths);
+    assert!(fixed.error.is_none(), "{fixed:?}");
+    req.ranges = vec![
+        "3-4".parse().expect("range"),
+        "9-10".parse().expect("range"),
+    ];
+    assert!(fetch(&req, &paths).error.is_none());
+    req.ranges = vec!["9-10".parse().expect("range")];
+    let narrow = fetch(&req, &paths);
+    assert_eq!(
+        narrow
+            .next
+            .as_ref()
+            .and_then(|next| next.repair.as_ref())
+            .map(|repair| repair.query.line_ranges()),
+        Some(vec![LineRange { start: 4, end: 5 }]),
+        "{narrow:?}"
     );
 }
 
@@ -1325,36 +1425,19 @@ fn a_many_page_long_line_names_the_faster_routes_on_its_first_page() {
     );
 }
 
-/// `contextLines` widens matchString hits; on a read without matchString it
-/// selects nothing, so the read is refused with the same read without it.
+/// `contextLines` widens matchString hits; a read without matchString is
+/// refused by the contract, the rule's one owner, before any file is read.
 #[test]
-fn context_lines_without_match_string_is_refused_with_a_repair() {
-    let t = Fixture::new();
-    let p = t.0.join("a.rs");
-    fs::write(&p, "fn a() {}\nfn b() {}\n").expect("fixture");
-    let result = fetch(
-        &qj(
-            &p,
-            serde_json::json!({"ranges": ["1-1"], "contextLines": 5}),
-        ),
-        &Paths(t.0.clone()),
-    );
-    assert_eq!(
-        result.error_code.as_deref(),
-        Some("invalidInput"),
-        "{result:?}"
-    );
+fn context_lines_without_match_string_is_refused_by_the_contract() {
+    let refused = crate::contracts::prepare_many_and_validate(
+        "localFetch",
+        serde_json::json!({"queries":[{"path":"a.rs","ranges":["1-1"],"contextLines":5}]}),
+    )
+    .expect_err("contextLines without matchString");
     assert!(
-        result
-            .error
-            .as_deref()
-            .is_some_and(|e| e.contains("contextLines")),
-        "{result:?}"
+        format!("{refused:?}").contains("contextLines"),
+        "{refused:?}"
     );
-    let next = serde_json::to_value(result.next.as_ref().expect("repair")).expect("json");
-    let row = &next["repair"]["query"]["queries"][0];
-    assert!(row.get("contextLines").is_none(), "{next}");
-    assert_eq!(row["ranges"], serde_json::json!(["1-1"]), "{next}");
 }
 
 /// The row names the file it read: `.` and `..` segments of the requested
@@ -1401,11 +1484,12 @@ fn the_row_path_follows_a_symlink_before_its_parent_segment() {
     assert_eq!(result.path, "other/a.rs", "{result:?}");
 }
 
-/// Whole-file and streamed reads echo the same path: the canonical file
-/// relative to the workspace.
+/// Whole-file and streamed reads through a symlink name the requested path
+/// in the row and in every continuation, and the first page names the
+/// file it resolved to; a path with no symlink names its canonical file.
 #[cfg(unix)]
 #[test]
-fn whole_and_streamed_reads_echo_the_canonical_path() {
+fn reads_through_a_symlink_keep_the_requested_path() {
     let t = Fixture::new();
     let root = fs::canonicalize(&t.0).expect("canonical");
     fs::create_dir_all(root.join("other")).expect("dir");
@@ -1415,10 +1499,14 @@ fn whole_and_streamed_reads_echo_the_canonical_path() {
     let lines = usize::try_from(executor::MAX_SOURCE_BYTES).expect("size") / line.len() + 10;
     fs::write(root.join("other").join("big.txt"), line.repeat(lines)).expect("fixture");
     std::os::unix::fs::symlink(root.join("other"), root.join("link")).expect("symlink");
+    std::os::unix::fs::symlink(root.join("other").join("a.rs"), root.join("file-link.rs"))
+        .expect("symlink");
     let policy = workspace_policy(&root);
-    for (requested, file, streamed) in [
-        ("link/a.rs", "a.rs", false),
-        ("link/big.txt", "big.txt", true),
+    for (requested, target, streamed) in [
+        ("link/a.rs", Some("other/a.rs"), false),
+        ("link/big.txt", Some("other/big.txt"), true),
+        ("file-link.rs", Some("other/a.rs"), false),
+        ("other/./a.rs", None, false),
     ] {
         let mut req = LocalFetchQuery::test_default();
         req.path = requested.parse().expect("path");
@@ -1433,7 +1521,18 @@ fn whole_and_streamed_reads_echo_the_canonical_path() {
             "{requested}: {:?}",
             result.warnings
         );
-        assert_eq!(result.path, format!("other/{file}"), "{requested}");
+        let disclosed = result
+            .warnings
+            .iter()
+            .find_map(|w| w.split_once(" resolves through a symlink to "))
+            .map(|(_, to)| to.trim_end_matches('.').to_owned());
+        assert_eq!(disclosed.as_deref(), target, "{requested}");
+        let named = if target.is_some() {
+            requested
+        } else {
+            "other/a.rs"
+        };
+        assert_eq!(result.path, named, "{requested}");
         // A read that continues the file names the file its row names.
         let mut next = result.next.clone().unwrap_or_default();
         let reads = next
@@ -1445,5 +1544,42 @@ fn whole_and_streamed_reads_echo_the_canonical_path() {
             reads.iter().all(|path| *path == result.path),
             "{requested}: {reads:?}"
         );
+        // The next page does not repeat where the link led.
+        if let Some(read) = result
+            .next
+            .as_ref()
+            .and_then(|next| next.continue_window.as_ref())
+        {
+            let page = fetch(&read.query, &policy);
+            assert!(
+                !page
+                    .warnings
+                    .iter()
+                    .any(|w| w.contains("resolves through a symlink")),
+                "{requested}: {:?}",
+                page.warnings
+            );
+        }
     }
+}
+
+/// A missing file leads to its parent's tree, where a mistyped name's
+/// siblings show, beside the listing that finds a moved file.
+#[test]
+fn a_missing_file_leads_to_its_parents_tree() {
+    let t = Fixture::new();
+    fs::create_dir_all(t.0.join("src")).expect("dir");
+    fs::write(t.0.join("src/executor.rs"), "fn a() {}\n").expect("fixture");
+    let policy = workspace_policy(&t.0);
+    let r = fetch(
+        &qj(&t.0.join("src/exector.rs"), serde_json::json!({})),
+        &policy,
+    );
+    assert_eq!(r.error_code.as_deref(), Some("pathNotFound"), "{r:?}");
+    let next = serde_json::to_value(r.next.as_ref().expect("next")).expect("json");
+    let tree = &next["viewTree"]["query"]["queries"][0];
+    assert_eq!(tree["operation"], "tree", "{next}");
+    assert_eq!(tree["path"], "src", "{next}");
+    assert!(next.get("findFile").is_some(), "{next}");
+    assert!(!r.path.is_empty(), "an error row names its path");
 }

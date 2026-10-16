@@ -147,174 +147,6 @@ impl<'a> MatchQuery<'a> {
     }
 }
 
-pub fn execute_match(
-    q: MatchQuery<'_>,
-    paths: &PathPolicy,
-    security: &ContentSecurity,
-    cancel: &dyn CancellationCheck,
-    response_window: Option<usize>,
-) -> super::AstResult {
-    let out = execute_match_inner(q, paths, security, cancel, response_window)?;
-    Ok(retry_omitted_parts(
-        q,
-        out,
-        paths,
-        security,
-        cancel,
-        response_window,
-    ))
-}
-
-/// A declaration pattern matches exactly, so `function $N($$$A) { $$$B }`
-/// misses every function with a return type and Rust `fn …` every `pub`
-/// item. Re-run it once as a rule over the pattern plus the variants that
-/// spell those parts. A union that finds more replaces the result as
-/// written, with a warning naming the variants; its continuations replay
-/// that rule.
-fn retry_omitted_parts(
-    q: MatchQuery<'_>,
-    out: Value,
-    paths: &PathPolicy,
-    security: &ContentSecurity,
-    cancel: &dyn CancellationCheck,
-    response_window: Option<usize>,
-) -> Value {
-    let (MatchQuery::Pattern(query), Some(pattern)) = (q, q.pattern()) else {
-        return out;
-    };
-    if out["status"] == "error" {
-        return out;
-    }
-    let language = out["inferredLanguage"]
-        .as_str()
-        .map(str::to_owned)
-        .or_else(|| q.language());
-    let extensions = match language.as_deref() {
-        Some(language) => language_extensions(language).unwrap_or_default(),
-        None => Some(octocode_engine::text::extension_of(&q.path(), true, ""))
-            .filter(|extension| !extension.is_empty())
-            .into_iter()
-            .collect(),
-    };
-    let variants = omitted_part_variants(&pattern, &extensions);
-    if variants.is_empty() {
-        return out;
-    }
-    let mut row = serde_json::to_value(query).unwrap_or_default();
-    let Some(fields) = row.as_object_mut() else {
-        return out;
-    };
-    fields.retain(|key, value| key != "pattern" && !value.is_null());
-    let any = std::iter::once(&pattern)
-        .chain(&variants)
-        .map(|variant| json!({"pattern": variant}))
-        .collect::<Vec<_>>();
-    fields.insert("rule".into(), json!({"any": any.clone()}));
-    let Ok(rule) = serde_json::from_value::<AstSearchQueryMatchRule>(row) else {
-        return out;
-    };
-    let Ok(mut retried) = execute_match_inner(
-        MatchQuery::Rule(&rule),
-        paths,
-        security,
-        cancel,
-        response_window,
-    ) else {
-        return out;
-    };
-    let written = out["matchCount"].as_u64().unwrap_or(0);
-    if retried["matchCount"].as_u64().unwrap_or(0) <= written {
-        return out;
-    }
-    let note = json!({
-        "code":"structural.pattern.relaxed",
-        "severity":"warning",
-        "stage":"match",
-        "message":format!(
-            "{written} {} as written; {} match the relaxed rule.",
-            if written == 1 { "match" } else { "matches" },
-            retried["matchCount"].as_u64().unwrap_or(0)
-        ),
-        "rule":{"any": any},
-    });
-    match retried["diagnostics"].as_array_mut() {
-        Some(diagnostics) => diagnostics.insert(0, note),
-        None => retried["diagnostics"] = json!([note]),
-    }
-    retried
-}
-
-/// Variants of a declaration pattern that spell what it omitted: a return
-/// type (TypeScript, Rust, Python, Go) and, for Rust items, `pub`.
-fn omitted_part_variants(
-    pattern: &str,
-    extensions: &std::collections::BTreeSet<String>,
-) -> Vec<String> {
-    let has = |ext: &str| extensions.contains(ext);
-    let (keyword, slot, body) = if has("ts") || has("tsx") {
-        ("function", ": $_", '{')
-    } else if has("rs") {
-        ("fn", " -> $_", '{')
-    } else if has("py") {
-        ("def", " -> $_", ':')
-    } else if has("go") {
-        ("func", " $_", '{')
-    } else {
-        return Vec::new();
-    };
-    let returned = return_slot(pattern, keyword, slot, body);
-    let first = pattern.split_whitespace().next().unwrap_or_default();
-    let visible =
-        (has("rs") && RUST_VISIBLE_ITEMS.contains(&first)).then(|| format!("pub {pattern}"));
-    let both = returned
-        .as_ref()
-        .filter(|_| visible.is_some())
-        .map(|returned| format!("pub {returned}"));
-    [returned, visible, both].into_iter().flatten().collect()
-}
-
-/// `pattern` with `slot` after the parameter list that `body` directly
-/// follows, when the declaration after `keyword` spells no return type.
-fn return_slot(pattern: &str, keyword: &str, slot: &str, body: char) -> Option<String> {
-    let start = pattern.match_indices(keyword).find_map(|(index, _)| {
-        let before = pattern[..index].chars().next_back();
-        let after = pattern[index + keyword.len()..].chars().next();
-        let boundary = |ch: Option<char>| {
-            ch.is_none_or(|ch| !(ch.is_alphanumeric() || ch == '_' || ch == '$'))
-        };
-        (boundary(before) && boundary(after)).then_some(index + keyword.len())
-    })?;
-    let mut depth = 0_i32;
-    let mut close = None;
-    for (offset, ch) in pattern[start..].char_indices() {
-        match ch {
-            '(' | '[' => depth += 1,
-            ')' | ']' => {
-                depth -= 1;
-                if depth == 0 && ch == ')' {
-                    close = Some(start + offset);
-                }
-            }
-            _ if depth == 0 && ch == body => {
-                let close = close?;
-                // Only whitespace between `)` and the body: no return type.
-                return pattern[close + 1..start + offset]
-                    .trim()
-                    .is_empty()
-                    .then(|| format!("{}{slot}{}", &pattern[..=close], &pattern[close + 1..]));
-            }
-            _ => {}
-        }
-    }
-    None
-}
-
-/// Rust item keywords a visibility modifier (`pub`, `pub(crate)`) can precede.
-const RUST_VISIBLE_ITEMS: &[&str] = &[
-    "fn", "async", "unsafe", "const", "static", "struct", "enum", "union", "trait", "type", "mod",
-    "extern", "use",
-];
-
 /// The validated scope of one `match` query and the grammar it runs with.
 struct Scope {
     canonical: std::path::PathBuf,
@@ -354,19 +186,29 @@ struct Scan {
     source_digest: String,
     /// Directory and ignore-file metadata observed during discovery, not source reads.
     discovery_sources: Vec<std::path::PathBuf>,
-    /// Ignore dependencies outside observable memo metadata disable reuse.
+    /// Files outside the walk whose contents decide its ignore rules, and
+    /// the repository markers whose presence does (empty when ignore rules
+    /// are off): the memo watches them like the walked entries.
+    ignore_rules: Vec<std::path::PathBuf>,
+    repository_markers: Vec<std::path::PathBuf>,
+    /// An ignore dependency no stamp can watch (a link, an unreadable
+    /// entry) disables reuse.
     untracked_ignore_dependencies: bool,
     /// Candidate entries the security path policy withheld from the walk.
     withheld: crate::policy::discovery::Withheld,
     /// Files the walk passed over because no grammar parses their names.
     unparsed: Unparsed,
+    /// Without `language`: the files the walk admitted, by parser extension
+    /// (the census the scope's grammar is inferred from).
+    census: std::collections::BTreeMap<String, usize>,
 }
 
 /// Example paths a skipped-file warning names.
 const UNPARSED_EXAMPLES: usize = 3;
 
 /// Files a directory scan left unparsed for want of a grammar: their count
-/// and the first [`UNPARSED_EXAMPLES`] display paths in path order.
+/// and the first [`UNPARSED_EXAMPLES`] paths in path order, spelled as the
+/// response's row paths are (workspace-relative, else absolute).
 #[derive(Default)]
 struct Unparsed {
     count: u32,
@@ -393,10 +235,10 @@ impl Unparsed {
         match self.count {
             0 => None,
             1 => Some(format!(
-                "1 file skipped: no AST grammar for its name ({names}); set languageGlobs to parse it."
+                "1 file skipped: no AST grammar for its name ({names}); if it is source code, languageGlobs maps its name to a grammar."
             )),
             count => Some(format!(
-                "{count} files skipped: no AST grammar for their names ({names}{more}); set languageGlobs to parse them."
+                "{count} files skipped: no AST grammar for their names ({names}{more}); if they are source code, languageGlobs maps their names to a grammar."
             )),
         }
     }
@@ -504,7 +346,7 @@ const SKIP_CODES: [&str; 3] = [
     "structural.file.tooLarge",
 ];
 
-fn execute_match_inner(
+pub fn execute_match(
     q: MatchQuery<'_>,
     paths: &PathPolicy,
     security: &ContentSecurity,
@@ -515,15 +357,11 @@ fn execute_match_inner(
     let scope = resolve_scope(q, paths, cancel)?;
     let continues = q.page() > 1 || q.match_page() > 1;
     let key = scan_key(q, paths);
-    let memo_eligible = memo_scope_eligible(q, &scope);
-    if !memo_eligible && let Some(snapshot) = q.snapshot() {
-        SCANS.evict(&snapshot);
-    }
     // A continuation page reuses the scan its first page stored when nothing
     // it read changed; the snapshot below still decides whether it serves.
     let stored = q
         .snapshot()
-        .filter(|_| continues && memo_eligible)
+        .filter(|_| continues)
         .and_then(|snapshot| SCANS.get(&snapshot, &key))
         .filter(|scan| {
             if !scan.untracked_ignore_dependencies && memo_source_unchanged(&scope, scan) {
@@ -550,6 +388,8 @@ fn execute_match_inner(
             std::sync::Arc::new(scan)
         }
     };
+    let mut scope = scope;
+    scope.inferred = infer_grammar(q, &scope, &scan)?;
     let snapshot = match_snapshot(q, &scope, &scan);
     // A page number without a snapshot asks for that page of a fresh scan;
     // only a snapshot that no longer matches is stale.
@@ -560,7 +400,7 @@ fn execute_match_inner(
             if let Some(stale) = q.snapshot() {
                 SCANS.evict(&stale);
             }
-            return execute_match_inner(q, paths, security, cancel, response_window);
+            return execute_match(q, paths, security, cancel, response_window);
         }
         if let Some(error) = interrupted_rescan(q, &scan) {
             return Err(error);
@@ -612,10 +452,16 @@ fn execute_match_inner(
     } else {
         EmptyScope::default()
     };
-    let out = render_match_page(q, &scope, &scan, grouped, &snapshot, empty_scope, budget);
+    let exact_miss_scope = grouped.total_matches == 0
+        && grouped.scanned_files > 0
+        && !scan.truncated
+        && q.scan_offset() == 0;
+    let mut out = render_match_page(q, &scope, &scan, grouped, &snapshot, empty_scope, budget);
+    if exact_miss_scope && let Some(miss) = exact_miss(q, &scope, paths, security, cancel) {
+        miss.attach(&mut out);
+    }
     if fresh
         && !scan.untracked_ignore_dependencies
-        && memo_scope_eligible(q, &scope)
         && out["next"]
             .as_object()
             .is_some_and(|next| next.contains_key("nextPage") || next.contains_key("nextMatchPage"))
@@ -628,14 +474,159 @@ fn execute_match_inner(
             .collect::<Vec<_>>();
         SCANS.put(
             (snapshot, key),
-            &scope.canonical,
-            &watched,
+            super::memo::Watch {
+                root: &scope.canonical,
+                sources: &watched,
+                rules: &scan.ignore_rules,
+                markers: &scan.repository_markers,
+            },
             started,
             std::sync::Arc::clone(&scan),
             scan_bytes(&scan),
         );
     }
     Ok(out)
+}
+
+/// A declaration pattern that matched nothing in a scope that holds
+/// declarations of its kind (named as the pattern names it): a pattern
+/// matches every part it spells, so an item that adds or leaves out a part
+/// (a modifier, a return type) is not a match. The rule that lists them.
+struct ExactMiss {
+    kind: String,
+    count: usize,
+    files: usize,
+    query: Value,
+}
+
+/// The parser extension a scope's files are read with: a single file's own
+/// (or its override), else the named or inferred grammar's.
+fn scope_extension(scope: &Scope) -> Option<String> {
+    if scope.is_file {
+        return Some(
+            super::parser_override(&scope.canonical, scope.language.as_deref()).unwrap_or_else(
+                || {
+                    octocode_engine::text::extension_of(
+                        &scope.canonical.to_string_lossy(),
+                        true,
+                        "",
+                    )
+                },
+            ),
+        );
+    }
+    scope
+        .language
+        .as_deref()
+        .or(scope.inferred.as_deref())
+        .and_then(crate::tools::ast_rule::primary_extension)
+}
+
+/// [`ExactMiss`] of an empty `pattern` scan, counted by one scan of its
+/// rule over the same scope; `None` when the pattern spells no declaration
+/// or the scope holds none of its kind.
+fn exact_miss(
+    q: MatchQuery<'_>,
+    scope: &Scope,
+    paths: &PathPolicy,
+    security: &ContentSecurity,
+    cancel: &dyn CancellationCheck,
+) -> Option<ExactMiss> {
+    let MatchQuery::Pattern(_) = q else {
+        return None;
+    };
+    let extension = scope_extension(scope)?;
+    let declaration = octocode_engine::structural::pattern_declaration(&q.pattern()?, &extension)?;
+    let mut rule = json!({"kind": declaration.kind});
+    if let Some((kind, name)) = &declaration.name {
+        rule["has"] = json!({"kind": kind, "regex": format!("^{}$", regex::escape(name))});
+    }
+    let mut query = q.to_value();
+    let fields = query.as_object_mut()?;
+    for field in ["pattern", "snapshot", "page", "matchPage", "scanOffset"] {
+        fields.shift_remove(field);
+    }
+    fields.insert("rule".into(), rule);
+    if !scope.is_file
+        && !fields.contains_key("language")
+        && let Some(inferred) = &scope.inferred
+    {
+        fields.insert("language".into(), json!(inferred));
+    }
+    let rule_query: AstSearchQueryMatchRule = serde_json::from_value(query.clone()).ok()?;
+    let rule_query = MatchQuery::Rule(&rule_query);
+    let rule_scope = resolve_scope(rule_query, paths, cancel).ok()?;
+    let scan = if rule_scope.is_file {
+        scan_file(rule_query, &rule_scope, security)
+    } else {
+        scan_directory(rule_query, &rule_scope, paths, cancel)
+    }
+    .ok()?;
+    let count = scan.files.iter().map(|file| file.1.len()).sum::<usize>();
+    let files = scan.files.iter().filter(|file| !file.1.is_empty()).count();
+    (count > 0).then_some(ExactMiss {
+        kind: declaration.kind,
+        count,
+        files,
+        query,
+    })
+}
+
+impl ExactMiss {
+    /// The diagnostic that counts the declarations the pattern missed, and
+    /// the rule query that lists them.
+    fn attach(self, out: &mut Value) {
+        let Self {
+            kind,
+            count,
+            files,
+            query,
+        } = self;
+        let diagnostic = json!({
+            "code": "structural.pattern.exact",
+            "severity": "warning",
+            "stage": "match",
+            "message": format!(
+                "The pattern matches as written: {count} {kind} node(s) in {files} file(s) differ from it in a part it spells or leaves out (a modifier, a return type)."
+            ),
+            "recovery": "Spell those parts in the pattern, or list every node of the kind with a rule.",
+        });
+        match out["diagnostics"].as_array_mut() {
+            Some(diagnostics) => diagnostics.push(diagnostic),
+            None => out["diagnostics"] = json!([diagnostic]),
+        }
+        out["next"]["broadenSearch"] =
+            crate::tools::result::Continuation::new(ToolId::AstSearch, query)
+                .confidence("exact")
+                .build();
+    }
+}
+
+/// The one grammar a directory scan without `language` read, from the
+/// census of its own walk (no second walk): `None` when it read several (or
+/// one the query does not compile in). A first window holding no file of a
+/// supported grammar is `languageRequired`.
+fn infer_grammar(
+    q: MatchQuery<'_>,
+    scope: &Scope,
+    scan: &Scan,
+) -> Result<Option<String>, ToolError> {
+    if scope.is_file || scope.language.is_some() {
+        return Ok(None);
+    }
+    let (pattern, rule) = (q.pattern(), q.rule());
+    let present = crate::tools::ast_rule::rank_grammars(scan.census.clone());
+    match choose_grammar(present.into_iter(), |_, extensions| {
+        compile_check(extensions, pattern.as_deref(), rule.as_deref())
+    }) {
+        GrammarChoice::One(language) => Ok(Some(language)),
+        GrammarChoice::Several(_) | GrammarChoice::Invalid(_) => Ok(None),
+        GrammarChoice::Absent if q.scan_offset() == 0 => Err(ToolError::new(
+            "languageRequired",
+            "No source file of a supported structural grammar was found under path; set language.",
+        )),
+        GrammarChoice::Absent => Ok(None),
+    }
 }
 
 /// Validate the selector and query without narrowing an inferred directory
@@ -677,26 +668,13 @@ fn resolve_scope(
         compile_check(extensions, q.pattern().as_deref(), q.rule().as_deref())
             .map_err(|error| ToolError::new(error.code, error.message))?;
     }
-    let inferred = if meta.is_dir() && q.language().is_none() {
-        match directory_choice(q, &p.canonical, &parsers, paths, cancel)? {
-            GrammarChoice::One(language) => Some(language),
-            GrammarChoice::Several(_) | GrammarChoice::Invalid(_) => None,
-            GrammarChoice::Absent => {
-                return Err(ToolError::new(
-                    "languageRequired",
-                    "No source file of a supported structural grammar was found under path; set language.",
-                ));
-            }
-        }
-    } else {
-        None
-    };
     let language = q.language();
     Ok(Scope {
         canonical: p.canonical,
         is_file: meta.is_file(),
         language,
-        inferred,
+        // Read from the scan's own walk (`infer_grammar`).
+        inferred: None,
         extensions,
         parsers,
     })
@@ -822,7 +800,16 @@ fn scan_directory(
     let grammars = structural_extensions();
     let unparsed = std::sync::Mutex::new(Unparsed::default());
     let observed = std::sync::Mutex::new(std::collections::BTreeSet::new());
+    let ignore_rules = q.include_ignored() != Some(true);
+    let external_rules = std::sync::Mutex::new(if ignore_rules {
+        octocode_engine::search::walk::external_ignore_inputs(&scope.canonical)
+            .into_iter()
+            .collect::<std::collections::BTreeSet<_>>()
+    } else {
+        std::collections::BTreeSet::new()
+    });
     let untracked_ignore_dependencies = std::sync::atomic::AtomicBool::new(false);
+    let census = std::sync::Mutex::new(std::collections::BTreeMap::<String, usize>::new());
     let withheld = std::sync::Mutex::new(crate::policy::discovery::Withheld::default());
     let discovery = paths.discovery_walk();
     let r = octocode_engine::structural::search_files(
@@ -854,10 +841,14 @@ fn scan_directory(
             if allowed && is_dir {
                 let mut watched = observed.lock().unwrap_or_else(|error| error.into_inner());
                 watched.insert(path.to_path_buf());
-                if q.include_ignored() != Some(true) {
-                    if repository_marker_present(path) {
-                        untracked_ignore_dependencies
-                            .store(true, std::sync::atomic::Ordering::Relaxed);
+                if ignore_rules {
+                    // A repository nested in the scope keeps its exclude
+                    // file in its own git directory, outside the walk.
+                    if path != scope.canonical && path.join(".git").exists() {
+                        external_rules
+                            .lock()
+                            .unwrap_or_else(|error| error.into_inner())
+                            .extend(octocode_engine::search::walk::external_ignore_inputs(path));
                     }
                     for name in [".gitignore", ".ignore"] {
                         let ignore = path.join(name);
@@ -885,23 +876,40 @@ fn scan_directory(
             // A file no grammar parses is disclosed, not silently dropped; one
             // only `language` leaves out has a grammar and is the caller's choice.
             if allowed && unparsed_file && !has_extension_in(path, &grammars) {
+                // Named as a row path reads after the response stage: from
+                // the workspace root, else absolute.
                 unparsed
                     .lock()
                     .unwrap_or_else(|error| error.into_inner())
-                    .record(match_display_path(
-                        &scope.canonical,
-                        &path.to_string_lossy(),
-                    ));
+                    .record(
+                        paths
+                            .workspace_relative(path)
+                            .unwrap_or_else(|| path.to_string_lossy().into_owned()),
+                    );
+            }
+            let admitted = allowed && !unparsed_file;
+            if admitted && scope.language.is_none() && path.is_file() {
+                let extension = scope.parsers.extension(path).map_or_else(
+                    || octocode_engine::text::extension_of(&path.to_string_lossy(), true, ""),
+                    str::to_owned,
+                );
+                *census
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .entry(extension)
+                    .or_default() += 1;
             }
             // Grammar filtering is not an explicit include override: ignored
             // source files remain ignored unless the caller overrides them.
-            allowed && !unparsed_file
+            admitted
         },
         &|path| {
             if let Some(extension) = scope.parsers.extension(path) {
                 extension.to_owned()
-            } else if super::cpp_header_override(path, scope.language.as_deref()) {
-                "cpp".to_owned()
+            } else if let Some(parser) =
+                super::shared_extension_parser(path, scope.language.as_deref())
+            {
+                parser
             } else {
                 octocode_engine::text::extension_of(&path.to_string_lossy(), true, "")
             }
@@ -927,6 +935,16 @@ fn scan_directory(
     Ok(Scan {
         sources,
         source_digest,
+        ignore_rules: external_rules
+            .into_inner()
+            .unwrap_or_else(|error| error.into_inner())
+            .into_iter()
+            .collect(),
+        repository_markers: if ignore_rules {
+            repository_markers(&scope.canonical)
+        } else {
+            Vec::new()
+        },
         untracked_ignore_dependencies: untracked_ignore_dependencies.into_inner(),
         discovery_sources: observed
             .into_inner()
@@ -956,6 +974,9 @@ fn scan_directory(
         unparsed: unparsed
             .into_inner()
             .unwrap_or_else(|error| error.into_inner()),
+        census: census
+            .into_inner()
+            .unwrap_or_else(|error| error.into_inner()),
     })
 }
 
@@ -964,33 +985,13 @@ fn directory_source_digest<'a>(files: impl Iterator<Item = (&'a str, Option<&'a 
     crate::digest::json_sha256(&json!(identities))
 }
 
-/// External ignore dependencies are not captured by the walked scope's stamps.
-/// Keep their selection fresh by rescanning instead of caching Git/global rules.
-fn memo_scope_eligible(q: MatchQuery<'_>, scope: &Scope) -> bool {
-    if scope.is_file || q.include_ignored() == Some(true) {
-        return true;
-    }
-    scope.canonical.ancestors().enumerate().all(|(depth, dir)| {
-        !repository_marker_present(dir)
-            && (depth == 0
-                || [".ignore", ".gitignore"]
-                    .iter()
-                    .all(|name| !memo_dependency_present(&dir.join(name))))
-    })
-}
-
-fn repository_marker_present(dir: &std::path::Path) -> bool {
-    [".git", ".jj"]
-        .iter()
-        .any(|name| memo_dependency_present(&dir.join(name)))
-}
-
-fn memo_dependency_present(path: &std::path::Path) -> bool {
-    match std::fs::symlink_metadata(path) {
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
-        // An unreadable dependency cannot establish that reuse is safe.
-        _ => true,
-    }
+/// The repository markers at and above `root` whose presence decides
+/// whether a `.gitignore` applies ([`octocode_engine::search::walk`]): the
+/// memo keeps their presence.
+fn repository_markers(root: &std::path::Path) -> Vec<std::path::PathBuf> {
+    root.ancestors()
+        .flat_map(|dir| [dir.join(".git"), dir.join(".jj")])
+        .collect()
 }
 
 #[cfg(unix)]
@@ -2138,7 +2139,7 @@ fn other_language_repair(
 }
 
 fn diag(d: &StructuralDiagnostic) -> Value {
-    json!({"code":d.code,"severity":d.severity,"stage":d.stage,"message":d.message,"path":d.path,"recovery":crate::tools::ast_rule::diagnostic_recovery(&d.code,d.recovery.as_deref())})
+    crate::tools::ast_rule::diagnostic_row(d, d.path.as_deref())
 }
 
 fn error_diagnostic(diagnostics: &[StructuralDiagnostic]) -> Option<&StructuralDiagnostic> {

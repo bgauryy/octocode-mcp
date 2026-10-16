@@ -374,12 +374,12 @@ async fn a_local_source_judges_exactly_its_ranges_and_leads_to_the_same_read() {
     }
     let result = &out["queries"][0];
     assert_eq!(result["answers"]["inside"]["noul"], 0.9);
-    let read = &result["hints"]["read"];
+    let read = &crate::support::checks::hint(result, "read");
     assert_eq!(read["tool"], "localFetch");
     let row = &read["query"]["queries"][0];
     assert_eq!(row["path"], "docs/guide.md");
     assert_eq!(row["ranges"], json!(["2-4", "40-41"]));
-    assert_eq!(row["minify"], "none");
+    assert!(row.get("minify").is_none(), "{row}");
     assert_eq!(row["snapshot"].as_str().map(str::len), Some(64), "{row}");
     assert!(
         !out.to_string().contains("line 3 inside"),
@@ -447,7 +447,7 @@ async fn the_read_lead_returns_the_classified_capture() {
         })],
     )
     .await;
-    let read = out["queries"][0]["hints"]["read"].clone();
+    let read = crate::support::checks::hint(&out["queries"][0], "read").clone();
     let replay = runtime
         .run(
             "read-lead".into(),
@@ -576,10 +576,13 @@ async fn a_github_source_reads_its_requested_ref_and_pins_the_lead_to_that_commi
         "{states:?}"
     );
     for (index, (_, sha, _)) in shas.iter().enumerate() {
-        let lead = &out["queries"][index]["hints"]["read"];
+        let lead = &crate::support::checks::hint(&out["queries"][index], "read");
         assert_eq!(lead["tool"], "ghGetFileContent");
         assert_eq!(lead["query"]["queries"][0]["ref"], *sha, "{lead}");
-        assert_eq!(lead["query"]["queries"][0]["minify"], "none");
+        assert!(
+            lead["query"]["queries"][0].get("minify").is_none(),
+            "{lead}"
+        );
     }
     runtime.close().await;
 }
@@ -667,6 +670,53 @@ async fn a_provider_failure_fails_the_row_and_the_runtime_recovers() {
     assert!(
         recovered["queries"][0].get("replayed").is_none(),
         "a failure is never cached"
+    );
+    runtime.close().await;
+}
+
+#[tokio::test]
+async fn a_provider_failure_keeps_the_pinned_source_inspection_call() {
+    let server = MockServer::builder().start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(400))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let workspace = Workspace::new();
+    workspace.write(
+        "src/evidence.txt",
+        "RECOVERY_SOURCE_SENTINEL applies after restart.\n",
+    );
+    let runtime = provider_runtime(&workspace, &server);
+    let out = clasify(
+        &runtime,
+        vec![json!({
+            "source":{"tool":"localFetch","query":{"path":"src/evidence.txt","ranges":["1-1"]}},
+            "questions":{"restart":noul("Does this state a restart requirement?")}
+        })],
+    )
+    .await;
+    let row = &out["queries"][0];
+    assert_eq!(row["error"]["errorCode"], "classificationProviderError");
+    assert!(row.get("answers").is_none());
+    assert!(!out.to_string().contains("RECOVERY_SOURCE_SENTINEL"));
+    let lead = &crate::support::checks::hint(&row["error"], "read");
+    assert_eq!(lead["tool"], "localFetch", "{out}");
+    assert_eq!(lead["query"]["queries"][0]["ranges"], json!(["1-1"]));
+    assert!(lead["query"]["queries"][0]["snapshot"].as_str().is_some());
+    assert!(
+        crate::support::checks::hint(&row["error"], "text")
+            .to_string()
+            .contains("if still needed")
+    );
+    let read = runtime
+        .run("inspect".into(), "localFetch".into(), lead["query"].clone())
+        .await
+        .expect("inspection call");
+    assert!(
+        read.structured_content
+            .to_string()
+            .contains("RECOVERY_SOURCE_SENTINEL")
     );
     runtime.close().await;
 }
@@ -760,6 +810,10 @@ async fn a_selection_past_its_deadline_withholds_bodies_and_recovers() {
     assert_eq!(selection["unknownItems"], 1, "{late}");
     assert_eq!(selection["selectedItems"], 0, "{late}");
     assert!(
+        late["warnings"].to_string().contains("unfiltered lead"),
+        "{late}"
+    );
+    assert!(
         !late.to_string().contains("UNKNOWN_SELECTION_SENTINEL"),
         "{late}"
     );
@@ -800,4 +854,49 @@ async fn a_selection_past_its_deadline_withholds_bodies_and_recovers() {
             .contains("UNKNOWN_SELECTION_SENTINEL"),
         "{judged}"
     );
+}
+
+/// A provider that refuses the credential is not an unsure model: under
+/// clasifyContext the row fails with the provider's typed error, its
+/// credential hint, an `unavailable` receipt, and the unfiltered lead, and
+/// the call exits as a failure instead of success.
+#[tokio::test]
+async fn a_refused_credential_under_clasify_context_fails_the_row_with_its_error() {
+    let server = MockServer::builder().start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(401))
+        .mount(&server)
+        .await;
+    let workspace = Workspace::new();
+    let file = workspace.write("src/a.rs", "fn recovery() {}\nfn other() { recovery(); }\n");
+    let runtime = provider_runtime(&workspace, &server);
+    let row = crate::support::run(
+        &runtime,
+        "localSearch",
+        json!({"path": file.parent().unwrap(), "matchString": "recovery",
+            "clasifyContext": {"classifiers": ["Does it add hints?"]}}),
+        &[],
+    )
+    .await;
+    assert_eq!(row.status(), "error", "{}", row.data());
+    let data = row.data();
+    assert_eq!(data["errorCode"], "classificationProviderError", "{data}");
+    assert!(
+        data["hints"]
+            .to_string()
+            .contains("OCTOCODE_CLASSIFICATION_API"),
+        "{data}"
+    );
+    assert_eq!(data["selection"]["status"], "unavailable", "{data}");
+    assert_eq!(
+        data["selection"]["reason"], "classificationProviderError",
+        "{data}"
+    );
+    assert!(data["next"]["unfiltered"].is_object(), "{data}");
+    assert_ne!(
+        row.outcome.exit_class(),
+        octocode_native::runtime::ExitClass::Success,
+        "{data}"
+    );
+    runtime.close().await;
 }

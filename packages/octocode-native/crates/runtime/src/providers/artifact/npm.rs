@@ -404,7 +404,10 @@ fn release_facts(artifact: &mut ArtifactItem, row: &serde_json::Map<String, Valu
             .collect()
     };
     artifact.dependencies = Some(declared("dependencies"));
-    artifact.peer_dependencies = Some(declared("peerDependencies"));
+    // Peers are rare: a version that declares none shows no list (its
+    // `dependencies` list already says the manifest was read).
+    let peers = declared("peerDependencies");
+    artifact.peer_dependencies = (!peers.is_empty()).then_some(peers);
     artifact.deprecated = string(row.get("deprecated"));
     artifact.engines = row
         .get("engines")
@@ -830,6 +833,21 @@ mod tests {
             .iter()
             .map(|seen| (seen.url.to_string(), seen.authorized))
             .collect()
+    }
+
+    /// A version that declares no peers shows no `peerDependencies` list;
+    /// its (empty) `dependencies` list still says the manifest was read.
+    #[tokio::test]
+    async fn npm_version_without_peers_has_no_peer_list() {
+        let mut bare = manifest("4.6.5", false);
+        bare["peerDependencies"] = json!({});
+        let http = routes(vec![("/zod/latest", JSON, bare)]);
+        let page = lookup(&http, json!({"packageName": "zod"}))
+            .await
+            .expect("lookup");
+        let item = &page.artifacts[0];
+        assert_eq!(item.dependencies, Some(Vec::new()));
+        assert_eq!(item.peer_dependencies, None);
     }
 
     #[tokio::test]

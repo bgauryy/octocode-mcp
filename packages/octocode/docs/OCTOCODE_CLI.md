@@ -3,7 +3,8 @@
 `npx octocode` runs every Octocode research tool from a terminal, under the same
 tool names, query contracts, security policy and native runtime as the MCP
 server. There are no per-tool flags or aliases: a command is a tool name plus
-one JSON query.
+one JSON query. The npm launcher forwards every command to the native CLI,
+including help, version, installation, skills, and `config view`.
 
 ```text
 npx octocode <toolName> '<json>'   ──► native Rust runtime ──► GitHub, local, packages, LSP
@@ -83,7 +84,7 @@ Replace `npx octocode` with `octocode` when the package is installed globally.
   working directory is not the repository root.
 - `mainGoal` and `reasoning` are optional; add them only in multi-call research.
 - `next.*` continuations complete the result: run them, or name what stays
-  unread. Optional `hints.*` leads appear only with `"extras":["hints"]`.
+  unread. Optional `hints` strings suggest calls as `<action>: <tool> <JSON input>`; opt in with `"extras":["hints"]`.
   The contract: [tool data contract](https://github.com/bgauryy/octocode/blob/main/docs/TOOL_DATA_CONTRACT.md).
 
 ### Schema discovery
@@ -120,7 +121,7 @@ The CLI and MCP server share cache data under the configured Octocode home:
 | Bucket | Path | Contents |
 |---|---|---|
 | Clone | `tmp/clone/{owner}/{repo}/{branch}` | Reusable Git checkouts |
-| Tree | `tmp/materialize/v2/{owner}/{repo}/{commitSha}` | Materialized repository trees; `{commitSha}.manifest.json` beside each records the files written |
+| Tree | `tmp/materialize/v3/{owner}/{repo}/{commitSha}` | Materialized repository trees; `{commitSha}.manifest.json` beside each records the files written |
 | Response | `tmp/response/` | Eligible GitHub and npm response payloads |
 
 `cache status` prints the cache directory and recent evictions; `cache clear`
@@ -233,7 +234,8 @@ Windsurf, Trae, Antigravity, VS Code Cline/Roo/Continue, Zed, OpenCode, Gemini
 CLI, Kiro, Codex, Goose. Use an exact id; a partial id such as `claude` is
 rejected with the ids it could mean. Other flags: `--method npx|bunx|pnpm`,
 `--enable-local true|false`, `--pass-env`, `--rollback <file.bak>`. Without
-`--ide` on a terminal, a picker asks for the client.
+`--ide` on a terminal, the native CLI lists clients and asks for a number.
+Press Enter to cancel. Piped or JSON invocations require `--ide`.
 
 ---
 
@@ -298,8 +300,9 @@ cover `rust-analyzer` and `clangd`. Built-in routes and custom servers:
 
 ## `skill` — agent skills
 
-The `octocode` package bundles the public skills from this repo's `skills/`
-directory. `install` copies a skill into the durable store
+The native executable embeds the public skills from this repo's `skills/`
+directory. The Node package ships the same files and delegates skill commands
+to that executable. `install` copies a skill into the durable store
 `$OCTOCODE_HOME/skills/<name>` atomically, then links each selected platform's
 skill directory to that copy. Links never target an npm or `npx` cache.
 
@@ -325,7 +328,7 @@ npx octocode skill remove octocode-research --platform pi
 | `--upgrade` | Refresh changed bundled content in the store. A copy refreshes only while it still matches the previous content; other drift stays a conflict. |
 | `--dry-run` | Preview `install`, `remove`, or `check --fix` without writing. |
 | `--fix` | `check`: refresh stale or broken installs in place; never adds platforms. A failed repair exits 1. |
-| `--workspace` | `check`: also check `<cwd>/.agents/skills`. |
+| `--workspace` | `check --fix`: also repair existing `<cwd>/.agents/skills` installations. |
 | `--no-env` | `check`: skip environment readiness. |
 
 `skill list` marks installs that differ from the bundled copy `[stale]` and
@@ -335,9 +338,12 @@ or `partial` (an optional setting would unlock more). A GitHub token from
 `auth login` or a `gh` login counts as set. `check` exits 1 on stale, broken or
 needs-config.
 
-The npm launcher owns `skill`. The native binary forwards `skill` to the
-`octocode` launcher on `PATH`, and exits 1 with an `npx -y octocode skill …`
-rerun command when that launcher is missing.
+Every skill command works directly from the native binary without Node, npm,
+network access, or another `octocode` on `PATH`. For example:
+`octocode skill install --all --platform codex --global`. JSON reports identify
+embedded sources as `bundled:<name>`; installed paths remain filesystem paths.
+`check --fix --json` repairs existing installations and reports the resulting
+state. Links to external development checkouts are left intact.
 
 ---
 
@@ -347,18 +353,19 @@ Tools and `graph` print readable text on a terminal and one JSON line on a pipe;
 `--json` forces JSON on a terminal. Errors follow the output: the
 `{"error":"…","errorCode":"…"}` envelope on stdout in JSON mode (plus `details`
 when there are repair steps), text on stderr otherwise. A mistyped command gets
-the same envelope. `NO_COLOR` disables color.
+the same envelope. `NO_COLOR` disables color. If the npm launcher cannot resolve or start the
+native binary, it reports the startup failure on stderr and exits `5`.
 
 ### Exit codes
 
 | Code | Meaning |
 |---:|---|
 | `0` | Success, including a typed empty payload and a result with more pages. |
-| `1` | Every row empty / no matches. |
+| `1` | Every row empty or out of range (`status: outOfRange`, a page past the last) / no matches. |
 | `2` | Invalid input or flags, including any batch row rejected as `invalidInput`. |
 | `3` | Not found. |
 | `4` | Authentication or permission failure. |
-| `5` | Execution error, including an unavailable tool, a missing native runtime, and a `config view` edit conflict or contract mismatch. |
+| `5` | Execution error, including an unavailable tool, a missing native runtime, or a configuration viewer startup failure. |
 | `7` | Rate limited. |
 | `130` | Interrupted (Ctrl-C). |
 

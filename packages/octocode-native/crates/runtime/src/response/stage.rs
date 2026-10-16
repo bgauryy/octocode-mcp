@@ -36,7 +36,79 @@ pub(crate) struct StageInput {
 /// violation is returned as `Ok(Err(_))`; isolated row violations become
 /// explicit error rows and mark the outcome failed.
 pub(crate) fn finish(
+    mut input: StageInput,
+    context: &ExecutionContext,
+) -> Result<Result<ToolOutcome, ContractValidationError>, ExecutionError> {
+    let remaining = match settle(
+        input.tool,
+        &mut input.structured,
+        &input.response_query,
+        &mut input.failure,
+    ) {
+        Ok(remaining) => remaining,
+        Err(error) => return Ok(Err(error)),
+    };
+    respond(input, remaining, None, context)
+}
+
+/// The page-independent half of the stage: selection receipts, line
+/// numbers, output validation (row violations isolated, marking `failure`)
+/// and continuation shaping. Returns the remaining-notes the pager words.
+/// A settled envelope is what a page replay stores, so its later pages are
+/// neither validated nor shaped again.
+pub(crate) fn settle(
+    tool: ToolId,
+    structured: &mut Value,
+    response_query: &Value,
+    failure: &mut Option<FailureKind>,
+) -> Result<Vec<Vec<super::pages::Remaining>>, ContractValidationError> {
+    crate::tools::selection_errors::decorate(tool, structured, response_query);
+    super::notices::place(structured, tool.output().rows_key());
+    super::channels::publish_hints(structured, tool);
+    // The notes stay with the pager for the pages a split row moves.
+    let remaining = super::pages::take_remaining_notes(structured);
+    // Hosts show agents this JSON: source reads carry their line numbers in
+    // `content` itself, and both text encodings render from it. Numbering
+    // precedes validation so an unpaged response is exactly what was checked.
+    crate::tools::numbered::number_read_rows(tool, structured);
+    // Validate the complete, sanitized rows before deriving text, error state,
+    // or a pagination snapshot from them.
+    if isolate_output_rows(tool.as_str(), structured)? && failure.is_none() {
+        *failure = Some(FailureKind::Execution);
+    }
+    super::channels::lead_continuations(structured, tool);
+    Ok(remaining)
+}
+
+/// Rendered text a replayed envelope keeps for its later pages: the text of
+/// the envelope with or without transient telemetry (`stripped`).
+#[derive(Default)]
+pub(crate) struct TextCache(std::sync::Mutex<Option<(bool, String)>>);
+
+impl TextCache {
+    fn get_or_render(&self, stripped: bool, render: impl FnOnce() -> String) -> String {
+        let mut cached = self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        match cached.as_ref() {
+            Some((was_stripped, text)) if *was_stripped == stripped => text.clone(),
+            _ => {
+                let text = render();
+                *cached = Some((stripped, text.clone()));
+                text
+            }
+        }
+    }
+}
+
+/// The page-dependent half of the stage over a [`settle`]d envelope: text,
+/// paging and the paged shape's contract check. `text` reuses a replay's
+/// rendered text.
+pub(crate) fn respond(
     input: StageInput,
+    remaining: Vec<Vec<super::pages::Remaining>>,
+    text: Option<&TextCache>,
     context: &ExecutionContext,
 ) -> Result<Result<ToolOutcome, ContractValidationError>, ExecutionError> {
     let StageInput {
@@ -45,35 +117,18 @@ pub(crate) fn finish(
         mut response_query,
         mut options,
         mcp,
-        mut failure,
+        failure,
         auto_page_chars,
         text_format,
         allow_auto_paging,
         source_digest,
     } = input;
-    crate::tools::selection_errors::decorate(tool, &mut structured, &response_query);
-    // The notes stay with the pager for the pages a split row moves.
-    let remaining = super::pages::take_remaining_notes(&mut structured);
-    // Hosts show agents this JSON: source reads carry their line numbers in
-    // `content` itself, and both text encodings render from it. Numbering
-    // precedes validation so an unpaged response is exactly what was checked.
-    crate::tools::numbered::number_read_rows(tool, &mut structured);
-    // Validate the complete, sanitized rows before deriving text, error state,
-    // or a pagination snapshot from them.
-    match isolate_output_rows(tool.as_str(), &mut structured) {
-        Ok(true) if failure.is_none() => failure = Some(FailureKind::Execution),
-        Ok(_) => {}
-        Err(error) => return Ok(Err(error)),
-    }
-    super::channels::lead_continuations(&mut structured, tool);
     let all_failed = response_all_failed(&structured);
     // An explicitly paged text response hashes and windows the rendered
     // text, so transient telemetry must leave before rendering (row pages
     // keep per-call facts outside their snapshot; the pager handles both).
-    if options.explicit()
-        && !options.rows_scope()
-        && let Some(envelope) = structured.as_object_mut()
-    {
+    let stripped = options.explicit() && !options.rows_scope();
+    if stripped && let Some(envelope) = structured.as_object_mut() {
         super::pager::strip_transient_telemetry(envelope);
     }
     context.check()?;
@@ -82,8 +137,13 @@ pub(crate) fn finish(
         || options.response_length.is_some()
         || options.response_offset.is_some()
         || options.response_snapshot.is_some();
-    let rendered_text =
-        render.then(|| super::render::render_tool(tool, &structured, &response_query, text_format));
+    let rendered_text = render.then(|| {
+        let draw = || super::render::render_tool(tool, &structured, &response_query, text_format);
+        match text {
+            Some(cache) => cache.get_or_render(stripped, draw),
+            None => draw(),
+        }
+    });
     context.check()?;
     if allow_auto_paging {
         options.auto_paginate(rendered_text.as_deref(), &structured, auto_page_chars);
@@ -269,6 +329,21 @@ mod tests {
     /// A page that continues keeps every other lead its row carries when
     /// the row asked for `hints`; by default a successful row's optional
     /// search lead goes and its page stays.
+    fn suggested_input(data: &Value, action: &str, tool: &str) -> Value {
+        let prefix = format!("{action}: {tool} ");
+        let text = data["hints"]
+            .as_array()
+            .expect("string guidance")
+            .iter()
+            .filter_map(Value::as_str)
+            .find_map(|text| text.strip_prefix(&prefix))
+            .expect("suggested tool call");
+        let input: Value = serde_json::from_str(text).expect("complete JSON input");
+        crate::contracts::prepare_many_and_validate(tool, input.clone())
+            .expect("suggestion validates");
+        input
+    }
+
     #[test]
     fn a_continuing_row_keeps_its_search_lead() {
         let mut row = fetch_row(0);
@@ -283,11 +358,9 @@ mod tests {
                 Some(&hinted),
             );
             let data = &outcome.structured_content["results"][0]["data"];
-            let leads = [&data["next"]["findText"], &data["hints"]["findText"]];
-            assert!(
-                leads.iter().any(|lead| lead["tool"] == "localSearch"),
-                "mcp={mcp}: {data}"
-            );
+            let input = suggested_input(data, "findText", "localSearch");
+            assert_eq!(input["queries"][0]["matchString"], "hit");
+            assert!(data["next"].get("findText").is_none());
             assert_eq!(
                 data["next"]["continueWindow"]["tool"], "localFetch",
                 "{data}"
@@ -323,7 +396,8 @@ mod tests {
         for mcp in [false, true] {
             let outcome = stage("lspSearch", lsp_partial_row(false), mcp);
             let data = &outcome.structured_content["results"][0]["data"];
-            let rows = data["hints"]["findText"]["query"]["queries"]
+            let input = suggested_input(data, "findText", "localSearch");
+            let rows = input["queries"]
                 .as_array()
                 .unwrap_or_else(|| panic!("mcp={mcp}: lead stays: {data}"));
             let paths: Vec<_> = rows.iter().filter_map(|row| row["path"].as_str()).collect();
@@ -425,6 +499,51 @@ mod tests {
         );
     }
 
+    /// A classified row's two unfiltered routes (the unknown evidence only,
+    /// and the whole view) reach different scopes: after channel shaping
+    /// they are still two separately callable pages with their rows intact.
+    #[test]
+    fn the_unknown_and_whole_unfiltered_routes_stay_two_calls() {
+        let call = |tool: &str, row: Value| json!({"tool":tool,"query":{"queries":[row]}});
+        let cases = [
+            (
+                "localSearch",
+                json!({"path":"/tmp/src","matchString":"fn","include":["/a.rs"]}),
+                json!({"path":"/tmp/src","matchString":"fn","snapshot":"s1"}),
+                json!({"files":[{"path":"a.rs","matches":[{"line":1,"value":"fn a()"}]}],
+                    "matchCount":1,"matchedLineCount":1,"filesScanned":2}),
+            ),
+            (
+                "localFetch",
+                json!({"path":"/tmp/a.txt","ranges":["9-20","30-31"]}),
+                json!({"path":"/tmp/a.txt","fullContent":true}),
+                json!({"path":"a.txt","content":"one\n","totalLines":40}),
+            ),
+        ];
+        for (tool, unknown, whole, mut data) in cases {
+            data["next"] = json!({"unfiltered": call(tool, unknown.clone()),
+                "unfiltered2": call(tool, whole.clone())});
+            for mcp in [false, true] {
+                let outcome = stage(
+                    tool,
+                    json!({"results":[{"index":0,"data":data.clone()}]}),
+                    mcp,
+                );
+                let next = &outcome.structured_content["results"][0]["data"]["next"];
+                assert_eq!(
+                    next["unfiltered"]["query"]["queries"],
+                    json!([unknown]),
+                    "{tool} mcp={mcp}: {next}"
+                );
+                assert_eq!(
+                    next["unfiltered2"]["query"]["queries"],
+                    json!([whole]),
+                    "{tool} mcp={mcp}: {next}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn rejected_batch_rows_stay_explicit_errors_on_both_channels() {
         let rejected = json!({"index":1,"status":"error","data":{"error":"Check the query fields.","errorCode":"invalidInput"}});
@@ -509,7 +628,7 @@ mod tests {
             "answers":{"a":{"type":"noul","noul":0.5}},
             "usage":{"input_tokens":3,"output_tokens":1},
             "hints":{"read":{"tool":"localFetch","query":{"queries":[
-                {"path":"/tmp/a","ranges":["1-2"],"minify":"none"}]}}}}]});
+                {"path":"/tmp/a","ranges":["1-2"]}]}}}}]});
         let mut structured = receipt.clone();
         super::super::continuations::finalize(
             &mut structured,
@@ -536,7 +655,14 @@ mod tests {
         .expect("stage runs")
         .expect("valid envelope");
         // The read of exactly what was judged survives the stage unchanged.
-        assert_eq!(outcome.structured_content["queries"], receipt["queries"]);
+        let returned = &outcome.structured_content["queries"][0];
+        assert_eq!(
+            suggested_input(returned, "read", "localFetch"),
+            receipt["queries"][0]["hints"]["read"]["query"]
+        );
+        for key in ["id", "model", "answers", "usage"] {
+            assert_eq!(returned[key], receipt["queries"][0][key]);
+        }
         assert!(
             outcome.content.is_empty(),
             "non-MCP receipts are not rendered"

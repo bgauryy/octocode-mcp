@@ -12,10 +12,11 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const SHA: &str = "0123456789abcdef0123456789abcdef01234567";
 
-/// The head commit hit lines are pinned to resolves while the index search
-/// runs: one round trip, not two in series, before the file reads.
+/// A ref search's commit, which its hit lines are pinned to, resolves while
+/// the index search runs: one round trip, not two in series, before the
+/// file reads.
 #[tokio::test]
-async fn the_head_commit_resolves_while_the_search_runs() {
+async fn the_ref_commit_resolves_while_the_search_runs() {
     let server = MockServer::builder().start().await;
     let delay = Duration::from_millis(300);
     let search = Delayed::new(
@@ -35,7 +36,7 @@ async fn the_head_commit_resolves_while_the_search_runs() {
         .mount(&server)
         .await;
     Mock::given(method("GET"))
-        .and(path("/api/v3/repos/a/b/commits/HEAD"))
+        .and(path("/api/v3/repos/a/b/commits/dev"))
         .respond_with(commit.clone())
         .mount(&server)
         .await;
@@ -48,13 +49,15 @@ async fn the_head_commit_resolves_while_the_search_runs() {
         .await;
     let provider = one_shot_provider(&server);
     let query: GhSearchCodeQuery =
-        serde_json::from_value(json!({"owner":"a","repo":"b","keywords":["wrap_app"]}))
+        serde_json::from_value(json!({"owner":"a","repo":"b","ref":"dev","keywords":["wrap_app"]}))
             .expect("query");
     let context = default_context();
     let out = execute(&provider, &query, &context, &Passthrough)
         .await
         .expect("search");
     assert_eq!(out.data["commitSha"], SHA, "{}", out.data);
+    // The page's core-quota cost: one contents read (an `extras:["stats"]` field).
+    assert_eq!(out.data["contentReads"], 1, "{}", out.data);
     assert_eq!(
         out.data["files"][0]["lines"],
         json!(["1\tfn wrap_app() {}"])
@@ -69,6 +72,77 @@ async fn the_head_commit_resolves_while_the_search_runs() {
     assert!(
         gap < delay / 2,
         "the commit lookup waited {gap:?} for the search"
+    );
+}
+
+/// A default-branch search reads each hit at the commit the index matched
+/// (its `html_url`), so its lines are the text the index searched, with no
+/// commit lookup; files whose index blob is the same are read once.
+#[tokio::test]
+async fn default_branch_lines_are_read_at_the_indexed_commit() {
+    let server = MockServer::builder().start().await;
+    let item = |name: &str, blob: &str| {
+        json!({"name":name,"path":format!("src/{name}"),"sha":blob,
+            "html_url":format!("https://github.com/a/b/blob/{SHA}/src/{name}"),
+            "repository":{"full_name":"a/b","html_url":"https://x","url":"https://x"}})
+    };
+    Mock::given(method("GET"))
+        .and(path("/api/v3/search/code"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "total_count":3,"incomplete_results":false,"items":[
+                item("one.rs", "b1"), item("copy.rs", "b1"), item("two.rs", "b2")
+            ]
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(wiremock::matchers::path_regex("/commits/"))
+        .respond_with(ResponseTemplate::new(500))
+        .expect(0)
+        .mount(&server)
+        .await;
+    for (name, body, reads) in [
+        ("one.rs", "fn wrap_app() {}\n", 1),
+        ("copy.rs", "fn wrap_app() {}\n", 0),
+        ("two.rs", "let x = wrap_app();\n", 1),
+    ] {
+        Mock::given(method("GET"))
+            .and(path(format!("/api/v3/repos/a/b/contents/src%2F{name}")))
+            .and(wiremock::matchers::query_param("ref", SHA))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "type":"file","encoding":"base64","content":STANDARD.encode(body)
+            })))
+            .expect(reads)
+            .mount(&server)
+            .await;
+    }
+    let provider = one_shot_provider(&server);
+    let query: GhSearchCodeQuery =
+        serde_json::from_value(json!({"owner":"a","repo":"b","keywords":["wrap_app"]}))
+            .expect("query");
+    let out = execute(&provider, &query, &default_context(), &Passthrough)
+        .await
+        .expect("search");
+    let data = &out.data;
+    assert_eq!(data["commitSha"], SHA, "{data}");
+    assert_eq!(data["contentReads"], 2, "{data}");
+    let listed = data["files"]
+        .as_array()
+        .expect("files")
+        .iter()
+        .flat_map(|file| {
+            std::iter::once(file["path"].clone())
+                .chain(file["alsoAt"].as_array().cloned().unwrap_or_default())
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(listed.len(), 3, "every hit is listed once: {data}");
+    assert!(
+        data["files"]
+            .as_array()
+            .expect("files")
+            .iter()
+            .all(|file| file.get("lines").is_some()),
+        "{data}"
     );
 }
 
@@ -106,6 +180,67 @@ async fn searches_without_line_reads_resolve_no_commit() {
         "{:?}",
         requests.iter().map(|r| r.url.path()).collect::<Vec<_>>()
     );
+}
+
+/// A path-only page reads no lines, yet names the commit the index matched
+/// (from each hit's `html_url`), so a read of a listed path can be pinned;
+/// rows indexed at different commits each name theirs.
+#[tokio::test]
+async fn path_only_rows_name_their_indexed_commit() {
+    let other = "89abcdef0123456789abcdef0123456789abcdef";
+    let server = MockServer::builder().start().await;
+    let item = |name: &str, sha: &str| {
+        json!({"name":name,"path":name,"sha":"1",
+            "html_url":format!("https://github.com/a/b/blob/{sha}/{name}"),
+            "repository":{"full_name":"a/b","html_url":"https://x","url":"https://x"}})
+    };
+    Mock::given(method("GET"))
+        .and(path("/api/v3/search/code"))
+        .and(wiremock::matchers::query_param("q", "app repo:a/b in:path"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "total_count":2,"incomplete_results":false,
+            "items":[item("app.rs", SHA), item("app_test.rs", SHA)]
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/search/code"))
+        .and(wiremock::matchers::query_param("q", "lib repo:a/b in:path"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "total_count":2,"incomplete_results":false,
+            "items":[item("lib.rs", SHA), item("lib_test.rs", other)]
+        })))
+        .mount(&server)
+        .await;
+    let provider = one_shot_provider(&server);
+    let context = default_context();
+    let search = |keyword: &str| -> GhSearchCodeQuery {
+        serde_json::from_value(
+            json!({"owner":"a","repo":"b","keywords":[keyword],"matchIn":"path"}),
+        )
+        .expect("query")
+    };
+    let shared = execute(&provider, &search("app"), &context, &Passthrough)
+        .await
+        .expect("search");
+    assert_eq!(shared.data["commitSha"], SHA, "{}", shared.data);
+    let mixed = execute(&provider, &search("lib"), &context, &Passthrough)
+        .await
+        .expect("search");
+    assert!(mixed.data.get("commitSha").is_none(), "{}", mixed.data);
+    let commits = mixed.data["files"]
+        .as_array()
+        .expect("files")
+        .iter()
+        .map(|row| {
+            (
+                row["path"].as_str().unwrap_or_default(),
+                row["commitSha"].as_str().unwrap_or_default(),
+            )
+        })
+        .collect::<std::collections::BTreeMap<_, _>>();
+    assert_eq!(commits["lib.rs"], SHA, "{}", mixed.data);
+    assert_eq!(commits["lib_test.rs"], other, "{}", mixed.data);
 }
 
 /// Two owner-wide hits in different repositories, indexed at `SHA`.
@@ -433,7 +568,8 @@ async fn a_path_scoped_empty_says_why_it_proves_nothing() {
     assert_eq!(
         out.data["hints"],
         json!([
-            "Code search indexes only the default branch; `v1` was not searched. No indexed match under `src`: unproven absence (the index can lag); ghStructure the path, ghGetFileContent its files."
+            "Code search indexes only the default branch; `v1` was not searched.",
+            "No indexed match under `src`: unproven absence (the index can lag); ghStructure the path, ghGetFileContent its files."
         ]),
         "{}",
         out.data
@@ -653,6 +789,78 @@ async fn a_page_past_the_window_repairs_to_the_last_real_page() {
     assert_eq!(next["repair"]["query"]["queries"][0]["page"], 8, "{next}");
 }
 
+/// Code search serves a page only while its last result lies inside the
+/// 1,000-result window: at 3 a page the window ends at page 333 (999
+/// results), which is the terminal page, and page 334 repairs to it.
+#[tokio::test]
+async fn the_code_search_window_ends_at_its_last_whole_page() {
+    let server = MockServer::builder().start().await;
+    mount_counted_search(&server, 2236).await;
+    let provider = one_shot_provider(&server);
+    let at = |page: usize| -> GhSearchCodeQuery {
+        serde_json::from_value(json!({
+            "owner":"a","repo":"b","keywords":["needle"],"pageSize":3,"page":page,"fields":["path"]
+        }))
+        .expect("query")
+    };
+    let context = default_context();
+    let first = execute(&provider, &at(1), &context, &Passthrough)
+        .await
+        .expect("first page");
+    assert_eq!(
+        first.data["pagination"]["totalItems"], 999,
+        "{}",
+        first.data
+    );
+    assert_eq!(
+        first.data["pagination"]["totalPages"], 333,
+        "{}",
+        first.data
+    );
+    let last = execute(&provider, &at(333), &context, &Passthrough)
+        .await
+        .expect("last page");
+    assert!(last.data["next"]["nextPage"].is_null(), "{}", last.data);
+    assert_eq!(last.data["terminalLimit"], true, "{}", last.data);
+    let Err(failure) = super::run(&provider, &at(334), Ok(&context), &Passthrough).await else {
+        panic!("a page past the window is a failure");
+    };
+    let next = failure.next.expect("repair");
+    assert_eq!(next["repair"]["query"]["queries"][0]["page"], 333, "{next}");
+}
+
+/// A merged multi-`extensions` page is page N of each extension's own
+/// search of `ceil(pageSize / k)` files, so the window is that search's: at
+/// 50 files over 3 extensions (17 each) page 58 is the last, and page 59
+/// repairs to it. The error states the caller's page size and the merged
+/// reachable total (3 × 986), as page 1 does, never the per-search size.
+#[tokio::test]
+async fn a_multi_extension_window_is_each_searchs_own() {
+    let server = MockServer::builder().start().await;
+    mount_counted_search(&server, 5000).await;
+    let provider = one_shot_provider(&server);
+    let at = |page: usize| -> GhSearchCodeQuery {
+        serde_json::from_value(json!({
+            "owner":"a","repo":"b","keywords":["needle"],"extensions":["rs","ts","go"],
+            "pageSize":50,"page":page,"fields":["path"]
+        }))
+        .expect("query")
+    };
+    let context = default_context();
+    execute(&provider, &at(58), &context, &Passthrough)
+        .await
+        .expect("the last page");
+    let Err(failure) = super::run(&provider, &at(59), Ok(&context), &Passthrough).await else {
+        panic!("a page past the window is a failure");
+    };
+    assert_eq!(
+        failure.message,
+        "Page 59 is past GitHub's search window: at pageSize 50, page 58 is the last, reaching the first 2958 results."
+    );
+    let next = failure.next.expect("repair");
+    assert_eq!(next["repair"]["query"]["queries"][0]["page"], 58, "{next}");
+}
+
 /// `fields:["path","matchCount"]` states each file's hit count without
 /// listing its lines, and no warning says the count is missing.
 #[tokio::test]
@@ -740,20 +948,18 @@ fn warnings_of(out: &crate::tools::result::ToolData) -> &serde_json::Value {
 
 /// A paged search page states the repeats it found: a later page drops a
 /// file an earlier cached page listed, and counts the earlier pages it could
-/// check (an uncached one is named, not assumed, and its repeats stay
-/// listed). A clean first page carries no note: that totals are estimates is
-/// static and lives in the tool description.
+/// check. An uncached earlier page keeps its repeats listed and adds no note
+/// (a jump to a deep page dropped nothing), nor does a clean first page:
+/// that totals are estimates is static and lives in the tool description.
 #[tokio::test]
 async fn paged_pages_state_estimates_and_the_repeats_they_dropped() {
     let checked =
         "Repeat check read 1 of 1 earlier page; pages no longer cached were not compared.";
-    let unchecked =
-        "Repeat check read 0 of 1 earlier page; pages no longer cached were not compared.";
     let dropped = "Dropped 1 file GitHub listed again (already on an earlier page or this one).";
     for (cached, page, paths, warnings) in [
         (true, 1, vec!["a.rs", "b.rs"], serde_json::Value::Null),
         (true, 2, vec!["c.rs"], json!([dropped, checked])),
-        (false, 2, vec!["b.rs", "c.rs"], json!([unchecked])),
+        (false, 2, vec!["b.rs", "c.rs"], serde_json::Value::Null),
     ] {
         let server = MockServer::builder().start().await;
         mount_search_page(&server, 1, 4, &["a.rs", "b.rs"]).await;

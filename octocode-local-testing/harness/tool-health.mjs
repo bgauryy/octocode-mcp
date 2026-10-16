@@ -125,7 +125,7 @@ function cliArgs(cliArgv, { tool = 'schema', cwd = FIXTURE, extraEnv = {} } = {}
       clearTimeout(timer);
       let raw; try { raw = JSON.parse(stdout); } catch {}
       const json = expandShared(raw);
-      resolve({ surface: 'cli', status, raw, json, sc: json, text: stdout + stderr, stdout, stderr, isError: !raw || (status !== 0 && !(status === 1 && statusClass(raw) === 'empty')), ms: Math.round(performance.now() - t0) });
+      resolve({ surface: 'cli', status, raw, json, sc: json, text: stdout + stderr, stdout, stderr, isError: !raw || (status !== 0 && !(status === 1 && ['empty', 'outOfRange'].includes(statusClass(raw)))), ms: Math.round(performance.now() - t0) });
     });
   });
 }
@@ -147,7 +147,7 @@ const firstError = json => { const row = rowsOf(json).find(r => r.status === 'er
 const EXIT = { ok: 0, empty: 1, invalid: 2, tool: 5 };
 const hasHintOrLead = data => {
   const hints = data?.hints;
-  const n = hints && typeof hints === 'object' ? Object.entries(hints).filter(([k, v]) => k === 'text' ? v?.length : v?.tool).length : 0;
+  const n = Array.isArray(hints) && hints.every(hint => typeof hint === 'string' && hint.trim()) ? hints.length : 0;
   return n > 0 || Object.keys(data?.next ?? {}).length > 0;
 };
 

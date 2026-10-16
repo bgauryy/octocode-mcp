@@ -80,6 +80,28 @@ pub struct GraphFactExport {
     pub source: Option<String>,
 }
 
+/// A Rust qualified path outside call and `use` position: a constant or
+/// type (`crate::a::LIMIT`), a function passed as a value, or a path inside
+/// a macro token tree. Its module prefix is a dependency, as a call's is.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, Eq, PartialEq, Ord, PartialOrd)]
+#[serde(default, rename_all = "camelCase")]
+pub struct GraphFactPath {
+    pub line: u32,
+    /// The path as written, whitespace removed (`crate::a::LIMIT`).
+    pub path: String,
+    /// Declaration id of the enclosing item; absent for module-level code.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub caller_id: Option<String>,
+    /// Number of inline `mod` items enclosing the path: their `super`s
+    /// stay in the file.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub inline_depth: u32,
+}
+
+fn is_zero(value: &u32) -> bool {
+    *value == 0
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(default, rename_all = "camelCase")]
 pub struct GraphFactCall {
@@ -155,6 +177,9 @@ pub struct GraphFactsDocument {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub error_lines: Vec<[u32; 2]>,
     pub modules: Vec<GraphFactRustModule>,
+    /// Rust qualified paths outside call and `use` position.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub paths: Vec<GraphFactPath>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rust_root_unsupported: Option<bool>,
 }
@@ -169,7 +194,7 @@ pub struct GraphFactsDocument {
 /// any later write moves its time past the stored one. On Unix the status
 /// change time and inode also change on a write that restores the old
 /// modification time, or on a replace by rename.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SourceStamp {
     pub size: u64,
     /// Modification time, nanoseconds since the Unix epoch.

@@ -63,6 +63,7 @@ flowchart LR
 
 - Live browser rendering or interaction: `octocode-chrome-devtools`.
 - Code or package claims: `octocode-research`.
+- For an orchestrated multi-actor task: [octocode-workflows composition](../octocode-workflows/references/composition.md).
 
 ## Output
 

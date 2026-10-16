@@ -15,13 +15,135 @@ use std::{
     path::Path,
 };
 
+/// One analysis answer: its rows, summary, warnings, and low confidence.
+type Answer = (Vec<Value>, Value, Vec<String>, bool);
+
+/// Answers of shared graphs, so a later result or diagnostic page reuses the
+/// analysis its first page ran instead of recomputing it. Keyed by the
+/// graph's allocation and the query fields that decide the answer (every
+/// field but the page cursors); the weak reference proves the stored answer
+/// is of this very graph, and holds its address while the entry lives.
+static ANSWERS: crate::tools::page_memo::PageMemo<(
+    std::sync::Weak<BuiltGraph>,
+    std::sync::Arc<Answer>,
+)> = crate::tools::page_memo::PageMemo::new(std::time::Duration::from_secs(60), 16, 64 << 20);
+
+/// The query as its answer and page layout over graph `b` depend on it:
+/// every field but the page cursors, the snapshot, the caller's notes and
+/// the output extras; the scan root is the graph's own (a lead may spell
+/// `path` relative to the workspace), file references are the graph keys
+/// they name, and both page sizes are resolved (an explicit default equals
+/// an omitted one). The answer memo key and the snapshot id both digest it,
+/// so a page of one analysis never continues another's.
+pub(super) fn answer_fields(q: &AstTopologyQuery, b: &BuiltGraph) -> Value {
+    let mut query = serde_json::to_value(q).unwrap_or_default();
+    if let Some(fields) = query.as_object_mut() {
+        fields.retain(|_, value| !value.is_null());
+        for cursor in [
+            "page",
+            "diagnosticPage",
+            "snapshot",
+            "mainGoal",
+            "reasoning",
+            "extras",
+            "supersedes",
+            "path",
+        ] {
+            fields.remove(cursor);
+        }
+        let key = |raw: &str| node_key(raw, &b.root, &b.nodes);
+        for field in ["source", "target"] {
+            if let Some(Value::String(raw)) = fields.get_mut(field) {
+                *raw = key(raw);
+            }
+        }
+        if let Some(entrypoints) = q.entrypoints() {
+            fields.insert(
+                "entrypoints".into(),
+                json!(entrypoints.iter().map(|raw| key(raw)).collect::<Vec<_>>()),
+            );
+        }
+        fields.insert("root".into(), json!(b.root));
+        fields.insert("pageSize".into(), json!(q.page_size()));
+        fields.insert("diagnosticPageSize".into(), json!(q.diagnostic_page_size()));
+        // A lead rebuilds the row in another field order: digest one order.
+        fields.sort_keys();
+    }
+    query
+}
+
+/// The memo key of `q`'s answer over `b`.
+fn answer_key(b: &std::sync::Arc<BuiltGraph>, q: &AstTopologyQuery) -> String {
+    format!("{:p}|{}", std::sync::Arc::as_ptr(b), answer_fields(q, b))
+}
+
+/// The analysis `q` asks of `b`, from the memo when this graph answered it.
+fn answer(
+    b: &std::sync::Arc<BuiltGraph>,
+    q: &AstTopologyQuery,
+    read: &dyn Fn(&std::path::Path) -> Option<String>,
+) -> Result<Answer, ToolError> {
+    let key = answer_key(b, q);
+    let stored = ANSWERS.get(&key, "", |(graph, answer)| {
+        graph
+            .upgrade()
+            .is_some_and(|graph| std::sync::Arc::ptr_eq(&graph, b))
+            .then(|| std::sync::Arc::clone(answer))
+    });
+    if let Some(answer) = stored.flatten() {
+        return Ok((*answer).clone());
+    }
+    #[cfg(test)]
+    ANALYSES.with(|count| count.set(count.get() + 1));
+    let answer = match q.analysis() {
+        GraphAnalysis::Dependencies | GraphAnalysis::Dependents => traversal(b, q)?,
+        GraphAnalysis::Path => path_analysis(b, q)?,
+        GraphAnalysis::Cycles => cycles(b),
+        GraphAnalysis::Reachability => reachability(b, q, read),
+        GraphAnalysis::DeadCode => dead_code(b, q, read),
+        GraphAnalysis::Drift => {
+            return Err(ToolError::new(
+                "invalidGraphQuery",
+                "drift is dispatched before analyze",
+            ));
+        }
+    };
+    let weight = answer
+        .0
+        .iter()
+        .map(crate::tools::stream_page::json_chars)
+        .sum::<usize>();
+    ANSWERS.put(
+        key,
+        String::new(),
+        weight,
+        (
+            std::sync::Arc::downgrade(b),
+            std::sync::Arc::new(answer.clone()),
+        ),
+    );
+    Ok(answer)
+}
+
+#[cfg(test)]
+thread_local! {
+    static ANALYSES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Analyses this thread computed, not served from the memo (tests).
+#[cfg(test)]
+pub(super) fn analyses() -> usize {
+    ANALYSES.with(std::cell::Cell::get)
+}
+
 pub(crate) fn analyze(
-    b: &BuiltGraph,
+    b: &std::sync::Arc<BuiltGraph>,
     display_path: &str,
     q: &AstTopologyQuery,
     paths: &PathPolicy,
     security: &ContentSecurity,
     cancel: &dyn CancellationCheck,
+    response_window: Option<usize>,
 ) -> AstGraphResult {
     let read = |path: &std::path::Path| super::aliases::read_config_text(paths, security, path);
     cancel.check().map_err(ToolError::cancelled)?;
@@ -43,19 +165,7 @@ pub(crate) fn analyze(
             true,
         )
     } else {
-        match q.analysis() {
-            GraphAnalysis::Dependencies | GraphAnalysis::Dependents => traversal(b, q)?,
-            GraphAnalysis::Path => path_analysis(b, q)?,
-            GraphAnalysis::Cycles => cycles(b),
-            GraphAnalysis::Reachability => reachability(b, q, &read),
-            GraphAnalysis::DeadCode => dead_code(b, q, &read),
-            GraphAnalysis::Drift => {
-                return Err(ToolError::new(
-                    "invalidGraphQuery",
-                    "drift is dispatched before analyze",
-                ));
-            }
-        }
+        answer(b, q, &read)?
     };
     warnings.extend(extra_warnings);
     drop_repeated_summary_lists(&mut summary, q);
@@ -89,29 +199,35 @@ pub(crate) fn analyze(
     // way: a partial answer that names why, never an empty one.
     let suppressed = summary["suppressed"] == true;
     let answer_empty = pending_endpoint.is_none() && !suppressed && answer_is_empty(&items);
-    let (page, pagination) = paginate(items, q);
+    let budget = crate::tools::page_windows::page_budget(response_window, &answer_fields(q, b));
+    let (page, pagination) = paginate(items, q, budget);
     base.insert("nodes".into(), Value::Array(page));
     base.insert("pagination".into(), pagination);
     base.insert("graphSummary".into(), summary);
-    if !warnings.is_empty() {
+    // The answer's scan notes hold for every page: the first page states
+    // them once (page-specific notes are added below).
+    if !warnings.is_empty() && q.page() <= 1 {
         base.insert("warnings".into(), json!(warnings));
     }
     if low {
         base.insert("confidence".into(), json!("low"));
     }
-    let coverage_state = add_coverage(&mut base, b, q, &results_digest);
+    let coverage_state = add_coverage(&mut base, b, q, &results_digest, budget);
     let result_page_limit = mark_scope_cuts(&mut base, cuts, q, coverage_state.changed);
     if suppressed {
         crate::tools::paging::mark_partial(&mut base, "entrypointsUnresolved", &[]);
     }
     // A diagnostic page reached from a lead (it carries the snapshot) shows
     // the diagnostics only: its results were delivered by the offering page.
-    let diagnostics_only = q.diagnostic_rows_requested() && q.diagnostic_snapshot().is_some();
+    let diagnostics_only = q.diagnostic_rows_requested() && q.snapshot().is_some();
     if diagnostics_only && !coverage_state.changed {
         keep_diagnostics_only(&mut base);
     }
     if answer_empty && !diagnostics_only {
         mark_empty(&mut base);
+        if let Some(hint) = test_roots_hint(q, &base["graphSummary"]) {
+            base.insert("hints".into(), json!([hint]));
+        }
     }
     if !coverage_state.changed {
         add_next(
@@ -360,6 +476,23 @@ pub(super) fn answer_is_empty(items: &[Value]) -> bool {
 /// An empty answer is an empty result, as a search with no match is: every
 /// interface reports it as such (CLI exit 1) and the row carries a recovery
 /// that names the operation.
+/// The fact of an empty deadCode answer that test files kept alive: how
+/// many test roots it counted (`includeTests` decides whether they count).
+fn test_roots_hint(q: &AstTopologyQuery, summary: &Value) -> Option<String> {
+    if q.analysis() != GraphAnalysis::DeadCode || q.include_tests() == Some(false) {
+        return None;
+    }
+    let tests = summary["entrypointsResolved"]
+        .as_array()?
+        .iter()
+        .filter_map(Value::as_str)
+        .filter(|file| crate::content::is_test_path(file))
+        .count();
+    (tests > 0).then(|| {
+        format!("0 dead exports; {tests} test file(s) count as roots and keep what they import live (includeTests:false).")
+    })
+}
+
 pub(super) fn mark_empty(base: &mut Map<String, Value>) {
     base.insert("status".into(), json!("empty"));
 }
@@ -479,8 +612,7 @@ fn unlinked_importer_warning(b: &BuiltGraph, target: &str) -> Option<String> {
 }
 
 pub(super) fn is_js_ts(file: &str) -> bool {
-    octocode_engine::text::JS_TS_EXTENSIONS
-        .contains(&octocode_engine::text::extension_of(file, true, "").as_str())
+    super::linking::Linker::of(file) == super::linking::Linker::JsTs
 }
 
 /// `path` without its JS/TS extension.
@@ -636,25 +768,16 @@ pub(super) fn cycles(b: &BuiltGraph) -> (Vec<Value>, Value, Vec<String>, bool) {
     // of its ancestor (`use super::…`) loop by construction. Cycles are found
     // on the use graph without those edges; the loops they alone close are
     // counted, not listed.
-    let uses = dependency_graph(&b.nodes);
-    let c = condense(&uses);
-    let layers = layer_map(&c);
-    let trans = find_transitive(&c);
-    let runtime = runtime_graph(&uses);
-    let runtime_cycles = scc(&runtime, true);
-    let file_witnesses = CycleWitnesses::new(&uses);
-    let runtime_witnesses = CycleWitnesses::new(&runtime);
+    let cycles = Cycles::of(&b.nodes);
+    let (uses, c) = (&cycles.uses, &cycles.condensed);
+    let layers = layer_map(c);
+    let trans = find_transitive(c);
+    let file_witnesses = CycleWitnesses::new(uses);
+    let runtime_witnesses = CycleWitnesses::new(&cycles.runtime);
     let mut items = Vec::new();
-    for (id, files) in c.components.iter().enumerate() {
-        if files.len() == 1 && !uses[&files[0]].edges.contains_key(&files[0]) {
-            continue;
-        }
+    for (id, files) in cycles.groups() {
         let members = files.iter().cloned().collect::<BTreeSet<_>>();
-        let contained = runtime_cycles
-            .iter()
-            .filter(|x| x.iter().all(|f| members.contains(f)))
-            .cloned()
-            .collect::<Vec<_>>();
+        let contained = cycles.runtime_within(&members);
         let outgoing = c
             .edges
             .get(&id)
@@ -665,22 +788,32 @@ pub(super) fn cycles(b: &BuiltGraph) -> (Vec<Value>, Value, Vec<String>, bool) {
         // Small facts first and `files` last: a cycle too large for one
         // response page shows its counts and runtime cycles before its files.
         let mut item = json!({"componentId":id,"fileCount":files.len(),"runtimeCycleCount":contained.len(),"runtimeCycle":!contained.is_empty()});
-        if !contained.is_empty() {
-            item["runtimeGroups"] = json!(
-                contained
-                    .iter()
-                    .map(|group| json!({"fileCount":group.len(),"files":group}))
-                    .collect::<Vec<_>>()
-            );
-            let witness = runtime_witnesses.witness(&members);
-            let largest = contained.iter().map(Vec::len).max().unwrap_or_default();
-            item["runtimeCycleEdgesShown"] = witness_label(&witness, largest);
-            item["runtimeCycleEdges"] = json!(witness_edges(witness));
-        }
         let witness = file_witnesses.witness(&members);
+        let static_edges = json!(witness_edges(witness.clone()));
+        if !contained.is_empty() {
+            let runtime_witness = runtime_witnesses.witness(&members);
+            let runtime_edges = json!(witness_edges(runtime_witness.clone()));
+            // One runtime cycle over the whole static group with the same
+            // witness edges: the static evidence below states it once.
+            if matches!(contained.as_slice(), [group] if group.len() == files.len())
+                && runtime_edges == static_edges
+            {
+                item["sameAsStatic"] = json!(true);
+            } else {
+                item["runtimeGroups"] = json!(
+                    contained
+                        .iter()
+                        .map(|group| json!({"fileCount":group.len(),"files":group}))
+                        .collect::<Vec<_>>()
+                );
+                let largest = contained.iter().map(Vec::len).max().unwrap_or_default();
+                item["runtimeCycleEdgesShown"] = witness_label(&runtime_witness, largest);
+                item["runtimeCycleEdges"] = runtime_edges;
+            }
+        }
         item["cycleEdgesShown"] = witness_label(&witness, files.len());
-        item["cycleEdges"] = json!(witness_edges(witness));
-        item["edgeKinds"] = json!(collect_kinds(&uses, files));
+        item["cycleEdges"] = static_edges;
+        item["edgeKinds"] = json!(collect_kinds(uses, files));
         item["topologicalLayer"] = json!(layers.get(&id));
         item["outgoingComponents"] = json!(outgoing);
         item["confidence"] = json!("syntactic");
@@ -812,13 +945,16 @@ pub(super) fn first_import_line(b: &BuiltGraph, importer: &str, target: &str) ->
                 .map(|(_, line)| *line)
                 .min()
         })
-        // A qualified path (`crate::b::f()`) is its own evidence line.
+        // A qualified path (`crate::b::f()`, `crate::b::LIMIT`) is its own
+        // evidence line.
         .or_else(|| {
             facts
                 .calls
                 .iter()
-                .filter(|call| call.target.as_deref() == Some(target))
-                .map(|call| call.line)
+                .map(|call| (&call.target, call.line))
+                .chain(facts.paths.iter().map(|path| (&path.target, path.line)))
+                .filter(|(linked, _)| linked.as_deref() == Some(target))
+                .map(|(_, line)| line)
                 .min()
         })
 }
@@ -907,7 +1043,7 @@ mod tests {
             "dependencies"
         );
         assert_eq!(
-            result["next"]["nextDiagnosticPage"]["query"]["queries"][0]["diagnosticSnapshot"],
+            result["next"]["nextDiagnosticPage"]["query"]["queries"][0]["snapshot"],
             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         );
 
@@ -934,7 +1070,7 @@ mod tests {
         assert_eq!(offered["diagnosticPage"], 1);
         assert_eq!(offered["diagnosticPageSize"], 2);
         assert_eq!(
-            offered["diagnosticSnapshot"],
+            offered["snapshot"],
             "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
         );
     }

@@ -1,4 +1,4 @@
-// Replay one or more calls and print full text: node harness/debug-call.mjs '<tool>' '<query json>' [...]
+// Replay one or more calls and print full text: node harness/debug-call.mjs '<tool>' '<query json | {"queries":[...],...} envelope>' [...]
 import { startServer } from './mcp-client.mjs';
 const client = await startServer();
 const args = process.argv.slice(2);

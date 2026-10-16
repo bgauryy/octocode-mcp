@@ -69,7 +69,7 @@ pub(super) fn score(path: &str, value: &str, terms: &[Term]) -> u8 {
 /// lexicographically by group ID as a stable tiebreaker.
 /// Repository IDs use ASCII characters, so lexicographic order is equivalent
 /// to locale-aware collation for all practical repository names.
-pub(super) fn sort(groups: &mut [Group]) -> Result<(), ProviderError> {
+pub(super) fn sort(groups: &mut [Group]) {
     for group in groups.iter_mut() {
         group.matches.sort_by_key(|value| Reverse(value.score));
     }
@@ -81,5 +81,4 @@ pub(super) fn sort(groups: &mut [Group]) -> Result<(), ProviderError> {
             .then_with(|| right.matches.len().cmp(&left.matches.len()))
             .then_with(|| left.id.cmp(&right.id))
     });
-    Ok(())
 }

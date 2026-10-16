@@ -225,9 +225,10 @@ async fn an_empty_code_search_reads_the_repository_once_and_offers_two_variants(
         .filter(|request| request.url.path() == "/api/v3/repos/o/r")
         .count();
     assert_eq!(repo_reads, 1, "GET /repos/o/r once: {data}");
+    let hint = crate::support::checks::hint(data, "broadenSearch");
     let variants = data
         .pointer("/next/broadenSearch/query/queries")
-        .or_else(|| data.pointer("/hints/broadenSearch/query/queries"))
+        .or_else(|| hint.pointer("/query/queries"))
         .and_then(|rows| rows.as_array())
         .unwrap_or_else(|| panic!("a broadenSearch lead: {data}"));
     assert_eq!(variants.len(), 2, "{data}");

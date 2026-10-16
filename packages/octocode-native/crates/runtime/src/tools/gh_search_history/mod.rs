@@ -237,18 +237,21 @@ impl From<ProviderError> for HistoryFailure {
 
 /// Runs one history search: GitHub search for keywords and search-only
 /// filters, else the REST list endpoint.
-pub async fn execute(
-    transport: &GitHubTransport,
+pub async fn execute<C: octocode_github::ConditionalCache>(
+    provider: &octocode_github::GitHubProvider<C>,
     query: GhSearchHistoryQuery,
     context: &RequestContext,
     security: &impl ContentScan,
 ) -> Result<Value, HistoryFailure> {
+    let transport = &provider.transport;
     let mut query = HistorySearch::new(query)?;
     crate::tools::gh_shared::reject_boolean_keywords(&query.keywords())?;
     let page = query.page().unwrap_or(1);
     let per = page_size(&query);
     let searching = query::uses_search(&query);
-    if searching && let Err(error) = crate::tools::gh_shared::reject_window(page, per) {
+    if searching
+        && let Err(error) = crate::tools::gh_shared::SearchWindow::PageStart.reject(page, per)
+    {
         return Err(window_failure(error, &query, per));
     }
     let mut unconfirmed = Vec::new();
@@ -261,7 +264,7 @@ pub async fn execute(
     // with no rows or a 422; only then is the canonical name looked up.
     if searching
         && may_be_renamed(&fetched)
-        && let Some(warnings) = follow_rename(transport, &mut query, context).await?
+        && let Some(warnings) = follow_rename(provider, &mut query, context).await?
     {
         rename_warnings = warnings;
         fetched = fetch(transport, &query, page, per, searching, context).await;
@@ -278,7 +281,7 @@ pub async fn execute(
             .owner()
             .zip(query.repo())
             .is_some_and(|(owner, repo)| transport.followed_rename(owner, repo));
-    if redirected && let Some(warnings) = follow_rename(transport, &mut query, context).await? {
+    if redirected && let Some(warnings) = follow_rename(provider, &mut query, context).await? {
         rename_warnings = warnings;
     }
     // A commit list answers an unknown author with no rows; only an empty
@@ -286,12 +289,17 @@ pub async fn execute(
     if !searching && query.operation() == HistoryOperation::Commit && result.items.is_empty() {
         unconfirmed = confirm_commit_users(transport, &query, context).await?;
     }
-    result.warnings.splice(0..0, rename_warnings);
     result.warnings.splice(0..0, unconfirmed);
     result.warnings.extend(warnings);
     rows::sanitize_items(&mut result.items, security)?;
     let paging = shape::Paging::new(&result, page, per);
-    Ok(shape::shape(&query, result, &paging, terms))
+    let mut shaped = shape::shape(&query, result, &paging, terms);
+    // A rename reads the same on every row and page of the repository: a
+    // static notice, said once per response.
+    for notice in rename_warnings {
+        crate::tools::paging::push_notice(&mut shaped, notice);
+    }
+    Ok(shaped)
 }
 
 /// Confirms the logins a commit search or an empty commit list names
@@ -361,26 +369,13 @@ async fn fetch(
     context: &RequestContext,
 ) -> Result<Fetched, ProviderError> {
     let (terms, warnings) = query::build_query_with_warnings(query)?;
-    let commit_search = searching && query.operation() == HistoryOperation::Commit;
-    let newest_first = query::lists_issues_newest_first(query);
+    let (sort, order) = query::search_order(query);
     let request = HistoryRequest {
         query: terms,
         page,
         per_page: per,
-        sort: if commit_search {
-            Some("committer-date".into())
-        } else if newest_first {
-            Some("created".into())
-        } else {
-            query.sort().filter(|v| v != "best-match")
-        },
-        order: if commit_search {
-            Some("desc".into())
-        } else if newest_first {
-            Some(query.order().unwrap_or_else(|| "desc".into()))
-        } else {
-            query.order()
-        },
+        sort,
+        order,
     };
     let result = match query.operation() {
         HistoryOperation::Commit if searching => {
@@ -469,15 +464,23 @@ fn may_be_renamed(fetched: &Result<Fetched, ProviderError>) -> bool {
 /// Points the query at the repository's canonical name when it was renamed,
 /// returning the rename warnings; `None` when the name stands. A failed
 /// lookup keeps the original answer.
-async fn follow_rename(
-    transport: &GitHubTransport,
+async fn follow_rename<C: octocode_github::ConditionalCache>(
+    provider: &octocode_github::GitHubProvider<C>,
     query: &mut HistorySearch,
     context: &RequestContext,
 ) -> Result<Option<Vec<String>>, ProviderError> {
     let Some((owner, repo)) = query.owner().zip(query.repo()) else {
         return Ok(None);
     };
-    match transport.canonical_owner_repo(owner, repo, context).await {
+    match crate::tools::gh_shared::canonical_repo(
+        provider,
+        owner,
+        repo,
+        context,
+        crate::tools::gh_shared::RenameCheck::Metadata,
+    )
+    .await
+    {
         Ok(Some(canonical)) => {
             let warning = crate::tools::gh_shared::renamed_warning(owner, repo, &canonical);
             query.query.set_scope(&canonical.0, &canonical.1);
@@ -511,10 +514,12 @@ fn window_failure(error: ProviderError, query: &HistorySearch, per: usize) -> Hi
     }
 }
 
-/// A bare GitHub 404 of a listing. A commit listing at a `ref` cannot tell
-/// a missing ref from a missing repository: the message names the ref and
-/// the refs listing is the one lead (it fails on a missing repository).
-/// Without a ref the repository itself did not resolve; the message names it.
+/// A bare GitHub 404 of a listing, or a search scoped to a missing
+/// repository. A commit listing at a `ref` cannot tell a missing ref from a
+/// missing repository: the message names the ref and the refs listing is the
+/// one lead (it fails on a missing repository). Otherwise the repository
+/// itself did not resolve: the message names it and a search for its name is
+/// the lead.
 fn missing_scope_failure(mut error: ProviderError, query: &HistorySearch) -> HistoryFailure {
     if error.reason == Some(ProviderErrorReason::UserNotFound) {
         let next = leads::without_users(query).map(|lead| json!({ "withoutUsers": lead }));
@@ -523,20 +528,31 @@ fn missing_scope_failure(mut error: ProviderError, query: &HistorySearch) -> His
             next,
         };
     }
-    if error.kind != ProviderErrorKind::NotFound || error.reason.is_some() {
+    // A search scoped to a missing repository fails typed (GitHub's 422);
+    // a listing's 404 does not say which of repository and ref is missing.
+    let repository_missing = crate::tools::gh_shared::repository_not_found(&error);
+    if error.kind != ProviderErrorKind::NotFound || (error.reason.is_some() && !repository_missing)
+    {
         return error.into();
     }
     let (Some(owner), Some(repo)) = (query.owner(), query.repo()) else {
         error.message = crate::tools::gh_shared::provider_message(&error).into_boxed_str();
         return error.into();
     };
-    let Some(reference) = query.reference() else {
-        // The repository itself did not resolve: the message names it.
+    let reference = query.reference().filter(|_| !repository_missing);
+    let Some(reference) = reference else {
+        // The repository itself did not resolve: the message names it, and
+        // its recovery is the owner/repo spelling, not a history filter.
         error.message = format!(
             "Repository {owner}/{repo} not found, or private and not accessible to this token"
         )
         .into_boxed_str();
-        return error.into();
+        return HistoryFailure {
+            error: Box::new(error),
+            next: Some(json!({
+                "findRepository": crate::tools::gh_shared::repository_search(repo)
+            })),
+        };
     };
     error.message =
         format!("Ref \"{reference}\" or repository {owner}/{repo} not found").into_boxed_str();

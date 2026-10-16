@@ -10,9 +10,34 @@ use std::{
 #[derive(Default)]
 pub(super) struct CargoCrates {
     packages: BTreeMap<String, BTreeMap<String, String>>,
+    /// The scan root's module path when the root lies inside a crate whose
+    /// root (`src/lib.rs`, `src/main.rs`) is above it: `crate::a::b::x`
+    /// written under root `src/a/b` names `x` inside the scan.
+    enclosing_module: Option<Vec<String>>,
 }
 
 impl CargoCrates {
+    /// These crates, with the scan `root`'s module path inside the crate
+    /// that encloses it ([`enclosing_module`]).
+    pub(super) fn within(mut self, root: &Path) -> Self {
+        self.enclosing_module = enclosing_module(root);
+        self
+    }
+
+    /// `crate::` path `segments` (after `crate`) as a path from the scan
+    /// root, when the scan root lies below its crate's root and the path
+    /// names its module or one below it (empty: the root module itself);
+    /// `None` otherwise.
+    pub(super) fn inside_scan<'s>(&self, segments: &'s [&'s str]) -> Option<&'s [&'s str]> {
+        let prefix = self.enclosing_module.as_ref()?;
+        (segments.len() >= prefix.len()
+            && prefix
+                .iter()
+                .zip(segments)
+                .all(|(module, segment)| module == segment))
+        .then(|| &segments[prefix.len()..])
+    }
+
     pub(super) fn resolve(&self, importer: &str, name: &str) -> Option<&String> {
         self.packages
             .iter()
@@ -25,6 +50,28 @@ impl CargoCrates {
             .max_by_key(|(directory, _)| directory.len())
             .and_then(|(_, dependencies)| dependencies.get(name))
     }
+}
+
+/// The module path of `root` inside the crate whose source root encloses
+/// it: the nearest ancestor holding `lib.rs` or `main.rs` beside a
+/// `Cargo.toml` one level up (the `src/` of a package), with `root`'s
+/// directories below it as module names. `None` when `root` is itself a
+/// crate root, or no crate encloses it.
+fn enclosing_module(root: &Path) -> Option<Vec<String>> {
+    let root = root.canonicalize().ok()?;
+    let source = root.ancestors().skip(1).find(|dir| {
+        (dir.join("lib.rs").is_file() || dir.join("main.rs").is_file())
+            && dir
+                .parent()
+                .is_some_and(|package| package.join("Cargo.toml").is_file())
+    })?;
+    let modules = root
+        .strip_prefix(source)
+        .ok()?
+        .components()
+        .map(|part| part.as_os_str().to_str().map(str::to_owned))
+        .collect::<Option<Vec<_>>>()?;
+    (!modules.is_empty()).then_some(modules)
 }
 
 // Refresh metadata on every graph build. A root manifest/lock stamp cannot

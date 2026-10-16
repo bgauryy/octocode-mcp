@@ -100,52 +100,42 @@ pub(super) fn checkout_status(
     Ok(status)
 }
 
-/// The branch a default-branch clone checked out (the remote HEAD).
-pub(super) fn current_branch(
-    context: &CloneContext<'_>,
-    directory: &Path,
-) -> Result<String, CloneError> {
-    let output = run(
-        context,
-        scoped(directory, &["symbolic-ref", "--quiet", "--short", "HEAD"]),
-        head_timeout(context),
-        "read checkout branch",
-        None,
-    )?;
-    let branch = output.stdout.trim().to_owned();
-    if branch.is_empty() {
-        return Err(CloneError::new(
-            "gitFailed",
-            "Git did not report the checked-out default branch.",
-        ));
-    }
-    Ok(branch)
-}
-
-/// Check out `branch` (the remote default when `None`), a tag, or a full
-/// commit SHA with `depth` commits of history, limited to `sparse_paths`.
+/// Check out `reference` (a full commit SHA, a branch or a tag) with
+/// `depth` commits of history, limited to `sparse_paths`.
 pub(super) fn checkout(
     context: &CloneContext<'_>,
     repository_url: &str,
-    branch: Option<&str>,
+    reference: &str,
     sparse_paths: Option<&[String]>,
     depth: u64,
     target: &Path,
 ) -> Result<(), CloneError> {
-    match branch {
-        Some(commit) if octocode_github::is_full_sha(commit) => {
-            checkout_commit(context, repository_url, commit, sparse_paths, depth, target)
-        }
-        _ => checkout_branch(context, repository_url, branch, sparse_paths, depth, target),
+    if octocode_github::is_full_sha(reference) {
+        checkout_commit(
+            context,
+            repository_url,
+            reference,
+            sparse_paths,
+            depth,
+            target,
+        )
+    } else {
+        checkout_branch(
+            context,
+            repository_url,
+            reference,
+            sparse_paths,
+            depth,
+            target,
+        )
     }
 }
 
-/// `git clone` of one branch. Without `branch`, git follows the remote HEAD,
-/// so no API call is needed to learn the default branch.
+/// `git clone` of one branch or tag.
 fn checkout_branch(
     context: &CloneContext<'_>,
     repository_url: &str,
-    branch: Option<&str>,
+    branch: &str,
     sparse_paths: Option<&[String]>,
     depth: u64,
     target: &Path,
@@ -158,10 +148,9 @@ fn checkout_branch(
         OsString::from("--depth"),
         OsString::from(depth.to_string()),
         OsString::from("--single-branch"),
+        OsString::from("--branch"),
+        OsString::from(branch),
     ]);
-    if let Some(branch) = branch {
-        args.extend([OsString::from("--branch"), OsString::from(branch)]);
-    }
     args.extend([
         OsString::from("--"),
         OsString::from(repository_url),

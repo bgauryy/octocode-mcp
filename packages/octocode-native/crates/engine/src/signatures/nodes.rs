@@ -355,11 +355,67 @@ pub(super) fn is_call_node(kind: &str) -> bool {
     )
 }
 
-/// The callee label of a call node and the node that spells it.
+/// The callee label of a call node and the node that spells it. The label
+/// is structural: the argument lists, index expressions and literals of a
+/// chained receiver (`write(&path, "…").expect`) are elided to their
+/// brackets (`write().expect`), so no argument text is carried as a name.
 pub(super) fn call_callee<'tree>(
     node: Node<'tree>,
     content: &str,
 ) -> Option<(String, Node<'tree>)> {
+    let (label, spelled) = callee_text(node, content)?;
+    Some((elide_arguments(&label), spelled))
+}
+
+/// `label` with the inside of every bracket group and string literal
+/// removed: `a(x, "s").b[0].c` → `a().b[].c`. Quotes and brackets nested
+/// inside a group are skipped with it; a backslash escapes the next char.
+fn elide_arguments(label: &str) -> String {
+    let mut out = String::with_capacity(label.len());
+    let mut depth = 0usize;
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    for c in label.chars() {
+        if let Some(open) = quote {
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == open {
+                quote = None;
+                if depth == 0 {
+                    out.push(c);
+                }
+            }
+            continue;
+        }
+        match c {
+            '"' | '\'' | '`' => {
+                quote = Some(c);
+                if depth == 0 {
+                    out.push(c);
+                }
+            }
+            '(' | '[' | '{' => {
+                if depth == 0 {
+                    out.push(c);
+                }
+                depth += 1;
+            }
+            ')' | ']' | '}' if depth > 0 => {
+                depth -= 1;
+                if depth == 0 {
+                    out.push(c);
+                }
+            }
+            _ if depth == 0 => out.push(c),
+            _ => {}
+        }
+    }
+    out
+}
+
+fn callee_text<'tree>(node: Node<'tree>, content: &str) -> Option<(String, Node<'tree>)> {
     // Java `obj.name(..)`: the receiver lives in a sibling `object` field.
     if let (Some(object), Some(name)) = (
         node.child_by_field_name("object"),
@@ -533,6 +589,25 @@ pub(super) fn clean_specifier(text: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    /// A callee label keeps its receiver chain and drops argument text, so
+    /// no literal of the source (a planted token) becomes a name.
+    #[test]
+    fn callee_labels_elide_arguments_and_literals() {
+        for (label, expected) in [
+            (
+                r#"std::fs::write(&source,"exportconstT=\"ghp_x\";").expect"#,
+                "std::fs::write().expect",
+            ),
+            ("self.config.iter", "self.config.iter"),
+            ("items[i+1].map(|x|{x}).len", "items[].map().len"),
+            (r#"f(')', "(").g"#, "f().g"),
+            (r#""lit".join"#, r#""".join"#),
+            ("Vec::<String>::new", "Vec::<String>::new"),
+        ] {
+            assert_eq!(super::elide_arguments(label), expected, "{label}");
+        }
+    }
+
     #[test]
     fn every_grammar_declaration_kind_is_a_declared_declaration_kind() {
         for entry in super::super::languages::all_entries() {

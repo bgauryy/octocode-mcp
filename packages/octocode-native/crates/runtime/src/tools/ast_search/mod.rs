@@ -164,6 +164,7 @@ pub(super) fn engine_error_code(tag: &str) -> &'static str {
             "languageUnsupported"
         }
         "structural.content.tooLarge" | "structural.file.tooLarge" => "fileTooLarge",
+        "syntaxTree.options.lineOutOfRange" => "invalidInput",
         "structural.file.unreadable" => "fileReadFailed",
         "structural.parse.interrupted" | "structural.match.deadline" => "timeout",
         declared => crate::tools::id::error_codes::ALL
@@ -175,22 +176,29 @@ pub(super) fn engine_error_code(tag: &str) -> &'static str {
 
 pub(super) use crate::tools::display_name;
 
-/// A `.h` suffix is shared by C and C++. Keep C as the default and allow an
-/// explicit C++ parser only for a single ambiguous header.
-pub(super) fn cpp_header_override(path: &std::path::Path, selector: Option<&str>) -> bool {
-    octocode_engine::text::extension_of(&path.to_string_lossy(), true, "") == "h"
-        && selector.is_some_and(|language| {
-            language.eq_ignore_ascii_case("cpp") || language.eq_ignore_ascii_case("c++")
-        })
+/// The parser of a file whose extension the selected family shares with
+/// another grammar (`.h` is C's, and C++'s family parses it too), as the
+/// grammar registry decides; `None` when the file's own extension decides.
+pub(super) fn shared_extension_parser(
+    path: &std::path::Path,
+    selector: Option<&str>,
+) -> Option<String> {
+    let selector = selector?;
+    let path = path.to_string_lossy();
+    let extension = octocode_engine::text::extension_of(&path, true, "");
+    let parser = octocode_engine::signatures::languages::parser_for_path(selector, &path);
+    (octocode_engine::signatures::languages::parses_path(selector, &path) && parser != extension)
+        .then_some(parser)
 }
 
 /// The parser extension of a single file whose own extension does not pick
-/// the requested grammar: `cpp` for a `.h` under C++, and the grammar's own
-/// extension for a file whose extension selects no grammar (an extensionless
-/// script, a `.txt`). `None`: the file's extension decides.
+/// the requested grammar: a shared extension parsed by the selected family
+/// (`.h` under C++), and the grammar's own extension for a file whose
+/// extension selects no grammar (an extensionless script, a `.txt`).
+/// `None`: the file's extension decides.
 pub(super) fn parser_override(path: &std::path::Path, selector: Option<&str>) -> Option<String> {
-    if cpp_header_override(path, selector) {
-        return Some("cpp".to_owned());
+    if let Some(parser) = shared_extension_parser(path, selector) {
+        return Some(parser);
     }
     let language = selector?;
     if crate::tools::ast_rule::file_grammar(path).is_some() {
@@ -218,16 +226,16 @@ pub(super) fn validate_file_language(
                 "language must name a registered grammar.",
             ));
         }
-        let selected = crate::tools::ast_rule::language_extensions(language).ok_or_else(|| {
-            ToolError::new(
+        if crate::tools::ast_rule::language_extensions(language).is_none() {
+            return Err(ToolError::new(
                 "languageUnsupported",
                 format!("language \"{language}\" is not a supported structural grammar."),
-            )
-        })?;
+            ));
+        }
         // Only an extension of another grammar contradicts `language`; one
-        // that selects no grammar is parsed as `language`.
-        if !crate::tools::ast_rule::has_extension_in(path, &selected)
-            && !cpp_header_override(path, selector)
+        // that selects no grammar is parsed as `language`, and any spelling
+        // of the file's own grammar (`.cc` for a `.hpp`) reads it.
+        if !octocode_engine::signatures::languages::parses_path(language, &path.to_string_lossy())
             && let Some((grammar, _)) = crate::tools::ast_rule::file_grammar(path)
         {
             return Err(ToolError::new(

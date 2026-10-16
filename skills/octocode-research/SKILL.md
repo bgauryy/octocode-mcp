@@ -51,15 +51,15 @@ Trace only `entry → transformations → state → output → consumers`; switc
 
 ## Classifiers or clasify?
 
-When a broad search or fetch would make the host read many plausible candidates, use `clasifyContext:{classifiers:[...]}` on `localSearch`, `localFetch`, `ghSearchCode` or `ghGetFileContent` to return selected evidence. When a typed answer can choose among unread files, docs or images, use `clasify` with source references or image assets; discover concrete targets before screening a folder. Exact anchors, small reads, identity and exhaustive coverage use ordinary tools.
+Use classification when its answer changes what you read next. For noisy searches or large fetches with many plausible passages, use `clasifyContext:{classifiers:[...]}` on `localSearch`, `localFetch`, `ghSearchCode` or `ghGetFileContent` to receive selected evidence. To choose among unread files, docs or images, use `clasify` with source references or image assets; discover concrete targets first. Exact anchors, small reads, identity and exhaustive coverage use ordinary tools.
 
-Ask one observable question per missing fact. Optional `mainGoal`/`reasoning` add context to inline selection; use a short call rationale, not private reasoning. Read [clasify](references/clasify.md) for scopes and typed requests. Never repeat the same relevance decision in both routes. Read deciding evidence before a source claim; stop when it answers the question. Unknown or withheld evidence is unresolved, never proof of absence.
+Ask one observable question per missing fact. Optional `mainGoal`/`reasoning` add a short task context to inline selection. Read [clasify](references/clasify.md) for scopes and typed requests; avoid repeating the same relevance decision in both routes. Read deciding evidence before a source claim; stop when it answers the question. If an unknown/error could change the conclusion, [inspect the underlying evidence](references/clasify.md#recover-from-unknown-or-error); otherwise name the unresolved scope.
 
 ## Tools and setup
 
 - Unfamiliar or failed call: `schema <name> --view query`. Env and availability: [octocode](references/octocode.md#16-public-tools); never print credentials.
 - Batch up to 5 independent rows; dependent probes stay sequential. Omit research metadata when it adds no useful context.
-- Copy needed paging calls unchanged. `next.unfiltered` recovers the complete original view, including selected evidence; use it for unresolved coverage or completeness, not automatically after a sufficient answer. Name unread scope. Paging and optional `hints.*`: [octocode](references/octocode.md#read-results-and-recover).
+- Copy needed paging calls unchanged. `next.unfiltered` recovers the complete original view, including selected evidence; use it for unresolved coverage or completeness, not automatically after a sufficient answer. Name unread scope. Paging and optional `hints`: [octocode](references/octocode.md#read-results-and-recover).
 
 ## Resources
 
@@ -73,7 +73,7 @@ Ask one observable question per missing fact. Optional `mainGoal`/`reasoning` ad
 | Behavior change or refactor | [workflows](references/workflows.md#change-impact) | RED-GREEN, blast radius |
 | PR, diff, staged changes, one file to review | [workflows](references/workflows.md#pr-review) | Modes, order, report |
 | Invocation, templates, setup, pagination, exit codes, hints | [octocode](references/octocode.md) | Catalog, recovery |
-| Classifiers, typed judgment | [clasify](references/clasify.md) | Admission, requests, results |
+| Classifiers, typed judgment, unknown/error recovery | [clasify](references/clasify.md) | Route, questions, results, inspection |
 | Saving or listing reports | [render-report.mjs](scripts/render-report.mjs) | Commands in [output](output.md) |
 
 ## Related skills
@@ -82,6 +82,7 @@ Ask one observable question per missing fact. Optional `mainGoal`/`reasoning` ad
 - `octocode-brainstorming`: an open idea, not a code claim.
 - `octocode-scraping`: public web pages.
 - `octocode-chrome-devtools`: a live browser.
+- For an orchestrated multi-actor investigation: [octocode-workflows composition](../octocode-workflows/references/composition.md).
 
 ## Output
 

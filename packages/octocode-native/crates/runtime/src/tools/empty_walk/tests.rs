@@ -23,6 +23,18 @@ fn repo(gitignore: &str, dirs: &[&str]) -> Fixture {
     root
 }
 
+/// [`repo`]'s layout outside any git work tree, where a default-excluded
+/// directory name is pruned by its name alone.
+fn plain(dirs: &[&str]) -> Fixture {
+    let root = Fixture::new();
+    std::fs::write(root.0.join("visible.md"), "x\n").expect("visible");
+    for dir in dirs {
+        std::fs::create_dir_all(root.0.join(dir)).expect("dir");
+        std::fs::write(root.0.join(dir).join("needle.ts"), "x\n").expect("file");
+    }
+    root
+}
+
 /// The probe a file-walking tool supplies: `.ts` files under the relaxed walk.
 fn typescript(root: &Path) -> impl FnMut(Walk) -> Result<Hits, String> + '_ {
     let probe = typescript_probe(root);
@@ -54,7 +66,13 @@ fn each_cause_alone_is_named_and_lifted_alone() {
             "node_modules/",
         ),
     ] {
-        let root = repo(gitignore, &[dir]);
+        // Inside a git work tree a listed name is pruned only where git
+        // ignores it, so a default-excluded directory alone is one outside.
+        let root = if cause == Cause::DefaultExcluded {
+            plain(&[dir])
+        } else {
+            repo(gitignore, &[dir])
+        };
         let diagnosis = skipped(&root.0, DEFAULTS);
         assert_eq!(diagnosis.causes(), [cause], "{dir}");
         assert_eq!(diagnosis.because(), reason, "{dir}");
@@ -96,7 +114,11 @@ fn a_match_behind_two_causes_lifts_exactly_those_two() {
             vec![Cause::Hidden, Cause::DefaultExcluded],
         ),
     ] {
-        let root = repo(gitignore, &[dir]);
+        let root = if causes.contains(&Cause::Ignored) {
+            repo(gitignore, &[dir])
+        } else {
+            plain(&[dir])
+        };
         let diagnosis = skipped(&root.0, DEFAULTS);
         assert_eq!(diagnosis.causes(), causes, "{dir}");
         assert!(!diagnosis.because().is_empty(), "{dir}");
@@ -362,7 +384,10 @@ fn a_probe_stays_within_the_request_globs() {
 /// lifted walk: each file is admitted once, however many walks are probed.
 #[test]
 fn one_walk_answers_every_relaxed_walk() {
-    let root = repo("gen/\n", &["gen", ".cfg", "node_modules/pkg", "src"]);
+    let root = repo(
+        "gen/\nnode_modules/\n",
+        &["gen", ".cfg", "node_modules/pkg", "src"],
+    );
     let admitted = Cell::new(0);
     let permits = |_: &Path| {
         admitted.set(admitted.get() + 1);

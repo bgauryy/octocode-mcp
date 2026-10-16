@@ -120,7 +120,7 @@ async fn walk_row_continuations(
         match data["next"].get(key) {
             Some(next) => {
                 assert_eq!(next["tool"], tool, "{next}");
-                input = json!({"queries": [next["query"].clone()]});
+                input = next["query"].clone();
             }
             None => {
                 assert_ne!(data["pagination"]["hasMore"], true, "{data}");
@@ -220,7 +220,7 @@ async fn every_default_local_search_page_names_the_enclosing_declaration_of_ever
             }
         }
         match data["next"].get("nextPage") {
-            Some(next) => input = json!({"queries": [next["query"].clone()]}),
+            Some(next) => input = next["query"].clone(),
             None => break,
         }
     }
@@ -368,7 +368,7 @@ async fn a_split_page_offers_its_row_continuation_only_after_its_last_part() {
                 }
                 let response_next = envelope["responsePagination"]["next"]["query"].clone();
                 input = match (row_next, response_next.is_object()) {
-                    (Some(next), _) => json!({"queries": [next["query"].clone()]}),
+                    (Some(next), _) => next["query"].clone(),
                     (None, true) => response_next,
                     (None, false) => {
                         assert_ne!(row["data"]["pagination"]["hasMore"], true, "{row}");

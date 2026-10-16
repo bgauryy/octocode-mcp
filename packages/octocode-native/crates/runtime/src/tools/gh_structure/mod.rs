@@ -42,14 +42,37 @@ pub async fn run<C: octocode_github::ConditionalCache>(
         Err(error) => error,
     };
     let error = classify_unresolved_sha(provider, query, context, error).await;
+    let path = query.path.as_deref().unwrap_or_default().trim_matches('/');
+    let requested = query.ref_.as_ref().map(|value| value.as_str());
+    // A path failure comes after its ref resolved: its leads pin that commit.
+    let commit = if error.reason == Some(ProviderErrorReason::PathIsFile)
+        || missing_path(&error, Some(path))
+    {
+        crate::tools::gh_shared::failed_at_commit(
+            provider,
+            query.owner.as_str(),
+            query.repo.as_str(),
+            requested,
+            context,
+        )
+        .await
+    } else {
+        None
+    };
     let at = RepoPath {
         owner: query.owner.as_str(),
         repo: query.repo.as_str(),
-        path: query.path.as_deref().unwrap_or_default().trim_matches('/'),
-        reference: query.ref_.as_ref().map(|value| value.as_str()),
+        path,
+        reference: commit.as_deref().or(requested),
     };
     if error.reason == Some(ProviderErrorReason::PathIsFile) {
         return Err(file_failure(error, &at));
+    }
+    if error.reason == Some(ProviderErrorReason::Submodule) {
+        let failure = search_failure(error, None);
+        return Err(
+            crate::tools::gh_shared::submodule_failure(provider, &at, context, failure).await,
+        );
     }
     if !missing_path(&error, Some(at.path)) {
         // A repository that did not resolve leads to a search for its name.
@@ -166,13 +189,17 @@ fn max_entries_per_page() -> usize {
     crate::contracts::query_schema_max(ToolId::GhStructure, None, "pageSize")
 }
 const CONTENTS_LIMIT: usize = 1000;
-/// Listing page size when `pageSize` is omitted (contract: optional,
-/// "default 300 entries, refs 30").
-pub(super) const DEFAULT_ENTRIES_PER_PAGE: u64 = 300;
+/// Tree listing page size when `pageSize` is omitted (contract
+/// `ghStructure.semanticPolicy.treePageSize`).
+pub(super) const DEFAULT_ENTRIES_PER_PAGE: u64 =
+    crate::tools::id::gh_structure_policy::TREE_PAGE_SIZE as u64;
 /// Upper bound on Contents API directory reads for one fallback walk (git
 /// trees API truncated or unavailable). Past it the listing is a typed
 /// terminal limit instead of an unbounded request fan-out.
 pub(crate) const MAX_DIRECTORY_FETCHES: usize = 200;
+/// GitHub reads one listing step (a walk level, a materialize chunk) sends
+/// at once; the global request semaphore still bounds the total.
+const READ_CONCURRENCY: usize = 8;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 struct TreeEntry {
@@ -193,7 +220,11 @@ struct Traversal {
     /// Fallback walk stopped at [`MAX_DIRECTORY_FETCHES`].
     #[serde(default)]
     fetch_limit: bool,
-    /// Entries skipped by [`ignored_entry`], by name.
+    /// What the listing does not show, by name: symlinks and submodules,
+    /// which have no listable content. Every committed directory is listed
+    /// and walked: a tree holds only tracked content, so the local
+    /// build-output prune names (`build/`, `coverage/`, `node_modules/`) do not
+    /// apply to it.
     #[serde(default)]
     omitted: std::collections::BTreeMap<String, usize>,
 }
@@ -250,7 +281,7 @@ pub(crate) async fn execute<C: octocode_github::ConditionalCache>(
     } else {
         None
     };
-    disclose_limits(&traversal, &mut value, &mut output);
+    disclose_limits(&traversal, &page, &mut value, &mut output);
     if traversal.contents_limit {
         value["next"]["cloneRepo"] = clone_lead(query, &scope, &commit_sha);
     }
@@ -347,7 +378,14 @@ async fn canonical<C: octocode_github::ConditionalCache>(
     context: &RequestContext,
 ) -> Result<Option<(String, GhStructureQuery)>, ProviderError> {
     let (owner, repo) = (query.owner.as_str(), query.repo.as_str());
-    let Some(to) = crate::tools::gh_shared::canonical_repo(provider, owner, repo, context).await
+    let Some(to) = crate::tools::gh_shared::canonical_repo(
+        provider,
+        owner,
+        repo,
+        context,
+        crate::tools::gh_shared::RenameCheck::Redirected,
+    )
+    .await?
     else {
         return Ok(None);
     };
@@ -602,6 +640,17 @@ mod tests {
         let file = root_is_directory(&tree, "src/lib.rs").expect_err("file");
         assert_eq!(file.kind, ProviderErrorKind::Validation);
     }
+    /// A depth-3 listing of the repository root of `a/b`.
+    fn test_listing() -> Listing<'static> {
+        Listing {
+            owner: "a",
+            repo: "b",
+            branch: "main",
+            root: "",
+            max_depth: 3,
+        }
+    }
+
     /// A submodule is not listed, and not dropped silently: the listing
     /// names it beside the directories it skips by design.
     #[test]
@@ -614,7 +663,7 @@ mod tests {
             ]
         }))
         .expect("tree");
-        let traversal = traverse::traversal_from_git_tree(tree, "", 3);
+        let traversal = traverse::traversal_from_git_tree(tree, &test_listing());
         assert_eq!(traversal.entries.len(), 2);
         assert_eq!(
             serde_json::to_value(&traversal.omitted).expect("omitted"),
@@ -624,7 +673,8 @@ mod tests {
 
     /// A git tree types a symlink `blob` of mode `120000`: it is named
     /// beside the skipped entries, never listed or sized as a file, and a
-    /// listing rooted at it is not a file listing.
+    /// listing rooted at it says it is a symlink and is repaired by a read
+    /// (which follows the link to its file).
     #[test]
     fn a_git_tree_symlink_is_named_not_listed_as_a_file() {
         let tree: octocode_github::TreeResponse = serde_json::from_value(json!({
@@ -634,7 +684,7 @@ mod tests {
             ]
         }))
         .expect("tree");
-        let traversal = traverse::traversal_from_git_tree(tree.clone(), "", 3);
+        let traversal = traverse::traversal_from_git_tree(tree.clone(), &test_listing());
         let listed = traversal
             .entries
             .iter()
@@ -646,7 +696,7 @@ mod tests {
             json!({"docs (symlink)": 1})
         );
         let link = root_is_directory(&tree, "docs").expect_err("a symlink");
-        assert_eq!(link.reason, None);
+        assert_eq!(link.reason, Some(ProviderErrorReason::PathIsFile));
         assert_eq!(
             link.message.as_ref(),
             "Path \"docs\" is a symlink, not a directory"
@@ -991,9 +1041,7 @@ mod tests {
                     {"path":"a/b","type":"tree"},
                     {"path":"a/b/handler.rs","type":"blob","size":5},
                     {"path":"a/b/other.rs","type":"blob","size":5},
-                    {"path":"a/handler_test.rs","type":"blob","size":5},
-                    {"path":"node_modules","type":"tree"},
-                    {"path":"node_modules/handler.js","type":"blob","size":5}
+                    {"path":"a/handler_test.rs","type":"blob","size":5}
                 ]}),
             )
             .await;
@@ -1028,12 +1076,6 @@ mod tests {
                 "{} {}",
                 first.data,
                 second.data
-            );
-            assert_eq!(
-                first.data["omitted"],
-                json!({"node_modules":1}),
-                "{}",
-                first.data
             );
         }
 
@@ -1127,7 +1169,8 @@ mod tests {
         }
 
         /// A listing of a file is typed; its one repair is that file's read
-        /// at the same ref, with no prose beside it.
+        /// at the commit the listing resolved (not the movable ref), with no
+        /// prose beside it.
         #[tokio::test]
         async fn a_listing_of_a_file_leads_to_its_read() {
             let server = server().await;
@@ -1159,7 +1202,64 @@ mod tests {
             assert_eq!(next["read"]["tool"], "ghGetFileContent", "{next}");
             assert_eq!(
                 next["read"]["query"]["queries"][0],
-                json!({"owner":"a","repo":"b","path":"src/lib.rs","ref":"main"}),
+                json!({"owner":"a","repo":"b","path":"src/lib.rs","ref":SHA}),
+                "{next}"
+            );
+        }
+
+        /// A listing of a submodule leads to the submodule's repository at
+        /// the commit the parent pins, as a read of it does; a symlink is
+        /// read (the read follows it to its file). Neither gets the generic
+        /// invalid-field tip.
+        #[tokio::test]
+        async fn a_listing_of_a_submodule_or_symlink_leads_to_its_content() {
+            let server = server().await;
+            let pinned = "89abcdef0123456789abcdef0123456789abcdef";
+            mount_json(
+                &server,
+                "/api/v3/repos/a/b/contents/vendor%2Flib",
+                200,
+                json!({"type":"submodule","name":"lib","path":"vendor/lib","sha":pinned,
+                    "submodule_git_url":format!("{}/o2/r2.git", server.uri())}),
+            )
+            .await;
+            mount_json(
+                &server,
+                "/api/v3/repos/a/b/contents/docs%2Flink",
+                200,
+                json!({"type":"symlink","name":"link","path":"docs/link","target":"../README.md"}),
+            )
+            .await;
+            let provider = mock_provider(&server, RetryPolicy::default());
+            let context = default_context();
+            let home = tempfile::tempdir().expect("home");
+            let listing =
+                |path: &str| query(json!({"owner":"a","repo":"b","path":path,"ref":"main"}));
+            let submodule = run(&provider, &listing("vendor/lib"), Ok(&context), home.path())
+                .await
+                .expect_err("a submodule is not a tree");
+            assert_eq!(submodule.error.reason, Some(ProviderErrorReason::Submodule));
+            assert!(submodule.hints.is_empty(), "{:?}", submodule.hints);
+            let next = submodule.next.expect("submodule lead");
+            let row = &next["viewTree"]["query"]["queries"][0];
+            assert_eq!(next["viewTree"]["tool"], "ghStructure", "{next}");
+            assert_eq!(
+                (&row["owner"], &row["repo"]),
+                (&json!("o2"), &json!("r2")),
+                "{next}"
+            );
+            assert_eq!(row["ref"], pinned, "{next}");
+            let symlink = run(&provider, &listing("docs/link"), Ok(&context), home.path())
+                .await
+                .expect_err("a symlink is not a tree");
+            assert_eq!(
+                symlink.message,
+                "Path \"docs/link\" is a symlink, not a directory"
+            );
+            let next = symlink.next.expect("read lead");
+            assert_eq!(
+                next["read"]["query"]["queries"][0],
+                json!({"owner":"a","repo":"b","path":"docs/link","ref":SHA}),
                 "{next}"
             );
         }

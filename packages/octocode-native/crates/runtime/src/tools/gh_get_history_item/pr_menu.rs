@@ -1,26 +1,30 @@
 //! The pull-request read menu: the public query a continuation starts from,
 //! the section menu, and the merge-commit read.
 use super::patch::hunks::DIFF_CONTEXT_LINES;
-use super::util::{content_flag, merge};
-use super::{DEFAULT_PAGE_SIZE, HistoryItemRequest, ItemOperation};
+use super::util::merge;
+use super::{DEFAULT_PAGE_SIZE, HistoryItemRequest, ItemOperation, Section, Sections};
 use crate::tools::id::ToolId;
 use crate::tools::result::{Continuation, remove_nulls};
 use serde_json::{Map, Value, json};
 
-/// The caller's query as a working query for `operation`: the public fields,
-/// with the pull-request/issue selection held as the internal `content`
-/// selector (builders edit it); [`flatten_selectors`] turns it back into the
-/// public `sections` on emission.
+/// The caller's query as a working query for `operation`: the public
+/// fields, with the sections the read resolved (a pull request's patches
+/// list their files too); builders replace `sections` with
+/// [`Sections::set_on`].
 pub(super) fn base_public_query(q: &HistoryItemRequest, operation: ItemOperation) -> Value {
     let mut v = serde_json::to_value(&q.query).unwrap_or_default();
     remove_nulls(&mut v);
+    if matches!(operation, ItemOperation::PullRequest | ItemOperation::Issue) {
+        let sections = q.sections();
+        let sections =
+            if matches!(operation, ItemOperation::PullRequest) && sections.has(Section::Patches) {
+                sections.with(Section::Files)
+            } else {
+                sections
+            };
+        sections.set_on(&mut v);
+    }
     if let Some(m) = v.as_object_mut() {
-        if matches!(operation, ItemOperation::PullRequest | ItemOperation::Issue) {
-            m.remove("sections");
-            if let Some(content) = q.content_value() {
-                m.insert("content".into(), content);
-            }
-        }
         m.insert(
             "operation".into(),
             json!(match operation {
@@ -31,48 +35,29 @@ pub(super) fn base_public_query(q: &HistoryItemRequest, operation: ItemOperation
             }),
         );
         m.remove("extras");
-        match operation {
-            ItemOperation::PullRequest => {
-                // pageSize has no contract default: each surface sizes its own
-                // page, so an omitted pageSize stays omitted on replay.
-                m.insert(
-                    "minify".into(),
-                    json!(q.minify().unwrap_or_else(|| "standard".to_owned())),
-                );
-                if let Some(Value::Object(content)) = m.get_mut("content")
-                    && content.get("patches").is_some()
-                {
-                    content.insert("files".into(), json!(true));
-                }
-            }
-            ItemOperation::Compare => {
-                m.insert("page".into(), json!(q.page().unwrap_or(1)));
-                m.insert(
-                    "pageSize".into(),
-                    json!(q.page_size().unwrap_or(DEFAULT_PAGE_SIZE)),
-                );
-            }
-            _ => {}
+        // Text is always GitHub's verbatim text: `minify` changes no read.
+        m.remove("minify");
+        // A continuation restates no default: page 1 and the contract's
+        // page size are what an omitted field reads. Only an issue declares
+        // a pageSize default; a pull request, commit or comparison sizes
+        // each section itself, so its pageSize stays as the caller set it.
+        if m.get("page").and_then(Value::as_u64) == Some(1) {
+            m.remove("page");
+        }
+        if operation == ItemOperation::Issue
+            && m.get("pageSize").and_then(Value::as_u64) == u64::try_from(DEFAULT_PAGE_SIZE).ok()
+        {
+            m.remove("pageSize");
         }
     }
     v
 }
 
-/// An executable `ghGetHistoryItem` continuation in the public spelling.
-pub(super) fn continuation(mut q: Value) -> Value {
-    flatten_selectors(&mut q);
+/// An executable `ghGetHistoryItem` continuation.
+pub(super) fn continuation(q: Value) -> Value {
     Continuation::new(ToolId::GhGetHistoryItem, q)
         .confidence("exact")
         .build()
-}
-
-/// A pull-request read in the public spelling, without the default
-/// (`standard`) `minify`.
-pub(super) fn menu_read(mut q: Value) -> Value {
-    if q.get("minify").and_then(Value::as_str) == Some("standard") {
-        remove_key(&mut q, "minify");
-    }
-    continuation(q)
 }
 
 /// The recovery of a `matchString` that hit no patch line (a pull
@@ -82,81 +67,7 @@ pub(super) fn without_match_string(mut q: Value) -> Value {
     for key in ["matchString", "contextLines"] {
         remove_key(&mut q, key);
     }
-    menu_read(q)
-}
-
-/// Pull-request sections in their published order.
-pub(super) const PR_SECTION_ORDER: [&str; 8] = [
-    "body",
-    "files",
-    "patches",
-    "comments",
-    "reviewComments",
-    "reviews",
-    "commits",
-    "commitFiles",
-];
-
-/// Rewrite a working pull-request or issue query's internal `content` into
-/// the public `sections`. Lossless: every internal selector has one public
-/// spelling.
-pub(super) fn flatten_selectors(query: &mut Value) {
-    let Some(fields) = query.as_object_mut() else {
-        return;
-    };
-    if !matches!(
-        fields.get("operation").and_then(Value::as_str),
-        Some("pullRequest" | "issue")
-    ) {
-        return;
-    }
-    let Some(content) = fields.remove("content") else {
-        return;
-    };
-    fields.remove("sections");
-    let flag = |key: &str| content.get(key).and_then(Value::as_bool) == Some(true);
-    let mut sections = Vec::new();
-    if flag("body") {
-        sections.push("body");
-    }
-    if flag("files") {
-        sections.push("files");
-    }
-    if let Some(patches) = content.get("patches").and_then(Value::as_object)
-        && patches.get("mode").and_then(Value::as_str) != Some("none")
-    {
-        sections.push("patches");
-    }
-    if let Some(comments) = content.get("comments").and_then(Value::as_object) {
-        let set = |key: &str| comments.get(key).and_then(Value::as_bool) == Some(true);
-        if set("discussion") {
-            sections.push("comments");
-        }
-        if set("reviewInline") {
-            sections.push("reviewComments");
-        }
-    }
-    if flag("reviews") {
-        sections.push("reviews");
-    }
-    if let Some(commits) = content.get("commits").and_then(Value::as_object) {
-        sections.push(
-            if commits.get("includeFiles").and_then(Value::as_bool) == Some(true) {
-                "commitFiles"
-            } else {
-                "commits"
-            },
-        );
-    }
-    sections.sort_by_key(|section| {
-        PR_SECTION_ORDER
-            .iter()
-            .position(|known| known == section)
-            .unwrap_or(PR_SECTION_ORDER.len())
-    });
-    if !sections.is_empty() {
-        fields.insert("sections".into(), json!(sections));
-    }
+    continuation(q)
 }
 
 /// A diff at most this many changed lines reads in one all-patches call, so a
@@ -168,11 +79,11 @@ pub(super) const SMALL_DIFF_LINES: u64 = 100;
 pub(super) const INVENTORY_ALL_PATCHES_FILES: u64 = 30;
 
 /// A first-page fetch of `query`'s PR: the base public query without its
-/// content selection, filters, or per-surface cursors.
+/// sections, literal, or per-surface cursors.
 pub(super) fn fresh_pr_query(query: &HistoryItemRequest) -> Value {
     let mut target = base_public_query(query, ItemOperation::PullRequest);
     if let Some(object) = target.as_object_mut() {
-        for key in ["content", "offset", "length", "page", "matchString"] {
+        for key in ["sections", "offset", "length", "page", "matchString"] {
             object.remove(key);
         }
     }
@@ -210,19 +121,16 @@ pub(super) const MENU_CAP: usize = 2;
 /// `readFiles`, else the patch read or `readBody`; a small diff reads every patch (`readPatches`)
 /// instead of a separate file list; `readDiscussion` reads comments and
 /// reviews together, without comments when the provider counts none.
-pub(super) fn pr_next_menu(
-    query: &HistoryItemRequest,
-    content: Option<&Map<String, Value>>,
-    patch_mode: &str,
-    review: &[String],
-    raw: &Value,
-) -> Value {
+pub(super) fn pr_next_menu(query: &HistoryItemRequest, review: &[String], raw: &Value) -> Value {
+    let read = query.sections();
+    let patches = read.has(Section::Patches);
     let count = |key: &str| raw.get(key).and_then(Value::as_u64);
+    // A body the read did not fetch (a GraphQL section read) may hold
+    // text: only a fetched empty one rules its read out.
     let has_body = raw
         .get("body")
-        .and_then(Value::as_str)
-        .is_some_and(|body| !body.trim().is_empty());
-    let want_body = !content_flag(content, "body") && has_body;
+        .is_none_or(|body| body.as_str().is_some_and(|body| !body.trim().is_empty()));
+    let want_body = !read.has(Section::Body) && has_body;
     let changed_files = count("changed_files");
     let has_files = changed_files != Some(0);
     let small_pr = is_small_pr(count("additions"), count("deletions"), changed_files);
@@ -231,38 +139,43 @@ pub(super) fn pr_next_menu(
     // without the current content selection or any per-surface cursor.
     let target = fresh_pr_query(query);
     let mut next = Map::new();
-    let call = |content: Value| menu_read(merge(target.clone(), json!({"content":content})));
-    let with_body = |mut content: Value| {
-        if want_body {
-            content["body"] = json!(true);
-        }
-        content
+    let call = |sections: Sections| {
+        let mut query = target.clone();
+        sections.set_on(&mut query);
+        continuation(query)
     };
-    let files_read = content_flag(content, "files") || patch_mode != "none";
+    let with_body = |sections: Sections| {
+        if want_body {
+            sections.with(Section::Body)
+        } else {
+            sections
+        }
+    };
+    let files_read = read.lists_files();
     let mut body_offered = false;
     if !files_read && has_files && !small_pr {
-        next.insert("readFiles".into(), call(with_body(json!({"files":true}))));
+        next.insert(
+            "readFiles".into(),
+            call(with_body(Sections::of([Section::Files]))),
+        );
         body_offered = true;
     }
-    if patch_mode == "none" && has_files {
+    if !patches && has_files {
         let covers_all = changed_files.is_some_and(|files| review.len() as u64 >= files);
         if !review.is_empty() && !covers_all {
             // The query is exact; which files answer the question is a
             // ranking guess (source files by churn, packed to one budget).
-            let mut selected = menu_read(merge(
+            let mut selected = continuation(merge(
                 target.clone(),
                 json!({"include": review, "sections": ["patches"]}),
             ));
             selected["confidence"] = json!("high");
             next.insert("readSelectedPatches".into(), selected);
             if changed_files.is_none_or(|files| files <= INVENTORY_ALL_PATCHES_FILES) {
-                next.insert(
-                    "readPatches".into(),
-                    call(json!({"patches":{"mode":"all"}})),
-                );
+                next.insert("readPatches".into(), call(Sections::of([Section::Patches])));
             }
         } else if small_pr || covers_all {
-            let patches = json!({"patches":{"mode":"all"}});
+            let patches = Sections::of([Section::Patches]);
             let patches = if body_offered {
                 patches
             } else {
@@ -273,20 +186,17 @@ pub(super) fn pr_next_menu(
         }
     }
     if want_body && !body_offered && !files_read {
-        next.insert("readBody".into(), call(json!({"body":true})));
+        next.insert("readBody".into(), call(Sections::of([Section::Body])));
     }
-    let mut discussion = Map::new();
-    if content.and_then(|v| v.get("comments")).is_none() && !no_comments {
-        discussion.insert(
-            "comments".into(),
-            json!({"discussion":true,"reviewInline":true}),
-        );
+    let mut discussion = Sections::default();
+    if !read.has(Section::Comments) && !read.has(Section::ReviewComments) && !no_comments {
+        discussion = Sections::of([Section::Comments, Section::ReviewComments]);
     }
-    if !content_flag(content, "reviews") {
-        discussion.insert("reviews".into(), json!(true));
+    if !read.has(Section::Reviews) {
+        discussion = discussion.with(Section::Reviews);
     }
     if !discussion.is_empty() {
-        next.insert("readDiscussion".into(), call(Value::Object(discussion)));
+        next.insert("readDiscussion".into(), call(discussion));
     }
     Value::Object(next.into_iter().take(MENU_CAP).collect())
 }

@@ -56,29 +56,42 @@ pub fn extract(
     content: &str,
     regex: &impl RegexMatch,
 ) -> Result<Extraction, ExtractionError> {
-    let lines = content.split_inclusive('\n').collect::<Vec<_>>();
+    if selects_whole(q) {
+        return Ok(Extraction::whole(content.into()));
+    }
     let patterns = q.match_strings();
+    let requested = q.line_ranges();
+    let lines = content.split_inclusive('\n').collect::<Vec<_>>();
     if !patterns.is_empty() {
         return match_extract(q, content, &lines, &patterns, regex);
     }
-    let requested = q.line_ranges();
-    if !requested.is_empty() {
-        return ranges_extract(q, content, &lines, &requested);
-    }
-    Ok(Extraction {
-        text: content.into(),
-        source_lines: None,
-        start: None,
-        end: None,
-        match_ranges: vec![],
-        matched_lines: vec![],
-        count: None,
-        warnings: vec![],
-        next: NextCalls::default(),
-        blocks: vec![],
-        match_limited: false,
-    })
+    ranges_extract(q, content, &lines, &requested)
 }
+
+/// A read with no pattern and no range selects the whole text.
+pub(super) fn selects_whole(q: &LocalFetchQuery) -> bool {
+    q.match_strings().is_empty() && q.line_ranges().is_empty()
+}
+
+impl Extraction {
+    /// A read with no pattern and no range: the whole text, as given.
+    pub(super) fn whole(text: String) -> Self {
+        Self {
+            text,
+            source_lines: None,
+            start: None,
+            end: None,
+            match_ranges: vec![],
+            matched_lines: vec![],
+            count: None,
+            warnings: vec![],
+            next: NextCalls::default(),
+            blocks: vec![],
+            match_limited: false,
+        }
+    }
+}
+
 /// Line ranges joined into one view: sorted, overlapping or adjacent ranges
 /// merged, clamped to the file end; with `block`, each widened to its
 /// enclosing declaration.
@@ -194,6 +207,8 @@ fn match_spans(
     regex: &impl RegexMatch,
 ) -> Result<RegexSpans, ExtractionError> {
     let mut found = RegexSpans::default();
+    // Case-insensitive literals share one folded copy of the source.
+    let mut folded: Option<Folded> = None;
     for (index, pattern) in patterns.iter().enumerate() {
         let sensitive = q.case_sensitive_for(pattern);
         let name = |error| failing_item(error, index, pattern, patterns.len());
@@ -205,7 +220,13 @@ fn match_spans(
                 .map_err(name)?
         } else {
             RegexSpans {
-                spans: literal_ranges(content, pattern, sensitive),
+                spans: if sensitive {
+                    sensitive_ranges(content, pattern)
+                } else {
+                    folded
+                        .get_or_insert_with(|| Folded::of(content))
+                        .ranges(pattern)
+                },
                 truncated: false,
             }
         };
@@ -283,13 +304,11 @@ fn pcre2_ranges(
     Ok(RegexSpans { spans, truncated })
 }
 
-/// 1-based lines any span touches: every line of a multiline match, not
-/// just its start. A match ending at the next line's start does not touch it.
-/// Each requested range clamped to the file, with its byte span in
-/// `lines`' source: where a region grep counts hits.
 /// A requested line range and the byte span it covers.
 type Region = (LineRange, (usize, usize));
 
+/// Each requested range clamped to the file, with its byte span in
+/// `lines`' source: where a region grep counts hits.
 fn region_bytes(lines: &[&str], ranges: &[LineRange]) -> Vec<Region> {
     let mut starts = Vec::with_capacity(lines.len() + 1);
     let mut offset = 0;
@@ -314,6 +333,8 @@ fn region_bytes(lines: &[&str], ranges: &[LineRange]) -> Vec<Region> {
         .collect()
 }
 
+/// 1-based lines any span touches: every line of a multiline match, not
+/// just its start. A match ending at the next line's start does not touch it.
 fn hit_lines(lines: &[&str], spans: &[(usize, usize)]) -> Vec<usize> {
     let mut hits = vec![];
     let mut line_start = 0;
@@ -786,30 +807,57 @@ pub(super) fn byte_windows(
     (text, selected)
 }
 
-/// Literal matches in original byte coordinates. Unicode lowercasing can
-/// change byte length (e.g. İ → i + combining dot), so folded offsets must
-/// never be used to slice the source. Only length-changing characters need
-/// an entry in the offset map; ordinary text keeps an empty map.
+/// Literal matches in original byte coordinates (see [`Folded`] for the
+/// case-insensitive ones).
+#[cfg(test)]
 pub(super) fn literal_ranges(content: &str, pattern: &str, sensitive: bool) -> Vec<(usize, usize)> {
     if sensitive {
-        return content
-            .match_indices(pattern)
-            .map(|(start, matched)| (start, start + matched.len()))
-            .collect();
+        sensitive_ranges(content, pattern)
+    } else {
+        Folded::of(content).ranges(pattern)
     }
-    let folded = content.to_lowercase();
-    let needle = pattern.to_lowercase();
-    let mut changes = Vec::new();
-    let mut folded_start = 0;
-    for (start, character) in content.char_indices() {
-        let source_end = start + character.len_utf8();
-        let folded_end = folded_start + character.to_lowercase().map(char::len_utf8).sum::<usize>();
-        if folded_end - folded_start != character.len_utf8() {
-            changes.push((folded_start..folded_end, start..source_end));
+}
+
+fn sensitive_ranges(content: &str, pattern: &str) -> Vec<(usize, usize)> {
+    content
+        .match_indices(pattern)
+        .map(|(start, matched)| (start, start + matched.len()))
+        .collect()
+}
+
+/// A source lowercased once for every case-insensitive literal of a read.
+/// Unicode lowercasing can change byte length (e.g. İ → i + combining dot),
+/// so folded offsets must never be used to slice the source: `changes` maps
+/// each length-changing character's folded bytes to its source bytes
+/// (ordinary text keeps it empty).
+struct Folded {
+    text: String,
+    changes: Vec<(std::ops::Range<usize>, std::ops::Range<usize>)>,
+}
+
+impl Folded {
+    fn of(content: &str) -> Self {
+        let mut changes = Vec::new();
+        let mut folded_start = 0;
+        for (start, character) in content.char_indices() {
+            let source_end = start + character.len_utf8();
+            let folded_end =
+                folded_start + character.to_lowercase().map(char::len_utf8).sum::<usize>();
+            if folded_end - folded_start != character.len_utf8() {
+                changes.push((folded_start..folded_end, start..source_end));
+            }
+            folded_start = folded_end;
         }
-        folded_start = folded_end;
+        Self {
+            text: content.to_lowercase(),
+            changes,
+        }
     }
-    let original_offset = |offset, end| {
+
+    /// The source byte offset of folded offset `offset`; inside a changed
+    /// character, its start (or its end, for a span's `end`).
+    fn original_offset(&self, offset: usize, end: bool) -> usize {
+        let changes = &self.changes;
         let index = changes.partition_point(|(range, _)| range.end <= offset);
         if let Some((range, source)) = changes.get(index)
             && range.start < offset
@@ -822,14 +870,42 @@ pub(super) fn literal_ranges(content: &str, pattern: &str, sensitive: bool) -> V
             let (range, source) = &changes[index - 1];
             offset - range.end + source.end
         }
-    };
-    folded
-        .match_indices(&needle)
-        .map(|(start, matched)| {
-            (
-                original_offset(start, false),
-                original_offset(start + matched.len(), true),
-            )
-        })
-        .collect()
+    }
+
+    /// Spans of `pattern`, ignoring case, in source byte coordinates.
+    fn ranges(&self, pattern: &str) -> Vec<(usize, usize)> {
+        self.text
+            .match_indices(&pattern.to_lowercase())
+            .map(|(start, matched)| {
+                (
+                    self.original_offset(start, false),
+                    self.original_offset(start + matched.len(), true),
+                )
+            })
+            .collect()
+    }
+}
+
+#[cfg(test)]
+mod folded_tests {
+    use super::Folded;
+
+    /// One folded copy serves every case-insensitive literal of a read, and
+    /// each span slices the source's own bytes, around length-changing
+    /// characters too.
+    #[test]
+    fn one_fold_serves_every_pattern_in_source_coordinates() {
+        let source = "İneedle and İNEEDLE, then Straße STRASSE";
+        let folded = Folded::of(source);
+        let text = |spans: Vec<(usize, usize)>| {
+            spans
+                .into_iter()
+                .map(|(start, end)| &source[start..end])
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(text(folded.ranges("needle")), ["needle", "NEEDLE"]);
+        assert_eq!(text(folded.ranges("İ")), ["İ", "İ"]);
+        assert_eq!(text(folded.ranges("straße")), ["Straße"]);
+        assert_eq!(text(folded.ranges("THEN")), ["then"]);
+    }
 }

@@ -25,12 +25,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
-import { startServer, cliEntry, ROOT, LIVE as LIVE_SERVICES } from './mcp-client.mjs';
+import { startServer, cliEntry, hermeticEnv, ROOT, LIVE as LIVE_SERVICES } from './mcp-client.mjs';
+import { MCP_SURFACE_BUDGETS, measureMcpSurface } from '@octocodeai/config/mcp';
 import { schemaErrors, verboseFields, loadVerboseRules, isPageName, hintEntries } from './sensors.mjs';
-import { CHECKS, CLASIFY_SURFACE_BUDGET, checkChainFit, checkRowContract, descriptionLint, rowFieldNames, silentOmissions, surfaceBudget, zeroBasedTexts, zeroCoordinates } from './acceptance.mjs';
+import { CHECKS, checkChainFit, checkRowContract, descriptionLint, rowFieldNames, silentOmissions, surfaceBudget, zeroBasedTexts, zeroCoordinates } from './acceptance.mjs';
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SRC = path.join(ROOT, 'packages/octocode-native/crates/runtime/src');
 const CONTRACT = path.join(ROOT, 'packages/octocode-config/contract/tool-contract.json');
 const TOOL_TYPES = path.join(ROOT, 'packages/octocode-config/contract/tool_types.rs');
@@ -51,7 +50,6 @@ const T = 'octocode-local-testing/repos';
 // so they FAIL by default; --strict= overrides (empty = report mode).
 const STRICT = new Set((opt('strict') ?? 'C3,C5').split(',').filter(Boolean));
 const OUT = path.resolve(ROOT, opt('out') ?? `.octocode/evals/${new Date().toISOString().slice(0, 10)}-chain`);
-const QUOTAS_FILE = path.join(HERE, 'chain-quotas.json');
 
 // ---------- fixed tables (PLAN.md decisions) ----------
 /** Native module that owns each ToolId (tools/<module>). */
@@ -623,27 +621,39 @@ const addonBefore = addonStamp();
 // Published view: live tools/list for MCP tools, `octocode schema` for CLI-only tools.
 const list = await startServer({ cwd: ROOT, env: { OCTOCODE_BETA: 'true' } });
 const listed = Object.fromEntries(list.tools.map(t => [t.name, t]));
-const toolsListBytes = JSON.stringify(list.tools).length;
-const instructionsBytes = (list.init?.instructions ?? '').length;
+const listedBytes = measureMcpSurface(list.tools, list.init?.instructions ?? '');
+const toolsListBytes = listedBytes.toolsList;
+const instructionsBytes = listedBytes.instructions;
 list.close();
-// The surface budget measures the default surface: beta off, no classification key. clasify
-// is opt-in (a key registers it), so its addition has its own budget.
-const surfaceOf = async env => {
-  const server = await startServer({ cwd: ROOT, env: { OCTOCODE_BETA: 'false', ...env } });
-  const perTool = Object.fromEntries(server.tools.map(t => [t.name, JSON.stringify(t).length]));
-  const instructions = (server.init?.instructions ?? '').length;
-  server.close();
-  return { perTool, instructions, total: Object.values(perTool).reduce((a, b) => a + b, 0) + instructions };
+// Discovery needs no provider call: fixture credentials select the keyed
+// surfaces in an empty home, independent of the caller's credentials/config.
+const profileEnv = hermeticEnv({ PATH: process.env.PATH }, 'surface-budget');
+const surfaceOf = async profile => {
+  const server = await startServer({
+    cwd: profileEnv.OCTOCODE_HOME,
+    env: {
+      ...Object.fromEntries(Object.keys(process.env).map(name => [name, undefined])),
+      ...profileEnv,
+      WORKSPACE_ROOT: profileEnv.OCTOCODE_HOME,
+      ALLOWED_PATHS: profileEnv.OCTOCODE_HOME,
+      OCTOCODE_STORAGE_MODE: 'memory',
+      OCTOCODE_ENABLE_LOCAL: 'true',
+      OCTOCODE_DEFER_TOOLS: '',
+      TOOLS_TO_RUN: '',
+      DISABLE_TOOLS: '',
+      OCTOCODE_BETA: profile === 'keyedBeta' ? 'true' : 'false',
+      OCTOCODE_CLASSIFICATION_API: profile === 'default' ? '' : 'fixture-key',
+    },
+  });
+  try { return measureMcpSurface(server.tools, server.init?.instructions ?? ''); }
+  finally { server.close(); }
 };
-const plain = await surfaceOf({ OCTOCODE_CLASSIFICATION_API: '' });
-const keyed = await surfaceOf({});
-const defaultSurface = plain.perTool;
-const defaultInstructionsBytes = plain.instructions;
-const clasifyAddition = keyed.perTool.clasify ? keyed.total - plain.total : null;
+const surfaces = {};
+for (const profile of Object.keys(MCP_SURFACE_BUDGETS.totals)) surfaces[profile] = await surfaceOf(profile);
 const pub = {};
 for (const t of ALL_TOOLS) {
   const ct = contract.tools.find(x => x.name === t);
-  if (listed[t]) pub[t] = { description: listed[t].description, inputSchema: listed[t].inputSchema, cliOnly: false, bytes: JSON.stringify(listed[t]).length };
+  if (listed[t]) pub[t] = { description: listed[t].description, inputSchema: listed[t].inputSchema, cliOnly: false, bytes: listedBytes.perTool[t] };
   else {
     const r = spawnSync(process.execPath, [CLI, 'schema', t], { cwd: ROOT, encoding: 'utf8', env: { ...process.env, OCTOCODE_BETA: 'true' }, maxBuffer: 64 << 20 });
     let j = {}; try { j = JSON.parse(r.stdout); } catch {}
@@ -672,12 +682,10 @@ if (LIVE) {
 const addonAfter = addonStamp();
 
 // ---------- Acceptance C1-C5 ----------
-let quotas = {};
-try { quotas = JSON.parse(fs.readFileSync(QUOTAS_FILE, 'utf8')); } catch {}
 const published = Object.fromEntries(ALL_TOOLS.map(t => [t, { description: pub[t].description, inputSchema: pub[t].inputSchema }]));
 const zeroText = zeroBasedTexts(published);
-const budget = surfaceBudget(defaultSurface, defaultInstructionsBytes, { quotas });
-if (clasifyAddition !== null && clasifyAddition > CLASIFY_SURFACE_BUDGET) budget.reasons.push(`clasify adds ${clasifyAddition} B > ${CLASIFY_SURFACE_BUDGET} B (+${clasifyAddition - CLASIFY_SURFACE_BUDGET})`);
+const budgets = Object.fromEntries(Object.entries(surfaces).map(([profile, measured]) =>
+  [profile, surfaceBudget(measured, { profile, baseline: surfaces.default })]));
 const acceptance = Object.fromEntries(CHECKS.map(c => [c, { strict: STRICT.has(c), perTool: {} }]));
 for (const t of TOOLS) {
   const lv = live?.perTool[t];
@@ -689,7 +697,12 @@ for (const t of TOOLS) {
   set('C4', liveAcc?.C4 ?? [], !!liveAcc);
   set('C5', descriptionLint(t, pub[t].description, ALL_TOOLS, x => publishedFields[x], allNames(contract.tools.find(x => x.name === t)?.outputSchema).names));
 }
-acceptance.C5.surface = { tools: Object.keys(defaultSurface).length, toolsList: Object.values(defaultSurface).reduce((a, b) => a + b, 0) + Math.max(0, Object.keys(defaultSurface).length - 1) + 2, instructions: defaultInstructionsBytes, total: budget.total, perTool: defaultSurface, clasifyAddition, reasons: budget.reasons };
+acceptance.C5.surface = {
+  ...budgets.default,
+  tools: Object.keys(surfaces.default.perTool).length,
+  profiles: budgets,
+  reasons: Object.values(budgets).flatMap(({ profile, reasons }) => reasons.map(reason => `${profile}: ${reason}`)),
+};
 
 const STEPS = ['description', 'schema', 'input', 'execute', 'output', 'communicate'];
 const cell = r => (!r ? '·' : r.ok === null ? '—' : r.ok ? '✓' : '✗');
@@ -726,7 +739,11 @@ function markdown(p) {
       L.push(`| ${t} | ${r.samples.map(s => `${s.id} ${s.pages}p${s.exhausted ? '' : '+'}${s.errors.length ? ' err' : ''}`).join(', ')} | ${c.pagesWithNext} / ${c.missingMore.length} | ${c.terminal} / ${c.staleTerminal.length} | ${c.hintsMax} | ${esc(r.output.paginationKeys.join('; '))} | ${esc(c.natural ?? '—')} | ${esc(c.replays.map(x => `${x.name}→${x.tool} ${x.ok === null ? `— ${x.detail}` : x.ok ? '✓' : '✗'}`).join(', ') || '—')} |`);
     }
   }
-  L.push('', '## Acceptance checks', '', `Strict: ${[...STRICT].join(',') || 'none (report mode)'}. Default surface (beta off, ${p.acceptance.C5.surface.tools} tools): tools/list ${p.acceptance.C5.surface.toolsList} B + instructions ${p.acceptance.C5.surface.instructions} B = ${p.acceptance.C5.surface.total} B${p.acceptance.C5.surface.reasons.length ? ` (${p.acceptance.C5.surface.reasons.join('; ')})` : ''}.`, '');
+  L.push('', '## Acceptance checks', '', `Strict: ${[...STRICT].join(',') || 'none (report mode)'}.`);
+  for (const [profile, surface] of Object.entries(p.acceptance.C5.surface.profiles)) {
+    L.push(`${profile}: tools/list ${surface.toolsList} B + instructions ${surface.instructions} B = ${surface.total} B / ${surface.budget} B${surface.reasons.length ? ` (${surface.reasons.join('; ')})` : ''}.`);
+  }
+  L.push('');
   L.push(`| Tool | ${CHECKS.join(' | ')} |`, `|---|${CHECKS.map(() => ':-:').join('|')}|`);
   for (const t of TOOLS) L.push(`| ${t} | ${CHECKS.map(c => { const r = p.acceptance[c].perTool[t]; return r.ok === null ? '—' : r.ok ? '✓' : `✗ ${r.reasons.length}`; }).join(' | ')} |`);
   L.push(`| **fail** | ${CHECKS.map(c => TOOLS.filter(t => p.acceptance[c].perTool[t].ok === false).length).join(' | ')} |`, '');

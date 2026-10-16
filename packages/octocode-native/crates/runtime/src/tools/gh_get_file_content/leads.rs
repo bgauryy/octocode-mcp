@@ -41,21 +41,10 @@ pub(super) fn last_window_repair(
     total_lines: usize,
     sha: &str,
 ) -> Option<Value> {
-    let requested = local.line_ranges();
-    if total_lines == 0
-        || requested.is_empty()
-        || requested.iter().any(|range| range.start <= total_lines)
-    {
-        return None;
-    }
-    let width = requested
-        .iter()
-        .map(|range| range.end.saturating_sub(range.start) + 1)
-        .max()?;
-    let start = total_lines.saturating_sub(width - 1).max(1);
+    let (start, end) = local.last_window_span(total_lines)?;
     let mut row = query_row(query, &[]);
     row["ref"] = json!(sha);
-    row["ranges"] = json!([format!("{start}-{total_lines}")]);
+    row["ranges"] = json!([format!("{start}-{end}")]);
     Some(
         Continuation::new(ToolId::GhGetFileContent, row)
             .confidence("high")
@@ -63,10 +52,47 @@ pub(super) fn last_window_repair(
     )
 }
 
+/// One localFetch continuation row as the same read of the GitHub file at
+/// `resolved_ref`, in the caller's view. A window (offset, length or unit)
+/// never reads the whole file; a whole-view read (the unfiltered view of a
+/// `fullContent` read) keeps `fullContent`.
+fn github_row(
+    mut query: serde_json::Map<String, Value>,
+    source: &GhGetFileContentQuery,
+    view: Option<MinifyMode>,
+    resolved_ref: &str,
+) -> Value {
+    query.insert("owner".into(), Value::String(source.owner.to_string()));
+    query.insert("repo".into(), Value::String(source.repo.to_string()));
+    query.insert("ref".into(), Value::String(resolved_ref.to_owned()));
+    query.remove("snapshot");
+    if ["offset", "length", "unit"]
+        .iter()
+        .any(|field| query.contains_key(*field))
+    {
+        query.remove("fullContent");
+    }
+    match view {
+        Some(MinifyMode::Standard) => {
+            query.insert("minify".into(), Value::String("standard".into()));
+        }
+        Some(MinifyMode::Symbols) => {
+            query.insert("minify".into(), Value::String("symbols".into()));
+        }
+        None => {
+            query.remove("minify");
+        }
+    }
+    if let Some(force) = source.force_refresh {
+        query.insert("forceRefresh".into(), Value::Bool(force));
+    }
+    Value::Object(query)
+}
+
 pub(super) fn rewrite_continuations(
     result: &mut crate::tools::local_fetch::LocalFetchResult,
     source: &GhGetFileContentQuery,
-    view: MinifyMode,
+    view: Option<MinifyMode>,
     resolved_ref: &str,
 ) -> Option<Value> {
     let mut value = serde_json::to_value(result.next.take()?).ok()?;
@@ -79,41 +105,18 @@ pub(super) fn rewrite_continuations(
     // miss adds its own repository-level lead.
     object.retain(|_, continuation| continuation["tool"] == ToolId::LocalFetch.as_str());
     for continuation in object.values_mut() {
-        let Some(Value::Object(mut query)) =
-            crate::tools::result::continuation_row(continuation).cloned()
+        let Some(rows) = continuation
+            .pointer("/query/queries")
+            .and_then(Value::as_array)
         else {
             continue;
         };
-        query.insert("owner".into(), Value::String(source.owner.to_string()));
-        query.insert("repo".into(), Value::String(source.repo.to_string()));
-        query.insert("ref".into(), Value::String(resolved_ref.to_owned()));
-        // A continuation reads a window, never the whole file, and keeps
-        // the caller's view; the default view is omitted. A selected row
-        // (`ranges`, `matchString`) is verbatim under the default view; a
-        // window paged on from a verbatim whole-file read stays verbatim.
-        query.remove("fullContent");
-        let selected = query.contains_key("ranges") || query.contains_key("matchString");
-        match if selected && source.clasify_context.is_none() {
-            source.minify.unwrap_or_else(default_minify)
-        } else {
-            view
-        } {
-            mode if mode == default_minify() => {
-                query.remove("minify");
-            }
-            mode => {
-                let name = match mode {
-                    MinifyMode::None => "none",
-                    MinifyMode::Standard => "standard",
-                    MinifyMode::Symbols => "symbols",
-                };
-                query.insert("minify".into(), Value::String(name.to_owned()));
-            }
-        }
-        if let Some(force) = source.force_refresh {
-            query.insert("forceRefresh".into(), Value::Bool(force));
-        }
-        let mut call = Continuation::new(ToolId::GhGetFileContent, Value::Object(query));
+        let rows = rows
+            .iter()
+            .filter_map(Value::as_object)
+            .map(|row| github_row(row.clone(), source, view, resolved_ref))
+            .collect::<Vec<_>>();
+        let mut call = Continuation::input(ToolId::GhGetFileContent, json!({"queries": rows}));
         if let Some(confidence) = continuation["confidence"].as_str() {
             call = call.confidence(confidence);
         }
@@ -122,7 +125,60 @@ pub(super) fn rewrite_continuations(
     (!object.is_empty()).then_some(value)
 }
 
-/// Ordinary GitHub reads use the standard view; classified reads resolve to raw text.
-pub(super) fn default_minify() -> MinifyMode {
-    MinifyMode::Standard
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tools::local_fetch::{FetchCall, LocalFetchResult, NextCalls};
+
+    fn read(fields: Value) -> FetchCall {
+        let mut row = json!({"path":"README.md"});
+        for (key, value) in fields.as_object().into_iter().flatten() {
+            row[key] = value.clone();
+        }
+        FetchCall {
+            query: serde_json::from_value(row).expect("read"),
+        }
+    }
+
+    /// The whole-view recovery of a `fullContent` read stays a whole read
+    /// on GitHub; a window (offset/length) never reads the whole file, and
+    /// every row of a multi-row call becomes a GitHub read.
+    #[test]
+    fn a_whole_view_lead_keeps_full_content_and_every_row_is_rewritten() {
+        let source: GhGetFileContentQuery =
+            serde_json::from_value(json!({"owner":"o","repo":"r","path":"README.md"}))
+                .expect("query");
+        let mut rest = serde_json::Map::new();
+        rest.insert(
+            "unfiltered3".into(),
+            Continuation::input(
+                ToolId::LocalFetch,
+                json!({"queries":[{"path":"README.md","ranges":["1-2"]},
+                    {"path":"README.md","ranges":["9-9"]}]}),
+            )
+            .build(),
+        );
+        let mut result = LocalFetchResult::blank("success");
+        result.next = Some(NextCalls {
+            unfiltered: Some(read(json!({"ranges":["3-4"]}))),
+            unfiltered2: Some(read(json!({"fullContent":true}))),
+            continue_window: Some(read(json!({"offset":50,"length":50,"unit":"lines"}))),
+            unfiltered_rest: rest,
+            ..NextCalls::default()
+        });
+        let next = rewrite_continuations(&mut result, &source, None, "abc123").expect("next");
+        let whole = &next["unfiltered2"];
+        assert_eq!(whole["tool"], "ghGetFileContent");
+        assert_eq!(whole["query"]["queries"][0]["fullContent"], true, "{next}");
+        let window = &next["continueWindow"]["query"]["queries"][0];
+        assert!(window.get("fullContent").is_none() && window["offset"] == 50);
+        let rows = next["unfiltered3"]["query"]["queries"]
+            .as_array()
+            .expect("rows");
+        assert_eq!(rows.len(), 2);
+        assert!(
+            rows.iter()
+                .all(|row| row["owner"] == "o" && row["ref"] == "abc123")
+        );
+    }
 }

@@ -1,4 +1,5 @@
 //! Assembles match and context lines into per-file snippets.
+use sha2::{Digest as _, Sha256};
 use std::collections::HashMap;
 
 use crate::types::{TextSearchFile, TextSearchMatch};
@@ -78,6 +79,9 @@ fn clips_to_window(line: &str, column: u32, max_chars: usize) -> bool {
 /// Lines whose match already fits the head are truncated from the start; otherwise
 /// the window starts a quarter-snippet before the match and is marked with `…`.
 fn clip_around_match(line: &str, column: u32, max_chars: usize) -> String {
+    if line.chars().count() <= max_chars {
+        return line.to_owned();
+    }
     if !clips_to_window(line, column, max_chars) {
         return truncate_unicode(line, max_chars);
     }
@@ -134,11 +138,11 @@ pub(crate) fn assemble_file(
             .into_iter()
             .map(|m| {
                 let chars = m.line_text.chars().count();
+                let (clipped, bytes) = (chars > max_snippet, m.line_text.len());
                 let rank = line_rank_at(&m.line_text, m.column);
                 let byte_offset = utf16_to_byte_offset(&m.line_text, m.column);
-                let value = if chars <= max_snippet
-                    && !clips_to_window(&m.line_text, m.column, max_snippet)
-                {
+                let value_digest = Sha256::digest(m.line_text.trim().as_bytes()).into();
+                let value = if !clipped {
                     m.line_text
                 } else {
                     clip_around_match(&m.line_text, m.column, max_snippet)
@@ -148,10 +152,11 @@ pub(crate) fn assemble_file(
                     column: m.column,
                     byte_offset,
                     value,
+                    value_digest,
                     count: None,
                     rank: Some(rank),
-                    original_chars: (chars > max_snippet)
-                        .then(|| u32::try_from(chars).unwrap_or(u32::MAX)),
+                    original_chars: clipped.then(|| u32::try_from(chars).unwrap_or(u32::MAX)),
+                    original_bytes: clipped.then(|| u32::try_from(bytes).unwrap_or(u32::MAX)),
                 }
             })
             .collect::<Vec<_>>();
@@ -180,7 +185,7 @@ pub(crate) fn assemble_file(
         .raw_matches
         .iter()
         .map(|m| {
-            let (value, original_chars) = {
+            let (value, value_digest, original_chars, original_bytes) = {
                 // Contiguous context only: stop at the first line that is absent.
                 // Join by line slot (not by buffer emptiness) so a blank
                 // leading line keeps its place and line numbers stay aligned.
@@ -198,7 +203,8 @@ pub(crate) fn assemble_file(
                     window.join("\n")
                 };
                 let joined = join(&before);
-                let chars = joined.chars().count();
+                let (chars, joined_bytes) = (joined.chars().count(), joined.len());
+                let value_digest = Sha256::digest(joined.trim().as_bytes()).into();
                 let value = if chars <= max_snippet {
                     joined
                 } else {
@@ -222,9 +228,12 @@ pub(crate) fn assemble_file(
                         clip_around_match(&m.line_text, m.column, max_snippet)
                     }
                 };
+                let clipped = chars > max_snippet;
                 (
                     value,
-                    (chars > max_snippet).then(|| u32::try_from(chars).unwrap_or(u32::MAX)),
+                    value_digest,
+                    clipped.then(|| u32::try_from(chars).unwrap_or(u32::MAX)),
+                    clipped.then(|| u32::try_from(joined_bytes).unwrap_or(u32::MAX)),
                 )
             };
 
@@ -233,9 +242,11 @@ pub(crate) fn assemble_file(
                 column: m.column,
                 byte_offset: utf16_to_byte_offset(&m.line_text, m.column),
                 value,
+                value_digest,
                 count: None,
                 rank: Some(line_rank_at(&m.line_text, m.column)),
                 original_chars,
+                original_bytes,
             }
         })
         .collect();
@@ -404,6 +415,16 @@ mod tests {
         let long = "a".repeat(600);
         let f = assemble(&[(1, &long, Some(0))], 0, 500);
         assert_eq!(f.matches[0].original_chars, Some(600));
+        assert_eq!(f.matches[0].original_bytes, Some(600));
+        // Bytes are counted apart from characters: `中` takes three.
+        let wide = "中".repeat(600);
+        for context in [0, 1] {
+            let f = assemble(&[(1, &wide, Some(0))], context, 500);
+            assert_eq!(f.matches[0].original_chars, Some(600), "{context}");
+            assert_eq!(f.matches[0].original_bytes, Some(1_800), "{context}");
+        }
+        let short = assemble(&[(1, "match", Some(0))], 0, 500);
+        assert_eq!(short.matches[0].original_bytes, None);
     }
 
     #[test]
@@ -428,8 +449,8 @@ mod tests {
     }
 
     /// A hit line kept whole is moved into its value; every value still
-    /// equals the clip of the line, including a line that fits but whose
-    /// match sits in its tail (that one is clipped to a window).
+    /// equals the clip of the line, including a fitting line whose match
+    /// sits in its tail (that line stays whole).
     #[test]
     fn moved_line_values_equal_the_clipped_line() {
         let lines = [
@@ -457,6 +478,55 @@ mod tests {
     fn untruncated_content_snippet_has_no_original_char_length() {
         let f = assemble(&[(1, "short line", Some(0))], 0, 500);
         assert_eq!(f.matches[0].original_chars, None);
+    }
+
+    #[test]
+    fn fitting_tail_matches_keep_the_complete_source_line() {
+        for prefix in ["x", "é", "😀"] {
+            let line = format!("{}needle", prefix.repeat(34));
+            let column = u32::try_from(prefix.encode_utf16().count() * 34).unwrap();
+            for context in [0, 1] {
+                for limit in [40, 41] {
+                    let file = assemble(&[(1, &line, Some(column))], context, limit);
+                    let hit = &file.matches[0];
+                    assert_eq!(hit.value, line, "{prefix} context={context} limit={limit}");
+                    assert_eq!(hit.original_chars, None);
+                    assert_eq!(hit.original_bytes, None);
+                }
+                let clipped = assemble(&[(1, &line, Some(column))], context, 39);
+                assert!(clipped.matches[0].value.contains("needle"));
+                assert_eq!(clipped.matches[0].original_chars, Some(40));
+                assert_eq!(clipped.matches[0].original_bytes, Some(line.len() as u32));
+            }
+        }
+    }
+
+    #[test]
+    fn complete_value_identity_is_independent_of_display_width() {
+        let first = format!("needle {} first", "a".repeat(50));
+        let second = format!("needle {} second", "a".repeat(50));
+        let lines = [(1, first.as_str(), Some(0)), (2, second.as_str(), Some(0))];
+        for context in [0, 1] {
+            let narrow = assemble(&lines, context, 20);
+            let whole = assemble(&lines, context, 500);
+            for (clipped, complete) in narrow.matches.iter().zip(&whole.matches) {
+                assert_ne!(clipped.value, complete.value);
+                assert_eq!(clipped.value_digest, complete.value_digest);
+            }
+            if context == 0 {
+                assert_eq!(narrow.matches[0].value, narrow.matches[1].value);
+                assert_ne!(
+                    narrow.matches[0].value_digest,
+                    narrow.matches[1].value_digest
+                );
+            }
+        }
+        let padded = format!("  {first}  ");
+        let duplicates = assemble(&[(1, &first, Some(0)), (2, &padded, Some(2))], 0, 20);
+        assert_eq!(
+            duplicates.matches[0].value_digest,
+            duplicates.matches[1].value_digest
+        );
     }
 
     #[test]

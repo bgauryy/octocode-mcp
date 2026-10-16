@@ -6,7 +6,7 @@
 // model), localSearch must select the implementing file, localFetch over a huge
 // file must select the target among its match windows, two classifiers over one
 // file must both select their declarations, and a selected continuation walk
-// must stay in source order while next.unfiltered recovers every line once.
+// must stay in source order while whole-view recovery returns every line once.
 //
 // Public `clasify`: typed noul/choice/score answers over held `state`, over a
 // localFetch `source` (with an executable `hints.read`), over a URL capture,
@@ -15,7 +15,7 @@
 // Measures host-visible bytes (the selected view) against a direct full read.
 import fs from 'node:fs';
 import path from 'node:path';
-import { FIXTURES, REPOS, checks, collect, rowData, startServer, writeResults } from './mcp-client.mjs';
+import { findHint, FIXTURES, REPOS, checks, collect, rowData, startServer, writeResults } from './mcp-client.mjs';
 
 const { check, skip, summary } = checks('clasify');
 // Selection needs only the caller's provider key; beta exposes public clasify.
@@ -36,8 +36,8 @@ function groundTruth(dir, file, regex) {
 
 /** localFetch content as `[lineNumber, text]` pairs (`N<TAB>text` per line). */
 const numbered = content => String(content ?? '').split('\n').flatMap(line => {
-  const match = /^(\d+)\t(.*)$/.exec(line);
-  return match ? [[Number(match[1]), match[2]]] : [];
+  const match = /^(\d+)\t/.exec(line);
+  return match ? [[Number(match[1]), line.slice(match[0].length)]] : [];
 });
 
 const LOCATE = [
@@ -61,7 +61,7 @@ const LOCATE = [
   { name: 'pytorch autograd Engine::execute', dir: 'huge-cpp', glob: 'torch/csrc/autograd/engine.cpp', regex: '^auto Engine::execute\\(', target: 'The autograd engine method that executes the backward graph from given root edges.' },
 ];
 // A raw line window: selection judges raw line chunks (minified and byte views are rejected).
-const PAGE = { unit: 'lines', length: 120, minify: 'none' };
+const PAGE = { unit: 'lines', length: 120 };
 const MAX_SELECTED_PAGES = 20;
 
 /** A selected view: the first page plus its plan-bound continueWindow pages (never next.unfiltered). */
@@ -104,25 +104,50 @@ else {
   console.table(table);
   console.log(`clasifyContext selected declaration: ${table.filter(r => r.strict).length}/${table.length}`);
 
-  // Search: the implementing file is among the selected files (selection unit: files).
+  // Search receipts count snippet groups; adjacent hit windows form one group.
   // A content view is required; file-list and count views reject clasifyContext.
   const scheduler = path.join(REPOS, 'huge-go/pkg/scheduler');
   if (!fs.existsSync(scheduler)) skip('clasifyContext localSearch: schedule_one.go is selected', `missing ${scheduler}`);
   else {
-    const pages = [await call('localSearch', {
-      path: scheduler, matchString: 'func (sched *Scheduler)', pageSize: 3, matchPageSize: 1,
+    const first = await call('localSearch', {
+      path: scheduler, matchString: 'func (sched *Scheduler)', pageSize: 3, matchPageSize: 1, contextLines: 0,
       clasifyContext: { classifiers: ['The implementation of scheduling one pod: the main per-pod scheduling cycle.'] },
-    })];
-    for (let lead = rowData(pages[0])?.next?.nextPage; lead && pages.length < MAX_SELECTED_PAGES; lead = rowData(pages.at(-1))?.next?.nextPage) pages.push(await follow(lead));
-    const receipt = rowData(pages[0])?.selection;
-    const files = pages.flatMap(page => (rowData(page)?.files ?? []).map(f => f.path ?? ''));
+    });
+    const pages = [];
+    const pending = [first];
+    const seen = new Set();
+    let repeated = false;
+    while (pending.length && pages.length < 100) {
+      const page = pending.shift();
+      pages.push(page);
+      for (const key of ['nextPage', 'nextMatchPage']) {
+        const lead = rowData(page)?.next?.[key];
+        if (!lead) continue;
+        const identity = JSON.stringify([lead.tool, lead.query]);
+        if (seen.has(identity)) { repeated = true; continue; }
+        seen.add(identity);
+        pending.push(await follow(lead));
+      }
+    }
+    const receipt = rowData(first)?.selection;
+    const hits = pages.flatMap(page => (rowData(page)?.files ?? []).flatMap(file =>
+      (file.matches ?? []).map(hit => ({ path: file.path, line: hit.line }))));
+    const files = new Set(hits.map(hit => hit.path));
+    const uniqueHits = new Set(hits.map(hit => JSON.stringify([hit.path, hit.line])));
+    let groups = 0;
+    for (const file of files) {
+      const lines = [...new Set(hits.filter(hit => hit.path === file).map(hit => hit.line))].sort((a, b) => a - b);
+      groups += lines.filter((line, index) => index === 0 || line > lines[index - 1] + 1).length;
+    }
     check('clasifyContext localSearch: schedule_one.go is selected and other hits are withheld', pages.every(p => !p.isError && !p.rowErrors)
-      && files.some(file => file.endsWith('schedule_one.go')) && receipt?.selectedItems === new Set(files).size && receipt.selectedItems < receipt.totalItems,
-    JSON.stringify({ selection: receipt, files }).slice(0, 240));
+      && !pending.length && !repeated && uniqueHits.size === hits.length
+      && [...files].some(file => file.endsWith('schedule_one.go')) && receipt?.unit === 'chunks'
+      && receipt.selectedItems === groups && receipt.selectedItems < receipt.totalItems
+      && receipt.selectedItems + receipt.excludedItems + receipt.unknownItems === receipt.totalItems,
+    JSON.stringify({ selection: receipt, groups, hits: hits.length, pages: pages.length, remaining: pending.length, files: [...files] }).slice(0, 400));
   }
 
-  // Huge single file (3MB checker.ts): localSearch selects whole files, so the
-  // in-file narrowing is localFetch's: matchString windows are judged before delivery.
+  // Huge single file (3MB checker.ts): localFetch judges the match windows before delivery.
   {
     const truth = groundTruth('typescript', 'tsc/testdata/fixtures/compiler/checker.ts', 'function isTypeAssignableTo\\(');
     if (!truth) skip('huge file: selected match windows', 'missing checker.ts');
@@ -159,7 +184,7 @@ else {
   }
 
   // Selected replay: the plan-bound walk keeps source order, holds the deciding
-  // line, withholds the filler, and terminates; next.unfiltered recovers every line once.
+  // line, withholds the filler, and terminates; whole-view recovery reaches every line once.
   {
     // Under the workspace (the server's allowed root): the OS temp dir is outside it.
     const scratch = path.join(FIXTURES, 'scratch');
@@ -170,7 +195,7 @@ else {
       const lines = Array.from({ length: 429 }, (_, i) => `Line ${i + 1}: operational documentation filler explaining ordinary housekeeping and source ownership.`);
       lines[172] = 'Retry only after a transient upstream timeout; stop retrying after three attempts.';
       fs.writeFileSync(file, lines.join('\n') + '\n');
-      const first = await call('localFetch', { path: file, clasifyContext: { classifiers: ['When must a retry stop?'] }, unit: 'lines', length: 100, minify: 'none' });
+      const first = await call('localFetch', { path: file, clasifyContext: { classifiers: ['When must a retry stop?'] }, unit: 'lines', length: 100 });
       const view = await selectedView(first);
       const r = view.receipt;
       check('walk: every selected page succeeds', view.ok, view.pages.filter(p => p.isError || p.rowErrors).map(p => p.text.slice(0, 80)).join(' | '));
@@ -178,12 +203,13 @@ else {
       check('walk: selected pages keep source order, carry one receipt, terminate, and withhold the filler', view.complete && sourceOrdered(view.lines)
         && r?.selectedItems + r?.excludedItems + r?.unknownItems === r?.totalItems && r.selectedItems < r.totalItems && view.lines.length < 429
         && view.pages.every(page => JSON.stringify(rowData(page)?.selection) === JSON.stringify(r)), `${view.pages.length} pages, ${view.lines.length} lines, ${receiptText(r)}`);
-      const unfiltered = rowData(first)?.next?.unfiltered;
+      const next = rowData(first)?.next;
+      const unfiltered = next?.unfiltered2 ?? next?.unfiltered;
       const recovered = unfiltered ? [await follow(unfiltered)] : [];
       for (let lead = recovered[0] && rowData(recovered[0])?.next?.continueWindow; lead && recovered.length < 20; lead = rowData(recovered.at(-1))?.next?.continueWindow) recovered.push(await follow(lead));
       const seen = recovered.flatMap(p => numbered(rowData(p)?.content).map(([n]) => n));
       const once = seen.length === 429 && new Set(seen).size === 429 && seen.every(n => n >= 1 && n <= 429);
-      check('walk: next.unfiltered drops the plan and recovers lines 1-429 exactly once', !!unfiltered && unfiltered.query?.queries?.[0]?.clasifyContext === undefined
+      check('walk: whole unfiltered recovery drops the plan and recovers lines 1-429 exactly once', !!unfiltered && unfiltered.query?.queries?.[0]?.clasifyContext === undefined
         && recovered.every(p => !p.isError && !p.rowErrors && rowData(p)?.selection === undefined) && once && !rowData(recovered.at(-1))?.next?.continueWindow,
       `${recovered.length} pages, ${seen.length} lines, ${new Set(seen).size} distinct`);
     } finally {
@@ -242,7 +268,7 @@ else {
       const row = clasifyRow(out);
       check('source: a present target answers yes and an absent one no', row.answers?.timer?.noul >= 0.5 && row.answers?.yaml?.noul < 0.5, JSON.stringify(row.answers ?? row.error));
       check('source: no source body is returned', !out.text.includes('serverCron(struct aeEventLoop'), out.text.slice(0, 160));
-      const lead = row.hints?.read;
+      const lead = findHint(row, 'read');
       const read = lead && await follow(lead);
       const lines = numbered(read && rowData(read)?.content);
       check('source: hints.read is a pinned localFetch of the captured range', lead?.tool === 'localFetch' && typeof lead.query?.queries?.[0]?.snapshot === 'string'
@@ -257,7 +283,8 @@ else {
     } }] });
     const row = clasifyRow(out);
     check('url: the page is judged and its provenance carries snapshot and expiresAt', row.answers?.reserved?.noul >= 0.5 && typeof row.source?.snapshot === 'string' && typeof row.source?.expiresAt === 'string', JSON.stringify(row).slice(0, 220));
-    const read = row.hints?.read && await follow(row.hints.read);
+    const lead = findHint(row, 'read');
+    const read = lead && await follow(lead);
     check('url: hints.read returns the captured text through localFetch', !!read && !read.isError && /example\.com/.test(rowData(read)?.content ?? ''), read?.text.slice(0, 160) ?? 'no hints.read');
   }
 

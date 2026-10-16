@@ -1,11 +1,8 @@
 //! JSON-value helpers shared across history-item shaping: typed accessors,
 //! the shallow merge, and the provider comment mapper.
 use crate::tools::result::remove_nulls;
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
 
-pub(super) fn content_flag(value: Option<&Map<String, Value>>, key: &str) -> bool {
-    value.and_then(|v| v.get(key)).and_then(Value::as_bool) == Some(true)
-}
 pub(super) fn array(value: Value) -> Vec<Value> {
     value.as_array().cloned().unwrap_or_default()
 }

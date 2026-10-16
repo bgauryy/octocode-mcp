@@ -49,7 +49,7 @@ async fn malformed_remote_regex_keeps_original_error_and_required_file_path() {
         data["error"].to_string().contains("matchString[1]"),
         "{data}"
     );
-    let repair = &data["hints"]["repair"];
+    let repair = &crate::support::checks::hint(data, "repair");
     assert_eq!(repair["tool"], "ghGetFileContent", "{data}");
     let row = &repair["query"]["queries"][0];
     assert_eq!(
@@ -66,7 +66,10 @@ async fn malformed_remote_regex_keeps_original_error_and_required_file_path() {
         (Some("a"), Some("b"), Some(sha)),
         "{data}"
     );
-    assert!(data["hints"].get("text").is_none(), "{data}");
+    assert!(
+        crate::support::checks::hint(data, "text").is_null(),
+        "{data}"
+    );
     runtime.close().await;
 }
 
@@ -501,11 +504,12 @@ async fn three_sequential_queries_each_hit_the_server() {
     runtime.close().await;
 }
 
-/// ghCloneRepo: no GitHub API call precedes git. After git fails, one
-/// `commits/{ref}` call classifies the missing repository, which leads to a
+/// ghCloneRepo pins its commit through the API before git runs: an
+/// unbranched row reads the repository's default branch, so a missing
+/// repository is classified by that one call, with no git, and leads to a
 /// search for it.
 #[tokio::test]
-async fn gh_clone_repo_makes_no_metadata_call_before_git() {
+async fn gh_clone_repo_classifies_a_missing_repository_before_git() {
     let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .and(path("/api/v3/repos/ghost/nope"))
@@ -528,7 +532,8 @@ async fn gh_clone_repo_makes_no_metadata_call_before_git() {
     // The missing repository leads to a search for it (a failed row keeps
     // its recovery lead).
     assert_eq!(
-        data["hints"]["findRepository"]["tool"], "ghSearchRepo",
+        crate::support::checks::hint(data, "findRepository")["tool"],
+        "ghSearchRepo",
         "{data}"
     );
     let api_calls: Vec<String> = server
@@ -539,13 +544,8 @@ async fn gh_clone_repo_makes_no_metadata_call_before_git() {
         .map(|request| request.url.path().to_owned())
         .filter(|path| path.starts_with("/api/"))
         .collect();
-    // No repository metadata call precedes git; after git fails, exactly one
-    // `commits/{ref}` call explains the failure (gh_clone_repo/mod.rs).
-    assert_eq!(
-        api_calls,
-        ["/api/v3/repos/ghost/nope/commits/HEAD"],
-        "{api_calls:?}"
-    );
+    // The one pinning read answered; nothing followed it.
+    assert_eq!(api_calls, ["/api/v3/repos/ghost/nope"], "{api_calls:?}");
     runtime.close().await;
 }
 
@@ -589,7 +589,8 @@ async fn gh_get_file_content_on_directory_returns_tree_recovery() {
         "{data}"
     );
     assert_eq!(
-        data["hints"]["viewTree"]["query"]["queries"][0]["path"], "src",
+        crate::support::checks::hint(data, "viewTree")["query"]["queries"][0]["path"],
+        "src",
         "{data}"
     );
     runtime.close().await;
@@ -695,27 +696,39 @@ async fn gh_file_read_of_a_missing_path_recovers_to_what_exists() {
     let data = row_data(&outcome);
     assert_eq!(data["errorCode"], "notFound", "{data}");
     assert_eq!(
-        data["hints"]["read"]["query"]["queries"][0]["path"], "tokio/src/lib.rs",
+        crate::support::checks::hint(data, "read")["query"]["queries"][0]["path"],
+        "tokio/src/lib.rs",
         "{data}"
     );
+    // Recovery leads pin the commit the read resolved, not the movable ref.
     assert_eq!(
-        data["hints"]["read"]["query"]["queries"][0]["ref"], "main",
+        crate::support::checks::hint(data, "read")["query"]["queries"][0]["ref"],
+        sha,
         "{data}"
     );
     // The case-fixed read is the one repair; no listing beside it.
-    assert!(data["hints"].get("viewTree").is_none(), "{data}");
+    assert!(
+        crate::support::checks::hint(data, "viewTree").is_null(),
+        "{data}"
+    );
     let outcome = call(&runtime, "ghGetFileContent", read("tokio/src/nope.rs"))
         .await
         .expect("error row");
     let data = row_data(&outcome);
-    assert!(data["hints"].get("read").is_none(), "{data}");
+    assert!(
+        crate::support::checks::hint(data, "read").is_null(),
+        "{data}"
+    );
     assert_eq!(
-        data["hints"]["viewTree"]["query"]["queries"][0]["path"], "tokio/src",
+        crate::support::checks::hint(data, "viewTree")["query"]["queries"][0]["path"],
+        "tokio/src",
         "{data}"
     );
     // A hint is not proof, so no continuation carries confidence:"exact".
     assert!(
-        data["hints"]["viewTree"].get("confidence").is_none(),
+        crate::support::checks::hint(data, "viewTree")
+            .get("confidence")
+            .is_none(),
         "{data}"
     );
     runtime.close().await;
@@ -780,18 +793,27 @@ async fn gh_structure_of_a_missing_path_recovers_to_the_nearest_directory() {
         );
         let data = row_data(&outcome);
         assert_eq!(data["errorCode"], "notFound", "{data}");
-        assert_eq!(data["hints"]["viewTree"]["tool"], "ghStructure", "{data}");
         assert_eq!(
-            data["hints"]["viewTree"]["query"]["queries"][0]["path"], nearest,
+            crate::support::checks::hint(data, "viewTree")["tool"],
+            "ghStructure",
             "{data}"
         );
         assert_eq!(
-            data["hints"]["viewTree"]["query"]["queries"][0]["ref"], "main",
+            crate::support::checks::hint(data, "viewTree")["query"]["queries"][0]["path"],
+            nearest,
+            "{data}"
+        );
+        // Recovery leads pin the commit the listing resolved.
+        assert_eq!(
+            crate::support::checks::hint(data, "viewTree")["query"]["queries"][0]["ref"],
+            sha,
             "{data}"
         );
         // A hint is not proof, so no continuation carries confidence:"exact".
         assert!(
-            data["hints"]["viewTree"].get("confidence").is_none(),
+            crate::support::checks::hint(data, "viewTree")
+                .get("confidence")
+                .is_none(),
             "{data}"
         );
         assert!(
@@ -833,7 +855,7 @@ async fn gh_search_picked_repositories_are_contract_valid() {
         json!([{"owner":"o","repo":"r","stars":0}])
     );
     // The top repository's tree lead is a hint, not a page.
-    let lead = &row_data(&outcome)["hints"]["viewRepo"];
+    let lead = &crate::support::checks::hint(row_data(&outcome), "viewRepo");
     assert_eq!(lead["tool"], "ghStructure", "{}", row_data(&outcome));
     assert_eq!(
         (
@@ -940,7 +962,7 @@ async fn anonymous_rate_limit_advises_authentication() {
     let data = row_data(&outcome);
     assert_eq!(data["errorCode"], "rateLimited", "{data}");
     assert!(
-        data["hints"]["text"][0]
+        crate::support::checks::hint(data, "text")[0]
             .as_str()
             .is_some_and(|hint| hint.contains("auth login")),
         "{data}"
@@ -955,7 +977,7 @@ fn all_hints(value: &serde_json::Value) -> Vec<String> {
         serde_json::Value::Object(map) => {
             for (key, child) in map {
                 if key == "hints"
-                    && let Some(hints) = child.get("text").and_then(|text| text.as_array())
+                    && let Some(hints) = child.as_array()
                 {
                     out.extend(hints.iter().filter_map(|h| h.as_str().map(str::to_owned)));
                 }
@@ -1042,17 +1064,23 @@ async fn gh_file_read_on_a_missing_repository_reports_repository_access() {
         "Repository ghost/nope not found, or private and not accessible to this token",
         "{data}"
     );
-    assert!(data.pointer("/hints/viewTree").is_none(), "{data}");
+    assert!(
+        crate::support::checks::hint(data, "viewTree").is_null(),
+        "{data}"
+    );
     // As on ghSearchCode and ghStructure, the one repair is a search for
     // the repository's name, which names the owner that holds it.
-    let find = &data["hints"]["findRepository"];
+    let find = &crate::support::checks::hint(data, "findRepository");
     assert_eq!(find["tool"], "ghSearchRepo", "{data}");
     assert_eq!(
         find["query"]["queries"][0]["keywords"],
         json!(["nope"]),
         "{data}"
     );
-    assert!(data.pointer("/hints/text").is_none(), "{data}");
+    assert!(
+        crate::support::checks::hint(data, "text").is_null(),
+        "{data}"
+    );
     checks::assert_absent(data, "exact case");
     checks::assert_absent(data, "commits#get-a-commit");
     runtime.close().await;
@@ -1146,7 +1174,7 @@ async fn big_file_runtime(
 /// Whole-file pages respect the default and a configured 40k host window and
 /// deliver the source byte for byte, every line exactly once, through copied
 /// continuations: comments and blank lines are kept, because `fullContent`
-/// is the verbatim view and every continuation pins `minify:"none"`.
+/// is the verbatim view, which every continuation keeps by omitting `minify`.
 #[tokio::test]
 async fn gh_full_content_pages_stay_under_the_configured_window_and_cover_the_file() {
     let sha = "0123456789abcdef0123456789abcdef01234567";
@@ -1185,7 +1213,8 @@ async fn gh_full_content_pages_stay_under_the_configured_window_and_cover_the_fi
         assert!(joined == text, "byte-for-byte source at window {window}");
         for continuation in &walk.queries[1..] {
             let row = &continuation["queries"][0];
-            assert_eq!(row["minify"], "none", "{continuation}");
+            // The raw view is the default: omitted.
+            assert!(row.get("minify").is_none(), "{continuation}");
             assert!(row.get("fullContent").is_none(), "{continuation}");
         }
         runtime.close().await;
@@ -1305,15 +1334,15 @@ async fn pinned_ref_code_search_warns_and_leads_to_the_ref_listing() {
         json!(["Files from the default-branch index at fedcba9, not dev; `lines` read at dev."]),
         "{data}"
     );
-    let lead = &data["hints"]["viewRepo"];
+    let lead = &crate::support::checks::hint(data, "viewRepo");
     assert_eq!(lead["tool"], "ghStructure", "{data}");
     assert_eq!(lead["query"]["queries"][0]["ref"], at_ref, "{data}");
     assert_eq!(lead["query"]["queries"][0]["path"], "pkg", "{data}");
     assert_eq!(
-        data["hints"]
-            .as_object()
-            .and_then(|hints| hints.keys().next())
-            .map(String::as_str),
+        data["hints"][0]
+            .as_str()
+            .and_then(|text| text.split_once(": "))
+            .map(|(name, _)| name),
         Some("viewRepo"),
         "{data}"
     );
@@ -1355,7 +1384,7 @@ async fn gh_bad_ref_is_not_found_with_a_refs_lead() {
                 .contains("\"no-such-ref\""),
             "{tool}: {data}"
         );
-        let lead = &data["hints"]["viewRefs"];
+        let lead = &crate::support::checks::hint(data, "viewRefs");
         assert_eq!(lead["tool"], "ghStructure", "{tool}: {data}");
         let row = &lead["query"]["queries"][0];
         for (field, value) in [("owner", "a"), ("repo", "b"), ("operation", "refs")] {
@@ -1410,7 +1439,8 @@ async fn gh_missing_full_sha_is_named_with_a_refs_lead() {
             "{tool}: {data}"
         );
         assert_eq!(
-            data["hints"]["viewRefs"]["tool"], "ghStructure",
+            crate::support::checks::hint(data, "viewRefs")["tool"],
+            "ghStructure",
             "{tool}: {data}"
         );
     }

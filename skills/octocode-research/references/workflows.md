@@ -12,7 +12,7 @@ Load when the source or task is known: local checkout, remote repository or pack
 - No bodies needed: files or count view; one file's hits: one `localFetch` with `matchString`.
   `npx octocode localSearch '{"path":"src","matchString":"createCache|withCache","regex":"rust","resultView":"files"}'`
 - Broad content exploration: `clasifyContext` can select matched evidence before host reading. An unread file's contents need `clasify.source` or a classified `localFetch`; path/count results do not reveal them. Use the [route decision](clasify.md#choose-the-route).
-- `hints.repair` regex fix: confirm it still searches what you meant.
+- `repair` in `hints` regex fix: confirm it still searches what you meant.
 - `structureSearch files` stops at `maxEntries`: follow `next.expandScan`. Rows group by `dir`: path = `root`/`dir`/name; ` (n)` = bytes.
 - Absence claim: set `noIgnore` (and `hidden` on `tree`).
 - Never pass view offsets as LSP positions.
@@ -21,7 +21,7 @@ Load when the source or task is known: local checkout, remote repository or pack
 
 - AST pattern matches nothing: inspect hints and diagnostics before relaxing it. `terminalLimit`: narrow.
 - Pass a `symbols` row's `symbolName` + `line` to `lspSearch` unchanged.
-- Anchored LSP: `path` + `symbolName` + a real `line`; `workspaceSymbol`: `symbolName` + `path` or `workspaceRoot`. Unresolved anchor returns `hints.read`.
+- Anchored LSP: `path` + `symbolName` + a real `line`; `workspaceSymbol`: `symbolName` + `path` or `workspaceRoot`. Unresolved anchor returns `read` in `hints`.
 - Operations: `definition` identity; `references` uses (`groupByFile:true` counts); `callers`/`callees` flow (a row's `symbolName` + `line` anchor the next hop); `hover`/`implementation` types.
 - Servers: ts/js, py, rust, c/c++. Check `lsp.serverAvailable`, capabilities (`extras:["receipts"]`), `coverage`, truncation; native fallback is syntactic.
 - Long MCP session paying cold starts: `OCTOCODE_LSP_PREWARM=all`.
@@ -47,17 +47,17 @@ Load when the source or task is known: local checkout, remote repository or pack
 
 - `ghSearchCode`: indexed default branch only, `owner` required, max 1,000 results. `ref` sets later reads' ref, not the index.
 - Broad hit pages can use `clasifyContext`; it assesses available hit evidence, not unseen whole files. For unread bodies at known paths, use `clasify.source` with `ghGetFileContent`, or a classified fetch; keep the resolved commit.
-- Check hit `lines` first; `hints.read` (`extras:["hints"]`) reads around the top hit, so pick the deciding line yourself.
-- `ghGetFileContent` honors explicit `ref` (default branch when omitted; unknown refs rejected). 404 (bad path/ref or no access): `hints.viewTree` lists the nearest directory. Pin a commit for citations.
-- Dependency matters: resolve it with `artifactSearch` before guessing a repository. `hints.viewReleaseSource` pins the installed release commit (`source.verification`: `provenance` or `unverified`); `hints.viewRepo` is default-branch code, not release evidence.
+- Check hit `lines` first; `read` in `hints` (`extras:["hints"]`) reads around the top hit, so pick the deciding line yourself.
+- `ghGetFileContent` honors explicit `ref` (default branch when omitted; unknown refs rejected). 404 (bad path/ref or no access): `viewTree` in `hints` lists the nearest directory. Pin a commit for citations.
+- Dependency matters: resolve it with `artifactSearch` before guessing a repository. `viewReleaseSource` in `hints` pins the installed release commit (`source.verification`: `provenance` or `unverified`); `viewRepo` in `hints` is default-branch code, not release evidence.
 
 ### History
 
 - `ghSearchHistory` finds `pullRequest`, `issue`, `commit`. Commit `keywords` search default-branch messages; omit `keywords` to walk by path, ref, or date. Extra filters in `qualifiers`; PR negation supports only `-is:draft`.
-- `extras:["hints"]`: `hints.readPullRequest` prefers merged candidates; a bare issue-number search offers `hints.readIssueLinks`.
+- `extras:["hints"]`: `readPullRequest` in `hints` prefers merged candidates; a bare issue-number search offers `readIssueLinks` in `hints`.
 - Exact reads: `pullRequest`/`issue` by `number`; `commit` by `ref`; `compare` by `base` + `head` (or `commit` with `base`).
-- Issue → fix: read the issue; `closedBy` lists PRs with merge state; `hints.readPullRequest` reads the fix.
-- PR: `matchString` + `include` for hit lines; else `sections:["files"]`, then `hints.readSelectedPatches`. Close `unsearchedFiles` via `next.searchUnpatchedFile`. Open PRs at `headSha`, merged behavior at `mergeCommitSha`.
+- Issue → fix: read the issue; `closedBy` lists PRs with merge state; `readPullRequest` in `hints` reads the fix.
+- PR: `matchString` + `include` for hit lines; else `sections:["files"]`, then `readSelectedPatches` in `hints`. Close `unsearchedFiles` via `next.searchUnpatchedFile`. Open PRs at `headSha`, merged behavior at `mergeCommitSha`.
 - Patch windows share one budget across rows: finish `responsePagination`, then a row's `next.continuePatch` (narrow its `include`) or `next.nextFilePage`. Keep `length` as given. Commit and compare diffs: `sections:["patches"]` (+`include`).
 
 ### Docs and web
@@ -72,7 +72,7 @@ Load when the source or task is known: local checkout, remote repository or pack
 - Local → upstream: resolve the local version or error anchor; confirm local callers and config before claiming an upstream fix applies.
 - Remote → local, smallest first: one read: `ghGetFileContent`; a directory: `ghStructure` (`materialize` small sets, then `localSearch` at `location.localPath`); repeated subtree reads: `ghCloneRepo` + `path` (path or list; availability in [octocode](octocode.md)); repo-wide graph or LSP: full clone.
 - A sparse clone proves nothing about omitted paths; shallow history (`historyDepth`, default 1) is not full history.
-- Work in `location.localPath` (or `hints.exploreClone`); keep the resolved ref and `commitSha`; `forceRefresh` when currency matters.
+- Work in `location.localPath` (or `exploreClone` in `hints`); keep the resolved ref and `commitSha`; `forceRefresh` when currency matters.
 
 ## Change impact
 

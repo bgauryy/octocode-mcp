@@ -886,21 +886,29 @@ impl LspClientPool {
     }
 }
 
+/// How long a first request waits for the server's project load, per
+/// language. Built-in servers and the languages a user's `lsp-servers.json`
+/// commonly adds (sourcekit-lsp for Swift, bash-language-server) are listed.
 fn readiness_timeout(language_id: Option<&str>) -> Option<u32> {
+    use super::family::{is_c_family, is_typescript_family};
+    // tsserver/typescript-language-server and pyright/jedi build a project
+    // model before they can answer navigation queries; clangd parses the
+    // compilation database + preamble; Metals and jdtls import the build.
+    // Without a readiness wait a query can race that indexing and return a
+    // partial/empty answer stripped of the partiality signal the lifecycle
+    // contract promises.
+    if is_typescript_family(language_id) {
+        return Some(30_000);
+    }
+    if is_c_family(language_id) {
+        return Some(20_000);
+    }
     match language_id {
-        Some("go") => Some(15_000),
+        Some("go" | "python") => Some(15_000),
         Some("rust") => Some(60_000),
-        Some("java") => Some(120_000),
+        Some("java" | "scala") => Some(120_000),
         Some("csharp" | "swift") => Some(30_000),
         Some("shellscript") => Some(2_000),
-        // tsserver/typescript-language-server and pyright/jedi build a project
-        // model before they can answer navigation queries. clangd parses the
-        // compilation database + preamble. Without a readiness wait a query can
-        // race that indexing and return a partial/empty answer stripped of the
-        // partiality signal the lifecycle contract promises.
-        Some("typescript" | "typescriptreact" | "javascript" | "javascriptreact") => Some(30_000),
-        Some("python") => Some(15_000),
-        Some("c" | "cpp" | "cuda") => Some(20_000),
         _ => None,
     }
 }
@@ -1689,6 +1697,10 @@ mod tests {
         assert_eq!(readiness_timeout(Some("c")), Some(20_000));
         assert_eq!(readiness_timeout(Some("cpp")), Some(20_000));
         assert_eq!(readiness_timeout(Some("cuda")), Some(20_000));
+        // Every built-in server's language waits, objective-c (clangd) and
+        // scala (Metals) included.
+        assert_eq!(readiness_timeout(Some("objective-c")), Some(20_000));
+        assert_eq!(readiness_timeout(Some("scala")), Some(120_000));
         // An unknown/unlisted language still opts out of the readiness wait.
         assert_eq!(readiness_timeout(Some("plaintext")), None);
         assert_eq!(readiness_timeout(None), None);

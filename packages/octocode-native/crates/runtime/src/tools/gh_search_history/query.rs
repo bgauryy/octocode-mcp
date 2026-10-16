@@ -8,10 +8,23 @@ use octocode_github::{
 
 /// A keyword-less issue listing keeps the REST list order (newest first)
 /// instead of search's unordered best-match.
-pub(super) fn lists_issues_newest_first(q: &GhSearchHistoryQuery) -> bool {
+fn lists_issues_newest_first(q: &GhSearchHistoryQuery) -> bool {
     matches!(q.operation(), HistoryOperation::Issue)
         && q.keywords().is_empty()
         && q.sort().is_none_or(|sort| sort == "best-match")
+}
+
+/// The order GitHub search runs a query in, as `(sort, order)`; no sort is
+/// best match. Commit search runs newest first by committer date, and a
+/// keyword-less issue listing newest first by creation.
+pub(super) fn search_order(q: &GhSearchHistoryQuery) -> (Option<String>, Option<String>) {
+    if q.operation() == HistoryOperation::Commit {
+        return (Some("committer-date".into()), Some("desc".into()));
+    }
+    if lists_issues_newest_first(q) {
+        return (Some("created".into()), Some("desc".into()));
+    }
+    (q.sort().filter(|sort| sort != "best-match"), q.order())
 }
 
 /// Issue-style qualifiers only the search API understands.

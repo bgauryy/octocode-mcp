@@ -17,7 +17,7 @@ export default defineConfig({
         functions: 80,
         lines: 71,
       },
-      exclude: ['src/index.ts', 'src/cli/types.ts'],
+      exclude: ['src/index.ts'],
     },
     testTimeout: 30000,
     hookTimeout: 15000,

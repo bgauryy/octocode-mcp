@@ -132,7 +132,7 @@ pub(crate) fn has_recovery(value: &Value) -> bool {
 /// (provider kinds, policy, locks, input). A tool answers only for the codes
 /// it alone emits (`ToolOutput::error_hint`); any other code gets the tool's
 /// fallback hint.
-pub(super) fn error_code_hint(tool: ToolId, code: &str) -> Option<&'static str> {
+pub(crate) fn error_code_hint(tool: ToolId, code: &str) -> Option<&'static str> {
     Some(match code {
         "outsideAllowedRoots" | "symlinkEscape" => SANDBOX_HINT,
         "authentication" => crate::tools::gh_shared::GITHUB_AUTH_RECOVERY_HINT,
@@ -188,13 +188,18 @@ fn error_fallback_hint(tool: ToolId, query: &Value, row: &Value) -> &'static str
 /// contract rejects.
 pub(crate) fn ensure_recovery(row: &mut Value, tool: ToolId, query: &Value) {
     let status = row.get("status").and_then(Value::as_str);
-    if !matches!(status, Some("error" | "empty")) || has_recovery(row) {
+    if !matches!(status, Some("error" | "empty" | "outOfRange")) || has_recovery(row) {
         return;
     }
     let hint = if status == Some("error") {
         error_fallback_hint(tool, query, row)
     } else {
-        tool.output().fallback_hint(query)
+        // An empty row that names its own category answers for itself: the
+        // tool's hint for that category (or none), not the generic fallback.
+        row.pointer("/data/category")
+            .and_then(Value::as_str)
+            .and_then(|category| tool.output().error_hint(category))
+            .unwrap_or_else(|| tool.output().fallback_hint(query))
     };
     if hint == crate::tools::output::NO_HINT {
         return;
@@ -217,7 +222,7 @@ fn visit(value: &mut Value, recovery: bool, seen: &mut std::collections::BTreeSe
     };
     let needs_help = matches!(
         node.get("status").and_then(Value::as_str),
-        Some("error" | "empty")
+        Some("error" | "empty" | "outOfRange")
     ) || recovery;
     let keys: Vec<String> = node.keys().cloned().collect();
     for key in keys {
@@ -333,13 +338,17 @@ pub fn result_row(
     if data.get("errorCode").and_then(Value::as_str) == Some("staleSnapshot") {
         super::pages::restart_stale(tool, query, &mut data);
     }
+    super::notices::drop_on_later_page(query, &mut data);
     let status =
         if status != Some("error") && super::pages::settle_out_of_range(tool, query, &mut data) {
-            Some("empty")
+            Some("outOfRange")
         } else {
             status
         };
-    let paged = !tool.output().resource_major()
+    // An error row is not a partial result: a page it offers is the way
+    // past the error (a bounded read of a too-large file), not more of it.
+    let paged = status != Some("error")
+        && !tool.output().resource_major()
         && !super::pages::is_complete(&data)
         && super::pages::has_remaining_page(tool, &data);
     // A row with more to read is not empty, whatever the tool decided from
@@ -397,12 +406,13 @@ fn states_more(data: &Value) -> bool {
     data.as_object().is_some_and(|object| {
         object
             .iter()
-            .any(|(key, block)| super::pages::is_pagination_key(key) && block["hasMore"] == true)
+            .flat_map(|(key, value)| super::pages::page_blocks(key, value))
+            .any(|block| block["hasMore"] == true)
     })
 }
 
-/// Whether the row's own pagination (`pagination`, `filePagination`,
-/// `contentPagination`) reports `hasMore` and nothing beyond the pages makes
+/// Whether the row's own pagination (`pagination`, a `contentPagination`
+/// section) reports `hasMore` and nothing beyond the pages makes
 /// it partial: `isPartial` would restate it. A `partialReasons` list or a
 /// `terminalLimit` is another cause, which the flag still sums up.
 fn states_remaining_page(data: &Map<String, Value>) -> bool {
@@ -413,7 +423,8 @@ fn states_remaining_page(data: &Map<String, Value>) -> bool {
             .is_none_or(Vec::is_empty)
         && data
             .iter()
-            .any(|(key, block)| super::pages::is_pagination_key(key) && block["hasMore"] == true)
+            .flat_map(|(key, value)| super::pages::page_blocks(key, value))
+            .any(|block| block["hasMore"] == true)
 }
 
 /// The diagnostics view of a row: its evidence kind and confidence, and the
@@ -512,7 +523,8 @@ fn minimize_error_data(data: &mut Map<String, Value>) {
     data.remove("snapshot");
     data.retain(|key, value| {
         !value.as_array().is_some_and(Vec::is_empty)
-            && (!super::pages::is_pagination_key(key) || walks_on(value))
+            && (!super::pages::is_pagination_key(key)
+                || super::pages::retain_page_blocks(key, value, walks_on))
     });
 }
 
@@ -575,12 +587,11 @@ fn minimize_data(data: &mut Map<String, Value>, tool: ToolId, query: &Value, ech
         }
     }
     let limited = data.contains_key("providerLimit");
-    for (_, block) in data
-        .iter_mut()
-        .filter(|(key, _)| super::pages::is_pagination_key(key))
-    {
-        if let Some(block) = block.as_object_mut() {
-            super::pages::slim_pagination(block, limited);
+    for (key, value) in data.iter_mut() {
+        for block in super::pages::page_blocks_mut(key, value) {
+            if let Some(block) = block.as_object_mut() {
+                super::pages::slim_pagination(block, limited);
+            }
         }
     }
     // A later page keeps its pagination: it names where the page starts
@@ -588,7 +599,11 @@ fn minimize_data(data: &mut Map<String, Value>, tool: ToolId, query: &Value, ech
     // The `echo` extra keeps the pagination of a finished single page: the
     // caller asked to see what the request resolved to, `hasMore:false`
     // included.
-    data.retain(|key, value| !super::pages::is_pagination_key(key) || echo || walks_on(value));
+    data.retain(|key, value| {
+        !super::pages::is_pagination_key(key)
+            || echo
+            || super::pages::retain_page_blocks(key, value, walks_on)
+    });
     // The stats extra asks for every total.
     if reports_scan_totals(tool, data) && !super::extras::wants(query, ExtraKind::Stats) {
         minimize_search_totals(data);

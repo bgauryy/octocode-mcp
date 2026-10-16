@@ -229,12 +229,11 @@ async fn an_issue_lists_its_closing_pull_requests_from_graphql() {
         .expect(1)
         .mount(&server)
         .await;
+    // A later window lists no `closedBy`: it spends no GraphQL request.
     Mock::given(method("POST"))
         .and(path("/api/graphql"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"data": {
-            "repository": {"issue": {"closedByPullRequestsReferences": {"totalCount": 2}}}
-        }})))
-        .expect(1)
+        .respond_with(ResponseTemplate::new(500))
+        .expect(0)
         .mount(&server)
         .await;
     let issue = |offset: u64| json!({"operation":"issue","owner":"a","repo":"b","number":42,"offset":offset,"length":10});

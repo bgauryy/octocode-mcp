@@ -3,7 +3,9 @@ mod aliases;
 mod analysis;
 mod cargo;
 mod drift;
+mod edges;
 mod graph;
+mod linking;
 mod liveness;
 mod memo;
 mod packages;
@@ -11,6 +13,21 @@ mod page;
 mod scope;
 pub mod store;
 mod types;
+
+/// Version of the [`types::BuiltGraph`] shape a stored graph was written
+/// with: bump it when the shape changes, so no older file is read. 2: call
+/// labels elide argument text, and only a graph the secret scanner passes
+/// is stored (version 1 files could hold raw call arguments).
+const GRAPH_SHAPE: u32 = 2;
+
+/// Host settings for graph linking and optional persistence. Each runtime
+/// supplies its own directory; memory-only runtimes never read or write it.
+#[derive(Clone, Debug, Default)]
+pub struct AstTopologyRuntimeOptions {
+    pub cargo: Option<String>,
+    pub cache_dir: Option<std::path::PathBuf>,
+    pub response_window: Option<usize>,
+}
 
 /// Contract maximum of an astTopology query field; an undeclared bound stays
 /// open (validation enforces it).
@@ -41,7 +58,7 @@ impl crate::tools::output::ToolOutput for Output {
                 "No import cycle in the scanned files; coverage.imports counts the imports a cycle could pass through unlinked."
             }
             Some("deadCode") => {
-                "No dead export found from the resolved entrypoints; pass entrypoints to add roots."
+                "No dead export found from the resolved entrypoints; test files count as roots unless includeTests is false."
             }
             Some("reachability") => {
                 "No files to classify: check that path covers the code and read coverage.diagnostics."
@@ -70,28 +87,44 @@ impl crate::tools::output::ToolOutput for Output {
 
 /// Execute public `astTopology` through the portable native
 /// fact scanner and Rust-owned graph algorithms.
-/// `cargo` is the configured `OCTOCODE_CARGO` for Rust workspace linking.
+/// Host settings are separate from the public query contract.
 pub fn execute_topology(
     query: &AstTopologyQuery,
     paths: &PathPolicy,
     security: &ContentSecurity,
     cancel: &dyn CancellationCheck,
-    cargo: Option<&str>,
+    options: &AstTopologyRuntimeOptions,
 ) -> AstGraphResult {
     // The builder and graph algorithms uphold map-index invariants with
     // `expect()`; a corrupt or adversarial input tripping one must surface as
     // a structured tool error, not tear down the host process.
     let extras = graph::BuildExtras {
-        cargo: cargo.map(str::to_owned),
+        cargo: options.cargo.clone(),
+        cache_dir: options.cache_dir.clone(),
         ..Default::default()
     };
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         if query.analysis() == GraphAnalysis::Drift {
-            return drift::drift(query, paths, security, cancel, &extras);
+            return drift::drift(
+                query,
+                paths,
+                security,
+                cancel,
+                &extras,
+                options.response_window,
+            );
         }
         let (built, display_path) =
             graph::build_graph_shared_with(query, paths, security, cancel, &extras)?;
-        analysis::analyze(&built, &display_path, query, paths, security, cancel)
+        analysis::analyze(
+            &built,
+            &display_path,
+            query,
+            paths,
+            security,
+            cancel,
+            options.response_window,
+        )
     }))
     .unwrap_or_else(|panic| {
         let detail = panic

@@ -17,46 +17,52 @@ pub(crate) fn drift(
     security: &ContentSecurity,
     cancel: &dyn CancellationCheck,
     extras: &super::graph::BuildExtras,
+    response_window: Option<usize>,
 ) -> Result<Value, ToolError> {
-    let head = super::graph::build_graph_with(q, paths, security, cancel, extras)?;
+    // Both graphs come from the shared graph memo (and its disk tier), so
+    // each page after the first reads them back instead of rescanning.
+    let (head, head_display) =
+        super::graph::build_graph_shared_with(q, paths, security, cancel, extras)?;
     let baseline_root = q
         .baseline()
         .map(str::to_owned)
         .ok_or_else(|| ToolError::new("invalidGraphQuery", "drift requires baseline"))?;
     let mut base_query = q.clone();
     base_query.set_path(baseline_root);
-    let mut base = super::graph::build_graph_with(&base_query, paths, security, cancel, extras)?;
+    let (base, base_display) =
+        super::graph::build_graph_shared_with(&base_query, paths, security, cancel, extras)?;
     cancel.check().map_err(ToolError::cancelled)?;
 
     // The native scanner keys every node on a path relative to its own scan
-    // root, so two-root drift shares identity across differing absolute roots.
-    // Equalize the root metadata so the engine's root-mismatch gate — which
-    // protects consumers that key on absolute paths — does not false-refuse this
-    // legitimately comparable pair. The real roots stay visible in `path` /
-    // `baseline` below.
-    base.code_graph.snapshot.root = head.code_graph.snapshot.root.clone();
-    let diff = octocode_engine::graph::diff_graphs(&base.code_graph, &head.code_graph);
+    // root, so two-root drift shares identity across differing absolute
+    // roots; the real roots stay visible in `path` / `baseline` below.
+    let diff = octocode_engine::graph::diff_across_roots(&base.code_graph, &head.code_graph);
 
     let items = drift_rows(&diff);
     let summary = drift_summary(&diff);
 
     let mut base_map = Map::new();
     base_map.insert("operation".into(), json!("drift"));
-    base_map.insert("path".into(), json!(head.display_path));
-    base_map.insert("baseline".into(), json!(base.display_path));
+    base_map.insert("path".into(), json!(head_display));
+    base_map.insert("baseline".into(), json!(base_display));
     base_map.insert("filesScanned".into(), json!(head.facts.len()));
     base_map.insert("baselineFilesScanned".into(), json!(base.facts.len()));
 
-    let snapshot = crate::digest::json_sha256(&items);
-    if q.diagnostic_snapshot()
-        .is_some_and(|expected| expected != snapshot)
-    {
+    let mut fields = super::analysis::answer_fields(q, &head);
+    fields["baseline"] = json!(base.root);
+    let budget = crate::tools::page_windows::page_budget(response_window, &fields);
+    let snapshot = crate::digest::json_sha256(&json!([
+        items,
+        fields,
+        q.page_size().is_none().then_some(budget)
+    ]));
+    if q.snapshot().is_some_and(|expected| expected != snapshot) {
         base_map.insert("nodes".into(), json!([]));
         mark_stale(&mut base_map, q);
         return Ok(Value::Object(base_map));
     }
     let answer_empty = super::analysis::answer_is_empty(&items);
-    let (page, pagination) = paginate(items, q);
+    let (page, pagination) = paginate(items, q, budget);
     let has_more = pagination["hasMore"] == json!(true);
     let cuts = ScanCuts::of(&head).union(ScanCuts::of(&base));
     let mut warnings = cuts.warnings(q);
@@ -68,7 +74,8 @@ pub(crate) fn drift(
     base_map.insert("nodes".into(), Value::Array(page));
     base_map.insert("pagination".into(), pagination);
     base_map.insert("graphSummary".into(), summary);
-    if !warnings.is_empty() {
+    // The scan notes hold for every page: the first page states them once.
+    if !warnings.is_empty() && q.page() <= 1 {
         base_map.insert("warnings".into(), json!(warnings));
     }
     if answer_empty {

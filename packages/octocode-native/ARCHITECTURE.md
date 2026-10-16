@@ -12,7 +12,7 @@ Node MCP → N-API adapter ─────┘       ├── generated octocode
                                       └── octocode-engine primitives
 ```
 
-The CLI never loads N-API or JavaScript. The MCP addon and native CLI call the same Rust runtime. JavaScript interfaces own protocol framing, registration, interactive selection, and process startup only.
+The CLI never loads N-API or JavaScript. The MCP addon and native CLI call the same Rust runtime. The Node CLI owns process startup only; Rust owns command parsing, output, interactive selection, skills, and the browser configuration server. The separate Node MCP adapter owns its protocol framing and registration.
 
 GitHub materialization separates acquisition from persistence. `tools/gh_structure/materialize`
 owns listing order, provider reads, limits, and continuations; its `snapshot` module owns
@@ -32,7 +32,7 @@ Other non-Unix targets retain the checked-path fallback.
 
 The runtime owns all sixteen catalog tools ([tools reference](../../docs/OCTOCODE_TOOLS.md)). Availability is resolved once per runtime from configuration and surface, without a provider startup request (`runtime/availability.rs`). Each tool is `Available` or carries one reason: `Disabled` (the contract parks it on every surface; `astRewrite` today), `ToolList` (`tools.enabled` / `tools.disabled`), `CliOnly`, or `MissingConfiguration` with the unset settings in order. The catalog, admission, clasify context errors, and CLI help and schema all project that one value. GitHub and artifact tools are enabled by default; local tools honor local policy. `ghCloneRepo` and `astTopology` are CLI-only; `ghCloneRepo` also needs persistent storage, and `astTopology` needs beta (`OCTOCODE_BETA` or `local.beta`). Public `clasify` needs beta and a nonblank classification credential (`OCTOCODE_CLASSIFICATION_API` or `classification.api`). Optional `clasifyContext` belongs only to `localFetch`, `localSearch`, `ghGetFileContent`, and `ghSearchCode`, and only when that credential is present, whatever the beta state. The [availability guide](../../docs/OCTOCODE_CLASIFY.md#availability) owns the gate combinations. Public tool input accepts a bare query object or `{ "queries": [...] }`; a bare array is rejected.
 
-`clasify` is a thin interface to the provider primitives: each `queries[]` row holds keyed `noul`/`choice`/`score` questions over exactly one literal `state` or one `source`. `tools/source_capture` captures a source completely through the same authorized readers a direct call runs (contract validation, input security, the reader's path policy and redaction, output sanitization), following every content page pinned to the first page's file snapshot or commit; a selection over the state limit (`clasify.semanticPolicy.maxStateChars`) fails its row instead of being judged in part. A URL source is fetched over HTTPS under the address policy and saved as a capture file that a `localFetch` lead reads back. The row returns the provider's validated answers unchanged, the model that answered, its usage, and for a source one `hints.read` of exactly what was judged; never a body. `mainGoal` and `reasoning` never reach the provider. A failed row keeps its own error; siblings keep their answers.
+`clasify` is a thin interface to the provider primitives: each `queries[]` row holds keyed `noul`/`choice`/`score` questions over exactly one literal `state` or one `source`. `tools/source_capture` captures a source completely through the same authorized readers a direct call runs (contract validation, input security, the reader's path policy and redaction, output sanitization), following every content page pinned to the first page's file snapshot or commit; a selection over the state limit (`clasify.semanticPolicy.maxStateChars`) fails its row instead of being judged in part. A URL source is fetched over HTTPS under the address policy and saved as a capture file that a `localFetch` lead reads back. The row returns the provider's validated answers unchanged, the model that answered, its usage, and for a source one `read` suggestion in `hints` of exactly what was judged; never a body. `mainGoal` and `reasoning` never reach the provider. A failed row keeps its own error; siblings keep their answers.
 
 `tools/judgment` is the one evaluator behind retrieval `clasifyContext` and `clasify`: prepared state, provider questions, optional captured image assets and capability options in; validated answers, model and usage out. It owns the provider client, request batching (all questions over one state in one request when the serialized group fits the headroom, else one request per question), response validation (`providers/classification/jev.rs`), retries (`octocode_github::Backoff`, `classify_status`, `read_bounded`), the process-wide endpoint gate (`providers/classification/gate.rs`, bounded by the runtime's constant classification concurrency, idle gates dropped past 64), and accounting. Its judgment cache is runtime-owned: a `cache::Store` (memory always; `<home>/tmp/judgment` on disk only under persistent storage; 256 entries, 8 MiB, 30-minute TTL) keyed by the credential `Partition`, model, state, questions, image bytes and capability options, with one `KeyedFlight` so identical concurrent evaluations make one request. Only complete validated evaluations are cached; a replay reports `replayed: true` and the original usage. The same authenticated transport exposes the provider model catalog. Image source capture reuses local access policy, GitHub content by resolved commit, HTTPS address checks, and the existing capture store; it sends bytes internally and returns only provenance and a saved inspection path. Retrieval compiles each atomic question through the contract's `classifierTemplate` into a Score question (`tools/judgment/select.rs`). `tools/selection` applies the core selection policy and partitions candidates into selected, excluded and unknown. It saves decisions in the `selection` plan, binds source identity, template, context and optional brief, and replays without new provider calls. Code search selects its sanitized provider page at the response boundary (`ToolOutput::selects_provider_page`); local search and both fetch tools select before their own pagination. Default output contains only selected evidence in source order, with a partition receipt and optional `next.unfiltered` recovery.
 
@@ -188,6 +188,29 @@ Tool wire types come from the same run: `contracts::tool_types` `include!`s `con
 `config` reports the config and dotenv paths, key names, and config warnings. `config set` and `config unset` use `config/edit.rs` for locked atomic edits, sharing the dotenv parser and generated protected-key policy. They preserve unrelated lines and never return values.
 
 Configuration policy is independently owned by `@octocodeai/config` in `config-contract.json`. The config generator validates that declaration against its meta-schema (Ajv) and commits it pre-validated. Native `build.rs` does not re-run meta-schema validation; it renders Rust config structs, defaults, environment policy, and generic resolver/validator metadata into `OUT_DIR` and fails closed on any missing or mistyped field it reads. Generated files are not hand edited.
+
+## Bundled skills
+
+`crates/cli/src/cli/skill/` owns skill parsing, the platform registry, installation,
+freshness checks, repair and removal. The Node launcher delegates these commands
+to the native executable. Runtime config owns home and credential resolution.
+
+`crates/cli/build.rs` runs `scripts/embed-skills.mjs`, which uses the Node package's
+`stage-skills.mjs` filter to stage canonical `skills/` files into Cargo's output
+directory. Rust embeds those bytes and executable permissions. Cargo watches the
+source tree and staging scripts, so a changed workflow is included on rebuild.
+Node is a build prerequisite; no Node process or extraction cache is needed to
+list, inspect, install, check or remove skills from a shipped binary.
+
+Installation copies into `$OCTOCODE_HOME/skills/<name>` and links selected global
+or project host directories to that durable copy. Windows link mode uses directory
+junctions. Replacement stages beside the target, retains a backup until publication
+succeeds, and restores it on failure. `--upgrade` updates copy destinations only
+when they still match the previous canonical tree; edited copies require `--force`.
+Dry runs validate and report conflicts without writing. Freshness checks compare
+paths, sizes and bytes, reuse comparisons within a check, and leave external
+development links alone. The CLI tests run with an empty executable search path;
+the migration fixtures preserve installer reports and filesystem behavior.
 
 ## Build modes
 

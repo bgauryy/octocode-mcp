@@ -181,8 +181,9 @@ pub(super) fn build_next(
 
 /// Snapshot identity: the [`query_key`] (the validated root plus every
 /// field that changes which matches are collected or how their values read,
-/// with defaults applied), then the collected result itself. Pagination
-/// fields (`page`, `matchPage`, `pageSize`, `matchPageSize`) only select
+/// with defaults applied), then the collected result and source digests.
+/// Source outside matched lines can change enclosing names and page cuts.
+/// Pagination fields (`page`, `matchPage`, `pageSize`, `matchPageSize`) only select
 /// from that result and stay out, so a continuation may change them while
 /// keeping its snapshot.
 pub(super) fn fingerprint(
@@ -201,21 +202,26 @@ pub(super) fn fingerprint(
                     o.insert("line".into(), json!(m.line));
                     o.insert("column".into(), json!(m.column));
                     o.insert("value".into(), json!(m.value));
+                    o.insert("valueDigest".into(), json!(hex::encode(m.value_digest)));
+                    o.insert("byteOffset".into(), json!(m.byte_offset));
+                    o.insert("rank".into(), json!(m.rank));
+                    o.insert("originalChars".into(), json!(m.original_chars));
+                    o.insert("originalBytes".into(), json!(m.original_bytes));
                     if let Some(c) = m.count {
                         o.insert("count".into(), json!(c));
                     }
                     Value::Object(o)
                 })
                 .collect::<Vec<_>>();
-            json!({"path":f.path,"matchCount":f.match_count,"matches":matches})
+            json!({"path":f.path,"matchCount":f.match_count,"matches":matches,
+                "sourceDigest":f.source.map(|source| hex::encode(source.digest))})
         })
         .collect::<Vec<_>>();
     let canonical = canonicalize_dropping_nulls(
         json!([query_key,file_values,{"matchCount":stats.match_count.unwrap_or(0),"matchedLineCount":stats.matched_lines.unwrap_or(0),"fileCount":stats.files_matched.unwrap_or(files.len() as u32),"filesScanned":stats.files_searched.unwrap_or(0),"capped":stats.capped.unwrap_or(false),"capReason":stats.cap_reason,"errorCount":stats.error_count.filter(|n|*n>0),"firstError":stats.first_error} ]),
     );
-    // v4: `matchCount`/`matchedLineCount`/`fileCount`, 1-based
-    // columns, `enclosing` objects and `moreLines` arrays
-    // (an older cursor restarts instead of mixing shapes across pages).
+    // v5 binds the source and complete value identities that determine
+    // page cuts and duplicate ranking, including text outside visible rows.
     format!(
         "{SNAPSHOT_SCHEME}{SNAPSHOT_VERSION}:{}",
         crate::digest::json_sha256(&canonical)
@@ -223,7 +229,7 @@ pub(super) fn fingerprint(
 }
 
 const SNAPSHOT_SCHEME: &str = "lexical-live-v";
-const SNAPSHOT_VERSION: u32 = 4;
+const SNAPSHOT_VERSION: u32 = 5;
 
 /// A `snapshot` no search could have issued: not `lexical-live-v<N>:` plus a
 /// SHA-256. That is input to correct; a well-formed snapshot of an older
@@ -249,102 +255,57 @@ pub(super) fn malformed_snapshot(query: &LocalSearchQuery) -> Option<ToolError> 
     })
 }
 
-/// Digest of the search semantics a snapshot answers: the query fields
-/// that change which rows match or how pages cut, under `root`.
+/// Fields that only pick a page from a collected result, name a cursor or
+/// carry the caller's intent: they stay out of [`query_key`], so a
+/// continuation may change them and keep its snapshot. Every other field
+/// is search semantics, including any field the contract adds later.
+const NON_SEMANTIC_FIELDS: [&str; 10] = [
+    "page",
+    "matchPage",
+    "pageSize",
+    "matchPageSize",
+    "snapshot",
+    "selection",
+    "clasifyContext",
+    "extras",
+    "mainGoal",
+    "reasoning",
+];
+
+/// Digest of the search semantics a snapshot answers: the whole normalized
+/// query less [`NON_SEMANTIC_FIELDS`], with the defaults the walk applies
+/// spelled out, under the validated `root` (which replaces `path`), and the
+/// page cut.
 pub(super) fn query_key(
     q: &LocalSearchQuery,
     root: &std::path::Path,
     page_budget: usize,
 ) -> String {
-    let mut identity = serde_json::Map::new();
-    // The page cut: a continuation served under another response window
-    // would cut other pages, so it restarts instead of skipping rows.
-    identity.insert("pageChars".into(), json!(page_budget));
-    identity.insert(
-        "defaultExcludes".into(),
-        json!(q.default_excludes.defaults()),
-    );
-    identity.insert("matchString".into(), json!(q.match_string));
-    identity.insert(
-        "regex".into(),
-        json!(match q.regex_mode() {
-            LocalSearchQueryRegex::Literal => "fixed",
-            LocalSearchQueryRegex::Pcre2 => "perl",
-            LocalSearchQueryRegex::Rust => "smart",
-        }),
-    );
-    identity.insert(
-        "caseMode".into(),
-        json!(match q.case_mode {
-            LocalSearchQueryCaseMode::Sensitive => "sensitive",
-            LocalSearchQueryCaseMode::Insensitive => "insensitive",
-            LocalSearchQueryCaseMode::Smart => "smart",
-        }),
-    );
-    identity.insert(
-        "contextLines".into(),
-        json!(q.context_lines().unwrap_or(DEFAULT_CONTEXT_LINES)),
-    );
-    identity.insert(
-        "matchContentLength".into(),
-        json!(effective_match_content_length(q)),
-    );
-    identity.insert(
-        "multiline".into(),
-        json!(match q.multiline {
-            LocalSearchQueryMultiline::Off => "off",
-            LocalSearchQueryMultiline::On => "on",
-            LocalSearchQueryMultiline::Dotall => "dotall",
-        }),
-    );
-    identity.insert(
-        "sort".into(),
-        json!(match q.sort {
-            LocalSearchQuerySort::Relevance => "relevance",
-            LocalSearchQuerySort::Traversal => "traversal",
-            LocalSearchQuerySort::MatchCount => "matchCount",
-            LocalSearchQuerySort::Path => "path",
-            LocalSearchQuerySort::Modified => "modified",
-            LocalSearchQuerySort::Accessed => "accessed",
-            LocalSearchQuerySort::Created => "created",
-        }),
-    );
-    identity.insert(
-        "output".into(),
-        json!(match q.result_view {
-            LocalSearchQueryResultView::MatchOnly => "matchOnly",
-            LocalSearchQueryResultView::Files => "files",
-            LocalSearchQueryResultView::FilesWithout => "filesWithout",
-            LocalSearchQueryResultView::CountLines => "countLines",
-            LocalSearchQueryResultView::CountMatches => "countMatches",
-            _ => "content",
-        }),
-    );
-    identity.insert(
-        "unique".into(),
-        json!(match q.unique {
-            LocalSearchQueryUnique::Off => "off",
-            LocalSearchQueryUnique::List => "list",
-            LocalSearchQueryUnique::Count => "count",
-        }),
-    );
-    macro_rules! opt {
-        ($name:literal,$value:expr) => {
-            if let Some(v) = $value {
-                identity.insert($name.into(), json!(v));
-            }
-        };
+    let mut semantics = normalized_query(&q.canonical(), true);
+    if let Some(fields) = semantics.as_object_mut() {
+        for field in NON_SEMANTIC_FIELDS {
+            fields.remove(field);
+        }
+        fields.remove("path");
+        fields.insert("regex".into(), json!(q.regex_mode()));
+        fields.insert(
+            "contextLines".into(),
+            json!(q.context_lines().unwrap_or(DEFAULT_CONTEXT_LINES)),
+        );
+        fields.insert(
+            "matchContentLength".into(),
+            json!(effective_match_content_length(q)),
+        );
+        fields.insert(
+            "defaultExcludes".into(),
+            json!(q.default_excludes.defaults()),
+        );
+        // The page cut: a continuation served under another response window
+        // would cut other pages, so it restarts instead of skipping rows.
+        fields.insert("pageChars".into(), json!(page_budget));
     }
-    opt!("wholeWord", q.whole_word);
-    opt!("invertMatch", q.invert_match);
-    opt!("include", (!q.include.is_empty()).then_some(&q.include));
-    opt!("exclude", (!q.exclude.is_empty()).then_some(&q.exclude));
-    opt!("includeIgnored", q.include_ignored);
-    opt!("includeHidden", q.include_hidden);
-    opt!("maxDepth", q.max_depth);
-    opt!("language", q.language.as_ref());
-    opt!("sortReverse", q.reverse);
-    let mut entries = identity.into_iter().collect::<Vec<_>>();
-    entries.sort_by(|a, b| a.0.cmp(&b.0));
-    crate::digest::json_sha256(&json!([root.to_string_lossy(), entries]))
+    crate::digest::json_sha256(&canonicalize_dropping_nulls(json!([
+        root.to_string_lossy(),
+        semantics
+    ])))
 }

@@ -49,11 +49,7 @@ async fn walk(
         hops += 1;
         assert!(hops < 50, "walk terminates");
         let page = runtime
-            .run(
-                format!("walk-{hops}"),
-                tool.into(),
-                json!({"queries":[next.clone()]}),
-            )
+            .run(format!("walk-{hops}"), tool.into(), next.clone())
             .await
             .expect("continuation runs unchanged");
         let row = &page.structured_content["results"][0];
@@ -319,7 +315,10 @@ async fn a_match_window_that_cuts_its_declaration_offers_no_reread_and_block_rea
         json!({"path": path, "matchString": "other needle", "extras": ["hints"]}),
     ] {
         let data = read(query.clone()).await;
-        assert!(data["hints"].get("readBlock").is_none(), "{query}: {data}");
+        assert!(
+            crate::support::checks::hint(&data, "readBlock").is_null(),
+            "{query}: {data}"
+        );
         assert!(data["next"].get("readBlock").is_none(), "{query}: {data}");
     }
     // The caller reads the whole declaration with `block`.

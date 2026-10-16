@@ -126,50 +126,33 @@ impl Field {
     }
 }
 
-/// Operations a qualifier key applies to (bit set).
-const PR: u8 = 1;
-const ISSUE: u8 = 2;
-const COMMIT: u8 = 4;
-const SEARCH: u8 = PR | ISSUE;
-
-/// The operation bit of `operation`.
-fn operation_bit(operation: HistoryOperation) -> u8 {
-    match operation {
-        HistoryOperation::PullRequest => PR,
-        HistoryOperation::Issue => ISSUE,
-        HistoryOperation::Commit => COMMIT,
-    }
-}
-
-/// `qualifiers` keys, the filter each one sets, and the operations it
-/// applies to.
-const QUALIFIER_KEYS: &[(&str, Field, u8)] = &[
-    ("assignee", Field::Assignee, SEARCH),
-    ("author", Field::Author, SEARCH | COMMIT),
-    ("committer", Field::Committer, COMMIT),
-    ("commenter", Field::Commenter, SEARCH),
-    ("mentions", Field::Mentions, SEARCH),
-    ("created", Field::Created, SEARCH),
-    ("updated", Field::Updated, SEARCH),
-    ("closed", Field::Closed, SEARCH),
-    ("comments", Field::Comments, SEARCH),
-    ("reactions", Field::Reactions, SEARCH),
-    ("linked", Field::Linked, SEARCH),
-    ("label", Field::Label, SEARCH),
-    ("in", Field::Match, SEARCH),
-    ("is", Field::State, SEARCH),
-    ("archived", Field::Archived, SEARCH),
-    ("review-requested", Field::ReviewRequested, PR),
-    ("reviewed-by", Field::ReviewedBy, PR),
-    ("review", Field::Review, PR),
-    ("status", Field::Status, PR),
-    ("merged", Field::Merged, PR),
-    ("draft", Field::Draft, PR),
-    ("head", Field::Head, PR),
-    ("base", Field::Base, PR),
+/// The filter each `qualifiers` key sets. Which operations take a key is
+/// the contract's (`x-qualifierKeys` per operation), never restated here.
+const QUALIFIER_FIELDS: &[(&str, Field)] = &[
+    ("assignee", Field::Assignee),
+    ("author", Field::Author),
+    ("committer", Field::Committer),
+    ("commenter", Field::Commenter),
+    ("mentions", Field::Mentions),
+    ("created", Field::Created),
+    ("updated", Field::Updated),
+    ("closed", Field::Closed),
+    ("comments", Field::Comments),
+    ("reactions", Field::Reactions),
+    ("linked", Field::Linked),
+    ("label", Field::Label),
+    ("in", Field::Match),
+    ("is", Field::State),
+    ("archived", Field::Archived),
+    ("review-requested", Field::ReviewRequested),
+    ("reviewed-by", Field::ReviewedBy),
+    ("review", Field::Review),
+    ("status", Field::Status),
+    ("merged", Field::Merged),
+    ("draft", Field::Draft),
+    ("head", Field::Head),
+    ("base", Field::Base),
 ];
-/// Scope comes from owner/repo/operation, never from free text.
-const SCOPE_QUALIFIERS: &[&str] = &["repo", "org", "user", "owner", "type"];
 
 /// `qualifiers` without its person terms (`author:x`, `-reviewed-by:y`, …):
 /// what is left once the logins that failed to resolve are out of the way.
@@ -178,9 +161,9 @@ pub(super) fn without_person_terms(qualifiers: &str) -> String {
         .split_whitespace()
         .filter(|term| {
             let key = term.trim_start_matches('-').split(':').next().unwrap_or("");
-            !QUALIFIER_KEYS
+            !QUALIFIER_FIELDS
                 .iter()
-                .any(|(name, field, _)| *name == key && field.is_person())
+                .any(|(name, field)| *name == key && field.is_person())
         })
         .collect::<Vec<_>>()
         .join(" ")
@@ -190,41 +173,16 @@ fn qualifier_error(message: String) -> ProviderError {
     ProviderError::new(ProviderErrorKind::Validation, message)
 }
 
-/// The keys `operation` accepts, in table order.
-fn operation_keys(operation: u8) -> impl Iterator<Item = &'static str> {
-    QUALIFIER_KEYS
+/// The filter `key` sets. The typed query admits only the keys the
+/// contract declares for its operation (`x-qualifierKeys`), so which
+/// operation takes a key, unknown keys and scope keys are the contract's
+/// rejections, never restated here.
+fn qualifier_field(key: &str) -> Result<Field, ProviderError> {
+    QUALIFIER_FIELDS
         .iter()
-        .filter(move |(_, _, applies)| applies & operation != 0)
-        .map(|(name, _, _)| *name)
-}
-
-/// The filter `key` sets for `operation`, or the error naming where the key
-/// applies, or the unknown-key error with a suggestion.
-fn qualifier_field(key: &str, operation: u8) -> Result<Field, ProviderError> {
-    if let Some(&(_, field, applies)) = QUALIFIER_KEYS.iter().find(|(name, _, _)| *name == key) {
-        if applies & operation != 0 {
-            return Ok(field);
-        }
-        return Err(qualifier_error(match applies {
-            PR => format!("qualifiers: {key}: applies to pull requests only."),
-            COMMIT => format!("qualifiers: {key}: applies to commits only."),
-            _ => format!(
-                "qualifiers: {key}: does not apply here; allowed: {}.",
-                operation_keys(operation).collect::<Vec<_>>().join(", ")
-            ),
-        }));
-    }
-    let suggestion = operation_keys(operation)
-        .map(|name| (crate::contracts::levenshtein(key, name), name))
-        .filter(|(distance, _)| *distance <= 2)
-        .min();
-    Err(qualifier_error(match suggestion {
-        Some((_, name)) => format!("qualifiers: unknown key {key}:; did you mean {name}:?"),
-        None => format!(
-            "qualifiers: unknown key {key}:; allowed: {}.",
-            operation_keys(operation).collect::<Vec<_>>().join(", ")
-        ),
-    }))
+        .find(|(name, _)| *name == key)
+        .map(|(_, field)| *field)
+        .ok_or_else(|| qualifier_error(format!("qualifiers: unknown key {key}:.")))
 }
 
 /// A parsed qualifier value.
@@ -361,16 +319,15 @@ impl Filters {
         }
     }
 
-    /// Parses a query's `qualifiers` string: allowlisted keys only, scope
-    /// qualifiers rejected, a filter set twice rejected (an excluded value
-    /// may repeat), unknown keys get a suggestion.
+    /// Parses a query's `qualifiers` string (its keys are the contract's):
+    /// a filter set twice is rejected (an excluded value may repeat).
     pub(super) fn parse(query: &GhSearchHistoryQuery) -> Result<Self, ProviderError> {
         let mut filters = Self::default();
         let Some(text) = query.qualifiers() else {
             return Ok(filters);
         };
-        let operation = operation_bit(query.operation());
-        let pull_request = operation == PR;
+        let operation = query.operation();
+        let pull_request = operation == HistoryOperation::PullRequest;
         for term in crate::contracts::qualifier_terms(text) {
             let (negated, term) = match term.strip_prefix('-') {
                 Some(rest) => (true, rest),
@@ -385,16 +342,11 @@ impl Filters {
                 )));
             };
             let key = key.to_ascii_lowercase();
-            if SCOPE_QUALIFIERS.contains(&key.as_str()) {
-                return Err(qualifier_error(format!(
-                    "qualifiers: {key}: is not allowed; scope comes from owner/repo."
-                )));
-            }
-            let field = qualifier_field(&key, operation)?;
+            let field = qualifier_field(&key)?;
             // A negated filter excludes what it names; the typed flags
             // (`is:`, `draft:`, `archived:`, `in:`) keep their own spellings.
             if negated
-                && operation != COMMIT
+                && operation != HistoryOperation::Commit
                 && !matches!(
                     field,
                     Field::State | Field::Draft | Field::Archived | Field::Match
@@ -412,55 +364,63 @@ impl Filters {
 
 #[cfg(test)]
 mod tests {
-    use crate::contracts::query_schema_value;
-    use crate::tools::id::ToolId;
-    use serde_json::Value;
+    use super::QUALIFIER_FIELDS;
 
-    /// The contract's key list of one operation's `qualifiers`: the
-    /// declared `x-qualifierKeys`, else the key alternation of its pattern.
-    fn contract_keys(operation: &str) -> Vec<String> {
-        let declared = query_schema_value(
-            ToolId::GhSearchHistory,
+    /// The `qualifiers` keys the contract declares for `operation`.
+    fn contract_keys(operation: &str) -> Vec<&'static str> {
+        crate::contracts::query_schema_value(
+            crate::tools::id::ToolId::GhSearchHistory,
             Some(operation),
             "qualifiers",
             "x-qualifierKeys",
-        );
-        if let Some(keys) = declared.and_then(Value::as_array) {
-            return keys
-                .iter()
-                .filter_map(Value::as_str)
-                .map(str::to_owned)
-                .collect();
-        }
-        let pattern = query_schema_value(
-            ToolId::GhSearchHistory,
-            Some(operation),
-            "qualifiers",
-            "pattern",
         )
-        .and_then(Value::as_str)
-        .expect("qualifiers pattern");
-        let end = pattern.find("):").expect("key group");
-        let start = pattern[..end].rfind("(?:").expect("key group start") + 3;
-        pattern[start..end].split('|').map(str::to_owned).collect()
+        .and_then(serde_json::Value::as_array)
+        .map_or(&[][..], Vec::as_slice)
+        .iter()
+        .filter_map(serde_json::Value::as_str)
+        .collect()
     }
 
-    /// Native `QUALIFIER_KEYS` is the contract's key list, per
-    /// operation (commit people filters are qualifiers too).
+    /// Every key the contract declares for an operation sets a native
+    /// filter, and every native filter key is one the contract declares.
     #[test]
-    fn native_qualifier_keys_match_the_contract() {
-        for (operation, bit) in [
-            ("pullRequest", super::PR),
-            ("issue", super::ISSUE),
-            ("commit", super::COMMIT),
+    fn every_contract_qualifier_key_sets_a_native_filter() {
+        let mut declared = Vec::new();
+        for operation in ["pullRequest", "issue", "commit"] {
+            let keys = contract_keys(operation);
+            assert!(!keys.is_empty(), "{operation}: no x-qualifierKeys");
+            for key in keys {
+                assert!(
+                    QUALIFIER_FIELDS.iter().any(|(name, _)| *name == key),
+                    "{operation}: contract key {key} has no native filter"
+                );
+                declared.push(key);
+            }
+        }
+        for (name, _) in QUALIFIER_FIELDS {
+            assert!(declared.contains(name), "{name}: no operation declares it");
+        }
+    }
+
+    /// Which operation takes a key is the typed query's (the contract's)
+    /// check: a key outside the operation's list never reaches the parser.
+    #[test]
+    fn a_key_outside_the_operations_list_is_rejected_by_the_typed_query() {
+        for (operation, qualifiers) in [
+            ("issue", "review:approved"),
+            ("commit", "label:bug"),
+            ("pullRequest", "committer:dev"),
+            ("pullRequest", "repo:evil/x"),
         ] {
-            let mut native = super::operation_keys(bit)
-                .map(str::to_owned)
-                .collect::<Vec<_>>();
-            let mut contract = contract_keys(operation);
-            native.sort();
-            contract.sort();
-            assert_eq!(native, contract, "{operation}");
+            let row = serde_json::json!({"operation":operation,"owner":"o","repo":"r",
+                "qualifiers":qualifiers});
+            assert!(
+                serde_json::from_value::<crate::tools::gh_search_history::GhSearchHistoryQuery>(
+                    row
+                )
+                .is_err(),
+                "{operation} {qualifiers}"
+            );
         }
     }
 }

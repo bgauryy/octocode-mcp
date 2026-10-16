@@ -15,7 +15,6 @@
 use super::LspSearchQuery;
 use super::failure::flag_partial;
 use super::importers::{SCAN_CAPPED, SCAN_COMPLETE, SCAN_FAILED};
-use super::render::TS_LANGUAGE_IDS;
 use super::scope::Scope;
 use serde_json::{Value, json};
 use std::path::Path;
@@ -56,8 +55,8 @@ pub(super) fn annotate(
     anchor_path: &str,
     scope: &Scope,
 ) {
-    if !language_id.is_some_and(|id| TS_LANGUAGE_IDS.contains(&id))
-        || !is_incoming(&query.operation())
+    if !octocode_engine::lsp::family::is_typescript_family(language_id)
+        || !is_incoming(query.operation())
         || !row.is_object()
         || row.get("status").and_then(Value::as_str) == Some("error")
     {
@@ -126,7 +125,7 @@ pub(super) fn annotate_compile_database(
         || row.pointer("/kind").and_then(Value::as_str) == Some("empty");
     if empty {
         row["hints"] = json!([COMPILE_DATABASE_HINT]);
-    } else if is_incoming(&query.operation()) {
+    } else if is_incoming(query.operation()) {
         flag_partial(
             row,
             query,

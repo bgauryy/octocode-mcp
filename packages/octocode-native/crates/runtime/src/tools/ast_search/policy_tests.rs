@@ -516,6 +516,33 @@ fn directory_symbols_use_path_scoped_header_parser_and_preserve_it_in_next_page(
 
 /// A directory match without language uses the one grammar whose files the
 /// scope holds; continuations retain per-file inference rather than narrowing it.
+/// A directory match without `language` infers its grammar from the census
+/// of the scan's own walk: no second walk, the same `inferredLanguage`, and
+/// a scope without any supported file is still `languageRequired`.
+#[test]
+fn the_inferred_grammar_comes_from_the_scan_walk() {
+    let root = Fixture::new();
+    root.write("src/a.rs", "fn a() { b(); }\n");
+    root.write("src/b.rs", "fn b() {}\n");
+    root.write("notes.txt", "b()\n");
+    let before = crate::tools::ast_rule::present_walks();
+    let out = run(
+        &root.0,
+        json!({"operation":"match","mainGoal":"test","reasoning":"test","path":root.0,"pattern":"b()"}),
+    )
+    .expect("match");
+    assert_eq!(out["inferredLanguage"], "rust", "{out}");
+    assert_eq!(crate::tools::ast_rule::present_walks(), before, "one walk");
+    let empty = Fixture::new();
+    empty.write("notes.txt", "b()\n");
+    let error = run(
+        &empty.0,
+        json!({"operation":"match","mainGoal":"test","reasoning":"test","path":empty.0,"pattern":"b()"}),
+    )
+    .expect_err("no grammar");
+    assert_eq!(error.code, "languageRequired", "{error:?}");
+}
+
 #[test]
 fn directory_match_infers_the_only_grammar_present() {
     let root = Fixture::new();

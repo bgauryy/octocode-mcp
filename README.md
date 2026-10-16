@@ -215,7 +215,7 @@ Unpublished: [octocode-architecture-view](https://github.com/bgauryy/octocode/tr
 | [`@octocodeai/config`](https://github.com/bgauryy/octocode/tree/main/packages/octocode-config) | configuration and tool contracts |
 | [`@octocodeai/octocode-agents-communication`](https://github.com/bgauryy/octocode/tree/main/packages/octocode-agents-communication) | agent coordination |
 | [`@octocodeai/octocode-chrome-devtools`](https://github.com/bgauryy/octocode/tree/main/packages/octocode-chrome-devtools) | Chrome DevTools MCP server and CLI |
-| [`octocode-benchmark`](https://github.com/bgauryy/octocode/tree/main/packages/octocode-benchmark), [`octocode-mcp-cli`](https://github.com/bgauryy/octocode/tree/main/packages/octocode-mcp-cli), [`octocode-skill-installer`](https://github.com/bgauryy/octocode/tree/main/packages/octocode-skill-installer) | benchmark and internal tooling (private) |
+| [`octocode-benchmark`](https://github.com/bgauryy/octocode/tree/main/packages/octocode-benchmark), [`octocode-mcp-cli`](https://github.com/bgauryy/octocode/tree/main/packages/octocode-mcp-cli) | benchmark and internal tooling (private) |
 
 How the pieces fit: [DEVELOPMENT.md](https://github.com/bgauryy/octocode/blob/main/skills-dev/octocode-dev/docs/DEVELOPMENT.md).
 

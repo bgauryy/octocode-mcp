@@ -196,8 +196,9 @@ fn budget_pages_count_a_header_for_each_group_a_page_opens() {
 }
 
 /// A tree without `hidden` skips dot entries, but says how many it skipped
-/// and offers the executable retry that includes them; pruned directories
-/// such as `.git` stay out of the count, since `hidden:true` prunes them too.
+/// and, on a filtered listing, offers the one retry that lifts every cause it
+/// skipped by (`includeSkipped`); `.git`, which the path policy withholds,
+/// stays out of the count.
 #[test]
 fn tree_discloses_skipped_dot_entries_and_offers_include_hidden() {
     let root = Fixture::new();
@@ -217,10 +218,11 @@ fn tree_discloses_skipped_dot_entries_and_offers_include_hidden() {
         json!([{"dir":"src","files":["lib.rs (2)"]}]),
         "{out}"
     );
-    // An unfiltered outline names the count; the retry lead is for a
-    // filtered or empty listing.
+    // Every counted dot entry is reachable: the lead lifts includeHidden.
     assert_eq!(out["summary"]["hidden"], 3, "{out}");
-    assert!(out["next"].get("includeHidden").is_none(), "{out}");
+    let lead = &out["next"]["includeSkipped"]["query"]["queries"][0];
+    assert_eq!(lead["includeHidden"], true, "{out}");
+    assert!(lead.get("defaultExcludes").is_none(), "{out}");
     let filtered = run(
         &root.0,
         json!({"operation":"tree","mainGoal":"t","reasoning":"t","path":root.0,"maxDepth":2,"extensions":["rs"]}),
@@ -231,9 +233,16 @@ fn tree_discloses_skipped_dot_entries_and_offers_include_hidden() {
         filtered["summary"]["hidden"].as_u64() > Some(0),
         "{filtered}"
     );
-    let retry = &filtered["next"]["includeHidden"];
+    let retry = &filtered["next"]["includeSkipped"];
     assert_eq!(retry["tool"], "structureSearch", "{out}");
     assert_eq!(retry["query"]["queries"][0]["includeHidden"], true, "{out}");
+    assert!(
+        retry["query"]["queries"][0]
+            .get("defaultExcludes")
+            .is_none()
+            && retry["query"]["queries"][0].get("includeIgnored").is_none(),
+        "only the cause it hit: {out}"
+    );
     assert!(
         retry["query"]["queries"][0].get("snapshot").is_none(),
         "{out}"
@@ -244,7 +253,7 @@ fn tree_discloses_skipped_dot_entries_and_offers_include_hidden() {
         json!([{"dir":"src","files":["lib.rs (2)"]}]),
         "{all}"
     );
-    assert!(all["next"].get("includeHidden").is_none(), "{all}");
+    assert!(all["next"].get("includeSkipped").is_none(), "{all}");
     assert!(all["summary"].get("hidden").is_none(), "{all}");
 }
 
@@ -429,7 +438,7 @@ fn withheld_entries_follow_the_walks_glob_dialect() {
     root.write("cfg/app.production", "x\n");
     let out = run(
         &root.0,
-        json!({"operation":"files","path":root.0,"include":["cfg/*.production"],"includeIgnored":true}),
+        json!({"operation":"files","path":root.0,"include":["cfg/*.production"],"includeIgnored":true,"includeHidden":true}),
     )
     .expect("listing");
     let paths = listed(&out)
@@ -837,7 +846,7 @@ fn files_empty_withheld_not_duplicated() {
     std::fs::write(root.0.join("b.rs"), "x\n").expect("other");
     let out = run(
         &root.0,
-        json!({"operation":"files","mainGoal":"t","reasoning":"t","path":root.0,"extensions":["ts"]}),
+        json!({"operation":"files","mainGoal":"t","reasoning":"t","path":root.0,"extensions":["ts"],"includeHidden":true}),
     )
     .expect("files");
     assert_eq!(out["status"], "empty", "{out}");
@@ -869,4 +878,76 @@ fn bare_word_include_lists_dir_files() {
         "{out}"
     );
     crate::tools::test_support::checks::assert_absent(&out["files"], "other.rs");
+}
+
+/// A paged tree states the walk's withheld entries once, on its first page,
+/// like its summary; later pages carry only their own warnings.
+#[test]
+fn walk_warnings_are_stated_on_the_first_page_only() {
+    let root = Fixture::new();
+    std::fs::write(root.0.join(".npmrc"), "token\n").expect("credential");
+    for n in 0..6 {
+        std::fs::write(root.0.join(format!("f{n}.txt")), "x\n").expect("file");
+    }
+    let pages = walk_pages(
+        &root.0,
+        json!({"operation":"tree","mainGoal":"t","reasoning":"t","path":root.0,"includeHidden":true,"pageSize":2}),
+    );
+    assert!(pages.len() > 1, "{pages:?}");
+    let withheld = |page: &Value| page["warnings"].to_string().contains("withheld");
+    assert!(withheld(&pages[0]), "{}", pages[0]);
+    assert!(pages[1..].iter().all(|page| !withheld(page)), "{pages:?}");
+}
+
+/// A filtered listing whose walk pruned a default-excluded directory leads
+/// to the same listing with the prune lifted (outside a git work tree a
+/// listed name is pruned by name), and the lead reaches what it hid.
+#[test]
+fn a_filtered_listing_leads_past_pruned_directories() {
+    let root = Fixture::new();
+    std::fs::create_dir_all(root.0.join("src/coverage")).expect("dir");
+    std::fs::write(root.0.join("src/coverage/pass.rs"), "x\n").expect("pruned");
+    std::fs::write(root.0.join("src/lib.rs"), "x\n").expect("visible");
+    for operation in ["tree", "files"] {
+        let out = run(
+            &root.0,
+            json!({"operation":operation,"mainGoal":"t","reasoning":"t","path":root.0,"extensions":["rs"]}),
+        )
+        .expect("listing");
+        assert!(
+            !out["files"].to_string().contains("pass.rs"),
+            "{operation}: {out}"
+        );
+        let lead = out["next"]["includeSkipped"]["query"]["queries"][0].clone();
+        assert_eq!(lead["defaultExcludes"], false, "{operation}: {out}");
+        let all = run(&root.0, lead).expect("lead");
+        assert!(
+            all["files"].to_string().contains("pass.rs"),
+            "{operation}: the lead reaches the pruned file: {all}"
+        );
+    }
+}
+
+/// `files` shares every local walk's hidden default: dot entries stay out
+/// unless `includeHidden`, and the listing counts what it hid.
+#[test]
+fn files_hide_dot_entries_unless_include_hidden() {
+    let root = Fixture::new();
+    root.write(".cfg/a.ts", "x\n");
+    root.write("b.ts", "x\n");
+    let query = |hidden: bool| {
+        let mut query = json!({"operation":"files","path":root.0,"extensions":["ts"]});
+        if hidden {
+            query["includeHidden"] = json!(true);
+        }
+        run(&root.0, query).expect("files")
+    };
+    let default = query(false);
+    let paths = listed(&default)
+        .iter()
+        .filter_map(|entry| entry["path"].as_str().map(str::to_owned))
+        .collect::<Vec<_>>();
+    assert!(paths.len() == 1 && paths[0].ends_with("b.ts"), "{default}");
+    assert_eq!(default["summary"]["hidden"], 1, "{default}");
+    assert_eq!(listed(&query(true)).len(), 2);
 }

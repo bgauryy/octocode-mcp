@@ -128,7 +128,7 @@ for (const [label, query] of [
   const sym = await call('astSearch', { operation: 'symbols', path: TARGETS.checkerTs }, {}, 'symbols checker');
   bounded(sym, 'astSearch symbols checker.ts');
   const d = rowData(sym);
-  check('astSearch symbols 3MB checker.ts: answers or refuses with a repair', !sym.isError && (d?.symbols?.length > 0 || nextHints(sym.sc).length > 0 || (d?.hints?.text?.length ?? 0) > 0), `${d?.errorCode ?? ''} symbols=${d?.symbols?.length} hints=${JSON.stringify(d?.hints ?? {}).slice(0, 120)}`);
+  check('astSearch symbols 3MB checker.ts: answers or refuses with a repair', !sym.isError && (d?.symbols?.length > 0 || nextHints(sym.sc).length > 0 || (d?.hints?.length ?? 0) > 0), `${d?.errorCode ?? ''} symbols=${d?.symbols?.length} hints=${JSON.stringify(d?.hints ?? {}).slice(0, 120)}`);
 }
 {
   const first = await call('astSearch', { operation: 'symbols', path: manyFns, pageSize: 100 }, {}, 'symbols manyFns');

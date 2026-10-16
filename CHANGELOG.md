@@ -24,14 +24,21 @@
   still deletes them.
 
 ### Fixed — security, lossless reads and leads (2026-10-15)
+- **`lspSearch` importer recovery no longer drops the gitignored-files
+  scan silently.** The scan for ignored files that spell the name has a 3 s
+  bound; on a repository with large ignored checkouts it stopped there and
+  returned nothing, so the row read as having no ignored importer. The row
+  is now partial (`importerScanIgnored`) with a warning that the scan did
+  not finish, the files it reached, and a `next.includeSkipped`
+  `localSearch` over the whole scope.
 - **Clone cache checks access on every hit.** A cached `ghCloneRepo`
   checkout is served only after one `commits/{ref}` call with the caller's
   own credential succeeds; any failure refuses the hit, so one token can no
   longer reuse another's private checkout. A host serving several users
   should still give each its own `OCTOCODE_HOME`.
 - **`fullContent` pages are lossless.** A `ghGetFileContent` (or
-  `localFetch`) `fullContent` read too large for one page continues with
-  `minify:"none"` unless you chose a view; the pages join to the whole file.
+  `localFetch`) `fullContent` read too large for one page continues raw
+  (no `minify`) unless you chose a view; the pages join to the whole file.
 - **`ghGetHistoryItem` PR misses return leads.** A `matchString` that hits
   no patch line offers `withoutMatchString`, then `readFiles`; an
   `include`/`status`/`minChanges` scope that matches nothing offers

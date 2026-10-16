@@ -60,7 +60,7 @@ impl Layout {
         output_root: &std::path::Path,
         parsed: &mut octocode_engine::types::TextSearchResult,
         page_budget: usize,
-        outlines: CutOutlines,
+        outlines: &CutOutlines,
     ) -> Self {
         let view = query.result_view;
         let list = list_view(view);
@@ -75,7 +75,6 @@ impl Layout {
         };
         let show_all = !list
             && query.match_page_size().is_none()
-            && parsed.files.len() <= default_page_size(view) as usize
             && {
                 let mut names = PageNames::default();
                 fits_within(&parsed.files, page_budget, |index, file| {
@@ -392,13 +391,14 @@ impl PageCosts {
     pub(super) fn with_owners(
         mut self,
         files: &[octocode_engine::types::TextSearchFile],
-        outlines: CutOutlines,
+        outlines: &CutOutlines,
     ) -> Self {
         self.owners = outlines
-            .into_iter()
-            .filter_map(|(index, outline)| {
+            .iter()
+            .filter_map(|(&index, outline)| {
                 let file = files.get(index)?;
                 let owners = outline
+                    .as_ref()
                     .map(|outline| {
                         file.matches
                             .iter()
@@ -608,9 +608,8 @@ pub(super) fn streamed_layout(q: &LocalSearchQuery) -> bool {
 /// `per_file` ranked rows in file order, then every file's remaining rows.
 /// Each page holds as much of the stream as fits `budget` serialized chars
 /// (at least one row), counting a file's `pagination` whenever its later
-/// rows may fall on a later page. No page holds more than
-/// [`ENCLOSING_MAX_FILES`] files, so every hit row it shows is named. No
-/// page shows clipped values that need more reads than one `expandValues`
+/// rows may fall on a later page; however many files that is, every hit
+/// row it shows is named. No page shows clipped values that need more reads than one `expandValues`
 /// call runs ([`max_expansion_rows`]), so each page's values are one call
 /// away. `whole` puts the entire result on one page. A file's
 /// rows on one page are always one contiguous rank range, and its later
@@ -689,10 +688,7 @@ pub(super) fn stream_pages(
                     .saturating_sub((costs.expansion_rows)(&mut file.matches[shown].iter()))
             };
             let over_reads = reads + added_reads(&page, &slot) > max_reads;
-            // Every page names the enclosing declaration of each hit row in
-            // at most `ENCLOSING_MAX_FILES` files, so no page holds more.
-            let page_full = !has_file && page.len() >= ENCLOSING_MAX_FILES;
-            if !page.is_empty() && (over_budget || page_full || over_reads) {
+            if !page.is_empty() && (over_budget || over_reads) {
                 pages.push(std::mem::take(&mut page));
                 slot.clear();
                 paged.clear();
@@ -922,11 +918,13 @@ pub(super) fn expansion_rows<'a>(
     if costs.multiline {
         return 1;
     }
+    // The same rows `is_long_line_hit` reads by a byte window.
     let long = |matched: &&octocode_engine::types::TextSearchMatch| {
-        matched
-            .original_chars
-            .map_or_else(|| matched.value.chars().count(), |chars| chars as usize)
-            > crate::tools::local_fetch::LINE_PAGE_BYTES
+        super::leads::passes_line_page(
+            matched
+                .original_bytes
+                .map_or_else(|| matched.value.len(), |bytes| bytes as usize),
+        )
     };
     let (long, plain): (Vec<_>, Vec<_>) = clipped.into_iter().partition(long);
     long.len()

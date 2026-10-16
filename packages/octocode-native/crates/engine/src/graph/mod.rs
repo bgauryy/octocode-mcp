@@ -6,12 +6,12 @@ pub use algorithms::{
     Condensed, CycleWitnesses, FileEdge, FileGraphNode, condense, reachable, reverse, scc,
     scc_unsorted, shortest_path, strongly_connected_components, transitive_edges, traverse,
 };
-pub use diff::{GraphDiff, diff_graphs};
+pub use diff::{GraphDiff, diff_across_roots, diff_graphs};
 pub use model::{
     CodeGraphBuilder, CodeGraphSnapshot, EdgeKind, GraphFactCall, GraphFactCommonJs,
-    GraphFactDeclaration, GraphFactEdge, GraphFactExport, GraphFactImport, GraphFactRustModule,
-    GraphFactsDocument, GraphFactsTypedEntry, GraphPosition, GraphRange, IMPORT_USE_MODULE,
-    NodeKind, SourceStamp,
+    GraphFactDeclaration, GraphFactEdge, GraphFactExport, GraphFactImport, GraphFactPath,
+    GraphFactRustModule, GraphFactsDocument, GraphFactsTypedEntry, GraphPosition, GraphRange,
+    IMPORT_USE_MODULE, NodeKind, SourceStamp,
 };
 
 use std::{fs, path::Path, sync::Arc};
@@ -23,7 +23,9 @@ use crate::error::ErrorKind;
 use crate::search::walk::Stop;
 use crate::types::{FileSystemQueryOptions, GraphFactsScanDiagnostic, GraphFactsScanOptions};
 
-const DEFAULT_MAX_FILE_BYTES: u32 = 1_000_000;
+/// Largest source the graph-facts scan parses; a larger file stays an
+/// unparsed (skipped) node. One bound for astTopology, ingest, and reuse.
+pub const MAX_GRAPH_SOURCE_BYTES: u32 = 1_000_000;
 
 enum GraphFactsScanOutcome<T> {
     /// A parsed file and what the caller's map kept of it (`None`: nothing).
@@ -260,6 +262,11 @@ fn facts_heap_bytes(
             size_of::<GraphFactRustModule>() + text(&m.name) + list(&m.scope) + option(&m.path)
         })
         .sum::<usize>();
+    bytes += facts
+        .paths
+        .iter()
+        .map(|p| size_of::<GraphFactPath>() + text(&p.path) + option(&p.caller_id))
+        .sum::<usize>();
     bytes += list(&facts.diagnostics);
     bytes += facts.error_lines.len() * size_of::<[u32; 2]>();
     bytes += reference_counts
@@ -327,18 +334,30 @@ fn scan_with_budget<T: Send>(
     stop: &Stop<'_>,
     budget: Option<std::time::Duration>,
 ) -> Result<GraphFactsMappedScan<T>, GraphScanError> {
+    let walked = walk_graph_fact_files(&options, admit, stop)?;
+    evaluate_walk(options, walked, keep, map, stop, budget)
+}
+
+/// The candidate files a graph-facts scan of `options` reads, in walk order:
+/// files of an outlined grammar (or mapped by `languageGlobs`) that `admit`
+/// passes, up to `max_files` (unset: the walk budget). A caller that needs
+/// the file list first (to count or fingerprint a scope) walks once with
+/// this and hands the walk to [`scan_walked_graph_facts`].
+pub fn walk_graph_fact_files(
+    options: &GraphFactsScanOptions,
+    admit: &(dyn Fn(&Path, Option<fs::FileType>) -> bool + Sync),
+    stop: &Stop<'_>,
+) -> Result<crate::types::FileSystemQueryResult, GraphScanError> {
     let root = std::path::PathBuf::from(&options.path);
     let overrides = parser_overrides(&root, options.language_globs.as_deref())?;
-    let timed = options.max_files.is_none();
     let max_files = options
         .max_files
         .unwrap_or(crate::scan_budget::SCAN_WALK_FILES as u32);
-    let max_file_bytes = options.max_file_bytes.unwrap_or(DEFAULT_MAX_FILE_BYTES);
     let extensions = crate::signatures::graph_facts::graph_fact_extensions();
     // A file only `languageGlobs` map to a grammar has an extension no grammar
     // claims, so with overrides the walk admits it by glob as well.
     let admitted = crate::search::fs_query::normalize_extensions(extensions.clone());
-    let walk_filter = |path: &Path, file_type: Option<fs::FileType>| -> bool {
+    let walk_filter = |path: &Path, file_type: Option<fs::FileType>, _| -> bool {
         if !admit(path, file_type) {
             return false;
         }
@@ -352,15 +371,15 @@ fn scan_with_budget<T: Send>(
                 .iter()
                 .any(|(_, matcher)| crate::search::glob::matches(matcher, path, false))
     };
-    let query = crate::search::fs_query::query_file_system(
+    crate::search::fs_query::query_file_system(
         FileSystemQueryOptions {
-            path: options.path,
+            path: options.path.clone(),
             recursive: Some(true),
             ignore: options.ignore,
             entry_type: Some("f".to_owned()),
             extensions: overrides.is_empty().then_some(extensions),
-            exclude_dir: options.exclude_dir,
-            exclude: options.exclude,
+            exclude_dir: options.exclude_dir.clone(),
+            exclude: options.exclude.clone(),
             stop_at_limit: Some(true),
             limit: Some(max_files),
             ..Default::default()
@@ -371,8 +390,50 @@ fn scan_with_budget<T: Send>(
     .map_err(|error| match error.kind() {
         ErrorKind::InvalidGlob => GraphScanError::InvalidGlob(error.reason),
         _ => GraphScanError::Failed(error.reason),
-    })?;
+    })
+}
 
+/// [`scan_graph_facts`] over `walked`, a [`walk_graph_fact_files`] walk of
+/// these same `options` (so `max_files` and the filters agree), without
+/// walking again.
+pub fn scan_walked_graph_facts<T: Send>(
+    options: GraphFactsScanOptions,
+    walked: crate::types::FileSystemQueryResult,
+    keep: &(dyn Fn(&str) -> bool + Sync),
+    map: &(dyn Fn(&GraphFactsView<'_>) -> Option<T> + Sync),
+    stop: &Stop<'_>,
+) -> Result<GraphFactsMappedScan<T>, GraphScanError> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        evaluate_walk(
+            options,
+            walked,
+            keep,
+            map,
+            stop,
+            Some(crate::scan_budget::SCAN_TIME_BUDGET),
+        )
+    }))
+    .unwrap_or_else(|_| {
+        Err(GraphScanError::Failed(
+            "graph-facts scan failed on pathological input".to_owned(),
+        ))
+    })
+}
+
+/// Read, parse and map the walked candidates of a scan, within its time
+/// budget when `max_files` is unset.
+fn evaluate_walk<T: Send>(
+    options: GraphFactsScanOptions,
+    query: crate::types::FileSystemQueryResult,
+    keep: &(dyn Fn(&str) -> bool + Sync),
+    map: &(dyn Fn(&GraphFactsView<'_>) -> Option<T> + Sync),
+    stop: &Stop<'_>,
+    budget: Option<std::time::Duration>,
+) -> Result<GraphFactsMappedScan<T>, GraphScanError> {
+    let root = std::path::PathBuf::from(&options.path);
+    let overrides = parser_overrides(&root, options.language_globs.as_deref())?;
+    let timed = options.max_files.is_none();
+    let max_file_bytes = options.max_file_bytes.unwrap_or(MAX_GRAPH_SOURCE_BYTES);
     let truncated = query.was_capped;
     let mut entries = query.entries;
     // Walk order is stable, so the leading files an earlier window read are

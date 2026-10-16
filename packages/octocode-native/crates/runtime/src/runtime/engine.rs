@@ -90,68 +90,48 @@ pub struct ToolRuntime {
     classification: &'static dyn crate::providers::classification::ClassificationProvider,
 }
 
-/// One paged response's envelope before paging, replayed only for a request
-/// that carries the page's `responseSnapshot` while its sources are
-/// unchanged since it executed.
-#[derive(Clone)]
+/// One paged response's settled envelope (validated, continuations shaped;
+/// see [`stage::settle`]) before paging, replayed only for a request that
+/// carries the page's `responseSnapshot` while its sources are unchanged
+/// since it executed. Later pages reuse its rendered text.
 struct PageReplay {
-    key: [u8; 32],
-    snapshot: String,
     /// When the rows started executing: the sources must be unchanged since.
     started: std::time::SystemTime,
-    stored: std::time::Instant,
-    bytes: usize,
     structured: Value,
+    remaining: Vec<Vec<crate::response::pages::Remaining>>,
     response_query: Value,
     failure: Option<FailureKind>,
     source_digest: Option<String>,
+    text: stage::TextCache,
 }
 
-/// Bounded LRU of [`PageReplay`]s. A page served from it is byte-identical
-/// to the one a same-snapshot re-execution would produce, without the
-/// dispatch; a mismatched or missing snapshot, or changed sources, always
-/// re-execute, so a later page answers as a fresh runtime would.
-#[derive(Default)]
-struct PageReplayMemo {
-    entries: std::sync::Mutex<std::collections::VecDeque<PageReplay>>,
+/// Bounded, expiring LRU of [`PageReplay`]s by page snapshot, partitioned by
+/// the batch identity ([`page_replay_key`]). A page served from it is
+/// byte-identical to the one a same-snapshot re-execution would produce,
+/// without the dispatch; a mismatched or missing snapshot, or changed
+/// sources, always re-execute, so a later page answers as a fresh runtime
+/// would.
+struct PageReplayMemo(crate::tools::page_memo::PageMemo<Arc<PageReplay>>);
+
+impl Default for PageReplayMemo {
+    fn default() -> Self {
+        Self(crate::tools::page_memo::PageMemo::new(
+            Duration::from_secs(120),
+            8,
+            32 * 1024 * 1024,
+        ))
+    }
 }
 
 impl PageReplayMemo {
-    const MAX_ENTRIES: usize = 8;
-    const MAX_BYTES: usize = 32 * 1024 * 1024;
-    const TTL: Duration = Duration::from_secs(120);
-
-    fn get(&self, key: &[u8; 32], snapshot: &str) -> Option<PageReplay> {
-        let mut entries = self
-            .entries
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        entries.retain(|entry| entry.stored.elapsed() < Self::TTL);
-        let position = entries
-            .iter()
-            .position(|entry| &entry.key == key && entry.snapshot == snapshot)?;
-        let entry = entries.remove(position)?;
-        entries.push_back(entry.clone());
-        Some(entry)
+    fn get(&self, key: &[u8; 32], snapshot: &str) -> Option<Arc<PageReplay>> {
+        self.0.get(snapshot, &hex::encode(key), Arc::clone)
     }
 
-    fn insert(&self, entry: PageReplay) {
-        if entry.bytes > Self::MAX_BYTES {
-            return;
-        }
-        let mut entries = self
-            .entries
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        entries.retain(|stored| stored.key != entry.key && stored.stored.elapsed() < Self::TTL);
-        entries.push_back(entry);
-        let mut bytes: usize = entries.iter().map(|stored| stored.bytes).sum();
-        while entries.len() > Self::MAX_ENTRIES || bytes > Self::MAX_BYTES {
-            let Some(evicted) = entries.pop_front() else {
-                break;
-            };
-            bytes -= evicted.bytes;
-        }
+    fn insert(&self, key: &[u8; 32], snapshot: String, replay: PageReplay) {
+        let weight = json_bytes(&replay.structured);
+        self.0
+            .put(snapshot, hex::encode(key), weight, Arc::new(replay));
     }
 }
 
@@ -206,7 +186,9 @@ pub struct ToolOutcome {
     pub all_failed: bool,
 }
 
-/// An invalid row of an isolated batch, shaped like any other error row.
+/// An invalid row of an isolated batch, shaped like any other error row. Its
+/// `hints.repair` is the one-row call with every field fixed, when each has
+/// an exact fix.
 fn rejected_row(
     tool: ToolId,
     index: usize,
@@ -218,17 +200,130 @@ fn rejected_row(
         "error": formatted["error"],
         "errorCode": "invalidInput",
     });
-    if let Some(details) = formatted.get("details") {
-        data["hints"] = details.clone();
+    let one_row = json!({ "queries": [raw] });
+    let issues = error
+        .issues
+        .iter()
+        .map(|issue| {
+            let mut issue = issue.clone();
+            if issue.path.first().is_some_and(|part| part == "queries") && issue.path.len() > 1 {
+                issue.path[1] = "0".to_owned();
+            }
+            issue
+        })
+        .collect::<Vec<_>>();
+    let mut hints = serde_json::Map::new();
+    let mut text = formatted
+        .get("details")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    if let Some(repair) = repair_lead(tool, &one_row, &issues) {
+        // The note names the caller's own row, not the one-row repair call.
+        text.extend(repair.note(Some(index)).map(Value::String));
+        hints.insert("repair".into(), repair.lead);
+    }
+    if !text.is_empty() {
+        hints.insert("text".into(), Value::Array(text));
+    }
+    if !hints.is_empty() {
+        data["hints"] = Value::Object(hints);
     }
     let mut row = rows::result_row(tool, index, &raw, data, Some("error"));
     extras::prune_row(&mut row, tool, &raw);
     (index, row)
 }
 
-fn invalid_input_error(tool: &str, error: contracts::ContractValidationError) -> RuntimeError {
+/// A rejected input's `hints.repair` lead, and what a lossy one drops.
+struct RepairLead {
+    lead: Value,
+    /// The caller's fields the lead drops (paths); empty for an exact fix.
+    dropped: Vec<String>,
+}
+
+impl RepairLead {
+    /// The note a lossy lead needs: what it drops (a field the contract
+    /// does not own, or a value its field does not list, whose default then
+    /// applies). `row` renames the one-row repair call's `queries.0` to the
+    /// caller's row.
+    fn note(&self, row: Option<usize>) -> Option<String> {
+        if self.dropped.is_empty() {
+            return None;
+        }
+        let dropped = self
+            .dropped
+            .iter()
+            .map(|path| match (row, path.strip_prefix("queries.0.")) {
+                (Some(row), Some(rest)) => format!("queries.{row}.{rest}"),
+                _ => path.clone(),
+            })
+            .collect::<Vec<_>>();
+        Some(format!(
+            "The repair lead drops {}: without it (or with the field's default) the call may read more broadly than asked. Express that constraint with a supported field if it matters.",
+            dropped.join(", ")
+        ))
+    }
+}
+
+/// The call that fixes a rejected input, when every issue has a fix and the
+/// fixed call is admitted. An exact fix is `high` confidence; one that drops
+/// a field the caller set (no contract field owns it) is `low` and named,
+/// since it reads more broadly than the call asked.
+fn repair_lead(
+    tool: ToolId,
+    input: &Value,
+    issues: &[contracts::ValidationIssue],
+) -> Option<RepairLead> {
+    // A lead is a continuation: canonical as written, and admitted as a call.
+    // A candidate's own issues (rows lifted out of a nested envelope) are
+    // repaired in a further pass; a clasify admission refusal is final.
+    let repaired = contracts::repair_input(input, issues, |candidate| {
+        let rows = contracts::prepare_many_and_validate(tool.as_str(), candidate.clone())
+            .map_err(|error| error.issues)?;
+        if tool.is_clasify() && crate::tools::clasify::admit(rows.iter()).is_err() {
+            return Err(Vec::new());
+        }
+        Ok(())
+    })?;
+    let mut repaired = repaired;
+    // A cursor clamped to the schema's maximum may still be past the last
+    // page the tool reaches: the lead goes there in the same hop.
+    if tool == ToolId::ArtifactSearch
+        && let Some(rows) = repaired.input["queries"].as_array_mut()
+    {
+        for row in rows {
+            if let Some(page) = crate::tools::artifact_search::reachable_page(row) {
+                row["page"] = json!(page);
+            }
+        }
+    }
+    let exact = repaired.dropped.is_empty();
+    Some(RepairLead {
+        lead: crate::tools::result::Continuation::input(tool, repaired.input)
+            .confidence(if exact { "high" } else { "low" })
+            .build(),
+        dropped: repaired.dropped,
+    })
+}
+
+fn invalid_input_error(
+    tool: &str,
+    input: &Value,
+    error: contracts::ContractValidationError,
+) -> RuntimeError {
     let mut payload = contracts::format_input_error(tool, &error);
     payload["errorCode"] = json!("invalidInput");
+    if let Some(repair) =
+        ToolId::from_name(tool).and_then(|id| repair_lead(id, input, &error.issues))
+    {
+        if let Some(note) = repair.note(None) {
+            payload["hints"] = json!({ "text": [note] });
+        }
+        payload["hints"]["repair"] = repair.lead;
+    }
+    if let Some(id) = ToolId::from_name(tool) {
+        crate::response::channels::publish_hints(&mut payload, id);
+    }
     RuntimeError {
         code: "invalidInput".into(),
         message: error.to_string(),
@@ -297,21 +392,6 @@ fn security_issues(
         }),
     );
     issues
-}
-
-/// Put rejected rows back at their input positions and renumber `index`, so
-/// rows stay aligned with the caller's queries.
-pub(crate) fn merge_rejected_rows(rows: &mut Vec<Value>, rejected: Vec<(usize, Value)>) {
-    if rejected.is_empty() {
-        return;
-    }
-    for (index, row) in rejected {
-        let position = index.min(rows.len());
-        rows.insert(position, row);
-    }
-    for (index, row) in rows.iter_mut().enumerate() {
-        row["index"] = json!(index);
-    }
 }
 
 fn output_contract_error(tool: &str, error: contracts::ContractValidationError) -> RuntimeError {
@@ -502,6 +582,11 @@ impl ToolRuntime {
         // clear never touches the other's entries.
         let persistent = config::is_persistent_storage_enabled(&config.resolved);
         let response_dir = persistent.then(|| octocode_home.join("tmp").join("response"));
+        if persistent {
+            crate::tools::declarations_cache::persist_symbols_views(
+                octocode_home.join("tmp").join("outline"),
+            );
+        }
         let github_cache = super::github_cache::GitHubContentCache::new(
             crate::cache::CacheConfig::default(),
             response_dir,
@@ -905,7 +990,7 @@ impl ToolRuntime {
         } = prepare_queries(tool, input)?;
         if id.is_clasify() {
             crate::tools::clasify::admit(prepared.iter().map(|(_, query)| query))
-                .map_err(|error| invalid_input_error(tool, error))?;
+                .map_err(|error| invalid_input_error(tool, input, error))?;
         }
         let bulk = input.is_array() || input.get("queries").is_some();
         let mut queries = Vec::with_capacity(prepared.len());
@@ -958,6 +1043,7 @@ impl ToolRuntime {
                 .collect();
             return Err(invalid_input_error(
                 tool,
+                input,
                 contracts::ContractValidationError { issues },
             ));
         }
@@ -1090,7 +1176,7 @@ fn prepare_queries(tool: &str, input: &Value) -> Result<PreparedRows, RuntimeErr
         }),
         Err(error) => {
             let Some(rows) = contracts::prepare_rows(tool, input) else {
-                return Err(invalid_input_error(tool, error));
+                return Err(invalid_input_error(tool, input, error));
             };
             let mut prepared = Vec::with_capacity(rows.len());
             let mut invalid = Vec::new();
@@ -1132,7 +1218,7 @@ struct ChannelRun {
     clasify: bool,
     dispatcher: super::domain_dispatch::DomainDispatcher,
     output: OutputSettings,
-    replayed: Option<PageReplay>,
+    replayed: Option<Arc<PageReplay>>,
     replays: (Arc<PageReplayMemo>, [u8; 32]),
 }
 
@@ -1155,13 +1241,19 @@ impl ChannelRun {
                 replay.started,
             )
         {
-            let stage = self.stage(replay.structured, replay.response_query, true);
-            return stage::finish(
+            let stage = self.stage(
+                replay.structured.clone(),
+                replay.response_query.clone(),
+                true,
+            );
+            return stage::respond(
                 stage::StageInput {
                     failure: replay.failure,
-                    source_digest: replay.source_digest,
+                    source_digest: replay.source_digest.clone(),
                     ..stage
                 },
+                replay.remaining.clone(),
+                Some(&replay.text),
                 context,
             );
         }
@@ -1177,7 +1269,8 @@ impl ChannelRun {
             is_available: &available,
         };
         if self.clasify {
-            self.run_clasify(rejected, &scope, context)
+            debug_assert!(rejected.is_empty(), "admission refuses clasify as a whole");
+            self.run_clasify(&scope, context)
         } else {
             self.run_rows(rejected, &scope, context)
         }
@@ -1209,14 +1302,12 @@ impl ChannelRun {
     /// are billed per evaluation, so its response never auto-pages.
     fn run_clasify(
         &self,
-        rejected: Vec<(usize, Value)>,
         scope: &continuations::Scope<'_>,
         context: &ExecutionContext,
     ) -> StageResult {
         let mut receipts = crate::tools::clasify::call(
             &self.dispatcher.evaluator,
             &self.queries,
-            rejected,
             &self.dispatcher,
             context,
         )?;
@@ -1248,31 +1339,23 @@ impl ChannelRun {
     ) -> StageResult {
         let started = std::time::SystemTime::now();
         let ShapedRows {
-            structured,
+            mut structured,
             response_query,
             rejected_at,
-            failure,
+            admitted,
+            failure: shaped_failure,
             source_digest,
         } = self.shape_rows(rejected, scope, context)?;
         // A replay seed only for a response that can page: an explicit
         // window, or one near the automatic page size.
         let pageable = self.options.explicit()
             || crate::tools::stream_page::json_chars(&structured) * 2 > self.output.auto_page_chars;
-        let seed_of = |structured: &Value| PageReplay {
-            key: self.replays.1,
-            snapshot: String::new(),
-            started,
-            stored: std::time::Instant::now(),
-            bytes: 0,
-            structured: structured.clone(),
-            response_query: response_query.clone(),
-            failure,
-            source_digest: source_digest.clone(),
-        };
         // A paged batch with rejected rows pages only its admitted rows (the
         // body a continuation reproduces); the rejected rows ride page 1.
-        let body = (pageable && !rejected_at.is_empty())
-            .then(|| super::row_indices::admitted_body(&structured, &rejected_at));
+        let body = match admitted.filter(|_| pageable) {
+            Some(rows) => Some(self.envelope_of(rows, &rejected_at, scope, context)?.0),
+            None => None,
+        };
         let rejected_rows: Vec<Value> = body
             .as_ref()
             .and_then(|_| structured["results"].as_array())
@@ -1288,31 +1371,59 @@ impl ChannelRun {
                     .collect()
             })
             .unwrap_or_default();
-        let seed = pageable.then(|| seed_of(&structured));
+        // Settle (validate, shape) once; a seed stores the settled envelope
+        // so a replayed page skips both.
+        let settle = |structured: &mut Value| {
+            let mut failure = shaped_failure;
+            stage::settle(self.id, structured, &response_query, &mut failure)
+                .map(|remaining| (remaining, failure))
+        };
+        let seed_of = |structured: &Value, remaining: &[Vec<_>], failure| PageReplay {
+            started,
+            structured: structured.clone(),
+            remaining: remaining.to_vec(),
+            response_query: response_query.clone(),
+            failure,
+            source_digest: source_digest.clone(),
+            text: stage::TextCache::default(),
+        };
+        let (remaining, failure) = match settle(&mut structured) {
+            Ok(settled) => settled,
+            Err(error) => return Ok(Err(error)),
+        };
+        let seed = pageable.then(|| seed_of(&structured, &remaining, failure));
         let stage = self.stage(structured, response_query.clone(), true);
-        let finished = stage::finish(
+        let finished = stage::respond(
             stage::StageInput {
                 failure,
                 source_digest: source_digest.clone(),
                 ..stage
             },
+            remaining,
+            seed.as_ref().map(|seed| &seed.text),
             context,
         )?;
-        if let (Ok(outcome), Some(body)) = (&finished, body)
+        if let (Ok(outcome), Some(mut body)) = (&finished, body)
             && super::row_indices::is_paged(outcome)
         {
-            let seed = seed_of(&body);
+            let (remaining, failure) = match settle(&mut body) {
+                Ok(settled) => settled,
+                Err(error) => return Ok(Err(error)),
+            };
+            let seed = seed_of(&body, &remaining, failure);
             let stage = self.stage(body, response_query.clone(), true);
-            let mut finished = stage::finish(
+            let mut finished = stage::respond(
                 stage::StageInput {
                     failure,
-                    source_digest,
+                    source_digest: source_digest.clone(),
                     ..stage
                 },
+                remaining,
+                Some(&seed.text),
                 context,
             )?;
             if let Ok(outcome) = &mut finished {
-                remember_page(&self.replays.0, outcome, seed);
+                remember_page(&self.replays, outcome, seed);
                 if self.options.response_offset.unwrap_or(0) == 0 {
                     super::row_indices::attach_rejected(
                         outcome,
@@ -1326,7 +1437,7 @@ impl ChannelRun {
             return Ok(finished);
         }
         if let (Ok(outcome), Some(seed)) = (&finished, seed) {
-            remember_page(&self.replays.0, outcome, seed);
+            remember_page(&self.replays, outcome, seed);
         }
         Ok(finished)
     }
@@ -1349,9 +1460,33 @@ impl ChannelRun {
         for (row, index) in rows.iter_mut().zip(&self.row_indices) {
             row["index"] = json!(index);
         }
+        // The body a paged continuation reproduces holds the admitted rows
+        // only; shaped from them alone, so nothing a rejected row carries (a
+        // repair lead's path names `root`) reaches it.
+        let admitted = (!rejected.is_empty()).then(|| rows.clone());
         rows.extend(rejected.into_iter().map(|(_, row)| row));
         rows.sort_by_key(|row| row["index"].as_u64());
-        let by_row = super::row_indices::by_position(&self.queries, &rejected_at);
+        let (structured, response_query) = self.envelope_of(rows, &rejected_at, scope, context)?;
+        Ok(ShapedRows {
+            structured,
+            response_query,
+            rejected_at,
+            admitted,
+            failure,
+            source_digest,
+        })
+    }
+
+    /// Rows (input-ordered, `index` set) → the sanitized, ranked envelope
+    /// with its finalized continuations, and the response query it answers.
+    fn envelope_of(
+        &self,
+        rows: Vec<Value>,
+        rejected_at: &[usize],
+        scope: &continuations::Scope<'_>,
+        context: &ExecutionContext,
+    ) -> Result<(Value, Value), ExecutionError> {
+        let by_row = super::row_indices::by_position(&self.queries, rejected_at);
         let mut structured = rows::envelope_in(rows, self.id, &by_row, &self.dispatcher.paths);
         rows::sanitize_output(
             &mut structured,
@@ -1386,13 +1521,7 @@ impl ChannelRun {
                 self.id, error.issues
             );
         }
-        Ok(ShapedRows {
-            structured,
-            response_query,
-            rejected_at,
-            failure,
-            source_digest,
-        })
+        Ok((structured, response_query))
     }
 
     /// Runs every row (sharing the response window) and shapes it: result
@@ -1449,6 +1578,8 @@ struct ShapedRows {
     structured: Value,
     response_query: Value,
     rejected_at: Vec<usize>,
+    /// The admitted rows alone, when the batch has rejected rows.
+    admitted: Option<Vec<Value>>,
     failure: Option<FailureKind>,
     source_digest: Option<String>,
 }
@@ -1461,15 +1592,17 @@ struct EvaluatedRows {
     source_digest: Option<String>,
 }
 
-/// Keeps a paged response's pre-paging envelope for its later pages.
-fn remember_page(replays: &PageReplayMemo, outcome: &ToolOutcome, mut seed: PageReplay) {
+/// Keeps a paged response's settled envelope for its later pages.
+fn remember_page(
+    (replays, key): &(Arc<PageReplayMemo>, [u8; 32]),
+    outcome: &ToolOutcome,
+    seed: PageReplay,
+) {
     let pagination = &outcome.structured_content["responsePagination"];
     if pagination["hasMore"] == true
         && let Some(snapshot) = pagination["snapshot"].as_str()
     {
-        seed.snapshot = snapshot.to_owned();
-        seed.bytes = json_bytes(&seed.structured);
-        replays.insert(seed);
+        replays.insert(key, snapshot.to_owned(), seed);
     }
 }
 

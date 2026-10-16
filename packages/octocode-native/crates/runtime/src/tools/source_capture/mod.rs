@@ -74,18 +74,21 @@ pub(crate) fn capture(
             "Enable the reader, or supply the data as state.",
         ));
     }
+    // A captured state is the exact text: the source query admits no
+    // `minify`, and an omitted one reads the file as is.
     let mut row = source["query"].clone();
-    // A captured state is the exact text: a minified view is not the source.
-    row["minify"] = json!("none");
     let mut text = String::new();
+    // Characters captured so far, counted once per page.
+    let mut chars = 0;
     let mut pin: Option<String> = None;
     for _ in 0..MAX_PAGES {
         let page = read_page(id, &row, dispatcher, context)?;
         if pin.is_none() {
             pin = page.pin.clone();
         }
+        chars += page.content.chars().count();
         text.push_str(&page.content);
-        if text.chars().count() > max_chars {
+        if chars > max_chars {
             return Err(too_large(max_chars));
         }
         let Some(mut next) = page.next else {
@@ -95,7 +98,6 @@ pub(crate) fn capture(
                 source: None,
             });
         };
-        next["minify"] = json!("none");
         // Every later page reads the commit the first page resolved.
         if id == ToolId::GhGetFileContent
             && let Some(sha) = &pin
@@ -166,7 +168,7 @@ fn read_page(
                 _ => "classificationContextFailed",
             },
             format!("The {tool} source read could not complete."),
-            "Run the same read directly to inspect it.",
+            RERUN_HINT,
         )
     })?;
     let source_digest = result.source_digest.clone();
@@ -183,24 +185,12 @@ fn read_page(
         failure(
             "classificationContextFailed",
             "The source read's output could not be sanitized.",
-            "Run the same read directly to inspect it.",
+            RERUN_HINT,
         )
     })?;
     let data = &state["results"][0]["data"];
     if state["results"][0]["status"] == "error" || data.get("errorCode").is_some() {
-        let code = data["errorCode"]
-            .as_str()
-            .filter(|code| crate::tools::id::error_codes::class(code).is_some())
-            .unwrap_or("classificationContextFailed");
-        return Err(ClassificationError {
-            code: code.to_owned(),
-            message: data["error"]
-                .as_str()
-                .unwrap_or("The source read failed.")
-                .to_owned(),
-            hints: vec!["Run the same read directly to inspect it.".into()],
-            ..ClassificationError::default()
-        });
+        return Err(reader_failure(id, data));
     }
     let content = data["content"].as_str().unwrap_or_default();
     if content.is_empty() {
@@ -227,6 +217,66 @@ fn read_page(
     })
 }
 
+/// Re-running a read that failed for a reason repeating it cannot change
+/// (the reader's own hints and leads are the recovery then).
+const RERUN_HINT: &str = "Run the same read directly to inspect it.";
+
+/// The reader's error row as the capture's failure: its code (when
+/// declared), its message, and its own recovery. The reader's leads
+/// (`findFile`, `viewTree`, `repair`, ...) are kept by name. A missing path,
+/// a refusal or an invalid input fails the same way on a re-run, so its own
+/// hints say what to do (else the code's shared recovery); any other failure
+/// also offers the re-run.
+fn reader_failure(tool: ToolId, data: &Value) -> ClassificationError {
+    use crate::tools::id::error_codes::{ErrorClass, class};
+    let declared = data["errorCode"]
+        .as_str()
+        .and_then(|code| Some((code, class(code)?)));
+    let leads: Vec<(String, Value)> = ["next", "hints"]
+        .iter()
+        .filter_map(|channel| data[*channel].as_object())
+        .flatten()
+        .filter(|(_, lead)| lead.get("tool").is_some() && lead.get("query").is_some())
+        .map(|(name, lead)| (name.clone(), lead.clone()))
+        .collect();
+    let own = match &data["hints"] {
+        Value::Array(items) => items.as_slice(),
+        hints => hints["text"].as_array().map_or(&[][..], Vec::as_slice),
+    };
+    let mut hints: Vec<String> = own
+        .iter()
+        .filter_map(Value::as_str)
+        .map(str::to_owned)
+        .collect();
+    let final_failure = declared.is_some_and(|(_, class)| {
+        matches!(
+            class,
+            ErrorClass::NotFound | ErrorClass::Permission | ErrorClass::InvalidInput
+        )
+    });
+    if !final_failure {
+        hints.push(RERUN_HINT.into());
+    } else if hints.is_empty() && leads.is_empty() {
+        // Re-running a final failure fails the same way: say the code's fix.
+        let hint = declared
+            .and_then(|(code, _)| crate::response::rows::error_code_hint(tool, code))
+            .unwrap_or(RERUN_HINT);
+        hints.push(hint.into());
+    }
+    ClassificationError {
+        code: declared
+            .map_or("classificationContextFailed", |(code, _)| code)
+            .to_owned(),
+        message: data["error"]
+            .as_str()
+            .unwrap_or("The source read failed.")
+            .to_owned(),
+        hints,
+        leads,
+        ..ClassificationError::default()
+    }
+}
+
 /// The selection the state names: path, ranges or whole file, and pin.
 fn identity(id: ToolId, query: &Value, pin: Option<&str>) -> Value {
     let mut source = json!({ "path": query["path"] });
@@ -248,7 +298,7 @@ fn identity(id: ToolId, query: &Value, pin: Option<&str>) -> Value {
 
 /// The read of exactly the captured selection: same path and ranges (or
 /// whole file), exact text, pinned to the snapshot or commit.
-fn read_lead(id: ToolId, query: &Value, pin: Option<&str>) -> Value {
+pub(super) fn read_lead(id: ToolId, query: &Value, pin: Option<&str>) -> Value {
     let mut row = serde_json::Map::new();
     for field in ["owner", "repo", "path", "ranges", "fullContent"] {
         if let Some(value) = query.get(field) {
@@ -269,6 +319,58 @@ fn read_lead(id: ToolId, query: &Value, pin: Option<&str>) -> Value {
         }
         (_, None) => {}
     }
-    row.insert("minify".into(), json!("none"));
     crate::tools::result::Continuation::new(id, Value::Object(row)).build()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A missing file's capture failure carries the reader's own leads and
+    /// hints, not a re-run of a read that cannot succeed.
+    #[test]
+    fn a_final_reader_failure_keeps_its_own_leads_and_hints() {
+        let lead = |tool: &str| json!({"tool": tool, "query": {"queries": [{"path": "src"}]}});
+        let data = json!({
+            "path": "src/exector.rs",
+            "errorCode": "pathNotFound",
+            "error": "Path does not exist: src/exector.rs",
+            "hints": ["Check the spelling."],
+            "next": {"viewTree": lead("structureSearch"), "findFile": lead("structureSearch")},
+        });
+        let failure = reader_failure(ToolId::LocalFetch, &data);
+        assert_eq!(failure.code, "pathNotFound");
+        assert_eq!(failure.hints, vec!["Check the spelling.".to_owned()]);
+        let mut names: Vec<&str> = failure
+            .leads
+            .iter()
+            .map(|(name, _)| name.as_str())
+            .collect();
+        names.sort_unstable();
+        assert_eq!(names, ["findFile", "viewTree"]);
+        // A refusal with no recovery of its own says the code's fix, never
+        // a re-run that fails the same way.
+        let bare = reader_failure(
+            ToolId::LocalFetch,
+            &json!({"errorCode": "outsideAllowedRoots", "error": "no"}),
+        );
+        assert_eq!(bare.hints.len(), 1, "{:?}", bare.hints);
+        assert_ne!(bare.hints[0], RERUN_HINT);
+        // A failure a re-run can change keeps the re-run beside its hints.
+        let transient = reader_failure(
+            ToolId::LocalFetch,
+            &json!({
+                "errorCode": "fileReadFailed", "error": "io", "hints": {"text": ["Disk busy."]}
+            }),
+        );
+        assert_eq!(
+            transient.hints,
+            vec!["Disk busy.".to_owned(), RERUN_HINT.to_owned()]
+        );
+        let undeclared = reader_failure(
+            ToolId::LocalFetch,
+            &json!({"errorCode": "madeUp", "error": "x"}),
+        );
+        assert_eq!(undeclared.code, "classificationContextFailed");
+    }
 }

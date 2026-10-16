@@ -155,12 +155,8 @@ pub(super) struct Snapshot<'a> {
     pub(super) root: &'a Path,
 }
 
-/// Files read at once; the global request semaphore still bounds the total.
-pub(super) const MATERIALIZE_CONCURRENCY: usize = 8;
-
-/// Where materialized checkouts live under the Octocode home. The layout is
-/// versioned and apart from `tmp/tree`, which octocode-mcp 19.x directory
-/// fetches rewrite: a shared path let one writer replace the other's files.
+/// Where materialized checkouts live under the Octocode home, versioned so
+/// a layout change never shares a path with another writer's files.
 pub(super) const MATERIALIZE_LAYOUT: [&str; 3] = ["tmp", "materialize", "v3"];
 
 /// Root of every materialized checkout under the cache home; local tools may
@@ -172,8 +168,8 @@ pub(crate) fn materialize_root(home: &Path) -> PathBuf {
 }
 
 /// Write `entries[offset..]` under the locked, content-verified snapshot,
-/// reading up to [`MATERIALIZE_CONCURRENCY`] files at once and writing them
-/// in listing order, so the write caps stop at the same entry as a serial
+/// reading up to [`READ_CONCURRENCY`] files ahead and writing them in
+/// listing order, so the write caps stop at the same entry as a serial
 /// walk. A cached file is reused only when its actual bytes match the recorded
 /// identity. `location.localPath` is the listed directory.
 pub(super) async fn materialize_tree<C: octocode_github::ConditionalCache>(
@@ -198,25 +194,26 @@ pub(super) async fn materialize_tree<C: octocode_github::ConditionalCache>(
         skips: MaterializeSkips::default(),
         recorded: Vec::new(),
     };
-    'chunks: while writer.cursor < entries.len() {
-        let chunk =
-            &entries[writer.cursor..entries.len().min(writer.cursor + MATERIALIZE_CONCURRENCY)];
+    {
+        use futures_util::StreamExt as _;
         let store = &store;
-        let reads = futures_util::future::join_all(chunk.iter().map(|entry| async move {
-            if entry.kind != EntryKind::File {
-                return Acquired::NotAFile;
-            }
-            if entry
-                .size
-                .is_some_and(|size| size > MATERIALIZE_FILE_BYTES as u64)
-            {
-                return Acquired::Oversized;
-            }
-            if store.reusable(entry).await {
-                return Acquired::Reused;
-            }
-            Acquired::Read(
-                provider
+        // Up to READ_CONCURRENCY reads run ahead of the writer; a slow file
+        // holds back only the writes after it, never the next reads.
+        let mut reads = futures_util::stream::iter(&entries[offset..])
+            .map(|entry| async move {
+                if entry.kind != EntryKind::File {
+                    return (entry, Acquired::NotAFile);
+                }
+                if entry
+                    .size
+                    .is_some_and(|size| size > MATERIALIZE_FILE_BYTES as u64)
+                {
+                    return (entry, Acquired::Oversized);
+                }
+                if store.reusable(entry).await {
+                    return (entry, Acquired::Reused);
+                }
+                let read = provider
                     .get_file_content(
                         &octocode_github::ContentRequest {
                             owner: snapshot.owner.to_owned(),
@@ -224,17 +221,16 @@ pub(super) async fn materialize_tree<C: octocode_github::ConditionalCache>(
                             path: entry.path.clone(),
                             reference: Some(snapshot.commit.to_owned()),
                             force_refresh: false,
-                            session_id: None,
                         },
                         context,
                     )
-                    .await,
-            )
-        }))
-        .await;
-        for (entry, read) in chunk.iter().zip(reads) {
+                    .await;
+                (entry, Acquired::Read(read))
+            })
+            .buffered(READ_CONCURRENCY);
+        while let Some((entry, read)) = reads.next().await {
             if !writer.write(entry, read).await? {
-                break 'chunks;
+                break;
             }
         }
     }

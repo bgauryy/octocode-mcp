@@ -49,6 +49,56 @@ static SKIPS_SOURCE_CODE: LazyLock<Vec<bool>> = LazyLock::new(|| {
         .collect()
 });
 
+/// Patterns that take any value assigned to a credential-named key. Only the
+/// key's name says "credential", so a value that spells a code identifier
+/// (`"x-kubernetes-patch-merge-key": "resourceClaimName"`) names a field and
+/// is kept; a generated credential is never such a name.
+const CREDENTIAL_ASSIGNMENT_PATTERNS: &[&str] =
+    &["envVarSecrets", "dotenvSecretAssignment", "yamlSecretValue"];
+
+/// Index-aligned with PATTERNS: the pattern keeps identifier-shaped values.
+static KEEPS_IDENTIFIER_VALUES: LazyLock<Vec<bool>> = LazyLock::new(|| {
+    PATTERNS
+        .iter()
+        .map(|p| CREDENTIAL_ASSIGNMENT_PATTERNS.contains(&p.name))
+        .collect()
+});
+
+/// Whether `value` is a camelCase or PascalCase name of two or more
+/// pronounceable words (`resourceClaimName`, `createdAt`, `ContainerPort`):
+/// letters only, each capital starts a word of at least two letters, and
+/// every word has a vowel and no run of more than three consonants. A random
+/// token of credential length almost never has this shape (about 1 in 15,000
+/// of 16 random letters, far fewer with digits); field, type and property
+/// names do.
+pub(crate) fn is_identifier_name(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if !bytes.iter().all(u8::is_ascii_alphabetic) {
+        return false;
+    }
+    let starts: Vec<usize> = std::iter::once(0)
+        .chain((1..bytes.len()).filter(|&at| bytes[at].is_ascii_uppercase()))
+        .collect();
+    starts.len() >= 2
+        && starts.iter().enumerate().all(|(index, &start)| {
+            let end = starts.get(index + 1).copied().unwrap_or(bytes.len());
+            pronounceable_word(&bytes[start..end])
+        })
+}
+
+/// One word of [`is_identifier_name`]: an optional capital, then lowercase.
+fn pronounceable_word(word: &[u8]) -> bool {
+    let vowel = |byte: u8| b"aeiouy".contains(&byte.to_ascii_lowercase());
+    let mut consonants = 0;
+    word.len() >= 2
+        && word[1..].iter().all(u8::is_ascii_lowercase)
+        && word.iter().any(|&byte| vowel(byte))
+        && word.iter().all(|&byte| {
+            consonants = if vowel(byte) { 0 } else { consonants + 1 };
+            consonants <= 3
+        })
+}
+
 /// Whether `path` names a source-code file: its extension belongs to a
 /// grammar language the engine parses.
 fn is_source_code_path(path: &str) -> bool {
@@ -219,7 +269,14 @@ fn empty_result(content: &str) -> DetectResult {
 /// (`API_TOKEN = "…"`) keeps its identifier and quotes, so redacted source
 /// still reads, and parses, as the same statement. An alternation names one
 /// group per branch (`secret`, `secret_…`); the participating one is redacted.
-fn replace_preserving_lines(regex: &regex::Regex, content: &str, replacement: &str) -> String {
+/// Only the secrets `redacts` accepts are redacted; a rejected match stays
+/// verbatim.
+fn replace_secrets(
+    regex: &regex::Regex,
+    content: &str,
+    replacement: &str,
+    redacts: impl Fn(&str) -> bool,
+) -> String {
     let secret_groups: Vec<usize> = regex
         .capture_names()
         .enumerate()
@@ -237,6 +294,9 @@ fn replace_preserving_lines(regex: &regex::Regex, content: &str, replacement: &s
                 .iter()
                 .find_map(|&index| captures.get(index))
                 .unwrap_or(whole);
+            if !redacts(secret.as_str()) {
+                return whole.as_str().to_owned();
+            }
             let line_breaks = secret
                 .as_str()
                 .bytes()
@@ -346,7 +406,10 @@ pub(crate) fn detect_in(content: &str, scope: Scope<'_>) -> DetectResult {
         }
         let pattern = &PATTERNS[idx];
         let regex = pattern_regex(idx);
-        let result = replace_preserving_lines(regex, &sanitized, replacement_for(idx));
+        let keeps_names = KEEPS_IDENTIFIER_VALUES[idx];
+        let result = replace_secrets(regex, &sanitized, replacement_for(idx), |secret| {
+            !(keeps_names && is_identifier_name(secret))
+        });
         if result != sanitized {
             secrets_detected.push(pattern.name.to_string());
             sanitized = result;

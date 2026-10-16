@@ -16,6 +16,10 @@ use super::classify::{
 use super::format::{
     EdgeKind, FLAG_EXPORTED, FLAG_LOCAL_USE, FLAG_TEST, GraphTables, NONE, NodeKind,
 };
+use crate::tools::ast_graph::algorithms::Cycles;
+use crate::tools::ast_graph::edges::{Load, RUST_MODULE, load};
+use crate::tools::ast_graph::liveness::exports_judged;
+use crate::tools::ast_graph::types::Node;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -39,18 +43,10 @@ pub(crate) const DETECTORS: &[&str] = &[
     "misplaced-file",
 ];
 
-/// Languages whose named imports are linked to declarations, so "no
-/// importer" is meaningful for unused-export.
-const NAMED_IMPORT_LANGUAGES: &[&str] = &["typescript", "tsx", "javascript", "python"];
 const PACKAGE_SCOPED: &[&str] = &["go", "java", "scala", "csharp"];
-const ABSTRACT_KINDS: &[&str] = &[
-    "interface",
-    "trait",
-    "type",
-    "type_alias",
-    "typeAlias",
-    "protocol",
-];
+/// Declaration kinds (of [`octocode_engine::signatures::DECLARATION_KINDS`])
+/// that declare a contract, not an implementation.
+const ABSTRACT_KINDS: &[&str] = &["interface", "trait", "type"];
 
 #[derive(Clone, Debug)]
 pub(crate) struct Finding {
@@ -176,9 +172,9 @@ impl<'a> View<'a> {
             if (src.flags | dst.flags) & (ROLE_NOT_AUTHORED | ROLE_DECLARATION) != 0 {
                 continue;
             }
-            let detail = t.str(edge.detail);
-            // Type-only and lazily loaded edges never create a runtime cycle.
-            if detail.contains("type") || detail == "dynamic-import" || detail == "lazy-import" {
+            // Type-only and deferred (dynamic, on-call) imports are no
+            // evidence of a structural violation.
+            if matches!(load(t.str(edge.detail)), Load::TypeOnly | Load::Deferred) {
                 continue;
             }
             out[edge.src as usize].push(edge.dst);
@@ -680,30 +676,73 @@ fn note(notes: &mut Vec<Value>, detector: &str, reason: &str) {
     notes.push(json!({"detector": detector, "skipped": reason}));
 }
 
+/// The file graph the stored tables hold, over the files `keep` admits:
+/// each `imports` edge between them under its kind, and each Rust `mod`
+/// declaration (a `contains` edge) as a module-tree edge — the input of the
+/// one cycle engine ([`Cycles`]) astTopology also runs.
+pub(super) fn file_graph(t: &GraphTables, keep: &dyn Fn(u32) -> bool) -> BTreeMap<String, Node> {
+    let mut graph = BTreeMap::<String, Node>::new();
+    for (id, node) in t.nodes.iter().enumerate() {
+        let Ok(id) = u32::try_from(id) else { break };
+        if node.kind != NodeKind::File || !keep(id) {
+            continue;
+        }
+        let entry = graph.entry(t.str(node.key).to_owned()).or_default();
+        for edge in t.out(id) {
+            let target = &t.nodes[edge.dst as usize];
+            if target.kind != NodeKind::File || !keep(edge.dst) {
+                continue;
+            }
+            let kind = match edge.kind {
+                EdgeKind::Imports => t.str(edge.detail),
+                EdgeKind::Contains if t.str(edge.detail) == super::tables::MODULE_DETAIL => {
+                    RUST_MODULE
+                }
+                _ => continue,
+            };
+            entry
+                .edges
+                .entry(t.str(target.key).to_owned())
+                .or_default()
+                .insert(kind.to_owned());
+        }
+    }
+    graph
+}
+
 fn detect_cycles(c: &mut Ctx) {
     let v = &c.v;
-    let adj = |id: u32| v.out[id as usize].clone();
     // Go forbids import cycles between packages; file-level SCCs inside one
     // package are normal.
-    let nodes = v
+    let graph = file_graph(v.t, &|f| v.file_level(f));
+    let cycles = Cycles::of(&graph);
+    let ids = v
         .files
         .iter()
-        .copied()
-        .filter(|f| v.file_level(*f))
-        .collect::<Vec<_>>();
-    let allowed = nodes.iter().copied().collect::<BTreeSet<_>>();
-    let restricted = |id: u32| {
-        adj(id)
+        .map(|id| (v.key(*id), *id))
+        .collect::<BTreeMap<_, _>>();
+    let id_of = |file: &str| ids.get(file).copied();
+    // Witnesses and cuts follow the dependency edges the groups were found on.
+    let adj = |id: u32| {
+        cycles
+            .uses
+            .get(v.key(id))
             .into_iter()
-            .filter(|x| allowed.contains(x))
+            .flat_map(|node| node.edges.keys())
+            .filter_map(|target| id_of(target))
             .collect::<Vec<_>>()
     };
-    let components = strongly_connected(&nodes, &restricted, v.t.nodes.len());
     let mut found = Vec::new();
-    for members in components {
+    for (_, files) in cycles.groups() {
+        let members = files.iter().filter_map(|f| id_of(f)).collect::<Vec<_>>();
+        if members.is_empty() {
+            continue;
+        }
         let set = members.iter().copied().collect::<BTreeSet<_>>();
-        let witness = witness_cycle(members[0], &set, &restricted);
-        let cuts = feedback_arcs(&members, &restricted);
+        let names = files.iter().cloned().collect::<BTreeSet<_>>();
+        let runtime = !cycles.runtime_within(&names).is_empty();
+        let witness = witness_cycle(members[0], &set, &adj);
+        let cuts = feedback_arcs(&members, &adj);
         let rust = members.iter().all(|m| v.language(*m) == "rust");
         let impact = members.iter().map(|m| v.impact(*m)).fold(0.0, f64::max);
         let member_keys = members.iter().map(|m| v.key(*m)).collect::<Vec<_>>();
@@ -716,15 +755,32 @@ fn detect_cycles(c: &mut Ctx) {
         };
         let evidence = json!({
             "size": members.len(),
+            "runtime": runtime,
             "members": member_keys,
             "witness": witness.windows(2).map(|w| hop(w[0], w[1])).collect::<Vec<_>>(),
             "suggestedCuts": cuts.iter().map(|(a, b)| hop(*a, *b)).collect::<Vec<_>>(),
             "cutCount": cuts.len(),
         });
-        let mut controls = vec!["type-only imports excluded", "dynamic imports excluded"];
-        let mut confidence = 0.85;
+        let (kind, mut confidence, mut controls) = if runtime {
+            (
+                "Runtime import cycle",
+                0.85,
+                vec!["module-load imports alone close it"],
+            )
+        } else {
+            (
+                "Import cycle",
+                0.35,
+                vec![
+                    "no module-load loop: it closes only through type-only, deferred or compile-time imports",
+                ],
+            )
+        };
+        // The groups are astTopology's over production files: a loop that
+        // only test or config files close is not a production finding.
+        controls.push("test and config files left out");
         if rust {
-            confidence = 0.35;
+            confidence = f64::min(confidence, 0.35);
             controls.push("rust modules within one crate may legally cycle");
         }
         let first = v.key(witness[0]);
@@ -733,7 +789,7 @@ fn detect_cycles(c: &mut Ctx) {
             member_keys[0].to_owned(),
             member_keys.join(","),
             format!(
-                "Runtime import cycle of {} files; {} import(s) break it",
+                "{kind} of {} files; {} import(s) break it",
                 members.len(),
                 cuts.len()
             ),
@@ -1016,6 +1072,18 @@ fn detect_unused_exports(c: &mut Ctx) {
     let v = &c.v;
     let t = v.t;
     let public = public_api_files(v);
+    // An unreachable file is one `unreachable-file` finding, as astTopology
+    // states it once: its exports are not listed again.
+    let entries = v.entries.keys().copied().collect::<Vec<_>>();
+    let unreachable = if entries.is_empty() {
+        BTreeSet::new()
+    } else {
+        unreached_files(v, &entries)
+            .0
+            .into_iter()
+            .map(|(file, _)| file)
+            .collect()
+    };
     let namespace_used = t
         .edges
         .iter()
@@ -1040,13 +1108,9 @@ fn detect_unused_exports(c: &mut Ctx) {
             || v.flags(file) & ROLE_ENTRY != 0
             || public.contains(&file)
             || namespace_used.contains(&file)
-            || !NAMED_IMPORT_LANGUAGES.contains(&v.language(file))
+            || unreachable.contains(&file)
+            || !exports_judged(v.key(file), t.str(node.detail))
         {
-            continue;
-        }
-        // Python has no export syntax: module-level variables in scripts
-        // are not API. Only functions and classes count.
-        if v.language(file) == "python" && !matches!(t.str(node.detail), "function" | "class") {
             continue;
         }
         let used = t.incoming(id as u32).any(|e| {
@@ -1666,50 +1730,25 @@ fn detect_misplaced(c: &mut Ctx) {
 /// Lakos cumulative component dependency, normalized against a balanced
 /// binary tree of the same size (NCCD > 1: more coupled than a tree).
 fn health(v: &View) -> Value {
-    let nodes = v
-        .files
-        .iter()
-        .copied()
-        .filter(|f| v.production(*f))
-        .collect::<Vec<_>>();
-    let n = nodes.len();
+    // The condensation of the cycle engine over production files: its
+    // groups are the `cycle` detector's, so `filesInCycles` counts them.
+    let graph = file_graph(v.t, &|f| v.production(f));
+    let n = graph.len();
     if n == 0 {
         return json!({});
     }
-    let allowed = nodes.iter().copied().collect::<BTreeSet<_>>();
-    let adj = |id: u32| {
-        v.out[id as usize]
-            .iter()
-            .copied()
-            .filter(|x| allowed.contains(x))
-            .collect::<Vec<_>>()
-    };
-    // Condense SCCs (singletons included) and sum reach sizes bottom-up.
-    let mut comp_of = BTreeMap::<u32, usize>::new();
-    let mut sizes = Vec::new();
-    for members in strongly_connected(&nodes, &adj, v.t.nodes.len()) {
-        for m in &members {
-            comp_of.insert(*m, sizes.len());
-        }
-        sizes.push(members.len());
-    }
-    for node in &nodes {
-        if !comp_of.contains_key(node) {
-            comp_of.insert(*node, sizes.len());
-            sizes.push(1);
-        }
-    }
+    let cycles = Cycles::of(&graph);
+    let sizes = cycles
+        .condensed
+        .components
+        .iter()
+        .map(Vec::len)
+        .collect::<Vec<_>>();
     let k = sizes.len();
     let words = k.div_ceil(64);
-    let mut dag = vec![BTreeSet::new(); k];
-    for node in &nodes {
-        for next in adj(*node) {
-            let (a, b) = (comp_of[node], comp_of[&next]);
-            if a != b {
-                dag[a].insert(b);
-            }
-        }
-    }
+    let dag = (0..k)
+        .map(|id| cycles.condensed.edges.get(&id).cloned().unwrap_or_default())
+        .collect::<Vec<BTreeSet<usize>>>();
     // Reverse topological order via DFS post-order.
     let mut order = Vec::with_capacity(k);
     let mut state = vec![0u8; k];
@@ -1761,7 +1800,7 @@ fn health(v: &View) -> Value {
     }
     let nf = n as f64;
     let balanced = (nf + 1.0) * (nf + 1.0).log2() - nf;
-    let tangled = sizes.iter().filter(|s| **s > 1).copied().sum::<usize>();
+    let tangled = cycles.groups().map(|(_, files)| files.len()).sum::<usize>();
     json!({
         "files": n,
         "ccd": ccd,
@@ -2157,5 +2196,17 @@ mod tests {
     fn magnitude_is_bounded() {
         assert!((magnitude(0) - 0.6).abs() < 1e-9);
         assert!(magnitude(1_000_000) <= 1.0);
+    }
+
+    /// Abstractness reads kinds the extractors emit; a spelling no
+    /// extractor produces would never count.
+    #[test]
+    fn abstract_kinds_are_emitted_declaration_kinds() {
+        for kind in ABSTRACT_KINDS {
+            assert!(
+                octocode_engine::signatures::DECLARATION_KINDS.contains(kind),
+                "{kind}"
+            );
+        }
     }
 }

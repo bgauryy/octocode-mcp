@@ -3,9 +3,7 @@ import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  NODE_OWNED_COMMANDS,
   resolveNativeBin,
-  shouldDelegateToNative,
   delegateToNative,
   NativeLaunchError,
 } from '../../src/cli/native-delegate.js';
@@ -76,50 +74,17 @@ describe('resolveNativeBin', () => {
   });
 });
 
-describe('shouldDelegateToNative', () => {
-  it('delegates covered commands without an opt-in flag', () => {
-    expect(shouldDelegateToNative('search')).toBe(true);
-  });
-
-  it('delegates top-level help when no command is present', () => {
-    expect(shouldDelegateToNative(undefined)).toBe(true);
-  });
-
-  it('does not delegate Node-owned commands', () => {
-    for (const command of NODE_OWNED_COMMANDS) {
-      expect(shouldDelegateToNative(command)).toBe(false);
-    }
-  });
-
-  it('delegates every other command', () => {
-    expect(shouldDelegateToNative('ast')).toBe(true);
-    expect(shouldDelegateToNative('graph')).toBe(true);
-    expect(shouldDelegateToNative('tools')).toBe(true);
-  });
-
-  it('delegates lsp-server', () => {
-    expect(shouldDelegateToNative('lsp-server')).toBe(true);
-  });
-
-  it('delegates flag-only install', () => {
-    // Interactive install is selected in index.ts from the absence of --ide.
-    expect(shouldDelegateToNative('install')).toBe(true);
-  });
-
-  it('keeps skill materialization in Node to avoid native re-entry', () => {
-    expect(shouldDelegateToNative('skill')).toBe(false);
-  });
-});
-
 describe('delegateToNative', () => {
   it('passes through the child exit code (success)', async () => {
-    const bin = makeFakeBin('process.exit(0)');
-    await expect(delegateToNative(bin, ['--help'])).resolves.toBe(0);
+    await expect(
+      delegateToNative(process.execPath, ['-e', 'process.exit(0)'])
+    ).resolves.toBe(0);
   });
 
   it('passes through a non-zero exit code', async () => {
-    const bin = makeFakeBin('process.exit(7)');
-    await expect(delegateToNative(bin, [])).resolves.toBe(7);
+    await expect(
+      delegateToNative(process.execPath, ['-e', 'process.exit(7)'])
+    ).resolves.toBe(7);
   });
 
   it('fails with the bin and the cause when the binary cannot be spawned', async () => {
@@ -143,10 +108,19 @@ describe('delegateToNative', () => {
     }
   );
 
-  it('runs a .cjs launcher via the node executable', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'native-launcher-'));
-    const launcher = join(dir, 'octocode.cjs');
-    writeFileSync(launcher, 'process.exit(3)\n');
-    await expect(delegateToNative(launcher, [])).resolves.toBe(3);
+  it('preserves argument boundaries, environment, and working directory', async () => {
+    const args = ['value with spaces', '--literal=equals=value', 'Unicode: λ'];
+    const script = `
+      const expected = JSON.parse(process.env.OCTOCODE_TEST_EXPECTED);
+      const valid = JSON.stringify(process.argv.slice(1)) === JSON.stringify(expected.args)
+        && process.cwd() === expected.cwd;
+      process.exit(valid ? 0 : 9);
+    `;
+    await expect(
+      delegateToNative(process.execPath, ['-e', script, '--', ...args], {
+        ...process.env,
+        OCTOCODE_TEST_EXPECTED: JSON.stringify({ args, cwd: process.cwd() }),
+      })
+    ).resolves.toBe(0);
   });
 });

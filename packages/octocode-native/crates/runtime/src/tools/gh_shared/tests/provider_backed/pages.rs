@@ -17,7 +17,7 @@ async fn page_data(server: &MockServer, tool: &str, row: Value) -> Value {
         }
         "ghSearchHistory" => {
             let query = serde_json::from_value(row).expect("ghSearchHistory query");
-            gh_search_history::execute(&provider(server).transport, query, &context, &Passthrough)
+            gh_search_history::execute(&provider(server), query, &context, &Passthrough)
                 .await
                 .expect("ghSearchHistory page")
         }

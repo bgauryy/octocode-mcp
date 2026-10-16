@@ -34,6 +34,13 @@ pub fn run_if_due(home: &Path, capture_ttl: Duration) -> bool {
     // `tmp/tree` is written by octocode-mcp 19.x, which shares this home;
     // native never reads it, so aged entries are cleared here.
     sweep_dir(&tmp.join("tree"), INTERVAL);
+    // Materialized checkouts: each snapshot ages by its last write and is
+    // removed only under its own lock, so a materialize in progress keeps
+    // it. `v2` is a retired layout no writer uses: it ages out whole.
+    sweep_materialized(
+        &crate::tools::gh_structure::materialize::materialize_root(home),
+        INTERVAL,
+    );
     sweep_dir(&tmp.join("materialize").join("v2"), INTERVAL);
     // Rate-limit mirrors only hold facts that expire within ~1h.
     sweep_dir(&tmp.join("ratelimit"), INTERVAL);
@@ -49,6 +56,60 @@ pub fn run_if_due(home: &Path, capture_ttl: Duration) -> bool {
         .as_secs();
     let _ = fs::write(marker, epoch.to_string());
     true
+}
+
+/// Removes each materialized snapshot (`<root>/<owner>/<repo>/<commit>`
+/// with its `<commit>.manifest.json`) whose newest write is older than
+/// `max_age`, holding its `<commit>.lock` as a materialize does: a snapshot
+/// whose lock is held is in use and stays. The lock file stays too, so a
+/// writer waiting on it never locks a file another writer recreated.
+fn sweep_materialized(root: &Path, max_age: Duration) {
+    let now = SystemTime::now();
+    let modified = |path: &Path| fs::metadata(path).and_then(|meta| meta.modified()).ok();
+    let children = |path: &Path| {
+        fs::read_dir(path)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
+            .map(|entry| entry.path())
+            .collect::<Vec<_>>()
+    };
+    for repo in children(root).iter().flat_map(|owner| children(owner)) {
+        for snapshot in children(&repo) {
+            let Some(commit) = snapshot
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+            else {
+                continue;
+            };
+            let manifest = repo.join(format!("{commit}.manifest.json"));
+            let newest = [modified(&snapshot), modified(&manifest)]
+                .into_iter()
+                .flatten()
+                .max();
+            let stale = newest
+                .and_then(|newest| now.duration_since(newest).ok())
+                .is_some_and(|age| age > max_age);
+            if !stale {
+                continue;
+            }
+            let Ok(file) = fs::OpenOptions::new()
+                .create(true)
+                .truncate(false)
+                .write(true)
+                .open(repo.join(format!("{commit}.lock")))
+            else {
+                continue;
+            };
+            let Ok(_lease) = octocode_io::lock::lock_within(file, Duration::ZERO, Duration::ZERO)
+            else {
+                continue;
+            };
+            let _ = fs::remove_dir_all(&snapshot);
+            let _ = fs::remove_file(&manifest);
+        }
+    }
 }
 
 fn sweep_dir(path: &PathBuf, max_age: Duration) {
@@ -79,6 +140,50 @@ fn sweep_dir(path: &PathBuf, max_age: Duration) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Materialized snapshots of the current layout age out by their last
+    /// write; one whose lock is held (a materialize in progress) stays, and
+    /// so does a fresh one.
+    #[test]
+    fn stale_materialized_snapshots_are_swept_unless_locked() {
+        let home = tempfile::tempdir().unwrap();
+        let repo = crate::tools::gh_structure::materialize::materialize_root(home.path())
+            .join("owner/repo");
+        let old = SystemTime::now() - INTERVAL * 2;
+        let age = |path: &Path| {
+            fs::File::open(path)
+                .unwrap()
+                .set_times(fs::FileTimes::new().set_modified(old))
+                .unwrap();
+        };
+        for commit in ["stale", "busy", "fresh"] {
+            let dir = repo.join(commit);
+            fs::create_dir_all(dir.join("src")).unwrap();
+            fs::write(dir.join("src/lib.rs"), "x").unwrap();
+            let manifest = repo.join(format!("{commit}.manifest.json"));
+            fs::write(&manifest, "{}").unwrap();
+            if commit != "fresh" {
+                age(&dir);
+                age(&manifest);
+            }
+        }
+        let held = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(repo.join("busy.lock"))
+            .unwrap();
+        let _lease = octocode_io::lock::lock_within(held, Duration::ZERO, Duration::ZERO)
+            .expect("held lock");
+        assert!(run_if_due(home.path(), INTERVAL));
+        assert!(!repo.join("stale").exists());
+        assert!(!repo.join("stale.manifest.json").exists());
+        assert!(
+            repo.join("busy/src/lib.rs").exists(),
+            "a held snapshot stays"
+        );
+        assert!(repo.join("fresh/src/lib.rs").exists());
+    }
 
     #[test]
     fn fresh_home_without_tmp_writes_nothing() {

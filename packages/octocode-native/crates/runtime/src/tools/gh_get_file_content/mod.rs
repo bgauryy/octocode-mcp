@@ -10,11 +10,9 @@ use serde_json::{Value, json};
 use crate::security::scan::ContentScan;
 use crate::tools::cancel::CancellationCheck;
 use crate::tools::gh_shared::{GhFailure, locate_path, missing_path};
-use crate::tools::local_fetch::{
-    LocalFetchQuery, MinifyMode, RegexMatch, WindowUnit, process_fetched_content,
-};
+use crate::tools::local_fetch::{LocalFetchQuery, RegexMatch, process_fetched_content};
 use crate::tools::result::ToolData;
-use leads::{default_minify, empty_match_lead, last_window_repair, rewrite_continuations};
+use leads::{empty_match_lead, last_window_repair, rewrite_continuations};
 use octocode_github::{
     ConditionalCache, ContentRequest, GitHubProvider, ProviderError, RequestContext,
 };
@@ -22,30 +20,13 @@ use octocode_github::{
 pub use crate::contracts::tool_types::GhGetFileContentQuery;
 
 /// One read's result. The wire row is flat: the read file's fields beside
-/// `owner`/`repo`, with no `files` wrapper (a query reads one path).
-#[derive(Clone, Debug)]
+/// `owner`/`repo` (a query reads one path).
+#[derive(Clone, Debug, Serialize)]
 pub struct GhGetFileContentResult {
     pub owner: String,
     pub repo: String,
-    pub files: Vec<GhGetFileContentFile>,
-}
-
-impl Serialize for GhGetFileContentResult {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        #[derive(Serialize)]
-        struct Flat<'a> {
-            owner: &'a str,
-            repo: &'a str,
-            #[serde(flatten)]
-            file: Option<&'a GhGetFileContentFile>,
-        }
-        Flat {
-            owner: &self.owner,
-            repo: &self.repo,
-            file: self.files.first(),
-        }
-        .serialize(serializer)
-    }
+    #[serde(flatten)]
+    pub file: GhGetFileContentFile,
 }
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -119,27 +100,50 @@ where
         Ok(result) => return Ok(file_read(result, query)),
         Err(error) => error,
     };
-    if let Some(url) = errors::submodule_url(&error) {
-        let repository = errors::github_repository(url);
-        let pinned = match repository {
-            Some(_) => submodule_commit(provider, query, request_context).await,
-            None => None,
-        };
+    if error.reason == Some(octocode_github::ProviderErrorReason::Submodule) {
         let failure = errors::failure(error, query, None);
-        return Err(errors::submodule_recovery(
+        return Err(crate::tools::gh_shared::submodule_failure(
+            provider,
+            &errors::repo_path(query),
+            request_context,
             failure,
-            repository,
-            pinned.as_deref(),
-        ));
+        )
+        .await);
     }
+    // A path failure comes after its ref resolved: its recovery leads pin
+    // that commit, as the read's own continuations do.
+    let commit = if missing_path(&error, Some(query.path.as_str()))
+        || error.reason == Some(octocode_github::ProviderErrorReason::PathIsDirectory)
+    {
+        crate::tools::gh_shared::failed_at_commit(
+            provider,
+            query.owner.as_str(),
+            query.repo.as_str(),
+            query.ref_.as_ref().map(|value| value.as_str()),
+            request_context,
+        )
+        .await
+    } else {
+        None
+    };
+    let pinned = commit.and_then(|sha| {
+        Some(GhGetFileContentQuery {
+            ref_: Some(sha.parse().ok()?),
+            ..query.clone()
+        })
+    });
+    let query = pinned.as_ref().unwrap_or(query);
     // Recovery leads name a renamed repository as it is now.
     let canonical = crate::tools::gh_shared::canonical_repo(
         provider,
         query.owner.as_str(),
         query.repo.as_str(),
         request_context,
+        crate::tools::gh_shared::RenameCheck::Redirected,
     )
     .await
+    .ok()
+    .flatten()
     .and_then(|(owner, repo)| {
         Some(GhGetFileContentQuery {
             owner: owner.parse().ok()?,
@@ -156,52 +160,15 @@ where
     Err(errors::failure(error, query, found))
 }
 
-/// The commit a submodule path is pinned to: its entry in the parent
-/// directory's listing at the read's commit (one listing request).
-async fn submodule_commit<C>(
-    provider: &GitHubProvider<C>,
-    query: &GhGetFileContentQuery,
-    context: &RequestContext,
-) -> Option<String>
-where
-    C: ConditionalCache,
-{
-    let (owner, repo) = (query.owner.as_str(), query.repo.as_str());
-    let reference = provider
-        .resolve_reference(
-            owner,
-            repo,
-            query.ref_.as_ref().map(|value| value.as_str()),
-            false,
-            context,
-        )
-        .await
-        .ok()?;
-    let parent = crate::tools::gh_shared::parent_dir(query.path.as_str());
-    let path = crate::tools::gh_shared::repo_path(query.path.as_str());
-    provider
-        .repository_contents(owner, repo, &parent, &reference, context)
-        .await
-        .ok()?
-        .entries
-        .into_iter()
-        .find(|entry| entry.path == path)?
-        .sha
-}
-
 /// The row of a read: its status from the file, and the resolved commit
 /// unless the caller already named that full SHA.
 fn file_read(result: GhGetFileContentResult, query: &GhGetFileContentQuery) -> FileRead {
-    let status = match result
-        .files
-        .first()
-        .map(|file| file.content.status.as_str())
-    {
-        Some("error") => Some("error"),
-        Some("empty") => Some("empty"),
+    let status = match result.file.content.status.as_str() {
+        "error" => Some("error"),
+        "empty" => Some("empty"),
         _ => None,
     };
-    let cache = !result.files.is_empty() && result.files.iter().all(|file| file.from_cache);
+    let cache = result.file.from_cache;
     let mut data = serde_json::to_value(&result).unwrap_or_default();
     if data["commitSha"].as_str() == query.ref_.as_ref().map(|value| value.as_str())
         && let Some(map) = data.as_object_mut()
@@ -247,7 +214,6 @@ where
         path: query.path.to_string(),
         reference: Some(sha),
         force_refresh: query.force_refresh.unwrap_or(false),
-        session_id: None,
     };
     let acquired = provider
         .get_file_content(&content_request, request_context)
@@ -259,8 +225,9 @@ where
         query.owner.as_str(),
         query.repo.as_str(),
         request_context,
+        crate::tools::gh_shared::RenameCheck::Redirected,
     )
-    .await;
+    .await?;
     let renamed_warning = renamed.as_ref().map(|to| {
         crate::tools::gh_shared::renamed_warning(query.owner.as_str(), query.repo.as_str(), to)
     });
@@ -393,14 +360,10 @@ fn shape(
         content.warnings.insert(0, warning);
     }
     let next = read_leads(&mut content, query, &local, match_not_found, &acquired);
-    // The contract's default view is no news; another view is echoed.
-    if content.content_view == Some(default_minify()) {
-        content.content_view = None;
-    }
     Ok(GhGetFileContentResult {
         owner: query.owner.to_string(),
         repo: query.repo.to_string(),
-        files: vec![GhGetFileContentFile {
+        file: GhGetFileContentFile {
             content,
             commit_sha: acquired.resolved_ref,
             file_type: file_type(&query.path),
@@ -409,7 +372,7 @@ fn shape(
             next,
             last_modified,
             last_modified_by,
-        }],
+        },
     })
 }
 
@@ -646,7 +609,7 @@ fn local_query(query: &GhGetFileContentQuery) -> Result<LocalFetchQuery, Provide
         unit,
         whole_word,
     } = query;
-    let mut local = LocalFetchQuery {
+    Ok(LocalFetchQuery {
         block: *block,
         case_mode: *case_mode,
         whole_word: *whole_word,
@@ -660,13 +623,7 @@ fn local_query(query: &GhGetFileContentQuery) -> Result<LocalFetchQuery, Provide
             .transpose()
             .map_err(decode_display)?,
         match_string: match_string.clone(),
-        minify: Some(minify.unwrap_or_else(|| {
-            if clasify_context.is_some() {
-                MinifyMode::None
-            } else {
-                default_minify()
-            }
-        })),
+        minify: *minify,
         offset: *offset,
         path: path.as_str().parse().map_err(decode_display)?,
         ranges: ranges
@@ -692,36 +649,7 @@ fn local_query(query: &GhGetFileContentQuery) -> Result<LocalFetchQuery, Provide
             .transpose()
             .map_err(decode_display)?,
         unit: *unit,
-    };
-    let requested_lines = local.full_content == Some(true) || local.has_ranges();
-    // Explicitly requested lines come back verbatim, as a match read does:
-    // the default (standard) view drops comment and blank lines, so a
-    // `ranges` or whole-file read would return fewer lines than asked, or
-    // none. A view the caller named other than the default is kept.
-    if requested_lines
-        && clasify_context.is_none()
-        && minify.unwrap_or_else(default_minify) == default_minify()
-    {
-        local.minify = Some(MinifyMode::None);
-    }
-    let paged = !requested_lines && local.match_string.is_none();
-    // A path-only read keeps no length: localFetch guards it with a head.
-    if local.length.is_none() && paged && !crate::tools::local_fetch::unanchored_first_read(&local)
-    {
-        local.length = crate::tools::local_fetch::wire_positive(default_chunk_size(&local));
-    }
-    Ok(local)
-}
-
-/// A byte page when `length` is omitted: localFetch's 16 KiB page budget
-/// (its `LINE_PAGE_BYTES`, private to local_fetch).
-const DEFAULT_BYTE_CHUNK: usize = 16_384;
-
-fn default_chunk_size(local: &LocalFetchQuery) -> usize {
-    match local.unit.unwrap_or(WindowUnit::Lines) {
-        WindowUnit::Lines => crate::tools::local_fetch::DEFAULT_LINE_CHUNK,
-        WindowUnit::Bytes => DEFAULT_BYTE_CHUNK,
-    }
+    })
 }
 
 fn decode_display(error: impl std::fmt::Display) -> ProviderError {
@@ -761,6 +689,7 @@ mod tests {
     use crate::tools::gh_shared::test_support::{
         default_context, fixture_context, mock_provider, mount_json,
     };
+    use crate::tools::local_fetch::WindowUnit;
     use crate::tools::local_fetch::wire_positive;
     use base64::{Engine as _, engine::general_purpose::STANDARD};
     use octocode_github::{NoCache, RetryPolicy};
@@ -815,7 +744,7 @@ mod tests {
         fn select(
             &self,
             call: crate::tools::selection::JudgeCall<'_>,
-        ) -> Result<Vec<(usize, crate::tools::selection::Decision)>, String> {
+        ) -> crate::tools::selection::Judgments {
             self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             call.handle.block_on(async {
                 tokio::time::sleep(Duration::from_millis(5)).await;
@@ -837,7 +766,7 @@ mod tests {
         let provider = mock_provider(&server, RetryPolicy::default());
         let query: GhGetFileContentQuery = serde_json::from_value(json!({
             "owner":"a", "repo":"b", "path":"large.txt", "ref":sha,
-            "unit":"lines", "length":100, "minify":"none", "clasifyContext":{"classifiers":["find useful evidence"]}
+            "unit":"lines", "length":100, "clasifyContext":{"classifiers":["find useful evidence"]}
         }))
         .expect("ranked query");
         let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -883,11 +812,7 @@ mod tests {
         .expect("ranked read must not block the reactor")
         .expect("ranked read");
         assert_eq!(
-            result.files[0]
-                .content
-                .selection
-                .as_ref()
-                .map(|r| &r.status),
+            result.file.content.selection.as_ref().map(|r| &r.status),
             Some(&crate::contracts::tool_types::SelectionStatus::Complete)
         );
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
@@ -965,7 +890,7 @@ mod tests {
             )
             .await
             .expect("read");
-            pages.push(result.files[0].clone());
+            pages.push(result.file.clone());
         }
         let (plain, classifiers) = (&pages[0], &pages[1]);
         assert!(plain.content.pagination.is_some(), "{plain:?}");
@@ -1074,7 +999,7 @@ mod tests {
         let provider = mock_provider(&server, RetryPolicy::default());
         let query: GhGetFileContentQuery = serde_json::from_value(serde_json::json!({
             "owner": "a", "repo": "b", "path": "src/lib.rs", "ref": "main",
-            "unit": "lines", "length": 2, "minify": "none", "mainGoal": "test", "reasoning": "test"
+            "unit": "lines", "length": 2, "mainGoal": "test", "reasoning": "test"
         }))
         .expect("ghGetFileContent query");
         let result = execute_default_regex(
@@ -1088,14 +1013,14 @@ mod tests {
         .await
         .expect("result");
         assert_eq!(
-            result.files[0].content.content.as_deref(),
+            result.file.content.content.as_deref(),
             Some("one\nneedle [REDACTED]\n")
         );
-        assert_eq!(result.files[0].commit_sha, sha);
-        let wire = serde_json::to_value(&result.files[0]).expect("file json");
+        assert_eq!(result.file.commit_sha, sha);
+        let wire = serde_json::to_value(&result.file).expect("file json");
         assert_eq!(wire["commitSha"], sha);
         assert!(wire.get("resolvedRef").is_none(), "{wire}");
-        let next = result.files[0].next.clone().expect("continuation");
+        let next = result.file.next.clone().expect("continuation");
         assert_eq!(next["continueWindow"]["tool"], "ghGetFileContent");
         assert_eq!(next["continueWindow"]["query"]["queries"][0]["owner"], "a");
         assert_eq!(next["continueWindow"]["query"]["queries"][0]["ref"], sha);
@@ -1130,10 +1055,10 @@ mod tests {
         .await
         .expect("result");
         assert_eq!(
-            result.files[0].match_not_found,
+            result.file.match_not_found,
             Some(true),
             "{:?}",
-            result.files[0].content
+            result.file.content
         );
     }
 
@@ -1192,20 +1117,20 @@ mod tests {
             serde_json::json!({"owner":"a","repo":"b","path":"a.txt","ref":sha}),
         )
         .await;
-        assert_eq!(plain.files[0].last_modified, None);
-        assert_eq!(plain.files[0].last_modified_by, None);
+        assert_eq!(plain.file.last_modified, None);
+        assert_eq!(plain.file.last_modified_by, None);
         let base = serde_json::json!({"owner":"a","repo":"b","path":"a.txt","ref":sha,"extras":["receipts"]});
         let stamped = read(&provider, base.clone()).await;
         assert_eq!(
-            stamped.files[0].last_modified.as_deref(),
+            stamped.file.last_modified.as_deref(),
             Some("2026-01-02T00:00:00Z")
         );
-        assert_eq!(stamped.files[0].last_modified_by.as_deref(), Some("ada-l"));
+        assert_eq!(stamped.file.last_modified_by.as_deref(), Some("ada-l"));
         let mut later = base;
         later["offset"] = 20.into();
         let later = read(&provider, later).await;
-        assert_eq!(later.files[0].last_modified, None);
-        assert_eq!(later.files[0].last_modified_by, None);
+        assert_eq!(later.file.last_modified, None);
+        assert_eq!(later.file.last_modified_by, None);
         let mut missing =
             serde_json::json!({"owner":"a","repo":"b","path":"missing.txt","ref":sha});
         missing["mainGoal"] = "test".into();
@@ -1252,20 +1177,20 @@ mod tests {
         matched["matchString"] = "line 12".into();
         matched["contextLines"] = 1.into();
         let window = read(&provider, matched).await;
-        let file = &window.files[0].content;
+        let file = &window.file.content;
         assert_eq!(file.matched_lines, vec![12]);
         assert_eq!(
             file.source_line_ranges,
             vec![crate::tools::local_fetch::LineRange { start: 11, end: 13 }]
         );
-        for minify in [None, Some("none")] {
+        for minify in [None, Some("standard")] {
             let mut ranged = base();
             ranged["ranges"] = serde_json::json!(["1-15"]);
             if let Some(mode) = minify {
                 ranged["minify"] = mode.into();
             }
             let window = read(&provider, ranged).await;
-            let content = window.files[0].content.content.clone().unwrap_or_default();
+            let content = window.file.content.content.clone().unwrap_or_default();
             assert!(content.contains("line 15"), "{content}");
             assert!(!content.contains("line 16"), "{minify:?}: {content}");
         }
@@ -1293,7 +1218,7 @@ mod tests {
             serde_json::json!({"owner":"a","repo":"b","path":"lib/r.js","ref":sha,"ranges":["1-3"]}),
         )
         .await;
-        let file = &ranged.files[0].content;
+        let file = &ranged.file.content;
         assert_eq!(file.status, "success", "{file:?}");
         assert_eq!(
             file.content.as_deref(),
@@ -1305,7 +1230,7 @@ mod tests {
             serde_json::json!({"owner":"a","repo":"b","path":"lib/r.js","ref":sha,"fullContent":true}),
         )
         .await;
-        let file = &whole.files[0].content;
+        let file = &whole.file.content;
         assert_eq!(file.content.as_deref(), Some(body), "{file:?}");
         assert_eq!(file.returned_lines, Some(9), "{file:?}");
     }
@@ -1325,7 +1250,7 @@ mod tests {
             serde_json::json!({"owner":"a","repo":"b","path":"small.py","ref":sha,"ranges":["99-103","200-201"]}),
         )
         .await;
-        let file = &past.files[0];
+        let file = &past.file;
         assert!(file.content.error.is_some(), "{:?}", file.content);
         let repair = &file.next.as_ref().expect("repair lead")["repair"];
         assert_eq!(repair["tool"], "ghGetFileContent", "{repair}");
@@ -1339,14 +1264,15 @@ mod tests {
             serde_json::json!({"owner":"a","repo":"b","path":"small.py","ref":sha,"ranges":["29-40"]}),
         )
         .await;
-        assert!(inside.files[0].content.error.is_none());
+        assert!(inside.file.content.error.is_none());
         assert!(
-            inside.files[0]
+            inside
+                .file
                 .next
                 .as_ref()
                 .is_none_or(|next| next.get("repair").is_none()),
             "{:?}",
-            inside.files[0].next
+            inside.file.next
         );
     }
 
@@ -1368,7 +1294,7 @@ mod tests {
         let provider = mock_provider(&server, RetryPolicy::default());
         let base = serde_json::json!({"owner":"a","repo":"b","path":"big.txt","ref":sha});
         let head = read(&provider, base.clone()).await;
-        let file = &head.files[0];
+        let file = &head.file;
         assert_eq!(
             file.content.returned_lines,
             Some(50),
@@ -1388,11 +1314,11 @@ mod tests {
         let mut whole = base.clone();
         whole["fullContent"] = true.into();
         let whole = read(&provider, whole).await;
-        assert!(whole.files[0].content.returned_lines.expect("lines") > 50);
+        assert!(whole.file.content.returned_lines.expect("lines") > 50);
         let mut ranged = base;
         ranged["ranges"] = serde_json::json!(["10-200"]);
         let ranged = read(&provider, ranged).await;
-        assert_eq!(ranged.files[0].content.returned_lines, Some(191));
+        assert_eq!(ranged.file.content.returned_lines, Some(191));
     }
 
     /// A path-only read of a minified file (one oversized line) pages by
@@ -1416,12 +1342,11 @@ mod tests {
         )
         .await;
         let provider = mock_provider(&server, RetryPolicy::default());
-        let mut query =
-            serde_json::json!({"owner":"a","repo":"b","path":"min.js","ref":sha,"minify":"none"});
+        let mut query = serde_json::json!({"owner":"a","repo":"b","path":"min.js","ref":sha});
         let (mut text, mut pages) = (String::new(), 0);
         loop {
             let result = read(&provider, query).await;
-            let file = &result.files[0];
+            let file = &result.file;
             assert_eq!(file.content.error_code, None, "{:?}", file.content);
             assert!(!file.content.out_of_range, "{:?}", file.content);
             text.push_str(file.content.content.as_deref().unwrap_or_default());
@@ -1442,10 +1367,10 @@ mod tests {
         assert!(text == body, "pages join into the file exactly once");
     }
 
-    /// Continuations and leads carry only fields that change the read: a
-    /// default view (`fullContent` off, `minify: standard`, sent or not) is
-    /// omitted, a chosen `minify: none` is kept, and a whole-file read pages
-    /// without `fullContent` in the verbatim view its first page used.
+    /// Continuations and leads carry only fields that change the read: the
+    /// default view (`fullContent` off, raw `minify: none`, sent or not) is
+    /// omitted, a chosen `minify: standard` is kept, and a whole-file read
+    /// pages without `fullContent` in the raw view its first page used.
     #[tokio::test]
     async fn continuations_omit_default_view_fields() {
         let server = MockServer::builder().start().await;
@@ -1465,23 +1390,49 @@ mod tests {
         paged["length"] = 100.into();
         let mut standard = paged.clone();
         standard["minify"] = "standard".into();
-        let mut verbatim = paged.clone();
-        verbatim["minify"] = "none".into();
         let mut whole = base;
         whole["fullContent"] = true.into();
-        for (query, minify) in [
-            (paged, None),
-            (standard, None),
-            (verbatim, Some("none")),
-            (whole, Some("none")),
-        ] {
+        for (query, minify) in [(paged, None), (standard, Some("standard")), (whole, None)] {
             let result = read(&provider, query).await;
-            let next = result.files[0].next.clone().expect("continuation");
+            let next = result.file.next.clone().expect("continuation");
             let page = &next["continueWindow"]["query"]["queries"][0];
             assert!(page.get("fullContent").is_none(), "{next}");
             assert_eq!(page.get("minify").and_then(Value::as_str), minify, "{next}");
             assert_eq!(page["ref"], sha, "{next}");
         }
+    }
+
+    /// An unsized page is paged as localFetch pages it: every later page's
+    /// continuation stays unsized (no injected `length`), and the chain
+    /// still reaches the file's end.
+    #[tokio::test]
+    async fn unsized_page_continuations_stay_unsized() {
+        let server = MockServer::builder().start().await;
+        let sha = "0123456789abcdef0123456789abcdef01234567";
+        let body: String = (1..=6000).map(|i| format!("line of text {i}\n")).collect();
+        mount_json(
+            &server,
+            "/api/v3/repos/a/b/contents/big.txt",
+            200,
+            serde_json::json!({"type":"file","encoding":"base64","content":STANDARD.encode(&body)}),
+        )
+        .await;
+        let provider = mock_provider(&server, RetryPolicy::default());
+        let mut query = serde_json::json!({"owner":"a","repo":"b","path":"big.txt","ref":sha});
+        let mut pages = 0;
+        loop {
+            let result = read(&provider, query.clone()).await;
+            pages += 1;
+            let Some(next) = result.file.next.clone() else {
+                break;
+            };
+            let page = next["continueWindow"]["query"]["queries"][0].clone();
+            assert!(page.get("length").is_none(), "page {pages}: {next}");
+            assert!(page.get("unit").is_none(), "page {pages}: {next}");
+            assert!(pages < 100, "the chain never ends: {next}");
+            query = page;
+        }
+        assert!(pages > 2, "the file spans several pages");
     }
 
     #[tokio::test]
@@ -1505,7 +1456,7 @@ mod tests {
         )
         .await
         .expect("result");
-        let file = &result.files[0];
+        let file = &result.file;
         // The first bounded page comes back inline, not an empty body.
         assert_eq!(file.content.error_code, None);
         assert_eq!(file.content.status, "success");
@@ -1743,9 +1694,10 @@ mod tests {
         assert!(data["next"].get("findCode").is_none(), "{data}");
     }
 
-    /// A submodule path leads to the submodule's GitHub repository at the
-    /// commit the parent pins, not to the generic invalid-field tip; a
-    /// submodule hosted elsewhere gets no GitHub lead.
+    /// A submodule path leads to the submodule's repository on the
+    /// configured GitHub host at the commit the parent pins, not to the
+    /// generic invalid-field tip; a submodule hosted elsewhere gets no
+    /// GitHub lead.
     #[tokio::test]
     async fn a_submodule_path_leads_to_its_repository_at_the_pinned_commit() {
         let server = MockServer::builder().start().await;
@@ -1755,7 +1707,7 @@ mod tests {
             &server,
             "/api/v3/repos/a/b/contents/vendor%2Flib",
             200,
-            serde_json::json!({"type":"submodule","submodule_git_url":"https://github.com/o2/r2.git","sha":pinned}),
+            serde_json::json!({"type":"submodule","submodule_git_url":format!("{}/o2/r2.git", server.uri()),"sha":pinned}),
         )
         .await;
         mount_json(
@@ -1763,16 +1715,6 @@ mod tests {
             "/api/v3/repos/a/b/contents/vendor%2Fext",
             200,
             serde_json::json!({"type":"submodule","submodule_git_url":"https://gitlab.com/o3/r3.git","sha":pinned}),
-        )
-        .await;
-        mount_json(
-            &server,
-            "/api/v3/repos/a/b/contents/vendor",
-            200,
-            serde_json::json!([
-                {"name":"lib","path":"vendor/lib","type":"submodule","sha":pinned,"git_url":null},
-                {"name":"ext","path":"vendor/ext","type":"submodule","sha":pinned,"git_url":null}
-            ]),
         )
         .await;
         let provider = mock_provider(&server, RetryPolicy::default());
@@ -1806,6 +1748,47 @@ mod tests {
             !elsewhere.hints[0].contains("rejected field"),
             "{:?}",
             elsewhere.hints
+        );
+    }
+
+    /// A submodule URL names a repository only on the host the configured
+    /// endpoint serves, in every clone URL form.
+    #[test]
+    fn submodule_urls_resolve_on_the_configured_host_only() {
+        let public = octocode_github::GitHubEndpoint::new(
+            url::Url::parse("https://api.github.com").expect("URL"),
+        )
+        .expect("endpoint");
+        let enterprise = octocode_github::GitHubEndpoint::new(
+            url::Url::parse("https://ghe.example.com/api/v3").expect("URL"),
+        )
+        .expect("endpoint");
+        let named = Some(("o".to_owned(), "r".to_owned()));
+        for url in [
+            "https://github.com/o/r.git",
+            "http://github.com/o/r",
+            "git://github.com/o/r.git",
+            "ssh://git@github.com/o/r.git",
+            "git@github.com:o/r.git",
+        ] {
+            assert_eq!(
+                crate::tools::gh_shared::hosted_repository(url, &public),
+                named,
+                "{url}"
+            );
+            assert_eq!(
+                crate::tools::gh_shared::hosted_repository(url, &enterprise),
+                None,
+                "{url}"
+            );
+        }
+        assert_eq!(
+            crate::tools::gh_shared::hosted_repository("git@ghe.example.com:o/r.git", &enterprise),
+            named
+        );
+        assert_eq!(
+            crate::tools::gh_shared::hosted_repository("https://gitlab.com/o/r.git", &public),
+            None
         );
     }
 

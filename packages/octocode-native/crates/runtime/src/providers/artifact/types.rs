@@ -231,9 +231,9 @@ pub struct ArtifactItem {
     /// declares none, absent when the registry read did not say.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dependencies: Option<Vec<String>>,
-    /// npm peer dependencies (`name@range`) as declared, like
-    /// `dependencies`: empty when it declares none, absent for a registry
-    /// with no such field.
+    /// npm peer dependencies (`name@range`) as declared; absent when the
+    /// version declares none (its `dependencies` list shows the manifest
+    /// was read) and for a registry with no such field.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub peer_dependencies: Option<Vec<String>>,
     /// npm `engines`: every runtime or tool the package declares, with its

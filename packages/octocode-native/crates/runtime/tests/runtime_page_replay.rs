@@ -308,7 +308,7 @@ async fn a_continuation_replays_regardless_of_the_callers_key_order() {
             "localFetch".into(),
             json!({
                 "queries":[{"reasoning":"Exercise page replay.",
-                    "path":file.to_string_lossy(),"minify":"none"}],
+                    "path":file.to_string_lossy()}],
                 "responseLength": 800
             }),
         )

@@ -1,8 +1,11 @@
 //! Inline evidence questions use the same typed evaluator as `clasify`.
 //! Every admitted candidate receives independent questions; the core-owned
 //! probability policy selects, excludes or leaves it unknown before host output.
+use super::transport::CIRCUIT_OPEN;
 use super::{ClassificationError, EvaluationInput, Evaluator, stats::ClassificationUsage};
-use crate::tools::selection::{Decision, JudgeCall, SelectionJudge};
+use crate::tools::selection::{
+    Decision, JudgeCall, JudgeFailure, Judgments, ProviderError, SelectionJudge,
+};
 use futures_util::{StreamExt as _, stream};
 use serde_json::{Value, json};
 use std::time::Instant;
@@ -23,6 +26,8 @@ fn template() -> Option<&'static Value> {
         .get("classifierTemplate")
 }
 
+/// A classifier fills the contract template's slot verbatim: the template
+/// (core `classifierTemplate`) judges it as a predicate about the source.
 /// Questions are independent, so each receives the optional research context.
 pub(crate) fn compile(
     classifier: &str,
@@ -55,6 +60,35 @@ pub(crate) fn candidate_state(mut state: Value) -> Value {
     }
     strip(&mut state);
     state
+}
+
+/// Compress only inline source coordinates, after candidate admission. Inclusive
+/// runs preserve every coordinate, including omission markers and repeated lines.
+fn provider_state(state: &Value) -> std::borrow::Cow<'_, Value> {
+    let Some(lines) = state.get("sourceLines").and_then(Value::as_array) else {
+        return std::borrow::Cow::Borrowed(state);
+    };
+    let mut ranges: Vec<[u64; 2]> = Vec::new();
+    for value in lines {
+        let Some(line) = value.as_u64() else {
+            return std::borrow::Cow::Borrowed(state);
+        };
+        if let Some(last) = ranges.last_mut()
+            && line > 0
+            && last[1] > 0
+            && last[1].checked_add(1) == Some(line)
+        {
+            last[1] = line;
+        } else {
+            ranges.push([line, line]);
+        }
+    }
+    let mut compact = state.clone();
+    if let Some(fields) = compact.as_object_mut() {
+        fields.shift_remove("sourceLines");
+        fields.insert("sourceLineRanges".into(), json!(ranges));
+    }
+    std::borrow::Cow::Owned(compact)
 }
 
 #[derive(Clone, Copy)]
@@ -135,6 +169,7 @@ impl SelectionJudge for Evaluator {
         json!({
             "partition":self.partition().identity(), "model":self.model,
             "template":template(),
+            "sourceCoordinates":1,
         })
     }
 
@@ -142,17 +177,18 @@ impl SelectionJudge for Evaluator {
         candidate_state(state)
     }
 
-    fn select(&self, call: JudgeCall<'_>) -> Result<Vec<(usize, Decision)>, String> {
+    fn select(&self, call: JudgeCall<'_>) -> Judgments {
         if !self.is_configured() {
             return Err("classificationUnavailable".into());
         }
-        let policy = Policy::from_contract().ok_or("invalidClassificationPolicy")?;
+        let policy =
+            Policy::from_contract().ok_or(JudgeFailure::from("invalidClassificationPolicy"))?;
         let questions = call
             .classifiers
             .iter()
             .map(|classifier| compile(classifier, call.main_goal, call.reasoning))
             .collect::<Option<Vec<_>>>()
-            .ok_or("invalidClassificationRequest")?;
+            .ok_or(JudgeFailure::from("invalidClassificationRequest"))?;
         let deadline = (Instant::now() + call.limits.timeout).min(call.context.deadline);
         let budget = self.budget(deadline, call.context.cancellation.clone());
         let gate = self.gate();
@@ -168,8 +204,9 @@ impl SelectionJudge for Evaluator {
                                 "Use the explicit unfiltered continuation to inspect this evidence.",
                             )));
                         };
+                        let compact = provider_state(state);
                         let judged = self.evaluate_prepared(EvaluationInput {
-                            state, questions, assets:None, long_context:call.long_context,
+                            state: &compact, questions, assets:None, long_context:call.long_context,
                         }, None, budget, gate).await;
                         (ordinal, judged)
                     }
@@ -179,18 +216,47 @@ impl SelectionJudge for Evaluator {
         });
         let mut usage = ClassificationUsage::default();
         let mut decisions = Vec::with_capacity(outcomes.len());
+        // The first provider failure in source order, reported when nothing
+        // answered. A budget stop (the selection's own deadline) is not the
+        // provider's answer: those candidates stay unknown. A paused
+        // provider (the circuit opened by the failures of this very call) is
+        // their consequence, so a failure that caused it comes first.
+        let mut first_failure: Option<((bool, usize), ClassificationError)> = None;
         for (ordinal, outcome) in outcomes {
             usage.add(&outcome);
             let decision = match outcome {
                 Ok(judged) if judged.answers.len() == questions.len() => {
                     policy.decide(&judged.answers)
                 }
-                _ => Decision::Unknown,
+                Ok(_) => Decision::Unknown,
+                Err(error) => {
+                    let rank = (error.code == CIRCUIT_OPEN, ordinal);
+                    if !matches!(error.code.as_str(), "timeout" | "cancelled")
+                        && first_failure
+                            .as_ref()
+                            .is_none_or(|(first, _)| rank < *first)
+                    {
+                        first_failure = Some((rank, error));
+                    }
+                    continue;
+                }
             };
             decisions.push((ordinal, decision));
         }
         self.record(usage);
-        Ok(decisions)
+        // A provider that failed every candidate gave no answer at all: its
+        // typed error (credential, quota, transport) is the row's outcome,
+        // never an "unknown" judgment that looks like an honest unsure model.
+        match first_failure {
+            Some((_, error)) if decisions.is_empty() => {
+                Err(JudgeFailure::Provider(ProviderError {
+                    code: error.code,
+                    message: error.message,
+                    hints: error.hints,
+                }))
+            }
+            _ => Ok(decisions),
+        }
     }
 }
 
@@ -318,7 +384,7 @@ mod tests {
             None,
         );
         let candidates = ["failed candidate", "selected candidate"]
-            .map(|text| Candidate::new(Some(json!({"text":text}))));
+            .map(|text| Candidate::new(Some(json!({"text":text,"sourceLines":[4,5,0,9]}))));
         let classifiers = vec!["Does this describe termination?".to_owned()];
         let context = ExecutionContext {
             cancellation: tokio_util::sync::CancellationToken::new(),
@@ -348,7 +414,11 @@ mod tests {
         };
         let mut decisions = run("Explain retry behavior");
         decisions.sort_by_key(|(ordinal, _)| *ordinal);
-        assert_eq!(decisions, [(0, Decision::Unknown), (1, Decision::Selected)]);
+        assert_eq!(
+            decisions,
+            [(1, Decision::Selected)],
+            "a failed candidate stays undecided (unknown) beside a judged one"
+        );
         let initial = executor
             .block_on(server.received_requests())
             .expect("requests");
@@ -362,6 +432,11 @@ mod tests {
                 Some("true")
             );
             let body: Value = request.body_json().expect("request");
+            assert!(body["state"].get("sourceLines").is_none());
+            assert_eq!(
+                body["state"]["sourceLineRanges"],
+                json!([[4, 5], [0, 0], [9, 9]])
+            );
             for question in body["questions"].as_object().expect("questions").values() {
                 assert_eq!(
                     question["instructions"]["mainGoal"],
@@ -385,6 +460,131 @@ mod tests {
     }
 
     #[test]
+    fn a_provider_failing_every_candidate_is_a_typed_error_not_unknown() {
+        use crate::runtime::{ExecutionContext, SelectionLimits};
+        use crate::tools::selection::Candidate;
+        use std::time::Duration;
+        use wiremock::{Mock, MockServer, ResponseTemplate, matchers::method};
+
+        let executor = tokio::runtime::Runtime::new().expect("runtime");
+        let server = executor.block_on(MockServer::start());
+        executor.block_on(
+            Mock::given(method("POST"))
+                .respond_with(ResponseTemplate::new(401))
+                .mount(&server),
+        );
+        let evaluator = Evaluator::new(
+            Some(secrecy::SecretString::from("bad-key".to_owned())),
+            server.uri(),
+            "jev-test".into(),
+            &crate::providers::classification::jev::JEV,
+            Duration::from_secs(10),
+            0,
+            4,
+            None,
+            None,
+        );
+        let candidates = ["first", "second"].map(|text| Candidate::new(Some(json!({"text":text}))));
+        let context = ExecutionContext {
+            cancellation: tokio_util::sync::CancellationToken::new(),
+            deadline: Instant::now() + Duration::from_secs(10),
+            walk_threads: None,
+            response_window: None,
+            github_credential: None,
+        };
+        let failure = evaluator
+            .select(JudgeCall {
+                candidates: &candidates,
+                admitted: &[0, 1],
+                classifiers: &["Does this describe termination?".to_owned()],
+                main_goal: None,
+                reasoning: None,
+                long_context: false,
+                limits: SelectionLimits {
+                    max_candidates: 2,
+                    max_chars: 10_000,
+                    timeout: Duration::from_secs(10),
+                },
+                handle: executor.handle(),
+                context: &context,
+            })
+            .expect_err("no candidate was judged");
+        let JudgeFailure::Provider(error) = failure else {
+            panic!("a provider failure, not an unavailable judge: {failure:?}");
+        };
+        assert_eq!(error.code, "classificationProviderError");
+        assert!(error.message.contains("401"), "{}", error.message);
+        assert!(
+            error
+                .hints
+                .iter()
+                .any(|hint| hint.contains("OCTOCODE_CLASSIFICATION_API")),
+            "credential hint: {:?}",
+            error.hints
+        );
+    }
+
+    /// A host that refuses connections fails every candidate; the circuit
+    /// it opens within the same call is the consequence, so the row names
+    /// the cause (no connection), not "failed repeatedly".
+    #[test]
+    fn a_refused_connection_is_named_not_the_circuit_it_opens() {
+        use crate::runtime::{ExecutionContext, SelectionLimits};
+        use crate::tools::selection::Candidate;
+        use std::time::Duration;
+
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .and_then(|listener| listener.local_addr())
+            .expect("free port")
+            .port();
+        let executor = tokio::runtime::Runtime::new().expect("runtime");
+        let evaluator = Evaluator::new(
+            Some(secrecy::SecretString::from("key".to_owned())),
+            format!("http://127.0.0.1:{port}"),
+            "jev-test".into(),
+            &crate::providers::classification::jev::JEV,
+            Duration::from_secs(10),
+            0,
+            4,
+            None,
+            None,
+        );
+        let candidates: Vec<_> = (0..12)
+            .map(|n| Candidate::new(Some(json!({"text":format!("candidate {n}")}))))
+            .collect();
+        let admitted: Vec<usize> = (0..candidates.len()).collect();
+        let context = ExecutionContext {
+            cancellation: tokio_util::sync::CancellationToken::new(),
+            deadline: Instant::now() + Duration::from_secs(20),
+            walk_threads: None,
+            response_window: None,
+            github_credential: None,
+        };
+        let failure = evaluator
+            .select(JudgeCall {
+                candidates: &candidates,
+                admitted: &admitted,
+                classifiers: &["Does this describe termination?".to_owned()],
+                main_goal: None,
+                reasoning: None,
+                long_context: false,
+                limits: SelectionLimits {
+                    max_candidates: candidates.len(),
+                    max_chars: 100_000,
+                    timeout: Duration::from_secs(20),
+                },
+                handle: executor.handle(),
+                context: &context,
+            })
+            .expect_err("nothing was judged");
+        let JudgeFailure::Provider(error) = failure else {
+            panic!("a provider failure: {failure:?}");
+        };
+        assert_eq!(error.code, "classificationProviderError", "{error:?}");
+        assert!(error.message.contains("could not connect"), "{error:?}");
+    }
+
+    #[test]
     fn context_selection_routing_is_not_sent_as_source_evidence() {
         let candidate = json!({"evidence":{
             "path":"retry.rs",
@@ -402,13 +602,39 @@ mod tests {
     }
 
     #[test]
+    fn provider_coordinates_round_trip_without_changing_admission_evidence() {
+        let lines = vec![0, 1, 2, 2, 3, 0, 0, 7, 8, 4, u64::MAX];
+        let original = json!({"path":"src/λ.rs","sourceLines":lines,"content":"α\nβ\n…\n"});
+        let compact = provider_state(&original);
+        let expanded = compact["sourceLineRanges"]
+            .as_array()
+            .expect("runs")
+            .iter()
+            .flat_map(|pair| pair[0].as_u64().expect("start")..=pair[1].as_u64().expect("end"))
+            .collect::<Vec<_>>();
+        assert_eq!(expanded, lines);
+        assert_eq!(compact["content"], original["content"]);
+        assert_eq!(compact["path"], original["path"]);
+        assert_eq!(original["sourceLines"], json!(lines));
+        for state in [
+            json!({"content":"source"}),
+            json!({"sourceLines":["invalid"]}),
+        ] {
+            assert_eq!(provider_state(&state).as_ref(), &state);
+        }
+        let long = json!({"sourceLines":(1000..2000).collect::<Vec<_>>(),"content":"source"});
+        assert!(provider_state(&long).to_string().len() < long.to_string().len());
+    }
+
+    #[test]
     fn a_classifier_fills_the_contract_template_slot() {
         let template = template().expect("contract template");
         let question = compile("When do retries stop?", None, None).expect("question");
         assert_eq!(question["type"], "score");
         assert_eq!(
             question["instructions"][template["slot"].as_str().expect("slot")],
-            "When do retries stop?"
+            "When do retries stop?",
+            "the template, not native, frames the predicate"
         );
         assert_eq!(question["criteria"], template["question"]["criteria"]);
         assert_eq!(

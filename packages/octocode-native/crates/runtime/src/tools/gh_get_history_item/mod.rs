@@ -48,12 +48,14 @@ mod window;
 
 /// Items per page of a provider collection (comments, reviews, commits,
 /// patch file pages) when `pageSize` is omitted: the contract default the
-/// issue, commit and compare variants declare. The pull-request variant
-/// declares none (an omitted patch-free inventory sizes itself to the
-/// response page) and pages its collections by the same default.
+/// issue variant declares. Pull requests, commits and comparisons declare
+/// none (an omitted patch-free inventory sizes itself to the response page)
+/// and page their collections by the same default.
 pub(crate) const DEFAULT_PAGE_SIZE: usize =
     crate::tools::id::query_limits::gh_get_history_item::issue::PAGE_SIZE_DEFAULT;
-const DEFAULT_TEXT_WINDOW: usize = 12_000;
+/// Characters per body, comment or review window when `length` is omitted
+/// (contract `ghGetHistoryItem.semanticPolicy.textWindowChars`).
+const DEFAULT_TEXT_WINDOW: usize = crate::tools::id::gh_get_history_item_policy::TEXT_WINDOW_CHARS;
 
 pub use crate::contracts::tool_types::GhGetHistoryItemQuery;
 pub(crate) use output::Output;
@@ -72,20 +74,13 @@ enum ItemOperation {
 #[derive(Clone, Debug)]
 pub struct HistoryItemRequest {
     pub query: GhGetHistoryItemQuery,
-    /// The sections the row reads, as the nested selector every handler
-    /// reads (`body`, `files`, `patches{mode}`,
-    /// `comments{discussion,reviewInline}`, `reviews`,
-    /// `commits{includeFiles}`); built from `sections` ([`selection`]). Runtime-only, never on the wire.
-    content: Option<Value>,
-    /// Commit/compare rows that read patch text (`sections:["patches"]`).
-    include_diff: bool,
+    /// The sections the row reads, resolved once from the typed query
+    /// ([`Sections::resolve`]).
+    sections: Sections,
     /// The response page this row's output fits: the call's explicit page
     /// (`responseLength`) or the configured automatic page, shared by the
     /// rows of one call.
     pub auto_page_chars: Option<usize>,
-    /// Commit/compare `include` scope (paths or globs); pull requests
-    /// filter their changed files by `include` ([`filter::InventoryFilter`]).
-    pub(super) file_scope: Vec<String>,
     /// File text at the pull request's head that widens `matchString` hunks
     /// past GitHub's diff context (read once per file and call).
     head_sources: Option<std::sync::Arc<patch::hunks::HeadSources>>,
@@ -93,113 +88,112 @@ pub struct HistoryItemRequest {
 
 impl HistoryItemRequest {
     /// Parses a validated `ghGetHistoryItem` row.
-    pub fn from_row(mut row: Value) -> Result<Self, serde_json::Error> {
-        let (content, include_diff, file_scope) = selection(&mut row);
+    pub fn from_row(row: Value) -> Result<Self, serde_json::Error> {
+        let query: GhGetHistoryItemQuery = serde_json::from_value(row)?;
         Ok(Self {
-            query: serde_json::from_value(row)?,
-            content,
-            include_diff,
+            sections: Sections::resolve(&query),
+            query,
             auto_page_chars: None,
-            file_scope,
             head_sources: None,
         })
     }
-    /// The `content` selector as JSON, for the shaping code's key lookups.
-    pub(crate) fn content_value(&self) -> Option<Value> {
-        self.content.clone()
+    /// The sections the row reads.
+    pub(crate) fn sections(&self) -> Sections {
+        self.sections
     }
-    /// Commit/compare rows that read patch text.
+    /// Commit/compare (and pull-request) rows that read patch text.
     pub(crate) fn include_diff(&self) -> bool {
-        self.include_diff
+        self.sections.has(Section::Patches)
     }
 }
 
-/// The sections a row reads, as the nested selector the handlers share
-/// (internal keys `body`, `files`, `patches`, `comments`, `reviews`,
-/// `commits`):
-/// pull-request and issue `sections` become `content`; commit/compare `sections:["patches"]` reads patch text and
-/// `include` scopes the files. Returns `(content, include_diff, file_scope)`.
-fn selection(row: &mut Value) -> (Option<Value>, bool, Vec<String>) {
-    let Some(fields) = row.as_object_mut() else {
-        return (None, false, Vec::new());
-    };
-    let strings = |value: Option<&Value>| {
-        value
-            .and_then(Value::as_array)
+/// One section of a history item (`body`, `files`, `patches`, `comments`,
+/// `reviewComments`, `reviews`, `commits`, `commitFiles`).
+pub(crate) use crate::contracts::tool_types::GhGetHistoryItemQuerySectionsItem as Section;
+
+/// The sections one read returns: the generated `sections`, with the one
+/// default resolved (a `matchString` with no section named reads the
+/// patches it searches). Continuations set it back on the wire in the
+/// published order ([`Sections::wire`]).
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct Sections(u8);
+
+impl Sections {
+    /// Every section, in the published order.
+    const ORDER: [Section; 8] = [
+        Section::Body,
+        Section::Files,
+        Section::Patches,
+        Section::Comments,
+        Section::ReviewComments,
+        Section::Reviews,
+        Section::Commits,
+        Section::CommitFiles,
+    ];
+
+    fn bit(section: Section) -> u8 {
+        let index = Self::ORDER
+            .iter()
+            .position(|known| *known == section)
+            .unwrap_or_default();
+        1 << index
+    }
+    /// The sections named.
+    pub(crate) fn of(sections: impl IntoIterator<Item = Section>) -> Self {
+        sections
             .into_iter()
-            .flatten()
-            .filter_map(|item| item.as_str().map(str::to_owned))
-            .collect::<Vec<_>>()
-    };
-    let sections = strings(fields.get("sections"));
-    let operation = fields
-        .get("operation")
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_owned();
-    match operation.as_str() {
-        "pullRequest" | "issue" => {
-            let mut content = serde_json::Map::new();
-            let mut comments = serde_json::Map::new();
-            for section in &sections {
-                match section.as_str() {
-                    "body" => {
-                        content.insert("body".into(), Value::Bool(true));
-                    }
-                    "files" => {
-                        content.insert("files".into(), Value::Bool(true));
-                    }
-                    "patches" => {
-                        content
-                            .entry("patches")
-                            .or_insert_with(|| serde_json::json!({"mode":"all"}));
-                    }
-                    "comments" => {
-                        comments.insert("discussion".into(), Value::Bool(true));
-                    }
-                    "reviewComments" => {
-                        comments.insert("reviewInline".into(), Value::Bool(true));
-                    }
-                    "reviews" => {
-                        content.insert("reviews".into(), Value::Bool(true));
-                    }
-                    "commits" => {
-                        content
-                            .entry("commits")
-                            .or_insert_with(|| serde_json::json!({}));
-                    }
-                    "commitFiles" => {
-                        content.insert("commits".into(), serde_json::json!({"includeFiles": true}));
-                    }
-                    _ => {}
-                }
-            }
-            if !comments.is_empty() {
-                content.insert("comments".into(), Value::Object(comments));
-            }
-            // `matchString` on a pull request filters its patches; with no
-            // section selected it searches every patch.
-            if operation == "pullRequest"
-                && content.is_empty()
-                && fields.get("matchString").and_then(Value::as_str).is_some()
-            {
-                content.insert("patches".into(), serde_json::json!({"mode":"all"}));
-            }
-            (
-                (!content.is_empty()).then_some(Value::Object(content)),
-                false,
-                Vec::new(),
-            )
+            .fold(Self::default(), |set, section| set.with(section))
+    }
+    /// The sections `query` reads.
+    fn resolve(query: &GhGetHistoryItemQuery) -> Self {
+        let named = match query {
+            GhGetHistoryItemQuery::PullRequest { sections, .. }
+            | GhGetHistoryItemQuery::Issue { sections, .. }
+            | GhGetHistoryItemQuery::Commit { sections, .. }
+            | GhGetHistoryItemQuery::Compare { sections, .. } => Self::of(sections.iter().copied()),
+        };
+        if named.is_empty() && query.match_string().is_some() {
+            Self::of([Section::Patches])
+        } else {
+            named
         }
-        "commit" | "compare" => {
-            // `matchString` with no section named searches the patches, as
-            // on a pull request.
-            let include_diff = sections.iter().any(|section| section == "patches")
-                || (sections.is_empty()
-                    && fields.get("matchString").and_then(Value::as_str).is_some());
-            (None, include_diff, strings(fields.get("include")))
+    }
+    pub(crate) fn has(self, section: Section) -> bool {
+        self.0 & Self::bit(section) != 0
+    }
+    pub(crate) fn with(self, section: Section) -> Self {
+        Self(self.0 | Self::bit(section))
+    }
+    pub(crate) fn is_empty(self) -> bool {
+        self.0 == 0
+    }
+    /// The read lists changed files: as an inventory or with patches.
+    pub(crate) fn lists_files(self) -> bool {
+        self.has(Section::Files) || self.has(Section::Patches)
+    }
+    /// The read lists commits (with or without each commit's paths).
+    pub(crate) fn lists_commits(self) -> bool {
+        self.has(Section::Commits) || self.has(Section::CommitFiles)
+    }
+    /// The published `sections` value, in published order; `None` when
+    /// empty (the summary read).
+    pub(crate) fn wire(self) -> Option<Value> {
+        let names = Self::ORDER
+            .into_iter()
+            .filter(|section| self.has(*section))
+            .map(|section| Value::from(section.to_string()))
+            .collect::<Vec<_>>();
+        (!names.is_empty()).then_some(Value::Array(names))
+    }
+    /// Set these sections on a working continuation query (or clear them
+    /// for the summary read).
+    pub(crate) fn set_on(self, query: &mut Value) {
+        if let Some(fields) = query.as_object_mut() {
+            match self.wire() {
+                Some(sections) => fields.insert("sections".into(), sections),
+                None => fields.remove("sections"),
+            };
         }
-        _ => (None, false, Vec::new()),
     }
 }
 
@@ -293,17 +287,24 @@ impl GhGetHistoryItemQuery {
             _ => None,
         }
     }
-    /// Whether the read names `section` (`commits`, `files`, `patches`).
-    pub(crate) fn names_section(&self, section: &str) -> bool {
-        let named = |sections: &[String]| sections.iter().any(|name| name == section);
+    /// The `include` path patterns (pull request, commit, comparison).
+    pub(crate) fn include_patterns(&self) -> Vec<&str> {
         match self {
-            Self::Commit { sections, .. } => {
-                named(&sections.iter().map(ToString::to_string).collect::<Vec<_>>())
-            }
-            Self::Compare { sections, .. } => {
-                named(&sections.iter().map(ToString::to_string).collect::<Vec<_>>())
-            }
-            _ => false,
+            Self::PullRequest { include, .. }
+            | Self::Commit { include, .. }
+            | Self::Compare { include, .. } => include
+                .iter()
+                .flat_map(|include| include.iter())
+                .map(|pattern| pattern.as_str())
+                .collect(),
+            Self::Issue { .. } => Vec::new(),
+        }
+    }
+    /// The pull-request head a page continuation is pinned to (`headSha`).
+    pub(crate) fn head_sha(&self) -> Option<&str> {
+        match self {
+            Self::PullRequest { head_sha, .. } => head_sha.as_deref().map(String::as_str),
+            _ => None,
         }
     }
     /// The page of the section a read lists (`page`): every page
@@ -318,12 +319,10 @@ impl GhGetHistoryItemQuery {
     }
     pub(crate) fn page_size(&self) -> Option<usize> {
         match self {
-            Self::PullRequest { page_size, .. } => page_size.map(|size| usize_of(size.get())),
-            Self::Issue { page_size, .. }
+            Self::PullRequest { page_size, .. }
             | Self::Commit { page_size, .. }
-            | Self::Compare { page_size, .. } => {
-                page_size.as_ref().map(|size| usize_of(size.0.get()))
-            }
+            | Self::Compare { page_size, .. } => page_size.map(|size| usize_of(size.get())),
+            Self::Issue { page_size, .. } => page_size.as_ref().map(|size| usize_of(size.0.get())),
         }
     }
     /// Items per page of a provider collection (comments, reviews, commits,
@@ -398,13 +397,6 @@ impl GhGetHistoryItemQuery {
             | Self::Issue { extras, .. }
             | Self::Commit { extras, .. }
             | Self::Compare { extras, .. } => extras.contains(&kind),
-        }
-    }
-    /// The pull-request text view (`"standard"` or `"none"`).
-    pub(crate) fn minify(&self) -> Option<String> {
-        match self {
-            Self::PullRequest { minify, .. } => Some(minify.to_string()),
-            _ => None,
         }
     }
 }
@@ -585,23 +577,23 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    /// A read with no section named is the summary: it selects none.
     #[test]
-    fn false_content_selectors_do_not_request_sections() {
+    fn a_summary_read_selects_no_section() {
         let query = HistoryItemRequest::from_row(json!({
             "operation":"pullRequest", "owner":"o", "repo":"r", "number":1,
-            "mainGoal":"Read the pull request.","reasoning":"False selectors must stay off."
+            "mainGoal":"Read the pull request.","reasoning":"No section named."
         }))
-        .expect("false selectors are valid booleans");
-        let wants = pull_request::content_wants(&query);
-        assert!(
-            !wants.body && !wants.files && !wants.discussion && !wants.reviews && !wants.commits
-        );
+        .expect("summary read");
+        assert!(query.sections().is_empty());
+        assert_eq!(query.sections().wire(), None);
     }
 
-    /// `sections` select the internal content model each
-    /// handler reads.
+    /// The typed `sections` are what every handler reads; a `matchString`
+    /// with none named reads the patches it searches, on every operation
+    /// that takes one.
     #[test]
-    fn sections_select_the_content_model() {
+    fn sections_resolve_from_the_typed_query() {
         let row = |fields: Value| {
             HistoryItemRequest::from_row(super::util::merge(
                 json!({"operation":"pullRequest","mainGoal":"g","reasoning":"r",
@@ -611,21 +603,26 @@ mod tests {
             .expect("pull request row")
         };
         let read = row(json!({
-            "sections":["body","files","patches","comments","reviewComments","reviews"],
+            "sections":["reviews","patches","body","comments","files","reviewComments"],
             "include":["src/**"],"status":["modified"]
         }));
+        // Published order on the wire, whatever order the caller named.
         assert_eq!(
-            read.content_value(),
-            Some(
-                json!({"body":true,"files":true,"patches":{"mode":"all"},"reviews":true,
-                "comments":{"discussion":true,"reviewInline":true}})
-            )
+            read.sections().wire(),
+            Some(json!([
+                "body",
+                "files",
+                "patches",
+                "comments",
+                "reviewComments",
+                "reviews"
+            ]))
         );
+        assert!(!read.sections().lists_commits());
         assert_eq!(
-            row(json!({"matchString":"needle"})).content_value(),
-            Some(json!({"patches":{"mode":"all"}}))
+            row(json!({"matchString":"needle"})).sections(),
+            Sections::of([Section::Patches])
         );
-        // Commit sections:["patches"] reads diffs; base...head is compare's.
         let commit = HistoryItemRequest::from_row(json!({
             "operation":"commit","mainGoal":"g","reasoning":"r","owner":"o","repo":"r",
             "ref":"head-sha","sections":["patches"],"include":["src/*.rs"]
@@ -639,16 +636,18 @@ mod tests {
             .is_err()
         );
         assert!(commit.include_diff());
-        assert_eq!(commit.file_scope, ["src/*.rs"]);
+        assert_eq!(commit.include_patterns(), ["src/*.rs"]);
+        let grep = HistoryItemRequest::from_row(json!({
+            "operation":"compare","owner":"o","repo":"r","base":"a","head":"b","matchString":"x"
+        }))
+        .expect("compare grep");
+        assert!(grep.include_diff());
         let issue = HistoryItemRequest::from_row(json!({
             "operation":"issue","mainGoal":"g","reasoning":"r","owner":"o","repo":"r","number":2,
             "sections":["comments"]
         }))
         .expect("issue include");
-        assert_eq!(
-            issue.content_value(),
-            Some(json!({"comments":{"discussion":true}}))
-        );
+        assert_eq!(issue.sections(), Sections::of([Section::Comments]));
     }
 
     struct ReplacingScan;

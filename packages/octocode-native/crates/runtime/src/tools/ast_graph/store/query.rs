@@ -1319,12 +1319,35 @@ fn cycle_preview_row(options: &QueryOptions, id: &str, keys: &[String]) -> Value
         detail.to = None;
         detail.list = Some("cycleNodes".into());
         row["nodesTruncated"] = json!(true);
-        row["nextNodes"] = json!(next_command(&detail, id, 0));
+        // The preview shows the first members: the listing reads on after them.
+        row["nextNodes"] = json!(next_command(&detail, id, MAX_CYCLE_MEMBERS));
     }
     row
 }
 
-fn cycles(g: &Graph, filter: &EdgeFilter, options: &QueryOptions) -> Result<Page, GraphOutput> {
+/// Cycle groups as member keys, each with whether a runtime (module-load)
+/// loop runs inside it. Over import edges they are the one cycle engine's
+/// groups ([`crate::tools::ast_graph::algorithms::Cycles`], as astTopology
+/// and the `cycle` detector report them); over other edge kinds (calls),
+/// the strongly connected groups of those edges, with no runtime verdict.
+fn cycle_groups(g: &Graph, filter: &EdgeFilter) -> Vec<(Vec<String>, Option<bool>)> {
+    if filter.kinds == [EdgeKind::Imports] {
+        let graph = super::detect::file_graph(&g.t, &|_| true);
+        let cycles = crate::tools::ast_graph::algorithms::Cycles::of(&graph);
+        return cycles
+            .groups()
+            .map(|(_, files)| {
+                let members = files
+                    .iter()
+                    .cloned()
+                    .collect::<std::collections::BTreeSet<_>>();
+                (
+                    files.clone(),
+                    Some(!cycles.runtime_within(&members).is_empty()),
+                )
+            })
+            .collect();
+    }
     let n = g.t.nodes.len();
     let successors = |id: u32| {
         g.t.out(id)
@@ -1334,17 +1357,23 @@ fn cycles(g: &Graph, filter: &EdgeFilter, options: &QueryOptions) -> Result<Page
             .collect::<Vec<_>>()
     };
     let nodes = (0..n as u32).collect::<Vec<_>>();
-    let mut components = super::detect::tarjan(&nodes, &successors, n, &|component| {
+    super::detect::tarjan(&nodes, &successors, n, &|component| {
         component.len() > 1 || successors(component[0]).contains(&component[0])
-    });
-    for component in &mut components {
-        component.sort_by(|a, b| g.key(*a).cmp(g.key(*b)));
+    })
+    .into_iter()
+    .map(|component| {
+        let keys = component.iter().map(|id| g.key(*id).to_owned()).collect();
+        (keys, None)
+    })
+    .collect()
+}
+
+fn cycles(g: &Graph, filter: &EdgeFilter, options: &QueryOptions) -> Result<Page, GraphOutput> {
+    let mut components = cycle_groups(g, filter);
+    for (component, _) in &mut components {
+        component.sort();
     }
-    components.sort_by(|a, b| {
-        b.len()
-            .cmp(&a.len())
-            .then_with(|| g.key(a[0]).cmp(g.key(b[0])))
-    });
+    components.sort_by(|(a, _), (b, _)| b.len().cmp(&a.len()).then_with(|| a[0].cmp(&b[0])));
     if options.list.as_deref() == Some("cycleNodes") {
         let Some(target) = options.target.as_deref() else {
             return Err(GraphOutput::error(
@@ -1352,19 +1381,16 @@ fn cycles(g: &Graph, filter: &EdgeFilter, options: &QueryOptions) -> Result<Page
                 "cycleNodes needs a cycle member",
             ));
         };
-        let Some(component) = components
+        let Some((component, _)) = components
             .iter()
-            .find(|component| component.iter().any(|id| g.key(*id) == target))
+            .find(|(component, _)| component.iter().any(|key| key == target))
         else {
             return Err(GraphOutput::error(
                 "invalidInput",
                 format!("no cycle contains {target:?}"),
             ));
         };
-        let rows = component
-            .iter()
-            .map(|id| json!(g.key(*id)))
-            .collect::<Vec<_>>();
+        let rows = component.iter().map(|key| json!(key)).collect::<Vec<_>>();
         return Ok(Page {
             total: rows.len(),
             rows,
@@ -1372,12 +1398,12 @@ fn cycles(g: &Graph, filter: &EdgeFilter, options: &QueryOptions) -> Result<Page
     }
     let rows = components
         .iter()
-        .map(|component| {
-            let keys = component
-                .iter()
-                .map(|id| g.key(*id).to_owned())
-                .collect::<Vec<_>>();
-            cycle_preview_row(options, &g.id, &keys)
+        .map(|(keys, runtime)| {
+            let mut row = cycle_preview_row(options, &g.id, keys);
+            if let Some(runtime) = runtime {
+                row["runtime"] = json!(runtime);
+            }
+            row
         })
         .collect::<Vec<_>>();
     Ok(Page {
@@ -1575,6 +1601,10 @@ mod evidence_list_tests {
                 .contains("--list cycleNodes")
         );
         assert!(row["nextNodes"].as_str().unwrap().contains("node-0"));
+        assert!(
+            row["nextNodes"].as_str().unwrap().ends_with("--offset 50"),
+            "{row}"
+        );
     }
 
     #[test]

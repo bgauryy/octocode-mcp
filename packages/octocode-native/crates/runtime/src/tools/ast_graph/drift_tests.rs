@@ -166,10 +166,395 @@ fn topology_passes_path_scoped_header_parser_to_the_shared_scan() {
         &paths,
         &security,
         &crate::tools::cancel::NeverCancel,
-        None,
+        &Default::default(),
     )
     .expect("public topology");
     assert!(public.is_object());
+}
+
+/// A snapshot binds the analysis parameters too: a page-2 cursor carried
+/// into a query with other `entrypoints` or `includeTests` is stale, even
+/// when both analyses list the same rows (no test file here, so
+/// `includeTests:false` changes no row).
+#[test]
+fn topology_snapshots_bind_the_analysis_parameters() {
+    let temp = Fixture::new();
+    let root = temp.0.as_path();
+    for i in 0..4 {
+        temp.write(&format!("f{i}.ts"), "export const value = 1;\n");
+    }
+    let first = run(json!({"operation":"reachability","path":root,"entrypoints":["f0.ts","f1.ts","f2.ts"],"pageSize":1,"mainGoal":"test","reasoning":"test"}), root).expect("first");
+    let cursor = first["next"]["nextPage"]["query"]["queries"][0].clone();
+    assert!(cursor["snapshot"].is_string(), "{first}");
+    for (field, value) in [
+        ("entrypoints", json!(["f0.ts", "f1.ts", "f3.ts"])),
+        ("includeTests", json!(false)),
+    ] {
+        let mut changed = cursor.clone();
+        changed[field] = value;
+        let rejected = run(changed, root).expect("changed cursor");
+        assert_eq!(
+            rejected["errorCode"], "staleSnapshot",
+            "{field}: {rejected}"
+        );
+    }
+    let same = run(cursor, root).expect("same cursor");
+    assert_eq!(same["pagination"]["currentPage"], 2, "{same}");
+}
+
+#[test]
+fn topology_pages_accept_equivalent_redacted_paths() {
+    let temp = fixture(&[
+        ("a.ts", "export const a = 1;\n"),
+        ("b.ts", "import { a } from './a'; export const b = a;\n"),
+        ("c.ts", "import { b } from './b'; export const c = b;\n"),
+    ]);
+    let root = temp.0.as_path();
+    let first = topology(
+        root,
+        json!({
+            "operation":"reachability", "entrypoints":[root.join("a.ts")], "pageSize":1
+        }),
+    );
+    let mut next = first["next"]["nextPage"]["query"]["queries"][0].clone();
+    next["path"] = json!(".");
+    next["entrypoints"] = json!(["a.ts"]);
+    let page = run(next, root).expect("equivalent path spellings replay");
+    assert!(page.get("errorCode").is_none(), "{page}");
+    assert_eq!(page["pagination"]["currentPage"], 2, "{page}");
+}
+
+fn topology_with_window(query: Value, root: &std::path::Path, window: usize) -> Value {
+    let (paths, security) = crate::tools::test_support::simple_policy(root);
+    let query: AstTopologyQuery = serde_json::from_value(query).expect("query");
+    execute_topology(
+        &query,
+        &paths,
+        &security,
+        &crate::tools::cancel::NeverCancel,
+        &AstTopologyRuntimeOptions {
+            response_window: Some(window),
+            ..Default::default()
+        },
+    )
+    .expect("topology with response window")
+}
+
+fn walk_automatic_topology_pages(
+    mut page: Value,
+    root: &std::path::Path,
+    window: usize,
+) -> Vec<Value> {
+    let pages = page["pagination"]["totalPages"].as_u64().expect("pages");
+    assert!(pages > 1, "fixture must span automatic pages: {page}");
+    let total = page["pagination"]["totalItems"].as_u64().expect("items");
+    let mut rows = Vec::new();
+    for current in 1..=pages {
+        assert!(page.get("errorCode").is_none(), "{page}");
+        assert_eq!(page["pagination"]["currentPage"], current, "{page}");
+        assert_eq!(page["pagination"]["totalPages"], pages, "{page}");
+        assert_eq!(page["pagination"]["totalItems"], total, "{page}");
+        assert!(page["pagination"].get("pageSize").is_none(), "{page}");
+        rows.extend(page["nodes"].as_array().expect("nodes").iter().cloned());
+        if current < pages {
+            let next = page["next"]["nextPage"]["query"]["queries"][0].clone();
+            assert!(next["snapshot"].is_string(), "{page}");
+            assert!(next.get("pageSize").is_none(), "{page}");
+            page = topology_with_window(next, root, window);
+        } else {
+            assert_eq!(page["pagination"]["hasMore"], false, "{page}");
+            assert!(page["next"].get("nextPage").is_none(), "{page}");
+        }
+    }
+    assert_eq!(rows.len() as u64, total);
+    rows
+}
+
+#[test]
+fn automatic_topology_pages_cover_every_file_and_bind_the_response_window() {
+    let temp = Fixture::new();
+    let root = temp.0.as_path();
+    temp.write("entry.ts", "import './missing';\nexport const entry = 1;\n");
+    let mut expected = BTreeMap::from([("entry.ts".to_owned(), 1usize)]);
+    for index in 0..30 {
+        let name = format!("f{index:02}_{}.ts", "long_".repeat(index % 9));
+        temp.write(&name, "export const value = 1;\n");
+        expected.insert(name, 1);
+    }
+    let query = json!({"operation":"reachability","path":root,"entrypoints":["entry.ts"]});
+    let first = topology_with_window(query.clone(), root, 1024);
+    let next = first["next"]["nextPage"]["query"]["queries"][0].clone();
+    let resized = topology_with_window(next.clone(), root, 4096);
+    assert_eq!(resized["errorCode"], "staleSnapshot", "{resized}");
+    let mut equivalent = next;
+    equivalent["path"] = json!(".");
+    equivalent["entrypoints"] = json!([root.join("entry.ts")]);
+    equivalent["extras"] = json!(["stats"]);
+    let replay = topology_with_window(equivalent, root, 1024);
+    assert!(replay.get("errorCode").is_none(), "{replay}");
+    assert_eq!(replay["pagination"]["currentPage"], 2, "{replay}");
+
+    let diagnostic_query = first["next"]["readDiagnostics"]["query"]["queries"][0].clone();
+    assert!(diagnostic_query.is_object(), "{first}");
+    let diagnostics = topology_with_window(diagnostic_query, root, 1024);
+    assert!(diagnostics.get("errorCode").is_none(), "{diagnostics}");
+    assert_eq!(diagnostics["nodes"], json!([]), "{diagnostics}");
+    assert!(
+        diagnostics["coverage"]["diagnostics"]
+            .as_array()
+            .is_some_and(|rows| !rows.is_empty()),
+        "{diagnostics}"
+    );
+
+    let mut seen = BTreeMap::<String, usize>::new();
+    for row in walk_automatic_topology_pages(first, root, 1024) {
+        if let Some(file) = row["file"].as_str() {
+            *seen.entry(file.to_owned()).or_default() += 1;
+        } else {
+            for file in row["files"].as_array().expect("reachable files") {
+                *seen
+                    .entry(file.as_str().expect("file").to_owned())
+                    .or_default() += 1;
+            }
+        }
+    }
+    assert_eq!(seen, expected);
+
+    let mut counted = query;
+    counted["pageSize"] = json!(1);
+    let first = topology_with_window(counted, root, 1024);
+    let next = first["next"]["nextPage"]["query"]["queries"][0].clone();
+    let replay = topology_with_window(next, root, 4096);
+    assert!(replay.get("errorCode").is_none(), "{replay}");
+    assert_eq!(replay["pagination"]["currentPage"], 2, "{replay}");
+}
+
+/// Characters a default response spends on a page of `nodes`: optional
+/// fields pruned, and the fields all of them share stated once.
+fn delivered_chars(nodes: &Value) -> usize {
+    use crate::tools::{id::ToolId, stream_page::json_chars};
+    let mut row = json!({"data": {"nodes": nodes}});
+    crate::response::extras::prune_row(&mut row, ToolId::AstTopology, &json!({}));
+    let mut rows = [row];
+    let shared = crate::contracts::shared_fields::hoist(ToolId::AstTopology, &mut rows);
+    json_chars(&rows[0]["data"]["nodes"]) + shared.map_or(0, |shared| json_chars(&shared))
+}
+
+/// A window-sized page is cut by what the response delivers, not by the
+/// optional row facts the default view drops or the fields every row of the
+/// page shares: every page but the last fills most of the window.
+#[test]
+fn automatic_topology_pages_fill_the_window_as_delivered() {
+    let temp = Fixture::new();
+    let root = temp.0.as_path();
+    temp.write("target.ts", "export const target = 1;\n");
+    for index in 0..400 {
+        temp.write(
+            &format!("importers/importer_{index:03}.ts"),
+            "import { target } from '../target';\nexport const value = target;\n",
+        );
+    }
+    let window = 20_000;
+    let query = json!({"operation":"dependents","path":root,"source":"target.ts"});
+    let first = topology_with_window(query, root, window);
+    let pages = first["pagination"]["totalPages"].as_u64().expect("pages");
+    let rows = walk_automatic_topology_pages(first.clone(), root, window);
+    assert_eq!(rows.len(), 400);
+    let mut page = first;
+    for current in 1..pages {
+        let chars = delivered_chars(&page["nodes"]);
+        assert!(
+            chars * 4 >= window * 3 && chars <= window,
+            "page {current} of {pages} delivers {chars} chars of a {window}-char window"
+        );
+        let next = page["next"]["nextPage"]["query"]["queries"][0].clone();
+        page = topology_with_window(next, root, window);
+    }
+}
+
+#[test]
+fn automatic_drift_pages_cover_every_change_and_bind_the_response_window() {
+    let temp = Fixture::new();
+    let root = temp.0.as_path();
+    temp.write("base/unchanged.ts", "export const unchanged = 1;\n");
+    temp.write("head/unchanged.ts", "export const unchanged = 1;\n");
+    let mut expected = BTreeMap::new();
+    for index in 0..30 {
+        let name = format!("added{index:02}_{}.ts", "long_".repeat(index % 9));
+        temp.write(&format!("head/{name}"), "export const value = 1;\n");
+        expected.insert(name, 1usize);
+    }
+    let query = json!({"operation":"drift","path":root.join("head"),"baseline":root.join("base")});
+    let first = topology_with_window(query.clone(), root, 1024);
+    let next = first["next"]["nextPage"]["query"]["queries"][0].clone();
+    let resized = topology_with_window(next.clone(), root, 4096);
+    assert_eq!(resized["errorCode"], "staleSnapshot", "{resized}");
+    let mut equivalent = next;
+    equivalent["path"] = json!("head");
+    equivalent["baseline"] = json!("base");
+    let replay = topology_with_window(equivalent, root, 1024);
+    assert!(replay.get("errorCode").is_none(), "{replay}");
+    assert_eq!(replay["pagination"]["currentPage"], 2, "{replay}");
+
+    let mut seen_files = BTreeMap::<String, usize>::new();
+    let mut seen_declarations = BTreeMap::<String, usize>::new();
+    for row in walk_automatic_topology_pages(first, root, 1024) {
+        assert_eq!(row["change"], "added", "{row}");
+        match row["category"].as_str() {
+            Some("file") => {
+                *seen_files
+                    .entry(row["file"].as_str().expect("changed file").to_owned())
+                    .or_default() += 1;
+            }
+            Some("relation") => {
+                assert_eq!(row["edgeKind"], "declares", "{row}");
+                assert_eq!(row["confidence"], "syntactic", "{row}");
+                let file = row["from"]
+                    .as_str()
+                    .and_then(|from| from.strip_prefix("file:"))
+                    .expect("declaration's file");
+                assert_eq!(
+                    row["to"],
+                    format!("symbol:{file}#declaration:{file}#value@0:13:constant"),
+                    "{row}"
+                );
+                *seen_declarations.entry(file.to_owned()).or_default() += 1;
+            }
+            _ => panic!("unexpected drift change: {row}"),
+        }
+    }
+    assert_eq!(seen_files, expected);
+    assert_eq!(seen_declarations, expected);
+
+    let mut counted = query;
+    counted["pageSize"] = json!(1);
+    let first = topology_with_window(counted, root, 1024);
+    let next = first["next"]["nextPage"]["query"]["queries"][0].clone();
+    let replay = topology_with_window(next, root, 4096);
+    assert!(replay.get("errorCode").is_none(), "{replay}");
+    assert_eq!(replay["pagination"]["currentPage"], 2, "{replay}");
+}
+
+/// No stored graph holds a secret of the source. A chained call's argument
+/// is not part of its callee's name, so that graph is stored without it; a
+/// graph whose facts still spell a secret (an import specifier) is kept in
+/// memory only. Drift stores both of its graphs under the same rule.
+#[test]
+fn a_stored_graph_never_holds_a_secret_of_the_source() {
+    const TOKEN: &str = "ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789";
+    let temp = fixture(&[
+        (
+            "src/lib.rs",
+            &format!(
+                "pub fn save(p: &str) {{\n    std::fs::write(p, \"{TOKEN}\").expect(\"w\");\n}}\n"
+            ),
+        ),
+        (
+            "web/a.ts",
+            &format!("import t from \"{TOKEN}\";\nexport const a = t;\n"),
+        ),
+        ("base/lib.rs", "pub fn save() {}\n"),
+    ]);
+    let cache = tempfile::tempdir().expect("cache");
+    let root = temp.0.as_path();
+    let (paths, security) = crate::tools::test_support::simple_policy(root);
+    let options = AstTopologyRuntimeOptions {
+        cache_dir: Some(cache.path().to_owned()),
+        ..Default::default()
+    };
+    let run_with_cache = |query: Value| {
+        let query: AstTopologyQuery = serde_json::from_value(query).expect("query");
+        execute_topology(
+            &query,
+            &paths,
+            &security,
+            &crate::tools::cancel::NeverCancel,
+            &options,
+        )
+        .expect("topology")
+    };
+    let stored = || {
+        std::fs::read_dir(cache.path())
+            .expect("cache files")
+            .map(|entry| std::fs::read_to_string(entry.expect("entry").path()).expect("file"))
+            .collect::<Vec<_>>()
+    };
+    run_with_cache(json!({"operation":"cycles","path":root.join("src")}));
+    assert_eq!(stored().len(), 1, "a graph without secret text is stored");
+    run_with_cache(json!({"operation":"cycles","path":root.join("web")}));
+    run_with_cache(
+        json!({"operation":"drift","path":root.join("src"),"baseline":root.join("base")}),
+    );
+    let files = stored();
+    assert_eq!(files.len(), 2, "src and base are stored; web is not");
+    assert!(
+        files.iter().all(|text| !text.contains("ghp_")),
+        "a stored graph holds a token"
+    );
+    assert!(
+        files.iter().any(|text| text.contains("write().expect")),
+        "callees keep their chain"
+    );
+}
+
+#[test]
+fn topology_disk_cache_is_supplied_per_call() {
+    let temp = fixture(&[("a.ts", "export const a = 1;\n")]);
+    let cache = tempfile::tempdir().expect("cache");
+    let root = temp.0.as_path();
+    let (paths, security) = crate::tools::test_support::simple_policy(root);
+    let query: AstTopologyQuery = serde_json::from_value(json!({
+        "operation":"reachability", "path":root, "entrypoints":["a.ts"]
+    }))
+    .expect("query");
+    execute_topology(
+        &query,
+        &paths,
+        &security,
+        &crate::tools::cancel::NeverCancel,
+        &Default::default(),
+    )
+    .expect("initial memory topology");
+    assert_eq!(
+        std::fs::read_dir(cache.path())
+            .expect("cache files")
+            .count(),
+        0
+    );
+    let options = AstTopologyRuntimeOptions {
+        cache_dir: Some(cache.path().to_owned()),
+        ..Default::default()
+    };
+    execute_topology(
+        &query,
+        &paths,
+        &security,
+        &crate::tools::cancel::NeverCancel,
+        &options,
+    )
+    .expect("persistent topology");
+    let stored: Vec<_> = std::fs::read_dir(cache.path())
+        .expect("cache files")
+        .collect();
+    assert_eq!(stored.len(), 1);
+    for entry in stored {
+        std::fs::remove_file(entry.expect("entry").path()).expect("remove stored graph");
+    }
+    temp.write("b.ts", "export const b = 2;\n");
+    execute_topology(
+        &query,
+        &paths,
+        &security,
+        &crate::tools::cancel::NeverCancel,
+        &Default::default(),
+    )
+    .expect("memory topology");
+    assert_eq!(
+        std::fs::read_dir(cache.path())
+            .expect("cache files")
+            .count(),
+        0
+    );
 }
 
 #[test]
@@ -389,6 +774,30 @@ fn later_pages_reuse_the_graph_until_a_scanned_file_changes() {
     let out = run(query(1), root).expect("after a new file");
     assert_eq!(builds(), after_first + 1, "a new file rebuilds the graph");
     assert_eq!(out["nodes"].as_array().map(Vec::len), Some(2), "{out}");
+}
+
+/// A later result page of the same graph reuses the analysis its first page
+/// ran; a changed analysis input (here `includeTests`) computes anew.
+#[test]
+fn later_pages_reuse_the_analysis_of_their_graph() {
+    let temp = fixture(&[
+        ("a.ts", "import { b } from './b';\nexport const a = b;\n"),
+        ("b.ts", "import { a } from './a';\nexport const b = a;\n"),
+    ]);
+    let root = temp.0.as_path();
+    let query = |page: u32, tests: bool| json!({"mainGoal":"test","reasoning":"test","operation":"deadCode","entrypoints":["a.ts"],"path":root.to_string_lossy(),"page":page,"pageSize":1,"includeTests":tests});
+    let analyses = || analysis::analyses();
+    let first = run(query(1, true), root).expect("page 1");
+    let after_first = analyses();
+    let second = run(query(2, true), root).expect("page 2");
+    assert_eq!(analyses(), after_first, "page 2 reused the analysis");
+    assert_eq!(first["graphSummary"], second["graphSummary"]);
+    run(query(1, false), root).expect("other input");
+    assert_eq!(
+        analyses(),
+        after_first + 1,
+        "a changed input analyzes again"
+    );
 }
 
 #[test]

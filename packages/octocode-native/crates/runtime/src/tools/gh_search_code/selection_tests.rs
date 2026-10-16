@@ -25,7 +25,7 @@ impl SelectionJudge for RecordingJudge {
         json!({"test":"record-sanitized-github-candidates"})
     }
 
-    fn select(&self, call: JudgeCall<'_>) -> Result<Vec<(usize, Decision)>, String> {
+    fn select(&self, call: JudgeCall<'_>) -> crate::tools::selection::Judgments {
         let states = call
             .admitted
             .iter()

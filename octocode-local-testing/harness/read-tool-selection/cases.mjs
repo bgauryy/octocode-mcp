@@ -29,7 +29,7 @@ export const CASES = [
   {
     tool: 'localSearch',
     scope: 'selectedView',
-    unit: 'files',
+    unit: 'chunks',
     query: {
       path: 'src',
       matchString: 'healthMarker',
@@ -200,7 +200,6 @@ export const CASES = [
         unit: 'lines',
         offset: 10,
         length: 8,
-        minify: 'none',
       },
     },
   },
@@ -223,7 +222,6 @@ export const CASES = [
       path: 'selection-guide.txt',
       unit: 'lines',
       length: 15,
-      minify: 'none',
     },
     classifiers: [sourceTarget],
     target: 'SELECTED_SELECTION_SENTINEL',
@@ -232,14 +230,12 @@ export const CASES = [
       path: 'selection-guide.txt',
       matchString: 'Cancellation removes',
       contextLines: 0,
-      minify: 'none',
     },
     single: {
       ...gh,
       path: 'single-selected.txt',
       unit: 'lines',
       length: 20,
-      minify: 'none',
     },
     protected: [
       { ...gh, path: 'selection-guide.txt', unit: 'bytes', length: 100 },

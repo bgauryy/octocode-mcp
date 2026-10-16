@@ -46,6 +46,19 @@ pub(crate) fn property_schemas<'a>(
     defs: &'a Value,
     name: &str,
 ) -> Vec<&'a Value> {
+    members(schema, defs, |schema| schema["properties"].get(name))
+}
+
+/// Item schemas through references and composition branches.
+pub(crate) fn item_schemas<'a>(schema: &'a Value, defs: &'a Value) -> Vec<&'a Value> {
+    members(schema, defs, |schema| schema.get("items"))
+}
+
+fn members<'a>(
+    schema: &'a Value,
+    defs: &'a Value,
+    member: impl Fn(&'a Value) -> Option<&'a Value>,
+) -> Vec<&'a Value> {
     let mut found = Vec::new();
     let mut pending = vec![schema];
     let mut seen = HashSet::new();
@@ -54,7 +67,7 @@ pub(crate) fn property_schemas<'a>(
         if !seen.insert(std::ptr::from_ref(schema)) {
             continue;
         }
-        if let Some(property) = schema["properties"].get(name) {
+        if let Some(property) = member(schema) {
             found.push(property);
         }
         for key in ["allOf", "oneOf", "anyOf"] {
@@ -153,33 +166,48 @@ pub(crate) fn restorable_fields(tool: ToolId) -> Option<&'static HashSet<&'stati
             return fields;
         };
         for schema in [&contract["querySchema"], &contract["inputSchema"]] {
-            collect_defaulted(schema, &mut fields);
+            collect_defaulted(schema, &schema["$defs"], &mut fields);
         }
         fields
     });
     Some(fields)
 }
 
-fn collect_defaulted(schema: &'static Value, fields: &mut HashSet<&'static str>) {
+/// A field's default may sit on its own schema or on the definition it
+/// references (`{"$ref":"#/$defs/HI_PageSize"}`).
+fn collect_defaulted(
+    schema: &'static Value,
+    defs: &'static Value,
+    fields: &mut HashSet<&'static str>,
+) {
     match schema {
         Value::Object(object) => {
             if let Some(Value::Object(properties)) = object.get("properties") {
                 fields.extend(
                     properties
                         .iter()
-                        .filter(|(_, field)| field.get("default").is_some())
+                        .filter(|(_, field)| resolve_ref(field, defs).get("default").is_some())
                         .map(|(name, _)| name.as_str()),
                 );
             }
             object
                 .values()
-                .for_each(|child| collect_defaulted(child, fields));
+                .for_each(|child| collect_defaulted(child, defs, fields));
         }
         Value::Array(items) => items
             .iter()
-            .for_each(|child| collect_defaulted(child, fields)),
+            .for_each(|child| collect_defaulted(child, defs, fields)),
         _ => {}
     }
+}
+
+/// Whether any query-schema variant of `tool` declares the top-level `field`.
+pub(crate) fn query_declares(tool: ToolId, field: &str) -> bool {
+    variants(tool).is_some_and(|variants| {
+        variants
+            .iter()
+            .any(|variant| variant.fields.contains_key(field))
+    })
 }
 
 /// [`query_schema_value`] as an unsigned integer.
@@ -290,12 +318,6 @@ mod tests {
                 Some("pullRequest"),
                 "pageSize",
                 "maximum",
-            ),
-            (
-                ToolId::GhGetHistoryItem,
-                Some("pullRequest"),
-                "minify",
-                "default",
             ),
             (ToolId::GhSearchHistory, None, "pageSize", "default"),
             (ToolId::GhSearchHistory, None, "pageSize", "maximum"),

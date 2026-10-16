@@ -1,45 +1,14 @@
 import { spawnSync } from 'node:child_process';
-import { createRequire } from 'node:module';
-import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { allowLocalExecutables } from '../../../../test-utils/external-effects-guard.js';
+import { binary, launcher, ready } from './native-fixture.js';
 
 // End-to-end: the BUILT launcher against the REAL packaged native binary —
 // the exact path `npx octocode` takes. Everything else in this suite mocks
 // the delegation boundary; this file is the one place the boundary is real.
 // Skips when either artifact is absent (unbuilt checkout, platforms without
 // committed binaries).
-
-const require = createRequire(import.meta.url);
-const launcher = resolve(__dirname, '..', '..', 'out', 'octocode.js');
-
-function nativeBinary(): string | null {
-  try {
-    const packageRoot = dirname(
-      require.resolve('@octocodeai/octocode-native/package.json')
-    );
-    // platform.cjs is not on the package exports map; load it by path.
-    const platform = require(join(packageRoot, 'bin', 'platform.cjs')) as {
-      getPlatformSuffix: () => string | null;
-    };
-    const suffix = platform.getPlatformSuffix();
-    if (!suffix) return null;
-    const binary = join(
-      packageRoot,
-      'npm',
-      suffix,
-      process.platform === 'win32' ? 'octocode.exe' : 'octocode'
-    );
-    return existsSync(binary) ? binary : null;
-  } catch {
-    return null;
-  }
-}
-
-const binary = nativeBinary();
-if (binary) allowLocalExecutables(binary);
-const ready = existsSync(launcher) && binary !== null;
 
 function runLauncher(args: string[], env: NodeJS.ProcessEnv = {}) {
   return spawnSync(process.execPath, [launcher, ...args], {
@@ -50,6 +19,44 @@ function runLauncher(args: string[], env: NodeJS.ProcessEnv = {}) {
 }
 
 describe.skipIf(!ready)('launcher → native binary e2e', () => {
+  it.each([
+    [],
+    ['--help'],
+    ['--version'],
+    ['--version', '--bogus'],
+    ['--', '--help'],
+    ['unknown', '--json'],
+    ['schema'],
+    ['schema', 'localFetch', '--view', 'query'],
+    ['config', '--json'],
+    ['config', 'view', '--help'],
+    ['config', 'view', '--idle-timeout=abc'],
+    ['config', 'view', '--json', '--idle-timeout=abc'],
+    ['config', 'view', '--idle-timeout=0'],
+    ['config', 'view', '--idle-timeout=3601'],
+    ['config', 'view', '--add', 'KEY'],
+    ['install'],
+    ['install', '--json'],
+    ['install', '--list', '--json'],
+    ['install', '--ide', 'not-a-client', '--json'],
+    ['skill', 'list', '--json'],
+    ['skill', 'info', 'octocode-architect', '--json'],
+    ['localSearch', '{"queries":['],
+    ['localFetch', '{"queries":[{"path":"package.json","ranges":["1-3"]}]}'],
+  ])('matches native stdout, stderr, and exit status for %j', (...args) => {
+    const native = spawnSync(binary as string, args, {
+      encoding: 'utf8',
+      env: { ...process.env, NO_COLOR: '1' },
+      timeout: 60_000,
+    });
+    const node = runLauncher(args);
+    expect(native.error).toBeUndefined();
+    expect(node.error).toBeUndefined();
+    expect(node.status).toBe(native.status);
+    expect(node.stdout).toBe(native.stdout);
+    expect(node.stderr).toBe(native.stderr);
+  });
+
   it.each([
     ['beta off, no key', '0', ''],
     ['beta off, key present', '0', 'discovery-only-test-key'],
@@ -174,17 +181,18 @@ describe.skipIf(!ready)('launcher → native binary e2e', () => {
     expect(result.status).toBe(2);
   });
 
-  it('keeps the skill recursion guard intact in the packaged binary', () => {
-    // The native binary forwards every `skill` subcommand to the npm CLI. With
-    // the delegation marker already set, the guard refuses to delegate again
-    // and names the npm launcher instead of recursing.
-    const result = spawnSync(binary as string, ['skill', 'sync'], {
+  it('ships the same skill catalog through native and Node entrypoints', () => {
+    const native = spawnSync(binary as string, ['skill', 'list', '--json'], {
       encoding: 'utf8',
-      env: { ...process.env, OCTOCODE_SKILL_DELEGATED: '1' },
+      env: { ...process.env, PATH: '' },
       timeout: 30_000,
     });
-    expect(result.status).toBe(1);
-    expect(result.stderr).toMatch(/npm launcher owns `skill`/);
-    expect(result.stderr).toContain('octocode skill sync');
+    const node = runLauncher(['skill', 'list', '--json']);
+    expect(native.status, native.stderr).toBe(0);
+    expect(node.status, node.stderr).toBe(0);
+    const names = (stdout: string) =>
+      JSON.parse(stdout).skills.map((skill: { name: string }) => skill.name);
+    expect(names(native.stdout)).toEqual(names(node.stdout));
+    expect(names(native.stdout)).toContain('octocode-architect');
   });
 });

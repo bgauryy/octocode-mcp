@@ -2,7 +2,6 @@ use super::types::*;
 use super::{cursor::*, layout::*, leads::*, regex_repair::*, rows::*, verify::*};
 use crate::policy::path::PathPolicy;
 use crate::policy::prune::DefaultsFlag;
-use crate::policy::prune::PruneMode;
 use crate::security::ContentSecurity;
 use crate::tools::cancel::CancellationCheck;
 use crate::tools::result::ToolError;
@@ -44,26 +43,8 @@ pub(super) const DEFAULT_LIST_PAGE_SIZE: u32 = 100;
 /// Matched files the engine collects for pages; more are counted only.
 pub(super) const MAX_COLLECTED_FILES: u32 = 10_000;
 
+/// One localSearch row; `selection` judges it under `clasifyContext`.
 pub fn execute_local_search(
-    query: &LocalSearchQuery,
-    paths: &PathPolicy,
-    security: &ContentSecurity,
-    cancel: &impl CancellationCheck,
-    walk_threads: Option<u32>,
-    response_window: Option<usize>,
-) -> Result<LocalSearchResult, ToolError> {
-    execute_local_search_selected(
-        query,
-        paths,
-        security,
-        cancel,
-        walk_threads,
-        response_window,
-        None,
-    )
-}
-
-pub(crate) fn execute_local_search_selected(
     query: &LocalSearchQuery,
     paths: &PathPolicy,
     security: &ContentSecurity,
@@ -98,7 +79,7 @@ pub(crate) fn execute_local_search_selected(
         &scope,
         &mut scan.parsed,
         scan.page_budget,
-        scan.stored_redaction.as_ref(),
+        scan.stored_redaction.as_deref(),
         selection,
         &scan.identity,
     )?;
@@ -107,9 +88,12 @@ pub(crate) fn execute_local_search_selected(
         value,
         query_key: std::mem::take(&mut scan.query_key),
         redaction: shaped.redaction,
-        skipped: scan.skipped.clone(),
+        skipped: Arc::clone(&scan.skipped),
     });
-    let selection_token = shaped.selection.as_ref().map(|rank| rank.token.as_str());
+    let selection_token = shaped
+        .selection
+        .as_ref()
+        .map(super::selection::Selected::token);
     let (next, leftover_matches) = cursor(
         query,
         &scan.parsed,
@@ -139,28 +123,23 @@ pub(crate) fn execute_local_search_selected(
     };
     let mut result = settle_row(&scope, &page, rows, next)?;
     if let Some(selected) = &shaped.selection {
-        if selected.receipt.selected_items < selected.receipt.total_items {
-            let mut recovery = normalized_query(query, streamed_layout(query));
-            if let Some(fields) = recovery.as_object_mut() {
-                for key in ["clasifyContext", "selection", "page", "matchPage"] {
-                    fields.remove(key);
-                }
-                fields.insert("snapshot".into(), json!(scan.identity));
-            }
+        let leads = selected.leads(query, &scan.identity, !root.is_file());
+        if !leads.is_empty() {
             let next = result.next.get_or_insert_with(|| json!({}));
-            next["unfiltered"] = crate::tools::result::Continuation::new(
-                crate::tools::id::ToolId::LocalSearch,
-                recovery,
-            )
-            .confidence("exact")
-            .build();
+            for (name, lead) in leads {
+                next[name] = lead;
+            }
         }
-        if selected.receipt.total_items > 0 && result.files.is_empty() {
+        // The pre-selection totals hold for every page: said on the first.
+        if query.page().max(1) == 1 && query.match_page().max(1) == 1 {
+            result.warnings.extend(selected.disclosure());
+        }
+        if selected.receipt().total_items > 0 && result.files.is_empty() {
             result.status = SearchStatus::Success;
         }
     }
     result.source_snapshot = Some(scan.identity);
-    result.selection = shaped.selection.map(|selection| selection.receipt);
+    result.selection = shaped.selection.map(|selection| selection.outcome.receipt);
     Ok(result)
 }
 
@@ -249,7 +228,8 @@ fn settle_row(
     }
     // A zero-match search cut by a binary file proved nothing about the cut
     // files: the tree of the scope is the way to narrow it.
-    let lists_scope = coverage.scope_miss || (empty && coverage.binary_cut);
+    let lists_scope =
+        (coverage.scope_miss || (empty && coverage.binary_cut)).then_some(!coverage.scope_miss);
     route_beyond_pages(
         query,
         layout,
@@ -338,24 +318,36 @@ fn annotate_rows<'q>(
 }
 
 /// What lies past every page the row can continue to: files past the
-/// collection cap are on no page (every page says so), and with them, a
-/// scope miss or an unproven empty result (`lists_scope`), the row leads
-/// to the scope's tree to split the search; file pages past the last page a
-/// continuation names are counted.
+/// collection cap are on no page (every page says so), and the row leads
+/// to the scope's top directories to split the search by (`narrowScope`).
+/// A scope miss or an unproven empty result (`lists_scope`) leads to the
+/// scope's listing: with the search's globs when they matched files
+/// (`Some(true)`), without them when they matched none, so the listing
+/// shows what names exist. File pages past the last page a continuation
+/// names are counted.
 fn route_beyond_pages(
     query: &LocalSearchQuery,
     layout: &Layout,
     stats: &SearchStats,
     total_files: u32,
-    lists_scope: bool,
+    lists_scope: Option<bool>,
     next: &mut Option<Value>,
     warnings: &mut Vec<String>,
 ) {
     let uncollected = uncollected_warning(stats, total_files);
-    if (lists_scope || uncollected.is_some())
-        && let Some(map) = next.get_or_insert_with(|| json!({})).as_object_mut()
+    if let Some(map) = next.get_or_insert_with(|| json!({})).as_object_mut() {
+        if let Some(keep_globs) = lists_scope {
+            map.insert("viewTree".into(), scope_listing(query, keep_globs));
+        }
+        if uncollected.is_some() {
+            map.insert("narrowScope".into(), scope_directories(query));
+        }
+    }
+    if next
+        .as_ref()
+        .is_some_and(|next| next.as_object().is_some_and(serde_json::Map::is_empty))
     {
-        map.insert("viewTree".into(), scope_listing(query));
+        *next = None;
     }
     warnings.extend(uncollected);
     warnings.extend(page_ceiling_warning(
@@ -434,7 +426,7 @@ pub(super) struct Shaped {
     pub(super) unverified: bool,
     /// Outlines parsed from the verified reads (see [`verify_shown`]).
     pub(super) outlines: Outlines,
-    pub(super) selection: Option<crate::tools::selection::Outcome>,
+    pub(super) selection: Option<super::selection::Selected>,
 }
 
 /// Redact the scan, order it, cut the page, and verify what it shows.
@@ -460,14 +452,21 @@ pub(super) fn shape_page(
     } = *scope;
     let (mut redacted, redaction) = redact_scan(scope, parsed, stored_redaction)?;
     order_files(query, &mut parsed.files);
-    let selection = select_files(scope, parsed, selection, identity, &mut redacted)?;
-    let outlines = cut_outlines(scope, &parsed.files)?;
-    let layout = Layout::cut(query, paths, output_root, parsed, page_budget, outlines);
+    let selection =
+        super::selection::select_hits(scope, parsed, selection, identity, &mut redacted)?;
+    let mut cut = cut_outlines(scope, &parsed.files)?;
+    let layout = Layout::cut(query, paths, output_root, parsed, page_budget, &cut);
     for (index, _) in &layout.shown {
         validate_matched(paths, &output_root.join(&parsed.files[*index].path))?;
     }
     let mut outlines = Outlines::new();
-    let unverified = verify_shown(scope, parsed, &layout, &mut redacted, &mut outlines)?;
+    let unverified = verify_shown(
+        scope,
+        parsed,
+        &layout,
+        &mut redacted,
+        (&mut cut, &mut outlines),
+    )?;
     Ok(Shaped {
         layout,
         redacted,
@@ -476,99 +475,6 @@ pub(super) fn shape_page(
         outlines,
         selection,
     })
-}
-
-/// Select matched-file evidence before paging; replay requires its bound plan.
-fn select_files(
-    scope: &PageScope<'_, impl CancellationCheck>,
-    parsed: &mut octocode_engine::types::TextSearchResult,
-    selection: Option<&crate::tools::selection::Runtime>,
-    identity: &str,
-    redacted: &mut Redacted,
-) -> Result<Option<crate::tools::selection::Outcome>, ToolError> {
-    let query = scope.query;
-    if query.clasify_context.is_none() {
-        return match query.selection {
-            Some(_) => Err(stale_snapshot(query)),
-            None => Ok(None),
-        };
-    }
-    if query.snapshot.is_some() && query.selection.is_none() {
-        return Err(stale_snapshot(query));
-    }
-    if matches!(
-        query.result_view,
-        LocalSearchQueryResultView::Files
-            | LocalSearchQueryResultView::FilesWithout
-            | LocalSearchQueryResultView::CountLines
-            | LocalSearchQueryResultView::CountMatches
-    ) {
-        let mut error = ToolError::new(
-            "invalidInput",
-            "clasifyContext requires a content view; use paginated or matchOnly.",
-        );
-        let mut recovery = normalized_query(query, streamed_layout(query));
-        if let Some(fields) = recovery.as_object_mut() {
-            for key in ["clasifyContext", "selection", "page", "matchPage"] {
-                fields.remove(key);
-            }
-        }
-        error.next = Some(Box::new(
-            json!({"unfiltered": crate::tools::result::Continuation::new(
-            crate::tools::id::ToolId::LocalSearch, recovery).build()}),
-        ));
-        return Err(error);
-    }
-    let unsupported = None;
-    let needs_states = crate::tools::selection::needs_candidate_states(
-        selection,
-        query.selection.as_ref().map(|token| token.as_str()),
-        unsupported,
-        parsed.files.len(),
-    );
-    let candidates = parsed
-        .files
-        .iter_mut()
-        .map(|file| {
-            let state = if needs_states && verify_candidate(scope, file, redacted)? {
-                Some(json!({"path": file.path, "matches": file.matches.iter().map(|hit| json!({"line":hit.line,"value":hit.value})).collect::<Vec<_>>()}))
-            } else {
-                None
-            };
-            Ok(crate::tools::selection::Candidate::new(state))
-        })
-        .collect::<Result<Vec<_>, ToolError>>()?;
-    let query_json = normalized_query(query, streamed_layout(query));
-    let outcome = crate::tools::selection::select(
-        selection,
-        &query_json,
-        identity,
-        query.selection.as_ref().map(|s| s.as_str()),
-        &candidates,
-        unsupported,
-        crate::contracts::tool_types::SelectionUnit::Files,
-    )
-    .map_err(|failure| match failure {
-        crate::tools::selection::Failure::Stale => stale_snapshot(query),
-        crate::tools::selection::Failure::Cancelled => {
-            ToolError::cancelled("Selection was cancelled")
-        }
-    })?;
-    let mut original = std::mem::take(&mut parsed.files)
-        .into_iter()
-        .map(Some)
-        .collect::<Vec<_>>();
-    parsed.files = outcome
-        .selected
-        .iter()
-        .map(|&index| {
-            original
-                .get_mut(index)
-                .and_then(Option::take)
-                .ok_or_else(|| stale_snapshot(query))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(Some(outcome))
 }
 
 /// The row's status, and whether it ends at a limit nothing continues.
@@ -617,14 +523,16 @@ pub(super) struct Scanned {
     /// The query key `identity` was derived from.
     pub(super) query_key: String,
     /// A stored scan's redaction to replay (see [`redact_scan`]).
-    pub(super) stored_redaction: Option<Redaction>,
-    /// A fresh scan small enough to store for this snapshot's later pages.
-    pub(super) reusable: Option<octocode_engine::types::TextSearchResult>,
+    pub(super) stored_redaction: Option<Arc<Redaction>>,
+    /// A fresh scan, packed before any page shapes it, small enough to
+    /// store for this snapshot's later pages.
+    pub(super) reusable: Option<super::packed::Packed>,
     /// The query's own walk, for probes over the same scope.
     pub(super) search_options: TextSearchOptions,
     pub(super) policy_key: String,
-    /// What the walk left out: policy-withheld and default-excluded files.
-    pub(super) skipped: crate::policy::discovery::WalkSkips,
+    /// What the walk left out: policy-withheld, ignored, default-excluded
+    /// and hidden entries.
+    pub(super) skipped: Arc<crate::policy::discovery::WalkSkips>,
 }
 
 /// Plan and run the walk (or reuse its stored scan) and prove a cursor
@@ -655,7 +563,7 @@ pub(super) fn scan_query(
     // the row around it, fits one response window. Sized by the canonical
     // root, not its spelling: a continuation names the same root relative
     // to the workspace and must cut the same pages.
-    let mut sized = normalized_query(query, streamed_layout(query));
+    let mut sized = normalized_query(&query.canonical(), streamed_layout(query));
     sized["path"] = json!(validated.canonical.to_string_lossy());
     let page_budget = crate::tools::page_windows::page_budget(response_window, &sized);
     // A stored scan was stored under the snapshot derived from its query
@@ -677,8 +585,10 @@ pub(super) fn scan_query(
     {
         return Err(stale_snapshot(query));
     }
-    let reusable =
-        (digests.is_none() && super::manifest::fits(&parsed).is_some()).then(|| parsed.clone());
+    let reusable = digests
+        .is_none()
+        .then(|| super::manifest::pack(&parsed))
+        .flatten();
     Ok(Scanned {
         validated,
         parsed,
@@ -755,17 +665,14 @@ pub(super) fn search_options(
         // Credential-named files are withheld, and generated files skipped
         // (both counted), by the walk's path filter, not by globs here.
         exclude: Some(query.exclude.clone().into_iter().collect()),
-        exclude_dir: Some(
-            PruneMode::SearchSafe
-                .directories_with_includes(query.default_excludes.defaults(), &query.include),
-        ),
-        // `includeIgnored` is the one "search everything" switch: it
-        // walks hidden files too unless `hidden` says otherwise.
+        // The default-excluded directories are pruned by the walk's path
+        // filter too (`SearchWalk`), which keeps the ones git tracks.
+        exclude_dir: None,
+        // Each flag lifts its own cause, as in every local walk; the dot
+        // entries left out are recorded by the walk's path filter.
         ignore: octocode_engine::search::walk::IgnorePolicy::new(
             query.include_ignored,
-            query
-                .include_hidden
-                .or(query.include_ignored.filter(|all| *all)),
+            query.include_hidden,
         ),
         max_depth: query.max_depth(),
         // The engine owns the relevance order (for a bare-identifier search,
@@ -814,7 +721,7 @@ pub(super) type ScanDigests =
 pub(super) struct ScanOutput {
     pub(super) parsed: octocode_engine::types::TextSearchResult,
     pub(super) digests: ScanDigests,
-    pub(super) skipped: crate::policy::discovery::WalkSkips,
+    pub(super) skipped: Arc<crate::policy::discovery::WalkSkips>,
     /// What was stored with a reused scan: its query key and redaction.
     pub(super) stored: Option<StoredDerived>,
 }
@@ -822,7 +729,7 @@ pub(super) struct ScanOutput {
 /// What a stored scan's fresh page derived from it.
 pub(super) struct StoredDerived {
     pub(super) query_key: String,
-    pub(super) redaction: Option<Redaction>,
+    pub(super) redaction: Option<Arc<Redaction>>,
 }
 
 /// The matches: a continuation reuses its page-1 scan instead of walking
@@ -855,6 +762,7 @@ pub(super) fn scan(
             paths.clone(),
             std::path::PathBuf::from(&options.path),
             query.default_excludes.defaults(),
+            options.include.as_deref().unwrap_or_default(),
         ));
         let parsed = search_text_cancellable(options, walk.clone(), &|| cancel.check().is_err())
             .map_err(|error| {
@@ -866,7 +774,7 @@ pub(super) fn scan(
                 };
                 ToolError::new(code, error.to_string())
             })?;
-        (parsed, None, walk.skipped(), None)
+        (parsed, None, Arc::new(walk.skipped()), None)
     };
     cancel.check().map_err(ToolError::cancelled)?;
     if parsed.files.is_empty()
@@ -997,6 +905,8 @@ pub(super) fn project_files(
         .iter()
         .filter_map(|(index, rows)| Some((slots.get_mut(*index)?.take()?, rows.clone())))
         .map(|(f, rows)| {
+            // One key per file, its line and column set per row.
+            let mut key = (f.path.clone(), 0, 0);
             let total = f.matches.len() as u32;
             let end = rows.end.min(f.matches.len());
             let start = rows.start.min(end);
@@ -1005,7 +915,8 @@ pub(super) fn project_files(
             let shown = page_rows
                 .into_iter()
                 .inspect(|m| {
-                    if redacted.contains(&(f.path.clone(), m.line, m.column)) {
+                    (key.1, key.2) = (m.line, m.column);
+                    if redacted.contains(&key) {
                         shown_redacted += 1;
                     }
                 })
@@ -1023,11 +934,17 @@ pub(super) fn project_files(
             later.sort_unstable();
             later.dedup();
             let shown = match layout.merge_context {
-                Some(context) => merge_context_windows(
-                    shown,
-                    context,
-                    effective_match_content_length(query) as usize,
-                ),
+                Some(context) => {
+                    let mut hits = f.matches.iter().map(|m| m.line).collect::<Vec<_>>();
+                    hits.sort_unstable();
+                    hits.dedup();
+                    merge_context_windows(
+                        shown,
+                        context,
+                        effective_match_content_length(query) as usize,
+                        &hits,
+                    )
+                }
                 None => shown,
             };
             SearchFile {

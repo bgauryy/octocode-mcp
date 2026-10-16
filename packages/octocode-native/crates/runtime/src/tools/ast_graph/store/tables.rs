@@ -13,9 +13,12 @@ use super::format::{
     NONE, NodeKind, NodeRec,
 };
 use super::workspace::{Declared, Workspace};
+use crate::tools::ast_graph::edges::Load;
 use crate::tools::ast_graph::types::{BuiltGraph, Declaration, FileFacts};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
+/// Detail of a file → file `contains` edge: a Rust `mod` declaration.
+pub(super) const MODULE_DETAIL: &str = "module";
 /// How many re-export hops a call target may traverse.
 const MAX_REEXPORT_DEPTH: usize = 8;
 /// Shorter names are too generic for a graph-wide unique-name match.
@@ -792,20 +795,6 @@ impl<'a> Projector<'a> {
 
     /// imports: linked file edges (one per relation) and external packages.
     fn import_edges(&mut self, externals: &[External], package_nodes: &BTreeMap<String, u32>) {
-        let function_ranges = self
-            .built
-            .facts
-            .iter()
-            .map(|(file, facts)| {
-                let ranges = facts
-                    .declarations
-                    .iter()
-                    .filter(|d| matches!(d.kind.as_str(), "function" | "method"))
-                    .map(|d| (d.line, d.end_line))
-                    .collect::<Vec<_>>();
-                (file.as_str(), ranges)
-            })
-            .collect::<HashMap<_, _>>();
         let mut externals_by_file = HashMap::<&str, Vec<&External>>::new();
         for external in externals {
             externals_by_file
@@ -818,10 +807,7 @@ impl<'a> Projector<'a> {
             let Some(&src) = self.file_nodes.get(file.as_str()) else {
                 continue;
             };
-            let ranges = function_ranges
-                .get(file.as_str())
-                .map_or(&[][..], Vec::as_slice);
-            self.file_import_edges(file, node, src, ranges);
+            self.file_import_edges(file, node, src);
             let mut seen = BTreeMap::<u32, (u32, &'static str)>::new();
             for external in externals_by_file.get(file.as_str()).into_iter().flatten() {
                 if let Some(&dst) = package_nodes.get(external.name.as_str()) {
@@ -853,7 +839,6 @@ impl<'a> Projector<'a> {
         file: &str,
         node: &crate::tools::ast_graph::types::Node,
         src: u32,
-        function_ranges: &[(u32, u32)],
     ) {
         let built = self.built;
         let facts = built.facts.get(file);
@@ -868,7 +853,6 @@ impl<'a> Projector<'a> {
                     .push(import.line);
             }
         }
-        let python = self.lang(file) == "python";
         for (target, kinds) in &node.edges {
             let Some(&dst) = self.file_nodes.get(target.as_str()) else {
                 continue;
@@ -877,23 +861,15 @@ impl<'a> Projector<'a> {
                 .get(target.as_str())
                 .map_or(&[][..], Vec::as_slice);
             let line = lines.iter().copied().min().unwrap_or(NONE);
-            // Python imports inside function bodies run lazily, on call:
-            // they cannot form a module-load cycle.
-            let lazy = python
-                && !lines.is_empty()
-                && lines
-                    .iter()
-                    .all(|line| function_ranges.iter().any(|(s, e)| s < line && line <= e));
             for kind in kinds {
                 // `mod child;` declares a submodule: containment, not a
                 // dependency (it would fold every module tree into a cycle).
-                let (edge_kind, detail) = if kind == "rust-module" {
-                    (EdgeKind::Contains, "module")
-                } else if lazy {
-                    (EdgeKind::Imports, "lazy-import")
-                } else {
-                    (EdgeKind::Imports, kind.as_str())
-                };
+                let (edge_kind, detail) =
+                    if crate::tools::ast_graph::edges::load(kind) == Load::ModuleTree {
+                        (EdgeKind::Contains, MODULE_DETAIL)
+                    } else {
+                        (EdgeKind::Imports, kind.as_str())
+                    };
                 self.push(src, dst, edge_kind, Confidence::High, detail, line);
             }
         }

@@ -2,7 +2,7 @@ use super::super::rest::Rest;
 use super::*;
 
 /// A commit's `continuePatch` copies the page-stream cursor named on
-/// `filePagination`, never a file's own per-file `nextOffset`.
+/// `contentPagination.files`, never a file's own per-file `nextOffset`.
 #[test]
 fn commit_continue_patch_copies_the_page_stream_cursor() {
     let query = HistoryItemRequest::from_row(json!({
@@ -13,15 +13,14 @@ fn commit_continue_patch_copies_the_page_stream_cursor() {
     let mut out = json!({
         "files":[{"filename":"a.rs","patch":"aaa"},{"filename":"b.rs","patch":"bbbbbbb",
             "patchPagination":{"unit":"chars","offset":0,"length":7,"total":20,"hasMore":true,"nextOffset":7}}],
-        "filePagination":{"currentPage":1,"hasMore":false}
+        "contentPagination":{"files":{"currentPage":1,"hasMore":false}}
     });
-    let cursors = DiffCursors::of_file_page(&out["filePagination"], Some(10), true);
+    let cursors = DiffCursors::of_file_page(&out["contentPagination"]["files"], Some(10), true);
     attach_diff_continuations(
         &mut out,
         &query,
         ItemOperation::Commit,
         Some("abc"),
-        false,
         cursors,
     );
     let next = &out["next"]["continuePatch"]["query"]["queries"][0];
@@ -70,14 +69,13 @@ fn history_b_patch_walk_hops_carry_no_response_page_knobs() {
     }))
     .expect("commit query");
     commit.auto_page_chars = Some(20_000);
-    let mut out = json!({"filePagination":{"currentPage":1,"hasMore":false}});
-    let cursors = DiffCursors::of_file_page(&out["filePagination"], Some(10), true);
+    let mut out = json!({"contentPagination":{"files":{"currentPage":1,"hasMore":false}}});
+    let cursors = DiffCursors::of_file_page(&out["contentPagination"]["files"], Some(10), true);
     attach_diff_continuations(
         &mut out,
         &commit,
         ItemOperation::Commit,
         Some("abc"),
-        false,
         cursors,
     );
     let hop = &out["next"]["continuePatch"]["query"];
@@ -173,29 +171,6 @@ fn a_cut_comment_body_continues_with_offset_on_its_comment_page() {
     assert!(next.get("commentOffset").is_none(), "{next}");
 }
 
-/// `next.readRawBody` re-reads only the minified surfaces, raw, from
-/// their first character, on the same comment page.
-#[test]
-fn raw_body_read_targets_the_minified_surfaces_on_the_same_page() {
-    let query: HistoryItemRequest = HistoryItemRequest::from_row(json!({
-        "operation":"pullRequest","mainGoal":"g","reasoning":"r","owner":"a","repo":"b","number":1,
-        "sections":["body","patches","comments"],
-        "page":2,"offset":10
-    }))
-    .expect("pr query");
-    let mut out = json!({"pullRequests":[{"number":1}]});
-    attach_raw_body_read(&mut out, &query, &[]);
-    assert!(out.get("next").is_none(), "{out}");
-    attach_raw_body_read(&mut out, &query, &["body", "comments"]);
-    let next = &out["next"]["readRawBody"]["query"]["queries"][0];
-    assert_eq!(next["minify"], "none", "{out}");
-    assert_eq!(next["page"], 2, "{out}");
-    for key in ["offset", "content"] {
-        assert!(next.get(key).is_none(), "{key} kept: {next}");
-    }
-    assert_eq!(next["sections"], json!(["body", "comments"]), "{next}");
-}
-
 /// More reshaped files than one selection holds continue in numbered
 /// reads that reach each file exactly once.
 #[test]
@@ -270,7 +245,7 @@ fn merged_pull_requests_offer_no_merge_commit_read_beside_the_shown_sha() {
             "changed_files":3,"additions":63,"deletions":4}),
         json!({"merged_at":null,"merge_commit_sha":"deadbee"}),
     ] {
-        let menu = pr_next_menu(&query, None, "none", &[], &raw);
+        let menu = pr_next_menu(&query, &[], &raw);
         assert!(menu.get("readMergeCommit").is_none(), "{menu}");
     }
 }
@@ -477,13 +452,11 @@ fn pr_next_menu_carries_required_defaults_and_drops_cursors() {
         "reasoning":"r"
     }))
     .expect("query");
-    let content_value = query.content_value();
-    let content = content_value.as_ref().and_then(Value::as_object);
-    let menu = pr_next_menu(&query, content, "none", &["src/a.rs".into()], &json!({}));
+    let menu = pr_next_menu(&query, &["src/a.rs".into()], &json!({}));
     let reviews = &menu["readFiles"]["query"]["queries"][0];
     // pageSize has no contract default; an omitted one stays omitted.
     assert!(reviews.get("pageSize").is_none(), "{reviews}");
-    // Menu reads use the flat spelling; the default minify stays implicit.
+    // Menu reads use the flat spelling; text is verbatim, so no `minify`.
     assert!(reviews.get("minify").is_none(), "{reviews}");
     assert_eq!(reviews["sections"], json!(["files"]));
     assert!(reviews.get("content").is_none(), "{reviews}");
@@ -509,7 +482,7 @@ fn pr_next_menu_omits_entries_the_row_already_answers() {
     // Empty body, one small file, comments present: every patch reads in
     // one call, so no separate file list.
     let small = json!({"body":"","changed_files":1,"additions":6,"deletions":1,"comments":3});
-    let menu = pr_next_menu(&query, None, "none", &[], &small);
+    let menu = pr_next_menu(&query, &[], &small);
     assert_eq!(names(&menu), ["readPatches", "readDiscussion"]);
     assert_eq!(
         menu["readPatches"]["query"]["queries"][0]["sections"],
@@ -518,7 +491,7 @@ fn pr_next_menu_omits_entries_the_row_already_answers() {
     // A body rides the file list of a large diff.
     let large = json!({"body":"x","changed_files":40,
         "additions":900,"deletions":50,"comments":0,"review_comments":0});
-    let menu = pr_next_menu(&query, None, "none", &[], &large);
+    let menu = pr_next_menu(&query, &[], &large);
     assert_eq!(names(&menu), ["readFiles", "readDiscussion"]);
     assert_eq!(
         menu["readFiles"]["query"]["queries"][0]["sections"],
@@ -533,7 +506,7 @@ fn pr_next_menu_omits_entries_the_row_already_answers() {
     let empty = json!({"body":"y","changed_files":0,
         "comments":0,"review_comments":0});
     assert_eq!(
-        names(&pr_next_menu(&query, None, "none", &[], &empty)),
+        names(&pr_next_menu(&query, &[], &empty)),
         ["readBody", "readDiscussion"]
     );
 }
@@ -548,7 +521,7 @@ fn menus_hold_at_most_two_entries_and_inventory_reviews_many_files() {
     .expect("query");
     let merged = json!({"body":"x".repeat(900),"changed_files":656,"additions":282_700,
         "deletions":284_842,"comments":5,"merged_at":"2026-01-01T00:00:00Z","merge_commit_sha":"abc"});
-    let menu = pr_next_menu(&query, None, "none", &[], &merged);
+    let menu = pr_next_menu(&query, &[], &merged);
     let keys = menu
         .as_object()
         .map(|m| m.keys().cloned().collect::<Vec<_>>())
@@ -557,8 +530,12 @@ fn menus_hold_at_most_two_entries_and_inventory_reviews_many_files() {
     crate::tools::test_support::checks::assert_absent(&menu, "<literal");
     let review = vec!["src/a.rs".to_owned(), "src/b.rs".to_owned()];
     let inventory = json!({"changed_files":30,"additions":900,"deletions":10});
-    let content = json!({"files":true});
-    let menu = pr_next_menu(&query, content.as_object(), "none", &review, &inventory);
+    let inventory_read: HistoryItemRequest = HistoryItemRequest::from_row(json!({
+        "operation":"pullRequest","mainGoal": "test", "reasoning":"r","owner":"o","repo":"r","number":1,
+        "sections":["files"]
+    }))
+    .expect("inventory query");
+    let menu = pr_next_menu(&inventory_read, &review, &inventory);
     assert_eq!(
         menu["readSelectedPatches"]["query"]["queries"][0]["sections"],
         json!(["patches"])
@@ -575,7 +552,7 @@ fn menus_hold_at_most_two_entries_and_inventory_reviews_many_files() {
     assert!(menu.get("readDiscussion").is_none(), "{menu}");
     // A pick covering every changed file is the every-patch read.
     let two = json!({"body":"","changed_files":2,"additions":900,"deletions":10});
-    let menu = pr_next_menu(&query, content.as_object(), "none", &review, &two);
+    let menu = pr_next_menu(&inventory_read, &review, &two);
     assert_eq!(
         menu["readPatches"]["query"]["queries"][0]["sections"],
         json!(["patches"]),
@@ -609,7 +586,7 @@ fn patch_hops_are_the_same_file_page_at_the_stream_cursor() {
     let hop = &out["next"]["continuePatch"]["query"]["queries"][0];
     assert!(hop.get("queries").is_none(), "{hop}");
     assert!(hop.get("content").is_none(), "{hop}");
-    assert!(hop.get("minify").is_none(), "default minify: {hop}");
+    assert!(hop.get("minify").is_none(), "minify: {hop}");
     assert!(hop.get("length").is_none(), "{hop}");
     assert_eq!(hop["operation"], "pullRequest");
     assert_eq!(hop["sections"], json!(["patches"]), "{hop}");
@@ -681,20 +658,19 @@ fn compare_pages_are_offered_once_with_their_own_cursor_only() {
     };
     let mut first = json!({
         "commits":[{"sha":"1"}],
-        "pagination":{"currentPage":1,"hasMore":true,"nextPage":2},
         "files":[{"path":"a.rs","patch":"x"}],
-        "filePagination":{"currentPage":1,"hasMore":true,"nextPage":2}
+        "contentPagination":{"commits":{"currentPage":1,"hasMore":true,"nextPage":2},
+            "files":{"currentPage":1,"hasMore":true,"nextPage":2}}
     });
     let cursors = DiffCursors {
         commit_page: Some(2),
-        ..DiffCursors::of_file_page(&first["filePagination"], Some(5000), true)
+        ..DiffCursors::of_file_page(&first["contentPagination"]["files"], Some(5000), true)
     };
     attach_diff_continuations(
         &mut first,
         &compare(json!({})),
         ItemOperation::Compare,
         None,
-        false,
         cursors,
     );
     let next = first["next"].as_object().expect("next");
@@ -710,15 +686,14 @@ fn compare_pages_are_offered_once_with_their_own_cursor_only() {
 
     let mut last = json!({
         "files":[{"path":"b.rs","patch":"y"}],
-        "filePagination":{"currentPage":1,"hasMore":true,"nextPage":2}
+        "contentPagination":{"files":{"currentPage":1,"hasMore":true,"nextPage":2}}
     });
-    let cursors = DiffCursors::of_file_page(&last["filePagination"], None, true);
+    let cursors = DiffCursors::of_file_page(&last["contentPagination"]["files"], None, true);
     attach_diff_continuations(
         &mut last,
         &compare(json!({"offset":5000})),
         ItemOperation::Compare,
         None,
-        false,
         cursors,
     );
     let names = last["next"]
@@ -792,23 +767,70 @@ fn issue_pages_use_the_published_include_spelling() {
     assert!(comments.get("content").is_none(), "{out}");
 }
 
-/// `next.readRawBody` re-reads the comment surface it names with every
-/// comment kind the call read: discussion and inline review comments both.
+/// A budget-sized file page (no `pageSize`, no patches) carries the page
+/// size its grid was cut on in `nextFilePage`, so the continuation reads
+/// the same grid under any batch share; a caller's `pageSize` and a patch
+/// page (fixed batch) carry nothing new. `readPatches` from an inventory
+/// page opens the patch page that holds the page's first file.
 #[test]
-fn raw_body_read_keeps_every_comment_kind() {
-    for sections in [
-        json!(["comments", "reviewComments"]),
-        json!(["reviewComments"]),
-        json!(["comments"]),
-    ] {
-        let query: HistoryItemRequest = HistoryItemRequest::from_row(json!({
-            "operation":"pullRequest","owner":"a","repo":"b","number":1,
-            "sections":sections.clone()
-        }))
-        .expect("pr query");
-        let mut out = json!({"pullRequests":[{"number":1}]});
-        attach_raw_body_read(&mut out, &query, &["comments"]);
-        let next = &out["next"]["readRawBody"]["query"]["queries"][0];
-        assert_eq!(next["sections"], sections, "{next}");
-    }
+fn budget_sized_file_pages_pin_their_grid_on_the_continuation() {
+    let request = |row: Value, share: usize| {
+        let mut query = HistoryItemRequest::from_row(row).expect("query");
+        query.auto_page_chars = Some(share);
+        query
+    };
+    let pr_next = |query: &HistoryItemRequest| {
+        let mut out = json!({"pullRequests":[{"contentPagination":{
+            "files":{"hasMore":true,"nextPage":2}
+        }}]});
+        promote_pr_continuations(&mut out, query, &Rest::default());
+        out["next"]["nextFilePage"]["query"]["queries"][0].clone()
+    };
+    let pr = |fields: Value| {
+        super::super::util::merge(
+            json!({"operation":"pullRequest","owner":"a","repo":"b","number":1}),
+            fields,
+        )
+    };
+    let alone = pr_next(&request(pr(json!({"sections":["files"]})), 20_000));
+    let batched = pr_next(&request(pr(json!({"sections":["files"]})), 10_000));
+    assert_eq!(alone["pageSize"], 333, "{alone}");
+    assert_eq!(batched["pageSize"], 166, "{batched}");
+    // Replayed in another batch, the pinned size is the caller's now.
+    let replay = request(batched.clone(), 20_000);
+    assert_eq!(super::super::inventory::file_page_size(&replay, false), 166);
+    assert_eq!(pr_next(&replay)["pageSize"], 166);
+    let patches = pr_next(&request(pr(json!({"sections":["patches"]})), 10_000));
+    assert!(patches.get("pageSize").is_none(), "{patches}");
+    let sized = pr_next(&request(
+        pr(json!({"sections":["files"],"pageSize":50})),
+        10_000,
+    ));
+    assert_eq!(sized["pageSize"], 50, "{sized}");
+
+    let compare = |page: u64, share: usize| {
+        let query = request(
+            json!({"operation":"compare","owner":"a","repo":"b","base":"x","head":"y","page":page}),
+            share,
+        );
+        let mut out = json!({"files":["M +1 -1 a.rs"],
+            "contentPagination":{"files":{"currentPage":page,"hasMore":true,"nextPage":page + 1}}});
+        let cursors = DiffCursors::of_file_page(&out["contentPagination"]["files"], None, true);
+        attach_diff_continuations(&mut out, &query, ItemOperation::Compare, None, cursors);
+        out
+    };
+    let out = compare(2, 10_000);
+    let files = &out["next"]["nextFilePage"]["query"]["queries"][0];
+    assert_eq!(
+        (&files["page"], &files["pageSize"]),
+        (&json!(3), &json!(166)),
+        "{out}"
+    );
+    // Inventory page 2 (files 166..332) starts on patch page 2 (100..200).
+    let patches = &out["next"]["readPatches"]["query"]["queries"][0];
+    assert_eq!(patches["page"], 2, "{out}");
+    assert!(patches.get("pageSize").is_none(), "{out}");
+    let first = compare(1, 10_000);
+    let patches = &first["next"]["readPatches"]["query"]["queries"][0];
+    assert!(patches.get("page").is_none(), "{first}");
 }

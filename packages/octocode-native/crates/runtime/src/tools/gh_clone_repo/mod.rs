@@ -45,13 +45,9 @@ impl Sparse {
         &self.paths
     }
 
-    /// Cache identity: one path keys as itself (the layout before multi-path
-    /// sparse, so existing entries stay valid); several key as their sorted,
-    /// newline-joined set, so request order does not split the cache.
+    /// Cache identity: the sorted, newline-joined path set, so request
+    /// order does not split the cache.
     pub(crate) fn key(&self) -> String {
-        if let [path] = self.paths.as_slice() {
-            return path.clone();
-        }
         let mut sorted = self.paths.clone();
         sorted.sort();
         sorted.join("\n")
@@ -114,8 +110,6 @@ pub struct CloneContext<'a> {
     pub config: &'a CloneConfig,
     pub endpoint: &'a GitHubEndpoint,
     pub credential: Option<&'a ResolvedCredential>,
-    /// Parent/provider-resolved default branch. Required when query.ref_ is absent.
-    pub resolved_default_branch: Option<&'a str>,
     pub cancellation: &'a dyn CancellationCheck,
     pub deadline: Instant,
     pub path_policy: &'a PathPolicy,
@@ -145,7 +139,7 @@ pub struct CloneLocation {
     /// History depth when more than the shallow single commit.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub history_depth: Option<u64>,
-    /// When the checkout was cloned; a cache hit's commit may lag the branch.
+    /// When the checkout of this commit was cloned.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cloned_at: Option<String>,
     /// When the checkout stops being reused (`forceRefresh` re-clones now).
@@ -160,6 +154,9 @@ pub struct CloneResult {
     pub location: CloneLocation,
     /// Continuations into the local tools on the checkout.
     pub next: serde_json::Value,
+    /// Per-call facts the checkout follows from (a repository rename).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -209,10 +206,12 @@ pub enum CloneFailure {
     Provider(ProviderError),
 }
 
-/// Run one ghCloneRepo row. A fresh clone runs on git alone, which
-/// authenticates with the caller's credential; only after git failed does
-/// one `commits/{ref}` call name a missing ref or repository. A cache hit
-/// is served only after the same call passes with the caller's credential.
+/// Run one ghCloneRepo row. One API answer pins the checkout before git
+/// runs: the commit the requested ref (else the default branch) names, read
+/// with the caller's own credential ([`pin`]). The checkout is keyed by that
+/// commit under the repository's canonical name, so a branch that moved is
+/// checked out again, and one commit reached by branch, abbreviated or full
+/// SHA, or an old repository name shares one checkout.
 pub async fn run<C: ConditionalCache>(
     provider: &GitHubProvider<C>,
     query: &GhCloneRepoQuery,
@@ -220,74 +219,92 @@ pub async fn run<C: ConditionalCache>(
     context: &CloneContext<'_>,
 ) -> Result<CloneResult, CloneFailure> {
     let request = request.map_err(CloneFailure::Provider)?;
-    let git = match execute_clone(query, context) {
-        Ok(hit) if hit.location.cached => {
-            return authorize_hit(provider, query, request, hit).await;
-        }
-        Ok(result) => return Ok(result),
-        Err(error) => error,
+    validate_query(query).map_err(CloneFailure::Clone)?;
+    let pin = pin(provider, query, request).await?;
+    let decode = |error: crate::contracts::tool_types::error::ConversionError| {
+        CloneFailure::Clone(CloneError::new("invalidInput", error.to_string()))
     };
-    if git.code != GIT_FAILED {
-        return Err(CloneFailure::Clone(git));
+    let pinned = GhCloneRepoQuery {
+        owner: pin.owner.parse().map_err(decode)?,
+        repo: pin.repo.parse().map_err(decode)?,
+        ref_: Some(pin.commit.parse().map_err(decode)?),
+        ..query.clone()
+    };
+    let mut result = execute_clone(&pinned, context).map_err(CloneFailure::Clone)?;
+    result.location.resolved_ref = pin.label;
+    if pin.renamed {
+        result
+            .warnings
+            .push(crate::tools::gh_shared::renamed_warning(
+                query.owner.as_str(),
+                query.repo.as_str(),
+                &(pin.owner, pin.repo),
+            ));
     }
-    let reference = query.ref_.as_ref().map_or("HEAD", |value| value.as_str());
-    let answer = provider
-        .transport
-        .commit_sha(&query.owner, &query.repo, reference, request)
-        .await;
-    Err(explain_git_failure(query, git, answer))
+    Ok(result)
 }
 
-/// Serve a cache hit only to a caller whose own credential reads the
-/// repository at the served ref. The cache is shared by every credential of
-/// the runtime and its keys name none (a refreshed token must not re-clone),
-/// so a checkout another caller's credential fetched is gated here. Any
-/// failure refuses the hit, a rate limit or outage included: one caller's
-/// spent quota never unlocks another caller's checkout.
-async fn authorize_hit<C: ConditionalCache>(
+/// The commit one clone checks out, under the repository's canonical name,
+/// and the ref name it was asked for (the default branch's name when none).
+struct Pin {
+    owner: String,
+    repo: String,
+    commit: String,
+    label: String,
+    /// `owner`/`repo` is the canonical name of a renamed repository.
+    renamed: bool,
+}
+
+/// Resolve the clone's commit with the caller's credential. The clone cache
+/// is shared by every credential of the runtime and its keys name none (a
+/// refreshed token must not re-clone), so this read is also the access check
+/// a cached checkout is served behind. Any failed answer refuses the row, a
+/// rate limit or outage included: one caller's spent quota never unlocks
+/// another caller's checkout. The reads follow GitHub's rename redirect, so
+/// the canonical name costs no further request when nothing was renamed.
+async fn pin<C: ConditionalCache>(
     provider: &GitHubProvider<C>,
     query: &GhCloneRepoQuery,
     request: &RequestContext,
-    hit: CloneResult,
-) -> Result<CloneResult, CloneFailure> {
-    let reference = hit.location.resolved_ref.as_str();
-    match provider
-        .transport
-        .commit_sha(&query.owner, &query.repo, reference, request)
-        .await
-    {
-        Ok(_) => Ok(hit),
-        Err(api) => Err(api_refusal(query, reference, api).unwrap_or_else(CloneFailure::Provider)),
-    }
-}
-
-const GIT_FAILED: &str = "gitFailed";
-
-/// After git failed, the `commits/{ref}` answer explains why: a missing ref
-/// or repository is not-found input, a credential the API rejects keeps its
-/// provider error. When the ref resolves, or the API itself failed (rate
-/// limit, outage, timeout), the answer says nothing about the request, so
-/// the git error stands and an API failure is a hint.
-pub(crate) fn explain_git_failure(
-    query: &GhCloneRepoQuery,
-    mut git: CloneError,
-    answer: Result<String, ProviderError>,
-) -> CloneFailure {
-    let api = match answer {
-        Ok(sha) => return CloneFailure::Clone(abbreviated_sha(query, &sha).unwrap_or(git)),
-        Err(api) => api,
+) -> Result<Pin, CloneFailure> {
+    let (owner, repo) = (query.owner.as_str(), query.repo.as_str());
+    let refused = |reference: &str, api: ProviderError| {
+        api_refusal(query, reference, api).unwrap_or_else(CloneFailure::Provider)
     };
-    let reference = query.ref_.as_ref().map_or("HEAD", |value| value.as_str());
-    match api_refusal(query, reference, api) {
-        Ok(failure) => failure,
-        Err(api) => {
-            git.hints.push(format!(
-                "The GitHub API ref check also failed: {}",
-                api.message
-            ));
-            CloneFailure::Clone(git)
+    let label = match query.ref_.as_deref() {
+        Some(reference) => reference.to_owned(),
+        None => {
+            provider
+                .transport
+                .repository_metadata(owner, repo, request)
+                .await
+                .map_err(|api| refused("HEAD", api))?
+                .default_branch
         }
-    }
+    };
+    let commit = provider
+        .transport
+        .commit_sha(owner, repo, &label, request)
+        .await
+        .map_err(|api| refused(&label, api))?;
+    let canonical = crate::tools::gh_shared::canonical_repo(
+        provider,
+        owner,
+        repo,
+        request,
+        crate::tools::gh_shared::RenameCheck::Redirected,
+    )
+    .await
+    .map_err(CloneFailure::Provider)?;
+    let renamed = canonical.is_some();
+    let (owner, repo) = canonical.unwrap_or_else(|| (owner.to_owned(), repo.to_owned()));
+    Ok(Pin {
+        owner,
+        repo,
+        commit,
+        label,
+        renamed,
+    })
 }
 
 /// What a failed `commits/{reference}` answer says about the request: a
@@ -325,36 +342,6 @@ fn api_refusal(
     }
 }
 
-/// A `ref` git cannot clone because it abbreviates the commit `sha` that
-/// `commits/{ref}` resolved: invalid input naming the full SHA, with the
-/// clone at it as the lead. `None` for any other ref.
-fn abbreviated_sha(query: &GhCloneRepoQuery, sha: &str) -> Option<CloneError> {
-    let reference = query.ref_.as_deref()?;
-    let abbreviated = reference.len() < sha.len()
-        && reference.bytes().all(|byte| byte.is_ascii_hexdigit())
-        && sha
-            .to_ascii_lowercase()
-            .starts_with(&reference.to_ascii_lowercase());
-    if !abbreviated {
-        return None;
-    }
-    let mut retry = serde_json::to_value(query).ok()?;
-    retry["ref"] = serde_json::json!(sha);
-    Some(CloneError {
-        next: Some(Box::new(serde_json::json!({
-            "cloneFullSha": crate::tools::result::Continuation::new(crate::tools::id::ToolId::GhCloneRepo, retry)
-                .confidence("exact")
-                .build()
-        }))),
-        ..CloneError::new(
-            "invalidInput",
-            format!(
-                "ref \"{reference}\" abbreviates commit {sha}; git checks out a branch, tag, or full commit SHA"
-            ),
-        )
-    })
-}
-
 /// A path the policy denies, under the flat code the local tools share
 /// ([`PolicyError::local_error_code`]), so it gets their recovery hints.
 fn policy_denied(error: PolicyError) -> CloneError {
@@ -370,6 +357,10 @@ struct Plan<'a> {
     query: &'a GhCloneRepoQuery,
     context: &'a CloneContext<'a>,
     repository_url: String,
+    /// The web root checkouts are cloned from ([`web_root`]): it keys the
+    /// cache entry beside the commit, not the URL, whose owner/repo casing
+    /// would split one repository into several checkouts.
+    host: String,
     sparse: Option<Sparse>,
     sparse_key: Option<String>,
     depth: u64,
@@ -385,7 +376,7 @@ impl Plan<'_> {
             branch,
             self.sparse_key.as_deref(),
             self.depth,
-            &self.repository_url,
+            &self.host,
         );
         self.context
             .path_policy
@@ -422,6 +413,7 @@ impl Plan<'_> {
         CloneResult {
             bytes,
             next: explore_next(clone_dir, paths),
+            warnings: Vec::new(),
             location: CloneLocation {
                 kind: if paths.is_some() { "tree" } else { "repo" },
                 local_path: clone_dir.to_string_lossy().into_owned(),
@@ -435,32 +427,6 @@ impl Plan<'_> {
                 expires_at,
             },
         }
-    }
-
-    /// The branch whose cache entry is looked up before any network call:
-    /// the requested ref, else the caller's default branch, else the alias a
-    /// default-branch clone recorded. `run` checks the caller's access to it
-    /// before serving the hit.
-    fn known_branch(&self) -> Option<String> {
-        let context = self.context;
-        self.query
-            .ref_
-            .as_ref()
-            .map(ToString::to_string)
-            .or_else(|| context.resolved_default_branch.map(str::to_owned))
-            .or_else(|| {
-                (!self.force_refresh())
-                    .then(|| {
-                        cache::default_branch_alias(
-                            &context.config.cache_home,
-                            &self.query.owner,
-                            &self.query.repo,
-                            &self.repository_url,
-                            context.config.cache_ttl,
-                        )
-                    })
-                    .flatten()
-            })
     }
 }
 
@@ -477,33 +443,32 @@ fn execute_clone(
     }
     validate_query(query)?;
     let sparse = Sparse::of(query);
+    let root = web_root(context.endpoint)?;
     let plan = Plan {
         query,
         context,
-        repository_url: repository_url(context.endpoint, &query.owner, &query.repo)?,
+        repository_url: repository_url(&root, &query.owner, &query.repo)?,
+        host: root.into(),
         sparse_key: sparse.as_ref().map(Sparse::key),
         sparse,
         depth: history_depth(query),
     };
     authorize_home(context)?;
-    if let Some(branch) = plan.known_branch().as_deref() {
-        let clone_dir = plan.target(branch)?;
-        let _lock = cache::CloneLock::acquire(&clone_dir, context)?;
-        if !plan.force_refresh()
-            && let Some(hit) = cache_hit(context, &clone_dir, &plan.identity(branch))?
-        {
-            return Ok(plan.result(branch, &clone_dir, hit));
-        }
-        if query.ref_.is_some() || context.resolved_default_branch.is_some() {
-            return fresh_clone(&plan, Some(branch), Some(clone_dir.as_path()));
-        }
+    // `run` pins every row to a commit before it gets here.
+    let Some(reference) = query.ref_.as_deref() else {
+        return Err(CloneError::new(
+            "invalidInput",
+            "ref must name the commit to check out",
+        ));
+    };
+    let clone_dir = plan.target(reference)?;
+    let _lock = cache::CloneLock::acquire(&clone_dir, context)?;
+    if !plan.force_refresh()
+        && let Some(hit) = cache_hit(context, &clone_dir, &plan.identity(reference))?
+    {
+        return Ok(plan.result(reference, &clone_dir, hit));
     }
-    // Unknown (or stale-aliased) default branch: let git resolve the remote
-    // HEAD. One lock serializes concurrent default-branch clones; "HEAD" is
-    // never a branch name, so it cannot collide with a branch cache entry.
-    let pending = plan.target("HEAD")?;
-    let _lock = cache::CloneLock::acquire(&pending, context)?;
-    fresh_clone(&plan, None, None)
+    fresh_clone(&plan, reference, &clone_dir)
 }
 
 /// The clones root under the cache home passes the path policy, then exists.
@@ -585,22 +550,12 @@ fn cache_hit(
     }))
 }
 
-/// What publishing a checked-out stage left at its cache entry.
-enum Published {
-    /// The stage replaced the entry; its recorded metadata.
-    Fresh(cache::CacheMeta),
-    /// The entry already held a valid checkout; the stage is discarded.
-    Cached(CacheHit),
-}
-
-/// Check out into a stage, verify it, and publish it. `branch` is `None` for
-/// a default-branch clone: git resolves the remote HEAD and the branch it
-/// checked out names the cache entry (and the default-branch alias).
-/// `locked_dir` is the entry the caller already holds the lock of.
+/// Check out `reference` into a stage, verify it, and publish it as the
+/// cache entry `clone_dir`, whose lock the caller holds.
 fn fresh_clone(
     plan: &Plan<'_>,
-    branch: Option<&str>,
-    locked_dir: Option<&Path>,
+    reference: &str,
+    clone_dir: &Path,
 ) -> Result<CloneResult, CloneError> {
     let context = plan.context;
     // Only a fresh clone probes git: a cache hit's failing `rev-parse`
@@ -608,111 +563,58 @@ fn fresh_clone(
     context.git.assert_available(&control(context))?;
     cache::cleanup_stale_artifacts(&context.config.cache_home);
     cache::evict(context, None);
-    let stage_key = match locked_dir {
-        Some(dir) => dir.to_path_buf(),
-        None => plan.target("HEAD")?,
-    };
-    let stage = cache::stage_dir(&context.config.cache_home, &stage_key)?;
-    let (resolved, commit_sha) =
-        checkout_stage(plan, branch, &stage).inspect_err(|_| discard_stage(context, &stage))?;
-    let (clone_dir, meta) =
-        match publish_stage(plan, &stage, branch, &resolved, &commit_sha, locked_dir) {
-            Ok((clone_dir, Published::Fresh(meta))) => (clone_dir, meta),
-            Ok((clone_dir, Published::Cached(hit))) => {
-                discard_stage(context, &stage);
-                return Ok(plan.result(&resolved, &clone_dir, hit));
-            }
-            Err(error) => {
-                discard_stage(context, &stage);
-                return Err(error);
-            }
-        };
+    let stage = cache::stage_dir(&context.config.cache_home, clone_dir)?;
+    let published = checkout_stage(plan, reference, &stage)
+        .and_then(|commit_sha| publish_stage(plan, &stage, reference, &commit_sha, clone_dir));
+    let meta = published.inspect_err(|_| discard_stage(context, &stage))?;
     context
         .path_policy
-        .validate(&clone_dir)
+        .validate(clone_dir)
         .map_err(policy_denied)?;
     let mut result = plan.result(
-        &resolved,
-        &clone_dir,
+        reference,
+        clone_dir,
         CacheHit {
-            commit_sha,
+            commit_sha: meta.commit_sha.clone(),
             verified: true,
             age: cache::CacheAge::of(&meta, context.config.cache_ttl),
             size: meta.checkout_bytes,
         },
     );
     result.location.cached = false;
-    cache::evict(context, Some(&clone_dir));
+    cache::evict(context, Some(clone_dir));
     Ok(result)
 }
 
-/// Publish a verified stage as the cache entry of `resolved`, under that
-/// entry's lock. The entry may already hold a valid checkout (an
-/// explicit-ref clone of the same branch): it is kept and the stage is not
-/// published. A default-branch clone records which branch the default
-/// resolved to.
+/// Publish a verified stage as the cache entry `clone_dir` of `reference`.
 fn publish_stage(
     plan: &Plan<'_>,
     stage: &Path,
-    branch: Option<&str>,
-    resolved: &str,
+    reference: &str,
     commit_sha: &str,
-    locked_dir: Option<&Path>,
-) -> Result<(PathBuf, Published), CloneError> {
+    clone_dir: &Path,
+) -> Result<cache::CacheMeta, CloneError> {
     let context = plan.context;
-    let write_alias = || {
-        if branch.is_none() {
-            cache::write_default_branch_alias(
-                &context.config.cache_home,
-                &plan.query.owner,
-                &plan.query.repo,
-                &plan.repository_url,
-                resolved,
-            );
-        }
-    };
-    let clone_dir = match locked_dir {
-        Some(dir) => dir.to_path_buf(),
-        None => plan.target(resolved)?,
-    };
-    // A default-branch clone learns its entry only now; take that entry's
-    // lock before replacing it.
-    let _lock = match locked_dir {
-        Some(_) => None,
-        None => Some(cache::CloneLock::acquire(&clone_dir, context)?),
-    };
-    if locked_dir.is_none()
-        && !plan.force_refresh()
-        && let Some(hit) = cache_hit(context, &clone_dir, &plan.identity(resolved))?
-    {
-        write_alias();
-        return Ok((clone_dir, Published::Cached(hit)));
-    }
-    let meta = write_stage_meta(plan, resolved, commit_sha, stage)?;
+    let meta = write_stage_meta(plan, reference, commit_sha, stage)?;
     // The target lock also covers this final check. forceRefresh bypasses
     // cache_hit, and user writes may arrive while the stage is fetched.
-    if clone_dir.exists() && !git::checkout_status(context, &clone_dir)?.safe_to_replace {
-        return Err(dirty_checkout(&clone_dir));
+    if clone_dir.exists() && !git::checkout_status(context, clone_dir)?.safe_to_replace {
+        return Err(dirty_checkout(clone_dir));
     }
-    cache::promote(&context.config.cache_home, stage, &clone_dir)?;
-    write_alias();
-    Ok((clone_dir, Published::Fresh(meta)))
+    cache::promote(&context.config.cache_home, stage, clone_dir)?;
+    Ok(meta)
 }
 
-/// Check out into `stage` and verify it: every sparse path exists, and a
-/// requested commit is the checked-out HEAD. Returns the resolved branch
-/// and commit.
-fn checkout_stage(
-    plan: &Plan<'_>,
-    branch: Option<&str>,
-    stage: &Path,
-) -> Result<(String, String), CloneError> {
+/// Check out `reference` into `stage` and verify it: every sparse path
+/// exists, and a requested commit is the checked-out HEAD. Returns the
+/// checked-out commit.
+fn checkout_stage(plan: &Plan<'_>, reference: &str, stage: &Path) -> Result<String, CloneError> {
     let context = plan.context;
     let sparse_paths = plan.sparse.as_ref().map(Sparse::paths);
     git::checkout(
         context,
         &plan.repository_url,
-        branch,
+        reference,
         sparse_paths,
         plan.depth,
         stage,
@@ -724,21 +626,17 @@ fn checkout_stage(
             .map(String::as_str)
             .collect::<Vec<_>>();
         if !missing.is_empty() {
-            return Err(sparse_not_found(plan.query, branch, &missing));
+            return Err(sparse_not_found(plan.query, reference, &missing));
         }
     }
-    let resolved = match branch {
-        Some(branch) => branch.to_owned(),
-        None => git::current_branch(context, stage)?,
-    };
     let commit_sha = git::read_head(context, stage)?;
-    if octocode_github::is_full_sha(&resolved) && commit_sha != resolved.to_ascii_lowercase() {
+    if octocode_github::is_full_sha(reference) && commit_sha != reference.to_ascii_lowercase() {
         return Err(CloneError::new(
             "commitMismatch",
-            format!("Checkout HEAD {commit_sha} does not match requested commit {resolved}."),
+            format!("Checkout HEAD {commit_sha} does not match requested commit {reference}."),
         ));
     }
-    Ok((resolved, commit_sha))
+    Ok(commit_sha)
 }
 
 /// Record the checkout's identity, commit and size in its stage. Repository
@@ -798,12 +696,7 @@ fn discard_stage(context: &CloneContext<'_>, stage: &Path) {
 
 /// Requested sparse paths absent at the checked-out revision: a not-found
 /// input, named per path, with the recovery as its one hint.
-fn sparse_not_found(
-    query: &GhCloneRepoQuery,
-    branch: Option<&str>,
-    missing: &[&str],
-) -> CloneError {
-    let at = branch.map_or_else(String::new, |branch| format!("@{branch}"));
+fn sparse_not_found(query: &GhCloneRepoQuery, reference: &str, missing: &[&str]) -> CloneError {
     let paths = missing
         .iter()
         .map(|path| format!("\"{path}\""))
@@ -814,7 +707,7 @@ fn sparse_not_found(
         ..CloneError::new(
             "pathNotFound",
             format!(
-                "Path does not exist: {paths} in {}/{}{at}; nothing was checked out for it.",
+                "Path does not exist: {paths} in {}/{}@{reference}; nothing was checked out for it.",
                 query.owner, query.repo
             ),
         )
@@ -912,11 +805,10 @@ fn is_sparse_path(path: &str) -> bool {
             .all(|segment| !matches!(segment, "." | ".."))
 }
 
-fn repository_url(
-    endpoint: &GitHubEndpoint,
-    owner: &str,
-    repo: &str,
-) -> Result<String, CloneError> {
+/// The git web root of `endpoint` that repositories are cloned from:
+/// `https://github.com` for the public API, the GitHub Enterprise host (and
+/// any path prefix before `/api/v3`) otherwise.
+fn web_root(endpoint: &GitHubEndpoint) -> Result<url::Url, CloneError> {
     let base = endpoint
         .rest(&[])
         .map_err(|error| CloneError::new("configuration", error.message))?;
@@ -932,19 +824,19 @@ fn repository_url(
     }
     let path = base.path().trim_end_matches('/');
     if base.host_str() == Some("api.github.com") && path.is_empty() {
-        let mut url = url::Url::parse("https://github.com").map_err(|_| unsupported_endpoint())?;
-        url.path_segments_mut()
-            .map_err(|_| unsupported_endpoint())?
-            .push(owner)
-            .push(&format!("{repo}.git"));
-        return Ok(url.into());
+        return url::Url::parse("https://github.com").map_err(|_| unsupported_endpoint());
     }
-    if !path.ends_with("/api/v3") {
+    let Some(prefix) = path.strip_suffix("/api/v3") else {
         return Err(unsupported_endpoint());
-    }
-    let prefix = &path[..path.len() - "/api/v3".len()];
+    };
     let mut url = base.clone();
     url.set_path(prefix);
+    Ok(url)
+}
+
+/// The git URL of `owner/repo` under `root` ([`web_root`]).
+fn repository_url(root: &url::Url, owner: &str, repo: &str) -> Result<String, CloneError> {
+    let mut url = root.clone();
     url.path_segments_mut()
         .map_err(|_| unsupported_endpoint())?
         .pop_if_empty()

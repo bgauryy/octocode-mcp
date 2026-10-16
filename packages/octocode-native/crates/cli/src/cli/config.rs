@@ -345,7 +345,10 @@ pub fn manage(
         .parent()
         .ok_or("Workspace configuration directory is unavailable.")?;
     if operation == "inspect" {
-        return Ok(inspect_management(runtime.config(), workspace));
+        return Ok(enrich_settings(inspect_management(
+            runtime.config(),
+            workspace,
+        )));
     }
     let scope = request
         .get("scope")
@@ -403,4 +406,41 @@ pub fn manage(
         _ => return Err("Unknown configuration operation.".into()),
     };
     Ok(json!({"success":true,"changed":changed,"key":key,"scope":scope}))
+}
+
+/// The generated native contract is the one metadata source for the browser
+/// editor.  This replaces the former Node-side join with `CONFIG_FIELDS`.
+fn enrich_settings(mut view: serde_json::Value) -> serde_json::Value {
+    use octocode_native::config::{CONFIG_FIELDS, ConfigFieldKind};
+    let Some(settings) = view
+        .get_mut("settings")
+        .and_then(serde_json::Value::as_array_mut)
+    else {
+        return view;
+    };
+    for setting in settings {
+        let Some(key) = setting.get("key").and_then(serde_json::Value::as_str) else {
+            continue;
+        };
+        let Some(field) = CONFIG_FIELDS.iter().find(|field| field.path == key) else {
+            continue;
+        };
+        let kind = match field.kind {
+            ConfigFieldKind::Boolean => "boolean",
+            ConfigFieldKind::String => "string",
+            ConfigFieldKind::Url => "url",
+            ConfigFieldKind::Path => "path",
+            ConfigFieldKind::StringArray => "stringArray",
+            ConfigFieldKind::Enum => "enum",
+        };
+        setting["type"] = json!(kind);
+        setting["credential"] = json!(field.credential);
+        if let Ok(default) = serde_json::from_str(field.default_json) {
+            setting["defaultValue"] = default;
+        }
+        if !field.values.is_empty() {
+            setting["values"] = json!(field.values);
+        }
+    }
+    view
 }

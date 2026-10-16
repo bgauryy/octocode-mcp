@@ -27,6 +27,7 @@ use matching::{
     CandidateVisitor, CaptureEnv, MatchWithKind, collect_kind_matches, visit_named_expanding_macros,
 };
 use pattern::CompiledPattern;
+pub use pattern::PatternDeclaration;
 pub use rule::RULE_INVALID;
 use rule::{CompiledRule, Document};
 
@@ -40,6 +41,11 @@ use super::types::StructuralMatch;
 
 pub(super) type OctoCompiledMatcher =
     Box<dyn Fn(&str) -> Result<Vec<MatchWithKind>, ExecutionError> + Send + Sync>;
+
+/// The declaration `pattern` spells in `lang` ([`CompiledPattern::declaration`]).
+pub(super) fn pattern_declaration(lang: &AgLanguage, pattern: &str) -> Option<PatternDeclaration> {
+    CompiledPattern::new(lang, pattern).ok()?.declaration()
+}
 
 pub(super) fn compile_matcher(
     lang: &AgLanguage,

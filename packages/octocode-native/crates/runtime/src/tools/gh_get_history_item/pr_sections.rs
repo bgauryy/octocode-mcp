@@ -1,43 +1,21 @@
 //! Pull-request discussion, review and commit sections: one public page of
 //! each, with per-item body windows.
-use super::patch::page::shape_files;
-use super::patch_hop::{DiffCursors, attach_diff_continuations, take_reshaped_paths};
+use super::inventory::compact_inventory;
 use super::rest::BodyWindows;
-use super::text::{body_matches, delivered_earlier, needle, window_body};
+use super::text::{body_matches, delivered_earlier, needle, shape_comment, window_body};
 use super::util::{array, str_at, string};
 use super::window::{WindowState, paginate_window};
-use super::{HistoryItemRequest, ItemOperation, fetch};
+use super::{HistoryItemRequest, Section, fetch};
 use crate::tools::gh_shared::commit::utc_date;
-use crate::tools::gh_shared::ensure_next;
 use crate::tools::id::ToolId;
 use crate::tools::result::remove_nulls;
 use futures_util::{StreamExt as _, TryStreamExt as _};
+use octocode_github::MAX_PER_PAGE;
 use octocode_github::{GitHubTransport, ProviderError, RequestContext};
 use serde_json::{Map, Value, json};
 
-/// Fields of a mapped comment that anchor it in the diff and its thread.
-const COMMENT_ANCHOR_KEYS: [&str; 8] = [
-    "path",
-    "side",
-    "startLine",
-    "line",
-    "commitSha",
-    "outdated",
-    "subjectType",
-    "inReplyToId",
-];
-
 /// Commit-detail requests in flight at once for `commits.includeFiles`.
 const COMMIT_DETAIL_CONCURRENCY: usize = 4;
-
-/// What one page of PR comments adds beside its rows.
-pub(super) struct CommentShape {
-    /// A minified body view dropped text from a comment.
-    pub(super) dropped: bool,
-    /// `readCommentCode`, `readCommentCode2`, …: the code the page's anchored
-    /// review comments on the first anchor's file discuss, ten ranges per read.
-    pub(super) code_reads: Vec<Value>,
-}
 
 /// A commit's person as one string: the GitHub login, else the git name
 /// (the same rule as search rows).
@@ -146,6 +124,9 @@ impl CommentSection {
 
 /// Shape one page of a PR comment `section`; every comment body window of
 /// the page joins `windows` (one shared `offset` continues them all).
+/// Returns `readCommentCode`, `readCommentCode2`, …: the code the page's
+/// anchored review comments on the first anchor's file discuss, ten ranges
+/// per read.
 pub(super) fn shape_pr_comments(
     row: &mut Value,
     pagination: &mut Map<String, Value>,
@@ -154,7 +135,7 @@ pub(super) fn shape_pr_comments(
     state: WindowState,
     query: &HistoryItemRequest,
     windows: &mut BodyWindows,
-) -> CommentShape {
+) -> Vec<Value> {
     let needle = needle(query);
     let comments = comments
         .into_iter()
@@ -162,33 +143,16 @@ pub(super) fn shape_pr_comments(
         .collect::<Vec<_>>();
     let (slice, page) = state.paginate(comments, query.page(), Some(query.collection_page_size()));
     let mut shaped = Vec::new();
-    let mut dropped = false;
     for comment in slice {
-        let (body, body_page) = window_body(
-            &string(comment.get("body")),
-            query.char_offset(),
-            query,
-            windows,
-            &mut dropped,
-        );
+        // The mapped row keeps the review anchor and thread link: path,
+        // line range, side, the commit the lines belong to, and the comment
+        // this one replies to.
+        let (item, body_page) = shape_comment(&comment, query.char_offset(), query, windows);
         // A body continuation lists only the bodies it continues: a whole
         // body an earlier window delivered is not repeated as an empty row.
         if delivered_earlier(query.char_offset(), &body_page) {
             continue;
         }
-        // A whole body restates no window.
-        let windowed = body_page["offset"] != 0 || body_page["hasMore"] == true;
-        let mut item = json!({
-            "id": comment["id"], "author": comment["author"],
-            "body": body, "bodyPagination": windowed.then_some(body_page),
-            "createdAt": comment.get("createdAt"), "updatedAt": comment.get("updatedAt")
-        });
-        // The review anchor and thread link: path, line range, side, the
-        // commit the lines belong to, and the comment this one replies to.
-        for key in COMMENT_ANCHOR_KEYS {
-            item[key] = comment.get(key).cloned().unwrap_or(Value::Null);
-        }
-        remove_nulls(&mut item);
         shaped.push(item);
     }
     let code_reads = match section {
@@ -199,14 +163,10 @@ pub(super) fn shape_pr_comments(
         row[section.key()] = Value::Array(shaped);
     }
     pagination.insert(section.key().into(), page);
-    CommentShape {
-        dropped,
-        code_reads,
-    }
+    code_reads
 }
 
-/// Shape one page of PR reviews; true when a minified body view dropped
-/// text from any of them. Their cut bodies join `windows`.
+/// Shape one page of PR reviews. Their cut bodies join `windows`.
 pub(super) fn shape_pr_reviews(
     row: &mut Value,
     pagination: &mut Map<String, Value>,
@@ -214,7 +174,7 @@ pub(super) fn shape_pr_reviews(
     state: WindowState,
     query: &HistoryItemRequest,
     windows: &mut BodyWindows,
-) -> bool {
+) {
     let needle = needle(query);
     let reviews = reviews
         .into_iter()
@@ -222,11 +182,9 @@ pub(super) fn shape_pr_reviews(
         .collect::<Vec<_>>();
     let (slice, page) = state.paginate(reviews, query.page(), Some(query.collection_page_size()));
     let mut shaped = Vec::new();
-    let mut dropped = false;
     for review in slice {
         let raw_body = string(review.get("body"));
-        let (body, body_page) =
-            window_body(&raw_body, query.char_offset(), query, windows, &mut dropped);
+        let (body, body_page) = window_body(&raw_body, query.char_offset(), query, windows);
         if delivered_earlier(query.char_offset(), &body_page) {
             continue;
         }
@@ -248,9 +206,15 @@ pub(super) fn shape_pr_reviews(
     }
     row["reviews"] = Value::Array(shaped);
     pagination.insert("reviews".into(), page);
-    dropped
 }
 
+/// Shape one page of PR commits. With `commitFiles` each commit lists its
+/// changed paths (the inventory rows, no patches: a commit read returns
+/// those) from one commit-detail read; a commit with more files than one
+/// file page shows continues on the row's `next`
+/// (`continueCommitFiles`, `continueCommitFiles2`, …: that commit's next file
+/// page), never in a list nested in the commit. Returns those
+/// continuations.
 pub(super) async fn shape_pr_commits(
     transport: &GitHubTransport,
     row: &mut Value,
@@ -259,17 +223,12 @@ pub(super) async fn shape_pr_commits(
     state: WindowState,
     query: &HistoryItemRequest,
     context: &RequestContext,
-) -> Result<(), ProviderError> {
-    let include_files = query
-        .content_value()
-        .as_ref()
-        .and_then(|content| content.pointer("/commits/includeFiles"))
-        .and_then(Value::as_bool)
-        == Some(true);
+) -> Result<Vec<(String, Value)>, ProviderError> {
+    let include_files = query.sections().has(Section::CommitFiles);
     let (slice, page) = state.paginate(commits, query.page(), Some(query.collection_page_size()));
     // Each commit's files are one detail request: a few run at once, in
     // page order, through the transport's shared admission and deadline.
-    let shaped: Vec<Value> = futures_util::stream::iter(slice)
+    let shaped: Vec<(Value, Option<Value>)> = futures_util::stream::iter(slice)
         .map(|item| async move {
             let sha = string(item.get("sha"));
             let mut commit = json!({
@@ -278,62 +237,57 @@ pub(super) async fn shape_pr_commits(
                 "author":commit_person(&item),
                 "date":utc_date(str_at(&item,"/commit/author/date"))
             });
+            let mut more_files = None;
             if include_files {
+                // One provider batch of paths per commit.
+                let per_page = MAX_PER_PAGE;
                 let (detail, more) = fetch(
                     transport,
                     &["repos", query.owner(), query.repo(), "commits", &sha],
-                    &[("per_page", "100".into()), ("page", "1".into())],
+                    &[("per_page", per_page.to_string()), ("page", "1".into())],
                     context,
                 )
                 .await?;
                 let files = array(detail.get("files").cloned().unwrap_or(json!([])));
-                let (files, files_page) =
-                    paginate_window(files, 0, !more, Some(1), Some(query.collection_page_size()));
-                let (mut files, cursor) = shape_files(files, true, query);
-                let reshaped = take_reshaped_paths(
-                    Some(&mut files),
-                    query.wants(crate::contracts::tool_types::ExtraKind::Details),
-                );
-                let cursors = DiffCursors::of_file_page(
-                    &files_page,
-                    cursor,
-                    files.as_array().is_some_and(|files| !files.is_empty()),
-                );
-                commit["files"] = files;
-                commit["filePagination"] = files_page;
-                attach_diff_continuations(
-                    &mut commit,
-                    query,
-                    ItemOperation::Commit,
-                    Some(&sha),
-                    true,
-                    cursors,
-                );
-                if !reshaped.is_empty() {
-                    attach_raw_commit_read(&mut commit, query, &sha);
+                let (files, files_page) = paginate_window(files, 0, !more, Some(1), Some(per_page));
+                commit["files"] = Value::Array(compact_inventory(&files));
+                if let Some(next_page) = files_page.get("nextPage").and_then(Value::as_u64) {
+                    commit["contentPagination"]["files"] = files_page;
+                    more_files = Some(commit_files_page(query, &sha, next_page, per_page));
                 }
             }
-            Ok::<_, ProviderError>(commit)
+            Ok::<_, ProviderError>((commit, more_files))
         })
         .buffered(COMMIT_DETAIL_CONCURRENCY)
         .try_collect()
         .await?;
-    row["commits"] = Value::Array(shaped);
+    let mut continuations = Vec::new();
+    let mut commits = Vec::with_capacity(shaped.len());
+    for (commit, more_files) in shaped {
+        commits.push(commit);
+        if let Some(read) = more_files {
+            let name = match continuations.len() {
+                0 => "continueCommitFiles".to_owned(),
+                index => format!("continueCommitFiles{}", index + 1),
+            };
+            continuations.push((name, read));
+        }
+    }
+    row["commits"] = Value::Array(commits);
     pagination.insert("commits".into(), page);
-    Ok(())
+    Ok(continuations)
 }
 
-/// A PR commit's file rows show the PR's patch view (narrowed to
-/// `matchString` hits); a commit read is never narrowed, so it returns every
-/// patch of that commit whole, paged.
-fn attach_raw_commit_read(commit: &mut Value, query: &HistoryItemRequest, sha: &str) {
-    ensure_next(commit);
-    commit["next"]["readUntrimmed"] = crate::tools::result::Continuation::new(
+/// The next changed-file page of one PR commit: the commit read of its
+/// paths at `page`.
+fn commit_files_page(query: &HistoryItemRequest, sha: &str, page: u64, page_size: usize) -> Value {
+    crate::tools::result::Continuation::new(
         ToolId::GhGetHistoryItem,
-        json!({"operation":"commit","owner":query.owner(),"repo":query.repo(),"ref":sha,"sections":["patches"]}),
+        json!({"operation":"commit","owner":query.owner(),"repo":query.repo(),"ref":sha,
+            "sections":["files"],"page":page,"pageSize":page_size}),
     )
     .confidence("exact")
-    .build();
+    .build()
 }
 
 #[cfg(test)]
@@ -356,7 +310,7 @@ mod tests {
         section: CommentSection,
         raw: Vec<Value>,
         pagination: &mut Map<String, Value>,
-    ) -> (Value, CommentShape) {
+    ) -> (Value, Vec<Value>) {
         let mut row = json!({});
         let shape = shape_pr_comments(
             &mut row,
@@ -435,8 +389,8 @@ mod tests {
             ],
             &mut Map::new(),
         );
-        let [read] = shape.code_reads.as_slice() else {
-            panic!("one code read: {:?}", shape.code_reads);
+        let [read] = shape.as_slice() else {
+            panic!("one code read: {shape:?}");
         };
         assert_eq!(read["tool"], "ghGetFileContent", "{read}");
         let q = &read["query"]["queries"][0];
@@ -461,8 +415,8 @@ mod tests {
             ],
             &mut Map::new(),
         );
-        let [read] = shape.code_reads.as_slice() else {
-            panic!("one code read: {:?}", shape.code_reads);
+        let [read] = shape.as_slice() else {
+            panic!("one code read: {shape:?}");
         };
         let q = &read["query"]["queries"][0];
         assert_eq!(q["path"], "src/a.ts", "{read}");
@@ -508,8 +462,8 @@ mod tests {
         assert_eq!(inline.get("comments"), None, "{inline}");
         assert_eq!(talk.pointer("/comments/0/id"), Some(&json!("2")), "{talk}");
         assert_eq!(talk.get("reviewComments"), None, "{talk}");
-        assert_eq!(inline_shape.code_reads.len(), 1);
-        assert!(talk_shape.code_reads.is_empty());
+        assert_eq!(inline_shape.len(), 1);
+        assert!(talk_shape.is_empty());
         assert_eq!(
             pagination.keys().collect::<Vec<_>>(),
             ["reviewComments", "comments"]
@@ -523,7 +477,7 @@ mod tests {
     fn body_continuation_lists_only_unfinished_bodies() {
         let query = HistoryItemRequest::from_row(json!({
             "operation":"pullRequest","owner":"o","repo":"r","number":1,
-            "sections":["comments"],"minify":"none","offset":10,"length":10
+            "sections":["comments"],"offset":10,"length":10
         }))
         .expect("pull request row");
         let mut row = json!({});

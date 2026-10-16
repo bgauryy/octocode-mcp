@@ -3,13 +3,14 @@
 use super::types::*;
 
 /// Order one clipped file's rows for paging: by lexical hit rank, then
-/// distinct text before repeats, stable by line.
+/// distinct complete values before repeats, stable by line. Display clips
+/// never define duplicate identity: a wider expansion keeps the same order.
 pub(super) fn rank_file_rows(matches: &mut Vec<octocode_engine::types::TextSearchMatch>) {
     matches.sort_by_key(|matched| std::cmp::Reverse(matched.rank.unwrap_or(1)));
     let mut seen = std::collections::HashSet::new();
     let (distinct, repeats): (Vec<_>, Vec<_>) = std::mem::take(matches)
         .into_iter()
-        .partition(|matched| seen.insert(matched.value.trim().to_owned()));
+        .partition(|matched| seen.insert(matched.value_digest));
     matches.extend(distinct);
     matches.extend(repeats);
 }
@@ -41,6 +42,11 @@ pub(super) fn project_match(
                     .original_chars
                     .map_or_else(|| matched.value.chars().count(), |chars| chars as usize),
             ),
+            original_bytes: Some(
+                matched
+                    .original_bytes
+                    .map_or_else(|| matched.value.len(), |bytes| bytes as usize),
+            ),
             returned_chars: Some(chars),
             enclosing: None,
             enclosing_line: None,
@@ -60,6 +66,7 @@ pub(super) fn project_match(
         count: matched.count,
         clipped,
         original_chars: matched.original_chars.map(|chars| chars as usize),
+        original_bytes: matched.original_bytes.map(|bytes| bytes as usize),
         returned_chars: clipped.then(|| matched.value.chars().count()),
         enclosing: None,
         enclosing_line: None,
@@ -92,10 +99,37 @@ pub(super) fn context_window(matched: &SearchMatch, context: u32) -> Option<(u32
 /// Merges overlapping windows while the joined block stays within the
 /// `max_chars` (`matchContentLength`) budgets of the rows it joins, so a
 /// block is never larger than those rows returned separately.
+///
+/// `hits` are every hit line of the file (sorted, any page): a window shows
+/// only the lines its hit owns ([`owned_lines`]), so a hit or context line
+/// that another page's row owns is never shown twice across pages.
+/// The lines `[low, high]` of hit `line`'s ±`context` window it owns among
+/// the file's `hits` (sorted): a line within reach of two hits belongs to
+/// the nearer one, the earlier on a tie. Each line of every window is owned
+/// by exactly one hit, so pages showing disjoint hits show disjoint lines.
+pub(super) fn owned_lines(line: u32, context: u32, hits: &[u32]) -> (u32, u32) {
+    let mut low = line.saturating_sub(context);
+    let mut high = line.saturating_add(context);
+    let at = hits.partition_point(|&hit| hit < line);
+    if let Some(&previous) = at.checked_sub(1).and_then(|i| hits.get(i)) {
+        // Lines past the previous hit's reach, or nearer this hit.
+        let past_reach = previous.saturating_add(context).saturating_add(1);
+        let nearer = previous + (line - previous) / 2 + 1;
+        low = low.max(past_reach.min(nearer));
+    }
+    if let Some(&next) = hits[at..].iter().find(|&&hit| hit > line) {
+        let before_reach = next.saturating_sub(context).saturating_sub(1);
+        let nearer = line + (next - line) / 2;
+        high = high.min(before_reach.max(nearer));
+    }
+    (low, high)
+}
+
 pub(super) fn merge_context_windows(
     rows: Vec<SearchMatch>,
     context: u32,
     max_chars: usize,
+    hits: &[u32],
 ) -> Vec<SearchMatch> {
     struct Block {
         head: SearchMatch,
@@ -129,6 +163,16 @@ pub(super) fn merge_context_windows(
             out.extend(open.take().map(flush));
             out.push(row);
             continue;
+        };
+        let (start, lines) = {
+            let (low, high) = owned_lines(row.line, context, hits);
+            let end = start + lines.len() as u32; // exclusive
+            let from = low.max(start);
+            let to = high.saturating_add(1).min(end).max(from);
+            (
+                from,
+                lines[(from - start) as usize..(to - start) as usize].to_vec(),
+            )
         };
         if let Some(block) = open.as_mut() {
             let end = block.start + block.lines.len() as u32; // exclusive
@@ -190,6 +234,8 @@ mod merge_tests {
             count: None,
             clipped: false,
             original_chars: None,
+
+            original_bytes: None,
             returned_chars: None,
             enclosing: None,
             enclosing_line: None,
@@ -197,37 +243,71 @@ mod merge_tests {
         }
     }
 
+    /// Each line within reach of two hits belongs to the nearer (the
+    /// earlier on a tie); a line only one hit reaches is that hit's.
+    #[test]
+    fn every_window_line_has_one_owning_hit() {
+        let hits = [10, 13, 30];
+        assert_eq!(owned_lines(10, 3, &hits), (7, 11));
+        assert_eq!(owned_lines(13, 3, &hits), (12, 16));
+        assert_eq!(owned_lines(30, 3, &hits), (27, 33));
+        // Hits 3 apart with ±1: no window line is shared.
+        assert_eq!(owned_lines(5, 1, &[5, 8]), (4, 6));
+        assert_eq!(owned_lines(8, 1, &[5, 8]), (7, 9));
+        // A row whose neighbour is on another page shows only its own
+        // lines: 13's window on its own page starts after 10's line 11.
+        let lines = (1..=20).map(|n| format!("l{n}")).collect::<Vec<_>>();
+        let merged = merge_context_windows(vec![row(13, &lines[9..16].join("\n"))], 3, 500, &hits);
+        assert_eq!(
+            merged[0].value,
+            "12\tl12\n13\tl13\n14\tl14\n15\tl15\n16\tl16"
+        );
+    }
+
     #[test]
     fn splices_only_when_shared_lines_agree() {
         // Rows 5 and 6 with ±1 context share lines 5..=6.
-        let merged =
-            merge_context_windows(vec![row(5, "l4\nl5\nl6"), row(6, "l5\nl6\nl7")], 1, 500);
+        let merged = merge_context_windows(
+            vec![row(5, "l4\nl5\nl6"), row(6, "l5\nl6\nl7")],
+            1,
+            500,
+            &[],
+        );
         assert_eq!(merged.len(), 1);
         assert_eq!(merged[0].value, "4\tl4\n5\tl5\n6\tl6\n7\tl7");
         assert_eq!(merged[0].match_lines, Some(vec![5, 6]));
         // A window ending on a blank line keeps that line numbered.
-        let blank = merge_context_windows(vec![row(5, "l4\nl5\n")], 1, 500);
+        let blank = merge_context_windows(vec![row(5, "l4\nl5\n")], 1, 500, &[]);
         assert_eq!(blank[0].value, "4\tl4\n5\tl5\n6\t");
         // A redacted/rewritten shared line keeps both rows verbatim.
         let apart = merge_context_windows(
             vec![row(5, "l4\nl5\nl6"), row(6, "l5\n[REDACTED]\nl7")],
             1,
             500,
+            &[],
         );
         assert_eq!(apart.len(), 2);
         assert!(apart.iter().all(|m| m.match_lines.is_none()));
         // A value whose line count cannot be a ±1 window is never spliced.
-        let odd = merge_context_windows(vec![row(5, "l4\nl5\nl6"), row(6, "one line")], 1, 500);
+        let odd =
+            merge_context_windows(vec![row(5, "l4\nl5\nl6"), row(6, "one line")], 1, 500, &[]);
         assert_eq!(odd.len(), 2);
         assert_eq!(odd[1].value, "one line");
         // Disjoint windows (gap at line 7..) stay separate rows.
-        let gap = merge_context_windows(vec![row(2, "l1\nl2\nl3"), row(9, "l8\nl9\nl10")], 1, 500);
+        let gap = merge_context_windows(
+            vec![row(2, "l1\nl2\nl3"), row(9, "l8\nl9\nl10")],
+            1,
+            500,
+            &[],
+        );
         assert_eq!(gap.len(), 2);
         // A merged block may use the budgets of the rows it replaces (here
         // 2 × 8 chars), so it is never larger than those rows unmerged.
-        let within = merge_context_windows(vec![row(5, "l4\nl5\nl6"), row(6, "l5\nl6\nl7")], 1, 8);
+        let within =
+            merge_context_windows(vec![row(5, "l4\nl5\nl6"), row(6, "l5\nl6\nl7")], 1, 8, &[]);
         assert_eq!(within.len(), 1, "two 8-char rows merge into 11 chars");
-        let capped = merge_context_windows(vec![row(5, "l4\nl5\nl6"), row(6, "l5\nl6\nl7")], 1, 5);
+        let capped =
+            merge_context_windows(vec![row(5, "l4\nl5\nl6"), row(6, "l5\nl6\nl7")], 1, 5, &[]);
         assert_eq!(
             capped.len(),
             2,
@@ -246,7 +326,7 @@ mod merge_tests {
             lines[lo - 1..hi].join("\n")
         };
         let rows = vec![row(5, &window(5)), row(7, &window(7)), row(9, &window(9))];
-        let merged = merge_context_windows(rows, 3, 60);
+        let merged = merge_context_windows(rows, 3, 60, &[]);
         assert_eq!(merged.len(), 1, "{merged:?}");
         let numbered = (2..=12)
             .map(|n| format!("{n}\tline{n:02}"))

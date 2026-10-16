@@ -1,5 +1,6 @@
 use super::aliases::{ResolveContext, probe_js};
 use super::cargo::{CargoCrates, load_cargo_crates};
+use super::linking::Linker;
 use super::packages::{PackageIndex, PackageLink};
 use super::types::*;
 use crate::tools::id::ToolId;
@@ -8,7 +9,6 @@ use crate::tools::result::ToolError;
 use crate::{
     policy::path::PathPolicy, security::ContentSecurity, tools::cancel::CancellationCheck,
 };
-use octocode_engine::text::JS_TS_EXTENSIONS;
 use octocode_engine::types::GraphFactsScanOptions;
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -24,8 +24,13 @@ pub(crate) struct BuildExtras {
     /// The configured `OCTOCODE_CARGO` for `cargo metadata`; `None` runs
     /// `cargo` from PATH.
     pub cargo: Option<String>,
+    /// This runtime's persistent cache; absent in memory mode.
+    pub cache_dir: Option<PathBuf>,
 }
 
+/// An owned graph built straight from a scan, bypassing the memo: drift
+/// needs the evidence graph the memo does not keep (and edits it), and a
+/// one-shot ingest never reads a memo it would fill.
 pub(crate) fn build_graph_with(
     q: &AstTopologyQuery,
     paths: &PathPolicy,
@@ -33,29 +38,9 @@ pub(crate) fn build_graph_with(
     cancel: &dyn CancellationCheck,
     extras: &BuildExtras,
 ) -> Result<BuiltGraph, ToolError> {
-    let cancelled = ToolError::cancelled;
-    cancel.check().map_err(cancelled)?;
-    let requested_root = q
-        .path()
-        .map(PathBuf::from)
-        .or_else(|| infer_root(q))
-        .ok_or_else(|| missing_root_error(q))?;
-    let validated = paths
-        .validate(&requested_root)
-        .map_err(|e| ToolError::policy(e, "pathValidationFailed"))?;
-    // Only drift diffs the evidence graph, which the memo does not keep.
-    let drift = q.analysis() == super::GraphAnalysis::Drift;
-    let key = memo_key(q, paths, extras, &validated.canonical);
-    if !drift && let Some(graph) = super::memo::get(&key) {
-        let mut built = (*graph).clone();
-        built.display_path = paths.redact(&validated.canonical);
-        return Ok(built);
-    }
-    let built = build_fresh(q, paths, security, cancel, extras, validated)?;
-    if !drift {
-        super::memo::put(key, std::sync::Arc::new(built.clone()));
-    }
-    Ok(built)
+    let validated = validated_root(q, paths, cancel)?;
+    let scan = discover_facts(q, paths, cancel, extras, &validated.canonical)?;
+    build_fresh(q, paths, security, cancel, extras, validated, scan)
 }
 
 /// Shared immutable graph for public topology pages. Presentation path is
@@ -68,34 +53,53 @@ pub(crate) fn build_graph_shared_with(
     cancel: &dyn CancellationCheck,
     extras: &BuildExtras,
 ) -> Result<(std::sync::Arc<BuiltGraph>, String), ToolError> {
+    let validated = validated_root(q, paths, cancel)?;
+    let display_path = paths.redact(&validated.canonical);
+    let scan = discover_facts(q, paths, cancel, extras, &validated.canonical)?;
+    let key = format!(
+        "{}|{}",
+        memo_key(q, paths, extras, &validated.canonical),
+        super::memo::discovery_key(&scan.walk)
+    );
+    if let Some(graph) = super::memo::get(&key, extras.cache_dir.as_deref()) {
+        return Ok((graph, display_path));
+    }
+    let graph = std::sync::Arc::new(build_fresh(
+        q, paths, security, cancel, extras, validated, scan,
+    )?);
+    super::memo::put(key, graph.clone(), extras.cache_dir.as_deref());
+    Ok((graph, display_path))
+}
+
+/// The scan root a query names (or infers from an absolute file), validated
+/// under the path policy.
+fn validated_root(
+    q: &AstTopologyQuery,
+    paths: &PathPolicy,
+    cancel: &dyn CancellationCheck,
+) -> Result<crate::policy::path::ValidatedPath, ToolError> {
     cancel.check().map_err(ToolError::cancelled)?;
     let requested_root = q
         .path()
         .map(PathBuf::from)
         .or_else(|| infer_root(q))
         .ok_or_else(|| missing_root_error(q))?;
-    let validated = paths
+    paths
         .validate(&requested_root)
-        .map_err(|error| ToolError::policy(error, "pathValidationFailed"))?;
-    let display_path = paths.redact(&validated.canonical);
-    let key = memo_key(q, paths, extras, &validated.canonical);
-    if let Some(graph) = super::memo::get(&key) {
-        return Ok((graph, display_path));
-    }
-    let graph = std::sync::Arc::new(build_fresh(q, paths, security, cancel, extras, validated)?);
-    super::memo::put(key, graph.clone());
-    Ok((graph, display_path))
+        .map_err(|error| ToolError::policy(error, "pathValidationFailed"))
 }
 
 /// Everything besides the files that decides the built graph.
 fn memo_key(q: &AstTopologyQuery, paths: &PathPolicy, extras: &BuildExtras, root: &Path) -> String {
     format!(
-        "{root:?}|{:?}|{}|{:?}|{:?}|{:?}|{extras:?}|{paths:?}",
+        "{root:?}|{:?}|{}|{:?}|{:?}|{:?}|{:?}|{:?}|{paths:?}",
         q.exclude(),
         q.default_excludes(),
         q.max_files(),
         q.language_globs(),
         q.rust_workspace(),
+        extras.extra_excludes,
+        extras.cargo,
     )
 }
 
@@ -117,11 +121,19 @@ fn build_fresh(
     cancel: &dyn CancellationCheck,
     extras: &BuildExtras,
     validated: crate::policy::path::ValidatedPath,
+    scan: FactScan,
 ) -> Result<BuiltGraph, ToolError> {
     #[cfg(test)]
     FRESH_BUILDS.with(|count| count.set(count.get() + 1));
     let cancelled = ToolError::cancelled;
-    let scan = scan_facts(q, paths, cancel, extras, &validated.canonical)?;
+    let scan = octocode_engine::graph::scan_walked_graph_facts(
+        scan.options,
+        scan.walk,
+        &|_: &str| true,
+        &|view: &octocode_engine::graph::GraphFactsView<'_>| Some(view.to_entry()),
+        &|| cancel.check().is_err(),
+    )
+    .map_err(|error| ToolError::graph_scan(&error, cancel))?;
     cancel.check().map_err(cancelled)?;
     // A discovered path is not linkable until its facts were actually parsed.
     // Otherwise an unread or oversized target becomes a false resolved edge.
@@ -192,46 +204,62 @@ fn build_fresh(
     Ok(built)
 }
 
-/// The fact scan of `root` under the query's exclusions and file bounds.
-fn scan_facts(
+/// One policy-filtered discovery walk, reused for memo freshness and parsing.
+struct FactScan {
+    options: GraphFactsScanOptions,
+    walk: octocode_engine::types::FileSystemQueryResult,
+}
+
+fn discover_facts(
     q: &AstTopologyQuery,
     paths: &PathPolicy,
     cancel: &dyn CancellationCheck,
     extras: &BuildExtras,
     root: &Path,
-) -> Result<
-    octocode_engine::graph::GraphFactsMappedScan<octocode_engine::graph::GraphFactsTypedEntry>,
-    ToolError,
-> {
+) -> Result<FactScan, ToolError> {
     let mut exclude =
         crate::policy::prune::PruneMode::SyntaxVisible.directories(q.default_excludes());
     exclude.extend(extras.extra_excludes.iter().cloned());
-    let globs = q.exclude().map(<[String]>::to_vec);
-    if q.max_files().is_none() {
-        admit_scope(q, root, &exclude, globs.clone(), paths, cancel)?;
-    }
+    let options = |max_files: u32| GraphFactsScanOptions {
+        path: root.to_string_lossy().into_owned(),
+        exclude_dir: Some(exclude.clone()),
+        exclude: q.exclude().map(<[String]>::to_vec),
+        max_files: Some(max_files),
+        skip_files: None,
+        max_file_bytes: Some(octocode_engine::graph::MAX_GRAPH_SOURCE_BYTES),
+        language_globs: q
+            .language_globs()
+            .as_ref()
+            .map(crate::tools::ast_rule::language_globs),
+        ignore: octocode_engine::search::walk::IgnorePolicy::default(),
+    };
     let max_files = q.scan_files().clamp(1, super::topology_max("maxFiles"));
     let discovery = paths.discovery_walk();
-    octocode_engine::graph::scan_graph_facts(
-        GraphFactsScanOptions {
-            path: root.to_string_lossy().into_owned(),
-            exclude_dir: Some(exclude),
-            exclude: globs,
-            max_files: Some(max_files),
-            skip_files: None,
-            max_file_bytes: Some(1_000_000),
-            language_globs: q
-                .language_globs()
-                .as_ref()
-                .map(crate::tools::ast_rule::language_globs),
-            ignore: octocode_engine::search::walk::IgnorePolicy::default(),
-        },
-        &|path, file_type| discovery.permits_entry(path, file_type),
-        &|_| true,
-        &|view| Some(view.to_entry()),
-        &|| cancel.check().is_err(),
-    )
-    .map_err(|error| ToolError::graph_scan(&error, cancel))
+    let admit = |path: &Path, file_type| discovery.permits_entry(path, file_type);
+    let stop = || cancel.check().is_err();
+    let scan_error = |error| ToolError::graph_scan(&error, cancel);
+    // An implicit-default scan is admitted first by a discovery-only count
+    // (no parsing). The count walks the scan's own candidates, so an
+    // admitted root's count is the scan's walk and is not walked again.
+    let admitted = match q.max_files() {
+        Some(_) => None,
+        None => Some(admit_scope(
+            q,
+            root,
+            options(SCOPE_COUNT_FILES),
+            &admit,
+            cancel,
+            paths,
+        )?)
+        .filter(|walk| !walk.was_capped && walk.entries.len() <= max_files as usize),
+    };
+    let options = options(max_files);
+    let walk = match admitted {
+        Some(walk) => walk,
+        None => octocode_engine::graph::walk_graph_fact_files(&options, &admit, &stop)
+            .map_err(scan_error)?,
+    };
+    Ok(FactScan { options, walk })
 }
 
 /// Whether Cargo linking was requested but has no manifest, and the
@@ -244,7 +272,7 @@ fn cargo_linking(
     cancel: &dyn CancellationCheck,
 ) -> (bool, CargoCrates) {
     let rust_cargo_unavailable = q.rust_workspace() == Some(AstTopologyQueryRustWorkspace::Cargo)
-        && known.iter().any(|file| file.ends_with(".rs"))
+        && known.iter().any(|file| is_rust(file))
         && !has_cargo_manifest(&b.root, known);
     if rust_cargo_unavailable {
         b.diagnostics.push(Diagnostic {
@@ -272,7 +300,7 @@ fn cargo_linking(
     } else {
         CargoCrates::default()
     };
-    (rust_cargo_unavailable, cargo_crates)
+    (rust_cargo_unavailable, cargo_crates.within(&b.root))
 }
 
 /// Link one scanned file, unless its fact schema is unsupported.
@@ -316,29 +344,31 @@ fn link_entry(
     Ok(())
 }
 
+/// Whether `file` is Rust source, by the grammar its extension selects.
+fn is_rust(file: &str) -> bool {
+    super::linking::Linker::of(file) == super::linking::Linker::Rust
+}
+
 fn has_cargo_manifest(root: &Path, known: &BTreeSet<String>) -> bool {
     if root.join("Cargo.toml").is_file() {
         return true;
     }
-    known
-        .iter()
-        .filter(|file| file.ends_with(".rs"))
-        .any(|file| {
-            let mut directory = root.join(file).parent().map(Path::to_path_buf);
-            while let Some(candidate) = directory {
-                if !candidate.starts_with(root) {
-                    return false;
-                }
-                if candidate.join("Cargo.toml").is_file() {
-                    return true;
-                }
-                if candidate == root {
-                    return false;
-                }
-                directory = candidate.parent().map(Path::to_path_buf);
+    known.iter().filter(|file| is_rust(file)).any(|file| {
+        let mut directory = root.join(file).parent().map(Path::to_path_buf);
+        while let Some(candidate) = directory {
+            if !candidate.starts_with(root) {
+                return false;
             }
-            false
-        })
+            if candidate.join("Cargo.toml").is_file() {
+                return true;
+            }
+            if candidate == root {
+                return false;
+            }
+            directory = candidate.parent().map(Path::to_path_buf);
+        }
+        false
+    })
 }
 
 /// No `path` and no absolute file to infer a root from: the caller must name
@@ -392,51 +422,6 @@ fn extension(file: &str) -> &str {
         .filter(|x| !x.contains('/'))
         .unwrap_or("")
 }
-fn is_c_family_extension(ext: &str) -> bool {
-    matches!(
-        ext,
-        "c" | "h" | "cc" | "cpp" | "cxx" | "hh" | "hpp" | "hxx" | "cu" | "cuh"
-    )
-}
-fn linking(ext: &str) -> &'static str {
-    if JS_TS_EXTENSIONS.contains(&ext) {
-        "javascript-relative"
-    } else if ext == "go" {
-        "go-packages"
-    } else if ext == "java" {
-        "java-imports"
-    } else if ext == "rs" {
-        "rust-modules"
-    } else if matches!(ext, "py" | "pyi") {
-        "python-modules"
-    } else if is_c_family_extension(ext) {
-        "c-relative-includes"
-    } else {
-        "unsupported"
-    }
-}
-fn edge_kind(ext: &str, kind: &str) -> &'static str {
-    if ext == "rs" {
-        if kind == "module" {
-            "rust-module"
-        } else {
-            "rust-use"
-        }
-    } else if kind == "type" {
-        "type-import"
-    } else if ext == "go" {
-        "go-import"
-    } else if ext == "java" {
-        "java-import"
-    } else if matches!(ext, "py" | "pyi") {
-        "python-import"
-    } else if is_c_family_extension(ext) {
-        "c-include"
-    } else {
-        "static-import"
-    }
-}
-
 /// Diagnostic prefix the tree-sitter fact producer stamps on every file.
 const TREE_SITTER_SYNTAX_ONLY: &str = "tree-sitter graph facts are syntax-only;";
 
@@ -458,15 +443,14 @@ fn link_file(
     counts: BTreeMap<String, u32>,
     graph_builder: Option<&mut octocode_engine::graph::CodeGraphBuilder>,
 ) -> Result<(), ToolError> {
-    let ext = extension(&file).to_owned();
+    let lang = Linker::of(&file);
     let language = if p.language.is_empty() {
-        ext.clone()
+        extension(&file).to_owned()
     } else {
         p.language.clone()
     };
-    let link = linking(&ext);
-    count_language(b, &language, link);
-    push_fact_diagnostics(b, &file, &p.diagnostics, &language, link, inputs.security);
+    count_language(b, &language, lang.label());
+    push_fact_diagnostics(b, &file, &p.diagnostics, &language, lang, inputs.security);
     let syntax_only = p
         .diagnostics
         .iter()
@@ -474,9 +458,9 @@ fn link_file(
     let facts = FileFacts {
         reference_counts: counts,
         reference_basis: if syntax_only {
-            "syntax-references"
+            ReferenceBasis::Syntax
         } else {
-            "semantic-references"
+            ReferenceBasis::Semantic
         },
         language,
         ..Default::default()
@@ -486,8 +470,7 @@ fn link_file(
         graph_builder,
         inputs,
         file,
-        ext,
-        link,
+        lang,
         node: Node::default(),
         facts,
     };
@@ -495,7 +478,7 @@ fn link_file(
     for import in p.imports {
         linker.import(import, &p.modules)?;
     }
-    if linker.ext == "java" {
+    if linker.lang == Linker::Java {
         linker.java_same_package(&p.calls, &p.edges)?;
     }
     for export in p.exports {
@@ -506,6 +489,9 @@ fn link_file(
     }
     for require in p.common_js {
         linker.common_js(require)?;
+    }
+    for path in p.paths {
+        linker.path(path)?;
     }
     let FileLink {
         b,
@@ -532,7 +518,7 @@ fn push_fact_diagnostics(
     file: &str,
     messages: &[String],
     language: &str,
-    link: &str,
+    lang: Linker,
     security: &ContentSecurity,
 ) {
     for message in messages {
@@ -553,7 +539,7 @@ fn push_fact_diagnostics(
             message: sanitize(security, message),
         });
     }
-    if link == "unsupported" {
+    if lang == Linker::Unsupported {
         b.diagnostics.push(Diagnostic {
             file: file.to_owned(),
             line: None,
@@ -571,8 +557,7 @@ struct FileLink<'x, 'g> {
     graph_builder: Option<&'g mut octocode_engine::graph::CodeGraphBuilder>,
     inputs: &'x LinkInputs<'x>,
     file: String,
-    ext: String,
-    link: &'static str,
+    lang: Linker,
     node: Node,
     facts: FileFacts,
 }
@@ -590,10 +575,18 @@ impl FileLink<'_, '_> {
         )
     }
 
+    /// Whether `line` lies inside a function or method body of this file
+    /// (after its header line): code there runs on call.
+    fn inside_function(&self, line: u32) -> bool {
+        self.facts.declarations.iter().any(|d| {
+            matches!(d.kind.as_str(), "function" | "method") && d.line < line && line <= d.end_line
+        })
+    }
+
     /// A bare JS/TS specifier naming project code (alias, workspace package,
     /// `#`/`@/`/`~/` convention): failing to link it is an internal gap.
     fn internal_bare(&self, spec: &str) -> bool {
-        JS_TS_EXTENSIONS.contains(&self.ext.as_str())
+        self.lang == Linker::JsTs
             && !spec.starts_with('.')
             && !spec.starts_with('/')
             && self.inputs.ctx.is_internal_bare_js(spec, &self.file)
@@ -603,7 +596,7 @@ impl FileLink<'_, '_> {
         resolve(
             spec,
             &self.file,
-            &self.ext,
+            self.lang,
             hint,
             imported,
             self.inputs.known,
@@ -625,7 +618,7 @@ impl FileLink<'_, '_> {
             &self.file,
             line,
             spec,
-            &self.ext,
+            self.lang,
             target,
             unsupported,
             internal,
@@ -667,11 +660,17 @@ impl FileLink<'_, '_> {
         i: octocode_engine::graph::GraphFactImport,
         modules: &[octocode_engine::graph::GraphFactRustModule],
     ) -> Result<(), ToolError> {
-        if matches!(self.ext.as_str(), "go" | "java") {
+        if matches!(self.lang, Linker::Go | Linker::Java) {
             return self.package_import(i);
         }
-        let rust = self.ext == "rs";
-        let target = if rust
+        let rust = self.lang == Linker::Rust;
+        // `include!("path")` splices that file into this one: the path is
+        // relative to this file and its items share this file's namespace.
+        let include = rust && i.import_kind == "include";
+        let target = if include {
+            join_within_root(dirname(&self.file), &i.specifier)
+                .filter(|target| self.inputs.known.contains(target))
+        } else if rust
             && let Some(local) = rust_local_target(&i, &self.file, modules, self.inputs.known)
         {
             Some(local)
@@ -679,21 +678,41 @@ impl FileLink<'_, '_> {
             None
         } else {
             self.resolve(
-                &rust_scoped_specifier(&i, &self.ext),
+                &rust_scoped_specifier(&i, self.lang),
                 i.resolution_hint.as_deref(),
                 i.imported_name.as_deref().unwrap_or_default(),
             )
         };
-        let unsupported = self.link == "unsupported" || rust && self.inputs.rust_cargo_unavailable;
-        let external = self.record(i.line, &i.specifier, &target, unsupported);
+        let unsupported = self.lang == Linker::Unsupported
+            || rust && !include && self.inputs.rust_cargo_unavailable;
+        // An unresolved include names a file outside the scan, never a package.
+        let external = if include {
+            record_resolution(
+                self.b,
+                &self.file,
+                i.line,
+                &i.specifier,
+                self.lang,
+                &target,
+                unsupported,
+                true,
+                self.inputs.security,
+            )
+        } else {
+            self.record(i.line, &i.specifier, &target, unsupported)
+        };
         if let Some(t) = target.as_ref().filter(|t| **t != self.file) {
             let kind = if i.import_kind.is_empty() {
                 "value"
             } else {
                 &i.import_kind
             };
-            self.edge(t, edge_kind(&self.ext, kind), i.line)?;
-            if i.imported_name.as_deref() == Some("*") || is_c_family_extension(&self.ext) {
+            let mut kind = self.lang.import_edge(kind);
+            if kind == super::edges::PYTHON_IMPORT && self.inside_function(i.line) {
+                kind = super::edges::PYTHON_LAZY_IMPORT;
+            }
+            self.edge(t, kind, i.line)?;
+            if i.imported_name.as_deref() == Some("*") || self.lang == Linker::CFamily || include {
                 self.b.namespace_targets.insert(t.clone());
             }
         }
@@ -722,7 +741,7 @@ impl FileLink<'_, '_> {
         let targets = match self
             .inputs
             .packages
-            .resolve(&self.ext, &i.specifier, &self.file)
+            .resolve(self.lang, &i.specifier, &self.file)
         {
             PackageLink::Files(files) => files,
             PackageLink::UnresolvedInternal => {
@@ -750,7 +769,7 @@ impl FileLink<'_, '_> {
         let mut linked_targets = Vec::new();
         for target in targets {
             if target != self.file {
-                self.edge(&target, edge_kind(&self.ext, "value"), i.line)?;
+                self.edge(&target, self.lang.import_edge("value"), i.line)?;
                 if self.b.edges_capped {
                     break;
                 }
@@ -841,13 +860,13 @@ impl FileLink<'_, '_> {
             return Ok(());
         };
         let target = self.resolve(&spec, None, x.local_name.as_deref().unwrap_or(&x.name));
-        self.record(x.line, &spec, &target, self.link == "unsupported");
+        self.record(x.line, &spec, &target, self.lang == Linker::Unsupported);
         if let Some(t) = &target {
             self.facts.reexport_lines.push((t.clone(), x.line));
         }
         if x.name == "*" {
             if let Some(t) = target {
-                let kind = if self.ext == "rs" {
+                let kind = if self.lang == Linker::Rust {
                     "rust-use"
                 } else if x.export_kind == "type" {
                     "type-star-reexport"
@@ -884,13 +903,13 @@ impl FileLink<'_, '_> {
             let target = self.resolve(&c.callee, None, "*");
             self.record(c.line, &c.callee, &target, false);
             if let Some(t) = target {
-                self.edge(&t, "dynamic-import", c.line)?;
+                self.edge(&t, super::edges::DYNAMIC_IMPORT, c.line)?;
                 self.node.dynamic_only.insert(t.clone());
                 self.b.namespace_targets.insert(t);
             }
             return Ok(());
         }
-        let target = (self.ext == "rs" && !self.inputs.rust_cargo_unavailable)
+        let target = (self.lang == Linker::Rust && !self.inputs.rust_cargo_unavailable)
             .then(|| {
                 rust_call_target(
                     &c.callee,
@@ -904,7 +923,7 @@ impl FileLink<'_, '_> {
         // A qualified path (`crate::b::f()`) depends on its module as much
         // as a `use` does.
         if let Some(t) = target.as_ref().filter(|t| **t != self.file) {
-            self.edge(t, "rust-path", c.line)?;
+            self.edge(t, super::edges::RUST_PATH, c.line)?;
         }
         self.facts.calls.push(Call {
             caller_id: c.caller_id,
@@ -912,6 +931,48 @@ impl FileLink<'_, '_> {
             line: c.line,
             kind: c.kind,
             receiver_type: c.receiver_type,
+            target,
+        });
+        Ok(())
+    }
+
+    /// A Rust qualified path outside call and `use` position depends on its
+    /// module as a call does. One that names the current crate but does not
+    /// resolve is an internal gap, never silently complete coverage.
+    fn path(&mut self, p: octocode_engine::graph::GraphFactPath) -> Result<(), ToolError> {
+        if self.inputs.rust_cargo_unavailable {
+            // The import pass already reports the missing manifest.
+            return Ok(());
+        }
+        let target = match rust_inline_path(&p.path, p.inline_depth) {
+            None => Some(self.file.clone()),
+            Some(path) => rust_call_target(
+                path,
+                &self.file,
+                &self.facts.imports,
+                self.inputs.known,
+                self.inputs.cargo_crates,
+            ),
+        };
+        match &target {
+            Some(t) if *t != self.file => self.edge(t, super::edges::RUST_PATH, p.line)?,
+            Some(_) => {}
+            None if rust_internal_specifier(&p.path) => {
+                self.b.count_import(2, &self.file, p.line, &p.path);
+                self.b.diagnostics.push(Diagnostic {
+                    file: self.file.clone(),
+                    line: Some(p.line),
+                    code: "unresolved-internal".into(),
+                    message: sanitize(
+                        self.inputs.security,
+                        &format!("Cannot link path {:?} (unresolvedInternal).", p.path),
+                    ),
+                });
+            }
+            None => {}
+        }
+        self.facts.paths.push(PathRef {
+            line: p.line,
             target,
         });
         Ok(())
@@ -1048,7 +1109,7 @@ fn record_resolution(
     file: &str,
     line: u32,
     spec: &str,
-    ext: &str,
+    lang: Linker,
     target: &Option<String>,
     unsupported: bool,
     internal_bare: bool,
@@ -1067,14 +1128,14 @@ fn record_resolution(
                 &format!("Cannot link import {spec:?} (unsupported)."),
             ),
         })
-    } else if !matches!(ext, "py" | "pyi")
+    } else if lang != Linker::Python
         && (spec.starts_with('.') || spec.starts_with('/') || internal_bare)
         && is_non_code_specifier(spec)
     {
         b.count_import(4, file, line, spec)
     } else if spec.starts_with('.')
         || spec.starts_with('/')
-        || (ext == "rs" && rust_internal_specifier(spec))
+        || (lang == Linker::Rust && rust_internal_specifier(spec))
         || internal_bare
     {
         b.count_import(2, file, line, spec);
@@ -1097,14 +1158,14 @@ fn record_resolution(
 fn resolve(
     spec: &str,
     importer: &str,
-    ext: &str,
+    lang: Linker,
     hint: Option<&str>,
     imported: &str,
     known: &BTreeSet<String>,
     cargo_crates: &CargoCrates,
     ctx: &ResolveContext,
 ) -> Option<String> {
-    if matches!(ext, "py" | "pyi") {
+    if lang == Linker::Python {
         return resolve_python(
             spec,
             importer,
@@ -1131,7 +1192,7 @@ fn resolve(
             resolve_python(local, importer, hint, imported, known, &["."])
         });
     }
-    if is_c_family_extension(ext) {
+    if lang == Linker::CFamily {
         let quoted = match hint {
             Some("c-relative") => true,
             Some("c-system") => false,
@@ -1154,10 +1215,10 @@ fn resolve(
             .find_map(|dir| join_within_root(dir, spec).filter(|p| known.contains(p)))
             .or_else(|| ctx.header_by_suffix(spec, importer));
     }
-    if ext == "rs" {
+    if lang == Linker::Rust {
         return resolve_rust(spec, importer, known, cargo_crates);
     }
-    if !JS_TS_EXTENSIONS.contains(&ext) {
+    if lang != Linker::JsTs {
         return None;
     }
     if spec.starts_with('/') {
@@ -1180,22 +1241,26 @@ fn rust_module_child_dir(importer: &str) -> String {
 }
 
 /// The importer's crate-root directory: the nearest ancestor holding a
-/// `lib.rs`/`main.rs` in the scanned set, else the nearest ancestor named
-/// `src` (a multi-crate workspace has many `src/` roots — anchoring to the
-/// importer's own is what makes `crate::` resolvable outside a single-crate
-/// scan), else the scan-relative `src`.
-fn rust_crate_root(importer: &str, known: &BTreeSet<String>) -> String {
+/// `lib.rs`/`main.rs` in the scanned set; `None` when the scan holds none.
+fn rust_crate_root(importer: &str, known: &BTreeSet<String>) -> Option<String> {
     let mut dir = dirname(importer);
     loop {
         if known.contains(&join(dir, "lib.rs")) || known.contains(&join(dir, "main.rs")) {
-            return dir.to_owned();
+            return Some(dir.to_owned());
         }
         let parent = dirname(dir);
         if parent == dir || dir == "." {
-            break;
+            return None;
         }
         dir = parent;
     }
+}
+
+/// Without a scanned crate root: the importer's nearest ancestor named
+/// `src` (a multi-crate workspace has many `src/` roots — anchoring to the
+/// importer's own is what makes `crate::` resolvable outside a single-crate
+/// scan), else the scan-relative `src`.
+fn rust_src_dir(importer: &str) -> String {
     let mut dir = dirname(importer);
     loop {
         if dir == "src" || dir.ends_with("/src") {
@@ -1247,15 +1312,40 @@ fn rust_local_target(
     (climbs <= depth).then(|| file.to_owned())
 }
 
+/// A Rust path written inside `depth` inline modules: a `self::` path or
+/// one whose `super`s stay within those modules names this file (`None`);
+/// otherwise the path with the inline climbs removed, resolved from the
+/// file's own module.
+fn rust_inline_path(path: &str, depth: u32) -> Option<&str> {
+    if depth == 0 {
+        return Some(path);
+    }
+    if path.starts_with("self::") {
+        return None;
+    }
+    let climbs = path.split("::").take_while(|s| *s == "super").count();
+    if climbs == 0 {
+        return Some(path);
+    }
+    if climbs <= depth as usize {
+        return None;
+    }
+    let mut rest = path;
+    for _ in 0..depth {
+        rest = rest.strip_prefix("super::")?;
+    }
+    Some(rest)
+}
+
 /// A Rust `super::` path written inside inline modules climbs those first:
 /// at inline depth `d`, the first `d` `super`s stay in the file, so only the
 /// rest climb from the file's own module.
 fn rust_scoped_specifier<'a>(
     import: &'a octocode_engine::graph::GraphFactImport,
-    ext: &str,
+    lang: Linker,
 ) -> std::borrow::Cow<'a, str> {
     let depth = import.module_scope.as_ref().map_or(0, Vec::len);
-    if ext != "rs" || depth == 0 {
+    if lang != Linker::Rust || depth == 0 {
         return std::borrow::Cow::Borrowed(&import.specifier);
     }
     let mut rest = import.specifier.as_str();
@@ -1357,10 +1447,15 @@ fn resolve_rust(
             .or_else(|| known.contains(src).then(|| src.clone()));
     }
     match first {
-        "crate" => {
-            let base = rust_crate_root(importer, known);
-            resolve_rust_module_prefix(&base, &segments[1..], known)
-        }
+        "crate" => match rust_crate_root(importer, known) {
+            Some(base) => resolve_rust_module_prefix(&base, &segments[1..], known),
+            // The crate's root is above the scan: a path into the scan's
+            // own modules names a file from the scan root.
+            None => match cargo_crates.inside_scan(&segments[1..]) {
+                Some(rest) => resolve_rust_module_prefix(".", rest, known),
+                None => resolve_rust_module_prefix(&rust_src_dir(importer), &segments[1..], known),
+            },
+        },
         "self" => {
             let base = rust_module_child_dir(importer);
             resolve_rust_module_prefix(&base, &segments[1..], known)
@@ -1474,48 +1569,32 @@ pub(super) fn climb(mut parts: Vec<String>, path: &str) -> Option<Vec<String>> {
 }
 /// Implicit-default scans larger than this are refused before parsing: a
 /// monorepo root otherwise parses thousands of files and can exhaust the call
-/// deadline before any analysis. An explicit maxFiles opts in to a full scan.
-pub(crate) const SCOPE_ADMISSION_FILES: u32 = 5_000;
+/// deadline before any analysis. An explicit maxFiles opts in to a full scan
+/// (contract `astTopology.semanticPolicy.scopeAdmissionFiles`).
+pub(crate) const SCOPE_ADMISSION_FILES: u32 = {
+    let files = crate::tools::id::ast_topology_policy::SCOPE_ADMISSION_FILES;
+    assert!(files <= u32::MAX as usize);
+    files as u32
+};
 const SCOPE_COUNT_FILES: u32 = 100_000;
 
-/// Cheap discovery-only preflight (no parsing) for an implicit-default scan.
+/// Cheap discovery-only preflight (no parsing) for an implicit-default scan:
+/// the scan's candidate walk, counted well past the admission bound so the
+/// per-directory suggestions reflect the whole root, not the first
+/// directories walked. An admitted root returns its walk.
 fn admit_scope(
     q: &AstTopologyQuery,
     root: &Path,
-    exclude: &[String],
-    globs: Option<Vec<String>>,
-    paths: &PathPolicy,
+    options: GraphFactsScanOptions,
+    admit: &(dyn Fn(&Path, Option<std::fs::FileType>) -> bool + Sync),
     cancel: &dyn CancellationCheck,
-) -> Result<(), ToolError> {
-    let discovery = paths.discovery_walk();
-    let found = octocode_engine::portable::query_file_system(
-        octocode_engine::types::FileSystemQueryOptions {
-            path: root.to_string_lossy().into_owned(),
-            recursive: Some(true),
-            ignore: octocode_engine::search::walk::IgnorePolicy::default(),
-            entry_type: Some("f".to_owned()),
-            extensions: Some(octocode_engine::signatures::graph_facts::graph_fact_extensions()),
-            exclude_dir: Some(exclude.to_vec()),
-            exclude: globs,
-            // Discovery is cheap; count well past the admission bound so the
-            // per-directory suggestions reflect the whole root, not the
-            // first directories walked.
-            stop_at_limit: Some(true),
-            limit: Some(SCOPE_COUNT_FILES),
-            ..Default::default()
-        },
-        &|path, file_type| discovery.permits_entry(path, file_type),
-        &|| cancel.check().is_err(),
-    )
-    .map_err(|error| match error.kind() {
-        octocode_engine::error::ErrorKind::Cancelled => ToolError::cancelled(error.reason),
-        octocode_engine::error::ErrorKind::InvalidGlob => {
-            ToolError::new("invalidGlob", error.reason)
-        }
-        _ => ToolError::new("scanFailed", error.reason),
-    })?;
+    paths: &PathPolicy,
+) -> Result<octocode_engine::types::FileSystemQueryResult, ToolError> {
+    let found =
+        octocode_engine::graph::walk_graph_fact_files(&options, admit, &|| cancel.check().is_err())
+            .map_err(|error| ToolError::graph_scan(&error, cancel))?;
     if found.entries.len() as u32 <= SCOPE_ADMISSION_FILES {
-        return Ok(());
+        return Ok(found);
     }
     let entries: Vec<String> = found
         .entries
@@ -1909,7 +1988,7 @@ mod tests {
             super::resolve(
                 "../target",
                 "entry.ts",
-                "ts",
+                super::Linker::JsTs,
                 None,
                 "*",
                 &known,
@@ -1934,7 +2013,7 @@ mod tests {
                 super::resolve(
                     specifier,
                     "src/entry.ts",
-                    "ts",
+                    super::Linker::JsTs,
                     None,
                     "*",
                     &known,
@@ -1958,7 +2037,7 @@ mod tests {
             super::resolve(
                 "example",
                 "main.go",
-                "go",
+                super::Linker::Go,
                 None,
                 "*",
                 &known,
@@ -2105,7 +2184,15 @@ mod tests {
         let security = crate::security::ContentSecurity::new();
         let record = |b: &mut super::BuiltGraph, spec: &str, internal: bool| {
             super::record_resolution(
-                b, "src/a.ts", 1, spec, "ts", &None, false, internal, &security,
+                b,
+                "src/a.ts",
+                1,
+                spec,
+                super::Linker::JsTs,
+                &None,
+                false,
+                internal,
+                &security,
             )
         };
         assert!(record(&mut b, "react", false), "third-party stays external");
@@ -2239,6 +2326,7 @@ mod tests {
             &super::BuildExtras {
                 extra_excludes: vec!["pkg".into()],
                 cargo: None,
+                cache_dir: None,
             },
         );
         assert_eq!(filtered.facts.keys().collect::<Vec<_>>(), ["src/main.ts"],);

@@ -3,6 +3,7 @@
 // disabled refusal and leaves its copy untouched until the tool returns.
 // Every run works on fresh copies under fixtures/rewrite/<id>/{oc,sg,sed}; product repos are never touched.
 import fs from 'node:fs';
+import { suggestedCall } from '../../harness/lead-predicates.mjs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { HERE, REPOS, sh, ocAll, ocRaw, saveRaw } from './lib.mjs';
@@ -68,7 +69,8 @@ function measureOctocode(q, dOC, orig, dSG, lang) {
   const datas = prevAll.parts.map(p => p?.results?.[0]?.data || {});
   const d = { ...datas[0], ...datas[datas.length - 1], matchCount: datas[0].matchCount };
   let apply = null, applyData = null;
-  if (d.hints?.apply?.query) { apply = ocRaw('astRewrite', d.hints.apply.query, { cwd: HERE, reps: 1 }); applyData = apply.parsed?.results?.[0]?.data; }
+  const applyLead = (d.hints ?? []).map(suggestedCall).find(call => call?.key === 'apply');
+  if (applyLead) { apply = ocRaw(applyLead.tool, applyLead.query, { cwd: HERE, reps: 1 }); applyData = apply.parsed?.results?.[0]?.data; }
   return { query: q, calls: prev.calls + (apply ? 1 : 0), previewCalls: prev.calls, chars: prev.chars + (apply?.chars || 0), ms: prev.ms + (apply?.ms || 0),
     previewMatches: d.matchCount, previewComplete: d.complete, affectedFiles: d.affectedFiles, previewError: d.error || null,
     applyResult: applyData ? Object.fromEntries(Object.entries(applyData).filter(([k]) => !['files', 'matches'].includes(k))) : null,

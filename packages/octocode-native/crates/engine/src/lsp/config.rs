@@ -407,6 +407,12 @@ const WORKSPACE_ROOT_MARKERS: &[(&str, &str)] = &[
     ("package.json", ".ts"),
 ];
 
+/// The project markers that select a language server for a workspace root,
+/// in priority order (each once).
+pub fn workspace_root_marker_names() -> impl Iterator<Item = &'static str> {
+    WORKSPACE_ROOT_MARKERS.iter().map(|(marker, _)| *marker)
+}
+
 /// Resolve the language server for a workspace root directory (the
 /// `workspaceRoot`-only query shape), inferring the language from project
 /// markers since a directory has no file extension. Returns `None` when no
@@ -433,10 +439,7 @@ pub fn typescript_server_fallback_for_workspace_root(
 /// synced.
 fn workspace_root_probe_path(workspace_root: &str) -> Option<String> {
     let root = Path::new(workspace_root);
-    let extension = WORKSPACE_ROOT_MARKERS
-        .iter()
-        .find(|(marker, _)| root.join(marker).is_file())
-        .map(|(_, extension)| *extension)?;
+    let extension = root_markers(root).into_iter().next()?;
     Some(
         root.join(format!("workspace{extension}"))
             .to_string_lossy()
@@ -466,19 +469,51 @@ pub fn workspace_root_representative_source(workspace_root: &str) -> Option<Stri
 /// tsconfig), which a root-only query does not search.
 #[must_use]
 pub fn workspace_root_languages(workspace_root: &str) -> Vec<&'static str> {
-    let root = Path::new(workspace_root);
     let mut languages: Vec<&'static str> = Vec::new();
-    for (marker, extension) in WORKSPACE_ROOT_MARKERS {
-        let family = if *extension == ".js" {
-            ".ts"
-        } else {
-            *extension
-        };
-        if root.join(marker).is_file() && !languages.contains(&family) {
+    for extension in root_markers(Path::new(workspace_root)) {
+        let family = js_family(extension);
+        if !languages.contains(&family) {
             languages.push(family);
         }
     }
     languages
+}
+
+/// The probe extensions of the project markers at `root`, in
+/// server-selection order: a language whose manifest here declares a
+/// workspace (a Cargo `[workspace]`, `package.json` `workspaces` or
+/// `pnpm-workspace.yaml`, `go.work`) first, because the root is that
+/// language's project and the other markers are its tooling (a Cargo
+/// workspace with a `tsconfig.json` for its JS bindings); otherwise
+/// [`WORKSPACE_ROOT_MARKERS`] order.
+fn root_markers(root: &Path) -> Vec<&'static str> {
+    let mut found = WORKSPACE_ROOT_MARKERS
+        .iter()
+        .filter(|(marker, _)| root.join(marker).is_file())
+        .map(|(_, extension)| *extension)
+        .collect::<Vec<_>>();
+    found.sort_by_key(|extension| !declares_language_workspace(root, js_family(extension)));
+    found
+}
+
+fn js_family(extension: &'static str) -> &'static str {
+    if extension == ".js" { ".ts" } else { extension }
+}
+
+/// Whether `root` holds a workspace manifest of the language `family`.
+fn declares_language_workspace(root: &Path, family: &str) -> bool {
+    match family {
+        ".rs" => crate::lsp::workspace::declares_cargo_workspace(root),
+        ".ts" => {
+            root.join("pnpm-workspace.yaml").is_file()
+                || std::fs::read_to_string(root.join("package.json"))
+                    .ok()
+                    .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+                    .is_some_and(|manifest| manifest.get("workspaces").is_some())
+        }
+        ".go" => root.join("go.work").is_file(),
+        _ => false,
+    }
 }
 
 /// [`workspace_root_representative_source`] for one language, as returned
@@ -1523,20 +1558,47 @@ mod tests {
                 .map(|elapsed| elapsed.as_nanos())
                 .unwrap_or(0)
         ));
+        let cargo_workspace = ("Cargo.toml", "[workspace]\nmembers = []\n");
         let cases = [
-            ("rust", &["Cargo.toml"][..], "rust"),
-            ("ts", &["tsconfig.json"][..], "typescript"),
-            ("node", &["package.json"][..], "typescript"),
+            ("rust", &[("Cargo.toml", "")][..], "rust"),
+            ("ts", &[("tsconfig.json", "")][..], "typescript"),
+            ("node", &[("package.json", "")][..], "typescript"),
             // A tsconfig is the strongest TypeScript signal; Cargo beats a bare
             // package.json (npm wrappers around Rust crates).
-            ("mixed", &["package.json", "Cargo.toml"][..], "rust"),
+            (
+                "mixed",
+                &[("package.json", ""), ("Cargo.toml", "")][..],
+                "rust",
+            ),
+            (
+                "ts-over-crate",
+                &[("tsconfig.json", ""), ("Cargo.toml", "")][..],
+                "typescript",
+            ),
+            // A Cargo workspace root is Rust's project; its tsconfig serves
+            // JS bindings.
+            (
+                "cargo-workspace",
+                &[("tsconfig.json", ""), cargo_workspace][..],
+                "rust",
+            ),
+            // Both declare a workspace: marker order decides.
+            (
+                "both-workspaces",
+                &[
+                    ("tsconfig.json", ""),
+                    ("package.json", "{\"workspaces\": []}"),
+                    cargo_workspace,
+                ][..],
+                "typescript",
+            ),
         ];
         let options = LspDiscoveryOptions::default();
         for (name, markers, expected) in cases {
             let root = base.join(name);
             std::fs::create_dir_all(&root).expect("root");
-            for marker in markers {
-                std::fs::write(root.join(marker), "").expect("marker");
+            for (marker, content) in markers {
+                std::fs::write(root.join(marker), content).expect("marker");
             }
             let root = root.to_string_lossy().into_owned();
             let config = default_server_for_workspace_root(&root, &options)

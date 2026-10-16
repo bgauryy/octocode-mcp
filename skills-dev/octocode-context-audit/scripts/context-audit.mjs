@@ -286,7 +286,8 @@ function probe(server, timeoutMs = 20_000) {
 async function collectMcp() {
   const servers = [];
   for (const server of configuredServers()) {
-    const probed = PROBE ? await probe(server) : { error: "probe disabled" };
+    const probed = PROBE ? await probe(server) : { skipped: "probe disabled" };
+    const measured = !probed.error && !probed.skipped;
     const tools = (probed.tools ?? []).map((tool) => {
       const description = tool.description ?? "";
       const schema = JSON.stringify(tool.inputSchema ?? {});
@@ -296,7 +297,7 @@ async function collectMcp() {
     });
     const instructionsChars = (probed.instructions ?? "").length;
     const total = instructionsChars + tools.reduce((sum, tool) => sum + tool.totalChars, 0);
-    servers.push({ name: server.name, source: server.source, error: probed.error, serverInfo: probed.serverInfo, instructionsChars, toolCount: tools.length, totalChars: total, totalTokens: tokens(total), tools });
+    servers.push({ name: server.name, source: server.source, measurement: measured ? "measured" : probed.skipped ? "skipped" : "failed", error: probed.error, skipped: probed.skipped, serverInfo: probed.serverInfo, instructionsChars: measured ? instructionsChars : null, toolCount: measured ? tools.length : null, totalChars: measured ? total : null, totalTokens: measured ? tokens(total) : null, tools });
     if (probed.error) finding(server.config.command ? "high" : "low", "mcp", server.name, `Not measured: ${probed.error}.`);
     if (instructionsChars > BUDGET.mcpInstructions) finding("medium", "mcp", `${server.name} instructions`, `${instructionsChars} chars of server instructions every session; budget ${BUDGET.mcpInstructions}.`, { chars: instructionsChars });
     if (total > BUDGET.mcpServerTotal) finding("high", "mcp", server.name, `${tools.length} tools cost ${total} chars (~${tokens(total)} tokens) when loaded; budget ${BUDGET.mcpServerTotal}.`, { chars: total });
@@ -429,6 +430,19 @@ function crossCheck(mcp, skills, usage) {
 // ---------------------------------------------------------------------- report
 const escape = (value) => String(value).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
+function mcpCost(servers) {
+  if (!servers.length) return "none";
+  const measured = servers.filter(server => server.measurement === "measured");
+  if (!measured.length) return "not measured";
+  const cost = measured.reduce((sum, server) => sum + server.totalTokens, 0);
+  const missing = servers.length - measured.length;
+  return `~${cost.toLocaleString()} tok${missing ? ` measured; ${missing} unmeasured` : ""}`;
+}
+
+const serverMeasurement = server => server.measurement === "measured"
+  ? `${server.toolCount} tools · instructions ${server.instructionsChars} chars · total ~${server.totalTokens} tok`
+  : `not measured (${server.skipped ?? server.error})`;
+
 function html(report) {
   const rank = { high: 0, medium: 1, low: 2 };
   const rows = [...report.findings].sort((a, b) => rank[a.severity] - rank[b.severity] || (b.chars ?? 0) - (a.chars ?? 0));
@@ -455,13 +469,13 @@ code{font-size:12px;word-break:break-all}
 <div class="kpis">
 <div class="kpi"><span class="muted">Always-loaded instructions</span><b>~${report.instructions.alwaysLoadedTokens.toLocaleString()} tok</b></div>
 <div class="kpi"><span class="muted">Skill descriptions (${report.skills.uniqueCount})</span><b>~${report.skills.descriptionTokens.toLocaleString()} tok</b></div>
-<div class="kpi"><span class="muted">MCP servers (${report.mcp.length})</span><b>~${report.mcp.reduce((s, x) => s + x.totalTokens, 0).toLocaleString()} tok</b></div>
+<div class="kpi"><span class="muted">MCP servers (${report.mcp.length})</span><b>${escape(mcpCost(report.mcp))}</b></div>
 <div class="kpi"><span class="muted">Unused MCP tools</span><b>${report.unusedTools.length}</b></div>
 <div class="kpi"><span class="muted">Findings</span><b>${report.findings.length}</b></div>
 </div>
 <h2>Findings</h2><div class="wrap">${table(["Severity", "Area", "Subject", "Finding"], rows.map((f) => `<tr><td class="sev ${f.severity}">${f.severity}</td><td>${escape(f.area)}</td><td><code>${escape(f.subject)}</code></td><td>${escape(f.message)}</td></tr>`))}</div>
 <h2>MCP tools</h2><div class="wrap">${table(["Server/tool", "Total chars", "", "Desc", "Schema", "Calls", "Errors"], report.mcp.flatMap((server) => [
-  `<tr><td colspan="7"><b>${escape(server.name)}</b> <span class="muted">${escape(server.source)} · ${server.error ? escape(server.error) : `${server.toolCount} tools · instructions ${server.instructionsChars} chars · total ~${server.totalTokens} tok`}</span></td></tr>`,
+  `<tr><td colspan="7"><b>${escape(server.name)}</b> <span class="muted">${escape(server.source)} · ${escape(serverMeasurement(server))}</span></td></tr>`,
   ...[...server.tools].sort((a, b) => b.totalChars - a.totalChars).map((tool) => `<tr><td><code>${escape(tool.name)}</code></td><td class="num">${tool.totalChars.toLocaleString()}</td><td class="barcell">${bar(tool.totalChars, maxTool)}</td><td class="num">${tool.descriptionChars}</td><td class="num">${tool.schemaChars.toLocaleString()}</td><td class="num">${tool.calls ?? "–"}</td><td class="num">${tool.errors ?? "–"}</td></tr>`),
 ]))}</div>
 <h2>Instruction files</h2><div class="wrap">${table(["File", "Loaded", "Chars", ""], [...report.instructions.files].sort((a, b) => b.chars - a.chars).map((file) => `<tr><td><code>${escape(path.relative(report.workspace, file.path) || file.path)}</code></td><td>${escape(file.loaded)}</td><td class="num">${file.chars.toLocaleString()}</td><td class="barcell">${bar(file.chars, maxFile)}</td></tr>`))}</div>
@@ -487,7 +501,7 @@ if (flag("--json")) {
 } else {
   const count = (severity) => findings.filter((f) => f.severity === severity).length;
   console.log(`context-audit: ${findings.length} findings (high ${count("high")}, medium ${count("medium")}, low ${count("low")})`);
-  console.log(`  instructions always loaded ~${instructions.alwaysLoadedTokens} tok · skills ${skills.uniqueCount} (~${skills.descriptionTokens} tok) · MCP ${mcp.map((s) => `${s.name} ${s.toolCount} tools ~${s.totalTokens} tok`).join(", ") || "none"}`);
+  console.log(`  instructions always loaded ~${instructions.alwaysLoadedTokens} tok · skills ${skills.uniqueCount} (~${skills.descriptionTokens} tok) · MCP ${mcp.map((s) => `${s.name}: ${serverMeasurement(s)}`).join(", ") || "none"}`);
   console.log(`  usage: ${usage.sessions} sessions, ${usage.calls} tool calls in ${usage.days} days · unused MCP tools ${unusedTools.length}`);
   for (const f of findings.filter((f) => f.severity !== "low").slice(0, 15)) console.log(`  [${f.severity}] ${f.area} ${f.subject}: ${f.message}`);
   console.log(`  report: ${path.join(OUT, "context-audit.html")}`);

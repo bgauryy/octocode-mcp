@@ -302,14 +302,6 @@ pub(super) fn uri_to_path(uri: &str) -> String {
     decode_uri_path(uri).unwrap_or_else(|_| uri.to_owned())
 }
 
-/// Language ids served by the TypeScript server.
-pub(super) const TS_LANGUAGE_IDS: [&str; 4] = [
-    "typescript",
-    "typescriptreact",
-    "javascript",
-    "javascriptreact",
-];
-
 /// A word-bounded literal regex for `name` in the default (`rust`) engine.
 pub(super) fn word_pattern(name: &str) -> String {
     let word = |c: Option<char>| c.is_some_and(|c| c.is_alphanumeric() || c == '_');

@@ -1,8 +1,8 @@
-//! Text views of history items: the body view and its char windows, and the
-//! `matchString` needle every content filter matches.
+//! Text windows of history items (bodies, comments, reviews: always GitHub's
+//! verbatim text), and the `matchString` needle every content filter matches.
+use super::HistoryItemRequest;
 use super::rest::BodyWindows;
 use super::util::string;
-use super::{HistoryItemRequest, ItemOperation};
 use crate::tools::id::ToolId;
 use serde_json::Value;
 
@@ -36,41 +36,6 @@ pub(super) fn body_matches(value: &Value, needle: Option<&str>) -> bool {
     needle.is_none_or(|n| string(value.get("body")).to_lowercase().contains(n))
 }
 
-/// Pull-request text is minified unless `minify:"none"` or a `matchString`
-/// asks for the verbatim text.
-pub(super) fn minified_view(query: &HistoryItemRequest) -> bool {
-    matches!(query.operation(), ItemOperation::PullRequest)
-        && query.minify().as_deref() != Some("none")
-        && query.match_string().is_none()
-}
-
-/// The text view of a PR/issue body, comment or review. A minified view
-/// that only reflows whitespace keeps the source text, so offsets stay
-/// GitHub's own; a view that drops text is marked (`bodyView`) and has a raw
-/// re-read.
-pub(super) fn history_body_view(value: &str, query: &HistoryItemRequest) -> String {
-    if !minified_view(query) {
-        return value.to_owned();
-    }
-    let view = octocode_engine::portable::apply_content_view_minification(value, "history.md");
-    if view_dropped_text(value, &view) {
-        view
-    } else {
-        value.to_owned()
-    }
-}
-
-/// Whether a body view dropped text: any non-whitespace character differs
-/// from the raw body (whitespace-only normalization keeps every word).
-pub(super) fn view_dropped_text(raw: &str, view: &str) -> bool {
-    let words = |text: &str| {
-        text.chars()
-            .filter(|c| !c.is_whitespace())
-            .collect::<String>()
-    };
-    raw != view && words(raw) != words(view)
-}
-
 /// A body window a continuation hop (`offset` > 0) finds empty: an earlier
 /// window of the same page delivered the whole body (an empty one
 /// included), so the hop does not list its item again.
@@ -80,27 +45,86 @@ pub(super) fn delivered_earlier(offset: Option<usize>, body_page: &Value) -> boo
         && body_page["hasMore"] != true
 }
 
-/// Window one item body through the body view, noting its window on the
-/// page's `windows` (one shared `offset` continues every cut body) and
-/// whether the view dropped text (`bodyView` + `next.readRawBody`).
+/// Window one item body, verbatim (GitHub's own text and character
+/// offsets: HTML comments, image links and emoji are evidence), noting its
+/// window on the page's `windows` (one shared `offset` continues every cut
+/// body).
 pub(super) fn window_body(
     body: &str,
     offset: Option<usize>,
     query: &HistoryItemRequest,
     windows: &mut BodyWindows,
-    dropped: &mut bool,
 ) -> (String, Value) {
-    let view = history_body_view(body, query);
-    *dropped |= view_dropped_text(body, &view);
-    let (text, page) = paginate_text(&view, offset, query.char_length());
+    let (text, page) = paginate_text(body, offset, query.char_length());
     windows.add(&page);
     (text, page)
+}
+
+/// One discussion or review comment (a mapped comment row) with its body
+/// windowed at `offset`, for an issue page and a pull-request page alike:
+/// the row's fields in order, `bodyPagination` right after the body when
+/// the window is cut or continued. Returns the row and its window.
+pub(super) fn shape_comment(
+    comment: &Value,
+    offset: Option<usize>,
+    query: &HistoryItemRequest,
+    windows: &mut BodyWindows,
+) -> (Value, Value) {
+    let (body, page) = window_body(&string(comment.get("body")), offset, query, windows);
+    // A whole body restates no window.
+    let windowed = page["offset"] != 0 || page["hasMore"] == true;
+    let mut row = serde_json::Map::new();
+    for (key, value) in comment.as_object().into_iter().flatten() {
+        if key != "body" {
+            row.insert(key.clone(), value.clone());
+            continue;
+        }
+        row.insert("body".into(), Value::String(body.clone()));
+        if windowed {
+            row.insert("bodyPagination".into(), page.clone());
+        }
+    }
+    (Value::Object(row), page)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// An issue comment and a pull-request discussion comment are one row
+    /// shape: the mapped fields in order, the window after the body only
+    /// when it is cut.
+    #[test]
+    fn a_comment_row_keeps_its_fields_and_windows_its_body() {
+        let query = HistoryItemRequest::from_row(json!({
+            "operation":"issue","owner":"o","repo":"r","number":1,"length":3
+        }))
+        .expect("query");
+        let comment = json!({"id":"7","author":"a","body":"abcdef","createdAt":"t","path":"p"});
+        let (row, page) = shape_comment(&comment, None, &query, &mut BodyWindows::default());
+        assert_eq!(
+            row.as_object()
+                .map(|row| row.keys().cloned().collect::<Vec<_>>()),
+            Some(
+                [
+                    "id",
+                    "author",
+                    "body",
+                    "bodyPagination",
+                    "createdAt",
+                    "path"
+                ]
+                .map(String::from)
+                .to_vec()
+            )
+        );
+        assert_eq!(row["body"], "abc");
+        assert_eq!(page["hasMore"], true);
+        let whole = json!({"id":"8","author":"a","body":"ab","createdAt":"t"});
+        let (row, _) = shape_comment(&whole, None, &query, &mut BodyWindows::default());
+        assert_eq!(row, whole);
+    }
 
     #[test]
     fn text_windows_are_unicode_safe() {
@@ -122,31 +146,20 @@ mod tests {
         assert_eq!(clamped.chars().count(), 100_000);
     }
 
-    /// Whitespace normalization is not a dropped-text view; a removed HTML
-    /// comment or badge is.
+    /// Every pull-request text surface is the raw GitHub text by default:
+    /// an HTML comment, an image attachment, a warning line and emoji are
+    /// evidence a view must not drop (react#30774's review discussion).
     #[test]
-    fn body_views_that_drop_words_are_detected() {
-        assert!(!view_dropped_text("a\r\n\n\n b  ", "a\n\nb"));
-        assert!(view_dropped_text("a <!-- hidden --> b", "a b"));
-        let raw = "Fixes #1\n<!-- checklist: tests added -->\n[![ci](https://x/badge.svg)](https://x)\nBody";
+    fn pull_request_text_is_verbatim_by_default() {
+        let raw = "Fixes #1\n<!-- danger: header -->\n![image](https://github.com/user-attachments/assets/05746ddc)\n\u{1f6a8} WARNING \u{1f6a8}<br/>\n[![ci](https://x/badge.svg)](https://x)\nBody";
         let pr = HistoryItemRequest::from_row(json!({
             "operation":"pullRequest","mainGoal":"g","reasoning":"r","owner":"o","repo":"r","number":1
         }))
         .expect("pr query");
         let mut windows = BodyWindows::default();
-        let mut dropped = false;
-        let (text, _) = window_body(raw, None, &pr, &mut windows, &mut dropped);
-        assert!(dropped, "{text}");
-        assert!(!text.contains("checklist"), "{text}");
-        let raw_pr = HistoryItemRequest::from_row(json!({
-            "operation":"pullRequest","mainGoal":"g","reasoning":"r","owner":"o","repo":"r","number":1,
-            "minify":"none"
-        }))
-        .expect("raw pr query");
-        let mut dropped = false;
-        let (text, _) = window_body(raw, None, &raw_pr, &mut windows, &mut dropped);
-        assert!(!dropped);
+        let (text, page) = window_body(raw, None, &pr, &mut windows);
         assert_eq!(text, raw);
+        assert_eq!(page["total"], raw.chars().count());
     }
 
     /// (microsoft/TypeScript#57465: seven 26–37k-char comments on one
@@ -156,13 +169,12 @@ mod tests {
     #[test]
     fn cut_bodies_of_one_page_count_every_remaining_char() {
         let pr = HistoryItemRequest::from_row(json!({
-            "operation":"pullRequest","owner":"o","repo":"r","number":1,"minify":"none","length":10
+            "operation":"pullRequest","owner":"o","repo":"r","number":1,"length":10
         }))
         .expect("pr query");
         let mut windows = BodyWindows::default();
-        let mut dropped = false;
         for body in ["a".repeat(25), "b".repeat(5), "c".repeat(40)] {
-            window_body(&body, None, &pr, &mut windows, &mut dropped);
+            window_body(&body, None, &pr, &mut windows);
         }
         let mut rest = super::super::rest::Rest::default();
         let mut pagination = serde_json::Map::new();
@@ -175,23 +187,5 @@ mod tests {
                 .map(|note| note.left),
             Some(format!("{} more comment body chars", 15 + 30))
         );
-    }
-
-    /// A view that only reflows whitespace keeps the body verbatim, so body
-    /// offsets are GitHub's own character offsets.
-    #[test]
-    fn whitespace_only_views_keep_the_source_text() {
-        let pr = HistoryItemRequest::from_row(json!({
-            "operation":"pullRequest","mainGoal":"g","reasoning":"r","owner":"o","repo":"r","number":1
-        }))
-        .expect("pr query");
-        let raw = "Intro  \r\n\n\n\nDetails\n\n\n- item\n";
-        assert_eq!(history_body_view(raw, &pr), raw);
-        let mut windows = BodyWindows::default();
-        let mut dropped = false;
-        let (text, page) = window_body(raw, None, &pr, &mut windows, &mut dropped);
-        assert_eq!(text, raw);
-        assert_eq!(page["total"], raw.chars().count());
-        assert!(!dropped);
     }
 }

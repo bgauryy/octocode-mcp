@@ -30,17 +30,6 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 
-/// Language ids that share one lexical family (one server answers them).
-const FAMILIES: [&[&str]; 2] = [
-    &[
-        "typescript",
-        "typescriptreact",
-        "javascript",
-        "javascriptreact",
-    ],
-    &["c", "cpp", "cuda", "objective-c", "objective-cpp"],
-];
-
 /// Project files whose edits change what a language server answers.
 const PROJECT_FILES: [&str; 12] = [
     "package.json",
@@ -67,9 +56,32 @@ const FRESH_MTIME: Duration = Duration::from_secs(2);
 /// A larger unsettled source disables cache reuse rather than reading it
 /// whole merely to decide whether a lexical scan may be reused.
 const FRESH_CONTENT_MAX_BYTES: usize = 1024 * 1024;
-/// Bound of the text scan; a slower scan reports no files (no
-/// `textOnlyFiles`, and importer recovery reports a failed scan).
+/// At most this many unanswered text-scan files are parsed to tell a code
+/// use from a comment or string mention; the rest count as uses.
+const CODE_CHECKED_FILES: usize = 256;
+/// Largest file the code-use check reads; a larger one counts as a use.
+const CODE_CHECK_MAX_BYTES: usize = 4 * 1024 * 1024;
+/// Bound of the text scan. A slower honored scan reports no files (no
+/// `textOnlyFiles`, and importer recovery reports a failed scan); a slower
+/// lifted scan reports the files it reached and says it did not finish
+/// (see [`IgnoredMentions::unfinished`]).
 const TEXT_SCAN_BUDGET: Duration = Duration::from_secs(3);
+/// Bound of the scan with ignore rules lifted. What it finds is a lead
+/// unless a file imports the name, so a large ignored tree is not worth a
+/// longer wait on every request.
+const LIFTED_SCAN_BUDGET: Duration = Duration::from_secs(1);
+/// How long a scope whose lifted scan hit its bound skips that scan. The
+/// bound is reached by the size of the ignored tree, whatever the name, so
+/// every later request would pay it again for the same unfinished answer.
+const UNBOUNDED_IGNORED_TTL: Duration = Duration::from_secs(600);
+
+/// Scopes (`root`, `include`, policy) whose lifted scan hit its bound.
+static UNBOUNDED_IGNORED: octocode_io::memo::Memo<String, ()> =
+    octocode_io::memo::Memo::new(octocode_io::memo::MemoLimits {
+        max_entries: 64,
+        max_weight: 64,
+        keep_newest: false,
+    });
 
 /// Text scans by `(root, include, symbol, scope fingerprint, policy)`. The
 /// fingerprint covers every family file under the root, so an unchanged
@@ -102,6 +114,12 @@ pub(super) struct Scope {
     /// Canonical files the language server's answer covers (listed, or
     /// verified as importers), recorded by the operation.
     answered: Mutex<BTreeSet<String>>,
+    /// Whether a text-scan file uses a symbol in code (not only in comments
+    /// or strings), by symbol and canonical path; see [`Self::text_only_files`].
+    code_uses: Mutex<HashMap<String, bool>>,
+    /// The anchor file (canonical) and the zero-based lines of it the answer
+    /// covers, the anchor's own line included; see [`Self::anchor_gap`].
+    anchor_lines: Mutex<Option<(String, BTreeSet<u32>)>>,
 }
 
 impl Scope {
@@ -112,6 +130,8 @@ impl Scope {
             text: Mutex::new(None),
             fingerprint: Mutex::new(None),
             answered: Mutex::new(BTreeSet::new()),
+            code_uses: Mutex::new(HashMap::new()),
+            anchor_lines: Mutex::new(None),
         }
     }
 
@@ -137,6 +157,22 @@ impl Scope {
         }
     }
 
+    /// The scope fingerprint this request computed, if any.
+    pub(super) fn fingerprint(&self) -> Option<String> {
+        self.fingerprint
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Whether the server's answer covers `file` (canonical path).
+    pub(super) fn is_answered(&self, file: &str) -> bool {
+        self.answered
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .contains(file)
+    }
+
     /// Record files (paths or `file://` uris) the server's answer covers.
     pub(super) fn answer(&self, files: impl IntoIterator<Item = impl AsRef<str>>) {
         if let Ok(mut answered) = self.answered.lock() {
@@ -146,6 +182,41 @@ impl Scope {
                     .map(|file| canonical(&uri_to_path(file.as_ref()))),
             );
         }
+    }
+
+    /// Record the zero-based lines of the anchor file the whole answer (every
+    /// page) covers, with the anchor's own `line`.
+    pub(super) fn answer_anchor_lines(
+        &self,
+        anchor: &str,
+        line: u32,
+        lines: impl IntoIterator<Item = u32>,
+    ) {
+        if let Ok(mut slot) = self.anchor_lines.lock() {
+            let mut covered = lines.into_iter().collect::<BTreeSet<_>>();
+            covered.insert(line);
+            *slot = Some((canonical(&uri_to_path(anchor)), covered));
+        }
+    }
+
+    /// The anchor file (canonical) when it uses `symbol` in code on a line
+    /// the answer does not cover: an answered file can still hide missed
+    /// sites, which no file count shows. `None` when nothing was recorded,
+    /// or the file cannot be read or parsed.
+    pub(super) fn anchor_gap(&self, symbol: &str) -> Option<String> {
+        let (file, covered) = self
+            .anchor_lines
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()?;
+        let text = crate::tools::source::read_bounded(Path::new(&file), CODE_CHECK_MAX_BYTES)
+            .ok()
+            .and_then(|bytes| String::from_utf8(bytes).ok())?;
+        let lines = octocode_engine::lsp::resolver::code_occurrence_lines(&file, &text, symbol)?;
+        lines
+            .iter()
+            .any(|line| u32::try_from(*line).is_ok_and(|line| !covered.contains(&line)))
+            .then_some(file)
     }
 
     /// Files under the scope that spell `symbol` as a word (canonical
@@ -167,21 +238,16 @@ impl Scope {
         {
             return Ok(scan);
         }
-        let stored = self
-            .fingerprint
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone()
-            .map(|fingerprint| {
-                crate::digest::sha256(
-                    format!(
-                        "{}\u{0}{}\u{0}{symbol}\u{0}{fingerprint}\u{0}{policy:?}",
-                        self.root,
-                        self.include.join("\u{0}")
-                    )
-                    .as_bytes(),
+        let stored = self.fingerprint().map(|fingerprint| {
+            crate::digest::sha256(
+                format!(
+                    "{}\u{0}{}\u{0}{symbol}\u{0}{fingerprint}\u{0}{policy:?}",
+                    self.root,
+                    self.include.join("\u{0}")
                 )
-            });
+                .as_bytes(),
+            )
+        });
         let hit = stored
             .as_ref()
             .and_then(|key| TEXT_SCANS.get(key))
@@ -196,9 +262,11 @@ impl Scope {
                     policy,
                     cancel,
                     Ignores::Honored,
+                    TEXT_SCAN_BUDGET,
                 )
                 .await?
-                .map(Arc::new);
+                .filter(|scan| scan.complete)
+                .map(|scan| Arc::new(scan.files));
                 if let (Some(key), Some(files)) = (stored, &files) {
                     TEXT_SCANS.insert(key, Arc::clone(files), 1, None);
                 }
@@ -219,7 +287,12 @@ impl Scope {
     /// such as `node_modules/` stay out), with the deciding rules of the
     /// first few; files in `skip` (already in the answer) are left out.
     /// Scanned per request: the scope fingerprint does not cover ignored
-    /// files. Empty when either scan failed or hit a bound.
+    /// files, and the walk reads every ignored file the default prune keeps
+    /// (a gitignored `repos/` checkout costs seconds, so measuring it is
+    /// the only way to know). A lifted scan that fails or hits
+    /// [`LIFTED_SCAN_BUDGET`] says so in [`IgnoredMentions::unfinished`],
+    /// with the files it reached before stopping; the scope then skips the
+    /// lifted scan for [`UNBOUNDED_IGNORED_TTL`], reporting it unfinished.
     pub(super) async fn ignored_text_files(
         &self,
         symbol: &str,
@@ -227,9 +300,29 @@ impl Scope {
         policy: &PathPolicy,
         cancel: &dyn CancellationCheck,
     ) -> Result<IgnoredMentions, LspFailure> {
+        self.ignored_text_files_within(symbol, skip, policy, cancel, LIFTED_SCAN_BUDGET)
+            .await
+    }
+
+    async fn ignored_text_files_within(
+        &self,
+        symbol: &str,
+        skip: &std::collections::HashSet<String>,
+        policy: &PathPolicy,
+        cancel: &dyn CancellationCheck,
+        budget: Duration,
+    ) -> Result<IgnoredMentions, LspFailure> {
         let Some(visible) = self.text_files(symbol, policy, cancel).await? else {
-            return Ok(IgnoredMentions::default());
+            return Ok(IgnoredMentions::unfinished());
         };
+        let unbounded = format!(
+            "{}\u{0}{}\u{0}{policy:?}",
+            self.root,
+            self.include.join("\u{0}")
+        );
+        if UNBOUNDED_IGNORED.get(&unbounded).is_some() {
+            return Ok(IgnoredMentions::unfinished());
+        }
         let Some(every) = scan_text(
             &self.root,
             &self.include,
@@ -237,12 +330,18 @@ impl Scope {
             policy,
             cancel,
             Ignores::Lifted,
+            budget,
         )
         .await?
         else {
-            return Ok(IgnoredMentions::default());
+            return Ok(IgnoredMentions::unfinished());
         };
+        let unfinished = !every.complete;
+        if unfinished {
+            UNBOUNDED_IGNORED.insert(unbounded, (), 1, Some(UNBOUNDED_IGNORED_TTL));
+        }
         let files = every
+            .files
             .into_iter()
             .filter(|file| !visible.contains(file) && !skip.contains(file))
             .collect::<Vec<_>>();
@@ -255,35 +354,81 @@ impl Scope {
                 rules.push(rule);
             }
         }
-        Ok(IgnoredMentions { files, rules })
+        Ok(IgnoredMentions {
+            files,
+            rules,
+            unfinished,
+            importing: Vec::new(),
+        })
     }
 
     /// Files the text scan of `symbol` found that the server's answer does
-    /// not cover; `None` when either side is unknown.
+    /// not cover and that use the name in code: a file that spells it only
+    /// in comments or strings holds no use the server could have missed (a
+    /// file the grammar cannot parse counts its word matches). Past
+    /// [`CODE_CHECKED_FILES`] files, the rest count by their word matches.
+    /// `None` when either side is unknown.
     pub(super) fn text_only_files(&self, symbol: &str) -> Option<Vec<String>> {
-        let text = self
-            .text
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let files = text
-            .as_ref()
-            .filter(|scan| scan.symbol == symbol)?
-            .files
-            .clone()?;
-        let answered = self
-            .answered
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if answered.is_empty() {
-            return None;
-        }
-        Some(
+        let unanswered = {
+            let text = self
+                .text
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let files = text
+                .as_ref()
+                .filter(|scan| scan.symbol == symbol)?
+                .files
+                .clone()?;
+            let answered = self
+                .answered
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if answered.is_empty() {
+                return None;
+            }
             files
                 .iter()
                 .filter(|file| !answered.contains(*file))
                 .cloned()
+                .collect::<Vec<_>>()
+        };
+        Some(
+            unanswered
+                .into_iter()
+                .enumerate()
+                .filter(|(index, file)| {
+                    *index >= CODE_CHECKED_FILES || self.uses_in_code(symbol, file)
+                })
+                .map(|(_, file)| file)
                 .collect(),
         )
+    }
+
+    /// Whether `file` (canonical) uses `symbol` in code; memoized per
+    /// request. An unreadable or unparsable file
+    /// counts as a use.
+    fn uses_in_code(&self, symbol: &str, file: &str) -> bool {
+        let key = format!("{symbol}\u{0}{file}");
+        if let Some(known) = self
+            .code_uses
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(&key)
+        {
+            return *known;
+        }
+        let uses = crate::tools::source::read_bounded(Path::new(file), CODE_CHECK_MAX_BYTES)
+            .ok()
+            .and_then(|bytes| String::from_utf8(bytes).ok())
+            .is_none_or(|text| {
+                octocode_engine::lsp::resolver::code_occurrence_lines(file, &text, symbol)
+                    .is_none_or(|lines| !lines.is_empty())
+            });
+        self.code_uses
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(key, uses);
+        uses
     }
 
     /// The owned inputs of the fingerprint walk, for a blocking worker.
@@ -356,7 +501,7 @@ fn search_root(anchor: &Path, server_root: &str, policy: &PathPolicy) -> String 
         .or_else(|| {
             start
                 .ancestors()
-                .filter(|dir| is_workspace_manifest_root(dir))
+                .filter(|dir| octocode_engine::lsp::workspace::is_workspace_manifest_root(dir))
                 .last()
         })
         .map_or_else(|| PathBuf::from(server_root), Path::to_path_buf);
@@ -381,28 +526,13 @@ fn search_root(anchor: &Path, server_root: &str, policy: &PathPolicy) -> String 
         .unwrap_or_else(|| start.to_string_lossy().into_owned())
 }
 
-fn is_workspace_manifest_root(dir: &Path) -> bool {
-    let read = |name: &str| std::fs::read_to_string(dir.join(name)).ok();
-    dir.join("pnpm-workspace.yaml").is_file()
-        || dir.join("lerna.json").is_file()
-        || dir.join("go.work").is_file()
-        || read("package.json")
-            .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
-            .is_some_and(|manifest| manifest.get("workspaces").is_some())
-        || read("Cargo.toml").is_some_and(|text| {
-            text.lines()
-                .any(|line| line.trim_start().starts_with("[workspace]"))
-        })
-}
-
 /// `*.ext` globs of every grammar in `language_id`'s family; the anchor's
 /// own extension for a language the registry does not know.
 fn family_include(language_id: Option<&str>, anchor: &Path) -> Vec<String> {
     let family: Vec<&str> = match language_id {
-        Some(id) => FAMILIES
-            .iter()
-            .find(|family| family.contains(&id))
-            .map_or_else(|| vec![id], |family| family.to_vec()),
+        Some(id) => {
+            octocode_engine::lsp::family::family_of(id).map_or_else(|| vec![id], <[&str]>::to_vec)
+        }
         None => Vec::new(),
     };
     let mut globs = octocode_engine::signatures::languages::all_entries()
@@ -427,6 +557,31 @@ pub(super) struct IgnoredMentions {
     pub(super) files: Vec<String>,
     /// Distinct deciding rules (`.gitignore:1 'gen/'`) of the first files.
     pub(super) rules: Vec<String>,
+    /// The scan failed or stopped at its bound: `files` is what it reached,
+    /// and ignored files may mention the name beyond it.
+    pub(super) unfinished: bool,
+    /// Of `files`, those that import the name (or could not be checked):
+    /// the evidence that ignore rules hide an importer. A file that only
+    /// spells the name (a bundled copy declaring its own) is not one.
+    pub(super) importing: Vec<String>,
+}
+
+impl IgnoredMentions {
+    /// A scan that produced nothing: no file is known, and that is not
+    /// proof of none.
+    pub(super) fn unfinished() -> Self {
+        Self {
+            unfinished: true,
+            ..Self::default()
+        }
+    }
+}
+
+/// What a text scan reached. `complete` is false when the scan stopped at
+/// its bound (cancelled by the budget before the walk finished).
+struct Scanned {
+    files: BTreeSet<String>,
+    complete: bool,
 }
 
 /// Whether a text scan honors ignore rules (every lexical scan does) or
@@ -447,7 +602,8 @@ async fn scan_text(
     policy: &PathPolicy,
     cancel: &dyn CancellationCheck,
     ignores: Ignores,
-) -> Result<Option<BTreeSet<String>>, LspFailure> {
+    budget: Duration,
+) -> Result<Option<Scanned>, LspFailure> {
     if symbol.trim().is_empty() {
         return Ok(None);
     }
@@ -468,12 +624,16 @@ async fn scan_text(
     let base = root.to_owned();
     let scanned = blocking_cancellable(cancel, move |stopped| {
         let started = Instant::now();
-        let bounded = || stopped() || started.elapsed() > TEXT_SCAN_BUDGET;
+        let bounded = || stopped() || started.elapsed() > budget;
         search_text_cancellable(options, filter, &bounded)
             .ok()
-            .filter(|_| started.elapsed() <= TEXT_SCAN_BUDGET)
-            .map(|parsed| {
-                parsed
+            .map(|parsed| Scanned {
+                complete: !parsed
+                    .stats
+                    .cap_reason
+                    .as_deref()
+                    .is_some_and(|reason| reason.split(", ").any(|part| part == "cancelled")),
+                files: parsed
                     .files
                     .into_iter()
                     .map(|file| {
@@ -484,7 +644,7 @@ async fn scan_text(
                             canonical(&Path::new(&base).join(path).to_string_lossy())
                         }
                     })
-                    .collect::<BTreeSet<_>>()
+                    .collect::<BTreeSet<_>>(),
             })
     })
     .await?
@@ -747,6 +907,10 @@ mod tests {
         write(&root.join("b.ts"), "import { f } from './a';\nf();\n");
         write(&root.join("c.ts"), "// f is mentioned here\n");
         write(&root.join("d.rs"), "fn f() {}\n");
+        write(
+            &root.join("e.ts"),
+            "const label = 'f';\nexport const g = () => f();\n",
+        );
         let scope = Scope::new(root.to_string_lossy().into_owned(), vec!["*.ts".into()]);
         let policy = workspace_policy(&root);
         let cancel = crate::tools::cancel::NeverCancel;
@@ -755,14 +919,15 @@ mod tests {
             .await
             .expect("scan")
             .expect("files");
-        assert_eq!(files.len(), 3, "{files:?}");
+        assert_eq!(files.len(), 4, "{files:?}");
         // Unknown until the operation records its answer.
         assert_eq!(scope.text_only_files("f"), None);
         scope.answer([root.join("a.ts").to_string_lossy()]);
         scope.answer([format!("file://{}", root.join("b.ts").display())]);
+        // c.ts only mentions the name in a comment: no use was missed.
         assert_eq!(
             scope.text_only_files("f"),
-            Some(vec![root.join("c.ts").to_string_lossy().into_owned()])
+            Some(vec![root.join("e.ts").to_string_lossy().into_owned()])
         );
         assert_eq!(scope.text_only_files("g"), None);
     }
@@ -800,6 +965,51 @@ mod tests {
         assert_eq!(scan(Some("fp2")).await, 3);
         write(&root.join("d.ts"), "f();\n");
         assert_eq!(scan(None).await, 4);
+    }
+
+    /// A lifted scan that finishes lists the ignored files; one that stops at
+    /// its bound says so instead of reading as "no ignored file".
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn an_ignored_scan_past_its_bound_is_unfinished_not_empty() {
+        let (_dir, root) = fixture();
+        std::fs::create_dir_all(root.join(".git")).expect("git");
+        write(&root.join(".gitignore"), "gen/\n");
+        write(&root.join("a.ts"), "export function f() {}\n");
+        write(&root.join("b.ts"), "f();\n");
+        for index in 0..50 {
+            write(&root.join(format!("gen/g{index}.ts")), "f();\n");
+        }
+        let policy = workspace_policy(&root);
+        let cancel = &crate::tools::cancel::NeverCancel;
+        let skip = std::collections::HashSet::new();
+        let scope = Scope::new(root.to_string_lossy().into_owned(), vec!["*.ts".to_owned()]);
+
+        let finished = scope
+            .ignored_text_files("f", &skip, &policy, cancel)
+            .await
+            .expect("scan");
+        assert!(!finished.unfinished);
+        assert_eq!(finished.files.len(), 50);
+        assert_eq!(finished.rules, [".gitignore:1 'gen/'"]);
+
+        let stopped = scope
+            .ignored_text_files_within("f", &skip, &policy, cancel, Duration::ZERO)
+            .await
+            .expect("scan");
+        assert!(stopped.unfinished, "{stopped:?}");
+        assert!(stopped.files.len() < 50, "{stopped:?}");
+        // The visible files never count as ignored, finished or not.
+        assert!(stopped.files.iter().all(|file| file.contains("/gen/")));
+        // The scope's ignored tree outlasted the bound: later requests skip
+        // the lifted scan, for any name, and report it unfinished.
+        let skipped = scope
+            .ignored_text_files("other", &skip, &policy, cancel)
+            .await
+            .expect("scan");
+        assert!(
+            skipped.unfinished && skipped.files.is_empty(),
+            "{skipped:?}"
+        );
     }
 
     #[cfg(unix)]

@@ -52,6 +52,7 @@ pub(crate) fn published(tool: ToolId, query: &Value, row: &Value) -> Value {
     let mut public = serde_json::json!({ "results": [shaped] });
     finalize(&mut public, tool, &Sources::Rows(&[]), &Scope::everything())
         .expect("valid continuations");
+    crate::response::channels::publish_hints(&mut public, tool);
     public
 }
 

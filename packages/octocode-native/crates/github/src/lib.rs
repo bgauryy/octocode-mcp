@@ -28,7 +28,7 @@ pub use budget::{AuthAdmission, ExecutorConfig, GitHubBudget, GitHubResource, Li
 pub use commit_dates::{MAX_PATHS_PER_REQUEST, PathDates};
 pub use content::{
     CachedContent, ConditionalCache, ContentRequest, ContentResponse, GitHubProvider, NoCache,
-    Retention, is_full_sha,
+    Retention, Submodule, is_full_sha,
 };
 pub use credentials::{CredentialSource, ResolvedCredential};
 pub use endpoint::{GitHubEndpoint, credential_host, is_loopback};

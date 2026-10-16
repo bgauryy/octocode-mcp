@@ -2,6 +2,7 @@
 //! Every algorithm here reads syntactic import edges, so rendered rows carry
 //! `confidence: "syntactic"`.
 
+use super::edges::{Load, load};
 use super::types::Node;
 pub(crate) use octocode_engine::graph::{
     Condensed, CycleWitnesses, condense, reachable, reverse, scc, scc_unsorted, transitive_edges,
@@ -56,10 +57,11 @@ pub(crate) fn witness_edges(edges: Vec<FileEdge>) -> Vec<Value> {
 /// The file graph without its module tree: no `rust-module` edges, and no
 /// edge from a module file to one of its ancestors in that tree.
 pub(super) fn dependency_graph(nodes: &BTreeMap<String, Node>) -> BTreeMap<String, Node> {
+    let module_tree = |kind: &String| load(kind) == Load::ModuleTree;
     let mut parent = BTreeMap::<&str, &str>::new();
     for (file, node) in nodes {
         for (target, kinds) in &node.edges {
-            if kinds.contains("rust-module") {
+            if kinds.iter().any(module_tree) {
                 parent.entry(target.as_str()).or_insert(file.as_str());
             }
         }
@@ -88,7 +90,7 @@ pub(super) fn dependency_graph(nodes: &BTreeMap<String, Node>) -> BTreeMap<Strin
                 .filter_map(|(target, kinds)| {
                     let kinds = kinds
                         .iter()
-                        .filter(|kind| *kind != "rust-module")
+                        .filter(|kind| !module_tree(kind))
                         .cloned()
                         .collect::<BTreeSet<_>>();
                     (!kinds.is_empty()).then(|| (target.clone(), kinds))
@@ -119,22 +121,15 @@ pub(super) fn collect_kinds(g: &BTreeMap<String, Node>, files: &[String]) -> Vec
     }
     kinds.into_iter().collect()
 }
+/// The graph of the edges that run while their importer loads
+/// ([`Load::Eager`]): its cycles are runtime (module-load) cycles.
 pub(super) fn runtime_graph(g: &BTreeMap<String, Node>) -> BTreeMap<String, Node> {
-    let runtime = BTreeSet::from([
-        "static-import",
-        "dynamic-import",
-        "named-reexport",
-        "star-reexport",
-        "commonjs-require",
-        "create-require",
-        "python-import",
-    ]);
     g.iter()
         .map(|(f, n)| {
             let edges = n
                 .edges
                 .iter()
-                .filter(|(_, k)| k.iter().any(|x| runtime.contains(x.as_str())))
+                .filter(|(_, k)| k.iter().any(|x| load(x) == Load::Eager))
                 .map(|(t, k)| (t.clone(), k.clone()))
                 .collect();
             (
@@ -147,6 +142,61 @@ pub(super) fn runtime_graph(g: &BTreeMap<String, Node>) -> BTreeMap<String, Node
         })
         .collect()
 }
+
+/// The cycles of a file graph as every cycle surface reports them
+/// (astTopology `cycles`, `graph query cycles`, the `cycle` detector): the
+/// strongly connected groups of the dependency graph (module trees left
+/// out), and inside each the groups its runtime edges close.
+pub(super) struct Cycles {
+    /// The dependency graph: the file graph without its module trees.
+    pub uses: BTreeMap<String, Node>,
+    /// Its condensation; a cycle group is a component of several files or
+    /// one importing itself.
+    pub condensed: Condensed,
+    /// The runtime subgraph of `uses` and its own cycle groups.
+    pub runtime: BTreeMap<String, Node>,
+    pub runtime_groups: Vec<Vec<String>>,
+}
+
+impl Cycles {
+    pub(super) fn of(nodes: &BTreeMap<String, Node>) -> Self {
+        let uses = dependency_graph(nodes);
+        let condensed = condense(&uses);
+        let runtime = runtime_graph(&uses);
+        let runtime_groups = scc(&runtime, true);
+        Self {
+            uses,
+            condensed,
+            runtime,
+            runtime_groups,
+        }
+    }
+
+    /// Each cycle group with its component id, in condensation order.
+    pub(super) fn groups(&self) -> impl Iterator<Item = (usize, &Vec<String>)> {
+        self.condensed
+            .components
+            .iter()
+            .enumerate()
+            .filter(|(_, files)| {
+                files.len() > 1
+                    || self
+                        .uses
+                        .get(&files[0])
+                        .is_some_and(|node| node.edges.contains_key(&files[0]))
+            })
+    }
+
+    /// The runtime cycle groups inside `members` (one static group).
+    pub(super) fn runtime_within(&self, members: &BTreeSet<String>) -> Vec<Vec<String>> {
+        self.runtime_groups
+            .iter()
+            .filter(|group| group.iter().all(|file| members.contains(file)))
+            .cloned()
+            .collect()
+    }
+}
+
 pub(super) fn layer_map(c: &Condensed) -> BTreeMap<usize, usize> {
     let mut out = BTreeMap::new();
     for (i, l) in c.layers.iter().enumerate() {

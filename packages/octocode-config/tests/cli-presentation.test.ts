@@ -101,6 +101,23 @@ describe('CLI presentation embedded by the native binary', () => {
     ]);
   });
 
+  it('lists the envelope fields MCP publishes beside queries', () => {
+    for (const definition of DIRECT_TOOL_DEFINITIONS) {
+      const { queries: _queries, ...published } = (publishedInputSchema(
+        definition.inputSchema
+      ).properties ?? {}) as Json;
+      const views = tool(definition.name).views as Record<string, Json>;
+      for (const name of ['query', 'full'])
+        expect(
+          views[name]!.envelopeFields ?? {},
+          `${definition.name} ${name}`
+        ).toEqual(published);
+    }
+    expect(
+      ((tool('localSearch').views as Json).query as Json).envelopeFields
+    ).toHaveProperty('responseLength');
+  });
+
   it('lists the continuation fields the query view hides, one line each', () => {
     const fields = (name: string) =>
       ((tool(name).views as Json).query as Json).continuationFields as Record<
@@ -199,6 +216,27 @@ describe('CLI presentation embedded by the native binary', () => {
     }
   });
 
+  it('lists in each operation view only the fields that operation takes', () => {
+    const selected = (name: string, operation: string) =>
+      (
+        (tool(name).selections as Record<string, Json>)[
+          `operation=${operation}`
+        ]!.querySchema as Json
+      ).properties as Json;
+    const hover = selected('lspSearch', 'hover');
+    for (const field of ['graphDepth', 'groupByFile', 'includeDeclaration', 'contextLines'])
+      expect(hover, `hover.${field}`).not.toHaveProperty(field);
+    expect((hover.operation as Json).enum).toEqual(['hover']);
+    expect(selected('lspSearch', 'callers')).toHaveProperty('graphDepth');
+    expect(selected('lspSearch', 'callers')).not.toHaveProperty('groupByFile');
+    const languages = selected('ghStructure', 'languages');
+    for (const field of ['path', 'ref', 'page', 'maxDepth'])
+      expect(languages, `languages.${field}`).not.toHaveProperty(field);
+    const hidden = ((tool('lspSearch').views as Json).query as Json)
+      .operationFields as Record<string, string[]>;
+    expect(hidden.hover).not.toContain('graphDepth');
+  });
+
   it('names the fields the query view hides and the call that shows them', () => {
     const query = (name: string) => (tool(name).views as Json).query as Json;
     const lsp = query('lspSearch');
@@ -282,7 +320,7 @@ describe('CLI presentation embedded by the native binary', () => {
     expect(tool('astSearch').fields).toContain('match:rule[path*, rule*, ');
     expect(tool('astTopology').fields).toMatch(/^deadCode\[/);
     expect(tool('lspSearch').fields).toMatch(
-      /^anchored\[line\*, path\*, symbolName\*, workspaceRoot\?\] \| document\[/
+      /^anchored\[line\*, path\*, symbolName\*, orderHint\?, workspaceRoot\?\] \| document\[/
     );
     expect(tool('ghGetHistoryItem').fields).not.toContain('operation');
   });

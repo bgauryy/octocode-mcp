@@ -54,6 +54,16 @@ export function success(result) {
   return dataOf(result);
 }
 
+export function failure(result, code) {
+  const row = result.json?.results?.[0];
+  assert.equal(row?.status, 'error', JSON.stringify(result.json));
+  assert.equal(row.data?.errorCode, code, JSON.stringify(result.json));
+  if (result.code !== undefined)
+    assert.equal(result.code, contract.errorCodes[code] === 'rateLimited' ? 7 : 5);
+  if (result.isError !== undefined) assert.equal(result.isError, true);
+  return row.data;
+}
+
 export function answer(request, mode = 'score') {
   const state = JSON.stringify(request.state);
   const high =
@@ -315,6 +325,10 @@ export function evidence(spec, data, query = {}) {
         const value = evidenceValue(file);
         // Symbol pagination may divide one file group across pages. Preserve every
         // symbol payload and its file identity while comparing the complete walk.
+        if (spec.tool === 'localSearch' && Array.isArray(value.matches)) {
+          const { matches, ...identity } = value;
+          return matches.map(match => stable({ ...identity, match }));
+        }
         if (spec.tool === 'astSearch' && Array.isArray(value.symbols)) {
           const { symbols, ...identity } = value;
           return symbols.map(symbol => stable({ ...identity, symbol }));
@@ -341,7 +355,7 @@ export function pages(value) {
       if (key === 'hints') continue;
       if (key === 'next' && child && typeof child === 'object') {
         for (const [kind, lead] of Object.entries(child)) {
-          if (PAGE_CHANNELS.has(kind) && lead?.tool && lead.query)
+          if (PAGE_CHANNELS.has(kind.replace(/\d+$/, '')) && lead?.tool && lead.query)
             out.push({ kind, ...lead });
         }
       } else visit(child);
@@ -360,7 +374,8 @@ async function walkLeads(
     mcp,
     overrides = {},
     maxPages = 80,
-    include = lead => lead.kind !== 'unfiltered',
+    include = lead => !/^unfiltered\d*$/.test(lead.kind),
+    errorCode,
   } = {}
 ) {
   const pending = initial.map(lead => ({ ...lead }));
@@ -395,7 +410,7 @@ async function walkLeads(
         [lead.tool, JSON.stringify(lead.query), '--json'],
         overrides
       );
-    const data = success(result);
+    const data = errorCode ? failure(result, errorCode) : success(result);
     provider.push(ctx.calls() - before);
     responses.push({ input: lead.query, ...result });
     if (spec.tool === 'ghGetFileContent')
@@ -434,7 +449,9 @@ export async function walk(ctx, spec, query, options = {}) {
 }
 
 export async function recoverUnfiltered(ctx, spec, response, options = {}) {
-  const lead = pages(success(response)).find(row => row.kind === 'unfiltered');
+  const leads = pages(dataOf(response));
+  const lead = leads.find(row => row.kind === 'unfiltered2') ??
+    leads.find(row => row.kind === 'unfiltered');
   assert.ok(lead, 'classified output exposes next.unfiltered');
   const before = ctx.calls();
   const run = await walkLeads(

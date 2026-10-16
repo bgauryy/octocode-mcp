@@ -1,7 +1,4 @@
-use super::{
-    GitHubTransport, ProviderError, ProviderErrorKind, ProviderErrorReason, RequestContext,
-    RequestSpec,
-};
+use super::{GitHubTransport, ProviderError, ProviderErrorReason, RequestContext, RequestSpec};
 use serde_json::Value;
 
 #[derive(Clone, Debug)]
@@ -106,31 +103,6 @@ impl GitHubTransport {
             listed: true,
             has_more,
         })
-    }
-    /// The canonical `(owner, repo)` of a renamed repository; `None` when
-    /// `owner/repo` stands (case aside) or does not exist. The caller words
-    /// the rename warning.
-    pub async fn canonical_owner_repo(
-        &self,
-        owner: &str,
-        repo: &str,
-        context: &RequestContext,
-    ) -> Result<Option<(String, String)>, ProviderError> {
-        match self.repository_metadata(owner, repo, context).await {
-            Ok(meta) => Ok(meta
-                .full_name
-                .as_deref()
-                .and_then(|full| full.split_once('/'))
-                .filter(|(canonical_owner, canonical_repo)| {
-                    !(canonical_owner.eq_ignore_ascii_case(owner)
-                        && canonical_repo.eq_ignore_ascii_case(repo))
-                })
-                .map(|(canonical_owner, canonical_repo)| {
-                    (canonical_owner.to_owned(), canonical_repo.to_owned())
-                })),
-            Err(error) if error.kind == ProviderErrorKind::NotFound => Ok(None),
-            Err(error) => Err(error),
-        }
     }
     /// Confirms that `login` is a GitHub account the token can see
     /// (`GET /users/{login}`, through the response cache). GitHub's commit

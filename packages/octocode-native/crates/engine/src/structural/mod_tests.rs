@@ -1558,3 +1558,23 @@ fn a_scan_past_its_time_budget_resumes_exactly_once() {
     assert!(calls > 1, "a zero budget must cut the scan");
     fs::remove_dir_all(root).expect("cleanup");
 }
+
+/// A pattern whose root the grammar names by a `name` field is a
+/// declaration: its kind, and its name unless that is a metavariable.
+/// Expressions and calls are not declarations.
+#[test]
+fn a_named_root_pattern_is_a_declaration() {
+    let rust = pattern_declaration("fn $NAME($$$ARGS) -> $R { $$$BODY }", "rs").expect("fn");
+    assert_eq!(rust.kind, "function_item");
+    assert_eq!(rust.name, None);
+    let named = pattern_declaration("fn run() {}", "rs").expect("named fn");
+    assert_eq!(
+        named.name,
+        Some(("identifier".to_owned(), "run".to_owned()))
+    );
+    let class = pattern_declaration("class $C { $$$B }", "ts").expect("class");
+    assert_eq!(class.kind, "class_declaration");
+    assert_eq!(pattern_declaration("$X.unwrap()", "rs"), None);
+    assert_eq!(pattern_declaration("foo($A)", "ts"), None);
+    assert_eq!(pattern_declaration("fn ???", "rs"), None);
+}

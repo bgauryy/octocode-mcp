@@ -1,7 +1,7 @@
 //! Continuations: the read of a likely row, the next page, and the
 //! recovery from an empty search.
 use super::rows::{is_completed, is_merged, item_number, item_repo, read_target};
-use super::{GhSearchHistoryQuery, HistoryOperation, HistorySearch};
+use super::{GhSearchHistoryQuery, HistorySearch};
 use crate::tools::gh_shared::{broaden_lead, drop_each_keyword, without};
 use crate::tools::id::ToolId;
 use crate::tools::result::{Continuation, query_row};
@@ -196,36 +196,56 @@ pub(super) fn broaden_search(q: &GhSearchHistoryQuery) -> Option<Value> {
     broaden_lead(ToolId::GhSearchHistory, variants, BROADEN_VARIANTS)
 }
 
-/// A capped search's narrowing (`narrowScope`), one call: rows ordered
-/// newest first continue past GitHub's 1,000-result window before this
-/// page's last row (`until` set to its date, the window's own field; a row
-/// at that instant may show again); any other order is re-sorted newest
-/// first, whose pages end in that same continuation. `None` when the query
-/// cannot take it (a `created:` qualifier owns the window) or no row is
-/// dated.
+/// A capped search's narrowing (`narrowScope`), one call. Rows in a date
+/// order continue past GitHub's 1,000-result window from this page's last
+/// row: creation order through the query's own window (newest first sets
+/// `until`, oldest first `since`), update order through an `updated:`
+/// qualifier. A row at that instant may show again; none is skipped. An
+/// order with no date to resume from (best match, comments, reactions), or
+/// an update order whose `updated:` qualifier owns the window, is re-sorted
+/// newest first, whose pages end in that continuation. `None` when a
+/// `created:` qualifier owns a creation-ordered window or no row is dated.
 pub(super) fn narrow_capped(q: &HistorySearch, items: &[Value]) -> Option<Value> {
-    let commit = q.operation() == HistoryOperation::Commit;
-    let newest_first = commit
-        || (q.sort().as_deref() == Some("created") && q.order().as_deref() == Some("desc"))
-        || super::query::lists_issues_newest_first(q);
+    let (sort, order) = super::query::search_order(q);
+    let newest_first = order.as_deref() != Some("asc");
+    let last = |pointers: &[&str]| {
+        items.iter().rev().find_map(|item| {
+            pointers
+                .iter()
+                .find_map(|pointer| item.pointer(pointer))
+                .and_then(Value::as_str)
+                .map(|date| crate::tools::gh_shared::commit::utc_date(Some(date)))
+        })
+    };
     let mut row = same_query(q);
-    if newest_first {
-        if !commit && q.filters().created.is_some() {
-            return None;
+    let resumed = match sort.as_deref() {
+        Some("committer-date") => {
+            row["until"] = json!(last(&["/commit/committer/date", "/commit/author/date"])?);
+            true
         }
-        let date = items.iter().rev().find_map(|item| {
-            let date = if commit {
-                item.pointer("/commit/committer/date")
-                    .or_else(|| item.pointer("/commit/author/date"))
-            } else {
-                item.get("created_at")
-            };
-            date.and_then(Value::as_str)
-        })?;
-        row["until"] = json!(crate::tools::gh_shared::commit::utc_date(Some(date)));
-    } else {
-        row["sort"] = json!("created:desc");
-    }
+        Some("created") => {
+            if q.filters().created.is_some() {
+                return None;
+            }
+            let bound = if newest_first { "until" } else { "since" };
+            row[bound] = json!(last(&["/created_at"])?);
+            true
+        }
+        Some("updated") if q.filters().updated.is_none() => {
+            let date = last(&["/updated_at"])?;
+            let bound = if newest_first { "<=" } else { ">=" };
+            let term = format!("updated:{bound}{date}");
+            row["qualifiers"] = json!(match q.qualifiers() {
+                Some(qualifiers) => format!("{} {term}", qualifiers.trim()),
+                None => term,
+            });
+            true
+        }
+        _ => {
+            row["sort"] = json!("created:desc");
+            false
+        }
+    };
     crate::contracts::validate(
         ToolId::GhSearchHistory.as_str(),
         json!({ "queries": [row] }),
@@ -233,7 +253,7 @@ pub(super) fn narrow_capped(q: &HistorySearch, items: &[Value]) -> Option<Value>
     .ok()?;
     Some(
         Continuation::new(ToolId::GhSearchHistory, row)
-            .confidence(if newest_first { "exact" } else { "medium" })
+            .confidence(if resumed { "exact" } else { "medium" })
             .build(),
     )
 }

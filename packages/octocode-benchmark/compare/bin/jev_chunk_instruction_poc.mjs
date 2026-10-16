@@ -186,7 +186,7 @@ async function main() {
         if (stopped) continue;
         current = { case: item.id, ...spec, responses: [] }; const begin = run.ledger.length, time = performance.now();
         try {
-          if (spec.arm === 'full-read') await read({ path: item.path, snapshot: item.origin.sha256, fullContent: true, minify: 'none' }, current.responses);
+          if (spec.arm === 'full-read') await read({ path: item.path, snapshot: item.origin.sha256, fullContent: true }, current.responses);
           else {
             const units = item.units[spec.mode], scores = {};
             const questions = Object.fromEntries(item.atoms.map((atom, i) => [`fact${i + 1}`, { type: 'score', instructions: { question: PROMPTS[spec.prompt], goal: atom.ask }, criteria: LEVELS }]));
@@ -194,7 +194,7 @@ async function main() {
             // One unit per query row (a complete selected state); a call holds at most CLASIFY_BATCH rows.
             for (let start = 0; start < units.length; start += CLASIFY_BATCH) {
               const batch = units.slice(start, start + CLASIFY_BATCH);
-              const input = { queries: batch.map(unit => ({ id: unit.id, source: { tool: 'localFetch', query: { path: item.path, snapshot: item.origin.sha256, ranges: [`${unit.start}-${unit.end}`], minify: 'none' } }, questions })) };
+              const input = { queries: batch.map(unit => ({ id: unit.id, source: { tool: 'localFetch', query: { path: item.path, snapshot: item.origin.sha256, ranges: [`${unit.start}-${unit.end}`] } }, questions })) };
               const json = await call('clasify', input, current.responses);
               if (json.queries?.length !== batch.length) throw new Error('Candidate not completely judged');
               for (const row of json.queries) {
@@ -205,7 +205,7 @@ async function main() {
             current.scores = scores; current.selected = choosePerQuestion(units, scores, ids);
             current.ranges = mergeRanges(Object.values(current.selected).map(unit => [unit.start, unit.end])).map(range => range.join('-'));
             current.unitCount = units.length;
-            await read({ path: item.path, snapshot: item.origin.sha256, ranges: current.ranges, minify: 'none' }, current.responses);
+            await read({ path: item.path, snapshot: item.origin.sha256, ranges: current.ranges }, current.responses);
           }
           current.factCoverage = sourceCoverage(current.responses, item);
           current.coverage = sourceCoverage(current.responses, { ...item, atoms: item.contextAtoms });

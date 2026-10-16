@@ -247,35 +247,162 @@ pub(crate) async fn remember_canonical<C: ConditionalCache>(
     }
 }
 
+/// How [`canonical_repo`] learns a rename its memo does not hold.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RenameCheck {
+    /// Only when a request to the repository already followed GitHub's
+    /// rename redirect: free for a repository GitHub never redirected.
+    Redirected,
+    /// Read the repository's metadata: a search never redirects, so an
+    /// empty search scoped to an old name only learns the rename here.
+    Metadata,
+}
+
 /// The canonical name of a renamed repository, `None` when `owner/repo`
-/// stands. Costs no request for a repository GitHub never redirected: the
-/// memo answers first, then a followed rename redirect triggers one
-/// metadata read, which is memoized.
+/// stands (case aside), does not exist, or cannot be checked. The memo
+/// answers first; past it, `check` decides whether one (memoized) metadata
+/// read is spent. Only a cancelled or timed-out read fails.
 pub(crate) async fn canonical_repo<C: ConditionalCache>(
     provider: &GitHubProvider<C>,
     owner: &str,
     repo: &str,
     context: &RequestContext,
-) -> Option<(String, String)> {
-    let partition = provider.transport.cache_partition(context, None).ok()?;
+    check: RenameCheck,
+) -> Result<Option<(String, String)>, ProviderError> {
+    let Ok(partition) = provider.transport.cache_partition(context, None) else {
+        return Ok(None);
+    };
     if let Some(cached) = provider
         .cache
         .get(&partition, &canonical_key(owner, repo))
         .await
     {
-        return renamed_to(owner, repo, std::str::from_utf8(&cached.bytes).ok()?);
+        return Ok(std::str::from_utf8(&cached.bytes)
+            .ok()
+            .and_then(|full_name| renamed_to(owner, repo, full_name)));
     }
-    if !provider.transport.followed_rename(owner, repo) {
-        return None;
+    if check == RenameCheck::Redirected && !provider.transport.followed_rename(owner, repo) {
+        return Ok(None);
     }
-    let full_name = provider
+    let full_name = match provider
         .transport
         .repository_metadata(owner, repo, context)
         .await
-        .ok()?
-        .full_name?;
+    {
+        Ok(meta) => meta.full_name,
+        Err(error)
+            if matches!(
+                error.kind,
+                ProviderErrorKind::Cancelled | ProviderErrorKind::Timeout
+            ) =>
+        {
+            return Err(error);
+        }
+        Err(_) => None,
+    };
+    let Some(full_name) = full_name else {
+        return Ok(None);
+    };
     remember_canonical(provider, owner, repo, &full_name, context).await;
-    renamed_to(owner, repo, &full_name)
+    Ok(renamed_to(owner, repo, &full_name))
+}
+
+/// The commit a failed read or listing resolved before it failed (the ref
+/// memo answers; a full SHA is itself), so its recovery leads pin the same
+/// commit its success leads would, not the movable ref. Called only after
+/// the repository and ref resolved (a path failure); `None` otherwise.
+pub(crate) async fn failed_at_commit<C: ConditionalCache>(
+    provider: &GitHubProvider<C>,
+    owner: &str,
+    repo: &str,
+    reference: Option<&str>,
+    context: &RequestContext,
+) -> Option<String> {
+    provider
+        .resolve_reference(owner, repo, reference, false, context)
+        .await
+        .ok()
+}
+
+/// The failure of a request that named a submodule path (a read or a
+/// listing), with its recovery: where the parent's contents entry at the
+/// request's commit points (one request), then [`submodule_recovery`].
+pub(crate) async fn submodule_failure<C: ConditionalCache>(
+    provider: &GitHubProvider<C>,
+    at: &RepoPath<'_>,
+    context: &RequestContext,
+    failure: GhFailure,
+) -> GhFailure {
+    let submodule = match failed_at_commit(provider, at.owner, at.repo, at.reference, context).await
+    {
+        Some(commit) => provider
+            .submodule(at.owner, at.repo, at.path, &commit, context)
+            .await
+            .ok()
+            .flatten(),
+        None => None,
+    };
+    let repository = submodule
+        .as_ref()
+        .and_then(|submodule| submodule.url.as_deref())
+        .and_then(|url| hosted_repository(url, provider.transport.endpoint()));
+    let pinned = submodule.and_then(|submodule| submodule.commit);
+    submodule_recovery(failure, repository, pinned.as_deref())
+}
+
+/// `owner`/`repo` of a submodule clone URL (https, http, ssh or git scheme,
+/// or scp-like `git@host:owner/repo`) hosted where `endpoint` serves:
+/// github.com for the public API, else the Enterprise host itself.
+pub(crate) fn hosted_repository(
+    url: &str,
+    endpoint: &octocode_github::GitHubEndpoint,
+) -> Option<(String, String)> {
+    let (host, path) = match url::Url::parse(url) {
+        Ok(parsed) if parsed.host_str().is_some() => (
+            parsed.host_str()?.to_owned(),
+            parsed.path().trim_start_matches('/').to_owned(),
+        ),
+        // scp-like syntax: `[user@]host:path`.
+        _ => {
+            let (authority, path) = url.split_once(':')?;
+            let host = authority.rsplit('@').next()?;
+            (host.to_owned(), path.trim_start_matches('/').to_owned())
+        }
+    };
+    if !host.eq_ignore_ascii_case(endpoint.credential_host()) {
+        return None;
+    }
+    let path = path.trim_end_matches('/');
+    let path = path.strip_suffix(".git").unwrap_or(path);
+    let mut segments = path.rsplit('/');
+    let repo = segments.next().filter(|part| !part.is_empty())?;
+    let owner = segments.next().filter(|part| !part.is_empty())?;
+    Some((owner.to_owned(), repo.to_owned()))
+}
+
+/// The recovery of a submodule path: the submodule's GitHub repository at
+/// the commit the parent pins (when the listing named it), else, for a
+/// submodule hosted elsewhere, the fact that it is not on GitHub.
+fn submodule_recovery(
+    mut failure: GhFailure,
+    repository: Option<(String, String)>,
+    pinned: Option<&str>,
+) -> GhFailure {
+    let Some((owner, repo)) = repository else {
+        return failure.hint("The submodule's repository is not on GitHub.");
+    };
+    let at = RepoPath {
+        owner: &owner,
+        repo: &repo,
+        path: "",
+        reference: pinned,
+    };
+    let confidence = if pinned.is_some() { "high" } else { "low" };
+    failure.hints.clear();
+    failure.next = Some(Box::new(
+        json!({ "viewTree": tree_recovery(&at, None, confidence) }),
+    ));
+    failure
 }
 
 /// The one warning a read states for a renamed repository.
@@ -310,6 +437,58 @@ pub(crate) fn reject_boolean_keywords<S: AsRef<str>>(keywords: &[S]) -> Result<(
 /// Results GitHub search reaches for one query, however many match.
 pub(crate) const SEARCH_RESULT_CAP: usize = 1000;
 
+/// Where a GitHub search endpoint draws its 1,000-result line through the
+/// pages of one query.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SearchWindow {
+    /// A page is served while its first result lies inside the cap, so the
+    /// last page may run past it: repository, issue and commit search.
+    PageStart,
+    /// A page is served only while its last result lies inside the cap
+    /// (`page * per <= 1000`): code search. When `per` does not divide
+    /// 1,000, the results past the last whole page are unreachable.
+    PageEnd,
+}
+
+impl SearchWindow {
+    /// The last page GitHub serves at `per` rows a page.
+    pub(crate) fn last_page(self, per: usize) -> usize {
+        let per = per.max(1);
+        match self {
+            Self::PageStart => SEARCH_RESULT_CAP.div_ceil(per),
+            Self::PageEnd => (SEARCH_RESULT_CAP / per).max(1),
+        }
+    }
+
+    /// What `matched` results reach through this window at `per` a page.
+    pub(crate) fn reach(self, matched: usize, per: usize) -> SearchReach {
+        let per = per.max(1);
+        let total = matched.min(self.last_page(per).saturating_mul(per));
+        SearchReach {
+            total,
+            pages: total.div_ceil(per),
+            capped: matched > total,
+        }
+    }
+
+    /// A page past the last one GitHub serves cannot be read.
+    pub(crate) fn reject(self, page: usize, per: usize) -> Result<(), ProviderError> {
+        let last = self.last_page(per);
+        if page > last {
+            Err(ProviderError::new(
+                ProviderErrorKind::Validation,
+                format!(
+                    "Page {page} is past GitHub's search window: at {per} per page, page {last} is the last, reaching the first {} results.",
+                    last.saturating_mul(per.max(1))
+                ),
+            )
+            .with_reason(ProviderErrorReason::SearchWindowExceeded))
+        } else {
+            Ok(())
+        }
+    }
+}
+
 /// What one search's match count reaches through GitHub's 1,000-result
 /// window at `per` rows a page.
 #[derive(Clone, Copy)]
@@ -322,36 +501,16 @@ pub(crate) struct SearchReach {
 }
 
 impl SearchReach {
-    pub(crate) fn new(matched: usize, per: usize) -> Self {
-        let total = matched.min(SEARCH_RESULT_CAP);
-        Self {
-            total,
-            pages: total.div_ceil(per.max(1)),
-            capped: matched > SEARCH_RESULT_CAP,
-        }
-    }
-
     /// Whether page `current` lies past the last page of a non-empty search.
     pub(crate) fn past_last(&self, current: usize) -> bool {
         self.total > 0 && current > self.pages
     }
 }
 
-/// A search page past GitHub's 1,000-result window cannot be read.
-pub(crate) fn reject_window(page: usize, per: usize) -> Result<(), ProviderError> {
-    if (page - 1).saturating_mul(per) >= SEARCH_RESULT_CAP {
-        Err(ProviderError::new(
-            ProviderErrorKind::Validation,
-            "GitHub search page exceeds the 1,000-result search window",
-        )
-        .with_reason(ProviderErrorReason::SearchWindowExceeded))
-    } else {
-        Ok(())
-    }
-}
-
 /// A search failure's one repair lead, replacing its static hint: a page
-/// past the search window leads to the last reachable page (`repair`); a
+/// past the search window leads to the last page a
+/// [`SearchWindow::PageStart`] search serves (`repair`; a code search
+/// re-points it at its own last page); a
 /// repository that did not resolve leads to a search for its name
 /// (`findRepository`), which names the owner that holds it. Any other
 /// failure is returned unchanged.
@@ -365,7 +524,7 @@ pub(crate) fn with_search_repair(
     let (name, lead) = if failure.error.reason == Some(ProviderErrorReason::SearchWindowExceeded) {
         (
             "repair",
-            page_replay(tool, query, SEARCH_RESULT_CAP.div_ceil(per.max(1))),
+            page_replay(tool, query, SearchWindow::PageStart.last_page(per)),
         )
     } else if let Some(repo) = repo.filter(|_| repository_not_found(&failure.error)) {
         ("findRepository", repository_search(repo))
@@ -461,9 +620,10 @@ pub(crate) fn broaden_lead(tool: ToolId, variants: Vec<Value>, limit: usize) -> 
 #[derive(Clone, Copy)]
 pub(crate) struct SearchCompleteness<'a> {
     pub(crate) tool: ToolId,
-    /// GitHub's own match count (past the cap, more than the reachable
-    /// `totalItems`).
+    /// GitHub's own match count (past the cap, more than `reachable`).
     pub(crate) matched: usize,
+    /// The results the search window reaches (`totalItems`).
+    pub(crate) reachable: usize,
     /// GitHub's incomplete-results flag.
     pub(crate) incomplete: bool,
     pub(crate) page: usize,
@@ -487,17 +647,19 @@ pub(crate) fn apply_partial(
     let SearchCompleteness {
         tool,
         matched,
+        reachable,
         incomplete,
         page,
         has_more,
         subject,
     } = *facts;
-    if matched > SEARCH_RESULT_CAP {
-        // The match count is this call's fact; that search stops at 1,000
-        // is the cap reason (`providerResultCap`), not a per-call note.
+    if matched > reachable {
+        // The match count is this call's fact; that search stops at its
+        // window is the cap reason (`providerResultCap`), not a per-call
+        // note.
         let count = (page == 1).then(|| {
             format!(
-                "GitHub matched {matched} {subject} results; the first {SEARCH_RESULT_CAP} are reachable."
+                "GitHub matched {matched} {subject} results; the first {reachable} are reachable."
             )
         });
         let warnings = Vec::from_iter(count);

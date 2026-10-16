@@ -12,7 +12,9 @@
 //! bound; per-node failures are collected as data.
 
 use super::anchor::Position;
-use super::failure::{LspFailure, continuation, partial_with_retry};
+use super::failure::{
+    IMPORTER_REQUEST_FAILED, LspFailure, RequestFailures, continuation, partial_with_retry,
+};
 use super::importers::{
     ImporterSearch, Importers, WindowRequest, callers_from_references, enclosing_callable,
     flatten_symbols, verified_anchors,
@@ -21,7 +23,7 @@ use super::locations::{public_range, salted_items_payload, snapshot_changed};
 use super::render::{as_array, decode_uri_path, symbol_kind_name, uri_to_path};
 use super::scope::Scope;
 use super::source::{SourceCache, item_uri_is_authorized};
-use super::{LspSearchQuery, cancellable};
+use super::{LspSearchQuery, Op, cancellable};
 use crate::policy::path::PathPolicy;
 use crate::tools::cancel::CancellationCheck;
 use futures_util::StreamExt;
@@ -777,7 +779,7 @@ impl ClassFacts {
                         crate::tools::declarations_cache::extract(
                             &source.content,
                             &file,
-                            false,
+                            None,
                             || {
                                 octocode_engine::portable::extract_declarations(
                                     &source.content,
@@ -994,7 +996,7 @@ pub(super) fn call_items_payload(
     // which the sizes charge only to the run's first call.
     let mut row = salted_items_payload(
         query,
-        query.operation().as_str(),
+        query.operation(),
         json!(items),
         salt,
         budget.saturating_sub(reserve).max(1),
@@ -1193,7 +1195,7 @@ pub(super) fn mark_partial_expansion(
     if failures.is_empty() {
         return;
     }
-    let reason = if matches!(query.operation().as_str(), "supertypes" | "subtypes") {
+    let reason = if matches!(query.op(), Op::Supertypes | Op::Subtypes) {
         "typeHierarchyExpansionFailed"
     } else {
         "callHierarchyExpansionFailed"
@@ -1477,14 +1479,14 @@ async fn hierarchy_roots(
     }: Position<'_>,
     cancel: &dyn CancellationCheck,
 ) -> Result<(Vec<Value>, &'static [Expansion]), LspFailure> {
-    let (prepared, expansions): (Value, &[Expansion]) = match query.operation().as_str() {
-        "callers" | "callees" => (
+    let (prepared, expansions): (Value, &[Expansion]) = match query.op() {
+        Op::Callers | Op::Callees => (
             cancellable(
                 cancel,
                 client.prepare_call_hierarchy(path.to_owned(), line, character),
             )
             .await??,
-            if query.operation() == "callers" {
+            if query.op() == Op::Callers {
                 &[Expansion::IncomingCalls]
             } else {
                 &[Expansion::OutgoingCalls]
@@ -1496,7 +1498,7 @@ async fn hierarchy_roots(
                 client.prepare_type_hierarchy(path.to_owned(), line, character),
             )
             .await??,
-            if query.operation() == "supertypes" {
+            if query.op() == Op::Supertypes {
                 &[Expansion::Supertypes]
             } else {
                 &[Expansion::Subtypes]
@@ -1515,25 +1517,28 @@ async fn hierarchy_roots(
 
 /// Call-hierarchy items prepared at verified importer call sites (TS/JS
 /// recovery); an item prepared there resolves in the importer's program.
+/// A call site that fails to prepare is recorded in `failures`.
 async fn importer_roots(
     client: &NativeLspClient,
     paths: &PathPolicy,
     importers: &Importers,
     cancel: &dyn CancellationCheck,
+    failures: &mut RequestFailures,
 ) -> Result<Vec<Value>, LspFailure> {
     let mut roots = Vec::new();
     for anchor in importers.call_sites() {
-        if let Ok(more) = cancellable(
+        match cancellable(
             cancel,
             client.prepare_call_hierarchy(anchor.path.clone(), anchor.line, anchor.character),
         )
         .await?
         {
-            roots.extend(
+            Ok(more) => roots.extend(
                 as_array(&more)
                     .into_iter()
                     .filter(|root| item_uri_is_authorized(root, paths)),
-            );
+            ),
+            Err(error) => failures.record_engine(&error)?,
         }
     }
     Ok(roots)
@@ -1591,6 +1596,7 @@ pub(super) async fn hierarchy(
     let mut failures = Vec::new();
     let mut walks = Vec::new();
     let mut verified = None;
+    let mut importer_failures = RequestFailures::default();
     let mut anchor_answered = HashSet::new();
     let mut class_facts = ClassFacts::default();
     for &expansion in expansions {
@@ -1613,6 +1619,7 @@ pub(super) async fn hierarchy(
                 return Ok((snapshot_changed(query), None));
             };
             derived_items = recovered.items;
+            importer_failures.extend(recovered.failures);
             verified = Some(recovered.importers);
             anchor_answered = recovered.answered;
         }
@@ -1658,10 +1665,16 @@ pub(super) async fn hierarchy(
             paths,
         )
     };
-    if let Some(note) = class_uses_warning(query.operation().as_str(), &roots) {
+    if let Some(note) = class_uses_warning(query.operation(), &roots) {
         crate::tools::paging::push_warnings(&mut row, [note]);
     }
     mark_partial_expansion(&mut row, query, &failures);
+    importer_failures.disclose(
+        &mut row,
+        query,
+        IMPORTER_REQUEST_FAILED,
+        "Importer recovery",
+    );
     // Every walked direction is marked together: marking them one after
     // the other would let the second overwrite the first's
     // `unexpandedParents` and `continueWalk*`.
@@ -1684,6 +1697,8 @@ struct Recovered {
     answered: HashSet<String>,
     /// Caller rows derived from the importers' references.
     items: Vec<Value>,
+    /// Importer requests the server did not answer.
+    failures: RequestFailures,
 }
 
 impl IncomingRecovery<'_, '_> {
@@ -1730,13 +1745,16 @@ impl IncomingRecovery<'_, '_> {
             foreign.extend(answered.iter().cloned());
             *walk = Walk::new(paths, &[], Expansion::IncomingCalls, self.depth);
         }
-        let extra = importer_roots(client, paths, &importers, cancel).await?;
+        let mut failures = RequestFailures::default();
+        let extra = importer_roots(client, paths, &importers, cancel, &mut failures).await?;
         walk.add_roots(client, extra, foreign, cancel).await?;
         // Reference-derived callers fill in only files the server's call
         // hierarchy did not answer for at level 1.
         let mut skip = walk.answered_files();
         skip.extend(answered.iter().cloned());
-        let derived = callers_from_references(client, sources, cancel, &importers, &skip).await?;
+        let derived =
+            callers_from_references(client, sources, cancel, &importers, &skip, &mut failures)
+                .await?;
         let mut items = Vec::new();
         for (node, sites) in derived {
             let edge = HierarchyEdge {
@@ -1754,6 +1772,7 @@ impl IncomingRecovery<'_, '_> {
             importers,
             answered,
             items,
+            failures,
         }))
     }
 }

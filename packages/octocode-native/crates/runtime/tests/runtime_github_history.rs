@@ -28,7 +28,7 @@ async fn github_missing_identity_is_a_contract_error() {
 #[tokio::test]
 async fn gh_search_history_commits_lists_via_rest() {
     let server = MockServer::builder().start().await;
-    // canonical_owner_repo pre-flight
+    // Repository metadata (rename) pre-flight
     Mock::given(method("GET"))
         .and(path("/api/v3/repos/a/b"))
         .respond_with(
@@ -221,7 +221,7 @@ async fn gh_get_history_item_commit_fetches_via_rest() {
     assert_eq!(data["commitSha"], sha, "{data}");
     assert!(data.get("ref").is_none(), "{data}");
     assert_eq!(
-        data["hints"]["findPullRequest"]["query"]["queries"][0]["keywords"],
+        crate::support::checks::hint(data, "findPullRequest")["query"]["queries"][0]["keywords"],
         json!([sha]),
         "{data}"
     );
@@ -256,10 +256,13 @@ async fn squash_merge_commit_reads_its_pull_request_directly() {
     .await
     .expect("commit read");
     let data = row_data(&outcome);
-    let read = &data["hints"]["readPullRequest"];
+    let read = &crate::support::checks::hint(data, "readPullRequest");
     assert_eq!(read["tool"], "ghGetHistoryItem", "{data}");
     assert_eq!(read["query"]["queries"][0]["number"], 8506, "{data}");
-    assert!(data["hints"].get("findPullRequest").is_none(), "{data}");
+    assert!(
+        crate::support::checks::hint(data, "findPullRequest").is_null(),
+        "{data}"
+    );
     checks::assert_output_contract("ghGetHistoryItem", &outcome.structured_content);
     runtime.close().await;
 }
@@ -420,7 +423,8 @@ async fn gh_get_history_item_pull_request_without_content_passes_output_contract
         "{pr}"
     );
     // The body rides the file-list read.
-    let get_body = &row_data(&outcome)["hints"]["readFiles"]["query"]["queries"][0];
+    let get_body =
+        &crate::support::checks::hint(row_data(&outcome), "readFiles")["query"]["queries"][0];
     // Continuations omit defaulted fields; validation restores them on replay.
     assert!(get_body.get("pageSize").is_none(), "{get_body}");
     assert!(get_body.get("minify").is_none(), "{get_body}");
@@ -429,7 +433,8 @@ async fn gh_get_history_item_pull_request_without_content_passes_output_contract
         .expect("compact continuation validates");
     // pageSize has no contract default: each surface sizes its own page.
     assert!(replayed.get("pageSize").is_none(), "{replayed}");
-    assert_eq!(replayed["minify"], "standard", "{replayed}");
+    // History text is always verbatim: no minify field exists.
+    assert!(replayed.get("minify").is_none(), "{replayed}");
     runtime.close().await;
 }
 
@@ -731,7 +736,7 @@ async fn gh_pull_request_read_of_an_issue_number_offers_read_issue() {
     .expect("error row");
     let data = row_data(&outcome);
     assert_eq!(row_status(&outcome), "error", "{data}");
-    let read = &data["hints"]["readIssue"]["query"]["queries"][0];
+    let read = &crate::support::checks::hint(data, "readIssue")["query"]["queries"][0];
     assert_eq!(read["operation"], "issue", "{data}");
     assert_eq!(read["number"], 9, "{data}");
     assert!(
@@ -771,7 +776,7 @@ async fn commit_patch_view_carries_the_headline_not_the_whole_message() {
     assert!(data.get("message").is_none(), "{data}");
     assert_eq!(data["messageHeadline"], "Fix the parser (#42)", "{data}");
     checks::assert_absent(data, "Long rationale");
-    let lead = &data["hints"]["readCommit"];
+    let lead = &crate::support::checks::hint(data, "readCommit");
     assert_eq!(lead["tool"], "ghGetHistoryItem", "{data}");
     assert!(
         lead["query"]["queries"][0].get("sections").is_none(),
@@ -780,7 +785,7 @@ async fn commit_patch_view_carries_the_headline_not_the_whole_message() {
     // The pull request the headline names stays a lead beside it: a commit
     // view reads the same discussion route, one file or many.
     assert_eq!(
-        data["hints"]["readPullRequest"]["query"],
+        crate::support::checks::hint(data, "readPullRequest")["query"],
         json!({"queries":[{"operation":"pullRequest","owner":"a","repo":"b","number":42,"extras":["hints"]}]}),
         "{data}"
     );
@@ -1066,7 +1071,7 @@ async fn issue_read_lists_closing_pull_requests_and_reads_the_merged_fix() {
         ]),
         "{data}"
     );
-    let read = &data["hints"]["readPullRequest"];
+    let read = &crate::support::checks::hint(data, "readPullRequest");
     assert_eq!(read["tool"], "ghGetHistoryItem", "{data}");
     assert_eq!(
         read["query"]["queries"][0]["operation"], "pullRequest",
@@ -1095,7 +1100,7 @@ async fn issue_read_lists_closing_pull_requests_and_reads_the_merged_fix() {
     .expect("issue read");
     let data = row_data(&outcome);
     assert!(data["issues"][0].get("closedBy").is_none(), "{data}");
-    let find = &data["hints"]["findPullRequest"];
+    let find = &crate::support::checks::hint(data, "findPullRequest");
     assert_eq!(find["tool"], "ghSearchHistory", "{data}");
     assert_eq!(
         find["query"]["queries"][0]["keywords"],
@@ -1105,9 +1110,9 @@ async fn issue_read_lists_closing_pull_requests_and_reads_the_merged_fix() {
     runtime.close().await;
 }
 
-/// A bounded closing-reference set stays disclosed on every body window,
-/// not only the first one that lists it; later windows ask only for the
-/// count instead of the linked pull requests again.
+/// A bounded closing-reference set is disclosed once, on the first body
+/// window that lists it; later windows list no `closedBy`, so they spend no
+/// GraphQL request on it and restate no bound.
 #[tokio::test]
 async fn issue_body_windows_keep_closing_reference_coverage() {
     let server = MockServer::builder().start().await;
@@ -1148,14 +1153,13 @@ async fn issue_body_windows_keep_closing_reference_coverage() {
                 .unwrap_or_default()
                 .to_owned(),
         );
-        assert_eq!(data["isPartial"], true, "window {window}: {data}");
-        assert_eq!(data["terminalLimit"], true, "window {window}: {data}");
         let reasons = data["partialReasons"]
             .as_array()
             .cloned()
             .unwrap_or_default();
-        assert!(
+        assert_eq!(
             reasons.contains(&json!("closingReferenceLimit")),
+            window == 0,
             "window {window}: {data}"
         );
         // `next.continueBody` holds the rest: no separate reason restates it.
@@ -1163,8 +1167,12 @@ async fn issue_body_windows_keep_closing_reference_coverage() {
             !reasons.contains(&json!("contentPagination")),
             "window {window}: {data}"
         );
-        let warning = data["warnings"][0].as_str().unwrap_or_default();
-        assert!(warning.contains("25 of 31"), "window {window}: {data}");
+        let warnings = data["warnings"].to_string();
+        assert_eq!(
+            warnings.contains("25 of 31"),
+            window == 0,
+            "window {window}: {data}"
+        );
         if window < 2 {
             // `partialReasons` say why the row is partial; the visible
             // body pagination and `next.continueBody` reach the remaining
@@ -1191,7 +1199,10 @@ async fn issue_body_windows_keep_closing_reference_coverage() {
             );
         } else {
             assert!(data["issues"][0].get("closedBy").is_none(), "{data}");
-            assert!(data["hints"].get("readPullRequest").is_none(), "{data}");
+            assert!(
+                crate::support::checks::hint(data, "readPullRequest").is_null(),
+                "{data}"
+            );
         }
         match data["next"]["continueBody"]["query"].as_object() {
             Some(next) => query = serde_json::Value::Object(next.clone()),
@@ -1207,14 +1218,8 @@ async fn issue_body_windows_keep_closing_reference_coverage() {
         .filter(|request| request.url.path() == "/api/graphql")
         .map(|request| String::from_utf8_lossy(&request.body).into_owned())
         .collect::<Vec<_>>();
-    assert_eq!(documents.len(), 3, "{documents:?}");
+    assert_eq!(documents.len(), 1, "{documents:?}");
     assert!(documents[0].contains("nodes"), "{documents:?}");
-    assert!(
-        documents[1..]
-            .iter()
-            .all(|document| !document.contains("nodes")),
-        "{documents:?}"
-    );
     runtime.close().await;
 }
 
@@ -1255,13 +1260,13 @@ async fn commit_patch_view_numbers_both_sides_and_reads_each_side() {
         "{data}"
     );
     assert_eq!(
-        data["hints"]["readAtCommit"]["query"],
+        crate::support::checks::hint(data, "readAtCommit")["query"],
         json!({"queries":[{"owner":"a","repo":"b","path":"src/a.rs","ref":sha,"extras":["hints"]}]}),
         "{data}"
     );
     // A lead inherits the row's extras.
     assert_eq!(
-        data["hints"]["readParent"]["query"],
+        crate::support::checks::hint(data, "readParent")["query"],
         json!({"queries":[{"owner":"a","repo":"b","path":"src/a.rs","ref":parent,"ranges":["30-52"],"extras":["hints"]}]}),
         "{data}"
     );
@@ -1300,10 +1305,13 @@ async fn bad_commit_sha_is_not_found() {
     );
     // A missed commit leads to a commit search in the repository,
     // never to a refs listing (a SHA-shaped ref names no branch).
-    let lead = &data["hints"]["findCommit"];
+    let lead = &crate::support::checks::hint(data, "findCommit");
     assert_eq!(lead["tool"], "ghSearchHistory", "{data}");
     assert_eq!(lead["query"]["queries"][0]["operation"], "commit", "{data}");
-    assert!(data["hints"].get("viewRefs").is_none(), "{data}");
+    assert!(
+        crate::support::checks::hint(data, "viewRefs").is_null(),
+        "{data}"
+    );
     runtime.close().await;
 }
 
@@ -1425,11 +1433,32 @@ async fn issue_comment_walk_reads_every_comment_and_counts_the_rest() {
     // grid follows the contract's default pageSize (10 since 2026-10-09),
     // so page cuts land one call later than at 30.
     assert!(calls <= 6, "{calls} calls");
+    // A page past the discussion's last states it on the comment page
+    // block: the page, the page count on its grid, and `outOfRange`.
+    let past = call(
+        &runtime,
+        "ghGetHistoryItem",
+        json!({"operation":"issue","owner":"a","repo":"b","number":7,"sections":["comments"],
+            "page":40,"pageSize":10,"extras":[]}),
+    )
+    .await
+    .expect("page past the end");
+    let data = row_data(&past).clone();
+    let block = &data["issues"][0]["contentPagination"]["comments"];
+    assert_eq!(block["outOfRange"], true, "{data}");
+    assert_eq!(
+        (block["currentPage"].clone(), block["totalPages"].clone()),
+        (json!(40), json!(11)),
+        "{data}"
+    );
+    assert_eq!(block["hasMore"], false, "{data}");
+    assert!(data["issues"][0].get("comments").is_none(), "{data}");
     runtime.close().await;
 }
 
-/// A PR summary previews its body (template comments minified away) and
-/// leads to the whole body.
+/// A PR summary previews the opening of its verbatim body (an HTML
+/// comment is text like any other, never minified away) and leads to the
+/// whole body.
 #[tokio::test]
 async fn pr_summary_previews_the_body() {
     let server = MockServer::builder().start().await;
@@ -1460,13 +1489,21 @@ async fn pr_summary_previews_the_body() {
     let preview = data["pullRequests"][0]["bodyPreview"]
         .as_str()
         .expect("preview");
-    assert!(preview.starts_with("Fixes the cache race."), "{preview}");
+    assert!(
+        preview.starts_with("<!-- template: describe the change --> Fixes the cache race."),
+        "{preview}"
+    );
     assert!(
         preview.ends_with('…') && preview.chars().count() <= 301,
         "{preview}"
     );
-    let leads = data["hints"].to_string();
-    assert!(leads.contains("\"body\""), "no whole-body read: {data}");
+    let leads = crate::support::checks::leads(data);
+    assert!(
+        leads.iter().any(|lead| lead.query["queries"][0]["sections"]
+            .as_array()
+            .is_some_and(|sections| sections.contains(&json!("body")))),
+        "no whole-body read: {data}"
+    );
     runtime.close().await;
 }
 
@@ -1523,7 +1560,7 @@ async fn gh_history_item_not_found_names_the_item() {
             assert!(error.contains("a/b"), "{query}: {data}");
         }
         if query["operation"] == "compare" {
-            let lead = &data["hints"]["viewRefs"];
+            let lead = &crate::support::checks::hint(data, "viewRefs");
             assert_eq!(lead["tool"], "ghStructure", "{data}");
             assert_eq!(lead["query"]["queries"][0]["operation"], "refs", "{data}");
         }
@@ -1695,11 +1732,11 @@ async fn history_a_unpatched_file_gets_head_and_parent_reads() {
     let data = row_data(&outcome);
     // The response's lead cap keeps the head read (and the merge read, by
     // priority); `readParent` is built the same way (unit-tested).
-    let head = &data["hints"]["readAtCommit"]["query"]["queries"][0];
+    let head = &crate::support::checks::hint(data, "readAtCommit")["query"]["queries"][0];
     assert_eq!(head["path"], "src/huge.rs", "{data}");
     assert_eq!(head["ref"], HISTORY_A_HEAD, "{data}");
     // The merge read locates the patched file's hunks by text.
-    let merge = &data["hints"]["readAtMerge"]["query"]["queries"][0];
+    let merge = &crate::support::checks::hint(data, "readAtMerge")["query"]["queries"][0];
     assert_eq!(merge["ref"], HISTORY_A_MERGE, "{data}");
     assert_eq!(
         merge["matchString"],
@@ -1816,7 +1853,7 @@ async fn history_a_issue_summary_counts_comments_and_offers_the_discussion() {
         let data = row_data(&outcome);
         assert_eq!(row_status(&outcome), "success", "{data}");
         let issue = &data["issues"][0];
-        let read = &data["hints"]["readDiscussion"];
+        let read = &crate::support::checks::hint(data, "readDiscussion");
         if offered {
             assert_eq!(issue["commentsCount"], 105, "{data}");
             assert_eq!(read["tool"], "ghGetHistoryItem", "{data}");
@@ -1933,7 +1970,7 @@ async fn history_a_compare_commits_are_headlines_with_login_authors() {
         "{data}"
     );
     assert!(commits.iter().all(|c| c.get("message").is_none()), "{data}");
-    let read = &data["hints"]["readCommit"]["query"]["queries"][0];
+    let read = &crate::support::checks::hint(data, "readCommit")["query"]["queries"][0];
     assert_eq!(read["operation"], "commit", "{data}");
     assert_eq!(read["ref"], "c2", "{data}");
     runtime.close().await;

@@ -26,6 +26,9 @@ pub struct TextSearchMatch {
     pub byte_offset: u32,
     /// Assembled match + context window, truncated to `max_snippet_chars`.
     pub value: String,
+    /// SHA-256 of the trimmed value before clipping. Duplicate ranking uses
+    /// this identity so changing the display width cannot reorder rows.
+    pub value_digest: [u8; 32],
     /// Frequency for this value when `count_unique` is enabled.
     pub count: Option<u32>,
     /// Lexical hit rank of the matched line (see `relevance::line_rank`):
@@ -38,6 +41,9 @@ pub struct TextSearchMatch {
     /// when the snippet was not truncated. Lets callers surface a truncation
     /// indicator on content-view snippets, not just only-matching spans.
     pub original_chars: Option<u32>,
+    /// The same pre-truncation value's length in UTF-8 bytes, set with
+    /// `original_chars`: what a byte-paged read of the clipped line costs.
+    pub original_bytes: Option<u32>,
 }
 
 #[derive(Debug, Clone)]
@@ -275,9 +281,10 @@ pub struct FileSystemQueryOptions {
     /// Resume position: the leading entries (walk order, as
     /// [`FileSystemQueryResult::walk_position`] counts them) an earlier walk
     /// of the same query already inspected. The walk replays them without
-    /// listing or counting them (it still reads directories to find where
-    /// they end), and `time_budget` starts after them, so a resumed walk
-    /// always inspects new entries.
+    /// listing or counting them (it still reads the directories it must
+    /// enter to find where they end, and judges only those), and
+    /// `time_budget` starts after them, so a resumed walk always inspects
+    /// new entries.
     pub skip_entries: Option<u32>,
 }
 
@@ -299,6 +306,10 @@ pub struct FileSystemEntry {
     pub extension: Option<String>,
     /// Output depth where direct children are 0.
     pub depth: u32,
+    /// The entry's position in the walk (1-based, [`FileSystemQueryResult::walk_position`]
+    /// counts the same way): a walk resumed at it (`skip_entries`) starts
+    /// at the entry after it. 0 for the root.
+    pub walk_position: u32,
 }
 
 #[derive(Debug, Clone)]

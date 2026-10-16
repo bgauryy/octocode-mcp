@@ -6,7 +6,7 @@ use std::{
     collections::BTreeMap,
     fs::TryLockError,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, Once},
     time::{Duration, Instant, SystemTime},
 };
 use tokio_util::sync::CancellationToken;
@@ -16,6 +16,38 @@ const LOCK_POLL: Duration = Duration::from_millis(5);
 /// The longest a write that cannot be cancelled waits for a peer's lock
 /// before it goes ahead unlocked, as on a filesystem without lock support.
 const WRITE_LOCK_WAIT: Duration = Duration::from_secs(1);
+/// How far past now a peer's start stamp may lie and still count. A start is
+/// reserved at most one wait ahead (the 60 s code-search window plus the
+/// spacing chain, inside the tool deadline), so a stamp beyond this comes from
+/// a clock that jumped or a damaged file, never from a live reservation, and
+/// it must not hold the window until its own time arrives.
+const PEER_STAMP_HORIZON_MS: u64 = 120_000;
+
+/// Say once per process, on stderr (stdout carries results and JSON-RPC), that
+/// the shared record cannot be used and this process paces alone: the request
+/// still goes ahead under its own limits.
+fn warn_unshared(action: &str, path: &Path, error: &dyn std::fmt::Display) {
+    static WARNED: Once = Once::new();
+    WARNED.call_once(|| {
+        eprintln!(
+            "[octocode] warning: GitHub rate-limit state shared with other octocode processes cannot be used ({action} {}: {error}); this process paces its GitHub requests alone.",
+            path.display()
+        );
+    });
+}
+
+/// The state file's bytes: `None` when it does not exist yet, or cannot be
+/// read (with the warning).
+fn read_state(path: &Path) -> Option<Vec<u8>> {
+    match std::fs::read(path) {
+        Ok(bytes) => Some(bytes),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => {
+            warn_unshared("read", path, &error);
+            None
+        }
+    }
+}
 
 pub(super) struct Persist {
     pub(super) path: PathBuf,
@@ -61,7 +93,11 @@ impl KeyFacts {
             }
         }
         self.cooldown_until_ms = self.cooldown_until_ms.max(other.cooldown_until_ms);
+        let horizon = now_ms.saturating_add(PEER_STAMP_HORIZON_MS);
         for (group, stamp) in other.last_start_ms {
+            if stamp > horizon {
+                continue;
+            }
             let entry = self.last_start_ms.entry(group).or_default();
             *entry = (*entry).max(stamp);
         }
@@ -73,7 +109,8 @@ impl KeyFacts {
             .enumerate()
         {
             for &stamp in stamps {
-                if stamp.saturating_add(60_000) > now_ms {
+                let peer_beyond_horizon = side == 1 && stamp > horizon;
+                if stamp.saturating_add(60_000) > now_ms && !peer_beyond_horizon {
                     window.entry(stamp).or_default()[side] += 1;
                 }
             }
@@ -118,17 +155,22 @@ impl KeyFacts {
 }
 
 impl KeyState {
+    /// Mirror this key's facts to its file under `dir`, created here once:
+    /// a directory that cannot be created leaves the key in-memory only.
     pub(super) fn attach_dir(&self, dir: &Path) {
         let mut persist = self
             .persist
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if persist.is_none() {
-            *persist = Some(Persist {
-                path: dir.join(self.key.file_name()),
-                seen: None,
-            });
+        if persist.is_some() {
+            return;
         }
+        let path = dir.join(self.key.file_name());
+        if let Err(error) = std::fs::create_dir_all(dir) {
+            warn_unshared("create the directory of", &path, &error);
+            return;
+        }
+        *persist = Some(Persist { path, seen: None });
     }
 
     /// Merge the on-disk view when another process has written it since we
@@ -148,8 +190,7 @@ impl KeyState {
             return;
         }
         persist.seen = Some(stamp);
-        let Some(disk) = std::fs::read(&persist.path)
-            .ok()
+        let Some(disk) = read_state(&persist.path)
             .and_then(|bytes| serde_json::from_slice::<KeyFacts>(&bytes).ok())
         else {
             return;
@@ -175,14 +216,11 @@ impl KeyState {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .as_ref()
             .map(|persist| persist.path.clone());
-        let Some(path) = path.and_then(|path| {
-            std::fs::create_dir_all(path.parent()?).ok()?;
-            Some(path)
-        }) else {
+        let Some(path) = path else {
             return Ok(reserve(&mut self.facts()));
         };
         let _lock = lock_file(&path, deadline, cancellation).await?;
-        let on_disk = std::fs::read(&path).ok();
+        let on_disk = read_state(&path);
         let (result, view) = {
             let mut facts = self.facts();
             if let Some(disk) = on_disk
@@ -230,12 +268,6 @@ impl KeyState {
                 None => return,
             }
         };
-        let Some(parent) = path.parent() else {
-            return;
-        };
-        if std::fs::create_dir_all(parent).is_err() {
-            return;
-        }
         // Serialize read-merge-write across processes: without it, two CLI
         // processes read the same file and the later rename drops the other's
         // start stamps and window slots. Released on drop. A
@@ -244,7 +276,7 @@ impl KeyState {
         let _lock = lock_file_blocking(&path, Instant::now() + WRITE_LOCK_WAIT);
         let now = now_ms();
         let mut view = self.facts().blocking_view(now);
-        let on_disk = std::fs::read(&path).ok();
+        let on_disk = read_state(&path);
         if let Some(disk) = on_disk
             .as_deref()
             .and_then(|bytes| serde_json::from_slice::<KeyFacts>(bytes).ok())
@@ -266,7 +298,10 @@ impl KeyState {
         }
         // No fsync: this is a rebuildable cache, and a flush here would hold the
         // peer lock for a disk write (see `WRITE_LOCK_WAIT`). The rename keeps it whole.
-        let _ = octocode_io::atomic::write_atomic(path, &bytes, false);
+        if let Err(error) = octocode_io::atomic::write_atomic(path, &bytes, false) {
+            warn_unshared("write", path, &error);
+            return;
+        }
         if let Some(stamp) = file_stamp(path)
             && let Some(persist) = self
                 .persist
@@ -283,22 +318,32 @@ impl KeyState {
 fn open_lock_file(path: &Path) -> Option<std::fs::File> {
     let mut name = path.as_os_str().to_os_string();
     name.push(".lock");
-    std::fs::OpenOptions::new()
+    let name = PathBuf::from(name);
+    match std::fs::OpenOptions::new()
         .create(true)
         .truncate(false)
         .write(true)
-        .open(PathBuf::from(name))
-        .ok()
+        .open(&name)
+    {
+        Ok(file) => Some(file),
+        Err(error) => {
+            warn_unshared("open the lock file", &name, &error);
+            None
+        }
+    }
 }
 
 /// One non-blocking attempt at the exclusive advisory lock: `Some(true)` when
 /// taken, `Some(false)` when a peer holds it, `None` when the filesystem does
 /// not support locking.
-fn try_lock_once(file: &std::fs::File) -> Option<bool> {
+fn try_lock_once(file: &std::fs::File, path: &Path) -> Option<bool> {
     match file.try_lock() {
         Ok(()) => Some(true),
         Err(TryLockError::WouldBlock) => Some(false),
-        Err(TryLockError::Error(_)) => None,
+        Err(TryLockError::Error(error)) => {
+            warn_unshared("lock", path, &error);
+            None
+        }
     }
 }
 
@@ -315,7 +360,7 @@ async fn lock_file(
         return Ok(None);
     };
     loop {
-        match try_lock_once(&file) {
+        match try_lock_once(&file, path) {
             Some(true) => return Ok(Some(file)),
             None => return Ok(None),
             Some(false) => pause(LOCK_POLL, deadline, cancellation).await?,
@@ -327,12 +372,18 @@ async fn lock_file(
 /// `deadline`, so a stalled peer cannot hold the caller indefinitely.
 fn lock_file_blocking(path: &Path, deadline: Instant) -> Option<octocode_io::lock::LockedFile> {
     let file = open_lock_file(path)?;
-    octocode_io::lock::lock_within(
+    match octocode_io::lock::lock_within(
         file,
         deadline.saturating_duration_since(Instant::now()),
         LOCK_POLL,
-    )
-    .ok()
+    ) {
+        Ok(lock) => Some(lock),
+        Err(octocode_io::lock::LockError::Busy) => None,
+        Err(octocode_io::lock::LockError::Io(error)) => {
+            warn_unshared("lock", path, &error);
+            None
+        }
+    }
 }
 
 #[cfg(test)]
@@ -582,5 +633,150 @@ mod tests {
         assert_eq!(inode(), first, "same view, no rewrite");
         state.cool_down(now_ms() + 30_000);
         assert_ne!(inode(), first, "a new cooldown is written");
+    }
+
+    async fn admit_code_search(
+        state: &Arc<KeyState>,
+        budget: &GitHubBudget,
+        cap: Duration,
+    ) -> Result<Admission, ProviderError> {
+        state
+            .admit(
+                Some(Group::CodeSearch),
+                budget.config(),
+                true,
+                cap,
+                Instant::now() + Duration::from_secs(10),
+                &CancellationToken::new(),
+            )
+            .await
+    }
+
+    /// Two budgets with separate key states and one state file stand in for
+    /// two processes: together they stay within one window, and their starts
+    /// keep the spacing across both.
+    #[tokio::test]
+    async fn two_processes_share_one_window_and_one_spacing() {
+        let dir = tempfile::tempdir().expect("state directory");
+        let key = LimiterKey::new("h", Some("tok"));
+        let config = ExecutorConfig {
+            code_search_per_minute: 4,
+            search_spacing: Duration::from_millis(150),
+            ..ExecutorConfig::relaxed()
+        };
+        let budgets = [
+            GitHubBudget::with_config(config.clone()),
+            GitHubBudget::with_config(config),
+        ];
+        let states = budgets
+            .iter()
+            .map(|budget| budget.key_state(&key, Some(dir.path())))
+            .collect::<Vec<_>>();
+        let mut starts = Vec::new();
+        let mut refused = 0;
+        for turn in 0..6 {
+            let which = turn % 2;
+            match admit_code_search(&states[which], &budgets[which], Duration::from_secs(1)).await {
+                Ok(admission) => {
+                    starts.push(Instant::now());
+                    drop(admission);
+                }
+                Err(error) => {
+                    assert_eq!(error.kind, ProviderErrorKind::RateLimited);
+                    refused += 1;
+                }
+            }
+        }
+        assert_eq!((starts.len(), refused), (4, 2), "one window of 4 for both");
+        for pair in starts.windows(2) {
+            assert!(
+                pair[1] - pair[0] >= Duration::from_millis(140),
+                "starts {:?} apart across processes",
+                pair[1] - pair[0]
+            );
+        }
+        let disk: KeyFacts =
+            serde_json::from_slice(&std::fs::read(dir.path().join(key.file_name())).expect("file"))
+                .expect("json");
+        assert_eq!(disk.code_search_ms.len(), 4);
+    }
+
+    /// A corrupt file, stamps older than the window, and stamps from a clock
+    /// far ahead hold nothing back: the admission goes ahead at once and the
+    /// file is valid again.
+    #[tokio::test]
+    async fn a_corrupt_stale_or_future_stamped_file_is_recovered() {
+        let key = LimiterKey::new("h", Some("tok"));
+        let now = now_ms();
+        let hour = 3_600_000;
+        let full_window = |stamp: u64| KeyFacts {
+            code_search_ms: vec![stamp; 10].into(),
+            last_start_ms: BTreeMap::from([("code_search".to_owned(), stamp)]),
+            ..KeyFacts::default()
+        };
+        let files = [
+            b"{ not json".to_vec(),
+            serde_json::to_vec(&full_window(now - 2 * 60_000)).expect("stale"),
+            serde_json::to_vec(&full_window(now + hour)).expect("future"),
+        ];
+        for bytes in files {
+            let dir = tempfile::tempdir().expect("state directory");
+            std::fs::write(dir.path().join(key.file_name()), &bytes).expect("seed");
+            let budget = GitHubBudget::with_config(ExecutorConfig {
+                search_spacing: Duration::from_secs(2),
+                ..ExecutorConfig::octokit()
+            });
+            let state = budget.key_state(&key, Some(dir.path()));
+            let started = Instant::now();
+            let admission = admit_code_search(&state, &budget, Duration::from_secs(1)).await;
+            assert!(admission.is_ok(), "{:?}", admission.err());
+            assert!(started.elapsed() < Duration::from_millis(500));
+            let disk: KeyFacts = serde_json::from_slice(
+                &std::fs::read(dir.path().join(key.file_name())).expect("file"),
+            )
+            .expect("the file is valid json again");
+            assert_eq!(disk.code_search_ms.len(), 1, "{disk:?}");
+        }
+    }
+
+    /// A state directory that cannot be created degrades to this process's
+    /// own pacing: the request is admitted and its window still applies.
+    #[tokio::test]
+    async fn an_unusable_state_directory_degrades_to_per_process_pacing() {
+        let parent = tempfile::tempdir().expect("tempdir");
+        let blocker = parent.path().join("not-a-directory");
+        std::fs::write(&blocker, b"file").expect("blocker");
+        let budget = GitHubBudget::with_config(ExecutorConfig {
+            code_search_per_minute: 1,
+            ..ExecutorConfig::relaxed()
+        });
+        let state = budget.key_state(
+            &LimiterKey::new("h", None),
+            Some(&blocker.join("ratelimit")),
+        );
+        let first = admit_code_search(&state, &budget, Duration::from_secs(1)).await;
+        assert!(first.is_ok(), "{:?}", first.err());
+        let second = admit_code_search(&state, &budget, Duration::from_secs(1)).await;
+        assert_eq!(
+            second.err().map(|error| error.kind),
+            Some(ProviderErrorKind::RateLimited)
+        );
+    }
+
+    #[test]
+    fn peer_stamps_beyond_the_horizon_are_not_merged() {
+        let now = 1_000_000_000;
+        let beyond = now + super::PEER_STAMP_HORIZON_MS + 1;
+        let mut facts = KeyFacts::default();
+        facts.merge(
+            KeyFacts {
+                code_search_ms: vec![beyond, now].into(),
+                last_start_ms: BTreeMap::from([("code_search".to_owned(), beyond)]),
+                ..KeyFacts::default()
+            },
+            now,
+        );
+        assert_eq!(facts.code_search_ms, vec![now]);
+        assert!(facts.last_start_ms.is_empty());
     }
 }

@@ -5,14 +5,14 @@ mod executor;
 mod output;
 pub(crate) use output::Output;
 mod extraction;
+mod key_outline;
 mod large_source;
 mod pagination;
 mod pattern_repair;
 mod selection;
 mod types;
-pub(crate) use executor::unanchored_first_read;
+pub(crate) use executor::process_fetched_content_selected;
 pub use executor::{execute_local_fetch, process_fetched_content};
-pub(crate) use executor::{execute_local_fetch_selected, process_fetched_content_selected};
 pub use types::*;
 
 #[cfg(test)]

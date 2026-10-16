@@ -414,7 +414,8 @@ async fn location_rows_are_objects_named_like_tool_inputs() {
         "{}",
         outline.structured_content
     );
-    // Match rows are objects; the 1-based column is a detail.
+    // Match rows are objects with their 1-based column: two matches can
+    // start on one line.
     let matched = support::run(
         &runtime,
         "astSearch",
@@ -424,7 +425,7 @@ async fn location_rows_are_objects_named_like_tool_inputs() {
     .await;
     assert_eq!(
         matched.data()["files"][0]["matches"][0],
-        json!({"line":2,"value":"let a = 1;"}),
+        json!({"line":2,"column":5,"value":"let a = 1;"}),
         "{}",
         matched.structured_content
     );
@@ -460,12 +461,15 @@ async fn location_rows_are_objects_named_like_tool_inputs() {
 // ---------- lead names and runnable recoveries ----------
 
 /// The lead `name` under `next` or `hints`, whichever channel holds it.
-fn lead<'a>(outcome: &'a ToolOutcome, name: &str) -> &'a Value {
+fn lead(outcome: &ToolOutcome, name: &str) -> Value {
     let data = support::row_data(outcome);
-    [&data["next"][name], &data["hints"][name]]
-        .into_iter()
-        .find(|lead| lead.is_object())
-        .unwrap_or_else(|| panic!("no `{name}` lead: {}", outcome.structured_content))
+    [
+        data["next"][name].clone(),
+        support::checks::hint(data, name),
+    ]
+    .into_iter()
+    .find(|lead| lead.is_object())
+    .unwrap_or_else(|| panic!("no `{name}` lead: {}", outcome.structured_content))
 }
 
 #[tokio::test]
@@ -480,10 +484,8 @@ async fn a_case_sensitive_miss_leads_to_a_runnable_ignore_case_read() {
         &[],
     )
     .await;
-    let hint = miss.data()["hints"]
-        .as_array()
-        .and_then(|hints| hints.iter().find_map(Value::as_str))
-        .or_else(|| miss.data()["hints"]["text"][0].as_str())
+    let hint = support::checks::hint(miss.data(), "text")[0]
+        .as_str()
         .unwrap_or_default()
         .to_owned();
     assert!(!hint.contains("caseMode"), "{hint}");
@@ -509,7 +511,7 @@ async fn a_case_sensitive_miss_leads_to_a_runnable_ignore_case_read() {
     .await;
     assert!(
         insensitive.data()["next"].get("ignoreCase").is_none()
-            && insensitive.data()["hints"].get("ignoreCase").is_none(),
+            && support::checks::hint(insensitive.data(), "ignoreCase").is_null(),
         "{}",
         insensitive.structured_content
     );

@@ -1744,6 +1744,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "junction"
+version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cde48f36530cbd91b65f050101e6c056d6eb743cea2a8f0f19beef69c6742ff8"
+dependencies = [
+ "scopeguard",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "keyring-core"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2073,9 +2083,16 @@ dependencies = [
 name = "octocode-cli"
 version = "20.2.0"
 dependencies = [
+ "base64 0.23.1",
+ "bytes",
  "clap",
  "flate2",
  "futures-util",
+ "getrandom 0.4.3",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "junction",
  "libc",
  "octocode-engine",
  "octocode-github",
@@ -2085,6 +2102,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml_ng",
+ "subtle",
  "tempfile",
  "tokio",
  "tokio-util",
@@ -2102,6 +2120,7 @@ dependencies = [
  "ast-grep-config",
  "ast-grep-core",
  "criterion",
+ "globset",
  "grep-matcher",
  "grep-pcre2",
  "grep-regex",
@@ -2126,6 +2145,7 @@ dependencies = [
  "sha2",
  "tempfile",
  "tokio",
+ "toml",
  "tree-sitter",
  "tree-sitter-asm",
  "tree-sitter-c",

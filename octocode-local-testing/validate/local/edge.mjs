@@ -2,6 +2,7 @@
 // and applies an automatic check where one is decidable. Judgments are summarised in REPORT.md.
 import path from 'node:path';
 import fs from 'node:fs';
+import { suggestedCall } from '../../harness/lead-predicates.mjs';
 import { HERE, REPOS, sh, oc, ocAll, ocRaw, saveRaw } from './lib.mjs';
 
 const P = path.join(HERE, 'fixtures/edge/proj');
@@ -126,7 +127,7 @@ scen('missing-path', 'Nonexistent path', `rg -n foo src/nope.ts`, 'localSearch',
 {
   const f = S('src/rw.ts'); fs.writeFileSync(f, 'console.log("a");\nconsole.log("b");\n');
   const prev = oc('astRewrite', { path: S('src'), langType: 'typescript', ruleKind: 'pattern', pattern: 'console.log($A)', rewrite: 'logger.info($A)', include: ['rw.ts'] }, { cwd: P, reps: 1 });
-  const nx = prev.parsed?.results?.[0]?.data?.hints?.apply?.query;
+  const nx = (prev.parsed?.results?.[0]?.data?.hints ?? []).map(suggestedCall).find(call => call?.key === 'apply')?.query;
   fs.appendFileSync(f, 'console.log("c");\n');
   const ap = nx ? ocRaw('astRewrite', { queries: [nx] }, { cwd: P, reps: 1 }) : null;
   const after = fs.readFileSync(f, 'utf8');

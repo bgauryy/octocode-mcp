@@ -283,8 +283,7 @@
           "owner": "microsoft",
           "repo": "TypeScript",
           "operation": "pullRequest",
-          "number": 51387,
-          "minify": "standard"
+          "number": 51387
         }
       ]
     }
@@ -342,7 +341,6 @@
         {
           "owner": "bgauryy",
           "repo": "octocode",
-          "pageSize": 100,
           "operation": "commit",
           "ref": "main"
         }
@@ -369,7 +367,6 @@
         {
           "owner": "bgauryy",
           "repo": "octocode",
-          "pageSize": 100,
           "operation": "compare",
           "base": "main",
           "head": "update-tools"
@@ -752,7 +749,6 @@
         {
           "path": ".",
           "page": 1,
-          "pageSize": 100,
           "diagnosticPageSize": 100,
           "source": "src/index.ts",
           "graphDepth": 2,
@@ -780,7 +776,6 @@
         {
           "path": ".",
           "page": 1,
-          "pageSize": 100,
           "diagnosticPageSize": 100,
           "source": "src/index.ts",
           "graphDepth": 2,
@@ -808,7 +803,6 @@
         {
           "path": ".",
           "page": 1,
-          "pageSize": 100,
           "diagnosticPageSize": 100,
           "source": "src/index.ts",
           "target": "src/responses.ts",
@@ -2750,8 +2744,7 @@
           ],
           "include": [
             "src/**"
-          ],
-          "minify": "standard"
+          ]
         }
       ]
     }
@@ -3228,7 +3221,6 @@
           "ranges": [
             "1-80"
           ],
-          "minify": "none",
           "clasifyContext": {
             "classifiers": [
               "What does get return for an expired key in the local-memory cache?"
@@ -3251,8 +3243,7 @@
           "path": "cache.ts",
           "ranges": [
             "1-80"
-          ],
-          "minify": "none"
+          ]
         }
       ]
     }
@@ -3269,7 +3260,6 @@
           "ranges": [
             "1-80"
           ],
-          "minify": "none",
           "classifiers": [
             "What does get return for an expired key in the local-memory cache?"
           ]
@@ -3290,7 +3280,6 @@
           "ranges": [
             "1-80"
           ],
-          "minify": "none",
           "ranking": "saved-plan"
         }
       ]
@@ -3309,7 +3298,6 @@
           "ranges": [
             "1-80"
           ],
-          "minify": "none",
           "goals": [
             "What does get return for an expired key in the local-memory cache?"
           ]
@@ -3371,7 +3359,7 @@
     },
     "accepted": false,
     "messages": [
-      "Input matches multiple exclusive schema branches"
+      "Send exactly one of: state, source."
     ]
   },
   {
@@ -3391,7 +3379,7 @@
     },
     "accepted": false,
     "messages": [
-      "Missing required field: state"
+      "Send exactly one of: state, source."
     ]
   },
   {
@@ -3417,7 +3405,7 @@
     },
     "accepted": false,
     "messages": [
-      "Missing required field: ranges"
+      "Send exactly one of: ranges, fullContent."
     ]
   },
   {
@@ -3513,7 +3501,7 @@
     },
     "accepted": false,
     "messages": [
-      "Input matches multiple exclusive schema branches"
+      "Send exactly one of: ranges, fullContent."
     ]
   },
   {

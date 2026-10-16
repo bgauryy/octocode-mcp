@@ -17,7 +17,11 @@ impl ToolOutput for Output {
             "fileAccessFailed" => Some(crate::tools::output::LIST_FILES_HINT),
             // The message names the item; `repair` is the corrected read.
             // A malformed page cursor: the message names the bad offset.
-            "invalidPattern" | "invalidPagination" => Some(crate::tools::output::NO_HINT),
+            // `notAFile`: a directory's tree is its lead; a FIFO or device
+            // has nothing to retry.
+            "invalidPattern" | "invalidPagination" | "notAFile" => {
+                Some(crate::tools::output::NO_HINT)
+            }
             _ => None,
         }
     }

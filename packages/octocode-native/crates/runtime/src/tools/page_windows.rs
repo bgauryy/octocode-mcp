@@ -110,10 +110,12 @@ const ROW_SKELETON_CHARS: usize = 2_000;
 /// whose continuation rewords them still cuts every page at the same rows.
 const FREE_TEXT_CHARS: usize = 1_200;
 
-/// Instruction and cursor fields do not change source-page boundaries. The
-/// final response pager charges their serialized size, including context
-/// removed by an unfiltered recovery over the same captured source.
-const UNSIZED_QUERY_FIELDS: [&str; 7] = [
+/// Instruction, cursor and reporting fields do not change source-page
+/// boundaries (`extras` only adds optional row facts). The final response
+/// pager charges their serialized size, including context removed by an
+/// unfiltered recovery over the same captured source.
+const UNSIZED_QUERY_FIELDS: [&str; 8] = [
+    "extras",
     "mainGoal",
     "reasoning",
     "page",
@@ -167,6 +169,19 @@ mod tests {
         assert!(!terminal_row_fits(Some(needed - 1), &row));
         assert!(!terminal_row_fits(Some(0), &row));
         assert!(!terminal_row_fits(None, &row));
+    }
+
+    /// Asking for optional row extras leaves the page cut unchanged, so a
+    /// walk's pages and snapshots do not depend on them.
+    #[test]
+    fn extras_do_not_change_the_page_budget() {
+        let plain = serde_json::json!({"path": "src", "matchString": "x"});
+        let mut extras = plain.clone();
+        extras["extras"] = serde_json::json!(["hints", "details", "stats", "receipts"]);
+        assert_eq!(
+            page_budget(Some(40_000), &plain),
+            page_budget(Some(40_000), &extras)
+        );
     }
 
     #[test]

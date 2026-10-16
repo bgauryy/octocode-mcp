@@ -1,5 +1,7 @@
 //! Controlled benchmark: identical graph extraction with and without CommonJS facts.
 //! Run explicitly; wall-clock measurements are not correctness-test assertions.
+//! Repository samples are frozen engine fixtures so CLI migrations cannot change
+//! or remove the parser workload. Their imports are parsed, never executed.
 
 use std::hint::black_box;
 use std::time::Instant;
@@ -32,7 +34,7 @@ fn corpus() -> Vec<(&'static str, &'static str, String, usize, &'static str)> {
         (
             "repository_cli_dispatch",
             "fixture.ts",
-            include_str!("../../../../../octocode/src/cli/index.ts").to_owned(),
+            include_str!("../../tests/fixtures/commonjs/cli_dispatch.ts").to_owned(),
             0,
             "train",
         ),
@@ -40,7 +42,7 @@ fn corpus() -> Vec<(&'static str, &'static str, String, usize, &'static str)> {
         (
             "repository_skill_command",
             "fixture.ts",
-            include_str!("../../../../../octocode/src/cli/commands/skill.ts").to_owned(),
+            include_str!("../../tests/fixtures/commonjs/skill_command.ts").to_owned(),
             0,
             "held-out",
         ),

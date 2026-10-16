@@ -194,7 +194,7 @@ async fn walks_keep_source_folders_and_disclose_only_credential_files() {
     let listed = call(
         &runtime,
         "structureSearch",
-        json!({"operation": "files", "path": root}),
+        json!({"operation": "files", "path": root, "includeHidden": true}),
     )
     .await
     .expect("structureSearch");

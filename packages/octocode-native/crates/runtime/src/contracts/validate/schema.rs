@@ -255,6 +255,71 @@ fn value_type(value: &Value) -> &'static str {
     }
 }
 
+/// The known fields whose `enum` or `const` lists `value` (a string): an
+/// unknown field carrying one of those values most likely meant one of them
+/// (`{"type":"match"}` for `operation`).
+/// The known field that takes line spans (`["95-105"]`: an array of
+/// `start-end` strings), which a `start…`/`end…` pair of numbers spells.
+fn span_field(root: &Value, properties: &serde_json::Map<String, Value>) -> Option<String> {
+    const SPAN: &str = "^[1-9]\\d*-[1-9]\\d*$";
+    let resolve = |schema: &Value| {
+        let mut schema = schema.clone();
+        for _ in 0..8 {
+            match schema
+                .get("$ref")
+                .and_then(Value::as_str)
+                .and_then(|reference| reference.strip_prefix("#/$defs/"))
+                .and_then(|name| root["$defs"].get(name))
+            {
+                Some(target) => schema = target.clone(),
+                None => break,
+            }
+        }
+        schema
+    };
+    properties
+        .iter()
+        .find(|(_, schema)| {
+            let schema = resolve(schema);
+            resolve(&schema["items"])["pattern"] == SPAN
+        })
+        .map(|(name, _)| name.clone())
+}
+
+pub(super) fn fields_listing(
+    root: &Value,
+    properties: &serde_json::Map<String, Value>,
+    value: &Value,
+) -> Vec<String> {
+    if !value.is_string() {
+        return Vec::new();
+    }
+    let lists = |schema: &Value| {
+        let mut schema = schema;
+        for _ in 0..8 {
+            match schema
+                .get("$ref")
+                .and_then(Value::as_str)
+                .and_then(|reference| reference.strip_prefix("#/$defs/"))
+                .and_then(|name| root["$defs"].get(name))
+            {
+                Some(target) => schema = target,
+                None => break,
+            }
+        }
+        schema.get("const") == Some(value)
+            || schema
+                .get("enum")
+                .and_then(Value::as_array)
+                .is_some_and(|values| values.contains(value))
+    };
+    properties
+        .iter()
+        .filter(|(_, schema)| lists(schema))
+        .map(|(name, _)| name.clone())
+        .collect()
+}
+
 fn validate_object(
     root: &Value,
     schema: &Value,
@@ -301,13 +366,17 @@ fn validate_object(
     }
     if schema.get("additionalProperties") == Some(&Value::Bool(false)) {
         // Built on the first unknown field only; a speculative probe skips it.
-        let known_fields = || -> Value {
+        let known_fields = |value: &Value| -> Value {
             let known: Vec<Value> = properties
                 .map(|p| p.keys().map(|k| serde_json::json!(k)).collect())
                 .unwrap_or_default();
-            serde_json::json!({ "knownFields": known })
+            serde_json::json!({
+                "knownFields": known,
+                "valueFields": properties.map(|p| fields_listing(root, p, value)).unwrap_or_default(),
+                "spanField": properties.and_then(|p| span_field(root, p)),
+            })
         };
-        for key in object.keys() {
+        for (key, field) in object.iter() {
             if !properties.is_some_and(|known| known.contains_key(key)) {
                 let mut field_path = path.clone();
                 field_path.push(key.clone());
@@ -316,7 +385,7 @@ fn validate_object(
                     path: field_path,
                     message: format!("Unknown field: {key}"),
                     // Embed known fields so format_input_error can suggest alternatives.
-                    schema: (!speculative).then(known_fields),
+                    schema: (!speculative).then(|| known_fields(field)),
                     received: None,
                 });
             }

@@ -502,6 +502,79 @@ try {
     expect(result, /textbox "Search collection"/);
     refute(result, /PAGE_NOT_FULLY_LOADED/);
   });
+  const savedPageText = out => {
+    const prefix = '[ARTIFACT] PAGE_TEXT ';
+    const line = out.split('\n').find(line => line.startsWith(prefix));
+    if (!line) throw new Error(`Missing page text artifact: ${out}`);
+    return readFileSync(line.slice(prefix.length), 'utf8');
+  };
+  await test('snapshot text: retains every article and surrounding content', () => {
+    const out = open('page-snapshot.mjs', 'text-scope.html', {
+      SNAPSHOT_TEXT: '12',
+    }).out;
+    const text = savedPageText(out);
+    for (const expected of [
+      'Evidence before articles',
+      'First article evidence',
+      'Second article evidence',
+      'Evidence after articles',
+    ]) {
+      if (!text.includes(expected)) throw new Error(`Missing ${expected}`);
+    }
+    refute(text, /Hidden evidence/);
+  });
+  await test('snapshot text: main does not hide surrounding document evidence', () => {
+    const text = savedPageText(
+      open('page-snapshot.mjs', 'text-scope-main.html', {
+        SNAPSHOT_TEXT: '12',
+      }).out
+    );
+    for (const expected of [
+      'Evidence outside main',
+      'Evidence inside main',
+      'Evidence after main',
+    ]) {
+      if (!text.includes(expected)) throw new Error(`Missing ${expected}`);
+    }
+  });
+  await test('snapshot text: CSS and ref roots bound the saved text', () => {
+    for (const kind of ['css', 'ref', 'region']) {
+      const initial = open('page-snapshot.mjs', 'text-scope.html').out;
+      const saved = cliArtifact(initial, 'PAGE_SNAPSHOT');
+      const root =
+        kind === 'css'
+          ? '#second'
+          : Object.entries(kind === 'ref' ? saved.refs : saved.regions).find(
+              ([, row]) =>
+                row.name ===
+                (kind === 'ref' ? 'Second article' : 'Second region')
+            )?.[0];
+      if (!root) throw new Error(`Missing ${kind} root`);
+      const text = savedPageText(
+        success(
+          check('page-snapshot.mjs', {
+            SNAPSHOT_TEXT: '12',
+            SNAPSHOT_ROOT: root,
+          })
+        ).out
+      );
+      if (!text.includes('Second article'))
+        throw new Error('Scoped text missing');
+      refute(text, /First article|Evidence before|Evidence after/);
+      if (kind !== 'ref' && !text.includes('Second article evidence'))
+        throw new Error('Scoped article body missing');
+    }
+  });
+  await test('snapshot text: extraction error is explicit, not an empty artifact', () => {
+    const result = check('page-snapshot.mjs', { SNAPSHOT_TEXT: '12' }, [
+      '--new-tab',
+      `${BASE}/text-scope-error.html`,
+    ]);
+    if (result.code === 0)
+      throw new Error('Text extraction failure was hidden');
+    expect(result.out, /PAGE_TEXT_UNAVAILABLE/);
+    refute(result.out, /\[ARTIFACT\] PAGE_TEXT /);
+  });
   await test('network: redirects, full body timing and unfinished requests retained', () => {
     open('page-snapshot.mjs', 'async-flow.html');
     const result = success(

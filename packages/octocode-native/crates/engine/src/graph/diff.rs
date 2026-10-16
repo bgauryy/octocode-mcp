@@ -147,6 +147,17 @@ pub struct GraphDiff {
 
 /// Compute a deterministic structural diff from `base` to `head`.
 pub fn diff_graphs(base: &CodeGraphSnapshot, head: &CodeGraphSnapshot) -> GraphDiff {
+    diff_with(base, head, true)
+}
+
+/// [`diff_graphs`] of two scans of different roots (a baseline checkout
+/// against the working tree): nodes key on root-relative paths, so the roots
+/// themselves are not compared.
+pub fn diff_across_roots(base: &CodeGraphSnapshot, head: &CodeGraphSnapshot) -> GraphDiff {
+    diff_with(base, head, false)
+}
+
+fn diff_with(base: &CodeGraphSnapshot, head: &CodeGraphSnapshot, same_root: bool) -> GraphDiff {
     let mut incompatibilities = Vec::new();
     if base.snapshot.facts_schema_version != head.snapshot.facts_schema_version {
         incompatibilities.push(DiffIncompatibility::FactsSchemaChanged {
@@ -154,7 +165,7 @@ pub fn diff_graphs(base: &CodeGraphSnapshot, head: &CodeGraphSnapshot) -> GraphD
             head: head.snapshot.facts_schema_version,
         });
     }
-    if base.snapshot.root != head.snapshot.root {
+    if same_root && base.snapshot.root != head.snapshot.root {
         incompatibilities.push(DiffIncompatibility::RootChanged {
             base: base.snapshot.root.clone(),
             head: head.snapshot.root.clone(),
@@ -464,6 +475,19 @@ mod tests {
         assert_eq!(forward.relations.removed, backward.relations.added);
         assert_eq!(forward.files.added, backward.files.removed);
         assert_eq!(forward.metrics.edges, -backward.metrics.edges);
+    }
+
+    #[test]
+    fn scans_of_two_roots_diff_by_relative_path() {
+        let mut base = snapshot(&[("src/a.rs", "src/b.rs", "rust-use", 1)]);
+        base.snapshot.root = "/baseline".into();
+        let head = snapshot(&[("src/a.rs", "src/c.rs", "rust-use", 1)]);
+        assert!(!diff_graphs(&base, &head).comparable);
+        let diff = diff_across_roots(&base, &head);
+        assert!(diff.comparable);
+        assert!(diff.incompatibilities.is_empty());
+        assert_eq!(diff.relations.added[0].to, NodeId::file("src/c.rs"));
+        assert_eq!(diff.relations.removed[0].to, NodeId::file("src/b.rs"));
     }
 
     #[test]

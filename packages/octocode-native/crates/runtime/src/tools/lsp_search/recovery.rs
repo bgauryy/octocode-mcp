@@ -6,7 +6,7 @@
 
 use super::anchor::Position;
 use super::cancellable;
-use super::failure::LspFailure;
+use super::failure::{LspFailure, RequestFailures};
 use super::render::uri_to_path;
 use super::source::SourceCache;
 use crate::tools::cancel::CancellationCheck;
@@ -71,7 +71,59 @@ async fn settled_locations(
     )
     .await??;
     snippets.retain(|snippet| snippet.content != SNIPPET_CONTENT_WITHHELD);
-    Ok(snippets)
+    Ok(one_spelling(snippets).0)
+}
+
+/// [`get_locations`], also saying whether the server spelled any location
+/// through a symlink (see [`one_spelling`]).
+pub(super) async fn get_spelled_locations(
+    client: &NativeLspClient,
+    snippet_policy: &SnippetReadPolicy,
+    cancel: &dyn CancellationCheck,
+    request: LocationRequest,
+    (path, line, character): (&str, u32, u32),
+) -> Result<(Vec<JsCodeSnippet>, bool), LspFailure> {
+    let mut snippets = cancellable(
+        cancel,
+        client.get_locations(
+            request,
+            path.to_owned(),
+            line,
+            character,
+            snippet_policy,
+            None,
+        ),
+    )
+    .await??;
+    snippets.retain(|snippet| snippet.content != SNIPPET_CONTENT_WITHHELD);
+    Ok(one_spelling(snippets))
+}
+
+/// Each location once, named by its real path. A server that reaches one
+/// file through a symlink (a workspace package linked under
+/// `node_modules`) and through its real path reports the same site twice,
+/// and its `includeDeclaration: false` filter knows the declaration under
+/// one spelling only. Every location is renamed to its canonical path (as
+/// [`snippet_identity`] keys it), later twins are dropped, and the flag says
+/// whether any location was renamed.
+pub(super) fn one_spelling(snippets: Vec<JsCodeSnippet>) -> (Vec<JsCodeSnippet>, bool) {
+    let mut seen = HashSet::new();
+    let mut respelled = false;
+    let snippets = snippets
+        .into_iter()
+        .filter_map(|mut snippet| {
+            let spelled = uri_to_path(&snippet.uri);
+            let real = super::scope::canonical(&spelled);
+            if real != spelled
+                && let Ok(uri) = octocode_engine::lsp::uri::path_to_uri(&real)
+            {
+                snippet.uri = uri;
+                respelled = true;
+            }
+            seen.insert(snippet_identity(&snippet)).then_some(snippet)
+        })
+        .collect();
+    (snippets, respelled)
 }
 
 /// Definition identity: `(canonical path, range)`, so a symlink and its
@@ -162,7 +214,10 @@ pub(super) async fn resolve_definition_chain(
                 let has_distinct_target = found
                     .iter()
                     .any(|candidate| snippet_identity(candidate) != identity);
-                if should_retry_definition_hop(depth, path, &target, has_distinct_target) {
+                // Locations name real paths (`one_spelling`); so does the
+                // anchor here.
+                let anchor = super::scope::canonical(path);
+                if should_retry_definition_hop(depth, &anchor, &target, has_distinct_target) {
                     // Ask again after the settle; never the cached early answer.
                     nested = settled_locations(
                         client,
@@ -269,8 +324,16 @@ pub(super) async fn recover_aliases(
             .iter()
             .map(snippet_identity)
             .collect::<HashSet<_>>(),
-        Err(failure) if failure.code == "cancelled" => return Err(failure),
-        Err(_) => return Ok(AliasRecovery::default()),
+        Err(failure) => {
+            // Without the anchor's identity no alias can be verified: every
+            // candidate file goes unchecked.
+            let mut failures = RequestFailures::default();
+            failures.record(failure)?;
+            return Ok(AliasRecovery {
+                failures,
+                ..AliasRecovery::default()
+            });
+        }
     };
     if definition_ids.is_empty() {
         return Ok(AliasRecovery::default());
@@ -285,6 +348,7 @@ pub(super) async fn recover_aliases(
         .map(|snippet| uri_to_path(&snippet.uri))
         .collect::<BTreeSet<_>>();
     let mut recovered = Vec::new();
+    let mut failures = RequestFailures::default();
     let mut capped = false;
     let mut files_read = 0usize;
     let mut imports_checked = 0usize;
@@ -306,7 +370,7 @@ pub(super) async fn recover_aliases(
                 break;
             }
             imports_checked += 1;
-            let Ok(targets) = get_locations(
+            let targets = match get_locations(
                 client,
                 snippet_policy,
                 cancel,
@@ -316,14 +380,17 @@ pub(super) async fn recover_aliases(
                 local_character,
             )
             .await
-            else {
-                cancel.check().map_err(LspFailure::cancelled)?;
-                continue;
+            {
+                Ok(targets) => targets,
+                Err(failure) => {
+                    failures.record(failure)?;
+                    continue;
+                }
             };
             if targets.iter().map(snippet_identity).collect::<HashSet<_>>() != definition_ids {
                 continue;
             }
-            if let Ok(extra) = get_locations(
+            match get_locations(
                 client,
                 snippet_policy,
                 cancel,
@@ -336,25 +403,29 @@ pub(super) async fn recover_aliases(
             )
             .await
             {
-                recovered.extend(
+                Ok(extra) => recovered.extend(
                     extra
                         .into_iter()
                         .filter(|snippet| !provider_ids.contains(&snippet_identity(snippet))),
-                );
+                ),
+                Err(failure) => failures.record(failure)?,
             }
         }
     }
     Ok(AliasRecovery {
         snippets: recovered,
         capped,
+        failures,
     })
 }
 
-/// What alias recovery found, and whether a cap left candidates unchecked.
+/// What alias recovery found, whether a cap left candidates unchecked, and
+/// the server requests that failed (each one an alias left unchecked).
 #[derive(Debug, Default)]
 pub(super) struct AliasRecovery {
     pub(super) snippets: Vec<JsCodeSnippet>,
     pub(super) capped: bool,
+    pub(super) failures: RequestFailures,
 }
 
 /// Partial reason of a references row whose alias scan stopped at a cap.

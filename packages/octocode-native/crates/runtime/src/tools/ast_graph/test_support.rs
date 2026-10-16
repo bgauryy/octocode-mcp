@@ -12,7 +12,7 @@ pub(super) fn run(query: Value, root: &Path) -> AstGraphResult {
         &paths,
         &security,
         &crate::tools::cancel::NeverCancel,
-        None,
+        &Default::default(),
     )
 }
 

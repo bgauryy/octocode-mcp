@@ -105,24 +105,24 @@ pub const CREDENTIAL_FILE_EXTENSIONS: &[&str] = &[
 /// (`id_rsa.old`, `credentials.json.bak`).
 const BACKUP_SUFFIXES: &[&str] = &[".old", ".bak", ".backup", ".orig", ".save", "~"];
 
-/// Generated, lock, and OS-metadata file names a text search skips by
-/// default; `defaultExcludes:false` searches them.
-pub const GENERATED_FILE_NAMES: &[&str] =
-    &["package-lock.json", ".DS_Store", "Thumbs.db", "db.sqlite3"];
+/// OS-metadata and database file names a text search skips by default;
+/// `defaultExcludes:false` searches them. Lockfiles are not here: the
+/// dependency versions they pin are evidence.
+pub const GENERATED_FILE_NAMES: &[&str] = &[".DS_Store", "Thumbs.db", "db.sqlite3"];
 
 /// Generated, minified, archive, and object-file extensions a text search
 /// skips by default; `defaultExcludes:false` searches them. Source maps are
 /// named by their compound suffix, so a keymap or linker `.map` source stays
-/// searchable.
+/// searchable. Lockfiles (`*.lock`) and patches (`*.patch`, `*.diff`) are
+/// not here: they are written or reviewed by hand and hold evidence.
 pub const GENERATED_FILE_EXTENSIONS: &[&str] = &[
-    ".lock", ".tmp", ".temp", ".cache", ".bak", ".backup", ".orig", ".swp", ".swo", ".rej", ".pid",
-    ".exe", ".dll", ".so", ".dylib", ".a", ".lib", ".o", ".obj", ".bin", ".class", ".pdb", ".pyc",
-    ".pyo", ".pyd", ".jar", ".war", ".db", ".sqlite", ".sqlite3", ".zip", ".tar", ".gz", ".bz2",
-    ".xz", ".rar", ".7z", ".js.map", ".mjs.map", ".cjs.map", ".css.map", ".ts.map", ".min.js",
-    ".min.css", ".patch", ".diff",
+    ".tmp", ".temp", ".cache", ".bak", ".backup", ".orig", ".swp", ".swo", ".rej", ".pid", ".exe",
+    ".dll", ".so", ".dylib", ".a", ".lib", ".o", ".obj", ".bin", ".class", ".pdb", ".pyc", ".pyo",
+    ".pyd", ".jar", ".war", ".db", ".sqlite", ".sqlite3", ".zip", ".tar", ".gz", ".bz2", ".xz",
+    ".rar", ".7z", ".js.map", ".mjs.map", ".cjs.map", ".css.map", ".ts.map", ".min.js", ".min.css",
 ];
 
-/// The default-exclude pattern a file name matches (`package-lock.json`,
+/// The default-exclude pattern a file name matches (`.DS_Store`,
 /// `*.min.js`), for a count by pattern.
 pub fn generated_file_pattern(name: &str) -> Option<String> {
     if let Some(exact) = GENERATED_FILE_NAMES.iter().find(|exact| **exact == name) {
@@ -294,15 +294,19 @@ impl Withheld {
 }
 
 /// A text search walk's path filter: admits exactly what [`PathPolicy`]
-/// admits, skips the default-excluded generated files unless
-/// `defaultExcludes:false`, and counts both so the result can disclose them.
+/// admits, applies the default excludes unless `defaultExcludes:false` (the
+/// text search's default-pruned directories, as [`Prune::at`] applies them
+/// under the root, and the generated files), and records both, and the dot
+/// entries the walk left out, so the result can disclose them.
 ///
 /// [`PathPolicy`]: super::path::PathPolicy
+/// [`Prune::at`]: octocode_engine::search::walk::Prune::at
 pub struct SearchWalk {
     policy: super::path::PathPolicy,
     /// The searched root: a file named as the root is always searched.
     root: std::path::PathBuf,
-    skip_generated: bool,
+    /// The default excludes; `None` with `defaultExcludes:false`.
+    defaults: Option<octocode_engine::search::walk::RootedPrune>,
     skipped: std::sync::Mutex<WalkSkips>,
 }
 
@@ -310,22 +314,65 @@ pub struct SearchWalk {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct WalkSkips {
     pub withheld: Withheld,
-    /// Default-excluded files (`*.lock`, `package-lock.json`), each by its
-    /// path under the walk root.
+    /// Default-pruned directories, each by its path under the walk root.
+    pub pruned: std::collections::BTreeSet<String>,
+    /// Default-excluded files (`*.min.js`, `.DS_Store`), each by its path
+    /// under the walk root.
     pub generated: std::collections::BTreeSet<String>,
+    /// Dot entries left out without `includeHidden`, each by its path under
+    /// the walk root, a directory's with a trailing `/` (its contents were
+    /// never walked). One the path policy withholds is not here: no flag
+    /// reaches it.
+    pub hidden: std::collections::BTreeSet<String>,
+    /// Some dot entry would also be default-excluded (`.github/`, `.cache/`,
+    /// `.DS_Store`): reaching it lifts both.
+    pub hidden_excluded: bool,
+    /// Entries an ignore rule left out without `includeIgnored`, each by its
+    /// path under the walk root, a directory's with a trailing `/` (its
+    /// contents were never walked). One the path policy withholds is not
+    /// here: no flag reaches it.
+    pub ignored: std::collections::BTreeSet<String>,
+    /// Some ignored entry would also be default-excluded (an ignored
+    /// `node_modules/`) or is a dot entry: reaching it lifts those too.
+    pub ignored_excluded: bool,
+    pub ignored_hidden: bool,
 }
 
 impl SearchWalk {
+    /// The walk of `root` under `policy`, with the text search's default
+    /// excludes (less the directories an `include` glob names) when
+    /// `defaults`.
     pub fn new(
         policy: super::path::PathPolicy,
         root: std::path::PathBuf,
-        skip_generated: bool,
+        defaults: bool,
+        include: &[String],
     ) -> Self {
+        let defaults = defaults.then(|| {
+            octocode_engine::search::walk::Prune::new(
+                super::prune::PruneMode::SearchSafe.directories_with_includes(true, include),
+            )
+            .at(&root)
+        });
         Self {
             policy,
             root,
-            skip_generated,
+            defaults,
             skipped: std::sync::Mutex::new(WalkSkips::default()),
+        }
+    }
+
+    /// Whether the default excludes leave out `path`: a pruned directory
+    /// or a generated file below the root (the root itself is searched).
+    fn excludes(&self, path: &Path, is_dir: bool) -> bool {
+        let Some(prune) = self.defaults.as_ref().filter(|_| path != self.root) else {
+            return false;
+        };
+        if is_dir {
+            prune.prunes(path, true)
+        } else {
+            path.file_name()
+                .is_some_and(|name| generated_file_pattern(&name.to_string_lossy()).is_some())
         }
     }
 
@@ -352,22 +399,63 @@ impl octocode_engine::portable::TextSearchPathFilter for SearchWalk {
             self.note(|skips| skips.withheld.record(path, is_dir));
             return false;
         }
-        if self.skip_generated
-            && !is_dir
-            && path != self.root
-            && path
-                .file_name()
-                .is_some_and(|name| generated_file_pattern(&name.to_string_lossy()).is_some())
-        {
-            let shown = path.strip_prefix(&self.root).unwrap_or(path);
+        if self.excludes(path, is_dir) {
+            let shown = self.shown(path);
             self.note(|skips| {
-                skips
-                    .generated
-                    .insert(shown.to_string_lossy().replace('\\', "/"));
+                if is_dir {
+                    skips.pruned.insert(shown);
+                } else {
+                    skips.generated.insert(shown);
+                }
             });
             return false;
         }
         true
+    }
+
+    fn skipped_hidden(&self, path: &Path, is_dir: bool) {
+        if let Some((shown, excluded)) = self.skipped_entry(path, is_dir) {
+            self.note(|skips| {
+                skips.hidden.insert(shown);
+                skips.hidden_excluded |= excluded;
+            });
+        }
+    }
+
+    fn skipped_ignored(&self, path: &Path, is_dir: bool) {
+        if let Some((shown, excluded)) = self.skipped_entry(path, is_dir) {
+            let hidden = path
+                .file_name()
+                .is_some_and(|name| name.as_encoded_bytes().first() == Some(&b'.'));
+            self.note(|skips| {
+                skips.ignored.insert(shown);
+                skips.ignored_excluded |= excluded;
+                skips.ignored_hidden |= hidden;
+            });
+        }
+    }
+}
+
+impl SearchWalk {
+    /// An entry a walk rule (hidden, ignored) left out, as the skips record
+    /// it: its path under the root (a directory's with a trailing `/`) and
+    /// whether the default excludes would leave it out too; `None` for one
+    /// the path policy withholds, which no flag reaches.
+    fn skipped_entry(&self, path: &Path, is_dir: bool) -> Option<(String, bool)> {
+        if !octocode_engine::portable::TextSearchPathFilter::allows(&self.policy, path, is_dir) {
+            return None;
+        }
+        let excluded = self.excludes(path, is_dir);
+        let mut shown = self.shown(path);
+        if is_dir {
+            shown.push('/');
+        }
+        Some((shown, excluded))
+    }
+
+    /// `path` under the walk root, with `/` separators.
+    fn shown(&self, path: &Path) -> String {
+        normalized(path.strip_prefix(&self.root).unwrap_or(path))
     }
 }
 

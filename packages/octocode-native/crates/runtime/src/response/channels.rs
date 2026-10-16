@@ -4,12 +4,9 @@
 //! [`crate::tools::id::channel`]):
 //! - `next` keeps pages: continuations that reach unshown data of the same
 //!   result. A caller follows every one.
-//! - `hints` is one object of optional agent guidance: prose tips under
-//!   `text` and lead calls under their own names. The exception is a
-//!   partial object with no page (`isPartial` and nothing in `next` that
-//!   reaches more of its result): its leads are the only route to the
-//!   evidence it withholds, so they stay in the default output with all
-//!   their rows ([`shape`]).
+//! - `hints` carries optional guidance. Internally named calls retain their
+//!   validation and ordering; [`publish_hints`] emits deduplicated strings at
+//!   the public boundary, after path compaction.
 //!
 //! [`shape`] applies the channel policy to one object; the continuation
 //! stage ([`super::continuations::finalize`]) calls it for every object of
@@ -19,6 +16,126 @@ use serde_json::{Map, Value, json};
 
 use crate::tools::id::continuation_channels::{HINT_TEXT_KEY, HINTS_KEY, PAGES_KEY};
 use crate::tools::id::{Channel, ToolId, channel, continuation_channels, kind};
+
+/// Publish optional guidance once, after its calls have been validated and
+/// paths compacted. Required continuations remain structured in `next`.
+pub(crate) fn publish_hints(value: &mut Value, tool: ToolId) {
+    let Ok(contract) = crate::contracts::tool_contract(tool) else {
+        return;
+    };
+    let schema = &contract["outputSchema"];
+    publish_at(value, &[schema], &schema["$defs"]);
+}
+
+fn publish_at(value: &mut Value, schemas: &[&Value], defs: &Value) {
+    match value {
+        Value::Array(items) => {
+            let items_schemas: Vec<_> = schemas
+                .iter()
+                .flat_map(|schema| crate::contracts::item_schemas(schema, defs))
+                .collect();
+            if !items_schemas.is_empty() {
+                for item in items {
+                    publish_at(item, &items_schemas, defs);
+                }
+            }
+        }
+        Value::Object(object) => {
+            let mut empty_hints = false;
+            for (key, child) in object.iter_mut() {
+                let declared: Vec<_> = schemas
+                    .iter()
+                    .flat_map(|schema| crate::contracts::property_schemas(schema, defs, key))
+                    .collect();
+                if declared.is_empty() {
+                    continue;
+                }
+                if key == HINTS_KEY {
+                    let guidance = match child {
+                        Value::Array(items) => items.iter().all(Value::is_string),
+                        Value::Object(fields) => fields.iter().all(|(key, value)| {
+                            (key == HINT_TEXT_KEY
+                                && value
+                                    .as_array()
+                                    .is_some_and(|items| items.iter().all(Value::is_string)))
+                                || (value["tool"].is_string() && value["query"].is_object())
+                        }),
+                        _ => false,
+                    };
+                    if guidance {
+                        let mut strings = Vec::new();
+                        collect_hints(
+                            child.take(),
+                            None,
+                            &mut strings,
+                            &mut std::collections::HashSet::new(),
+                        );
+                        empty_hints = strings.is_empty();
+                        *child = Value::Array(strings);
+                    }
+                } else if key != PAGES_KEY {
+                    publish_at(child, &declared, defs);
+                }
+            }
+            if empty_hints {
+                object.remove(HINTS_KEY);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn collect_hints(
+    value: Value,
+    label: Option<&str>,
+    strings: &mut Vec<Value>,
+    seen: &mut std::collections::HashSet<String>,
+) {
+    let text = match value {
+        Value::String(text) => text,
+        Value::Array(items) => {
+            items
+                .into_iter()
+                .for_each(|item| collect_hints(item, None, strings, seen));
+            return;
+        }
+        Value::Object(mut fields) => {
+            if let (Some(tool), Some(query)) = (
+                fields.get("tool").and_then(Value::as_str),
+                fields.get("query"),
+            ) {
+                let qualification =
+                    if fields.get("confidence").and_then(Value::as_str) == Some("low") {
+                        "Approximate: "
+                    } else {
+                        ""
+                    };
+                {
+                    let call = format!("{qualification}{tool} {query}");
+                    let mut identity = query.clone();
+                    identity.sort_all_objects();
+                    if !seen.insert(format!("{qualification}{tool} {identity}")) {
+                        return;
+                    }
+                    label.map_or(call.clone(), |label| format!("{label}: {call}"))
+                }
+            } else {
+                if let Some(text) = fields.shift_remove(HINT_TEXT_KEY) {
+                    collect_hints(text, None, strings, seen);
+                }
+                fields
+                    .into_iter()
+                    .for_each(|(name, hint)| collect_hints(hint, Some(&name), strings, seen));
+                return;
+            }
+        }
+        _ => return,
+    };
+    let text = Value::String(text.trim().to_owned());
+    if text.as_str().is_some_and(|text| !text.is_empty()) && !strings.contains(&text) {
+        strings.push(text);
+    }
+}
 
 /// Keys that name a row, and notes that lead it: they stay ahead of the
 /// continuation keys.
@@ -88,15 +205,18 @@ pub(super) fn move_text(object: &mut Map<String, Value>) {
 ///   (empty or failed) row; no lead carries prose;
 /// - repeated pages of one kind merge into as few calls as the target's row
 ///   limit allows ([`merge_repeats`]);
-/// - leads move from `next` to `hints`, which keeps at most
-///   the contract's `maxHintLeads` of them, each reading only its top hit;
-/// - `confidence` goes from every call once it has ranked the leads;
+/// - leads move from `next` to the internal hint map, keeping every row and
+///   field its tool built (the rows may be routes the response never
+///   shows, such as pruned directories);
+/// - `confidence` goes from every call once it has ranked the leads, except
+///   `low`: the caveat that a call only approximates the request (a lossy
+///   repair) stays with it;
 /// - with `opt_in_leads` (a successful row whose `extras` lacks `hints`),
 ///   only the contract's `defaultLeads` stay: the row already holds the
 ///   path, ref and lines a next call is built from;
 /// - an object that [`withholds_evidence`] has no page to reach what it
 ///   leaves out, so its leads are that route: they all stay, ignoring
-///   `opt_in_leads` and the `maxHintLeads` cap, and each keeps every row.
+///   `opt_in_leads`.
 ///
 /// Idempotent.
 pub(super) fn shape(
@@ -120,41 +240,12 @@ pub(super) fn shape(
     if let Some(Value::Object(next)) = object.get_mut(PAGES_KEY) {
         merge_repeats(next, tool);
     }
-    split(object, tool, withheld);
-    if opt_in_leads
-        && !withheld
-        && let Some(Value::Object(hints)) = object.get_mut(HINTS_KEY)
-    {
-        hints.retain(|name, _| {
-            name == HINT_TEXT_KEY || continuation_channels::DEFAULT_LEADS.contains(&kind(name))
-        });
-        if hints.is_empty() {
-            object.remove(HINTS_KEY);
-        }
-    }
-    if single_hit(object)
-        && let Some(Value::Object(hints)) = object.get_mut(HINTS_KEY)
-    {
-        // One hit, one lead; exact leads are deterministic routes to other
-        // evidence, not alternatives, so they stay up to the menu.
-        let exact = hints
-            .values()
-            .filter(|call| call["confidence"] == "exact")
-            .count();
-        cap_leads(hints, exact.clamp(1, continuation_channels::MAX_HINT_LEADS));
-    }
+    split(object, tool, withheld, opt_in_leads);
     for key in [PAGES_KEY, HINTS_KEY] {
         if let Some(Value::Object(calls)) = object.get_mut(key) {
-            for (name, call) in calls.iter_mut() {
-                let Some(call) = call.as_object_mut() else {
-                    continue;
-                };
-                call.shift_remove("confidence");
-                if key == HINTS_KEY
-                    && !withheld
-                    && !continuation_channels::ALTERNATIVE_ROW_LEADS.contains(&name.as_str())
-                {
-                    top_hit(call);
+            for call in calls.values_mut().filter_map(Value::as_object_mut) {
+                if call.get("confidence").and_then(Value::as_str) != Some("low") {
+                    call.shift_remove("confidence");
                 }
             }
         }
@@ -173,26 +264,14 @@ fn withholds_evidence(object: &Map<String, Value>, tool: ToolId) -> bool {
             if next.keys().any(|name| channel(tool, name) == Channel::Page))
 }
 
-/// A lead is an optional route, so it carries the minimal runnable row:
-/// the top hit's row. The other rows are already shown, and withheld
-/// evidence rides `next`. A row's own ranges stay whole: they may be one
-/// unit (the rest of a declaration around a shown window). The contract's
-/// `alternativeRowLeads` (rows that are alternatives to try, not rows
-/// already shown) keep every row.
-fn top_hit(call: &mut Map<String, Value>) {
-    if let Some(rows) = call
-        .get_mut("query")
-        .and_then(|query| query.get_mut("queries"))
-        .and_then(Value::as_array_mut)
-    {
-        rows.truncate(1);
-    }
-}
-
-/// Pages of one kind (`readHits`, `readHits2`, …) that call the same tool
-/// with the same response window differ only in their rows: their distinct
-/// rows ride as few calls as the target's row limit allows, named like the
-/// tool names them.
+/// Pages of one kind that reach the unread rest of this result
+/// (`readHits`, `readHits2`, …) and call the same tool with the same
+/// response window differ only in their rows: their distinct rows ride as
+/// few calls as the target's row limit allows, named like the tool names
+/// them. An enrichment page (`unfiltered`, `expand*`) is another view of
+/// rows already shown, so two of one kind are alternative scopes (the
+/// unknown evidence, the whole view), not pieces of one rest: they stay
+/// apart.
 fn merge_repeats(next: &mut Map<String, Value>, tool: ToolId) {
     struct Group {
         kind: String,
@@ -202,7 +281,7 @@ fn merge_repeats(next: &mut Map<String, Value>, tool: ToolId) {
     }
     let mut groups: Vec<Group> = Vec::new();
     for (name, call) in next.iter() {
-        if channel(tool, name) != Channel::Page {
+        if !crate::tools::id::is_remaining(tool, name) {
             continue;
         }
         let (Some(target), Some(rows)) = (
@@ -275,9 +354,9 @@ fn merge_repeats(next: &mut Map<String, Value>, tool: ToolId) {
     }
 }
 
-/// Moves every lead out of `next` into `hints`, capped unless `withheld`
+/// Moves every lead out of `next` into the internal hint map, retained when `withheld`
 /// (see [`withholds_evidence`]).
-fn split(object: &mut Map<String, Value>, tool: ToolId, withheld: bool) {
+fn split(object: &mut Map<String, Value>, tool: ToolId, withheld: bool, opt_in_leads: bool) {
     let leads: Vec<String> = match object.get(PAGES_KEY) {
         Some(Value::Object(next)) => next
             .keys()
@@ -297,16 +376,30 @@ fn split(object: &mut Map<String, Value>, tool: ToolId, withheld: bool) {
             object.remove(PAGES_KEY);
         }
     }
+    // Optional routes are emitted only when requested; default routes stay.
+    let keep = |hints: &mut Map<String, Value>| {
+        if withheld {
+            return;
+        }
+        if opt_in_leads {
+            hints.retain(|name, _| {
+                name == HINT_TEXT_KEY || continuation_channels::DEFAULT_LEADS.contains(&kind(name))
+            });
+        }
+        order_leads(hints);
+    };
     match object.get_mut(HINTS_KEY) {
         Some(Value::Object(hints)) => {
             hints.extend(moved);
-            if !withheld {
-                cap_leads(hints, continuation_channels::MAX_HINT_LEADS);
+            keep(hints);
+            if hints.is_empty() {
+                object.remove(HINTS_KEY);
             }
         }
         _ if !moved.is_empty() => {
-            if !withheld {
-                cap_leads(&mut moved, continuation_channels::MAX_HINT_LEADS);
+            keep(&mut moved);
+            if moved.is_empty() {
+                return;
             }
             // Leads read before the pages that follow them (clasify's exact
             // read ahead of its walk), so `hints` takes `next`'s place.
@@ -320,68 +413,37 @@ fn split(object: &mut Map<String, Value>, tool: ToolId, withheld: bool) {
     }
 }
 
-/// Keys beside the evidence lists: guidance and coverage notes.
-const NOT_EVIDENCE: [&str; 4] = ["warnings", "partialReasons", "diagnostics", HINTS_KEY];
-
-/// A complete answer of one hit: no page left (`next`), not partial, and
-/// exactly one non-empty evidence list holding one entry with no list of 2+
-/// records inside (one file with several matches is several hits).
-fn single_hit(object: &Map<String, Value>) -> bool {
-    if object.contains_key(PAGES_KEY) || object.get("isPartial") == Some(&Value::Bool(true)) {
-        return false;
-    }
-    let mut lists = object
-        .iter()
-        .filter(|(key, _)| !NOT_EVIDENCE.contains(&key.as_str()))
-        .filter_map(|(_, value)| value.as_array())
-        .filter(|list| !list.is_empty());
-    match (lists.next(), lists.next()) {
-        (Some(only), None) => only.len() == 1 && !holds_records(&only[0]),
-        _ => false,
-    }
-}
-
-/// Whether `value` holds a list of 2+ objects at any depth.
-fn holds_records(value: &Value) -> bool {
-    match value {
-        Value::Array(items) => {
-            items.iter().filter(|item| item.is_object()).count() >= 2
-                || items.iter().any(holds_records)
-        }
-        Value::Object(fields) => fields.values().any(holds_records),
-        _ => false,
-    }
-}
-
-/// Keeps the first `limit` leads. The contract's lead priority
-/// (`continuationChannels.leadPriority`) goes first; other leads follow in
-/// the order the tool emitted them (new evidence first). A lead marked
-/// `confidence: "low"` yields its place to any other. The choice is
-/// deterministic: a stable order, never a tie broken by hashing.
-fn cap_leads(hints: &mut Map<String, Value>, limit: usize) {
+/// Orders leads without a fixed count cap. The contract's lead priority
+/// (`continuationChannels.leadPriority`) goes first, then its default leads
+/// (`defaultLeads`: what the default output shows never yields to an
+/// opt-in lead), then the rest in the order the tool emitted them (new
+/// evidence first). A lead marked `confidence: "low"` yields its place to
+/// any other. The choice is deterministic: a stable order, never a tie
+/// broken by hashing.
+fn order_leads(hints: &mut Map<String, Value>) {
     let rank = |name: &str| {
         continuation_channels::LEAD_PRIORITY
             .iter()
             .position(|lead| *lead == name)
             .unwrap_or(continuation_channels::LEAD_PRIORITY.len())
     };
-    let mut leads: Vec<((bool, usize, usize), String)> = hints
+    let opt_in = |name: &str| !continuation_channels::DEFAULT_LEADS.contains(&kind(name));
+    let mut leads: Vec<((bool, usize, bool, usize), String)> = hints
         .iter()
         .filter(|(name, _)| name.as_str() != HINT_TEXT_KEY)
         .enumerate()
         .map(|(order, (name, call))| {
             (
-                (call["confidence"] == "low", rank(name), order),
+                (call["confidence"] == "low", rank(name), opt_in(name), order),
                 name.clone(),
             )
         })
         .collect();
-    if leads.len() <= limit {
-        return;
-    }
     leads.sort();
-    for (_, name) in leads.into_iter().skip(limit) {
-        hints.shift_remove(&name);
+    for (_, name) in leads {
+        if let Some(call) = hints.shift_remove(&name) {
+            hints.insert(name, call);
+        }
     }
 }
 
@@ -392,6 +454,57 @@ mod tests {
     use crate::tools::id::ToolId;
     use crate::tools::id::{Channel, channel, continuation_channels, is_remaining};
     use serde_json::{Value, json};
+
+    #[test]
+    fn published_guidance_is_deduplicated_text_and_keeps_pages_executable() {
+        let call =
+            json!({"tool":"localFetch","query":{"queries":[{"path":"a.rs","ranges":["2-4"]}]}});
+        let mut response = json!({"results":[{"data":{
+            "next":{"continueWindow":call},
+            "hints":{"text":[" narrow ","narrow",""],"read":call,"duplicate":call},
+            "pullRequests":[{"hints":{"read":call}}]
+        }}]});
+        super::publish_hints(&mut response, ToolId::GhGetHistoryItem);
+        let data = &response["results"][0]["data"];
+        assert_eq!(data["next"]["continueWindow"], call);
+        let hints = data["hints"].as_array().expect("string hints");
+        assert_eq!(hints.len(), 2);
+        assert_eq!(hints[0], "narrow");
+        let suggestion = hints[1].as_str().expect("suggested call");
+        let query: Value =
+            serde_json::from_str(suggestion.strip_prefix("read: localFetch ").expect("tool"))
+                .expect("JSON input");
+        assert_eq!(query, call["query"]);
+        assert_eq!(data["pullRequests"][0]["hints"], json!([suggestion]));
+        let once = response.clone();
+        super::publish_hints(&mut response, ToolId::GhGetHistoryItem);
+        assert_eq!(response, once);
+        let mut evidence = json!({"queries":[{"answers":{"score":{"type":"score",
+            "legend":{"0":{"hints":[" repeated "," repeated "],"nested":{"hints":{"read":call}}}}}}}]});
+        let original = evidence.clone();
+        super::publish_hints(&mut evidence, ToolId::Clasify);
+        assert_eq!(evidence, original, "evidence fields are not guidance");
+    }
+
+    #[test]
+    fn equivalent_hint_calls_ignore_object_order_but_keep_batch_order() {
+        let first = json!({"queries":[{"path":"a.rs","ranges":["2-4"]},{"path":"b.rs"}]});
+        let reordered = json!({"queries":[{"ranges":["2-4"],"path":"a.rs"},{"path":"b.rs"}]});
+        let reversed = json!({"queries":[{"path":"b.rs"},{"path":"a.rs","ranges":["2-4"]}]});
+        let mut response = json!({"results":[{"data":{"hints":{
+            "read":{"tool":"localFetch","query":first},
+            "same":{"tool":"localFetch","query":reordered},
+            "reversed":{"tool":"localFetch","query":reversed}
+        }}}]});
+        super::publish_hints(&mut response, ToolId::LocalFetch);
+        assert_eq!(
+            response["results"][0]["data"]["hints"],
+            json!([
+                format!("read: localFetch {first}"),
+                format!("reversed: localFetch {reversed}")
+            ])
+        );
+    }
 
     /// [`shape`] on every object of every row, as the continuation stage
     /// applies it.
@@ -492,7 +605,7 @@ mod tests {
     }
 
     #[test]
-    fn hints_offer_at_most_two_leads_and_never_cap_pages_or_text() {
+    fn hints_keep_distinct_leads_without_capping_pages_or_text() {
         let call = |tool: &str| json!({"tool":tool,"query":{"path":"/r/a"}});
         let mut low = call("localSearch");
         low["confidence"] = json!("low");
@@ -522,17 +635,19 @@ mod tests {
             .filter(|key| *key != "text")
             .cloned()
             .collect::<Vec<_>>();
-        assert_eq!(leads, vec!["readDefinition", "findCallers"], "{data}");
+        assert_eq!(
+            leads,
+            vec!["readDefinition", "findCallers", "read", "widen"],
+            "{data}"
+        );
         let once = structured.clone();
         split_hints(&mut structured, ToolId::LspSearch);
         assert_eq!(structured, once, "idempotent");
     }
 
-    /// A complete answer of one hit offers one lead (plus its exact
-    /// leads); several hits, a partial answer, or one with pages left keep
-    /// the two-lead menu.
+    /// Result counts do not arbitrarily remove distinct optional routes.
     #[test]
-    fn a_complete_single_hit_answer_offers_one_lead() {
+    fn lead_availability_does_not_depend_on_the_result_count() {
         let call = |tool: &str| json!({"tool":tool,"query":{"path":"a"}});
         let leads = |data: Value, tool: ToolId| {
             let mut structured = json!({"results":[{"index":0,"data":data}]});
@@ -545,7 +660,10 @@ mod tests {
         let menu = || json!({"readFiles":call("ghGetHistoryItem"),"readDiscussion":call("ghGetHistoryItem")});
         let one =
             json!({"pullRequests":[{"number":1,"labels":["bug"]}],"warnings":["w"],"next":menu()});
-        assert_eq!(leads(one, ToolId::GhGetHistoryItem), ["readFiles"]);
+        assert_eq!(
+            leads(one, ToolId::GhGetHistoryItem),
+            ["readFiles", "readDiscussion"]
+        );
         let two = json!({"pullRequests":[{"number":1},{"number":2}],"next":menu()});
         assert_eq!(leads(two, ToolId::GhGetHistoryItem).len(), 2);
         let partial = json!({"pullRequests":[{"number":1}],"isPartial":true,"next":menu()});
@@ -556,9 +674,8 @@ mod tests {
         assert_eq!(leads(file, ToolId::LocalSearch).len(), 2);
         let hit = json!({"files":[{"path":"a.rs","matches":[{"line":1,"enclosing":{"line":1}}]}],
             "next":{"read":call("localFetch"),"findCallers":call("lspSearch")}});
-        assert_eq!(leads(hit, ToolId::LocalSearch), ["read"]);
-        // Exact leads are deterministic routes, not alternatives: they all
-        // stay, up to the two-lead menu.
+        assert_eq!(leads(hit, ToolId::LocalSearch), ["read", "findCallers"]);
+        // Exact routes and optional alternatives remain available.
         let exact = |tool: &str| json!({"tool":tool,"confidence":"exact","query":{"path":"a"}});
         let named = json!({"pullRequests":[{"number":1}],
             "next":{"readFiles":exact("ghGetHistoryItem"),"readDiscussion":exact("ghGetHistoryItem")}});
@@ -568,14 +685,17 @@ mod tests {
         );
         let alternative = json!({"pullRequests":[{"number":1}],
             "next":{"readFiles":exact("ghGetHistoryItem"),"readDiscussion":call("ghGetHistoryItem")}});
-        assert_eq!(leads(alternative, ToolId::GhGetHistoryItem), ["readFiles"]);
+        assert_eq!(
+            leads(alternative, ToolId::GhGetHistoryItem),
+            ["readFiles", "readDiscussion"]
+        );
         let paged = json!({"files":[{"path":"a.rs","matches":[{"line":1}]}],
             "next":{"nextPage":call("localSearch"),"read":call("localFetch"),"findCallers":call("lspSearch")}});
         assert_eq!(leads(paged, ToolId::LocalSearch).len(), 2);
     }
 
     #[test]
-    fn contract_priority_leads_survive_the_cap_ahead_of_rereads() {
+    fn contract_priority_leads_precede_rereads() {
         assert_eq!(
             continuation_channels::LEAD_PRIORITY.first(),
             Some(&"readAtMerge")
@@ -583,7 +703,7 @@ mod tests {
         let call = |tool: &str| json!({"tool":tool,"query":{"path":"a"}});
         let mut structured = json!({"results":[{"index":0,"data":{
             "pullRequests":[{"number":1,"next":{
-                "readRawBody":call("ghGetHistoryItem"),
+                "readBody":call("ghGetHistoryItem"),
                 "readUntrimmed":call("ghGetHistoryItem"),
                 "readAtMerge":call("ghGetFileContent")
             }}]
@@ -595,7 +715,11 @@ mod tests {
             .map(|h| h.keys().cloned().collect::<Vec<_>>());
         assert_eq!(
             leads,
-            Some(vec!["readRawBody".to_owned(), "readAtMerge".to_owned()]),
+            Some(vec![
+                "readAtMerge".to_owned(),
+                "readBody".to_owned(),
+                "readUntrimmed".to_owned()
+            ]),
             "{hints}"
         );
     }
@@ -629,7 +753,7 @@ mod tests {
     /// without it) that a full lead menu still keeps: its warning only
     /// counts the files.
     #[test]
-    fn the_skipped_binary_listing_is_a_lead_that_survives_the_cap() {
+    fn the_skipped_binary_listing_remains_a_lead() {
         assert_eq!(channel(ToolId::LocalSearch, "binarySkipped"), Channel::Lead);
         let call = |tool: &str| json!({"tool":tool,"query":{"path":"a"}});
         let mut structured = json!({"results":[{"index":0,"data":{"next":{
@@ -647,7 +771,11 @@ mod tests {
             .map(|h| h.keys().cloned().collect::<Vec<_>>());
         assert_eq!(
             leads,
-            Some(vec!["read".to_owned(), "binarySkipped".to_owned()]),
+            Some(vec![
+                "read".to_owned(),
+                "binarySkipped".to_owned(),
+                "findReferences".to_owned()
+            ]),
             "{data}"
         );
     }
@@ -663,18 +791,18 @@ mod tests {
             json!({"tool":"localFetch","query":{"queries":[row.clone(), {"path":"b.rs"}]}}),
         ] {
             let mut structured = json!({"results":[{"index":0,"data":{
-                "next":{"read":lead}
+                "next":{"read":lead.clone()}
             }}]});
             split_hints(&mut structured, ToolId::LocalFetch);
             let kept = &structured["results"][0]["data"]["hints"]["read"]["query"]["queries"];
-            assert_eq!(kept, &json!([row]), "{structured}");
+            assert_eq!(kept, &lead["query"]["queries"], "{structured}");
         }
     }
 
-    /// A lead is an optional route, so it carries the minimal runnable row:
-    /// the top hit's row. Pages keep every row.
+    /// A lead keeps every row its tool built, like a page: its rows may be
+    /// routes the response never shows (pruned directories at their depth).
     #[test]
-    fn a_lead_reads_only_the_top_hit_and_pages_keep_every_row() {
+    fn a_lead_keeps_every_row_its_tool_built() {
         let rows = json!([
             {"path":"a.rs","ranges":["1-3","9-12"]},
             {"path":"b.rs","ranges":["4-5"]}
@@ -689,10 +817,7 @@ mod tests {
         split_hints(&mut structured, ToolId::AstSearch);
         let data = &structured["results"][0]["data"];
         assert_eq!(data["next"]["nextPage"]["query"]["queries"], rows);
-        assert_eq!(
-            data["hints"]["read"]["query"],
-            json!({"queries":[{"path":"a.rs","ranges":["1-3","9-12"]}]})
-        );
+        assert_eq!(data["hints"]["read"]["query"], json!({"queries":rows}));
         assert_eq!(
             data["files"][0]["hints"]["read"]["query"]["ranges"],
             json!(["1-3", "9-12"]),
@@ -722,7 +847,7 @@ mod tests {
     }
 
     #[test]
-    fn confidence_goes_from_every_call_and_low_still_yields_its_place() {
+    fn confidence_goes_from_every_call_but_low_which_still_yields_its_place() {
         let call = |tool: &str, confidence: &str| json!({"tool":tool,"confidence":confidence,"query":{"queries":[{"path":"a"}],"confidence":"exact"}});
         let mut structured = json!({"results":[{"index":0,"data":{
             "next": {
@@ -744,11 +869,15 @@ mod tests {
         let leads = data["hints"].as_object().expect("hints");
         assert_eq!(
             leads.keys().cloned().collect::<Vec<_>>(),
-            vec!["read", "findReferences"],
-            "a low lead yields its place: {data}"
+            vec!["read", "findReferences", "widen"],
+            "low-confidence leads follow exact routes: {data}"
         );
         assert!(
-            leads.values().all(|lead| lead.get("confidence").is_none()),
+            leads.iter().all(|(name, lead)| if name == "widen" {
+                lead["confidence"] == "low"
+            } else {
+                lead.get("confidence").is_none()
+            }),
             "{data}"
         );
         assert!(
@@ -758,11 +887,20 @@ mod tests {
             "{data}"
         );
         assert_eq!(data["confidence"], "exact", "only continuations change");
+        // A low call that keeps its place keeps its caveat.
+        let mut lossy = json!({"results":[{"index":0,"status":"error","data":{
+            "next": {"repair": call("localSearch", "low")}
+        }}]});
+        split_hints(&mut lossy, ToolId::LocalSearch);
+        assert_eq!(
+            lossy["results"][0]["data"]["hints"]["repair"]["confidence"], "low",
+            "{lossy}"
+        );
     }
 
     /// Evidence a row withholds (a capped file's hits, a capped body, a
     /// clipped line, narrowed patches) is the unread rest of the result: it
-    /// stays in `next`, past the lead cap, as one call per row limit.
+    /// stays in `next` as one call per admitted batch.
     #[test]
     fn withheld_evidence_reads_stay_in_next_as_one_call() {
         for name in [
@@ -822,16 +960,15 @@ mod tests {
         assert_eq!(paths("readHits2"), ["f6", "f7"], "duplicates merge once");
         assert_eq!(
             data["hints"].as_object().map(|h| h.len()),
-            Some(2),
-            "optional routes keep the lead cap: {data}"
+            Some(3),
+            "distinct optional routes remain available: {data}"
         );
         let once = structured.clone();
         split_hints(&mut structured, ToolId::GhSearchCode);
         assert_eq!(structured, once, "idempotent");
     }
 
-    /// A partial object with no page keeps every lead (past the cap) and
-    /// every row of each; with a page it keeps today's cap and top hit.
+    /// Every lead keeps all of its rows, with or without a next page.
     #[test]
     fn a_partial_object_without_a_page_keeps_all_leads_and_rows() {
         let rows = json!([{"path":"a"},{"path":"b"},{"path":"c"}]);
@@ -867,12 +1004,60 @@ mod tests {
         let hints = paged["results"][0]["data"]["hints"]
             .as_object()
             .expect("hints");
-        assert_eq!(hints.len(), 2, "{paged}");
+        assert_eq!(hints.len(), 3, "all distinct optional routes stay: {paged}");
         assert!(
-            hints
-                .values()
-                .all(|call| call["query"]["queries"].as_array().map(Vec::len) == Some(1)),
-            "{paged}"
+            hints.values().all(|call| call["query"]["queries"] == rows),
+            "a lead keeps its rows: {paged}"
+        );
+    }
+
+    /// Opt-in leads leave before ordering: a default lead emitted after
+    /// optional ones is not capped away by leads the default output drops.
+    #[test]
+    fn a_default_lead_remains_when_opt_in_leads_are_hidden() {
+        let lead = |tool: &str| json!({"tool":tool,"query":{"queries":[{"path":"a"}]}});
+        let mut object = json!({"next":{
+            "ignoreCase":lead("localSearch"),
+            "findFile":lead("structureSearch"),
+            "readDiagnostics":lead("lspSearch"),
+            "viewFileCount":lead("localSearch")
+        }})
+        .as_object()
+        .cloned()
+        .expect("object");
+        shape(&mut object, ToolId::LocalSearch, false, true);
+        let kept = object["hints"]
+            .as_object()
+            .map(|hints| hints.keys().cloned().collect::<Vec<_>>())
+            .unwrap_or_default();
+        assert!(kept.contains(&"viewFileCount".to_owned()), "{kept:?}");
+        assert!(kept.contains(&"readDiagnostics".to_owned()), "{kept:?}");
+        assert!(!kept.contains(&"ignoreCase".to_owned()), "{kept:?}");
+    }
+
+    /// With `extras: ["hints"]` (opt-in leads allowed), a default lead
+    /// still outranks an opt-in one the tool emitted first: asking for more
+    /// hints never hides one the default output shows.
+    #[test]
+    fn opting_into_hints_keeps_the_default_leads() {
+        let lead = |tool: &str| json!({"tool":tool,"query":{"queries":[{"path":"a"}]}});
+        let mut object = json!({"next":{
+            "read":lead("localFetch"),
+            "includeSkipped":lead("localSearch"),
+            "viewFileCount":lead("localSearch")
+        }})
+        .as_object()
+        .cloned()
+        .expect("object");
+        shape(&mut object, ToolId::LocalSearch, false, false);
+        let kept = object["hints"]
+            .as_object()
+            .map(|hints| hints.keys().cloned().collect::<Vec<_>>())
+            .unwrap_or_default();
+        assert_eq!(
+            kept,
+            ["includeSkipped", "viewFileCount", "read"],
+            "{object:?}"
         );
     }
 

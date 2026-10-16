@@ -13,21 +13,13 @@
 //   C4 no silent omit   a positive omitted/unlisted/skipped/withheld/dropped/
 //                       hidden count needs a `next` page or terminalLimit:true.
 //   C5 description lint each description names a neighbor tool and one of its
-//                       published fields; keyless surface total <= budget;
-//                       the keyed clasify addition <= its own budget; quotas.
+//                       published fields; default/keyed/beta surfaces and
+//                       per-tool additions fit the core-owned budgets.
+
+import { MCP_SURFACE_BUDGETS } from '@octocodeai/config/mcp';
+import { suggestedCall } from './lead-predicates.mjs';
 
 export const CHECKS = ['C1', 'C2', 'C3', 'C4', 'C5'];
-/**
- * Mirrors core publishedSurfaceBudget.test.ts MAX_DEFAULT_SURFACE_BYTES; that file records why each
- * raise was made (the Zod-derived view carries every repair note and <workflow> once, so responses
- * carry none). Keep both values equal.
- */
-export const SURFACE_BUDGET = 20_078;
-/**
- * Bytes clasify adds when a classification key registers it: its tool only (the prompt does not change).
- * Core MAX_CLASIFY_TOOL_BYTES (2,523 since 2026-10-10: the hints.read rule in the description) plus 200 B headroom.
- */
-export const CLASIFY_SURFACE_BUDGET = 2_723;
 
 const SOURCE_TEXT_KEYS = new Set(['value', 'content', 'text', 'body', 'patch', 'diff', 'snippet', 'code', 'source', 'line', 'lines', 'matchString', 'message', 'title', 'description', 'error', 'warnings', 'question', 'answer', 'evidence', 'reason', 'summary', 'readme']);
 const isObject = v => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -40,7 +32,14 @@ export function continuations(node, at = '') {
     if (!n || typeof n !== 'object') return;
     if (Array.isArray(n)) { n.forEach((c, i) => walk(c, `${p}[${i}]`)); return; }
     for (const [k, v] of Object.entries(n)) {
-      if ((k === 'next' || k === 'hints') && isObject(v)) {
+      if (k === 'hints' && Array.isArray(v)) {
+        for (const text of v) {
+          const call = suggestedCall(text);
+          if (call) out.push({ at: `${p}.hints.${call.key}`, name: call.key, tool: call.tool, query: call.query });
+        }
+        continue;
+      }
+      if (k === 'next' && isObject(v)) {
         if (isLead(v)) out.push({ at: `${p}.${k}`, name: k, tool: v.tool, query: v.query });
         else for (const [name, h] of Object.entries(v)) if (isLead(h)) out.push({ at: `${p}.${k}.${name}`, name, tool: h.tool, query: h.query });
         continue;
@@ -128,21 +127,21 @@ export function checkChainFit(sc, tool, { inputNames, published, toolNames = [] 
 }
 
 /**
- * Lint: a `name:value` token in `hints.text` must be a published field of
+ * Lint: a `name:value` token in a prose hint must be a published field of
  * the emitting tool, or appear as a field of a lead query on the same row.
  */
 export function hintTextLint(sc, tool, published, toolNames = []) {
   const reasons = [];
   const pub = published(tool) ?? new Set();
   for (const r of rowsOf(sc)) {
-    const texts = [].concat(r.data?.hints?.text ?? []).filter(t => typeof t === 'string');
+    const texts = (Array.isArray(r.data?.hints) ? r.data.hints : []).filter(t => typeof t === 'string' && !suggestedCall(t));
     if (!texts.length) continue;
     const leadFields = new Set(continuations({ data: r.data }).flatMap(c => (c.query.queries ?? []).flatMap(q => Object.keys(q ?? {}))));
     for (const t of texts) {
       const named = toolNames.filter(n => new RegExp(`\\b${n}\\b`).test(t)).map(n => published(n) ?? new Set());
       for (const m of t.matchAll(/(?<![\w.])([a-z][A-Za-z0-9]*):(?=["[{\d]|true|false)/g)) {
         const name = m[1];
-        if (!pub.has(name) && !leadFields.has(name) && !named.some(s => s.has(name))) reasons.push(`${r.at}.hints.text names unpublished \`${name}\` with no lead`);
+        if (!pub.has(name) && !leadFields.has(name) && !named.some(s => s.has(name))) reasons.push(`${r.at}.hints names unpublished \`${name}\` with no lead`);
       }
     }
   }
@@ -158,15 +157,15 @@ export function checkRowContract(sc, expect, { schemaErr, isError, text } = {}) 
   if (!rows.length) { reasons.push(`no result rows${isError ? ` (call error: ${String(text ?? '').slice(0, 120)})` : ''}`); return reasons; }
   for (const r of rows) {
     const d = r.data ?? {};
-    const leads = continuations({ data: d }).filter(c => !c.at.includes('.next.'));
-    const prose = [].concat(d.hints?.text ?? []).filter(t => typeof t === 'string');
+    const leads = continuations({ data: d });
+    const prose = (Array.isArray(d.hints) ? d.hints : []).filter(t => typeof t === 'string' && t.trim() && !suggestedCall(t));
     if (r.status === 'error') {
       if (typeof d.errorCode !== 'string' || !d.errorCode) reasons.push(`${r.at}: error row without errorCode`);
       if (typeof d.error !== 'string' || !d.error) reasons.push(`${r.at}: error row without error text`);
-      if (!leads.length && !prose.length) reasons.push(`${r.at}: error row without a recovery (lead or hints.text)`);
+      if (!leads.length && !prose.length) reasons.push(`${r.at}: error row without a recovery (next or hints)`);
       if (d.retryable === false) reasons.push(`${r.at}: retryable:false emitted (only true is published)`);
     } else if (r.status === 'empty') {
-      if (!leads.length && !prose.length) reasons.push(`${r.at}: empty row without a recovery (lead or hints.text)`);
+      if (!leads.length && !prose.length) reasons.push(`${r.at}: empty row without a recovery (next or hints)`);
     } else if (expect) {
       reasons.push(`${r.at}: probe expected status ${expect}, got ${r.status ?? 'ok'}`);
     }
@@ -181,12 +180,14 @@ const ZERO_BASED = /\b(0-based|zero-based|0-indexed|zero-indexed)\b/i;
  * an upstream grammar, not source coordinates.
  * - `responseOffset`: a character offset into the rendered response (or,
  *   with responseScope rows, a page index) — an offset, not a line/column.
+ * - lspSearch `orderHint`: an index into the symbol list, not a source position.
  * - astRewrite `transform.substring.startChar/endChar`: ast-grep's own
  *   `substring` slice semantics (Python-style, 0-based, end exclusive);
  *   renumbering would silently shift every pasted ast-grep rule.
  */
 export const ZERO_BASED_ALLOWED = [
   /(^|\.)responseOffset\.description$/,
+  /^lspSearch\.inputSchema\..*\.orderHint\.description$/,
   /^astRewrite\.inputSchema\..*\.substring\.properties\.(startChar|endChar)\.description$/,
 ];
 /** Published texts (descriptions at any depth) naming a 0-based coordinate. */
@@ -260,11 +261,33 @@ export function descriptionLint(tool, description, toolNames, publishedFields, o
   else if (!neighbors.some(n => names(publishedFields(n), desc)) && !names(ownOutputs, note)) reasons.push(`names ${neighbors.join(',')} but none of its fields`);
   return reasons;
 }
-/** Surface budget: total and per-tool quotas ({tool: bytes}). */
-export function surfaceBudget(perToolBytes, instructionsBytes, { budget = SURFACE_BUDGET, quotas = {} } = {}) {
+/** Check a core-measured MCP surface against its capability profile. */
+export function surfaceBudget(measured, { profile = 'default', baseline } = {}) {
   const reasons = [];
-  const total = Object.values(perToolBytes).reduce((a, b) => a + (b ?? 0), 0) + instructionsBytes;
-  if (total > budget) reasons.push(`surface ${total} B > ${budget} B (+${total - budget})`);
-  for (const [t, q] of Object.entries(quotas)) if ((perToolBytes[t] ?? 0) > q) reasons.push(`${t} ${perToolBytes[t]} B > quota ${q} B`);
-  return { total, reasons };
+  const budget = MCP_SURFACE_BUDGETS.totals[profile];
+  if (budget === undefined) throw new Error(`Unknown MCP surface profile: ${profile}`);
+  if (measured.total > budget) reasons.push(`surface ${measured.total} B > ${budget} B (+${measured.total - budget})`);
+  const expected = new Set(Object.keys(MCP_SURFACE_BUDGETS.tools));
+  if (profile === 'keyedBeta') expected.add('clasify');
+  for (const name of expected) if (!(name in measured.perTool)) reasons.push(`missing tool ${name}`);
+  for (const name of Object.keys(measured.perTool)) if (!expected.has(name)) reasons.push(`unexpected tool ${name}`);
+  if (profile === 'default') {
+    if (measured.instructions > MCP_SURFACE_BUDGETS.instructions) reasons.push(`instructions ${measured.instructions} B > quota ${MCP_SURFACE_BUDGETS.instructions} B`);
+    for (const [name, quota] of Object.entries(MCP_SURFACE_BUDGETS.tools)) {
+      if (measured.perTool[name] > quota) reasons.push(`${name} ${measured.perTool[name]} B > quota ${quota} B`);
+    }
+  } else if (!baseline) {
+    reasons.push('keyed surface requires the default baseline');
+  } else {
+    for (const name of Object.keys(MCP_SURFACE_BUDGETS.tools)) {
+      if (!(name in measured.perTool) || !(name in baseline.perTool)) continue;
+      const added = measured.perTool[name] - baseline.perTool[name];
+      const quota = MCP_SURFACE_BUDGETS.selectionAdditions[name];
+      if (quota === undefined && added !== 0) reasons.push(`${name} unexpectedly changes by ${added} B`);
+      if (quota !== undefined && added <= 0) reasons.push(`${name} is missing its keyed selection surface`);
+      if (quota !== undefined && added > quota) reasons.push(`${name} adds ${added} B > quota ${quota} B`);
+    }
+  }
+  if (measured.perTool.clasify > MCP_SURFACE_BUDGETS.clasify) reasons.push(`clasify ${measured.perTool.clasify} B > quota ${MCP_SURFACE_BUDGETS.clasify} B`);
+  return { ...measured, profile, budget, reasons };
 }

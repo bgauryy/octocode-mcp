@@ -278,7 +278,7 @@ fn files_and_tree_report_the_same_totals() {
     #[cfg(unix)]
     std::os::unix::fs::symlink(root.0.join("a/one.txt"), root.0.join("link.txt")).expect("link");
     let summaries = [
-        json!({"operation":"files","path":root.0,"maxDepth":10}),
+        json!({"operation":"files","path":root.0,"maxDepth":10,"includeHidden":true}),
         json!({"operation":"tree","path":root.0,"maxDepth":10,"includeHidden":true}),
     ]
     .map(|query| {

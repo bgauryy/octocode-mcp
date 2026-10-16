@@ -154,7 +154,12 @@ pub(super) fn summary(entries: &[TreeEntry]) -> Value {
 /// Provider limits and skipped entries of the walk, stated on the page. A
 /// limit's `terminalLimitReached` code is the shared coverage code
 /// (`response::pages::coverage_codes`), never restated here.
-pub(super) fn disclose_limits(traversal: &Traversal, value: &mut Value, output: &mut ToolData) {
+pub(super) fn disclose_limits(
+    traversal: &Traversal,
+    page: &ListingPage<'_>,
+    value: &mut Value,
+    output: &mut ToolData,
+) {
     use crate::tools::paging::{mark_partial, terminal_limit};
     if traversal.contents_limit {
         terminal_limit(value, "providerContentsLimit", &[]);
@@ -170,9 +175,9 @@ pub(super) fn disclose_limits(traversal: &Traversal, value: &mut Value, output: 
             "maxDirectoryFetches": MAX_DIRECTORY_FETCHES
         });
     }
-    if !traversal.omitted.is_empty() {
-        // Dependency/VCS/build directories are skipped by design; name each
-        // skipped name with its count instead of silently dropping them.
+    if !traversal.omitted.is_empty() && page.current == 1 {
+        // Symlinks and submodules have no listable content: name each with
+        // its count instead of silently dropping them, once per listing.
         value["omitted"] = json!(traversal.omitted);
     }
     if traversal.failed_subtrees > 0 {

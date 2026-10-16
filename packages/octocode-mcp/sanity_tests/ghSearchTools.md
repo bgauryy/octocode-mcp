@@ -14,7 +14,7 @@ Manual runtime checks for the three GitHub discovery tools.
 
 - [ ] Run one representative query per tool and verify paths, repository identities, and counts against GitHub.
 - [ ] Repeat a query with a small `pageSize`; follow `next` and verify that it names the same tool and preserves `pageSize` and filters while incrementing `page`.
-- [ ] Run the `ghSearchCode` `hints.read` lead (ghGetFileContent) and a zero-hit `hints.viewTree` lead (ghStructure) unchanged.
+- [ ] Decode and execute the `ghSearchCode` `read` suggestion (ghGetFileContent) and a zero-hit `viewTree` suggestion (ghStructure) from the `hints` strings without changing their calls.
 - [ ] Walk response-character pagination when present and verify that no serialized content is silently dropped.
 - [ ] Repeat the same request and verify a cached response is marked `cache:1` without extra payload.
 

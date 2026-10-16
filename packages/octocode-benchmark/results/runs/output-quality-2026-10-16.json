@@ -1,0 +1,3403 @@
+{
+ "campaign": "output-quality-2026-10-16",
+ "octocode_label": "Octocode 20.2.0 output audit build 2",
+ "runner_model": "claude-sonnet-5-5",
+ "judge_model": "gpt-6.1-sol",
+ "question_set": "github-v2",
+ "question_ids": [
+  "Q1",
+  "Q2",
+  "Q3",
+  "Q4",
+  "Q5",
+  "Q6",
+  "Q7",
+  "Q8",
+  "Q9",
+  "Q10",
+  "Q11",
+  "Q12",
+  "Q13",
+  "Q14",
+  "Q15",
+  "Q16",
+  "Q17",
+  "Q18",
+  "Q19",
+  "Q20",
+  "Q21",
+  "Q22",
+  "Q23",
+  "Q24",
+  "Q25",
+  "Q26",
+  "Q27",
+  "Q28",
+  "Q29",
+  "Q30"
+ ],
+ "manifest": {
+  "frozenAt": "2026-10-16T09:11:11.438934+00:00",
+  "purpose": "Current frozen local build versus lean gh on 30 public GitHub development questions. No causal comparison against the historical campaign.",
+  "arms": [
+   "mcp",
+   "gh-lean"
+  ],
+  "runner": "claude",
+  "model": "claude-sonnet-5-5",
+  "maxTurns": 60,
+  "maxAttempts": 1,
+  "concurrency": 4,
+  "campaignDeadlineSeconds": 3600,
+  "classification": "disabled; no TypeSafe calls",
+  "judge": {
+   "runner": "codex",
+   "model": "gpt-6.1-sol",
+   "secondsPerAttempt": 600,
+   "maxAttempts": 2,
+   "retryOnly": "invalid infrastructure or parse failures; preserve originals",
+   "calibration": "Same model, rubric and isolated harness calibrated in release-fixes-2026-10-16; preserve that calibration reference"
+  },
+  "artifact": {
+   "binary": {
+    "source": "/Users/bgaryy/code/octocode/packages/octocode-native/npm/darwin-arm64/octocode",
+    "path": "/Users/bgaryy/code/octocode/.octocode/octocode-dev/output-quality-2026-10-16/candidate2-runtime/octocode",
+    "sha256": "5664f46341015dbdb4d408e69ca619a6ee05742b01be785ddfcb9f52e1f271f3",
+    "sourceMtime": 1792141649.1557896
+   },
+   "addon": {
+    "source": "/Users/bgaryy/code/octocode/packages/octocode-native/npm/darwin-arm64/octocode-native.darwin-arm64.node",
+    "path": "/Users/bgaryy/code/octocode/.octocode/octocode-dev/output-quality-2026-10-16/candidate2-runtime/octocode.node",
+    "sha256": "829e9e2b4b06bf437bf9bc4504e3306ae26d366448dc636fe12fcf83a7ec6a1e",
+    "sourceMtime": 1792141649.371907
+   },
+   "mcp": {
+    "source": "/Users/bgaryy/code/octocode/packages/octocode-mcp/dist/index.js",
+    "path": "/Users/bgaryy/code/octocode/.octocode/octocode-dev/output-quality-2026-10-16/candidate2-runtime/mcp/index.js",
+    "sha256": "ae7569a2d644aaa58cccd97f85709f3f95b136623d69720b5e11617d4e7a7b81",
+    "sourceMtime": 1792141654.5415356
+   },
+   "contract": {
+    "source": "/Users/bgaryy/code/octocode/packages/octocode-config/contract/tool-contract.json",
+    "path": "/Users/bgaryy/code/octocode/.octocode/octocode-dev/output-quality-2026-10-16/candidate2-runtime/tool-contract.json",
+    "sha256": "afbe9d869c1c016a55ccb0eda537bea53ed731acc2ce06bcfcb666b8ecc7cfb9",
+    "sourceMtime": 1792141731.4681208
+   }
+  },
+  "frozenInputs": {
+   "packages/octocode-benchmark/compare/arms/runner.md": "7671f3e85bb70356eaeb6858229707d4ed22a64babaa7c5c0196bbaee9068280",
+   "packages/octocode-benchmark/compare/arms/mcp.md": "1653c91f3501765ca441e2b845530700ca9ec8cfebc83f7127a42b59b435a931",
+   "packages/octocode-benchmark/compare/arms/gh-lean.md": "ec1eb412d78d26606f70f7637bef658b6abda3cbdfae41b0f296c9202d085038",
+   "packages/octocode-benchmark/compare/github-questions/Q12.md": "83d762e429bac5c69b95c7c2471c023385de7898a3e1cb8004ade48a7f1382af",
+   "packages/octocode-benchmark/compare/github-questions/Q26.md": "7247c2fedfbff5cefd8c02a894708e5ef4d9aa6288c10fe0c9d18425e386907f",
+   "packages/octocode-benchmark/compare/github-questions/Q22.md": "686b74aff52b368ba9cb7868504e4ed0e083916e7efdd806ff894a7f0b589e26",
+   "packages/octocode-benchmark/compare/github-questions/Q16.md": "34f085f64c8a13ddc5ebd4dff0ca82fc7ef9bf14c4f611cc7fdc8c00c95477f3",
+   "packages/octocode-benchmark/compare/github-questions/Q8.md": "b9ed98e2fefdf2afc8417906af8d73431e6fc846f60b05b46a1ad950ec1e906a",
+   "packages/octocode-benchmark/compare/github-questions/Q23.md": "1bf865e051c7e1be7ca600b573934625728242d5e6a7eb4a87d4a7a966eab8a7",
+   "packages/octocode-benchmark/compare/github-questions/Q17.md": "5669745883ed22dc928147ab3c107f7a25d0eaeb1e3ba2ff4c8bb1d63a75c1a0",
+   "packages/octocode-benchmark/compare/github-questions/Q9.md": "1bbfebdff84eb90c523c6a3d5be76b10c4ad0b8ef2d4cdfe10ac773c362dc6e6",
+   "packages/octocode-benchmark/compare/github-questions/Q13.md": "f37bd51573466e6e500956c65c2ba2a41a1d83c34b200738d1b0c237c43c14b5",
+   "packages/octocode-benchmark/compare/github-questions/Q27.md": "b21e7b4d6c1d1d24884b29f8d5ffbaaf0958167035f583820252f331c2b449ce",
+   "packages/octocode-benchmark/compare/github-questions/Q18.md": "2d07a0668cd6ca66a986de65f22d14518fcf523145d35a90d127bbb0674e97b6",
+   "packages/octocode-benchmark/compare/github-questions/Q6.md": "0b336e2167ce7fd1d20241170ba1de340cd927c5883cbd7129be71d8a5764cc9",
+   "packages/octocode-benchmark/compare/github-questions/Q28.md": "1661941e751e93080d25f333406883a47622a1477fa5b4954af5c81cf27b9033",
+   "packages/octocode-benchmark/compare/github-questions/Q2.md": "5d38d33b23a3b39b92f12f981fae7195e18be3b4ce193ae5d3f303641a60da23",
+   "packages/octocode-benchmark/compare/github-questions/Q29.md": "755032abdfb626b2bdc42176d4a6d8965d453757db17f96b92486134c6711a9b",
+   "packages/octocode-benchmark/compare/github-questions/Q3.md": "67ebeebbfc73fa844cbe6821d4ed3aa0bcfeb59cf693ff7fa3120f30ab59113c",
+   "packages/octocode-benchmark/compare/github-questions/Q19.md": "4dd02338d43d34d2ed6794c927f2a49b8795d869050f4bee899688bfe887c91e",
+   "packages/octocode-benchmark/compare/github-questions/Q7.md": "d67c5827b15fd69220c62efc381bd19cef65da9f3815b5a4e745e71222ea0616",
+   "packages/octocode-benchmark/compare/github-questions/Q4.md": "c14ccfe2c1c5aa7e8ff7c9c58ee12a383410c30ff3ca90e84c7f5d9d50c0752e",
+   "packages/octocode-benchmark/compare/github-questions/Q5.md": "6ff42d23dd321679f3b6d1673514b918c84d9a407016efb64d554494f3286197",
+   "packages/octocode-benchmark/compare/github-questions/Q1.md": "8b15bc2a68eb70ac4f4c0a22736550baf3243d2b674c3e827adb24ef22857957",
+   "packages/octocode-benchmark/compare/github-questions/Q20.md": "78cf44f735a99f77e8b7105a9fa035084fc5ea4922dc71585c877a6208b61b43",
+   "packages/octocode-benchmark/compare/github-questions/Q14.md": "e9f17acbfaa3d37ae4e7907a496b0d7a71716136bdfee1204ec1284b101c685b",
+   "packages/octocode-benchmark/compare/github-questions/Q30.md": "7c4444ccf4785f97dc2013370e90eaae8c5fe800f9807c2947f4f3332c2df731",
+   "packages/octocode-benchmark/compare/github-questions/Q10.md": "d27d5ebef8fcc6d86eeba06de43dc013d1320ee081cecbbb14421483e6ee1808",
+   "packages/octocode-benchmark/compare/github-questions/Q24.md": "36c5d42df3242e9841a935c5b075cedc0aac31e04c6750d80c4234366817a25f",
+   "packages/octocode-benchmark/compare/github-questions/Q11.md": "f09ce91566429ce04c7b302690932382b81de86e1a9a1c09d260e4bfee0a0e91",
+   "packages/octocode-benchmark/compare/github-questions/Q25.md": "32ce4984990e7981af9023ee8acdf07c78bea3b5600e85c5ddf65a9b27f02254",
+   "packages/octocode-benchmark/compare/github-questions/Q21.md": "420b79f074814f391bede1b35cf4e986fa115b183b7c9bd27d58cc01a1634737",
+   "packages/octocode-benchmark/compare/github-questions/Q15.md": "841b45ae949b51ea1a2192e933371cfda1fbc4411c272ae457e6e35f9de92509"
+  },
+  "completed": {
+   "solverRuns": 60,
+   "validSolverRuns": 60,
+   "judgments": 30,
+   "validJudgments": 30,
+   "judgeAttempts": 30,
+   "judgeAttemptNumbering": "First harness slot reserved to cap two actual attempts; all first actual attempts (number2) passed. No attempt1 was invoked.",
+   "judgeAudit": "judge-audit.json",
+   "measurements": "measured-summary.json",
+   "solverArtifactRehash": "strict-rehash.json"
+  },
+  "harnessHashes": {
+   "packages/octocode-benchmark/compare/bin/judge_codex.py": "9a95890f180d71dcf631278bcf6253b97ff03bbcd4df822b3e1b514567eed51a",
+   "packages/octocode-benchmark/compare/bin/judge_pair.sh": "e37ee5052c7ad6aa5252f58c2741b09e76e45add2c01c45115b4c609caea20cb"
+  }
+ },
+ "runs": [
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q1",
+   "chars": 2480,
+   "model_in": 1123,
+   "model_out": 1357,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 3
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 1539
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 18505,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 712,
+   "cost_usd": 0.0268049,
+   "turns": 4,
+   "secs": 8.489,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 7.451,
+   "tool_secs": 1.038,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q10",
+   "chars": 10384,
+   "model_in": 7086,
+   "model_out": 3298,
+   "calls": 8,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 8
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 8288
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 51115,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1809,
+   "cost_usd": 0.055567000000000005,
+   "turns": 9,
+   "secs": 19.735,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 17.67,
+   "tool_secs": 2.065,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q11",
+   "chars": 7031,
+   "model_in": 4191,
+   "model_out": 2840,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 3
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 4787
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 19870,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1333,
+   "cost_usd": 0.0387362,
+   "turns": 4,
+   "secs": 13.862,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 12.901,
+   "tool_secs": 0.961,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q12",
+   "chars": 4533,
+   "model_in": 1224,
+   "model_out": 3309,
+   "calls": 5,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 5
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 2143
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 32403,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1674,
+   "cost_usd": 0.0396748,
+   "turns": 6,
+   "secs": 15.735,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 14.1,
+   "tool_secs": 1.635,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q13",
+   "chars": 7945,
+   "model_in": 5426,
+   "model_out": 2519,
+   "calls": 5,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 5
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 6204
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 30924,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1354,
+   "cost_usd": 0.043604399999999995,
+   "turns": 6,
+   "secs": 15.603,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 12.102,
+   "tool_secs": 3.501,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q14",
+   "chars": 2444,
+   "model_in": 801,
+   "model_out": 1643,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 3
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 1367
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 24620,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 868,
+   "cost_usd": 0.0288827,
+   "turns": 4,
+   "secs": 18.242,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 15.216,
+   "tool_secs": 3.026,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q15",
+   "chars": 5513,
+   "model_in": 3457,
+   "model_out": 2056,
+   "calls": 1,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 1
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 3658
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 13097,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 855,
+   "cost_usd": 0.0301317,
+   "turns": 2,
+   "secs": 9.207,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 7.305,
+   "tool_secs": 1.902,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q16",
+   "chars": 2096,
+   "model_in": 299,
+   "model_out": 1797,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 4
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 850
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 24588,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 965,
+   "cost_usd": 0.0291085,
+   "turns": 5,
+   "secs": 22.919,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 21.249,
+   "tool_secs": 1.67,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q17",
+   "chars": 8514,
+   "model_in": 5410,
+   "model_out": 3104,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 3
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 5854
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 14064,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1367,
+   "cost_usd": 0.0388077,
+   "turns": 4,
+   "secs": 11.31,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 10.819,
+   "tool_secs": 0.491,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q18",
+   "chars": 2547,
+   "model_in": 277,
+   "model_out": 2270,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 2
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 726
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 12176,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1144,
+   "cost_usd": 0.029103700000000003,
+   "turns": 3,
+   "secs": 9.659,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 8.998,
+   "tool_secs": 0.661,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q19",
+   "chars": 7453,
+   "model_in": 3793,
+   "model_out": 3660,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 4
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 4787
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 26908,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1769,
+   "cost_usd": 0.044338100000000005,
+   "turns": 5,
+   "secs": 16.176,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 14.347,
+   "tool_secs": 1.829,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q2",
+   "chars": 2622,
+   "model_in": 700,
+   "model_out": 1922,
+   "calls": 5,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 5
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 1372
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 24815,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 968,
+   "cost_usd": 0.0302766,
+   "turns": 6,
+   "secs": 12.347,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 10.378,
+   "tool_secs": 1.969,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q20",
+   "chars": 5559,
+   "model_in": 2261,
+   "model_out": 3298,
+   "calls": 5,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 5
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 3215
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 26270,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1651,
+   "cost_usd": 0.0404501,
+   "turns": 6,
+   "secs": 14.56,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 13.097,
+   "tool_secs": 1.463,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q21",
+   "chars": 17300,
+   "model_in": 11594,
+   "model_out": 5706,
+   "calls": 8,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 8
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 13336
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 47968,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 2824,
+   "cost_usd": 0.0736743,
+   "turns": 9,
+   "secs": 25.28,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 23.163,
+   "tool_secs": 2.117,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q22",
+   "chars": 5171,
+   "model_in": 1697,
+   "model_out": 3474,
+   "calls": 5,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 5
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 2544
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 27184,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1810,
+   "cost_usd": 0.0422407,
+   "turns": 6,
+   "secs": 18.317,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 15.88,
+   "tool_secs": 2.437,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q23",
+   "chars": 8340,
+   "model_in": 4480,
+   "model_out": 3860,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 3
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 5169
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 29589,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1827,
+   "cost_usd": 0.048002,
+   "turns": 4,
+   "secs": 19.632,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 18.048,
+   "tool_secs": 1.584,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q24",
+   "chars": 9813,
+   "model_in": 5422,
+   "model_out": 4391,
+   "calls": 6,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 6
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 6404
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 22884,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1938,
+   "cost_usd": 0.0484884,
+   "turns": 7,
+   "secs": 19.402,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 18.363,
+   "tool_secs": 1.039,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q25",
+   "chars": 24433,
+   "model_in": 20884,
+   "model_out": 3549,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 3
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 21286
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 31032,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1515,
+   "cost_usd": 0.0706806,
+   "turns": 4,
+   "secs": 15.887,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 14.42,
+   "tool_secs": 1.467,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q26",
+   "chars": 2927,
+   "model_in": 774,
+   "model_out": 2153,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 4
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 1375
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 25129,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1139,
+   "cost_usd": 0.0318776,
+   "turns": 5,
+   "secs": 13.582,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 12.402,
+   "tool_secs": 1.18,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q27",
+   "chars": 4595,
+   "model_in": 2093,
+   "model_out": 2502,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 2
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 2293
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 12752,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1212,
+   "cost_usd": 0.032232000000000004,
+   "turns": 3,
+   "secs": 8.982,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 8.538,
+   "tool_secs": 0.444,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q28",
+   "chars": 14098,
+   "model_in": 9593,
+   "model_out": 4505,
+   "calls": 7,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 7
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 11099
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 42149,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 2175,
+   "cost_usd": 0.0602259,
+   "turns": 8,
+   "secs": 25.439,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 22.11,
+   "tool_secs": 3.329,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q29",
+   "chars": 12011,
+   "model_in": 6286,
+   "model_out": 5725,
+   "calls": 8,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 8
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 8116
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 59251,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 2825,
+   "cost_usd": 0.06565510000000001,
+   "turns": 9,
+   "secs": 27.837,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 24.846,
+   "tool_secs": 2.991,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q3",
+   "chars": 6296,
+   "model_in": 3702,
+   "model_out": 2594,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 4
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 4208
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 21412,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1224,
+   "cost_usd": 0.037305099999999994,
+   "turns": 5,
+   "secs": 14.756,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 13.371,
+   "tool_secs": 1.385,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q30",
+   "chars": 11160,
+   "model_in": 7212,
+   "model_out": 3948,
+   "calls": 5,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 5
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 8177
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 37813,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1882,
+   "cost_usd": 0.0517026,
+   "turns": 6,
+   "secs": 20.594,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 18.705,
+   "tool_secs": 1.889,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q4",
+   "chars": 6197,
+   "model_in": 2975,
+   "model_out": 3222,
+   "calls": 6,
+   "failed": 1,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 6
+   },
+   "tool_failed_calls": {
+    "Bash": 1
+   },
+   "tool_chars": {
+    "Bash": 3963
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 26933,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1624,
+   "cost_usd": 0.0414281,
+   "turns": 7,
+   "secs": 15.774,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 14.352,
+   "tool_secs": 1.422,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q5",
+   "chars": 19110,
+   "model_in": 15004,
+   "model_out": 4106,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 2
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 15419
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 25005,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1706,
+   "cost_usd": 0.060674000000000006,
+   "turns": 3,
+   "secs": 20.019,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 17.965,
+   "tool_secs": 2.054,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q6",
+   "chars": 2674,
+   "model_in": 431,
+   "model_out": 2243,
+   "calls": 6,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 6
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 1371
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 25094,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1166,
+   "cost_usd": 0.032499,
+   "turns": 7,
+   "secs": 11.801,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 11.011,
+   "tool_secs": 0.79,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q7",
+   "chars": 4444,
+   "model_in": 1984,
+   "model_out": 2460,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 4
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 2404
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 12901,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1119,
+   "cost_usd": 0.031843399999999994,
+   "turns": 5,
+   "secs": 16.403,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 15.816,
+   "tool_secs": 0.587,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q8",
+   "chars": 2652,
+   "model_in": 825,
+   "model_out": 1827,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 3
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 1524
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 18247,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 905,
+   "cost_usd": 0.02844,
+   "turns": 4,
+   "secs": 8.521,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 7.307,
+   "tool_secs": 1.214,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q9",
+   "chars": 3748,
+   "model_in": 2142,
+   "model_out": 1606,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 3
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 2533
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 19235,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 804,
+   "cost_usd": 0.028570099999999998,
+   "turns": 4,
+   "secs": 9.018,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 8.262,
+   "tool_secs": 0.756,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q1",
+   "chars": 3263,
+   "model_in": 1954,
+   "model_out": 1309,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchCode": 1,
+    "ghGetFileContent": 1
+   },
+   "tool_failed_calls": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchCode": 373,
+    "ghGetFileContent": 1941
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 39691,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 677,
+   "cost_usd": 0.0654051,
+   "turns": 3,
+   "secs": 8.765,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 7.612,
+   "tool_secs": 1.153,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q10",
+   "chars": 5767,
+   "model_in": 3485,
+   "model_out": 2282,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghStructure": 1,
+    "ghGetFileContent": 2
+   },
+   "tool_failed_calls": {
+    "ghStructure": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghStructure": 184,
+    "ghGetFileContent": 3887
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghStructure": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghStructure": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 41785,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1138,
+   "cost_usd": 0.0384395,
+   "turns": 4,
+   "secs": 10.766,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 10.378,
+   "tool_secs": 0.388,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q11",
+   "chars": 8430,
+   "model_in": 5063,
+   "model_out": 3367,
+   "calls": 5,
+   "failed": 2,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchCode": 3,
+    "ghGetFileContent": 2
+   },
+   "tool_failed_calls": {
+    "ghSearchCode": 2,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchCode": 1742,
+    "ghGetFileContent": 4395
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 56345,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1793,
+   "cost_usd": 0.0515388,
+   "turns": 6,
+   "secs": 27.172,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 22.132,
+   "tool_secs": 5.04,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q12",
+   "chars": 4583,
+   "model_in": 2011,
+   "model_out": 2572,
+   "calls": 1,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghGetFileContent": 1
+   },
+   "tool_failed_calls": {
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghGetFileContent": 2332
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 26681,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1103,
+   "cost_usd": 0.032304799999999995,
+   "turns": 2,
+   "secs": 10.182,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 9.297,
+   "tool_secs": 0.885,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q13",
+   "chars": 16189,
+   "model_in": 13338,
+   "model_out": 2851,
+   "calls": 4,
+   "failed": 2,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchHistory": 3,
+    "ghGetHistoryItem": 1
+   },
+   "tool_failed_calls": {
+    "ghSearchHistory": 2,
+    "ghGetHistoryItem": 0
+   },
+   "tool_chars": {
+    "ghSearchHistory": 5107,
+    "ghGetHistoryItem": 8907
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchHistory": 0,
+    "ghGetHistoryItem": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchHistory": 0,
+    "ghGetHistoryItem": 0
+   },
+   "input_tokens": 61759,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1570,
+   "cost_usd": 0.0646819,
+   "turns": 5,
+   "secs": 18.591,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 13.942,
+   "tool_secs": 4.649,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q14",
+   "chars": 3196,
+   "model_in": 1681,
+   "model_out": 1515,
+   "calls": 1,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghGetFileContent": 1
+   },
+   "tool_failed_calls": {
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghGetFileContent": 1893
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 26613,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 834,
+   "cost_usd": 0.0293818,
+   "turns": 2,
+   "secs": 8.262,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 7.834,
+   "tool_secs": 0.428,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q15",
+   "chars": 10945,
+   "model_in": 8603,
+   "model_out": 2342,
+   "calls": 1,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghGetHistoryItem": 1
+   },
+   "tool_failed_calls": {
+    "ghGetHistoryItem": 0
+   },
+   "tool_chars": {
+    "ghGetHistoryItem": 8745
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghGetHistoryItem": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghGetHistoryItem": 0
+   },
+   "input_tokens": 29251,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 944,
+   "cost_usd": 0.0410923,
+   "turns": 2,
+   "secs": 9.621,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 8.944,
+   "tool_secs": 0.677,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q16",
+   "chars": 2401,
+   "model_in": 926,
+   "model_out": 1475,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghGetFileContent": 1,
+    "artifactSearch": 1
+   },
+   "tool_failed_calls": {
+    "ghGetFileContent": 0,
+    "artifactSearch": 0
+   },
+   "tool_chars": {
+    "ghGetFileContent": 456,
+    "artifactSearch": 684
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghGetFileContent": 0,
+    "artifactSearch": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghGetFileContent": 0,
+    "artifactSearch": 0
+   },
+   "input_tokens": 26219,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 733,
+   "cost_usd": 0.026827000000000004,
+   "turns": 3,
+   "secs": 7.537,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 6.694,
+   "tool_secs": 0.843,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q17",
+   "chars": 11728,
+   "model_in": 8336,
+   "model_out": 3392,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchCode": 1,
+    "ghGetFileContent": 2
+   },
+   "tool_failed_calls": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchCode": 797,
+    "ghGetFileContent": 8215
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 59116,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1605,
+   "cost_usd": 0.0525333,
+   "turns": 4,
+   "secs": 15.779,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 14.528,
+   "tool_secs": 1.251,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q18",
+   "chars": 2556,
+   "model_in": 513,
+   "model_out": 2043,
+   "calls": 1,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghGetFileContent": 1
+   },
+   "tool_failed_calls": {
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghGetFileContent": 682
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 26015,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1066,
+   "cost_usd": 0.029099200000000002,
+   "turns": 2,
+   "secs": 9.577,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 9.17,
+   "tool_secs": 0.407,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q19",
+   "chars": 17257,
+   "model_in": 12722,
+   "model_out": 4535,
+   "calls": 7,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchCode": 3,
+    "ghGetFileContent": 4
+   },
+   "tool_failed_calls": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchCode": 2823,
+    "ghGetFileContent": 11483
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 101814,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 2449,
+   "cost_usd": 0.0783586,
+   "turns": 8,
+   "secs": 27.272,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 23.787,
+   "tool_secs": 3.485,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q2",
+   "chars": 2243,
+   "model_in": 772,
+   "model_out": 1471,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchRepo": 1,
+    "ghSearchCode": 2,
+    "ghStructure": 1
+   },
+   "tool_failed_calls": {
+    "ghSearchRepo": 0,
+    "ghSearchCode": 0,
+    "ghStructure": 0
+   },
+   "tool_chars": {
+    "ghSearchRepo": 269,
+    "ghSearchCode": 711,
+    "ghStructure": 202
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghSearchCode": 0,
+    "ghStructure": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghSearchCode": 0,
+    "ghStructure": 0
+   },
+   "input_tokens": 39780,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 846,
+   "cost_usd": 0.0663357,
+   "turns": 5,
+   "secs": 13.403,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 8.621,
+   "tool_secs": 4.782,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q20",
+   "chars": 8656,
+   "model_in": 5875,
+   "model_out": 2781,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghGetFileContent": 2
+   },
+   "tool_failed_calls": {
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghGetFileContent": 6209
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 28510,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1272,
+   "cost_usd": 0.0413108,
+   "turns": 3,
+   "secs": 10.562,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 10.532,
+   "tool_secs": 0.03,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q21",
+   "chars": 39776,
+   "model_in": 34346,
+   "model_out": 5430,
+   "calls": 5,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghGetFileContent": 3,
+    "ghSearchCode": 2
+   },
+   "tool_failed_calls": {
+    "ghGetFileContent": 0,
+    "ghSearchCode": 0
+   },
+   "tool_chars": {
+    "ghGetFileContent": 32790,
+    "ghSearchCode": 2628
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghGetFileContent": 0,
+    "ghSearchCode": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghGetFileContent": 0,
+    "ghSearchCode": 0
+   },
+   "input_tokens": 107964,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 2619,
+   "cost_usd": 0.1155553,
+   "turns": 6,
+   "secs": 24.379,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 20.536,
+   "tool_secs": 3.843,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q22",
+   "chars": 10598,
+   "model_in": 7601,
+   "model_out": 2997,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghGetHistoryItem": 2
+   },
+   "tool_failed_calls": {
+    "ghGetHistoryItem": 0
+   },
+   "tool_chars": {
+    "ghGetHistoryItem": 7993
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghGetHistoryItem": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghGetHistoryItem": 0
+   },
+   "input_tokens": 46933,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1372,
+   "cost_usd": 0.0504242,
+   "turns": 3,
+   "secs": 20.779,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 19.274,
+   "tool_secs": 1.505,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q23",
+   "chars": 7933,
+   "model_in": 4974,
+   "model_out": 2959,
+   "calls": 1,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghGetFileContent": 1
+   },
+   "tool_failed_calls": {
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghGetFileContent": 5189
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 28982,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1375,
+   "cost_usd": 0.0435697,
+   "turns": 2,
+   "secs": 11.263,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 10.749,
+   "tool_secs": 0.514,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q24",
+   "chars": 3564,
+   "model_in": 825,
+   "model_out": 2739,
+   "calls": 1,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchCode": 1
+   },
+   "tool_failed_calls": {
+    "ghSearchCode": 0
+   },
+   "tool_chars": {
+    "ghSearchCode": 926
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchCode": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchCode": 0
+   },
+   "input_tokens": 26094,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1030,
+   "cost_usd": 0.0290708,
+   "turns": 2,
+   "secs": 11.182,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 10.39,
+   "tool_secs": 0.792,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q25",
+   "chars": 16040,
+   "model_in": 12554,
+   "model_out": 3486,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghGetHistoryItem": 2
+   },
+   "tool_failed_calls": {
+    "ghGetHistoryItem": 0
+   },
+   "tool_chars": {
+    "ghGetHistoryItem": 12861
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghGetHistoryItem": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghGetHistoryItem": 0
+   },
+   "input_tokens": 48868,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1511,
+   "cost_usd": 0.057588600000000004,
+   "turns": 3,
+   "secs": 15.629,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 13.869,
+   "tool_secs": 1.76,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q26",
+   "chars": 3513,
+   "model_in": 1268,
+   "model_out": 2245,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghStructure": 2,
+    "ghGetFileContent": 1
+   },
+   "tool_failed_calls": {
+    "ghStructure": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghStructure": 1350,
+    "ghGetFileContent": 495
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghStructure": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghStructure": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 53360,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1165,
+   "cost_usd": 0.0356432,
+   "turns": 4,
+   "secs": 13.517,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 12.895,
+   "tool_secs": 0.622,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q27",
+   "chars": 5455,
+   "model_in": 2594,
+   "model_out": 2861,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghGetFileContent": 1,
+    "ghStructure": 1
+   },
+   "tool_failed_calls": {
+    "ghGetFileContent": 0,
+    "ghStructure": 0
+   },
+   "tool_chars": {
+    "ghGetFileContent": 2614,
+    "ghStructure": 201
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghGetFileContent": 0,
+    "ghStructure": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghGetFileContent": 0,
+    "ghStructure": 0
+   },
+   "input_tokens": 27070,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1382,
+   "cost_usd": 0.036646899999999996,
+   "turns": 3,
+   "secs": 11.266,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 10.538,
+   "tool_secs": 0.728,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q28",
+   "chars": 22285,
+   "model_in": 17388,
+   "model_out": 4897,
+   "calls": 5,
+   "failed": 2,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchCode": 4,
+    "ghGetFileContent": 1
+   },
+   "tool_failed_calls": {
+    "ghSearchCode": 2,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchCode": 6953,
+    "ghGetFileContent": 11600
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 63950,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 2379,
+   "cost_usd": 0.07868499999999999,
+   "turns": 6,
+   "secs": 27.554,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 17.7,
+   "tool_secs": 9.854,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q29",
+   "chars": 15920,
+   "model_in": 10721,
+   "model_out": 5199,
+   "calls": 3,
+   "failed": 1,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchCode": 2,
+    "ghGetFileContent": 1
+   },
+   "tool_failed_calls": {
+    "ghSearchCode": 1,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchCode": 1084,
+    "ghGetFileContent": 10375
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 57684,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 2258,
+   "cost_usd": 0.063604,
+   "turns": 4,
+   "secs": 43.943,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 43.22,
+   "tool_secs": 0.723,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q3",
+   "chars": 6645,
+   "model_in": 4065,
+   "model_out": 2580,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghGetHistoryItem": 1,
+    "ghSearchCode": 1,
+    "ghGetFileContent": 1
+   },
+   "tool_failed_calls": {
+    "ghGetHistoryItem": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghGetHistoryItem": 3828,
+    "ghSearchCode": 360,
+    "ghGetFileContent": 331
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghGetHistoryItem": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghGetHistoryItem": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 42866,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1207,
+   "cost_usd": 0.0399396,
+   "turns": 4,
+   "secs": 11.728,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 11.15,
+   "tool_secs": 0.578,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q30",
+   "chars": 11311,
+   "model_in": 7323,
+   "model_out": 3988,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchCode": 1,
+    "ghGetFileContent": 2
+   },
+   "tool_failed_calls": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchCode": 1548,
+    "ghGetFileContent": 6295
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 57948,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1671,
+   "cost_usd": 0.0509159,
+   "turns": 4,
+   "secs": 22.432,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 19.315,
+   "tool_secs": 3.117,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q4",
+   "chars": 8070,
+   "model_in": 4710,
+   "model_out": 3360,
+   "calls": 5,
+   "failed": 3,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchCode": 4,
+    "ghGetFileContent": 1
+   },
+   "tool_failed_calls": {
+    "ghSearchCode": 3,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchCode": 3223,
+    "ghGetFileContent": 2726
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 56892,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1750,
+   "cost_usd": 0.0497907,
+   "turns": 6,
+   "secs": 58.316,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 13.6,
+   "tool_secs": 44.716,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q5",
+   "chars": 21882,
+   "model_in": 18093,
+   "model_out": 3789,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghGetHistoryItem": 2
+   },
+   "tool_failed_calls": {
+    "ghGetHistoryItem": 0
+   },
+   "tool_chars": {
+    "ghGetHistoryItem": 18423
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghGetHistoryItem": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghGetHistoryItem": 0
+   },
+   "input_tokens": 47116,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1626,
+   "cost_usd": 0.0668392,
+   "turns": 3,
+   "secs": 25.914,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 24.165,
+   "tool_secs": 1.749,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q6",
+   "chars": 7152,
+   "model_in": 4435,
+   "model_out": 2717,
+   "calls": 7,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghGetFileContent": 4,
+    "ghSearchRepo": 1,
+    "ghSearchCode": 1,
+    "ghStructure": 1
+   },
+   "tool_failed_calls": {
+    "ghGetFileContent": 0,
+    "ghSearchRepo": 0,
+    "ghSearchCode": 0,
+    "ghStructure": 0
+   },
+   "tool_chars": {
+    "ghGetFileContent": 3880,
+    "ghSearchRepo": 283,
+    "ghSearchCode": 866,
+    "ghStructure": 465
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghGetFileContent": 0,
+    "ghSearchRepo": 0,
+    "ghSearchCode": 0,
+    "ghStructure": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghGetFileContent": 0,
+    "ghSearchRepo": 0,
+    "ghSearchCode": 0,
+    "ghStructure": 0
+   },
+   "input_tokens": 88532,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1505,
+   "cost_usd": 0.0508204,
+   "turns": 8,
+   "secs": 42.792,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 14.396,
+   "tool_secs": 28.396,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q7",
+   "chars": 5244,
+   "model_in": 3071,
+   "model_out": 2173,
+   "calls": 1,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghGetFileContent": 1
+   },
+   "tool_failed_calls": {
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghGetFileContent": 3357
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 27298,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 939,
+   "cost_usd": 0.033086000000000004,
+   "turns": 2,
+   "secs": 16.828,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 15.94,
+   "tool_secs": 0.888,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q8",
+   "chars": 2133,
+   "model_in": 594,
+   "model_out": 1539,
+   "calls": 1,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchCode": 1
+   },
+   "tool_failed_calls": {
+    "ghSearchCode": 0
+   },
+   "tool_chars": {
+    "ghSearchCode": 922
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchCode": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchCode": 0
+   },
+   "input_tokens": 25903,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 661,
+   "cost_usd": 0.0249483,
+   "turns": 2,
+   "secs": 10.613,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 7.592,
+   "tool_secs": 3.021,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q9",
+   "chars": 5188,
+   "model_in": 3396,
+   "model_out": 1792,
+   "calls": 4,
+   "failed": 2,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchCode": 2,
+    "ghGetFileContent": 2
+   },
+   "tool_failed_calls": {
+    "ghSearchCode": 1,
+    "ghGetFileContent": 1
+   },
+   "tool_chars": {
+    "ghSearchCode": 1246,
+    "ghGetFileContent": 2695
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 41037,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1080,
+   "cost_usd": 0.0372036,
+   "turns": 5,
+   "secs": 9.282,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 8.746,
+   "tool_secs": 0.536,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  }
+ ],
+ "prior_attempts": [],
+ "judgments": [
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q1",
+   "scores": {
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    },
+    "mcp": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "Both answers are fully correct; supplied authoritative metrics give X 783 fewer characters (2480 versus 3263), though instrumented logs were unavailable for independent audit."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q10",
+   "scores": {
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 4
+    },
+    "mcp": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    }
+   },
+   "winner": "mcp",
+   "reason": "Both establish the verified entry chain correctly; Y uses 4,617 fewer characters (5,767 versus 10,384)."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q11",
+   "scores": {
+    "gh-lean": {
+     "correctness": 4,
+     "depth": 3,
+     "workflow": 5
+    },
+    "mcp": {
+     "correctness": 4,
+     "depth": 3,
+     "workflow": 3
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "Both materially misstate the channel method; at equal correctness, X uses 1,399 fewer characters (7,031 versus 8,430)."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q12",
+   "scores": {
+    "mcp": {
+     "correctness": 7,
+     "depth": 3,
+     "workflow": 5
+    },
+    "gh-lean": {
+     "correctness": 7,
+     "depth": 3,
+     "workflow": 5
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "Equal correctness scores; supplied metrics give Y a 50-character advantage (4533 vs 4583), pending instrumented-log verification."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q13",
+   "scores": {
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 4
+    },
+    "mcp": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 3
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "Both answers are fully correct; X wins the character tiebreak with 7,945 versus 16,189 reported characters, a gap of 8,244."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q14",
+   "scores": {
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    },
+    "mcp": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 5
+    }
+   },
+   "winner": "tie",
+   "reason": "Both correctly identify an explicitly nonoptional peer and no regular dependency; instrumented logs are unavailable to verify the character tiebreak."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q15",
+   "scores": {
+    "mcp": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 5
+    },
+    "gh-lean": {
+     "correctness": 7,
+     "depth": 3,
+     "workflow": 5
+    }
+   },
+   "winner": "mcp",
+   "reason": "X recognizes the reviewed scope correction; Y incorrectly asserts that merged Child includes Promise<string | Child[]> and uses resolveArrayToFragment()."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q16",
+   "scores": {
+    "mcp": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    },
+    "gh-lean": {
+     "correctness": 7,
+     "depth": 3,
+     "workflow": 4
+    }
+   },
+   "winner": "mcp",
+   "reason": "X supports both dependency fields; Y explicitly leaves ESLint's containing dependency field unverified."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q17",
+   "scores": {
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    },
+    "mcp": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "Both answers are fully correct; X uses 3,214 fewer instrumented characters (8,514 versus 11,728)."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q18",
+   "scores": {
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 4
+    },
+    "mcp": {
+     "correctness": 7,
+     "depth": 3,
+     "workflow": 4
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "X verifies peerDependenciesMeta.sass.optional=true; Y explicitly leaves this required consumer-install fact unconfirmed."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q19",
+   "scores": {
+    "mcp": {
+     "correctness": 6,
+     "depth": 3,
+     "workflow": 4
+    },
+    "gh-lean": {
+     "correctness": 6,
+     "depth": 3,
+     "workflow": 5
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "Comparable correctness with incomplete native dispatch coverage; Y uses 9,804 fewer supplied authoritative characters."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q2",
+   "scores": {
+    "mcp": {
+     "correctness": 7,
+     "depth": 3,
+     "workflow": 4
+    },
+    "gh-lean": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 5
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "Y directly checks the pinned source entry for absence; X relies solely on an index not verified against the pinned SHA."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q20",
+   "scores": {
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    },
+    "mcp": {
+     "correctness": 7,
+     "depth": 3,
+     "workflow": 5
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "X supports both stdout and stderr forwarding; Y explicitly leaves the required stderr connection unconfirmed."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q21",
+   "scores": {
+    "gh-lean": {
+     "correctness": 4,
+     "depth": 3,
+     "workflow": 4
+    },
+    "mcp": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 4
+    }
+   },
+   "winner": "mcp",
+   "reason": "Y correctly identifies the last after_agent exit and reverse hook chains; X also incorrectly claims all END targets remap to exit."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q22",
+   "scores": {
+    "mcp": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 5
+    },
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 4
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "Both answers verify all required facts; Y uses 5,171 characters versus X's 10,598, a 5,427-character advantage."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q23",
+   "scores": {
+    "gh-lean": {
+     "correctness": 7,
+     "depth": 3,
+     "workflow": 5
+    },
+    "mcp": {
+     "correctness": 4,
+     "depth": 3,
+     "workflow": 5
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "X proves the final write_iter transition; Y incorrectly claims rw_verify_area checks mandatory locks at the pinned ref."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q24",
+   "scores": {
+    "gh-lean": {
+     "correctness": 7,
+     "depth": 4,
+     "workflow": 4
+    },
+    "mcp": {
+     "correctness": 7,
+     "depth": 3,
+     "workflow": 5
+    }
+   },
+   "winner": "mcp",
+   "reason": "Both correctly enumerate every call but overstate parameter-removal breakage; at equal correctness, Y uses 6,249 fewer characters."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q25",
+   "scores": {
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 1
+    },
+    "mcp": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 5
+    }
+   },
+   "winner": "mcp",
+   "reason": "Equal verified correctness; Y uses 8,393 fewer characters and fetches selected hunks, while X dumps the full PR patch."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q26",
+   "scores": {
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 4
+    },
+    "mcp": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 5
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "Equal verified correctness; X uses 586 fewer authoritative characters (2927 versus 3513)."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q27",
+   "scores": {
+    "gh-lean": {
+     "correctness": 4,
+     "depth": 3,
+     "workflow": 5
+    },
+    "mcp": {
+     "correctness": 4,
+     "depth": 3,
+     "workflow": 5
+    }
+   },
+   "winner": "tie",
+   "reason": "Both omit CancelledError, Mutation, and Query; no instrumented log verifies the claimed character gap."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q28",
+   "scores": {
+    "gh-lean": {
+     "correctness": 4,
+     "depth": 2,
+     "workflow": 4
+    },
+    "mcp": {
+     "correctness": 7,
+     "depth": 4,
+     "workflow": 4
+    }
+   },
+   "winner": "mcp",
+   "reason": "Y correctly documents curated memory storage and character-limit enforcement; X materially confuses the retained-tail budget with summary sizing."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q29",
+   "scores": {
+    "mcp": {
+     "correctness": 7,
+     "depth": 4,
+     "workflow": 4
+    },
+    "gh-lean": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 4
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "Y verifies Bearer authorization on every HTTP request and the complete token-acquisition sequence; X leaves the every-request requirement unconfirmed."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q3",
+   "scores": {
+    "mcp": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    },
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "Both answers are fully correct and verified; Y uses 349 fewer characters (6296 versus 6645)."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q30",
+   "scores": {
+    "mcp": {
+     "correctness": 4,
+     "depth": 4,
+     "workflow": 4
+    },
+    "gh-lean": {
+     "correctness": 7,
+     "depth": 4,
+     "workflow": 5
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "Y explains pipe creation with verified endpoint-wrapping code; X explicitly leaves pipe establishment unanswered."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q4",
+   "scores": {
+    "mcp": {
+     "correctness": 7,
+     "depth": 3,
+     "workflow": 3
+    },
+    "gh-lean": {
+     "correctness": 7,
+     "depth": 3,
+     "workflow": 4
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "Both incorrectly say end() starts the first request; at equal correctness, Y uses 1,873 fewer characters."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q5",
+   "scores": {
+    "mcp": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 4
+    },
+    "gh-lean": {
+     "correctness": 7,
+     "depth": 4,
+     "workflow": 4
+    }
+   },
+   "winner": "mcp",
+   "reason": "X correctly explains the hydration handoff; Y says nextNode goes to mountComponent, but it goes to the Vapor interface hydrate call."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q6",
+   "scores": {
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 4
+    },
+    "mcp": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 4
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "Both answers verify every required fact; X wins the correctness tie with 4,478 fewer characters (2,674 versus 7,152)."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q7",
+   "scores": {
+    "mcp": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 5
+    },
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 4
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "Both answers are fully correct on the requested facts; Y uses 800 fewer authoritative characters (4444 versus 5244)."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q8",
+   "scores": {
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    },
+    "mcp": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    }
+   },
+   "winner": "mcp",
+   "reason": "Both answers fully identify the requested declarations; supplied authoritative metrics give Y a 519-character advantage."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q9",
+   "scores": {
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    },
+    "mcp": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 3
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "Both answers are fully correct; X uses 1,440 fewer characters according to the supplied authoritative metrics."
+  }
+ ]
+}

@@ -38,7 +38,7 @@ try {
         record.ranges=mergeRanges(row.ranges.map(([start,end])=>[Math.max(1,start-surrounding),Math.min(totalLines,end+surrounding)]));
         if(surrounding===0) record.responses=[...row.responses];
         else if(record.ranges.length) {
-          const query={path:file,snapshot:row.snapshot,ranges:record.ranges.map(range=>range.join('-')),minify:'none'};
+          const query={path:file,snapshot:row.snapshot,ranges:record.ranges.map(range=>range.join('-'))};
           const response=await invoke('localFetch',{queries:[query]},fixture,localEnv);
           record.responses.push(response);
           if(response.code!==0||response.json?.results?.some(row=>row.status==='error'||row.data?.next)) throw new Error('Expanded read failed or remained paged');

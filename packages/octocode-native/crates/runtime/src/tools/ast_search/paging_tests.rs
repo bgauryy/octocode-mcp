@@ -138,6 +138,39 @@ fn symbol_pages_fill_the_window_and_walk_every_symbol_once() {
     assert!(outputs.len() <= 12, "{} calls", outputs.len());
 }
 
+/// A directory page states each file's path once, so a row is measured
+/// without it: pages of many small files under a long path fill the window
+/// as a single file's pages do.
+#[test]
+fn directory_symbol_pages_measure_rows_as_delivered() {
+    let root = Fixture::new();
+    for index in 0..300 {
+        root.write(
+            &format!("packages/some-long-package-name/src/modules/file_{index:03}.ts"),
+            format!("export function a{index}() {{}}\nexport function b{index}() {{}}\n"),
+        );
+    }
+    let outputs = walk(
+        &root.0,
+        json!({"operation":"symbols","path":root.0.join("packages")}),
+        symbol_rows,
+    );
+    let mut all = Vec::new();
+    for (index, out) in outputs.iter().enumerate() {
+        let chars = json_chars(out);
+        assert!(chars <= WINDOW, "page {index} is {chars} chars");
+        if out["pagination"]["hasMore"] == true {
+            assert!(
+                chars * 10 >= WINDOW * 8,
+                "page {index} holds only {chars} chars"
+            );
+        }
+        all.extend(symbol_rows(out));
+    }
+    assert_eq!(all.len(), 600, "{} rows", all.len());
+    assert_eq!(all.iter().collect::<BTreeSet<_>>().len(), 600);
+}
+
 #[test]
 fn an_explicit_symbol_page_size_is_exact() {
     let root = Fixture::new();
@@ -272,7 +305,12 @@ fn a_syntax_tree_pages_by_bytes_and_reaches_every_node_once() {
     );
     let mut ids = Vec::new();
     for (index, out) in outputs.iter().enumerate() {
-        let chars = json_chars(out);
+        // As delivered: `returnedBytes` is a `stats` extra a default row drops.
+        let mut delivered = out.clone();
+        delivered
+            .as_object_mut()
+            .map(|row| row.remove("returnedBytes"));
+        let chars = json_chars(&delivered);
         assert!(chars <= WINDOW, "page {index} is {chars} chars");
         ids.extend(
             out["nodes"]
@@ -292,4 +330,39 @@ fn a_syntax_tree_pages_by_bytes_and_reaches_every_node_once() {
         "{} calls for {total} nodes",
         outputs.len()
     );
+}
+
+/// A later window-sized page reads on from the walk its first page kept
+/// (no parse or walk from the first node again), and a page past the last
+/// is the shared out-of-range outcome with the page count, never an empty
+/// success.
+#[test]
+fn a_syntax_tree_page_reuses_its_walk_and_past_the_end_is_out_of_range() {
+    let root = Fixture::new();
+    let file = root.0.join("tree.ts");
+    root.write("tree.ts", numbered_functions(300));
+    let (paths, security) = simple_policy(&root.0);
+    let run = |row: Value| {
+        let query: AstSearchQuery = serde_json::from_value(row).expect("typed row");
+        execute_ast(&query, &paths, &security, &NeverCancel, Some(WINDOW)).expect("tree")
+    };
+    let first = run(json!({"operation":"syntaxTree","path":file}));
+    let pages = first["pagination"]["totalPages"].as_u64().expect("pages");
+    assert!(pages > 2, "{}", first["pagination"]);
+    let next = first["next"]["nextPage"]["query"]["queries"][0].clone();
+    let inspected = super::syntax::inspections();
+    let second = run(next.clone());
+    assert_eq!(
+        super::syntax::inspections(),
+        inspected,
+        "page 2 re-read the tree"
+    );
+    assert_eq!(second["pagination"]["currentPage"], 2, "{second}");
+    let mut past = next;
+    past["page"] = json!(pages + 5);
+    let out = run(past);
+    assert!(out.get("errorCode").is_none(), "{out}");
+    assert_eq!(out["nodes"], json!([]), "{out}");
+    assert_eq!(out["pagination"]["outOfRange"], true, "{out}");
+    assert_eq!(out["pagination"]["totalPages"], pages, "{out}");
 }

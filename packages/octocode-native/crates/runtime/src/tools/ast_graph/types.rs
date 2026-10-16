@@ -1,11 +1,16 @@
 use crate::tools::num::u32_of;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub use crate::contracts::tool_types::{AstTopologyQuery, AstTopologyQueryRustWorkspace};
 
-/// The file bound of a scan without `maxFiles`.
-pub(crate) const DEFAULT_SCAN_FILES: u32 = 20_000;
+/// The file bound of a scan without `maxFiles` (contract
+/// `astTopology.semanticPolicy.defaultScanFiles`).
+pub(crate) const DEFAULT_SCAN_FILES: u32 = {
+    let files = crate::tools::id::ast_topology_policy::DEFAULT_SCAN_FILES;
+    assert!(files <= u32::MAX as usize);
+    files as u32
+};
 
 /// The `analysis` discriminant of an [`AstTopologyQuery`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -160,8 +165,8 @@ impl AstTopologyQuery {
     pub(crate) fn page(&self) -> u32 {
         every_analysis!(self, page => u32_of(*page))
     }
-    pub(crate) fn page_size(&self) -> u32 {
-        every_analysis!(self, page_size => u32_of(*page_size))
+    pub(crate) fn page_size(&self) -> Option<usize> {
+        every_analysis!(self, page_size => page_size.map(crate::tools::num::usize_of))
     }
     pub(crate) fn diagnostic_page(&self) -> u32 {
         every_analysis!(self, diagnostic_page => diagnostic_page.map_or(1, u32_of))
@@ -174,8 +179,8 @@ impl AstTopologyQuery {
     pub(crate) fn diagnostic_page_size(&self) -> u32 {
         every_analysis!(self, diagnostic_page_size => u32_of(*diagnostic_page_size))
     }
-    pub(crate) fn diagnostic_snapshot(&self) -> Option<&str> {
-        every_analysis!(self, diagnostic_snapshot => diagnostic_snapshot.as_deref().map(String::as_str))
+    pub(crate) fn snapshot(&self) -> Option<&str> {
+        every_analysis!(self, snapshot => snapshot.as_deref().map(String::as_str))
     }
     pub(crate) fn rust_workspace(&self) -> Option<AstTopologyQueryRustWorkspace> {
         every_analysis!(self, rust_workspace => *rust_workspace)
@@ -184,7 +189,7 @@ impl AstTopologyQuery {
 
 pub(crate) type RawFacts = octocode_engine::graph::GraphFactsDocument;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct Declaration {
     /// Stable occurrence id from the facts (file + name + position + kind).
     pub id: String,
@@ -210,7 +215,7 @@ impl Declaration {
         }
     }
 }
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct Import {
     pub imported_name: String,
     /// Binding name inside the importing file (`import { a as b }` → `b`).
@@ -225,13 +230,13 @@ pub(crate) struct Import {
     /// `None` when the producer could not tell, so the import counts as used.
     pub used_in: Option<Vec<String>>,
 }
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct Reexport {
     pub local_name: String,
     pub imported_name: String,
     pub target: Option<String>,
 }
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct Call {
     /// Declaration id of the caller; `None` for module-level code.
     pub caller_id: Option<String>,
@@ -247,9 +252,17 @@ pub(crate) struct Call {
     /// callee is unqualified or the prefix did not resolve.
     pub target: Option<String>,
 }
+/// A Rust qualified path outside call and `use` position (a constant, type,
+/// function value, or a path in a macro body): its line and the file its
+/// module prefix names; `target` is `None` when the prefix did not resolve.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct PathRef {
+    pub line: u32,
+    pub target: Option<String>,
+}
 /// A declaration's base type (`class A extends Base`, `impl Display for A`),
 /// as written at the declaration site.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct Heritage {
     /// Declaration id of the derived type.
     pub decl_id: String,
@@ -259,7 +272,7 @@ pub(crate) struct Heritage {
     pub target: String,
     pub line: u32,
 }
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub(crate) struct FileFacts {
     pub declarations: Vec<Declaration>,
     pub imports: Vec<Import>,
@@ -267,23 +280,45 @@ pub(crate) struct FileFacts {
     /// Line of each linked re-export statement (named or `*`), by target.
     pub reexport_lines: Vec<(String, u32)>,
     pub calls: Vec<Call>,
+    /// Rust qualified paths outside call and `use` position.
+    pub paths: Vec<PathRef>,
     /// Base-type relations of this file's declarations.
     pub heritage: Vec<Heritage>,
     /// Value-reference count per declaration id (declaration names, export
     /// clauses and call targets excluded). A missing id was not counted.
     pub reference_counts: BTreeMap<String, u32>,
-    /// How the counts were produced: `semantic-references` (scope-resolved
-    /// JS/TS symbols) or `syntax-references` (identifier tokens by name).
-    pub reference_basis: &'static str,
+    /// How the counts were produced.
+    pub reference_basis: ReferenceBasis,
     pub language: String,
     /// Source content digest (`octocode_engine::digest::sha256`).
     pub digest: String,
     /// Size and change times of the bytes `digest` hashed, when settled.
     pub stamp: Option<octocode_engine::graph::SourceStamp>,
 }
+/// How a file's reference counts were produced.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) enum ReferenceBasis {
+    /// Scope-resolved JS/TS symbols.
+    #[default]
+    #[serde(rename = "semantic-references")]
+    Semantic,
+    /// Identifier tokens by name.
+    #[serde(rename = "syntax-references")]
+    Syntax,
+}
+
+impl ReferenceBasis {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Semantic => "semantic-references",
+            Self::Syntax => "syntax-references",
+        }
+    }
+}
+
 pub(crate) type Node = octocode_engine::graph::FileGraphNode;
 
-#[derive(Clone, Debug, Serialize, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq, Ord, PartialOrd)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Diagnostic {
     pub file: String,
@@ -293,7 +328,7 @@ pub(crate) struct Diagnostic {
     pub message: String,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub(crate) struct BuiltGraph {
     pub root: std::path::PathBuf,
     pub display_path: String,
@@ -314,7 +349,9 @@ pub(crate) struct BuiltGraph {
     pub imports: [u32; 5],
     /// Statements already tallied in `imports` for the file named by
     /// `counted_file`, so a statement that binds several names counts once.
+    #[serde(skip)]
     pub(super) counted_file: String,
+    #[serde(skip)]
     pub(super) counted: BTreeSet<(usize, u32, String)>,
     pub diagnostics: Vec<Diagnostic>,
     pub namespace_targets: BTreeSet<String>,

@@ -44,7 +44,7 @@ and VS Code extension are thin adapters with no tool logic.
 |---|---|---|
 | `packages/octocode-native` | `@octocodeai/octocode-native` | The Rust engine: every tool, the native `octocode` binary, and the N-API addon the MCP server loads. Six platform packages under `npm/<platform>` carry the binaries |
 | `packages/octocode-mcp` | `octocode-mcp` | Thin stdio MCP server: loads the addon, checks the contract fingerprint, registers the available tools |
-| `packages/octocode` | `octocode` | Node CLI launcher (`npx octocode`): runs the native binary; owns `octocode skill` and the install picker |
+| `packages/octocode` | `octocode` | Node CLI launcher (`npx octocode`): forwards unchanged arguments and stdio to the native binary; native owns all commands |
 | `packages/octocode-config` | `@octocodeai/config` (private) | The only tool-contract generator, plus configuration loading (home, `.env`, `.octocoderc`). Bundled into the MCP server and CLI |
 | `packages/octocode-vscode` | `octocode-mcp-vscode` | VS Code extension: GitHub sign-in, token sync, MCP install across editors. Runs no research tools |
 | `packages/octocode-claude-plugin` | `@octocodeai/claude-plugin` | Claude Code plugin: MCP launch config, public skills, onboarding |
@@ -52,7 +52,6 @@ and VS Code extension are thin adapters with no tool logic.
 | `packages/octocode-pi-extension` | `@octocodeai/pi-extension` | Pi coding-agent extension: guarded file tools, Octocode MCP, skills, subagents, web and browser tools |
 | `packages/octocode-agents-communication` | `@octocodeai/octocode-agents-communication` | MCP server and CLI for cross-agent coordination: session identity, path leases, messages |
 | `packages/octocode-chrome-devtools` | `@octocodeai/octocode-chrome-devtools` | Chrome DevTools MCP server and CLI for live-browser work |
-| `packages/octocode-skill-installer` | `@octocodeai/octocode-skill-installer` (private) | Library bundled into the CLI that installs, links and upgrades skills |
 | `packages/octocode-mcp-cli` | `octocode-mcp-cli` (private) | Library that maps MCP tools and instructions to a Zod CLI and back |
 | `packages/octocode-benchmark` | `@octocodeai/octocode-benchmark` (private) | Research benchmark: Octocode MCP versions against other tools, blind-judged, measured in characters and time |
 
@@ -121,10 +120,9 @@ Dogfood the local CLI, MCP server and skills, and turn what you learn into impro
 them over shell reads: `localSearch` instead of `rg`/`grep`, `localFetch` instead of `cat`/`sed`,
 `structureSearch` instead of `ls`/`find`, and `astSearch`/`lspSearch` for symbols. Follow every
 `next.*` page or name what stays unread; `hints.*` are optional leads. Graph and AST edges are
-candidates: confirm callers with `lspSearch` before claiming code is unused. Record verified
-defects, open decisions and known limitations in [ISSUES.md](ISSUES.md); when a tool has a bad
-default, a misleading hint or a missing continuation, report it there instead of working around it
-silently, and delete the entry once it is fixed.
+candidates: confirm callers with `lspSearch` before claiming code is unused. When a tool has a bad
+default, a misleading hint or a missing continuation, report it to the user instead of working
+around it silently.
 
 ## Release
 

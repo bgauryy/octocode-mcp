@@ -216,6 +216,13 @@ fn reference(
         *value = candidate;
         return Ok(());
     }
+    if exclusive && let Some(fields) = required_alternatives(branches) {
+        return Err(issue(
+            "schema.union",
+            path.to_vec(),
+            format!("Send exactly one of: {}.", fields.join(", ")),
+        ));
+    }
     if let Some(mixed) = mixed_forms(&failures, path) {
         return Err(mixed);
     }
@@ -285,6 +292,23 @@ fn reference(
     // Branch scoring may group key errors for parity, but the selected branch
     // must retain individual paths and schemas for precise diagnostics.
     Err(ContractValidationError { issues: selected })
+}
+
+/// The fields of a `oneOf` whose branches each only require one field
+/// (`[{required:["state"]},{required:["source"]}]`): the value must carry
+/// exactly one of them, whether it sent none or several.
+fn required_alternatives(branches: &[Value]) -> Option<Vec<&str>> {
+    branches
+        .iter()
+        .map(|branch| {
+            let branch = branch.as_object().filter(|branch| branch.len() == 1)?;
+            match branch.get("required")?.as_array()?.as_slice() {
+                [field] => field.as_str(),
+                _ => None,
+            }
+        })
+        .collect::<Option<Vec<_>>>()
+        .filter(|fields| fields.len() > 1)
 }
 
 /// A missing required field that the schema pins to literals
@@ -528,6 +552,20 @@ fn annotate_sibling_branch_fields(
         let Some(field) = item.path.last() else {
             continue;
         };
+        // The fields any branch lists the unknown field's value for: the
+        // selector a misnamed `type`/`analysis` meant.
+        let mut listing = branches
+            .iter()
+            .filter_map(|branch| branch_object(root, branch).get("properties")?.as_object())
+            .flat_map(|properties| super::schema::fields_listing(root, properties, &value[field]))
+            .collect::<Vec<_>>();
+        listing.sort();
+        listing.dedup();
+        if !listing.is_empty()
+            && let Some(schema) = item.schema.as_mut().and_then(Value::as_object_mut)
+        {
+            schema.insert("valueFields".into(), serde_json::json!(listing));
+        }
         let declaring = branches
             .iter()
             .map(|branch| branch_object(root, branch))

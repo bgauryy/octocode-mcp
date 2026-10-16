@@ -1,4 +1,4 @@
-//! astSearch patterns and rules: compile errors, relaxed retries, rule
+//! astSearch patterns and rules: compile errors, exact patterns, rule
 //! spellings, and syntax-tree error rows.
 use super::test_rows::*;
 use crate::tools::cancel::NeverCancel;
@@ -87,6 +87,78 @@ fn syntax_tree_of_an_unsupported_file_is_an_error_row() {
     assert!(out.get("isPartial").is_none(), "{out}");
 }
 
+/// `line` roots the tree at the smallest node covering that line: the
+/// rows start at the statement, not at the file's program node.
+#[test]
+fn syntax_tree_starts_at_the_node_covering_a_line() {
+    let root = Fixture::new();
+    let file = root.0.join("a.ts");
+    std::fs::write(&file, "const a = 1;\nfunction f() {\n  return a;\n}\n").expect("file");
+    let out = run(
+        &root.0,
+        json!({"operation":"syntaxTree","path":file,"line":3}),
+    )
+    .expect("row");
+    let first = out["nodes"][0].as_str().expect("node row");
+    assert!(first.contains("return_statement 3:"), "{out}");
+    assert!(!out.to_string().contains("program"), "{out}");
+}
+
+/// A `line` past the last line is invalid input that names the line
+/// count, with the whole-file tree as its repair; never a failed execution
+/// that suggests broadening.
+#[test]
+fn syntax_tree_line_past_the_end_is_invalid_input_with_a_repair() {
+    let root = Fixture::new();
+    let file = root.0.join("a.ts");
+    std::fs::write(&file, "const a = 1;\nfunction f() {\n  return a;\n}\n").expect("file");
+    let error = run(
+        &root.0,
+        json!({"operation":"syntaxTree","path":file,"line":99}),
+    )
+    .expect_err("past the end");
+    assert_eq!(error.code, "invalidInput", "{error:?}");
+    assert!(error.message.contains("(4 lines)"), "{error:?}");
+    let repair = &error.next.as_deref().expect("repair")["repair"];
+    let row = &repair["query"]["queries"][0];
+    assert_eq!(row["operation"], "syntaxTree", "{repair}");
+    assert!(row.get("line").is_none(), "{repair}");
+    crate::contracts::validate_query("astSearch", row.clone()).expect("a valid repair row");
+}
+
+/// A blank `line` roots the tree at the next item and says so once, on the
+/// first page only.
+#[test]
+fn syntax_tree_blank_line_snaps_to_the_next_item_and_notes_it_once() {
+    let root = Fixture::new();
+    let file = root.0.join("a.ts");
+    std::fs::write(
+        &file,
+        "const a = 1;\n\nfunction f() {\n  const b = a;\n  const c = b;\n  return c;\n}\n",
+    )
+    .expect("file");
+    let first = run(
+        &root.0,
+        json!({"operation":"syntaxTree","path":file,"line":2,"pageSize":3}),
+    )
+    .expect("row");
+    let node = first["nodes"][0].as_str().expect("node row");
+    assert!(node.contains("function_declaration 3:"), "{first}");
+    assert_eq!(
+        first["diagnostics"][0]["code"], "syntaxTree.options.lineBlank",
+        "{first}"
+    );
+    let mut next = first["next"]["nextPage"]["query"]["queries"][0].clone();
+    assert_eq!(next["line"], 2, "{first}");
+    next["mainGoal"] = json!("test");
+    let second = run(&root.0, next).expect("page 2");
+    assert!(
+        second["nodes"].as_array().is_some_and(|n| !n.is_empty()),
+        "{second}"
+    );
+    assert!(second.get("diagnostics").is_none(), "{second}");
+}
+
 /// A failed inspection states its error once: the row carries no empty
 /// page, no snapshot, no single-page block and no diagnostics that repeat
 /// `error`, and no recovery text about paging.
@@ -147,42 +219,108 @@ fn patterns_without_metavariables_offer_no_capture_expansion() {
     );
 }
 
+/// A pattern is the answer as written: one that omits a part (Rust
+/// visibility, a return type) matches only items spelled without it, with
+/// no silent broader rule, and equals its `rule: {pattern}` form.
 #[test]
-fn rust_item_pattern_without_visibility_also_matches_pub_items() {
+fn a_pattern_matches_exactly_as_written() {
     let root = Fixture::new();
-    let source = root.0.join("lib.rs");
+    let rust = root.0.join("items.rs");
     std::fs::write(
-        &source,
-        "pub fn a() -> Result<u8, String> { Ok(1) }\nfn b() -> Result<u8, String> { Ok(2) }\n",
+        &rust,
+        "pub fn a() -> u8 { 1 }\npub(crate) fn b() {}\nfn c() {}\n",
     )
-    .expect("source");
-    let relaxed = |out: &serde_json::Value| {
-        out["diagnostics"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .any(|d| d["code"] == "structural.pattern.relaxed" && d["severity"] == "warning")
+    .expect("rust");
+    let typed = root.0.join("typed.ts");
+    std::fs::write(
+        &typed,
+        "export function typed(a: number): number { return a; }\nexport function untyped(b) { return b; }\n",
+    )
+    .expect("typed");
+    let matched = |path: &PathBuf, query: serde_json::Value| {
+        let mut query = query;
+        query["operation"] = json!("match");
+        query["path"] = json!(path);
+        run(&root.0, query).expect("match")
     };
-    // ast-grep reads the visibility modifier as a named child, so `fn` alone
-    // skips `pub fn`; the result also runs the visible spelling and says so.
-    let out = run(
-        &root.0,
-        json!({"operation":"match","mainGoal":"test","reasoning":"test","path":source,
-            "pattern":"fn $N() -> Result<$T, String> { $$$B }"}),
+    for (path, pattern, count) in [
+        (&rust, "fn $N() { $$$B }", 1),
+        (&rust, "pub fn $N() -> $R { $$$B }", 1),
+        (&typed, "export function $N($$$A) { $$$B }", 1),
+    ] {
+        let out = matched(path, json!({"pattern": pattern}));
+        assert_eq!(out["matchCount"], count, "{pattern}: {out}");
+        assert!(
+            out["diagnostics"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .all(|d| d["code"] != "structural.pattern.relaxed"),
+            "{pattern}: {out}"
+        );
+        let rule = matched(path, json!({"rule": {"pattern": pattern}}));
+        assert_eq!(out["files"], rule["files"], "{pattern}: {out}");
+    }
+}
+
+/// An exact declaration pattern that matches nothing while the scope holds
+/// declarations of its kind gets a diagnostic counting them and a rule lead
+/// that lists them (named as the pattern names it); an expression pattern,
+/// or a scope without the kind, gets neither.
+#[test]
+fn an_exact_declaration_miss_counts_the_kind_and_leads_to_its_rule() {
+    let root = Fixture::new();
+    let dir = root.0.join("src");
+    std::fs::create_dir_all(&dir).expect("dir");
+    std::fs::write(
+        dir.join("items.rs"),
+        "pub(crate) fn a() -> u8 { 1 }\npub(crate) fn b() -> u8 { 2 }\nstruct S;\n",
     )
-    .expect("match");
-    assert_eq!(out["matchCount"], 2, "{out}");
-    assert!(relaxed(&out), "{out}");
-    checks::assert_absent(&out, "visibilityExact");
-    // A pattern that already names the visibility is run as written.
-    let out = run(
-        &root.0,
-        json!({"operation":"match","mainGoal":"test","reasoning":"test","path":source,
-            "pattern":"pub fn $N() -> Result<$T, String> { $$$B }"}),
-    )
-    .expect("match");
-    assert_eq!(out["matchCount"], 1, "{out}");
-    assert!(!relaxed(&out), "{out}");
+    .expect("rust");
+    std::fs::write(dir.join("more.rs"), "pub fn run() -> u8 { 3 }\n").expect("rust");
+    let matched = |path: &PathBuf, pattern: &str| {
+        run(
+            &root.0,
+            json!({"operation":"match","path":path,"pattern":pattern}),
+        )
+        .expect("match")
+    };
+    let miss = matched(&dir, "fn $NAME($$$ARGS) -> $R { $$$BODY }");
+    assert_eq!(miss["matchCount"], 0, "{miss}");
+    let note = miss["diagnostics"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|d| d["code"] == "structural.pattern.exact")
+        .unwrap_or_else(|| panic!("exact-miss diagnostic: {miss}"));
+    assert!(
+        note["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("3 function_item node(s) in 2 file(s)")),
+        "{note}"
+    );
+    let lead = &miss["next"]["broadenSearch"]["query"]["queries"][0];
+    assert_eq!(lead["rule"], json!({"kind":"function_item"}), "{miss}");
+    assert!(lead.get("pattern").is_none(), "{lead}");
+    crate::contracts::validate_query("astSearch", lead.clone()).expect("a valid lead row");
+    let mut follow = lead.clone();
+    follow["mainGoal"] = json!("test");
+    let listed = run(&root.0, follow).expect("lead runs");
+    assert_eq!(listed["matchCount"], 3, "{listed}");
+    // A named pattern lists only its name.
+    let named = matched(&dir.join("more.rs"), "fn run() -> u8 { 3 }");
+    let lead = &named["next"]["broadenSearch"]["query"]["queries"][0];
+    assert_eq!(
+        lead["rule"],
+        json!({"kind":"function_item","has":{"kind":"identifier","regex":"^run$"}}),
+        "{named}"
+    );
+    // An expression pattern is no declaration: no count, no lead.
+    let call = matched(&dir, "$X.unwrap()");
+    assert!(call["next"].get("broadenSearch").is_none(), "{call}");
+    // A kind the scope lacks: nothing to list.
+    let none = matched(&dir, "trait $T { $$$B }");
+    assert!(none["next"].get("broadenSearch").is_none(), "{none}");
 }
 
 /// A rule that does not parse as a rule (an unknown key, malformed YAML) is
@@ -347,78 +485,6 @@ fn every_rule_spelling_matches_like_the_bare_rule() {
     }
 }
 
-#[test]
-fn an_empty_declaration_pattern_retries_with_the_parts_it_omitted() {
-    let root = Fixture::new();
-    let typed = root.0.join("typed.ts");
-    std::fs::write(
-        &typed,
-        "export function typed(a: number): number { return a; }\nfunction local(): void {}\n",
-    )
-    .expect("typed");
-    let mixed = root.0.join("mixed.ts");
-    std::fs::write(
-        &mixed,
-        "export function typed(a: number): number { return a; }\nexport function untyped(b) { return b; }\n",
-    )
-    .expect("mixed");
-    let rust = root.0.join("items.rs");
-    std::fs::write(
-        &rust,
-        "pub fn a() -> u8 { 1 }\npub(crate) fn b() {}\nfn c() {}\n",
-    )
-    .expect("rust");
-    let python = root.0.join("defs.py");
-    std::fs::write(&python, "def f(x) -> int:\n    return x\n").expect("python");
-    let matched = |path: &PathBuf, pattern: &str| {
-        run(
-            &root.0,
-            json!({"operation":"match","mainGoal":"test","reasoning":"test","path":path,"pattern":pattern}),
-        )
-        .expect("match")
-    };
-    let relaxed = |out: &serde_json::Value| {
-        out["diagnostics"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .any(|d| d["code"] == "structural.pattern.relaxed")
-    };
-
-    // Every function has a return type: the pattern as written matches
-    // nothing, so the retry spells the return type it omitted.
-    let out = matched(&typed, "export function $N($$$A) { $$$B }");
-    assert_eq!(out["matchCount"], 1, "{out}");
-    assert!(out.get("status").is_none(), "{out}");
-    assert!(relaxed(&out), "{out}");
-    let out = matched(&typed, "function $N($$$A) { $$$B }");
-    assert_eq!(out["matchCount"], 2, "{out}");
-
-    // A pattern that matches as written still gains the spellings it
-    // omitted: the untyped function and the typed one.
-    let out = matched(&mixed, "export function $N($$$A) { $$$B }");
-    assert_eq!(out["matchCount"], 2, "{out}");
-    assert!(relaxed(&out), "{out}");
-
-    // Rust: visibility and the return type; Python: the return annotation.
-    let out = matched(&rust, "fn $N() { $$$B }");
-    assert_eq!(out["matchCount"], 3, "{out}");
-    assert!(relaxed(&out), "c as written, a and b relaxed: {out}");
-    let only_pub = root.0.join("pub.rs");
-    std::fs::write(&only_pub, "pub fn a() -> u8 { 1 }\npub(crate) fn b() {}\n").expect("pub");
-    let out = matched(&only_pub, "fn $N() { $$$B }");
-    assert_eq!(out["matchCount"], 2, "{out}");
-    assert!(relaxed(&out), "{out}");
-    let out = matched(&python, "def $F($$$A): $$$B");
-    assert_eq!(out["matchCount"], 1, "{out}");
-    assert!(relaxed(&out), "{out}");
-
-    // Nothing to add, or nothing found either way: the plain empty result.
-    let out = matched(&typed, "class $C { $$$B }");
-    assert_eq!(out["status"], "empty", "{out}");
-    assert!(!relaxed(&out), "{out}");
-}
-
 /// An empty match counts the files it parsed and leads to the syntax
 /// tree of the first, where the pattern's node shape can be compared.
 #[test]
@@ -483,40 +549,6 @@ fn repairable_failures_carry_one_lead() {
     assert_eq!(
         out["hints"],
         json!(["No python file under this path was parsed."]),
-        "{out}"
-    );
-}
-
-/// A relaxed pattern carries the relaxed rule its continuations replay, and
-/// states the counts as written and relaxed.
-#[test]
-fn a_relaxed_pattern_carries_its_rule_and_both_counts() {
-    let root = Fixture::new();
-    let source = root.0.join("lib.rs");
-    std::fs::write(&source, "pub fn a() { x(); }\nfn b() { y(); }\n").expect("source");
-    let out = run(
-        &root.0,
-        json!({"operation":"match","path":source,"pattern":"fn $N() { $$$B }"}),
-    )
-    .expect("match");
-    assert_eq!(out["matchCount"], 2, "{out}");
-    let note = out["diagnostics"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .find(|d| d["code"] == "structural.pattern.relaxed")
-        .expect("relaxed note");
-    let message = note["message"].as_str().expect("message");
-    // Per-call facts only: the counts, beside the relaxed `rule`. Why
-    // continuations replay it is the tool description's.
-    assert_eq!(
-        message, "1 match as written; 2 match the relaxed rule.",
-        "{message}"
-    );
-    let any = note["rule"]["any"].as_array().expect("relaxed rule");
-    assert_eq!(any[0], json!({"pattern":"fn $N() { $$$B }"}), "{out}");
-    assert!(
-        any.contains(&json!({"pattern":"pub fn $N() { $$$B }"})),
         "{out}"
     );
 }

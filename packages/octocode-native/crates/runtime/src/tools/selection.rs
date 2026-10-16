@@ -10,8 +10,11 @@ use serde_json::{Value, json};
 use std::collections::HashSet;
 use std::time::{Duration, Instant};
 
-/// Format 4 replaces complete permutations with source-ordered partitions.
-const VERSION: u8 = 4;
+mod admission;
+
+/// Version 6 adds candidate pages: a plan judges a pool of the ordinals,
+/// and the unjudged rest opens the next candidate page.
+const VERSION: u8 = 6;
 
 #[derive(Clone)]
 pub(crate) struct Runtime {
@@ -35,7 +38,35 @@ pub(crate) trait SelectionJudge: Send + Sync {
     fn project(&self, state: Value) -> Value {
         state
     }
-    fn select(&self, call: JudgeCall<'_>) -> Result<Vec<(usize, Decision)>, String>;
+    fn select(&self, call: JudgeCall<'_>) -> Judgments;
+}
+
+/// One decision per judged candidate ordinal, or why none was judged.
+pub(crate) type Judgments = Result<Vec<(usize, Decision)>, JudgeFailure>;
+
+/// Why a judge decided no candidate.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum JudgeFailure {
+    /// Judging cannot run here (no credential, no usable policy): the receipt
+    /// is `unavailable` with this reason and the evidence stays unfiltered.
+    Unavailable(String),
+    /// Every admitted candidate failed at the provider with this typed error.
+    /// The row fails with it; an unknown answer is never invented for it.
+    Provider(ProviderError),
+}
+
+/// A provider's typed error as a classified row reports it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ProviderError {
+    pub code: String,
+    pub message: String,
+    pub hints: Vec<String>,
+}
+
+impl From<&str> for JudgeFailure {
+    fn from(reason: &str) -> Self {
+        Self::Unavailable(reason.to_owned())
+    }
 }
 
 pub(crate) struct JudgeCall<'a> {
@@ -59,14 +90,30 @@ pub(crate) struct Candidate {
 impl Candidate {
     /// Admission charges serialized sanitized state, including JSON escaping.
     pub(crate) fn new(state: Option<Value>) -> Self {
-        let evidence_chars = state
-            .as_ref()
-            .map_or(0, |state| state.to_string().chars().count());
+        let evidence_chars = state.as_ref().map_or(0, serialized_chars);
         Self {
             state,
             evidence_chars,
         }
     }
+}
+
+/// Unicode scalars of `value` serialized as JSON, counted while writing
+/// instead of building the string.
+fn serialized_chars(value: &Value) -> usize {
+    struct Chars(usize);
+    impl std::io::Write for Chars {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            // Every scalar has exactly one non-continuation byte.
+            self.0 += bytes.iter().filter(|&&byte| byte & 0xC0 != 0x80).count();
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let mut chars = Chars(0);
+    serde_json::to_writer(&mut chars, value).map_or(0, |()| chars.0)
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -81,18 +128,161 @@ struct Plan {
     total: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     reason: Option<String>,
+    /// Eligible ordinals the candidate budget left unjudged, as half-open
+    /// `[start, end)` runs in source order, independent of admission order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty", with = "runs")]
+    unjudged: Vec<[u32; 2]>,
+    /// The ordinals this candidate page judges from, as runs; empty is every
+    /// ordinal (the first candidate page). A later candidate page's pool is
+    /// the unjudged rest of the page before it, so a chain of candidate
+    /// pages judges each ordinal once.
+    #[serde(default, skip_serializing_if = "Vec::is_empty", with = "runs")]
+    pool: Vec<[u32; 2]>,
+    /// The token opens the candidate page over `pool` (nothing judged yet)
+    /// instead of replaying a judged page.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    opens: bool,
     checksum: String,
+}
+
+/// Half-open ordinal runs as one flat list of gaps and lengths (each run's
+/// start minus the previous run's end, then its length), so a plan stays
+/// small however scattered its runs are. Decoded runs are ascending,
+/// disjoint and non-empty.
+mod runs {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
+
+    pub(super) fn serialize<S: Serializer>(
+        runs: &[[u32; 2]],
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        let mut flat = Vec::with_capacity(runs.len() * 2);
+        let mut end = 0u32;
+        for &[start, stop] in runs {
+            flat.push(start.saturating_sub(end));
+            flat.push(stop.saturating_sub(start));
+            end = stop;
+        }
+        flat.serialize(serializer)
+    }
+
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Vec<[u32; 2]>, D::Error> {
+        let flat = Vec::<u32>::deserialize(deserializer)?;
+        if flat.len() % 2 != 0 {
+            return Err(D::Error::custom("runs are gap and length pairs"));
+        }
+        let mut runs = Vec::with_capacity(flat.len() / 2);
+        let mut end = 0u32;
+        for &[gap, length] in flat.as_chunks::<2>().0 {
+            let start = end
+                .checked_add(gap)
+                .ok_or_else(|| D::Error::custom("run past u32"))?;
+            let stop = start
+                .checked_add(length)
+                .filter(|stop| *stop > start)
+                .ok_or_else(|| D::Error::custom("empty run"))?;
+            runs.push([start, stop]);
+            end = stop;
+        }
+        Ok(runs)
+    }
 }
 
 pub(crate) struct Outcome {
     pub selected: Vec<usize>,
+    /// Judged irrelevant; every other unselected ordinal is unknown.
+    pub excluded: Vec<usize>,
+    /// The unknown ordinals no judge saw: eligible candidates past the
+    /// candidate budget. The rest of the unknown ones were judged unsure,
+    /// or had no state to judge.
+    pub unjudged: Vec<usize>,
     pub receipt: Selection,
     pub token: String,
+    /// The ordinals this candidate page judged from (empty: all of them);
+    /// the others were judged by an earlier candidate page.
+    pool: Vec<[u32; 2]>,
+    /// The token that opens the next candidate page over the unjudged
+    /// ordinals, when the budget left any.
+    next_candidates: Option<String>,
+}
+
+impl Outcome {
+    /// Whether this candidate page judged `ordinal` (or left it unjudged);
+    /// an ordinal outside its pool was judged by an earlier candidate page.
+    pub(crate) fn considers(&self, ordinal: usize) -> bool {
+        u32::try_from(ordinal).is_ok_and(|ordinal| in_runs(&self.pool, ordinal))
+    }
+
+    /// The `selection` token of `next.nextCandidatePage`: the same call
+    /// judging the ordinals this page's budget left unjudged. `None` when
+    /// none were left, or when the token would exceed what `tool`'s
+    /// `selection` field accepts (the unjudged rest then stays unknown).
+    pub(crate) fn next_candidates(&self, tool: ToolId) -> Option<&str> {
+        let max = crate::contracts::query_schema_number(tool, None, "selection", "maxLength")
+            .and_then(|n| usize::try_from(n).ok())?;
+        self.next_candidates
+            .as_deref()
+            .filter(|token| token.len() <= max)
+    }
+}
+
+/// Whether `ordinal` lies in `runs` (empty runs hold every ordinal).
+fn in_runs(runs: &[[u32; 2]], ordinal: u32) -> bool {
+    if runs.is_empty() {
+        return true;
+    }
+    let at = runs.partition_point(|&[_, end]| end <= ordinal);
+    runs.get(at).is_some_and(|&[start, _]| start <= ordinal)
+}
+
+fn decode(token: &str) -> Option<Plan> {
+    let bytes = URL_SAFE_NO_PAD.decode(token).ok()?;
+    serde_json::from_slice(&bytes).ok()
 }
 
 pub(crate) enum Failure {
     Stale,
     Cancelled,
+    /// The provider failed every judged candidate: the row reports this
+    /// error, its `unavailable` receipt and an unfiltered lead.
+    Provider(Box<ProviderFailure>),
+}
+
+pub(crate) struct ProviderFailure {
+    pub error: ProviderError,
+    pub receipt: Selection,
+}
+
+impl ProviderFailure {
+    /// The failed row's error with its receipt and `unfiltered` lead: the
+    /// evidence stays reachable without classification.
+    pub(crate) fn tool_error(self, unfiltered: Value) -> crate::tools::result::ToolError {
+        let ProviderError {
+            code,
+            message,
+            hints,
+        } = self.error;
+        crate::tools::result::ToolError {
+            hints,
+            next: Some(Box::new(json!({ "unfiltered": unfiltered }))),
+            selection: Some(Box::new(self.receipt)),
+            ..crate::tools::result::ToolError::new(code, message)
+        }
+    }
+
+    /// [`Self::tool_error`] as a row's `data`.
+    pub(crate) fn row(self, unfiltered: Value) -> Value {
+        let error = self.tool_error(unfiltered);
+        let mut data = json!({"errorCode":error.code, "error":error.message});
+        if !error.hints.is_empty() {
+            data["hints"] = json!(error.hints);
+        }
+        data["selection"] = serde_json::to_value(error.selection).unwrap_or(Value::Null);
+        data["next"] = error.next.map_or(Value::Null, |next| *next);
+        data
+    }
 }
 
 fn skip_reason(
@@ -111,14 +301,16 @@ fn skip_reason(
     })
 }
 
-/// Saved plans need cardinality and source binding, not candidate bodies.
+/// Saved plans need cardinality and source binding, not candidate bodies;
+/// a token opening a candidate page judges, so it needs them.
 pub(crate) fn needs_candidate_states(
     runtime: Option<&Runtime>,
     prior: Option<&str>,
     unsupported: Option<&'static str>,
     total: usize,
 ) -> bool {
-    prior.is_none() && skip_reason(runtime, unsupported, total).is_none()
+    prior.is_none_or(|token| decode(token).is_some_and(|plan| plan.opens))
+        && skip_reason(runtime, unsupported, total).is_none()
 }
 
 /// Select the sanitized evidence of one provider page. Never hydrate hidden
@@ -162,25 +354,25 @@ pub(crate) fn apply_sanitized_rows(
             if !data["next"].is_object() {
                 data["next"] = json!({});
             }
-            data["next"]["unfiltered"] = unfiltered(tool, query);
+            data["next"]["unfiltered"] = provider_page_unfiltered(tool, query);
             continue;
         }
         if !data.is_object() {
             *data = json!({});
         }
-        let Some(values) = data["files"].as_array().cloned() else {
+        let Some(Value::Array(values)) = data.get_mut("files").map(Value::take) else {
             row["status"] = json!("error");
             row["data"] = json!({
                 "errorCode":"invalidClassificationView",
                 "error":"Classification requires an array of source evidence candidates.",
                 "selection": unavailable_receipt(0, "invalidClassificationView"),
-                "next":{"unfiltered":unfiltered(tool, query)}
+                "next":{"unfiltered":provider_page_unfiltered(tool, query)}
             });
             continue;
         };
         let states = values
             .iter()
-            .map(|item| runtime.judge.project(json!({"evidence":item})))
+            .map(|item| runtime.judge.project(json!({ "evidence": item })))
             .collect::<Vec<_>>();
         let source = candidate_source_digest(tool, query, data, &states);
         let candidates = values
@@ -213,6 +405,11 @@ pub(crate) fn apply_sanitized_rows(
         ) {
             Ok(outcome) => outcome,
             Err(Failure::Cancelled) => return Err(crate::runtime::ExecutionError::Cancelled),
+            Err(Failure::Provider(failure)) => {
+                row["status"] = json!("error");
+                row["data"] = failure.row(provider_page_unfiltered(tool, query));
+                continue;
+            }
             Err(Failure::Stale) => {
                 let stale = crate::tools::result::stale_snapshot(
                     crate::tools::result::restart_query(tool, query),
@@ -226,22 +423,25 @@ pub(crate) fn apply_sanitized_rows(
                 continue;
             }
         };
-        data["files"] = json!(
+        let mut values = values.into_iter().map(Some).collect::<Vec<_>>();
+        data["files"] = Value::Array(
             outcome
                 .selected
                 .iter()
-                .map(|&i| &values[i])
-                .collect::<Vec<_>>()
+                .filter_map(|&i| values.get_mut(i).and_then(Option::take))
+                .collect(),
         );
         data["selection"] = serde_json::to_value(&outcome.receipt).unwrap_or(Value::Null);
         strip_plan_from_tool_continuations(data, tool);
-        if !data["next"].is_object() {
-            data["next"] = json!({});
+        // The unfiltered page reaches what selection left out; a page that
+        // kept every candidate (or had none) leaves nothing out.
+        if outcome.receipt.selected_items < outcome.receipt.total_items {
+            if !data["next"].is_object() {
+                data["next"] = json!({});
+            }
+            data["next"]["unfiltered"] = provider_page_unfiltered(tool, query);
         }
-        data["next"]["unfiltered"] = unfiltered(tool, query);
-        if tool == ToolId::GhSearchCode {
-            crate::tools::gh_shared::finish_code_selection(data, query);
-        }
+        tool.output().finish_selection(data, query);
         let response_row = if queries.len() == 1 {
             Some(&mut *response_query)
         } else {
@@ -269,23 +469,33 @@ fn unavailable_receipt(total: usize, reason: &str) -> Value {
     .unwrap_or(Value::Null)
 }
 
-/// The provider page is part of source identity, not response-output paging.
-fn unfiltered(tool: ToolId, query: &Value) -> Value {
-    let mut query = query.clone();
-    if let Some(fields) = query.as_object_mut() {
-        for key in [
-            "clasifyContext",
-            "selection",
-            "offset",
-            "length",
-            "unit",
-            "fullContent",
-            "matchPage",
-        ] {
-            fields.remove(key);
+/// The one unfiltered recovery row: the classified read as an ordinary read
+/// from its first window, without `clasifyContext`, any cursor
+/// ([`CURSOR_FIELDS`](crate::tools::result::CURSOR_FIELDS)) or window size.
+/// `keep` names cursors that are source identity here (a provider `page`).
+pub(crate) fn unfiltered_row(query: &Value, keep: &[&str]) -> Value {
+    let mut row = query.clone();
+    if let Some(fields) = row.as_object_mut() {
+        fields.remove("clasifyContext");
+        fields.remove("length");
+        fields.remove("unit");
+        for field in crate::tools::result::CURSOR_FIELDS {
+            if !keep.contains(&field) {
+                fields.remove(field);
+            }
         }
     }
-    json!({"tool":tool.as_str(), "query":{"queries":[query]}})
+    row
+}
+
+/// [`unfiltered_row`] as the `next.unfiltered` lead of `tool`.
+pub(crate) fn unfiltered(tool: ToolId, query: &Value, keep: &[&str]) -> Value {
+    crate::tools::result::Continuation::new(tool, unfiltered_row(query, keep)).build()
+}
+
+/// A provider page keeps its page: it is the judged source.
+fn provider_page_unfiltered(tool: ToolId, query: &Value) -> Value {
+    unfiltered(tool, query, &["page"])
 }
 
 fn candidate_source_digest(tool: ToolId, query: &Value, data: &Value, states: &[Value]) -> String {
@@ -364,8 +574,26 @@ impl Plan {
             excluded: Vec::new(),
             total: u32::try_from(total).unwrap_or(u32::MAX),
             reason: reason.map(str::to_owned),
+            unjudged: Vec::new(),
+            pool: Vec::new(),
+            opens: false,
             checksum: String::new(),
         }
+    }
+
+    /// The ordinals this candidate page judges from.
+    fn pool_size(&self) -> usize {
+        if self.pool.is_empty() {
+            return self.total as usize;
+        }
+        self.pool
+            .iter()
+            .map(|[start, end]| (end - start) as usize)
+            .sum()
+    }
+
+    fn in_pool(&self, ordinal: usize) -> bool {
+        u32::try_from(ordinal).is_ok_and(|ordinal| in_runs(&self.pool, ordinal))
     }
 
     fn digest(&self) -> String {
@@ -373,7 +601,29 @@ impl Plan {
             "version":self.version, "binding":self.binding, "status":self.status,
             "scope":self.scope, "unit":self.unit, "selected":self.selected,
             "excluded":self.excluded, "total":self.total, "reason":self.reason,
+            "unjudged":self.unjudged, "pool":self.pool, "opens":self.opens,
         }))
+    }
+
+    /// Records every eligible ordinal outside `admitted` as unjudged.
+    fn mark_unjudged(&mut self, candidates: &[Candidate], admitted: &[usize]) {
+        let admitted = admitted.iter().copied().collect::<HashSet<_>>();
+        let mut runs: Vec<[u32; 2]> = Vec::new();
+        for (ordinal, candidate) in candidates.iter().enumerate() {
+            if candidate.state.is_none() || admitted.contains(&ordinal) || !self.in_pool(ordinal) {
+                continue;
+            }
+            let ordinal = u32::try_from(ordinal).unwrap_or(u32::MAX);
+            match runs.last_mut() {
+                Some(run) if run[1] == ordinal => run[1] = ordinal.saturating_add(1),
+                _ => runs.push([ordinal, ordinal.saturating_add(1)]),
+            }
+        }
+        self.unjudged = runs;
+    }
+
+    fn unjudged_ordinals(&self) -> impl Iterator<Item = u32> + '_ {
+        self.unjudged.iter().flat_map(|[start, end]| *start..*end)
     }
 
     fn seal(&mut self) {
@@ -397,16 +647,38 @@ impl Plan {
         {
             return false;
         }
+        if self.unjudged.iter().any(|[start, end]| start >= end)
+            || self
+                .pool
+                .last()
+                .is_some_and(|&[_, end]| usize::try_from(end).map_or(true, |end| end > total))
+        {
+            return false;
+        }
         let mut seen = HashSet::with_capacity(self.selected.len() + self.excluded.len());
-        if !self.selected.iter().chain(&self.excluded).all(|ordinal| {
-            usize::try_from(*ordinal).is_ok_and(|i| i < total) && seen.insert(*ordinal)
-        }) {
+        if !self
+            .selected
+            .iter()
+            .chain(&self.excluded)
+            .copied()
+            .chain(self.unjudged_ordinals())
+            .all(|ordinal| {
+                usize::try_from(ordinal).is_ok_and(|i| i < total && self.in_pool(i))
+                    && seen.insert(ordinal)
+            })
+        {
             return false;
         }
         let judged = self.selected.len() + self.excluded.len();
+        if self.opens {
+            return !self.pool.is_empty()
+                && seen.is_empty()
+                && self.status == SelectionStatus::Partial;
+        }
+        let size = self.pool_size();
         match self.status {
-            SelectionStatus::Complete => judged == total,
-            SelectionStatus::Partial => judged < total,
+            SelectionStatus::Complete => judged == size,
+            SelectionStatus::Partial => judged < size,
             SelectionStatus::Unavailable => judged == 0,
         }
     }
@@ -416,23 +688,43 @@ impl Plan {
         self.excluded.sort_unstable();
         self.seal();
         let selected = self.selected.iter().map(|&i| i as usize).collect();
+        let excluded = self.excluded.iter().map(|&i| i as usize).collect();
+        let unjudged = self.unjudged_ordinals().map(|i| i as usize).collect();
+        let size = i64::try_from(self.pool_size()).unwrap_or(i64::MAX);
         let receipt = Selection {
             status: self.status,
             scope: self.scope,
             unit: self.unit,
             selected_items: self.selected.len() as i64,
             excluded_items: self.excluded.len() as i64,
-            unknown_items: i64::from(self.total)
-                - self.selected.len() as i64
-                - self.excluded.len() as i64,
-            total_items: i64::from(self.total),
+            unknown_items: size - self.selected.len() as i64 - self.excluded.len() as i64,
+            total_items: size,
             reason: self.reason.clone(),
         };
-        let token = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&self).unwrap_or_default());
+        let encode =
+            |plan: &Plan| URL_SAFE_NO_PAD.encode(serde_json::to_vec(plan).unwrap_or_default());
+        let next_candidates = (!self.unjudged.is_empty()).then(|| {
+            let mut opening = Plan::new(
+                self.binding.clone(),
+                self.total as usize,
+                SelectionStatus::Partial,
+                self.scope,
+                self.unit,
+                None,
+            );
+            opening.pool = self.unjudged.clone();
+            opening.opens = true;
+            opening.seal();
+            encode(&opening)
+        });
         Outcome {
             selected,
+            excluded,
+            unjudged,
             receipt,
-            token,
+            token: encode(&self),
+            pool: self.pool,
+            next_candidates,
         }
     }
 }
@@ -518,13 +810,16 @@ pub(crate) fn select_scoped(
         |r| r.limits,
     );
     let bound = binding(query, source, limits, runtime);
+    // A saved plan replays; a token opening a candidate page judges its pool.
+    let mut pool = Vec::new();
     if let Some(token) = prior {
-        let bytes = URL_SAFE_NO_PAD.decode(token).map_err(|_| Failure::Stale)?;
-        let plan: Plan = serde_json::from_slice(&bytes).map_err(|_| Failure::Stale)?;
-        return plan
-            .valid(&bound, candidates.len(), scope, unit)
-            .then(|| plan.finish())
-            .ok_or(Failure::Stale);
+        let plan = decode(token)
+            .filter(|plan| plan.valid(&bound, candidates.len(), scope, unit))
+            .ok_or(Failure::Stale)?;
+        if !plan.opens {
+            return Ok(plan.finish());
+        }
+        pool = plan.pool;
     }
     let mut plan = Plan::new(
         bound,
@@ -534,6 +829,8 @@ pub(crate) fn select_scoped(
         unit,
         None,
     );
+    plan.pool = pool;
+    let pool_size = plan.pool_size();
     if let Some(reason) = skip_reason(runtime, unsupported, candidates.len()) {
         plan.status = if candidates.is_empty() && reason == "noCandidates" {
             SelectionStatus::Complete
@@ -545,7 +842,11 @@ pub(crate) fn select_scoped(
     }
     let mut admitted = Vec::new();
     let mut chars = 0usize;
-    for (ordinal, candidate) in candidates.iter().enumerate() {
+    for ordinal in admission::order(candidates, query, unit)
+        .into_iter()
+        .filter(|&ordinal| plan.in_pool(ordinal))
+    {
+        let candidate = &candidates[ordinal];
         if admitted.len() == limits.max_candidates {
             break;
         }
@@ -558,13 +859,15 @@ pub(crate) fn select_scoped(
     }
     let eligible = candidates
         .iter()
-        .filter(|candidate| candidate.state.is_some())
+        .enumerate()
+        .filter(|(ordinal, candidate)| candidate.state.is_some() && plan.in_pool(*ordinal))
         .count();
-    let omitted_reason = match (eligible < candidates.len(), admitted.len() < eligible) {
+    let omitted_reason = match (eligible < pool_size, admitted.len() < eligible) {
         (true, true) => "candidateEligibilityAndBudget",
         (true, false) => "candidateIneligible",
         _ => "candidateBudget",
     };
+    plan.mark_unjudged(candidates, &admitted);
     if admitted.is_empty() {
         plan.reason = Some(omitted_reason.into());
         return Ok(plan.finish());
@@ -618,11 +921,11 @@ pub(crate) fn select_scoped(
                 }
             }
             let known = plan.selected.len() + plan.excluded.len();
-            if known == candidates.len() {
+            if known == pool_size {
                 plan.status = SelectionStatus::Complete;
             } else {
                 plan.reason = Some(
-                    if admitted.len() < candidates.len() {
+                    if admitted.len() < pool_size {
                         omitted_reason
                     } else {
                         "classificationUnknown"
@@ -631,9 +934,19 @@ pub(crate) fn select_scoped(
                 );
             }
         }
-        Err(reason) => {
+        Err(JudgeFailure::Unavailable(reason)) => {
             plan.status = SelectionStatus::Unavailable;
             plan.reason = Some(reason);
+            plan.unjudged.clear();
+        }
+        Err(JudgeFailure::Provider(error)) => {
+            plan.status = SelectionStatus::Unavailable;
+            plan.unjudged.clear();
+            plan.reason = Some(error.code.clone());
+            return Err(Failure::Provider(Box::new(ProviderFailure {
+                error,
+                receipt: plan.finish().receipt,
+            })));
         }
     }
     Ok(plan.finish())
@@ -643,6 +956,51 @@ pub(crate) fn select_scoped(
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn bounded_chunk_admission_reaches_relevant_evidence_after_the_prefix() {
+        let executor = tokio::runtime::Runtime::new().unwrap();
+        let calls = std::sync::Arc::new(AtomicUsize::new(0));
+        let mut runtime = test_runtime(
+            std::sync::Arc::new(SelectedJudge(calls.clone())),
+            executor.handle().clone(),
+        );
+        runtime.limits.max_candidates = 2;
+        let mut candidates = (0..100)
+            .map(|_| Candidate::new(Some(json!({"content":"unrelated rendering code"}))))
+            .collect::<Vec<_>>();
+        candidates[75] = Candidate::new(Some(
+            json!({"content":"fn retryConnection() { retry_connection(); }"}),
+        ));
+        candidates[99] = Candidate::new(Some(
+            json!({"content":"fn connectionRetry() { connection_retry(); }"}),
+        ));
+        let query = json!({"clasifyContext":{"classifiers":["retry connection"]}});
+        let outcome = select(
+            Some(&runtime),
+            &query,
+            "source",
+            None,
+            &candidates,
+            None,
+            SelectionUnit::Chunks,
+        )
+        .unwrap_or_else(|_| panic!("selection failed"));
+        assert_eq!(outcome.selected, [75, 99]);
+        assert_eq!(outcome.receipt.unknown_items, 98);
+        let replay = select(
+            Some(&runtime),
+            &query,
+            "source",
+            Some(&outcome.token),
+            &candidates,
+            None,
+            SelectionUnit::Chunks,
+        )
+        .unwrap_or_else(|_| panic!("replay failed"));
+        assert_eq!(replay.selected, outcome.selected);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
 
     #[test]
     fn context_selection_plan_returns_only_selected_ordinals_in_source_order() {
@@ -821,7 +1179,7 @@ mod tests {
         fn identity(&self) -> Value {
             json!({"backend":"test"})
         }
-        fn select(&self, _call: JudgeCall<'_>) -> Result<Vec<(usize, Decision)>, String> {
+        fn select(&self, _call: JudgeCall<'_>) -> Judgments {
             Err("providerUnavailable".into())
         }
     }
@@ -833,7 +1191,7 @@ mod tests {
             fn identity(&self) -> Value {
                 json!({"test":"exclude"})
             }
-            fn select(&self, call: JudgeCall<'_>) -> Result<Vec<(usize, Decision)>, String> {
+            fn select(&self, call: JudgeCall<'_>) -> Judgments {
                 self.0.fetch_add(1, Ordering::SeqCst);
                 Ok(call
                     .admitted
@@ -900,6 +1258,39 @@ mod tests {
         );
     }
 
+    /// A provider page with no candidates left nothing out: no unfiltered
+    /// page re-runs the same empty search.
+    #[test]
+    fn an_empty_provider_page_offers_no_unfiltered_page() {
+        struct NoJudge;
+        impl SelectionJudge for NoJudge {
+            fn identity(&self) -> Value {
+                json!({"test":"none"})
+            }
+            fn select(&self, _: JudgeCall<'_>) -> Judgments {
+                Ok(Vec::new())
+            }
+        }
+        let executor = tokio::runtime::Runtime::new().expect("runtime");
+        let runtime = test_runtime(std::sync::Arc::new(NoJudge), executor.handle().clone());
+        let query = json!({"owner":"o","repo":"r","keywords":["nothing"],
+            "clasifyContext":{"classifiers":["Relevant?"]}});
+        let mut page = json!({"results":[{"index":0,"status":"empty","data":{"files":[]}}]});
+        let mut response_query = query.clone();
+        apply_sanitized_rows(
+            ToolId::GhSearchCode,
+            &mut page,
+            &[query],
+            &[0],
+            &mut response_query,
+            &runtime,
+        )
+        .expect("empty provider page");
+        let data = &page["results"][0]["data"];
+        assert_eq!(data["selection"]["totalItems"], 0, "{data}");
+        assert!(data["next"].get("unfiltered").is_none(), "{data}");
+    }
+
     #[test]
     fn path_only_candidates_are_unknown_without_provider_work() {
         let executor = tokio::runtime::Runtime::new().expect("runtime");
@@ -936,7 +1327,8 @@ mod tests {
             std::sync::Arc::new(SelectedJudge(calls.clone())),
             executor.handle().clone(),
         );
-        let query = json!({"clasifyContext":{"classifiers":["Does it describe retries?"]}});
+        let query = json!({"owner":"o","keywords":["retry"],
+            "clasifyContext":{"classifiers":["Does it describe retries?"]}});
         let mut output = json!({"results":[{"index":0,"status":"error","data":{
             "errorCode":"providerUnavailable","files":[{"path":"a.rs","lines":["UNJUDGED_BODY"]}]
         }}]});
@@ -959,12 +1351,66 @@ mod tests {
         assert_eq!(calls.load(Ordering::SeqCst), 0);
     }
 
+    #[test]
+    fn a_provider_failing_the_whole_page_fails_the_row_with_its_typed_error() {
+        struct Unauthorized;
+        impl SelectionJudge for Unauthorized {
+            fn identity(&self) -> Value {
+                json!({"backend":"unauthorized"})
+            }
+            fn select(&self, _call: JudgeCall<'_>) -> Judgments {
+                Err(JudgeFailure::Provider(ProviderError {
+                    code: "classificationProviderError".into(),
+                    message: "Classification provider returned HTTP 401 Unauthorized".into(),
+                    hints: vec!["Check OCTOCODE_CLASSIFICATION_API and account access.".into()],
+                }))
+            }
+        }
+        let executor = tokio::runtime::Runtime::new().expect("runtime");
+        let runtime = test_runtime(std::sync::Arc::new(Unauthorized), executor.handle().clone());
+        let query = json!({"owner":"o","repo":"r","page":2,"keywords":["retry"],
+            "clasifyContext":{"classifiers":["Does it state when retries stop?"]}});
+        let mut output = json!({"results":[{"index":0,"data":{"files":[
+            {"path":"a.rs","matches":[{"line":1,"value":"UNJUDGED_BODY"}]}
+        ]}}]});
+        let mut response_query = query.clone();
+        apply_sanitized_rows(
+            ToolId::GhSearchCode,
+            &mut output,
+            &[query],
+            &[0],
+            &mut response_query,
+            &runtime,
+        )
+        .expect("a failed judgment is a row outcome");
+        let row = &output["results"][0];
+        assert_eq!(row["status"], "error");
+        let data = &row["data"];
+        assert_eq!(data["errorCode"], "classificationProviderError");
+        assert!(
+            data["hints"]
+                .to_string()
+                .contains("OCTOCODE_CLASSIFICATION_API")
+        );
+        assert!(!data.to_string().contains("UNJUDGED_BODY"));
+        assert_eq!(data["selection"]["status"], "unavailable");
+        assert_eq!(data["selection"]["reason"], "classificationProviderError");
+        assert_eq!(data["selection"]["unknownItems"], 1);
+        let recovery = &data["next"]["unfiltered"]["query"]["queries"][0];
+        assert_eq!(recovery["page"], 2);
+        assert!(recovery.get("clasifyContext").is_none());
+        assert!(
+            response_query.get("selection").is_none(),
+            "no plan to replay"
+        );
+    }
+
     struct SelectedJudge(std::sync::Arc<AtomicUsize>);
     impl SelectionJudge for SelectedJudge {
         fn identity(&self) -> Value {
             json!({"backend":"reverse-test"})
         }
-        fn select(&self, call: JudgeCall<'_>) -> Result<Vec<(usize, Decision)>, String> {
+        fn select(&self, call: JudgeCall<'_>) -> Judgments {
             self.0.fetch_add(1, Ordering::SeqCst);
             Ok(call
                 .admitted
@@ -1263,7 +1709,7 @@ mod tests {
             fn identity(&self) -> Value {
                 json!({"backend":"exclude"})
             }
-            fn select(&self, call: JudgeCall<'_>) -> Result<Vec<(usize, Decision)>, String> {
+            fn select(&self, call: JudgeCall<'_>) -> Judgments {
                 assert_eq!(call.admitted, [0]);
                 Ok(vec![(0, Decision::Excluded)])
             }
@@ -1635,6 +2081,145 @@ mod tests {
             SelectionScope::SelectedView,
             SelectionUnit::Files
         ));
+    }
+
+    /// Candidate pages: each judges the budget's worth of what the page
+    /// before left unjudged, so a chain judges every eligible ordinal
+    /// exactly once; a later page's plan replays like the first, and a
+    /// candidate without state stays unknown on the first page only.
+    #[test]
+    fn a_chain_of_candidate_pages_judges_every_ordinal_once() {
+        struct Recording(std::sync::Mutex<Vec<usize>>);
+        impl SelectionJudge for Recording {
+            fn identity(&self) -> Value {
+                json!({"test":"recording"})
+            }
+            fn select(&self, call: JudgeCall<'_>) -> Judgments {
+                self.0.lock().expect("lock").extend(call.admitted);
+                Ok(call
+                    .admitted
+                    .iter()
+                    .map(|&i| {
+                        let decision = if i % 2 == 0 {
+                            Decision::Selected
+                        } else {
+                            Decision::Excluded
+                        };
+                        (i, decision)
+                    })
+                    .collect())
+            }
+        }
+        let executor = tokio::runtime::Runtime::new().expect("runtime");
+        let judge = std::sync::Arc::new(Recording(std::sync::Mutex::new(Vec::new())));
+        let mut runtime = test_runtime(judge.clone(), executor.handle().clone());
+        runtime.limits.max_candidates = 3;
+        let mut candidates = (0..8)
+            .map(|i| Candidate::new(Some(json!({"content":format!("evidence {i}")}))))
+            .collect::<Vec<_>>();
+        candidates.push(Candidate::new(None));
+        let query = json!({"clasifyContext":{"classifiers":["evidence"]}});
+        let run = |prior: Option<&str>| {
+            select(
+                Some(&runtime),
+                &query,
+                "source",
+                prior,
+                &candidates,
+                None,
+                SelectionUnit::Chunks,
+            )
+            .unwrap_or_else(|_| panic!("candidate page"))
+        };
+        let mut prior: Option<String> = None;
+        let mut totals = Vec::new();
+        let mut shown = Vec::new();
+        let mut second_page = None;
+        loop {
+            assert!(needs_candidate_states(
+                Some(&runtime),
+                prior.as_deref(),
+                None,
+                candidates.len()
+            ));
+            let outcome = run(prior.as_deref());
+            totals.push(outcome.receipt.total_items);
+            shown.extend(outcome.selected.iter().copied());
+            if totals.len() == 2 {
+                second_page = Some((outcome.token.clone(), outcome.selected.clone()));
+            }
+            match outcome.next_candidates(ToolId::LocalSearch) {
+                Some(next) => prior = Some(next.to_owned()),
+                None => break,
+            }
+            assert!(totals.len() < 10, "the chain ends");
+        }
+        assert_eq!(totals, [9, 5, 2], "each page counts its own pool");
+        let mut judged = judge.0.lock().expect("lock").clone();
+        judged.sort_unstable();
+        assert_eq!(judged, (0..8).collect::<Vec<_>>(), "each judged once");
+        shown.sort_unstable();
+        assert_eq!(shown, [0, 2, 4, 6]);
+        let (token, selected) = second_page.expect("second page");
+        assert!(!needs_candidate_states(
+            Some(&runtime),
+            Some(&token),
+            None,
+            9
+        ));
+        let replay = run(Some(&token));
+        assert_eq!(replay.selected, selected);
+        assert_eq!(replay.receipt.total_items, 5);
+        assert!(
+            (0..9).filter(|&o| replay.considers(o)).count() == 5,
+            "the replay keeps its pool"
+        );
+        assert_eq!(
+            judge.0.lock().expect("lock").len(),
+            8,
+            "a replay never judges"
+        );
+    }
+
+    /// An opening token carries no decisions: one that claims any is stale.
+    #[test]
+    fn an_opening_token_with_decisions_is_stale() {
+        let limits = crate::runtime::RuntimeLimits::DEFAULT.selection;
+        let bound = binding(&json!({}), "source", limits, None);
+        let mut plan = Plan::new(
+            bound.clone(),
+            4,
+            SelectionStatus::Partial,
+            SelectionScope::SelectedView,
+            SelectionUnit::Chunks,
+            None,
+        );
+        plan.pool = vec![[1, 3]];
+        plan.opens = true;
+        plan.seal();
+        let valid = |plan: &Plan| {
+            plan.valid(
+                &bound,
+                4,
+                SelectionScope::SelectedView,
+                SelectionUnit::Chunks,
+            )
+        };
+        assert!(valid(&plan));
+        let decoded = decode(&URL_SAFE_NO_PAD.encode(serde_json::to_vec(&plan).unwrap()))
+            .expect("round trip");
+        assert_eq!(decoded.pool, [[1, 3]]);
+        plan.selected = vec![1];
+        plan.seal();
+        assert!(!valid(&plan));
+        plan.selected = vec![0];
+        plan.opens = false;
+        plan.seal();
+        assert!(!valid(&plan), "a decision outside the pool");
+        plan.pool = vec![[3, 5]];
+        plan.selected.clear();
+        plan.seal();
+        assert!(!valid(&plan), "a pool past the candidates");
     }
 
     #[test]

@@ -183,6 +183,9 @@ struct RowSplit {
 struct FragmentArena {
     wholes: Vec<Value>,
     splits: Vec<RowSplit>,
+    /// Fields an entry schema of the responding tool requires: a later
+    /// slice keeps them on the elements it passes through.
+    required: Option<&'static std::collections::BTreeSet<String>>,
 }
 
 impl FragmentArena {
@@ -253,7 +256,31 @@ impl FragmentArena {
     /// Build one planned fragment, moving its data out of the arena.
     fn materialize(&mut self, fragment: &Fragment) -> Value {
         note_materialized();
-        self.build(fragment)
+        let later = self.later_pointers(fragment);
+        let mut value = self.build(fragment);
+        // Pruned once the fragment is whole: a list the skeleton emptied
+        // may be the slot a joined split fills.
+        if let Some(required) = self.required {
+            for pointer in later {
+                drop_emptied_lists(&mut value, &pointer, required);
+            }
+        }
+        value
+    }
+
+    /// The paged pointers of `fragment`'s later slices (a chunk past its
+    /// split's first item).
+    fn later_pointers(&self, fragment: &Fragment) -> Vec<String> {
+        match fragment {
+            Fragment::Whole(_) => Vec::new(),
+            Fragment::Chunk { split, start, .. } => (*start > 0)
+                .then(|| self.splits[*split].pointer.clone())
+                .into_iter()
+                .collect(),
+            Fragment::Joined { inner, .. } | Fragment::Continues { inner, .. } => {
+                self.later_pointers(inner)
+            }
+        }
     }
 
     fn build(&mut self, fragment: &Fragment) -> Value {
@@ -268,6 +295,9 @@ impl FragmentArena {
                 let mut value = row_split.skeleton.clone();
                 if *start > 0 {
                     empty_secondary_lists(&mut value, &row_split.pointer);
+                    if let Some(required) = self.required {
+                        lean_elements(&mut value, &row_split.pointer, required);
+                    }
                 }
                 if let Some(slot) = value.pointer_mut(&row_split.pointer) {
                     *slot = Value::Array(items);
@@ -598,6 +628,82 @@ fn empty_secondary_lists(skeleton: &mut Value, pointer: &str) {
     }
 }
 
+/// A later slice of a split element (a pull request whose comments page)
+/// names the element, not its description again: on each array element the
+/// paged `pointer` passes through, its descriptive scalars (a body, a head
+/// SHA) ride the first part only; the fields its entry schema requires
+/// (`required`), its lists (emptied beside the paged one, and dropped by
+/// [`drop_emptied_lists`] once the part is whole) and nested objects stay.
+fn lean_elements(
+    skeleton: &mut Value,
+    pointer: &str,
+    required: &std::collections::BTreeSet<String>,
+) {
+    let segments = pointer
+        .trim_start_matches('/')
+        .split('/')
+        .map(|segment| segment.replace("~1", "/").replace("~0", "~"))
+        .collect::<Vec<_>>();
+    let mut node = Some(skeleton);
+    let mut in_element = false;
+    for key in &segments {
+        let Some(current) = node else {
+            return;
+        };
+        if in_element && let Some(map) = current.as_object_mut() {
+            map.retain(|name, value| {
+                name == key
+                    || name == PAGES_KEY
+                    || name == HINTS_KEY
+                    || required.contains(name)
+                    || value.is_array()
+                    || value.is_object()
+            });
+        }
+        in_element = current.is_array();
+        node = match current {
+            Value::Object(map) => map.get_mut(key),
+            Value::Array(items) => key.parse::<usize>().ok().and_then(|i| items.get_mut(i)),
+            _ => None,
+        };
+    }
+}
+
+/// On a later slice, each array element the paged `pointer` passes through
+/// drops its lists left empty (an emptied `reviews: []` says nothing) unless
+/// its entry schema requires them; the paged array itself stays.
+fn drop_emptied_lists(
+    value: &mut Value,
+    pointer: &str,
+    required: &std::collections::BTreeSet<String>,
+) {
+    let segments = pointer
+        .trim_start_matches('/')
+        .split('/')
+        .map(|segment| segment.replace("~1", "/").replace("~0", "~"))
+        .collect::<Vec<_>>();
+    let mut node = Some(value);
+    let mut in_element = false;
+    for key in &segments {
+        let Some(current) = node else {
+            return;
+        };
+        if in_element && let Some(map) = current.as_object_mut() {
+            map.retain(|name, value| {
+                name == key
+                    || required.contains(name)
+                    || value.as_array().is_none_or(|items| !items.is_empty())
+            });
+        }
+        in_element = current.is_array();
+        node = match current {
+            Value::Object(map) => map.get_mut(key),
+            Value::Array(items) => key.parse::<usize>().ok().and_then(|i| items.get_mut(i)),
+            _ => None,
+        };
+    }
+}
+
 /// Serialized length `rowPart` adds to a non-empty row object.
 fn row_part_chars(part: usize, of: usize) -> usize {
     json_chars(&json!({"rowPart": {"part": part, "of": of}})) - 1
@@ -748,6 +854,7 @@ pub(super) fn paginate_rows(
     options: &ResponsePageOptions,
     mut volatile: Vec<Option<Map<String, Value>>>,
     remaining: &[Vec<Remaining>],
+    tool: Option<crate::tools::id::ToolId>,
 ) -> (Map<String, Value>, ResponsePagination) {
     let budget = options.response_length.unwrap_or(1).max(1);
     let rows = match structured.remove("results") {
@@ -760,7 +867,7 @@ pub(super) fn paginate_rows(
     let row_budget = budget
         .saturating_sub(overhead + INCOMPLETE_BANNER_CHARS)
         .max(1);
-    let mut plan = RowPlan::new(rows, &volatile, row_budget);
+    let mut plan = RowPlan::new(rows, &volatile, row_budget, tool);
     let total = full.encode_utf16().count();
     let snapshot = format!(
         "response-rows-v4:{budget}:{}",
@@ -847,7 +954,12 @@ struct RowPlan {
 }
 
 impl RowPlan {
-    fn new(rows: Vec<Value>, volatile: &[Option<Map<String, Value>>], row_budget: usize) -> Self {
+    fn new(
+        rows: Vec<Value>,
+        volatile: &[Option<Map<String, Value>>],
+        row_budget: usize,
+        tool: Option<crate::tools::id::ToolId>,
+    ) -> Self {
         let reserves: Vec<usize> = volatile
             .iter()
             .map(|fields| fields.as_ref().map_or(0, volatile_reserve))
@@ -858,7 +970,10 @@ impl RowPlan {
             .map(|(row, reserve)| json_chars(row) + 1 + reserve)
             .collect();
         let shares = fair_shares(&sizes, row_budget);
-        let mut arena = FragmentArena::default();
+        let mut arena = FragmentArena {
+            required: tool.map(crate::contracts::shared_fields::required_entry_fields),
+            ..FragmentArena::default()
+        };
         let mut heads = Vec::with_capacity(rows.len());
         let mut tails = Vec::new();
         for (position, row) in rows.into_iter().enumerate() {
@@ -1055,6 +1170,7 @@ mod tests {
             &options,
             Vec::new(),
             &[],
+            None,
         );
         assert!(pagination.total_pages > 2 && pagination.has_more);
         let row = &first["results"][0];
@@ -1077,6 +1193,7 @@ mod tests {
                 &options,
                 Vec::new(),
                 &[],
+                None,
             );
             for row in envelope["results"].as_array().unwrap() {
                 for file in row["data"]["files"].as_array().unwrap() {
@@ -1096,6 +1213,7 @@ mod tests {
             &stale,
             Vec::new(),
             &[],
+            None,
         );
         assert_eq!(restart.restart, Some(true));
         assert_eq!(restart.next_char_offset, Some(0));
@@ -1123,6 +1241,7 @@ mod tests {
             &options,
             Vec::new(),
             &[],
+            None,
         );
         let past = ResponsePageOptions {
             response_offset: Some(50),
@@ -1135,6 +1254,7 @@ mod tests {
             &past,
             Vec::new(),
             &[],
+            None,
         );
         assert_eq!(restart.restart, Some(true));
         assert_eq!(restart.current_page, 51, "the page asked for");
@@ -1146,6 +1266,66 @@ mod tests {
                 .any(|w| w.as_str().is_some_and(|w| w.contains(&reason)))),
             "{envelope:?}"
         );
+    }
+
+    /// A later slice of a split pull request names it (its required
+    /// fields) and continues its comments; the long body rides part 1 once.
+    #[test]
+    fn later_slices_of_an_element_do_not_repeat_its_description() {
+        let comments = (0..80)
+            .map(|n| json!({"author":"a","body":format!("comment {n} {}", "x".repeat(60))}))
+            .collect::<Vec<_>>();
+        let body = "B".repeat(600);
+        let structured = json!({"results":[{"index":0,"data":{
+            "pullRequests":[{"number":7,"title":"t","state":"open","body":body,
+                "headSha":"h","comments":comments,"reviews":[{"author":"r","state":"approved"}]}]
+        }}]});
+        let options = ResponsePageOptions {
+            response_length: Some(3_000),
+            response_scope: Some("rows".into()),
+            ..Default::default()
+        };
+        let full = structured.to_string();
+        let mut offset = 0;
+        let mut bodies = 0;
+        let mut seen = 0;
+        loop {
+            let page = ResponsePageOptions {
+                response_offset: Some(offset),
+                response_snapshot: (offset > 0).then(|| {
+                    paginate_rows(
+                        structured.as_object().unwrap().clone(),
+                        &full,
+                        &options,
+                        Vec::new(),
+                        &[],
+                        Some(crate::tools::id::ToolId::GhGetHistoryItem),
+                    )
+                    .1
+                    .snapshot
+                }),
+                ..options.clone()
+            };
+            let (envelope, pagination) = paginate_rows(
+                structured.as_object().unwrap().clone(),
+                &full,
+                &page,
+                Vec::new(),
+                &[],
+                Some(crate::tools::id::ToolId::GhGetHistoryItem),
+            );
+            let pr = &envelope["results"][0]["data"]["pullRequests"][0];
+            assert_eq!(pr["number"], 7, "{envelope:?}");
+            bodies += usize::from(pr.get("body").is_some());
+            seen += pr["comments"].as_array().map_or(0, Vec::len);
+            assert_ne!(pr.get("reviews"), Some(&json!([])), "no emptied list: {pr}");
+            if !pagination.has_more {
+                break;
+            }
+            offset += 1;
+        }
+        assert_eq!(seen, 80);
+        assert_eq!(bodies, 1, "the body rides one part");
     }
 
     /// A row with two large arrays (a comparison's commits and files)
@@ -1173,6 +1353,7 @@ mod tests {
             &options,
             Vec::new(),
             &[],
+            None,
         );
         let (mut commits_seen, mut files_seen, mut chars) = (0, 0, 0);
         for page in 0..first.total_pages {
@@ -1187,6 +1368,7 @@ mod tests {
                 &options,
                 Vec::new(),
                 &[],
+                None,
             );
             chars += json_chars(&Value::Object(envelope.clone()));
             for row in envelope["results"].as_array().unwrap() {
@@ -1225,6 +1407,7 @@ mod tests {
             &options,
             Vec::new(),
             &[],
+            None,
         );
         let items = first["results"][0]["data"]["files"][0]["matches"]
             .as_array()
@@ -1276,6 +1459,7 @@ mod lazy_page_tests {
             &options(1_000, 0, None),
             Vec::new(),
             &[],
+            None,
         );
         assert!(first.has_more);
         for changed_length in [700, 2_000] {
@@ -1285,6 +1469,7 @@ mod lazy_page_tests {
                 &options(changed_length, 1, Some(first.snapshot.clone())),
                 Vec::new(),
                 &[],
+                None,
             );
             assert_eq!(pagination.restart, Some(true), "length {changed_length}");
             assert_eq!(pagination.changed, Some(true));
@@ -1303,6 +1488,7 @@ mod lazy_page_tests {
             &options(1_000, 0, None),
             Vec::new(),
             &[],
+            None,
         );
         assert!(first.snapshot.starts_with("response-rows-v4:"));
         let obsolete = first
@@ -1314,6 +1500,7 @@ mod lazy_page_tests {
             &options(1_000, 1, Some(obsolete)),
             Vec::new(),
             &[],
+            None,
         );
         assert_eq!(pagination.restart, Some(true));
         assert_eq!(pagination.next_char_offset, Some(0));
@@ -1332,11 +1519,13 @@ mod lazy_page_tests {
             &options(length, 0, None),
             Vec::new(),
             &[],
+            None,
         );
         (0..first.total_pages)
             .map(|offset| {
                 let request = options(length, offset, Some(first.snapshot.clone()));
-                let page = paginate_rows(structured.clone(), &full, &request, Vec::new(), &[]);
+                let page =
+                    paginate_rows(structured.clone(), &full, &request, Vec::new(), &[], None);
                 assert!(page.1.restart.is_none(), "length {length} page {offset}");
                 page
             })
@@ -1882,6 +2071,7 @@ mod lazy_page_tests {
             &options(700, 0, None),
             Vec::new(),
             &[],
+            None,
         );
         assert!(first.total_pages > 20, "{}", first.total_pages);
         let last = first.total_pages - 1;
@@ -1892,6 +2082,7 @@ mod lazy_page_tests {
             &options(700, last, Some(first.snapshot.clone())),
             Vec::new(),
             &[],
+            None,
         );
         let returned = page["results"].as_array().map_or(0, Vec::len);
         let built = MATERIALIZED.with(std::cell::Cell::get);

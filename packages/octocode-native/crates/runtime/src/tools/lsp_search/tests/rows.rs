@@ -1036,14 +1036,19 @@ fn site_level_partial_survives_matching_counts() {
         "symbolName": "get", "line": 1
     }));
     let mut row = serde_json::json!({"kind": "references"});
-    flag_partial(&mut row, &q, "dynamicDispatch", Some("dynamic"), &scope);
+    flag_partial(&mut row, &q, "cfgGatedFiles", Some("gated"), &scope);
     assert_eq!(row["isPartial"], true, "{row}");
     assert_eq!(row["coverage"]["textOnlyFiles"], 0, "{row}");
     assert_eq!(
         row["partialReasons"],
-        serde_json::json!(["dynamicDispatch"]),
+        serde_json::json!(["cfgGatedFiles"]),
         "{row}"
     );
+    // Dynamic dispatch is judged by files: every file that spells the name
+    // is answered, so the Python row is complete.
+    let mut python = serde_json::json!({"kind": "references"});
+    flag_partial(&mut python, &q, "dynamicDispatch", Some("dynamic"), &scope);
+    assert!(python.get("isPartial").is_none(), "{python}");
     assert!(row["coverage"].get("reason").is_none(), "{row}");
     // No file to list: the lead searches the whole scope.
     assert_eq!(
@@ -1202,12 +1207,78 @@ fn unresolved_anchor_leads_to_real_symbol_lines() {
     assert_eq!(lead("findSimilar")["symbolName"], "render", "{row}");
     assert_eq!(lead("findSimilar")["line"], 312, "{row}");
     assert_eq!(lead("findSimilar2")["line"], 350, "{row}");
-    // Two leads (the hint cap); the third line, uncovered, is stated once.
-    assert!(row["next"].get("findSimilar3").is_none(), "{row}");
+    // Every candidate fits the tool's batch limit and gets a runnable suggestion.
+    assert_eq!(lead("findSimilar3")["line"], 40, "{row}");
     assert_eq!(row["next"]["findSimilar"]["confidence"], "high", "{row}");
     let hints = row["hints"].to_string();
-    assert!(hints.contains("`render` appears on line 40."), "{row}");
+    assert!(!hints.contains("`render` appears on line 40."), "{row}");
     assert!(!hints.contains("312") && !hints.contains("350"), "{row}");
+}
+
+/// An orderHint past its line's occurrences leads to the last one on the
+/// same line, with no listing of the name's other lines.
+#[test]
+fn an_order_hint_past_the_line_leads_to_its_last_occurrence() {
+    let q = query(serde_json::json!({
+        "operation": "definition", "path": "/repo/lib.rs",
+        "symbolName": "config", "line": 3, "orderHint": 2
+    }));
+    let source = "struct L { config: u8 }\nfn a(config: u8) {}\nfn f() -> L { L { config: target.config } }\nfn b(config: u8) {}\n";
+    let mut row = failure(&q, "file:///repo/lib.rs", "anchorUnresolved", "x", true);
+    anchor_recovery(&mut row, &q, Some(source));
+    let lead = &row["next"]["findSimilar"]["query"]["queries"][0];
+    assert_eq!(lead["orderHint"], 1, "{row}");
+    assert_eq!(lead["line"], 3, "{row}");
+    assert!(row["next"].get("findSimilar2").is_none(), "{row}");
+    assert!(
+        !row["hints"].to_string().contains("appears on line"),
+        "{row}"
+    );
+}
+
+/// A near-miss spelling that only a comment holds is no anchor.
+#[test]
+fn near_names_skip_comment_words() {
+    let q = query(serde_json::json!({
+        "operation": "hover", "path": "/repo/anchor.rs",
+        "symbolName": "Anchor", "line": 1
+    }));
+    let source = "//! The anchor of a request.\nfn other() {}\n";
+    let mut row = failure(&q, "file:///repo/anchor.rs", "anchorUnresolved", "x", true);
+    anchor_recovery(&mut row, &q, Some(source));
+    assert!(row["next"].get("findSimilar").is_none(), "{row}");
+    assert!(!row["hints"].to_string().contains("Closest names"), "{row}");
+}
+
+/// A name the file holds only in a comment, or only on the failing line,
+/// never leads back to the failing query: a code line elsewhere is the
+/// lead; without one, a workspace search for the name.
+#[test]
+fn unresolved_anchor_never_leads_back_to_itself() {
+    let lead_for = |source: &str| {
+        let q = query(serde_json::json!({
+            "operation": "hover", "path": "/repo/anchor.rs",
+            "symbolName": "Request", "line": 1
+        }));
+        let mut row = failure(&q, "file:///repo/anchor.rs", "anchorUnresolved", "x", true);
+        anchor_recovery(&mut row, &q, Some(source));
+        assert!(row["next"].get("findSimilar2").is_none(), "{row}");
+        assert!(row["next"].get("read").is_none(), "{row}");
+        row["next"]["findSimilar"]["query"]["queries"][0].clone()
+    };
+    let search = lead_for("//! Request handling.\nfn other() {}\n");
+    assert_eq!(
+        search,
+        serde_json::json!({
+            "operation": "workspaceSymbol", "path": "/repo/anchor.rs",
+            "symbolName": "Request"
+        })
+    );
+    let quoted = lead_for("//! Request handling.\nfn other() { let s = \"Request\"; }\n");
+    assert_eq!(quoted["operation"], "workspaceSymbol", "{quoted}");
+    let later = lead_for("//! Request handling.\nfn other() {}\nstruct Request;\n");
+    assert_eq!(later["operation"], "hover", "{later}");
+    assert_eq!(later["line"], 3, "{later}");
 }
 
 /// Leads that cover every candidate line leave no sentence beside them.

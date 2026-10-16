@@ -4,6 +4,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { suggestedCall } from './lead-predicates.mjs';
 
 export const TESTING = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const ROOT = path.resolve(TESTING, '..');
@@ -14,8 +15,8 @@ export const RESULTS = path.join(TESTING, 'results');
 export const LIVE = process.env.OCTOCODE_LIVE === '1';
 export { hermeticEnv } from '../../test-utils/hermetic-env.ts';
 
-export async function startServer({ env = {}, cwd = ROOT, timeoutMs = Number(process.env.OCTOCODE_TEST_CALL_TIMEOUT_MS ?? 240_000) } = {}) {
-  const server = spawn(process.execPath, [path.join(ROOT, 'packages/octocode-mcp/dist/index.js')], {
+export async function startServer({ env = {}, cwd = ROOT, entry = path.join(ROOT, 'packages/octocode-mcp/dist/index.js'), timeoutMs = Number(process.env.OCTOCODE_TEST_CALL_TIMEOUT_MS ?? 240_000) } = {}) {
+  const server = spawn(process.execPath, [entry], {
     cwd,
     env: { ...process.env, ...env },
     stdio: ['pipe', 'pipe', 'pipe'], detached: process.platform !== 'win32',
@@ -66,8 +67,15 @@ export async function startServer({ env = {}, cwd = ROOT, timeoutMs = Number(pro
   } catch (error) { clearTimeout(deadline); terminate(); throw error; }
   const log = [];
 
-  /** Call a tool with one query (or an array) plus optional top-level args. Briefs are optional, so none is added. */
+  /**
+   * Call a tool with one query (or an array) plus optional top-level args. Briefs are optional, so none is added.
+   * A complete `{queries:[...], responseLength, ...}` envelope runs as given: wrapping it again would nest one
+   * envelope in a row, which the runtime rejects.
+   */
   async function call(tool, queries, extra = {}, label = '') {
+    if (queries && !Array.isArray(queries) && typeof queries === 'object' && Array.isArray(queries.queries)) {
+      return raw(tool, { ...queries, ...extra }, label);
+    }
     return raw(tool, { queries: Array.isArray(queries) ? queries : [queries], ...extra }, label);
   }
 
@@ -107,8 +115,8 @@ export async function startServer({ env = {}, cwd = ROOT, timeoutMs = Number(pro
 
 /**
  * Apply the response's `shared` defaults (TOOL_DATA_CONTRACT "Paths, shared
- * fields, and anchors"): identical scalars hoisted out of object entries in
- * arrays directly inside row `data` are restored on those entries only.
+ * fields, and anchors"): commitSha belongs to each row; other shared scalars
+ * belong to object entries in arrays directly inside row `data`.
  */
 export function expandShared(sc) {
   if (!sc?.shared || typeof sc.shared !== 'object') return sc;
@@ -116,11 +124,12 @@ export function expandShared(sc) {
   for (const row of copy.results ?? []) {
     const data = row?.data;
     if (!data || typeof data !== 'object') continue;
+    if (copy.shared.commitSha !== undefined && data.commitSha === undefined) data.commitSha = copy.shared.commitSha;
     for (const value of Object.values(data)) {
       if (!Array.isArray(value)) continue;
       for (const item of value) {
         if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
-        for (const [key, def] of Object.entries(copy.shared)) if (!(key in item)) item[key] = def;
+        for (const [key, def] of Object.entries(copy.shared)) if (key !== 'commitSha' && !(key in item)) item[key] = def;
       }
     }
   }
@@ -133,7 +142,14 @@ export function nextHints(value, pathLabel = '') {
   const walk = (node, at) => {
     if (!node || typeof node !== 'object') return;
     if (typeof node.tool === 'string' && node.query && typeof node.query === 'object') hints.push({ ...node, path: at });
-    for (const [key, child] of Object.entries(node)) walk(child, `${at}.${key}`);
+    for (const [key, child] of Object.entries(node)) {
+      if (key === 'hints' && Array.isArray(child)) {
+        for (const text of child) {
+          const call = suggestedCall(text);
+          if (call) hints.push({ ...call, path: `${at}.hints.${call.key}` });
+        }
+      } else walk(child, `${at}.${key}`);
+    }
   };
   walk(value, pathLabel);
   return hints;
@@ -451,9 +467,10 @@ export function cliEntry(tool, args, { env = {}, label = '', ...options } = {}) 
   try { parsed = JSON.parse(run.stdout); } catch {}
   const sc = expandShared(parsed);
   // Exit 1 is the empty class (every row `status:"empty"`, as a grep with no
-  // match): a complete answer, not a failed call.
+  // match, or `"outOfRange"`, a page past the last): a complete answer, not a
+  // failed call.
   const rows = parsed?.results ?? [];
-  const emptyAnswer = run.status === 1 && rows.length > 0 && rows.every(r => r.status === 'empty');
+  const emptyAnswer = run.status === 1 && rows.length > 0 && rows.every(r => r.status === 'empty' || r.status === 'outOfRange');
   return {
     label, tool, args, ms: Math.round(run.ms), bytes: Buffer.byteLength(run.stdout, 'utf8'), text: run.stdout + run.stderr, sc,
     isError: !!run.error || !parsed || (run.status !== 0 && !emptyAnswer),

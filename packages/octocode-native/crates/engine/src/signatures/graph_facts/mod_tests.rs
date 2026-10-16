@@ -82,6 +82,37 @@ fn rust_use_bindings_record_their_enclosing_declarations() {
 }
 
 #[test]
+fn rust_paths_outside_calls_and_uses_are_facts() {
+    let source = "use crate::util::run;\nconst A: u32 = crate::limits::MAX;\nfn f() -> crate::types::Out {\n    let g = crate::rules::globs;\n    crate::calls::direct();\n    json!({\"x\": crate::macros::recovery(a), \"y\": $crate::m::Z});\n    let _ = Self::new;\n    mod inner { fn h() { super::super::up::X; } }\n}\n";
+    let facts = extract_graph_facts_with_metadata(source, "src/lib.rs")
+        .expect("graph facts")
+        .facts;
+    let paths = facts
+        .paths
+        .iter()
+        .map(|p| {
+            (
+                p.path.as_str(),
+                p.line,
+                p.caller_id.is_some(),
+                p.inline_depth,
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        paths,
+        [
+            ("crate::limits::MAX", 2, true, 0),
+            ("crate::types::Out", 3, true, 0),
+            ("crate::rules::globs", 4, true, 0),
+            ("crate::m::Z", 6, true, 0),
+            ("crate::macros::recovery", 6, true, 0),
+            ("super::super::up::X", 8, true, 1),
+        ]
+    );
+}
+
+#[test]
 fn rust_comments_and_strings_are_not_references() {
     let source = "/// `helper` is documented; see helper.\npub fn helper() {}\n// helper\n/* helper */\npub fn caller() -> &'static str { \"helper\" }\n";
     assert_eq!(reference_count(source, "lib.rs", "helper"), 0);
@@ -747,6 +778,31 @@ fn c_import_facts_distinguish_quoted_system_and_computed_headers() {
     assert_eq!(imports[2]["resolutionHint"], "unsupported");
 }
 
+/// A file-inclusion macro with a literal path is an `include` import of
+/// that path; a computed path or another macro is none.
+#[test]
+fn rust_include_macros_name_their_literal_file() {
+    let graph = facts(
+        "include!(\"gen/types.rs\");\nconst T: &str = include_str!(\"../data.txt\");\n\
+         include!(concat!(env!(\"OUT_DIR\"), \"/x.rs\"));\nfn f() { println!(\"a.rs\"); }\n",
+        "lib.rs",
+    );
+    let includes: Vec<_> = graph["imports"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|import| import["importKind"] == "include")
+        .map(|import| (import["specifier"].clone(), import["line"].clone()))
+        .collect();
+    assert_eq!(
+        includes,
+        [
+            (serde_json::json!("gen/types.rs"), serde_json::json!(1)),
+            (serde_json::json!("../data.txt"), serde_json::json!(2)),
+        ]
+    );
+}
+
 #[test]
 fn python_graph_facts_include_module_public_defs() {
     let src = r#"
@@ -1132,6 +1188,39 @@ fn recovered_parse_reports_error_line_spans() {
     assert!(clean.error_lines.is_empty());
     let json = serde_json::to_value(&clean).expect("json");
     assert!(json.get("errorLines").is_none(), "{json}");
+}
+
+/// An error that runs to the end of a file with a trailing newline ends on
+/// its last line, never the line after it (an end at column 0 is the
+/// previous line's newline).
+#[test]
+fn an_error_reaching_the_file_end_ends_on_the_last_line() {
+    for (path, source) in [
+        (
+            "a.c",
+            "int ok(void) { return 1; }\nint broken( {\n  return 2;\n  more(;\n",
+        ),
+        (
+            "a.js",
+            "// @flow\ntype T = {| a: number |};\nconst x: Array<T> = [\n  {a: 1},\n",
+        ),
+    ] {
+        let lines = u32::try_from(source.lines().count()).expect("lines");
+        let facts = extract_graph_facts_with_metadata(source, path)
+            .expect("graph facts")
+            .facts;
+        assert!(!facts.error_lines.is_empty(), "{path}: {facts:?}");
+        assert!(
+            facts.error_lines.iter().all(|[_, end]| *end <= lines),
+            "{path}: {:?} past line {lines}",
+            facts.error_lines
+        );
+        assert!(
+            facts.error_lines.iter().any(|[_, end]| *end == lines),
+            "{path}: {:?} reaches line {lines}",
+            facts.error_lines
+        );
+    }
 }
 
 #[test]

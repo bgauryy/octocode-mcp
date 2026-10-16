@@ -9,8 +9,8 @@ import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
-import { ROOT, RESULTS, startServer, expandShared, hermeticEnv } from './mcp-client.mjs';
-import { dataOf, stable, success } from './read-tool-selection/support.mjs';
+import { findHint, nextHints, ROOT, RESULTS, startServer, expandShared, hermeticEnv } from './mcp-client.mjs';
+import { dataOf, failure, stable, success } from './read-tool-selection/support.mjs';
 
 const fixture = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'octocode-selection-')));
 const cliPath = path.join(ROOT, 'packages/octocode/out/octocode.js');
@@ -156,7 +156,6 @@ function receipt(row, unit) {
   assert.equal(value.selectedItems + value.excludedItems + value.unknownItems, value.totalItems, 'selection partitions reconcile');
   return value;
 }
-const unitOf = tool => tool === 'localFetch' ? 'chunks' : 'files';
 
 /** Selected rows are a source-ordered subsequence of the ordinary rows. */
 function assertSubsequence(selected, baseline) {
@@ -170,7 +169,7 @@ function assertSubsequence(selected, baseline) {
 
 /** next.unfiltered strips classification and reproduces the ordinary walk without provider work. */
 async function assertRecovery(tool, row, baseline, overrides) {
-  const lead = row.next?.unfiltered;
+  const lead = row.next?.unfiltered2 ?? row.next?.unfiltered;
   assert.ok(lead, 'classified output exposes next.unfiltered');
   assert.equal(lead.tool, tool);
   const query = lead.query.queries[0];
@@ -244,8 +243,9 @@ try {
         const schema = server.tools.find(tool => tool.name === name)?.inputSchema.properties.queries.items;
         assert.ok(schema?.properties.clasifyContext, `${name} keeps clasifyContext`);
       }
-      const row = success({ json: (await server.call('localSearch', search)).sc });
-      const value = receipt(row, 'files');
+      const result = await server.call('localSearch', search);
+      const row = failure({ json: result.sc, isError: result.isError }, 'classificationProviderError');
+      const value = receipt(row, 'chunks');
       // Per-candidate provider errors are unknown decisions (judgment/select.rs): partial, never excluded.
       assert.ok(['partial', 'unavailable'].includes(value.status), value.status);
       assert.equal(value.selectedItems, 0);
@@ -287,7 +287,7 @@ try {
       const plain = { ...ordinary(search), matchString: 'ordinary bookkeeping', pageSize: 5, extras: ['hints'], mainGoal: classifiers[0] };
       for (const result of [await cli('localSearch', plain), await cli('localSearch', plain, overrides), { json: (await server.call('localSearch', plain)).sc }]) {
         const row = success(result);
-        assert.equal(row.hints?.clasify, undefined);
+        assert.equal(findHint(row, 'hints.clasify'), undefined);
         assert.equal(row.next?.clasify, undefined);
         assert.ok(!JSON.stringify(result.json).includes('"tool":"clasify"'), 'retrieval returns no clasify lead');
       }
@@ -295,7 +295,7 @@ try {
       const cliSelected = success(await cli('localSearch', search, overrides));
       const mcpSelected = success({ json: (await server.call('localSearch', search)).sc });
       for (const row of [cliSelected, mcpSelected]) {
-        const value = receipt(row, 'files');
+        const value = receipt(row, 'chunks');
         assert.equal(value.selectedItems, 2);
         assert.equal(value.excludedItems, 3);
         assert.ok(matchRows(row).some(line => line.includes(marker)), 'selected target evidence is returned');
@@ -329,7 +329,7 @@ try {
       assert.ok(!path.isAbsolute(lead.query.queries[0].path), 'response normalizes an absolute source path to its workspace-relative continuation');
       assert.ok(lead.query.queries[0].selection, 'the continuation carries the saved plan');
       assert.deepEqual(lead.query.queries[0].clasifyContext, query.clasifyContext, 'the continuation keeps clasifyContext');
-      const value = receipt(first, unitOf(tool));
+      const value = receipt(first, 'chunks');
       assert.ok(value.selectedItems > 0 && value.excludedItems > 0, JSON.stringify(value));
       for (const result of selected.results) assert.deepEqual(dataOf(result).selection, value, 'every page reports the same plan');
       assert.ok(selected.rows.some(row => row.includes(marker)), 'selected pages contain the target evidence');
@@ -346,19 +346,21 @@ try {
       const attempts = [];
       // A selection past its constant deadline is covered by
       // runtime_clasify::a_selection_past_its_deadline_withholds_bodies_and_recovers.
-      for (const failure of ['401', '429', '500', 'malformed']) {
-        mode = failure;
+      for (const failureMode of ['401', '429', '500', 'malformed']) {
+        mode = failureMode;
         const startedCalls = calls;
-        const row = success(await cli(tool, query));
-        const value = receipt(row, unitOf(tool));
-        attempts.push({ failure, providerCalls: calls - startedCalls, status: value.status, reason: value.reason });
-        assert.ok(calls > startedCalls, `${failure} attempted the provider`);
-        assert.ok(['partial', 'unavailable'].includes(value.status), failure);
-        assert.equal(value.selectedItems, 0, failure);
-        assert.equal(value.excludedItems, 0, `${failure}: a failed judgment never excludes`);
-        assert.equal(value.unknownItems, value.totalItems, failure);
-        assert.deepEqual(rowsOf(tool, row), [], `${failure}: no raw fallback body`);
-        assert.equal(continuation(row)?.query.queries[0].selection, undefined, `${failure}: no plan-bound continuation of an empty view`);
+        const row = failure(await cli(tool, query), failureMode === 'malformed'
+          ? 'invalidClassificationResponse' : failureMode === '429'
+            ? 'classificationRateLimited' : 'classificationProviderError');
+        const value = receipt(row, 'chunks');
+        attempts.push({ failure: failureMode, providerCalls: calls - startedCalls, status: value.status, reason: value.reason });
+        assert.ok(calls > startedCalls, `${failureMode} attempted the provider`);
+        assert.ok(['partial', 'unavailable'].includes(value.status), failureMode);
+        assert.equal(value.selectedItems, 0, failureMode);
+        assert.equal(value.excludedItems, 0, `${failureMode}: a failed judgment never excludes`);
+        assert.equal(value.unknownItems, value.totalItems, failureMode);
+        assert.deepEqual(rowsOf(tool, row), [], `${failureMode}: no raw fallback body`);
+        assert.equal(continuation(row)?.query.queries[0].selection, undefined, `${failureMode}: no plan-bound continuation of an empty view`);
         mode = 'score';
         await assertRecovery(tool, row, baseline);
       }
@@ -391,10 +393,11 @@ try {
       const before = calls;
       const result = await cli(tool, query);
       assertRejected(result, JSON.stringify(query));
-      const recovery = dataOf(result)?.next?.unfiltered?.query?.queries?.[0];
-      assert.ok(recovery, 'rejection names the unfiltered read');
-      assert.equal(recovery.clasifyContext, undefined);
-      assert.equal(calls, before);
+      const recovery = findHint(result.json, 'repair')?.query?.queries?.[0] ??
+        dataOf(result)?.next?.unfiltered?.query?.queries?.[0];
+      assert.ok(recovery, 'rejection supplies an executable repair');
+      assert.equal(calls, before, 'validation does not call the provider');
+      success(await cli(tool, recovery));
     }
     const before = calls;
     const row = success(await cli('localFetch', { path: path.join(searchDir, '4.txt'), clasifyContext: { classifiers }, fullContent: true }));
@@ -407,7 +410,7 @@ try {
     for (const [tool, query] of [['localSearch', { ...search, matchString: 'NO_MATCH_EXISTS' }], ['localFetch', { ...fetch, matchString: 'NO_MATCH_EXISTS' }]]) {
       const before = calls;
       const row = success(await cli(tool, query));
-      const value = receipt(row, unitOf(tool));
+      const value = receipt(row, 'chunks');
       assert.equal(value.status, 'complete', tool);
       assert.equal(value.totalItems, 0, tool);
       assert.equal(calls, before, tool);
@@ -425,7 +428,7 @@ try {
     const baseline = await walk(cli, 'localSearch', ordinary(query));
     const before = calls;
     const limited = await walk(cli, 'localSearch', query);
-    const value = receipt(dataOf(limited.results[0]), 'files');
+    const value = receipt(dataOf(limited.results[0]), 'chunks');
     assert.equal(calls - before, 64, 'one provider request per admitted candidate');
     assert.equal(value.status, 'partial');
     assert.equal(value.reason, 'candidateBudget');
@@ -446,7 +449,7 @@ try {
     assert.equal(baseline.rows.length, expectedCount, 'every fixture match is reached');
     assert.equal(new Set(baseline.rows).size, expectedCount, 'each original match occurs once');
     assert.deepEqual(selected.rows, baseline.rows);
-    const value = receipt(dataOf(selected.results[0]), 'files');
+    const value = receipt(dataOf(selected.results[0]), 'chunks');
     assert.equal(value.status, 'complete');
     assert.equal(value.selectedItems, value.totalItems);
     assert.ok(selected.provider.slice(1).every(n => n === 0), 'match and file pages replay the plan');
@@ -479,7 +482,7 @@ try {
       const { selection: omitted, ...withoutPlan } = continuation(row).query.queries[0];
       assert.ok(omitted);
       const before = calls;
-      assert.equal(staleCode(await cli(tool, withoutPlan)), 'staleSnapshot', `${tool} without plan`);
+      assert.equal(staleCode(await cli(tool, withoutPlan)), tool === 'localFetch' ? 'invalidInput' : 'staleSnapshot', `${tool} without plan`);
       // Changed selection limits (runtime constants) re-bind the plan:
       // selection::tests::changed_selection_limits_invalidate_the_plan_binding.
       assert.equal(calls, before, 'stale replays make no provider calls');
@@ -549,7 +552,7 @@ try {
     fs.writeFileSync(secretPath, `topic postgres://admin:${password}@db.example.com/app\n-----BEGIN RSA PRIVATE KEY-----\n${`${body}\n`.repeat(100)}-----END RSA PRIVATE KEY-----\n`);
     fs.writeFileSync(path.join(secretDir, 'public.txt'), 'topic public documentation.\n');
     const before = sentStates.length;
-    receipt(success(await cli('localSearch', { path: secretDir, matchString: 'topic', clasifyContext: { classifiers } })), 'files');
+    receipt(success(await cli('localSearch', { path: secretDir, matchString: 'topic', clasifyContext: { classifiers } })), 'chunks');
     receipt(success(await cli('localFetch', { path: secretPath, clasifyContext: { classifiers }, unit: 'lines', length: 10 })), 'chunks');
     const outgoing = JSON.stringify(sentStates.slice(before));
     assert.ok(sentStates.length > before);
@@ -559,7 +562,7 @@ try {
   await check('provider paths use workspace-relative identities for search and fetch', async () => {
     for (const [tool, query] of [['localSearch', search], ['localFetch', { ...fetch, ranges: undefined }]]) {
       const before = sentStates.length;
-      const value = receipt(success(await cli(tool, query)), unitOf(tool));
+      const value = receipt(success(await cli(tool, query)), 'chunks');
       const states = sentStates.slice(before);
       assert.ok(states.length > 0, `${tool} sends candidate states`);
       assert.equal(states.length, value.totalItems - value.unknownItems, `${tool} sends one state per admitted candidate`);
@@ -584,11 +587,11 @@ try {
     assert.equal(calls - before, 1, 'one provider request for one selected state');
     assert.deepEqual(sentQuestions.slice(start).flat().map(question => question.type), ['noul'], 'no selection question is sent');
     assert.ok(!JSON.stringify(row).includes('Cancelling a waiting request'), 'no source body is returned');
-    const read = row.hints.read;
+    const read = findHint(row, 'read');
     assert.equal(read.tool, 'localFetch');
     const exact = read.query.queries[0];
     assert.deepEqual(exact.ranges, ['880-920']);
-    assert.equal(exact.minify, 'none');
+    assert.equal(exact.minify, undefined);
     assert.ok(exact.snapshot, 'the lead pins the captured snapshot');
     assert.equal(exact.clasifyContext, undefined, 'source verification does not add a selection stage');
     assert.equal(exact.selection, undefined, 'source verification carries no selection plan');
@@ -633,9 +636,9 @@ try {
     receipt(dataOf(selected.results[0]), 'chunks');
     for (const result of selected.results) {
       const row = dataOf(result);
-      assert.equal(row.hints?.readBlock, undefined);
-      for (const [name, lead] of Object.entries(row.hints ?? {})) {
-        if (name === 'text') continue;
+      assert.equal(findHint(row, 'hints.readBlock'), undefined);
+      for (const lead of nextHints(row).filter(call => call.path.includes('.hints.'))) {
+        const name = lead.key;
         for (const query of lead.query?.queries ?? []) {
           assert.equal(query.selection, undefined, `hints.${name} inherits no selection plan`);
           assert.equal(query.clasifyContext, undefined, `hints.${name} inherits no classification context`);
@@ -694,7 +697,7 @@ try {
   await check('selection reports provider usage through existing opt-in statistics', async () => {
     const before = calls;
     const row = success(await cli('localSearch', search, { OCTOCODE_STORAGE_MODE: 'persistent', OCTOCODE_ENABLE_STATS: 'true' }));
-    assert.ok(receipt(row, 'files').selectedItems > 0);
+    assert.ok(receipt(row, 'chunks').selectedItems > 0);
     const usage = JSON.parse(fs.readFileSync(path.join(isolated.OCTOCODE_HOME, 'stats.json'), 'utf8')).stats.clasify;
     assert.equal(usage.calls, calls - before);
     assert.equal(usage.input_tokens, 10 * usage.calls);

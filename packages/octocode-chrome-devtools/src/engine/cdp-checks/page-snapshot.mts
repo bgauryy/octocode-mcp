@@ -19,7 +19,7 @@ import { collectRefs, clip, flat } from '../ax-snapshot.mjs';
 //   SNAPSHOT_CONTEXT   0 drops row/card context lines and inferred names (default on)
 //   SNAPSHOT_URLS      1 appends link targets (→ /path)
 //   SNAPSHOT_CLICKABLE 0 skips cursor:pointer/onclick detection (one DOMSnapshot call)
-//   SNAPSHOT_TEXT      print the first N chars (max 4000) of main/body text; full text -> page-text.txt
+//   SNAPSHOT_TEXT      print the first N chars (max 4000) of document/root text; full text -> page-text.txt
 //   SNAPSHOT_STDOUT    summary keeps refs on disk
 //   SNAPSHOT_DEPTH     max AX tree depth (default unlimited)
 
@@ -181,8 +181,9 @@ export async function run(cdp) {
   const viewport = VIEWPORT
     ? (await cdp.send('Page.getLayoutMetrics')).cssVisualViewport
     : null;
+  const selectedRootBackendId = ROOT ? await rootBackendId(cdp) : null;
   const { useful, regions, totalNodes, findings } = await collectRefs(cdp, {
-    rootBackendId: ROOT ? await rootBackendId(cdp) : null,
+    rootBackendId: selectedRootBackendId,
     viewport,
     clickable: CLICKABLE,
     depth: DEPTH,
@@ -342,15 +343,39 @@ export async function run(cdp) {
   console.log(`[ARTIFACT] PAGE_SNAPSHOT ${artifactPath}`);
 
   if (TEXT_CHARS > 0) {
-    const text =
-      (
+    let text;
+    try {
+      let response;
+      if (selectedRootBackendId !== null) {
+        const { object } = await cdp.send('DOM.resolveNode', {
+          backendNodeId: selectedRootBackendId,
+          objectGroup: 'snapshot-text',
+        });
+        response = await cdp.send('Runtime.callFunctionOn', {
+          objectId: object.objectId,
+          functionDeclaration: 'function() { return this.innerText; }',
+          returnByValue: true,
+        });
+      } else {
+        response = await cdp.send('Runtime.evaluate', {
+          returnByValue: true,
+          expression: '(document.body || document.documentElement).innerText',
+        });
+      }
+      if (
+        response.exceptionDetails ||
+        typeof response.result?.value !== 'string'
+      )
+        throw new Error('Document or selected root text could not be read');
+      text = response.result.value;
+    } catch (error) {
+      throw new Error(`PAGE_TEXT_UNAVAILABLE: ${error.message}`);
+    } finally {
+      if (selectedRootBackendId !== null)
         await cdp
-          .send('Runtime.evaluate', {
-            returnByValue: true,
-            expression: `((document.querySelector('main,[role=main],article') || document.body)?.innerText || '').replace(/\\s+/g, ' ').trim()`,
-          })
-          .catch(() => null)
-      )?.result?.value ?? '';
+          .send('Runtime.releaseObjectGroup', { objectGroup: 'snapshot-text' })
+          .catch(() => {});
+    }
     const textPath = join(cdp.outputDir, 'page-text.txt');
     writeFileSync(textPath, `${text}\n`, { mode: 0o600 });
     console.log(

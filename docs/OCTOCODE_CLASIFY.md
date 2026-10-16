@@ -1,265 +1,207 @@
-# Evidence selection and clasify
+# JEV in Octocode
 
-Use `clasifyContext` for noisy local search, large local fetches, and scoped GitHub fetches that still contain many irrelevant passages. JEV selects evidence before the host reads it. Keep exact reads and GitHub search ordinary. Use beta `clasify` when a typed answer about unread files, URLs or images decides which resources to inspect. Both routes use one evaluator; optional row `mainGoal` and `reasoning` add research context.
-
-The current priorities come from the [2026-10-15 paired CLI measurements](../.octocode/octocode-eval-benchmark/2026-10-15-jev-flow-review-v2/README.md):
-
-| Workflow | Tool argument + result tokens | Decision |
-|---|---:|---|
-| Noisy local search | 10,585 → 1,061 (−90%) | Use selection after lexical narrowing |
-| Large local fetch | 8,542 → 600 (−93%) | Select passages when the exact location is unknown |
-| Scoped GitHub fetch | 2,807 → 775 (−72%) | Pin the ref, narrow the view, then select |
-| Exact local read | 184 → 243 (+32%) | Read directly; omit classification |
-
-These are case-specific tool-I/O measurements, not whole-agent savings or guaranteed quality improvements. The GitHub search comparison left every candidate unknown and did not support promotion. Its classifier field remains available for experiments, but is not a recommended route. Count recovery and final evidence reads when evaluating a workflow.
+JEV scouts evidence before the main agent reads it. The aim is fewer tokens spent on irrelevant content while the host handles reasoning and verification. The agent sends paths, URLs or image references plus questions; Octocode acquires the content internally and sends it to JEV.
 
 ## Choose a route once
 
-| Need | Route | What comes back |
+| Need | Use | Host receives |
 |---|---|---|
-| A known name, condition, or source range | Ordinary search, AST/LSP, or a bounded read | Direct evidence; no JEV call |
-| Filter many local lexical search hits | Narrow path, globs and known file terms, then optional `clasifyContext` | Selected hit evidence, coverage and recovery |
-| Relevant passages from large local files or scoped GitHub files | Batch `localFetch` or `ghGetFileContent` with `clasifyContext` | Selected passages, coverage and recovery |
-| A typed decision over unread source | `clasify` with a `source` reference | JEV answers, model, usage, and a read lead; no body |
-| A typed decision over unread images | `clasify` with image `assets` referenced in the state or questions | JEV answers and captured image identities; no bytes |
-| A typed decision over data you already hold | `clasify` with literal `state` | JEV answers, model and usage |
-| Available provider models | `clasify` with `operation:"models"` | Model names, descriptions, and release dates |
-| Every match, a whole file, or an absence claim | Ordinary traversal of every page | All pages in the declared scope; classification never proves completeness |
+| Choose which unread resource to inspect | `clasify` with `source` or image `assets` | Typed answers and inspection references; no source body or image bytes |
+| Read relevant passages from many hits or a large file | Search/fetch with `clasifyContext:{classifiers:[...]}` | Selected evidence, coverage counts and recovery links |
+| Read a known line, small file, or exact symbol | Ordinary search/fetch, AST or LSP | Direct evidence; no JEV call |
 
-Prefer an adequate exact route. Classifying a page you must read in full saves nothing, and a `clasify` pass that repeats a relevance question already asked by `classifiers` only adds work. For a list of documents: if the next step needs passages, batch classified fetches; if a typed answer decides which documents to open, screen their paths with `clasify`. Either way Octocode reads the source internally; the host sends paths and questions, not file bodies.
-
-```mermaid
-flowchart TD
-    Q[Missing fact] --> E{Exact route answers it?}
-    E -- yes --> D[Read direct evidence]
-    E -- no --> T{Typed judgment changes the next action?}
-    T -- yes --> J[clasify: state or source]
-    T -- no --> S[Noisy local search or large/scoped fetch + clasifyContext]
-    S --> R[Read returned source; continue only for missing evidence]
-    D & J & R --> V[Verify conditions, exceptions and coverage]
-```
-
-## Quick start
-
-Set the [classification key](AUTHENTICATION.md#classification-key-clasify); `clasify` also needs beta ([availability](#availability)). Restart the MCP server after changing configuration. Discover fields with `npx octocode schema localSearch --view query` or `npx octocode schema clasify --view query`; run a saved request with `npx octocode clasify --input request.json`.
-
-Search with one self-contained question per missing fact:
-
-<!-- tool: localSearch -->
-```json
-{"queries":[{"path":"src/cache","matchString":"expire","contextLines":3,"clasifyContext":{"classifiers":["Does this code remove expiry metadata when a local-memory cache entry expires?"]}}]}
-```
-
-Ask a typed question about unread source without reading it first:
-
-<!-- tool: clasify -->
-```json
-{"queries":[{"source":{"tool":"localFetch","query":{"path":"tests/cache.test.ts","ranges":["40-110"]}},"questions":{"cleanup_asserted":{"type":"noul","instructions":"Does the selected expired-entry test explicitly assert removal of expiry metadata?"}}}]}
-```
-
-### Read relevant passages from known large files
-
-Batch the discovered paths with the deciding question:
-
-<!-- tool: localFetch -->
-```json
-{"queries":[{"path":"docs/upgrade-guide.md","fullContent":true,"clasifyContext":{"classifiers":["Does this passage specify when a rolling upgrade may mix server versions?"]}},{"path":"docs/deployment-guide.md","fullContent":true,"clasifyContext":{"classifiers":["Does this passage specify when a rolling upgrade may mix server versions?"]}}]}
-```
-
-Read the selected passages once; follow selected continuations only for evidence still needed. Check unknown coverage before concluding that no passage answers. Small files and known exact ranges usually need only an ordinary fetch.
-
-Inline selection already returns source. Do not fetch the same complete deciding passage again merely to verify the classification. Read more only when a required condition is missing, the excerpt is clipped, or the claim requires broader coverage. Standalone `clasify` returns judgments without bodies, so its deciding source may still need a read.
-
-### Match first, then classify the surrounding evidence
-
-When the file is known and a literal locates plausible passages, use `matchString` with enough `contextLines` for the deciding conditions; `clasifyContext` then selects from that extracted view and never inspects the rest of the file. Positive `contextLines` may complete a small enclosing declaration, so it is not a strict ±N unless `ranges` bound the view; `contextLines:0` disables that completion and returns complete matching lines instead of compact excerpts of very long lines. `block:true` widens to enclosing declarations. Prefer an ordinary matched fetch when its windows already answer.
-
-<!-- tool: localFetch -->
-```json
-{"queries":[{"path":"src/cache/expiry.ts","matchString":"expire","contextLines":8,"clasifyContext":{"classifiers":["Does this passage show expiry metadata being removed when a cache entry expires?"]}}]}
-```
-
-The same selectors work on `ghGetFileContent` with repository identity and a ref. Gutters and `sourceLineRanges` refer to the original file; gaps stay gaps. A selected window is a place to inspect, not proof that every line supports the question. Keep the snapshot or resolved commit when narrowing a follow-up read.
-
-### Filter local code search before reading hits
-
-Narrow candidates with path, include/exclude and `fileHas`/`fileLacks`, then add one atomic classifier when the remaining hits need interpretation. JEV sees bounded hit snippets per file (`contextLines` defaults to 0), so a larger `pageSize` cannot expose a missing surrounding condition. If the decision needs the whole file, use a classified fetch or `clasify` with a `source`. Classification cannot recover a file lexical search excluded.
-
-### Screen several unread resources
-
-Pass the references to `clasify`, one row per resource, batched in one call. One Noul question fits an observable yes/no decision; use Choice when separating support, contradiction and insufficient evidence changes the next action.
-
-<!-- tool: clasify -->
-```json
-{"queries":[{"id":"rotation","source":{"tool":"localFetch","query":{"path":"docs/credential-rotation.md","fullContent":true}},"questions":{"restart_free":{"type":"noul","instructions":"Does this guide explicitly describe rotating credentials without restarting the service?"}}},{"id":"deployment","source":{"tool":"localFetch","query":{"path":"docs/deployment.md","fullContent":true}},"questions":{"restart_free":{"type":"noul","instructions":"Does this guide explicitly describe rotating credentials without restarting the service?"}}}]}
-```
-
-For GitHub use `source.tool:"ghGetFileContent"` with `owner`, `repo`, `path`, `ref` and the selection; for a web page use `source:{url:"https://…"}`. Discover file targets before classifying a folder. A path inside literal `state` is never read.
-
-Use the answers to choose the next read. For a source-backed claim, fetch the deciding passage with `matchString` or a smaller range, keeping the returned snapshot or ref. If the task only needs a typed classification, the answer may finish it. Batch independent questions about one resource, and ask only questions whose answers change the next action. Classification pays off only when the reading it avoids exceeds its added tool and context cost.
-
-## Classifiers on search and fetch
-
-`clasifyContext` is optional on four tools. Its `classifiers` array holds one to five atomic evidence questions, each nonblank and at most 1,000 characters. Row `mainGoal` and `reasoning` add context to every question (keep reasoning a short search rationale); none of these fields exposes the host conversation to JEV.
-
-| Tool | What is assessed | Scope |
-|---|---|---|
-| `localSearch` | Sanitized matched-line bundles per file | Collected lexical matches; content views only |
-| `ghSearchCode` | Available hit evidence on one provider page | Default-branch index; filename-only hits stay unknown |
-| `localFetch` | Source-addressed windows from the extracted raw view | Supplied ranges or matches, or the file before output paging |
-| `ghGetFileContent` | The same raw windows | Source at the resolved commit |
-
-Fetch candidates are independent windows of about 2,048 characters, split at omitted source spans; they are not semantic sections or whole declarations, so a question needing facts from separate windows can stay unknown. For a joint decision, use one complete `clasify` source selection or read the deciding ranges together. `longContext:true` opts into JEV's long-context header; it does not merge windows or lift the [fixed selection budget](CONFIGURATION.md#fixed-internal-limits) (64 candidates, 131,072 characters, 10 s per operation).
-
-Each question compiles to one core-owned three-level Score rubric: no useful evidence, related background, direct evidence. A candidate is **selected** if any question gives direct evidence more than half the probability, **excluded** only if every question gives no useful evidence more than half, and **unknown** otherwise. These are selection rules, not calibrated confidence. Selected items keep source order.
-
-Only selected bodies enter the default response. `selection` reports status (`complete`, `partial`, `unavailable`), scope (`selectedView`, `providerPage`), unit (`files`, `chunks`), and total, selected, excluded and unknown counts, which sum to the total. A failed or unassessed candidate stays unknown; a provider error never falls back to raw bodies or becomes a negative judgment.
-
-Copy selected-result paging calls unchanged: their `selection` token replays the bound decision without another JEV call. `next.unfiltered` recovers the complete original view without classification; use it for completeness or unresolved coverage, and name withheld scope. Local recovery uses a snapshot, GitHub file recovery a commit; GitHub search recovery reruns the provider page and can reflect index changes.
-
-Search count and path-only views, explicit minified fetches, fresh byte windows and streamed sources reject `clasifyContext` with recovery. An omitted fetch `minify` resolves to raw text. Other tools reject `clasifyContext`; inline search never fetches full files behind filename hits.
-
-## clasify: JEV's four primitives
-
-Each evaluation row holds keyed `questions` and exactly one of `state` or `source`. A separate `{operation:"models"}` row lists the provider's models. Questions use the provider's field names:
-
-| `type` | `criteria` | Answer fields |
-|---|---|---|
-| `noul` | Optional `{true, false}` meanings | `noul`: P(yes) over this state |
-| `choice` | 1–255 `{label: meaning}`; add an insufficient-evidence label when the state may not decide | `choice`, `confidence`, every `probabilities` entry |
-| `score` | 1–10 ordered levels, low to high | `score` (a zero-based, possibly fractional level), `confidence`, `probabilities`, `legend` |
-| `box` | None; name the visible object in `instructions` | `box: {top, bottom, left, right}` normalized to 0–1, and nullable `confidence` |
-
-`instructions` may be omitted or null. Instructions and criterion meanings can be text, objects or arrays; structure organizes the question, it does not request generated JSON. Confidence measures how concentrated the distribution is, not correctness. Independent questions about one state share one provider request; compose dependent decisions in your own logic. A row `model` overrides the configured model (`OCTOCODE_CLASSIFICATION_MODEL`, else the provider default); the answer names the model that answered. Pin an exact model for reproducible results.
-
-### State or source
-
-| Input | What Octocode does | What you receive |
-|---|---|---|
-| `state`: text, object or array | Sends it as data; a path or URL inside it is never fetched | Answers, `model`, `usage` |
-| `source: {tool: "localFetch", query: {path, ranges or fullContent}}` | Reads the selection through the authorized reader and binds its snapshot | Answers plus `hints.read` with the same path, ranges and snapshot |
-| `source: {tool: "ghGetFileContent", query: {owner, repo, path, ref?, ranges or fullContent}}` | Resolves the ref to a commit and reads the selection | Answers plus `hints.read` pinned to that commit |
-| `source: {url: "https://…#section"}` | Fetches the HTTPS page, extracts text, selects the fragment's section, and saves the capture | Answers, `source: {url, snapshot, expiresAt}`, and `hints.read` into the saved capture |
-
-A file source needs explicit `ranges` or `fullContent:true`. Captures are exact text (`minify:"none"`). A selection over the state limit fails with `classificationContextTooLarge`: narrow the ranges or set `longContext:true` (the provider can still reject it). A denied, missing or changed source fails the row before any JEV call, and a failed row never becomes a negative answer.
-
-`hints.read` reads exactly what was judged: same selection, snapshot or commit. A URL lead reads the saved extracted text through `localFetch`, so its line numbers refer to that text, not the HTML. Captures live under `<home>/tmp/capture/url/<snapshot>/` and expire after 24 hours; a changed or removed capture fails the lead (`staleSnapshot` or not found) and never fetches a newer page.
-
-### Locate a passage with typed questions
-
-`clasify` judges the whole selection once; `hints.read` names that selection, not an answer-specific citation. To locate a passage, keep the source as a path, ask a Choice question whose labels are known line ranges, and pair it with an independent Noul existence question (the provider's [line-ID search pattern](https://docs.typesafe.ai/cookbooks/semantic_find)).
-
-<!-- tool: clasify -->
-```json
-{"queries":[{"source":{"tool":"localFetch","query":{"path":"docs/upgrade-guide.md","ranges":["40-99"]}},"questions":{"exists":{"type":"noul","instructions":"Does the selected source explicitly state when a rolling upgrade may mix server versions?"},"where":{"type":"choice","instructions":"Which original source range most directly states when a rolling upgrade may mix server versions? Choose unknown if no range addresses it.","criteria":{"lines_40_59":"Original source lines 40-59","lines_60_79":"Original source lines 60-79","lines_80_99":"Original source lines 80-99","unknown":"No listed range addresses the question"}}}}]}
-```
-
-Take ranges from an outline or a known bounded selection; coarse ranges cost less than per-line labels. Read the chosen range with neighboring context and keep its snapshot or ref. A low existence result, an `unknown` label or a flat distribution leaves the location unresolved; Choice probabilities compete and sum to one, so the top one is not independent confidence. Choice returns one location, so it cannot establish every supporting site: use classified fetch or separate questions for that. Do not split whole-source questions into window-level ones: absence, universal claims and cross-range relationships change meaning.
-
-### Unread images and model discovery
-
-Reference PNG or JPEG images in an `assets` map. Each key must appear in a string value inside `state` or `questions`; the provider substitutes the image there. An unused key fails before acquisition. Octocode does not crawl images embedded in a text page.
-
-<!-- tool: clasify -->
-```json
-{"queries":[{"model":"jev-1.14.0","state":"Inspect image_1.","assets":{"image_1":{"type":"image","source":{"tool":"localFetch","query":{"path":"screenshots/settings.png"}}}},"questions":{"contains_save":{"type":"noul","instructions":"Is a Save button visibly present in image_1?"},"save_location":{"type":"box","instructions":"Locate the Save button in image_1."}}}]}
-```
-
-An image source is `{tool:"localFetch",query:{path,snapshot?}}`, `{tool:"ghGetFileContent",query:{owner,repo,path,ref?}}`, or `{url:"https://…"}` pointing directly at PNG/JPEG bytes, with no fragment. Octocode reads the original bytes under the access and network policy, checks the dimensions against the [limits](#limits) without resizing, resolves GitHub refs to commits, and sends the images with the provider's image opt-in header. The provider still validates encoding and model compatibility. Images and Box are experimental ([provider image limits](https://docs.typesafe.ai/images#limits)).
-
-The result's `assets` map reports each image's origin, digest `snapshot`, format, size, dimensions, saved `path`, and `expiresAt`; inspect the saved file with an image-capable reader when details matter. Image capture needs persistent storage and an available `localFetch` reader (and the GitHub reader for GitHub images).
-
-List model IDs before pinning one; each entry has `name`, `description`, and `release_date`:
-
-<!-- tool: clasify -->
-```json
-{"queries":[{"operation":"models"}]}
-```
-
-Pin a model tested for the primitive you need: on 2026-10-15, Box passed on `jev-1.14.0` and returned HTTP 400 on `jev-1.13.0`. Octocode never switches models after a rejection.
-
-### Write questions that work
-
-- Search snippets: ask whether the captured evidence addresses one fact, such as “Does this snippet show expiry metadata being removed?” A missing surrounding condition remains unknown; classification cannot recover a lexical miss.
-- Code or documentation: name one stated condition, such as “Does this function return CANCELLED before enqueueing when request.cancelled is true?” Select enough source for both operations. Keep correctness, vulnerability proof and cross-file reasoning with the host.
-- Images: ask a visible fact, such as “Does screen show both Browser and Renderer containers?” Use `state:{screen:"image_1"}` with one asset reference and group independent questions about `screen` in the same row. Avoid repeated image references in each question.
-- Choice for mutually exclusive alternatives, with an insufficient-evidence option when needed.
-- Score for an ordered rubric whose levels you can act on, not exact counting or arithmetic. Scores are zero-based, possibly fractional levels, not automatically a 1–10 rating.
-- Pair Box with an independent presence question. Use coordinates only after presence is supported and inspect the image before acting; Box can return coordinates for an absent object. Sibling answers do not condition one another.
-
-The [image development set](../.octocode/octocode-eval-benchmark/2026-10-15-jev-images-v1/README.md) answered all 42 presence questions correctly, while Box met the overlap threshold on 7/9 cases and exact counts were less reliable. Grouping five independent questions about one image reduced tool argument/result tokens by 73.6% in one paired run. These results support visible-fact scouting and grouping, not general design judgment or proven savings against a host vision model.
-
-### AST and LSP candidates
-
-Keep AST structural matches and LSP definitions, references and callers ordinary. They establish different evidence: syntax and symbol identity. Neither accepts `clasifyContext`; filtering identity edges would invalidate exhaustive reference or reachability claims.
-
-When AST or LSP produces many candidate locations whose bodies are expensive to read, those returned paths and ranges can feed the existing `clasify.source` route. Classify only to choose the next body reads; retain the original candidate list, unknowns and coverage. First try a more precise structural pattern, lexical filter or bounded read. Do not add a second classifier implementation or imply that a semantic judgment verifies an LSP edge. This follow-up route needs workload-specific measurement before promotion alongside the three priorities above.
-
-In a [synthetic 20-function comparison](../.octocode/octocode-agentic-prompts/2026-10-15-jev-routing/ast-paired.json), AST discovery plus all body reads used 9,593 tool-I/O tokens. Classifying the 20 source ranges and reading the single positive used 5,590 (−41.7%), with all 20 judgments correct. A precise ordinary search plus one read used only 640. The exact LSP definition query used 171. This supports selective follow-up when candidate bodies genuinely need interpretation; it does not justify classifying precise searches or identity results. JEV usage was separate: 13,546 input and 400 output tokens.
-
-## Read the answers
-
-| Result | Interpretation and action |
-|---|---|
-| Selected source from `clasifyContext` | A promising place to read; verify every required condition |
-| `noul` near 0 | This state does not establish the fact; it is not absence elsewhere |
-| `choice` with low `confidence` | The state does not separate the labels; read or narrow before acting |
-| `box` with null confidence | No provider confidence; inspect the saved image before relying on the location |
-| `score` between levels | The distribution spans levels; read `probabilities` and `legend` |
-| `replayed: true` | Saved answers for an identical evaluation; `usage` is not new spend |
-| Row `error` | Refine the source or retry; it is not a “no” |
+Use one classification stage per relevance decision. If selected passages already answer the question, read them once and stop. A judgment over already-read `state` cannot save that reading.
 
 ## Shared mechanism
 
 ```mermaid
-flowchart LR
-    R[Search or fetch + clasifyContext] --> T[Core relevance template]
-    C[clasify + questions] --> Q[JEV Question definition]
-    T --> Q
-    R --> S[Shared source capture]
-    C --> S
-    S --> E[One evaluator: admission, cache, single flight, retries, usage]
-    Q --> E
-    E --> J[JEV]
-    E --> O[Selected source pages or typed answers]
+flowchart TD
+    A[Agent sends references and questions] --> C[clasify: capture unread text or images]
+    A --> S[Search or fetch with clasifyContext]
+    S --> W[Retrieved snippets or source chunks]
+    C --> E[Shared evaluator and answer cache]
+    W --> E
+    E -->|Uncached request| J[JEV typed questions]
+    J -->|Answers| E
+    E -->|clasify| T[Typed answers and inspection references]
+    E -->|clasifyContext| P[Selected evidence and coverage]
+    E -->|Unknown or error| R[Conditional inspection guidance]
+    T --> H[Host decides what to read or conclude]
+    P --> H
+    R --> H
 ```
 
-Retrieval passes the units it already captured to the evaluator; it never calls public `clasify`, which resolves sources through the same readers. Identical prepared state, questions, model, image bytes and options reuse one validated answer from either entry point. GitHub bytes are reused at the resolved commit; local files and URLs are reacquired to check current content. Only complete validated answers are cached: 30 minutes, 256 entries and 8 MiB in memory, and on disk only in persistent storage mode. Concurrent identical requests share one provider call; each waiter keeps its own deadline.
+Both routes share validation, caching, concurrent-request deduplication, retries and usage accounting. Search/fetch passes captured evidence directly to the evaluator; it does not call the public `clasify` tool.
 
-## Measure the cost
+Identical evidence, questions, model, image bytes and options reuse complete validated answers for 30 minutes. Concurrent identical requests share one provider call. GitHub bytes are cached by resolved commit; local files and URLs are reacquired to check their content. Persistent storage also saves answers and captured URL/image evidence.
 
-Count host input plus output over the whole task, and JEV usage separately: tool output alone overstates savings. In the 2026-10-15 [evaluation](../.octocode/octocode-eval-benchmark/2026-10-15-jev-e2e/README.md), hosts allowed to classify never chose to on eight research runs, and a document task that required classification saved 2.8–10.7% of host tokens with correct answers. Neither establishes a universal saving.
+## JEV API support
 
-## Reference
+Octocode supports all four [JEV question primitives](https://docs.typesafe.ai/primitives), evaluation through `POST /v1/systemone`, and model discovery through `GET /v1/models`.
 
-### Limits
+| Primitive | Question / criteria | Returned answer |
+|---|---|---|
+| **Noul** (`noul`) | One yes/no predicate; optional `{true,false}` meanings | `noul`: probability of yes, 0–1 |
+| **Choice** (`choice`) | Choose among 1–255 `{label:meaning}` alternatives | `choice`, every label's `probabilities`, `confidence` |
+| **Score** (`score`) | Ordered `criteria` levels, low to high, up to 10 | Zero-based, possibly fractional `score`, `probabilities`, `confidence`, `legend` |
+| **Box** (`box`) | Locate a named visible object in an image | Normalized `box:{top,bottom,left,right}` and nullable `confidence` |
 
-| Limit | Value |
-|---|---:|
-| `clasifyContext.classifiers` per row / characters each | 1–5 / 1,000 |
-| `clasify` rows per call | 5 |
-| Questions per row | 1–25 |
-| Complete serialized state characters, normal / `longContext:true` | 32,000 / 256,000 |
-| Choice labels / score levels | 1–255 / 1–10 |
-| Image assets per evaluation row | 8 |
-| Image bytes, each / combined per row | 8 MiB / 16 MiB |
-| Image width and height, each | 256–1,568 pixels, inclusive |
-| Image total pixels | 78,400–2,458,624, inclusive |
+Questions are keyed and independent. Group questions about the same resource in one row; a sibling answer cannot supply context to another question. `instructions` and criterion meanings accept structured JSON; this organizes input, not arbitrary generated JSON output. Confidence describes the distribution, not correctness.
 
-The state limit includes JSON escaping and source identity, so raw text can reach it before its own character count does. These are Octocode admission limits; a model may still reject an admitted input. Field details: [tool reference](OCTOCODE_TOOLS.md#semantic-assessment-reference).
+Also supported:
 
-### Availability
+- **Images:** PNG/JPEG `assets` from local/GitHub paths or HTTPS URLs. Octocode sends original bytes without resizing and enables `TypeSafe-Danger-Zone-Images: true`. Images and Box are experimental and model-dependent.
+- **Long context:** `longContext:true` enables `TypeSafe-Danger-Zone-Long-Context: true`. It increases admitted state size, not inline chunk size or selection budgets.
+- **Models:** `operation:"models"` returns names, descriptions and release dates. Row `model` overrides `OCTOCODE_CLASSIFICATION_MODEL`; the default is `jev-latest`. Pin a tested model for reproducibility.
+- **Results:** keyed `answers`, answering `model`, provider `usage` and `replayed`. Source/image provenance identifies what was judged; bodies stay out of standalone results.
 
-A nonblank `OCTOCODE_CLASSIFICATION_API` (or `classification.api`) enables `clasifyContext` on the available readers. Public `clasify` additionally needs beta (`OCTOCODE_BETA`); its visibility never gates inline selection. See [authentication](AUTHENTICATION.md#classification-key-clasify) and [classification egress](SECURITY.md#classification-egress).
+## clasify: scout unread resources
 
-| API key | Beta | Public `clasify` | `clasifyContext` |
-|---|---|---|---|
-| Missing or blank | Either | Hidden | Omitted |
-| Nonblank | Off | Hidden | Available on four readers |
-| Nonblank | On | Available | Available on four readers |
+Each evaluation row has `questions` and exactly one of `source` or `state`:
 
-Tool allow and deny lists still apply. Without a key, schemas omit the selection controls, discovery omits classification guidance, and an explicit context request fails clearly. Configuration enables the capability; it does not prove the key works, and discovery makes no provider request. Inspect with `npx octocode config --json` and `npx octocode schema <tool> --view query`. Calls without context make no JEV request.
+| Input | Meaning |
+|---|---|
+| `source:{tool:"localFetch",query:{path,ranges}}` | Read those local lines; `fullContent:true` can replace `ranges` |
+| `source:{tool:"ghGetFileContent",query:{owner,repo,path,ref,ranges}}` | Read at the resolved GitHub commit; `fullContent:true` can replace `ranges` |
+| `source:{url:"https://…#section"}` | Extract page text, select the section and save the capture; requires persistent storage |
+| `state` | Literal data already held; paths and URLs inside it are not fetched |
 
-### Usage stats
+Discover concrete paths before screening a folder. Batch up to five resources; put independent questions about one resource in the same row.
 
-With `OCTOCODE_ENABLE_STATS=true` and persistent storage, `<octocode-home>/stats.json` records `stats.clasify` for both entry points: attempted `calls`, reported `input_tokens` and `output_tokens`, and `known_usage_calls` / `unknown_usage_calls`. Failed sends and retries count as calls; a missing provider receipt means unknown usage, not zero. Cached answers add no requests. Use an isolated `OCTOCODE_HOME` for experiments.
+<!-- tool: clasify -->
+```json
+{
+  "queries": [{
+    "source": {
+      "tool": "localFetch",
+      "query": {"path": "docs/upgrade-guide.md", "fullContent": true}
+    },
+    "questions": {
+      "restart": {
+        "type": "noul",
+        "instructions": "Does this guide explicitly require restarting the service after an upgrade?"
+      }
+    }
+  }]
+}
+```
+
+`read` in `hints` opens the captured selection at the same snapshot/commit. It is not an answer-specific citation. Read the deciding passage before making a source claim; a task requesting only typed classification can finish with the answer. URL captures expire after 24 hours; their line numbers refer to extracted text, and a stale capture is not silently replaced.
+
+For location scouting, Choice labels can name observed source ranges, with an insufficient-evidence option. Read the chosen range with context at the same revision. Choice selects one location; use classified fetch when several passages matter.
+
+### Unread images
+
+Reference an asset key in `state` or the questions. An image source uses the same local/GitHub reader identity, or a direct HTTPS PNG/JPEG URL. Images require persistent capture storage and available readers; embedded page images are not crawled.
+
+<!-- tool: clasify -->
+```json
+{
+  "queries": [{
+    "model": "jev-1.14.0",
+    "state": {"screen": "image_1"},
+    "assets": {
+      "image_1": {
+        "type": "image",
+        "source": {"tool": "localFetch", "query": {"path": "screenshots/settings.png"}}
+      }
+    },
+    "questions": {
+      "present": {"type": "noul", "instructions": "Is a Save button visible in screen?"},
+      "location": {"type": "box", "instructions": "Locate the Save button in screen."}
+    }
+  }]
+}
+```
+
+Results include each asset's saved `path`, origin, snapshot, format, dimensions, size and expiry. Inspect that image when details matter. Check presence before using Box coordinates: Box can return a location for an absent object. Octocode does not switch models after rejection.
+
+## Classifiers on search and fetch
+
+`clasifyContext` filters retrieved evidence before returning it. Only selected bodies return, in source order. Optional row `mainGoal` and a short `reasoning` rationale add context to every inline question; JEV receives no host conversation.
+
+| Tool | What JEV evaluates | Use |
+|---|---|---|
+| `localSearch` | Each hit snippet (hit + context), before paging; counts describe kept hits. `resultView` `paginated` or `matchOnly` only: another view is rejected at admission, and `repair` in `hints` drops it | Noisy search after path/glob and known-term filtering |
+| `localFetch` | Windows from the file or selected ranges/matches | Large files with unknown relevant locations |
+| `ghGetFileContent` | The same windows, at a resolved commit | Scoped GitHub file reads |
+| `ghSearchCode` | Available hit lines on one provider page | Experimental; filename-only hits stay unknown |
+
+<!-- tool: localSearch -->
+```json
+{
+  "queries": [{
+    "path": "src/cache",
+    "matchString": "expire",
+    "contextLines": 3,
+    "clasifyContext": {
+      "classifiers": ["Do these lines show expiry metadata being removed?"]
+    }
+  }]
+}
+```
+
+The same `clasifyContext` works on fetch. Use `matchString` with enough `contextLines`, or explicit `ranges`, to retain deciding conditions. Positive context can complete a small declaration; ranges bound that expansion. Original line numbers remain source coordinates. Search never reads hidden whole-file bodies or recovers lexical misses.
+
+Whole-file `localFetch` keeps declarations and their documentation together when they fit the character budget. Oversized declarations, source gaps, unsupported syntax and extracted views use complete line windows targeting 2,048 characters; omitted spans split windows. Cross-window questions can still stay unresolved, and `longContext` does not join windows. Path/count-only search views, explicit minification, fresh byte windows and streamed sources reject classification with recovery.
+
+Keyword relevance prioritizes source-content windows for the bounded assessment budget, with each classifier getting an admission turn. This ordering does not select or exclude evidence: the classifier makes those decisions, and selected output stays in source order. Unassessed evidence remains unknown and recoverable.
+
+Each classifier becomes a shared three-level Score rubric: no useful evidence, background, direct evidence. A candidate is selected when any question assigns direct evidence probability above 0.5; excluded only when all assign no useful evidence above 0.5; otherwise unknown. `selection` reports scope, status and selected/excluded/unknown counts. “Complete” covers that view, not the whole repository.
+
+AST/LSP remain ordinary identity and structure tools. Their candidate paths/ranges can feed `clasify` when expensive body reads need screening; classification does not prove identity, reachability or absence.
+
+## Questions and recovery
+
+Ask one observable fact per question: snippets show a check, documentation states a condition, an image contains an object. Keep correctness, vulnerability proof, exact counting and cross-file reasoning with the host. Choice needs distinct outcomes and an insufficient-evidence option when the resource may not answer; Score needs meaningful ordered levels, not an assumed 1–10 confidence scale.
+
+| Situation | Next action |
+|---|---|
+| Selected evidence answers the scoped question | Stop; avoid a duplicate fetch or classification |
+| More selected evidence is needed | Copy the selected-page continuation unchanged; it replays without JEV |
+| Unknown/unavailable inline selection matters | Use `next.unfiltered` for the unknown evidence, and `next.unfiltered3`, `next.unfiltered4`, … for unknown ranges past one call. When `next.unfiltered2` is also present, it restores the complete original view, including already-selected evidence; otherwise `next.unfiltered` restores that view |
+| The candidate budget left candidates unjudged | Follow `next.nextCandidatePage` unchanged: the same classified call judges the rest, each candidate once |
+| `clasify` fails or a typed answer is insufficient | Inspect `read` in `error.hints` when present, or the successful `read` in `hints`; repair the named cause |
+| Image judgment is uncertain or fails | Inspect the saved image or original reference with an image-capable tool |
+
+Unknown/error is not “no.” Captured local/GitHub read leads preserve snapshot/commit and ranges; GitHub search recovery reruns its provider page and can reflect index changes. Following an inspection lead makes no JEV call; errors never automatically dump source bodies. Guidance uses successful-row `warnings`, empty/error `hints`, or `clasify`'s nested `error.hints`. Retry rejected input after correcting it; honor backoff for transient failures.
+
+## Availability
+
+| Configuration | Inline `clasifyContext` | Standalone `clasify` |
+|---|---|---|
+| No classification key | Unavailable | Hidden |
+| `OCTOCODE_CLASSIFICATION_API` set | Available on the four readers | Hidden without beta |
+| Key plus `OCTOCODE_BETA=1` | Available | Available |
+
+Reader policies and tool allow/deny lists still apply. Calls without classification make no JEV request. See [key setup](AUTHENTICATION.md#classification-key-clasify) and [what leaves the machine](SECURITY.md#classification-egress). Restart MCP after configuration changes.
+
+Inspect fields with `npx octocode schema clasify --view query`; execute a saved request with `npx octocode clasify --input request.json`. Discover models with `npx octocode clasify '{"queries":[{"operation":"models"}]}'`. CLI and MCP share the runtime and request contract.
+
+## Limits
+
+| Octocode limit | Value |
+|---|---|
+| Standalone rows / questions per row | 5 / 25 |
+| Inline classifiers / characters each | 1–5 / 1,000 |
+| Serialized state, normal / long context | 32,000 / 256,000 characters, including escaping and source identity |
+| Inline selection budget | 64 candidates, 131,072 characters, 10 seconds |
+| Image count / bytes | 8 per row; 8 MiB each, 16 MiB combined |
+| Image dimensions | 256–1,568 pixels per side; 78,400–2,458,624 total pixels |
+
+Oversized standalone inputs fail rather than classify a truncated prefix; inline budgets leave unassessed candidates unknown. Admission does not guarantee provider acceptance, particularly for experimental images. Full fields: [tool reference](OCTOCODE_TOOLS.md#semantic-assessment-reference).
+
+## Results and rating
+
+**8/10 for integration and DX** — engineering assessment on 2026-10-15, not model accuracy. Strengths: unread-resource inputs, typed primitives, one evaluator and actionable recovery. Limits: chunk boundaries, experimental images and workload-dependent quality/savings. [Recovery validation](../.octocode/octocode-dev/2026-10-15-jev-recovery/README.md) passed 48 Rust tests and 24 CLI/MCP checks.
+
+| Measured workflow | Tool input + output tokens | Guidance |
+|---|---:|---|
+| Noisy local search | −90% | Narrow lexically, then select |
+| Large local fetch | −93% | Select when the useful location is unknown |
+| Scoped GitHub fetch | −72% | Pin the ref and narrow the view |
+| Exact local read | +32% | Read directly |
+
+These [paired cases](../.octocode/octocode-eval-benchmark/2026-10-15-jev-flow-review-v2/README.md) do not establish whole-agent savings. GitHub search left every candidate unknown. A separate [whole-agent evaluation](../.octocode/octocode-eval-benchmark/2026-10-15-jev-e2e/README.md) found 2.8–10.7% savings on a forced-classification document task, while eight optional-use runs did not choose classification.
+
+Measure all host input/output, including questions and recovery reads, separately from JEV usage. `replayed:true` is cached usage, not a fresh provider spend. With stats and persistent storage enabled, `<octocode-home>/stats.json` records provider calls, token usage and unknown-usage calls; missing usage is not zero.

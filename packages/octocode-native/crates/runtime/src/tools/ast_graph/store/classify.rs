@@ -46,6 +46,13 @@ pub(crate) fn role_names(flags: u8) -> Vec<&'static str> {
         .collect()
 }
 
+/// Whether `path` is a type declaration file (`.d.ts`, `.d.mts`, `.pyi`,
+/// …): it types another file and never runs, so neither dead-code engine
+/// judges it.
+pub(crate) fn is_declaration(path: &str) -> bool {
+    path_roles(path) & ROLE_DECLARATION != 0
+}
+
 fn path_roles(path: &str) -> u8 {
     let lower = path.to_ascii_lowercase();
     let segments = lower.split('/').collect::<Vec<_>>();

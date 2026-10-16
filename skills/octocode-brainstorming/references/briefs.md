@@ -15,7 +15,7 @@ One JSON object per line in `<workspace>/.octocode/octocode-brainstorming/tmp/<r
 ## Gatherer brief
 
 ```text
-Purpose: quote evidence for one direction; the parent decides the answer.
+Purpose: quote evidence for one direction; the orchestrator decides the answer.
 
 Direction <letter>, <name>. Question: <bounded question>. Look for: <angles, source types, time window>, including evidence against it or limits.
 
@@ -63,7 +63,7 @@ Return (≤300 words): opening case with ids; the strongest expected counterpoin
 
 ## Judge brief
 
-The parent judges by default. A separate judge (on request) gets the resolution, both arguments, and the verified ledger, on a model that can check the arguments, at least as capable as the debaters.
+The orchestrator judges by default. A separate judge actor (on request) gets the resolution, both arguments, and the verified ledger, on a model that can check the arguments, at least as capable as the debaters.
 
 ```text
 You judge "<resolution>" on verified evidence only: an argument without a verified claim id is opinion.
@@ -76,7 +76,7 @@ Return (≤300 words), verdict first: PRO, CON, or UNRESOLVED; confidence with i
 
 ## Critic brief
 
-`medium`: one critic for every direction; `high`: one per direction.
+Assign a critic actor only when its independent review can change the decision; its duty may cover one or several directions.
 
 ```text
 Review evidence you did not gather: <direction <name> | each of these directions>: conclusion "<conclusion>", verified ledger at <path> <repeat per direction>.

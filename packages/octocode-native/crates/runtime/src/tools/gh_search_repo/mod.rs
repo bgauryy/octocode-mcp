@@ -4,9 +4,8 @@ mod provider_tests;
 mod query;
 
 use crate::tools::gh_shared::{
-    GhFailure, SEARCH_RESULT_CAP, SearchCompleteness, SearchReach, add_next, apply_partial,
-    broaden_lead, drop_each_keyword, field_names, pick_rows, reject_window, search_failure,
-    with_search_repair, without,
+    GhFailure, SearchCompleteness, SearchWindow, add_next, apply_partial, broaden_lead,
+    drop_each_keyword, field_names, pick_rows, search_failure, with_search_repair, without,
 };
 use crate::tools::id::ToolId;
 use crate::tools::num::usize_of;
@@ -122,7 +121,7 @@ pub(crate) async fn execute<C: ConditionalCache>(
         query,
         empty && !page.more && !page.past_end,
         page.incomplete,
-        page.matched > SEARCH_RESULT_CAP,
+        page.matched > page.reachable,
     ))
 }
 
@@ -139,7 +138,7 @@ async fn fetch_page<C: ConditionalCache>(
         let (data, listing) = owner_listing(provider, owner, current, per, context).await?;
         return Ok((data, Some(listing)));
     }
-    reject_window(current, per)?;
+    SearchWindow::PageStart.reject(current, per)?;
     let data = provider
         .transport
         .search_repositories(
@@ -166,7 +165,8 @@ struct RepoPage {
     next_from: usize,
     /// GitHub's own match count; an owner listing reports none.
     matched: usize,
-    /// The search total within the 1,000-result window.
+    /// The search total within the 1,000-result window (a last page may
+    /// run past 1,000).
     reachable: usize,
     incomplete: bool,
     /// An owner listing's REST pages read by this call.
@@ -184,7 +184,7 @@ impl RepoPage {
         current: usize,
         per: usize,
     ) -> Self {
-        let reach = SearchReach::new(data.total_count, per);
+        let reach = SearchWindow::PageStart.reach(data.total_count, per);
         let empty = data.items.is_empty() && current > 1;
         match listing {
             Some(listing) => Self {
@@ -244,6 +244,7 @@ impl RepoPage {
             &SearchCompleteness {
                 tool: ToolId::GhSearchRepo,
                 matched: self.matched,
+                reachable: self.reachable,
                 incomplete: self.incomplete,
                 page: self.current,
                 has_more: self.more,

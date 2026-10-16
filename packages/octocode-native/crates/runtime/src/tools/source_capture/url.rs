@@ -479,7 +479,6 @@ impl<'a> Store<'a> {
                 "path": file,
                 "snapshot": snapshot,
                 "ranges": [format!("1-{lines}")],
-                "minify": "none",
             }),
         )
         .build();

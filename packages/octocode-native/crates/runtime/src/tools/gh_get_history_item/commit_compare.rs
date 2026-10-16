@@ -1,19 +1,20 @@
 //! `operation: "commit"` and `operation: "compare"`: commit metadata or a
 //! ref comparison, each with one page of changed files.
-use super::filter::{PathScope, in_path_scope, scope_files};
+use super::filter::{FileFilter, FileScope, FilteredPage};
 use super::inventory::file_page_size;
-use super::patch::page::shape_files;
 use super::patch_hop::{
-    DiffCursors, attach_diff_continuations, commit_pull_request_lead, commit_query,
+    DiffCursors, attach_diff_continuations, commit_pull_request_lead, commit_query, files_only,
 };
-use super::pr_menu::{ChangeSides, change_reads, without_match_string};
+use super::pr_menu::{
+    ChangeSides, base_public_query, change_reads, remove_key, without_match_string,
+};
 use super::rest::Rest;
 use super::util::{array, str_at, string, usize_at};
 use super::window::{
-    MAX_FILE_BATCHES, WindowSpec, WindowState, clamp_warning, commit_file_items, load_window_with,
-    mark_capped, paginate_collection, paginate_window,
+    COMPARE_FILE_LIMIT, MAX_FILE_BATCHES, WindowSpec, WindowState, clamp_warning,
+    commit_file_items, load_window_with, page_starting_at,
 };
-use super::{HistoryItemRequest, ItemOperation, fetch, validation};
+use super::{HistoryItemRequest, ItemOperation, Section, fetch, validation};
 use crate::response::pages::Remaining;
 use crate::tools::gh_shared::commit::{commit_date, utc_date};
 use crate::tools::gh_shared::ensure_next;
@@ -23,9 +24,6 @@ use crate::tools::result::{Continuation, ToolData, remove_nulls};
 use octocode_github::{GitHubTransport, ProviderError, RequestContext};
 use serde_json::{Value, json};
 
-/// GitHub's compare endpoint lists at most this many changed files.
-const COMPARE_FILE_LIMIT: usize = 300;
-
 pub(super) async fn commit(
     transport: &GitHubTransport,
     query: &HistoryItemRequest,
@@ -34,21 +32,33 @@ pub(super) async fn commit(
     let reference = query
         .reference()
         .ok_or_else(|| validation("ref is required"))?;
-    let scope = PathScope::from_query(query).map_err(|message| validation(&message))?;
+    let scope = FileScope::from_query(query).map_err(|message| validation(&message))?;
     let path = scope.as_ref();
-    // File batches are derived from page×pageSize; an include scope hides
-    // files, so it scans from the first batch.
+    let needle = patch_needle(query);
+    let filter = FileFilter {
+        needle: needle.as_deref(),
+        scope: path,
+    };
+    let pinned = if octocode_github::is_full_sha(reference) {
+        reference.to_owned()
+    } else {
+        transport
+            .commit_sha(query.owner(), query.repo(), reference, context)
+            .await?
+    };
+    // File batches are derived from page×pageSize; a scope or a literal
+    // hides files, so a filtered read scans from the first batch.
     let mut loaded = load_window_with(
         transport,
-        &["repos", query.owner(), query.repo(), "commits", reference],
+        &["repos", query.owner(), query.repo(), "commits", &pinned],
         WindowSpec {
             max_batches: MAX_FILE_BATCHES,
             page: query.page().unwrap_or(1),
             page_size: file_page_size(query, query.include_diff()),
-            filtered: path.is_some(),
+            filtered: !filter.is_trivial(),
             provider_total: None,
         },
-        |file| in_path_scope(file, path),
+        |file| filter.matches(file),
         commit_file_items,
         context,
     )
@@ -69,27 +79,26 @@ pub(super) async fn commit(
         .then(|| empty_scope_warning(&loaded.items, path, query, state.exhausted && !state.capped))
         .flatten();
     let listed = state.skipped + loaded.items.len();
-    let scoped = scope_files(loaded.items, path);
     let commit = CommitFacts::of(raw);
     let mut out = commit_header(&commit, reference, query.include_diff(), listed, state);
     // A filter that left no file is an empty answer, not a bare `files: []`:
     // the row says so and its leads show.
     let scope_removed_all = unmatched.is_some();
     push_warnings(&mut out, unmatched);
-    let page = commit_file_page(&mut out, scoped, state, query, path.is_none(), &commit);
+    let files = filter.page(loaded.items, state, query, query.include_diff());
+    let page = commit_file_page(&mut out, files, query, path.is_none(), &commit);
     attach_diff_continuations(
         &mut out,
         query,
         ItemOperation::Commit,
         Some(&commit.sha),
-        false,
         page.cursors,
     );
     let remaining = file_page_note(&out);
-    if page.match_removed_all || scope_removed_all {
+    if scope_removed_all {
         out["status"] = json!("empty");
     }
-    let leads = commit_leads(&mut out, query, &commit, page);
+    let leads = commit_leads(query, &commit, page);
     lead_first(&mut out, leads);
     remove_nulls(&mut out);
     Ok(ToolData {
@@ -145,7 +154,7 @@ fn commit_header(
         "author":author,"committer":committer,
         "parents":raw.get("parents").and_then(Value::as_array).into_iter().flatten().filter_map(|v|str_at(v,"/sha").map(str::to_owned)).collect::<Vec<_>>(),
         // Top-level counts always describe the whole commit; a path scope's
-        // own count is `filePagination.totalItems`.
+        // own count is `contentPagination.files.totalItems`.
         "additions":raw.pointer("/stats/additions"),"deletions":raw.pointer("/stats/deletions"),
         "changedFilesCount":listed,
         // A scan stopped at the batch cap never saw the remaining files; a
@@ -161,51 +170,84 @@ fn commit_header(
     out
 }
 
-/// What a commit's file page leaves for its continuations and leads.
-struct CommitFilePage {
+/// What a commit's or comparison's file page leaves for its continuations
+/// and leads.
+struct FilePage {
     cursors: DiffCursors,
     /// The reads of the page's top file at both sides of the numbered diff.
     side_reads: Vec<Lead>,
-    /// A `matchString` hit no listed file it could search.
-    match_removed_all: bool,
-    /// Files the page listed before the `matchString` filter.
-    listed_on_page: usize,
+    /// `withoutMatchString`: the same read without the literal, when a
+    /// `matchString` hit none of the listed files it could search.
+    without_match: Option<Lead>,
 }
 
-/// One page of the commit's changed files on `out` (`files`,
-/// `filePagination`, and the page's warnings). Without the patches section
-/// the page still lists paths and line stats (no patches) so the agent can
-/// pick files before paying for diffs.
+/// One page of a commit's changed files on `out`: its window of the
+/// commit's file batches, then the shared file-page shaping.
 fn commit_file_page(
     out: &mut Value,
-    scoped: Vec<Value>,
-    state: WindowState,
+    files: FilteredPage,
     query: &HistoryItemRequest,
     unscoped: bool,
     commit: &CommitFacts<'_>,
-) -> CommitFilePage {
-    let patches = query.include_diff();
-    let (files, mut page) = paginate_window(
-        scoped,
-        state.skipped,
-        state.exhausted,
-        query.page(),
-        Some(file_page_size(query, patches)),
-    );
-    mark_capped(&mut page, state.capped);
+) -> FilePage {
     // A first page that lists every changed file (no scope, no grep) needs
     // no separate count.
     let whole = unscoped
         && query.match_string().is_none()
-        && state.exhausted
-        && !state.capped
+        && files.page["countScope"] != "partial"
+        && files.page["outOfRange"] != true
         && query.page().unwrap_or(1) == 1
-        && page["hasMore"] != true;
+        && files.page["hasMore"] != true;
     if whole && let Some(fields) = out.as_object_mut() {
         fields.remove("changedFilesCount");
     }
+    shape_file_page(
+        out,
+        files,
+        query,
+        DiffSides {
+            new: Some(commit.sha.as_str()),
+            old: commit.parent.as_deref(),
+        },
+        || commit_query(query, &commit.sha),
+    )
+}
+
+/// The two commits a commit's or comparison's numbered diff reads at: the
+/// commit (or comparison head) for ` `/`+` lines, its first parent (or the
+/// merge base) for `-` lines.
+#[derive(Clone, Copy)]
+struct DiffSides<'a> {
+    new: Option<&'a str>,
+    old: Option<&'a str>,
+}
+
+/// One page of changed files on `out` (`files`, `contentPagination.files`, and the
+/// page's warnings), for a commit and a comparison alike. Without the
+/// patches section the page lists paths and line stats (no patches) so the
+/// agent can pick files before paying for diffs. A `matchString` that hit
+/// none of the listed files it could search is an empty answer, never a bare
+/// `files: []`: the row says so, and `same_read` (the read that paged here)
+/// without the literal is its recovery.
+fn shape_file_page(
+    out: &mut Value,
+    filtered: FilteredPage,
+    query: &HistoryItemRequest,
+    sides: DiffSides<'_>,
+    same_read: impl FnOnce() -> Value,
+) -> FilePage {
+    let FilteredPage {
+        files,
+        mut page,
+        kept,
+        unsearched,
+        dropped,
+        in_scope,
+    } = filtered;
+    let patches = query.include_diff();
     // A file page's first patch window reads its top file at both sides of
-    // the numbered diff: the commit and its first parent.
+    // the numbered diff (a file the filter kept); the filter's facts are
+    // stated once, on the first page.
     let first_window = query.char_offset().is_none_or(|offset| offset == 0);
     let side_reads = if patches && first_window {
         change_reads(
@@ -213,8 +255,8 @@ fn commit_file_page(
             query.repo(),
             &files,
             &ChangeSides {
-                new_ref: Some(commit.sha.as_str()),
-                old_ref: commit.parent.as_deref(),
+                new_ref: sides.new,
+                old_ref: sides.old,
                 old_confidence: "high",
             },
             |_| true,
@@ -222,51 +264,44 @@ fn commit_file_page(
     } else {
         Vec::new()
     };
-    let listed_on_page = files.len();
-    let FileRows {
-        rows: files,
-        cursor,
-        dropped,
-        unsearched,
-    } = file_rows(files, query);
+    let (rows, cursor) = file_rows(files, query);
+    let listed = rows.as_array().is_some_and(|rows| !rows.is_empty());
     // Files it could not search may hold the literal: no empty answer then.
-    let match_removed_all = patches
-        && listed_on_page > 0
-        && unsearched.is_empty()
-        && files.as_array().is_some_and(Vec::is_empty);
-    let cursors = DiffCursors::of_file_page(
-        &page,
-        cursor,
-        files.as_array().is_some_and(|files| !files.is_empty()),
-    );
-    out["files"] = files;
+    let match_removed_all = patches && in_scope > 0 && unsearched.is_empty() && kept == 0;
+    let cursors = DiffCursors::of_file_page(&page, cursor, listed);
+    out["files"] = rows;
     super::window::lift_page_limits(out, &mut page);
-    out["filePagination"] = page;
+    out["contentPagination"]["files"] = page;
     if patches {
         push_warnings(out, clamp_warning(query));
     }
-    if first_window {
-        if dropped > 0 && !match_removed_all {
+    let mut without_match = None;
+    if first_page(query) {
+        if match_removed_all && let Some(needle) = query.match_string() {
             push_warnings(
                 out,
-                [super::filter::match_dropped_warning(
-                    dropped,
-                    listed_on_page,
-                )],
+                [super::filter::match_removed_all_warning(needle, in_scope)],
+            );
+            out["status"] = json!("empty");
+            // A literal alone resolved the sections to patches: without it,
+            // the read lists the files.
+            let mut same = same_read();
+            if !query.has_sections() {
+                same["sections"] = json!(["files"]);
+            }
+            without_match = Some(("withoutMatchString", without_match_string(same)));
+        } else if dropped > 0 {
+            push_warnings(
+                out,
+                [super::filter::match_dropped_warning(dropped, in_scope)],
             );
         }
-        mark_unsearched(
-            out,
-            query,
-            &unsearched,
-            (Some(commit.sha.as_str()), commit.parent.as_deref()),
-        );
+        mark_unsearched(out, query, &unsearched, (sides.new, sides.old));
     }
-    CommitFilePage {
+    FilePage {
         cursors,
         side_reads,
-        match_removed_all,
-        listed_on_page,
+        without_match,
     }
 }
 
@@ -274,25 +309,8 @@ fn commit_file_page(
 /// `matchString` hit nothing, the rest of the message, the pull request the
 /// commit names, then both sides of the diff; the response keeps the first
 /// ones its lead cap allows.
-fn commit_leads(
-    out: &mut Value,
-    query: &HistoryItemRequest,
-    commit: &CommitFacts<'_>,
-    page: CommitFilePage,
-) -> Vec<Lead> {
-    let mut leads = Vec::new();
-    if page.match_removed_all
-        && let Some(needle) = query.match_string()
-    {
-        push_warnings(
-            out,
-            [match_removed_all_warning(needle, page.listed_on_page)],
-        );
-        leads.push((
-            "withoutMatchString",
-            without_match_string(commit_query(query, &commit.sha, false)),
-        ));
-    }
+fn commit_leads(query: &HistoryItemRequest, commit: &CommitFacts<'_>, page: FilePage) -> Vec<Lead> {
+    let mut leads = Vec::from_iter(page.without_match);
     let pull_request = commit_pull_request_lead(commit.message, &commit.sha, query);
     if query.include_diff() && commit.message.trim_end() != commit.headline {
         leads.push(("readCommit", read_commit_lead(query, &commit.sha)));
@@ -315,61 +333,34 @@ fn commit_leads(
 /// its file page's facts ([`Rest`]).
 fn file_page_note(out: &Value) -> Vec<Remaining> {
     out.pointer("/next/nextFilePage")
-        .and(out.get("filePagination"))
+        .and(out.pointer("/contentPagination/files"))
         .and_then(|page| Rest::default().note("nextFilePage", "files", page))
         .into_iter()
         .collect()
 }
 
-/// A shaped file page: its rows, the patch-stream offset that continues
-/// them, how many in-scope files the `matchString` dropped (searched, no
-/// hit), and the files it could not search (GitHub sent no patch), each
-/// `(reason, path, removed)` like the pull-request file filter's.
-struct FileRows {
-    rows: Value,
-    cursor: Option<usize>,
-    dropped: usize,
-    unsearched: Vec<(&'static str, String, bool)>,
-}
-
-/// Changed files without patches read as the pull-request inventory
+/// The rows of a filtered file page and the patch-stream offset that
+/// continues them: without patches the pull-request inventory
 /// (`M +3 -1 path`, grouped by directory); with patches, one row per file,
-/// and a `matchString` keeps the files whose patch it hits (the
-/// pull-request file filter), each narrowed to its hits. A file GitHub sent
-/// without a patch was never searched: it is unsearched, not dropped.
-fn file_rows(files: Vec<Value>, query: &HistoryItemRequest) -> FileRows {
+/// each narrowed to its `matchString` hits.
+fn file_rows(files: Vec<Value>, query: &HistoryItemRequest) -> (Value, Option<usize>) {
     if !query.include_diff() {
-        return FileRows {
-            rows: Value::Array(super::inventory::compact_inventory(&files)),
-            cursor: None,
-            dropped: 0,
-            unsearched: Vec::new(),
-        };
+        return (
+            Value::Array(super::inventory::compact_inventory(&files)),
+            None,
+        );
     }
-    let needle = query.match_string().map(str::to_lowercase);
-    let filter = super::filter::FileFilter {
-        needle: needle.as_deref(),
-        scope: None,
-    };
-    let unsearched = match needle {
-        Some(_) => super::filter::unsearched_files(&files, &filter),
-        None => Vec::new(),
-    };
-    let listed = files.len();
-    let files = files
-        .into_iter()
-        .filter(|file| filter.matches(file))
-        .collect::<Vec<_>>();
-    let dropped = listed.saturating_sub(files.len() + unsearched.len());
-    let (mut rows, cursor) = shape_files(files, true, query);
+    let page = super::patch::page::shape_patch_page(files, query).compact();
+    let mut rows = Value::Array(page.rows);
     // The narrowed-view marker is internal to the pull-request lead.
     super::patch_hop::take_reshaped_paths(Some(&mut rows), false);
-    FileRows {
-        rows,
-        cursor,
-        dropped,
-        unsearched,
-    }
+    (rows, page.cursor)
+}
+
+/// The literal a read filters changed files by: its `matchString`, when it
+/// reads patches (an inventory lists every file).
+fn patch_needle(query: &HistoryItemRequest) -> Option<String> {
+    super::text::needle(query).filter(|_| query.include_diff())
 }
 
 /// List the files a `matchString` could not search (`!reason path`, as on
@@ -428,20 +419,34 @@ pub(super) async fn compare(
     // Omitted sections read both lists; named sections read what they name.
     // A patch window continues one file page's patches only.
     let window = query.char_offset().is_some_and(|offset| offset > 0);
-    let wants_commits = !window && (!query.has_sections() || query.names_section("commits"));
-    let wants_files =
-        !query.has_sections() || query.names_section("files") || query.names_section("patches");
+    let sections = query.sections();
+    let wants_commits = !window && (!query.has_sections() || sections.has(Section::Commits));
+    let wants_files = !query.has_sections() || sections.lists_files();
     let Comparison {
-        raw,
+        mut raw,
         total,
         more,
         base_sha,
         head_sha,
     } = read_comparison(transport, query, context, wants_commits).await?;
-    let file_limit = raw
+    let capped = raw
         .get("files")
         .and_then(Value::as_array)
         .is_some_and(|files| files.len() >= COMPARE_FILE_LIMIT);
+    // Past GitHub's compare file cap the two commits' trees name every
+    // other changed path (two reads); the cap stays only when a tree is
+    // truncated or unreadable.
+    let tree_files = if wants_files && capped {
+        tree_changed_files(transport, query, &raw, &head_sha, context).await
+    } else {
+        None
+    };
+    let file_limit = capped && tree_files.is_none();
+    if let Some(extra) = tree_files.as_ref().filter(|extra| !extra.is_empty())
+        && let Some(files) = raw.get_mut("files").and_then(Value::as_array_mut)
+    {
+        files.extend(extra.iter().cloned());
+    }
     let mut out = json!({"baseSha":base_sha,"headSha":head_sha,
         "aheadBy":usize_at(&raw,"/ahead_by"),"behindBy":usize_at(&raw,"/behind_by")});
     if more {
@@ -449,16 +454,19 @@ pub(super) async fn compare(
     }
     // The changed files lead the row (what the comparison changed), the
     // commit page follows (why): each is paged apart by its own continuation.
-    // One marker: the file list stops at GitHub's cap. Its continuation
-    // below reaches every changed file through the range's commits.
+    // One marker: the file list stops at GitHub's cap and the trees could
+    // not extend it. Its lead below reads the range's commits instead.
     if wants_files && file_limit {
         crate::tools::paging::mark_partial(&mut out, "providerFileLimit", &[]);
     }
-    let mut cursors = DiffCursors::default();
-    let mut side_reads = Vec::new();
-    if wants_files {
-        (cursors, side_reads) = attach_file_page(&mut out, &raw, query, window, file_limit)?;
-    }
+    // Continuations read the same two commits.
+    let pinned = query.with_compare_refs(&base_sha, &head_sha)?;
+    let file_page = wants_files
+        .then(|| attach_file_page(&mut out, &raw, &pinned, file_limit))
+        .transpose()?;
+    let mut cursors = file_page
+        .as_ref()
+        .map_or_else(DiffCursors::default, |page| page.cursors);
     // An identical range (the head is the base, or behind it) changes
     // nothing: an empty answer, as a commit or PR with nothing in scope is.
     if total == 0
@@ -495,35 +503,134 @@ pub(super) async fn compare(
         })
         .flatten()
         .map(|next| u64::try_from(next).unwrap_or(u64::MAX));
-    // Continuations read the same two commits.
-    let pinned = query.with_compare_refs(&base_sha, &head_sha)?;
-    attach_diff_continuations(
-        &mut out,
-        &pinned,
-        ItemOperation::Compare,
-        None,
-        false,
-        cursors,
-    );
-    let mut leads = capped_file_leads(
+    attach_diff_continuations(&mut out, &pinned, ItemOperation::Compare, None, cursors);
+    // A literal that hit nothing leads with its recovery, as on a commit.
+    let (without_match, side_reads) = file_page
+        .map(|page| (page.without_match, page.side_reads))
+        .unwrap_or_default();
+    let mut leads = Vec::from_iter(without_match);
+    leads.extend(capped_file_leads(
         query,
         &mut out,
         &raw,
         file_limit,
         wants_files,
         commits.as_ref(),
-    );
+    ));
     leads.extend(side_reads);
-    leads.extend(
-        commits
-            .and_then(|commits| commits.read)
-            .map(|read| ("readCommit", read)),
-    );
+    // A literal that emptied the file page answers with its recovery alone.
+    if leads
+        .first()
+        .is_none_or(|(name, _)| *name != "withoutMatchString")
+    {
+        leads.extend(
+            commits
+                .and_then(|commits| commits.read)
+                .map(|read| ("readCommit", read)),
+        );
+    }
+    // The tree source is a static fact of the comparison: stated once, on
+    // its first page.
+    if first_page(query) && tree_files.as_ref().is_some_and(|extra| !extra.is_empty()) {
+        push_warnings(
+            &mut out,
+            [format!(
+                "GitHub's compare lists {COMPARE_FILE_LIMIT} changed files; the rest come from the two commits' trees: no line counts or patches (each reads at headSha), and a rename shows as a removal plus an addition."
+            )],
+        );
+    }
     lead_first(&mut out, leads);
     Ok(ToolData {
         remaining: file_page_note(&out),
         ..ToolData::from(out)
     })
+}
+
+/// The comparison's changed paths past GitHub's compare file list, from the
+/// merge base's and the head's recursive trees: every path whose blob (or
+/// submodule commit) differs, as provider-shaped entries without patch or
+/// line counts, skipping the paths the compare list already holds. `None`
+/// when either tree is truncated or unreadable (the cap then stands).
+async fn tree_changed_files(
+    transport: &GitHubTransport,
+    query: &HistoryItemRequest,
+    raw: &Value,
+    head_sha: &str,
+    context: &RequestContext,
+) -> Option<Vec<Value>> {
+    let merge_base = str_at(raw, "/merge_base_commit/sha")?;
+    let request = |reference: &str| octocode_github::TreeRequest {
+        owner: query.owner().to_owned(),
+        repo: query.repo().to_owned(),
+        reference: reference.to_owned(),
+        recursive: true,
+    };
+    let (base_tree, head_tree) = (request(merge_base), request(head_sha));
+    let (base, head) = tokio::join!(
+        transport.get_tree(&base_tree, context),
+        transport.get_tree(&head_tree, context)
+    );
+    let (base, head) = (base.ok()?, head.ok()?);
+    if base.truncated || head.truncated {
+        return None;
+    }
+    Some(tree_diff(&base.tree, &head.tree, raw))
+}
+
+/// The changed entries between two recursive trees that `raw`'s compare
+/// file list does not name (by path, or a rename's previous path).
+fn tree_diff(
+    base: &[octocode_github::TreeEntry],
+    head: &[octocode_github::TreeEntry],
+    raw: &Value,
+) -> Vec<Value> {
+    use std::collections::{BTreeMap, HashSet};
+    let listed: HashSet<&str> = raw
+        .get("files")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .flat_map(|file| {
+            [
+                str_at(file, "/filename"),
+                str_at(file, "/previous_filename"),
+            ]
+        })
+        .flatten()
+        .collect();
+    let content = |entries: &[octocode_github::TreeEntry]| {
+        entries
+            .iter()
+            .filter(|entry| entry.kind == "blob" || entry.kind == "commit")
+            .map(|entry| {
+                (
+                    entry.path.clone(),
+                    (entry.sha.clone().unwrap_or_default(), entry.mode.clone()),
+                )
+            })
+            .collect::<BTreeMap<_, _>>()
+    };
+    let (base, head) = (content(base), content(head));
+    let mut changed = Vec::new();
+    for (path, side) in &head {
+        let status = match base.get(path) {
+            None => "added",
+            Some(old) if old != side => "modified",
+            Some(_) => continue,
+        };
+        changed.push((path, status, &side.0));
+    }
+    for (path, side) in &base {
+        if !head.contains_key(path) {
+            changed.push((path, "removed", &side.0));
+        }
+    }
+    changed.sort_by(|a, b| a.0.cmp(b.0));
+    changed
+        .into_iter()
+        .filter(|(path, _, _)| !listed.contains(path.as_str()))
+        .map(|(path, status, sha)| json!({"filename": path, "status": status, "sha": sha}))
+        .collect()
 }
 
 /// One comparison page as GitHub answers it, with both ends pinned to
@@ -700,18 +807,26 @@ fn attach_commit_page(
             })
             .collect::<Vec<_>>()
     );
-    // The last commit page past the first needs no page object.
-    if at.more || at.page == 1 {
-        // GitHub counts the range (`total_commits`): a count-cut page
-        // states that total unless the provider's links say otherwise.
-        let counted = at.total > 0 && (at.page.saturating_mul(at.per) < at.total) == at.more;
-        let facts = if counted {
-            crate::response::pages::PageFacts::counted(at.page, at.per, at.total)
-        } else {
-            crate::response::pages::PageFacts::open(at.page, Some(at.per), at.more)
-        };
+    // Every commit page states where it stands, the last one too. GitHub
+    // counts the range (`total_commits`): a count-cut page states that
+    // total unless the provider's links say otherwise.
+    let counted = at.total > 0 && (at.page.saturating_mul(at.per) < at.total) == at.more;
+    let facts = if counted {
+        crate::response::pages::PageFacts::counted(at.page, at.per, at.total)
+    } else {
+        crate::response::pages::PageFacts::open(at.page, Some(at.per), at.more)
+    };
+    // A commit page past the last is the shared out-of-range outcome (empty,
+    // `page N of M`, a restart), unless the same page still lists files.
+    let files_listed = out
+        .get("files")
+        .and_then(Value::as_array)
+        .is_some_and(|files| !files.is_empty());
+    if files_listed
+        || !crate::tools::paging::out_of_range(out, &["contentPagination", "commits"], facts)
+    {
         // The commit page continuation (`nextCommitPage`) is the cursor.
-        out["pagination"] = facts.to_value();
+        out["contentPagination"]["commits"] = facts.to_value();
     }
     ListedCommits {
         shas,
@@ -724,92 +839,58 @@ fn attach_commit_page(
 type Lead = (&'static str, Value);
 
 /// The comparison's changed-file page (paths and line stats; patches with
-/// the patches section or a `matchString`), its cursors, and the reads of
-/// its top file at both sides of the diff.
+/// the patches section or a `matchString`): GitHub lists the files whole
+/// with any commit page, so the page is a window of that list, then the
+/// shared file-page shaping. `query` names the comparison by its pinned
+/// commits.
 fn attach_file_page(
     out: &mut Value,
     raw: &Value,
     query: &HistoryItemRequest,
-    window: bool,
     file_limit: bool,
-) -> Result<(DiffCursors, Vec<Lead>), ProviderError> {
+) -> Result<FilePage, ProviderError> {
     let all_files = array(raw.get("files").cloned().unwrap_or(json!([])));
     let all_count = all_files.len();
-    let scope = PathScope::from_query(query).map_err(|message| validation(&message))?;
+    let scope = FileScope::from_query(query).map_err(|message| validation(&message))?;
+    let first_window = query.char_offset().is_none_or(|offset| offset == 0);
     let unmatched = scope
         .as_ref()
-        .filter(|_| !window)
+        .filter(|_| first_window)
         .and_then(|scope| empty_scope_warning(&all_files, Some(scope), query, !file_limit));
-    let scoped = scope_files(all_files, scope.as_ref());
     let include_diff = query.include_diff();
-    let (files, mut file_page) = paginate_collection(
-        scoped,
-        query.page(),
-        Some(file_page_size(query, include_diff)),
-    );
+    let needle = patch_needle(query);
+    let mut files = FileFilter {
+        needle: needle.as_deref(),
+        scope: scope.as_ref(),
+    }
+    .page(all_files, WindowState::COMPLETE, query, include_diff);
     // The whole comparison's count, when the listed files are not all of
-    // it (a scope or a later page); GitHub stops listing at 300, so a
-    // count at the cap is a floor (`partialReasons`).
-    if !include_diff && (files.len() < all_count || file_limit) {
+    // it (a scope or a later page). At GitHub's cap the count is only a
+    // floor: the file page's `countScope` says so and no count is claimed.
+    if !include_diff && !file_limit && files.files.len() < all_count {
         out["changedFilesCount"] = json!(all_count);
     }
     // The page's own count fact: at the cap its total is a floor.
     if file_limit {
-        file_page["countScope"] = json!("partial");
+        files.page["countScope"] = json!("partial");
     }
-    // The old side of a three-dot comparison is the merge base.
-    let side_reads = if include_diff && !window {
-        change_reads(
-            query.owner(),
-            query.repo(),
-            &files,
-            &ChangeSides {
-                new_ref: out["headSha"].as_str(),
-                old_ref: str_at(raw, "/merge_base_commit/sha"),
-                old_confidence: "high",
-            },
-            |_| true,
-        )
-    } else {
-        Vec::new()
-    };
-    let listed_on_page = files.len();
-    let FileRows {
-        rows: files,
-        cursor,
-        dropped,
-        unsearched,
-    } = file_rows(files, query);
-    let kept_any = files.as_array().is_some_and(|files| !files.is_empty());
-    let cursors = DiffCursors::of_file_page(
-        &file_page,
-        cursor,
-        files.as_array().is_some_and(|files| !files.is_empty()),
+    let head = out["headSha"].as_str().map(str::to_owned);
+    let page = shape_file_page(
+        out,
+        files,
+        query,
+        DiffSides {
+            new: head.as_deref(),
+            // The old side of a three-dot comparison is the merge base.
+            old: str_at(raw, "/merge_base_commit/sha"),
+        },
+        || {
+            let mut same = base_public_query(query, ItemOperation::Compare);
+            remove_key(&mut same, "offset");
+            files_only(&mut same, ItemOperation::Compare);
+            same
+        },
     );
-    out["files"] = files;
-    super::window::lift_page_limits(out, &mut file_page);
-    out["filePagination"] = file_page;
-    if include_diff && let Some(warning) = clamp_warning(query) {
-        push_warnings(out, [warning]);
-    }
-    if dropped > 0 && kept_any && !window {
-        push_warnings(
-            out,
-            [super::filter::match_dropped_warning(
-                dropped,
-                listed_on_page,
-            )],
-        );
-    }
-    if !window {
-        let head = out["headSha"].as_str().map(str::to_owned);
-        mark_unsearched(
-            out,
-            query,
-            &unsearched,
-            (head.as_deref(), str_at(raw, "/merge_base_commit/sha")),
-        );
-    }
     if let Some(warning) = unmatched {
         push_warnings(out, [warning]);
         // A scope that left none of a complete file list is an empty answer,
@@ -818,16 +899,16 @@ fn attach_file_page(
             out["status"] = json!("empty");
         }
     }
-    Ok((cursors, side_reads))
+    Ok(page)
 }
 
 /// A scoped path's own history lists the commits of the range that touched
 /// it: `ghSearchHistory` at the pinned head, from the range's start (its
 /// merge base: the base commit's own date is the first it can list, never an
-/// older commit). Past GitHub's compare file cap the scoped path also looks
-/// unchanged when it may not be, so this is the only complete answer for it;
-/// a file read warns, and reaches every changed file through the range's
-/// commits.
+/// older commit). When GitHub's compare file cap stands (the trees could
+/// not extend it) the scoped path may look unchanged when it is not; a file
+/// read warns and leads to the range's commits, whose touched files cover
+/// the net change (and more: a file changed and then reverted is touched).
 fn capped_file_leads(
     query: &HistoryItemRequest,
     out: &mut Value,
@@ -839,9 +920,9 @@ fn capped_file_leads(
     let mut leads = Vec::new();
     // The scope's literal prefix: a glob's directory, or the exact path.
     if let Some(path) = query
-        .file_scope
-        .iter()
-        .find_map(|pattern| literal_prefix(pattern))
+        .include_patterns()
+        .into_iter()
+        .find_map(literal_prefix)
     {
         let mut history = json!({"operation":"commit","owner":query.owner(),"repo":query.repo(),"path":path,"ref":out["headSha"]});
         if let Some(date) = str_at(raw, "/merge_base_commit/commit/committer/date")
@@ -859,44 +940,46 @@ fn capped_file_leads(
     if !file_limit {
         return leads;
     }
-    if wants_files {
-        // The cap is stated on every capped comparison, with what it may hide.
-        let hidden = if query.file_scope.is_empty() {
+    if wants_files && first_page(query) {
+        // The cap is stated once, on the comparison's first page, with what
+        // it may hide.
+        let include = query.include_patterns();
+        let hidden = if include.is_empty() {
             "other changed files".to_owned()
         } else {
-            format!("changes to {}", query.file_scope.join(", "))
+            format!("changes to {}", include.join(", "))
         };
         push_warnings(
             out,
             [format!(
-                "GitHub lists at most {COMPARE_FILE_LIMIT} changed files, so {hidden} may be missing."
+                "GitHub lists at most {COMPARE_FILE_LIMIT} changed files, so {hidden} may be missing; the range's commits reach them, as files each commit touched (a superset of the net change)."
             )],
         );
+    }
+    if wants_files {
         leads.extend(capped_files_reach(query, out, commits));
     }
     leads
+}
+
+/// Whether the read is the comparison's first page (no later `page`, no
+/// patch window past the start): where its static notices are stated.
+fn first_page(query: &HistoryItemRequest) -> bool {
+    query.page().unwrap_or(1) <= 1 && query.char_offset().is_none_or(|offset| offset == 0)
 }
 
 /// The lead that reaches the changed files past GitHub's compare cap through
 /// the range's commits: this page's commits as one batch of commit reads when
 /// the page lists no more commits than a batch takes, else the commits the
 /// page does not show, in batch-sized pages (each carries that batch read;
-/// [`unseen_commit_pages`] aligns them). A wider page that ends the range has
+/// [`page_starting_at`] aligns them). A wider page that ends the range has
 /// no unseen commit to list: its rows' `commitSha` are the reads.
 fn capped_files_reach(
     query: &HistoryItemRequest,
     out: &Value,
     commits: Option<&ListedCommits>,
 ) -> Option<(&'static str, Value)> {
-    let batch = crate::contracts::tool_contract(ToolId::GhGetHistoryItem)
-        .ok()
-        .and_then(|contract| {
-            contract
-                .pointer("/inputSchema/properties/queries/maxItems")?
-                .as_u64()
-        })
-        .and_then(|max| usize::try_from(max).ok())
-        .unwrap_or(1);
+    let batch = crate::tools::result::rows_per_call(ToolId::GhGetHistoryItem);
     let Some(listed) = commits else {
         return Some(commit_list_lead(query, out, batch, 1));
     };
@@ -915,19 +998,8 @@ fn capped_files_reach(
                 .build(),
         ));
     }
-    let (size, page) = unseen_commit_pages(listed.seen?, batch);
+    let (page, size) = page_starting_at(listed.seen?, batch);
     Some(commit_list_lead(query, out, size, page))
-}
-
-/// The page size and first page that list the range's commits after the
-/// first `seen`, each exactly once: GitHub pages the list by whole pages, so
-/// the size is the largest one within `batch` that divides `seen`.
-fn unseen_commit_pages(seen: usize, batch: usize) -> (usize, usize) {
-    let size = (1..=batch.max(1))
-        .rev()
-        .find(|size| seen.is_multiple_of(*size))
-        .unwrap_or(1);
-    (size, seen / size + 1)
 }
 
 fn commit_list_lead(
@@ -948,15 +1020,6 @@ fn commit_list_lead(
     )
 }
 
-/// A `matchString` that kept none of the page's changed files. It searches
-/// each file's path and its diff text, so the function context git prints
-/// after a hunk's `@@ … @@` counts as text: a hit there is not a changed line.
-fn match_removed_all_warning(needle: &str, listed: usize) -> String {
-    format!(
-        "matchString matched 0 of {listed} changed files listed on this page (it searched {needle:?} in each file's diff text, hunk-header context included); drop matchString to list the files."
-    )
-}
-
 /// Changed directories an empty-scope warning names at most.
 const NEAREST_DIRS: usize = 5;
 
@@ -966,7 +1029,7 @@ const NEAREST_DIRS: usize = 5;
 /// `complete` says whether `files` is the whole list (else N is a floor).
 fn empty_scope_warning(
     files: &[Value],
-    scope: Option<&PathScope>,
+    scope: Option<&FileScope>,
     query: &HistoryItemRequest,
     complete: bool,
 ) -> Option<String> {
@@ -975,9 +1038,9 @@ fn empty_scope_warning(
         return None;
     }
     let target = query
-        .file_scope
-        .iter()
-        .find_map(|pattern| literal_prefix(pattern))
+        .include_patterns()
+        .into_iter()
+        .find_map(literal_prefix)
         .unwrap_or_default();
     let mut dirs: Vec<&str> = Vec::new();
     for file in files {
@@ -1193,15 +1256,21 @@ mod tests {
         );
     }
 
-    /// The commit list lead starts after the shown commits and every commit
-    /// of the range falls on exactly one of its pages.
+    /// A list lead starts right after the shown items and every later item
+    /// falls on exactly one of its pages: the comparison's unseen commits
+    /// (batch-sized pages) and an issue's unshown comments (one provider
+    /// batch at most) alike.
     #[test]
-    fn unseen_commit_pages_start_where_the_shown_page_ends() {
+    fn a_page_starting_at_an_item_reaches_every_later_item_once() {
         for (seen, batch) in [(100, 5), (100, 3), (97, 5), (30, 4), (7, 1), (5, 5)] {
-            let (size, page) = unseen_commit_pages(seen, batch);
+            let (page, size) = page_starting_at(seen, batch);
             assert!((1..=batch).contains(&size), "{seen}/{batch}: {size}");
             assert_eq!(size * (page - 1), seen, "{seen}/{batch}: {size} {page}");
         }
-        assert_eq!(unseen_commit_pages(100, 5), (5, 21));
+        assert_eq!(page_starting_at(100, 5), (21, 5));
+        assert_eq!(page_starting_at(12, 100), (2, 12));
+        assert_eq!(page_starting_at(97, 100), (2, 97));
+        assert_eq!(page_starting_at(190, 100), (3, 95));
+        assert_eq!(page_starting_at(200, 100), (3, 100));
     }
 }

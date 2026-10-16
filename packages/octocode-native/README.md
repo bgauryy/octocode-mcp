@@ -146,7 +146,7 @@ and [clasify availability](../../docs/OCTOCODE_CLASIFY.md#availability).
 | `auth` | `status`, `login` (device flow; `--hostname`, `--force`, `--refresh`), `logout` |
 | `graph` | `ingest <path>` and `query <op>` over a persisted code graph ([CODE_GRAPH.md](docs/engine/CODE_GRAPH.md)) |
 | `install` | Add the MCP server to an agent client: `--ide <id>` from `--list` |
-| `skill <args…>` | Runs the npm launcher's `octocode skill` |
+| `skill list\|info\|install\|remove\|check` | Manage the embedded public skills without Node |
 | `help` | Help for the binary or a command |
 
 Hidden maintenance commands: `cache <status|clear>`,
@@ -156,8 +156,8 @@ Hidden maintenance commands: `cache <status|clear>`,
 [CLI guide](../octocode/docs/OCTOCODE_CLI.md#exit-codes).
 
 `npx @octocodeai/octocode-native` runs this binary directly. `npx octocode` (the
-Node launcher) runs the same binary and adds the interactive `install` picker and
-skill installation.
+Node launcher) runs the same binary with unchanged arguments and inherited stdio.
+Native owns the interactive `install` picker, skill commands, and `config view`.
 
 ## Test
 
@@ -170,6 +170,6 @@ yarn workspace @octocodeai/octocode-native verify      # fmt, clippy, cargo deny
 ## Constraints
 
 - No N-API in the CLI binary or the runtime library: it lives only in `crates/runtime-napi`.
-- No Node fallback for research or auth; only `skill` delegates to the Node launcher.
+- No command delegates back to Node; the CLI owns all command behavior.
 - Workspace clippy policy denies `unwrap_used`, `expect_used`, `panic`, `todo`, `unimplemented`, and `dbg_macro`.
 - Arguments use clap v4 derive; enum-like arguments are validated at parse time, so a bad value exits `2` with the choices listed.

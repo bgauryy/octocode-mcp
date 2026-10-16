@@ -802,7 +802,7 @@ async fn a_page_past_the_end_leads_back_to_the_first_page() {
         .await
         .expect("listing");
         let data = row_data(&outcome);
-        assert_eq!(row_status(&outcome), "empty", "{data}");
+        assert_eq!(row_status(&outcome), "outOfRange", "{data}");
         assert_eq!(data["pagination"]["outOfRange"], true, "{data}");
         assert_eq!(data["reason"], format!("page {page} of {of}"), "{data}");
         let restart = &data["next"]["restart"]["query"]["queries"][0];
@@ -1008,7 +1008,7 @@ async fn a_renamed_repository_is_listed_and_continued_under_its_canonical_name()
         1,
         "{data}"
     );
-    let read = &data["hints"]["read"]["query"]["queries"][0];
+    let read = &crate::support::checks::hint(data, "read")["query"]["queries"][0];
     assert_eq!(
         (read["owner"].as_str(), read["repo"].as_str()),
         (Some("c"), Some("d")),
@@ -1062,7 +1062,8 @@ async fn a_renamed_repository_without_a_ref_costs_no_extra_metadata_read() {
         "{data}"
     );
     assert_eq!(
-        data["hints"]["read"]["query"]["queries"][0]["owner"], "c",
+        crate::support::checks::hint(data, "read")["query"]["queries"][0]["owner"],
+        "c",
         "{data}"
     );
     runtime.close().await;
@@ -1147,7 +1148,7 @@ async fn refs_without_branches_lead_to_the_branch_listing() {
     )
     .await
     .expect("refs with hints");
-    let lead = &row_data(&hinted)["hints"]["viewRefs"];
+    let lead = &crate::support::checks::hint(row_data(&hinted), "viewRefs");
     assert_eq!(lead["tool"], "ghStructure", "{}", hinted.structured_content);
     assert_eq!(
         lead["query"]["queries"][0]["extras"],

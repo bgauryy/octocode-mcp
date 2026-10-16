@@ -21,10 +21,10 @@
 
 use super::LspSearchQuery;
 use super::anchor::Position;
-use super::failure::{LspFailure, flag_partial, ignored_text_lead, query_value};
+use super::failure::{LspFailure, RequestFailures, flag_partial, ignored_text_lead, query_value};
 use super::import_stop::{proven_missing, stays_on_import};
 use super::recovery::{get_locations, resolve_definition_chain, snippet_identity};
-use super::render::{TS_LANGUAGE_IDS, uri_to_path};
+use super::render::uri_to_path;
 use super::scope::{IgnoredMentions, Scope, canonical};
 use super::source::SourceCache;
 use crate::policy::path::PathPolicy;
@@ -50,10 +50,13 @@ const SKIP_BUDGET: std::time::Duration = std::time::Duration::from_secs(10);
 const DIGEST_PREFIX: &str = "lsp-imp:";
 /// Partial reason of a window that leaves later windows unverified.
 pub(super) const CAPPED_REASON: &str = "importerScanCapped";
-/// Partial reason of a scan whose ignore rules hid files that spell the name.
+/// Partial reason of a scan whose ignore rules hid files that import the
+/// name.
 pub(super) const IGNORED_REASON: &str = "importerScanIgnored";
-/// Settle/ready bounds for the last candidate open; the load it triggers
-/// covers every candidate opened before it.
+/// Settle/ready bounds for the last candidate open of a window; the load it
+/// triggers covers every candidate opened before it. Shorter than a
+/// request's anchor open (the server already loaded the anchor's project),
+/// so a request that verifies several windows stays bounded.
 const OPEN_SETTLE_MS: u32 = 200;
 const OPEN_READY_TIMEOUT_MS: u32 = 10_000;
 
@@ -225,7 +228,7 @@ impl Window {
 
 /// True for operations whose answer lists places that point *at* the anchor.
 pub(super) fn applies(language_id: Option<&str>, operation: &str) -> bool {
-    language_id.is_some_and(|id| TS_LANGUAGE_IDS.contains(&id))
+    octocode_engine::lsp::family::is_typescript_family(language_id)
         && matches!(operation, "references" | "callers")
 }
 
@@ -379,30 +382,47 @@ impl Importers {
         );
     }
 
-    /// Ignored files that spell the name are outside the candidate scan: the
-    /// row is partial, names the deciding rules, and leads to their text.
+    /// Gitignored files are outside the candidate scan. One that imports the
+    /// name may be a hidden importer: the row is partial, names the deciding
+    /// rules, and leads to exactly those files. Files that only spell the
+    /// name, or a scan for them that stopped at its bound, are no evidence
+    /// of a hidden importer: the row keeps only the lead (over the files, or
+    /// over the scope when the scan did not finish).
     fn disclose_ignored(&self, row: &mut Value, query: &LspSearchQuery, scope: &Scope) {
+        let ignored = &self.ignored;
         let Some(name) = query
             .symbol_name()
-            .filter(|_| !self.ignored.files.is_empty())
+            .filter(|_| !ignored.files.is_empty() || ignored.unfinished)
         else {
             return;
         };
-        let count = self.ignored.files.len();
-        let rules = match self.ignored.rules.as_slice() {
+        if ignored.importing.is_empty() {
+            let listed: &[String] = if ignored.unfinished {
+                &[]
+            } else {
+                &ignored.files
+            };
+            row["next"]["includeSkipped"] = ignored_text_lead(name, scope, listed);
+            return;
+        }
+        let rules = match ignored.rules.as_slice() {
             [] => "ignore rules".to_owned(),
             rules => rules.join(", "),
         };
-        let files = if count == 1 {
-            "1 file that spells this name is".to_owned()
+        let files = match ignored.importing.len() {
+            1 => "1 file that imports this name is".to_owned(),
+            count => format!("{count} files that import this name are"),
+        };
+        let more = if ignored.unfinished {
+            " The scan for gitignored files stopped at its time bound, so more may exist."
         } else {
-            format!("{count} files that spell this name are")
+            ""
         };
         let warning = format!(
-            "{files} gitignored ({rules}), so importer recovery did not verify them; a localSearch with includeIgnored reads their text."
+            "{files} gitignored ({rules}), so importer recovery did not verify them; a localSearch with includeIgnored reads their text.{more}"
         );
         crate::tools::paging::mark_partial(row, IGNORED_REASON, &[warning]);
-        row["next"]["includeSkipped"] = ignored_text_lead(name, scope, &self.ignored.files);
+        row["next"]["includeSkipped"] = ignored_text_lead(name, scope, &ignored.importing);
     }
 
     /// Record the scan on the row's coverage so readers and
@@ -533,9 +553,10 @@ pub(super) async fn verified_anchors(
             });
         }
     };
-    let ignored = scope
+    let mut ignored = scope
         .ignored_text_files(symbol, &skip, sources.policy(), cancel)
         .await?;
+    ignored.importing = importing_files(sources, cancel, &ignored.files, symbol).await?;
     let declaration = identities(
         client,
         sources,
@@ -561,7 +582,7 @@ pub(super) async fn verified_anchors(
     let mut unverified = Vec::new();
     loop {
         let (opened, open_failed) =
-            open_candidates(client, sources, cancel, window.files(), symbol).await?;
+            open_candidates(client, sources, cancel, anchor_path, window.files(), symbol).await?;
         let (found, other, unresolved) = verify_occurrences(
             client,
             sources,
@@ -597,32 +618,114 @@ pub(super) async fn verified_anchors(
     })
 }
 
+/// Ignored files read to tell an importer from a file that only spells the
+/// name; any beyond it count as importing (unchecked is not absence).
+const MAX_IGNORED_CHECKED: usize = 64;
+
+/// Of `files`, those that import `symbol`: by name (`import { symbol }`,
+/// `const { symbol } = require(…)`, renamed or not), or through a namespace
+/// or default binding whose member `.symbol` the file spells. A file that
+/// cannot be read or parsed counts as importing.
+async fn importing_files(
+    sources: &mut SourceCache<'_>,
+    cancel: &dyn CancellationCheck,
+    files: &[String],
+    symbol: &str,
+) -> Result<Vec<String>, LspFailure> {
+    let mut importing = Vec::new();
+    for (index, file) in files.iter().enumerate() {
+        cancel.check().map_err(LspFailure::cancelled)?;
+        let imports = if index < MAX_IGNORED_CHECKED {
+            match sources.get(file).await {
+                Some(source) => imports_name(&source.content, file, symbol),
+                None => true,
+            }
+        } else {
+            true
+        };
+        if imports {
+            importing.push(file.clone());
+        }
+    }
+    Ok(importing)
+}
+
+/// Whether `content` imports `symbol` (see [`importing_files`]); `true`
+/// when the file cannot be parsed.
+fn imports_name(content: &str, file: &str, symbol: &str) -> bool {
+    let Some(parsed) = octocode_engine::portable::extract_graph_facts(content, file)
+        .and_then(|facts| serde_json::from_str::<Value>(&facts).ok())
+    else {
+        return true;
+    };
+    let member = format!(".{symbol}");
+    let spells_member = || {
+        content.match_indices(&member).any(|(at, _)| {
+            !content[at + member.len()..]
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '$')
+        })
+    };
+    parsed
+        .get("imports")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .any(
+            |import| match import.get("importedName").and_then(Value::as_str) {
+                Some(name) if name == symbol => true,
+                Some("*" | "default") => spells_member(),
+                _ => false,
+            },
+        )
+}
+
 /// A synchronized candidate and its `(line, character, is-call)` occurrences.
 type OpenedFile = (String, Vec<(u32, u32, bool)>);
 
-/// Open every candidate that mentions `symbol`; wait once, on the last, for
-/// the project load the opens trigger, so identity checks do not race it.
+/// Open every candidate that mentions `symbol`; wait once, on the last one
+/// opened, for the project load the opens trigger, so identity checks do
+/// not race it. The anchor document is synchronized first: the client
+/// keeps a bounded set of open documents, and a request that verifies
+/// several windows must not evict the anchor whose program the checks use.
 /// Returns each opened file's occurrences and the candidates that failed.
 async fn open_candidates(
     client: &NativeLspClient,
     sources: &mut SourceCache<'_>,
     cancel: &dyn CancellationCheck,
+    anchor: &str,
     files: &[String],
     symbol: &str,
 ) -> Result<(Vec<OpenedFile>, Vec<String>), LspFailure> {
-    let mut opened = Vec::new();
+    if let Some(source) = sources.get(anchor).await {
+        client
+            .open_document(anchor.to_owned(), &source.content)
+            .await
+            .map_err(|error| LspFailure::from_engine(&error))?;
+    }
+    let mut eligible = Vec::new();
     let mut failed = Vec::new();
-    for (index, file) in files.iter().enumerate() {
+    for file in files {
         cancel.check().map_err(LspFailure::cancelled)?;
         let Some(source) = sources.get(file).await else {
             failed.push(file.clone());
             continue;
         };
         let spots = occurrences(&source.content, symbol);
-        if spots.is_empty() {
-            continue;
+        if !spots.is_empty() {
+            eligible.push((file.clone(), spots));
         }
-        let synced = if index + 1 == files.len() {
+    }
+    let last = eligible.len().saturating_sub(1);
+    let mut opened = Vec::new();
+    for (index, (file, spots)) in eligible.into_iter().enumerate() {
+        cancel.check().map_err(LspFailure::cancelled)?;
+        let Some(source) = sources.get(&file).await else {
+            failed.push(file);
+            continue;
+        };
+        let synced = if index == last {
             client
                 .open_document_and_wait(
                     file.clone(),
@@ -636,9 +739,9 @@ async fn open_candidates(
             client.open_document(file.clone(), &source.content).await
         };
         if synced.is_ok() {
-            opened.push((file.clone(), spots));
+            opened.push((file, spots));
         } else {
-            failed.push(file.clone());
+            failed.push(file);
         }
     }
     Ok((opened, failed))
@@ -814,13 +917,15 @@ const FILE_KIND: u64 = 1;
 /// function or method the server's `documentSymbol` places around it, or
 /// the file itself for a top-level call. Files the walk's own call
 /// hierarchy already answered (`answered`, canonical paths) are skipped
-/// before any request.
+/// before any request. A request the server fails is recorded in
+/// `failures`.
 pub(super) async fn callers_from_references(
     client: &NativeLspClient,
     sources: &mut SourceCache<'_>,
     cancel: &dyn CancellationCheck,
     importers: &Importers,
     answered: &HashSet<String>,
+    failures: &mut RequestFailures,
 ) -> Result<Vec<(Value, Vec<Value>)>, LspFailure> {
     let mut edges: Vec<(Value, Vec<Value>)> = Vec::new();
     for anchor in importers.per_file() {
@@ -832,7 +937,7 @@ pub(super) async fn callers_from_references(
         // Only the importer's own sites are kept: read no other file's
         // snippet (a references answer names every file using the symbol).
         let own_file = own_file_policy(sources.policy(), &file);
-        let Ok(references) = get_locations(
+        let references = match get_locations(
             client,
             &own_file,
             cancel,
@@ -844,8 +949,12 @@ pub(super) async fn callers_from_references(
             anchor.character,
         )
         .await
-        else {
-            continue;
+        {
+            Ok(references) => references,
+            Err(failure) => {
+                failures.record(failure)?;
+                continue;
+            }
         };
         let Some(source) = sources.get(&anchor.path).await else {
             continue;
@@ -864,10 +973,15 @@ pub(super) async fn callers_from_references(
         if calls.is_empty() {
             continue;
         }
-        let symbols = client
-            .get_document_symbols(anchor.path.clone())
-            .await
-            .unwrap_or_default();
+        // Without the outline each call is attributed to the file itself:
+        // the call sites stay listed, and the failure is disclosed.
+        let symbols = match client.get_document_symbols(anchor.path.clone()).await {
+            Ok(symbols) => symbols,
+            Err(error) => {
+                failures.record_engine(&error)?;
+                Default::default()
+            }
+        };
         let mut flat = Vec::new();
         flatten_symbols(&symbols, &mut flat);
         for call in calls {
@@ -1112,6 +1226,97 @@ mod tests {
         let mut row = json!({"status": "success"});
         importers.annotate(&mut row, &query, &scope);
         assert_eq!(row["coverage"]["importerScan"], SCAN_FAILED);
+    }
+
+    /// Only a gitignored file that imports the name makes the row partial;
+    /// files that only spell it, or a scan that stopped at its bound, leave
+    /// a lead and no partial reason.
+    #[test]
+    fn only_ignored_importers_make_the_row_partial() {
+        let query: LspSearchQuery = serde_json::from_value(json!({
+            "operation": "references", "path": "/r/a.ts", "symbolName": "x", "line": 1
+        }))
+        .expect("query");
+        let scope = Scope::new("/r".into(), vec!["*.ts".into()]);
+        let annotate = |ignored: IgnoredMentions| {
+            let importers = Importers {
+                ignored,
+                ..Importers::default()
+            };
+            let mut row = json!({"status": "success"});
+            importers.annotate(&mut row, &query, &scope);
+            row
+        };
+        let quiet = annotate(IgnoredMentions::default());
+        assert!(quiet.get("isPartial").is_none(), "{quiet}");
+        assert!(quiet["next"].get("includeSkipped").is_none(), "{quiet}");
+
+        // An unfinished scan: a lead over the scope, not a partial row.
+        let unfinished = annotate(IgnoredMentions::unfinished());
+        assert!(unfinished.get("isPartial").is_none(), "{unfinished}");
+        let lead = &unfinished["next"]["includeSkipped"]["query"]["queries"][0];
+        assert_eq!(lead["path"], "/r", "{unfinished}");
+        assert_eq!(lead["includeIgnored"], true, "{unfinished}");
+
+        // Bundled copies that only spell the name: their exact lead.
+        let copies = annotate(IgnoredMentions {
+            files: vec!["/r/releases/copy.mjs".into()],
+            rules: vec![".gitignore:1 'releases/**'".into()],
+            ..IgnoredMentions::default()
+        });
+        assert!(copies.get("isPartial").is_none(), "{copies}");
+        assert_eq!(
+            copies["next"]["includeSkipped"]["query"]["queries"][0]["path"], "/r/releases/copy.mjs",
+            "{copies}"
+        );
+
+        // An ignored importer: partial, named with its rule, lead to it.
+        let hidden = annotate(IgnoredMentions {
+            files: vec!["/r/gen/g.ts".into(), "/r/gen/h.ts".into()],
+            rules: vec![".gitignore:1 'gen/'".into()],
+            unfinished: true,
+            importing: vec!["/r/gen/g.ts".into()],
+        });
+        assert_eq!(
+            hidden["partialReasons"],
+            json!([IGNORED_REASON]),
+            "{hidden}"
+        );
+        let warning = hidden["warnings"][0].as_str().expect("warning");
+        assert!(
+            warning.contains("1 file that imports") && warning.contains("more may exist"),
+            "{hidden}"
+        );
+        assert_eq!(
+            hidden["next"]["includeSkipped"]["query"]["queries"][0]["path"], "/r/gen/g.ts",
+            "{hidden}"
+        );
+    }
+
+    #[test]
+    fn importing_is_by_name_or_namespace_member() {
+        assert!(imports_name(
+            "import { x } from './a';\nx();\n",
+            "a.ts",
+            "x"
+        ));
+        assert!(imports_name("import { x as y } from './a';\n", "a.ts", "x"));
+        assert!(imports_name(
+            "import * as a from './a';\na.x();\n",
+            "a.ts",
+            "x"
+        ));
+        assert!(!imports_name(
+            "import * as a from './a';\na.xy();\n",
+            "a.ts",
+            "x"
+        ));
+        // A bundled copy declaring its own `x` imports nothing of it.
+        assert!(!imports_name(
+            "import fs from 'node:fs';\nexport function x() { return fs; }\n",
+            "copy.mjs",
+            "x"
+        ));
     }
 
     #[test]

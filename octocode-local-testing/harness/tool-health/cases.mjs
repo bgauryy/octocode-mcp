@@ -21,6 +21,7 @@
 // GitHub tools read the loopback mock's `octo/demo` (built from the same
 // fixture files, plus the bulk pull request #4 of addBulkPullRequest);
 // artifactSearch reads the mock npm registry; clasify the mock jev provider.
+import { suggestedCall } from '../lead-predicates.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { declarations, lspLocations, structureFiles, sourceView, inventoryRows } from '../mcp-client.mjs';
@@ -113,9 +114,9 @@ function answerShapes(data) {
 }
 /** Why a source row's read lead does not re-read exactly the judged selection (null when it does). */
 function readLeadProblem(data) {
-  const read = data?.hints?.read;
+  const read = data?.hints?.map(suggestedCall).find(call => call?.key === 'read');
   const row = read?.query?.queries?.[0];
-  return read?.tool === 'localFetch' && String(row?.path).endsWith(GREETING_SOURCE.query.path) && JSON.stringify(row.ranges) === JSON.stringify(GREETING_SOURCE.query.ranges) && /^[a-f0-9]{64}$/.test(row.snapshot ?? '') && row.minify === 'none'
+  return read?.tool === 'localFetch' && String(row?.path).endsWith(GREETING_SOURCE.query.path) && JSON.stringify(row.ranges) === JSON.stringify(GREETING_SOURCE.query.ranges) && /^[a-f0-9]{64}$/.test(row.snapshot ?? '') && !Object.hasOwn(row, 'minify')
     ? null : `hints.read ${JSON.stringify(read)}`;
 }
 
@@ -305,7 +306,7 @@ export const CASES = {
   },
   ghGetFileContent: {
     budgetMs: REMOTE,
-    happy: { query: { owner: 'octo', repo: 'demo', path: 'src/greeter.ts', fullContent: true, minify: 'none' }, fields: ['path', 'content', 'commitSha', 'totalLines'], rows: data => numbered(data.content), min: 18 },
+    happy: { query: { owner: 'octo', repo: 'demo', path: 'src/greeter.ts', fullContent: true }, fields: ['path', 'content', 'commitSha', 'totalLines'], rows: data => numbered(data.content), min: 18 },
     // The mock's 1500-line octo/demo-docs guide.txt exceeds the full-content size limit.
     // Plain text on purpose: markdown minify is O(n^2) per paragraph today (backlog
     // item "Markdown minify is O(n²)"); a .md here costs ~25 s per page.

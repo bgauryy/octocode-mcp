@@ -29,7 +29,10 @@ mod rust;
 const MODULE_CALLER: &str = "module";
 
 use python::collect_python_imports;
-use rust::{RustContext, collect_rust_imports, rust_child_contexts, rust_inner_unsupported};
+use rust::{
+    RustContext, collect_rust_imports, collect_rust_paths, rust_child_contexts,
+    rust_inner_unsupported,
+};
 
 /// Graph positions of syntax-tree nodes: the shared [`LineIndex`] under the
 /// tree-sitter rule (`\n` only), with UTF-16 columns.
@@ -143,6 +146,8 @@ struct GraphAccumulator {
     edges: Vec<GraphFactEdge>,
     diagnostics: Vec<String>,
     modules: Vec<GraphFactRustModule>,
+    /// Rust qualified paths outside call and `use` position.
+    paths: Vec<crate::graph::GraphFactPath>,
     /// Start bytes of name tokens that are not value references: declaration
     /// names and the callee tokens of recorded calls (call edges).
     non_reference_tokens: std::collections::HashSet<usize>,
@@ -183,6 +188,7 @@ impl GraphAccumulator {
             calls: Vec::new(),
             edges: Vec::new(),
             modules: Vec::new(),
+            paths: Vec::new(),
             non_reference_tokens: std::collections::HashSet::new(),
             macro_bodies: Vec::new(),
             declaration_spans: Vec::new(),
@@ -271,10 +277,14 @@ fn syntax_error_lines(root: Node<'_>) -> Vec<[u32; 2]> {
     while let Some(node) = stack.pop() {
         if node.is_error() || node.is_missing() {
             let line = |row: usize| u32::try_from(row + 1).unwrap_or(u32::MAX);
-            spans.push((
-                line(node.start_position().row),
-                line(node.end_position().row),
-            ));
+            let (start, end) = (node.start_position(), node.end_position());
+            // A node ending at column 0 ends with the previous line's newline.
+            let last = if end.column == 0 && end.row > start.row {
+                end.row - 1
+            } else {
+                end.row
+            };
+            spans.push((line(start.row), line(last)));
             continue;
         }
         if node.has_error() {
@@ -404,6 +414,13 @@ fn extract_facts_before(
         diagnostics: acc.diagnostics,
         error_lines,
         modules: acc.modules,
+        paths: {
+            let mut paths = acc.paths;
+            // An item-level macro body is read both as tokens and as items.
+            paths.sort_unstable();
+            paths.dedup();
+            paths
+        },
         rust_root_unsupported,
         ..super::native_graph_facts(language_label(&ext, entry.language_id), file_path)
     };
@@ -775,6 +792,17 @@ fn visit_node(
             rust_node,
             deadline,
         );
+        if rust && !acc.declarations_only {
+            collect_rust_paths(
+                node,
+                &path,
+                content,
+                line_index,
+                acc,
+                declarations.last().map(|(id, _)| id.as_str()),
+                module_scope.len(),
+            );
+        }
         path.push(node);
         if acc.calls.len() > calls_before
             && let Some(receivers) = receivers.as_mut()
@@ -916,6 +944,8 @@ fn collect_node_facts(
         && node.kind() == "mod_item"
     {
         collect_rust_module(node, content, line_index, acc, rust);
+    } else if rust.is_some() && node.kind() == "macro_invocation" {
+        rust::collect_rust_include(node, content, line_index, acc);
     } else if matches!(acc.ext.as_str(), "py" | "pyi")
         && matches!(node.kind(), "import_statement" | "import_from_statement")
     {

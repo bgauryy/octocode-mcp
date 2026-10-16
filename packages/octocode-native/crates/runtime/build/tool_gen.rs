@@ -36,17 +36,6 @@ fn render_continuation_channels(contract: &Value) -> Result<String, Box<dyn Erro
             .collect::<Result<Vec<_>, _>>()?;
         Ok(format!("&[{}]", items.join(", ")))
     };
-    let count = |key: &str| {
-        channels
-            .get(key)
-            .and_then(Value::as_u64)
-            .filter(|value| *value > 0)
-            .ok_or_else(|| {
-                invalid(format!(
-                    "continuationChannels.{key} must be a positive integer"
-                ))
-            })
-    };
     Ok(format!(
         "/// Contract `continuationChannels`: pages stay in `next`, leads and\n\
          /// prose tips go to `hints`.\n\
@@ -64,10 +53,6 @@ fn render_continuation_channels(contract: &Value) -> Result<String, Box<dyn Erro
          \x20   pub const PAGE_KINDS: &[&str] = {page_kinds};\n\
          \x20   pub const LEAD_KINDS: &[&str] = {lead_kinds};\n\
          \x20   pub const LEAD_PRIORITY: &[&str] = {lead_priority};\n\
-         \x20   /// Lead calls one `hints` object offers at most.\n\
-         \x20   pub const MAX_HINT_LEADS: usize = {max_hint_leads};\n\
-         \x20   /// Leads whose rows are alternatives to try: they keep every row.\n\
-         \x20   pub const ALTERNATIVE_ROW_LEADS: &[&str] = {alternative_row_leads};\n\
          }}\n\n",
         pages = text("pagesKey")?,
         hints = text("hintsKey")?,
@@ -82,8 +67,6 @@ fn render_continuation_channels(contract: &Value) -> Result<String, Box<dyn Erro
         page_kinds = list("/kinds/pages")?,
         lead_kinds = list("/kinds/leads")?,
         lead_priority = list("/leadPriority")?,
-        max_hint_leads = count("maxHintLeads")?,
-        alternative_row_leads = list("/alternativeRowLeads")?,
     ))
 }
 
@@ -438,8 +421,11 @@ pub(super) fn render_tool_ids(contract: &Value) -> Result<String, Box<dyn Error>
         let module = to_snake(name);
         policy.push_str(&format!(
             "/// Contract `{name}.semanticPolicy`: tool sets and limits enforced outside its schema.\n\
-             pub mod {module}_policy {{\n    use super::ToolId;\n"
+             pub mod {module}_policy {{\n"
         ));
+        if entries.values().any(Value::is_array) {
+            policy.push_str("    use super::ToolId;\n");
+        }
         for (key, value) in entries {
             let constant = to_screaming_snake(key);
             match value {

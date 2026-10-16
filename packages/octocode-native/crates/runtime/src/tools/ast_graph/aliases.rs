@@ -207,13 +207,10 @@ impl ResolveContext {
         let mut all_dirs = BTreeSet::from([".".to_owned()]);
         let mut has_c = false;
         for file in known {
-            let ext = file.rsplit_once('.').map_or("", |x| x.1);
-            let is_js = octocode_engine::text::JS_TS_EXTENSIONS.contains(&ext);
-            let is_py = matches!(ext, "py" | "pyi");
-            has_c |= matches!(
-                ext,
-                "c" | "h" | "cc" | "cpp" | "cxx" | "hh" | "hpp" | "hxx" | "cu" | "cuh"
-            );
+            let linker = super::linking::Linker::of(file);
+            let is_js = linker == super::linking::Linker::JsTs;
+            let is_py = linker == super::linking::Linker::Python;
+            has_c |= linker == super::linking::Linker::CFamily;
             let mut dir = dirname(file);
             loop {
                 if !all_dirs.insert(dir.to_owned()) && !is_js && !is_py {

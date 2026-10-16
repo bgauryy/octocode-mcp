@@ -29,7 +29,7 @@ use octocode_engine::lsp::config::{
 use octocode_engine::lsp::pool::LspClientPool;
 use octocode_engine::lsp::uri::path_to_uri as engine_path_to_uri;
 use octocode_engine::lsp::workspace::resolve_workspace_root_for_file;
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::future::Future;
 use std::path::Path;
 use std::time::Duration;
@@ -54,16 +54,11 @@ mod source;
 mod walk;
 
 pub use failure::LspFailure;
-use failure::{failure, partial_with_retry, with_next};
+use failure::{empty, failure, partial_with_retry, with_next};
 pub(crate) use output::Output;
 use render::decode_uri_path;
 use source::{SourceCache, SourceReadError, read_bounded_source_async, snippet_policy};
 
-/// After the first `didOpen` of a document, how long to wait for a project
-/// load the open triggers to START (tsserver begins ~100 ms after didOpen),
-/// and the bound on the whole post-open wait.
-const DIDOPEN_SETTLE_MS: u32 = 400;
-const DIDOPEN_READY_TIMEOUT_MS: u32 = 15_000;
 /// How often a long language-server await re-checks cancellation.
 const CANCEL_POLL_MS: u64 = 50;
 
@@ -83,11 +78,72 @@ macro_rules! each_shape {
     };
 }
 
+/// The requested operation, decoded once from whichever shape the query
+/// is. The match is exhaustive over the generated operation enums, so an
+/// operation the contract adds fails to compile until it is handled.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Op {
+    Definition,
+    References,
+    Callers,
+    Callees,
+    Hover,
+    TypeDefinition,
+    Implementation,
+    Supertypes,
+    Subtypes,
+    DocumentSymbols,
+    Diagnostic,
+    WorkspaceSymbol,
+}
+
+impl Op {
+    /// The wire spelling.
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Self::Definition => "definition",
+            Self::References => "references",
+            Self::Callers => "callers",
+            Self::Callees => "callees",
+            Self::Hover => "hover",
+            Self::TypeDefinition => "typeDefinition",
+            Self::Implementation => "implementation",
+            Self::Supertypes => "supertypes",
+            Self::Subtypes => "subtypes",
+            Self::DocumentSymbols => "documentSymbols",
+            Self::Diagnostic => "diagnostic",
+            Self::WorkspaceSymbol => "workspaceSymbol",
+        }
+    }
+}
+
 /// Shape-independent views over the generated wire query, in LSP `u32`
 /// coordinates.
 impl LspSearchQuery {
-    pub(crate) fn operation(&self) -> String {
-        each_shape!(self, operation => operation.to_string())
+    pub(crate) fn op(&self) -> Op {
+        use wire::{AnchoredOperation as A, DocumentOperation as D};
+        match self {
+            Self::Anchored(query) => match query.operation {
+                A::Definition => Op::Definition,
+                A::References => Op::References,
+                A::Callers => Op::Callers,
+                A::Callees => Op::Callees,
+                A::Hover => Op::Hover,
+                A::TypeDefinition => Op::TypeDefinition,
+                A::Implementation => Op::Implementation,
+                A::Supertypes => Op::Supertypes,
+                A::Subtypes => Op::Subtypes,
+            },
+            Self::Document(query) => match query.operation {
+                D::DocumentSymbols => Op::DocumentSymbols,
+                D::Diagnostic => Op::Diagnostic,
+            },
+            Self::WorkspacePath(_) | Self::WorkspaceRoot(_) => Op::WorkspaceSymbol,
+        }
+    }
+    /// The operation's wire spelling.
+    pub(crate) fn operation(&self) -> &'static str {
+        self.op().name()
     }
     /// The file the query names (a path or `file://` URI).
     pub(crate) fn path(&self) -> Option<&str> {
@@ -159,6 +215,14 @@ impl LspSearchQuery {
     pub(crate) fn importer_page(&self) -> u32 {
         match self {
             Self::Anchored(query) => query.importer_page.map_or(1, |page| u32_of(page.get())),
+            _ => 1,
+        }
+    }
+    /// The window of the anchor type's implementation candidates
+    /// (`candidatePage`, one-based) a fallback `subtypes` walk checks.
+    pub(crate) fn candidate_page(&self) -> u32 {
+        match self {
+            Self::Anchored(query) => query.candidate_page.map_or(1, |page| u32_of(page.get())),
             _ => 1,
         }
     }
@@ -359,7 +423,7 @@ impl LspSearchQuery {
     /// its `workspaceRoot` (a workspace-wide search has no anchor file):
     /// the query keeps the directory and searches from it.
     fn directory_as_workspace_root(&mut self, decoded: &str, paths: &PathPolicy) -> Option<String> {
-        if self.operation() != "workspaceSymbol" {
+        if self.op() != Op::WorkspaceSymbol {
             return None;
         }
         let directory = paths
@@ -417,7 +481,7 @@ fn restore_root_spelling(row: &mut Value, canonical: Option<&str>, original: Opt
 /// Operations whose first page may reuse server responses from an earlier
 /// request: their answers depend only on the files the scope fingerprint
 /// covers. Diagnostics and hover always ask the server.
-const REUSED_OPERATIONS: [&str; 3] = ["references", "callers", "callees"];
+const REUSED_OPERATIONS: [Op; 3] = [Op::References, Op::Callers, Op::Callees];
 
 /// The page's response scope. Every cached key carries the anchor content
 /// digest; for [`REUSED_OPERATIONS`] it also carries the scope fingerprint
@@ -436,7 +500,7 @@ fn response_scope(
     let continuation = (query.page().is_some_and(|page| page > 1) || query.importer_page() > 1)
         && query.snapshot().is_some();
     match fingerprint {
-        Some(fingerprint) if REUSED_OPERATIONS.contains(&query.operation().as_str()) => {
+        Some(fingerprint) if REUSED_OPERATIONS.contains(&query.op()) => {
             octocode_engine::lsp::client::ResponseScope {
                 reuse: true,
                 generation: crate::digest::sha256(
@@ -463,7 +527,7 @@ async fn scope_responses(
         return Ok(());
     };
     let digest = crate::digest::sha256(document.content.as_bytes());
-    let fingerprint = if REUSED_OPERATIONS.contains(&query.operation().as_str()) {
+    let fingerprint = if REUSED_OPERATIONS.contains(&query.op()) {
         let walked = scope.walk_inputs();
         blocking_cancellable(cancel, move |stopped| walked.fingerprint(stopped))
             .await?
@@ -543,6 +607,9 @@ async fn execute_page(
     response_window: Option<usize>,
 ) -> Result<Value, LspFailure> {
     cancel.check().map_err(LspFailure::cancelled)?;
+    if unpinned_later_page(&query) {
+        return Ok(unpinned_page_row(&query));
+    }
     let original_root = query.workspace_root().map(str::to_owned);
     let path = match query.resolve_paths(paths) {
         Ok(path) => path,
@@ -571,6 +638,32 @@ async fn execute_page(
         }
         Err(Exit::Failed(failure)) => Err(failure),
     }
+}
+
+/// A later page that names neither the snapshot of the page before it nor
+/// a `pageSize`: its boundaries would follow the response window shared by
+/// the batch, so the same `page` could address different rows.
+/// The refusal of a later page with no snapshot and no `pageSize`, led
+/// back to the walk's first page (`next.restart`), whose `next.nextPage`
+/// carries the snapshot.
+fn unpinned_page_row(query: &LspSearchQuery) -> Value {
+    json!({
+        "status": "error",
+        "errorCode": "invalidInput",
+        "error": "page > 1 needs the snapshot its next page carries, or an explicit pageSize: without either, pages are cut from this call's response window, which depends on the other rows of the batch.",
+        "next": {
+            "restart": crate::tools::result::restart_query(
+                crate::tools::id::ToolId::LspSearch,
+                &failure::query_value(query),
+            )
+        }
+    })
+}
+
+fn unpinned_later_page(query: &LspSearchQuery) -> bool {
+    query.page().is_some_and(|page| page > 1)
+        && query.snapshot().is_none()
+        && query.page_size().is_none()
 }
 
 async fn run_page(
@@ -649,7 +742,7 @@ async fn run_page(
         anchor.resolved_symbol,
     );
     receipt::relative_server_roots(&mut result, paths);
-    if matches!(query.operation().as_str(), "references" | "callers") {
+    if matches!(query.op(), Op::References | Op::Callers) {
         locations::attach_read_lead(&mut result);
     }
     Ok(with_next(query, result))
@@ -659,20 +752,11 @@ async fn run_page(
 /// incoming, name-anchored, non-error row of a language with a coverage
 /// signal. Its `textOnlyFiles` needs the scope's text scan first.
 fn needs_text_scan(query: &LspSearchQuery, language_id: Option<&str>, row: &Value) -> bool {
-    const FLAGGED: [&str; 10] = [
-        "typescript",
-        "typescriptreact",
-        "javascript",
-        "javascriptreact",
-        "python",
-        "rust",
-        "c",
-        "cpp",
-        "objective-c",
-        "objective-cpp",
-    ];
-    inferred_project::is_incoming(&query.operation())
-        && language_id.is_some_and(|id| FLAGGED.contains(&id))
+    use octocode_engine::lsp::family::{is_c_family, is_typescript_family};
+    inferred_project::is_incoming(query.operation())
+        && (is_typescript_family(language_id)
+            || is_c_family(language_id)
+            || matches!(language_id, Some("python" | "rust")))
         && query
             .symbol_name()
             .is_some_and(|name| !name.trim().is_empty())
@@ -729,14 +813,17 @@ fn discover_server(
         default_server_for_file(&path, &workspace, &discovery)
     };
     let Some(mut config) = discovered else {
-        return Err(fail(
-            "serverUnavailable",
-            if root_only {
-                "No language server could be inferred for this workspace root (no tsconfig.json, Cargo.toml, go.mod, pyproject.toml, setup.py, jsconfig.json, or package.json)."
-            } else {
-                "No language server is configured for this file."
-            },
-        ));
+        let message = if root_only {
+            format!(
+                "No language server could be inferred for this workspace root (none of {}).",
+                octocode_engine::lsp::config::workspace_root_marker_names()
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        } else {
+            "No language server is configured for this file.".to_owned()
+        };
+        return Err(fail("serverUnavailable", &message));
     };
     receipt::apply_rust_context(&mut config, query).map_err(LspFailure::invalid_query)?;
     let fallback = if root_only {
@@ -791,7 +878,7 @@ struct Session {
     config: octocode_engine::lsp::types::JsLanguageServerConfig,
     /// Why the target's own server did not start, when `config` replaced it.
     fell_back_from: Option<String>,
-    /// The post-didOpen readiness (`"timeout"` when the project load was
+    /// The post-didOpen readiness (timeout when the project load was
     /// still running).
     open_readiness: Option<String>,
 }
@@ -815,17 +902,22 @@ async fn open_session(
         config,
         fell_back_from,
     } = acquire_leased_client(query, target, pool, cancel).await?;
+    // A readiness timeout means the live server announced progress and is
+    // still indexing. Do not sync or query it yet: return the established
+    // incomplete row with the same-query retry instead.
     if client.readiness().as_deref() == Some("timeout") {
-        return Err(target.fail(
+        let mut row = empty(
             query,
-            "timeout",
-            "Timed out waiting for the language server to become ready.",
-            false,
-        ));
+            "languageServerIndexing",
+            "The language server is still indexing the project; semantic results are not ready yet.",
+            true,
+        );
+        partial_with_retry(&mut row, query, "languageServerIndexing", &[]);
+        return Err(Exit::Row(row));
     }
-    if let Some(capability) = receipt::required_capability(&query.operation())
+    if let Some(capability) = receipt::required_capability(query.operation())
         && !client.has_capability(capability.to_owned())
-        && !heritage::fallback_provider(&query.operation())
+        && !heritage::fallback_provider(query.operation())
             .is_some_and(|provider| client.has_capability(provider.to_owned()))
     {
         return Err(target.fail(
@@ -936,12 +1028,7 @@ async fn sync_document(
     if let Some(document) = document {
         return match cancellable(
             cancel,
-            client.open_document_and_wait(
-                target.path.clone(),
-                &document.content,
-                Some(DIDOPEN_SETTLE_MS),
-                Some(DIDOPEN_READY_TIMEOUT_MS),
-            ),
+            client.open_document_and_wait(target.path.clone(), &document.content, None, None),
         )
         .await?
         {
@@ -971,12 +1058,7 @@ async fn sync_document(
         && let Some(source) = sources.get(&representative).await
         && let Ok(readiness) = cancellable(
             cancel,
-            client.open_document_and_wait(
-                representative,
-                &source.content,
-                Some(DIDOPEN_SETTLE_MS),
-                Some(DIDOPEN_READY_TIMEOUT_MS),
-            ),
+            client.open_document_and_wait(representative, &source.content, None, None),
         )
         .await?
     {
@@ -1003,7 +1085,8 @@ fn annotate(
             query,
             "languageServerIndexing",
             &[format!(
-                "The language server was still loading the project after {DIDOPEN_READY_TIMEOUT_MS} ms; results may be incomplete."
+                "The language server was still loading the project after {} ms; results may be incomplete.",
+                octocode_engine::lsp::client::OPEN_READY_TIMEOUT_MS
             )],
         );
     }
@@ -1018,7 +1101,16 @@ fn annotate(
     let language_id = target.config.language_id.as_deref();
     inferred_project::annotate(result, query, language_id, &target.path, scope);
     inferred_project::annotate_compile_database(result, query, language_id, &target.path, scope);
-    server_coverage::annotate(result, query, language_id, scope);
+    server_coverage::annotate(
+        result,
+        query,
+        language_id,
+        server_coverage::Server {
+            anchor: &target.path,
+            root: &target.config.workspace_root,
+        },
+        scope,
+    );
     receipt::attach_provider_context(
         result,
         query,

@@ -1,13 +1,17 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use bytes::Bytes;
-use reqwest::header::{ACCEPT, HeaderValue, IF_NONE_MATCH};
+use reqwest::header::{ACCEPT, CONTENT_TYPE, ETAG, HeaderValue, IF_NONE_MATCH};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::{future::Future, pin::Pin, time::Duration};
 
 use super::{
     GitHubTransport, Partition, ProviderError, ProviderErrorKind, RequestContext, RequestSpec,
+    ResponsePage,
 };
+
+/// GitHub's raw media type: a file's own bytes instead of a JSON payload.
+const RAW_MEDIA_TYPE: &str = "application/vnd.github.raw";
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct CachedContent {
@@ -96,7 +100,6 @@ pub struct ContentRequest {
     pub path: String,
     pub reference: Option<String>,
     pub force_refresh: bool,
-    pub session_id: Option<String>,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContentResponse {
@@ -106,6 +109,13 @@ pub struct ContentResponse {
     pub etag: Option<String>,
     pub from_cache: bool,
     pub raw_response_bytes: usize,
+}
+/// A submodule entry of a repository: the clone URL `.gitmodules` names
+/// for it and the commit its parent pins.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Submodule {
+    pub url: Option<String>,
+    pub commit: Option<String>,
 }
 pub struct GitHubProvider<C> {
     pub transport: GitHubTransport,
@@ -150,9 +160,7 @@ impl<C: ConditionalCache> GitHubProvider<C> {
             ));
         }
         let resolved_ref = self.resolve_commit(request, context).await?;
-        let partition = self
-            .transport
-            .cache_partition(context, request.session_id.as_deref())?;
+        let partition = self.transport.cache_partition(context, None)?;
         let key = cache_key(request, &resolved_ref);
         // Single flight: identical concurrent reads wait for the first and
         // then read what it cached.
@@ -199,8 +207,7 @@ impl<C: ConditionalCache> GitHubProvider<C> {
             }
             Err(error) => return Err(error),
         };
-        let (bytes, raw_response_bytes) =
-            self.page_bytes(request, &page.body, context, kind).await?;
+        let (bytes, raw_response_bytes) = self.page_bytes(request, &page, context, kind).await?;
         let etag = page
             .headers
             .get("etag")
@@ -223,7 +230,40 @@ impl<C: ConditionalCache> GitHubProvider<C> {
         })
     }
 
-    /// The contents request for `request` at `resolved_ref`.
+    /// The submodule at `path` of `owner/repo` at commit `reference`, from
+    /// its own contents entry; `None` when the path is no submodule.
+    pub async fn submodule(
+        &self,
+        owner: &str,
+        repo: &str,
+        path: &str,
+        reference: &str,
+        context: &RequestContext,
+    ) -> Result<Option<Submodule>, ProviderError> {
+        let mut url = self
+            .transport
+            .endpoint()
+            .rest(&["repos", owner, repo, "contents", path])?;
+        url.query_pairs_mut().append_pair("ref", reference);
+        let page = self
+            .transport
+            .execute(RequestSpec::get(url), context)
+            .await?;
+        let payload: ContentPayload = serde_json::from_slice(&page.body).map_err(|_| {
+            ProviderError::new(ProviderErrorKind::Decode, "invalid GitHub content response")
+        })?;
+        Ok(
+            (payload.kind.as_deref() == Some("submodule")).then_some(Submodule {
+                url: payload.submodule_git_url,
+                commit: payload.sha,
+            }),
+        )
+    }
+
+    /// The contents request for `request` at `resolved_ref`, in the raw
+    /// media type: a file (up to 100 MB) comes back as its own bytes, with
+    /// no base64 body and no second blob read; a directory, symlink entry,
+    /// or submodule still comes back as JSON, which types it.
     fn contents_spec(
         &self,
         request: &ContentRequest,
@@ -237,21 +277,42 @@ impl<C: ConditionalCache> GitHubProvider<C> {
             &request.path,
         ])?;
         url.query_pairs_mut().append_pair("ref", resolved_ref);
-        Ok(RequestSpec::get(url))
+        let mut spec = RequestSpec::get(url);
+        spec.headers
+            .insert(ACCEPT, HeaderValue::from_static(RAW_MEDIA_TYPE));
+        Ok(spec)
     }
 
-    /// The file bytes a contents `body` carries, and the raw bytes read for
-    /// them. Files between 1 MB and 100 MB come back 200 with
-    /// `encoding:"none"` and an empty body; their bytes are only available as
-    /// a git blob.
+    /// The file bytes a contents response carries, and the raw bytes read
+    /// for them. A raw-typed response is the file itself (its ETag is the
+    /// blob SHA). A JSON one is a non-file entry, or a base64 file payload
+    /// from a server that ignored the raw media type; in that payload, files
+    /// between 1 MB and 100 MB come back with `encoding:"none"` and an empty
+    /// body, and their bytes are only available as a git blob.
     async fn page_bytes(
         &self,
         request: &ContentRequest,
-        body: &[u8],
+        page: &ResponsePage,
         context: &RequestContext,
         kind: ContentKind,
     ) -> Result<(Bytes, usize), ProviderError> {
+        let body = page.body.as_ref();
         let raw_response_bytes = body.len();
+        let raw = page
+            .headers
+            .get(CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| value.starts_with(RAW_MEDIA_TYPE));
+        if raw {
+            let blob = page
+                .headers
+                .get(ETAG)
+                .and_then(|value| value.to_str().ok())
+                .map(|etag| etag.trim_start_matches("W/").trim_matches('"'))
+                .filter(|sha| is_full_sha(sha));
+            kind.check(body, blob)?;
+            return Ok((page.body.clone(), raw_response_bytes));
+        }
         let payload = parse_content_payload(body, &request.path)?;
         let needs_blob = payload.encoding.as_deref() == Some("none")
             || (payload.content.as_deref().is_none_or(str::is_empty)
@@ -286,8 +347,14 @@ impl<C: ConditionalCache> GitHubProvider<C> {
             }
             format!("github-tree:{}", hex::encode(digest.finalize()))
         };
+        // A listing at a full commit SHA is immutable: a cached one is served
+        // without asking GitHub again, like a file read at one.
+        let pinned = is_full_sha(reference);
         let cached = self.cache.get(&partition, &key).await;
-        if let Some(value) = cached.as_ref().filter(|value| value.etag.is_none()) {
+        if let Some(value) = cached
+            .as_ref()
+            .filter(|value| pinned || value.etag.is_none())
+        {
             return super::tree::parse_contents_listing(&value.bytes);
         }
         let mut segments = vec!["repos", owner, repo, "contents"];
@@ -334,7 +401,11 @@ impl<C: ConditionalCache> GitHubProvider<C> {
                         bytes: body,
                         resolved_ref: reference.to_owned(),
                     },
-                    Retention::Revalidate,
+                    if pinned {
+                        Retention::Pinned
+                    } else {
+                        Retention::Revalidate
+                    },
                 )
                 .await;
         }
@@ -453,6 +524,9 @@ impl<C: ConditionalCache> GitHubProvider<C> {
         Ok((bytes, directory.body.len().saturating_add(blob_bytes)))
     }
 
+    /// A blob's bytes as GitHub stores them: the raw media type answers
+    /// with the bytes themselves (up to 100 MB), not a base64 JSON body a
+    /// third larger that must then be decoded.
     async fn fetch_blob(
         &self,
         request: &ContentRequest,
@@ -468,14 +542,11 @@ impl<C: ConditionalCache> GitHubProvider<C> {
             "blobs",
             sha,
         ])?;
-        let blob = self
-            .transport
-            .execute(RequestSpec::get(blob_url), context)
-            .await?;
-        let payload: BlobPayload = serde_json::from_slice(&blob.body).map_err(|_| {
-            ProviderError::new(ProviderErrorKind::Decode, "invalid GitHub blob response")
-        })?;
-        let bytes = decode_bytes(Some(&payload.encoding), Some(payload.content))?;
+        let mut spec = RequestSpec::get(blob_url);
+        spec.headers
+            .insert(ACCEPT, HeaderValue::from_static(RAW_MEDIA_TYPE));
+        let blob = self.transport.execute(spec, context).await?;
+        let bytes = blob.body.to_vec();
         kind.check(&bytes, Some(sha))?;
         Ok((bytes, blob.body.len()))
     }
@@ -584,7 +655,8 @@ fn parse_content_payload(body: &[u8], path: &str) -> Result<ContentPayload, Prov
             None => format!(
                 "Path \"{path}\" is a git submodule; read files from the submodule repository instead."
             ),
-        })),
+        })
+        .with_reason(super::ProviderErrorReason::Submodule)),
         _ => Err(not_a_file(format!("GitHub path \"{path}\" is not a file"))),
     }
 }
@@ -679,11 +751,6 @@ struct DirectoryEntry {
     sha: String,
     #[serde(rename = "type")]
     kind: String,
-}
-#[derive(Deserialize)]
-struct BlobPayload {
-    encoding: String,
-    content: String,
 }
 fn decode_bytes(encoding: Option<&str>, content: Option<String>) -> Result<Vec<u8>, ProviderError> {
     let bytes = match encoding {

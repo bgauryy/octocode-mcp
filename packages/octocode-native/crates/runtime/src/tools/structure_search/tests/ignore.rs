@@ -213,6 +213,37 @@ fn tree_summary_counts_gitignored_entries_it_left_out() {
     assert!(all["summary"].get("ignored").is_none(), "{all}");
 }
 
+/// An unfiltered listing that left out ignored entries leads past every
+/// cause its summary counts in one call: the dot entries it skipped too,
+/// not only the ignored ones. Following the lead leaves nothing uncounted.
+#[test]
+fn an_unfiltered_listing_lead_lifts_every_counted_cause() {
+    let root = Fixture::new();
+    std::fs::create_dir(root.0.join(".git")).expect("repository marker");
+    std::fs::write(root.0.join(".gitignore"), "out/\n").expect("gitignore");
+    std::fs::create_dir_all(root.0.join("out")).expect("ignored");
+    std::fs::write(root.0.join("out/x.txt"), "x\n").expect("ignored file");
+    std::fs::create_dir_all(root.0.join(".cargo")).expect("hidden");
+    std::fs::write(root.0.join(".cargo/config.toml"), "x\n").expect("hidden file");
+    std::fs::create_dir_all(root.0.join("src")).expect("src");
+    std::fs::write(root.0.join("src/lib.rs"), "x\n").expect("lib");
+    for operation in ["tree", "files"] {
+        let out = run(
+            &root.0,
+            json!({"operation":operation,"path":root.0,"maxDepth":1}),
+        )
+        .expect("listing");
+        assert!(out["summary"]["ignored"].as_u64() > Some(0), "{out}");
+        assert!(out["summary"]["hidden"].as_u64() > Some(0), "{out}");
+        let lead = out["next"]["includeSkipped"]["query"]["queries"][0].clone();
+        assert_eq!(lead["includeIgnored"], true, "{out}");
+        assert_eq!(lead["includeHidden"], true, "{out}");
+        let all = run(&root.0, lead).expect("lead");
+        assert!(all["summary"].get("ignored").is_none(), "{all}");
+        assert!(all["summary"].get("hidden").is_none(), "{all}");
+    }
+}
+
 /// A path-ordered listing is the walk order, so the walk stops once the
 /// requested limit is filled instead of scanning the whole tree.
 #[test]

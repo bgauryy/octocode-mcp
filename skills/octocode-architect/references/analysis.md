@@ -7,7 +7,7 @@ Load when modeling a design, boundary, interface, or flow, or when topology, cyc
 - Name each hop's interface ([contract trace](checks.md#contract-trace)); make invalid states unrepresentable; keep core decisions apart from UI, storage, transport.
 - Record `module/layer -> responsibility -> owned data/invariants -> public interface -> allowed dependencies`.
 - Cross-check views; each hides what another exposes: static (file/symbol edges), control (who initiates, retries, cancels, handles errors), data ([data-flow trace](checks.md#data-flow-trace)), ownership (invariants, lifecycles, contracts), runtime (config, registries, processes, generated artifacts, dynamic dispatch).
-- Rejoin views for 1-3 scenarios as `trigger -> decision -> transformation -> side effect -> result/error`; note unresolved reflection, queues, registration, external systems, trust and transaction boundaries.
+- For a bounded decision, rejoin views for representative scenarios as `trigger -> decision -> transformation -> side effect -> result/error`; note unresolved reflection, queues, registration, external systems, trust and transaction boundaries. For a whole-system audit, follow [single-actor traversal](../../octocode-workflows/references/single-actor-traversal.md) and cover every inventoried surface and junction rather than sampling flows.
 - Name the quality attribute judged (correctness, security, changeability, performance, operability); [kill the strongest alternate](#kill-the-strongest-alternate) for look-alike signals.
 - Enforce layering in the build (`cargo deny` `[bans]` for Rust, a boundary test for TypeScript); a prose-only rule is `inferred`.
 - Generated source of truth (contract, schema, rule table): assert each hand-copied string (messages, allowlists, defaults) exists in the generated source; outcome parity tests miss copied text.
@@ -17,6 +17,15 @@ Load when modeling a design, boundary, interface, or flow, or when topology, cyc
 - Split into the smallest verifiable problems (inputs, outputs, verification point); order by dependency edges.
 - Parallelize only with clear ownership and a latency or independent-evidence gain, never to hide failures.
 - Compose after parts pass; test shared interfaces end to end.
+
+## Explore the graph and find critical paths
+
+- Seed exploration from exposed tools, user flows, protocol ingress, state owners, lifecycle hooks, and observed failures or profiles. Reconcile the graph with runtime registration; review the whole requested inventory, not only the graph's highest-ranked issues.
+- Expand breadth through callers, dependents, dependencies, implementations, and consumers. For each junction, ask what enters, what branches, what state changes, and who consumes the result. Keep unresolved dynamic or external edges visible.
+- Follow depth from a concrete trigger to its effect and observable outcome, then backtrack through error, fallback, retry, cancellation, and cleanup branches. Include asynchronous callbacks, queues, and fan-out/fan-in; an import chain alone is not an execution path.
+- Use the workflow [AST technique](../../octocode-workflows/references/ast-lsp-workflows.md#ast-workflow) to locate structures and its [LSP technique](../../octocode-workflows/references/ast-lsp-workflows.md#lsp-workflow) to resolve decisive identities. Preserve a frontier of unexplored edges and deduplicate by source identity and relevant scenario; record cycles without walking them forever.
+- Distinguish correctness-critical paths from latency-critical paths. A rarely used recovery or authorization path can be critical; high fan-in is only a lead for a runtime hotspot. Establish the workload and baseline before ranking measured cost.
+- At each critical path, apply the [review angles](checks.md#review-angles), record healthy invariants and disproved suspicions, and identify the next check that could change the verdict. Trace a changed boundary's upstream and downstream effects before closing it.
 
 ## Choose the narrowest evidence lane
 
@@ -35,7 +44,7 @@ Topology triages file relationships; it never proves symbol identity (use semant
 - Rust: `astTopology` with `rustWorkspace: "cargo"`, or crate edges from `cargo metadata --format-version 1` (or `cargo tree -e normal`); `rust-best-practices` when installed.
 - One bounded question: `astTopology`. Repeated: `npx octocode graph ingest <path>`, then `npx octocode graph query <op>`; re-ingest when `graph query stale` lists changed files.
 - Reruns: fix the absolute scan root, entrypoints, exclusions, test policy, page size.
-- Run `deadCode` `hints.references` leads unchanged.
+- Run `deadCode` `references` suggestions in `hints` unchanged.
 - Before an absence or completeness claim, check consumers outside the scanned roots and coverage signals: `astTopology` `coverage.state`, `isPartial`, `partialReasons`, `coverage.imports.unresolvedInternal` (diagnostics are counts until paged via `next.nextDiagnosticPage`), `pagination.outOfRange` on an empty page; `lspSearch` `coverage.exhaustive`; `graph` `callInternalRecall` and finding `tier`. Cold LSP servers undercount references: rerun, or treat partial as a lower bound.
 
 ## Kill the strongest alternate

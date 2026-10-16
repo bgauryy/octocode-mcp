@@ -33,6 +33,15 @@ pub(super) struct MatchBudget {
     deadline: Instant,
 }
 
+/// See [`CompiledPattern::declaration`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PatternDeclaration {
+    /// The declaration's node kind (`function_item`).
+    pub kind: String,
+    /// The name node's kind and text, when the pattern spells a name.
+    pub name: Option<(String, String)>,
+}
+
 pub(super) struct CompiledPattern {
     language: Language,
     expando: Expando,
@@ -187,6 +196,27 @@ impl CompiledPattern {
 
     pub(super) fn language(&self) -> &Language {
         &self.language
+    }
+
+    /// The declaration a pattern spells: its root's kind when the grammar
+    /// gives that node a `name` field, with the name node's kind and text
+    /// unless the name is a metavariable. `None` for any other pattern.
+    pub(super) fn declaration(&self) -> Option<PatternDeclaration> {
+        let tree = self.tree.as_ref()?;
+        let root = effective_pattern_root(tree.root_node(), &self.source);
+        let name = root.child_by_field_name("name")?;
+        let named = meta_from_node(name, &self.source, self.expando)
+            .is_none()
+            .then(|| {
+                (
+                    name.kind().to_owned(),
+                    node_text(name, &self.source).to_owned(),
+                )
+            });
+        Some(PatternDeclaration {
+            kind: root.kind().to_owned(),
+            name: named,
+        })
     }
 
     pub(super) fn is_special(&self) -> bool {

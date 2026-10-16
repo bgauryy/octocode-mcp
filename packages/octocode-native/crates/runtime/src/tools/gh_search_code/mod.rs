@@ -12,9 +12,8 @@ mod selection_tests;
 
 use crate::security::scan::ContentScan;
 use crate::tools::gh_shared::{
-    CODE_ROW_ID, GhFailure, SearchCompleteness, SearchReach, add_next, apply_partial, field_names,
-    pick_rows, push_warning_front, reject_window, search_failure, with_ref_recovery,
-    with_search_repair,
+    CODE_ROW_ID, GhFailure, SearchCompleteness, SearchWindow, add_next, apply_partial, field_names,
+    pick_rows, push_warning_front, search_failure, with_ref_recovery, with_search_repair,
 };
 use crate::tools::id::ToolId;
 use crate::tools::num::usize_of;
@@ -45,15 +44,21 @@ pub async fn run<C: ConditionalCache>(
         Err(error) => error,
     };
     // A page past the 1,000-result window repairs to the search's last real
-    // page when the first page names it (one search, usually cached).
-    let last_page = match context {
+    // page: the window's last page, or the first page's own last page when
+    // it names an earlier one (one search, usually cached). Its reachable
+    // results are the first page's total (every merged search's).
+    let window = match context {
         Some(context)
             if error.reason == Some(octocode_github::ProviderErrorReason::SearchWindowExceeded) =>
         {
-            search_page(provider, query, 1, page_size(query), context)
+            let window_last = SearchWindow::PageEnd.last_page(per_search(query, page_size(query)));
+            let first = search_page(provider, query, 1, page_size(query), context)
                 .await
-                .ok()
-                .map(|page| page.pages.max(1))
+                .ok();
+            let last = first
+                .as_ref()
+                .map_or(window_last, |page| page.pages.max(1).min(window_last));
+            Some((last, first.map(|page| page.total)))
         }
         _ => None,
     };
@@ -66,16 +71,24 @@ pub async fn run<C: ConditionalCache>(
             page_size(query),
             repo,
         );
-        if let Some(last) = last_page
-            && let Some(row) = failure
+        if let Some((last, reachable)) = window {
+            // Stated in the caller's page size: each merged search's own
+            // page size is internal.
+            failure.message = format!(
+                "Page {} is past GitHub's search window: at pageSize {}, page {last} is the last{}.",
+                usize_of(query.page),
+                page_size(query),
+                reachable.map_or_else(String::new, |total| format!(
+                    ", reaching the first {total} results"
+                )),
+            );
+            if let Some(row) = failure
                 .next
                 .as_mut()
                 .and_then(|next| next.pointer_mut("/repair/query/queries/0"))
-            && row["page"]
-                .as_u64()
-                .is_some_and(|page| page as usize > last)
-        {
-            row["page"] = json!(last);
+            {
+                row["page"] = json!(last);
+            }
         }
         match repo {
             Some(repo) => with_ref_recovery(failure, &query.owner, repo),
@@ -97,6 +110,13 @@ pub async fn run<C: ConditionalCache>(
     })
 }
 
+/// Files each merged search lists per page: GitHub ANDs repeated
+/// `extension:` qualifiers, so each of `k` extensions is its own search of
+/// `ceil(per / k)` files on the same page number.
+fn per_search(query: &GhSearchCodeQuery, per: usize) -> usize {
+    per.div_ceil(query.extensions.len().max(1)).max(1)
+}
+
 /// Files per page: the query's, within the contract maximum.
 fn page_size(query: &GhSearchCodeQuery) -> usize {
     usize_of(query.page_size).min(crate::contracts::query_schema_max(
@@ -114,9 +134,9 @@ pub(crate) async fn execute<C: ConditionalCache>(
 ) -> Result<ToolData, ProviderError> {
     let current = usize_of(query.page);
     let per = page_size(query);
-    reject_window(current, per)?;
-    // The commit hit lines are read at does not depend on the hits: resolve
-    // it during the index search instead of after it.
+    SearchWindow::PageEnd.reject(current, per_search(query, per))?;
+    // A ref search's lines are read at the ref's commit, which does not
+    // depend on the hits: resolve it during the index search, not after.
     let (data, commit) = futures_util::future::join(
         search_page(provider, query, current, per, context),
         code_output::line_commit(provider, query, context),
@@ -153,7 +173,16 @@ pub(crate) async fn execute<C: ConditionalCache>(
     let resolved_sha = resolution
         .as_ref()
         .and_then(|resolution| resolution.sha.clone());
+    // The core-quota cost of this page's line numbers (`extras:["stats"]`):
+    // the files read through the contents API.
+    let content_reads = resolution.as_ref().map_or(0, |resolution| resolution.reads);
+    if resolution.is_none() {
+        code_output::index_commits(&mut value, &mut items, &data.items, query);
+    }
     let reads = code_output::shape_files(&mut value, &mut items, query, resolution);
+    if content_reads > 0 {
+        value["contentReads"] = json!(content_reads);
+    }
     code_output::merge_identical(&mut items);
     code_output::hoist_shared(&mut value, &mut items);
     value["files"] = json!(items);
@@ -164,10 +193,14 @@ pub(crate) async fn execute<C: ConditionalCache>(
         pick_rows(&mut value, "files", CODE_ROW_ID, &fields);
     }
     if data.pages > 1 || past_end {
-        value["pagination"] = crate::response::pages::PageFacts::open(current, Some(per), more)
-            .with_total(data.total)
-            .out_of_range(past_end)
-            .to_value();
+        // The merged searches page together, so the page count is the
+        // longest search's, not `totalItems / pageSize`: once a short
+        // search runs out, the later pages hold the long one's share only.
+        value["pagination"] =
+            crate::response::pages::PageFacts::sized(current, data.pages, data.total, more)
+                .with_page_size(per)
+                .out_of_range(past_end)
+                .to_value();
     }
     add_next(&mut value, ToolId::GhSearchCode, query, current, more);
     // A file lists at most a few of its hit lines; `readHits` reads the rest.
@@ -232,8 +265,8 @@ fn disclose_completeness(
         query,
         &SearchCompleteness {
             tool: ToolId::GhSearchCode,
-            // Past the cap the page states GitHub's match count.
-            matched: if data.capped { data.matched } else { 0 },
+            matched: data.matched,
+            reachable: data.total,
             incomplete: data.incomplete,
             page: current,
             has_more: more,
@@ -267,10 +300,10 @@ struct SearchPage {
     /// Earlier page searches the repeat check could read, of those it needed.
     earlier_checked: usize,
     earlier_total: usize,
-    /// Reachable results (each search caps at 1,000).
+    /// Reachable results (each search's window ends at its last whole
+    /// page within 1,000 results).
     total: usize,
     pages: usize,
-    capped: bool,
     /// GitHub's match counts, summed over the merged searches.
     matched: usize,
     incomplete: bool,
@@ -294,7 +327,7 @@ async fn search_page<C: ConditionalCache>(
         [_, _, ..] => extensions.iter().copied().map(Some).collect(),
         _ => vec![None],
     };
-    let per_search = per.div_ceil(scopes.len()).max(1);
+    let per_search = per_search(query, per);
     let mut page = SearchPage {
         items: Vec::new(),
         fetched: 0,
@@ -303,7 +336,6 @@ async fn search_page<C: ConditionalCache>(
         earlier_total: 0,
         total: 0,
         pages: 0,
-        capped: false,
         matched: 0,
         incomplete: false,
         sso_partial: Vec::new(),
@@ -359,10 +391,9 @@ async fn search_page<C: ConditionalCache>(
             Some(data) => data,
             None => provider.transport.search_code(request, context).await?,
         };
-        let reach = SearchReach::new(data.total_count, per_search);
+        let reach = SearchWindow::PageEnd.reach(data.total_count, per_search);
         page.total += reach.total;
         page.pages = page.pages.max(reach.pages);
-        page.capped |= reach.capped;
         page.matched += data.total_count;
         page.incomplete |= data.incomplete_results;
         for organization in data.sso_partial_organizations {
@@ -401,9 +432,10 @@ impl SearchPage {
                 self.dropped,
             ));
         }
-        // Said when a repeat was found, or when a page could not be read:
-        // otherwise every page would restate a clean check.
-        if self.dropped > 0 || self.earlier_checked < self.earlier_total {
+        // Said beside a found repeat, to scope it: a page the caller jumped
+        // to dropped nothing, and a missed repeat would list a row twice,
+        // not lose one, so a clean or uncheckable page restates nothing.
+        if self.dropped > 0 {
             warnings.push(format!(
                 "Repeat check read {} of {} earlier page{}; pages no longer cached were not compared.",
                 self.earlier_checked,
@@ -425,35 +457,29 @@ async fn renamed_scope<C: ConditionalCache>(
     let Some(scoped) = query.repo.as_deref() else {
         return Ok(None);
     };
-    match provider
-        .transport
-        .canonical_owner_repo(&query.owner, scoped, context)
-        .await
-    {
-        Ok(Some((owner, repo))) => {
-            let warning = crate::tools::gh_shared::renamed_warning(
-                query.owner.as_str(),
-                scoped,
-                &(owner.clone(), repo.clone()),
-            );
-            let decode = |error: &dyn std::fmt::Display| {
-                ProviderError::new(ProviderErrorKind::Decode, error.to_string())
-            };
-            let mut renamed = query.clone();
-            renamed.owner = owner.parse().map_err(|error| decode(&error))?;
-            renamed.repo = Some(repo.parse().map_err(|error| decode(&error))?);
-            Ok(Some((renamed, vec![warning])))
-        }
-        Err(error)
-            if matches!(
-                error.kind,
-                ProviderErrorKind::Cancelled | ProviderErrorKind::Timeout
-            ) =>
-        {
-            Err(error)
-        }
-        Ok(_) | Err(_) => Ok(None),
-    }
+    let Some((owner, repo)) = crate::tools::gh_shared::canonical_repo(
+        provider,
+        &query.owner,
+        scoped,
+        context,
+        crate::tools::gh_shared::RenameCheck::Metadata,
+    )
+    .await?
+    else {
+        return Ok(None);
+    };
+    let warning = crate::tools::gh_shared::renamed_warning(
+        query.owner.as_str(),
+        scoped,
+        &(owner.clone(), repo.clone()),
+    );
+    let decode = |error: &dyn std::fmt::Display| {
+        ProviderError::new(ProviderErrorKind::Decode, error.to_string())
+    };
+    let mut renamed = query.clone();
+    renamed.owner = owner.parse().map_err(|error| decode(&error))?;
+    renamed.repo = Some(repo.parse().map_err(|error| decode(&error))?);
+    Ok(Some((renamed, vec![warning])))
 }
 
 /// Why a search is empty, with the route that verifies it.
@@ -481,10 +507,9 @@ async fn empty_page<C: ConditionalCache>(
             .confidence("high")
             .build();
     }
-    if value.get("hints").is_none()
-        && let Some(hint) = code_output::empty_hint(query)
-    {
-        value["hints"] = json!([hint]);
+    let hints = code_output::empty_hints(query);
+    if value.get("hints").is_none() && !hints.is_empty() {
+        value["hints"] = json!(hints);
         if value["next"].get("read").is_none()
             && let Some(read) = leads::unsearched_ref_read(query)
         {
@@ -504,6 +529,10 @@ pub(crate) struct Output;
 impl crate::tools::output::ToolOutput for Output {
     fn selects_provider_page(&self) -> bool {
         true
+    }
+
+    fn finish_selection(&self, data: &mut serde_json::Value, query: &serde_json::Value) {
+        crate::tools::gh_shared::finish_code_selection(data, query);
     }
 
     fn fallback_hint(&self, query: &serde_json::Value) -> &'static str {

@@ -85,6 +85,67 @@ fn a_suppressed_dead_code_verdict_is_partial_not_empty() {
     assert_eq!(out["coverage"]["state"], "partial", "{out}");
 }
 
+/// Test files are not entrypoints: with none resolved, a test root does not
+/// lift the suppression, and reachability says its roots are tests only.
+#[test]
+fn test_roots_alone_keep_the_dead_code_verdict_suppressed() {
+    let temp = fixture(&[
+        ("util.rs", "pub fn util() {}\npub fn other() {}\n"),
+        ("tests/util_test.rs", "fn t() { crate::util::util(); }\n"),
+    ]);
+    let out = topology(temp.0.as_path(), json!({"operation":"deadCode"}));
+    assert_eq!(out["graphSummary"]["suppressed"], true, "{out}");
+    assert_eq!(
+        out["partialReasons"],
+        json!(["entrypointsUnresolved"]),
+        "{out}"
+    );
+    let reach = topology(temp.0.as_path(), json!({"operation":"reachability"}));
+    assert!(
+        reach["warnings"].as_array().into_iter().flatten().any(|w| w
+            .as_str()
+            .is_some_and(|w| w.starts_with("only test files are roots"))),
+        "{reach}"
+    );
+}
+
+/// An empty deadCode answer that test roots kept alive says so: the row's
+/// hint counts the test roots, and `includeTests:false` finds the export
+/// only a test used.
+#[test]
+fn an_empty_dead_code_answer_counts_the_test_roots_that_kept_it_live() {
+    let temp = fixture(&[
+        ("main.ts", "export const main = 1;\n"),
+        ("util.ts", "export function util() {}\n"),
+        ("util.test.ts", "import { util } from './util';\nutil();\n"),
+    ]);
+    let root = temp.0.as_path();
+    let out = topology(
+        root,
+        json!({"operation":"deadCode","entrypoints":["main.ts"]}),
+    );
+    assert_eq!(out["status"], "empty", "{out}");
+    let hint = out["hints"][0].as_str().expect("hint");
+    assert!(hint.contains("1 test file(s) count as roots"), "{hint}");
+    assert!(
+        hint.chars().count() <= crate::response::rows::MAX_GUIDANCE_CHARS,
+        "{hint}"
+    );
+    let strict = topology(
+        root,
+        json!({"operation":"deadCode","entrypoints":["main.ts"],"includeTests":false}),
+    );
+    assert!(strict.get("hints").is_none(), "{strict}");
+    assert!(
+        strict["nodes"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|row| row["name"] == "util"),
+        "{strict}"
+    );
+}
+
 /// Unreferenced-export rows for a TS fixture rooted at `main.ts`, as
 /// `(name, exportedAs)` pairs.
 fn dead_exports(files: &[(&str, &str)]) -> Vec<(String, Value)> {
@@ -172,11 +233,39 @@ fn rust_dead_rows(files: &[(&str, &str)]) -> Vec<(String, String, Value)> {
         })
         .collect()
 }
-
+/// A qualified path outside a call (a constant, a function value, a path
+/// inside a macro body, a type) is an edge to its module, as a call is.
 #[test]
-fn rust_unreachable_caller_does_not_keep_its_qualified_path_callee_live() {
-    // `buried` is never called, so `crate::portable::secret()` inside it
-    // credits nothing; `used` is called from the live `handle`.
+fn rust_non_call_qualified_paths_link_to_their_module() {
+    let files: &[(&str, &str)] = &[
+        (
+            "src/lib.rs",
+            "pub mod rules;\npub mod user;\npub fn start() { user::run(); }\n",
+        ),
+        (
+            "src/rules.rs",
+            "pub const HINT: &str = \"h\";\npub fn globs(x: u8) -> u8 { x }\npub fn recovery() -> u8 { 1 }\npub struct Out;\npub fn idle() {}\n",
+        ),
+        (
+            "src/user.rs",
+            "pub fn run() -> Option<crate::rules::Out> {\n    let _ = crate::rules::HINT;\n    let _ = [1u8].map(crate::rules::globs);\n    let _ = format!(\"{}\", crate::rules::recovery());\n    None\n}\n",
+        ),
+    ];
+    let temp = fixture(files);
+    let out = topology(
+        temp.0.as_path(),
+        json!({"operation":"dependencies","source":"src/user.rs"}),
+    );
+    assert_eq!(result_files(&out), ["src/rules.rs"], "{out}");
+    assert_eq!(out["coverage"]["state"], "complete", "{out}");
+}
+
+/// Rust exports are not judged one by one: their uses run through method
+/// receivers, crate boundaries and paths the syntax does not link (the
+/// store's `unused-export` rule, `liveness::exports_judged`). A Rust file
+/// no entrypoint reaches is still judged, every export with it.
+#[test]
+fn rust_exports_are_not_judged_but_unreachable_files_are() {
     let rows = rust_dead_rows(&[
         (
             "src/lib.rs",
@@ -187,57 +276,59 @@ fn rust_unreachable_caller_does_not_keep_its_qualified_path_callee_live() {
             "pub fn handle() { crate::portable::used(); }\nfn buried() { crate::portable::secret(); }\n",
         ),
         ("src/portable.rs", "pub fn used() {}\npub fn secret() {}\n"),
+        ("src/stray.rs", "pub fn lost() {}\n"),
     ]);
     assert_eq!(
         rows,
-        vec![(
-            "src/portable.rs".to_owned(),
-            "secret".to_owned(),
-            json!("syntax-references")
-        )]
+        vec![("src/stray.rs".to_owned(), "lost".to_owned(), Value::Null)]
     );
 }
 
+/// A `crate::` path that cannot be linked is an internal gap, never a
+/// complete graph.
 #[test]
-fn rust_qualified_calls_resolve_through_the_imported_binding() {
-    // `h::run()` names `run` in the file `use crate::helper as h` binds;
-    // the same-named `run` elsewhere is not credited by it.
-    let rows = rust_dead_rows(&[
-        (
-            "src/main.rs",
-            "mod helper;\nmod other;\nuse crate::helper as h;\nfn main() { h::run(); }\n",
-        ),
-        ("src/helper.rs", "pub fn run() {}\npub fn idle() {}\n"),
-        ("src/other.rs", "pub fn run() {}\n"),
-    ]);
-    let names = rows
-        .iter()
-        .map(|(file, name, _)| format!("{file}:{name}"))
-        .collect::<Vec<_>>();
-    assert_eq!(names, vec!["src/helper.rs:idle", "src/other.rs:run"]);
-}
-
-#[test]
-fn rust_unresolved_qualified_name_credit_is_only_a_heuristic() {
-    // `unknown::sanitize()` cannot be resolved to a file: the name match
-    // no longer proves `sanitize` live, it labels the candidate.
-    let rows = rust_dead_rows(&[
-        (
-            "src/lib.rs",
-            "pub mod portable;\npub fn start() { unknown::sanitize(); }\n",
-        ),
-        ("src/portable.rs", "pub fn sanitize() {}\n"),
-    ]);
-    assert_eq!(
-        rows,
-        vec![(
-            "src/portable.rs".to_owned(),
-            "sanitize".to_owned(),
-            json!("qualified-path-name")
-        )]
+fn rust_unlinkable_crate_paths_count_as_unresolved_internal() {
+    let temp = fixture(&[(
+        "src/user.rs",
+        "pub fn run() -> u8 { let _ = crate::missing::LIMIT; 1 }\n",
+    )]);
+    let out = topology(
+        temp.0.as_path(),
+        json!({"operation":"dependencies","source":"src/user.rs"}),
     );
+    assert_eq!(out["coverage"]["imports"]["unresolvedInternal"], 1, "{out}");
+    assert_ne!(out["coverage"]["state"], "complete", "{out}");
 }
 
+/// A scan of a directory inside a crate (its `src/lib.rs` above the scan)
+/// links `crate::` paths into the scanned modules from the scan root; a
+/// path that leaves the scanned modules stays an unresolved gap.
+#[test]
+fn crate_paths_link_inside_a_subdirectory_scan() {
+    let temp = fixture(&[
+        CARGO_APP,
+        ("src/lib.rs", "pub mod tools;\n"),
+        (
+            "src/tools/mod.rs",
+            "pub mod a;\npub mod b;\npub const TOP: u8 = 1;\n",
+        ),
+        (
+            "src/tools/a.rs",
+            "use crate::tools::b::helper;\npub fn run() -> u8 { helper() + crate::tools::TOP + crate::config::LIMIT }\n",
+        ),
+        ("src/tools/b.rs", "pub fn helper() -> u8 { 1 }\n"),
+    ]);
+    let out = topology(
+        temp.0.as_path(),
+        json!({"operation":"dependencies","source":"a.rs","path":temp.0.join("src/tools")}),
+    );
+    let files = result_files(&out);
+    assert!(
+        files.contains(&"b.rs") && files.contains(&"mod.rs"),
+        "{out}"
+    );
+    assert_eq!(out["coverage"]["imports"]["unresolvedInternal"], 1, "{out}");
+}
 #[test]
 fn default_import_keeps_the_default_export_declaration_live() {
     // `import foo from` consumes the module's default export.
@@ -405,46 +496,6 @@ fn namespace_default_and_reexported_imports_stay_live() {
     ]);
     assert!(dead.is_empty(), "{dead:?}");
 }
-
-#[test]
-fn rust_use_binding_only_in_an_unreachable_fn_does_not_keep_its_target_live() {
-    let main = "mod app;\nmod util;\nfn main() { app::start(); }\n";
-    let rows = rust_dead_rows(&[
-        ("src/main.rs", main),
-        (
-            "src/app.rs",
-            "use crate::util::run;\npub fn start() {}\nfn buried() { run(); }\n",
-        ),
-        ("src/util.rs", "pub fn run() {}\n"),
-    ]);
-    assert_eq!(
-        rows,
-        vec![(
-            "src/util.rs".to_owned(),
-            "run".to_owned(),
-            json!("syntax-references")
-        )]
-    );
-    // Used from the live `start`, or straight from `main`: live.
-    let rows = rust_dead_rows(&[
-        ("src/main.rs", main),
-        (
-            "src/app.rs",
-            "use crate::util::run;\npub fn start() { run(); }\nfn buried() { run(); }\n",
-        ),
-        ("src/util.rs", "pub fn run() {}\n"),
-    ]);
-    assert!(rows.is_empty(), "{rows:?}");
-    let rows = rust_dead_rows(&[
-        (
-            "src/main.rs",
-            "mod util;\nuse crate::util::run;\nfn main() { run(); }\n",
-        ),
-        ("src/util.rs", "pub fn run() {}\n"),
-    ]);
-    assert!(rows.is_empty(), "{rows:?}");
-}
-
 #[test]
 fn rust_uses_that_cannot_be_ordered_by_liveness_stay_conservative() {
     // A `pub use` re-exports, a trait impl method and a test run without

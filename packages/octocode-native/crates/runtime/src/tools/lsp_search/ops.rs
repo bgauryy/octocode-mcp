@@ -2,27 +2,28 @@
 //! `execute` has admitted the query, acquired a leased client, synchronized
 //! the document, and resolved the anchor.
 
-use super::LspSearchQuery;
 use super::anchor::Position;
 use super::cancellable;
 use super::failure::{
-    LspFailure, empty, mark_diagnostics_unpublished, partial_with_retry, shown_paths,
-    text_search_lead,
+    ALIAS_RECOVERY_FAILED, IMPORTER_REQUEST_FAILED, LspFailure, RequestFailures, empty,
+    mark_diagnostics_unpublished, partial_with_retry, shown_paths, text_search_lead,
 };
 use super::heritage;
 use super::importers::{self, Importers, WindowRequest};
 use super::locations::{
     RECOVERED_ALIAS, items_payload, locations, public_hover, public_range, public_workspace_symbol,
-    salted_locations, snapshot_changed,
+    salted_items_payload, salted_locations, snapshot_changed,
 };
 use super::recovery::{
-    AliasSearch, get_locations, recover_aliases, resolve_definition_chain, snippet_identity,
+    AliasSearch, get_locations, get_spelled_locations, recover_aliases, resolve_definition_chain,
+    snippet_identity,
 };
 use super::render::as_array;
 use super::render::uri_to_path;
 use super::scope::Scope;
 use super::source::{SourceCache, filter_authorized_items};
 use super::walk::{HierarchyRequest, ImporterRecovery, hierarchy};
+use super::{LspSearchQuery, Op};
 use crate::policy::path::PathPolicy;
 use crate::tools::cancel::CancellationCheck;
 use crate::tools::id::ToolId;
@@ -63,6 +64,36 @@ enum Implemented {
 /// Flag a heritage-scan row incomplete: its note states what it is, and the
 /// retry asks the server again. Files the scan could not read are named,
 /// with a text search over them, so the gap can be followed.
+/// The anchor type has implementation candidates past this walk's window:
+/// the row is partial, and on its last result page `next.nextCandidatePage`
+/// walks the next window of candidates (each window checked exactly once).
+fn mark_more_candidates(row: &mut Value, query: &LspSearchQuery, digest: &str) {
+    crate::tools::paging::mark_partial(row, "hierarchyCandidateLimit", &[]);
+    if row.pointer("/pagination/hasMore").and_then(Value::as_bool) == Some(true) {
+        return;
+    }
+    let Some(candidate_page) = crate::tools::paging::next_cursor(
+        row,
+        ToolId::LspSearch,
+        None,
+        "candidatePage",
+        crate::tools::num::usize_of(query.candidate_page()).saturating_add(1),
+    ) else {
+        return;
+    };
+    let mut next = query.to_row();
+    if let Some(fields) = next.as_object_mut() {
+        fields
+            .retain(|key, value| !value.is_null() && !matches!(key.as_str(), "page" | "snapshot"));
+        fields.insert("candidatePage".into(), json!(candidate_page));
+        fields.insert("snapshot".into(), json!(digest));
+    }
+    row["next"]["nextCandidatePage"] =
+        crate::tools::result::Continuation::new(ToolId::LspSearch, next)
+            .confidence("exact")
+            .build();
+}
+
 fn mark_scan_answer(
     row: &mut Value,
     query: &LspSearchQuery,
@@ -126,10 +157,10 @@ impl<'a> Operation<'a, '_> {
 impl Operation<'_, '_> {
     pub(super) async fn run(self) -> Result<Value, LspFailure> {
         let query = self.query;
-        match query.operation().as_str() {
-            "definition" => self.definition().await,
-            "references" => self.references().await,
-            "typeDefinition" => {
+        match query.op() {
+            Op::Definition => self.definition().await,
+            Op::References => self.references().await,
+            Op::TypeDefinition => {
                 let found = self
                     .location_request(LocationRequest::TypeDefinition)
                     .await?;
@@ -137,9 +168,9 @@ impl Operation<'_, '_> {
                     .locations("typeDefinition", "typeDefinitionProvider", found)
                     .await)
             }
-            "implementation" => self.implementation().await,
-            "hover" => self.hover().await,
-            "documentSymbols" => {
+            Op::Implementation => self.implementation().await,
+            Op::Hover => self.hover().await,
+            Op::DocumentSymbols => {
                 let mut symbols = std::sync::Arc::unwrap_or_clone(
                     cancellable(
                         self.cancel,
@@ -147,9 +178,7 @@ impl Operation<'_, '_> {
                     )
                     .await??,
                 );
-                if self
-                    .language_id
-                    .is_some_and(|id| super::render::TS_LANGUAGE_IDS.contains(&id))
+                if octocode_engine::lsp::family::is_typescript_family(self.language_id)
                     && let Some(source) = self.sources.get(self.path).await
                 {
                     super::render::name_type_aliases(&mut symbols, &source.content);
@@ -161,15 +190,9 @@ impl Operation<'_, '_> {
                     self.budget,
                 ))
             }
-            "workspaceSymbol" => self.workspace_symbol().await,
-            "diagnostic" => self.diagnostic().await,
-            "callers" | "callees" | "supertypes" | "subtypes" => self.hierarchy().await,
-            other => Ok(empty(
-                query,
-                "unsupportedOperation",
-                &format!("Unsupported lspSearch operation: {other}"),
-                true,
-            )),
+            Op::WorkspaceSymbol => self.workspace_symbol().await,
+            Op::Diagnostic => self.diagnostic().await,
+            Op::Callers | Op::Callees | Op::Supertypes | Op::Subtypes => self.hierarchy().await,
         }
     }
 
@@ -203,11 +226,16 @@ impl Operation<'_, '_> {
     async fn references(mut self) -> Result<Value, LspFailure> {
         let query = self.query;
         let include_declaration = query.include_declaration().unwrap_or(true);
-        let mut found = self
-            .location_request(LocationRequest::References {
+        let (mut found, respelled) = get_spelled_locations(
+            self.client,
+            self.snippet_policy,
+            self.cancel,
+            LocationRequest::References {
                 include_declaration,
-            })
-            .await?;
+            },
+            (self.path, self.line, self.character),
+        )
+        .await?;
         let recovered = recover_aliases(
             self.client,
             self.sources,
@@ -222,26 +250,47 @@ impl Operation<'_, '_> {
         )
         .await?;
         let alias_scan_capped = recovered.capped;
-        let recovered = recovered.snippets;
+        let alias_failures = recovered.failures;
+        let mut recovered = recovered.snippets;
+        // Files the answer names, its declaration's included: answered
+        // even when the declaration row is left out.
+        let known_files = known_files(&found, &recovered);
+        let importers = self.importers(&known_files).await?;
+        if importers.as_ref().is_some_and(|importers| importers.stale) {
+            return Ok(snapshot_changed(query));
+        }
+        // The server drops the declaration under the spelling it knows; a
+        // symlinked twin and every importer's answer still carry it.
+        let asks_importers = importers
+            .as_ref()
+            .is_some_and(|importers| importers.per_file().next().is_some());
+        let declared = if include_declaration || !(respelled || asks_importers) {
+            None
+        } else {
+            let declared = self.declarations().await?;
+            let undeclared = |snippet: &octocode_engine::lsp::types::JsCodeSnippet| {
+                !declared.contains(&site_start(snippet))
+            };
+            found.retain(undeclared);
+            recovered.retain(undeclared);
+            Some(declared)
+        };
         let mut seen = found
             .iter()
             .chain(&recovered)
             .map(snippet_identity)
             .collect::<HashSet<_>>();
-        let known_files = found
-            .iter()
-            .chain(&recovered)
-            .map(|snippet| super::scope::canonical(&uri_to_path(&snippet.uri)))
-            .collect::<HashSet<_>>();
-        let importers = self.importers(&known_files).await?;
-        if importers.as_ref().is_some_and(|importers| importers.stale) {
-            return Ok(snapshot_changed(query));
-        }
         let later_window = query.importer_page() > 1;
+        let mut importer_failures = RequestFailures::default();
         let from_importers = match &importers {
             Some(importers) => {
-                self.importer_references(importers, include_declaration, &mut seen)
-                    .await?
+                self.importer_references(
+                    importers,
+                    declared.as_ref(),
+                    &mut seen,
+                    &mut importer_failures,
+                )
+                .await?
             }
             None => Vec::new(),
         };
@@ -271,6 +320,19 @@ impl Operation<'_, '_> {
                 .chain(importers.iter().flat_map(|found| found.rejected.clone()))
                 .chain(importers.iter().flat_map(Importers::covered)),
         );
+        let anchor_file = super::scope::canonical(&uri_to_path(self.path));
+        self.scope.answer_anchor_lines(
+            self.path,
+            self.line,
+            found
+                .iter()
+                .chain(&recovered)
+                .chain(&from_importers)
+                .filter(|snippet| {
+                    super::scope::canonical(&uri_to_path(&snippet.uri)) == anchor_file
+                })
+                .map(|snippet| snippet.range.start.line),
+        );
         // A later importer page leaves out the anchor's answer (listed on
         // importer page 1); it still deduplicates this window's rows.
         if later_window {
@@ -297,6 +359,16 @@ impl Operation<'_, '_> {
         if let Some(importers) = &importers {
             importers.annotate(&mut row, query, self.scope);
         }
+        importer_failures.disclose(
+            &mut row,
+            query,
+            IMPORTER_REQUEST_FAILED,
+            "Importer recovery",
+        );
+        // Alias recovery belongs to importer page 1, which lists its rows.
+        if !later_window {
+            alias_failures.disclose(&mut row, query, ALIAS_RECOVERY_FAILED, "Alias recovery");
+        }
         if !later_window && alias_scan_capped && row.pointer("/coverage").is_some() {
             if let Some(name) = query.symbol_name() {
                 self.scope
@@ -310,37 +382,58 @@ impl Operation<'_, '_> {
 
     /// The references the server reports from each verified importer's
     /// anchor, in the files that importer window owns, not already `seen`.
-    /// An importer whose request fails is skipped; cancellation is not.
+    /// An importer whose request fails is recorded in `failures`;
+    /// cancellation ends the request.
+    ///
+    /// Each importer is asked with its declarations included: from an
+    /// importer, `includeDeclaration` would drop its own import binding (a
+    /// reference to the anchor's symbol) and keep the symbol's declaration.
+    /// The `declared` sites (the anchor's declaration when the query leaves
+    /// declarations out) are dropped here instead.
     async fn importer_references(
         &self,
         importers: &Importers,
-        include_declaration: bool,
+        declared: Option<&HashSet<(String, u32, u32)>>,
         seen: &mut HashSet<String>,
+        failures: &mut RequestFailures,
     ) -> Result<Vec<octocode_engine::lsp::types::JsCodeSnippet>, LspFailure> {
         let mut found = Vec::new();
         for anchor in importers.per_file() {
-            let Ok(extra) = get_locations(
+            let extra = match get_locations(
                 self.client,
                 self.snippet_policy,
                 self.cancel,
                 LocationRequest::References {
-                    include_declaration,
+                    include_declaration: true,
                 },
                 &anchor.path,
                 anchor.line,
                 anchor.character,
             )
             .await
-            else {
-                self.cancel.check().map_err(LspFailure::cancelled)?;
-                continue;
+            {
+                Ok(extra) => extra,
+                Err(failure) => {
+                    failures.record(failure)?;
+                    continue;
+                }
             };
             found.extend(extra.into_iter().filter(|snippet| {
                 importers.owns(&super::scope::canonical(&uri_to_path(&snippet.uri)))
+                    && declared.is_none_or(|declared| !declared.contains(&site_start(snippet)))
                     && seen.insert(snippet_identity(snippet))
             }));
         }
         Ok(found)
+    }
+
+    /// Where the anchor's symbol is declared (`definition` from the
+    /// anchor), by canonical file and start. The same server just answered
+    /// `references` from this anchor, so a failure fails the request: a
+    /// declaration left in would read as a reference.
+    async fn declarations(&self) -> Result<HashSet<(String, u32, u32)>, LspFailure> {
+        let found = self.location_request(LocationRequest::Definition).await?;
+        Ok(found.iter().map(site_start).collect())
     }
 
     async fn hover(self) -> Result<Value, LspFailure> {
@@ -379,20 +472,30 @@ impl Operation<'_, '_> {
         } else {
             super::walk::Expansion::Supertypes
         };
-        let initial = if kind == "subtypes" {
+        let mut candidates = if kind == "subtypes" {
             match self.implemented(true).await? {
-                Implemented::Server(found) => Some(found),
+                Implemented::Server(found) => {
+                    let Some(window) =
+                        super::fallback_hierarchy::CandidateWindow::cut(query, found)
+                    else {
+                        return Ok(snapshot_changed(query));
+                    };
+                    Some(window)
+                }
                 Implemented::Scan {
                     found,
                     note,
                     unread,
                 } => {
+                    if query.candidate_page() > 1 {
+                        return Ok(snapshot_changed(query));
+                    }
                     let (scope, paths) = (self.scope, self.sources.policy());
                     scope.answer(
                         std::iter::once(self.path)
                             .chain(found.iter().map(|snippet| snippet.uri.as_str())),
                     );
-                    let mut row = self.locations(&kind, "implementationProvider", found).await;
+                    let mut row = self.locations(kind, "implementationProvider", found).await;
                     row["lsp"]["source"] = json!(SCAN_SOURCE);
                     mark_scan_answer(&mut row, query, scope, paths, note, &unread);
                     return Ok(row);
@@ -413,7 +516,14 @@ impl Operation<'_, '_> {
             character: self.character,
         };
         let walk = match source
-            .run(anchor, expansion, query.graph_depth().unwrap_or(1), initial)
+            .run(
+                anchor,
+                expansion,
+                query.graph_depth().unwrap_or(1),
+                candidates
+                    .as_mut()
+                    .map(|window| std::mem::take(&mut window.items)),
+            )
             .await
         {
             Ok(walk) => walk,
@@ -446,8 +556,18 @@ impl Operation<'_, '_> {
             .iter()
             .map(|edge| super::walk::public_edge(expansion, edge, None))
             .collect::<Vec<_>>();
-        let mut row = items_payload(query, &kind, json!(items), self.budget);
-        row["lsp"]["provider"] = json!(heritage::fallback_provider(&kind));
+        let mut row = salted_items_payload(
+            query,
+            kind,
+            json!(items),
+            candidates.as_ref().map(|window| window.digest.as_str()),
+            self.budget,
+            super::render::plain_sizes,
+        );
+        if row.get("errorCode").is_some() {
+            return Ok(row);
+        }
+        row["lsp"]["provider"] = json!(heritage::fallback_provider(kind));
         row["lsp"]["source"] = json!(if kind == "subtypes" {
             "implementation"
         } else {
@@ -455,6 +575,11 @@ impl Operation<'_, '_> {
         });
         super::walk::mark_partial_expansion(&mut row, query, &walk.failures);
         super::walk::mark_truncation(&mut row, query, &[(expansion, &walk)]);
+        if let Some(window) = &candidates
+            && window.has_more
+        {
+            mark_more_candidates(&mut row, query, &window.digest);
+        }
         if source.candidate_limited() {
             crate::tools::paging::terminal_limit(
                 &mut row,
@@ -542,7 +667,7 @@ impl Operation<'_, '_> {
                         &failure,
                         &scan.base,
                         scan.files,
-                        &self.query.operation(),
+                        self.query.operation(),
                     ),
                     found: scan.found,
                     unread: scan.unread,
@@ -591,7 +716,7 @@ impl Operation<'_, '_> {
 
     async fn hierarchy(self) -> Result<Value, LspFailure> {
         let query = self.query;
-        if matches!(query.operation().as_str(), "supertypes" | "subtypes")
+        if matches!(query.op(), Op::Supertypes | Op::Subtypes)
             && !self
                 .client
                 .has_capability("typeHierarchyProvider".to_owned())
@@ -626,7 +751,7 @@ impl Operation<'_, '_> {
     /// past the first names a window only importer recovery has.
     fn importer_symbol(&self) -> Result<Option<String>, LspFailure> {
         let operation = self.query.operation();
-        let symbol = (importers::applies(self.language_id, &operation) && !self.root_only)
+        let symbol = (importers::applies(self.language_id, operation) && !self.root_only)
             .then(|| self.query.symbol_name())
             .flatten()
             .filter(|name| !name.trim().is_empty())
@@ -951,6 +1076,27 @@ fn rank_workspace_symbols(symbols: &mut [Value], name: &str) {
 /// same name: an import alias or a property is rarely the definition sought.
 fn binding_rank(kind: &str) -> u8 {
     u8::from(matches!(kind, "variable" | "field" | "property"))
+}
+
+/// The canonical files a references answer already names.
+fn known_files(
+    found: &[octocode_engine::lsp::types::JsCodeSnippet],
+    recovered: &[octocode_engine::lsp::types::JsCodeSnippet],
+) -> HashSet<String> {
+    found
+        .iter()
+        .chain(recovered)
+        .map(|snippet| super::scope::canonical(&uri_to_path(&snippet.uri)))
+        .collect()
+}
+
+/// A location's canonical file and start position.
+fn site_start(snippet: &octocode_engine::lsp::types::JsCodeSnippet) -> (String, u32, u32) {
+    (
+        super::scope::canonical(&uri_to_path(&snippet.uri)),
+        snippet.range.start.line,
+        snippet.range.start.character,
+    )
 }
 
 #[cfg(test)]

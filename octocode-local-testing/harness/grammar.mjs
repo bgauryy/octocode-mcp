@@ -1,7 +1,7 @@
 // Grammar sweep: every Tree-sitter language through astSearch / localFetch / localSearch / lspSearch.
 import fs from 'node:fs';
 import path from 'node:path';
-import { FIXTURES, astMatchRows, checks, collect, declarations, rowData, startServer, writeResults } from './mcp-client.mjs';
+import { findHint, FIXTURES, astMatchRows, checks, collect, declarations, rowData, startServer, writeResults } from './mcp-client.mjs';
 
 const FIX = path.join(FIXTURES, 'grammar');
 const { check, summary } = checks('grammar');
@@ -55,8 +55,8 @@ for (const [lang, l] of Object.entries(L)) {
   res.symbolsDir = dirSym.isError ? 'ERR' : `ok(${declarations(dirSym).filter(o => typeof o.name === 'string' && typeof o.line === 'number').length})`;
   check(`${lang}: directory symbols (no language)`, !dirSym.isError && dirSym.rowErrors === 0, dirSym.text.slice(0, 100));
   const bad = await call('astSearch', { operation: 'symbols', path: dir, language: lang });
-  const repair = rowData(bad)?.hints?.repair;
-  check(`${lang}: directory symbols with language returns an exact repair`, !!repair && !('language' in repair.query), JSON.stringify(rowData(bad)?.hints ?? {}).slice(0, 100));
+  const repair = findHint(bad.sc, 'repair');
+  check(`${lang}: directory symbols with language returns an exact repair`, !!repair && repair.query.queries.every(query => !Object.hasOwn(query, 'language')), JSON.stringify(rowData(bad)?.hints ?? {}).slice(0, 100));
   if (l.call) {
     // Captures are opt-in (captureText); default rows carry line/column/value only.
     const m = await call('astSearch', { operation: 'match', path: dir, language: lang, pattern: `${l.call}($A)`, captureText: true });

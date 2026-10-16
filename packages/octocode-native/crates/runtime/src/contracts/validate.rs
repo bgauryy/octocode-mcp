@@ -12,8 +12,10 @@ mod numeric_tests;
 #[cfg(test)]
 mod pattern_tests;
 mod qualifiers;
+mod repair;
 mod shape;
 pub(crate) use qualifiers::qualifier_terms;
+pub(crate) use repair::repair_input;
 mod schema;
 mod topology;
 mod union;
@@ -113,11 +115,14 @@ pub fn format_input_error(tool_name: &str, error: &ContractValidationError) -> V
                 .flatten()
                 .filter_map(|v| v.as_str())
                 .collect();
-            let msg = match (sibling_requirement(issue), suggest_field(field, &known)) {
+            let msg = match (
+                sibling_requirement(issue),
+                value_field(issue).or_else(|| suggest_field(field, &known)),
+            ) {
                 (Some(requires), _) => {
                     format!("Remove '{field}' from {query}: it applies only with {requires}.")
                 }
-                _ if is_root_brief(&issue.path) => root_brief_message(field),
+                _ if is_root_brief(tool_name, &issue.path) => root_brief_message(field),
                 (None, Some(s)) => {
                     format!("Remove unknown field '{field}' from {query} (did you mean '{s}'?)")
                 }
@@ -160,7 +165,9 @@ pub fn format_input_error(tool_name: &str, error: &ContractValidationError) -> V
                             query_label(&issue.path)
                         );
                     }
-                    None if is_root_brief(&issue.path) => return root_brief_message(field),
+                    None if is_root_brief(tool_name, &issue.path) => {
+                        return root_brief_message(field);
+                    }
                     None => {}
                 }
                 let base = if path.is_empty() {
@@ -168,12 +175,12 @@ pub fn format_input_error(tool_name: &str, error: &ContractValidationError) -> V
                 } else {
                     format!("{path}: {}", issue.message)
                 };
-                return match suggest_field(field, &known) {
+                return match value_field(issue).or_else(|| suggest_field(field, &known)) {
                     Some(s) => format!("{base} (did you mean '{s}'?)"),
                     None => base,
                 };
             }
-            let message = match required_guidance(tool_name, issue) {
+            let message = match required_guidance(issue) {
                 Some(guidance) => format!("{} ({guidance})", issue.message),
                 None => issue.message.clone(),
             };
@@ -208,31 +215,21 @@ fn issues_error(mut details: Vec<String>) -> Value {
     tool_error(&first, details)
 }
 
-/// Core-authored guidance for a missing required field (the core schema's
-/// required-field error), rendered after `Missing required field: <name>` as
-/// MCP renders the core message.
-fn required_guidance(tool_name: &str, issue: &ValidationIssue) -> Option<&'static str> {
+/// Core-authored guidance for a missing required field: the field's
+/// contract `x-requiredMessage`, rendered after `Missing required field:
+/// <name>` as MCP renders the core message.
+fn required_guidance(issue: &ValidationIssue) -> Option<&str> {
     if issue.rule_id != "schema.required" {
         return None;
     }
-    Some(match (tool_name, issue.path.last()?.as_str()) {
-        ("ghSearchCode", "owner") => {
-            "Set owner: code search cannot span all of GitHub (add repo to narrow further)."
-        }
-        ("astRewrite", "rewrite") => "pattern takes rewrite; rule takes fix.",
-        ("astRewrite", "fix") => "rule takes fix; pattern takes rewrite.",
-        ("localFetch", "path") => "Set path to a local file.",
-        ("ghGetFileContent", "path") => "Set path to a repository-relative file.",
-        ("astTopology", "source") => {
-            "Set source to the file whose dependents to list; structureSearch finds its path."
-        }
-        _ => return None,
-    })
+    issue.schema.as_ref()?.get("x-requiredMessage")?.as_str()
 }
 
-/// `mainGoal`/`reasoning` sent beside `queries` instead of inside each row.
-fn is_root_brief(path: &[String]) -> bool {
-    matches!(path, [field] if field == "mainGoal" || field == "reasoning")
+/// A row field (`mainGoal`, `reasoning`, …) sent beside `queries` instead of
+/// inside each row: the envelope does not declare it, the rows do.
+fn is_root_brief(tool_name: &str, path: &[String]) -> bool {
+    matches!(path, [field] if crate::tools::id::ToolId::from_name(tool_name)
+        .is_some_and(|tool| super::query_declares(tool, field)))
 }
 
 fn root_brief_message(field: &str) -> String {
@@ -281,7 +278,7 @@ fn routing_details(tool_name: &str, issues: &[ValidationIssue]) -> Vec<String> {
                 }
             }
             ("schema.range", [queries, _, field])
-                if queries == "queries" && tool_name == "localFetch" && field == "length" =>
+                if queries == "queries" && field == "length" && windowed(tool_name) =>
             {
                 if let Some(message) = window_cap_message(issue) {
                     details.push(message);
@@ -326,6 +323,12 @@ fn routing_details(tool_name: &str, issues: &[ValidationIssue]) -> Vec<String> {
 
 /// A `length` above the window cap → the same read at the cap, and where the
 /// rest is: every result's `next` continuation carries the following offset.
+/// A tool whose rows read a window: `length` pages from an `offset`.
+fn windowed(tool_name: &str) -> bool {
+    crate::tools::id::ToolId::from_name(tool_name)
+        .is_some_and(|tool| super::query_declares(tool, "offset"))
+}
+
 fn window_cap_message(issue: &ValidationIssue) -> Option<String> {
     let cap = issue.schema.as_ref()?.get("maximum")?.as_u64()?;
     (issue.received.as_ref()?.as_u64()? > cap).then(|| {
@@ -463,25 +466,35 @@ fn contract_tool(tool_name: &str) -> Result<&'static Value, ContractValidationEr
 /// representations before typed decoding. Relation rules follow structural parsing.
 pub fn validate(tool_name: &str, mut input: Value) -> Result<Value, ContractValidationError> {
     let tool = contract_tool(tool_name)?;
+    let plan = RowPlan::of(tool_name, tool);
     apply_normalization_rules(&tool["rules"], &mut input)?;
     let mut issues = Vec::new();
     let item_schema = tool["inputSchema"]
         .pointer("/properties/queries/items")
+        .filter(|_| plan.item_differs)
         .unwrap_or(&tool["querySchema"]);
     if let Some(queries) = input.get_mut("queries").and_then(Value::as_array_mut) {
         for (index, query) in queries.iter_mut().enumerate() {
             let mut path = vec!["queries".to_owned(), index.to_string()];
-            let parsed =
-                validate_input_schema(&tool["querySchema"], &tool["querySchema"], query, &mut path)
-                    .and_then(|()| {
-                        validate_input_schema(&tool["inputSchema"], item_schema, query, &mut path)
-                    });
+            let mut parsed =
+                validate_input_schema(&tool["querySchema"], &tool["querySchema"], query, &mut path);
+            if parsed.is_ok() && plan.item_differs {
+                parsed = validate_input_schema(&tool["inputSchema"], item_schema, query, &mut path);
+            }
             if let Err(error) = parsed {
                 issues.extend(error.issues);
                 continue;
             }
-            let scoped = serde_json::json!({"queries":[query]});
-            if let Err(mut error) = apply_validation_rules(&tool["rules"], &scoped) {
+            // Row rules see a one-row batch; the row moves in and back out.
+            let scoped = serde_json::json!({"queries":[std::mem::take(query)]});
+            let ruled = apply_validation_rules(&tool["rules"], &scoped);
+            if let Value::Object(mut scoped) = scoped
+                && let Some(Value::Array(mut rows)) = scoped.remove("queries")
+                && let Some(row) = rows.pop()
+            {
+                *query = row;
+            }
+            if let Err(mut error) = ruled {
                 for issue in &mut error.issues {
                     if issue.path.first().is_some_and(|part| part == "queries")
                         && issue.path.get(1).is_some_and(|part| part == "0")
@@ -493,18 +506,79 @@ pub fn validate(tool_name: &str, mut input: Value) -> Result<Value, ContractVali
             }
         }
     }
+    // The rows were checked above; the envelope pass checks only the
+    // envelope (its own fields and the batch size), and reports its issues
+    // beside the rows' so one repair can fix every one.
+    if let Err(error) = validate_input_schema(
+        &tool["inputSchema"],
+        &plan.envelope,
+        &mut input,
+        &mut Vec::new(),
+    ) {
+        issues.extend(error.issues);
+    }
     if !issues.is_empty() {
         issues.dedup();
         return Err(ContractValidationError { issues });
     }
-    validate_input_schema(
-        &tool["inputSchema"],
-        &tool["inputSchema"],
-        &mut input,
-        &mut Vec::new(),
-    )?;
     apply_batch_rules(&tool["rules"], &input)?;
     Ok(input)
+}
+
+/// How one tool's rows validate, decided once from its contract.
+struct RowPlan {
+    /// The envelope's row schema says more than the query schema: rows
+    /// validate against both. Equal schemas (under the same `$defs`) are one
+    /// pass.
+    item_differs: bool,
+    /// The input schema without its row schema: rows are validated already.
+    envelope: Value,
+}
+
+impl RowPlan {
+    fn of(tool_name: &str, tool: &'static Value) -> &'static RowPlan {
+        use std::collections::HashMap;
+        use std::sync::{Mutex, OnceLock};
+        static PLANS: OnceLock<Mutex<HashMap<String, &'static RowPlan>>> = OnceLock::new();
+        let plans = PLANS.get_or_init(Mutex::default);
+        let mut plans = plans
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(plan) = plans.get(tool_name) {
+            return plan;
+        }
+        let plan: &'static RowPlan = Box::leak(Box::new(Self::derive(tool)));
+        plans.insert(tool_name.to_owned(), plan);
+        plan
+    }
+
+    fn derive(tool: &Value) -> Self {
+        let without_marker = |schema: &Value| {
+            let mut schema = schema.clone();
+            if let Some(fields) = schema.as_object_mut() {
+                fields.remove("$schema");
+            }
+            schema
+        };
+        let (input, query) = (&tool["inputSchema"], &tool["querySchema"]);
+        let item_differs = input
+            .pointer("/properties/queries/items")
+            .is_some_and(|item| {
+                without_marker(item) != without_marker(query)
+                    || (item.to_string().contains("\"$ref\"") && input["$defs"] != query["$defs"])
+            });
+        let mut envelope = input.clone();
+        if let Some(queries) = envelope
+            .pointer_mut("/properties/queries")
+            .and_then(Value::as_object_mut)
+        {
+            queries.remove("items");
+        }
+        Self {
+            item_differs,
+            envelope,
+        }
+    }
 }
 
 /// Rules that judge the whole batch once every row passed its own rules
@@ -874,20 +948,20 @@ fn internal(message: String) -> ContractValidationError {
     issue("contract.generated-json", vec![], message)
 }
 
-/// Fields renamed across releases: `(old, current)`. `lspSearch` took `uri`
-/// before it took `path`; an edit distance cannot connect the two.
-const RENAMED_FIELDS: &[(&str, &str)] = &[("uri", "path")];
+/// The one known field whose values list the unknown field's value
+/// (`{"type":"match"}` meant `operation`): the value is stronger evidence
+/// than a similar spelling.
+fn value_field(issue: &ValidationIssue) -> Option<&str> {
+    match issue.schema.as_ref()?["valueFields"].as_array()?.as_slice() {
+        [only] => only.as_str(),
+        _ => None,
+    }
+}
 
 /// The field `known` most likely meant by `unknown`: a known field that
 /// prefixes it, or the nearest spelling. The edit budget scales with the
 /// name so a short guess (`depth`, `mode`) never lands on an unrelated field.
 fn suggest_field<'a>(unknown: &str, known: &[&'a str]) -> Option<&'a str> {
-    // A field renamed in an earlier release: the spelling an older caller sends.
-    if let Some((_, current)) = RENAMED_FIELDS.iter().find(|(old, _)| *old == unknown)
-        && let Some(found) = known.iter().copied().find(|k| k == current)
-    {
-        return Some(found);
-    }
     // `keywordsToSearch` → `keywords`: a known field that prefixes the guess.
     if let Some(prefix) = known
         .iter()
@@ -1047,7 +1121,7 @@ mod tests {
         assert_eq!(
             format_input_error("localFetch", &relation),
             json!({
-                "error":"queries.0.fullContent: Remove unit, offset, and length when fullContent is true."
+                "error":"queries.0.length: length windows a read; fullContent reads the whole file. Remove length."
             })
         );
         assert!(
@@ -1313,7 +1387,7 @@ mod tests {
         );
         let dependents = details("astTopology", json!({"operation":"dependents","path":"/r"}));
         assert!(
-            dependents.contains("Missing required field: source (Set source to the file"),
+            dependents.contains("Missing required field: source (Set source to the start file"),
             "{dependents}"
         );
         let history = details(
@@ -1374,6 +1448,29 @@ mod tests {
         );
     }
 
+    /// An unknown field whose value is one of a field's listed values names
+    /// that field: `{"analysis":"dependents"}` meant `operation`.
+    #[test]
+    fn an_unknown_field_holding_a_listed_value_suggests_its_field() {
+        for (tool, row) in [
+            (
+                "structureSearch",
+                json!({"type":"tree","path":".","mainGoal":"g","reasoning":"r"}),
+            ),
+            (
+                "astTopology",
+                json!({"analysis":"dependents","path":".","mainGoal":"g","reasoning":"r"}),
+            ),
+        ] {
+            let error = validate(tool, json!({"queries":[row]})).expect_err("rejected");
+            let formatted = format_input_error(tool, &error).to_string();
+            assert!(
+                formatted.contains("did you mean 'operation'?"),
+                "{tool}: {formatted}"
+            );
+        }
+    }
+
     #[test]
     fn suggests_reasoning_for_a_typo_across_every_tool_shape() {
         // The enforcement IR carries no presentation examples; the accepted
@@ -1426,7 +1523,7 @@ mod tests {
             ),
             (
                 "localFetch",
-                json!({"path":"a.rs","minify":"NONE"}),
+                json!({"path":"a.rs","minify":"none"}),
                 "allowed:",
             ),
             (
@@ -1477,7 +1574,7 @@ mod tests {
         }
         let accepted = [
             ("localFetch", json!({"path":"a.rs","fullContent":true})),
-            ("localFetch", json!({"path":"a.rs","minify":"none"})),
+            ("localFetch", json!({"path":"a.rs","minify":"symbols"})),
             ("localFetch", json!({"path":"a.rs","ranges":["140-150"]})),
             (
                 "localSearch",
@@ -1552,24 +1649,11 @@ mod tests {
         assert_eq!(super::suggest_field("filePattern", &local_search), None);
     }
 
-    /// A field renamed in an earlier release points at its current name, but
-    /// only when this tool accepts that name.
+    /// No legacy spelling maps to a current field: `uri` is simply unknown.
     #[test]
-    fn a_renamed_field_suggests_its_current_name() {
+    fn a_retired_field_name_has_no_alias() {
         let lsp_search = ["operation", "path", "symbolName", "line", "graphDepth"];
-        assert_eq!(super::suggest_field("uri", &lsp_search), Some("path"));
-        assert_eq!(super::suggest_field("uri", &["operation", "line"]), None);
-    }
-
-    #[test]
-    fn a_misspelled_lsp_anchor_names_path() {
-        let error = validate(
-            "lspSearch",
-            json!({"queries":[{"operation":"hover","uri":"src/a.ts","symbolName":"a","line":1,"mainGoal":"g","reasoning":"r"}]}),
-        )
-        .expect_err("19.x field name");
-        let formatted = format_input_error("lspSearch", &error).to_string();
-        assert!(formatted.contains("did you mean 'path'?"), "{formatted}");
+        assert_eq!(super::suggest_field("uri", &lsp_search), None);
     }
 
     #[test]

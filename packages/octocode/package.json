@@ -6,14 +6,11 @@
   "bin": "./out/octocode.js",
   "bugs": "https://github.com/bgauryy/octocode/issues",
   "dependencies": {
-    "@inquirer/prompts": "^8.7.3",
     "@octocodeai/octocode-native": "20.2.0",
     "@typescript/native-preview": "7.0.0-dev.20260707.2"
   },
   "devDependencies": {
     "@octocodeai/config": "workspace:*",
-    "@octocodeai/octocode-core": "20.0.1",
-    "@octocodeai/octocode-skill-installer": "workspace:*",
     "@types/node": "^24.19.2",
     "@vitest/coverage-v8": "^5.0.4",
     "esbuild": "^0.28.2",

@@ -210,17 +210,20 @@ async fn pr_inventory_carries_the_identity_header_and_its_own_next_steps_only() 
     }
     // The next steps are the response's leads, not a list nested in the row.
     assert!(row.get("hints").is_none(), "{row}");
-    let menu = data["hints"].as_object().expect("hints");
+    let menu = crate::support::checks::leads(&data);
     // 250 files: no every-patch read, no placeholder literal search (only
     // the caller knows the literal), and no merge-commit read beside the
     // row's mergeCommitSha.
     assert_eq!(
-        menu.keys().collect::<Vec<_>>(),
+        menu.iter()
+            .map(|lead| lead.name.as_str())
+            .collect::<Vec<_>>(),
         ["readSelectedPatches"],
         "{row}"
     );
     // The review read names up to one patch page of source files.
-    let review = &menu["readSelectedPatches"]["query"]["queries"][0]["include"];
+    let review = &crate::support::checks::hint(&data, "readSelectedPatches")["query"]["queries"][0]
+        ["include"];
     assert_eq!(review.as_array().map(Vec::len), Some(30), "{row}");
     // An omitted pageSize reads the whole 250-file inventory in one page.
     let page = row.get("contentPagination").cloned().unwrap_or_default();
@@ -261,7 +264,7 @@ async fn pr_inventory_picks_the_largest_source_patch_and_keeps_all_patches() {
     .await;
     let data = run(&server, json!({"sections":["files"], "extras": ["hints"]})).await;
     let menu = &data["hints"];
-    let selected = &menu["readSelectedPatches"];
+    let selected = &crate::support::checks::hint(&data, "readSelectedPatches");
     // Source files only. Files that fit one call's patch budget come first:
     // at the default 20,000-char page the 335-line patch does not fit, so the
     // 15-line one leads and the larger follows through `continuePatch`.
@@ -274,7 +277,7 @@ async fn pr_inventory_picks_the_largest_source_patch_and_keeps_all_patches() {
         "{menu}"
     );
     assert_eq!(
-        menu["readPatches"]["query"]["queries"][0]["sections"],
+        crate::support::checks::hint(&data, "readPatches")["query"]["queries"][0]["sections"],
         json!(["patches"]),
         "{menu}"
     );
@@ -328,11 +331,7 @@ async fn pure_rename_patch_is_empty_not_a_provider_omission() {
         Duration::ZERO,
     )
     .await;
-    let data = run(
-        &server,
-        json!({"sections":["patches"], "extras": [], "minify": "none"}),
-    )
-    .await;
+    let data = run(&server, json!({"sections":["patches"], "extras": []})).await;
     let files = &data["pullRequests"][0]["files"];
     assert_eq!(files[0]["path"], "src/new_name.rs", "{files}");
     assert_eq!(files[0]["previousPath"], "src/old_name.rs", "{files}");
@@ -418,7 +417,10 @@ async fn pr_continuation_reads_carry_only_the_identity_header() {
     assert!(first.get("hints").is_some(), "{first}");
     // A literal search of every patch needs the caller's literal: it is
     // never offered as an executable placeholder.
-    assert!(first["hints"].get("findInPatches").is_none(), "{first}");
+    assert!(
+        crate::support::checks::hint(&first, "findInPatches").is_null(),
+        "{first}"
+    );
 
     let data = run(&server, follow).await;
     let row = &data["pullRequests"][0];
@@ -470,7 +472,7 @@ async fn patch_window_does_not_repeat_the_file_cursor_in_content_pagination() {
     let data = run(
         &server,
         json!({"sections":["patches"],"include":["src/big.rs"],
-               "minify": "none", "extras": []}),
+               "extras": []}),
     )
     .await;
     let row = &data["pullRequests"][0];
@@ -497,7 +499,7 @@ async fn selected_patch_scan_reads_file_batches_concurrently() {
     let data = run(
         &server,
         json!({"sections":["patches"],"include":["src/late.rs"],
-               "minify": "none", "extras": []}),
+               "extras": []}),
     )
     .await;
     let elapsed = started.elapsed();
@@ -530,7 +532,7 @@ async fn match_string_returns_matching_hunks_and_offers_the_whole_patch() {
     let data = run(
         &server,
         json!({"sections":["patches"], "matchString": "esbuild",
-               "minify": "none", "extras": []}),
+               "extras": []}),
     )
     .await;
     let files = &data["pullRequests"][0]["files"];
@@ -573,7 +575,7 @@ async fn match_string_returns_matching_hunks_and_offers_the_whole_patch() {
     let (status, none) = run_status(
         &server,
         json!({"sections":["patches"], "matchString": "absent-term",
-               "minify": "none", "extras": []}),
+               "extras": []}),
     )
     .await;
     let none_row = &none["pullRequests"][0];
@@ -584,13 +586,17 @@ async fn match_string_returns_matching_hunks_and_offers_the_whole_patch() {
     // that looks like an ignored filter; its leads run the fix: the same
     // read without the literal, then the file inventory.
     assert_eq!(status, "empty", "{none}");
-    assert!(none["hints"].get("text").is_none(), "{none}");
-    let unfiltered = &none["hints"]["withoutMatchString"]["query"]["queries"][0];
+    assert!(
+        crate::support::checks::hint(&none, "text").is_null(),
+        "{none}"
+    );
+    let unfiltered =
+        &crate::support::checks::hint(&none, "withoutMatchString")["query"]["queries"][0];
     assert!(unfiltered.get("matchString").is_none(), "{none}");
     assert_eq!(unfiltered["sections"], json!(["patches"]), "{none}");
-    assert_eq!(unfiltered["minify"], "none", "{none}");
+    assert!(unfiltered.get("minify").is_none(), "{none}");
     assert_eq!(
-        none["hints"]["readFiles"]["query"]["queries"][0]["sections"],
+        crate::support::checks::hint(&none, "readFiles")["query"]["queries"][0]["sections"],
         json!(["files"]),
         "{none}"
     );
@@ -598,7 +604,7 @@ async fn match_string_returns_matching_hunks_and_offers_the_whole_patch() {
     let only_hits = run(
         &server,
         json!({"sections":["patches"], "matchString": "esbuild",
-               "contextLines": 0, "minify": "none", "extras": []}),
+               "contextLines": 0, "extras": []}),
     )
     .await;
     assert_eq!(
@@ -615,17 +621,22 @@ async fn match_string_returns_matching_hunks_and_offers_the_whole_patch() {
     let hinted = run(
         &server,
         json!({"sections":["patches"], "matchString": "esbuild",
-               "minify": "none", "extras": ["hints"]}),
+               "extras": ["hints"]}),
     )
     .await;
-    // A one-file answer offers one lead: the code read outranks the
-    // low-confidence whole-patch re-read.
-    assert!(hinted["hints"]["readAtCommit"].is_object(), "{hinted}");
-    assert!(hinted["hints"].get("readFullPatches").is_none(), "{hinted}");
+    // Distinct optional reads remain available, even for one file.
+    assert!(
+        crate::support::checks::hint(&hinted, "readAtCommit").is_object(),
+        "{hinted}"
+    );
+    let whole = crate::support::checks::hint(&hinted, "readFullPatches");
+    assert_eq!(whole["tool"], "ghGetHistoryItem", "{hinted}");
+    assert_eq!(whole["query"]["queries"][0]["sections"], json!(["patches"]));
+    assert!(whole["query"]["queries"][0].get("matchString").is_none());
     // The whole patch is the same read without the grep, numbered.
     let full = run(
         &server,
-        json!({"sections":["patches"], "include": ["src/big.rs"], "minify": "none", "extras": []}),
+        json!({"sections":["patches"], "include": ["src/big.rs"], "extras": []}),
     )
     .await;
     let whole = full["pullRequests"][0]["files"][0]["patch"]
@@ -635,12 +646,12 @@ async fn match_string_returns_matching_hunks_and_offers_the_whole_patch() {
     assert!(whole.contains("\n201\t+new esbuild\n"), "{full}");
 }
 
-/// The default minified PR view drops markdown noise (HTML comments,
-/// badges) from bodies, comments and reviews, and says so with a lossless
-/// raw re-read; code hunks are never minified: every context line arrives,
-/// numbered on the new side.
+/// The default PR view is GitHub's verbatim text: a body's HTML comment
+/// is evidence and stays, with no raw re-read to chase; code hunks are
+/// never minified either: every context line arrives, numbered on the new
+/// side.
 #[tokio::test]
-async fn minified_pr_views_carry_lossless_raw_reads() {
+async fn pr_views_are_verbatim_by_default() {
     let server = MockServer::builder().start().await;
     let raw_body = "Fixes the cache.\n<!-- reviewer checklist: perf tested -->\nDetails here.";
     let mut meta = pr(2);
@@ -668,11 +679,8 @@ async fn minified_pr_views_carry_lossless_raw_reads() {
     )
     .await;
     let row = &data["pullRequests"][0];
-    assert_eq!(row["bodyView"], "minified", "{data}");
-    assert!(
-        !row["body"].as_str().unwrap_or("").contains("checklist"),
-        "{row}"
-    );
+    assert_eq!(row["body"], raw_body, "{row}");
+    assert!(row.get("bodyView").is_none(), "{row}");
     let files = row["files"].as_array().expect("files");
     let whole = files
         .iter()
@@ -688,25 +696,18 @@ async fn minified_pr_views_carry_lossless_raw_reads() {
         whole.contains("\n61\t-old\n61\t+new\n62\t ctx 1\n"),
         "{whole}"
     );
-    assert!(data.pointer("/hints/readUntrimmed").is_none(), "{data}");
-    // The merged-source check keeps its slot beside the raw re-read.
-    assert!(data.pointer("/hints/readAtMerge").is_some(), "{data}");
-    let raw_read = &data["hints"]["readRawBody"]["query"]["queries"][0];
-    assert_eq!(raw_read["minify"], "none", "{data}");
-    let mut follow = raw_read.clone();
-    for key in ["operation", "owner", "repo", "number"] {
-        follow.as_object_mut().map(|q| q.remove(key));
-    }
-    let body = run(&server, follow).await;
-    assert_eq!(body["pullRequests"][0]["body"], raw_body, "{body}");
-    assert!(body["pullRequests"][0].get("bodyView").is_none(), "{body}");
-    // A raw read is never flagged.
-    let plain = run(
-        &server,
-        json!({"sections":["body","patches"], "minify": "none"}),
-    )
-    .await;
-    assert!(plain.pointer("/hints/readRawBody").is_none(), "{plain}");
+    assert!(
+        crate::support::checks::hint(&data, "readUntrimmed").is_null(),
+        "{data}"
+    );
+    assert!(
+        crate::support::checks::hint(&data, "readRawBody").is_null(),
+        "{data}"
+    );
+    assert!(
+        !crate::support::checks::hint(&data, "readAtMerge").is_null(),
+        "{data}"
+    );
 }
 
 /// `matchString` searches patches, so a pull-request read with a
@@ -824,7 +825,7 @@ async fn merged_pr_rows_keep_merge_state_on_every_read() {
         (
             "patches",
             json!({"sections":["patches"],"include":["src/hit.rs"],
-                   "minify": "none", "extras": []}),
+                   "extras": []}),
             false,
         ),
         (
@@ -860,6 +861,51 @@ async fn merged_pr_rows_keep_merge_state_on_every_read() {
     }
 }
 
+/// A file page pins the head it read (`headSha` on `next.nextFilePage`);
+/// replayed after the head moved, the page is a stale snapshot whose
+/// restart is the first page without the pin, never a mix of two heads.
+#[tokio::test]
+async fn pull_request_pages_pin_the_head_and_a_moved_head_restarts() {
+    let server = MockServer::builder().start().await;
+    mount_pr(&server, 250).await;
+    mount_file_batches(
+        &server,
+        vec![numbered(1, 100), numbered(2, 100), numbered(3, 50)],
+        Duration::ZERO,
+    )
+    .await;
+    let first = run(
+        &server,
+        json!({"sections":["files"], "pageSize": 100, "extras": []}),
+    )
+    .await;
+    let page = &first["next"]["nextFilePage"]["query"]["queries"][0];
+    assert_eq!(page["headSha"], SHA, "{first}");
+    let mut moved = page.clone();
+    moved["headSha"] = json!("abcdef0123456789abcdef0123456789abcdef01");
+    for field in ["operation", "owner", "repo", "number"] {
+        moved.as_object_mut().expect("row").remove(field);
+    }
+    moved["extras"] = json!([]);
+    let (status, stale) = run_status(&server, moved).await;
+    assert_eq!(status, "error", "{stale}");
+    assert_eq!(stale["errorCode"], "staleSnapshot", "{stale}");
+    let restart = &stale["next"]["restart"]["query"]["queries"][0];
+    assert!(restart.get("headSha").is_none(), "{stale}");
+    assert!(restart.get("page").is_none(), "{stale}");
+    // An abbreviated pin of the same head reads the page, not a false
+    // stale snapshot.
+    let mut short = page.clone();
+    short["headSha"] = json!(&SHA[..7]);
+    for field in ["operation", "owner", "repo", "number"] {
+        short.as_object_mut().expect("row").remove(field);
+    }
+    short["extras"] = json!([]);
+    let (status, read) = run_status(&server, short).await;
+    assert_ne!(status, "error", "{read}");
+    assert!(read.get("errorCode").is_none(), "{read}");
+}
+
 /// Rows of one call share one patch budget, so two large patch
 /// reads fit one response page instead of spilling into response
 /// pagination; each row keeps its own exact `continuePatch`.
@@ -886,7 +932,7 @@ async fn patch_rows_in_one_call_share_one_budget() {
     let runtime = workspace.runtime(&[("GITHUB_API_URL", format!("{}/api/v3", server.uri()))]);
     let row = |file: &str| {
         json!({"operation": "pullRequest", "owner": "a", "repo": "b", "number": 9,
-               "mainGoal": "g", "reasoning": "r", "minify": "none",
+               "mainGoal": "g", "reasoning": "r",
                "sections": ["patches"], "include": [file]})
     };
     let outcome = runtime
@@ -952,7 +998,7 @@ async fn explicit_response_page_sizes_patch_walk_windows() {
         let runtime = &runtime;
         async move {
             let mut first = json!({"operation": "pullRequest", "owner": "a", "repo": "b",
-                "number": 9, "mainGoal": "g", "reasoning": "r", "minify": "none",
+                "number": 9, "mainGoal": "g", "reasoning": "r",
                 "sections": ["patches"], "extras": ["hints"]});
             if let Some(length) = char_length {
                 first["length"] = json!(length);
@@ -1005,7 +1051,7 @@ async fn explicit_response_page_sizes_patch_walk_windows() {
                 }
                 // One check at the merge commit, on the first window only.
                 assert_eq!(
-                    data["hints"].get("readAtMerge").is_some(),
+                    !crate::support::checks::hint(data, "readAtMerge").is_null(),
                     calls == 1,
                     "call {calls}: {data}"
                 );
@@ -1121,7 +1167,7 @@ async fn include_scopes_a_body_and_patch_read() {
     let flat = run(
         &server,
         json!({"sections":["body","patches"],
-               "include":["src/**"], "minify": "none", "extras": []}),
+               "include":["src/**"], "extras": []}),
     )
     .await;
     assert!(flat["pullRequests"][0].get("body").is_some(), "{flat}");
@@ -1170,9 +1216,15 @@ async fn files_scope_matching_nothing_is_an_empty_row_with_an_inventory_lead() {
         data.get("errorCode").is_none(),
         "an empty row carries no errorCode: {data}"
     );
-    assert!(data["hints"].get("text").is_none(), "{data}");
-    assert!(data["hints"].get("withoutMatchString").is_none(), "{data}");
-    let inventory = &data["hints"]["readFiles"]["query"]["queries"][0];
+    assert!(
+        crate::support::checks::hint(data, "text").is_null(),
+        "{data}"
+    );
+    assert!(
+        crate::support::checks::hint(data, "withoutMatchString").is_null(),
+        "{data}"
+    );
+    let inventory = &crate::support::checks::hint(data, "readFiles")["query"]["queries"][0];
     assert_eq!(inventory["sections"], json!(["files"]), "{data}");
     assert!(inventory.get("include").is_none(), "{data}");
     support::checks::assert_leads_valid(data);
@@ -1227,7 +1279,7 @@ async fn read_at_merge_picks_the_code_file_of_the_whole_pr_not_the_first_window(
         .filter_map(|file| file["path"].as_str())
         .collect::<Vec<_>>();
     assert!(!shown.contains(&"pkg/client/client.go"), "{data}");
-    let read = &data["hints"]["readAtMerge"]["query"]["queries"][0];
+    let read = &crate::support::checks::hint(&data, "readAtMerge")["query"]["queries"][0];
     for (field, value) in [
         ("ref", json!("fedcba9876543210fedcba9876543210fedcba98")),
         ("path", json!("pkg/client/client.go")),
@@ -1261,14 +1313,18 @@ async fn match_string_with_zero_hits_says_so() {
     )
     .await;
     assert_eq!(status, "empty", "{alone}");
-    assert!(alone["hints"].get("text").is_none(), "{alone}");
-    let unfiltered = &alone["hints"]["withoutMatchString"]["query"]["queries"][0];
+    assert!(
+        crate::support::checks::hint(&alone, "text").is_null(),
+        "{alone}"
+    );
+    let unfiltered =
+        &crate::support::checks::hint(&alone, "withoutMatchString")["query"]["queries"][0];
     assert!(unfiltered.get("matchString").is_none(), "{alone}");
     assert_eq!(unfiltered["number"], 9, "{alone}");
     // The literal alone searched every patch; the read without it reads them.
     assert_eq!(unfiltered["sections"], json!(["patches"]), "{alone}");
     assert_eq!(
-        alone["hints"]["readFiles"]["query"]["queries"][0]["sections"],
+        crate::support::checks::hint(&alone, "readFiles")["query"]["queries"][0]["sections"],
         json!(["files"]),
         "{alone}"
     );
@@ -1399,7 +1455,7 @@ async fn match_context_past_the_hunk_reads_the_head_text() {
         .await;
     let data = run(
         &server,
-        json!({"sections":["patches"], "matchString": "needle", "contextLines": 10, "minify": "none", "extras": []}),
+        json!({"sections":["patches"], "matchString": "needle", "contextLines": 10, "extras": []}),
     )
     .await;
     let file = &data["pullRequests"][0]["files"][0];
@@ -1417,6 +1473,47 @@ async fn match_context_past_the_hunk_reads_the_head_text() {
     );
 }
 
+/// A later file page widens its own hits: the head reads name the files
+/// this page shows, never the first page's again.
+#[tokio::test]
+async fn a_later_match_page_reads_the_head_text_of_its_own_files() {
+    use base64::Engine as _;
+    let server = MockServer::builder().start().await;
+    mount_pr(&server, 2).await;
+    let (patch, head) = hunk_at_53();
+    mount_file_batches(
+        &server,
+        vec![vec![
+            rest_file("src/a.rs", Some(&patch), 1, 1),
+            rest_file("src/b.rs", Some(&patch), 1, 1),
+        ]],
+        Duration::ZERO,
+    )
+    .await;
+    for (file, reads) in [("a", 0), ("b", 1)] {
+        Mock::given(method("GET"))
+            .and(path(format!("/api/v3/repos/a/b/contents/src/{file}.rs")))
+            .and(query_param("ref", SHA))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "type":"file","encoding":"base64","path":format!("src/{file}.rs"),
+                "content": base64::engine::general_purpose::STANDARD.encode(&head)
+            })))
+            .expect(reads)
+            .mount(&server)
+            .await;
+    }
+    let data = run(
+        &server,
+        json!({"sections":["patches"], "matchString": "needle", "contextLines": 10,
+            "pageSize": 1, "page": 2, "extras": []}),
+    )
+    .await;
+    let file = &data["pullRequests"][0]["files"][0];
+    assert_eq!(file["path"], "src/b.rs", "{data}");
+    assert!(file.get("contextClipped").is_none(), "{data}");
+    server.verify().await;
+}
+
 /// Without the head text (the read failed), the clip is explicit: the file
 /// is flagged and `next.expandContext` reads the wanted lines at headSha.
 #[tokio::test]
@@ -1432,7 +1529,7 @@ async fn match_context_clipped_by_the_hunk_is_flagged_with_a_head_read() {
     .await;
     let (_, data) = run_status(
         &server,
-        json!({"sections":["patches"], "matchString": "needle", "contextLines": 10, "minify": "none", "extras": []}),
+        json!({"sections":["patches"], "matchString": "needle", "contextLines": 10, "extras": []}),
     )
     .await;
     let file = &data["pullRequests"][0]["files"][0];
@@ -1593,10 +1690,11 @@ async fn history_b_merged_match_string_read_offers_the_source_side_only() {
     )
     .await;
     let lead = |name: &str| {
+        let hint = crate::support::checks::hint(&data, name);
         data.get("next")
             .and_then(|next| next.get(name))
-            .or_else(|| data.get("hints").and_then(|hints| hints.get(name)))
             .cloned()
+            .or_else(|| (!hint.is_null()).then_some(hint))
     };
     let at_commit = lead("readAtCommit").expect("readAtCommit lead");
     let row = &at_commit["query"]["queries"][0];
@@ -1726,9 +1824,10 @@ async fn history_b_large_pr_lead_walk_is_lossless_at_the_first_page_size() {
 /// the first window's metadata rows and summary alone exceed the 20k page,
 /// so the row splits into structured `rowPart`s. Following
 /// `responsePagination.next` first, then `continuePatch`/`nextFilePage`,
-/// every call keeps its rows, every patch arrives exactly once, and every
-/// patch-less file is listed exactly once: the walk's cursor rides the last
-/// part, so no part is skipped.
+/// every call keeps its rows, every patch arrives exactly once (a patch
+/// identical to an earlier one of its file page names that row,
+/// `samePatchAs`), and every patch-less file is listed exactly once: the
+/// walk's cursor rides the last part, so no part is skipped.
 #[tokio::test]
 async fn overflowing_patch_hop_pages_by_rows_and_loses_nothing() {
     let server = MockServer::builder().start().await;
@@ -1770,6 +1869,7 @@ async fn overflowing_patch_hop_pages_by_rows_and_loses_nothing() {
         "repo": "b", "number": 9, "sections": ["patches"]}]});
     let mut read = std::collections::BTreeMap::<String, String>::new();
     let mut listed = std::collections::BTreeMap::<String, usize>::new();
+    let mut same = std::collections::BTreeMap::<String, String>::new();
     let (mut calls, mut split_parts) = (0, 0);
     loop {
         calls += 1;
@@ -1792,13 +1892,23 @@ async fn overflowing_patch_hop_pages_by_rows_and_loses_nothing() {
             split_parts += 1;
         }
         let data = &row["data"];
-        let files = data["pullRequests"][0]["files"]
-            .as_array()
-            .unwrap_or_else(|| {
-                panic!("call {calls}: rows hidden from structuredContent: {content}")
-            });
+        // A later part of a split row omits a list the split emptied there
+        // (it pages another list); a whole row always shows its files.
+        let empty = Vec::new();
+        let files = match data["pullRequests"][0]["files"].as_array() {
+            Some(files) => files,
+            None if row.get("rowPart").is_some_and(|part| part["part"] != 1) => &empty,
+            None => panic!("call {calls}: rows hidden from structuredContent: {content}"),
+        };
         for file in files {
             let path = file["path"].as_str().expect("path").to_owned();
+            if let Some(earlier) = file["samePatchAs"].as_str() {
+                assert!(
+                    same.insert(path, earlier.to_owned()).is_none(),
+                    "call {calls}: {file}"
+                );
+                continue;
+            }
             match file["patch"].as_str() {
                 Some(patch) => {
                     let text = read.entry(path).or_default();
@@ -1824,19 +1934,120 @@ async fn overflowing_patch_hop_pages_by_rows_and_loses_nothing() {
     }
     assert!(split_parts >= 2, "the hop never overflowed its page");
     assert_eq!(
-        read.len(),
+        read.len() + same.len(),
         expected.len(),
-        "patches reached: {}",
-        read.len()
+        "patches reached: {} + {} repeats",
+        read.len(),
+        same.len()
     );
     for (path, patch) in &expected {
+        let holder = same.get(path).unwrap_or(path);
         assert_eq!(
-            read.get(path).map(|view| raw_patch(view)).as_ref(),
+            read.get(holder).map(|view| raw_patch(view)).as_ref(),
             Some(patch),
             "{path}"
         );
     }
     assert_eq!(listed.len(), 96, "{listed:?}");
     assert!(listed.values().all(|count| *count == 1), "{listed:?}");
+    runtime.close().await;
+}
+
+/// The changed-file paths a compact inventory page lists, in order:
+/// `M +1 -1 path` rows and `{"dir/": [rows]}` groups.
+fn inventory_paths(files: &Value) -> Vec<String> {
+    let name = |row: &Value| {
+        row.as_str()
+            .and_then(|row| row.rsplit(' ').next())
+            .map(str::to_owned)
+    };
+    files
+        .as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|row| match row {
+            Value::Object(group) => group
+                .iter()
+                .flat_map(|(dir, rows)| {
+                    rows.as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(name)
+                        .map(|file| format!("{dir}{file}"))
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>(),
+            row => name(row).into_iter().collect(),
+        })
+        .collect()
+}
+
+/// A budget-sized file page pins its grid: `next.nextFilePage`, copied
+/// unchanged, continues the same file list whether it runs alone or batched
+/// with other rows (a different budget share), so every walk lists each
+/// changed file exactly once.
+#[tokio::test]
+async fn file_page_continuations_continue_the_same_grid_in_any_batch() {
+    let server = MockServer::builder().start().await;
+    mount_pr(&server, 450).await;
+    mount_file_batches(
+        &server,
+        (1..=5)
+            .map(|batch| numbered(batch, if batch == 5 { 50 } else { 100 }))
+            .collect(),
+        Duration::ZERO,
+    )
+    .await;
+    let workspace = Workspace::new();
+    let runtime = workspace.runtime(&[("GITHUB_API_URL", format!("{}/api/v3", server.uri()))]);
+    let files_row = json!({"operation":"pullRequest","owner":"a","repo":"b","number":9,
+        "mainGoal":"g","reasoning":"r","sections":["files"]});
+    let body_row = json!({"operation":"pullRequest","owner":"a","repo":"b","number":9,
+        "mainGoal":"g","reasoning":"r","sections":["body"]});
+    // One call: the files row with or without a batched body row; returns
+    // the files row's paths and its copied-unchanged next file page.
+    let calls = std::sync::atomic::AtomicUsize::new(0);
+    let call = |row: Value, batched: bool| {
+        let runtime = &runtime;
+        let id = calls.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let body_row = body_row.clone();
+        async move {
+            let queries = if batched {
+                json!([row, body_row])
+            } else {
+                json!([row])
+            };
+            let outcome = runtime
+                .run(
+                    format!("grid-{id}"),
+                    "ghGetHistoryItem".into(),
+                    json!({ "queries": queries }),
+                )
+                .await
+                .expect("file page");
+            let content = outcome.structured_content;
+            assert!(content.get("responsePagination").is_none(), "{content}");
+            let data = &content["results"][0]["data"];
+            let paths = inventory_paths(&data["pullRequests"][0]["files"]);
+            let next = data.pointer("/next/nextFilePage/query/queries/0").cloned();
+            (paths, next)
+        }
+    };
+    for first_batched in [true, false] {
+        let mut seen = Vec::new();
+        let (paths, mut next) = call(files_row.clone(), first_batched).await;
+        let first_page = paths.len();
+        seen.extend(paths);
+        // Every later page runs in the other batch shape.
+        while let Some(row) = next {
+            let (paths, after) = call(row, !first_batched).await;
+            assert!(!paths.is_empty(), "an empty page mid-walk");
+            seen.extend(paths);
+            next = after;
+        }
+        let unique = seen.iter().collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(unique.len(), seen.len(), "a file repeated: {first_page}");
+        assert_eq!(seen.len(), 450, "first page {first_page}: {seen:?}");
+    }
     runtime.close().await;
 }

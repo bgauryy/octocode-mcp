@@ -58,7 +58,7 @@ fn walk_pages(files: &[(&str, &str)], request: &LocalSearchQuery) -> Vec<serde_j
         serde_json::json!({"path": root.path().to_string_lossy().into_owned()}),
         Some(request),
     );
-    let first = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+    let first = execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
         .expect("first page");
     let total = first.pagination.as_ref().map_or(1, |p| p.total_pages);
     let snapshot = first.source_snapshot.clone();
@@ -68,8 +68,9 @@ fn walk_pages(files: &[(&str, &str)], request: &LocalSearchQuery) -> Vec<serde_j
             serde_json::json!({"page": page, "snapshot": snapshot}),
             Some(&request),
         );
-        let result = execute_local_search(&next, &policy, &security, &NeverCancel, None, None)
-            .expect("later page");
+        let result =
+            execute_local_search(&next, &policy, &security, &NeverCancel, None, None, None)
+                .expect("later page");
         pages.push(serde_json::to_value(&result).expect("serialize"));
     }
     pages
@@ -119,7 +120,7 @@ fn an_empty_search_names_the_rule_that_skipped_its_matches() {
         serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "needle-here"}),
         None,
     );
-    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
         .expect("search");
     let hint = &result.hints[0];
     assert!(
@@ -291,7 +292,7 @@ fn a_pcre2_matching_limit_is_a_pattern_failure_not_an_unreadable_file() {
         serde_json::json!({"path": file.to_string_lossy().into_owned(), "matchString": "(a+)+$", "regex": "pcre2"}),
         None,
     );
-    let error = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+    let error = execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
         .expect_err("every file failed in the matcher");
     assert_eq!(error.code, "invalidPattern", "{error:?}");
     assert!(error.message.contains("first: patho.txt:"), "{error:?}");
@@ -307,7 +308,7 @@ fn a_pcre2_matching_limit_is_a_pattern_failure_not_an_unreadable_file() {
         serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "(a+)+$", "regex": "pcre2"}),
         None,
     );
-    let result = execute_local_search(&folder, &policy, &security, &NeverCancel, None, None)
+    let result = execute_local_search(&folder, &policy, &security, &NeverCancel, None, None, None)
         .expect("one file searched");
     assert!(
         result
@@ -328,16 +329,19 @@ fn scope_listing_keeps_the_search_walk_scope() {
         serde_json::json!({"path": "/repo", "matchString": "x", "includeIgnored": true, "defaultExcludes": false, "include": ["*.ts"]}),
         None,
     );
-    let listing = leads::scope_listing(&request);
+    let listing = leads::scope_listing(&request, true);
     let query = &listing["query"]["queries"][0];
     assert_eq!(query["operation"], "files", "{listing}");
     assert_eq!(query["includeIgnored"], true, "{listing}");
     assert_eq!(query["defaultExcludes"], false, "{listing}");
     assert_eq!(query["include"], serde_json::json!(["*.ts"]), "{listing}");
-    let plain = leads::scope_listing(&ls_query(
-        serde_json::json!({"path": "/repo", "matchString": "x"}),
-        None,
-    ));
+    let plain = leads::scope_listing(
+        &ls_query(
+            serde_json::json!({"path": "/repo", "matchString": "x"}),
+            None,
+        ),
+        true,
+    );
     let plain = &plain["query"]["queries"][0];
     assert!(
         plain.get("includeIgnored").is_none() && plain.get("defaultExcludes").is_none(),
@@ -359,12 +363,11 @@ fn a_skip_reason_above_the_root_is_root_relative() {
     assert_eq!(reason, "../.gitignore:1 '*.log'");
 }
 
-/// A page holds at most the default page size of files in every view, so
-/// the enclosing names it promises (and its warning) describe that page:
-/// a result of more files than a page opens with a full page and walks the
-/// rest, never one oversized page with unnamed rows.
+/// A page holds as many files as fit the response window, in every view,
+/// and names the enclosing declaration of every row it shows: 25 small
+/// files are one page, not a page of 20 and a page of 5.
 #[test]
-fn a_small_result_over_one_page_of_files_still_pages_by_file_count() {
+fn a_small_result_of_many_files_fills_one_page_with_every_row_named() {
     let sources: Vec<(String, String)> = (0..25)
         .map(|i| {
             (
@@ -383,19 +386,18 @@ fn a_small_result_over_one_page_of_files_still_pages_by_file_count() {
             None,
         );
         let pages = walk_pages(&fixtures, &request);
-        assert_eq!(pages.len(), 2, "{view}: {pages:?}");
+        assert_eq!(pages.len(), 1, "{view}: {pages:?}");
         let counts: Vec<usize> = pages
             .iter()
             .map(|page| page["files"].as_array().expect("files").len())
             .collect();
-        assert_eq!(counts, [20, 5], "{view}: {pages:?}");
+        assert_eq!(counts, [25], "{view}: {pages:?}");
         for page in &pages {
             assert!(page.get("warnings").is_none(), "{view}: {page}");
             for file in page["files"].as_array().expect("files") {
                 assert!(file["matches"][0].get("enclosing").is_some(), "{page}");
             }
         }
-        assert_eq!(pages[0]["pagination"]["hasMore"], true, "{view}: {pages:?}");
     }
 }
 
@@ -461,9 +463,16 @@ fn every_lead_of_every_view_validates_against_the_schema() {
                     }),
                     None,
                 );
-                let result =
-                    execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
-                        .expect("search");
+                let result = execute_local_search(
+                    &request,
+                    &policy,
+                    &security,
+                    &NeverCancel,
+                    None,
+                    None,
+                    None,
+                )
+                .expect("search");
                 let body = serde_json::to_value(result).expect("serialize");
                 assert_leads_validate(&body, &format!("{view:?}/{unique:?}/{page_size:?}"));
             }
@@ -495,7 +504,7 @@ fn an_empty_search_over_ignored_nested_repositories_names_the_ignore_rule() {
         serde_json::json!({"path": root.to_string_lossy().into_owned(), "matchString": "needle"}),
         None,
     );
-    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
         .expect("search");
     assert!(result.files.is_empty());
     let body = serde_json::to_value(&result).expect("result");
@@ -534,7 +543,7 @@ fn a_search_row_serializes_flat_totals_that_satisfy_the_output_contract() {
         serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "needle"}),
         None,
     );
-    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
         .expect("search");
     let mut wire = serde_json::to_value(&result).expect("serialize");
     assert_eq!(wire["matchCount"], 2, "{wire}");
@@ -594,8 +603,9 @@ fn match_only_pages_every_match_of_a_line_with_thousands_of_hits() {
     );
     let mut seen = Vec::new();
     for _ in 0..20 {
-        let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
-            .expect("page");
+        let result =
+            execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
+                .expect("page");
         let body = serde_json::to_value(&result).expect("serialize");
         assert!(body.get("partialReasons").is_none(), "{body}");
         for matched in body["files"][0]["matches"].as_array().expect("matches") {
@@ -733,8 +743,9 @@ fn every_clipped_value_on_a_default_page_is_one_expand_values_call_away() {
     let mut read_lines = std::collections::HashSet::new();
     let mut pages = 0;
     loop {
-        let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
-            .expect("search");
+        let result =
+            execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
+                .expect("search");
         pages += 1;
         assert!(pages < 60, "pagination must terminate");
         let clipped_files = result
@@ -810,7 +821,7 @@ fn mixed_value_reads_are_one_executable_expand_values_call() {
             "matchPageSize": 40, "matchContentLength": 50_000, "sort": "path"}),
         None,
     );
-    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
         .expect("search");
     let clipped = result
         .files
@@ -868,7 +879,7 @@ fn an_extension_as_language_repairs_to_its_type_name() {
         serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "alpha", "language": "rs"}),
         None,
     );
-    let error = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+    let error = execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
         .expect_err("rs is not a type name");
     assert_eq!(error.code, "invalidInput", "{error:?}");
     assert!(error.message.contains("\"rust\""), "{error:?}");
@@ -931,6 +942,7 @@ fn the_page_ceiling_names_the_file_pages_past_it() {
         &NeverCancel,
         None,
         None,
+        None,
     )
     .expect("search");
     assert!(
@@ -950,12 +962,13 @@ fn the_page_ceiling_names_the_file_pages_past_it() {
 #[test]
 fn skipped_path_evidence_outlives_compact_hints() {
     let root = tempfile::tempdir().expect("fixture");
-    fs::create_dir(root.path().join(".git")).expect("repository");
+    // `.ignore` rules apply outside a git work tree, where the default
+    // prune names directories by name alone.
     let ignored = (0..3)
         .map(|n| format!("ignored_{n}_{}", "long_name_".repeat(12)))
         .collect::<Vec<_>>();
     fs::write(
-        root.path().join(".gitignore"),
+        root.path().join(".ignore"),
         ignored
             .iter()
             .map(|n| format!("{n}/\n"))
@@ -966,7 +979,7 @@ fn skipped_path_evidence_outlives_compact_hints() {
         fs::create_dir(root.path().join(dir)).expect("ignored directory");
         fs::write(root.path().join(dir).join("hit.txt"), "needle\n").expect("hit");
     }
-    let generated = format!("{}.lock", "generated_".repeat(12));
+    let generated = format!("{}.min.js", "generated_".repeat(12));
     fs::write(root.path().join(&generated), "needle\n").expect("generated hit");
     let pruned = format!("{}/node_modules", "container_".repeat(10));
     fs::create_dir_all(root.path().join(&pruned)).expect("pruned directory");
@@ -979,11 +992,11 @@ fn skipped_path_evidence_outlives_compact_hints() {
     );
     for unproven in [false, true] {
         let run = || {
-            execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+            execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
                 .expect("search")
         };
         let result = if unproven {
-            super::leads::with_probe_budget(std::time::Duration::ZERO, run)
+            crate::tools::empty_walk::with_probe_budget(std::time::Duration::ZERO, run)
         } else {
             run()
         };
@@ -1004,23 +1017,28 @@ fn skipped_path_evidence_outlives_compact_hints() {
                 })
                 .collect::<Vec<_>>();
             assert_eq!(matching.len(), 1, "unproven={unproven}: {body}");
-            assert_eq!(
-                matching[0]["reason"],
-                format!(".gitignore:{} '{dir}/'", n + 1)
-            );
+            assert_eq!(matching[0]["reason"], format!(".ignore:{} '{dir}/'", n + 1));
         }
-        for name in [&generated, &pruned] {
-            assert_eq!(
-                entries
-                    .iter()
-                    .filter(
-                        |entry| entry["path"] == skipped_source_path(root.path(), name)
-                            && entry["cause"] == "default-excluded"
-                    )
-                    .count(),
-                1,
-                "{body}"
-            );
+        // A proven miss names each default-excluded path that holds a
+        // match; an unproven one counts the walk's under one entry.
+        let excluded = entries
+            .iter()
+            .filter(|entry| entry["cause"] == "default-excluded")
+            .collect::<Vec<_>>();
+        if unproven {
+            assert_eq!(excluded.len(), 1, "{body}");
+            assert_eq!(excluded[0]["reason"], "first of 2", "{body}");
+        } else {
+            for name in [&generated, &pruned] {
+                assert_eq!(
+                    excluded
+                        .iter()
+                        .filter(|entry| entry["path"] == skipped_source_path(root.path(), name))
+                        .count(),
+                    1,
+                    "{body}"
+                );
+            }
         }
         assert_leads_validate(&body, "skipped paths");
         let next = body["next"]["includeSkipped"]["query"]["queries"][0].clone();
@@ -1030,8 +1048,9 @@ fn skipped_path_evidence_outlives_compact_hints() {
         )
         .expect("canonical continuation");
         let retried = ls_query(prepared[0].clone(), None);
-        let found = execute_local_search(&retried, &policy, &security, &NeverCancel, None, None)
-            .expect("copied lead");
+        let found =
+            execute_local_search(&retried, &policy, &security, &NeverCancel, None, None, None)
+                .expect("copied lead");
         assert_eq!(found.files.len(), 5, "{found:?}");
     }
 }
@@ -1042,7 +1061,7 @@ fn skipped_paths_are_first_page_disclosure_with_copied_search_scope() {
     for n in 0..3 {
         fs::write(root.path().join(format!("v{n}.txt")), "needle\n").expect("visible hit");
     }
-    fs::write(root.path().join("generated.lock"), "needle\n").expect("excluded");
+    fs::write(root.path().join("generated.min.js"), "needle\n").expect("excluded");
     let (policy, security) = policy_for(root.path());
     let mut request = ls_query(
         serde_json::json!({"path":root.path(),"matchString":"needle","pageSize":1,"resultView":"files"}),
@@ -1050,14 +1069,15 @@ fn skipped_paths_are_first_page_disclosure_with_copied_search_scope() {
     );
     let mut paths = Vec::new();
     for page in 0..3 {
-        let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
-            .expect("page");
+        let result =
+            execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
+                .expect("page");
         let body = serde_json::to_value(&result).expect("result");
         if page == 0 {
             assert_eq!(body["skippedPaths"]["sampled"], false, "{body}");
             assert_eq!(
                 body["skippedPaths"]["entries"],
-                serde_json::json!([{"path":skipped_source_path(root.path(),"generated.lock"),"cause":"default-excluded"}]),
+                serde_json::json!([{"path":skipped_source_path(root.path(),"generated.min.js"),"cause":"default-excluded"}]),
                 "{body}"
             );
         } else {
@@ -1091,7 +1111,7 @@ fn skipped_paths_are_not_repeated_on_the_match_page_axis() {
     for name in ["a.txt", "b.txt"] {
         fs::write(root.path().join(name), "needle one\nneedle two\n").expect("hits");
     }
-    fs::write(root.path().join("generated.lock"), "needle\n").expect("excluded");
+    fs::write(root.path().join("generated.min.js"), "needle\n").expect("excluded");
     let start = serde_json::to_value(ls_query(
         serde_json::json!({"path":root.path(),"matchString":"needle","pageSize":1,"matchPageSize":1,"sort":"path"}),
         None,
@@ -1110,4 +1130,288 @@ fn skipped_paths_are_not_repeated_on_the_match_page_axis() {
     let mut rows = walk.rows;
     rows.sort();
     assert_eq!(rows, ["a.txt:1", "a.txt:2", "b.txt:1", "b.txt:2"]);
+}
+
+/// A search with hits still discloses the dot entries it left out, and its
+/// one `includeSkipped` lead lifts every cause on the way: a dot directory
+/// the default prune also names (`.github` outside a git work tree) needs
+/// `includeHidden` and `defaultExcludes:false` together, and following the
+/// lead reaches the hit there.
+#[test]
+fn a_search_with_hits_discloses_hidden_entries_and_its_lead_reaches_them() {
+    let root = tempfile::tempdir().expect("fixture");
+    fs::create_dir_all(root.path().join(".github/workflows")).expect("ci dir");
+    fs::write(
+        root.path().join(".github/workflows/ci.yml"),
+        "uses: actions/setup-node@v5\n",
+    )
+    .expect("ci");
+    fs::write(root.path().join(".eslintrc.json"), "{}\n").expect("dot file");
+    fs::write(
+        root.path().join("notes.md"),
+        "uses: actions/setup-node@v4\n",
+    )
+    .expect("doc");
+    let (policy, security) = policy_for(root.path());
+    let request = ls_query(
+        serde_json::json!({"path": root.path(), "matchString": "actions/setup-node"}),
+        None,
+    );
+    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
+        .expect("search");
+    assert_eq!(
+        result
+            .files
+            .iter()
+            .map(|f| f.path.as_str())
+            .collect::<Vec<_>>(),
+        ["notes.md"]
+    );
+    let body = serde_json::to_value(&result).expect("result");
+    assert_eq!(
+        body["skippedPaths"]["entries"],
+        serde_json::json!([
+            {"path": skipped_source_path(root.path(), ".eslintrc.json"), "cause": "hidden", "reason": "first of 2"},
+        ]),
+        "{body}"
+    );
+    let lead = body["next"]["includeSkipped"]["query"]["queries"][0].clone();
+    assert_eq!(lead["includeHidden"], true, "{body}");
+    assert_eq!(lead["defaultExcludes"], false, "{body}");
+    let retried = ls_query(lead, None);
+    let all = execute_local_search(&retried, &policy, &security, &NeverCancel, None, None, None)
+        .expect("lead");
+    let mut paths = all
+        .files
+        .iter()
+        .map(|f| f.path.as_str())
+        .collect::<Vec<_>>();
+    paths.sort_unstable();
+    assert_eq!(paths, [".github/workflows/ci.yml", "notes.md"]);
+}
+
+/// A search with hits discloses the entries ignore rules left out too (the
+/// search decides them itself, so they never vanish inside the walker),
+/// counted under one entry, and its one `includeSkipped` lead lifts what
+/// stands on the way: an ignored dot directory is hidden too, and an
+/// ignored `node_modules/` default-excluded too. Following it reaches
+/// every hit.
+#[test]
+fn a_search_with_hits_discloses_ignored_entries_and_its_lead_reaches_them() {
+    let root = tempfile::tempdir().expect("fixture");
+    fs::create_dir(root.path().join(".git")).expect("repository");
+    fs::write(
+        root.path().join(".gitignore"),
+        "results/\n.scratch/\nnode_modules/\n",
+    )
+    .expect("rules");
+    for file in [
+        "src/a.txt",
+        "results/run/r.txt",
+        ".scratch/s.txt",
+        "node_modules/dep/n.txt",
+    ] {
+        let path = root.path().join(file);
+        fs::create_dir_all(path.parent().expect("parent")).expect("dir");
+        fs::write(path, "tool-health\n").expect("hit");
+    }
+    let (policy, security) = policy_for(root.path());
+    let request = ls_query(
+        serde_json::json!({"path": root.path(), "matchString": "tool-health"}),
+        None,
+    );
+    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
+        .expect("search");
+    let body = serde_json::to_value(&result).expect("result");
+    assert_eq!(body["files"].as_array().map(Vec::len), Some(1), "{body}");
+    let entries = body["skippedPaths"]["entries"].as_array().expect("entries");
+    let ignored = entries
+        .iter()
+        .find(|entry| entry["cause"] == "ignored")
+        .expect("ignored entry");
+    assert_eq!(ignored["reason"], "first of 3", "{body}");
+    let lead = body["next"]["includeSkipped"]["query"]["queries"][0].clone();
+    assert_eq!(lead["includeIgnored"], true, "{body}");
+    assert_eq!(lead["includeHidden"], true, "{body}");
+    assert_eq!(lead["defaultExcludes"], false, "{body}");
+    let all = execute_local_search(
+        &ls_query(lead, None),
+        &policy,
+        &security,
+        &NeverCancel,
+        None,
+        None,
+        None,
+    )
+    .expect("lead");
+    let mut paths = all
+        .files
+        .iter()
+        .map(|f| f.path.as_str())
+        .collect::<Vec<_>>();
+    paths.sort_unstable();
+    assert_eq!(
+        paths,
+        [
+            ".scratch/s.txt",
+            "node_modules/dep/n.txt",
+            "results/run/r.txt",
+            "src/a.txt"
+        ]
+    );
+    let details = execute_local_search(
+        &ls_query(
+            serde_json::json!({"path": root.path(), "matchString": "tool-health", "extras": ["details"]}),
+            None,
+        ),
+        &policy,
+        &security,
+        &NeverCancel,
+        None,
+        None,
+        None,
+    )
+    .expect("details");
+    let listed = serde_json::to_value(&details).expect("result")["skippedPaths"]["entries"]
+        .as_array()
+        .expect("entries")
+        .iter()
+        .filter(|entry| entry["cause"] == "ignored")
+        .count();
+    assert_eq!(listed, 3);
+}
+
+/// Disclosure costs one entry per cause, not one per path or name: the
+/// cause's first path, counting the paths behind it (`sampled`), and
+/// `extras:["details"]` lists every path.
+#[test]
+fn skipped_paths_are_counted_per_cause_and_listed_whole_on_request() {
+    let root = tempfile::tempdir().expect("fixture");
+    for n in 0..4 {
+        let dir = root.path().join(format!("pkg{n}/node_modules/dep"));
+        fs::create_dir_all(&dir).expect("pruned");
+        fs::write(dir.join("x.txt"), "needle\n").expect("pruned hit");
+        fs::write(root.path().join(format!("pkg{n}/app.min.js")), "needle\n").expect("generated");
+    }
+    fs::write(root.path().join("visible.txt"), "needle\n").expect("hit");
+    let (policy, security) = policy_for(root.path());
+    let run = |fields: serde_json::Value| {
+        let mut request = serde_json::json!({"path": root.path(), "matchString": "needle"});
+        request
+            .as_object_mut()
+            .expect("object")
+            .extend(fields.as_object().expect("fields").clone());
+        let result = execute_local_search(
+            &ls_query(request, None),
+            &policy,
+            &security,
+            &NeverCancel,
+            None,
+            None,
+            None,
+        )
+        .expect("search");
+        serde_json::to_value(&result).expect("result")
+    };
+    let grouped = run(serde_json::json!({}));
+    assert_eq!(
+        grouped["skippedPaths"],
+        serde_json::json!({"entries": [
+            {"path": skipped_source_path(root.path(), "pkg0/node_modules"), "cause": "default-excluded", "reason": "first of 8"},
+        ], "sampled": true}),
+        "{grouped}"
+    );
+    assert!(
+        grouped["warnings"].as_array().is_none_or(|all| all
+            .iter()
+            .all(|w| !w.to_string().contains("Default excludes"))),
+        "{grouped}"
+    );
+    let every = run(serde_json::json!({"extras": ["details"]}));
+    let entries = every["skippedPaths"]["entries"]
+        .as_array()
+        .expect("entries");
+    assert_eq!(entries.len(), 8, "{every}");
+    assert!(
+        entries.iter().all(|entry| entry.get("reason").is_none()),
+        "{every}"
+    );
+    assert_eq!(every["skippedPaths"]["sampled"], false, "{every}");
+}
+
+/// Inside a git work tree a directory with a default-excluded name that git
+/// does not ignore is source the repository keeps (a crate's `build/`
+/// scripts): it is searched. An ignored one stays out.
+#[test]
+fn a_tracked_directory_with_a_pruned_name_is_searched_inside_git() {
+    let root = tempfile::tempdir().expect("fixture");
+    fs::create_dir(root.path().join(".git")).expect("repository");
+    fs::write(root.path().join(".gitignore"), "/target/\n").expect("rules");
+    for file in ["build/config_gen.rs", "target/debug/out.rs", "src/lib.rs"] {
+        let path = root.path().join(file);
+        fs::create_dir_all(path.parent().expect("parent")).expect("dir");
+        fs::write(path, "fn needle() {}\n").expect("source");
+    }
+    fs::write(root.path().join("Cargo.lock"), "needle = \"1.0\"\n").expect("lockfile");
+    let (policy, security) = policy_for(root.path());
+    let run = |include_ignored: bool| {
+        let request = ls_query(
+            serde_json::json!({"path": root.path(), "matchString": "needle", "includeIgnored": include_ignored, "sort": "path"}),
+            None,
+        );
+        execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
+            .expect("search")
+            .files
+            .into_iter()
+            .map(|file| file.path)
+            .collect::<Vec<_>>()
+    };
+    // Lockfiles pin dependency versions: evidence, searched by default.
+    assert_eq!(
+        run(false),
+        ["Cargo.lock", "build/config_gen.rs", "src/lib.rs"]
+    );
+    // `includeIgnored` walks ignored paths, but an ignored `target/` is
+    // still default-excluded.
+    assert_eq!(
+        run(true),
+        ["Cargo.lock", "build/config_gen.rs", "src/lib.rs"]
+    );
+}
+
+/// Globs that matched no file lead to the scope's listing without them,
+/// so the listing shows the names that exist instead of the same empty
+/// filter; a search past the collection cap leads to the scope's top
+/// directories (`narrowScope`), in the search's walk scope.
+#[test]
+fn a_scope_miss_lists_the_scope_without_its_globs_and_the_cap_splits_by_directory() {
+    let root = tempfile::tempdir().expect("fixture");
+    fs::write(root.path().join("lib.rs"), "fn main() {}\n").expect("lib");
+    let missed = search_root(
+        root.path(),
+        serde_json::json!({"matchString": "main", "include": ["nonexistent_zz"]}),
+    );
+    let next = missed.next.as_ref().expect("lead");
+    let listing = &next["viewTree"]["query"]["queries"][0];
+    assert_eq!(listing["operation"], "files", "{next}");
+    assert!(listing.get("include").is_none(), "{next}");
+    let request = ls_query(
+        serde_json::json!({"path": "/repo", "matchString": "x", "defaultExcludes": false}),
+        None,
+    );
+    let tree = leads::scope_directories(&request);
+    let tree = &tree["query"]["queries"][0];
+    assert_eq!(
+        (
+            &tree["operation"],
+            &tree["maxDepth"],
+            &tree["defaultExcludes"]
+        ),
+        (
+            &serde_json::json!("tree"),
+            &serde_json::json!(1),
+            &serde_json::json!(false)
+        ),
+        "{tree}"
+    );
 }

@@ -57,9 +57,10 @@ pub trait ToolOutput: Sync {
     /// carries only its own facts).
     fn fallback_hint(&self, query: &Value) -> &'static str;
 
-    /// Recovery for an `errorCode` only this tool emits. Codes every tool
-    /// shares (sandbox, auth, rate limit, timeout, not found, invalid input)
-    /// are answered by the response stage.
+    /// Recovery for an `errorCode` (or an empty row's `category`) only this
+    /// tool emits; [`NO_HINT`] when the row's own facts are the whole answer.
+    /// Codes every tool shares (sandbox, auth, rate limit, timeout, not
+    /// found, invalid input) are answered by the response stage.
     fn error_hint(&self, _code: &str) -> Option<&'static str> {
         None
     }
@@ -110,6 +111,10 @@ pub trait ToolOutput: Sync {
     fn selects_provider_page(&self) -> bool {
         false
     }
+
+    /// Finish a classified provider page's row `data` after selection: the
+    /// tool's own leads may only name the selected evidence.
+    fn finish_selection(&self, _data: &mut Value, _query: &Value) {}
 }
 
 /// Roots are widened only from a trusted source, so the hint names where the

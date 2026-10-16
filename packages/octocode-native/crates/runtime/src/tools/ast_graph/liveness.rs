@@ -11,7 +11,13 @@ pub(super) fn reachability(
     q: &AstTopologyQuery,
     read: &dyn Fn(&std::path::Path) -> Option<String>,
 ) -> (Vec<Value>, Value, Vec<String>, bool) {
-    let (roots, warnings, low) = entrypoints(b, q, read);
+    let (roots, mut warnings, low) = entrypoints(b, q, read);
+    if low && !roots.is_empty() {
+        warnings.push(format!(
+            "only test files are roots ({}): files read as reachable from tests, not from the program's entries.",
+            roots.len()
+        ));
+    }
     if low && roots.is_empty() {
         return (
             vec![],
@@ -34,7 +40,10 @@ pub(super) fn reachability(
         .keys()
         .filter(|f| live.contains(*f))
         .collect::<Vec<_>>();
-    let chunk = q.page_size().clamp(1, super::topology_max("pageSize")) as usize;
+    let chunk = q
+        .page_size()
+        .unwrap_or(super::topology_max("pageSize") as usize)
+        .max(1);
     items.extend(
         reachable_files
             .chunks(chunk)
@@ -54,10 +63,10 @@ pub(super) fn dead_code(
     read: &dyn Fn(&std::path::Path) -> Option<String>,
 ) -> (Vec<Value>, Value, Vec<String>, bool) {
     let (roots, mut warnings, low_entries) = entrypoints(b, q, read);
-    // Hard gate: with no resolvable roots, reachability is undefined and every
-    // export would falsely read as dead. Suppress the verdict rather than report
-    // the whole tree as dead.
-    if roots.is_empty() {
+    // Hard gate: with no resolved entrypoint, reachability is undefined and
+    // every export not reached from a test file would falsely read as dead.
+    // Suppress the verdict rather than report the tree as dead.
+    if low_entries || roots.is_empty() {
         warnings.push("dead-code verdict suppressed: no entrypoints resolved, so reachability cannot be computed and no export can be proven dead. Pass `entrypoints` explicitly to enable the analysis.".into());
         return (
             vec![],
@@ -108,7 +117,6 @@ pub(super) struct Liveness<'b> {
     rex: BTreeMap<String, Vec<(String, String)>>,
     star: BTreeMap<String, Vec<String>>,
     live_ids: BTreeMap<&'b str, BTreeSet<String>>,
-    path_named: BTreeSet<&'b str>,
 }
 
 impl<'b> Liveness<'b> {
@@ -149,8 +157,7 @@ impl<'b> Liveness<'b> {
                 (!v.is_empty()).then_some((t.clone(), v))
             })
             .collect();
-        let (live_ids, path_named) =
-            declaration_liveness(b, &live, &rootset, &public, &mut real, &rex, &star);
+        let live_ids = declaration_liveness(b, &live, &public, &mut real, &rex, &star);
         Self {
             live,
             rootset,
@@ -159,9 +166,24 @@ impl<'b> Liveness<'b> {
             rex,
             star,
             live_ids,
-            path_named,
         }
     }
+}
+
+/// Languages whose named imports link to declarations, so an export no
+/// importer names can be judged unused. Rust, Go, Java and C items are
+/// reached through receivers, packages and paths the syntax does not link:
+/// their exports are not judged one by one (their files still are).
+const NAMED_IMPORT_LANGUAGES: &[&str] = &["typescript", "tsx", "javascript", "python"];
+
+/// Whether an export of `file` of declaration `kind` can be judged unused:
+/// the one rule astTopology `deadCode` and the store's `unused-export`
+/// detector read. Python has no export syntax, so only its functions and
+/// classes are API.
+pub(super) fn exports_judged(file: &str, kind: &str) -> bool {
+    let language = super::store::tables::canonical_language(file, "");
+    NAMED_IMPORT_LANGUAGES.contains(&language.as_str())
+        && (language != "python" || matches!(kind, "function" | "class"))
 }
 
 /// Mutually referencing file clusters with no path from any entrypoint.
@@ -176,6 +198,7 @@ pub(super) fn dead_clusters(
         let report = files
             .into_iter()
             .filter(|f| q.include_tests().unwrap_or(true) || !crate::content::is_test_path(f))
+            .filter(|f| !super::store::classify::is_declaration(f))
             .collect::<Vec<_>>();
         if report.is_empty() || !report.iter().all(|f| !live.contains(f)) {
             continue;
@@ -196,13 +219,14 @@ pub(super) fn dead_rows(
     liveness: &mut Liveness,
     cluster_by: &BTreeMap<String, usize>,
 ) -> Vec<Value> {
-    let star_targets = liveness.star.keys().cloned().collect::<BTreeSet<_>>();
     let mut rows = Vec::new();
     for (file, ff) in &b.facts {
-        if !q.include_tests().unwrap_or(true) && crate::content::is_test_path(file) {
+        if !q.include_tests().unwrap_or(true) && crate::content::is_test_path(file)
+            || super::store::classify::is_declaration(file)
+        {
             continue;
         }
-        let rust = file.ends_with(".rs");
+        let rust = super::linking::Linker::of(file) == super::linking::Linker::Rust;
         let live_ids = liveness.live_ids.remove(file.as_str()).unwrap_or_else(|| {
             live_declarations(
                 file,
@@ -211,13 +235,14 @@ pub(super) fn dead_rows(
                 &liveness.real,
                 &liveness.rex,
                 &liveness.star,
-                rust && liveness.rootset.contains(file),
             )
         });
         let file_live = liveness.live.contains(file);
-        let exported_unreferenced = !liveness.rootset.contains(file)
-            && !star_targets.contains(file)
-            && !b.namespace_targets.contains(file);
+        // A star re-export target is judged by name like any file: its
+        // export is consumed only when a name the re-exporter passes on is
+        // imported (`consumed` follows `export *` chains).
+        let exported_unreferenced =
+            !liveness.rootset.contains(file) && !b.namespace_targets.contains(file);
         // A `mod x;` declaration is module structure: the child file's own
         // liveness is tracked separately.
         for d in ff
@@ -231,17 +256,18 @@ pub(super) fn dead_rows(
                 } else {
                     json!({"file":file,"name":d.name,"kind":d.kind,"line":d.line,"reason":"unreachable-file"})
                 }
-            } else if exported_unreferenced && !live_ids.contains(&d.id) {
+            } else if exported_unreferenced
+                && !live_ids.contains(&d.id)
+                && exports_judged(file, &d.kind)
+            {
                 let via = if d
                     .public_names()
                     .iter()
                     .any(|n| liveness.rex.contains_key(&binding(file, n)))
                 {
                     "reexport-chain"
-                } else if rust && liveness.path_named.contains(d.name.as_str()) {
-                    "qualified-path-name"
                 } else {
-                    ff.reference_basis
+                    ff.reference_basis.as_str()
                 };
                 json!({"file":file,"name":d.name,"kind":d.kind,"line":d.line,"reason":"unreferenced-export","viaHeuristic":via})
             } else {
@@ -260,19 +286,6 @@ pub(super) fn binding(f: &str, n: &str) -> String {
     format!("{f}::{n}")
 }
 
-/// Cross-file liveness per declaration. Two kinds of use credit a binding
-/// `(target file, name)` in `real` only from live code (a live declaration,
-/// module-level code, or a caller the file does not declare):
-/// - an import whose facts name its users (`used_in`); imports without that
-///   fact were credited unconditionally by the caller;
-/// - a Rust qualified-path call (`crate::portable::sanitize()`), which names
-///   an item without a `use`.
-///
-/// Credits can make new declarations live, so files are re-evaluated in
-/// rounds until no binding is added. Returns the final live declaration ids
-/// of every live file, and the Rust callee names that live code reaches only
-/// by an unresolved path: those stay dead candidates, labelled
-/// `qualified-path-name`.
 /// A credit on a re-exporting file can make the origin's export live:
 /// re-exporting file → the files it re-exports from.
 pub(super) fn reexport_origins<'b>(
@@ -297,44 +310,22 @@ pub(super) fn reexport_origins<'b>(
     origins
 }
 
-/// Names a file binds: declarations, re-exports and imports.
-pub(super) fn file_bound_names(b: &BuiltGraph, file: &str) -> BTreeSet<String> {
-    let Some(ff) = b.facts.get(file) else {
-        return BTreeSet::new();
-    };
-    ff.declarations
-        .iter()
-        .flat_map(|d| d.public_names())
-        .cloned()
-        .chain(ff.reexports.iter().map(|r| r.local_name.clone()))
-        .chain(ff.imports.iter().map(|i| {
-            i.local_name
-                .clone()
-                .unwrap_or_else(|| i.imported_name.clone())
-        }))
-        .collect()
-}
-
+/// Cross-file liveness per declaration: an import whose facts name its
+/// users (`used_in`) credits the binding `(target file, name)` in `real`
+/// only once one of those users is live (imports without that fact were
+/// credited unconditionally by the caller). Credits can make new
+/// declarations live, so files are re-evaluated in rounds until no binding
+/// is added. Returns the final live declaration ids of every live file.
 pub(super) fn declaration_liveness<'b>(
     b: &'b BuiltGraph,
     live: &BTreeSet<String>,
-    rootset: &BTreeSet<String>,
     public: &BTreeSet<String>,
     real: &mut BTreeSet<String>,
     rex: &BTreeMap<String, Vec<(String, String)>>,
     star: &BTreeMap<String, Vec<String>>,
-) -> (BTreeMap<&'b str, BTreeSet<String>>, BTreeSet<&'b str>) {
+) -> BTreeMap<&'b str, BTreeSet<String>> {
     let origins = reexport_origins(b, star);
-    // Names each file binds, built once per file on first use.
-    let mut bound_names: BTreeMap<&str, BTreeSet<String>> = BTreeMap::new();
-    let mut declares = |file: &'b str, name: &str| {
-        bound_names
-            .entry(file)
-            .or_insert_with(|| file_bound_names(b, file))
-            .contains(name)
-    };
     let mut live_ids = BTreeMap::new();
-    let mut path_named = BTreeSet::new();
     let mut dirty = b
         .facts
         .keys()
@@ -347,7 +338,7 @@ pub(super) fn declaration_liveness<'b>(
             let Some((file, ff)) = b.facts.get_key_value(file) else {
                 continue;
             };
-            let ids = live_declarations(file, ff, public, real, rex, star, rootset.contains(file));
+            let ids = live_declarations(file, ff, public, real, rex, star);
             let declared = ff
                 .declarations
                 .iter()
@@ -366,32 +357,6 @@ pub(super) fn declaration_liveness<'b>(
                     credited.insert(target.as_str());
                 }
             }
-            let calls = if file.ends_with(".rs") {
-                ff.calls.as_slice()
-            } else {
-                &[]
-            };
-            for call in calls {
-                let Some((_, name)) = call.callee.rsplit_once("::") else {
-                    continue;
-                };
-                if !call.caller_id.as_deref().is_none_or(is_live) || name.is_empty() {
-                    continue;
-                }
-                match &call.target {
-                    Some(target) => {
-                        if !declares(target, name) {
-                            path_named.insert(name);
-                        }
-                        if real.insert(binding(target, name)) {
-                            credited.insert(target.as_str());
-                        }
-                    }
-                    None => {
-                        path_named.insert(name);
-                    }
-                }
-            }
             live_ids.insert(file.as_str(), ids);
         }
         let mut pending = credited.into_iter().collect::<Vec<_>>();
@@ -406,7 +371,7 @@ pub(super) fn declaration_liveness<'b>(
             pending.extend(origins.get(file).into_iter().flatten().copied());
         }
     }
-    (live_ids, path_named)
+    live_ids
 }
 /// Declaration ids of `file` that are live: reachable over syntactic call and
 /// containment edges from the file's roots. Roots are exported declarations
@@ -422,7 +387,6 @@ pub(super) fn live_declarations(
     real: &BTreeSet<String>,
     rex: &BTreeMap<String, Vec<(String, String)>>,
     star: &BTreeMap<String, Vec<String>>,
-    entry: bool,
 ) -> BTreeSet<String> {
     fn consumed(
         file: &str,
@@ -484,12 +448,16 @@ pub(super) fn live_declarations(
             pending.push_back(id.to_owned());
         }
     }
-    for c in &ff.calls {
+    let uses = ff
+        .calls
+        .iter()
+        .map(|c| (c.callee.as_str(), c.caller_id.as_deref()));
+    for (callee, caller_id) in uses {
         let targets = by_name
-            .get(callee_name(&c.callee))
+            .get(callee_name(callee))
             .map(Vec::as_slice)
             .unwrap_or_default();
-        match c.caller_id.as_deref().filter(|id| ids.contains(id)) {
+        match caller_id.filter(|id| ids.contains(id)) {
             Some(caller) => edges.entry(caller).or_default().extend(targets),
             // Module-level code runs when the (live) module loads.
             None => {
@@ -512,9 +480,7 @@ pub(super) fn live_declarations(
             .reference_counts
             .get(&d.id)
             .is_none_or(|count| *count > 0);
-        // A Rust root's top-level `fn main` is where the program starts.
-        let is_entry = entry && d.name == "main" && d.parent.is_none();
-        if is_consumed || escapes || is_entry {
+        if is_consumed || escapes {
             mark(&d.id, &mut live, &mut pending)
         }
     }
@@ -588,10 +554,12 @@ pub(super) fn entrypoints(
         infer_rust_roots(b, read, &mut roots, &mut seen_roots);
         infer_go_roots(b, &mut roots, &mut seen_roots);
         if roots.is_empty() {
-            warnings.push("no entrypoints resolved for the detected languages — expected package.json main/module/types/exports/bin, a Cargo.toml target or src/main.rs|src/lib.rs|src/bin/*.rs, or a Go `func main`. Pass `entrypoints` explicitly; without a root every export reads as unreachable, so the dead-code verdict is suppressed.".into());
-            low = true
+            warnings.push("no entrypoints resolved for the detected languages — expected package.json main/module/types/exports/bin, a Cargo.toml target or src/main.rs|src/lib.rs|src/bin/*.rs, or a Go `func main`. Pass `entrypoints` explicitly.".into());
         }
     }
+    // No entry root (none inferred, or no explicit one found): any test
+    // roots below cannot stand in for the program's entries.
+    low |= roots.is_empty();
     if q.include_tests().unwrap_or(true) {
         for file in b
             .nodes
@@ -637,9 +605,7 @@ fn package_leaves(v: &Value) -> Vec<String> {
                     .next_back()
                     .unwrap_or(token)
                     .trim_matches(['\"', '\'']);
-                if octocode_engine::text::JS_TS_EXTENSIONS
-                    .contains(&octocode_engine::text::extension_of(t, false, "").as_str())
-                {
+                if super::linking::Linker::of(t) == super::linking::Linker::JsTs {
                     leaves.push(t.into())
                 }
             }
@@ -665,7 +631,10 @@ pub(super) fn infer_rust_roots(
     roots: &mut Vec<String>,
     seen: &mut BTreeSet<String>,
 ) {
-    let has_rust = b.nodes.keys().any(|k| k.ends_with(".rs"));
+    let has_rust = b
+        .nodes
+        .keys()
+        .any(|k| super::linking::Linker::of(k) == super::linking::Linker::Rust);
     if !has_rust {
         return;
     }
@@ -694,7 +663,8 @@ pub(super) fn is_rust_conventional_root(key: &str) -> bool {
         || key == "src/lib.rs"
         || key.ends_with("/main.rs")
         || key.ends_with("/lib.rs")
-        || (key.ends_with(".rs") && (key.starts_with("src/bin/") || key.contains("/src/bin/")))
+        || (super::linking::Linker::of(key) == super::linking::Linker::Rust
+            && (key.starts_with("src/bin/") || key.contains("/src/bin/")))
 }
 
 /// Extract quoted values of `path = "…"` keys from a Cargo.toml. Kept
@@ -728,7 +698,7 @@ pub(super) fn cargo_target_paths(content: &str) -> Vec<String> {
 /// are added separately as roots when tests are included).
 pub(super) fn infer_go_roots(b: &BuiltGraph, roots: &mut Vec<String>, seen: &mut BTreeSet<String>) {
     for (file, facts) in &b.facts {
-        if !file.ends_with(".go") {
+        if super::linking::Linker::of(file) != super::linking::Linker::Go {
             continue;
         }
         let has_main = facts

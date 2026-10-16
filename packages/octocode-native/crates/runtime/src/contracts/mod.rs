@@ -11,15 +11,18 @@ mod validate;
 pub(crate) use validate::{levenshtein, qualifier_terms};
 
 use crate::tools::id::ToolId;
-pub use prepare::{ContractInputError, prepare};
+pub use prepare::ENVELOPE_REQUIRED;
+pub(crate) use prepare::{ENVELOPE_ARRAY, ENVELOPE_NESTED};
 pub(crate) use schema_facts::query_schema_value;
-pub(crate) use schema_facts::{property_schemas, resolve_ref, restorable_fields};
+pub(crate) use schema_facts::{
+    item_schemas, property_schemas, query_declares, resolve_ref, restorable_fields,
+};
 pub use schema_facts::{query_schema_max, query_schema_number};
-pub(crate) use validate::validate_output_in_place;
 pub use validate::{
     ContractValidationError, ValidationIssue, format_input_error, normalize_input, tool_error,
     validate, validate_output, validate_query,
 };
+pub(crate) use validate::{repair_input, validate_output_in_place};
 
 /// Embedded contracts are immutable across runtime handles and requests.
 pub fn parsed_contract() -> Result<&'static serde_json::Value, &'static str> {
@@ -31,6 +34,17 @@ pub fn parsed_contract() -> Result<&'static serde_json::Value, &'static str> {
 
 static CONTRACT: std::sync::OnceLock<Result<serde_json::Value, String>> =
     std::sync::OnceLock::new();
+
+/// A recovery notice of classified results, authored once in core
+/// (`classificationNotices.<key>`); empty only if the embedded contract
+/// lacks it, which the contract tests rule out.
+pub(crate) fn classification_notice(key: &str) -> &'static str {
+    parsed_contract()
+        .ok()
+        .and_then(|contract| contract.pointer(&format!("/classificationNotices/{key}")))
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+}
 
 /// One tool's contract entry (`tools[i]`), parsed on first use from its
 /// build-verified span of the embedded contract. A tool call touches one tool,
@@ -109,20 +123,16 @@ pub fn isolate_row_violations(
     Some(patched)
 }
 
-/// Prepare and validate a single tool query. Returns the validated query
-/// `Value` with schema defaults applied. Callers that need response-paging
-/// options (`responseLength`, `renderText`, etc.) should parse them from
-/// the raw input *before* calling this function, since those envelope fields
-/// are not part of the per-query contract.
+/// Validate one test query: a bare row or a one-row envelope, through the
+/// same path every call takes ([`normalize_input`], then
+/// [`prepare_many_and_validate`]).
 #[cfg(test)]
 pub(crate) fn prepare_and_validate(
     tool_name: &str,
     input: serde_json::Value,
 ) -> Result<serde_json::Value, ContractValidationError> {
-    let prepared = prepare(tool_name, input).map_err(prepare_validation_error)?;
-    // Delegate to validate_query which handles the wrap/unwrap internally
-    // and strips the "queries.0." prefix from any validation error paths.
-    validate_query(tool_name, serde_json::Value::Object(prepared.query))
+    let mut rows = prepare_many_and_validate(tool_name, normalize_input(tool_name, input))?;
+    Ok(rows.pop().unwrap_or(serde_json::Value::Null))
 }
 
 /// One row of a batch whose envelope failed validation as a whole.
@@ -185,56 +195,27 @@ pub fn prepare_rows(tool_name: &str, input: &serde_json::Value) -> Option<Vec<Ro
     Some(results)
 }
 
-/// The rejection for any input that is not the `{"queries":[...]}` envelope.
-pub const ENVELOPE_REQUIRED: &str =
-    "Tool input must be {\"queries\":[...]}; put each query object in queries[].";
-
-/// Prepare and validate every query in the `{"queries":[...]}` envelope
-/// ([`normalize_input`] wraps a bare row into it first). Defaults are applied per query before
-/// validating the complete envelope, so cross-query limits and indexed
+/// Validate every query in the `{"queries":[...]}` envelope
+/// ([`normalize_input`] wraps a bare row into it first). The envelope's shape
+/// is checked first (`prepare::envelope_issues`: a bare array or a nested
+/// envelope is rejected with a repairable issue, never reshaped); then the
+/// complete envelope validates, so cross-query limits and indexed
 /// diagnostics remain contract-owned. Clasify's batch relation rules run
 /// at engine admission (`tools::clasify::admission`).
 pub fn prepare_many_and_validate(
     tool_name: &str,
     input: serde_json::Value,
 ) -> Result<Vec<serde_json::Value>, ContractValidationError> {
-    if !input
-        .as_object()
-        .is_some_and(|object| object.contains_key("queries"))
-    {
-        return Err(prepare_validation_error(ContractInputError::new(
-            ENVELOPE_REQUIRED,
-        )));
+    let issues = prepare::envelope_issues(tool_name, &input);
+    if !issues.is_empty() {
+        return Err(ContractValidationError { issues });
     }
-    let mut envelope = input;
-    let queries = envelope
-        .get_mut("queries")
-        .and_then(serde_json::Value::as_array_mut)
-        .ok_or_else(|| {
-            prepare_validation_error(ContractInputError::new("queries must be an array"))
-        })?;
-    for query in queries.iter_mut() {
-        let prepared = prepare(tool_name, query.take()).map_err(prepare_validation_error)?;
-        *query = serde_json::Value::Object(prepared.query);
-    }
-    match validate(tool_name, envelope)? {
+    match validate(tool_name, input)? {
         serde_json::Value::Object(mut validated) => match validated.remove("queries") {
             Some(serde_json::Value::Array(queries)) => Ok(queries),
             _ => Ok(Vec::new()),
         },
         _ => Ok(Vec::new()),
-    }
-}
-
-fn prepare_validation_error(error: ContractInputError) -> ContractValidationError {
-    ContractValidationError {
-        issues: vec![ValidationIssue {
-            rule_id: "prepare.envelope".to_owned(),
-            path: Vec::new(),
-            message: error.to_string(),
-            schema: None,
-            received: None,
-        }],
     }
 }
 
@@ -278,6 +259,18 @@ mod contract_owner_tests {
         prepare_and_validate, prepare_many_and_validate, validate_output,
     };
     use serde_json::json;
+
+    /// Every classification notice native renders is authored in the
+    /// embedded contract.
+    #[test]
+    fn every_classification_notice_comes_from_the_contract() {
+        for key in ["unresolved", "failedWithRead", "failed", "imageInspection"] {
+            assert!(
+                !super::classification_notice(key).is_empty(),
+                "classificationNotices.{key}"
+            );
+        }
+    }
 
     /// Normalization only wraps a bare row as a one-row `queries`; it never
     /// repairs a value (an encoded `queries` string, a string number), which
@@ -689,7 +682,7 @@ mod contract_owner_tests {
 
     #[test]
     fn history_output_accepts_pull_request_optional_content_actions() {
-        let output = json!({"results":[{
+        let mut output = json!({"results":[{
             "index":0,
             "status":"empty",
             "data":{
@@ -718,6 +711,10 @@ mod contract_owner_tests {
                 "hints":{"text":["Choose a changed path first."]}
             }
         }]});
+        crate::response::channels::publish_hints(
+            &mut output,
+            crate::tools::id::ToolId::GhGetHistoryItem,
+        );
         validate_output("ghGetHistoryItem", &output).expect("valid history output");
     }
 

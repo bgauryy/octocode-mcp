@@ -31,6 +31,11 @@ impl AstSearchQuerySyntaxTree {
     pub(crate) fn snapshot(&self) -> Option<&str> {
         self.snapshot.as_deref().map(String::as_str)
     }
+    /// The 1-based line whose covering node roots the tree (`line`).
+    pub(crate) fn line(&self) -> Option<u32> {
+        self.line
+            .map(|line| u32::try_from(line.get()).unwrap_or(u32::MAX))
+    }
 }
 
 pub fn execute_syntax(
@@ -57,7 +62,8 @@ pub fn execute_syntax(
         p.canonical.to_string_lossy(),
         q.language,
         sanitized.content,
-        q.named_only
+        q.named_only,
+        q.line()
     ]));
     if q.page() > 1 && q.snapshot() != Some(snapshot.as_str()) {
         return Ok(crate::tools::result::stale_snapshot(
@@ -66,6 +72,9 @@ pub fn execute_syntax(
                 &crate::tools::result::query_row(q, &[]),
             ),
         ));
+    }
+    if let Some(line) = q.line() {
+        check_line(q, line, &sanitized.content)?;
     }
     cancel.check().map_err(ToolError::cancelled)?;
     let source = Source {
@@ -77,14 +86,68 @@ pub fn execute_syntax(
         response_window,
         &serde_json::to_value(q).unwrap_or_default(),
     );
-    let (r, more) = read_page(q, &source, budget, cancel)?;
+    let page = read_page(q, &source, budget, &snapshot, cancel)?;
     Ok(render_tree_page(
         q,
         &p.canonical.to_string_lossy(),
-        r,
-        more,
+        page,
         &snapshot,
     ))
+}
+
+/// A `line` past the file's last line is invalid input naming the line
+/// count, repaired by the same tree without `line` (the whole file).
+fn check_line(q: &AstSearchQuerySyntaxTree, line: u32, content: &str) -> Result<(), ToolError> {
+    let total = content.lines().count();
+    if usize_of(line) <= total.max(1) {
+        return Ok(());
+    }
+    let mut error = ToolError::new(
+        "invalidInput",
+        format!("line {line} is past the end of the file ({total} lines)."),
+    );
+    let repaired = crate::tools::result::query_row(q, &["line", "page", "snapshot"]);
+    error.next = Some(Box::new(json!({
+        "repair": crate::tools::result::Continuation::new(ToolId::AstSearch, repaired).confidence("exact").build()
+    })));
+    Err(error)
+}
+
+/// One read page: its nodes (and the walk's status and diagnostics), whether
+/// a later page holds more, and its `pagination` facts.
+struct TreePage {
+    r: octocode_engine::structural::SyntaxTreeInspectResult,
+    more: bool,
+    facts: crate::response::pages::PageFacts,
+}
+
+/// A window-sized walk kept for the pages after the first: the nodes read
+/// so far and their page windows. The snapshot digests the file's content,
+/// path, grammar and `namedOnly`, so an entry can never serve another
+/// source; the page budget is its policy.
+struct Walked {
+    r: octocode_engine::structural::SyntaxTreeInspectResult,
+    windows: Vec<std::ops::Range<usize>>,
+}
+
+static WALKS: crate::tools::page_memo::PageMemo<std::sync::Arc<Walked>> =
+    crate::tools::page_memo::PageMemo::new(std::time::Duration::from_secs(60), 8, 64 << 20);
+
+impl Walked {
+    /// Rough heap bytes, the memo weight.
+    fn weight(&self) -> usize {
+        self.r
+            .nodes
+            .iter()
+            .map(|node| std::mem::size_of_val(node) + node.kind.len())
+            .sum::<usize>()
+            + self.windows.len() * std::mem::size_of::<std::ops::Range<usize>>()
+    }
+
+    /// Whether the walk read past `page`'s window, or read every node it can.
+    fn reaches(&self, page: usize) -> bool {
+        self.windows.len() > page || self.r.next_offset.is_none() || self.r.status != "ok"
+    }
 }
 
 /// The parsed file a syntax-tree page is read from.
@@ -95,6 +158,17 @@ struct Source<'a> {
     extension: Option<String>,
 }
 
+#[cfg(test)]
+thread_local! {
+    static INSPECTIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Engine tree reads this thread made (tests).
+#[cfg(test)]
+pub(super) fn inspections() -> usize {
+    INSPECTIONS.with(std::cell::Cell::get)
+}
+
 impl Source<'_> {
     /// The nodes `offset..offset + limit` of the tree, in preorder.
     fn inspect(
@@ -103,6 +177,8 @@ impl Source<'_> {
         offset: u32,
         limit: u32,
     ) -> Result<octocode_engine::structural::SyntaxTreeInspectResult, ToolError> {
+        #[cfg(test)]
+        INSPECTIONS.with(|count| count.set(count.get() + 1));
         octocode_engine::portable::inspect_syntax_tree_with_extension(
             self.content,
             &self.path.to_string_lossy(),
@@ -111,54 +187,111 @@ impl Source<'_> {
                 named_only: Some(q.named_only),
                 node_offset: Some(offset),
                 node_limit: Some(limit),
+                line: q.line(),
             }),
         )
         .map_err(super::native_error)
     }
 }
 
-/// Page `q.page()` of the tree and whether nodes are left after it. An
-/// explicit size asks the engine for exactly its page. Otherwise the page is
-/// the nodes that fill the window: each page starts where the one before
-/// ended, so the walk reads nodes from the start until the page's window is
-/// closed by a node that no longer fits.
+/// Page `q.page()` of the tree. An explicit size asks the engine for
+/// exactly its page. Otherwise the page is the nodes that fill the window:
+/// each page starts where the one before ended, so the walk reads nodes from
+/// the start until the page's window is closed by a node that no longer
+/// fits. That walk is kept by snapshot, so a later page reads on from it
+/// instead of parsing and walking the file from its first node again.
 fn read_page(
     q: &AstSearchQuerySyntaxTree,
     source: &Source<'_>,
     budget: usize,
+    snapshot: &str,
     cancel: &dyn CancellationCheck,
-) -> Result<(octocode_engine::structural::SyntaxTreeInspectResult, bool), ToolError> {
+) -> Result<TreePage, ToolError> {
+    use crate::response::pages::PageFacts;
+    let page = usize_of(q.page());
     if let Some((offset, size)) = q.node_offset().zip(q.page_size()) {
         let r = source.inspect(q, offset, size)?;
         let more = r.next_offset.is_some();
-        return Ok((r, more));
+        let total = usize_of(r.total_nodes);
+        let past_end = page > 1 && r.status == "ok" && usize_of(offset) >= total;
+        let facts = PageFacts::open(page, Some(usize_of(size)), more)
+            .with_total(total)
+            .out_of_range(past_end);
+        return Ok(TreePage { r, more, facts });
     }
-    let page = usize_of(q.page());
-    let mut walked = source.inspect(q, 0, NODE_CHUNK)?;
-    let mut windows;
-    loop {
-        let sizes = walked.nodes.iter().map(node_page_chars).collect::<Vec<_>>();
-        windows = crate::tools::page_windows::Paging::of(None, budget).windows(&sizes);
-        let Some(next) = walked
-            .next_offset
-            .filter(|_| windows.len() <= page && walked.status == "ok")
-        else {
-            break;
-        };
-        cancel.check().map_err(ToolError::cancelled)?;
-        let rest = source.inspect(q, next, NODE_CHUNK)?;
-        walked.nodes.extend(rest.nodes);
-        walked.next_offset = rest.next_offset;
-        walked.status = rest.status;
-        walked.diagnostics.extend(rest.diagnostics);
-    }
+    let policy = budget.to_string();
+    let stored = WALKS.get(snapshot, &policy, std::sync::Arc::clone);
+    let walked = match stored {
+        Some(walked) if walked.reaches(page) => walked,
+        stored => {
+            let mut r = match stored {
+                Some(walked) => walked.r.clone(),
+                None => source.inspect(q, 0, NODE_CHUNK)?,
+            };
+            let mut windows = page_windows(&r, budget);
+            while let Some(next) = r
+                .next_offset
+                .filter(|_| windows.len() <= page && r.status == "ok")
+            {
+                cancel.check().map_err(ToolError::cancelled)?;
+                let rest = source.inspect(q, next, NODE_CHUNK)?;
+                r.nodes.extend(rest.nodes);
+                r.next_offset = rest.next_offset;
+                r.status = rest.status;
+                for diagnostic in rest.diagnostics {
+                    if !r
+                        .diagnostics
+                        .iter()
+                        .any(|seen| seen.code == diagnostic.code)
+                    {
+                        r.diagnostics.push(diagnostic);
+                    }
+                }
+                windows = page_windows(&r, budget);
+            }
+            let walked = std::sync::Arc::new(Walked { r, windows });
+            if walked.r.status != "error" {
+                WALKS.put(
+                    snapshot.to_owned(),
+                    policy,
+                    walked.weight(),
+                    std::sync::Arc::clone(&walked),
+                );
+            }
+            walked
+        }
+    };
+    let windows = &walked.windows;
+    let total = usize_of(walked.r.total_nodes);
+    let more = windows.len() > page;
+    let read_all = walked.r.next_offset.is_none() || walked.r.status != "ok";
+    let facts = if read_all {
+        PageFacts::sized(page, windows.len(), total, more)
+            .out_of_range(page > 1 && page > windows.len())
+    } else {
+        PageFacts::open(page, None, more).with_total(total)
+    };
     let window = windows
         .get(page.saturating_sub(1))
         .cloned()
-        .unwrap_or(walked.nodes.len()..walked.nodes.len());
-    let more = windows.len() > page;
-    walked.nodes = walked.nodes[window].to_vec();
-    Ok((walked, more))
+        .unwrap_or(walked.r.nodes.len()..walked.r.nodes.len());
+    let r = octocode_engine::structural::SyntaxTreeInspectResult {
+        nodes: walked.r.nodes[window].to_vec(),
+        total_nodes: walked.r.total_nodes,
+        next_offset: walked.r.next_offset,
+        status: walked.r.status.clone(),
+        diagnostics: walked.r.diagnostics.clone(),
+    };
+    Ok(TreePage { r, more, facts })
+}
+
+/// The page windows of the nodes a walk read, under `budget`.
+fn page_windows(
+    r: &octocode_engine::structural::SyntaxTreeInspectResult,
+    budget: usize,
+) -> Vec<std::ops::Range<usize>> {
+    let sizes = r.nodes.iter().map(node_page_chars).collect::<Vec<_>>();
+    crate::tools::page_windows::Paging::of(None, budget).windows(&sizes)
 }
 
 /// The row of one read page: its nodes and diagnostics, pagination and the
@@ -166,8 +299,7 @@ fn read_page(
 fn render_tree_page(
     q: &AstSearchQuerySyntaxTree,
     display_path: &str,
-    r: octocode_engine::structural::SyntaxTreeInspectResult,
-    more: bool,
+    TreePage { r, more, facts }: TreePage,
     snapshot: &str,
 ) -> serde_json::Value {
     // Line/column locate every node; byte offsets are verbose (core field
@@ -183,7 +315,22 @@ fn render_tree_page(
         .iter()
         .map(|d| d.code.clone())
         .collect::<Vec<_>>();
-    let diagnostics=r.diagnostics.into_iter().map(|d|json!({"code":d.code,"severity":d.severity,"stage":d.stage,"message":d.message,"path":display_path,"recovery":crate::tools::ast_rule::diagnostic_recovery(&d.code,d.recovery.as_deref())})).collect::<Vec<_>>();
+    // A walk's notes do not change between its pages: page 1 states them, and
+    // a walk cut is stated where the listing stops (an error row keeps all).
+    let first_page = q.page() == 1;
+    let diagnostics = r
+        .diagnostics
+        .into_iter()
+        .filter(|d| {
+            r.status == "error"
+                || if is_walk_cut(&d.code) {
+                    !more
+                } else {
+                    first_page
+                }
+        })
+        .map(|d| crate::tools::ast_rule::diagnostic_row(&d, None))
+        .collect::<Vec<_>>();
     // A failed inspection is an error row that states its error once: the
     // declared code and message of the engine's first diagnostic. It has no
     // page, snapshot or diagnostics to add.
@@ -199,10 +346,7 @@ fn render_tree_page(
     }
     let page = q.page();
     let complete = r.status == "ok" && !more;
-    let pagination =
-        crate::response::pages::PageFacts::open(usize_of(page), q.page_size().map(usize_of), more)
-            .with_total(usize_of(r.total_nodes))
-            .to_value();
+    let pagination = facts.to_value();
     let mut out = json!({"operation":"syntaxTree","path":display_path,"nodes":nodes,"returnedBytes":node_bytes,"snapshot":snapshot,"isPartial":!complete,
         "pagination":pagination});
     if !diagnostics.is_empty() {
@@ -228,6 +372,11 @@ fn render_tree_page(
         }
     }
     out
+}
+
+/// A walk-budget stop: the listing ends there, not at the tree's end.
+fn is_walk_cut(code: &str) -> bool {
+    code.starts_with("syntaxTree.budget.")
 }
 
 /// The `partialReasons` of a partial walk, from its engine diagnostics: a
@@ -261,11 +410,11 @@ fn node_page_row(n: &octocode_engine::structural::SyntaxTreeNode) -> String {
     )
 }
 
-/// Characters a node adds to its page: its row and its `returnedBytes` entry.
+/// Characters a node adds to its delivered page: its row. Its
+/// `returnedBytes` entry is a `stats` extra a default row drops, so a page
+/// asking for stats may run past the window by those entries.
 fn node_page_chars(n: &octocode_engine::structural::SyntaxTreeNode) -> usize {
-    crate::tools::stream_page::json_text_chars(&node_page_row(n))
-        + crate::tools::stream_page::json_text_chars(&format!("{}-{}", n.start_byte, n.end_byte))
-        + 2
+    crate::tools::stream_page::json_text_chars(&node_page_row(n)) + 1
 }
 
 /// One node as `"<id> <kind> <startLine>:<startColumn>-<endLine>:<endColumn>

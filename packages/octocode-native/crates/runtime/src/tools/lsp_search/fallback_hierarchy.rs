@@ -15,6 +15,68 @@ use octocode_engine::lsp::types::JsCodeSnippet;
 use serde_json::{Value, json};
 use tokio::sync::Mutex;
 
+/// One window of implementation candidates, bound to the whole ordered set.
+pub(super) struct CandidateWindow {
+    pub(super) items: Vec<JsCodeSnippet>,
+    pub(super) digest: String,
+    pub(super) has_more: bool,
+}
+
+impl CandidateWindow {
+    pub(super) fn cut(
+        query: &super::LspSearchQuery,
+        mut candidates: Vec<JsCodeSnippet>,
+    ) -> Option<Self> {
+        let position = |item: &JsCodeSnippet| {
+            (
+                item.range.start.line,
+                item.range.start.character,
+                item.range.end.line,
+                item.range.end.character,
+            )
+        };
+        candidates.sort_by(|a, b| {
+            (&a.uri, position(a), &a.content).cmp(&(&b.uri, position(b), &b.content))
+        });
+        candidates.dedup_by(|a, b| a.uri == b.uri && position(a) == position(b));
+        let mut scope = query.to_row();
+        if let Some(fields) = scope.as_object_mut() {
+            for field in crate::tools::result::INTENT_FIELDS.iter().chain(&[
+                "page",
+                "candidatePage",
+                "snapshot",
+            ]) {
+                fields.remove(*field);
+            }
+        }
+        let identity = octocode_engine::digest::canonicalize_dropping_nulls(json!({
+            "query": scope,
+            "candidates": candidates,
+        }));
+        let digest = format!("lsp-candidates:{}", crate::digest::json_sha256(&identity));
+        let page = crate::tools::num::usize_of(query.candidate_page());
+        let start = (page - 1).saturating_mul(MAX_HIERARCHY_NODES);
+        // A window's first result page carries the candidate digest. Later
+        // result pages carry a result snapshot salted with this same digest.
+        if page > 1
+            && (start >= candidates.len()
+                || (query.page().unwrap_or(1) == 1 && query.snapshot() != Some(digest.as_str())))
+        {
+            return None;
+        }
+        let has_more = candidates.len() > start.saturating_add(MAX_HIERARCHY_NODES);
+        Some(Self {
+            items: candidates
+                .into_iter()
+                .skip(start)
+                .take(MAX_HIERARCHY_NODES)
+                .collect(),
+            digest,
+            has_more,
+        })
+    }
+}
+
 pub(super) struct Fallback<'a, 'p> {
     client: &'a NativeLspClient,
     sources: Mutex<&'a mut SourceCache<'p>>,
@@ -30,6 +92,7 @@ pub(super) struct Fallback<'a, 'p> {
         >,
     >,
     initial: Mutex<Option<(Value, Vec<JsCodeSnippet>)>>,
+    /// A node other than the anchor had more candidates than one window.
     candidate_limit: std::sync::atomic::AtomicBool,
 }
 
@@ -224,11 +287,11 @@ impl<'a, 'p> Fallback<'a, 'p> {
         let (line, character) = node_position(parent)?;
         let parent_key = self.keys.lock().await.key(parent);
         let seed = self.initial.lock().await.take();
-        let candidates = match seed {
+        let (candidates, anchor) = match seed {
             Some((root, candidates)) if self.keys.lock().await.key(&root) == parent_key => {
-                candidates
+                (candidates, true)
             }
-            _ => {
+            _ => (
                 get_locations(
                     self.client,
                     self.snippet_policy,
@@ -238,10 +301,13 @@ impl<'a, 'p> Fallback<'a, 'p> {
                     line,
                     character,
                 )
-                .await?
-            }
+                .await?,
+                false,
+            ),
         };
-        if candidates.len() > MAX_HIERARCHY_NODES {
+        // The anchor already owns a checked CandidateWindow. Deeper types
+        // still have a terminal per-node candidate limit.
+        if !anchor && candidates.len() > MAX_HIERARCHY_NODES {
             self.candidate_limit
                 .store(true, std::sync::atomic::Ordering::Relaxed);
         }
@@ -369,5 +435,114 @@ fn node_position(node: &Value) -> Result<(u32, u32), LspFailure> {
         _ => Err(LspFailure::invalid_query(
             "Type declaration has no exact anchor",
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::{LspSearchQuery, locations};
+    use super::*;
+
+    fn candidates() -> Vec<JsCodeSnippet> {
+        (0..MAX_HIERARCHY_NODES + 3)
+            .map(|line| {
+                serde_json::from_value(json!({
+            "uri": "file:///workspace/types.ts",
+            "range": {"start":{"line":line,"character":13},"end":{"line":line,"character":21}},
+            "content": format!("export class Child{line} extends Base {{}}"),
+        })).expect("snippet")
+            })
+            .collect()
+    }
+
+    fn query() -> LspSearchQuery {
+        serde_json::from_value(json!({"operation":"subtypes","path":"/workspace/types.ts","line":1,"symbolName":"Base","pageSize":1})).expect("query")
+    }
+
+    #[test]
+    fn candidate_windows_reject_mutation_and_preserve_stable_order() {
+        let query = query();
+        let first = CandidateWindow::cut(&query, candidates()).expect("first window");
+        assert_eq!(first.items.len(), MAX_HIERARCHY_NODES);
+        assert!(first.has_more);
+        let mut next = query.to_row();
+        next["candidatePage"] = json!(2);
+        next["snapshot"] = json!(first.digest);
+        let next: LspSearchQuery = serde_json::from_value(next).expect("next window");
+        let mut reordered = candidates();
+        reordered.reverse();
+        // Duplicate provider locations must not shift the candidate boundary.
+        reordered.push(reordered[0].clone());
+        let second = CandidateWindow::cut(&next, reordered).expect("same candidates");
+        assert_eq!(second.items.len(), 3);
+        assert_eq!(
+            second.items[0].range.start.line as usize,
+            MAX_HIERARCHY_NODES
+        );
+        assert!(!second.has_more);
+        let mut removed = candidates();
+        removed.remove(0);
+        assert!(CandidateWindow::cut(&next, removed).is_none());
+        let mut changed = candidates();
+        changed[0].content.push_str(" // changed");
+        assert!(CandidateWindow::cut(&next, changed).is_none());
+        let mut missing = next.to_row();
+        missing
+            .as_object_mut()
+            .expect("query object")
+            .remove("snapshot");
+        assert!(
+            CandidateWindow::cut(
+                &serde_json::from_value(missing).expect("query"),
+                candidates()
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn candidate_mutation_stales_later_result_pages_even_when_rows_disappear() {
+        let query = query();
+        let window = CandidateWindow::cut(&query, candidates()).expect("window");
+        let items = json!([{"name":"first"},{"name":"second"}]);
+        let first = super::super::failure::with_next(
+            &query,
+            locations::salted_items_payload(
+                &query,
+                "subtypes",
+                items.clone(),
+                Some(&window.digest),
+                16000,
+                super::super::render::plain_sizes,
+            ),
+        );
+        let next: LspSearchQuery =
+            serde_json::from_value(first["next"]["nextPage"]["query"]["queries"][0].clone())
+                .expect("next result page");
+        let stable = locations::salted_items_payload(
+            &next,
+            "subtypes",
+            items.clone(),
+            Some(&window.digest),
+            16000,
+            super::super::render::plain_sizes,
+        );
+        assert!(stable.get("errorCode").is_none(), "{stable}");
+        let mut changed = candidates();
+        changed.remove(0);
+        let changed =
+            CandidateWindow::cut(&next, changed).expect("digest checked by result pagination");
+        for rows in [items, json!([])] {
+            let stale = locations::salted_items_payload(
+                &next,
+                "subtypes",
+                rows,
+                Some(&changed.digest),
+                16000,
+                super::super::render::plain_sizes,
+            );
+            assert_eq!(stale["errorCode"], "staleSnapshot", "{stale}");
+            assert!(stale.pointer("/next/restart").is_some(), "{stale}");
+        }
     }
 }

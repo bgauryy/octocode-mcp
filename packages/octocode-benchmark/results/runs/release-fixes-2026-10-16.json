@@ -1,0 +1,5583 @@
+{
+ "campaign": "release-fixes-2026-10-16",
+ "octocode_label": "Octocode 20.2.0 build4",
+ "runner_model": "claude-sonnet-5-5",
+ "judge_model": "gpt-6.1-sol",
+ "question_set": "github-v2",
+ "question_ids": [
+  "Q1",
+  "Q2",
+  "Q3",
+  "Q4",
+  "Q5",
+  "Q6",
+  "Q7",
+  "Q8",
+  "Q9",
+  "Q10",
+  "Q11",
+  "Q12",
+  "Q13",
+  "Q14",
+  "Q15",
+  "Q16",
+  "Q17",
+  "Q18",
+  "Q19",
+  "Q20",
+  "Q21",
+  "Q22",
+  "Q23",
+  "Q24",
+  "Q25",
+  "Q26",
+  "Q27",
+  "Q28",
+  "Q29",
+  "Q30"
+ ],
+ "manifest": {
+  "campaign": "release-fixes-2026-10-16",
+  "phase": "complete",
+  "prepared_at": "2026-10-15T22:06:23.108061+00:00",
+  "question_set": "github-v2",
+  "question_ids": [
+   "Q1",
+   "Q2",
+   "Q3",
+   "Q4",
+   "Q5",
+   "Q6",
+   "Q7",
+   "Q8",
+   "Q9",
+   "Q10",
+   "Q11",
+   "Q12",
+   "Q13",
+   "Q14",
+   "Q15",
+   "Q16",
+   "Q17",
+   "Q18",
+   "Q19",
+   "Q20",
+   "Q21",
+   "Q22",
+   "Q23",
+   "Q24",
+   "Q25",
+   "Q26",
+   "Q27",
+   "Q28",
+   "Q29",
+   "Q30"
+  ],
+  "arms": [
+   "mcp",
+   "gh-lean"
+  ],
+  "passes": 1,
+  "planned_valid_runs": 60,
+  "planned_judgments": 30,
+  "parallel_runners": 4,
+  "runner": "claude",
+  "runner_model": "claude-sonnet-5-5",
+  "runner_max_turns": 60,
+  "runner_max_attempts": 1,
+  "solver_retry_budget": 0,
+  "campaign_deadline_seconds": 3600,
+  "judge_runner": "codex",
+  "judge_model": "gpt-6.1-sol",
+  "judge_pair_deadline_seconds": 600,
+  "judge_max_attempts": 3,
+  "judge_order": "unchanged seeded X/Y order and tool-identity redaction",
+  "judging": "independent read-only source checks; different family from researcher",
+  "classification": "disabled",
+  "product_snapshot": {
+   "command": "node /Users/bgaryy/code/octocode/packages/octocode-benchmark/campaigns/release-fixes-2026-10-16/build/octocode-mcp/dist/index.js",
+   "fingerprint": [
+    "004ac4ae1dd1d56f4eda05fa12fb74593915d2b3b63f3fa9c9d03a818522afbd  /Users/bgaryy/code/octocode/packages/octocode-native/npm/darwin-arm64/octocode-native.darwin-arm64.node",
+    "7bbfd51f5df0321b22cc62d98796c9c19cc5dd57b51674b0c5aa7840c9692f14  /Users/bgaryy/code/octocode/packages/octocode-mcp/dist/index.js",
+    "042896d473bfdab33fd8e5ce624e16f9eb8c3530",
+    "63d89ecb27497f264b4c3ecb0e4f6d2cf09896803a81fff027ecfb336f8974e2  /Users/bgaryy/code/octocode/packages/octocode-benchmark/campaigns/release-fixes-2026-10-16/build/node_modules/@typescript/native-preview-darwin-arm64/lib/tsgo"
+   ],
+   "frozen_at": "2026-10-15T22:16:31.519840+00:00"
+  },
+  "snapshot_release_required": true,
+  "frozen_snapshot_preflight_required": true,
+  "invalid_run_policy": "Retain every invalid attempt and its available usage; no solver retry, no retry of a valid answer. Missing measurements stay null.",
+  "judge_capture": {
+   "wrapper": "/Users/bgaryy/code/octocode/packages/octocode-benchmark/campaigns/release-fixes-2026-10-16/capture_codex.py",
+   "real_codex": "/Applications/Codex.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
+   "wrapper_control": "capture-control.json",
+   "policy": "Exact invocation arguments and stdin pass through; every exec receives independent stdout, stderr, observed verdict, status and available token receipt. Missing cost remains null."
+  },
+  "calibration": {
+   "source": "calibration-verdict.md",
+   "kind": "fresh isolated same-rubric synthetic control",
+   "scores": [
+    10,
+    1,
+    4,
+    10
+   ],
+   "human_calibration": false,
+   "attempts": 2,
+   "invalid_attempts": 1
+  },
+  "previous_campaign": "release-review-rebuilt-2026-10-15",
+  "comparison_policy": "Same-campaign mcp versus gh-lean is primary. Previous campaign comparison is descriptive only. Public questions are exploratory, not a release gate.",
+  "primary_metric": "Geometric mean of per-question observable-character ratios with paired bootstrap 95% CI, median and leaner count; correctness rounded to whole points first and within one point tied.",
+  "question_and_prompt_changes": false,
+  "limit_increases": false,
+  "input_hashes": {
+   "compare/bin/run_campaign.sh": "8a78f48ea911a16d9ce933acd1aede46478bd86708b1d6a2e6a6dd697c35913e",
+   "compare/bin/run_arm.sh": "f2ecc70b827478ff4f453dfb571a72bd444428872bd72d908ae4b91f0d6394cb",
+   "compare/bin/judge_pair.sh": "7fce61fd02de764282d6313a65bc2f29b2108c14e7b6078e0fb0401b9f478409",
+   "compare/bin/transcript_to_log.py": "20adcbc055a65193eade3260bf8674f1b3dda8e9c0d8db0adb0d60684f50960f",
+   "compare/bin/sumlog.py": "06eb8478d9e5414bc81f5eafe516802de956e30f68d9ce7f4e46f098b221091c",
+   "compare/arms/runner.md": "7671f3e85bb70356eaeb6858229707d4ed22a64babaa7c5c0196bbaee9068280",
+   "compare/arms/mcp.md": "1653c91f3501765ca441e2b845530700ca9ec8cfebc83f7127a42b59b435a931",
+   "compare/arms/gh-lean.md": "ec1eb412d78d26606f70f7637bef658b6abda3cbdfae41b0f296c9202d085038",
+   "skills/octocode-benchmark/references/JUDGING.md": "3f6cf7183c7f718457237a9df11562633a0a87f14a125f09a2b3952da19a6f8f",
+   "skills/octocode-benchmark/references/example-verdict.md": "c7e31ff2ce237947f1a9560bb344f5b17bad75a246cf96112589efc25316af47",
+   "compare/github-questions/Q1.md": "8b15bc2a68eb70ac4f4c0a22736550baf3243d2b674c3e827adb24ef22857957",
+   "compare/github-questions/Q2.md": "5d38d33b23a3b39b92f12f981fae7195e18be3b4ce193ae5d3f303641a60da23",
+   "compare/github-questions/Q3.md": "67ebeebbfc73fa844cbe6821d4ed3aa0bcfeb59cf693ff7fa3120f30ab59113c",
+   "compare/github-questions/Q4.md": "c14ccfe2c1c5aa7e8ff7c9c58ee12a383410c30ff3ca90e84c7f5d9d50c0752e",
+   "compare/github-questions/Q5.md": "6ff42d23dd321679f3b6d1673514b918c84d9a407016efb64d554494f3286197",
+   "compare/github-questions/Q6.md": "0b336e2167ce7fd1d20241170ba1de340cd927c5883cbd7129be71d8a5764cc9",
+   "compare/github-questions/Q7.md": "d67c5827b15fd69220c62efc381bd19cef65da9f3815b5a4e745e71222ea0616",
+   "compare/github-questions/Q8.md": "b9ed98e2fefdf2afc8417906af8d73431e6fc846f60b05b46a1ad950ec1e906a",
+   "compare/github-questions/Q9.md": "1bbfebdff84eb90c523c6a3d5be76b10c4ad0b8ef2d4cdfe10ac773c362dc6e6",
+   "compare/github-questions/Q10.md": "d27d5ebef8fcc6d86eeba06de43dc013d1320ee081cecbbb14421483e6ee1808",
+   "compare/github-questions/Q11.md": "f09ce91566429ce04c7b302690932382b81de86e1a9a1c09d260e4bfee0a0e91",
+   "compare/github-questions/Q12.md": "83d762e429bac5c69b95c7c2471c023385de7898a3e1cb8004ade48a7f1382af",
+   "compare/github-questions/Q13.md": "f37bd51573466e6e500956c65c2ba2a41a1d83c34b200738d1b0c237c43c14b5",
+   "compare/github-questions/Q14.md": "e9f17acbfaa3d37ae4e7907a496b0d7a71716136bdfee1204ec1284b101c685b",
+   "compare/github-questions/Q15.md": "841b45ae949b51ea1a2192e933371cfda1fbc4411c272ae457e6e35f9de92509",
+   "compare/github-questions/Q16.md": "34f085f64c8a13ddc5ebd4dff0ca82fc7ef9bf14c4f611cc7fdc8c00c95477f3",
+   "compare/github-questions/Q17.md": "5669745883ed22dc928147ab3c107f7a25d0eaeb1e3ba2ff4c8bb1d63a75c1a0",
+   "compare/github-questions/Q18.md": "2d07a0668cd6ca66a986de65f22d14518fcf523145d35a90d127bbb0674e97b6",
+   "compare/github-questions/Q19.md": "4dd02338d43d34d2ed6794c927f2a49b8795d869050f4bee899688bfe887c91e",
+   "compare/github-questions/Q20.md": "78cf44f735a99f77e8b7105a9fa035084fc5ea4922dc71585c877a6208b61b43",
+   "compare/github-questions/Q21.md": "420b79f074814f391bede1b35cf4e986fa115b183b7c9bd27d58cc01a1634737",
+   "compare/github-questions/Q22.md": "686b74aff52b368ba9cb7868504e4ed0e083916e7efdd806ff894a7f0b589e26",
+   "compare/github-questions/Q23.md": "1bf865e051c7e1be7ca600b573934625728242d5e6a7eb4a87d4a7a966eab8a7",
+   "compare/github-questions/Q24.md": "36c5d42df3242e9841a935c5b075cedc0aac31e04c6750d80c4234366817a25f",
+   "compare/github-questions/Q25.md": "32ce4984990e7981af9023ee8acdf07c78bea3b5600e85c5ddf65a9b27f02254",
+   "compare/github-questions/Q26.md": "7247c2fedfbff5cefd8c02a894708e5ef4d9aa6288c10fe0c9d18425e386907f",
+   "compare/github-questions/Q27.md": "b21e7b4d6c1d1d24884b29f8d5ffbaaf0958167035f583820252f331c2b449ce",
+   "compare/github-questions/Q28.md": "1661941e751e93080d25f333406883a47622a1477fa5b4954af5c81cf27b9033",
+   "compare/github-questions/Q29.md": "755032abdfb626b2bdc42176d4a6d8965d453757db17f96b92486134c6711a9b",
+   "compare/github-questions/Q30.md": "7c4444ccf4785f97dc2013370e90eaae8c5fe800f9807c2947f4f3332c2df731"
+  },
+  "preliminary_preflight": {
+   "preflight": {
+    "exit_code": 0,
+    "seconds": 1.459,
+    "log": "/Users/bgaryy/code/octocode/.octocode/octocode-dev/release-fixes-2026-10-16/benchmark-preflight.log"
+   },
+   "leak": {
+    "exit_code": 0,
+    "seconds": 3.189,
+    "log": "/Users/bgaryy/code/octocode/.octocode/octocode-dev/release-fixes-2026-10-16/benchmark-leak.log"
+   }
+  },
+  "preliminary_leak_check": {
+   "agent_visible_hits": 0,
+   "product_hits": 48,
+   "product_review": "All 48 reviewed in context: generic Node subprocess identifiers, standard package dependency fields and examples; no question-specific product branch."
+  },
+  "stable_artifact_signal_received": true,
+  "final_checks": {
+   "preflight": {
+    "exit_code": 0,
+    "log": "final-preflight.log"
+   },
+   "leak": {
+    "exit_code": 0,
+    "log": "final-leak.log"
+   }
+  },
+  "solver_started_at": "2026-10-15T22:17:01.019353+00:00",
+  "solver_status": {
+   "exit_code": 0,
+   "seconds": 238.844,
+   "finished_at": "2026-10-15T22:20:59.865998+00:00"
+  },
+  "judging_started_at": "2026-10-15T22:44:58.266175+00:00",
+  "build_label": "build4",
+  "post_freeze_changes_excluded": [
+   "Later selected localFetch next.unfiltered2 source snapshot fix",
+   "External source_capture and integration-test edits after freeze",
+   "Build5 localFetch snapshot binding and native CLI skill-management migration"
+  ],
+  "surface_limit": "Classification disabled; benchmark does not exercise semantic unfiltered recovery paths.",
+  "judging_finished_at": "2026-10-15T22:50:49.286932+00:00",
+  "snapshot_integrity": {
+   "files": 317,
+   "file_manifest_sha256": "86de2fe01d84855e9ec49ba47f1e1118c733ea367ebccfd809787c00b5fe0f32",
+   "native_and_mcp_entry_unchanged": true,
+   "harness_question_rubric_hashes_unchanged": true,
+   "after_isolation_repair_files_rehashed": 317,
+   "after_isolation_repair_mismatches": []
+  },
+  "completed_at": "2026-10-15T22:50:55.196303+00:00",
+  "judge_accounting": {
+   "invocations": [
+    {
+     "question": "Q1",
+     "invocation_id": "ae942545a1584013833e83f6179ad2c6",
+     "logical_attempt": 3,
+     "valid": true,
+     "exit_code": 0,
+     "seconds": 29.61,
+     "reported_tokens_used": 15671,
+     "reported_cost_usd": null,
+     "verdict_sha256": "432dbcaa0e24265f7f62ec4585ec2cc6ddfad6e445011e086cdd85662af76e88"
+    },
+    {
+     "question": "Q2",
+     "invocation_id": "5666d6b30faf4bc6b85c859a9d2bd086",
+     "logical_attempt": 3,
+     "valid": true,
+     "exit_code": 0,
+     "seconds": 42.638,
+     "reported_tokens_used": 23606,
+     "reported_cost_usd": null,
+     "verdict_sha256": "b2d17123b8baff43cd306d6a1ec50509c3aa912e527e704bbd7755d44c517b50"
+    },
+    {
+     "question": "Q3",
+     "invocation_id": "f4a3fc2fb9cb45ed849ed0c64c535c09",
+     "logical_attempt": 3,
+     "valid": true,
+     "exit_code": 0,
+     "seconds": 45.122,
+     "reported_tokens_used": 21048,
+     "reported_cost_usd": null,
+     "verdict_sha256": "2ffe7c589beaa4c7dadebe30c048917366a24f8041e44d98b619f8bb50f1d2b2"
+    },
+    {
+     "question": "Q4",
+     "invocation_id": "eaa908558e4348d4b608b2c7f3117a8a",
+     "logical_attempt": 3,
+     "valid": true,
+     "exit_code": 0,
+     "seconds": 43.35,
+     "reported_tokens_used": 22363,
+     "reported_cost_usd": null,
+     "verdict_sha256": "6919e2b33c53857622cbab73c77b5943a51b3e446e66f513e8f9fb7874d8d66f"
+    },
+    {
+     "question": "Q5",
+     "invocation_id": "ab3c27e7ede64b0a99e50e663079df05",
+     "logical_attempt": 3,
+     "valid": true,
+     "exit_code": 0,
+     "seconds": 50.18,
+     "reported_tokens_used": 41175,
+     "reported_cost_usd": null,
+     "verdict_sha256": "01be06f5ad74deda912cce0893a049c2d3845e2f764679bbe36d2eaad48216d1"
+    },
+    {
+     "question": "Q6",
+     "invocation_id": "008e2ee7de374ab2953181907ef86363",
+     "logical_attempt": 3,
+     "valid": true,
+     "exit_code": 0,
+     "seconds": 44.891,
+     "reported_tokens_used": 19804,
+     "reported_cost_usd": null,
+     "verdict_sha256": "abaeeab595ff6580e9007a6299e9b0fc4e60145971cd42840c308d8d36f930c7"
+    },
+    {
+     "question": "Q7",
+     "invocation_id": "7a305baa63324fdc8da0fa7b04c36121",
+     "logical_attempt": 3,
+     "valid": true,
+     "exit_code": 0,
+     "seconds": 36.235,
+     "reported_tokens_used": 22645,
+     "reported_cost_usd": null,
+     "verdict_sha256": "a9c906f99f957be728e3753fb3d35f4456fd1c35b27a2b3beb8b248252d9afb2"
+    },
+    {
+     "question": "Q8",
+     "invocation_id": "50f8fe16c10f4048a61c5330733b2390",
+     "logical_attempt": 3,
+     "valid": true,
+     "exit_code": 0,
+     "seconds": 38.206,
+     "reported_tokens_used": 31050,
+     "reported_cost_usd": null,
+     "verdict_sha256": "5f89147e92d1f0dc42480a5025039b3e8a4b77337395b651ed598f53ad8a8e57"
+    },
+    {
+     "question": "Q9",
+     "invocation_id": "037b06281ac1470c9cfd3a55bbf1e2dc",
+     "logical_attempt": 3,
+     "valid": true,
+     "exit_code": 0,
+     "seconds": 37.454,
+     "reported_tokens_used": 17486,
+     "reported_cost_usd": null,
+     "verdict_sha256": "e79f962f16927c5b92d602cbd40e0c14d6b9d5ec69b6b2aaf53a2057f78fc580"
+    },
+    {
+     "question": "Q10",
+     "invocation_id": "85633c2ff43d496aa8478a718d299ac1",
+     "logical_attempt": 3,
+     "valid": true,
+     "exit_code": 0,
+     "seconds": 44.611,
+     "reported_tokens_used": 19509,
+     "reported_cost_usd": null,
+     "verdict_sha256": "abb93cb0ca86f2227dffe848f9e97a1e3219a7e9f66d0e5b68818df853d0871a"
+    },
+    {
+     "question": "Q11",
+     "invocation_id": "e7a94625dde748108781dccee4d576da",
+     "logical_attempt": 3,
+     "valid": true,
+     "exit_code": 0,
+     "seconds": 57.288,
+     "reported_tokens_used": 27660,
+     "reported_cost_usd": null,
+     "verdict_sha256": "2c108c4a6461e860859b6745db9824e3964442c960179716bc61e3c1b41b4d2b"
+    },
+    {
+     "question": "Q12",
+     "invocation_id": "94a91ee6e89d47e295377f9a17edf705",
+     "logical_attempt": 3,
+     "valid": true,
+     "exit_code": 0,
+     "seconds": 38.274,
+     "reported_tokens_used": 20525,
+     "reported_cost_usd": null,
+     "verdict_sha256": "c5afdd6f4114574d05033ee053add3c1292fa9a366047dac4e9ad142650f183a"
+    },
+    {
+     "question": "Q13",
+     "invocation_id": "edc7b34686e64d07a7e12dde47514c52",
+     "logical_attempt": 3,
+     "valid": true,
+     "exit_code": 0,
+     "seconds": 40.142,
+     "reported_tokens_used": 23126,
+     "reported_cost_usd": null,
+     "verdict_sha256": "4a1b625d4798d605c1dcebec0103648909b180ca175541117d55ff64d4a878d0"
+    },
+    {
+     "question": "Q14",
+     "invocation_id": "a7e427ad27f846cf85c06341ac1106d3",
+     "logical_attempt": 3,
+     "valid": true,
+     "exit_code": 0,
+     "seconds": 36.261,
+     "reported_tokens_used": 17053,
+     "reported_cost_usd": null,
+     "verdict_sha256": "e1b21face5d9b054c224bfe2d6e3d13a99d68bdbdc679ca8ffc9224ffd06d086"
+    },
+    {
+     "question": "Q15",
+     "invocation_id": "7ac5f5375200427a8a69cb68eda9e763",
+     "logical_attempt": 3,
+     "valid": true,
+     "exit_code": 0,
+     "seconds": 47.312,
+     "reported_tokens_used": 16615,
+     "reported_cost_usd": null,
+     "verdict_sha256": "b61ecc63dbfb04dae4dd3edda12b4c4a6c09778f51a8aae4a5e4b7ac55100684"
+    },
+    {
+     "question": "Q16",
+     "invocation_id": "fdf612490f6443c7be2ab64b84acf6d5",
+     "logical_attempt": 3,
+     "valid": true,
+     "exit_code": 0,
+     "seconds": 44.916,
+     "reported_tokens_used": 9931,
+     "reported_cost_usd": null,
+     "verdict_sha256": "00c80298f1f9fac647d3778aae627369fd3d04907c69266a314430a55662367e"
+    },
+    {
+     "question": "Q17",
+     "invocation_id": "8294fc17a2a94d35b1a24b799534cc6f",
+     "logical_attempt": 3,
+     "valid": true,
+     "exit_code": 0,
+     "seconds": 53.733,
+     "reported_tokens_used": 22097,
+     "reported_cost_usd": null,
+     "verdict_sha256": "74599fa059a23ca0d7f5d546917eecf0b59644a27c0136db75ab115528eee589"
+    },
+    {
+     "question": "Q18",
+     "invocation_id": "3d6884b3468d4f7abe85abb3f885a18a",
+     "logical_attempt": 3,
+     "valid": true,
+     "exit_code": 0,
+     "seconds": 41.886,
+     "reported_tokens_used": 18973,
+     "reported_cost_usd": null,
+     "verdict_sha256": "4c2c00de0024d5b761004143f1c8dfeb56412fd9bf568c6b1e9dc280d3894dc7"
+    },
+    {
+     "question": "Q19",
+     "invocation_id": "c363d035785543f0a6484529f8886314",
+     "logical_attempt": 3,
+     "valid": true,
+     "exit_code": 0,
+     "seconds": 37.917,
+     "reported_tokens_used": 24602,
+     "reported_cost_usd": null,
+     "verdict_sha256": "70dfc9d17114ab4da4ce7e262711b40c511a755b53025d20d1d2708297c5fcca"
+    },
+    {
+     "question": "Q20",
+     "invocation_id": "9334f67c60a9420c9a000cc7bb6db0ed",
+     "logical_attempt": 3,
+     "valid": true,
+     "exit_code": 0,
+     "seconds": 43.923,
+     "reported_tokens_used": 35014,
+     "reported_cost_usd": null,
+     "verdict_sha256": "66806069232061a082f86a5385e565264fa1009e9dae780292f55e0d94bad299"
+    },
+    {
+     "question": "Q21",
+     "invocation_id": "efe1503840b54a9fbc5360008fcde37f",
+     "logical_attempt": 3,
+     "valid": true,
+     "exit_code": 0,
+     "seconds": 52.02,
+     "reported_tokens_used": 22987,
+     "reported_cost_usd": null,
+     "verdict_sha256": "c8ec956ef3526b50fcb6a8413f143e6919a66de340e392ab1c3f7ff694c91065"
+    },
+    {
+     "question": "Q22",
+     "invocation_id": "9efc04c7f2824d10b018e90e699695c3",
+     "logical_attempt": 3,
+     "valid": true,
+     "exit_code": 0,
+     "seconds": 40.495,
+     "reported_tokens_used": 11977,
+     "reported_cost_usd": null,
+     "verdict_sha256": "6f2409ada7bc0af567544769f2282683d0fc3dd1d1be9da24f8dd744932e1aee"
+    },
+    {
+     "question": "Q23",
+     "invocation_id": "ae02cc745781483ea0f0cc1cca7cb9e7",
+     "logical_attempt": 3,
+     "valid": true,
+     "exit_code": 0,
+     "seconds": 41.415,
+     "reported_tokens_used": 18994,
+     "reported_cost_usd": null,
+     "verdict_sha256": "e5d99c9f91540232c0bb84ecf4107ac4ed3dc392c72369f5af750c0b3ca86cf3"
+    },
+    {
+     "question": "Q24",
+     "invocation_id": "cfbc8daae5ef4c77a8c847b50ff076ce",
+     "logical_attempt": 3,
+     "valid": true,
+     "exit_code": 0,
+     "seconds": 52.23,
+     "reported_tokens_used": 15532,
+     "reported_cost_usd": null,
+     "verdict_sha256": "d74dbbddf7142c4d27279f8022320545b7a6dcaea22a22b8d07a6a7a61cb931d"
+    },
+    {
+     "question": "Q25",
+     "invocation_id": "8f73801bae3e4785bab0e812857401bf",
+     "logical_attempt": 3,
+     "valid": true,
+     "exit_code": 0,
+     "seconds": 46.068,
+     "reported_tokens_used": 23328,
+     "reported_cost_usd": null,
+     "verdict_sha256": "8e4993dc1ec1f3365f2cfbcab0dc5d687c759cea4814d93738d58916fe0b6394"
+    },
+    {
+     "question": "Q26",
+     "invocation_id": "36268c1f48524a9fa5d817da87e3fa58",
+     "logical_attempt": 3,
+     "valid": true,
+     "exit_code": 0,
+     "seconds": 40.555,
+     "reported_tokens_used": 34138,
+     "reported_cost_usd": null,
+     "verdict_sha256": "5115198bccfe81fb27d568a225a1a9ab0580f59aceb8a5646aea98deeebcf4cf"
+    },
+    {
+     "question": "Q27",
+     "invocation_id": "f39bd534a59f4338804b7c215a820cad",
+     "logical_attempt": 3,
+     "valid": true,
+     "exit_code": 0,
+     "seconds": 42.993,
+     "reported_tokens_used": 20483,
+     "reported_cost_usd": null,
+     "verdict_sha256": "433f13afce460b88809cb9c30d0d9d41a17d12c8c152bc2a66c1ba9593b61bdb"
+    },
+    {
+     "question": "Q28",
+     "invocation_id": "509a580f27ec4be4b13093fc9af21051",
+     "logical_attempt": 3,
+     "valid": true,
+     "exit_code": 0,
+     "seconds": 51.954,
+     "reported_tokens_used": 41593,
+     "reported_cost_usd": null,
+     "verdict_sha256": "fc7fe0bd1f68e8964737a4c4b7e8829f5c08b49c06f538331a8a063964808258"
+    },
+    {
+     "question": "Q29",
+     "invocation_id": "d65544578372421eb1c700f2c52b1706",
+     "logical_attempt": 3,
+     "valid": true,
+     "exit_code": 0,
+     "seconds": 52.389,
+     "reported_tokens_used": 51323,
+     "reported_cost_usd": null,
+     "verdict_sha256": "bc2613766f979d9be05fd2ad7f314908a50282455078ffd5cc8a20cf732f7cb7"
+    },
+    {
+     "question": "Q30",
+     "invocation_id": "315fd30ad3b048f4b6c1ffddecbcd4ba",
+     "logical_attempt": 3,
+     "valid": true,
+     "exit_code": 0,
+     "seconds": 38.703,
+     "reported_tokens_used": 24573,
+     "reported_cost_usd": null,
+     "verdict_sha256": "9fd864edfe2098eceef84c6b43cd0c1e9eda262cce6c36c33ede5084030a97f2"
+    }
+   ],
+   "valid_judgments": 30,
+   "initial_invalid_judgments": 30,
+   "invalid_setup_attempts": 30,
+   "logical_attempts": 90,
+   "model_invocations": 60,
+   "max_attempts_per_pair": 3,
+   "per_attempt_deadline_seconds": 600,
+   "remaining_attempts_per_pair": 0,
+   "valid_reported_tokens_used_sum": 714881,
+   "invalid_reported_tokens_used_sum": 638688,
+   "reported_tokens_used_sum": 1353569,
+   "reported_cost_usd": null,
+   "token_categories_available": false,
+   "model_invocation_seconds_sum": 2655.4699999999993,
+   "setup_attempt_seconds_sum": 10.403,
+   "invalid_setup_model_invocations": 0,
+   "invalid_setup_reported_tokens_used": 0,
+   "scope": "All judge stages retained. Tokens-used totals lack input/cache/output splits and costs; calibration separately accounted."
+  },
+  "solver_accounting": {
+   "attempted_runs": 60,
+   "valid_runs": 60,
+   "failed_attempts": 0,
+   "retries": 0,
+   "strict_valid_logs": 60
+  },
+  "setup_accounting": {
+   "new_paid_model_preflight_calls": 0,
+   "new_calibration_calls": 2,
+   "calibration": "Unchanged synthetic calibration; one tool-runtime setup failure then 10/1/4/10 pass; both retained; no human calibration.",
+   "preflight_and_leak": "Read-only local/auth/MCP validation; no research model calls.",
+   "calibration_attempts": [
+    {
+     "invocation_id": "660d4f2d84174dd29cbad482bd2f78a4",
+     "exit_code": 0,
+     "seconds": 15.025,
+     "reported_tokens_used": 12149,
+     "reported_cost_usd": null,
+     "valid": true
+    },
+    {
+     "invocation_id": "072cdae1cca140c8bfba9a02c2dae190",
+     "exit_code": 0,
+     "seconds": 11.584,
+     "reported_tokens_used": 11869,
+     "reported_cost_usd": null,
+     "valid": false
+    }
+   ],
+   "calibration_reported_tokens_used_sum": 24018,
+   "calibration_cost_usd": null
+  },
+  "invalid_input_evidence": "malformed-input-provenance/report.json",
+  "judgment_limitations": [
+   "Public questions and one automated pass; no human calibration",
+   "Initial 30 host-skill-contaminated judgments are invalid and excluded from quality; all grades and costs retained",
+   "No valid solver reruns; no grading adjustments or prompt/rubric/mapping changes",
+   "Frozen build4 only; later recovery fixes unmeasured"
+  ],
+  "solver_call_accounting": {
+   "mcp": {
+    "calls": 79,
+    "invalid_input_calls": 16,
+    "affected_runs": 10,
+    "parsed_successful_query_results": 84,
+    "provider_or_typed_query_errors": 0
+   },
+   "gh-lean": {
+    "calls": 129,
+    "failed_calls": 3,
+    "causes": {
+     "nonexistent_ref_http422": 1,
+     "shell_permission_refusal": 2
+    }
+   }
+  },
+  "judge_isolation": {
+   "ok": true,
+   "judgments": 30,
+   "with_skill_reads": 0,
+   "with_gh_verification": 30,
+   "with_evaluator_reads": 0,
+   "exact_prompt_matches": 30,
+   "packets_and_blind_mapping_unchanged": true,
+   "unchanged_input_hashes": [
+    "compare/bin/run_campaign.sh",
+    "compare/bin/run_arm.sh",
+    "compare/bin/transcript_to_log.py",
+    "compare/bin/sumlog.py",
+    "compare/arms/runner.md",
+    "compare/arms/mcp.md",
+    "compare/arms/gh-lean.md",
+    "skills/octocode-benchmark/references/JUDGING.md",
+    "skills/octocode-benchmark/references/example-verdict.md",
+    "compare/github-questions/Q1.md",
+    "compare/github-questions/Q2.md",
+    "compare/github-questions/Q3.md",
+    "compare/github-questions/Q4.md",
+    "compare/github-questions/Q5.md",
+    "compare/github-questions/Q6.md",
+    "compare/github-questions/Q7.md",
+    "compare/github-questions/Q8.md",
+    "compare/github-questions/Q9.md",
+    "compare/github-questions/Q10.md",
+    "compare/github-questions/Q11.md",
+    "compare/github-questions/Q12.md",
+    "compare/github-questions/Q13.md",
+    "compare/github-questions/Q14.md",
+    "compare/github-questions/Q15.md",
+    "compare/github-questions/Q16.md",
+    "compare/github-questions/Q17.md",
+    "compare/github-questions/Q18.md",
+    "compare/github-questions/Q19.md",
+    "compare/github-questions/Q20.md",
+    "compare/github-questions/Q21.md",
+    "compare/github-questions/Q22.md",
+    "compare/github-questions/Q23.md",
+    "compare/github-questions/Q24.md",
+    "compare/github-questions/Q25.md",
+    "compare/github-questions/Q26.md",
+    "compare/github-questions/Q27.md",
+    "compare/github-questions/Q28.md",
+    "compare/github-questions/Q29.md",
+    "compare/github-questions/Q30.md"
+   ],
+   "changed_input_hashes": [
+    "compare/bin/judge_pair.sh"
+   ],
+   "preflight": {
+    "model": "gpt-6.1-sol",
+    "timeout_seconds": 600,
+    "prompt_sha256": "ac38bb6b2fe3f7c5f4a62e798aa310e48acfd2edb3610a4e6bc6973451fd010a",
+    "disabled_features": [
+     "view_image",
+     "apps",
+     "plugins",
+     "memories",
+     "multi_agent",
+     "multi_agent_v2",
+     "browser_use",
+     "browser_use_external",
+     "computer_use",
+     "image_generation",
+     "goals",
+     "sleep_tool",
+     "hooks",
+     "skill_search",
+     "workspace_dependencies",
+     "unbounded_connection_retries",
+     "shell_snapshot"
+    ],
+    "no_daemon": true,
+    "fresh_home": true,
+    "fresh_codex_home": true,
+    "auth_files_copied": [
+     "auth.json"
+    ],
+    "preflight": true,
+    "reported_cost_usd": null,
+    "permissions": {
+     "filesystem": {
+      ":minimal": "read",
+      "/private/var/folders/nf/tf_qg9k56l97qnkcc2b_w5z40000gn/T/octocode-judge-9fraeavz/lab": "write",
+      "/private/var/folders/nf/tf_qg9k56l97qnkcc2b_w5z40000gn/T/octocode-judge-9fraeavz/home": "write",
+      "/opt/homebrew": "read",
+      "/Library": "read",
+      "/Users/bgaryy": "deny",
+      "/private/var/folders/nf/tf_qg9k56l97qnkcc2b_w5z40000gn/T/octocode-judge-9fraeavz/private": "deny"
+     },
+     "network": {
+      "enabled": true
+     }
+    },
+    "filesystem_probe": {
+     "exit_code": 0,
+     "stdout": "{\"visible\": true, \"denied\": {\"/private/var/folders/nf/tf_qg9k56l97qnkcc2b_w5z40000gn/T/octocode-judge-9fraeavz/private/canary.txt\": true, \"/Users/bgaryy/.codex/auth.json\": true, \"/Users/bgaryy/.agents/skills/octocode-research/SKILL.md\": true, \"/Users/bgaryy/code/octocode/.octocode/octocode-dev/release-review-2026-10-15/judge-calibration-prompt.txt\": true, \"/Users/bgaryy/code/octocode/packages/octocode-benchmark/campaigns/release-fixes-2026-10-16/judge/mcp~gh-lean/MAP.secret.txt\": true}}\n",
+     "stderr": "python3: error: couldn't create cache file '/var/folders/nf/tf_qg9k56l97qnkcc2b_w5z40000gn/T/xcrun_db-ImdqDBmd' (errno=Operation not permitted)\npython3: error: couldn't create cache file '/var/folders/nf/tf_qg9k56l97qnkcc2b_w5z40000gn/T/xcrun_db-XW3hHS5r' (errno=Operation not permitted)\n"
+    },
+    "github_probe": {
+     "exit_code": 0,
+     "stdout": "4444\n",
+     "stderr": ""
+    },
+    "prompt_probe": {
+     "exit_code": 0,
+     "forbidden_hits": [],
+     "stderr": "",
+     "bytes": 9213
+    },
+    "ok": true,
+    "exit_code": 0,
+    "seconds": 1.846
+   },
+   "judgments_audit": [
+    {
+     "question": "Q1",
+     "prompt_exactly_in_initial_transcript": true,
+     "source_verification_successes": 2,
+     "skill_reads": [],
+     "evaluator_reads": [],
+     "isolation_receipt": "judge/mcp~gh-lean/attempts/p1-Q1/3/isolation.json",
+     "model": "gpt-6.1-sol",
+     "reasoning_effort_none": true
+    },
+    {
+     "question": "Q2",
+     "prompt_exactly_in_initial_transcript": true,
+     "source_verification_successes": 3,
+     "skill_reads": [],
+     "evaluator_reads": [],
+     "isolation_receipt": "judge/mcp~gh-lean/attempts/p1-Q2/3/isolation.json",
+     "model": "gpt-6.1-sol",
+     "reasoning_effort_none": true
+    },
+    {
+     "question": "Q3",
+     "prompt_exactly_in_initial_transcript": true,
+     "source_verification_successes": 6,
+     "skill_reads": [],
+     "evaluator_reads": [],
+     "isolation_receipt": "judge/mcp~gh-lean/attempts/p1-Q3/3/isolation.json",
+     "model": "gpt-6.1-sol",
+     "reasoning_effort_none": true
+    },
+    {
+     "question": "Q4",
+     "prompt_exactly_in_initial_transcript": true,
+     "source_verification_successes": 2,
+     "skill_reads": [],
+     "evaluator_reads": [],
+     "isolation_receipt": "judge/mcp~gh-lean/attempts/p1-Q4/3/isolation.json",
+     "model": "gpt-6.1-sol",
+     "reasoning_effort_none": true
+    },
+    {
+     "question": "Q5",
+     "prompt_exactly_in_initial_transcript": true,
+     "source_verification_successes": 6,
+     "skill_reads": [],
+     "evaluator_reads": [],
+     "isolation_receipt": "judge/mcp~gh-lean/attempts/p1-Q5/3/isolation.json",
+     "model": "gpt-6.1-sol",
+     "reasoning_effort_none": true
+    },
+    {
+     "question": "Q6",
+     "prompt_exactly_in_initial_transcript": true,
+     "source_verification_successes": 3,
+     "skill_reads": [],
+     "evaluator_reads": [],
+     "isolation_receipt": "judge/mcp~gh-lean/attempts/p1-Q6/3/isolation.json",
+     "model": "gpt-6.1-sol",
+     "reasoning_effort_none": true
+    },
+    {
+     "question": "Q7",
+     "prompt_exactly_in_initial_transcript": true,
+     "source_verification_successes": 2,
+     "skill_reads": [],
+     "evaluator_reads": [],
+     "isolation_receipt": "judge/mcp~gh-lean/attempts/p1-Q7/3/isolation.json",
+     "model": "gpt-6.1-sol",
+     "reasoning_effort_none": true
+    },
+    {
+     "question": "Q8",
+     "prompt_exactly_in_initial_transcript": true,
+     "source_verification_successes": 4,
+     "skill_reads": [],
+     "evaluator_reads": [],
+     "isolation_receipt": "judge/mcp~gh-lean/attempts/p1-Q8/3/isolation.json",
+     "model": "gpt-6.1-sol",
+     "reasoning_effort_none": true
+    },
+    {
+     "question": "Q9",
+     "prompt_exactly_in_initial_transcript": true,
+     "source_verification_successes": 3,
+     "skill_reads": [],
+     "evaluator_reads": [],
+     "isolation_receipt": "judge/mcp~gh-lean/attempts/p1-Q9/3/isolation.json",
+     "model": "gpt-6.1-sol",
+     "reasoning_effort_none": true
+    },
+    {
+     "question": "Q10",
+     "prompt_exactly_in_initial_transcript": true,
+     "source_verification_successes": 2,
+     "skill_reads": [],
+     "evaluator_reads": [],
+     "isolation_receipt": "judge/mcp~gh-lean/attempts/p1-Q10/3/isolation.json",
+     "model": "gpt-6.1-sol",
+     "reasoning_effort_none": true
+    },
+    {
+     "question": "Q11",
+     "prompt_exactly_in_initial_transcript": true,
+     "source_verification_successes": 6,
+     "skill_reads": [],
+     "evaluator_reads": [],
+     "isolation_receipt": "judge/mcp~gh-lean/attempts/p1-Q11/3/isolation.json",
+     "model": "gpt-6.1-sol",
+     "reasoning_effort_none": true
+    },
+    {
+     "question": "Q12",
+     "prompt_exactly_in_initial_transcript": true,
+     "source_verification_successes": 3,
+     "skill_reads": [],
+     "evaluator_reads": [],
+     "isolation_receipt": "judge/mcp~gh-lean/attempts/p1-Q12/3/isolation.json",
+     "model": "gpt-6.1-sol",
+     "reasoning_effort_none": true
+    },
+    {
+     "question": "Q13",
+     "prompt_exactly_in_initial_transcript": true,
+     "source_verification_successes": 3,
+     "skill_reads": [],
+     "evaluator_reads": [],
+     "isolation_receipt": "judge/mcp~gh-lean/attempts/p1-Q13/3/isolation.json",
+     "model": "gpt-6.1-sol",
+     "reasoning_effort_none": true
+    },
+    {
+     "question": "Q14",
+     "prompt_exactly_in_initial_transcript": true,
+     "source_verification_successes": 2,
+     "skill_reads": [],
+     "evaluator_reads": [],
+     "isolation_receipt": "judge/mcp~gh-lean/attempts/p1-Q14/3/isolation.json",
+     "model": "gpt-6.1-sol",
+     "reasoning_effort_none": true
+    },
+    {
+     "question": "Q15",
+     "prompt_exactly_in_initial_transcript": true,
+     "source_verification_successes": 7,
+     "skill_reads": [],
+     "evaluator_reads": [],
+     "isolation_receipt": "judge/mcp~gh-lean/attempts/p1-Q15/3/isolation.json",
+     "model": "gpt-6.1-sol",
+     "reasoning_effort_none": true
+    },
+    {
+     "question": "Q16",
+     "prompt_exactly_in_initial_transcript": true,
+     "source_verification_successes": 7,
+     "skill_reads": [],
+     "evaluator_reads": [],
+     "isolation_receipt": "judge/mcp~gh-lean/attempts/p1-Q16/3/isolation.json",
+     "model": "gpt-6.1-sol",
+     "reasoning_effort_none": true
+    },
+    {
+     "question": "Q17",
+     "prompt_exactly_in_initial_transcript": true,
+     "source_verification_successes": 4,
+     "skill_reads": [],
+     "evaluator_reads": [],
+     "isolation_receipt": "judge/mcp~gh-lean/attempts/p1-Q17/3/isolation.json",
+     "model": "gpt-6.1-sol",
+     "reasoning_effort_none": true
+    },
+    {
+     "question": "Q18",
+     "prompt_exactly_in_initial_transcript": true,
+     "source_verification_successes": 2,
+     "skill_reads": [],
+     "evaluator_reads": [],
+     "isolation_receipt": "judge/mcp~gh-lean/attempts/p1-Q18/3/isolation.json",
+     "model": "gpt-6.1-sol",
+     "reasoning_effort_none": true
+    },
+    {
+     "question": "Q19",
+     "prompt_exactly_in_initial_transcript": true,
+     "source_verification_successes": 2,
+     "skill_reads": [],
+     "evaluator_reads": [],
+     "isolation_receipt": "judge/mcp~gh-lean/attempts/p1-Q19/3/isolation.json",
+     "model": "gpt-6.1-sol",
+     "reasoning_effort_none": true
+    },
+    {
+     "question": "Q20",
+     "prompt_exactly_in_initial_transcript": true,
+     "source_verification_successes": 2,
+     "skill_reads": [],
+     "evaluator_reads": [],
+     "isolation_receipt": "judge/mcp~gh-lean/attempts/p1-Q20/3/isolation.json",
+     "model": "gpt-6.1-sol",
+     "reasoning_effort_none": true
+    },
+    {
+     "question": "Q21",
+     "prompt_exactly_in_initial_transcript": true,
+     "source_verification_successes": 4,
+     "skill_reads": [],
+     "evaluator_reads": [],
+     "isolation_receipt": "judge/mcp~gh-lean/attempts/p1-Q21/3/isolation.json",
+     "model": "gpt-6.1-sol",
+     "reasoning_effort_none": true
+    },
+    {
+     "question": "Q22",
+     "prompt_exactly_in_initial_transcript": true,
+     "source_verification_successes": 3,
+     "skill_reads": [],
+     "evaluator_reads": [],
+     "isolation_receipt": "judge/mcp~gh-lean/attempts/p1-Q22/3/isolation.json",
+     "model": "gpt-6.1-sol",
+     "reasoning_effort_none": true
+    },
+    {
+     "question": "Q23",
+     "prompt_exactly_in_initial_transcript": true,
+     "source_verification_successes": 2,
+     "skill_reads": [],
+     "evaluator_reads": [],
+     "isolation_receipt": "judge/mcp~gh-lean/attempts/p1-Q23/3/isolation.json",
+     "model": "gpt-6.1-sol",
+     "reasoning_effort_none": true
+    },
+    {
+     "question": "Q24",
+     "prompt_exactly_in_initial_transcript": true,
+     "source_verification_successes": 3,
+     "skill_reads": [],
+     "evaluator_reads": [],
+     "isolation_receipt": "judge/mcp~gh-lean/attempts/p1-Q24/3/isolation.json",
+     "model": "gpt-6.1-sol",
+     "reasoning_effort_none": true
+    },
+    {
+     "question": "Q25",
+     "prompt_exactly_in_initial_transcript": true,
+     "source_verification_successes": 2,
+     "skill_reads": [],
+     "evaluator_reads": [],
+     "isolation_receipt": "judge/mcp~gh-lean/attempts/p1-Q25/3/isolation.json",
+     "model": "gpt-6.1-sol",
+     "reasoning_effort_none": true
+    },
+    {
+     "question": "Q26",
+     "prompt_exactly_in_initial_transcript": true,
+     "source_verification_successes": 4,
+     "skill_reads": [],
+     "evaluator_reads": [],
+     "isolation_receipt": "judge/mcp~gh-lean/attempts/p1-Q26/3/isolation.json",
+     "model": "gpt-6.1-sol",
+     "reasoning_effort_none": true
+    },
+    {
+     "question": "Q27",
+     "prompt_exactly_in_initial_transcript": true,
+     "source_verification_successes": 4,
+     "skill_reads": [],
+     "evaluator_reads": [],
+     "isolation_receipt": "judge/mcp~gh-lean/attempts/p1-Q27/3/isolation.json",
+     "model": "gpt-6.1-sol",
+     "reasoning_effort_none": true
+    },
+    {
+     "question": "Q28",
+     "prompt_exactly_in_initial_transcript": true,
+     "source_verification_successes": 5,
+     "skill_reads": [],
+     "evaluator_reads": [],
+     "isolation_receipt": "judge/mcp~gh-lean/attempts/p1-Q28/3/isolation.json",
+     "model": "gpt-6.1-sol",
+     "reasoning_effort_none": true
+    },
+    {
+     "question": "Q29",
+     "prompt_exactly_in_initial_transcript": true,
+     "source_verification_successes": 5,
+     "skill_reads": [],
+     "evaluator_reads": [],
+     "isolation_receipt": "judge/mcp~gh-lean/attempts/p1-Q29/3/isolation.json",
+     "model": "gpt-6.1-sol",
+     "reasoning_effort_none": true
+    },
+    {
+     "question": "Q30",
+     "prompt_exactly_in_initial_transcript": true,
+     "source_verification_successes": 3,
+     "skill_reads": [],
+     "evaluator_reads": [],
+     "isolation_receipt": "judge/mcp~gh-lean/attempts/p1-Q30/3/isolation.json",
+     "model": "gpt-6.1-sol",
+     "reasoning_effort_none": true
+    }
+   ]
+  },
+  "evaluation_status": "valid_solver_runs_and_isolated_replacement_judgments",
+  "initial_invalid_judge_accounting": {
+   "invocations": [
+    {
+     "question": "Q1",
+     "invocation_id": "04522963812d414c837e71bf39710a19",
+     "exit_code": 0,
+     "seconds": 30.0,
+     "reported_tokens_used": 12205,
+     "reported_cost_usd": null,
+     "verdict_sha256": "a1cbc08db7ae481f6ef90494e0637f794ff33ad91acfb9d61fdb0ee29d9af39a"
+    },
+    {
+     "question": "Q10",
+     "invocation_id": "9fe2bba535434d70bbdf56b9bae25c23",
+     "exit_code": 0,
+     "seconds": 44.167,
+     "reported_tokens_used": 23088,
+     "reported_cost_usd": null,
+     "verdict_sha256": "267d9e7e4ee5e23c827e9dddaf6c833b0ea2a148b306bfc95409fd445b652d89"
+    },
+    {
+     "question": "Q11",
+     "invocation_id": "87b6a768433e4f42be87606a48e687f0",
+     "exit_code": 0,
+     "seconds": 49.5,
+     "reported_tokens_used": 19371,
+     "reported_cost_usd": null,
+     "verdict_sha256": "ea126e7eac0231a7b4da4af11545ba8923a760a989bb9cbb258a9c668b1df05e"
+    },
+    {
+     "question": "Q12",
+     "invocation_id": "8e9db39249754320b02603640975f5df",
+     "exit_code": 0,
+     "seconds": 39.251,
+     "reported_tokens_used": 15329,
+     "reported_cost_usd": null,
+     "verdict_sha256": "d7f1a76c4f59caa8299c48c313720db51a17db00e4dc62c872681c6c32b69a10"
+    },
+    {
+     "question": "Q13",
+     "invocation_id": "34d97286c61d46b0aa83cda4414b0ee6",
+     "exit_code": 0,
+     "seconds": 50.997,
+     "reported_tokens_used": 17952,
+     "reported_cost_usd": null,
+     "verdict_sha256": "a00583ff004b0dfb187282692b262d573c87db079952e054b1d1abc636c26ed8"
+    },
+    {
+     "question": "Q14",
+     "invocation_id": "9eefdd845d7a453e9e836ed1a8e32209",
+     "exit_code": 0,
+     "seconds": 31.426,
+     "reported_tokens_used": 13664,
+     "reported_cost_usd": null,
+     "verdict_sha256": "3659aa54dd1e16cd2513f46c0b73c3a5ae4aa6055eee4486a224958110eb3707"
+    },
+    {
+     "question": "Q15",
+     "invocation_id": "e82dac38a5514fffbb82a92796798765",
+     "exit_code": 0,
+     "seconds": 40.344,
+     "reported_tokens_used": 21359,
+     "reported_cost_usd": null,
+     "verdict_sha256": "032297b512fdfa2f3d5a5de0d453aecfb89f62e3d180284066024773ed5a1986"
+    },
+    {
+     "question": "Q16",
+     "invocation_id": "b845ded31e9848d58eb9bfe1101dc477",
+     "exit_code": 0,
+     "seconds": 44.526,
+     "reported_tokens_used": 14027,
+     "reported_cost_usd": null,
+     "verdict_sha256": "c1fcb8bc40bd274d7ae20c81e5e3c2575852a0ab86e31f9f794f67b4b5358120"
+    },
+    {
+     "question": "Q17",
+     "invocation_id": "57c13bdc66224ff6972454e15e50f6bd",
+     "exit_code": 0,
+     "seconds": 46.508,
+     "reported_tokens_used": 17579,
+     "reported_cost_usd": null,
+     "verdict_sha256": "ea93cbc5cf39d760e856a9921bb6e7253bde654ceacb9de24ba8ba6a551c32fa"
+    },
+    {
+     "question": "Q18",
+     "invocation_id": "032dc32a3392425aa5e343e2986e6b98",
+     "exit_code": 0,
+     "seconds": 35.12,
+     "reported_tokens_used": 16199,
+     "reported_cost_usd": null,
+     "verdict_sha256": "cab4e1517972dc88ad4577d8700c65a640ed7bb5e613a33c3a863432aca2a5bb"
+    },
+    {
+     "question": "Q19",
+     "invocation_id": "c871dc3aa37d43d8b9a22e8b293275fd",
+     "exit_code": 0,
+     "seconds": 49.897,
+     "reported_tokens_used": 22805,
+     "reported_cost_usd": null,
+     "verdict_sha256": "6f3549a56f5fc3e628047f92bf9d6e09214daef27000f06fffea916e82f6bcb5"
+    },
+    {
+     "question": "Q2",
+     "invocation_id": "8fd967d643934be3a57de41fb4894c3d",
+     "exit_code": 0,
+     "seconds": 51.097,
+     "reported_tokens_used": 25865,
+     "reported_cost_usd": null,
+     "verdict_sha256": "5393c6cc90172427a4fa73a6d93349f9fb60cc7fa2882ab7e44291b1e4740f5c"
+    },
+    {
+     "question": "Q20",
+     "invocation_id": "8d3577ca5d764e09838905ff11107be8",
+     "exit_code": 0,
+     "seconds": 42.923,
+     "reported_tokens_used": 16762,
+     "reported_cost_usd": null,
+     "verdict_sha256": "5221b1fc83d8293c2aa60089cc0fea4b63eaf9a1e723b2adef915381f9ae1594"
+    },
+    {
+     "question": "Q21",
+     "invocation_id": "2ea038e58b0a4481aab42cb57034f653",
+     "exit_code": 0,
+     "seconds": 73.667,
+     "reported_tokens_used": 31573,
+     "reported_cost_usd": null,
+     "verdict_sha256": "7c830fa0760761b25c3ec1d84d691559940815a7f28abb810a9f820ed1cacdfb"
+    },
+    {
+     "question": "Q22",
+     "invocation_id": "d14acd4bdecd48f2b8758177eb7b2d55",
+     "exit_code": 0,
+     "seconds": 44.37,
+     "reported_tokens_used": 16399,
+     "reported_cost_usd": null,
+     "verdict_sha256": "8486212a34a07855e6b779cea79054237f1add9761c8fa1e5a9278f624b0fcb7"
+    },
+    {
+     "question": "Q23",
+     "invocation_id": "15fb585b394643859525588dd649ae08",
+     "exit_code": 0,
+     "seconds": 43.265,
+     "reported_tokens_used": 25112,
+     "reported_cost_usd": null,
+     "verdict_sha256": "4fd1eb813d3eececa8b5f858ab64d9f9fc887ba3010edb3266085a5a8169e3f5"
+    },
+    {
+     "question": "Q24",
+     "invocation_id": "0851411484f548df802fd78599bdaf97",
+     "exit_code": 0,
+     "seconds": 46.932,
+     "reported_tokens_used": 16138,
+     "reported_cost_usd": null,
+     "verdict_sha256": "a0bfad4effdba1ed6572dee87014d124bee7d52d2f7e210c7a1cbec456edc2c7"
+    },
+    {
+     "question": "Q25",
+     "invocation_id": "d91208105b1e4e209c7d55d5ee684acf",
+     "exit_code": 0,
+     "seconds": 42.164,
+     "reported_tokens_used": 18872,
+     "reported_cost_usd": null,
+     "verdict_sha256": "d219376bf81ffa47df1a0de3b213b5e69dfe52f5fe04f4935ea8d701609cae52"
+    },
+    {
+     "question": "Q26",
+     "invocation_id": "4a8eaea463d3497eaa9979db7cbadd9d",
+     "exit_code": 0,
+     "seconds": 40.71,
+     "reported_tokens_used": 20943,
+     "reported_cost_usd": null,
+     "verdict_sha256": "7e29573601cdbb85c12750b118b6c3769b75b6ee89b051ab73e58636be534c11"
+    },
+    {
+     "question": "Q27",
+     "invocation_id": "5307c333a9324d2c92dae613941b113d",
+     "exit_code": 0,
+     "seconds": 39.641,
+     "reported_tokens_used": 28589,
+     "reported_cost_usd": null,
+     "verdict_sha256": "d39648c8b8c3c5d602b9d77f1af73a1b0895426190607d23edc9baa04c0e69fd"
+    },
+    {
+     "question": "Q28",
+     "invocation_id": "fb7cf63e3a4046629009a20a72010a55",
+     "exit_code": 0,
+     "seconds": 81.711,
+     "reported_tokens_used": 45741,
+     "reported_cost_usd": null,
+     "verdict_sha256": "66d76ad0e8c8f7838f33ebbb5542f649426f255c099d8e06cdc4a3b162a6d61f"
+    },
+    {
+     "question": "Q29",
+     "invocation_id": "5dfd7aa4271045c396940d7a9e67e868",
+     "exit_code": 0,
+     "seconds": 46.984,
+     "reported_tokens_used": 27790,
+     "reported_cost_usd": null,
+     "verdict_sha256": "aee059a61be140da2983938a5f35930efbe5742acb198cddc61216bcc0f146f8"
+    },
+    {
+     "question": "Q3",
+     "invocation_id": "3fd9cbc6a9904e5ba8d13aa6aa385624",
+     "exit_code": 0,
+     "seconds": 41.39,
+     "reported_tokens_used": 16226,
+     "reported_cost_usd": null,
+     "verdict_sha256": "63ca82a9a38cbef67abe037784dc8119634cf6714a1c407b0da85e0a6c7f17c8"
+    },
+    {
+     "question": "Q30",
+     "invocation_id": "fa101e835efa462b8a149bc39b641e25",
+     "exit_code": 0,
+     "seconds": 47.089,
+     "reported_tokens_used": 20818,
+     "reported_cost_usd": null,
+     "verdict_sha256": "2ab66d04b0f66a119b2e281acafe60418fd295615e8ead859c14193048554ddc"
+    },
+    {
+     "question": "Q4",
+     "invocation_id": "54d8fc6d42ed476da2c51414c4caaf12",
+     "exit_code": 0,
+     "seconds": 37.258,
+     "reported_tokens_used": 17808,
+     "reported_cost_usd": null,
+     "verdict_sha256": "a06e4c66d8078d3c792b82642bce793d8b50c370191280d7119fac57e71f2663"
+    },
+    {
+     "question": "Q5",
+     "invocation_id": "8e965db876b540f4af17dd00c90012ff",
+     "exit_code": 0,
+     "seconds": 45.397,
+     "reported_tokens_used": 30180,
+     "reported_cost_usd": null,
+     "verdict_sha256": "496af70b41f6f2525b3516aa347ed2c269206778c9c08dfb8db3a1277fc35582"
+    },
+    {
+     "question": "Q6",
+     "invocation_id": "fd8b8af993b745cb9ad9042a50d84b6a",
+     "exit_code": 0,
+     "seconds": 42.117,
+     "reported_tokens_used": 23698,
+     "reported_cost_usd": null,
+     "verdict_sha256": "9fb493600a9c3ac25209945b6269d2f53ff751842d7c8a528113175a1ecd3d92"
+    },
+    {
+     "question": "Q7",
+     "invocation_id": "e346ff72ccd6490bb4f70d86d11b378b",
+     "exit_code": 0,
+     "seconds": 37.688,
+     "reported_tokens_used": 23165,
+     "reported_cost_usd": null,
+     "verdict_sha256": "dd8711abc88f05ef291ef8cee735bb8339d6437a19e27d84f665f97e81aa1b5d"
+    },
+    {
+     "question": "Q8",
+     "invocation_id": "5ec3cd3883b84ae4a447dd81c426bd6d",
+     "exit_code": 0,
+     "seconds": 32.764,
+     "reported_tokens_used": 24191,
+     "reported_cost_usd": null,
+     "verdict_sha256": "b7180df2dca115f5227ff2449113db6cffe798714f463a0c562585683dfaeabe"
+    },
+    {
+     "question": "Q9",
+     "invocation_id": "e1efdf72286943d1a397cd3090797a77",
+     "exit_code": 0,
+     "seconds": 43.796,
+     "reported_tokens_used": 15240,
+     "reported_cost_usd": null,
+     "verdict_sha256": "e49f0cd04a7c3c7dfb14d0681c8e62d34a7a22ef467ddcae91414d0060e58e94"
+    }
+   ],
+   "attempts": 30,
+   "failed_attempts": 0,
+   "retries": 0,
+   "reported_tokens_used_sum": 638688,
+   "token_categories_available": false,
+   "reported_cost_usd": null,
+   "cost_scope": "Judge cost unavailable; token receipts are Codex tokens-used totals, not split into input/cache/output."
+  },
+  "initial_invalid_judge_isolation": {
+   "judgments": 30,
+   "with_skill_reads": 30,
+   "with_gh_verification": 30,
+   "with_octocode_execution": 0,
+   "recorded_command_reads_of_mapping_or_evaluator_outputs": [],
+   "strict_judge_isolation_passed": false,
+   "qualification": "All judges used read-only gh to verify sources, but also loaded the inherited Octocode research skill. Scores are retained as exploratory, not a clean isolated quality evaluation."
+  },
+  "isolation_repair": {
+   "started_at": "2026-10-15T22:43:54.332397+00:00",
+   "reason": "All 30 initial judges loaded host research skill",
+   "solver_reruns": 0,
+   "initial_attempts_consumed_per_pair": 1,
+   "remaining_attempts_per_pair": 1,
+   "logical_max_attempts": 3,
+   "per_attempt_timeout_seconds": 600,
+   "rubric_changed": false,
+   "mapping_changed": false,
+   "preflight": "isolation-preflight.json",
+   "prompt_inspection": "isolation-prompt-input.json",
+   "calibration": "calibration-isolation.json",
+   "calibration_scores": {
+    "A": 10,
+    "B": 1,
+    "C": 4,
+    "D": 10
+   },
+   "invalid_initial_archive": "judge-invalid-initial",
+   "harness_hashes": {
+    "judge_pair.sh": "c53b54a6cf3761ebc421259009eb7b65f8504e54481c3fa60898b6800987cd03",
+    "judge_codex.py": "9a95890f180d71dcf631278bcf6253b97ff03bbcd4df822b3e1b514567eed51a"
+   },
+   "calibration_failed_attempts": 1,
+   "shell_start_failure": "Bash 3.2 rejects empty array expansion with set -u; failed before model invocation.",
+   "shell_start_failures": 30,
+   "model_invocations_in_shell_failure_stage": 0,
+   "final_harness_hashes": {
+    "judge_pair.sh": "e37ee5052c7ad6aa5252f58c2741b09e76e45add2c01c45115b4c609caea20cb",
+    "judge_codex.py": "9a95890f180d71dcf631278bcf6253b97ff03bbcd4df822b3e1b514567eed51a",
+    "test_judge_codex.py": "b007c18888a5b969375213c57e8ec660500823e43574d47cd24324ba16fd2233"
+   }
+  },
+  "invalid_judgments": [
+   {
+    "pair": "mcp~gh-lean",
+    "pass": 1,
+    "q": "Q1",
+    "scores": {
+     "gh-lean": {
+      "correctness": 10,
+      "depth": 4,
+      "workflow": 5
+     },
+     "mcp": {
+      "correctness": 10,
+      "depth": 5,
+      "workflow": 5
+     }
+    },
+    "winner": "gh-lean",
+    "reason": "Both answers are fully correct; X uses 680 fewer authoritative characters (2389 versus 3069).",
+    "valid": false,
+    "logical_attempt": 1,
+    "invalid_reason": "Host Octocode research skill was loaded"
+   },
+   {
+    "pair": "mcp~gh-lean",
+    "pass": 1,
+    "q": "Q10",
+    "scores": {
+     "gh-lean": {
+      "correctness": 4,
+      "depth": 3,
+      "workflow": 5
+     },
+     "mcp": {
+      "correctness": 7,
+      "depth": 3,
+      "workflow": 4
+     }
+    },
+    "winner": "mcp",
+    "reason": "Y correctly identifies exports.default.require; X falsely labels bun.require as a node condition.",
+    "valid": false,
+    "logical_attempt": 1,
+    "invalid_reason": "Host Octocode research skill was loaded"
+   },
+   {
+    "pair": "mcp~gh-lean",
+    "pass": 1,
+    "q": "Q11",
+    "scores": {
+     "gh-lean": {
+      "correctness": 7,
+      "depth": 4,
+      "workflow": 4
+     },
+     "mcp": {
+      "correctness": 4,
+      "depth": 3,
+      "workflow": 3
+     }
+    },
+    "winner": "gh-lean",
+    "reason": "X correctly locates createChannel and traces Go dispatch; Y names the wrong channel file, outweighing its 1,773-character advantage.",
+    "valid": false,
+    "logical_attempt": 1,
+    "invalid_reason": "Host Octocode research skill was loaded"
+   },
+   {
+    "pair": "mcp~gh-lean",
+    "pass": 1,
+    "q": "Q12",
+    "scores": {
+     "mcp": {
+      "correctness": 10,
+      "depth": 4,
+      "workflow": 5
+     },
+     "gh-lean": {
+      "correctness": 10,
+      "depth": 4,
+      "workflow": 5
+     }
+    },
+    "winner": "gh-lean",
+    "reason": "Both answer all material requested facts correctly; Y uses 645 fewer characters (3916 versus 4561).",
+    "valid": false,
+    "logical_attempt": 1,
+    "invalid_reason": "Host Octocode research skill was loaded"
+   },
+   {
+    "pair": "mcp~gh-lean",
+    "pass": 1,
+    "q": "Q13",
+    "scores": {
+     "gh-lean": {
+      "correctness": 10,
+      "depth": 5,
+      "workflow": 4
+     },
+     "mcp": {
+      "correctness": 10,
+      "depth": 5,
+      "workflow": 5
+     }
+    },
+    "winner": "gh-lean",
+    "reason": "Both answers are fully correct; X wins the required character tiebreak with 8,048 versus 12,328 characters, a gap of 4,280.",
+    "valid": false,
+    "logical_attempt": 1,
+    "invalid_reason": "Host Octocode research skill was loaded"
+   },
+   {
+    "pair": "mcp~gh-lean",
+    "pass": 1,
+    "q": "Q14",
+    "scores": {
+     "gh-lean": {
+      "correctness": 4,
+      "depth": 3,
+      "workflow": 4
+     },
+     "mcp": {
+      "correctness": 4,
+      "depth": 3,
+      "workflow": 4
+     }
+    },
+    "winner": "gh-lean",
+    "reason": "Both leave regular-dependency absence structurally unproven; X uses 875 fewer characters.",
+    "valid": false,
+    "logical_attempt": 1,
+    "invalid_reason": "Host Octocode research skill was loaded"
+   },
+   {
+    "pair": "mcp~gh-lean",
+    "pass": 1,
+    "q": "Q15",
+    "scores": {
+     "mcp": {
+      "correctness": 8,
+      "depth": 3,
+      "workflow": 5
+     },
+     "gh-lean": {
+      "correctness": 8,
+      "depth": 3,
+      "workflow": 5
+     }
+    },
+    "winner": "mcp",
+    "reason": "Both correctly answer all five requested facts and repeat the stale helper name; X uses 137 fewer instrumented characters.",
+    "valid": false,
+    "logical_attempt": 1,
+    "invalid_reason": "Host Octocode research skill was loaded"
+   },
+   {
+    "pair": "mcp~gh-lean",
+    "pass": 1,
+    "q": "Q16",
+    "scores": {
+     "mcp": {
+      "correctness": 10,
+      "depth": 5,
+      "workflow": 5
+     },
+     "gh-lean": {
+      "correctness": 10,
+      "depth": 5,
+      "workflow": 4
+     }
+    },
+    "winner": "mcp",
+    "reason": "Both dependency hops and fields are verified; X wins the correctness tie with 1,053 fewer characters.",
+    "valid": false,
+    "logical_attempt": 1,
+    "invalid_reason": "Host Octocode research skill was loaded"
+   },
+   {
+    "pair": "mcp~gh-lean",
+    "pass": 1,
+    "q": "Q17",
+    "scores": {
+     "gh-lean": {
+      "correctness": 10,
+      "depth": 5,
+      "workflow": 5
+     },
+     "mcp": {
+      "correctness": 10,
+      "depth": 5,
+      "workflow": 4
+     }
+    },
+    "winner": "gh-lean",
+    "reason": "Both answers are fully correct; X uses 1,921 fewer authoritative measured characters.",
+    "valid": false,
+    "logical_attempt": 1,
+    "invalid_reason": "Host Octocode research skill was loaded"
+   },
+   {
+    "pair": "mcp~gh-lean",
+    "pass": 1,
+    "q": "Q18",
+    "scores": {
+     "gh-lean": {
+      "correctness": 7,
+      "depth": 3,
+      "workflow": 4
+     },
+     "mcp": {
+      "correctness": 10,
+      "depth": 5,
+      "workflow": 5
+     }
+    },
+    "winner": "mcp",
+    "reason": "Y verifies sass optional-peer metadata; X explicitly leaves this required consumer-install fact unverified.",
+    "valid": false,
+    "logical_attempt": 1,
+    "invalid_reason": "Host Octocode research skill was loaded"
+   },
+   {
+    "pair": "mcp~gh-lean",
+    "pass": 1,
+    "q": "Q19",
+    "scores": {
+     "mcp": {
+      "correctness": 7,
+      "depth": 3,
+      "workflow": 5
+     },
+     "gh-lean": {
+      "correctness": 7,
+      "depth": 4,
+      "workflow": 5
+     }
+    },
+    "winner": "gh-lean",
+    "reason": "Both omit native dispatch symbols; Y verifies more of async dispatch and uses 6,125 fewer characters.",
+    "valid": false,
+    "logical_attempt": 1,
+    "invalid_reason": "Host Octocode research skill was loaded"
+   },
+   {
+    "pair": "mcp~gh-lean",
+    "pass": 1,
+    "q": "Q2",
+    "scores": {
+     "mcp": {
+      "correctness": 7,
+      "depth": 3,
+      "workflow": 4
+     },
+     "gh-lean": {
+      "correctness": 7,
+      "depth": 4,
+      "workflow": 5
+     }
+    },
+    "winner": "gh-lean",
+    "reason": "Equal correctness; Y adds direct entry-point evidence and uses 688 fewer reported authoritative characters.",
+    "valid": false,
+    "logical_attempt": 1,
+    "invalid_reason": "Host Octocode research skill was loaded"
+   },
+   {
+    "pair": "mcp~gh-lean",
+    "pass": 1,
+    "q": "Q20",
+    "scores": {
+     "gh-lean": {
+      "correctness": 10,
+      "depth": 4,
+      "workflow": 4
+     },
+     "mcp": {
+      "correctness": 10,
+      "depth": 5,
+      "workflow": 5
+     }
+    },
+    "winner": "gh-lean",
+    "reason": "Both answer every required fact correctly; X uses 5,689 fewer instrumented characters (6,315 versus 12,004).",
+    "valid": false,
+    "logical_attempt": 1,
+    "invalid_reason": "Host Octocode research skill was loaded"
+   },
+   {
+    "pair": "mcp~gh-lean",
+    "pass": 1,
+    "q": "Q21",
+    "scores": {
+     "gh-lean": {
+      "correctness": 4,
+      "depth": 3,
+      "workflow": 5
+     },
+     "mcp": {
+      "correctness": 10,
+      "depth": 4,
+      "workflow": 3
+     }
+    },
+    "winner": "mcp",
+    "reason": "Y correctly separates intermediate after_model sequence edges from the first hook's model/tools/exit routing; X incorrectly assigns the final router to every after_model node.",
+    "valid": false,
+    "logical_attempt": 1,
+    "invalid_reason": "Host Octocode research skill was loaded"
+   },
+   {
+    "pair": "mcp~gh-lean",
+    "pass": 1,
+    "q": "Q22",
+    "scores": {
+     "mcp": {
+      "correctness": 10,
+      "depth": 5,
+      "workflow": 5
+     },
+     "gh-lean": {
+      "correctness": 10,
+      "depth": 5,
+      "workflow": 4
+     }
+    },
+    "winner": "gh-lean",
+    "reason": "Both answers are fully correct; Y uses 4,445 characters versus X's 12,177, a 7,732-character advantage.",
+    "valid": false,
+    "logical_attempt": 1,
+    "invalid_reason": "Host Octocode research skill was loaded"
+   },
+   {
+    "pair": "mcp~gh-lean",
+    "pass": 1,
+    "q": "Q23",
+    "scores": {
+     "gh-lean": {
+      "correctness": 7,
+      "depth": 3,
+      "workflow": 4
+     },
+     "mcp": {
+      "correctness": 7,
+      "depth": 3,
+      "workflow": 3
+     }
+    },
+    "winner": "mcp",
+    "reason": "Equal overall correctness; Y uses 646 fewer instrumented characters (8569 versus 9215).",
+    "valid": false,
+    "logical_attempt": 1,
+    "invalid_reason": "Host Octocode research skill was loaded"
+   },
+   {
+    "pair": "mcp~gh-lean",
+    "pass": 1,
+    "q": "Q24",
+    "scores": {
+     "gh-lean": {
+      "correctness": 7,
+      "depth": 4,
+      "workflow": 4
+     },
+     "mcp": {
+      "correctness": 7,
+      "depth": 4,
+      "workflow": 5
+     }
+    },
+    "winner": "mcp",
+    "reason": "Both verify the complete inventory but overstate breaking changes; Y uses 5,175 fewer characters.",
+    "valid": false,
+    "logical_attempt": 1,
+    "invalid_reason": "Host Octocode research skill was loaded"
+   },
+   {
+    "pair": "mcp~gh-lean",
+    "pass": 1,
+    "q": "Q25",
+    "scores": {
+     "gh-lean": {
+      "correctness": 10,
+      "depth": 5,
+      "workflow": 4
+     },
+     "mcp": {
+      "correctness": 7,
+      "depth": 4,
+      "workflow": 5
+     }
+    },
+    "winner": "gh-lean",
+    "reason": "X cites the exact final patch hunks; Y's hunk headers do not match the primary patch, outweighing its 499-character advantage.",
+    "valid": false,
+    "logical_attempt": 1,
+    "invalid_reason": "Host Octocode research skill was loaded"
+   },
+   {
+    "pair": "mcp~gh-lean",
+    "pass": 1,
+    "q": "Q26",
+    "scores": {
+     "gh-lean": {
+      "correctness": 10,
+      "depth": 4,
+      "workflow": 4
+     },
+     "mcp": {
+      "correctness": 7,
+      "depth": 3,
+      "workflow": 4
+     }
+    },
+    "winner": "gh-lean",
+    "reason": "X establishes that create.md contains no middleware documentation; Y explicitly leaves that required check unresolved.",
+    "valid": false,
+    "logical_attempt": 1,
+    "invalid_reason": "Host Octocode research skill was loaded"
+   },
+   {
+    "pair": "mcp~gh-lean",
+    "pass": 1,
+    "q": "Q27",
+    "scores": {
+     "gh-lean": {
+      "correctness": 4,
+      "depth": 3,
+      "workflow": 4
+     },
+     "mcp": {
+      "correctness": 4,
+      "depth": 3,
+      "workflow": 4
+     }
+    },
+    "winner": "gh-lean",
+    "reason": "Both leave the required core class enumeration incomplete; at equal correctness, X uses 630 fewer characters.",
+    "valid": false,
+    "logical_attempt": 1,
+    "invalid_reason": "Host Octocode research skill was loaded"
+   },
+   {
+    "pair": "mcp~gh-lean",
+    "pass": 1,
+    "q": "Q28",
+    "scores": {
+     "gh-lean": {
+      "correctness": 4,
+      "depth": 3,
+      "workflow": 4
+     },
+     "mcp": {
+      "correctness": 7,
+      "depth": 4,
+      "workflow": 3
+     }
+    },
+    "winner": "mcp",
+    "reason": "X incorrectly presents the legacy tail-budget formula as default behavior; Y gives the more accurate context-bound explanation.",
+    "valid": false,
+    "logical_attempt": 1,
+    "invalid_reason": "Host Octocode research skill was loaded"
+   },
+   {
+    "pair": "mcp~gh-lean",
+    "pass": 1,
+    "q": "Q29",
+    "scores": {
+     "mcp": {
+      "correctness": 9,
+      "depth": 4,
+      "workflow": 4
+     },
+     "gh-lean": {
+      "correctness": 7,
+      "depth": 4,
+      "workflow": 5
+     }
+    },
+    "winner": "mcp",
+    "reason": "X explains the mandatory well-known discovery fallback that Y omits and identifies the authorization-code flow more concretely.",
+    "valid": false,
+    "logical_attempt": 1,
+    "invalid_reason": "Host Octocode research skill was loaded"
+   },
+   {
+    "pair": "mcp~gh-lean",
+    "pass": 1,
+    "q": "Q3",
+    "scores": {
+     "mcp": {
+      "correctness": 10,
+      "depth": 5,
+      "workflow": 5
+     },
+     "gh-lean": {
+      "correctness": 10,
+      "depth": 5,
+      "workflow": 5
+     }
+    },
+    "winner": "gh-lean",
+    "reason": "Both answers correctly establish the location, owner, and shortcut registration behavior; Y uses 1,256 fewer authoritative characters.",
+    "valid": false,
+    "logical_attempt": 1,
+    "invalid_reason": "Host Octocode research skill was loaded"
+   },
+   {
+    "pair": "mcp~gh-lean",
+    "pass": 1,
+    "q": "Q30",
+    "scores": {
+     "mcp": {
+      "correctness": 4,
+      "depth": 3,
+      "workflow": 2
+     },
+     "gh-lean": {
+      "correctness": 7,
+      "depth": 4,
+      "workflow": 5
+     }
+    },
+    "winner": "gh-lean",
+    "reason": "Y explains verified endpoint queues and Remote/Receiver roles missing from X, while using 5,144 fewer characters; both incompletely explain pipe establishment.",
+    "valid": false,
+    "logical_attempt": 1,
+    "invalid_reason": "Host Octocode research skill was loaded"
+   },
+   {
+    "pair": "mcp~gh-lean",
+    "pass": 1,
+    "q": "Q4",
+    "scores": {
+     "mcp": {
+      "correctness": 7,
+      "depth": 3,
+      "workflow": 5
+     },
+     "gh-lean": {
+      "correctness": 10,
+      "depth": 4,
+      "workflow": 4
+     }
+    },
+    "winner": "gh-lean",
+    "reason": "Y supplies the verified dependency section and bindings; X incorrectly says write/end lead into _performRequest.",
+    "valid": false,
+    "logical_attempt": 1,
+    "invalid_reason": "Host Octocode research skill was loaded"
+   },
+   {
+    "pair": "mcp~gh-lean",
+    "pass": 1,
+    "q": "Q5",
+    "scores": {
+     "mcp": {
+      "correctness": 10,
+      "depth": 4,
+      "workflow": 4
+     },
+     "gh-lean": {
+      "correctness": 10,
+      "depth": 4,
+      "workflow": 4
+     }
+    },
+    "winner": "mcp",
+    "reason": "Equal verified correctness; X uses 3,983 fewer supplied characters, though instrumented logs were unavailable.",
+    "valid": false,
+    "logical_attempt": 1,
+    "invalid_reason": "Host Octocode research skill was loaded"
+   },
+   {
+    "pair": "mcp~gh-lean",
+    "pass": 1,
+    "q": "Q6",
+    "scores": {
+     "gh-lean": {
+      "correctness": 10,
+      "depth": 4,
+      "workflow": 5
+     },
+     "mcp": {
+      "correctness": 10,
+      "depth": 5,
+      "workflow": 5
+     }
+    },
+    "winner": "mcp",
+    "reason": "Both answers are fully correct; Y wins the character tiebreak with 2,836 versus 2,868 characters, a gap of 32.",
+    "valid": false,
+    "logical_attempt": 1,
+    "invalid_reason": "Host Octocode research skill was loaded"
+   },
+   {
+    "pair": "mcp~gh-lean",
+    "pass": 1,
+    "q": "Q7",
+    "scores": {
+     "mcp": {
+      "correctness": 10,
+      "depth": 5,
+      "workflow": 5
+     },
+     "gh-lean": {
+      "correctness": 10,
+      "depth": 4,
+      "workflow": 5
+     }
+    },
+    "winner": "gh-lean",
+    "reason": "Equal verified correctness; Y uses 1,083 fewer authoritative characters (4,242 versus 5,325).",
+    "valid": false,
+    "logical_attempt": 1,
+    "invalid_reason": "Host Octocode research skill was loaded"
+   },
+   {
+    "pair": "mcp~gh-lean",
+    "pass": 1,
+    "q": "Q8",
+    "scores": {
+     "gh-lean": {
+      "correctness": 10,
+      "depth": 5,
+      "workflow": 4
+     },
+     "mcp": {
+      "correctness": 10,
+      "depth": 5,
+      "workflow": 3
+     }
+    },
+    "winner": "mcp",
+    "reason": "Both answer every required fact correctly; Y uses 196 fewer authoritative characters (2595 versus 2791).",
+    "valid": false,
+    "logical_attempt": 1,
+    "invalid_reason": "Host Octocode research skill was loaded"
+   },
+   {
+    "pair": "mcp~gh-lean",
+    "pass": 1,
+    "q": "Q9",
+    "scores": {
+     "gh-lean": {
+      "correctness": 9,
+      "depth": 5,
+      "workflow": 5
+     },
+     "mcp": {
+      "correctness": 9,
+      "depth": 5,
+      "workflow": 3
+     }
+    },
+    "winner": "gh-lean",
+    "reason": "Equal correctness; supplied authoritative metrics give X 1,732 fewer characters (4,088 versus 5,820).",
+    "valid": false,
+    "logical_attempt": 1,
+    "invalid_reason": "Host Octocode research skill was loaded"
+   }
+  ],
+  "invalid_judge_setup_attempts": [
+   {
+    "question": "Q4",
+    "exit_code": 1,
+    "seconds": 0.309,
+    "logical_attempt": 2,
+    "valid": false,
+    "model_invoked": false,
+    "reported_tokens_used": 0,
+    "reported_cost_usd": 0
+   },
+   {
+    "question": "Q1",
+    "exit_code": 1,
+    "seconds": 0.311,
+    "logical_attempt": 2,
+    "valid": false,
+    "model_invoked": false,
+    "reported_tokens_used": 0,
+    "reported_cost_usd": 0
+   },
+   {
+    "question": "Q3",
+    "exit_code": 1,
+    "seconds": 0.311,
+    "logical_attempt": 2,
+    "valid": false,
+    "model_invoked": false,
+    "reported_tokens_used": 0,
+    "reported_cost_usd": 0
+   },
+   {
+    "question": "Q2",
+    "exit_code": 1,
+    "seconds": 0.358,
+    "logical_attempt": 2,
+    "valid": false,
+    "model_invoked": false,
+    "reported_tokens_used": 0,
+    "reported_cost_usd": 0
+   },
+   {
+    "question": "Q6",
+    "exit_code": 1,
+    "seconds": 0.349,
+    "logical_attempt": 2,
+    "valid": false,
+    "model_invoked": false,
+    "reported_tokens_used": 0,
+    "reported_cost_usd": 0
+   },
+   {
+    "question": "Q7",
+    "exit_code": 1,
+    "seconds": 0.37,
+    "logical_attempt": 2,
+    "valid": false,
+    "model_invoked": false,
+    "reported_tokens_used": 0,
+    "reported_cost_usd": 0
+   },
+   {
+    "question": "Q5",
+    "exit_code": 1,
+    "seconds": 0.386,
+    "logical_attempt": 2,
+    "valid": false,
+    "model_invoked": false,
+    "reported_tokens_used": 0,
+    "reported_cost_usd": 0
+   },
+   {
+    "question": "Q8",
+    "exit_code": 1,
+    "seconds": 0.365,
+    "logical_attempt": 2,
+    "valid": false,
+    "model_invoked": false,
+    "reported_tokens_used": 0,
+    "reported_cost_usd": 0
+   },
+   {
+    "question": "Q9",
+    "exit_code": 1,
+    "seconds": 0.37,
+    "logical_attempt": 2,
+    "valid": false,
+    "model_invoked": false,
+    "reported_tokens_used": 0,
+    "reported_cost_usd": 0
+   },
+   {
+    "question": "Q10",
+    "exit_code": 1,
+    "seconds": 0.365,
+    "logical_attempt": 2,
+    "valid": false,
+    "model_invoked": false,
+    "reported_tokens_used": 0,
+    "reported_cost_usd": 0
+   },
+   {
+    "question": "Q11",
+    "exit_code": 1,
+    "seconds": 0.365,
+    "logical_attempt": 2,
+    "valid": false,
+    "model_invoked": false,
+    "reported_tokens_used": 0,
+    "reported_cost_usd": 0
+   },
+   {
+    "question": "Q12",
+    "exit_code": 1,
+    "seconds": 0.371,
+    "logical_attempt": 2,
+    "valid": false,
+    "model_invoked": false,
+    "reported_tokens_used": 0,
+    "reported_cost_usd": 0
+   },
+   {
+    "question": "Q14",
+    "exit_code": 1,
+    "seconds": 0.32,
+    "logical_attempt": 2,
+    "valid": false,
+    "model_invoked": false,
+    "reported_tokens_used": 0,
+    "reported_cost_usd": 0
+   },
+   {
+    "question": "Q13",
+    "exit_code": 1,
+    "seconds": 0.361,
+    "logical_attempt": 2,
+    "valid": false,
+    "model_invoked": false,
+    "reported_tokens_used": 0,
+    "reported_cost_usd": 0
+   },
+   {
+    "question": "Q15",
+    "exit_code": 1,
+    "seconds": 0.361,
+    "logical_attempt": 2,
+    "valid": false,
+    "model_invoked": false,
+    "reported_tokens_used": 0,
+    "reported_cost_usd": 0
+   },
+   {
+    "question": "Q16",
+    "exit_code": 1,
+    "seconds": 0.358,
+    "logical_attempt": 2,
+    "valid": false,
+    "model_invoked": false,
+    "reported_tokens_used": 0,
+    "reported_cost_usd": 0
+   },
+   {
+    "question": "Q17",
+    "exit_code": 1,
+    "seconds": 0.31,
+    "logical_attempt": 2,
+    "valid": false,
+    "model_invoked": false,
+    "reported_tokens_used": 0,
+    "reported_cost_usd": 0
+   },
+   {
+    "question": "Q19",
+    "exit_code": 1,
+    "seconds": 0.31,
+    "logical_attempt": 2,
+    "valid": false,
+    "model_invoked": false,
+    "reported_tokens_used": 0,
+    "reported_cost_usd": 0
+   },
+   {
+    "question": "Q18",
+    "exit_code": 1,
+    "seconds": 0.356,
+    "logical_attempt": 2,
+    "valid": false,
+    "model_invoked": false,
+    "reported_tokens_used": 0,
+    "reported_cost_usd": 0
+   },
+   {
+    "question": "Q20",
+    "exit_code": 1,
+    "seconds": 0.354,
+    "logical_attempt": 2,
+    "valid": false,
+    "model_invoked": false,
+    "reported_tokens_used": 0,
+    "reported_cost_usd": 0
+   },
+   {
+    "question": "Q21",
+    "exit_code": 1,
+    "seconds": 0.338,
+    "logical_attempt": 2,
+    "valid": false,
+    "model_invoked": false,
+    "reported_tokens_used": 0,
+    "reported_cost_usd": 0
+   },
+   {
+    "question": "Q23",
+    "exit_code": 1,
+    "seconds": 0.351,
+    "logical_attempt": 2,
+    "valid": false,
+    "model_invoked": false,
+    "reported_tokens_used": 0,
+    "reported_cost_usd": 0
+   },
+   {
+    "question": "Q22",
+    "exit_code": 1,
+    "seconds": 0.37,
+    "logical_attempt": 2,
+    "valid": false,
+    "model_invoked": false,
+    "reported_tokens_used": 0,
+    "reported_cost_usd": 0
+   },
+   {
+    "question": "Q24",
+    "exit_code": 1,
+    "seconds": 0.355,
+    "logical_attempt": 2,
+    "valid": false,
+    "model_invoked": false,
+    "reported_tokens_used": 0,
+    "reported_cost_usd": 0
+   },
+   {
+    "question": "Q25",
+    "exit_code": 1,
+    "seconds": 0.303,
+    "logical_attempt": 2,
+    "valid": false,
+    "model_invoked": false,
+    "reported_tokens_used": 0,
+    "reported_cost_usd": 0
+   },
+   {
+    "question": "Q26",
+    "exit_code": 1,
+    "seconds": 0.36,
+    "logical_attempt": 2,
+    "valid": false,
+    "model_invoked": false,
+    "reported_tokens_used": 0,
+    "reported_cost_usd": 0
+   },
+   {
+    "question": "Q27",
+    "exit_code": 1,
+    "seconds": 0.361,
+    "logical_attempt": 2,
+    "valid": false,
+    "model_invoked": false,
+    "reported_tokens_used": 0,
+    "reported_cost_usd": 0
+   },
+   {
+    "question": "Q28",
+    "exit_code": 1,
+    "seconds": 0.34,
+    "logical_attempt": 2,
+    "valid": false,
+    "model_invoked": false,
+    "reported_tokens_used": 0,
+    "reported_cost_usd": 0
+   },
+   {
+    "question": "Q29",
+    "exit_code": 1,
+    "seconds": 0.348,
+    "logical_attempt": 2,
+    "valid": false,
+    "model_invoked": false,
+    "reported_tokens_used": 0,
+    "reported_cost_usd": 0
+   },
+   {
+    "question": "Q30",
+    "exit_code": 1,
+    "seconds": 0.317,
+    "logical_attempt": 2,
+    "valid": false,
+    "model_invoked": false,
+    "reported_tokens_used": 0,
+    "reported_cost_usd": 0
+   }
+  ]
+ },
+ "runs": [
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q1",
+   "chars": 2389,
+   "model_in": 1151,
+   "model_out": 1238,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 2
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 1435
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 12337,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 614,
+   "cost_usd": 0.033062799999999996,
+   "turns": 3,
+   "secs": 6.633,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 5.227,
+   "tool_secs": 1.406,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q10",
+   "chars": 5045,
+   "model_in": 2768,
+   "model_out": 2277,
+   "calls": 6,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 6
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 3642
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 27327,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1261,
+   "cost_usd": 0.03821190000000001,
+   "turns": 7,
+   "secs": 12.928,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 10.428,
+   "tool_secs": 2.5,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q11",
+   "chars": 6830,
+   "model_in": 4163,
+   "model_out": 2667,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 4
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 4882
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 20234,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1307,
+   "cost_usd": 0.0389767,
+   "turns": 5,
+   "secs": 13.845,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 12.189,
+   "tool_secs": 1.656,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q12",
+   "chars": 3916,
+   "model_in": 1455,
+   "model_out": 2461,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 4
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 2101
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 19230,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1210,
+   "cost_usd": 0.032933800000000006,
+   "turns": 5,
+   "secs": 12.158,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 10.021,
+   "tool_secs": 2.137,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q13",
+   "chars": 8048,
+   "model_in": 5544,
+   "model_out": 2504,
+   "calls": 7,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 7
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 6461
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 37975,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1407,
+   "cost_usd": 0.0455414,
+   "turns": 8,
+   "secs": 19.124,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 13.585,
+   "tool_secs": 5.539,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q14",
+   "chars": 2042,
+   "model_in": 747,
+   "model_out": 1295,
+   "calls": 1,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 1
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 996
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 12057,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 584,
+   "cost_usd": 0.0232266,
+   "turns": 2,
+   "secs": 5.496,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 4.837,
+   "tool_secs": 0.659,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q15",
+   "chars": 5179,
+   "model_in": 3457,
+   "model_out": 1722,
+   "calls": 1,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 1
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 3658
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 13091,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 768,
+   "cost_usd": 0.0292494,
+   "turns": 2,
+   "secs": 7.381,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 6.297,
+   "tool_secs": 1.084,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q16",
+   "chars": 4160,
+   "model_in": 2194,
+   "model_out": 1966,
+   "calls": 6,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 6
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 3105
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 33606,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1138,
+   "cost_usd": 0.0365372,
+   "turns": 7,
+   "secs": 12.045,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 9.508,
+   "tool_secs": 2.537,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q17",
+   "chars": 9219,
+   "model_in": 6161,
+   "model_out": 3058,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 4
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 6800
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 22764,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1460,
+   "cost_usd": 0.0424562,
+   "turns": 5,
+   "secs": 12.679,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 11.344,
+   "tool_secs": 1.335,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q18",
+   "chars": 2609,
+   "model_in": 416,
+   "model_out": 2193,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 2
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 677
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 12163,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1074,
+   "cost_usd": 0.028316599999999997,
+   "turns": 3,
+   "secs": 9.425,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 8.636,
+   "tool_secs": 0.789,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q19",
+   "chars": 5204,
+   "model_in": 2108,
+   "model_out": 3096,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 4
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 3038
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 26234,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1558,
+   "cost_usd": 0.0392396,
+   "turns": 5,
+   "secs": 14.612,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 13.008,
+   "tool_secs": 1.604,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q2",
+   "chars": 1739,
+   "model_in": 168,
+   "model_out": 1571,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 4
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 593
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 18249,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 811,
+   "cost_usd": 0.0348244,
+   "turns": 5,
+   "secs": 38.183,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 37.849,
+   "tool_secs": 0.334,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q20",
+   "chars": 6315,
+   "model_in": 2925,
+   "model_out": 3390,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 4
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 3744
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 20798,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1642,
+   "cost_usd": 0.0401484,
+   "turns": 5,
+   "secs": 13.486,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 12.142,
+   "tool_secs": 1.344,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q21",
+   "chars": 19104,
+   "model_in": 13128,
+   "model_out": 5976,
+   "calls": 8,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 8
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 14962
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 47134,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 3149,
+   "cost_usd": 0.0784282,
+   "turns": 9,
+   "secs": 26.182,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 23.877,
+   "tool_secs": 2.305,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q22",
+   "chars": 4445,
+   "model_in": 1534,
+   "model_out": 2911,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 4
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 2245
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 26455,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1520,
+   "cost_usd": 0.038249899999999996,
+   "turns": 5,
+   "secs": 14.662,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 12.042,
+   "tool_secs": 2.62,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q23",
+   "chars": 9215,
+   "model_in": 6389,
+   "model_out": 2826,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 3
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 7056
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 30979,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1491,
+   "cost_usd": 0.0482247,
+   "turns": 4,
+   "secs": 14.033,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 12.138,
+   "tool_secs": 1.895,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q24",
+   "chars": 7980,
+   "model_in": 3789,
+   "model_out": 4191,
+   "calls": 7,
+   "failed": 1,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 7
+   },
+   "tool_failed_calls": {
+    "Bash": 1
+   },
+   "tool_chars": {
+    "Bash": 5223
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 29583,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 2022,
+   "cost_usd": 0.048711199999999996,
+   "turns": 8,
+   "secs": 19.383,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 17.967,
+   "tool_secs": 1.416,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q25",
+   "chars": 16127,
+   "model_in": 12444,
+   "model_out": 3683,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 3
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 12862
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 27971,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1648,
+   "cost_usd": 0.056525700000000005,
+   "turns": 4,
+   "secs": 13.963,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 12.701,
+   "tool_secs": 1.262,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q26",
+   "chars": 3090,
+   "model_in": 835,
+   "model_out": 2255,
+   "calls": 6,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 6
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 1676
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 32602,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1365,
+   "cost_usd": 0.0363512,
+   "turns": 7,
+   "secs": 13.788,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 11.573,
+   "tool_secs": 2.215,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q27",
+   "chars": 4227,
+   "model_in": 2093,
+   "model_out": 2134,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 2
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 2293
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 12752,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1086,
+   "cost_usd": 0.030972,
+   "turns": 3,
+   "secs": 7.594,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 6.666,
+   "tool_secs": 0.928,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q28",
+   "chars": 16148,
+   "model_in": 11892,
+   "model_out": 4256,
+   "calls": 8,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 8
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 13419
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 41349,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 2154,
+   "cost_usd": 0.06352,
+   "turns": 9,
+   "secs": 21.84,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 17.368,
+   "tool_secs": 4.472,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q29",
+   "chars": 8303,
+   "model_in": 4436,
+   "model_out": 3867,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 4
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 5275
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 27029,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1816,
+   "cost_usd": 0.046036999999999995,
+   "turns": 5,
+   "secs": 16.23,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 13.975,
+   "tool_secs": 2.255,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q3",
+   "chars": 5472,
+   "model_in": 3391,
+   "model_out": 2081,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 3
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 3807
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 20640,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 972,
+   "cost_usd": 0.0329061,
+   "turns": 4,
+   "secs": 11.123,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 8.89,
+   "tool_secs": 2.233,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q30",
+   "chars": 7889,
+   "model_in": 4356,
+   "model_out": 3533,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 4
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 4992
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 20862,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1600,
+   "cost_usd": 0.0410803,
+   "turns": 5,
+   "secs": 14.903,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 13.535,
+   "tool_secs": 1.368,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q4",
+   "chars": 7717,
+   "model_in": 3754,
+   "model_out": 3963,
+   "calls": 9,
+   "failed": 1,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 9
+   },
+   "tool_failed_calls": {
+    "Bash": 1
+   },
+   "tool_chars": {
+    "Bash": 5332
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 35661,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 2053,
+   "cost_usd": 0.049406599999999995,
+   "turns": 10,
+   "secs": 19.644,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 16.48,
+   "tool_secs": 3.164,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q5",
+   "chars": 25882,
+   "model_in": 20952,
+   "model_out": 4930,
+   "calls": 4,
+   "failed": 1,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 4
+   },
+   "tool_failed_calls": {
+    "Bash": 1
+   },
+   "tool_chars": {
+    "Bash": 21720
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 45921,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 2223,
+   "cost_usd": 0.0767767,
+   "turns": 5,
+   "secs": 21.716,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 18.449,
+   "tool_secs": 3.267,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q6",
+   "chars": 2868,
+   "model_in": 996,
+   "model_out": 1872,
+   "calls": 5,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 5
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 1625
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 24880,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 925,
+   "cost_usd": 0.029911600000000003,
+   "turns": 6,
+   "secs": 10.33,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 8.358,
+   "tool_secs": 1.972,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q7",
+   "chars": 4242,
+   "model_in": 1984,
+   "model_out": 2258,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 4
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 2404
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 12899,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1061,
+   "cost_usd": 0.031255399999999996,
+   "turns": 5,
+   "secs": 8.724,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 7.788,
+   "tool_secs": 0.936,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q8",
+   "chars": 2791,
+   "model_in": 825,
+   "model_out": 1966,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 3
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 1465
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 12343,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 945,
+   "cost_usd": 0.0280937,
+   "turns": 4,
+   "secs": 7.385,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 6.836,
+   "tool_secs": 0.549,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q9",
+   "chars": 4088,
+   "model_in": 2637,
+   "model_out": 1451,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "Bash": 3
+   },
+   "tool_failed_calls": {
+    "Bash": 0
+   },
+   "tool_chars": {
+    "Bash": 3073
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": 18783,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 772,
+   "cost_usd": 0.0289186,
+   "turns": 4,
+   "secs": 8.156,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 6.189,
+   "tool_secs": 1.967,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q1",
+   "chars": 3069,
+   "model_in": 1954,
+   "model_out": 1115,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchCode": 1,
+    "ghGetFileContent": 1
+   },
+   "tool_failed_calls": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchCode": 342,
+    "ghGetFileContent": 1941
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 39666,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 603,
+   "cost_usd": 0.064608,
+   "turns": 3,
+   "secs": 9.834,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 7.059,
+   "tool_secs": 2.775,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q10",
+   "chars": 4781,
+   "model_in": 2436,
+   "model_out": 2345,
+   "calls": 4,
+   "failed": 1,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghStructure": 1,
+    "ghGetFileContent": 3
+   },
+   "tool_failed_calls": {
+    "ghStructure": 0,
+    "ghGetFileContent": 1
+   },
+   "tool_chars": {
+    "ghStructure": 170,
+    "ghGetFileContent": 2984
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 54976,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1315,
+   "cost_usd": 0.0403858,
+   "turns": 5,
+   "secs": 12.027,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 11.452,
+   "tool_secs": 0.575,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q11",
+   "chars": 5057,
+   "model_in": 2561,
+   "model_out": 2496,
+   "calls": 4,
+   "failed": 2,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchCode": 3,
+    "ghGetFileContent": 1
+   },
+   "tool_failed_calls": {
+    "ghSearchCode": 2,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchCode": 1807,
+    "ghGetFileContent": 1502
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 54798,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1367,
+   "cost_usd": 0.0410323,
+   "turns": 5,
+   "secs": 17.279,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 12.486,
+   "tool_secs": 4.793,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q12",
+   "chars": 4561,
+   "model_in": 2217,
+   "model_out": 2344,
+   "calls": 1,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghGetFileContent": 1
+   },
+   "tool_failed_calls": {
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghGetFileContent": 2538
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 26788,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1020,
+   "cost_usd": 0.0319028,
+   "turns": 2,
+   "secs": 8.676,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 8.05,
+   "tool_secs": 0.626,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q13",
+   "chars": 12328,
+   "model_in": 10369,
+   "model_out": 1959,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchHistory": 1,
+    "ghGetHistoryItem": 1
+   },
+   "tool_failed_calls": {
+    "ghSearchHistory": 0,
+    "ghGetHistoryItem": 0
+   },
+   "tool_chars": {
+    "ghSearchHistory": 3699,
+    "ghGetHistoryItem": 7149
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchHistory": 0,
+    "ghGetHistoryItem": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchHistory": 0,
+    "ghGetHistoryItem": 0
+   },
+   "input_tokens": 45381,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1011,
+   "cost_usd": 0.0490614,
+   "turns": 3,
+   "secs": 13.658,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 8.462,
+   "tool_secs": 5.196,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q14",
+   "chars": 2917,
+   "model_in": 1531,
+   "model_out": 1386,
+   "calls": 1,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghGetFileContent": 1
+   },
+   "tool_failed_calls": {
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghGetFileContent": 1765
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 26534,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 620,
+   "cost_usd": 0.026937500000000003,
+   "turns": 2,
+   "secs": 5.601,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 5.114,
+   "tool_secs": 0.487,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q15",
+   "chars": 5042,
+   "model_in": 3404,
+   "model_out": 1638,
+   "calls": 1,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghGetHistoryItem": 1
+   },
+   "tool_failed_calls": {
+    "ghGetHistoryItem": 0
+   },
+   "tool_chars": {
+    "ghGetHistoryItem": 3535
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghGetHistoryItem": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghGetHistoryItem": 0
+   },
+   "input_tokens": 26972,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 718,
+   "cost_usd": 0.0297046,
+   "turns": 2,
+   "secs": 7.04,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 6.223,
+   "tool_secs": 0.817,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q16",
+   "chars": 3107,
+   "model_in": 1299,
+   "model_out": 1808,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghGetFileContent": 3
+   },
+   "tool_failed_calls": {
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghGetFileContent": 1780
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 40096,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 933,
+   "cost_usd": 0.0318721,
+   "turns": 4,
+   "secs": 9.546,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 7.998,
+   "tool_secs": 1.548,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q17",
+   "chars": 11140,
+   "model_in": 8059,
+   "model_out": 3081,
+   "calls": 3,
+   "failed": 1,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchCode": 2,
+    "ghGetFileContent": 1
+   },
+   "tool_failed_calls": {
+    "ghSearchCode": 1,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchCode": 1074,
+    "ghGetFileContent": 7576
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 56191,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1507,
+   "cost_usd": 0.050551000000000006,
+   "turns": 4,
+   "secs": 13.665,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 12.088,
+   "tool_secs": 1.577,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q18",
+   "chars": 3295,
+   "model_in": 1009,
+   "model_out": 2286,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghGetFileContent": 2
+   },
+   "tool_failed_calls": {
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghGetFileContent": 1436
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 39966,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1123,
+   "cost_usd": 0.0331858,
+   "turns": 3,
+   "secs": 9.973,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 9.566,
+   "tool_secs": 0.407,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q19",
+   "chars": 11329,
+   "model_in": 7607,
+   "model_out": 3722,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchCode": 1,
+    "ghGetFileContent": 2
+   },
+   "tool_failed_calls": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchCode": 1726,
+    "ghGetFileContent": 6842
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 59274,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1805,
+   "cost_usd": 0.0554578,
+   "turns": 4,
+   "secs": 17.254,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 14.093,
+   "tool_secs": 3.161,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q2",
+   "chars": 2427,
+   "model_in": 796,
+   "model_out": 1631,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchRepo": 1,
+    "ghSearchCode": 2,
+    "ghStructure": 1
+   },
+   "tool_failed_calls": {
+    "ghSearchRepo": 0,
+    "ghSearchCode": 0,
+    "ghStructure": 0
+   },
+   "tool_chars": {
+    "ghSearchRepo": 269,
+    "ghSearchCode": 748,
+    "ghStructure": 202
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghSearchCode": 0,
+    "ghStructure": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghSearchCode": 0,
+    "ghStructure": 0
+   },
+   "input_tokens": 39734,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 859,
+   "cost_usd": 0.0663246,
+   "turns": 5,
+   "secs": 12.376,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 8.146,
+   "tool_secs": 4.23,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q20",
+   "chars": 12004,
+   "model_in": 8910,
+   "model_out": 3094,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghGetFileContent": 3
+   },
+   "tool_failed_calls": {
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghGetFileContent": 9485
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 59292,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1545,
+   "cost_usd": 0.052590500000000005,
+   "turns": 4,
+   "secs": 12.465,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 11.997,
+   "tool_secs": 0.468,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q21",
+   "chars": 38772,
+   "model_in": 31930,
+   "model_out": 6842,
+   "calls": 7,
+   "failed": 2,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchCode": 3,
+    "ghGetFileContent": 4
+   },
+   "tool_failed_calls": {
+    "ghSearchCode": 1,
+    "ghGetFileContent": 1
+   },
+   "tool_chars": {
+    "ghSearchCode": 2588,
+    "ghGetFileContent": 31425
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 121224,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 3711,
+   "cost_usd": 0.12727080000000002,
+   "turns": 8,
+   "secs": 28.046,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 24.111,
+   "tool_secs": 3.935,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q22",
+   "chars": 12177,
+   "model_in": 9737,
+   "model_out": 2440,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghGetHistoryItem": 2
+   },
+   "tool_failed_calls": {
+    "ghGetHistoryItem": 0
+   },
+   "tool_chars": {
+    "ghGetHistoryItem": 10129
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghGetHistoryItem": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghGetHistoryItem": 0
+   },
+   "input_tokens": 49144,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1211,
+   "cost_usd": 0.0535008,
+   "turns": 3,
+   "secs": 13.573,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 11.21,
+   "tool_secs": 2.363,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q23",
+   "chars": 8569,
+   "model_in": 5437,
+   "model_out": 3132,
+   "calls": 3,
+   "failed": 2,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchCode": 1,
+    "ghGetFileContent": 2
+   },
+   "tool_failed_calls": {
+    "ghSearchCode": 1,
+    "ghGetFileContent": 1
+   },
+   "tool_chars": {
+    "ghSearchCode": 272,
+    "ghGetFileContent": 5622
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 43172,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1684,
+   "cost_usd": 0.050403,
+   "turns": 4,
+   "secs": 12.805,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 11.942,
+   "tool_secs": 0.863,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q24",
+   "chars": 2805,
+   "model_in": 825,
+   "model_out": 1980,
+   "calls": 1,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchCode": 1
+   },
+   "tool_failed_calls": {
+    "ghSearchCode": 0
+   },
+   "tool_chars": {
+    "ghSearchCode": 926
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchCode": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchCode": 0
+   },
+   "input_tokens": 26102,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 814,
+   "cost_usd": 0.0269194,
+   "turns": 2,
+   "secs": 7.98,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 7.166,
+   "tool_secs": 0.814,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q25",
+   "chars": 15628,
+   "model_in": 12554,
+   "model_out": 3074,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghGetHistoryItem": 2
+   },
+   "tool_failed_calls": {
+    "ghGetHistoryItem": 0
+   },
+   "tool_chars": {
+    "ghGetHistoryItem": 12861
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghGetHistoryItem": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghGetHistoryItem": 0
+   },
+   "input_tokens": 48836,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1391,
+   "cost_usd": 0.056315199999999996,
+   "turns": 3,
+   "secs": 13.098,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 11.353,
+   "tool_secs": 1.745,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q26",
+   "chars": 2634,
+   "model_in": 1002,
+   "model_out": 1632,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghStructure": 2
+   },
+   "tool_failed_calls": {
+    "ghStructure": 0
+   },
+   "tool_chars": {
+    "ghStructure": 1350
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghStructure": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghStructure": 0
+   },
+   "input_tokens": 39426,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 858,
+   "cost_usd": 0.029740799999999998,
+   "turns": 3,
+   "secs": 8.573,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 7.616,
+   "tool_secs": 0.957,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q27",
+   "chars": 4857,
+   "model_in": 2486,
+   "model_out": 2371,
+   "calls": 1,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghGetFileContent": 1
+   },
+   "tool_failed_calls": {
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghGetFileContent": 2614
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 26842,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1160,
+   "cost_usd": 0.0335149,
+   "turns": 2,
+   "secs": 8.329,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 7.808,
+   "tool_secs": 0.521,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q28",
+   "chars": 21007,
+   "model_in": 16390,
+   "model_out": 4617,
+   "calls": 4,
+   "failed": 2,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchCode": 3,
+    "ghGetFileContent": 1
+   },
+   "tool_failed_calls": {
+    "ghSearchCode": 2,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchCode": 4635,
+    "ghGetFileContent": 12701
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 61954,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 2242,
+   "cost_usd": 0.07313739999999999,
+   "turns": 5,
+   "secs": 19.177,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 15.847,
+   "tool_secs": 3.33,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q29",
+   "chars": 16871,
+   "model_in": 12305,
+   "model_out": 4566,
+   "calls": 3,
+   "failed": 1,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchCode": 2,
+    "ghGetFileContent": 1
+   },
+   "tool_failed_calls": {
+    "ghSearchCode": 1,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchCode": 2450,
+    "ghGetFileContent": 10554
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 59024,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 2055,
+   "cost_usd": 0.0644731,
+   "turns": 4,
+   "secs": 15.927,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 14.42,
+   "tool_secs": 1.507,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q3",
+   "chars": 6728,
+   "model_in": 4169,
+   "model_out": 2559,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghGetHistoryItem": 1,
+    "ghSearchCode": 1,
+    "ghGetFileContent": 1
+   },
+   "tool_failed_calls": {
+    "ghGetHistoryItem": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghGetHistoryItem": 3828,
+    "ghSearchCode": 449,
+    "ghGetFileContent": 333
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghGetHistoryItem": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghGetHistoryItem": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 42946,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1199,
+   "cost_usd": 0.0400197,
+   "turns": 4,
+   "secs": 10.414,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 9.194,
+   "tool_secs": 1.22,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q30",
+   "chars": 13033,
+   "model_in": 9750,
+   "model_out": 3283,
+   "calls": 2,
+   "failed": 1,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghGetFileContent": 2
+   },
+   "tool_failed_calls": {
+    "ghGetFileContent": 1
+   },
+   "tool_chars": {
+    "ghGetFileContent": 9962
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 43022,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1385,
+   "cost_usd": 0.0491998,
+   "turns": 3,
+   "secs": 12.366,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 11.48,
+   "tool_secs": 0.886,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q4",
+   "chars": 6511,
+   "model_in": 3481,
+   "model_out": 3030,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchCode": 1,
+    "ghGetFileContent": 1
+   },
+   "tool_failed_calls": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchCode": 2222,
+    "ghGetFileContent": 2055
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 41438,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1378,
+   "cost_usd": 0.0400365,
+   "turns": 3,
+   "secs": 15.785,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 10.727,
+   "tool_secs": 5.058,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q5",
+   "chars": 21899,
+   "model_in": 18052,
+   "model_out": 3847,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghGetHistoryItem": 2
+   },
+   "tool_failed_calls": {
+    "ghGetHistoryItem": 0
+   },
+   "tool_chars": {
+    "ghGetHistoryItem": 18341
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghGetHistoryItem": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghGetHistoryItem": 0
+   },
+   "input_tokens": 47089,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1627,
+   "cost_usd": 0.0667022,
+   "turns": 3,
+   "secs": 14.291,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 12.549,
+   "tool_secs": 1.742,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q6",
+   "chars": 2836,
+   "model_in": 1111,
+   "model_out": 1725,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghGetFileContent": 2,
+    "ghSearchCode": 1
+   },
+   "tool_failed_calls": {
+    "ghGetFileContent": 0,
+    "ghSearchCode": 0
+   },
+   "tool_chars": {
+    "ghGetFileContent": 901,
+    "ghSearchCode": 683
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghGetFileContent": 0,
+    "ghSearchCode": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghGetFileContent": 0,
+    "ghSearchCode": 0
+   },
+   "input_tokens": 40017,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 846,
+   "cost_usd": 0.0304911,
+   "turns": 4,
+   "secs": 29.132,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 7.435,
+   "tool_secs": 21.697,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q7",
+   "chars": 5325,
+   "model_in": 3455,
+   "model_out": 1870,
+   "calls": 1,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghGetFileContent": 1
+   },
+   "tool_failed_calls": {
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghGetFileContent": 3752
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 27500,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 814,
+   "cost_usd": 0.0326323,
+   "turns": 2,
+   "secs": 7.583,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 6.834,
+   "tool_secs": 0.749,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q8",
+   "chars": 2595,
+   "model_in": 959,
+   "model_out": 1636,
+   "calls": 3,
+   "failed": 2,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchCode": 3
+   },
+   "tool_failed_calls": {
+    "ghSearchCode": 2
+   },
+   "tool_chars": {
+    "ghSearchCode": 1515
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchCode": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchCode": 0
+   },
+   "input_tokens": 39770,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 928,
+   "cost_usd": 0.0312396,
+   "turns": 4,
+   "secs": 20.794,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 6.906,
+   "tool_secs": 13.888,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q9",
+   "chars": 5820,
+   "model_in": 4025,
+   "model_out": 1795,
+   "calls": 5,
+   "failed": 2,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchCode": 2,
+    "ghGetFileContent": 3
+   },
+   "tool_failed_calls": {
+    "ghSearchCode": 1,
+    "ghGetFileContent": 1
+   },
+   "tool_chars": {
+    "ghSearchCode": 1081,
+    "ghGetFileContent": 3568
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 56179,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": 1144,
+   "cost_usd": 0.0408748,
+   "turns": 6,
+   "secs": 12.17,
+   "setup_secs": null,
+   "solver_secs": null,
+   "model_secs": 9.204,
+   "tool_secs": 2.966,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null
+  }
+ ],
+ "prior_attempts": [],
+ "judgments": [
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q1",
+   "scores": {
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 5
+    },
+    "mcp": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "Both answers are fully correct; X wins the prescribed tiebreak with 680 fewer characters (2389 versus 3069)."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q10",
+   "scores": {
+    "gh-lean": {
+     "correctness": 4,
+     "depth": 4,
+     "workflow": 5
+    },
+    "mcp": {
+     "correctness": 7,
+     "depth": 3,
+     "workflow": 4
+    }
+   },
+   "winner": "mcp",
+   "reason": "Y identifies the correct default.require export branch; X falsely claims a node condition where the cited object is bun."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q11",
+   "scores": {
+    "gh-lean": {
+     "correctness": 7,
+     "depth": 4,
+     "workflow": 4
+    },
+    "mcp": {
+     "correctness": 4,
+     "depth": 3,
+     "workflow": 3
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "X correctly locates createChannel in lib/shared/common.ts and verifies Go dispatch; Y names nonexistent lib/npm/common.ts."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q12",
+   "scores": {
+    "mcp": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 5
+    },
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 5
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "Equal verified correctness; Y uses 645 fewer characters (3916 versus 4561) in the supplied authoritative metrics."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q13",
+   "scores": {
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 4
+    },
+    "mcp": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "Both answer every required fact correctly; X uses 4,280 fewer characters (8,048 versus 12,328)."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q14",
+   "scores": {
+    "gh-lean": {
+     "correctness": 4,
+     "depth": 3,
+     "workflow": 4
+    },
+    "mcp": {
+     "correctness": 4,
+     "depth": 3,
+     "workflow": 4
+    }
+   },
+   "winner": "tie",
+   "reason": "Both leave dependencies.vite absence unproven under the exact-object rule; instrumented character logs are unavailable for a verified tiebreak."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q15",
+   "scores": {
+    "mcp": {
+     "correctness": 7,
+     "depth": 3,
+     "workflow": 5
+    },
+    "gh-lean": {
+     "correctness": 7,
+     "depth": 3,
+     "workflow": 5
+    }
+   },
+   "winner": "mcp",
+   "reason": "Equivalent correctness: both answer all five requested facts but repeat stale implementation details; X uses 137 fewer characters."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q16",
+   "scores": {
+    "mcp": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    },
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 4
+    }
+   },
+   "winner": "mcp",
+   "reason": "Both dependency hops are fully verified for both answers; X wins the correctness tie with 1,053 fewer characters (3,107 versus 4,160)."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q17",
+   "scores": {
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 1
+    },
+    "mcp": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 1
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "Both answers are fully correct; X uses 1,921 fewer instrumented characters (9,219 versus 11,140)."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q18",
+   "scores": {
+    "gh-lean": {
+     "correctness": 7,
+     "depth": 3,
+     "workflow": 3
+    },
+    "mcp": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    }
+   },
+   "winner": "mcp",
+   "reason": "Y verifies Sass optional-peer metadata; X explicitly leaves this required, load-bearing fact unverified."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q19",
+   "scores": {
+    "mcp": {
+     "correctness": 7,
+     "depth": 3,
+     "workflow": 5
+    },
+    "gh-lean": {
+     "correctness": 7,
+     "depth": 4,
+     "workflow": 5
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "Both omit native dispatch symbols; at equal correctness, Y uses 6,125 fewer characters and verifies more of the JavaScript dispatch chain."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q2",
+   "scores": {
+    "mcp": {
+     "correctness": 10,
+     "depth": 3,
+     "workflow": 4
+    },
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 5
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "Equal material correctness; Y uses 688 fewer characters and adds a verified direct entry-point scan."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q20",
+   "scores": {
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 5
+    },
+    "mcp": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "Both correctly answer every required fact; X uses 5,689 fewer characters (6,315 versus 12,004)."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q21",
+   "scores": {
+    "gh-lean": {
+     "correctness": 7,
+     "depth": 3,
+     "workflow": 4
+    },
+    "mcp": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 3
+    }
+   },
+   "winner": "mcp",
+   "reason": "Y correctly enumerates the after_model sequence edges and final model_request target; X conflates the routers and suggests loopEntry."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q22",
+   "scores": {
+    "mcp": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    },
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 4
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "Both answers are fully correct; Y uses 4,445 versus X's 12,177 characters, a 7,732-character advantage."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q23",
+   "scores": {
+    "gh-lean": {
+     "correctness": 7,
+     "depth": 3,
+     "workflow": 5
+    },
+    "mcp": {
+     "correctness": 8,
+     "depth": 3,
+     "workflow": 3
+    }
+   },
+   "winner": "mcp",
+   "reason": "Y avoids X's false claim that rw_verify_area performs mandatory-lock checks; both incompletely describe the permission and offset checks."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q24",
+   "scores": {
+    "gh-lean": {
+     "correctness": 7,
+     "depth": 4,
+     "workflow": 4
+    },
+    "mcp": {
+     "correctness": 7,
+     "depth": 4,
+     "workflow": 5
+    }
+   },
+   "winner": "mcp",
+   "reason": "Equal correctness: both verify all three calls but overgeneralize parameter-removal breakage; Y uses 5,175 fewer characters."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q25",
+   "scores": {
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 2
+    },
+    "mcp": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 4
+    }
+   },
+   "winner": "mcp",
+   "reason": "Both answers verify the requested correction, reply, and final wording; Y uses 499 fewer instrumented characters."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q26",
+   "scores": {
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 3
+    },
+    "mcp": {
+     "correctness": 7,
+     "depth": 3,
+     "workflow": 5
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "X correctly resolves the absent middleware documentation in create.md; Y explicitly leaves that required file check undone."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q27",
+   "scores": {
+    "gh-lean": {
+     "correctness": 4,
+     "depth": 3,
+     "workflow": 4
+    },
+    "mcp": {
+     "correctness": 4,
+     "depth": 3,
+     "workflow": 4
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "Both omit a complete inherited core export enumeration; at equal correctness, X uses 630 fewer characters (4227 versus 4857)."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q28",
+   "scores": {
+    "gh-lean": {
+     "correctness": 4,
+     "depth": 3,
+     "workflow": 4
+    },
+    "mcp": {
+     "correctness": 7,
+     "depth": 4,
+     "workflow": 3
+    }
+   },
+   "winner": "mcp",
+   "reason": "X incorrectly presents the legacy tail-budget formula as general; default lean mode uses a clamped context-based budget."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q29",
+   "scores": {
+    "mcp": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 4
+    },
+    "gh-lean": {
+     "correctness": 7,
+     "depth": 3,
+     "workflow": 5
+    }
+   },
+   "winner": "mcp",
+   "reason": "X explains the mandatory well-known discovery fallback and identifies the authorization-code flow; Y omits the fallback and leaves token acquisition underexplained."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q3",
+   "scores": {
+    "mcp": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    },
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "Both answers are fully correct; Y uses 1,256 fewer authoritative total characters (5,472 versus 6,728)."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q30",
+   "scores": {
+    "mcp": {
+     "correctness": 7,
+     "depth": 3,
+     "workflow": 1
+    },
+    "gh-lean": {
+     "correctness": 7,
+     "depth": 4,
+     "workflow": 5
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "At equal correctness scores, Y explains endpoint semantics and uses 5,144 fewer characters; both incompletely explain pipe establishment."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q4",
+   "scores": {
+    "mcp": {
+     "correctness": 7,
+     "depth": 3,
+     "workflow": 5
+    },
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 4
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "Y correctly supplies the dependency field and delegation chain; X falsely says write/end lead into _performRequest, which the constructor initiates."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q5",
+   "scores": {
+    "mcp": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 4
+    },
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 4
+    }
+   },
+   "winner": "tie",
+   "reason": "Both verify the required scenarios and two-runtime rationale; instrumented logs are unavailable to validate the reported character gap."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q6",
+   "scores": {
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 5
+    },
+    "mcp": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 5
+    }
+   },
+   "winner": "tie",
+   "reason": "Both answers are fully verified; instrumented logs are unavailable, so the reported 32-character gap cannot break the tie."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q7",
+   "scores": {
+    "mcp": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 3
+    },
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 3
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "Both answer every required fact correctly; Y uses 1,083 fewer characters (4,242 versus 5,325)."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q8",
+   "scores": {
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 4
+    },
+    "mcp": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 3
+    }
+   },
+   "winner": "mcp",
+   "reason": "Both answers fully satisfy the question; Y uses 196 fewer characters (2595 versus 2791)."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q9",
+   "scores": {
+    "gh-lean": {
+     "correctness": 9,
+     "depth": 5,
+     "workflow": 5
+    },
+    "mcp": {
+     "correctness": 9,
+     "depth": 5,
+     "workflow": 4
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "Equal correctness; supplied authoritative metrics give X a 1,732-character advantage, though instrumented logs were unavailable for independent verification."
+  }
+ ]
+}

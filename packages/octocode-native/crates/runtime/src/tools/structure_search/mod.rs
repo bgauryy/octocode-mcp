@@ -266,12 +266,6 @@ impl Uncovered {
     }
 }
 
-/// How long an empty listing's probes may walk what it skipped, all of
-/// them together: an empty listing costs about what a listing does, never a
-/// walk of every dependency and build directory. Past it, absence behind the
-/// skipped paths is unproven: the lead lists them all the same.
-const PROBE_BUDGET: std::time::Duration = std::time::Duration::from_millis(300);
-
 /// Entries one probe lists before it stops: enough to name the skip
 /// reasons and to tell "some" from "none".
 const PROBE_HITS: usize = crate::tools::empty_walk::SAMPLE_FILES + 1;
@@ -411,7 +405,7 @@ fn note_empty(
         }
         Verdict::Absent => return Ok(()),
     };
-    let mut retry = json!({"page": 1, "snapshot": null});
+    let mut retry = json!({"page": 1, "snapshot": null, "walkOffset": null});
     lift(&mut retry, &causes);
     out["next"]["includeSkipped"] = continuation(query, retry);
     match out["hints"].as_array_mut() {
@@ -421,16 +415,33 @@ fn note_empty(
     Ok(())
 }
 
-/// A non-empty first page whose walk left out `.gitignore`d entries leads to
-/// the same listing over them; an empty one gets its lead from
-/// [`note_empty`], which proves the skipped paths hold entries.
-fn lead_to_ignored(out: &mut Value, query: &impl serde::Serialize, seen: &Uncovered) {
-    if seen.ignored == 0 || out["status"] == "empty" || out["next"].get("includeSkipped").is_some()
-    {
+/// A non-empty first page whose walk left out entries leads to the same
+/// listing with the causes it skipped by lifted, in one call: every
+/// ignored or dot entry its summary counts is reachable. Default-pruned
+/// directories (dependencies, build output), which the summary names
+/// rather than counts, are lifted only for a `filtered` listing (one looking
+/// for names, types or metadata), where more of what it looks for may sit.
+/// An empty page gets its lead from [`note_empty`], which proves the
+/// skipped paths hold entries.
+fn lead_to_skipped(
+    out: &mut Value,
+    query: &impl serde::Serialize,
+    seen: &Uncovered,
+    walk: Walk,
+    filtered: bool,
+) {
+    if out["status"] == "empty" || out["next"].get("includeSkipped").is_some() {
         return;
     }
-    let mut retry = json!({"page": 1, "snapshot": null});
-    lift(&mut retry, &[Cause::Ignored]);
+    let mut causes = seen.skipped(walk);
+    if !filtered {
+        causes.retain(|cause| *cause != Cause::DefaultExcluded);
+    }
+    if causes.is_empty() {
+        return;
+    }
+    let mut retry = json!({"page": 1, "snapshot": null, "walkOffset": null});
+    lift(&mut retry, &causes);
     out["next"]["includeSkipped"] = continuation(query, retry);
 }
 
@@ -449,6 +460,13 @@ struct Cut {
     /// The walk ran out of time before this root-relative entry: it and
     /// everything after it in walk order is unscanned.
     time_cut: Option<String>,
+    /// How the window's rows end at a time cut.
+    time_window: TimeWindow,
+    /// Walk entries inspected, `walkOffset` ones included: where
+    /// `next.continueWalk` resumes a time-cut walk.
+    walk_position: usize,
+    /// Walk entries earlier windows inspected (`walkOffset`).
+    walk_offset: usize,
     /// The walk stopped at the first match past the limit, so only a lower
     /// bound of the total is known.
     early_exit: bool,
@@ -461,14 +479,63 @@ struct Cut {
     snapshot: String,
 }
 
+/// How a window cut by time ends: whether `next.continueWalk` can resume it
+/// without a gap or a repeat, and where.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum TimeWindow {
+    /// The window lists every row its walk found (past `scanOffset`): the
+    /// walk resumes at its last inspected entry.
+    #[default]
+    Whole,
+    /// The walk found more rows than `maxEntries`: the window ends at the
+    /// last row it lists, in walk order, and the walk resumes there. The
+    /// rows after it in walk order are not dropped, the resume walks them.
+    EndedAtRows,
+    /// A listing sorted by something other than walk order resumed with
+    /// `scanOffset` skips rows of an earlier window's sort order, which a
+    /// walk cut short ranks differently: no row of the window is listed,
+    /// and none resumes it.
+    SortedPastScanOffset,
+}
+
 impl Cut {
     fn has_more(&self) -> bool {
         self.page < self.total_pages
     }
-    /// A time cut resumes nowhere: a wider walk starts over and stops at the
-    /// same entry.
+    /// More of the walk's own rows fit a wider `maxEntries`.
     fn can_expand(&self) -> bool {
-        self.limit_cut && self.time_cut.is_none() && self.requested < max_walk() as usize
+        self.limit_cut && self.requested < max_walk() as usize
+    }
+    /// The `walkOffset` that resumes a walk cut by time after the last entry
+    /// its window covers, when no row of this window was dropped (a window
+    /// cut at the walk ceiling lost rows no resume re-lists), the listing
+    /// is in walk order wherever `scanOffset` skips rows, and the walk
+    /// advanced past its own resume point and within the contract.
+    fn resume_at(&self) -> Option<usize> {
+        if self.time_cut.is_none()
+            || self.limit_cut
+            || self.scan_cut
+            || self.time_window == TimeWindow::SortedPastScanOffset
+            || self.walk_position <= self.walk_offset
+        {
+            return None;
+        }
+        crate::tools::paging::admitted(
+            crate::tools::id::ToolId::StructureSearch,
+            None,
+            "walkOffset",
+            self.walk_position,
+        )
+    }
+    /// The listing rows `scanOffset` skipped that this window's walk did
+    /// not reach: the resumed walk skips them before it lists.
+    fn rows_left_to_skip(&self) -> usize {
+        self.scan_offset.saturating_sub(self.available)
+    }
+    /// The time cut has no continuation: no resume reaches the entries past
+    /// it.
+    fn time_terminal(&self) -> bool {
+        self.time_cut.is_some() && self.resume_at().is_none()
     }
     /// More pages exist, but the next page number is past the contract's
     /// `page` maximum.
@@ -491,7 +558,7 @@ impl Cut {
         (self.limit_cut || self.scan_cut) && !self.can_expand()
     }
     fn terminal(&self) -> bool {
-        self.page_ceiling() || self.walk_ceiling() || self.time_cut.is_some()
+        self.page_ceiling() || self.walk_ceiling() || self.time_terminal()
     }
     fn out_of_range(&self) -> bool {
         self.total > 0 && self.page > self.total_pages
@@ -513,20 +580,28 @@ impl Cut {
                     "page {} is the last page a continuation may request; later rows of this listing",
                     self.page
                 )
-            } else if let Some(at) = &self.time_cut {
+            } else if self.walk_ceiling() {
+                if self.early_exit {
+                    format!(
+                        "the walk stopped at maxEntries {}; entries past it",
+                        self.requested
+                    )
+                } else {
+                    format!(
+                        "{} entries matched, past maxEntries {}; the rest",
+                        self.total_discovered.max(self.available),
+                        self.requested
+                    )
+                }
+            } else if self.time_window == TimeWindow::SortedPastScanOffset {
                 format!(
-                    "the walk stopped at its time budget before `{at}`; entries from there on in walk order (name-sorted, depth-first)"
-                )
-            } else if self.early_exit {
-                format!(
-                    "the walk stopped at maxEntries {}; entries past it",
-                    self.requested
+                    "the walk stopped at its time budget before `{}` and this listing's sort order cannot skip the rows of an earlier window across a cut walk, so this window lists none; its rows and entries from there on in walk order (name-sorted, depth-first)",
+                    self.time_cut.as_deref().unwrap_or_default()
                 )
             } else {
                 format!(
-                    "{} entries matched, past maxEntries {}; the rest",
-                    self.total_discovered.max(self.available),
-                    self.requested
+                    "the walk stopped at its time budget before `{}`; entries from there on in walk order (name-sorted, depth-first)",
+                    self.time_cut.as_deref().unwrap_or_default()
                 )
             };
             warnings.push(format!("terminalLimit: {past} are on no page."));
@@ -545,6 +620,28 @@ impl Cut {
                 json!({"maxEntries": wider, "scanOffset": (self.covered > 0).then_some(self.covered), "page": 1, "snapshot": null}),
             );
         }
+        // A time cut something continues is no terminal limit: the page
+        // names the entry and the continuation that reaches the rest.
+        if let Some(at) = self.time_cut.as_deref().filter(|_| !self.time_terminal()) {
+            warnings.push(match self.time_window {
+                TimeWindow::EndedAtRows => format!(
+                    "the walk stopped at its time budget before `{at}` and found more rows than maxEntries {}: this window lists the first rows in walk order (name-sorted, depth-first), and entries after the last listed one are not yet listed: the page's continuation resumes the walk there.",
+                    self.requested
+                ),
+                _ => format!(
+                    "the walk stopped at its time budget before `{at}`; entries from there on in walk order (name-sorted, depth-first) are not yet listed: the page's continuation resumes the walk there."
+                ),
+            });
+        }
+        // The walk resumes where this one stopped: offered on the last page,
+        // it inspects only entries this window did not.
+        if let Some(position) = self.resume_at().filter(|_| !self.has_more()) {
+            let skip = self.rows_left_to_skip();
+            out["next"]["continueWalk"] = continuation(
+                query,
+                json!({"walkOffset": position, "page": 1, "snapshot": null, "scanOffset": (skip > 0).then_some(skip)}),
+            );
+        }
         for (cut, reason) in [
             (self.limit_cut, "maxEntries"),
             (self.scan_cut, "walkLimit"),
@@ -556,8 +653,6 @@ impl Cut {
         }
         if self.page_ceiling() {
             crate::tools::paging::terminal_limit(out, crate::tools::paging::CURSOR_MAXIMUM, &[]);
-        } else if self.time_cut.is_some() {
-            crate::tools::paging::terminal_limit(out, "walkDeadline", &[]);
         } else if self.walk_ceiling() {
             // The walk's own cut reason is already listed above.
             let reason = if self.limit_cut {
@@ -566,6 +661,8 @@ impl Cut {
                 "walkLimit"
             };
             crate::tools::paging::terminal_limit(out, reason, &[]);
+        } else if self.time_terminal() {
+            crate::tools::paging::terminal_limit(out, "walkDeadline", &[]);
         }
         if self.limit_cut || self.scan_cut {
             out["clipped"] = json!(true);
@@ -699,6 +796,45 @@ trait Sourced {
     fn seen(&self) -> memo::Seen<'_>;
 }
 
+/// A walk cut by time lists at most `requested` rows, the first ones in walk
+/// order: the window ends at the last of them (`walk_position`), and the walk
+/// resumed there reaches the rows after it. Cut anywhere else (the best rows
+/// by a sort of a walk that timing cut short) the window could not tell the
+/// resume which rows it dropped, and two windows would overlap or leave a gap.
+/// Entries are in walk order; the root entry (position 0) is no row. A
+/// listing that is not in walk order (`in_walk_order`) cannot skip the
+/// `scan_offset` rows an earlier window listed over a walk cut short: the
+/// window lists nothing.
+fn end_window(
+    native: &mut octocode_engine::types::FileSystemQueryResult,
+    requested: usize,
+    scan_offset: usize,
+    in_walk_order: bool,
+) -> TimeWindow {
+    if native.time_cut.is_none() {
+        return TimeWindow::Whole;
+    }
+    if scan_offset > 0 && !in_walk_order {
+        native.entries.clear();
+        return TimeWindow::SortedPastScanOffset;
+    }
+    let mut rows = native
+        .entries
+        .iter()
+        .map(|entry| entry.walk_position)
+        .filter(|position| *position > 0);
+    // Fewer rows than `requested`, or exactly that many: nothing to end early.
+    let Some(last) = rows.nth(requested.saturating_sub(1)) else {
+        return TimeWindow::Whole;
+    };
+    if rows.next().is_none() {
+        return TimeWindow::Whole;
+    }
+    native.entries.retain(|entry| entry.walk_position <= last);
+    native.walk_position = last;
+    TimeWindow::EndedAtRows
+}
+
 /// One listing walk: its rows in listing order (cut to `maxEntries`) and
 /// what the walk saw beside them.
 struct Walked<R> {
@@ -716,6 +852,9 @@ struct WalkMeta {
     was_capped: bool,
     /// The walk ran out of time before this root-relative entry.
     time_cut: Option<String>,
+    time_window: TimeWindow,
+    /// Walk entries the window covers, `walkOffset` ones included.
+    walk_position: usize,
     /// Files, directories and file bytes of this window's rows, counted
     /// before directories with their own group fold into its header.
     files: usize,
@@ -731,6 +870,97 @@ impl<R: Sourced + Send + Sync + 'static> memo::Listed for Walked<R> {
     }
 }
 
+/// What a listing walk's policy callback leaves out, counted as the walk
+/// runs: entries the path policy withheld, dot entries skipped without
+/// `includeHidden`, and the default-pruned directories. The callback applies
+/// the default prune itself ([`Prune::at`]), so a directory with a pruned
+/// name that git tracks stays listed.
+///
+/// [`Prune::at`]: octocode_engine::search::walk::Prune::at
+struct WalkLeft {
+    withheld: std::sync::Mutex<crate::policy::discovery::Withheld>,
+    hidden: std::sync::atomic::AtomicUsize,
+    root: std::path::PathBuf,
+    /// The default prune; `None` with `defaultExcludes:false`.
+    prune: Option<octocode_engine::search::walk::RootedPrune>,
+    /// Pruned directories, root-relative, in walk order.
+    pruned: std::sync::Mutex<Vec<String>>,
+}
+
+impl WalkLeft {
+    fn new(root: &std::path::Path, defaults: bool) -> Self {
+        Self {
+            withheld: std::sync::Mutex::default(),
+            hidden: std::sync::atomic::AtomicUsize::new(0),
+            root: root.to_path_buf(),
+            prune: defaults.then(|| {
+                octocode_engine::search::walk::Prune::new(
+                    PruneMode::SyntaxVisible.directories(true),
+                )
+                .at(root)
+            }),
+            pruned: std::sync::Mutex::default(),
+        }
+    }
+
+    /// Whether the default prune leaves out `path`, a directory below the
+    /// root.
+    fn excludes(&self, path: &std::path::Path, file_type: Option<std::fs::FileType>) -> bool {
+        let is_dir = file_type.map_or_else(|| path.is_dir(), |kind| kind.is_dir());
+        path != self.root
+            && self
+                .prune
+                .as_ref()
+                .is_some_and(|prune| prune.prunes(path, is_dir))
+    }
+
+    /// [`Self::excludes`], recording a fresh visit (a replayed one was
+    /// recorded by the window it resumes).
+    fn prunes(
+        &self,
+        path: &std::path::Path,
+        file_type: Option<std::fs::FileType>,
+        visit: octocode_engine::portable::Visit,
+    ) -> bool {
+        let pruned = self.excludes(path, file_type);
+        if pruned && visit == octocode_engine::portable::Visit::Fresh {
+            let relative = path.strip_prefix(&self.root).unwrap_or(path);
+            self.pruned
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .push(relative.to_string_lossy().replace('\\', "/"));
+        }
+        pruned
+    }
+
+    fn count_hidden(&self) {
+        self.hidden
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn record_withheld(&self, path: &std::path::Path) {
+        self.withheld
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .record(path, path.is_dir());
+    }
+
+    fn into_uncovered(self, ignored: usize) -> Uncovered {
+        Uncovered {
+            ignored,
+            withheld: self
+                .withheld
+                .into_inner()
+                .unwrap_or_else(|error| error.into_inner()),
+            hidden: self.hidden.into_inner(),
+            pruned: self
+                .pruned
+                .into_inner()
+                .unwrap_or_else(|error| error.into_inner()),
+        }
+    }
+}
+
 impl<R: Sourced> Walked<R> {
     /// The walk's `rows` (listing order) cut to `requested`, less the
     /// `scan_offset` rows earlier windows listed (listing order is stable,
@@ -740,8 +970,7 @@ impl<R: Sourced> Walked<R> {
         mut rows: Vec<R>,
         requested: usize,
         scan_offset: usize,
-        withheld: std::sync::Mutex<crate::policy::discovery::Withheld>,
-        hidden: usize,
+        left: WalkLeft,
         security: &crate::security::ContentSecurity,
     ) -> Self {
         let available = rows.len();
@@ -772,17 +1001,12 @@ impl<R: Sourced> Walked<R> {
             time_cut: native
                 .time_cut
                 .map(|at| security.sanitize_text(&at, None).content),
+            time_window: TimeWindow::Whole,
+            walk_position: native.walk_position as usize,
             files,
             dirs,
             bytes,
-            uncovered: Uncovered {
-                ignored: native.ignored as usize,
-                withheld: withheld
-                    .into_inner()
-                    .unwrap_or_else(|error| error.into_inner()),
-                hidden,
-                pruned: native.pruned_dirs,
-            },
+            uncovered: left.into_uncovered(native.ignored as usize),
             warnings,
         };
         Self { rows, meta }
@@ -796,7 +1020,7 @@ impl<R: Sourced> Walked<R> {
         pages: usize,
         requested: usize,
         early_exit: bool,
-        scan_offset: usize,
+        (scan_offset, walk_offset): (usize, u32),
         snapshot: String,
     ) -> Cut {
         let meta = &self.meta;
@@ -814,6 +1038,9 @@ impl<R: Sourced> Walked<R> {
             limit_cut,
             scan_cut,
             time_cut: meta.time_cut.clone(),
+            time_window: meta.time_window,
+            walk_position: meta.walk_position,
+            walk_offset: walk_offset as usize,
             early_exit,
             total_discovered: meta.total_discovered,
             scan_offset,
@@ -844,10 +1071,20 @@ impl WalkMeta {
         summary
     }
 
-    /// The page's warnings past the walk's own and `cut`'s (`warnings`): the
-    /// path policy's withheld entries.
-    fn warn(&self, out: &mut Value, mut warnings: Vec<String>) {
-        warnings.extend(self.uncovered.withheld.notice());
+    /// The page's warnings: `cut`'s own (`warnings`), and on the first
+    /// page the walk's (unreadable entries, the path policy's withheld
+    /// entries) and the query's, which describe every page alike and are
+    /// stated once, like the summary.
+    fn warn(&self, out: &mut Value, query_notes: Vec<String>, cut: Vec<String>, page: usize) {
+        let mut warnings = Vec::new();
+        if page == 1 {
+            warnings.extend(self.warnings.iter().cloned());
+            warnings.extend(query_notes);
+        }
+        warnings.extend(cut);
+        if page == 1 {
+            warnings.extend(self.uncovered.withheld.notice());
+        }
         if !warnings.is_empty() {
             out["warnings"] = json!(warnings);
         }
@@ -877,7 +1114,7 @@ fn walk_warnings(s: u32, d: u32) -> Vec<String> {
 }
 
 /// [`note_empty`] for an empty listing: `walk` re-walks the same filters
-/// with the skipped paths `relaxed` lets in, within [`PROBE_BUDGET`].
+/// with the skipped paths `relaxed` lets in, within the probe budget.
 fn probe_empty<R: Sourced>(
     out: &mut Value,
     query: &impl serde::Serialize,
@@ -886,7 +1123,10 @@ fn probe_empty<R: Sourced>(
     shown: Walk,
     walk: impl Fn(Walk, Walking<'_>) -> Result<Walked<R>, ToolError>,
 ) -> Result<(), ToolError> {
-    let bound = ProbeBound::new(PROBE_BUDGET);
+    // Every probe of one empty listing shares the one probe budget: an empty
+    // listing costs about what a listing does, never a walk of every
+    // dependency and build directory.
+    let bound = ProbeBound::new(crate::tools::empty_walk::probe_budget());
     note_empty(out, query, at, seen, shown, |relaxed| {
         let found = walk(relaxed, Walking::Probe(&bound))?;
         let cut = found.meta.was_capped || bound.cut();

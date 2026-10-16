@@ -11,7 +11,7 @@
 # appends the X/Y map to judge/<armA>~<armB>/MAP.secret.txt.
 # Env: JUDGE_PROVIDER (default guy-provider-openai), JUDGE_MODEL (default gpt-5.5).
 #      JUDGE_RUNNER=codex: codex exec judge (model JUDGE_MODEL, default gpt-5.5; workspace-write
-#      sandbox with network in an empty temp cwd, gh behind the guard; recorded in
+#      tools use an isolated filesystem and fresh homes, gh behind the guard; recorded in
 #      judge/<pair>/JUDGE.txt).
 set -euo pipefail
 CAMP="$(cd "$1" && pwd)"; A="$2"; B="$3"; PASS="$4"; Q="$5"
@@ -123,15 +123,36 @@ if [ "${JUDGE_RUNNER:-pi}" = codex ]; then
   CODEX="${CODEX_BIN:-$(command -v codex || echo /Applications/Codex.app/Contents/Resources/codex-cli/bin/codex)}"
   MODEL="${JUDGE_MODEL:-gpt-5.5}"
   echo "runner=codex model=$MODEL codex=$("$CODEX" --version 2>/dev/null)" > "$DIR/JUDGE.txt"
-  for attempt in 1 2 3; do
-    WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/bench-judge-XXXXXX")"
-    { cat "$REF/JUDGING.md"; echo; cat "$REF/example-verdict.md"; echo; echo '---'; echo; printf '%s\n' "$PROMPT"; } > "$WORKDIR/prompt.md"
-    "$CODEX" exec --ephemeral --skip-git-repo-check --ignore-user-config --ignore-rules \
-      -s workspace-write -c sandbox_workspace_write.network_access=true -m "$MODEL" -C "$WORKDIR" \
-      -o "$DIR/p$PASS-$Q.md" - < "$WORKDIR/prompt.md" > "$DIR/p$PASS-$Q.stderr.log" 2>&1 || true
-    rm -rf "$WORKDIR"
-    if valid_verdict "$DIR/p$PASS-$Q.md"; then echo "$A~$B p$PASS $Q judged"; exit 0; fi
-    sleep $((attempt * 30))
+  USED="${JUDGE_ATTEMPTS_USED:-0}"
+  case "$USED" in 0|1|2) ;; *) echo "Judge attempt budget exhausted or invalid" >&2; exit 2 ;; esac
+  READ_ARGS=()
+  if [ "$QDIR" = local-questions ]; then
+    READ_ARGS+=(--read-path "$ANSWER_DIR/$Q.md")
+    while IFS= read -r root; do READ_ARGS+=(--read-path "$root"); done < <(
+      python3 - "$CAMP/runs/$A-p$PASS-$Q/corpus.json" <<'PYROOTS'
+import json, sys
+from pathlib import Path
+for repository in json.loads(Path(sys.argv[1]).read_text()):
+    print(repository['sourceRoot'])
+PYROOTS
+    )
+  fi
+  for ((attempt=USED+1; attempt<=3; attempt++)); do
+    ATTEMPT="$DIR/attempts/p$PASS-$Q/$attempt"
+    mkdir -p "$(dirname "$ATTEMPT")"
+    mkdir "$ATTEMPT"
+    { cat "$REF/JUDGING.md"; echo; cat "$REF/example-verdict.md"; echo; echo '---'; echo; printf '%s\n' "$PROMPT"; } > "$ATTEMPT/prompt.md"
+    RUN_OK=0
+    CODEX_BIN="$CODEX" python3 "$HERE/judge_codex.py" --model "$MODEL" \
+      --prompt "$ATTEMPT/prompt.md" --output "$ATTEMPT/verdict.md" \
+      --receipt "$ATTEMPT/isolation.json" --timeout "${JUDGE_TIMEOUT:-600}" \
+      ${READ_ARGS[@]+"${READ_ARGS[@]}"} > "$ATTEMPT/runner.log" 2>&1 && RUN_OK=1
+    cp "$ATTEMPT/runner.log" "$DIR/p$PASS-$Q.stderr.log"
+    if [ "$RUN_OK" = 1 ] && valid_verdict "$ATTEMPT/verdict.md"; then
+      cp "$ATTEMPT/verdict.md" "$DIR/p$PASS-$Q.md"
+      echo "$A~$B p$PASS $Q judged"; exit 0
+    fi
+    if [ "$attempt" -lt 3 ]; then sleep $((attempt * 30)); fi
   done
   echo "$A~$B p$PASS $Q NO VERDICT ($(tail -c 120 "$DIR/p$PASS-$Q.stderr.log" | tr '\n' ' '))"
   exit 1

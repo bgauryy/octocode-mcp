@@ -25,12 +25,20 @@ fn page_paths(
     policy: &PathPolicy,
     security: &ContentSecurity,
 ) -> Vec<String> {
-    execute_local_search(request, policy, security, &NeverCancel, None, Some(6_000))
-        .expect("page")
-        .files
-        .into_iter()
-        .map(|file| file.path)
-        .collect()
+    execute_local_search(
+        request,
+        policy,
+        security,
+        &NeverCancel,
+        None,
+        Some(6_000),
+        None,
+    )
+    .expect("page")
+    .files
+    .into_iter()
+    .map(|file| file.path)
+    .collect()
 }
 
 /// Thirty TS files of needle hits (every third also holds a token on a hit
@@ -79,7 +87,7 @@ fn an_extensionless_leading_nul_binary_is_listed_by_basename() {
         serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "alpha".to_string(), "regex": LocalSearchQueryRegex::Literal}),
         None,
     );
-    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
         .expect("search");
     assert!(!result.is_partial);
     assert_eq!(
@@ -145,7 +153,7 @@ fn opaque_binary_files_in_scope_do_not_make_a_search_partial() {
         serde_json::json!({"path": target.to_string_lossy().into_owned(), "matchString": "needle".to_string()}),
         None,
     );
-    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
         .expect("search");
     assert!(
         result.hints.iter().any(|h| h.contains("binary")),
@@ -193,7 +201,7 @@ fn a_binary_cut_keeps_the_ignored_path_disclosure_and_is_not_terminal() {
         serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "needleIgnored"}),
         None,
     );
-    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
         .expect("search");
     assert!(result.files.is_empty());
     assert!(result.is_partial, "the binary cut leaves a gap: {result:?}");
@@ -225,7 +233,7 @@ fn relevance_cap_keeps_hot_file_and_marks_first_and_final_pages_partial() {
         serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "hit".to_string(), "regex": LocalSearchQueryRegex::Literal}),
         None,
     );
-    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
         .expect("search");
     assert_eq!(result.files[0].path, "zzz-hot.txt");
     let stats = &result.stats;
@@ -246,18 +254,28 @@ fn relevance_cap_keeps_hot_file_and_marks_first_and_final_pages_partial() {
         serde_json::json!({"page": last_page, "snapshot": result.source_snapshot.as_ref().expect("snapshot")}),
         Some(&request),
     );
-    let last = execute_local_search(&last_request, &policy, &security, &NeverCancel, None, None)
-        .expect("last collected page");
+    let last = execute_local_search(
+        &last_request,
+        &policy,
+        &security,
+        &NeverCancel,
+        None,
+        None,
+        None,
+    )
+    .expect("last collected page");
     assert!(last.is_partial);
     assert!(last.terminal_limit);
-    // No page continues past the cap; the only lead lists the scope to split.
+    // No page continues past the cap; the only lead lists the scope's top
+    // directories to split the search by.
     let next = last.next.as_ref().expect("split lead");
     assert_eq!(
         next.as_object()
             .map(|map| map.keys().cloned().collect::<Vec<_>>()),
-        Some(vec!["viewTree".to_owned()]),
+        Some(vec!["narrowScope".to_owned()]),
         "{next}"
     );
+    assert_eq!(next["narrowScope"]["query"]["queries"][0]["maxDepth"], 1);
     assert!(
         last.warnings
             .iter()
@@ -293,7 +311,7 @@ fn cancellation_during_the_walk_reports_cancelled() {
     );
     // The first check (before the walk) passes; the walk's polls cancel.
     let cancel = CancelAfter(AtomicU32::new(0), 3);
-    let error = execute_local_search(&request, &policy, &security, &cancel, None, None)
+    let error = execute_local_search(&request, &policy, &security, &cancel, None, None, None)
         .expect_err("cancelled mid-walk");
     assert_eq!(error.code, "cancelled");
     assert!(
@@ -313,9 +331,15 @@ fn clipped_secret_guard_fails_closed_when_the_source_cannot_be_reread() {
             column: 0,
             byte_offset: 0,
             value: "…token = ghp_abcdefghijklmnop".into(),
+            value_digest: <sha2::Sha256 as sha2::Digest>::digest(
+                "…token = ghp_abcdefghijklmnop".as_bytes(),
+            )
+            .into(),
             count: None,
             rank: None,
             original_chars: Some(400),
+
+            original_bytes: Some(400),
         }],
         source: None,
     };
@@ -356,9 +380,15 @@ fn clipped_secret_guard_fails_closed_when_the_match_line_is_gone() {
             column: 0,
             byte_offset: 0,
             value: "…token = ghp_abcdefghijklmnop".into(),
+            value_digest: <sha2::Sha256 as sha2::Digest>::digest(
+                "…token = ghp_abcdefghijklmnop".as_bytes(),
+            )
+            .into(),
             count: None,
             rank: None,
             original_chars: Some(400),
+
+            original_bytes: Some(400),
         }],
         source: None,
     };
@@ -420,6 +450,13 @@ fn an_unset_regex_reads_every_text_literally() {
     let alternation = run(serde_json::json!({"matchString": "unwrap_or|foo_"}));
     assert_eq!(lines(&alternation), 0, "{alternation}");
     assert!(warned(&alternation, "ran as literal text"), "{alternation}");
+    // The regex reading is an executable retry, not only prose.
+    let retry = &alternation["next"]["findSimilar"];
+    let row = retry.pointer("/query/queries/0").unwrap_or(&retry["query"]);
+    assert_eq!(row["regex"], "rust", "{alternation}");
+    assert_eq!(row["matchString"], "unwrap_or|foo_", "{alternation}");
+    let retried = run(row.clone());
+    assert_eq!(lines(&retried), 2, "{retried}");
     let alternation = run(serde_json::json!({"matchString": "unwrap_or|foo_", "regex": "rust"}));
     assert_eq!(lines(&alternation), 2, "{alternation}");
     let explicit = run(serde_json::json!({"matchString": ".unwrap()", "regex": "rust"}));
@@ -455,7 +492,7 @@ fn an_include_matching_only_ignored_files_names_the_skip_not_the_scope() {
             "matchString": "func (s *T)", "include": ["*.go"]}),
         None,
     );
-    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
         .expect("search");
     assert!(result.files.is_empty());
     let hints = result.hints.join(" | ");
@@ -489,7 +526,7 @@ fn an_empty_search_names_matches_under_ignored_and_hidden_paths() {
         serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "needle-here"}),
         None,
     );
-    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
         .expect("search");
     assert!(result.files.is_empty());
     // The probe's finding is the row's first hint (rows keep one).
@@ -523,7 +560,7 @@ fn an_empty_search_names_matches_under_ignored_and_hidden_paths() {
     assert_eq!(lead["query"]["queries"][0]["includeHidden"], true, "{lead}");
     let retried: LocalSearchQuery =
         serde_json::from_value(lead["query"]["queries"][0].clone()).expect("lead query");
-    let found = execute_local_search(&retried, &policy, &security, &NeverCancel, None, None)
+    let found = execute_local_search(&retried, &policy, &security, &NeverCancel, None, None, None)
         .expect("retry");
     assert_eq!(found.files.len(), 2, "{found:?}");
     // Nothing to find elsewhere: no probe hint and no lead.
@@ -531,7 +568,7 @@ fn an_empty_search_names_matches_under_ignored_and_hidden_paths() {
         serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "absent-everywhere"}),
         None,
     );
-    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
         .expect("search");
     assert!(result.next.is_none(), "{:?}", result.next);
     assert_eq!(result.hints.len(), 1, "{:?}", result.hints);
@@ -551,7 +588,7 @@ fn an_empty_search_names_default_excluded_directories_that_match() {
         serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "getElectronVersion"}),
         None,
     );
-    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
         .expect("search");
     assert!(result.files.is_empty());
     let hint = &result.hints[0];
@@ -568,7 +605,7 @@ fn an_empty_search_names_default_excluded_directories_that_match() {
     let lead = &result.next.as_ref().expect("lead")["includeSkipped"]["query"]["queries"][0];
     assert_eq!(lead["defaultExcludes"], false, "{lead}");
     let retried: LocalSearchQuery = serde_json::from_value(lead.clone()).expect("lead query");
-    let found = execute_local_search(&retried, &policy, &security, &NeverCancel, None, None)
+    let found = execute_local_search(&retried, &policy, &security, &NeverCancel, None, None, None)
         .expect("retry");
     assert_eq!(found.files.len(), 1, "{found:?}");
 }
@@ -580,7 +617,9 @@ fn an_empty_search_names_default_excluded_directories_that_match() {
 fn an_unproven_probe_names_the_ignored_paths_and_leads_with_include_ignored() {
     let root = tempfile::tempdir().expect("fixture directory");
     fs::create_dir(root.path().join(".git")).expect("repository marker");
-    fs::write(root.path().join(".gitignore"), "repos/*\n").expect("gitignore");
+    // In a git work tree a default-excluded name is pruned where git
+    // ignores it.
+    fs::write(root.path().join(".gitignore"), "repos/*\nbuild/\n").expect("gitignore");
     fs::create_dir_all(root.path().join("repos/go")).expect("ignored dir");
     fs::write(root.path().join("repos/go/a.go"), "func Run() {}\n").expect("go");
     fs::create_dir_all(root.path().join("build")).expect("build dir");
@@ -592,8 +631,8 @@ fn an_unproven_probe_names_the_ignored_paths_and_leads_with_include_ignored() {
             "matchString": "func", "include": ["*.go"]}),
         None,
     );
-    let result = super::leads::with_probe_budget(std::time::Duration::ZERO, || {
-        execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+    let result = crate::tools::empty_walk::with_probe_budget(std::time::Duration::ZERO, || {
+        execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
             .expect("search")
     });
     assert!(result.files.is_empty());
@@ -601,7 +640,7 @@ fn an_unproven_probe_names_the_ignored_paths_and_leads_with_include_ignored() {
     let body = serde_json::to_value(&result).expect("result");
     assert_eq!(
         body["skippedPaths"]["entries"],
-        serde_json::json!([{"path":skipped_source_path(root.path(),"build"),"cause":"default-excluded"},{"path":skipped_source_path(root.path(),"repos/go"),"cause":"ignored","reason":".gitignore:1 'repos/*'"}]),
+        serde_json::json!([{"path":skipped_source_path(root.path(),"repos/go"),"cause":"ignored","reason":".gitignore:1 'repos/*'"}]),
         "{body}"
     );
     assert!(
@@ -615,7 +654,7 @@ fn an_unproven_probe_names_the_ignored_paths_and_leads_with_include_ignored() {
     assert_eq!(lead["includeIgnored"], true, "{next}");
     assert!(next.get("viewTree").is_none(), "{next}");
     let retried: LocalSearchQuery = serde_json::from_value(lead.clone()).expect("lead query");
-    let found = execute_local_search(&retried, &policy, &security, &NeverCancel, None, None)
+    let found = execute_local_search(&retried, &policy, &security, &NeverCancel, None, None, None)
         .expect("retry");
     assert!(
         found.files.iter().any(|file| file.path.ends_with("a.go")),
@@ -629,8 +668,8 @@ fn an_unproven_probe_names_the_ignored_paths_and_leads_with_include_ignored() {
         serde_json::json!({"path": plain.path().to_string_lossy().into_owned(), "matchString": "absent"}),
         None,
     );
-    let result = super::leads::with_probe_budget(std::time::Duration::ZERO, || {
-        execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+    let result = crate::tools::empty_walk::with_probe_budget(std::time::Duration::ZERO, || {
+        execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
             .expect("search")
     });
     assert!(result.next.is_none(), "{:?}", result.next);
@@ -652,7 +691,7 @@ fn a_skipped_match_replaces_the_generic_empty_count() {
             "matchString": "func", "include": ["*.go", "*.ts"]}),
         None,
     );
-    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
         .expect("search");
     let hints = result.hints.join(" | ");
     assert!(hints.contains("match in skipped paths"), "{hints}");
@@ -676,8 +715,8 @@ fn skipped_binaries_are_disclosed_on_the_first_page_only() {
         serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "needle", "pageSize": 1, "sort": "path"}),
         None,
     );
-    let page1 =
-        execute_local_search(&first, &policy, &security, &NeverCancel, None, None).expect("page 1");
+    let page1 = execute_local_search(&first, &policy, &security, &NeverCancel, None, None, None)
+        .expect("page 1");
     assert_eq!(page1.stats.binary_skipped, Some(1), "{:?}", page1.warnings);
     assert!(
         page1
@@ -687,7 +726,7 @@ fn skipped_binaries_are_disclosed_on_the_first_page_only() {
     );
     let next = page1.next.as_ref().expect("next")["nextPage"]["query"]["queries"][0].clone();
     let second: LocalSearchQuery = serde_json::from_value(next).expect("page 2 query");
-    let page2 = execute_local_search(&second, &policy, &security, &NeverCancel, None, None)
+    let page2 = execute_local_search(&second, &policy, &security, &NeverCancel, None, None, None)
         .expect("page 2");
     assert_eq!(page2.stats.binary_skipped, None, "{:?}", page2.warnings);
     assert!(
@@ -721,7 +760,7 @@ fn a_match_inside_a_binary_header_yields_no_row_and_no_read() {
         serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "PNG"}),
         None,
     );
-    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
         .expect("search");
     assert!(result.files.is_empty(), "{:?}", result.files);
     assert!(
@@ -826,6 +865,7 @@ fn a_workspace_relative_replay_of_an_absolute_search_walks_every_page_once() {
                     &NeverCancel,
                     None,
                     Some(20_000),
+                    None,
                 )
                 .unwrap_or_else(|error| panic!("{row} of {relative}: {error:?}"));
                 let body = serde_json::to_value(&result).expect("result");
@@ -970,7 +1010,7 @@ fn missing_path_leads_to_nearest_parent_tree() {
         serde_json::json!({"path": root.path().join("src/nativ").to_string_lossy(), "matchString": "x"}),
         None,
     );
-    let error = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+    let error = execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
         .expect_err("missing path");
     assert_eq!(error.code, "pathNotFound");
     let next = error.next.expect("viewTree lead");
@@ -981,9 +1021,10 @@ fn missing_path_leads_to_nearest_parent_tree() {
     );
 }
 
-/// A scope-miss row leads to a listing with the same globs.
+/// A scope-miss row leads to the scope's listing without the globs that
+/// matched nothing, so it shows the names that exist.
 #[test]
-fn scope_miss_leads_to_files_listing_with_same_globs() {
+fn scope_miss_leads_to_the_files_listing_without_its_globs() {
     let body = search_fixture(
         &[("a.rs", "needle\n")],
         ls_query(
@@ -996,7 +1037,7 @@ fn scope_miss_leads_to_files_listing_with_same_globs() {
     assert_eq!(lead["tool"], "structureSearch", "{body}");
     let listing = &lead["query"]["queries"][0];
     assert_eq!(listing["operation"], "files", "{body}");
-    assert_eq!(listing["include"], serde_json::json!(["*.zzz"]), "{body}");
+    assert!(listing.get("include").is_none(), "{body}");
 }
 
 /// A bare word include also searches inside directories named by it.
@@ -1076,8 +1117,16 @@ fn a_stored_page_is_byte_identical_to_the_page_a_rescan_cuts() {
     paged_fixture(root.path());
     let (policy, security) = policy_for(root.path());
     let search = |request: &LocalSearchQuery| {
-        execute_local_search(request, &policy, &security, &NeverCancel, None, Some(6_000))
-            .expect("search")
+        execute_local_search(
+            request,
+            &policy,
+            &security,
+            &NeverCancel,
+            None,
+            Some(6_000),
+            None,
+        )
+        .expect("search")
     };
     let run = |request: &LocalSearchQuery| {
         let result = search(request);
@@ -1149,6 +1198,7 @@ fn a_stored_page_checks_the_read_policy_of_the_files_it_shows() {
         &NeverCancel,
         None,
         Some(6_000),
+        None,
     )
     .expect("page 1");
     let snapshot = page_one.source_snapshot.clone().expect("snapshot");
@@ -1159,7 +1209,15 @@ fn a_stored_page_checks_the_read_policy_of_the_files_it_shows() {
         )
     };
     let run = |page: &LocalSearchQuery| {
-        execute_local_search(page, &policy, &security, &NeverCancel, None, Some(6_000))
+        execute_local_search(
+            page,
+            &policy,
+            &security,
+            &NeverCancel,
+            None,
+            Some(6_000),
+            None,
+        )
     };
     let second = serde_json::to_string(&run(&page(2)).expect("page 2")).expect("json");
     let on_two = page_paths(&page(2), &policy, &security);
@@ -1211,6 +1269,7 @@ fn a_key_file_rewritten_under_its_stamp_restarts_a_replayed_page() {
         &NeverCancel,
         None,
         Some(6_000),
+        None,
     )
     .expect("page 1")
     .source_snapshot
@@ -1238,6 +1297,7 @@ fn a_key_file_rewritten_under_its_stamp_restarts_a_replayed_page() {
         &NeverCancel,
         None,
         Some(6_000),
+        None,
     )
     .expect_err("changed key file");
     assert_eq!(error.code, "staleSnapshot");
@@ -1281,29 +1341,34 @@ fn count_views_order_by_count_under_the_default_sort() {
     assert_eq!(files[0].path, "decl.rs", "a line view keeps relevance");
 }
 
-/// `includeIgnored` is the one "search everything" switch: it
-/// also walks hidden files. An explicit `hidden:false` still wins.
+/// Each walk flag lifts its own cause, as in every local walk:
+/// `includeIgnored` walks `.gitignore`d paths, `includeHidden` dot entries.
 #[test]
-fn no_ignore_also_walks_hidden_files() {
+fn each_walk_flag_lifts_only_its_own_cause() {
     use super::executor::search_options;
+    use octocode_engine::search::walk::IgnorePolicy;
     let root = std::path::Path::new(".");
-    let all = search_options(
-        &ls_query(serde_json::json!({"includeIgnored": true}), None),
-        root,
-        None,
+    let policy =
+        |fields: serde_json::Value| search_options(&ls_query(fields, None), root, None).ignore;
+    assert_eq!(policy(serde_json::json!({})), IgnorePolicy::default());
+    assert_eq!(
+        policy(serde_json::json!({"includeIgnored": true})),
+        IgnorePolicy {
+            include_ignored: true,
+            include_hidden: false
+        }
     );
-    assert_eq!(all.ignore, octocode_engine::search::walk::IgnorePolicy::ALL);
-    let plain = search_options(&ls_query(serde_json::json!({}), None), root, None);
-    assert!(!plain.ignore.include_hidden);
-    let kept = search_options(
-        &ls_query(
-            serde_json::json!({"includeIgnored": true, "includeHidden": false}),
-            None,
-        ),
-        root,
-        None,
+    assert_eq!(
+        policy(serde_json::json!({"includeHidden": true})),
+        IgnorePolicy {
+            include_ignored: false,
+            include_hidden: true
+        }
     );
-    assert!(kept.ignore.include_ignored && !kept.ignore.include_hidden);
+    assert_eq!(
+        policy(serde_json::json!({"includeIgnored": true, "includeHidden": true})),
+        IgnorePolicy::ALL
+    );
 }
 
 /// A line view with thousands of hits leads to the per-file counts first: one
@@ -1342,6 +1407,23 @@ fn a_large_line_result_leads_to_per_file_counts() {
         ),
     );
     assert!(counts["next"].get("viewFileCount").is_none(), "{counts}");
+}
+
+/// The spelling probe walks what the query (and its lead) walks: a variant
+/// only in a default-excluded file is no reason to offer a lead that finds
+/// nothing.
+#[test]
+fn spelling_variants_in_default_excluded_files_are_not_counted() {
+    let files = [("dist.min.js", "parse_config()\n"), ("src/a.py", "x = 1\n")];
+    let body = search_fixture(
+        &files,
+        ls_query(serde_json::json!({"matchString":"parseConfig"}), None),
+    );
+    assert!(body["next"].get("findSimilar").is_none(), "{body}");
+    assert!(
+        !body["hints"].to_string().contains("other spellings"),
+        "{body}"
+    );
 }
 
 /// A compound identifier that matches nothing is probed in its other case
@@ -1406,4 +1488,27 @@ fn identifier_variants_cover_the_common_case_styles() {
         from_snake.iter().any(|v| v == "httpServerError"),
         "{from_snake:?}"
     );
+}
+
+/// A localFetch line page counts bytes, and so does the long-line test: a
+/// clipped hit on a line of 6000 three-byte characters (18 KB, under the
+/// page in characters) is read by a byte window at the hit, and a long
+/// ASCII line under the page in bytes by its line.
+#[test]
+fn a_line_past_the_byte_page_is_read_at_the_hit_whatever_its_characters() {
+    let read_of = |line: String| {
+        let body = search_fixture(
+            &[("a.txt", &format!("{line} needle\n"))],
+            ls_query(serde_json::json!({"matchString": "needle"}), None),
+        );
+        let read = &body["next"]["read"];
+        read.pointer("/query/queries/0")
+            .unwrap_or(&read["query"])
+            .clone()
+    };
+    let wide = read_of("中".repeat(6_000));
+    assert_eq!(wide["unit"], "bytes", "{wide}");
+    assert_eq!(wide["offset"], 18_001, "{wide}");
+    let ascii = read_of("x".repeat(10_000));
+    assert!(ascii.get("unit").is_none(), "{ascii}");
 }

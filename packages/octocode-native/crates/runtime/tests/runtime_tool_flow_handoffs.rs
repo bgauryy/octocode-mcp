@@ -49,9 +49,15 @@ async fn wide_searches_and_unfinished_reads_offer_no_clasify_handoff() {
             .expect("result")
             .structured_content;
         let data = &out["results"][0]["data"];
-        assert!(data["hints"].get("clasify").is_none(), "{tool}: {data}");
+        assert!(
+            crate::support::checks::hint(data, "clasify").is_null(),
+            "{tool}: {data}"
+        );
         assert!(data["next"].get("clasify").is_none(), "{tool}: {data}");
-        assert!(data["hints"].get("readBlock").is_none(), "{tool}: {data}");
+        assert!(
+            crate::support::checks::hint(data, "readBlock").is_null(),
+            "{tool}: {data}"
+        );
     }
     runtime.close().await;
 }

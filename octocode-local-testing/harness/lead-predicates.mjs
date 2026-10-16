@@ -43,14 +43,14 @@ export const NOT_EMPTY_KEYS = /^(read(Block|Files|Commit|Issue|PullRequest|AtCom
 export const SAME_TOOL_PAGE_KEYS = /^(next[A-Za-z]*Page|continue[A-Za-z]*|expandScan|restart)$/;
 // Fields a same-tool lead may change (besides CONTINUATION_FIELDS), per key family.
 export const MUTABLE = [
-  [/^include(Skipped|Hidden|Archived)$/, new Set(['includeIgnored', 'includeHidden', 'includeArchived', 'defaultExcludes'])],
+  [/^include(Skipped|Hidden|Archived|BuildScripts)$/, new Set(['includeIgnored', 'includeHidden', 'includeArchived', 'defaultExcludes', 'rustContext'])],
   [/^expandScan$/, new Set(['maxEntries', 'maxFiles', 'maxDepth'])],
   [/^continue[A-Za-z]*$/, new Set(['fullContent'])],
 ];
 // Enrichment and clipped-read leads add the option that widens the same read.
 export const ADDS_OPTIONS = /^(expand[A-Za-z]*|wholeLines|readBoundedLines|readHits|readDeclaration)$/;
-export const SAME_TOOL_KEYS = /^(includeSkipped|includeHidden|includeArchived|narrowScope|restart|retry|repair|broadenSearch|ignoreCase)$/;
-export const CONTINUATION_FIELDS = new Set(['page', 'snapshot', 'scanOffset', 'matchPage', 'offset', 'importerPage', 'diagnosticPage', 'diagnosticSnapshot', 'supersedes', 'materializeOffset', 'extras', 'mainGoal', 'reasoning', 'ranges', 'length', 'unit']);
+export const SAME_TOOL_KEYS = /^(includeSkipped|includeHidden|includeArchived|includeBuildScripts|narrowScope|restart|retry|repair|broadenSearch|ignoreCase)$/;
+export const CONTINUATION_FIELDS = new Set(['page', 'snapshot', 'scanOffset', 'matchPage', 'offset', 'importerPage', 'candidatePage', 'headSha', 'diagnosticPage', 'supersedes', 'materializeOffset', 'extras', 'mainGoal', 'reasoning', 'ranges', 'length', 'unit']);
 export const KEY_TOOLS = [
   [/^findText$/, { tools: ['localSearch', 'ghSearchCode', 'ghGetFileContent', 'localFetch'] }],
   [/^(findCallers|callers)$/, { tools: ['lspSearch'], operation: 'callers' }],
@@ -76,6 +76,17 @@ const PATH_FIELDS = new Set(['path', 'baseline', 'workspaceRoot']);
 // Helpers.
 export const short = (v, n = 240) => { const s = typeof v === 'string' ? v : JSON.stringify(v); return s.length > n ? `${s.slice(0, n - 1)}...` : s; };
 export const isLead = node => node && typeof node === 'object' && typeof node.tool === 'string' && node.query && typeof node.query === 'object';
+/** Decode a suggested call from a public hint; ordinary prose is not a call. */
+export function suggestedCall(text) {
+  if (typeof text !== 'string') return null;
+  const match = /^(\w+): (Approximate: )?(\w+) (\{[\s\S]*\})$/.exec(text);
+  if (!match) return null;
+  try {
+    const query = JSON.parse(match[4]);
+    if (!Array.isArray(query.queries)) return null;
+    return { key: match[1], tool: match[3], query, ...(match[2] ? { confidence: 'low' } : {}) };
+  } catch { return null; }
+}
 export const rowOf = (query, i = 0) => query?.queries?.[i] ?? {};
 const sortKeys = v => (Array.isArray(v) ? v.map(sortKeys) : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).sort().map(k => [k, sortKeys(v[k])])) : v);
 /** Canonical JSON: object keys sorted at every level. */
@@ -91,6 +102,12 @@ export function leadsOf(sc) {
     if (!node || typeof node !== 'object') return;
     if (Array.isArray(node)) { node.forEach((c, i) => visit(c, `${at}[${i}]`, rowIndex)); return; }
     for (const [key, child] of Object.entries(node)) {
+      if (key === 'hints' && Array.isArray(child)) {
+        for (const text of child) {
+          const lead = suggestedCall(text);
+          if (lead) out.push({ ...lead, path: `${at}.hints.${lead.key}`, container: 'hints', rowIndex });
+        }
+      }
       if ((key === 'next' || key === 'hints') && child && typeof child === 'object' && !Array.isArray(child)) {
         for (const [name, lead] of Object.entries(child)) {
           if (name !== 'text' && isLead(lead)) out.push({ path: `${at}.${key}.${name}`, container: key, key: name, tool: lead.tool, query: lead.query, rowIndex });
@@ -106,7 +123,7 @@ export function leadsOf(sc) {
 }
 
 /** Evidence atoms of a result: every scalar outside pagination/hint metadata, keyed by its enclosing path. */
-const NOISE = new Set(['next', 'hints', 'pagination', 'contentPagination', 'filePagination', 'matchPagination', 'warnings', 'summary', 'snapshot', 'root', 'index', 'status', 'terminalLimit', 'coverage', 'completeness', 'complete', 'isPartial', 'partialReasons', 'atLeast', 'truncated', 'filesScanned', 'matchCount', 'matchedLineCount', 'fileCount', 'totalFiles', 'moreLines', 'currentPage', 'totalPages', 'totalItems', 'hasMore', 'pageSize', 'extras', 'echo', 'receipts', 'stats']);
+const NOISE = new Set(['next', 'hints', 'pagination', 'contentPagination', 'matchPagination', 'warnings', 'summary', 'snapshot', 'root', 'index', 'status', 'terminalLimit', 'coverage', 'completeness', 'complete', 'isPartial', 'partialReasons', 'atLeast', 'truncated', 'filesScanned', 'matchCount', 'matchedLineCount', 'fileCount', 'totalFiles', 'moreLines', 'currentPage', 'totalPages', 'totalItems', 'hasMore', 'pageSize', 'extras', 'echo', 'receipts', 'stats']);
 export function atoms(sc) {
   const out = new Set();
   const walk = (node, ctx, key) => {
@@ -185,7 +202,8 @@ export const hitValues = sc => {
 /** ok | empty | error of an entry, with its row error codes. */
 export function outcomeOf(entry) {
   const rows = entry.sc?.results ?? [];
-  const statuses = rows.map(r => r.status ?? 'ok');
+  // A page past the last (`outOfRange`) reads nothing, as an empty row.
+  const statuses = rows.map(r => (r.status === 'outOfRange' ? 'empty' : r.status ?? 'ok'));
   const codes = rows.map(r => r.data?.errorCode).filter(Boolean);
   const error = entry.isError || statuses.includes('error');
   return { rows, codes, error, empty: rows.length > 0 && statuses.every(s => s === 'empty'), text: `${error ? 'error' : statuses.every(s => s === 'empty') ? 'empty' : 'ok'} ${codes.join(',')} ${entry.isError && !rows.length ? short(entry.text, 200) : ''}`.trim() };
@@ -207,12 +225,13 @@ export function scopeChanges(src, lead, { mutable = new Set(), additions = false
 // A count-view continuation materializes localSearch's default pageSize.
 // Accept that one field only when the source page reports the same effective
 // size, while comparing every other field against the original query.
-export function sourceScopeForPage(source, lead, sq, lq, defaultsOf = () => ({})) {
-  // A whole-file read using the default view selects exact lines. Its window
-  // carries that view after dropping fullContent; non-default views stay strict.
+export function sourceScopeForPage(source, lead, sq, lq) {
+  // A whole-file read's window keeps the read's view as is: an omitted
+  // `minify` (the exact view) stays omitted, a named one stays named. The
+  // window may add fields the read lacked, so an omitted view is compared
+  // explicitly.
   if (lead.tool === source.tool && lead.key === 'continueWindow' && sq.fullContent === true &&
-      (!Object.hasOwn(sq, 'minify') || sq.minify === defaultsOf(source.tool, sq).minify) &&
-      lq.minify === 'none') return { ...sq, minify: 'none' };
+      !Object.hasOwn(sq, 'minify')) return { ...sq, minify: null };
   if (source.tool !== 'localSearch' || lead.tool !== source.tool || lead.key !== 'nextPage' ||
       Object.hasOwn(sq, 'pageSize') || sq.resultView !== lq.resultView) return sq;
   const reported = source.entry.sc?.results?.[lead.rowIndex ?? 0]?.data?.pagination?.pageSize;
@@ -288,7 +307,7 @@ export function judgeLead(lead, source, entry, shown, { walked = false, root = p
   // A same-tool lead keeps everything it does not mutate.
   if (single && sameTool && (flag || key === 'includeSkipped' || PAGE_KEYS.test(key) || /^(restart|retry)$/.test(key))) {
     const mutable = MUTABLE.find(([re]) => re.test(key))?.[1];
-    const sourceScope = sourceScopeForPage(source, lead, sq, lq, defaultsOf);
+    const sourceScope = sourceScopeForPage(source, lead, sq, lq);
     const changed = scopeChanges({ ...defaultsOf(source.tool, sourceScope), ...sourceScope }, { ...defaultsOf(lead.tool, lq), ...lq }, { mutable, additions: ADDS_OPTIONS.test(key) || /^continue/.test(key), root });
     record('keeps-scope', changed.length === 0, changed.join('; '));
   }

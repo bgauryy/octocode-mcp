@@ -14,9 +14,9 @@ flowchart LR
     T -- yes --> E[Remove batch] --> V[Verify]
     T -- "evidence missing" --> I[Investigate or report gap]
     T -- "behavior must change" --> D[Report, keep out of batch]
-    V -- fails --> F{Second failure?}
-    F -- no --> E
-    F -- yes --> U[Revert, report blocker]
+    V -- fails --> F{Changed diagnosis?}
+    F -- yes --> E
+    F -- no --> U[Revert, report blocker]
 ```
 
 ## Workflow
@@ -24,7 +24,7 @@ flowchart LR
 1. Scope: requested paths and result; reuse existing authorization; ask only about effects outside it.
 2. Inspect candidates, contracts, consumers. Hypothesis test each: claim (redundant), strongest rival (live reference, entrypoint, config, dynamic or external use), distinguishing check (semantic references prove identity; topology gives leads; empty search proves nothing), result (confirmed: batch it; unresolved: defer; dismissed: keep).
 3. Remove proven redundancy in reviewable batches, one owner per duplicate; update callers and links; regenerate lockfiles and derived artifacts with their generator.
-4. Verify: run relevant checks, read results, repair introduced failures, keep coverage thresholds; done when they pass and unrun checks are named. Still failing after one repair: revert the batch, report a [Handoff (SBAR)](references/agent-defects.md#escalation-protocol) blocker.
+4. Verify: run relevant checks, read results, repair introduced failures only from a changed diagnosis, keep coverage thresholds; done when they pass and unrun checks are named. If evidence cannot distinguish a safe repair: revert the batch, report a [Handoff (SBAR)](references/agent-defects.md#escalation-protocol) blocker.
 
 ## Judgment calls
 
@@ -49,6 +49,7 @@ flowchart LR
 - `octocode-architect`: new branches, wrappers, unclear ownership, unresolved boundary, or design change.
 - `octocode-agentic-prompts`: instruction change alters behavior.
 - `octocode-skills`: skill packaging, activation.
+- For an orchestrated multi-actor task: [octocode-workflows composition](../octocode-workflows/references/composition.md).
 
 ## Output
 

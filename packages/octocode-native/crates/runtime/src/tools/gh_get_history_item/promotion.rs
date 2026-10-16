@@ -3,9 +3,8 @@
 use super::patch_hop::*;
 use super::pr_menu::*;
 use super::rest::Rest;
-use super::{HistoryItemRequest, ItemOperation};
+use super::{HistoryItemRequest, ItemOperation, Section, Sections};
 use crate::response::pages::Remaining;
-use crate::tools::gh_shared::ensure_next;
 use serde_json::{Map, Value, json};
 
 /// A pull-request `contentPagination` axis: its `next.*` name, the page field
@@ -87,7 +86,10 @@ pub(super) fn promote_pr_continuations(
             patch_continuation(nq, entry, q)
         } else {
             narrow_to_axis(&mut nq, axis, q);
-            menu_read(nq)
+            if axis == "files" {
+                pin_file_page_size(&mut nq, q, q.sections().has(Section::Patches));
+            }
+            continuation(nq)
         };
         next.insert(name.into(), call);
         notes.extend(rest.note(name, axis, entry));
@@ -110,68 +112,47 @@ fn narrow_to_axis(nq: &mut Value, axis: &str, q: &HistoryItemRequest) {
     match axis {
         "body" => {
             // The body has no page: a section page cursor would be inert.
-            nq["content"] = json!({"body":true});
+            Sections::of([Section::Body]).set_on(nq);
             remove_key(nq, "page");
         }
-        "reviewBody" => nq["content"] = json!({"reviews":true}),
+        "reviewBody" => Sections::of([Section::Reviews]).set_on(nq),
         "commentBody" => {
-            nq["content"] = json!({"comments": q
-                .content_value()
-                .and_then(|content| content.get("comments").cloned())
-                .unwrap_or(json!({"discussion":true}))});
+            let read = q.sections();
+            let comments = Sections::of(
+                [Section::Comments, Section::ReviewComments]
+                    .into_iter()
+                    .filter(|section| read.has(*section)),
+            );
+            let comments = if comments.is_empty() {
+                Sections::of([Section::Comments])
+            } else {
+                comments
+            };
+            comments.set_on(nq);
         }
         _ => {
             remove_key(nq, "offset");
             // A collection page continues only its own surface; the other
             // surfaces were already delivered on this call. The discussion
             // and the inline review comments page apart.
-            let (keep, comments): (&[&str], _) = match axis {
-                "files" => (&["files", "patches"], None),
-                "comments" => (&["comments"], Some(json!({"discussion": true}))),
-                "reviewComments" => (&["comments"], Some(json!({"reviewInline": true}))),
-                "reviews" => (&["reviews"], None),
-                "commits" => (&["commits"], None),
-                _ => (&[], None),
+            let read = q.sections();
+            let own: &[Section] = match axis {
+                "files" => &[Section::Files, Section::Patches],
+                "comments" => &[Section::Comments],
+                "reviewComments" => &[Section::ReviewComments],
+                "reviews" => &[Section::Reviews],
+                "commits" => &[Section::Commits, Section::CommitFiles],
+                _ => return,
             };
-            if let Some(content) = nq.get_mut("content").and_then(Value::as_object_mut) {
-                if !keep.is_empty() {
-                    content.retain(|key, _| keep.contains(&key.as_str()));
-                }
-                if let Some(comments) = comments {
-                    content.insert("comments".into(), comments);
-                }
-            }
+            // A page of patches lists their files.
+            let read = if read.has(Section::Patches) {
+                read.with(Section::Files)
+            } else {
+                read
+            };
+            Sections::of(own.iter().copied().filter(|section| read.has(*section))).set_on(nq);
         }
     }
-}
-
-/// `next.readRawBody`: the PR text surfaces whose minified view dropped text
-/// (the row says `bodyView:"minified"`), re-read with `minify:"none"` from
-/// their first character, on the same comment and review pages.
-pub(super) fn attach_raw_body_read(out: &mut Value, q: &HistoryItemRequest, surfaces: &[&str]) {
-    if surfaces.is_empty() {
-        return;
-    }
-    let mut nq = base_public_query(q, ItemOperation::PullRequest);
-    for key in ["offset", "include", "status", "minChanges"] {
-        remove_key(&mut nq, key);
-    }
-    let requested = q.content_value().unwrap_or_default();
-    let mut content = Map::new();
-    for surface in surfaces {
-        let value = match *surface {
-            "comments" => requested
-                .get("comments")
-                .cloned()
-                .unwrap_or(json!({"discussion":true})),
-            _ => json!(true),
-        };
-        content.insert((*surface).to_owned(), value);
-    }
-    nq["content"] = Value::Object(content);
-    nq["minify"] = json!("none");
-    ensure_next(out);
-    out["next"]["readRawBody"] = menu_read(nq);
 }
 
 /// `next.*` for every unfinished axis of the issue's page, and the note of
@@ -187,21 +168,13 @@ pub(super) fn promote_issue_continuations(
     else {
         return Vec::new();
     };
-    let content_value = q.content_value();
-    let comments = || json!({"comments":content_value.as_ref().and_then(|v|v.get("comments").cloned()).unwrap_or(json!({"discussion":true}))});
+    let comments = Sections::of([Section::Comments]);
     // A comment-body hop keeps the body section its first window read: the
     // hop does not show the body again, but sizes its page like that window.
-    let comment_bodies = || {
-        let mut content = comments();
-        if content_value
-            .as_ref()
-            .and_then(|v| v.get("body"))
-            .and_then(Value::as_bool)
-            == Some(true)
-        {
-            content["body"] = json!(true);
-        }
-        content
+    let comment_bodies = if q.sections().has(Section::Body) {
+        comments.with(Section::Body)
+    } else {
+        comments
     };
     let mut next = Map::new();
     let mut notes = Vec::new();
@@ -209,15 +182,20 @@ pub(super) fn promote_issue_continuations(
         if entry.get("hasMore").and_then(Value::as_bool) != Some(true) {
             continue;
         }
-        let (name, key, field, content) = match axis.as_str() {
-            "body" => ("continueBody", "offset", "nextOffset", json!({"body":true})),
+        let (name, key, field, sections) = match axis.as_str() {
+            "body" => (
+                "continueBody",
+                "offset",
+                "nextOffset",
+                Sections::of([Section::Body]),
+            ),
             "commentBody" => (
                 "continueCommentBody",
                 "offset",
                 "nextOffset",
-                comment_bodies(),
+                comment_bodies,
             ),
-            "comments" => ("nextCommentPage", "page", "nextPage", comments()),
+            "comments" => ("nextCommentPage", "page", "nextPage", comments),
             _ => continue,
         };
         let Some(cursor) = entry.get(field) else {
@@ -225,16 +203,17 @@ pub(super) fn promote_issue_continuations(
         };
         let mut nq = base_public_query(q, ItemOperation::Issue);
         nq[key] = cursor.clone();
-        nq["content"] = content;
+        sections.set_on(&mut nq);
         if axis == "comments" {
             // A comment page cut to the response budget resumes with the
             // page size that starts a page at its first unshown comment.
             if let Some(size) = rest.next_page_size() {
                 nq["pageSize"] = json!(size);
             }
-            nq["offset"] = json!(0);
+            // A page restarts every body window: the default offset.
+            remove_key(&mut nq, "offset");
         }
-        next.insert(name.into(), menu_read(nq));
+        next.insert(name.into(), continuation(nq));
         notes.extend(rest.note(name, axis, entry));
     }
     if !next.is_empty() {

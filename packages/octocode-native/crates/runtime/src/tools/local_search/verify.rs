@@ -1,7 +1,6 @@
 //! Secret safety of shown values: redaction of the scan, the re-read that
 //! checks clipped values against their source bytes, and bounded line reads.
 
-use super::leads::ENCLOSING_MAX_FILES;
 use super::types::*;
 use super::{cursor::*, layout::*};
 use crate::security::ContentSecurity;
@@ -356,16 +355,17 @@ pub(super) type Outlines =
 
 /// Re-read the shown files. A page from a stored scan shows each of its
 /// files only while that file still hashes to the stored bytes; text views
-/// prove it in the secret check, which reads the same bytes, and the first
-/// [`ENCLOSING_MAX_FILES`] files with rows are outlined from that read into
-/// `outlines`. Returns whether some values were redacted because their
-/// source could not be re-read.
+/// prove it in the secret check, which reads the same bytes, and every
+/// shown file with rows is outlined into `outlines`:
+/// taken from the page cut's outlines (`cut`) when it parsed the file, else
+/// parsed from the secret check's read. Returns whether some values were
+/// redacted because their source could not be re-read.
 pub(super) fn verify_shown(
     scope: &PageScope<'_, impl CancellationCheck>,
     parsed: &mut octocode_engine::types::TextSearchResult,
     layout: &Layout,
     redacted: &mut Redacted,
-    outlines: &mut Outlines,
+    (cut, outlines): (&mut CutOutlines, &mut Outlines),
 ) -> Result<bool, ToolError> {
     let PageScope {
         query,
@@ -392,15 +392,16 @@ pub(super) fn verify_shown(
         return Ok(false);
     }
     let mut unverified = false;
-    let mut files_with_rows = 0usize;
     // Outlines are parsed after the checks, in parallel: one tree-sitter
     // parse per shown file was the page's slowest serial step.
     let mut to_outline: Vec<(std::path::PathBuf, Vec<u8>)> = Vec::new();
     for (index, rows) in &layout.shown {
         let file = &mut parsed.files[*index];
         cancel.check().map_err(ToolError::cancelled)?;
-        let before = file
-            .matches
+        // The check rewrites only the shown rows, so only they are compared.
+        let end = rows.end.min(file.matches.len());
+        let start = rows.start.min(end);
+        let before = file.matches[start..end]
             .iter()
             .map(|matched| matched.value.clone())
             .collect::<Vec<_>>();
@@ -408,9 +409,9 @@ pub(super) fn verify_shown(
         // The page's first files are outlined for enclosing names: read
         // each once, for both its secret check and its outline.
         let shows_rows = rows.start.min(file.matches.len()) < rows.end.min(file.matches.len());
-        let outlined = shows_rows && files_with_rows < ENCLOSING_MAX_FILES;
-        files_with_rows += usize::from(shows_rows);
-        let bytes = outlined
+        let outlined = shows_rows;
+        let parsed_by_cut = outlined.then(|| cut.remove(index)).flatten();
+        let bytes = (outlined && parsed_by_cut.is_none())
             .then(|| crate::tools::source::read_bounded(&source, MAX_PARSE_SIZE).ok())
             .flatten();
         let expected = expected_digest(&source);
@@ -430,10 +431,14 @@ pub(super) fn verify_shown(
             Verification::Unverified => unverified = true,
             Verification::Changed => return Err(changed_since_scan(query)),
         }
-        if let Some(bytes) = bytes {
-            to_outline.push((source, bytes));
+        match (parsed_by_cut, bytes) {
+            (Some(outline), _) => {
+                outlines.insert(source, outline);
+            }
+            (None, Some(bytes)) => to_outline.push((source, bytes)),
+            (None, None) => {}
         }
-        for (matched, before) in file.matches.iter().zip(before) {
+        for (matched, before) in file.matches[start..end].iter().zip(before) {
             if matched.value != before {
                 redacted.insert((file.path.clone(), matched.line, matched.column));
             }
@@ -929,9 +934,12 @@ mod verification_tests {
             column: 0,
             byte_offset: 0,
             value: value.into(),
+            value_digest: Sha256::digest(value.trim().as_bytes()).into(),
             count: None,
             rank: None,
             original_chars: None,
+
+            original_bytes: None,
         }
     }
 

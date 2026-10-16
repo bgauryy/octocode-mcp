@@ -1,6 +1,14 @@
 import { describe, it } from 'vitest';
 import assert from 'node:assert/strict';
-import appJs from '../../src/cli/config-view/assets/app.js?raw';
+import { readFileSync } from 'node:fs';
+
+const appJs = readFileSync(
+  new URL(
+    '../../../octocode-native/crates/cli/src/cli/config_view/assets/app.js',
+    import.meta.url
+  ),
+  'utf8'
+);
 
 /** Minimal DOM stand-in: app.js assigns arbitrary element properties. */
 class Element {

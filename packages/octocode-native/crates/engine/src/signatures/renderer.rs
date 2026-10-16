@@ -23,7 +23,7 @@ pub fn render_skeleton(kept: &[(usize, String)], comment_prefix: &str) -> Option
     Some(s)
 }
 
-fn is_pure_comment(text: &str, prefix: &str) -> bool {
+pub(crate) fn is_pure_comment(text: &str, prefix: &str) -> bool {
     let t = text.trim();
     if t.is_empty() {
         return false;

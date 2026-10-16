@@ -28,10 +28,10 @@ The default catalog contains 12 tools over MCP and 13 in the CLI; the live catal
 
 ## Read results and recover
 
-- Row `status` `error`: use its repair (`hints.text` tip, `hints.repair` lead, or `next.restart` page). Check hoisted `shared` before calling a field missing.
+- Row `status` `error`: use its repair (`hints` tip, `repair` in `hints` lead, or `next.restart` page). `clasify` uses `queries[].error` with nested `error.hints`. Check hoisted `shared` before calling a field missing.
 - Copy needed page calls unchanged; they carry fields compact schemas omit. A coverage claim must cover every page in its declared view. With classification, `selection` describes candidate decisions, not completeness of the corpus.
-- `next.unfiltered` is explicit recovery of the original view, including selected items. Use it for unresolved coverage or completeness; a sufficient scoped answer does not require it. The [classification guide](clasify.md#select-inside-search-and-fetch) owns selection and recovery decisions.
-- `hints.*` lead: a ready `{tool, query}` named by purpose (`read`, `readPullRequest`, `viewRepo`, ...); skipping it never leaves a result incomplete. `hints.text` is a per-call fact. Successful rows show leads only with `extras:["hints"]`, except defaults such as `includeIgnored` and `countFiles`.
+- `next.unfiltered` recovers the original view, including selected items. The [classification recovery guide](clasify.md#recover-from-unknown-or-error) owns when to use it and when to stop.
+- `hints` is a string list: per-call facts or `<action>: <tool> <JSON input>` suggestions. Copy the JSON unchanged when following a suggestion; `Approximate:` marks low confidence. Suggestions do not complete unread pages. Successful-row suggestions need `extras:["hints"]` except the contract's default leads and the captured-source read from `clasify`.
 - GitHub empty or unindexed: provider blind spot; verify the path, or materialize and search locally.
 - Result, match, content, patch, and diagnostic pagination are independent: inspect limits even when `hasMore:false`.
 - Finish `responsePagination` (oversized batch response) before a row continuation.

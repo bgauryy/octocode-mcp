@@ -11,7 +11,7 @@ pub use crate::search::text_pattern::{
     TextPatternValidationResult, matches_line_break, validate_text_pattern,
 };
 pub use crate::signatures::{
-    extract_declarations, extract_graph_facts, extract_graph_facts_with_extension,
+    extract_declarations, extract_declarations_with_extension, extract_graph_facts,
 };
 pub use crate::text::diff_parser::filter_patch;
 
@@ -47,7 +47,7 @@ fn transform_on_deep_stack(
         .unwrap_or_else(|| shared.to_string())
 }
 
-pub use crate::search::fs_query::EntryFilter;
+pub use crate::search::fs_query::{EntryFilter, Visit};
 
 /// Walk a directory in name order under caller policy: `admit` decides each
 /// descendant before it is inspected or counted (a denied directory is not
@@ -93,13 +93,20 @@ pub fn sanitize_leaf(content: &str, source_path: &str) -> Result<SanitizationRes
         .map_err(|_| Error::new("content sanitization failed on pathological input"))
 }
 
-#[must_use]
-pub fn extract_signatures(content: &str, file_path: &str) -> Option<String> {
+/// The symbols outline of `content`, or the typed reason it has none.
+pub fn extract_signatures(
+    content: &str,
+    file_path: &str,
+) -> std::result::Result<String, crate::signatures::OutlineUnavailable> {
     let content = content.to_owned();
     let file_path = file_path.to_owned();
+    // The pool's fallback (no pool, a panic) is `None`: no tree.
     crate::signatures::run_on_deep_stack(move || {
-        crate::signatures::extract_signatures_inner(&content, &file_path)
+        Some(crate::signatures::extract_signatures_inner(
+            &content, &file_path,
+        ))
     })
+    .unwrap_or(Err(crate::signatures::OutlineUnavailable::ParseFailed))
 }
 
 /// The grammar inventory, built once.

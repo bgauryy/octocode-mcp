@@ -37,14 +37,29 @@ async fn invalid_rows_become_error_rows_while_valid_rows_execute() {
     assert_ne!(rows[0]["status"], "error");
     assert_eq!(rows[1]["status"], "error");
     assert_eq!(rows[1]["data"]["errorCode"], "invalidInput");
-    // The single repair is the row's error; no leftover hints.
+    // The error names the field; the one lead is the row without it.
     let error = rows[1]["data"]["error"].as_str().unwrap_or_default();
     assert!(
         error.contains("queries[1]") && error.contains("serchText"),
         "{}",
         rows[1]
     );
-    assert!(rows[1]["data"].get("hints").is_none(), "{}", rows[1]);
+    let hints = rows[1]["data"]["hints"].as_array().expect("string hints");
+    let repair = crate::support::checks::hint(&rows[1]["data"], "repair");
+    assert_eq!(hints.len(), 2, "{}", rows[1]);
+    assert_eq!(repair["tool"], "localSearch", "{}", rows[1]);
+    // Dropping a field the caller set reads more broadly: the note says so.
+    assert!(
+        crate::support::checks::hint(&rows[1]["data"], "text")
+            .to_string()
+            .contains("serchText"),
+        "{}",
+        rows[1]
+    );
+    let repaired = &repair["query"]["queries"];
+    assert_eq!(repaired.as_array().map(Vec::len), Some(1), "{}", rows[1]);
+    assert_eq!(repaired[0]["matchString"], "needle", "{}", rows[1]);
+    assert!(repaired[0].get("serchText").is_none(), "{}", rows[1]);
     assert_ne!(rows[2]["status"], "error");
     assert!(!outcome.all_failed);
     octocode_native::contracts::validate_output("localSearch", &outcome.structured_content)

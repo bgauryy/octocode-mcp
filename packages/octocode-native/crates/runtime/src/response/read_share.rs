@@ -163,22 +163,41 @@ fn read_continuation(row: &DomainResult) -> Option<&Value> {
 }
 
 /// Restore the caller's line-page maximum rather than the temporary share.
-/// Byte continuations retain their own coordinate and page length.
+/// Byte continuations retain their own coordinate and page length. A call
+/// that is no window of the read (no `offset`, no `ranges`: a classified
+/// read's whole view or next candidate page) reads the view as asked: the
+/// caller's `fullContent` and `unit` return.
 fn restore_page_size(data: &mut Value, original: &Value) {
     let Some(Value::Object(next)) = data.get_mut(PAGES_KEY) else {
         return;
     };
     for call in next.values_mut() {
-        if let Some(Value::Object(query)) = crate::tools::result::continuation_row_mut(call)
-            && query.get("unit").and_then(Value::as_str) != Some("bytes")
-        {
-            match original.get("length") {
-                Some(length) => {
-                    query.insert("length".into(), length.clone());
+        let Some(rows) = call
+            .pointer_mut("/query/queries")
+            .and_then(Value::as_array_mut)
+        else {
+            continue;
+        };
+        for query in rows.iter_mut().filter_map(Value::as_object_mut) {
+            if query.get("unit").and_then(Value::as_str) == Some("bytes") {
+                continue;
+            }
+            for field in ["length", "unit", "fullContent"] {
+                let windowed = query.contains_key("offset") || query.contains_key("ranges");
+                if field != "length" && windowed {
+                    continue;
                 }
-                None => {
-                    query.remove("length");
+                match original.get(field) {
+                    Some(value) => {
+                        query.insert(field.into(), value.clone());
+                    }
+                    None => {
+                        query.remove(field);
+                    }
                 }
+            }
+            if query.contains_key("fullContent") {
+                query.remove("length");
             }
         }
     }
@@ -214,17 +233,12 @@ pub(crate) fn share_window(
                 }
             }
             // A whole-file read pages as the same view without
-            // `fullContent`, which window controls cannot accompany.
-            // `fullContent` implies the verbatim view, so a read with no
-            // named view pins it: a tool whose default view is minified
-            // (ghGetFileContent) would otherwise drop lines.
+            // `fullContent`, which window controls cannot accompany. An
+            // omitted `minify` is the verbatim view on both readers.
             if let Some(fields) = query.as_object_mut()
                 && fields.remove("fullContent") == Some(Value::Bool(true))
             {
                 fields.insert("offset".into(), Value::from(0));
-                fields
-                    .entry("minify")
-                    .or_insert_with(|| Value::from("none"));
             }
             query["unit"] = Value::from("lines");
             query["length"] = Value::from(lines);
@@ -237,6 +251,14 @@ pub(crate) fn share_window(
             continue;
         }
         restore_page_size(&mut row.data, &queries[index]);
+        // The shortened read names the commit as its `ref`, so the reader
+        // omits `commitSha` as an echo of the request; the caller asked for
+        // another ref, and the first read's pin stays the row's.
+        if row.data.get("commitSha").is_none()
+            && let Some(sha) = rows[index].data.get("commitSha")
+        {
+            row.data["commitSha"] = sha.clone();
+        }
         rows[index] = row;
     }
     Ok(rows)
@@ -246,6 +268,38 @@ pub(crate) fn share_window(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// A shortened whole-file read's routes that are no window (the whole
+    /// view, the next candidate page) read the file as asked; its windows
+    /// keep their offsets and drop the temporary share.
+    #[test]
+    fn non_window_routes_of_a_shortened_read_keep_the_asked_view() {
+        let call = |row: Value| json!({"tool":"localFetch","query":{"queries":[row]}});
+        let mut data = json!({"next":{
+            "unfiltered2": call(json!({"path":"a.txt","unit":"lines"})),
+            "nextCandidatePage": call(json!({"path":"a.txt","unit":"lines","length":40,"selection":"t"})),
+            "continueWindow": call(json!({"path":"a.txt","unit":"lines","length":40,"offset":40})),
+            "unfiltered": call(json!({"path":"a.txt","ranges":["3-4"],"unit":"lines"})),
+        }});
+        restore_page_size(&mut data, &json!({"path":"a.txt","fullContent":true}));
+        let row = |name: &str| data["next"][name]["query"]["queries"][0].clone();
+        assert_eq!(
+            row("unfiltered2"),
+            json!({"path":"a.txt","fullContent":true})
+        );
+        assert_eq!(
+            row("nextCandidatePage"),
+            json!({"path":"a.txt","selection":"t","fullContent":true})
+        );
+        assert_eq!(
+            row("continueWindow"),
+            json!({"path":"a.txt","unit":"lines","offset":40})
+        );
+        assert_eq!(
+            row("unfiltered"),
+            json!({"path":"a.txt","ranges":["3-4"],"unit":"lines"})
+        );
+    }
 
     fn local_row(lines: usize, width: usize) -> DomainResult {
         let text: String = (1..=lines)
@@ -282,6 +336,7 @@ mod tests {
             &crate::tools::cancel::NeverCancel,
             &crate::tools::local_fetch::LocalFetchRegex,
             Some(window),
+            None,
         );
         assert_eq!(result.status, "success", "{result:?}");
         DomainResult::payload(serde_json::to_value(result).expect("result"), None)
@@ -616,16 +671,50 @@ mod tests {
         assert_eq!(cuts.iter().map(|cut| cut.0).collect::<Vec<_>>(), vec![0, 1]);
     }
 
-    /// `fullContent` implies the verbatim view; the shortened read that drops
-    /// it keeps that view unless the caller named one.
+    /// A GitHub read of a movable ref keeps the commit it pinned when a
+    /// shortened re-read names that commit as its `ref`.
     #[test]
-    fn dropping_full_content_pins_the_verbatim_view() {
+    fn a_shortened_github_read_keeps_the_commit_it_pinned() {
+        let text: String = (1..=900)
+            .map(|line| format!("{line:05}{}\n", "y".repeat(60)))
+            .collect();
+        let first = DomainResult::payload(
+            json!({"owner":"o","repo":"r","path":"a.rs","commitSha":"abc123","content":text,"totalLines":900}),
+            None,
+        );
+        let original =
+            json!({"owner":"o","repo":"r","path":"a.rs","ref":"main","fullContent":true});
+        let rows = share_window(
+            ToolId::GhGetFileContent,
+            std::slice::from_ref(&original),
+            vec![first],
+            Some(20_000),
+            |shortened| {
+                assert_eq!(shortened.len(), 1);
+                Ok(vec![DomainResult::payload(
+                    json!({"owner":"o","repo":"r","path":"a.rs","content":"00001y\n","totalLines":900}),
+                    None,
+                )])
+            },
+        )
+        .expect("shared");
+        assert_eq!(rows[0].data["commitSha"], "abc123", "{}", rows[0].data);
+    }
+
+    /// The shortened read that drops `fullContent` keeps the caller's view:
+    /// a named one, else none (the verbatim default).
+    #[test]
+    fn dropping_full_content_keeps_the_view() {
         for (tool, minify, expected) in [
-            (ToolId::GhGetFileContent, None, "none"),
-            (ToolId::GhGetFileContent, Some("standard"), "standard"),
-            (ToolId::GhGetFileContent, Some("symbols"), "symbols"),
-            (ToolId::LocalFetch, None, "none"),
-            (ToolId::LocalFetch, Some("standard"), "standard"),
+            (ToolId::GhGetFileContent, None, Value::Null),
+            (
+                ToolId::GhGetFileContent,
+                Some("standard"),
+                json!("standard"),
+            ),
+            (ToolId::GhGetFileContent, Some("symbols"), json!("symbols")),
+            (ToolId::LocalFetch, None, Value::Null),
+            (ToolId::LocalFetch, Some("standard"), json!("standard")),
         ] {
             let mut original = query(json!({"fullContent":true}));
             if let Some(minify) = minify {

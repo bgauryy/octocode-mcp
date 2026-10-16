@@ -22,6 +22,15 @@ use tokio::task::JoinHandle;
 use tokio::time::{Duration, timeout};
 
 pub(super) const REQUEST_TIMEOUT_MS: u32 = 30_000;
+/// After the first `didOpen` of a document, how long
+/// [`NativeLspClient::open_document_and_wait`] waits by default for a
+/// project load the open triggers to START (tsserver begins ~100 ms after
+/// didOpen).
+pub const OPEN_SETTLE_MS: u32 = 400;
+/// Default bound on the whole post-open wait.
+pub const OPEN_READY_TIMEOUT_MS: u32 = 15_000;
+/// Largest post-open wait any caller may ask for.
+const MAX_OPEN_READY_TIMEOUT_MS: u32 = 60_000;
 pub(super) const CONTENT_MODIFIED_RETRIES: u8 = 3;
 pub(super) const CONTENT_MODIFIED_RETRY_DELAY_MS: u64 = 500;
 const STDERR_RING_CAPACITY: usize = 100;
@@ -852,8 +861,8 @@ impl NativeLspClient {
     /// loading the project only after a `didOpen` (`$/progress begin` arrives
     /// ~100 ms later); querying immediately races that load and returns
     /// incomplete references. `settle_ms` bounds how long to wait for such a
-    /// wave to start (default 400 ms) and `timeout_ms` bounds the whole wait
-    /// (default 15 s, capped at 60 s).
+    /// wave to start (default [`OPEN_SETTLE_MS`]) and `timeout_ms` bounds the
+    /// whole wait (default [`OPEN_READY_TIMEOUT_MS`], capped at 60 s).
     ///
     /// The settle is not stacked on a startup readiness wait that already
     /// confirmed the project loaded (`progressIdle`): that server announced
@@ -879,9 +888,13 @@ impl NativeLspClient {
         let settle_ms = if self.readiness_is(Readiness::ProgressIdle) {
             0
         } else {
-            u64::from(settle_ms.unwrap_or(400))
+            u64::from(settle_ms.unwrap_or(OPEN_SETTLE_MS))
         };
-        let timeout_ms = u64::from(timeout_ms.unwrap_or(15_000).min(60_000));
+        let timeout_ms = u64::from(
+            timeout_ms
+                .unwrap_or(OPEN_READY_TIMEOUT_MS)
+                .min(MAX_OPEN_READY_TIMEOUT_MS),
+        );
         let readiness = self
             .inner
             .progress

@@ -7,7 +7,7 @@ fn selection_runtime(handle: tokio::runtime::Handle) -> crate::tools::selection:
         fn identity(&self) -> serde_json::Value {
             serde_json::json!({"test":"all-evidence"})
         }
-        fn select(&self, call: JudgeCall<'_>) -> Result<Vec<(usize, Decision)>, String> {
+        fn select(&self, call: JudgeCall<'_>) -> crate::tools::selection::Judgments {
             Ok(call
                 .admitted
                 .iter()
@@ -63,7 +63,7 @@ fn context_read_replays_selected_plan_and_rejects_source_drift() {
     let executor = tokio::runtime::Runtime::new().expect("runtime");
     let runtime = selection_runtime(executor.handle().clone());
     let read = |query: &LocalFetchQuery| {
-        execute_local_fetch_selected(
+        execute_local_fetch(
             query,
             &paths,
             &Safe,
@@ -123,7 +123,7 @@ fn context_read_with_no_matches_reports_empty_selection_scope() {
     );
     let executor = tokio::runtime::Runtime::new().expect("runtime");
     let runtime = selection_runtime(executor.handle().clone());
-    let result = execute_local_fetch_selected(
+    let result = execute_local_fetch(
         &query,
         &Paths(temp.0.clone()),
         &Safe,
@@ -141,6 +141,60 @@ fn context_read_with_no_matches_reports_empty_selection_scope() {
     assert_eq!(receipt.total_items, 0);
 }
 
+/// A classified read refused before selection leads to the caller's own
+/// read without the classifier: its window, ranges and view stay, bound to
+/// the source version the refusal saw.
+#[test]
+fn a_refused_classified_read_keeps_its_window_in_the_unfiltered_lead() {
+    let temp = Fixture::new();
+    let path = temp.0.join("evidence.txt");
+    let text = numbered(40);
+    fs::write(&path, &text).expect("fixture");
+    let digest = hex::encode(sha2::Sha256::digest(text.as_bytes()));
+    let paths = Paths(temp.0.clone());
+    for read in [
+        serde_json::json!({"unit": "bytes", "offset": 0, "length": 50}),
+        serde_json::json!({"ranges": ["1-30"], "offset": 10}),
+        serde_json::json!({"minify": "standard", "offset": 0, "length": 5}),
+    ] {
+        let mut query = qj(&path, read.clone());
+        query.clasify_context = Some(
+            serde_json::from_value(
+                serde_json::json!({"classifiers":["Does this explain ownership?"]}),
+            )
+            .expect("context"),
+        );
+        let row = execute_local_fetch(
+            &query,
+            &paths,
+            &Safe,
+            &NeverCancel,
+            &LocalFetchRegex,
+            None,
+            None,
+        );
+        assert_eq!(
+            row.error_code.as_deref(),
+            Some("invalidInput"),
+            "{read}: {row:?}"
+        );
+        let lead = row
+            .next
+            .expect("next")
+            .unfiltered
+            .expect("unfiltered")
+            .query;
+        // The row names the file as the workspace does.
+        let mut expected = qj(Path::new(lead.path.as_str()), read.clone());
+        expected.snapshot = digest.parse().ok();
+        assert_eq!(
+            serde_json::to_value(&lead).expect("json"),
+            serde_json::to_value(&expected).expect("json"),
+            "{read}"
+        );
+    }
+}
+
 #[test]
 fn selection_recovery_keeps_fetch_snapshot_and_rejects_changed_source() {
     let temp = Fixture::new();
@@ -152,7 +206,15 @@ fn selection_recovery_keeps_fetch_snapshot_and_rejects_changed_source() {
         serde_json::from_value(serde_json::json!({"classifiers":["Does this explain ownership?"]}))
             .expect("context"),
     );
-    let first = execute_local_fetch(&query, &paths, &Safe, &NeverCancel, &LocalFetchRegex, None);
+    let first = execute_local_fetch(
+        &query,
+        &paths,
+        &Safe,
+        &NeverCancel,
+        &LocalFetchRegex,
+        None,
+        None,
+    );
     assert!(first.content.as_deref().unwrap_or_default().is_empty());
     let captured = first.source_sha256.expect("captured source identity");
     let recovery = first
@@ -170,6 +232,7 @@ fn selection_recovery_keeps_fetch_snapshot_and_rejects_changed_source() {
         &NeverCancel,
         &LocalFetchRegex,
         None,
+        None,
     );
     assert_eq!(recovered.error_code, None);
     assert_eq!(recovered.content.as_deref(), Some("original evidence\n"));
@@ -181,12 +244,138 @@ fn selection_recovery_keeps_fetch_snapshot_and_rejects_changed_source() {
         &NeverCancel,
         &LocalFetchRegex,
         None,
+        None,
     );
     assert_eq!(changed.error_code.as_deref(), Some("staleSnapshot"));
     assert_eq!(
         recovery.snapshot.as_ref().map(|value| value.as_str()),
         Some(captured.as_str())
     );
+}
+
+#[test]
+fn unknown_and_whole_selection_recovery_reject_source_drift() {
+    let temp = Fixture::new();
+    let path = temp.0.join("evidence.txt");
+    let lines = ["selected", "unknown one", "unknown two"]
+        .map(|label| format!("{label} {}\n", "x".repeat(1_200)));
+    let original = lines.concat();
+    fs::write(&path, &original).expect("fixture");
+    let paths = Paths(temp.0.clone());
+    let query = qj(
+        &path,
+        serde_json::json!({
+            "fullContent": true,
+            "clasifyContext": {"classifiers": ["Find direct evidence"]}
+        }),
+    );
+    let executor = tokio::runtime::Runtime::new().expect("runtime");
+    let mut runtime = selection_runtime(executor.handle().clone());
+    runtime.limits.max_candidates = 1;
+    let first = execute_local_fetch(
+        &query,
+        &paths,
+        &Safe,
+        &NeverCancel,
+        &LocalFetchRegex,
+        None,
+        Some(&runtime),
+    );
+    let receipt = first.selection.expect("selection receipt");
+    assert_eq!((receipt.selected_items, receipt.unknown_items), (1, 2));
+    let captured = first.source_sha256.expect("captured source");
+    let next = first.next.expect("recovery");
+    let recoveries = [
+        (
+            next.unfiltered.expect("unknown chunks").query,
+            lines[1..].concat(),
+        ),
+        (next.unfiltered2.expect("whole view").query, original),
+    ];
+    for (recovery, expected) in &recoveries {
+        assert!(recovery.clasify_context.is_none() && recovery.selection.is_none());
+        assert_eq!(
+            recovery.snapshot.as_ref().map(|snapshot| snapshot.as_str()),
+            Some(captured.as_str())
+        );
+        let unchanged = fetch(recovery, &paths);
+        assert_eq!(unchanged.error_code, None);
+        assert_eq!(unchanged.content.as_deref(), Some(expected.as_str()));
+    }
+    let changed_source = lines
+        .iter()
+        .map(|line| line.replace("unknown", "changed"))
+        .collect::<String>();
+    fs::write(&path, changed_source).expect("change source");
+    for (recovery, _) in &recoveries {
+        let changed = fetch(recovery, &paths);
+        assert_eq!(changed.error_code.as_deref(), Some("staleSnapshot"));
+        assert!(changed.content.as_deref().unwrap_or_default().is_empty());
+    }
+}
+
+#[test]
+fn unread_block_and_whole_line_recovery_reject_source_drift() {
+    let temp = Fixture::new();
+    let paths = Paths(temp.0.clone());
+    let block = format!(
+        "fn work() {{\n{}}}\n",
+        (0..450)
+            .map(|n| format!("    let value_{n} = {n};\n"))
+            .collect::<String>()
+    );
+    let rest = block
+        .lines()
+        .skip(400)
+        .map(|line| format!("{line}\n"))
+        .collect::<String>();
+    let long_line = format!("{}needle{}\n", "a".repeat(4_000), "b".repeat(4_000));
+    let cases = [
+        (
+            "block.rs",
+            block.replace("let value_425 = 425;", "let changed_evidence = 425;"),
+            block,
+            serde_json::json!({"ranges": ["1-1"], "block": true, "length": 400}),
+            "continueBlock",
+            rest,
+        ),
+        (
+            "long.txt",
+            long_line.replacen('a', "changed_evidence", 1),
+            long_line.clone(),
+            serde_json::json!({"matchString": "needle"}),
+            "wholeLines",
+            long_line,
+        ),
+    ];
+    for (name, changed, original, fields, kind, expected) in cases {
+        let path = temp.0.join(name);
+        fs::write(&path, &original).expect("fixture");
+        let first = fetch(&qj(&path, fields), &paths);
+        let next = serde_json::to_value(first.next.expect("unread evidence")).expect("next");
+        let recovery: LocalFetchQuery =
+            serde_json::from_value(next[kind]["query"]["queries"][0].clone()).expect("recovery");
+        let captured = crate::digest::sha256(original.as_bytes());
+        assert_eq!(
+            recovery.snapshot.as_ref().map(|snapshot| snapshot.as_str()),
+            Some(captured.as_str()),
+            "{kind} pins the source bytes"
+        );
+        let unchanged = fetch(&recovery, &paths);
+        assert_eq!(unchanged.error_code, None, "{kind}");
+        assert_eq!(
+            unchanged.content.as_deref(),
+            Some(expected.as_str()),
+            "{kind}"
+        );
+        fs::write(&path, changed).expect("change source");
+        let stale = fetch(&recovery, &paths);
+        assert_eq!(stale.error_code.as_deref(), Some("staleSnapshot"), "{kind}");
+        assert!(
+            stale.content.as_deref().unwrap_or_default().is_empty(),
+            "{kind}"
+        );
+    }
 }
 
 #[test]
@@ -201,7 +390,7 @@ fn selection_provider_sees_workspace_relative_path_and_complete_evidence() {
         fn identity(&self) -> Value {
             serde_json::json!({"backend":"path-test"})
         }
-        fn select(&self, call: JudgeCall<'_>) -> Result<Vec<(usize, Decision)>, String> {
+        fn select(&self, call: JudgeCall<'_>) -> crate::tools::selection::Judgments {
             Ok(call
                 .admitted
                 .iter()
@@ -251,7 +440,7 @@ fn selection_provider_sees_workspace_relative_path_and_complete_evidence() {
         serde_json::from_value(serde_json::json!({"classifiers":["find evidence"]}))
             .expect("context"),
     );
-    let result = execute_local_fetch_selected(
+    let result = execute_local_fetch(
         &query,
         &policy,
         &Safe,
@@ -783,6 +972,60 @@ fn a_partial_match_names_the_redacted_lines_it_could_not_see() {
     );
 }
 
+/// A redacted line the result shows as context is not "outside" it, and
+/// the count, the same on every page, is stated by the first page only.
+#[test]
+fn redacted_context_lines_are_not_counted_outside_the_result() {
+    let t = Fixture::new();
+    let p = t.0.join("a.txt");
+    let mut source = String::from("CRE one\nvalue SECRET\n");
+    source.push_str(&"filler\n".repeat(10));
+    source.push_str("other SECRET\n");
+    source.push_str(&"filler\n".repeat(3));
+    source.push_str("CRE two\n");
+    fs::write(&p, &source).expect("fixture");
+    let paths = Paths(t.0.clone());
+    let outside = |result: &LocalFetchResult| {
+        result
+            .warnings
+            .iter()
+            .filter(|w| w.contains("outside this result"))
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+    let mut req = q(&p);
+    req.match_string = Some("CRE".parse().expect("match string"));
+    // Line 2 is context of the first hit; line 13 lies outside the result.
+    req.context_lines = Some(1);
+    let first = fetch(&req, &paths);
+    assert_eq!(
+        outside(&first),
+        vec!["1 redacted line outside this result: matchString cannot see text behind a [REDACTED…] placeholder; a plain read shows where they are.".to_owned()],
+        "{:?}",
+        first.warnings
+    );
+    // Both redacted lines shown as context: nothing lies outside.
+    req.context_lines = Some(4);
+    assert_eq!(outside(&fetch(&req, &paths)), Vec::<String>::new());
+    // A later page of the same read does not repeat the count.
+    req.context_lines = Some(1);
+    req.length = wire_positive(2);
+    let page = fetch(&req, &paths);
+    assert_eq!(outside(&page).len(), 1, "{:?}", page.warnings);
+    let next = page
+        .next
+        .and_then(|next| next.continue_window)
+        .expect("a second page")
+        .query;
+    let second = fetch(&next, &paths);
+    assert_eq!(
+        outside(&second),
+        Vec::<String>::new(),
+        "{:?}",
+        second.warnings
+    );
+}
+
 #[test]
 fn ranges_matches_redaction_and_binary() {
     let t = Fixture::new();
@@ -825,6 +1068,7 @@ fn cancellation_is_checked_around_io() {
         &Safe,
         &Cancel(AtomicUsize::new(0)),
         &LocalFetchRegex,
+        None,
         None,
     );
     assert_eq!(r.error_code.as_deref(), Some("cancelled"))
@@ -898,6 +1142,7 @@ fn full_content_continuation_pages_by_the_byte_budget_not_100_lines() {
         &NeverCancel,
         &LocalFetchRegex,
         Some(50_000),
+        None,
     );
     assert_eq!(limited.partial_reasons, vec![PartialReason::FullContent]);
     assert!(limited.pagination.as_ref().expect("first page").length > 1_000);
@@ -913,6 +1158,7 @@ fn full_content_continuation_pages_by_the_byte_budget_not_100_lines() {
         &NeverCancel,
         &LocalFetchRegex,
         Some(50_000),
+        None,
     );
     let pagination = page.pagination.expect("paged");
     let budget = crate::tools::page_windows::page_budget(
@@ -944,8 +1190,17 @@ fn full_content_is_cut_at_the_configured_response_window() {
     fs::write(&file, "let value = 1;\n".repeat(1_500)).expect("fixture");
     let mut full = q(&file);
     full.full_content = Some(true);
-    let read =
-        |window| execute_local_fetch(&full, &paths, &Safe, &NeverCancel, &LocalFetchRegex, window);
+    let read = |window| {
+        execute_local_fetch(
+            &full,
+            &paths,
+            &Safe,
+            &NeverCancel,
+            &LocalFetchRegex,
+            window,
+            None,
+        )
+    };
     let small = read(Some(10_000));
     assert_eq!(small.partial_reasons, vec![PartialReason::FullContent]);
     assert!(small.next.and_then(|next| next.continue_window).is_some());
@@ -972,7 +1227,7 @@ fn context_full_content_bounded_continuation_replays_its_selection() {
     );
     let executor = tokio::runtime::Runtime::new().expect("runtime");
     let runtime = selection_runtime(executor.handle().clone());
-    let first = execute_local_fetch_selected(
+    let first = execute_local_fetch(
         &full,
         &paths,
         &Safe,
@@ -993,7 +1248,7 @@ fn context_full_content_bounded_continuation_replays_its_selection() {
         "fullContent is bounded by the output page"
     );
     assert!(next.selection.is_some());
-    let second = execute_local_fetch_selected(
+    let second = execute_local_fetch(
         &next,
         &paths,
         &Safe,
@@ -1025,6 +1280,7 @@ fn full_content_limits_return_executable_continuations() {
         &NeverCancel,
         &LocalFetchRegex,
         Some(50_000),
+        None,
     );
     // Page 1 of the view is returned inline with the continuation.
     assert_eq!(result.error_code, None);
@@ -1049,6 +1305,7 @@ fn full_content_limits_return_executable_continuations() {
         &NeverCancel,
         &LocalFetchRegex,
         Some(50_000),
+        None,
     );
     assert_eq!(result.error_code, None);
     assert!(
@@ -1078,6 +1335,7 @@ fn security_limit_is_terminal_but_offers_a_bounded_line_read() {
         &Limited,
         &NeverCancel,
         &LocalFetchRegex,
+        None,
         None,
     );
     assert_eq!(result.error_code.as_deref(), Some("contentSecurityLimit"));
@@ -1166,6 +1424,7 @@ fn minified_views_page_in_raw_source_lines() {
                 &NeverCancel,
                 &LocalFetchRegex,
                 Some(50_000),
+                None,
             );
             assert_eq!(page.total_lines, Some(raw_total), "{first}");
             let pagination = page.pagination.clone().expect("paged");
@@ -1197,6 +1456,70 @@ fn minified_views_page_in_raw_source_lines() {
         );
         assert_eq!(shown, kept, "{first}: every kept line exactly once");
     }
+}
+
+/// A symbols view is kept in memory and on disk across calls, so it renders
+/// from the redacted source: neither tier, nor the outline, holds a secret
+/// of the file, and the view names the line its render redacted.
+#[test]
+fn a_kept_symbols_view_never_holds_a_secret_of_the_source() {
+    let dir = tempfile::tempdir().expect("dir");
+    let store = crate::cache::Store::new(
+        crate::cache::CacheConfig::default(),
+        Some(dir.path().to_owned()),
+    );
+    let token = "ghp_abcdefghijklmnopqrstuvwxyz0123456789";
+    let source = format!("pub const GH: &str = \"{token}\";\n\npub fn run() -> u8 {{\n    1\n}}\n");
+    let security = crate::security::ContentSecurity::new();
+    let view = super::executor::symbols_view(
+        &store,
+        &source,
+        "sec.rs",
+        Path::new("/fixture/sec.rs"),
+        &security,
+    );
+    let outline = view.outline.clone().expect("outline");
+    assert!(outline.contains("[REDACTED"), "{outline}");
+    assert!(!outline.contains(token), "{outline}");
+    assert_eq!(view.redacted_lines, vec![(1, 1)]);
+    let mut kept = 0;
+    for entry in fs::read_dir(dir.path()).expect("cache dir") {
+        let path = entry.expect("entry").path();
+        if path
+            .extension()
+            .is_some_and(|extension| extension == "json")
+        {
+            let text = fs::read_to_string(&path).expect("cache file");
+            assert!(!text.contains("ghp_"), "{}: {text}", path.display());
+            kept += 1;
+        }
+    }
+    assert_eq!(kept, 1, "the view is on disk");
+}
+
+/// An outline page counts the placeholders its render put in, as a plain
+/// page does.
+#[test]
+fn a_symbols_page_counts_the_secrets_its_outline_redacted() {
+    let t = Fixture::new();
+    let paths = Paths(t.0.clone());
+    let p = t.0.join("sec.ts");
+    fs::write(
+        &p,
+        "export const KEY = 'SECRET';\n\nexport function run(): number {\n  return 1;\n}\n",
+    )
+    .expect("fixture");
+    let row = fetch(&qj(&p, serde_json::json!({"minify":"symbols"})), &paths);
+    let content = row.content.expect("content");
+    assert!(!content.contains("SECRET"), "{content}");
+    assert!(content.contains("[REDACTED]"), "{content}");
+    assert!(
+        row.warnings
+            .iter()
+            .any(|warning| warning.starts_with("redactedContent: 1 ")),
+        "{:?}",
+        row.warnings
+    );
 }
 
 /// `minify:"symbols"` uses one gutter, `N\t`, in every language and on
@@ -1480,4 +1803,280 @@ fn a_match_list_is_a_grep_map_of_every_literal() {
         serde_json::json!({"matchString": "x.y", "contextLines": 0}),
     );
     assert_eq!(fetch(&one, &paths).matched_lines, vec![9]);
+}
+
+/// Only placeholders this read introduced count: literal `[REDACTED…]` text
+/// in the source is verbatim, even in a file with real redactions.
+#[test]
+fn literal_placeholder_text_is_not_counted_as_a_redaction() {
+    let t = Fixture::new();
+    let p = t.0.join("a.rs");
+    let mut source = String::from("let shown = \"[REDACTED-literal]\";\n");
+    source.push_str(&"let filler = 1;\n".repeat(2_000));
+    source.push_str("let key = \"SECRET\";\n");
+    fs::write(&p, &source).expect("fixture");
+    let paths = Paths(t.0.clone());
+    let redacted = |warnings: &[String]| {
+        warnings
+            .iter()
+            .find(|warning| warning.starts_with("redactedContent"))
+            .cloned()
+    };
+    let head = fetch(&qj(&p, serde_json::json!({"ranges": ["1-3"]})), &paths);
+    assert_eq!(redacted(&head.warnings), None, "{:?}", head.warnings);
+    let both = fetch(
+        &qj(&p, serde_json::json!({"ranges": ["1-1", "2002-2002"]})),
+        &paths,
+    );
+    let warning = redacted(&both.warnings).expect("the real redaction is named");
+    assert!(warning.contains("redactedContent: 1 "), "{warning}");
+    // A match read redacts the whole source first: its literal line is no
+    // unmatchable redacted line, the real one is.
+    let matched = fetch(
+        &qj(
+            &p,
+            serde_json::json!({"matchString": "shown", "contextLines": 0}),
+        ),
+        &paths,
+    );
+    assert_eq!(redacted(&matched.warnings), None, "{:?}", matched.warnings);
+    assert!(
+        matched
+            .warnings
+            .iter()
+            .any(|warning| warning.starts_with("1 redacted line outside")),
+        "{:?}",
+        matched.warnings
+    );
+}
+
+/// A file with a redaction keeps every miss lead: they count lines of the
+/// redacted text, so they hold for any guess. The redaction is a fact
+/// beside them.
+#[test]
+fn a_miss_in_a_redacted_file_keeps_its_leads() {
+    let t = Fixture::new();
+    let p = t.0.join("mod.rs");
+    fs::write(
+        &p,
+        "mod executor;\nconst K: &str = \"SECRET\";\nmod Other;\n",
+    )
+    .expect("fixture");
+    let paths = Paths(t.0.clone());
+    let read = |query| {
+        let row = fetch(&qj(&p, query), &paths);
+        assert_eq!(row.status, "empty", "{row:?}");
+        assert!(
+            row.hints
+                .iter()
+                .any(|hint| hint == super::executor::REDACTED_MATCH_HINT),
+            "{row:?}"
+        );
+        serde_json::to_value(row.next.as_ref().expect("next")).expect("json")
+    };
+    let next = read(serde_json::json!({"matchString": "executor|nothing"}));
+    assert_eq!(
+        next["repair"]["query"]["queries"][0]["matchString"],
+        serde_json::json!(["executor", "nothing"]),
+        "{next}"
+    );
+    let next = read(serde_json::json!({"matchString": "mod other", "caseMode": "sensitive"}));
+    assert!(next.get("ignoreCase").is_some(), "{next}");
+    let next = read(serde_json::json!({"matchString": "absent"}));
+    assert!(next.get("findText").is_some(), "{next}");
+}
+
+/// A literal `|` miss leads to the same read with each part as its own
+/// matchString, not to a search repeating the literal `|`.
+#[test]
+fn a_literal_bar_miss_repairs_to_a_match_list() {
+    let t = Fixture::new();
+    let p = t.0.join("mod.rs");
+    fs::write(&p, "mod executor;\nmod other;\n").expect("fixture");
+    let paths = Paths(t.0.clone());
+    let r = fetch(
+        &qj(&p, serde_json::json!({"matchString": "executor|nothing"})),
+        &paths,
+    );
+    assert_eq!(r.status, "empty", "{r:?}");
+    let next = serde_json::to_value(r.next.as_ref().expect("next")).expect("json");
+    assert_eq!(
+        next["repair"]["query"]["queries"][0]["matchString"],
+        serde_json::json!(["executor", "nothing"]),
+        "{next}"
+    );
+    assert!(next.get("findText").is_none(), "{next}");
+    let repaired: LocalFetchQuery =
+        serde_json::from_value(next["repair"]["query"]["queries"][0].clone()).expect("query");
+    assert_eq!(fetch(&repaired, &paths).matched_lines, vec![1]);
+    // Parts this file lacks too: the search looks for each part.
+    let r = fetch(
+        &qj(&p, serde_json::json!({"matchString": "absent|gone"})),
+        &paths,
+    );
+    let next = serde_json::to_value(r.next.as_ref().expect("next")).expect("json");
+    assert!(next.get("repair").is_none(), "{next}");
+    let search = &next["findText"]["query"]["queries"][0];
+    assert_eq!(search["regex"], "rust", "{next}");
+    assert!(
+        search["matchString"]
+            .as_str()
+            .is_some_and(|pattern| pattern.contains("absent") && pattern.contains(")|(")),
+        "{next}"
+    );
+}
+
+/// An explicit byte offset inside a character starts the page at that
+/// character's first byte, says so, and loses no byte.
+#[test]
+fn a_mid_character_byte_offset_snaps_to_the_character_start() {
+    let t = Fixture::new();
+    let p = t.0.join("mb.txt");
+    fs::write(&p, "abc語def\n").expect("fixture");
+    let paths = Paths(t.0.clone());
+    let r = fetch(
+        &qj(
+            &p,
+            serde_json::json!({"unit": "bytes", "offset": 4, "length": 4}),
+        ),
+        &paths,
+    );
+    assert_eq!(r.error_code, None, "{r:?}");
+    assert_eq!(r.content.as_deref(), Some("語d"), "{r:?}");
+    assert!(
+        r.warnings
+            .iter()
+            .any(|warning| warning.contains("starts at its first byte, 3")),
+        "{:?}",
+        r.warnings
+    );
+}
+
+/// A symbols read of a data document outlines its keys; a file with no
+/// outline names the specific reason.
+#[test]
+fn symbols_outline_data_keys_and_name_why_an_outline_is_missing() {
+    let t = Fixture::new();
+    let paths = Paths(t.0.clone());
+    let json = t.0.join("data.json");
+    let mut body = String::from("{\n  \"name\": \"x\",\n  \"items\": {\n");
+    body.push_str(&"    \"k\": 1,\n".repeat(200));
+    body.push_str("    \"last\": 2\n  }\n}\n");
+    fs::write(&json, &body).expect("fixture");
+    let r = fetch(&qj(&json, serde_json::json!({"minify": "symbols"})), &paths);
+    assert_eq!(r.content_view, Some(MinifyMode::Symbols), "{r:?}");
+    assert_eq!(
+        r.content.as_deref(),
+        Some("2\t  \"name\": \"x\",\n3-205\t  \"items\": {\n")
+    );
+    let text = t.0.join("notes.txt");
+    fs::write(&text, "plain\n".repeat(100)).expect("fixture");
+    let r = fetch(&qj(&text, serde_json::json!({"minify": "symbols"})), &paths);
+    assert_eq!(
+        r.minify_fallback
+            .as_ref()
+            .map(|fallback| fallback.reason.as_str()),
+        Some("unsupported-language"),
+        "{r:?}"
+    );
+}
+
+/// A symbols outline from a recovered parse (Flow types) says which lines
+/// the parser skipped, as a block read does.
+#[test]
+fn a_symbols_outline_from_a_recovered_parse_names_the_skipped_lines() {
+    let t = Fixture::new();
+    let p = t.0.join("Hooks.js");
+    let mut flow = String::from("// @flow\ntype Dispatch<A> = A => void;\n");
+    for i in 0..20 {
+        flow.push_str(&format!(
+            "export function useState{i}<S>(init: S): [S, Dispatch<S>] {{\n  const value = init;\n  const other = value;\n  return [other, () => {{}}];\n}}\n"
+        ));
+    }
+    fs::write(&p, &flow).expect("fixture");
+    let r = fetch(
+        &qj(&p, serde_json::json!({"minify": "symbols"})),
+        &Paths(t.0.clone()),
+    );
+    assert_eq!(r.content_view, Some(MinifyMode::Symbols), "{r:?}");
+    assert!(
+        r.warnings
+            .iter()
+            .any(|warning| warning.starts_with("The parser could not parse lines")),
+        "{:?}",
+        r.warnings
+    );
+    // A later outline page does not repeat it.
+    let later = fetch(
+        &qj(
+            &p,
+            serde_json::json!({"minify": "symbols", "offset": 5, "length": 5}),
+        ),
+        &Paths(t.0.clone()),
+    );
+    assert_eq!(later.content_view, Some(MinifyMode::Symbols), "{later:?}");
+    assert!(
+        !later
+            .warnings
+            .iter()
+            .any(|warning| warning.starts_with("The parser could not parse lines")),
+        "{:?}",
+        later.warnings
+    );
+}
+
+/// The pages of one large file version decode and key-redact it once; an
+/// edited version is prepared again.
+#[test]
+fn a_large_source_is_prepared_once_per_version() {
+    struct CountingKeys(AtomicUsize);
+    impl ContentScan for CountingKeys {
+        fn sanitize(
+            &self,
+            text: &str,
+            _: &Path,
+        ) -> Result<(String, Vec<String>), (String, String)> {
+            Ok((text.to_owned(), vec![]))
+        }
+        fn redact_key_blocks(&self, content: &str) -> (String, bool) {
+            self.0.fetch_add(1, Ordering::Relaxed);
+            crate::security::redact_private_key_blocks(content)
+        }
+    }
+    let t = Fixture::new();
+    let p = t.0.join("large.txt");
+    let line = format!("{}\n", "x".repeat(79));
+    fs::write(&p, line.repeat(4_000)).expect("fixture");
+    let scan = CountingKeys(AtomicUsize::new(0));
+    let read = |req: &LocalFetchQuery| {
+        execute_local_fetch(
+            req,
+            &Paths(t.0.clone()),
+            &scan,
+            &NeverCancel,
+            &LocalFetchRegex,
+            None,
+            None,
+        )
+    };
+    let first = read(&q(&p));
+    let next = first
+        .next
+        .and_then(|next| next.continue_window)
+        .expect("a second page")
+        .query;
+    let second = read(&next);
+    assert_eq!(second.status, "success", "{second:?}");
+    assert_eq!(
+        scan.0.load(Ordering::Relaxed),
+        1,
+        "one preparation for both pages"
+    );
+    fs::write(&p, line.repeat(4_001)).expect("edit");
+    assert_eq!(read(&q(&p)).total_lines, Some(4_001));
+    assert_eq!(
+        scan.0.load(Ordering::Relaxed),
+        2,
+        "a new version is prepared again"
+    );
 }

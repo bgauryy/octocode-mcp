@@ -25,6 +25,9 @@ pub struct SyntaxTreeInspectOptions {
     pub named_only: Option<bool>,
     pub node_offset: Option<u32>,
     pub node_limit: Option<u32>,
+    /// 1-based line: the walk starts at the smallest node (named, with
+    /// `named_only`) covering that line's text instead of the file root.
+    pub line: Option<u32>,
 }
 
 #[derive(Clone, Debug)]
@@ -172,8 +175,40 @@ fn inspect_bounded(
     };
 
     let line_index = LineIndex::tree_sitter(content);
+    let mut line_note = None;
+    let root = match options.line {
+        None => tree.root_node(),
+        Some(line) => match line_node(tree.root_node(), content, line, named_only) {
+            Some(LineRoot::Covering(node)) => node,
+            Some(LineRoot::Blank { node, note }) => {
+                line_note = Some(diagnostic(
+                    "syntaxTree.options.lineBlank",
+                    "warning",
+                    "options",
+                    note,
+                    file_path,
+                ));
+                node
+            }
+            None => {
+                return SyntaxTreeInspectResult {
+                    nodes: Vec::new(),
+                    total_nodes: 0,
+                    next_offset: None,
+                    status: "error".to_owned(),
+                    diagnostics: vec![diagnostic(
+                        "syntaxTree.options.lineOutOfRange",
+                        "error",
+                        "options",
+                        format!("line {line} is past the end of the file"),
+                        file_path,
+                    )],
+                };
+            }
+        },
+    };
     let mut pending = vec![Pending {
-        node: tree.root_node(),
+        node: root,
         included_parent: None,
     }];
     // Only the requested window is materialized; every included node still gets
@@ -200,6 +235,7 @@ fn inspect_bounded(
     } else {
         Vec::new()
     };
+    diagnostics.extend(line_note);
 
     while let Some(Pending {
         node,
@@ -278,6 +314,94 @@ fn inspect_bounded(
     }
 }
 
+/// Where a `line` roots the walk.
+enum LineRoot<'tree> {
+    /// The smallest node covering the line's text.
+    Covering(Node<'tree>),
+    /// A blank line has no text to cover: the item after it inside the node
+    /// enclosing it (else the item before it, else that node), with a note
+    /// that says which node the tree starts at.
+    Blank { node: Node<'tree>, note: String },
+}
+
+/// The smallest node (named, with `named_only`) covering the text of
+/// 1-based `line`, without its surrounding whitespace; for a blank line, the
+/// nearest item inside the node enclosing it; `None` past the end.
+fn line_node<'tree>(
+    root: Node<'tree>,
+    content: &str,
+    line: u32,
+    named_only: bool,
+) -> Option<LineRoot<'tree>> {
+    let index = usize::try_from(line.checked_sub(1)?).ok()?;
+    let start = if index == 0 {
+        0
+    } else {
+        content
+            .match_indices('\n')
+            .nth(index - 1)
+            .map(|(offset, _)| offset + 1)?
+    };
+    if start > content.len() || (start == content.len() && index > 0) {
+        return None;
+    }
+    let end = content[start..]
+        .find('\n')
+        .map_or(content.len(), |offset| start + offset);
+    let text = &content[start..end];
+    if text.trim().is_empty() {
+        return Some(blank_line_root(root, start, end, line));
+    }
+    let from = start + (text.len() - text.trim_start().len());
+    let to = (end - (text.len() - text.trim_end().len())).max(from);
+    let node = if named_only {
+        root.named_descendant_for_byte_range(from, to)
+    } else {
+        root.descendant_for_byte_range(from, to)
+    }?;
+    Some(LineRoot::Covering(node))
+}
+
+/// The root of a walk asked for blank `line` (bytes `start..end`): the
+/// smallest node strictly enclosing the line, then the first named child
+/// (comments and annotations aside) starting after it, else the last one
+/// ending before it.
+fn blank_line_root(root: Node<'_>, start: usize, end: usize, line: u32) -> LineRoot<'_> {
+    let mut cursor = root.walk();
+    let mut enclosing = root;
+    while let Some(inner) = enclosing
+        .named_children(&mut cursor)
+        .find(|child| child.start_byte() < start && child.end_byte() > end)
+    {
+        enclosing = inner;
+    }
+    // Comments are extras, and an attribute or decorator that is a sibling
+    // annotates the item after it: neither is an item, so the tree starts at
+    // the item itself.
+    let children = enclosing
+        .named_children(&mut cursor)
+        .filter(|child| {
+            !child.is_extra() && !crate::signatures::extractor::is_annotation_kind(child.kind())
+        })
+        .collect::<Vec<_>>();
+    let next = children.iter().find(|child| child.start_byte() >= end);
+    let previous = children
+        .iter()
+        .rev()
+        .find(|child| child.end_byte() <= start);
+    let (node, side) = match (next, previous) {
+        (Some(node), _) => (*node, "the next item"),
+        (None, Some(node)) => (*node, "the item before it"),
+        (None, None) => (enclosing, "the node enclosing it"),
+    };
+    let note = format!(
+        "line {line} is blank; the tree starts at {side}, {} at line {}",
+        node.kind(),
+        node.start_position().row + 1
+    );
+    LineRoot::Blank { node, note }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -303,6 +427,102 @@ mod tests {
         assert_eq!(identifier.start_column, 6);
     }
 
+    /// `line` roots the walk at the smallest node covering that line's
+    /// text: a statement inside a body, or the declaration its header line
+    /// opens; a line past the end is an options error.
+    #[test]
+    fn a_line_roots_the_tree_at_the_node_covering_it() {
+        let source = "const a = 1;\nfunction f(x: number) {\n  return x + a;\n}\n";
+        let at = |line| {
+            inspect_source(
+                source,
+                "x.ts",
+                Some(SyntaxTreeInspectOptions {
+                    named_only: Some(true),
+                    line: Some(line),
+                    ..Default::default()
+                }),
+            )
+        };
+        let body = at(3);
+        assert_eq!(body.status, "ok");
+        assert_eq!(body.nodes[0].kind, "return_statement");
+        assert_eq!(body.nodes[0].parent_id, None);
+        assert!(body.nodes.iter().all(|node| node.start_line == 3));
+        let header = at(2);
+        assert_eq!(header.nodes[0].kind, "function_declaration");
+        assert_eq!(header.nodes[0].end_line, 4);
+        let past = at(9);
+        assert_eq!(past.status, "error");
+        assert_eq!(
+            past.diagnostics[0].code,
+            "syntaxTree.options.lineOutOfRange"
+        );
+    }
+
+    /// A blank line covers no text: the tree starts at the next item inside
+    /// the node enclosing the line (else the item before it), and a warning
+    /// names that node instead of silently rooting at the file.
+    #[test]
+    fn a_blank_line_roots_at_the_nearest_item_and_says_so() {
+        let source =
+            "const a = 1;\n\n// doc\nfunction f(x: number) {\n  const y = x;\n\n  return y;\n}\n\n";
+        let at = |line| {
+            inspect_source(
+                source,
+                "x.ts",
+                Some(SyntaxTreeInspectOptions {
+                    named_only: Some(true),
+                    line: Some(line),
+                    ..Default::default()
+                }),
+            )
+        };
+        let between = at(2);
+        assert_eq!(between.status, "ok");
+        assert_eq!(between.nodes[0].kind, "function_declaration");
+        assert_eq!(between.nodes[0].start_line, 4);
+        let note = &between.diagnostics[0];
+        assert_eq!(note.code, "syntaxTree.options.lineBlank");
+        assert_eq!(note.severity, "warning");
+        assert!(note.message.contains("line 2 is blank"), "{}", note.message);
+        let in_body = at(6);
+        assert_eq!(in_body.nodes[0].kind, "return_statement");
+        let trailing = at(9);
+        assert_eq!(trailing.nodes[0].kind, "function_declaration");
+        assert!(
+            trailing.diagnostics[0]
+                .message
+                .contains("the item before it")
+        );
+    }
+
+    /// Attributes are siblings of the Rust item they annotate: a blank line
+    /// before them roots at the item, not at its first attribute.
+    #[test]
+    fn a_blank_line_before_attributes_roots_at_the_annotated_item() {
+        let source = "use std::fmt;\n\n/// Doc.\n#[derive(Clone, Copy, Debug)]\n#[non_exhaustive]\npub enum MatchQuery {\n    A,\n}\n";
+        let result = inspect_source(
+            source,
+            "x.rs",
+            Some(SyntaxTreeInspectOptions {
+                named_only: Some(true),
+                line: Some(2),
+                ..Default::default()
+            }),
+        );
+        assert_eq!(result.status, "ok");
+        assert_eq!(result.nodes[0].kind, "enum_item");
+        assert_eq!(result.nodes[0].start_line, 6);
+        assert!(
+            result.diagnostics[0]
+                .message
+                .contains("enum_item at line 6"),
+            "{}",
+            result.diagnostics[0].message
+        );
+    }
+
     #[test]
     fn named_only_reparents_around_punctuation() {
         let result = inspect_source(
@@ -311,6 +531,7 @@ mod tests {
             Some(SyntaxTreeInspectOptions {
                 named_only: Some(true),
                 node_offset: None,
+                line: None,
                 node_limit: Some(100),
             }),
         );
@@ -334,6 +555,7 @@ mod tests {
             Some(SyntaxTreeInspectOptions {
                 named_only: Some(false),
                 node_offset: None,
+                line: None,
                 node_limit: Some(1000),
             }),
         );
@@ -346,6 +568,7 @@ mod tests {
                 Some(SyntaxTreeInspectOptions {
                     named_only: Some(false),
                     node_offset: Some(offset),
+                    line: None,
                     node_limit: Some(2),
                 }),
             );
@@ -373,6 +596,7 @@ mod tests {
                 Some(SyntaxTreeInspectOptions {
                     named_only: Some(false),
                     node_offset: Some(offset),
+                    line: None,
                     node_limit: Some(3),
                 }),
                 budget,
@@ -438,6 +662,7 @@ mod tests {
             Some(SyntaxTreeInspectOptions {
                 named_only: Some(false),
                 node_offset: None,
+                line: None,
                 node_limit: Some(100_000),
             }),
         );
@@ -457,6 +682,7 @@ mod tests {
                 Some(SyntaxTreeInspectOptions {
                     named_only: Some(true),
                     node_offset: Some(offset),
+                    line: None,
                     node_limit: Some(3),
                 }),
             )

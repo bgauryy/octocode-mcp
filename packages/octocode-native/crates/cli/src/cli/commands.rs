@@ -195,10 +195,10 @@ pub(super) enum Command {
         command: super::graph::GraphCommand,
     },
     /// Install, remove, or check bundled Octocode skills (`octocode skill --help`).
+    #[command(disable_help_subcommand = true)]
     Skill {
-        /// Arguments for the npm launcher's `octocode skill`.
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<String>,
+        #[command(subcommand)]
+        command: super::skill::SkillCommand,
     },
     /// Add the Octocode MCP server to an agent client's configuration.
     Install(super::mcp_install::InstallArgs),

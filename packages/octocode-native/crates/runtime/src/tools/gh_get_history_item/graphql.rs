@@ -5,9 +5,8 @@
 //! GraphQL shape into the REST-shaped values the rest of the tool consumes,
 //! with per-collection completeness state.
 
-use super::pull_request::{ContentWants, content_wants};
 use super::util::str_at;
-use super::{HistoryItemRequest, ItemOperation};
+use super::{HistoryItemRequest, ItemOperation, Section, Sections};
 use octocode_github::{GitHubTransport, ProviderError, RequestContext};
 use serde_json::{Value, json};
 
@@ -31,19 +30,19 @@ pub(super) fn graphql_complete_collection_eligible(query: &HistoryItemRequest) -
     ) {
         return false;
     }
-    if query.page().unwrap_or(1) > 1 || query.include_diff() {
+    if query.page().unwrap_or(1) > 1 {
         return false;
     }
-    let wants = content_wants(query);
-    if wants.patch_mode != "none" {
+    let wants = query.sections();
+    if wants.has(Section::Patches) {
         return false;
     }
     let eligible = [
-        wants.body,
-        wants.files,
-        wants.discussion,
-        wants.commits,
-        wants.reviews,
+        wants.has(Section::Body),
+        wants.lists_files(),
+        wants.has(Section::Comments),
+        wants.lists_commits(),
+        wants.has(Section::Reviews),
     ]
     .into_iter()
     .filter(|value| *value)
@@ -63,10 +62,14 @@ pub(super) enum GraphqlOutcome {
 }
 
 /// The pull-request document for the wanted collections, and the page size
-/// variable each collection binds.
-pub(super) fn pull_request_document(wants: &ContentWants) -> (String, Vec<(&'static str, u32)>) {
+/// variable each collection binds. The body is selected only when the read
+/// shows it (`body`); a row without it leaves `body` unknown, not empty.
+pub(super) fn pull_request_document(
+    wants: &Sections,
+    body: bool,
+) -> (String, Vec<(&'static str, u32)>) {
     let mut selections: Vec<&str> = vec![
-        "number title url state body isDraft author { login }",
+        "number title url state isDraft author { login }",
         "labels(first:20){ pageInfo{ hasNextPage } nodes { name } }",
         "baseRefName baseRefOid headRefName headRefOid createdAt updatedAt closedAt mergedAt mergeCommit { oid }",
         "comments { totalCount } changedFiles additions deletions",
@@ -74,29 +77,32 @@ pub(super) fn pull_request_document(wants: &ContentWants) -> (String, Vec<(&'sta
         // `commits(first:)` selection of the same connection.
         "commitsCount: commits { totalCount } reviewThreads { totalCount }",
     ];
+    if body {
+        selections.push("body");
+    }
     let mut variables = Vec::new();
     let mut header = String::from("query($owner:String!,$repo:String!,$number:Int!");
     for (wanted, variable, first, selection) in [
         (
-            wants.files,
+            wants.lists_files(),
             "files",
             100,
             "files(first:$files){ pageInfo{ hasNextPage } nodes{ path additions deletions changeType } }",
         ),
         (
-            wants.discussion,
+            wants.has(Section::Comments),
             "discussion",
             100,
             "commentsConn: comments(first:$discussion){ pageInfo{ hasNextPage } nodes{ databaseId author{ login __typename } body createdAt url } }",
         ),
         (
-            wants.reviews,
+            wants.has(Section::Reviews),
             "reviews",
             100,
             "reviews(first:$reviews){ pageInfo{ hasNextPage } nodes{ databaseId author{ login __typename } state body submittedAt commit{ oid } } }",
         ),
         (
-            wants.commits,
+            wants.lists_commits(),
             "commits",
             50,
             "commits(first:$commits){ pageInfo{ hasNextPage } nodes{ commit{ oid message messageHeadline authoredDate author{ name user{ login } } } } }",
@@ -138,7 +144,7 @@ pub(super) async fn graphql_pull_request(
     transport: &GitHubTransport,
     query: &HistoryItemRequest,
     context: &RequestContext,
-    wants: &ContentWants,
+    wants: &Sections,
 ) -> Result<GraphqlOutcome, ProviderError> {
     if !transport.graphql_enabled || !transport.graphql_available(context) {
         return Ok(GraphqlOutcome::Unavailable);
@@ -146,7 +152,8 @@ pub(super) async fn graphql_pull_request(
     let Some(number) = query.number() else {
         return Ok(GraphqlOutcome::Unavailable);
     };
-    let (document, bound) = pull_request_document(wants);
+    let body = wants.has(Section::Body);
+    let (document, bound) = pull_request_document(wants, body);
     let mut variables = json!({
         "owner": query.owner(),
         "repo": query.repo(),
@@ -168,10 +175,10 @@ pub(super) async fn graphql_pull_request(
         return Ok(GraphqlOutcome::Failed(graphql_failure(&page.errors)));
     }
     Ok(GraphqlOutcome::Served(Box::new(GraphqlPr {
-        files: graphql_collection_state(&pr, "files", wants.files),
-        discussion: graphql_collection_state(&pr, "commentsConn", wants.discussion),
-        reviews: graphql_collection_state(&pr, "reviews", wants.reviews),
-        commits: graphql_collection_state(&pr, "commits", wants.commits),
+        files: graphql_collection_state(&pr, "files", wants.lists_files()),
+        discussion: graphql_collection_state(&pr, "commentsConn", wants.has(Section::Comments)),
+        reviews: graphql_collection_state(&pr, "reviews", wants.has(Section::Reviews)),
+        commits: graphql_collection_state(&pr, "commits", wants.lists_commits()),
         raw: map_graphql_pr_metadata(&pr),
         source: pr,
     })))
@@ -217,14 +224,13 @@ pub(super) fn map_graphql_pr_metadata(pr: &Value) -> Value {
         .pointer("/labels/pageInfo/hasNextPage")
         .and_then(Value::as_bool)
         == Some(true);
-    json!({
+    let mut raw = json!({
         "number": pr.get("number"),
         "title": pr.get("title"),
         "html_url": pr.get("url"),
         // GraphQL reports OPEN/CLOSED/MERGED; the public contract (and the REST
         // shape this projects into) uses lowercase open/closed/merged.
         "state": str_at(pr, "/state").map(str::to_ascii_lowercase),
-        "body": pr.get("body"),
         "draft": pr.get("isDraft"),
         "merged_at": pr.get("mergedAt"),
         // REST 2026-03-10 drops merge_commit_sha; GraphQL keeps mergeCommit.
@@ -245,7 +251,13 @@ pub(super) fn map_graphql_pr_metadata(pr: &Value) -> Value {
         "changed_files": pr.get("changedFiles"),
         "additions": pr.get("additions"),
         "deletions": pr.get("deletions"),
-    })
+    });
+    // A selected body is GitHub's (null when empty); an unselected one is
+    // left out, so readers tell "no body" from "not read".
+    if let Some(body) = pr.get("body") {
+        raw["body"] = body.clone();
+    }
+    raw
 }
 
 /// Each node of the connection at `pointer`, mapped by `row`.
@@ -275,8 +287,8 @@ pub(super) fn map_graphql_files(pr: &Value) -> Vec<Value> {
 }
 
 /// The REST login of a GraphQL author: GraphQL drops the `[bot]` suffix
-/// REST gives app accounts, so a `Bot` author gets it back and the bot
-/// filter sees the same login on both paths.
+/// REST gives app accounts, so a `Bot` author gets it back and both paths
+/// name the same author.
 fn author_login(node: &Value) -> String {
     let login = str_at(node, "/author/login").unwrap_or("unknown");
     if str_at(node, "/author/__typename") == Some("Bot") && !login.ends_with("[bot]") {
@@ -335,8 +347,8 @@ pub(super) fn map_graphql_commits(pr: &Value) -> Vec<Value> {
 
 #[cfg(test)]
 mod tests {
-    /// A GraphQL `Bot` author reads as the REST `<login>[bot]`, so the bot
-    /// filter drops review-app comments and reviews on both paths.
+    /// A GraphQL `Bot` author reads as the REST `<login>[bot]`, so both
+    /// paths name review-app comments and reviews alike.
     #[test]
     fn graphql_bot_authors_get_the_rest_bot_suffix() {
         let pr = serde_json::json!({
@@ -454,17 +466,25 @@ mod tests {
             "sections":["body","files","comments","reviews","commits"]
         }))
         .expect("GitHub history test data should be valid");
-        let wants = content_wants(&every);
-        assert!(wants.files && wants.discussion && wants.reviews && wants.commits);
-        let (document, variables) = pull_request_document(&wants);
+        let wants = every.sections();
+        assert!(
+            wants.lists_files()
+                && wants.has(Section::Comments)
+                && wants.has(Section::Reviews)
+                && wants.lists_commits()
+        );
+        let (document, variables) = pull_request_document(&wants, true);
+        // The PR's own body is selected only when the read uses it.
+        assert!(document.contains("totalCount } body "), "{document}");
+        let (without_body, _) = pull_request_document(&wants, false);
+        assert!(
+            !without_body.contains("totalCount } body "),
+            "{without_body}"
+        );
         assert_eq!(undefined_selections(&document), Vec::<String>::new());
         assert_eq!(variables.len(), 4, "{document}");
         assert_eq!(
             undefined_selections(super::super::issue::CLOSING_REFERENCES_DOCUMENT),
-            Vec::<String>::new()
-        );
-        assert_eq!(
-            undefined_selections(super::super::issue::CLOSING_REFERENCE_COUNT_DOCUMENT),
             Vec::<String>::new()
         );
         // The validator rejects what GitHub rejects.

@@ -7,6 +7,7 @@
 
 use super::algorithms::reachable;
 use super::analysis::{is_js_ts, module_stem, node_key};
+use super::linking::Linker;
 use super::types::{AstTopologyQuery, BuiltGraph, Diagnostic, GraphAnalysis};
 use serde_json::Value;
 use std::collections::BTreeSet;
@@ -43,11 +44,15 @@ impl Reach {
         match q.analysis() {
             GraphAnalysis::Dependencies => Self::From(expanded()),
             GraphAnalysis::Dependents => Self::Into(expanded()),
-            GraphAnalysis::Path => Self::From(
-                source()
-                    .map(|source| reachable(&b.nodes, &[source], false))
-                    .unwrap_or_default(),
-            ),
+            GraphAnalysis::Path => Self::From(source().map_or_else(BTreeSet::new, |source| {
+                match found_hops(items) {
+                    // A found path is proven: an unlinked edge can only add
+                    // a shorter one, and only out of a file nearer the source
+                    // than the path's next-to-last step.
+                    Some(hops) => near(b, &source, hops.checked_sub(2)),
+                    None => reachable(&b.nodes, &[source], false),
+                }
+            })),
             // The live files: an edge out of an unreached file reaches
             // nothing new.
             GraphAnalysis::Reachability => Self::From(
@@ -105,6 +110,29 @@ impl Reach {
             }
         }
     }
+}
+
+/// Edges of the path a path answer found; `None` when it found none.
+fn found_hops(items: &[Value]) -> Option<usize> {
+    let found = items.first().filter(|item| item["found"] == true)?;
+    Some(found["files"].as_array()?.len().saturating_sub(1))
+}
+
+/// `source` and the files at most `depth` edges from it; nothing when
+/// `depth` is `None` (a direct edge: no shorter path exists).
+fn near(b: &BuiltGraph, source: &str, depth: Option<usize>) -> BTreeSet<String> {
+    let Some(depth) = depth else {
+        return BTreeSet::new();
+    };
+    let mut files = BTreeSet::from([source.to_owned()]);
+    if let Ok(depth @ 1..) = u32::try_from(depth) {
+        files.extend(
+            super::algorithms::traverse(&b.nodes, source, depth)
+                .iter()
+                .filter_map(|row| row["file"].as_str().map(str::to_owned)),
+        );
+    }
+    files
 }
 
 /// Specifiers of `file`'s imports no resolver linked to a scanned file nor
@@ -168,27 +196,12 @@ fn join(importer: &str, spec: &str) -> Option<String> {
     Some(parts.join("/"))
 }
 
-/// Languages whose files never import one another. An extension outside
-/// these families is never ruled out.
-fn family(file: &str) -> Option<&'static str> {
-    let extension = octocode_engine::text::extension_of(file, true, "").to_ascii_lowercase();
-    if is_js_ts(file) {
-        return Some("js");
-    }
-    Some(match extension.as_str() {
-        "py" | "pyi" => "python",
-        "rs" => "rust",
-        "go" => "go",
-        "java" => "java",
-        "c" | "h" | "cc" | "cpp" | "cxx" | "hpp" | "hh" | "hxx" => "c",
-        _ => return None,
-    })
-}
-
+/// Whether files `a` and `b` can import one another: the same linker, or
+/// either one unlinked (never ruled out).
 fn same_language(a: &str, b: &str) -> bool {
-    match (family(a), family(b)) {
-        (Some(a), Some(b)) => a == b,
-        _ => true,
+    match (Linker::of(a), Linker::of(b)) {
+        (Linker::Unsupported, _) | (_, Linker::Unsupported) => true,
+        (a, b) => a == b,
     }
 }
 

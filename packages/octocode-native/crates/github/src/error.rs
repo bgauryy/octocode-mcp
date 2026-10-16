@@ -61,6 +61,9 @@ pub enum ProviderErrorReason {
     PullRequestIsIssue,
     /// A file read named binary content, which is never returned as text.
     BinaryFile,
+    /// A file read named a submodule: [`crate::GitHubProvider::submodule`]
+    /// reads where it points.
+    Submodule,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

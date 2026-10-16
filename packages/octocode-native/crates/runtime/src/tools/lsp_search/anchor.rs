@@ -56,7 +56,7 @@ pub(super) fn resolve_anchor(
     canonical_uri: &str,
     source: Option<&str>,
 ) -> Result<Anchor, String> {
-    if !is_anchored(&query.operation()) {
+    if !is_anchored(query.operation()) {
         return Ok(Anchor {
             line: 0,
             character: 0,
@@ -84,6 +84,9 @@ pub(super) fn resolve_anchor(
         if resolved.line_offset != 0 {
             symbol["lineDeviation"] = json!(resolved.line_offset.unsigned_abs());
         }
+        if last_member_start(name).is_none() {
+            disclose_same_line(&mut symbol, &resolved, name);
+        }
         return Ok(Anchor {
             line: resolved.position.line,
             character: resolved.position.character,
@@ -91,6 +94,60 @@ pub(super) fn resolve_anchor(
         });
     }
     Err("lspSearch requires symbolName and line".to_owned())
+}
+
+/// A line that spells the name more than once was resolved to one
+/// occurrence (`orderHint`, default the first): the receipt counts them and
+/// names each other one by the `orderHint` that selects it, its column, and
+/// the qualified spelling (`target.config`) that anchors on it without a
+/// hint.
+fn disclose_same_line(symbol: &mut Value, resolved: &JsResolvedSymbol, name: &str) {
+    let columns = &resolved.occurrences_on_line;
+    if columns.len() < 2 {
+        return;
+    }
+    let alternatives = columns
+        .iter()
+        .enumerate()
+        .filter(|(_, column)| **column != resolved.position.character)
+        .map(|(order, column)| {
+            let mut alternative = json!({"orderHint": order, "foundAtCharacter": column + 1});
+            if let Some(qualified) = qualified_at(&resolved.line_content, *column, name) {
+                alternative["symbolName"] = json!(qualified);
+            }
+            alternative
+        })
+        .collect::<Vec<_>>();
+    symbol["occurrencesOnLine"] = json!(columns.len());
+    symbol["alternatives"] = json!(alternatives);
+}
+
+/// `qualifier.name` (or `::`, `->`) when the occurrence at UTF-16 `column`
+/// of `line` is a member access; `None` for a bare name.
+fn qualified_at(line: &str, column: u32, name: &str) -> Option<String> {
+    let at = line
+        .char_indices()
+        .scan(0_u32, |units, (byte, ch)| {
+            let start = *units;
+            *units += ch.len_utf16() as u32;
+            Some((byte, start))
+        })
+        .find(|(_, start)| *start == column)
+        .map(|(byte, _)| byte)?;
+    let before = &line[..at];
+    let (separator, rest) = ["::", "->", "."].iter().find_map(|separator| {
+        before
+            .strip_suffix(separator)
+            .map(|rest| (*separator, rest))
+    })?;
+    let is_word = |ch: char| ch == '_' || ch == '$' || ch.is_alphanumeric();
+    let start = rest
+        .char_indices()
+        .rev()
+        .take_while(|(_, ch)| is_word(*ch))
+        .last()
+        .map(|(byte, _)| byte)?;
+    Some(format!("{}{separator}{name}", &rest[start..]))
 }
 
 /// Resolve `name` near `line_hint`. A member-qualified name (`this.ns`,
@@ -235,6 +292,40 @@ fn qualifier_width(resolved: &JsResolvedSymbol, name: &str, member_start: usize)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `config: target.config.clone()` spells `config` twice: the receipt
+    /// counts them and names the other by orderHint, column and qualified
+    /// name; a line with one occurrence says nothing more.
+    #[test]
+    fn a_repeated_name_on_the_line_names_its_alternatives() {
+        let source = "fn f(target: T) -> L {\n    L { config: target.config.clone() }\n}\n";
+        let query: LspSearchQuery = serde_json::from_value(json!({
+            "operation": "definition", "path": "/w/a.rs", "symbolName": "config", "line": 2
+        }))
+        .expect("query");
+        let anchor =
+            resolve_anchor(&query, "/w/a.rs", "file:///w/a.rs", Some(source)).expect("anchor");
+        let symbol = anchor.resolved_symbol.expect("receipt");
+        assert_eq!(symbol["occurrencesOnLine"], 2, "{symbol}");
+        assert_eq!(
+            symbol["alternatives"],
+            json!([{"orderHint": 1, "foundAtCharacter": 24, "symbolName": "target.config"}]),
+            "{symbol}"
+        );
+        let single: LspSearchQuery = serde_json::from_value(json!({
+            "operation": "definition", "path": "/w/a.rs", "symbolName": "target", "line": 1
+        }))
+        .expect("query");
+        let anchor =
+            resolve_anchor(&single, "/w/a.rs", "file:///w/a.rs", Some(source)).expect("anchor");
+        assert!(
+            anchor
+                .resolved_symbol
+                .expect("receipt")
+                .get("alternatives")
+                .is_none()
+        );
+    }
 
     #[test]
     fn a_stored_anchor_never_answers_for_edited_text() {

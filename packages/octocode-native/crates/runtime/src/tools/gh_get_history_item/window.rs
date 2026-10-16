@@ -6,12 +6,28 @@ use octocode_github::MAX_PER_PAGE;
 use octocode_github::{GitHubTransport, ProviderError, RequestContext};
 use serde_json::{Value, json};
 
+// GitHub's collection caps, in one table: provider facts, not tuning.
+
+/// GitHub's compare endpoint lists at most this many changed files.
+pub(super) const COMPARE_FILE_LIMIT: usize = 300;
 /// PR and commit file lists stop at 3000 files (30 batches of 100).
 pub(super) const MAX_FILE_BATCHES: usize = 30;
 /// Comments/reviews scanned for one page (3000 items).
 pub(super) const MAX_COLLECTION_BATCHES: usize = 30;
 /// GitHub lists at most 250 commits for a pull request.
 pub(super) const MAX_PR_COMMIT_BATCHES: usize = 3;
+
+/// The `(page, pageSize)` pair whose page starts exactly at item `start`
+/// of a list GitHub pages by whole pages: the largest page size within
+/// `max_size` that divides `start`, so every item past `start` falls on
+/// exactly one later page.
+pub(super) fn page_starting_at(start: usize, max_size: usize) -> (usize, usize) {
+    let size = (1..=max_size.max(1))
+        .rev()
+        .find(|size| start.is_multiple_of(*size))
+        .unwrap_or(1);
+    (start / size + 1, size)
+}
 
 /// How much of a provider collection a load covered.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -296,14 +312,6 @@ pub(super) fn reconcile_file_totals(
             "changedFilesCount": total
         });
     }
-}
-
-pub(super) fn paginate_collection(
-    values: Vec<Value>,
-    page: Option<usize>,
-    page_size: Option<usize>,
-) -> (Vec<Value>, Value) {
-    paginate_window(values, 0, true, page, page_size)
 }
 
 /// Page `values` (the filtered list, preceded by `skipped` items that were

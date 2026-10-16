@@ -23,8 +23,35 @@ mod tests;
 #[cfg(test)]
 mod tool_tests;
 
-/// Wall-clock bound of a [`FileProbe`]'s one walk: past it the probe is cut.
-const PROBE_DEADLINE: std::time::Duration = std::time::Duration::from_millis(1200);
+/// Wall-clock bound of one relaxed probe walk behind a local result (a
+/// [`FileProbe`], localSearch's re-walks, structureSearch's listing probes):
+/// past it the probe is cut and absence behind the skipped paths unproven.
+/// The one budget every local tool's probes share.
+pub(crate) const PROBE_BUDGET: std::time::Duration = std::time::Duration::from_millis(400);
+
+#[cfg(test)]
+thread_local! {
+    static TEST_PROBE_BUDGET: std::cell::Cell<Option<std::time::Duration>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// [`PROBE_BUDGET`], or a test's own on this thread ([`with_probe_budget`]).
+pub(crate) fn probe_budget() -> std::time::Duration {
+    #[cfg(test)]
+    if let Some(budget) = TEST_PROBE_BUDGET.with(std::cell::Cell::get) {
+        return budget;
+    }
+    PROBE_BUDGET
+}
+
+/// Runs `body` with [`probe_budget`] set to `budget` on this thread.
+#[cfg(test)]
+pub(crate) fn with_probe_budget<T>(budget: std::time::Duration, body: impl FnOnce() -> T) -> T {
+    TEST_PROBE_BUDGET.with(|cell| cell.set(Some(budget)));
+    let out = body();
+    TEST_PROBE_BUDGET.with(|cell| cell.set(None));
+    out
+}
 
 /// Files of a probe's finding kept to name skip reasons.
 pub(crate) const SAMPLE_FILES: usize = 8;
@@ -401,7 +428,7 @@ impl Tagged {
     ) -> Result<Self, String> {
         let overrides = globs.overrides(root).map_err(|error| error.reason)?;
         let rules = IgnoreRules::new(root);
-        let prune = Prune::new(mode.directories(true));
+        let prune = Prune::new(mode.directories(true)).at(root);
         let files = files
             .into_iter()
             .map(|file| {
@@ -422,7 +449,7 @@ impl Tagged {
                             &name.to_string_lossy(),
                         )
                         .is_some();
-                    if (is_dir && prune.names(name)) || generated {
+                    if prune.prunes(&prefix, is_dir) || generated {
                         bits |= Cause::DefaultExcluded.bit();
                     }
                 }
@@ -458,7 +485,7 @@ impl Tagged {
 
 /// A file probe for a tool without a text engine of its own: the files under
 /// `root` that `keep` admits, within `budget` walked files and
-/// [`PROBE_DEADLINE`], under a relaxed [`Walk`]. One walk with every cause lifted tags
+/// [`probe_budget`], under a relaxed [`Walk`]. One walk with every cause lifted tags
 /// each file with the causes that hide it; every relaxed walk is then
 /// answered from those tags. The walk is the discovery policy's (`permits`),
 /// `globs`, ignore rules and prune list the tool's scan honors.
@@ -489,7 +516,7 @@ impl<'a> FileProbe<'a> {
             root: root.to_path_buf(),
             mode,
             budget,
-            deadline: std::time::Instant::now() + PROBE_DEADLINE,
+            deadline: std::time::Instant::now() + probe_budget(),
             globs: Globs::default(),
             permits,
             keep,
@@ -723,24 +750,24 @@ fn hidden_entry(
 }
 
 /// The first pruned directory on the way to `file`, else the file itself
-/// when it is a generated one the default excludes skip (`*.lock`).
+/// when it is a generated one the default excludes skip (`*.min.js`).
 fn excluded_entry(
     root: &Path,
     mode: PruneMode,
     file: &Path,
     shown: &dyn Fn(&Path) -> String,
 ) -> Option<(PathBuf, String)> {
-    let pruned = mode.directories(true);
+    let prune = Prune::new(mode.directories(true));
     let directory = prefixes(root, file)
         .into_iter()
-        .filter(|(_, is_dir)| *is_dir)
-        .find_map(|(prefix, _)| {
-            let name = prefix.file_name()?.to_string_lossy();
-            pruned
-                .iter()
-                .any(|pruned| *pruned == name)
-                .then(|| (prefix.clone(), format!("{}/", shown(&prefix))))
-        });
+        .filter(|(prefix, is_dir)| {
+            *is_dir && prefix.file_name().is_some_and(|name| prune.names(name))
+        })
+        .map(|(prefix, _)| {
+            let reason = format!("{}/", shown(&prefix));
+            (prefix, reason)
+        })
+        .next();
     directory.or_else(|| {
         let name = file.file_name()?.to_string_lossy();
         let pattern = crate::policy::discovery::generated_file_pattern(&name)?;

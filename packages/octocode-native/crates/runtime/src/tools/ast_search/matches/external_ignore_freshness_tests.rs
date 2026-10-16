@@ -66,8 +66,12 @@ fn held_memo_is_evicted_when_an_external_ignore_dependency_appears() {
     }
 }
 
+/// Inside a repository (ancestor `.git`, its `info/exclude`, a worktree's
+/// shared exclude through `commondir`, a `.jj` marker, a repository nested
+/// in the scope) the stored scan serves its continuation pages, and an edit
+/// of the rules that decided the walk drops it: the page restarts.
 #[test]
-fn external_repository_rules_rescan_without_parsing_git_configuration() {
+fn repository_rules_keep_the_memo_and_an_edit_drops_it() {
     for kind in ["ancestor", "exclude", "worktree", "jj", "nested"] {
         let root = Fixture::new();
         let scope = sources(&root.0);
@@ -113,18 +117,18 @@ fn external_repository_rules_rescan_without_parsing_git_configuration() {
         let first = run(&query(&scope, false), &paths, &security);
         assert_eq!(first["matchCount"], 2, "{kind}: {first}");
         let snapshot = first["snapshot"].as_str().expect("snapshot");
-        assert!(
-            !SCANS.holds(snapshot),
-            "external rules deliberately disable memo: {kind}"
-        );
+        assert!(SCANS.holds(snapshot), "a repository scan is stored: {kind}");
         let next = first["next"]["nextMatchPage"]["query"]["queries"][0].clone();
         let unchanged = run(&next, &paths, &security);
         assert_eq!(unchanged["matchCount"], 2, "{kind}: {unchanged}");
+        assert!(SCANS.holds(snapshot), "the continuation reuses it: {kind}");
+        SCANS.evict(snapshot);
         assert_eq!(
             unchanged,
             run(&next, &paths, &security),
-            "fresh copied parity"
+            "stored and fresh pages are identical: {kind}"
         );
+        std::thread::sleep(std::time::Duration::from_millis(20));
         std::fs::write(&rules, "").expect("remove ignore rule");
         let changed = run(&next, &paths, &security);
         assert_eq!(changed["errorCode"], "staleSnapshot", "{kind}: {changed}");

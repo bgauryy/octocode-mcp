@@ -145,9 +145,172 @@ pub(crate) fn terminal_limit(row: &mut impl RowFields, reason: &str, warnings: &
     }
 }
 
+/// The key a static notice rides until the response stage places it.
+pub(crate) const NOTICES: &str = "notices";
+
+/// Writes a static notice: a note that reads the same on every page and
+/// every row of a result (a scope or parse caveat, a classification
+/// reminder). The response stage says it once, on the first row that
+/// carries it and on the first page only (`response::notices`): a
+/// continuation page never repeats it. A note that changes between pages
+/// (a count, a line range) is a warning ([`push_warnings`]).
+pub(crate) fn push_notice(row: &mut impl RowFields, notice: impl Into<String>) {
+    let Some(object) = row.fields() else {
+        return;
+    };
+    let notice = notice.into();
+    append_once(object, NOTICES, [notice.as_str()]);
+}
+
+/// Whether `query` continues an earlier page of its result: a page-number
+/// cursor past 1, an offset cursor past 0, or a cursor token (`snapshot`,
+/// `selection`, …) it carries ([`crate::tools::result::CURSOR_FIELDS`]).
+pub(crate) fn continues_a_page(query: &Value) -> bool {
+    crate::tools::result::CURSOR_FIELDS.iter().any(|field| {
+        let Some(value) = query.get(*field).filter(|value| !value.is_null()) else {
+            return false;
+        };
+        let lower = field.to_ascii_lowercase();
+        match value.as_u64() {
+            Some(page) if lower.ends_with("page") => page > 1,
+            Some(offset) if lower.ends_with("offset") => offset > 0,
+            _ => true,
+        }
+    })
+}
+
+/// The one out-of-range page outcome every paged tool shares. When `facts`
+/// is a page past the last one (page 1 of an empty result never is), the
+/// block at `block` (`&["pagination"]`, or a section such as
+/// `&["contentPagination", "comments"]`) becomes `facts` flagged
+/// `outOfRange`, and the row states `reason: "page N of M"`. The response
+/// stage then makes the row `status:"outOfRange"`, drops its partial signals and
+/// adds `next.restart` (page 1 of the same query;
+/// `response::pages::settle_out_of_range`). Returns whether the page was
+/// past the end; otherwise `row` is left alone.
+pub(crate) fn out_of_range(
+    row: &mut impl RowFields,
+    block: &[&str],
+    facts: crate::response::pages::PageFacts,
+) -> bool {
+    let Some((page, pages)) = facts.past_end() else {
+        return false;
+    };
+    let Some(object) = row.fields() else {
+        return true;
+    };
+    object.insert("reason".into(), json!(format!("page {page} of {pages}")));
+    if let Some((last, parents)) = block.split_last() {
+        let mut target = object;
+        for key in parents {
+            let entry = target.entry(*key).or_insert_with(|| json!({}));
+            if !entry.is_object() {
+                *entry = json!({});
+            }
+            let Some(next) = entry.as_object_mut() else {
+                return true;
+            };
+            target = next;
+        }
+        target.insert((*last).into(), facts.out_of_range(true).to_value());
+    }
+    true
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{CURSOR_MAXIMUM, mark_partial, next_cursor, push_warnings, terminal_limit};
+    use super::{
+        CURSOR_MAXIMUM, mark_partial, next_cursor, out_of_range, push_warnings, terminal_limit,
+    };
+    use crate::response::pages::PageFacts;
+
+    /// A static notice is written once; a later page is told by its
+    /// cursors, never by the tool.
+    #[test]
+    fn notices_append_once_and_continuations_are_told_by_their_cursors() {
+        let mut row = json!({});
+        super::push_notice(&mut row, "static");
+        super::push_notice(&mut row, "static");
+        assert_eq!(row[super::NOTICES], json!(["static"]));
+        for first in [
+            json!({"path":"a"}),
+            json!({"path":"a","page":1,"offset":0,"matchPage":1}),
+        ] {
+            assert!(!super::continues_a_page(&first), "{first}");
+        }
+        for later in [
+            json!({"page":2}),
+            json!({"offset":40}),
+            json!({"scanOffset":3}),
+            json!({"snapshot":"s"}),
+            json!({"matchPage":2}),
+        ] {
+            assert!(super::continues_a_page(&later), "{later}");
+        }
+    }
+
+    /// A page past the last writes the shared outcome once: the flagged
+    /// block where the tool pages (a row block or a section) and `reason`
+    /// "page N of M"; a page in range, or page 1 of nothing, writes nothing.
+    #[test]
+    fn a_page_past_the_end_states_the_shared_out_of_range_outcome() {
+        let mut row = json!({"items": []});
+        assert!(out_of_range(
+            &mut row,
+            &["pagination"],
+            PageFacts::counted(9, 10, 35)
+        ));
+        assert_eq!(row["reason"], "page 9 of 4");
+        assert_eq!(
+            row["pagination"],
+            json!({"currentPage": 9, "totalPages": 4, "pageSize": 10, "totalItems": 35,
+                "hasMore": false, "outOfRange": true})
+        );
+        let mut section = json!({"contentPagination": {"files": {"hasMore": false}}});
+        assert!(out_of_range(
+            &mut section,
+            &["contentPagination", "comments"],
+            PageFacts::counted(3, 30, 40)
+        ));
+        assert_eq!(
+            section["contentPagination"]["files"],
+            json!({"hasMore": false})
+        );
+        assert_eq!(section["contentPagination"]["comments"]["outOfRange"], true);
+        assert_eq!(section["reason"], "page 3 of 2");
+        for facts in [
+            PageFacts::counted(4, 10, 35),
+            PageFacts::counted(1, 10, 0),
+            PageFacts::open(7, Some(10), false),
+        ] {
+            let mut row = json!({});
+            assert!(!out_of_range(&mut row, &["pagination"], facts), "{facts:?}");
+            assert_eq!(row, json!({}));
+        }
+        // The response row: empty, no partial signals, page 1 as `restart`.
+        let query = json!({"owner": "o", "repo": "r", "keywords": ["k"], "page": 9});
+        let mut data = json!({"files": [], "isPartial": true, "partialReasons": ["x"]});
+        assert!(out_of_range(
+            &mut data,
+            &["pagination"],
+            PageFacts::counted(9, 10, 35)
+        ));
+        let row = crate::response::rows::result_row(ToolId::GhSearchCode, 0, &query, data, None);
+        assert_eq!(row["status"], "outOfRange", "{row}");
+        assert_eq!(row["data"]["reason"], "page 9 of 4");
+        assert!(
+            row["data"].get("isPartial").is_none_or(|p| p == false),
+            "{row}"
+        );
+        assert!(row["data"].get("partialReasons").is_none(), "{row}");
+        assert!(
+            row["data"]["next"]["restart"]["query"]
+                .get("page")
+                .is_none(),
+            "{row}"
+        );
+    }
+
     use crate::tools::id::ToolId;
     use serde_json::{Map, Value, json};
 

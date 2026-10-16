@@ -28,6 +28,9 @@ const BACKOFF: octocode_github::Backoff = octocode_github::Backoff {
 const MAX_RETRY_AFTER: Duration = Duration::from_secs(24 * 60 * 60);
 /// Runtimes whose clients stay cached; older entries are evicted.
 const MAX_CACHED_CLIENTS: usize = 8;
+/// The code of a request the open circuit refused: a consequence of earlier
+/// failures, never their cause.
+pub(crate) const CIRCUIT_OPEN: &str = "classificationProviderUnavailable";
 
 fn is_loopback_endpoint(endpoint: &Url) -> bool {
     match endpoint.host() {
@@ -194,7 +197,24 @@ pub(super) async fn wait<T>(
 fn transport_error() -> ClassificationError {
     ClassificationError::new(
         "classificationProviderError",
-        "Classification provider HTTPS request failed or timed out.",
+        "Classification provider request failed or timed out.",
+        "Check connectivity, certificates, proxy settings, and the configured API root.",
+    )
+}
+
+/// A request that got no response, named by how it failed: no connection
+/// to the configured host, a timeout, or another transport failure.
+fn send_error(error: &reqwest::Error) -> ClassificationError {
+    let what = if error.is_connect() {
+        "could not connect to the configured API host"
+    } else if error.is_timeout() {
+        "timed out"
+    } else {
+        return transport_error();
+    };
+    ClassificationError::new(
+        "classificationProviderError",
+        format!("Classification provider request {what}."),
         "Check connectivity, certificates, proxy settings, and the configured API root.",
     )
 }
@@ -240,7 +260,7 @@ fn denied(reason: GateDenied) -> ClassificationError {
         GateDenied::RateLimited { retry_after } => rate_limited(None, Some(retry_after), true),
         GateDenied::QuotaExhausted => quota_exhausted(),
         GateDenied::CircuitOpen { retry_after } => ClassificationError::new(
-            "classificationProviderUnavailable",
+            CIRCUIT_OPEN,
             format!(
                 "Classification provider failed repeatedly; requests are paused for about {:.0}s.",
                 retry_after.as_secs_f64().ceil().max(1.0)
@@ -356,11 +376,11 @@ async fn attempt(
             return if octocode_github::is_retryable_send(&error) {
                 Attempt::Retry {
                     delay: BACKOFF.next_delay(attempt),
-                    error: transport_error(),
+                    error: send_error(&error),
                     throttle: None,
                 }
             } else {
-                Attempt::Done(Err(transport_error()))
+                Attempt::Done(Err(send_error(&error)))
             };
         }
         Ok(Ok(response)) => response,
@@ -545,6 +565,9 @@ async fn request(
     let client = shared_client(&endpoint)?;
     let mut attempt_index = 0;
     let mut provider_calls = 0;
+    // A retry the circuit refuses reports the failure that preceded it: the
+    // cause, not the pause it led to.
+    let mut last_error: Option<ClassificationError> = None;
     let result = async {
         loop {
             check_budget(budget)?;
@@ -560,6 +583,9 @@ async fn request(
             )
             .await
             {
+                Attempt::Done(Err(error)) if error.code == CIRCUIT_OPEN => {
+                    return Err(last_error.take().unwrap_or(error));
+                }
                 Attempt::Done(result) => return result,
                 Attempt::Retry {
                     delay,
@@ -569,6 +595,7 @@ async fn request(
                     if attempt_index >= retries {
                         return Err(error);
                     }
+                    last_error = Some(error.clone());
                     if Instant::now() + delay >= budget.deadline {
                         return Err(match throttle {
                             Some(status) => rate_limited(Some(status), Some(delay), true),

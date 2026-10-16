@@ -11,6 +11,21 @@ const lead = (tool, row) => ({ tool, query: { queries: [row] } });
 const ok = data => ({ results: [{ index: 0, data }] });
 const empty = data => ({ results: [{ index: 0, data, status: 'empty' }] });
 
+test('string hints preserve suggested inputs and stay separate from required pages', () => {
+  const query = { queries: [{ path: 'a file.ts', ranges: ['4-9'], snapshot: 'abc' }] };
+  const value = ok({
+    next: { nextPage: lead('t', { page: 2 }) },
+    hints: [`read: u ${JSON.stringify(query)}`, `repair: Approximate: t ${JSON.stringify(query)}`, 'Use a narrower path.', 'read: u {broken}'],
+    content: `read: u ${JSON.stringify(query)}`,
+  });
+  const calls = leadsIn(value, TOOLS);
+  assert.equal(calls.length, 3);
+  assert.equal(calls[0].container, 'next');
+  assert.deepEqual(calls[1].query, query);
+  assert.equal(calls[1].container, 'hints');
+  assert.equal(calls[2].confidence, 'low');
+});
+
 /** A scripted surface: `script(tool, row)` → payload; records every call. */
 function surface(script) {
   const calls = [];
@@ -69,17 +84,19 @@ test('effective defaults never excuse changed or dropped supplied selection cont
 });
 
 test('whole-file pages preserve the effective exact view and reject changed non-default views', async () => {
-  for (const [seed, accepted] of [
-    [{ q: 'x', fullContent: true }, true],
-    [{ q: 'x' }, false],
-    [{ q: 'x', fullContent: true, minify: 'standard' }, true],
-    [{ q: 'x', fullContent: true, minify: 'none' }, true],
-    [{ q: 'x', fullContent: true, minify: 'symbols' }, false],
+  for (const [seed, minify, accepted] of [
+    [{ q: 'x', fullContent: true }, undefined, true],
+    [{ q: 'x' }, undefined, true],
+    [{ q: 'x', fullContent: true, minify: 'standard' }, 'standard', true],
+    [{ q: 'x', fullContent: true, minify: 'standard' }, undefined, false],
+    [{ q: 'x', fullContent: true, minify: 'symbols' }, 'symbols', true],
+    [{ q: 'x', fullContent: true, minify: 'symbols' }, undefined, false],
+    [{ q: 'x', fullContent: true }, 'standard', false],
   ]) {
     const script = (_tool, row) => row.offset
       ? ok({ items: ['second'] })
-      : ok({ items: ['first'], next: { continueWindow: lead('t', { q: 'x', unit: 'lines', offset: 1, minify: 'none' }) } });
-    const r = await driver({ defaultsOf: () => ({ minify: 'standard' }) })
+      : ok({ items: ['first'], next: { continueWindow: lead('t', { q: 'x', unit: 'lines', offset: 1, ...(minify === undefined ? {} : { minify }) }) } });
+    const r = await driver({ defaultsOf: () => ({}) })
       .explore('t', seed, { surface: 'cli', call: surface(script).call, rows, root: '/' });
     assert.equal(r.failures.some(f => f.check === 'lead.keeps-scope'), !accepted, JSON.stringify({ seed, failures: r.failures }));
     assert.deepEqual(r.chains[0].rows, ['first', 'second']);
@@ -185,7 +202,7 @@ test('facts: description text and notes repeated across every call shape fail', 
     fact('a|', ['Always the same static reminder text here.']),
   ] }]);
   assert.deepEqual(failures.map(f => f.check), ['facts.static', 'facts.repeated']);
-  assert.deepEqual(factSentences(empty({ warnings: ['short', 'A long warning sentence about this call. Second sentence is long enough too.'], hints: { text: ['No matches in 3 files searched.'] } })),
+  assert.deepEqual(factSentences(empty({ warnings: ['short', 'A long warning sentence about this call. Second sentence is long enough too.'], hints: ['No matches in 3 files searched.'] })),
     ['A long warning sentence about this call.', 'Second sentence is long enough too.', 'No matches in 3 files searched.']);
 });
 

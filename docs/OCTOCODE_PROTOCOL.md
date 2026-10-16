@@ -10,7 +10,7 @@ Context is a coding agent's scarcest resource. Whole files, whole diffs, and raw
 
 1. **Several views of the same code.** Each view answers a different question and returns citable anchors (path, line, SHA, id).
 2. **Precise questions.** Filters, match windows, symbol names, and patch filters make one call return the answer, not a haystack.
-3. **Every result says what to do next.** `next.*` pages reach the rest of a result, `hints.*` leads point to the cheapest optional follow-up, and failures carry repair tips.
+3. **Every result says what to do next.** `next.*` pages reach the rest of a result, `hints` leads point to the cheapest optional follow-up, and failures carry repair tips.
 4. **Evidence, not guesses.** Every result is pinned, bounded, honest about completeness, and scrubbed of secrets.
 
 | Dimension | Question it answers | Tools |
@@ -35,7 +35,7 @@ flowchart LR
   C --> R
   R --> P[PROVE<br/>LSP identity, diff, references]
   P --> D[DECIDE and cite]
-  R -. next.* page / hints.* lead .-> F
+  R -. next.* page / hints suggestion .-> F
   P -. zoom out .-> O
 ```
 
@@ -53,7 +53,7 @@ External to local is one flow: `artifactSearch` maps a package to its repository
 - Each tool's input schema, description, and output schema is authored once in `@octocodeai/octocode-core` (Zod). `@octocodeai/config` generates the JSON contract and the Rust and TypeScript types, and the native runtime embeds them.
 - MCP and the CLI run the same native code, so their output is the same.
 - If the core and native contract fingerprints differ, the MCP server refuses to start.
-- Zod is the only schema source and the only form passed around. Hosts resend every tool definition on every request, so `tools/list` shows a slim view derived in Zod from the same contract (`publishedQuerySchema`): merged operation variants, the primary fields, and no fields agents copy from `next.*` and `hints.*`. JSON Schema is emitted once at each edge (`z.toJSONSchema`: MCP `tools/list`, the CLI presentation, the native contract). The canonical schema still validates every call, and its errors list every valid field. `npx octocode schema` shows it.
+- Zod is the only schema source and the only form passed around. Hosts resend every tool definition on every request, so `tools/list` shows a slim view derived in Zod from the same contract (`publishedQuerySchema`): merged operation variants, the primary fields, and no fields agents copy from `next.*` and `hints`. JSON Schema is emitted once at each edge (`z.toJSONSchema`: MCP `tools/list`, the CLI presentation, the native contract). The canonical schema still validates every call, and its errors list every valid field. `npx octocode schema` shows it.
 - Why: agents learn one shape per tool, and drift is caught before it reaches a user.
 
 ### 3.2 Optional brief for multi-call research
@@ -76,9 +76,9 @@ External to local is one flow: `artifactSearch` maps a package to its repository
 - Details: [TOOL_DATA_CONTRACT.md](TOOL_DATA_CONTRACT.md#minimal-by-default).
 
 ### 3.6 Minification
-- `minify:"none"` gives exact source (the `localFetch` default), `"standard"` (the `ghGetFileContent` default) drops comments and indentation and compacts blank runs and minified bundles, and `"symbols"` gives an outline of signatures and headings. Strategies follow the format: code, JSON, Markdown, web.
+- Omit `minify` for exact source (the file-read default). `minify:"standard"` drops comments and indentation and compacts blank runs and minified bundles, and `"symbols"` gives an outline of signatures and headings. Strategies follow the format: code, JSON, Markdown, web.
 - A minified single-line file is clipped to windows around matches, with `originalChars` and `returnedChars` reported.
-- A transformed view keeps source line numbers in its gutter. Cite source or diff lines by number; quote only verbatim text (`none` reads, `matchString` reads, search hits).
+- A transformed view keeps source line numbers in its gutter. Cite source or diff lines by number; quote only verbatim text (reads without `minify`, `matchString` reads, search hits).
 
 ### 3.7 Smart pagination everywhere
 - Every list and every large body pages: item pages, content windows inside a file or patch, and whole-response pages. A huge file costs one bounded first page.
@@ -88,7 +88,7 @@ External to local is one flow: `artifactSearch` maps a package to its repository
 ### 3.8 Pages, leads, and failure hints
 - Follow-up calls use two channels. Both hold executable queries that run unchanged, and the runtime removes follow-ups the current surface cannot run.
   - **`next.*` = pages and recovery:** follow the pages needed for the claim's scope. `next.unfiltered` is optional recovery of the complete view after classification; it does not make a sufficient selected answer incomplete.
-  - **`hints.*` = optional leads:** ready calls named by purpose (`read` the top match, `readPullRequest` the fix, `viewTree` the scope); `hints.text` adds a sentence only for a per-call fact. A lead carries no prose: the tool description says what each lead kind is for. A successful row shows leads only with `extras:["hints"]`, except a few default leads (`includeIgnored`, `countFiles`, `apply`, …).
+  - **`hints` = optional strings:** plain text or `<action>: <tool> <JSON input>` suggestions named by purpose (`read` the top match, `readPullRequest` the fix, `viewTree` the scope); `hints` adds a sentence only for a per-call fact. Each suggestion keeps its complete validated input; duplicate text and calls appear once. A successful row shows leads only with `extras:["hints"]`, except a few default leads (`includeIgnored`, `countFiles`, `apply`, …).
 - An empty result keeps its leads. It is not an absence claim until scope, spelling, ref, and index limits are checked; the general repairs are stated once in each tool's description.
 - Errors are typed (`invalidInput`, `notFound`, `authentication`, `rateLimited`, …) and carry `retryable: true` only when a retry can help. Each class has its own CLI exit code; see the [CLI guide](../packages/octocode/docs/OCTOCODE_CLI.md#exit-codes).
 - GitHub tools follow a renamed repository to its canonical name and add a warning that names it.

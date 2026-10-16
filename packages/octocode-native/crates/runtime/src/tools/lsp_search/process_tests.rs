@@ -93,12 +93,122 @@ fn config(root: &Path, script: &Path, pids: Option<&Path>) -> JsLanguageServerCo
     }
 }
 
+fn execution_config(root: &Path, script: &Path, language_id: &str) -> super::LspExecutionConfig {
+    let config = root.join("lsp-servers.json");
+    std::fs::write(
+        &config,
+        serde_json::json!({"languageServers": {".ts": {
+            "command": script.to_string_lossy(), "args": [], "languageId": language_id
+        }}})
+        .to_string(),
+    )
+    .expect("config");
+    super::LspExecutionConfig {
+        config_path: Some(config.to_string_lossy().into_owned()),
+        ..super::LspExecutionConfig::default()
+    }
+}
+
 fn alive(pid: &str) -> bool {
     std::process::Command::new("kill")
         .args(["-0", pid])
         .stderr(std::process::Stdio::null())
         .status()
         .is_ok_and(|status| status.success())
+}
+
+/// Announced startup indexing is a live, incomplete answer with an exact
+/// retry. The retry reuses the same server after its progress ends; a request
+/// during the first response would crash this fixture instead.
+#[test]
+fn initial_indexing_returns_partial_then_retries_on_the_same_server() {
+    if !node_available() {
+        eprintln!("skipping: node not available");
+        return;
+    }
+    let (_dir, root, script) = fixture();
+    let server = FAKE_SERVER
+        .replace(
+            "const pids = process.env.FAKE_LSP_PIDS;",
+            "const pids = __dirname + '/pids.txt';\nconst gate = __dirname + '/indexing-ready';",
+        )
+        .replace(
+            "let buf = Buffer.alloc(0);",
+            "let indexingDone = false;\nlet buf = Buffer.alloc(0);",
+        )
+        .replace(
+            "    send({ jsonrpc: '2.0', id: msg.id, result: { capabilities: { hoverProvider: true, textDocumentSync: 1 } } });",
+            "    send({ jsonrpc: '2.0', id: msg.id, result: { capabilities: { hoverProvider: true, textDocumentSync: 1 } } });\n    send({ jsonrpc: '2.0', method: '$/progress', params: { token: 'index', value: { kind: 'begin', title: 'indexing' } } });\n    const waitForGate = setInterval(() => {\n      if (!fs.existsSync(gate)) return;\n      clearInterval(waitForGate);\n      indexingDone = true;\n      send({ jsonrpc: '2.0', method: '$/progress', params: { token: 'index', value: { kind: 'end', message: 'ready' } } });\n    }, 10);",
+        )
+        .replace(
+            "  } else if (msg.method === 'textDocument/hover') {\n    process.exit(3);",
+            "  } else if (msg.method === 'textDocument/hover') {\n    if (!indexingDone) process.exit(3);\n    fs.appendFileSync(pids, 'hover\\n');\n    send({ jsonrpc: '2.0', id: msg.id, result: { contents: 'ready' } });",
+        );
+    assert_ne!(server, FAKE_SERVER, "the indexing fixture is injected");
+    std::fs::write(&script, server).expect("indexing server");
+
+    let execution = execution_config(&root, &script, "shellscript");
+    let pool = LspClientPool::new(LspPoolOptions::default());
+    let query_row = serde_json::json!({
+        "operation": "hover", "path": root.join("a.ts").to_string_lossy(),
+        "symbolName": "a", "line": 1
+    });
+    let query: super::LspSearchQuery = serde_json::from_value(query_row.clone()).expect("query");
+    let expected_retry = query.to_row();
+    let paths = crate::tools::test_support::workspace_policy(&root);
+    let runtime = tokio::runtime::Runtime::new().expect("rt");
+    let first = runtime
+        .block_on(super::execute(
+            query,
+            &crate::tools::cancel::NeverCancel,
+            &pool,
+            &paths,
+            &execution,
+            None,
+        ))
+        .expect("indexing row");
+    assert_row_contract(ToolId::LspSearch, &query_row, &first);
+    assert_eq!(first["status"], "empty", "{first}");
+    assert_eq!(first["category"], "languageServerIndexing", "{first}");
+    assert!(
+        first["reason"]
+            .as_str()
+            .is_some_and(|reason| reason.contains("still indexing")),
+        "{first}"
+    );
+    assert_eq!(first["lsp"]["serverAvailable"], true, "{first}");
+    assert_eq!(first["isPartial"], true, "{first}");
+    let retry = first["next"]["retry"]["query"]["queries"][0].clone();
+    assert_eq!(retry, expected_retry, "{first}");
+    let pids = std::fs::read_to_string(root.join("pids.txt")).expect("server pid");
+    assert_eq!(
+        pids.lines().count(),
+        2,
+        "no semantic request before retry: {pids}"
+    );
+    std::fs::write(root.join("indexing-ready"), "").expect("indexing gate");
+
+    let retried = serde_json::from_value(retry).expect("retry query");
+    let second = runtime
+        .block_on(super::execute(
+            retried,
+            &crate::tools::cancel::NeverCancel,
+            &pool,
+            &paths,
+            &execution,
+            None,
+        ))
+        .expect("retry row");
+    assert_row_contract(ToolId::LspSearch, &query_row, &second);
+    assert_eq!(second["kind"], "hover", "{second}");
+    assert_eq!(second["hover"]["contents"], "ready", "{second}");
+    let pids = std::fs::read_to_string(root.join("pids.txt")).expect("server pid");
+    assert_eq!(
+        pids.lines().count(),
+        3,
+        "one server and one retry request: {pids}"
+    );
+    runtime.block_on(pool.clear_all());
 }
 
 /// A server that dies mid-request fails the pending request fast with a
@@ -837,7 +947,11 @@ function result(msg) {
 }
 function handle(msg) {
   if (msg.method === 'exit') process.exit(0);
-  if (msg.id !== undefined && msg.method) send({ jsonrpc: '2.0', id: msg.id, result: result(msg) });
+  if (msg.id === undefined || !msg.method) return;
+  const answer = result(msg);
+  // `{ __error }` answers the request with an internal error.
+  if (answer && answer.__error) send({ jsonrpc: '2.0', id: msg.id, error: { code: -32603, message: answer.__error } });
+  else send({ jsonrpc: '2.0', id: msg.id, result: answer });
 }
 process.stdin.on('data', (d) => {
   buf = Buffer.concat([buf, d]);
@@ -868,6 +982,14 @@ fn importer_fixture() -> (Fixture, PathBuf, super::LspExecutionConfig) {
 /// windows in order. An `n` file spells the name but binds another
 /// declaration (no reference); any other prefix imports and calls it.
 fn importer_fixture_of(layout: &[(&str, usize)]) -> (Fixture, PathBuf, super::LspExecutionConfig) {
+    importer_fixture_serving(layout, IMPORTER_SERVER)
+}
+
+/// [`importer_fixture_of`] with its own fake server script.
+fn importer_fixture_serving(
+    layout: &[(&str, usize)],
+    server: &str,
+) -> (Fixture, PathBuf, super::LspExecutionConfig) {
     use std::os::unix::fs::PermissionsExt;
     let dir = Fixture::new();
     let outer = dir.0.canonicalize().expect("canonical fixture");
@@ -876,7 +998,7 @@ fn importer_fixture_of(layout: &[(&str, usize)]) -> (Fixture, PathBuf, super::Ls
     // The server script lives beside the workspace: it spells the symbol,
     // and a candidate scan must not count it.
     let script = outer.join("fake-ts-lsp.js");
-    let source = IMPORTER_SERVER.replace(
+    let source = server.replace(
         "__ROOT__",
         &serde_json::to_string(&root.to_string_lossy()).expect("root literal"),
     );
@@ -1081,6 +1203,191 @@ async fn walk_across_silent_windows(operation: &str, silent: usize) -> (Fixture,
     (dir, pages)
 }
 
+/// A verified importer whose references request fails is a gap in the
+/// answer: the row is partial with `importerRequestFailed`, the error, and
+/// a retry; it never reads as complete.
+#[test]
+fn a_failed_importer_request_marks_the_row_partial() {
+    if !node_available() {
+        eprintln!("skipping: node not available");
+        return;
+    }
+    let server = IMPORTER_SERVER.replace(
+        "      if (uri === declUri) return [decl];\n      return [",
+        "      if (uri === declUri) return [decl];\n      if (uri !== declUri) return { __error: 'importer references failed' };\n      return [",
+    );
+    assert_ne!(server, IMPORTER_SERVER, "the failing branch is injected");
+    let (_dir, root, execution) = importer_fixture_serving(&[("f", 2)], &server);
+    let pool = LspClientPool::new(LspPoolOptions::default());
+    let query_row = serde_json::json!({
+        "operation": "references", "path": root.join("a.ts").to_string_lossy(),
+        "symbolName": "target", "line": 1, "pageSize": 100,
+        "workspaceRoot": root.to_string_lossy()
+    });
+    let query = serde_json::from_value(query_row.clone()).expect("query");
+    let paths = crate::tools::test_support::workspace_policy(&root);
+    let row = tokio::runtime::Runtime::new()
+        .expect("rt")
+        .block_on(super::execute(
+            query,
+            &crate::tools::cancel::NeverCancel,
+            &pool,
+            &paths,
+            &execution,
+            None,
+        ))
+        .expect("row");
+    assert_row_contract(ToolId::LspSearch, &query_row, &row);
+    assert_eq!(row["isPartial"], true, "{row}");
+    assert!(
+        row["partialReasons"]
+            .as_array()
+            .is_some_and(|reasons| reasons.contains(&serde_json::json!("importerRequestFailed"))),
+        "{row}"
+    );
+    assert!(
+        row["warnings"]
+            .to_string()
+            .contains("importer references failed"),
+        "{row}"
+    );
+    assert!(row["next"].get("retry").is_some(), "{row}");
+}
+
+/// `includeDeclaration:false` drops the anchor's declaration, never an
+/// importer's import binding: asked from the importer (as tsserver
+/// answers), the binding is that file's declaration of its alias, and the
+/// anchor's declaration is a reference.
+#[test]
+fn importer_recovery_without_declarations_keeps_import_bindings() {
+    if !node_available() {
+        eprintln!("skipping: node not available");
+        return;
+    }
+    let honoring = "    case 'textDocument/references': {\n      const uri = p.textDocument.uri;\n      const inc = !!(p.context && p.context.includeDeclaration);\n      if (uri === declUri) return inc ? [decl] : [];\n      return inc ? [{ uri, range: at(0, 9, 6) }, { uri, range: at(1, 0, 6) }, decl] : [{ uri, range: at(1, 0, 6) }, decl];\n    }\n";
+    let start = IMPORTER_SERVER
+        .find("    case 'textDocument/references': {")
+        .expect("references case");
+    let end = start
+        + IMPORTER_SERVER[start..]
+            .find("    case 'textDocument/prepareCallHierarchy':")
+            .expect("next case");
+    let server = format!(
+        "{}{honoring}{}",
+        &IMPORTER_SERVER[..start],
+        &IMPORTER_SERVER[end..]
+    );
+    let (_dir, root, execution) = importer_fixture_serving(&[("f", 2)], &server);
+    let pool = LspClientPool::new(LspPoolOptions::default());
+    let paths = crate::tools::test_support::workspace_policy(&root);
+    let runtime = tokio::runtime::Runtime::new().expect("rt");
+    let rows = |include_declaration: bool| {
+        let query_row = serde_json::json!({
+            "operation": "references", "path": root.join("a.ts").to_string_lossy(),
+            "symbolName": "target", "line": 1, "pageSize": 100,
+            "includeDeclaration": include_declaration,
+            "workspaceRoot": root.to_string_lossy()
+        });
+        let query = serde_json::from_value(query_row.clone()).expect("query");
+        let row = runtime
+            .block_on(super::execute(
+                query,
+                &crate::tools::cancel::NeverCancel,
+                &pool,
+                &paths,
+                &execution,
+                None,
+            ))
+            .expect("row");
+        assert_row_contract(ToolId::LspSearch, &query_row, &row);
+        let mut rows = reference_rows(&row);
+        rows.sort();
+        rows
+    };
+    let importer_sites = |file: &str| [(file.to_owned(), 1, 10), (file.to_owned(), 2, 1)];
+    let mut without = importer_sites("f000.ts").to_vec();
+    without.extend(importer_sites("f001.ts"));
+    assert_eq!(rows(false), without, "declaration out, bindings in");
+    let mut with = vec![("a.ts".to_owned(), 1, 17)];
+    with.extend(without);
+    assert_eq!(rows(true), with);
+}
+
+/// A server that reaches the workspace through a symlink as well (a
+/// workspace package linked under `node_modules`) names each site under both
+/// spellings, and its `includeDeclaration: false` filter knows the
+/// declaration under its real path only. Each site is listed once, under its
+/// real path, and the declaration stays out.
+#[test]
+fn symlinked_twins_list_each_site_once_under_its_real_path() {
+    if !node_available() {
+        eprintln!("skipping: node not available");
+        return;
+    }
+    let twins = "    case 'textDocument/references': {\n      const uri = p.textDocument.uri;\n      const inc = !!(p.context && p.context.includeDeclaration);\n      const linked = (u) => u.replace(root + '/', root + '/node_modules/pkg/');\n      const use = { uri: 'file://' + root + '/f000.ts', range: at(1, 0, 6) };\n      const twins = [use, decl].map((site) => ({ uri: linked(site.uri), range: site.range }));\n      if (uri === declUri) return (inc ? [decl, use] : [use]).concat(twins);\n      return [{ uri, range: at(0, 9, 6) }, use, decl];\n    }\n";
+    let start = IMPORTER_SERVER
+        .find("    case 'textDocument/references': {")
+        .expect("references case");
+    let end = start
+        + IMPORTER_SERVER[start..]
+            .find("    case 'textDocument/prepareCallHierarchy':")
+            .expect("next case");
+    let server = format!(
+        "{}{twins}{}",
+        &IMPORTER_SERVER[..start],
+        &IMPORTER_SERVER[end..]
+    );
+    let (_dir, root, execution) = importer_fixture_serving(&[("f", 1)], &server);
+    std::fs::create_dir_all(root.join("node_modules")).expect("node_modules");
+    std::os::unix::fs::symlink(&root, root.join("node_modules/pkg")).expect("package link");
+    let pool = LspClientPool::new(LspPoolOptions::default());
+    let paths = crate::tools::test_support::workspace_policy(&root);
+    let runtime = tokio::runtime::Runtime::new().expect("rt");
+    let rows = |include_declaration: bool| {
+        let query_row = serde_json::json!({
+            "operation": "references", "path": root.join("a.ts").to_string_lossy(),
+            "symbolName": "target", "line": 1, "pageSize": 100,
+            "includeDeclaration": include_declaration,
+            "workspaceRoot": root.to_string_lossy()
+        });
+        let query = serde_json::from_value(query_row.clone()).expect("query");
+        let row = runtime
+            .block_on(super::execute(
+                query,
+                &crate::tools::cancel::NeverCancel,
+                &pool,
+                &paths,
+                &execution,
+                None,
+            ))
+            .expect("row");
+        assert_row_contract(ToolId::LspSearch, &query_row, &row);
+        let mut sites = Vec::new();
+        for file in row["files"].as_array().expect("files") {
+            for site in file["matches"].as_array().expect("matches") {
+                let path = Path::new(file["path"].as_str().expect("path"));
+                let path = path.strip_prefix(&root).unwrap_or(path);
+                sites.push((
+                    path.to_string_lossy().into_owned(),
+                    site["line"].as_u64().expect("line"),
+                ));
+            }
+        }
+        sites.sort();
+        sites
+    };
+    let site = |path: &str, line: u64| (path.to_owned(), line);
+    // Declarations left out first, then in, then out again: the answer does
+    // not depend on what the server answered before.
+    assert_eq!(
+        rows(false),
+        [site("f000.ts", 2)],
+        "declaration out, one spelling"
+    );
+    assert_eq!(rows(true), [site("a.ts", 1), site("f000.ts", 2)]);
+    assert_eq!(rows(false), [site("f000.ts", 2)]);
+}
+
 /// A gitignored file that spells the name is never an importer candidate,
 /// and the row says so: partial, with the deciding ignore rule, and a lead
 /// whose localSearch rows (ignored files included) reach that file.
@@ -1164,6 +1471,7 @@ fn importer_recovery_names_gitignored_files_it_skipped() {
                 &crate::tools::cancel::NeverCancel,
                 None,
                 None,
+                None,
             )
             .expect("lead runs")
             .files
@@ -1205,6 +1513,53 @@ fn importer_windows_without_sites_are_skipped_not_returned_empty() {
         );
         assert!(landed.get("isPartial").is_none(), "{operation}: {landed}");
     }
+}
+
+/// One request that verifies several importer windows opens more files than
+/// the client keeps open (64): each window re-synchronizes the anchor first,
+/// so the identity checks of the last window still run against the
+/// anchor's program. The fake server resolves a candidate's occurrence to
+/// the declaration only while `a.ts` is open, as tsserver drops the
+/// program a closed anchor held.
+#[test]
+fn importer_windows_past_the_open_document_cap_keep_the_anchor_open() {
+    if !node_available() {
+        eprintln!("skipping: node not available");
+        return;
+    }
+    let tracking = IMPORTER_SERVER
+        .replace(
+            "function handle(msg) {\n  if (msg.method === 'exit') process.exit(0);",
+            "const open = new Set();\nfunction handle(msg) {\n  if (msg.method === 'exit') process.exit(0);\n  if (msg.method === 'textDocument/didOpen') open.add(msg.params.textDocument.uri);\n  if (msg.method === 'textDocument/didClose') open.delete(msg.params.textDocument.uri);",
+        )
+        .replace(
+            "      return [decl];\n    }\n    case 'textDocument/references'",
+            "      return open.has(declUri) ? [decl] : [];\n    }\n    case 'textDocument/references'",
+        );
+    assert_eq!(
+        tracking.matches("open.has(declUri)").count() + tracking.matches("open.add").count(),
+        2,
+        "both edits applied"
+    );
+    // Windows: f000-f023 (page 1) | n000-n023 | n024-n047 | n048-n071 |
+    // z000: page 2 opens 73 candidates in one request.
+    let (_dir, root, execution) =
+        importer_fixture_serving(&[("f", 24), ("n", 72), ("z", 1)], &tracking);
+    let pool = LspClientPool::new(LspPoolOptions::default());
+    let start = serde_json::json!({
+        "operation": "references", "path": root.join("a.ts").to_string_lossy(),
+        "symbolName": "target", "line": 1, "pageSize": 100,
+        "workspaceRoot": root.to_string_lossy()
+    });
+    let (pages, _) = tokio::runtime::Runtime::new()
+        .expect("rt")
+        .block_on(walk_pages(&pool, &root, &execution, start));
+    let last = &pages.last().expect("pages").row;
+    assert!(
+        lists_path(last, "z000.ts"),
+        "the importer after 72 silent candidates is verified: {last}"
+    );
+    assert!(last.get("isPartial").is_none(), "{last}");
 }
 
 /// The first page is no exception: when its windows, up to the request cap,
@@ -1977,7 +2332,7 @@ fn fallback_type_hierarchy_marks_unresolved_relations_partial_with_retry() {
 }
 
 #[test]
-fn fallback_type_hierarchy_discloses_bounded_candidate_verification() {
+fn fallback_subtypes_page_the_anchor_candidates_by_window() {
     let cap = super::walk::MAX_HIERARCHY_NODES;
     let mut content = "export class Base {}\n".to_owned();
     for index in 0..=cap {
@@ -1997,20 +2352,38 @@ fn fallback_type_hierarchy_discloses_bounded_candidate_verification() {
     );
     assert_eq!(results.len(), 1);
     let pages = results.remove(0);
+    // The anchor's candidates page by window: the first window's rows span
+    // result pages, and its last page continues to the next window.
+    let first_window = pages
+        .iter()
+        .take_while(|row| row["partialReasons"] == serde_json::json!(["hierarchyCandidateLimit"]))
+        .collect::<Vec<_>>();
     assert!(
-        pages.len() > 1,
+        first_window.len() > 1,
         "the verified prefix must cross the page budget"
     );
-    let mut identities = std::collections::HashSet::new();
-    let mut reached = 0;
-    for (page_index, row) in pages.iter().enumerate() {
+    for (page_index, row) in first_window.iter().enumerate() {
         assert_eq!(row["pagination"]["totalItems"], cap, "{row}");
         assert_eq!(row["pagination"]["currentPage"], page_index + 1, "{row}");
+        assert_eq!(row["isPartial"], true, "{row}");
+        assert!(row.get("terminalLimit").is_none(), "{row}");
         assert_eq!(
-            row["pagination"]["hasMore"],
-            page_index + 1 < pages.len(),
-            "{row}"
+            row.pointer("/next/nextCandidatePage").is_some(),
+            page_index + 1 == first_window.len(),
+            "only the window's last page offers the next window: {row}"
         );
+        if let Some(snapshot) = row.pointer("/next/nextCandidatePage/query/queries/0/snapshot") {
+            assert!(
+                snapshot
+                    .as_str()
+                    .is_some_and(|value| value.starts_with("lsp-candidates:")),
+                "candidate continuation pins the complete candidate list: {row}"
+            );
+        }
+    }
+    let mut identities = std::collections::HashSet::new();
+    let mut reached = 0;
+    for row in &pages {
         let shown = row["matches"].as_array().expect("matches");
         assert!(!shown.is_empty(), "each page retains complete rows: {row}");
         for matched in shown {
@@ -2023,28 +2396,16 @@ fn fallback_type_hierarchy_discloses_bounded_candidate_verification() {
             );
             reached += 1;
         }
-        assert_eq!(row["terminalLimit"], true, "{row}");
-        assert_eq!(row["isPartial"], true, "{row}");
-        assert_eq!(
-            row["partialReasons"],
-            serde_json::json!(["hierarchyCandidateLimit"]),
-            "{row}"
-        );
     }
-    assert_eq!(reached, cap, "all verified candidates must be reachable");
+    assert_eq!(reached, cap + 1, "every candidate is reachable");
     assert_eq!(
         identities.len(),
-        cap,
+        cap + 1,
         "each declaration must be reached once"
     );
-    assert!(
-        pages
-            .last()
-            .expect("final page")
-            .pointer("/next/nextPage")
-            .is_none(),
-        "the route terminates"
-    );
+    let last = pages.last().expect("final page");
+    assert!(last.get("isPartial").is_none(), "{last}");
+    assert!(last.get("next").is_none(), "the route terminates: {last}");
 }
 
 #[test]
@@ -2142,7 +2503,10 @@ fn workspace_symbol_provider_coverage_is_unknown_without_losing_semantic_rows() 
                 found.extend(row["matches"].as_array().expect("matches").iter().cloned());
                 page_count += 1;
                 if row.pointer("/next/nextPage").is_none() {
-                    let hint = &published["results"][0]["data"]["hints"]["inspectDocumentSymbols"];
+                    let hint = crate::tools::test_support::checks::hint(
+                        &published["results"][0]["data"],
+                        "inspectDocumentSymbols",
+                    );
                     assert_eq!(
                         hint["query"]["queries"][0],
                         json!({"operation":"documentSymbols", "path":path})
@@ -2299,8 +2663,8 @@ fn workspace_symbols_at_the_server_limit_say_capped() {
             );
             let says_capped = row["warnings"]
                 .as_array()
-                .expect("warnings")
-                .iter()
+                .into_iter()
+                .flatten()
                 .any(|warning| {
                     warning
                         .as_str()

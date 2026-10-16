@@ -1,6 +1,7 @@
 use crate::tools::id::query_limits::local_fetch::RANGES_MAX_ITEMS;
 use crate::tools::num::{usize_of, usize_of_signed};
 use serde::{Deserialize, Serialize};
+use std::fs;
 use std::path::{Path, PathBuf};
 
 pub use crate::contracts::tool_types::{
@@ -91,6 +92,24 @@ impl LocalFetchQuery {
     pub(crate) fn has_ranges(&self) -> bool {
         !self.ranges.is_empty()
     }
+    /// The file's last window as `(start, end)`, as wide as the widest
+    /// requested range, when every range starts past the file end. `None`
+    /// when any range reaches into the file (that read is served, clamped),
+    /// no range was requested, or the file has no line.
+    pub(crate) fn last_window_span(&self, total_lines: usize) -> Option<(usize, usize)> {
+        let requested = self.line_ranges();
+        if total_lines == 0
+            || requested.is_empty()
+            || requested.iter().any(|range| range.start <= total_lines)
+        {
+            return None;
+        }
+        let width = requested
+            .iter()
+            .map(|range| range.end.saturating_sub(range.start) + 1)
+            .max()?;
+        Some((total_lines.saturating_sub(width - 1).max(1), total_lines))
+    }
     /// `block:true`: widen windows to the enclosing declaration.
     pub(crate) fn block(&self) -> bool {
         self.block == Some(true)
@@ -103,8 +122,9 @@ impl LocalFetchQuery {
     pub(crate) fn path(&self) -> &str {
         self.path.as_str()
     }
-    pub(crate) fn minify_mode(&self) -> MinifyMode {
-        self.minify.unwrap_or(MinifyMode::None)
+    /// The requested transformed view; `None` reads the file as is.
+    pub(crate) fn minify_mode(&self) -> Option<MinifyMode> {
+        self.minify
     }
 }
 
@@ -113,8 +133,8 @@ impl LocalFetchQuery {
 pub const DEFAULT_LINE_CHUNK: usize = crate::tools::id::query_limits::local_fetch::LENGTH_MAXIMUM;
 
 /// Lines an unanchored read of a view longer than one line page returns
-/// before paging on.
-pub const HEAD_LINES: usize = 50;
+/// before paging on (contract `localFetch.semanticPolicy.headLines`).
+pub const HEAD_LINES: usize = crate::tools::id::local_fetch_policy::HEAD_LINES;
 
 /// Encodes an engine `usize` as a positive wire integer.
 pub(crate) fn wire_positive(value: usize) -> Option<std::num::NonZeroU64> {
@@ -169,9 +189,27 @@ impl Serialize for FetchCall {
 }
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 pub struct NextCalls {
-    /// Explicit recovery of the complete source view, including selected evidence.
+    /// Recovery of a classified view without classification: exactly the
+    /// unknown chunks when they fit one read, else the complete view.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unfiltered: Option<FetchCall>,
+    /// The complete unfiltered view, beside an `unfiltered` that reads only
+    /// the unknown chunks.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub unfiltered2: Option<FetchCall>,
+    /// The unknown chunks' `ranges` past what `unfiltered` reads
+    /// (`unfiltered3`, `unfiltered4`, …): each a call of as many rows of
+    /// `ranges` as one call takes, together reaching every unknown chunk.
+    #[serde(flatten)]
+    pub unfiltered_rest: serde_json::Map<String, serde_json::Value>,
+    /// The same classified read judging the chunks its candidate budget
+    /// left unjudged.
+    #[serde(
+        rename = "nextCandidatePage",
+        skip_serializing_if = "Option::is_none",
+        default
+    )]
+    pub next_candidate_page: Option<FetchCall>,
     #[serde(rename = "continueWindow", skip_serializing_if = "Option::is_none")]
     pub continue_window: Option<FetchCall>,
     #[serde(rename = "readBoundedLines", skip_serializing_if = "Option::is_none")]
@@ -231,6 +269,9 @@ impl NextCalls {
     pub fn absorb(&mut self, other: NextCalls) {
         let NextCalls {
             unfiltered,
+            unfiltered2,
+            unfiltered_rest,
+            next_candidate_page,
             continue_window,
             read_bounded_lines,
             restart,
@@ -246,6 +287,8 @@ impl NextCalls {
         } = other;
         for (mine, theirs) in [
             (&mut self.unfiltered, unfiltered),
+            (&mut self.unfiltered2, unfiltered2),
+            (&mut self.next_candidate_page, next_candidate_page),
             (&mut self.continue_window, continue_window),
             (&mut self.read_bounded_lines, read_bounded_lines),
             (&mut self.restart, restart),
@@ -259,6 +302,9 @@ impl NextCalls {
             if mine.is_none() {
                 *mine = theirs;
             }
+        }
+        if self.unfiltered_rest.is_empty() {
+            self.unfiltered_rest = unfiltered_rest;
         }
         for (mine, theirs) in [
             (&mut self.view_tree, view_tree),
@@ -279,6 +325,8 @@ impl NextCalls {
     pub fn reads_mut(&mut self) -> impl Iterator<Item = &mut FetchCall> {
         [
             &mut self.unfiltered,
+            &mut self.unfiltered2,
+            &mut self.next_candidate_page,
             &mut self.continue_window,
             &mut self.read_bounded_lines,
             &mut self.restart,
@@ -444,7 +492,6 @@ pub struct LocalFetchResult {
     pub is_partial: Option<bool>,
     pub partial_reasons: Vec<PartialReason>,
     pub terminal_limit: Option<bool>,
-    pub metadata_unavailable: Vec<String>,
     /// The requested offset is past the end of the selected view; emitted as
     /// `pagination.outOfRange`.
     pub out_of_range: bool,
@@ -485,14 +532,15 @@ impl LocalFetchResult {
             is_partial: None,
             partial_reasons: vec![],
             terminal_limit: None,
-            metadata_unavailable: vec![],
             out_of_range: false,
             next: None,
         }
     }
 
-    pub fn error(_path: String, code: &str, message: String) -> Self {
+    /// An error row for the read of `path`: every row names its file.
+    pub fn error(path: String, code: &str, message: String) -> Self {
         Self {
+            path,
             error_code: Some(code.into()),
             error: Some(message),
             ..Self::blank("error")
@@ -668,13 +716,8 @@ impl Serialize for LocalFetchResult {
         }
         opt(&mut map, "content", &self.content)?;
         opt(&mut map, "selection", &self.selection)?;
-        // `none` is the default view; only a transformed view is news (a
-        // tool with another default clears its own before this).
-        opt(
-            &mut map,
-            "contentView",
-            &self.content_view.filter(|view| *view != MinifyMode::None),
-        )?;
+        // The file as is is the default view; only a transformed view is news.
+        opt(&mut map, "contentView", &self.content_view)?;
         opt(&mut map, "minifyFallback", &self.minify_fallback)?;
         opt(&mut map, "errorCode", &self.error_code)?;
         opt(&mut map, "error", &self.error)?;
@@ -698,7 +741,6 @@ impl Serialize for LocalFetchResult {
         opt(&mut map, "isPartial", &self.is_partial)?;
         list(&mut map, "partialReasons", &self.partial_reasons)?;
         opt(&mut map, "terminalLimit", &self.terminal_limit)?;
-        list(&mut map, "metadataUnavailable", &self.metadata_unavailable)?;
         opt(&mut map, "next", &self.next)?;
         map.end()
     }
@@ -722,8 +764,12 @@ pub struct ValidatedRead {
     pub canonical: PathBuf,
     pub display: String,
     /// What a row names the read file by: the canonical path relative to
-    /// the workspace when inside it, else the canonical path.
+    /// the workspace when inside it, else the canonical path; a path read
+    /// through a symlink keeps the requested name.
     pub named: String,
+    /// The file a path read through a symlink resolved to, named as a
+    /// canonical path is.
+    pub target: Option<String>,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PathFailure {
@@ -734,13 +780,24 @@ pub struct PathFailure {
     /// The missing path lies in a sparse git checkout, so it may exist
     /// upstream outside the checked-out paths.
     pub sparse_checkout: bool,
-    /// The path is a directory, not a file.
-    pub directory: bool,
+    /// The path names something other than a regular file.
+    pub not_a_file: Option<NotAFile>,
     /// Where a missing file's listing searches: the workspace root (`.`)
     /// for a path inside it, else the allowed root that holds the path,
     /// else its closest admitted ancestor directory.
     pub search_root: Option<String>,
+    /// A missing path's nearest existing admitted parent directory, where
+    /// a mistyped name's siblings show.
+    pub nearest_dir: Option<Box<str>>,
 }
+/// What a path names instead of a regular file.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NotAFile {
+    Directory,
+    /// A FIFO, socket or device: never readable file text.
+    Special,
+}
+
 pub trait PathAccess {
     fn validate_read(&self, path: &Path) -> Result<ValidatedRead, PathFailure>;
 }
@@ -841,12 +898,30 @@ impl RegexMatch for LocalFetchRegex {
 impl PathAccess for crate::policy::path::PathPolicy {
     fn validate_read(&self, path: &Path) -> Result<ValidatedRead, PathFailure> {
         crate::policy::path::PathPolicy::validate_read(self, path)
-            .map(|validated| ValidatedRead {
-                named: self
+            .map(|validated| {
+                let resolved = self
                     .workspace_relative(&validated.canonical)
-                    .unwrap_or_else(|| validated.canonical.to_string_lossy().into_owned()),
-                canonical: validated.canonical,
-                display: validated.display,
+                    .unwrap_or_else(|| validated.canonical.to_string_lossy().into_owned());
+                // The request is a symlink, or names its file through one
+                // inside the workspace (`link/a.rs`, `link/../a.rs`). Links
+                // above the workspace (`/tmp`) rename nothing.
+                let lexical = self.expand_and_resolve(path);
+                let through_link = fs::symlink_metadata(&lexical)
+                    .is_ok_and(|meta| meta.file_type().is_symlink())
+                    || self
+                        .workspace_relative(&lexical)
+                        .is_some_and(|name| name != resolved);
+                let (named, target) = if through_link {
+                    (path.to_string_lossy().into_owned(), Some(resolved))
+                } else {
+                    (resolved, None)
+                };
+                ValidatedRead {
+                    named,
+                    target,
+                    canonical: validated.canonical,
+                    display: validated.display,
+                }
             })
             .map_err(|error| {
                 let missing = error.code == crate::policy::PolicyErrorCode::NotFound;
@@ -857,11 +932,19 @@ impl PathAccess for crate::policy::path::PathPolicy {
                     safe_path: error.safe_path,
                     resource_missing: missing,
                     sparse_checkout: missing && in_sparse_checkout(&resolved),
-                    directory: error.code == crate::policy::PolicyErrorCode::NotRegular
-                        && resolved.is_dir(),
+                    not_a_file: (error.code == crate::policy::PolicyErrorCode::NotRegular).then(
+                        || match resolved.is_dir() {
+                            true => NotAFile::Directory,
+                            false => NotAFile::Special,
+                        },
+                    ),
                     search_root: missing
                         .then(|| missing_search_root(self, path, &resolved))
                         .flatten(),
+                    nearest_dir: missing
+                        .then(|| self.nearest_existing_dir(&path.to_string_lossy()))
+                        .flatten()
+                        .map(String::into_boxed_str),
                 }
             })
     }

@@ -93,6 +93,19 @@ pub fn extract_declarations(content: &str, file_path: &str) -> Option<String> {
         .and_then(|facts| serde_json::to_string(&facts).ok())
 }
 
+/// [`extract_declarations`] parsed with the grammar of `extension` (a
+/// `language` override) instead of the path's own: declarations only, no
+/// call or path facts.
+#[must_use]
+pub fn extract_declarations_with_extension(
+    content: &str,
+    file_path: &str,
+    extension: &str,
+) -> Option<String> {
+    graph_facts::extract_declaration_facts_with_extension(content, file_path, extension)
+        .and_then(|facts| serde_json::to_string(&facts).ok())
+}
+
 /// [`tree_sitter_graph_facts`] without call facts (see
 /// `graph_facts::extract_declaration_facts_with_extension`).
 fn tree_sitter_declarations(
@@ -150,11 +163,48 @@ pub const DECLARATION_KINDS: &[&str] = &[
 use crate::text::file_extension::extension_of;
 use extractor::LangExtractConfig;
 
-/// Extract a structural skeleton from `content`.
-/// Returns `NNN| text` rendered string or `None`.
-pub fn extract_signatures_inner(content: &str, file_path: &str) -> Option<String> {
+/// Why a file has no symbols outline: the typed reason a reader falls back
+/// to another view.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum OutlineUnavailable {
+    /// Larger than [`MAX_PARSE_SIZE`]: not parsed.
+    TooLarge,
+    /// No grammar with an outline for this file type.
+    UnsupportedLanguage,
+    /// The parser gave no tree in time.
+    ParseFailed,
+    /// The parse kept no declaration line.
+    NoDeclarations,
+    /// The outline would be no smaller than the source.
+    NotSmaller,
+    /// Over-long lines (minified or bundled source) make up most of the
+    /// outline, so it is not a scannable list of signatures.
+    Minified,
+}
+
+impl OutlineUnavailable {
+    /// The reason as the readers report it.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::TooLarge => "too-large",
+            Self::UnsupportedLanguage => "unsupported-language",
+            Self::ParseFailed => "parse-failed",
+            Self::NoDeclarations => "no-declarations",
+            Self::NotSmaller => "not-smaller",
+            Self::Minified => "minified-lines",
+        }
+    }
+}
+
+/// Extract a structural skeleton from `content`: `N\ttext` lines, or the
+/// typed reason there is none.
+pub fn extract_signatures_inner(
+    content: &str,
+    file_path: &str,
+) -> Result<String, OutlineUnavailable> {
     if content.len() > MAX_PARSE_SIZE {
-        return None;
+        return Err(OutlineUnavailable::TooLarge);
     }
     let skeleton = std::panic::catch_unwind(|| {
         let ext = extension_of(file_path, true, "txt");
@@ -163,7 +213,7 @@ pub fn extract_signatures_inner(content: &str, file_path: &str) -> Option<String
             crate::text::file_extension::grammar_extension(content, &ext),
         )
     })
-    .unwrap_or(None)?;
+    .unwrap_or(Err(OutlineUnavailable::ParseFailed))?;
 
     // Return the source view when the rendered outline is no smaller. A file
     // with few body lines can grow once the outline includes line gutters.
@@ -174,40 +224,54 @@ pub fn extract_signatures_inner(content: &str, file_path: &str) -> Option<String
     // too, which is correct: a symbol outline of a handful of lines carries no
     // navigational value over just showing the lines.
     if skeleton.len() >= content.len() {
-        return None;
+        return Err(OutlineUnavailable::NotSmaller);
     }
 
-    // A usable outline is scannable: one short signature per line. Minified or
-    // bundled sources pack whole declarations onto a few enormous physical
-    // lines, so per-line extraction keeps those lines verbatim and returns a
-    // "skeleton" the agent cannot read. Detect that here and suppress it so the
-    // caller falls back to the standard view (which can be range-read) instead
-    // of promising an outline that is really raw minified bytes.
-    if skeleton
+    // A usable outline is scannable: mostly one short signature per line.
+    // Minified or bundled sources pack whole declarations onto a few enormous
+    // physical lines, so per-line extraction keeps those lines verbatim and
+    // the "outline" is really raw minified bytes. That holds when over-long
+    // lines make up most of the outline; a few long declarations (generated
+    // one-line structs) in an otherwise normal outline stay, verbatim, and
+    // their range gutter makes each body one `ranges` read away.
+    let long_chars: usize = skeleton
         .lines()
-        .any(|line| line.chars().count() > OUTLINE_MAX_LINE_CHARS)
-    {
-        return None;
+        .map(|line| line.chars().count())
+        .filter(|chars| *chars > OUTLINE_MAX_LINE_CHARS)
+        .sum();
+    if long_chars.saturating_mul(2) > skeleton.chars().count() {
+        return Err(OutlineUnavailable::Minified);
     }
-    Some(skeleton)
+    Ok(skeleton)
+}
+
+/// Whether `line` is a whole-line comment in the comment syntax of the
+/// grammar that reads `file_path`; `None` when no grammar reads it.
+#[must_use]
+pub fn is_comment_line(file_path: &str, line: &str) -> Option<bool> {
+    let ext = extension_of(file_path, true, "txt");
+    let entry = languages::find_entry(&ext)?;
+    Some(renderer::is_pure_comment(line, entry.comment_style))
 }
 
 /// Longest rendered outline line (gutter included) still treated as a scannable
 /// signature. Hand-written declaration lines effectively never reach this;
-/// anything longer signals minified/bundled source with no navigational value.
+/// an outline made mostly of longer lines is minified/bundled source.
 const OUTLINE_MAX_LINE_CHARS: usize = 1000;
 
-fn extract_by_ext(content: &str, ext: &str) -> Option<String> {
+fn extract_by_ext(content: &str, ext: &str) -> Result<String, OutlineUnavailable> {
     // Tree-sitter is the only signature path — real AST parsing, no regex
-    // heuristics. Languages outside the canonical registry return None and the
-    // caller falls back to the standard/none view.
-    let entry = languages::find_entry(ext)?;
+    // heuristics. Languages outside the canonical registry have no outline
+    // and the caller falls back to the standard/none view.
+    let entry = languages::find_entry(ext)
+        .filter(|entry| !entry.body_query.is_empty())
+        .ok_or(OutlineUnavailable::UnsupportedLanguage)?;
     let cfg = LangExtractConfig {
         language: entry.language.clone(),
         body_query: entry.body_query,
     };
-    let kept = extractor::extract_outline(content, &cfg)?;
-    renderer::render_skeleton(&kept, entry.comment_style)
+    let kept = extractor::extract_outline(content, &cfg).ok_or(OutlineUnavailable::ParseFailed)?;
+    renderer::render_skeleton(&kept, entry.comment_style).ok_or(OutlineUnavailable::NoDeclarations)
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
@@ -218,6 +282,24 @@ mod tests {
     /// The declarations-only extraction (outlines, enclosing names) skips
     /// call facts, reference counts and import uses, and keeps every other
     /// fact identical to the full graph extraction, in every grammar.
+    /// A `language` override outlines declarations only: the same
+    /// declarations as the full facts under that grammar, and no call facts.
+    #[test]
+    fn an_override_outlines_declarations_without_call_facts() {
+        let source = "fn make() -> u8 { helper(); 1 }\nfn helper() {}\n";
+        let lean: serde_json::Value = serde_json::from_str(
+            &extract_declarations_with_extension(source, "script", "rs").expect("facts"),
+        )
+        .expect("json");
+        let full: serde_json::Value = serde_json::from_str(
+            &extract_graph_facts_with_extension(source, "script", "rs").expect("facts"),
+        )
+        .expect("json");
+        assert_eq!(lean["declarations"], full["declarations"]);
+        assert!(!full["calls"].as_array().expect("calls").is_empty());
+        assert!(lean["calls"].as_array().is_none_or(Vec::is_empty), "{lean}");
+    }
+
     #[test]
     fn declaration_facts_equal_the_graph_facts_without_calls() {
         let cases = [
@@ -256,6 +338,7 @@ mod tests {
             };
             let mut expected = json(&full);
             expected["calls"] = serde_json::json!([]);
+            expected.as_object_mut().map(|facts| facts.remove("paths"));
             if let Some(edges) = expected["edges"].as_array_mut() {
                 edges.retain(|edge| edge["relation"] != "calls");
             }
@@ -279,7 +362,68 @@ mod tests {
     }
 
     fn extract(content: &str, path: &str) -> Option<String> {
-        extract_signatures_inner(content, path)
+        extract_signatures_inner(content, path).ok()
+    }
+
+    /// A few over-long declaration lines (generated one-line structs) keep
+    /// the outline, verbatim; an outline made mostly of them is minified.
+    #[test]
+    fn long_declaration_lines_keep_the_outline_unless_they_dominate_it() {
+        let mut source = String::new();
+        for i in 0..200 {
+            source.push_str(&format!(
+                "pub fn run{i}(value: usize) -> usize {{\n    let doubled = value * 2;\n    doubled + {i}\n}}\n\n"
+            ));
+        }
+        let fields = (0..120)
+            .map(|i| format!("pub field_{i}: usize"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let long = format!("pub struct Generated {{ {fields} }}");
+        assert!(long.len() > OUTLINE_MAX_LINE_CHARS);
+        source.push_str(&long);
+        source.push('\n');
+        let outline = extract_signatures_inner(&source, "lib.rs").expect("outline");
+        assert!(
+            outline.contains(&long),
+            "the long declaration stays verbatim"
+        );
+        assert!(outline.contains("pub fn run199(value: usize) -> usize"));
+
+        let minified = format!("{long}\n{long}\npub fn tail() {{\n    let x = 1;\n}}\n");
+        assert_eq!(
+            extract_signatures_inner(&minified, "lib.rs"),
+            Err(OutlineUnavailable::Minified)
+        );
+    }
+
+    /// Comment lines follow the file's own grammar: `#` comments Python,
+    /// not Rust; `--` comments neither.
+    #[test]
+    fn comment_lines_follow_the_files_grammar() {
+        assert_eq!(is_comment_line("a.py", "# note"), Some(true));
+        assert_eq!(is_comment_line("a.rs", "# note"), Some(false));
+        assert_eq!(is_comment_line("a.rs", "/// doc"), Some(true));
+        assert_eq!(is_comment_line("a.rs", "-- x"), Some(false));
+        assert_eq!(is_comment_line("notes.txt", "// x"), None);
+    }
+
+    /// Each missing outline names its own reason.
+    #[test]
+    fn a_missing_outline_names_its_reason() {
+        assert_eq!(
+            extract_signatures_inner("# Title\n\nText\n", "README.md"),
+            Err(OutlineUnavailable::UnsupportedLanguage)
+        );
+        assert_eq!(
+            extract_signatures_inner(&"x".repeat(MAX_PARSE_SIZE + 1), "big.rs"),
+            Err(OutlineUnavailable::TooLarge)
+        );
+        assert_eq!(
+            extract_signatures_inner("fn a() {}\n", "tiny.rs"),
+            Err(OutlineUnavailable::NotSmaller)
+        );
+        assert_eq!(OutlineUnavailable::Minified.as_str(), "minified-lines");
     }
 
     /// Gutters are unpadded so the content-view minifier (which trims

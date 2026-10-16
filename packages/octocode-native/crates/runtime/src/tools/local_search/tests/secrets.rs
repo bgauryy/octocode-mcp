@@ -664,8 +664,9 @@ fn relevance_on_path_list_views_demotes_test_paths_and_path_sort_does_not() {
     assert_eq!(without, ["z/src/other.rs", "a/tests/other.rs"]);
 }
 
-// Lean defaults: the paginated view returns only the hit line, 10 rows per
-// file page and 20 files per page; `detailed` keeps a ±3 context window.
+// Lean defaults: the paginated view returns only the hit line; a page takes
+// each file's first 10 rows, then later rows while the window has room, so
+// every file fits beside the hot one; `detailed` keeps a ±3 context window.
 #[test]
 fn default_paginated_view_is_lean_and_detailed_keeps_context() {
     let file = numbered(30, &(1..=12).collect::<Vec<_>>());
@@ -689,11 +690,16 @@ fn default_paginated_view_is_lean_and_detailed_keeps_context() {
         ),
     );
     let files = body["files"].as_array().expect("files");
-    assert_eq!(files.len(), 20, "{body}");
+    assert_eq!(files.len(), 27, "every file fits the window: {body}");
     let a = &files[0];
-    assert_eq!(a["matches"].as_array().expect("rows").len(), 10, "{body}");
+    assert_eq!(a["matches"].as_array().expect("rows").len(), 12, "{body}");
     assert_eq!(a["matches"][0]["value"], "line 1 needle");
-    assert_eq!(a["pagination"]["totalItems"], 12);
+    let hot = files
+        .iter()
+        .find(|file| file["path"] == "z.txt")
+        .expect("hot file");
+    assert_eq!(hot["pagination"]["totalItems"], 1200, "{body}");
+    assert!(hot["matches"].as_array().expect("rows").len() < 1200);
     let detailed = search_fixture(
         &[("a.txt", &numbered(30, &[20]))],
         ls_query(
@@ -917,7 +923,7 @@ fn continuations_derive_the_view_window_defaults() {
         serde_json::json!({"path": root.path().to_string_lossy().into_owned()}),
         Some(&make(LocalSearchQueryResultView::Paginated)),
     );
-    let first = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+    let first = execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
         .expect("first page");
     let body = serde_json::to_value(&first).expect("serialize");
     let next = body["next"]["nextMatchPage"]["query"]["queries"][0].clone();
@@ -928,8 +934,16 @@ fn continuations_derive_the_view_window_defaults() {
     let mut continued: LocalSearchQuery =
         serde_json::from_value(next).expect("continuation parses");
     continued.path = request.path.clone();
-    execute_local_search(&continued, &policy, &security, &NeverCancel, None, None)
-        .expect("detailed continuation is not stale");
+    execute_local_search(
+        &continued,
+        &policy,
+        &security,
+        &NeverCancel,
+        None,
+        None,
+        None,
+    )
+    .expect("detailed continuation is not stale");
 }
 
 /// A malformed `include` glob is caller input, coded by the engine's typed
@@ -946,6 +960,7 @@ fn a_bad_include_glob_is_invalid_glob() {
         &policy,
         &security,
         &NeverCancel,
+        None,
         None,
         None,
     )
@@ -965,7 +980,8 @@ fn a_scope_where_every_path_is_unreadable_is_an_access_error_not_empty() {
         serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "needle-only-here".to_string(), "regex": LocalSearchQueryRegex::Literal, "includeIgnored": true}),
         None,
     );
-    let outcome = execute_local_search(&request, &policy, &security, &NeverCancel, None, None);
+    let outcome =
+        execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None);
     unlock_dir(&hidden);
     let error = outcome.expect_err("every candidate failed");
     assert_eq!(error.code, "fileAccessFailed");
@@ -991,7 +1007,8 @@ fn unreadable_paths_beside_readable_misses_make_the_result_partial() {
         serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "needle-only-here".to_string(), "regex": LocalSearchQueryRegex::Literal, "includeIgnored": true}),
         None,
     );
-    let outcome = execute_local_search(&request, &policy, &security, &NeverCancel, None, None);
+    let outcome =
+        execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None);
     unlock_dir(&hidden);
     let result = outcome.expect("readable file searched");
     assert_eq!(result.status, SearchStatus::Partial);
@@ -1053,7 +1070,7 @@ fn clipped_values_carry_reads_that_return_them_whole() {
         serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "alpha", "regex": LocalSearchQueryRegex::Literal}),
         None,
     );
-    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
         .expect("search");
     let body = serde_json::to_value(&result).expect("serialize");
     assert!(
@@ -1113,7 +1130,7 @@ fn clipped_context_windows_merge_and_split_across_reads() {
                 "regex": LocalSearchQueryRegex::Literal, "contextLines": 1, "matchContentLength": 100}),
         None,
     );
-    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
         .expect("search");
     let next = result.next.clone().unwrap_or_default();
     assert_eq!(
@@ -1205,7 +1222,7 @@ fn clipped_values_on_a_grid_page_widen_the_same_page() {
                 "regex": LocalSearchQueryRegex::Literal, "pageSize": 2, "matchContentLength": 50}),
         None,
     );
-    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
         .expect("search");
     let body = serde_json::to_value(&result).expect("serialize");
     let next = result.next.clone().unwrap_or_default();
@@ -1244,6 +1261,7 @@ fn clipped_values_on_a_grid_page_widen_the_same_page() {
         &NeverCancel,
         None,
         None,
+        None,
     )
     .expect("widened search");
     let again = serde_json::to_value(&again).expect("serialize");
@@ -1257,6 +1275,52 @@ fn clipped_values_on_a_grid_page_widen_the_same_page() {
             .collect::<Vec<_>>()
     };
     assert_eq!(paths(&again), paths(&body), "the same rows, whole");
+}
+
+#[test]
+fn widening_values_preserves_duplicate_row_order() {
+    let root = tempfile::tempdir().expect("fixture");
+    let first = format!("needle {} A", "a".repeat(50));
+    let second = format!("needle {} B", "a".repeat(50));
+    let third = format!("needle {} C", "b".repeat(50));
+    fs::write(
+        root.path().join("hits.txt"),
+        format!("{first}\n{second}\n{third}\n{first}\n"),
+    )
+    .expect("fixture");
+    let (policy, security) = policy_for(root.path());
+    for page in 1..=4 {
+        let request = ls_query(
+            serde_json::json!({"path": root.path(), "matchString": "needle",
+                "matchContentLength": 20, "matchPageSize": 1, "matchPage": page}),
+            None,
+        );
+        let narrow =
+            execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
+                .expect("narrow page");
+        let next = narrow.next.as_ref().expect("expansion");
+        assert_eq!(next["expandValues"]["tool"], "localSearch");
+        let widened = ls_query(next["expandValues"]["query"]["queries"][0].clone(), None);
+        let whole =
+            execute_local_search(&widened, &policy, &security, &NeverCancel, None, None, None)
+                .expect("expanded page");
+        let ids = |result: &LocalSearchResult| {
+            result
+                .files
+                .iter()
+                .flat_map(|file| {
+                    file.matches
+                        .iter()
+                        .flatten()
+                        .map(move |hit| (file.path.clone(), hit.line))
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(ids(&narrow), ids(&whole), "matchPage={page}");
+        let hit = &whole.files[0].matches.as_ref().expect("match rows")[0];
+        assert_eq!(hit.line, page);
+        assert!(!hit.clipped);
+    }
 }
 
 /// A clipped multiline value hides its line span: its file is searched
@@ -1276,7 +1340,7 @@ fn clipped_multiline_values_widen_a_file_scoped_search() {
                 "matchString": "const list = \\[[^\\]]*\\]", "regex": "rust", "multiline": "on"}),
         None,
     );
-    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
         .expect("search");
     let body_json = serde_json::to_value(&result).expect("serialize");
     assert!(
@@ -1301,6 +1365,7 @@ fn clipped_multiline_values_widen_a_file_scoped_search() {
         &policy,
         &security,
         &NeverCancel,
+        None,
         None,
         None,
     )
@@ -1378,7 +1443,7 @@ fn many_text_cut_files_are_a_count_with_a_lossless_listing() {
         None,
     );
     let (policy, security) = policy_for(root.path());
-    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
         .expect("search");
     let warning = result
         .warnings
@@ -1429,7 +1494,7 @@ fn leading_nul_binaries_are_counted_with_a_listing_continuation() {
         serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "alpha".to_string(), "regex": LocalSearchQueryRegex::Literal}),
         None,
     );
-    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
         .expect("search");
     let body = serde_json::to_value(&result).expect("serialize");
     assert!(!result.is_partial, "{body}");
@@ -1475,7 +1540,7 @@ fn classification_candidates_never_receive_clipped_secrets_even_when_excluded() 
         fn identity(&self) -> Value {
             json!({"test":"record-safe-candidates"})
         }
-        fn select(&self, call: JudgeCall<'_>) -> Result<Vec<(usize, Decision)>, String> {
+        fn select(&self, call: JudgeCall<'_>) -> crate::tools::selection::Judgments {
             let mut recorded = self.0.lock().expect("recorded states");
             Ok(call
                 .admitted
@@ -1538,7 +1603,7 @@ fn classification_candidates_never_receive_clipped_secrets_even_when_excluded() 
             }),
             Some(&ls_query(fields, None)),
         );
-        let result = execute_local_search_selected(
+        let result = execute_local_search(
             &request,
             &policy,
             &security,

@@ -221,6 +221,11 @@ pub(super) async fn salted_locations(
         ("matches", json!(page))
     };
     let mut row = location_payload(kind, provider, key, rows, &locations, pagination);
+    // A clipped body is a partial row with its reason; the reads reach the
+    // omitted lines.
+    if !declaration_reads.is_empty() {
+        crate::tools::paging::mark_partial(&mut row, DECLARATION_CLIPPED, &[]);
+    }
     // One read per capped body: `readDeclaration`, `readDeclaration2`, ….
     for (index, read) in declaration_reads.into_iter().enumerate() {
         let key = match index {
@@ -357,6 +362,10 @@ pub(super) async fn apply_context_lines(
         "endLine": end,
     });
 }
+
+/// Partial reason of a row whose declaration body was clipped at
+/// [`MAX_DECLARATION_CONTENT_LINES`].
+const DECLARATION_CLIPPED: &str = "declarationClipped";
 
 /// Most lines of an enclosing declaration a location carries by default.
 /// `contextLines` replaces the body with an explicit window instead.
@@ -736,6 +745,10 @@ pub(super) fn salted_items_payload(
     if kind == "documentSymbols" {
         return document_symbols_payload(query, &raw_items, budget);
     }
+    let snapshot = salted_snapshot(query, kind, &raw_items, salt);
+    if snapshot_mismatch(query, &snapshot) {
+        return snapshot_changed(query);
+    }
     if raw_items.is_empty() {
         if kind == "diagnostics" {
             return empty(
@@ -751,10 +764,6 @@ pub(super) fn salted_items_payload(
             &format!("{kind} returned no results"),
             true,
         );
-    }
-    let snapshot = salted_snapshot(query, kind, &raw_items, salt);
-    if snapshot_mismatch(query, &snapshot) {
-        return snapshot_changed(query);
     }
     let sizes = sizes(&raw_items);
     let (page, pagination) = paginate(

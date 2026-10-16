@@ -15,8 +15,8 @@ flowchart LR
   D -- no --> B[Draft open choice, next check]
   W --> V[Verify]
   B --> V
-  V -- "gap, first time" --> R
-  V -- "gap after second pass" --> B
+  V -- "distinguishing evidence available" --> R
+  V -- "no distinguishing evidence" --> B
   V -- ready --> O[Save, render, deliver]
 ```
 
@@ -57,6 +57,7 @@ flowchart LR
 - `octocode-brainstorming`: issue or option space still open.
 - `octocode-documentation`: RFC language, or an ADR for a settled decision.
 - `octocode-eval-benchmark`: deciding claims need measurement.
+- For an orchestrated multi-actor task: [octocode-workflows composition](../octocode-workflows/references/composition.md).
 
 ## Output
 

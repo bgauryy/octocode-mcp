@@ -2,10 +2,10 @@
 //! discussion comments.
 use super::promotion::promote_issue_continuations;
 use super::rest::{BodyWindows, Rest};
-use super::text::{delivered_earlier, history_body_view, paginate_text, window_body};
-use super::util::{array, content_flag, map_comments, merge, str_at, string};
-use super::window::auto_page;
-use super::{DEFAULT_PAGE_SIZE, HistoryItemRequest, fetch, validation};
+use super::text::{delivered_earlier, paginate_text, shape_comment};
+use super::util::{array, map_comments, str_at, string};
+use super::window::{auto_page, page_starting_at};
+use super::{DEFAULT_PAGE_SIZE, HistoryItemRequest, Section, Sections, fetch, validation};
 use crate::tools::gh_shared::ensure_next;
 use crate::tools::id::ToolId;
 use crate::tools::result::{Continuation, ToolData, remove_nulls};
@@ -52,15 +52,15 @@ pub(super) async fn issue(
         .ok_or_else(|| validation("number is required"))?
         .to_string();
     let issue_path = ["repos", query.owner(), query.repo(), "issues", &number];
-    // The closing PRs load beside the issue on its first window; later
-    // windows ask only for their count so the bounded set stays disclosed.
+    // The closing PRs load beside the issue on its first window, which
+    // states their bound once; later windows list no `closedBy`.
     let first_window =
         query.page().unwrap_or(1) <= 1 && query.char_offset().is_none_or(|offset| offset == 0);
     let (fetched, closed_by) = tokio::join!(fetch(transport, &issue_path, &[], context), async {
         if first_window {
             closing_pull_requests(transport, query, context).await
         } else {
-            closing_reference_count(transport, query, context).await
+            None
         }
     });
     let (raw, _) = fetched?;
@@ -68,13 +68,11 @@ pub(super) async fn issue(
         return Err(validation(&format!("Issue #{number} is a pull request"))
             .with_reason(ProviderErrorReason::IssueIsPullRequest));
     }
-    let content_value = query.content_value();
-    let content = content_value.as_ref().and_then(Value::as_object);
-    let want_body = content.is_none_or(|v| content_flag(Some(v), "body"));
-    let comments = content
-        .and_then(|v| v.get("comments"))
-        .and_then(Value::as_object);
-    let want_comments = content_flag(comments, "discussion");
+    // A summary (no section named) shows the body; a section read what it
+    // names.
+    let sections = query.sections();
+    let want_body = sections.is_empty() || sections.has(Section::Body);
+    let want_comments = sections.has(Section::Comments);
     // A comment-body hop (`offset` > 0 with the discussion) continues the
     // comment bodies of its first window. The issue body is not shown again
     // (its own `continueBody` reads it at its own offset), but its first
@@ -95,12 +93,11 @@ pub(super) async fn issue(
         }
         row
     };
-    let body_view =
-        want_body.then(|| history_body_view(str_at(&raw, "/body").unwrap_or(""), query));
+    let body_view = want_body.then(|| str_at(&raw, "/body").unwrap_or(""));
     let mut row = header_for();
     let mut pagination = Map::new();
     let mut rest = Rest::default();
-    if let Some(body_view) = body_view.as_deref().filter(|_| show_body) {
+    if let Some(body_view) = body_view.filter(|_| show_body) {
         let (body, page) = paginate_text(body_view, query.char_offset(), query.char_length());
         row["body"] = json!(body);
         if query.char_offset().is_some() || query.char_length().is_some() || page["hasMore"] == true
@@ -112,7 +109,7 @@ pub(super) async fn issue(
         // A comment-body hop counts the row its first window showed.
         let used = if comment_hop {
             let mut first = header_for();
-            if let Some(body_view) = body_view.as_deref() {
+            if let Some(body_view) = body_view {
                 first["body"] = json!(paginate_text(body_view, None, query.char_length()).0);
             }
             crate::tools::stream_page::json_chars(&first)
@@ -124,8 +121,7 @@ pub(super) async fn issue(
             used,
             total: raw.get("comments").and_then(Value::as_u64),
         };
-        let page =
-            issue_comments(transport, query, context, at.issue_path, at.budget(query)).await?;
+        let page = issue_comments(transport, query, context, &at).await?;
         page.attach(&at, &mut row, &mut pagination, &mut rest);
     }
     if !pagination.is_empty() {
@@ -146,7 +142,7 @@ pub(super) async fn issue(
             .map(|total| (references.listed, total))
     });
     if let Some((listed, total)) = bounded {
-        mark_bounded_closing(&mut out, listed, total, first_window);
+        mark_bounded_closing(&mut out, listed, total);
     }
     if first_window {
         let prs = closed_by
@@ -208,7 +204,7 @@ struct CommentPage {
     /// Provider comments read up to the end of this page.
     consumed: usize,
     /// The `pageSize` that resumes the next page at its first unshown
-    /// comment ([`resume_page`]).
+    /// comment ([`page_starting_at`]).
     resume_size: Option<usize>,
 }
 
@@ -250,15 +246,15 @@ impl CommentPage {
 /// `pageSize`, and every page as many comments as fit (up to one provider
 /// batch), read from at most two provider batches. The page resumes at its
 /// first unshown comment through a `page`/`pageSize` pair that starts
-/// there ([`resume_page`]), so the comment cursor is the response's only
+/// there ([`page_starting_at`]), so the comment cursor is the response's only
 /// cursor.
 async fn issue_comments(
     transport: &GitHubTransport,
     query: &HistoryItemRequest,
     context: &RequestContext,
-    issue_path: &[&str],
-    budget: usize,
+    at: &CommentRead<'_>,
 ) -> Result<CommentPage, ProviderError> {
+    let (issue_path, budget) = (at.issue_path, at.budget(query));
     let page_no = query.page().unwrap_or(1);
     let grid = query.page_size().unwrap_or(DEFAULT_PAGE_SIZE).max(1);
     let start = page_no.saturating_sub(1) * grid;
@@ -295,7 +291,7 @@ async fn issue_comments(
     // (`offset` > 0) pages exactly the comments its first window showed.
     let (mut consumed, mut used) = (0, 0usize);
     for comment in &fetched {
-        let (first, _) = shape_issue_comment(comment, None, query, &mut BodyWindows::default());
+        let (first, _) = shape_comment(comment, None, query, &mut BodyWindows::default());
         let chars = crate::tools::stream_page::json_chars(&first) + 1;
         if consumed > 0 && (used + chars > budget || consumed >= cap) {
             break;
@@ -311,16 +307,28 @@ async fn issue_comments(
     let comments = fetched[..consumed]
         .iter()
         .filter_map(|comment| {
-            let (shaped, page) =
-                shape_issue_comment(comment, query.char_offset(), query, &mut bodies);
+            let (shaped, page) = shape_comment(comment, query.char_offset(), query, &mut bodies);
             (!delivered_earlier(query.char_offset(), &page)).then_some(shaped)
         })
         .collect();
-    let mut pagination = json!({"hasMore": more});
+    // A page past the discussion's last is the shared out-of-range outcome:
+    // its block states `page N of M` on the page grid it was asked on.
+    let past_end = (consumed == 0 && !more)
+        .then(|| at.total.and_then(|total| usize::try_from(total).ok()))
+        .flatten()
+        .map(|total| crate::response::pages::PageFacts::counted(page_no, grid, total))
+        .filter(|facts| facts.past_end().is_some());
+    let mut pagination = past_end.map_or_else(
+        || json!({"hasMore": more}),
+        |facts| facts.out_of_range(true).to_value(),
+    );
     let mut resume_size = None;
     if more {
-        let (page, size) = resume_page(start + consumed);
+        let (page, size) = page_starting_at(start + consumed, MAX_PER_PAGE);
+        // The next page and the page size that places it: `nextPage` alone
+        // under another size would land on other comments.
         pagination["nextPage"] = json!(page);
+        pagination["pageSize"] = json!(size);
         resume_size = Some(size);
     }
     Ok(CommentPage {
@@ -330,31 +338,6 @@ async fn issue_comments(
         consumed: start + consumed,
         resume_size,
     })
-}
-
-/// One issue comment with its body windowed at `offset` (the window's page
-/// is returned beside it); `bodies` collects the page's body windows.
-fn shape_issue_comment(
-    comment: &Value,
-    offset: Option<usize>,
-    query: &HistoryItemRequest,
-    bodies: &mut BodyWindows,
-) -> (Value, Value) {
-    let (body, page) = window_body(
-        str_at(comment, "/body").unwrap_or(""),
-        offset,
-        query,
-        bodies,
-        // Issue text is never minified.
-        &mut false,
-    );
-    let mut c = merge(comment.clone(), json!({"body":body}));
-    // A whole body's window restates its length only.
-    if page["offset"] != 0 || page["hasMore"] == true {
-        c["bodyPagination"] = page.clone();
-    }
-    remove_nulls(&mut c);
-    (c, page)
 }
 
 /// Response chars an issue comment page leaves to the row's cursors,
@@ -371,38 +354,20 @@ fn attach_comments_read(out: &mut Value, query: &HistoryItemRequest, raw: &Value
     for key in ["offset", "length", "page"] {
         super::pr_menu::remove_key(&mut nq, key);
     }
-    nq["content"] = json!({"comments": {"discussion": true}});
+    Sections::of([Section::Comments]).set_on(&mut nq);
     ensure_next(out);
-    out["next"]["readDiscussion"] = super::pr_menu::menu_read(nq);
-}
-
-/// The `(page, pageSize)` pair whose page starts at comment index
-/// `start`: the largest page size (at most one provider batch) dividing it.
-/// The size only places the start; the page fills its budget.
-fn resume_page(start: usize) -> (usize, usize) {
-    let size = (1..=start.clamp(1, MAX_PER_PAGE))
-        .rev()
-        .find(|size| start.is_multiple_of(*size))
-        .unwrap_or(1);
-    (start / size + 1, size)
+    out["next"]["readDiscussion"] = super::pr_menu::continuation(nq);
 }
 
 /// The closing-reference set ends at a bound: no cursor continues it, and the
 /// fix it names is a candidate among the listed references only.
-fn mark_bounded_closing(out: &mut Value, listed: usize, total: u64, first_window: bool) {
-    // Appended: a bot-comment warning on the same page stays.
+fn mark_bounded_closing(out: &mut Value, listed: usize, total: u64) {
     crate::tools::paging::terminal_limit(
         out,
         "closingReferenceLimit",
-        &[if first_window {
-            format!(
-                "closedBy lists {listed} of {total} linked pull requests; the first is a candidate, not the complete fix set."
-            )
-        } else {
-            format!(
-                "The first window's closedBy lists {listed} of {total} linked pull requests; the rest are not listed."
-            )
-        }],
+        &[format!(
+            "closedBy lists {listed} of {total} linked pull requests; the first is a candidate, not the complete fix set."
+        )],
     );
 }
 
@@ -412,9 +377,6 @@ const MAX_CLOSING_REFERENCES: usize = 25;
 
 /// The closing-reference lookup; `first` is [`MAX_CLOSING_REFERENCES`].
 pub(super) const CLOSING_REFERENCES_DOCUMENT: &str = "query($owner:String!,$repo:String!,$number:Int!,$first:Int!){ repository(owner:$owner,name:$repo){ issue(number:$number){ closedByPullRequestsReferences(first:$first,includeClosedPrs:true){ totalCount pageInfo{ hasNextPage } nodes{ number state mergedAt additions deletions changedFiles } } } } }";
-
-/// The closing-reference count alone, for windows past the first.
-pub(super) const CLOSING_REFERENCE_COUNT_DOCUMENT: &str = "query($owner:String!,$repo:String!,$number:Int!){ repository(owner:$owner,name:$repo){ issue(number:$number){ closedByPullRequestsReferences(first:1,includeClosedPrs:true){ totalCount } } } }";
 
 /// One linked pull request: its public `closedBy` row and whether its whole
 /// diff fits one patch read.
@@ -439,14 +401,7 @@ async fn closing_pull_requests(
     query: &HistoryItemRequest,
     context: &RequestContext,
 ) -> Option<ClosingReferences> {
-    let references = closed_by_references(
-        transport,
-        query,
-        context,
-        CLOSING_REFERENCES_DOCUMENT,
-        Some(MAX_CLOSING_REFERENCES),
-    )
-    .await?;
+    let references = closed_by_references(transport, query, context).await?;
     let more = references
         .pointer("/pageInfo/hasNextPage")
         .and_then(Value::as_bool)
@@ -465,60 +420,31 @@ async fn closing_pull_requests(
     })
 }
 
-/// The issue's `closedByPullRequestsReferences` object that `document`
-/// selects (`first` sets its window size). `None` when GraphQL is
-/// unavailable or failed.
+/// The issue's first [`MAX_CLOSING_REFERENCES`]
+/// `closedByPullRequestsReferences`. `None` when GraphQL is unavailable or
+/// failed.
 async fn closed_by_references(
     transport: &GitHubTransport,
     query: &HistoryItemRequest,
     context: &RequestContext,
-    document: &str,
-    first: Option<usize>,
 ) -> Option<Value> {
     if !transport.graphql_enabled || !transport.graphql_available(context) {
         return None;
     }
-    let mut variables = json!({
+    let variables = json!({
         "owner": query.owner(),
         "repo": query.repo(),
         "number": query.number()?,
+        "first": MAX_CLOSING_REFERENCES,
     });
-    if let Some(first) = first {
-        variables["first"] = json!(first);
-    }
     let mut page = transport
-        .execute_graphql(document, variables, context)
+        .execute_graphql(CLOSING_REFERENCES_DOCUMENT, variables, context)
         .await
         .ok()?;
     page.data
         .as_mut()?
         .pointer_mut("/repository/issue/closedByPullRequestsReferences")
         .map(Value::take)
-}
-
-/// The closing-reference total for a window past the first: no rows, only
-/// whether the set the first window lists is bounded.
-async fn closing_reference_count(
-    transport: &GitHubTransport,
-    query: &HistoryItemRequest,
-    context: &RequestContext,
-) -> Option<ClosingReferences> {
-    let total = closed_by_references(
-        transport,
-        query,
-        context,
-        CLOSING_REFERENCE_COUNT_DOCUMENT,
-        None,
-    )
-    .await?
-    .get("totalCount")?
-    .as_u64()?;
-    let limit = u64::try_from(MAX_CLOSING_REFERENCES).unwrap_or(u64::MAX);
-    Some(ClosingReferences {
-        prs: Vec::new(),
-        listed: MAX_CLOSING_REFERENCES.min(usize::try_from(total).unwrap_or(usize::MAX)),
-        bounded_total: (total > limit).then_some(total),
-    })
 }
 
 fn map_closing_pull_requests(nodes: &[Value]) -> Vec<ClosingPr> {
@@ -738,27 +664,6 @@ mod tests {
                 &out_for(&issue(goal), &large)["next"]["readPullRequest"]["query"]["queries"][0];
             assert!(read.get("include").is_none(), "{goal}: {read}");
             assert_eq!(read["sections"], json!(["body", "files"]), "{goal}");
-        }
-    }
-}
-
-#[cfg(test)]
-mod resume_tests {
-    use super::resume_page;
-
-    /// A cut page resumes exactly at its first unshown comment: the
-    /// page size only places the start (the largest one dividing it, at
-    /// most one provider batch); the next page fills its own budget.
-    #[test]
-    fn a_cut_comment_page_resumes_at_its_first_unshown_comment() {
-        assert_eq!(resume_page(12), (2, 12));
-        assert_eq!(resume_page(97), (2, 97));
-        assert_eq!(resume_page(190), (3, 95));
-        assert_eq!(resume_page(200), (3, 100));
-        for start in [1, 17, 97, 101, 250, 1009] {
-            let (page, size) = resume_page(start);
-            assert!(size <= 100);
-            assert_eq!((page - 1) * size, start, "{start}");
         }
     }
 }

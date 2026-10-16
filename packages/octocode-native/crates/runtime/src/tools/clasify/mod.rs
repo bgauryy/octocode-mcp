@@ -9,7 +9,6 @@
 //! Every row evaluates through the shared [`Evaluator`]: one provider client,
 //! judgment cache, single flight, retry policy and accounting for this tool
 //! and retrieval `classifiers` alike.
-use crate::contracts::tool_types::ClasifyQuery;
 use crate::runtime::{ExecutionContext, ExecutionError, domain_dispatch::DomainDispatcher};
 use crate::tools::judgment::{
     ClassificationError, EvaluationInput, Evaluator, Judged, stats::ClassificationUsage,
@@ -17,6 +16,8 @@ use crate::tools::judgment::{
 use crate::tools::result::FailureKind;
 use crate::tools::source_capture::{self, Captured};
 use serde_json::{Map, Value, json};
+
+mod recovery;
 
 /// clasify's output facts: rows are keyed query results with their own shape.
 pub(crate) struct Output;
@@ -82,13 +83,10 @@ enum Input {
     Models,
 }
 
-fn parse(position: usize, row: &Value) -> Result<Row, ExecutionError> {
-    // Contract validation passed: a row that does not parse means core and
-    // native disagree on the contract. The provider receives the validated
-    // row's own values: the typed form would reorder choice labels and map
-    // keys, which are semantic input.
-    let _typed: ClasifyQuery =
-        serde_json::from_value(row.clone()).map_err(|_| ExecutionError::WorkerFailed)?;
+/// A row contract validation admitted. The provider receives the validated
+/// row's own values: a typed form would reorder choice labels and map keys,
+/// which are semantic input (the contract tests keep the shapes aligned).
+fn parse(position: usize, row: &Value) -> Row {
     let questions = row["questions"].as_object();
     let input = if row["operation"] == "models" {
         Input::Models
@@ -97,7 +95,7 @@ fn parse(position: usize, row: &Value) -> Result<Row, ExecutionError> {
     } else {
         Input::Source(row["source"].clone())
     };
-    Ok(Row {
+    Row {
         id: row["id"]
             .as_str()
             .map_or_else(|| format!("q{position}"), str::to_owned),
@@ -113,10 +111,10 @@ fn parse(position: usize, row: &Value) -> Result<Row, ExecutionError> {
         input,
         assets: row.get("assets").cloned(),
         long_context: row["longContext"].as_bool() == Some(true),
-    })
+    }
 }
 
-fn parse_rows(rows: &[Value]) -> Result<Vec<Row>, ExecutionError> {
+fn parse_rows(rows: &[Value]) -> Vec<Row> {
     let mut reserved = rows
         .iter()
         .filter_map(|row| row["id"].as_str().map(str::to_owned))
@@ -124,7 +122,7 @@ fn parse_rows(rows: &[Value]) -> Result<Vec<Row>, ExecutionError> {
     rows.iter()
         .enumerate()
         .map(|(position, row)| {
-            let mut parsed = parse(position, row)?;
+            let mut parsed = parse(position, row);
             if row.get("id").is_none() {
                 let mut next = position;
                 while !reserved.insert(parsed.id.clone()) {
@@ -132,24 +130,24 @@ fn parse_rows(rows: &[Value]) -> Result<Vec<Row>, ExecutionError> {
                     parsed.id = format!("q{next}");
                 }
             }
-            Ok(parsed)
+            parsed
         })
         .collect()
 }
 
 /// Evaluate every row; a failed row keeps its own error and never hides a
-/// sibling's answers.
+/// sibling's answers. Admission refuses a clasify call with any invalid
+/// row as a whole (its rows share batch rules), so every row runs here.
 pub(crate) fn call(
     evaluator: &Evaluator,
     rows: &[Value],
-    rejected_rows: Vec<(usize, Value)>,
     dispatcher: &DomainDispatcher,
     context: &ExecutionContext,
 ) -> Result<Receipts, ExecutionError> {
     if !evaluator.is_configured() {
         return Err(ExecutionError::WorkerFailed);
     }
-    let parsed = parse_rows(rows)?;
+    let parsed = parse_rows(rows);
     let budget = evaluator.budget(context.deadline, context.cancellation.clone());
     let gate = evaluator.gate();
     let outcomes = std::thread::scope(|scope| {
@@ -189,7 +187,7 @@ pub(crate) fn call(
                 kinds.push(judged.as_ref().err().map(error_kind));
                 output.push(match judged {
                     Ok(judged) => answered(row, judged, captured, assets),
-                    Err(error) => failed(row, &error),
+                    Err(error) => failed(row, &error, captured.as_deref()),
                 });
             }
             RowOutcome::Models(result) => {
@@ -199,19 +197,14 @@ pub(crate) fn call(
                         models["id"] = json!(row.id);
                         models
                     }
-                    Err(error) => failed(row, &error),
+                    Err(error) => failed(row, &error, None),
                 });
             }
         }
     }
     // A call-level kind holds only when every row failed the same way.
-    let failure = if rejected_rows.is_empty() {
-        let first = kinds.first().copied().flatten();
-        first.filter(|kind| kinds.iter().all(|other| *other == Some(*kind)))
-    } else {
-        None
-    };
-    crate::runtime::engine::merge_rejected_rows(&mut output, rejected_rows);
+    let first = kinds.first().copied().flatten();
+    let failure = first.filter(|kind| kinds.iter().all(|other| *other == Some(*kind)));
     let mut structured = json!({ "queries": output });
     crate::response::rows::sanitize_fields(&mut structured, &dispatcher.security, context)?;
     Ok(Receipts {
@@ -229,10 +222,10 @@ enum RowOutcome {
     Models(Result<Value, ClassificationError>),
 }
 
-fn rejected(error: ClassificationError) -> RowOutcome {
+fn rejected(error: ClassificationError, captured: Option<Box<Captured>>) -> RowOutcome {
     RowOutcome::Judgment {
         judged: Err(error),
-        captured: None,
+        captured,
         assets: None,
     }
 }
@@ -250,32 +243,31 @@ fn evaluate_row(
         Input::Models => {
             return RowOutcome::Models(dispatcher.handle.block_on(evaluator.models(budget, gate)));
         }
+        // Admission measured a literal state against the same budget.
         Input::State(state) => (state.clone(), None),
         Input::Source(source) => {
-            match source_capture::capture(source, dispatcher, context, max_chars) {
-                Ok(captured) => (captured.state.clone(), Some(Box::new(captured))),
-                Err(error) => {
-                    return rejected(error);
-                }
+            let captured = match source_capture::capture(source, dispatcher, context, max_chars) {
+                Ok(captured) => captured,
+                Err(error) => return rejected(error, None),
+            };
+            // The admission budget in serialized Unicode scalars: captured
+            // identities, line labels and JSON escapes count too; no source
+            // is judged from a silently shortened state.
+            if captured.state.to_string().chars().count() > max_chars {
+                return rejected(
+                    ClassificationError::new(
+                        "classificationContextTooLarge",
+                        format!(
+                            "The serialized state exceeds the {max_chars}-character limit; nothing was judged."
+                        ),
+                        "Select narrower source ranges or split the state across query rows.",
+                    ),
+                    Some(Box::new(captured)),
+                );
             }
+            (captured.state.clone(), Some(Box::new(captured)))
         }
     };
-    // Match input admission's serialized Unicode-scalar budget. Captured
-    // identities, line labels and JSON escapes count too; no source is
-    // judged from a silently shortened state.
-    if state.to_string().chars().count() > max_chars {
-        return rejected(ClassificationError::new(
-            if captured.is_some() {
-                "classificationContextTooLarge"
-            } else {
-                "classificationStateTooLarge"
-            },
-            format!(
-                "The serialized state exceeds the {max_chars}-character limit; nothing was judged."
-            ),
-            "Select narrower source ranges or split the state across query rows.",
-        ));
-    }
     let assets = match row
         .assets
         .as_ref()
@@ -285,7 +277,7 @@ fn evaluate_row(
         .transpose()
     {
         Ok(assets) => assets,
-        Err(error) => return rejected(error),
+        Err(error) => return rejected(error, captured),
     };
     let judged = dispatcher.handle.block_on(evaluator.evaluate_prepared(
         EvaluationInput {
@@ -336,7 +328,7 @@ fn answered(
     out
 }
 
-fn failed(row: &Row, error: &ClassificationError) -> Value {
+fn failed(row: &Row, error: &ClassificationError, captured: Option<&Captured>) -> Value {
     let mut failure = json!({
         "errorCode": error.code,
         "error": error.message,
@@ -347,6 +339,7 @@ fn failed(row: &Row, error: &ClassificationError) -> Value {
     for (name, lead) in &error.leads {
         failure["hints"][name] = lead.clone();
     }
+    recovery::add(row, captured, &mut failure);
     json!({ "id": row.id, "error": failure })
 }
 
@@ -434,11 +427,7 @@ mod tests {
     use super::*;
 
     fn parsed_ids(rows: &[Value]) -> Vec<String> {
-        parse_rows(rows)
-            .expect("valid rows")
-            .into_iter()
-            .map(|row| row.id)
-            .collect()
+        parse_rows(rows).into_iter().map(|row| row.id).collect()
     }
 
     #[test]

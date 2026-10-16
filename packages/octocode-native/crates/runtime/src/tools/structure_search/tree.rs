@@ -3,17 +3,15 @@ use crate::policy::prune::DefaultsFlag;
 use crate::tools::empty_walk::Walk;
 use crate::tools::result::ToolError;
 use crate::{
-    policy::{path::PathPolicy, prune::PruneMode},
-    security::ContentSecurity,
-    tools::cancel::CancellationCheck,
+    policy::path::PathPolicy, security::ContentSecurity, tools::cancel::CancellationCheck,
 };
 use octocode_engine::search::walk::IgnorePolicy;
 use octocode_engine::types::FileSystemQueryOptions;
 use serde_json::{Value, json};
-use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 
 use super::Walking;
 use crate::contracts::tool_types::StructureSearchQueryTree;
+use octocode_engine::portable::Visit;
 
 /// Engine-unit views over the generated `tree` query.
 impl StructureSearchQueryTree {
@@ -47,6 +45,11 @@ impl StructureSearchQueryTree {
         self.scan_offset.map_or(0, |offset| {
             usize::try_from(offset.get()).unwrap_or(usize::MAX)
         })
+    }
+    /// Walk entries (walk order) an earlier, time-cut walk inspected.
+    fn walk_offset(&self) -> u32 {
+        self.walk_offset
+            .map_or(0, |offset| u32::try_from(offset.get()).unwrap_or(u32::MAX))
     }
     /// The caller's page size; `None` pages by the response budget.
     fn page_size(&self) -> Option<usize> {
@@ -123,6 +126,7 @@ pub fn execute_tree(
         q.default_excludes,
         requested,
         q.scan_offset(),
+        q.walk_offset(),
         q.page_size(),
         q.extras
             .contains(&crate::contracts::tool_types::ExtraKind::Details),
@@ -193,6 +197,7 @@ pub fn execute_tree(
             relaxed_query.include_hidden = Some(relaxed.hidden);
             relaxed_query.default_excludes = Some(DefaultExcludes(relaxed.default_excludes));
             relaxed_query.scan_offset = None;
+            relaxed_query.walk_offset = None;
             walk_tree(
                 &relaxed_query,
                 &validated.canonical,
@@ -229,11 +234,9 @@ fn walk_tree(
     let show_hidden = q.include_hidden.unwrap_or(false);
     let include = crate::policy::include::include_globs(&q.include);
     let probe = super::FilterProbe::new(root, &include, &q.extensions, None)?;
-    let withheld = std::sync::Mutex::new(crate::policy::discovery::Withheld::default());
-    let hidden = AtomicUsize::new(0);
-    let pruned = PruneMode::SyntaxVisible.directories(q.default_excludes.defaults());
+    let left = super::WalkLeft::new(root, q.default_excludes.defaults());
     let discovery = paths.discovery_walk();
-    let native = octocode_engine::portable::query_file_system(
+    let mut native = octocode_engine::portable::query_file_system(
         FileSystemQueryOptions {
             path: root.to_string_lossy().into_owned(),
             include_root: Some(false),
@@ -243,16 +246,18 @@ fn walk_tree(
             names: (!include.is_empty()).then(|| include.clone()),
             extensions: (!q.extensions.is_empty()).then(|| q.extensions.clone()),
             entry_type: q.entry_type.map(|kind| kind.to_string()),
-            exclude_dir: Some(pruned.clone()),
+            // The callback applies the default prune (`WalkLeft`).
+            exclude_dir: None,
             exclude: (!q.exclude.is_empty()).then(|| q.exclude.clone()),
             stop_at_limit: Some(true),
             time_budget: walking.budget(),
+            skip_entries: Some(q.walk_offset()),
             limit: Some(bound.map_or(super::max_walk(), |_| {
                 u32::try_from(requested).unwrap_or(u32::MAX)
             })),
             ..Default::default()
         },
-        &|path, file_type| {
+        &|path, file_type, visit| {
             // The root itself stays admitted: a probe out of time lists
             // nothing under it, never fails.
             if path != root && bound.is_some_and(|bound| !bound.admits(path, file_type)) {
@@ -261,39 +266,39 @@ fn walk_tree(
             // Dot entries out of view (no `hidden`) are neither listed nor
             // counted as withheld or ignored; the ones `includeHidden:true` would
             // walk (permitted, not ignored, not a pruned directory) are
-            // counted as hidden.
+            // counted as hidden, and the walk's own dot rule skips them.
             let name = crate::tools::display_name(path);
             let dot = name.starts_with('.');
             let allowed = discovery.permits_entry(path, file_type);
-            if !allowed
+            // A replayed entry was counted by the window it resumes.
+            let fresh = visit == Visit::Fresh;
+            if fresh
+                && !allowed
                 && (show_hidden || !dot)
                 && probe.could_list(path)
                 && super::reports_withheld(path)
             {
-                withheld
-                    .lock()
-                    .unwrap_or_else(|error| error.into_inner())
-                    .record(path, path.is_dir());
+                left.record_withheld(path);
             }
-            if allowed && dot && !show_hidden && !(pruned.contains(&name) && path.is_dir()) {
-                hidden.fetch_add(1, Relaxed);
+            if !allowed {
+                return false;
             }
-            allowed
+            if dot && !show_hidden {
+                if fresh && !left.excludes(path, file_type) {
+                    left.count_hidden();
+                }
+                return true;
+            }
+            !left.prunes(path, file_type, visit)
         },
         &|| cancel.check().is_err(),
     )
     .map_err(|error| super::walk_error(error, q.path.as_str(), cancel))?;
     cancel.check().map_err(ToolError::cancelled)?;
+    let window = super::end_window(&mut native, requested, q.scan_offset(), true);
     let rows = tree_rows(&native.entries, security);
-    let mut walk = super::Walked::finish(
-        native,
-        rows,
-        requested,
-        q.scan_offset(),
-        withheld,
-        hidden.into_inner(),
-        security,
-    );
+    let mut walk = super::Walked::finish(native, rows, requested, q.scan_offset(), left, security);
+    walk.meta.time_window = window;
     // One group per directory: `path`'s own entries first, then each
     // directory in walk order (component-wise path order), entries in walk
     // order within it. The sort is stable.
@@ -391,7 +396,7 @@ fn tree_page(
         pages.len(),
         requested,
         false,
-        q.scan_offset(),
+        (q.scan_offset(), q.walk_offset()),
         snapshot.clone(),
     );
     // Details are read for this page's files only, like `files` does.
@@ -427,22 +432,26 @@ fn tree_page(
         "files": files,
         "snapshot": snapshot,
     });
-    // A walk cut by time proved nothing about what it did not scan.
-    if total == 0 && walk.meta.time_cut.is_none() {
+    // A walk cut by time proved nothing about what it did not scan, and a
+    // resumed window past every entry of its filters is no empty listing.
+    if total == 0 && walk.meta.time_cut.is_none() && q.walk_offset() == 0 {
         out["status"] = json!("empty");
     }
     // The walk's summary and its retries describe the whole listing: page 1
     // states them once.
     if page == 1 {
-        // Skipped dot entries matter when the listing is filtered or empty;
-        // an unfiltered outline names their count in the summary.
-        let report_hidden = walk.meta.uncovered.hidden > 0 && total > 0 && q.filtered();
         out["summary"] = walk.meta.summary();
-        super::lead_to_ignored(&mut out, q, &walk.meta.uncovered);
-        if report_hidden {
-            out["next"]["includeHidden"] =
-                super::continuation(q, json!({"includeHidden":true,"page":1,"snapshot":null}));
-        }
+        super::lead_to_skipped(
+            &mut out,
+            q,
+            &walk.meta.uncovered,
+            Walk {
+                ignored: q.include_ignored == Some(true),
+                hidden: q.include_hidden == Some(true),
+                default_excludes: q.default_excludes.defaults(),
+            },
+            q.filtered(),
+        );
         if !q.filtered()
             && let Some(read) = tree_read(&walk.rows, root)
         {
@@ -458,12 +467,12 @@ fn tree_page(
         }
         out["pagination"] = facts.to_value();
     }
-    let mut warnings = walk.meta.warnings.clone();
-    warnings.extend(crate::policy::include::parent_glob_warning(
-        &q.include, &q.exclude,
-    ));
+    let mut warnings = Vec::new();
     cut.finish(&mut out, q, &mut warnings);
-    walk.meta.warn(&mut out, warnings);
+    let query_notes = crate::policy::include::parent_glob_warning(&q.include, &q.exclude)
+        .into_iter()
+        .collect();
+    walk.meta.warn(&mut out, query_notes, warnings, page);
     Ok(out)
 }
 

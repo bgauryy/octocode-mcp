@@ -10,6 +10,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { propagateOctocodeEnv } from '@octocodeai/config';
 import { hermeticEnv } from '../../../../test-utils/hermetic-env.ts';
+import { suggestedCall } from '../../../../octocode-local-testing/harness/lead-predicates.mjs';
 import { cases } from '../jev-proposal-poc/cases.mjs';
 
 const ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
@@ -228,7 +229,7 @@ async function main() {
       const suite = cases();
       for (const [index, item] of suite.entries()) {
         const file = path.join(fixture, `${item.id}.ts`); await fs.writeFile(file, item.source);
-        const ordinary = await walk({ path: file, minify: 'none', unit: 'lines', length: 10 }, env, fixture);
+        const ordinary = await walk({ path: file, unit: 'lines', length: 10 }, env, fixture);
         results.push({ case: item.id, arm: 'ordinary-source-order', coverage: coverage(ordinary, item.source), ...arrival(ordinary, item.gold), providerCalls: 0 });
         const order = [...run.arms.slice(index % 4), ...run.arms.slice(0, index % 4)];
         for (const arm of order) {
@@ -236,7 +237,7 @@ async function main() {
           current = { ...item, arm };
           const begin = ledger.length, time = performance.now();
           try {
-            const pages = await walk({ path: file, classifiers: [item.goal], minify: 'none', unit: 'lines', length: 10 }, env, fixture);
+            const pages = await walk({ path: file, classifiers: [item.goal], unit: 'lines', length: 10 }, env, fixture);
             await Promise.allSettled([...pending]);
             const entries = ledger.slice(begin);
             results.push({ case: item.id, arm, coverage: coverage(pages, item.source), ...arrival(pages, item.gold),
@@ -259,7 +260,7 @@ async function main() {
       for (const [id, source] of Object.entries(sources)) {
         const file = path.join(fixture, `${id}.txt`); await fs.writeFile(file, source);
         current = { id, arm: 'current-cli', fail: id === 'partial-failure' };
-        const query = { path: file, classifiers: ['Find the PROOF evidence.'], minify: 'none', unit: 'lines', length: 10 };
+        const query = { path: file, classifiers: ['Find the PROOF evidence.'], unit: 'lines', length: 10 };
         const begin = ledger.length;
         const result = await invoke(['localFetch', JSON.stringify({ queries: id === 'duplicate' ? [query, query] : [query] }), '--json'], fixture, env);
         const requests = ledger.slice(begin);
@@ -291,7 +292,7 @@ async function main() {
         results.push({ case: current.id, chars: chars(source), bytes: Buffer.byteLength(source), current: result,
           decidingEvidenceSent: ledger.slice(begin).some(x => JSON.stringify(x.state).includes('PROOF')) });
         if (!unicode) {
-          const lead = result.output.queries?.[0]?.hints?.read;
+          const lead = (result.output.queries?.[0]?.hints ?? []).map(suggestedCall).find(call => call?.key === 'read');
           if (lead) {
             await fs.writeFile(file, source.replace('INDEX_MARKER', 'CHANGED_AFTER_JUDGMENT'));
             const replay = await invoke([lead.tool, JSON.stringify(lead.query), '--json'], fixture, env);
@@ -306,7 +307,7 @@ async function main() {
       await fs.writeFile(controlFile, control.source);
       current = { id: 'pager-control', arm: 'current-cli' };
       const begin = ledger.length;
-      const pages = await walk({ path: controlFile, classifiers: [control.goal], minify: 'none', unit: 'lines', length: 10 }, env, fixture);
+      const pages = await walk({ path: controlFile, classifiers: [control.goal], unit: 'lines', length: 10 }, env, fixture);
       results.push({ case: 'pager-control', coverage: coverage(pages, control.source), pages: pages.length,
         scoringCalls: ledger.length - begin, expectedInitialCandidates: chunks(control.source).length,
         continuationDidNotRescore: ledger.length - begin === chunks(control.source).length });

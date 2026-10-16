@@ -81,7 +81,7 @@ fn configured_capabilities_match_the_exact_first_class_extension_set() {
 fn removed_languages_have_no_analysis_minifier_or_builtin_server_route() {
     for ext in ["toml", "lua", "zig"] {
         let file = format!("fixture.{ext}");
-        assert!(crate::signatures::extract_signatures_inner("target(value);", &file).is_none());
+        assert!(crate::signatures::extract_signatures_inner("target(value);", &file).is_err());
         assert!(crate::signatures::extract_graph_facts("target(value);", &file).is_none());
         assert!(
             !crate::signatures::graph_facts::graph_fact_extensions()
@@ -634,6 +634,29 @@ fn selection_names_one_grammar_and_families_span_aliases_and_cpp_headers() {
     {
         assert!(family("cpp").is_some_and(|set| set.contains(&"h".to_owned())));
         assert_eq!(parser_for_path("c++", "a/widget.h"), "cpp");
+        // Every spelling of the C++ grammar resolves to it before a file is
+        // compared: its extensions, with or without the dot, read `.h` as
+        // C++, and a `.cc` selector reads a `.hpp` file. In a directory a
+        // `.ext` selector still picks only that extension.
+        for selector in ["hpp", "cxx", ".hpp", ".cc"] {
+            assert!(super::parses_path(selector, "a/widget.h"), "{selector}");
+            assert!(super::parses_path(selector, "a/widget.hpp"), "{selector}");
+            assert_eq!(parser_for_path(selector, "a/widget.h"), "cpp", "{selector}");
+        }
+        for selector in ["hpp", "cxx"] {
+            assert!(
+                family(selector).is_some_and(
+                    |set| set.contains(&"h".to_owned()) && set.contains(&"hpp".to_owned())
+                ),
+                "{selector}"
+            );
+        }
+        assert_eq!(family(".cc").as_deref(), Some(&["cc".to_owned()][..]));
+        assert_eq!(parser_for_path(".cc", "a/widget.hpp"), "hpp");
+        // C does not also parse C++ files.
+        assert!(family("c").is_some_and(|set| !set.contains(&"hpp".to_owned())));
+        assert!(!super::parses_path("c", "a/widget.hpp"));
+        assert_eq!(parser_for_path("c", "a/widget.h"), "h");
     }
     assert_eq!(parser_for_path("typescript", "a/widget.tsx"), "tsx");
     assert_eq!(parser_for_path("typescript", "a/README"), "typescript");

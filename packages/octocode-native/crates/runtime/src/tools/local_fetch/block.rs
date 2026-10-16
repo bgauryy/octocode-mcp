@@ -5,55 +5,25 @@
 //! clasify locate; a file type without one keeps the requested window.
 
 use super::types::LineRange;
+use crate::tools::declarations_cache::{Declared, all_declarations};
 
 /// Largest declaration a block read returns in one window.
 pub const BLOCK_MAX_LINES: usize = 400;
 
-/// One multi-line declaration of the engine outline, 1-based lines.
-pub(crate) struct Declared {
-    pub(crate) name: String,
-    /// Its name line.
-    pub(crate) line: usize,
-    pub(crate) start: usize,
-    pub(crate) end: usize,
-}
-
 /// The multi-line declarations the engine outlines, in outline order.
 pub(crate) fn declarations(content: &str, path: &str) -> Option<Vec<Declared>> {
-    // Shared with outline pages and search hits: one parse per file version.
-    let raw = crate::tools::declarations_cache::extract(content, path, false, || {
-        octocode_engine::portable::extract_declarations(content, path)
-    })?;
-    let facts: serde_json::Value = serde_json::from_str(&raw).ok()?;
-    let line = |declaration: &serde_json::Value, pointer: &str| {
-        declaration
-            .pointer(pointer)
-            .and_then(serde_json::Value::as_u64)
-            .and_then(|line| usize::try_from(line).ok())
-            .map(|line| line + 1)
-    };
-    let declared: Vec<Declared> = facts["declarations"]
-        .as_array()?
-        .iter()
-        .filter_map(|declaration| {
-            let start = line(declaration, "/range/start/line")?;
-            let end = line(declaration, "/range/end/line")?;
-            // A one-line declaration is not a block to widen to.
-            (end > start).then(|| Declared {
-                name: declaration["name"].as_str().unwrap_or_default().to_owned(),
-                line: line(declaration, "/selectionRange/start/line").unwrap_or(start),
-                start,
-                end,
-            })
-        })
+    let declared: Vec<Declared> = all_declarations(content, path)?
+        .into_iter()
+        // A one-line declaration is not a block to widen to.
+        .filter(|declared| declared.end > declared.start)
         .collect();
     (!declared.is_empty()).then_some(declared)
 }
 
-/// Why the outline may miss a declaration: the parser recovered from syntax
-/// errors (Flow types, a newer syntax), named with the skipped line spans.
-fn recovered_parse(content: &str, path: &str) -> Option<String> {
-    let raw = crate::tools::declarations_cache::extract(content, path, false, || {
+/// The line spans (`"3, 7-9"`) the parser could not parse and recovered
+/// from (Flow types, a newer syntax); `None` after a clean parse.
+fn unparsed_lines(content: &str, path: &str) -> Option<String> {
+    let raw = crate::tools::declarations_cache::extract(content, path, None, || {
         octocode_engine::portable::extract_declarations(content, path)
     })?;
     let facts: serde_json::Value = serde_json::from_str(&raw).ok()?;
@@ -69,27 +39,42 @@ fn recovered_parse(content: &str, path: &str) -> Option<String> {
             }
         })
         .collect::<Vec<_>>();
-    (!spans.is_empty()).then(|| {
+    (!spans.is_empty()).then(|| spans.join(", "))
+}
+
+/// Why a block may miss its enclosing declaration: the parser recovered
+/// from syntax errors, named with the skipped line spans.
+fn recovered_parse(content: &str, path: &str) -> Option<String> {
+    unparsed_lines(content, path).map(|lines| {
         format!(
-            " The parser could not parse lines {} of this file (syntax its grammar lacks, e.g. Flow types) and recovered, so the outline may miss the enclosing declaration.",
-            spans.join(", ")
+            " The parser could not parse lines {lines} of this file (syntax its grammar lacks, e.g. Flow types) and recovered, so the outline may miss the enclosing declaration."
+        )
+    })
+}
+
+/// Why a symbols outline may miss declarations: the same recovered parse
+/// a block read names.
+pub(super) fn outline_recovery_warning(content: &str, path: &str) -> Option<String> {
+    unparsed_lines(content, path).map(|lines| {
+        format!(
+            "The parser could not parse lines {lines} of this file (syntax its grammar lacks, e.g. Flow types) and recovered, so this outline may miss declarations there."
         )
     })
 }
 
 /// 1-based inclusive spans of the multi-line declarations the engine outlines.
-pub(crate) fn declaration_spans(content: &str, path: &str) -> Option<Vec<(usize, usize)>> {
+fn declaration_spans(content: &str, path: &str) -> Option<Vec<(usize, usize)>> {
     declarations(content, path).map(|declared| declared.iter().map(|d| (d.start, d.end)).collect())
 }
 
 /// Whether a source line is part of the doc comment or attribute run that
-/// leads a declaration (`///`, `//`, `/*`, `*`, `#[`, `# `, `@`, `--`).
-fn leads_declaration(line: &str) -> bool {
+/// leads a declaration: a comment in the comment syntax of the file's
+/// grammar, an attribute (`#[…]`) or a decorator (`@…`).
+fn leads_declaration(path: &str, line: &str) -> bool {
     let line = line.trim_start();
-    ["//", "/*", "*", "#[", "# ", "@", "--"]
-        .iter()
-        .any(|prefix| line.starts_with(prefix))
-        || line.trim_end() == "#"
+    line.starts_with("#[")
+        || line.starts_with('@')
+        || octocode_engine::signatures::is_comment_line(path, line).unwrap_or(false)
 }
 
 /// Declaration spans for a block read: each widened up over the doc
@@ -118,7 +103,7 @@ fn with_docs(lines: &[&str], path: &str, (start, end): (usize, usize)) -> (usize
     while first > 1
         && lines
             .get(first - 2)
-            .is_some_and(|line| leads_declaration(line))
+            .is_some_and(|line| leads_declaration(path, line))
     {
         first -= 1;
     }
@@ -317,6 +302,37 @@ mod tests {
         let note = recovered_parse(flow, "Hooks.js").expect("Flow types force a recovered parse");
         assert!(note.contains("could not parse lines"), "{note}");
         assert!(recovered_parse(PY, "m.py").is_none());
+        let warning = outline_recovery_warning(flow, "Hooks.js").expect("outline warning");
+        assert!(
+            warning.starts_with("The parser could not parse lines"),
+            "{warning}"
+        );
+        assert!(outline_recovery_warning(PY, "m.py").is_none());
+    }
+
+    /// The lines a block widens up over are comments in the file's own
+    /// grammar, attributes and decorators: a Python `#` comment leads its
+    /// def, a Rust line that merely starts with `--` does not lead its fn.
+    #[test]
+    fn widening_follows_the_files_comment_syntax() {
+        let py = "x = 1\n# Adds.\n@cache\ndef add(a, b):\n    s = a + b\n    return s\n";
+        let widened = widen_ranges(
+            py,
+            "m.py",
+            vec![LineRange { start: 5, end: 5 }],
+            &mut vec![],
+            &mut vec![],
+        );
+        assert_eq!(widened, vec![LineRange { start: 2, end: 6 }]);
+        let rs = "const S: &str = \"a\n-- b\";\n#[inline]\nfn f() -> u8 {\n    1\n}\n";
+        let widened = widen_ranges(
+            rs,
+            "lib.rs",
+            vec![LineRange { start: 5, end: 5 }],
+            &mut vec![],
+            &mut vec![],
+        );
+        assert_eq!(widened, vec![LineRange { start: 3, end: 6 }]);
     }
 
     #[test]

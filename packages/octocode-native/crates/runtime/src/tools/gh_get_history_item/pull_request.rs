@@ -1,6 +1,6 @@
 //! `operation: "pullRequest"`: concurrent collection loads (GraphQL first page
 //! or REST windows), metadata row, and assembly of the shaped sections.
-use super::filter::{FileFilter, InventoryFilter};
+use super::filter::{FileFilter, FileScope};
 use super::graphql::{
     GraphqlCollection, GraphqlOutcome, GraphqlPr, graphql_complete_collection_eligible,
     graphql_pull_request, map_graphql_comments, map_graphql_commits, map_graphql_files,
@@ -12,54 +12,17 @@ use super::pr_finish::{finish_pr, pr_metadata, slim_row};
 use super::pr_menu::{INVENTORY_ALL_PATCHES_FILES, pr_next_menu};
 use super::pr_sections::{CommentSection, shape_pr_comments, shape_pr_commits, shape_pr_reviews};
 use super::rest::{BodyWindows, Rest};
-use super::text::{body_matches, history_body_view, needle, paginate_text, view_dropped_text};
-use super::util::{content_flag, map_comments, str_at};
+use super::text::{body_matches, needle, paginate_text};
+use super::util::{map_comments, str_at};
 use super::window::{
     Loaded, MAX_COLLECTION_BATCHES, MAX_FILE_BATCHES, MAX_PR_COMMIT_BATCHES, WindowSpec,
     load_window, reconcile_collection_total, reconcile_file_totals,
 };
-use super::{HistoryItemRequest, fetch, validation};
+use super::{HistoryItemRequest, Section, Sections, fetch, validation};
 use crate::contracts::tool_types::ExtraKind;
 use crate::tools::result::ToolData;
 use octocode_github::{GitHubTransport, ProviderError, ProviderErrorKind, RequestContext};
 use serde_json::{Map, Value, json};
-
-/// The content sections a pull-request query asks for.
-pub(super) struct ContentWants {
-    pub(super) body: bool,
-    pub(super) files: bool,
-    pub(super) discussion: bool,
-    inline: bool,
-    pub(super) reviews: bool,
-    pub(super) commits: bool,
-    pub(super) patch_mode: String,
-}
-
-pub(super) fn content_wants(query: &HistoryItemRequest) -> ContentWants {
-    let content_value = query.content_value();
-    let content = content_value.as_ref().and_then(Value::as_object);
-    let patch_mode = content
-        .and_then(|c| c.get("patches"))
-        .and_then(|p| p.get("mode"))
-        .and_then(Value::as_str)
-        .unwrap_or("none")
-        .to_owned();
-    let comments_selector = content
-        .and_then(|c| c.get("comments"))
-        .and_then(Value::as_object);
-    ContentWants {
-        body: content_flag(content, "body"),
-        files: content_flag(content, "files") || patch_mode != "none",
-        discussion: content_flag(comments_selector, "discussion"),
-        inline: content_flag(comments_selector, "reviewInline"),
-        reviews: content_flag(content, "reviews"),
-        commits: content
-            .and_then(|c| c.get("commits"))
-            .and_then(Value::as_object)
-            .is_some(),
-        patch_mode,
-    }
-}
 
 /// One PR collection: the whole list when GraphQL returned it complete,
 /// otherwise the REST window covering the requested public page.
@@ -88,12 +51,70 @@ pub(super) async fn pull_request(
     query: &HistoryItemRequest,
     context: &RequestContext,
 ) -> Result<ToolData, ProviderError> {
-    let wants = content_wants(query);
+    let wants = query.sections();
     let (graphql, graphql_fallback) = fast_path(transport, query, context, &wants).await?;
     let plan = PrPlan::new(query)?;
     let loads = load_pr(transport, query, context, &wants, &plan, graphql.as_ref()).await?;
+    let head = str_at(&loads.raw, "/head/sha").map(str::to_owned);
+    // A pin names the head by its SHA or an abbreviation of it.
+    if let Some(pinned) = query.query.head_sha()
+        && !head.as_deref().is_some_and(|head| head.starts_with(pinned))
+    {
+        // The head moved since the first page: nothing shown stays valid.
+        return Ok(ToolData::from(crate::tools::result::stale_snapshot(
+            crate::tools::result::restart_query(
+                crate::tools::id::ToolId::GhGetHistoryItem,
+                &crate::tools::result::query_row(&query.query, &[]),
+            ),
+        )));
+    }
     let shaped = shape_pr(transport, query, context, &wants, &plan, loads).await?;
-    Ok(finish_pr(query, &wants, &plan, shaped, graphql_fallback))
+    let mut data = finish_pr(query, &wants, &plan, shaped, graphql_fallback);
+    if let (Some(head), Some(number)) = (head, query.number()) {
+        pin_head_pages(&mut data.data, &head, number);
+    }
+    Ok(data)
+}
+
+/// Pins every page of this pull request (`next.*` of the row and of its
+/// commits) to the head this read saw: a later page of a moved head is a
+/// stale snapshot with `next.restart`, never a mix of two heads. Leads,
+/// enrichments and the restart itself stay unpinned.
+fn pin_head_pages(value: &mut Value, head: &str, number: u64) {
+    match value {
+        Value::Object(object) => {
+            if let Some(Value::Object(next)) = object.get_mut("next") {
+                let tool = crate::tools::id::ToolId::GhGetHistoryItem;
+                for (name, page) in next.iter_mut() {
+                    if !crate::tools::id::is_remaining(tool, name) || page["tool"] != tool.as_str()
+                    {
+                        continue;
+                    }
+                    let rows = page
+                        .pointer_mut("/query/queries")
+                        .and_then(Value::as_array_mut)
+                        .into_iter()
+                        .flatten();
+                    for row in rows {
+                        if row["operation"] == "pullRequest" && row["number"] == number {
+                            row["headSha"] = json!(head);
+                        }
+                    }
+                }
+            }
+            for (key, child) in object.iter_mut() {
+                if key != "next" && key != "hints" {
+                    pin_head_pages(child, head, number);
+                }
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                pin_head_pages(item, head, number);
+            }
+        }
+        _ => {}
+    }
 }
 
 /// The GraphQL fast path. REST serves whatever GraphQL could not; a failed
@@ -102,7 +123,7 @@ async fn fast_path(
     transport: &GitHubTransport,
     query: &HistoryItemRequest,
     context: &RequestContext,
-    wants: &ContentWants,
+    wants: &Sections,
 ) -> Result<(Option<GraphqlPr>, Option<String>), ProviderError> {
     if !graphql_complete_collection_eligible(query) {
         return Ok((None, None));
@@ -123,13 +144,11 @@ async fn fast_path(
     }
 }
 
-/// What a pull-request read selects: the content selector, the patch
-/// selection, the literal and the file scope.
+/// What a pull-request read selects: the literal and the file scope.
 pub(super) struct PrPlan {
     number: String,
-    content: Option<Value>,
     pub(super) needle: Option<String>,
-    pub(super) scope: Option<InventoryFilter>,
+    pub(super) scope: Option<FileScope>,
 }
 
 impl PrPlan {
@@ -138,17 +157,12 @@ impl PrPlan {
             .number()
             .ok_or_else(|| validation("number is required"))?
             .to_string();
-        let content = query.content_value();
-        let scope = InventoryFilter::from_query(query).map_err(|message| validation(&message))?;
+        let scope = FileScope::from_query(query).map_err(|message| validation(&message))?;
         Ok(Self {
             number,
-            content,
             needle: needle(query),
             scope,
         })
-    }
-    fn content(&self) -> Option<&Map<String, Value>> {
-        self.content.as_ref().and_then(Value::as_object)
     }
     fn file_filter(&self) -> FileFilter<'_> {
         FileFilter {
@@ -199,24 +213,27 @@ async fn first_requests(
 
 /// The PR fetched before its collections, beside its first file batch, when
 /// they need its counts: a selected or match-filtered file scan cannot jump
-/// to a batch by index, nor can a later comment page that filters bots; with
-/// the PR's counts in hand they read every batch at once. When the first
-/// file batch is the whole list (most PRs), a filtered read costs one round
-/// trip.
+/// to a batch by index, nor can a later comment page that `matchString`
+/// filters; with the PR's counts in hand they read every batch at once.
+/// When the first file batch is the whole list (most PRs), a filtered read
+/// costs one round trip.
 async fn prefetch(
     transport: &GitHubTransport,
     query: &HistoryItemRequest,
     context: &RequestContext,
-    wants: &ContentWants,
+    wants: &Sections,
     plan: &PrPlan,
     graphql: Option<&GraphqlPr>,
 ) -> Result<(Option<Value>, Option<Vec<Value>>), ProviderError> {
     if graphql.is_some() {
         return Ok((None, None));
     }
-    let filtered_files = wants.files && !plan.file_filter().is_trivial();
-    let later_comments =
-        (wants.discussion || wants.inline) && query.page().is_some_and(|page| page > 1);
+    let filtered_files = wants.lists_files() && !plan.file_filter().is_trivial();
+    // Only a `matchString` filters comments; an unfiltered later page jumps
+    // straight to its provider batch.
+    let later_comments = (wants.has(Section::Comments) || wants.has(Section::ReviewComments))
+        && plan.needle.is_some()
+        && query.page().is_some_and(|page| page > 1);
     let pulls = [
         "repos",
         query.owner(),
@@ -256,7 +273,7 @@ async fn load_pr(
     transport: &GitHubTransport,
     query: &HistoryItemRequest,
     context: &RequestContext,
-    wants: &ContentWants,
+    wants: &Sections,
     plan: &PrPlan,
     graphql: Option<&GraphqlPr>,
 ) -> Result<PrLoads, ProviderError> {
@@ -290,12 +307,12 @@ async fn load_pr(
         load_raw(transport, context, &pulls, graphql, raw_first.clone()),
         load_collection(
             transport,
-            wants.files,
+            wants.lists_files(),
             complete(|g| g.files, map_graphql_files).or(first_file_batch),
             &files_path,
             WindowSpec {
                 provider_total: provider_count("changed_files"),
-                page_size: file_page_size(query, wants.patch_mode != "none"),
+                page_size: file_page_size(query, wants.has(Section::Patches)),
                 ..spec(MAX_FILE_BATCHES, query.page(), !file_filter.is_trivial())
             },
             |value| file_filter.matches(value),
@@ -303,31 +320,31 @@ async fn load_pr(
         ),
         load_collection(
             transport,
-            wants.discussion,
+            wants.has(Section::Comments),
             complete(|g| g.discussion, map_graphql_comments),
             &discussion_path,
             WindowSpec {
                 provider_total: provider_count("comments"),
-                ..spec(MAX_COLLECTION_BATCHES, query.page(), true)
+                ..spec(MAX_COLLECTION_BATCHES, query.page(), needle.is_some())
             },
             comment_filter,
             context,
         ),
         load_collection(
             transport,
-            wants.inline,
+            wants.has(Section::ReviewComments),
             None,
             &inline_path,
             WindowSpec {
                 provider_total: provider_count("review_comments"),
-                ..spec(MAX_COLLECTION_BATCHES, query.page(), true)
+                ..spec(MAX_COLLECTION_BATCHES, query.page(), needle.is_some())
             },
             comment_filter,
             context,
         ),
         load_collection(
             transport,
-            wants.reviews,
+            wants.has(Section::Reviews),
             complete(|g| g.reviews, map_graphql_reviews),
             &reviews_path,
             spec(MAX_COLLECTION_BATCHES, query.page(), needle.is_some()),
@@ -336,7 +353,7 @@ async fn load_pr(
         ),
         load_collection(
             transport,
-            wants.commits,
+            wants.lists_commits(),
             complete(|g| g.commits, map_graphql_commits),
             &commits_path,
             spec(MAX_PR_COMMIT_BATCHES, query.page(), false),
@@ -365,6 +382,10 @@ pub(super) struct FileOutcome {
     /// `(dropped, listed)` changed files of the `matchString` filter.
     pub(super) match_dropped: Option<(usize, usize)>,
     pub(super) scope_unmatched: bool,
+    /// Changed files the read's `include`/`status`/`minChanges` scope
+    /// kept (every listed file without one), when the scope or literal
+    /// matched nothing.
+    pub(super) in_scope: usize,
     pub(super) merge_read: Option<Value>,
     /// `readAtCommit`/`readParent`: the top file at the head (when no merge
     /// read covers it) and at the base.
@@ -381,7 +402,7 @@ fn shape_files_section(
     loaded: Loaded,
     raw: &Value,
     query: &HistoryItemRequest,
-    wants: &ContentWants,
+    wants: &Sections,
     plan: &PrPlan,
 ) -> FileOutcome {
     let file_filter = plan.file_filter();
@@ -400,7 +421,7 @@ fn shape_files_section(
     // numbers match while the base has not moved past the diff's merge base.
     // A file GitHub sent without a patch comes first: no merge read covers
     // it, so its head read stays.
-    let side_reads = if query.later_page() || wants.patch_mode == "none" {
+    let side_reads = if query.later_page() || !wants.has(Section::Patches) {
         Vec::new()
     } else {
         let unpatched =
@@ -425,13 +446,22 @@ fn shape_files_section(
         && state.exhausted
         && query.page().unwrap_or(1) == 1
         && !loaded.items.iter().any(|file| file_filter.matches(file));
+    let in_scope = if scope_unmatched {
+        loaded
+            .items
+            .iter()
+            .filter(|file| plan.scope.as_ref().is_none_or(|scope| scope.matches(file)))
+            .count()
+    } else {
+        0
+    };
     let shaped = shape_pr_files(
         row,
         pagination,
         loaded.items,
         state,
         query,
-        &wants.patch_mode,
+        wants.has(Section::Patches),
         plan.scope.as_ref(),
     );
     if let Some(page) = pagination.get_mut("files") {
@@ -457,6 +487,7 @@ fn shape_files_section(
         }),
         match_dropped: shaped.match_dropped,
         scope_unmatched,
+        in_scope,
         merge_read,
         side_reads,
         clipped: shaped.clipped,
@@ -483,14 +514,25 @@ async fn head_sources(
     let sha = str_at(raw, "/head/sha").filter(|sha| !sha.is_empty())?;
     let lines = match_context(query);
     let filter = plan.file_filter();
-    let paths: Vec<&str> = loaded
+    // The files this page shows (the loaded window holds the pages around
+    // it): a later page widens its own hits, never the first page's again.
+    let kept = loaded
         .items
         .iter()
-        .filter(|file| filter.matches(file) && str_at(file, "/status") != Some("removed"))
+        .filter(|file| filter.matches(file))
+        .cloned()
+        .collect::<Vec<_>>();
+    let (page_files, _) =
+        loaded
+            .state
+            .paginate(kept, query.page(), Some(file_page_size(query, true)));
+    let paths: Vec<String> = page_files
+        .iter()
+        .filter(|file| str_at(file, "/status") != Some("removed"))
         .filter(|file| {
             str_at(file, "/patch").is_some_and(|patch| head_text_needed(patch, &needle, lines))
         })
-        .filter_map(|file| str_at(file, "/filename"))
+        .filter_map(|file| str_at(file, "/filename").map(str::to_owned))
         .take(MAX_HEAD_SOURCES)
         .collect();
     if paths.is_empty() {
@@ -503,7 +545,7 @@ async fn head_sources(
             .await
             .ok()
             .and_then(|(value, _)| decode_contents(&value));
-        ((*path).to_owned(), text)
+        (path.clone(), text)
     });
     let mut sources = HeadSources::default();
     for (path, text) in futures_util::future::join_all(reads).await {
@@ -538,18 +580,18 @@ fn decode_contents(value: &Value) -> Option<String> {
 /// and keeps only its continuations.
 fn read_menu(
     query: &HistoryItemRequest,
-    plan: &PrPlan,
-    patch_mode: &str,
     review: &[String],
     raw: &Value,
     slim: bool,
     file_read: bool,
 ) -> Option<Value> {
     if !slim {
-        return Some(pr_next_menu(query, plan.content(), patch_mode, review, raw));
+        return Some(pr_next_menu(query, review, raw));
     }
-    let first_inventory =
-        file_read && patch_mode == "none" && !query.later_page() && !query.has_file_filter();
+    let first_inventory = file_read
+        && !query.sections().has(Section::Patches)
+        && !query.later_page()
+        && !query.has_file_filter();
     if !first_inventory {
         return None;
     }
@@ -557,7 +599,7 @@ fn read_menu(
         .get("changed_files")
         .and_then(Value::as_u64)
         .is_some_and(|files| files <= INVENTORY_ALL_PATCHES_FILES);
-    let mut next = pr_next_menu(query, plan.content(), patch_mode, review, raw);
+    let mut next = pr_next_menu(query, review, raw);
     if let Some(menu) = next.as_object_mut() {
         menu.retain(|name, _| {
             name == "readSelectedPatches" || (all_patches && name == "readPatches")
@@ -570,20 +612,20 @@ fn read_menu(
 pub(super) struct ShapedPr {
     pub(super) row: Value,
     pub(super) files: FileOutcome,
-    /// Surfaces whose minified view dropped text (`next.readRawBody`).
-    pub(super) minified: Vec<&'static str>,
     pub(super) menu: Option<Value>,
     /// The code the page's anchored review comments discuss, ten ranges a read.
     pub(super) comment_reads: Vec<Value>,
     /// What the row's pages leave to read beside its public pages.
     pub(super) rest: Rest,
+    /// Each listed commit's next file page (`continueCommitFiles…`).
+    pub(super) commit_file_pages: Vec<(String, Value)>,
 }
 
 async fn shape_pr(
     transport: &GitHubTransport,
     query: &HistoryItemRequest,
     context: &RequestContext,
-    wants: &ContentWants,
+    wants: &Sections,
     plan: &PrPlan,
     loads: PrLoads,
 ) -> Result<ShapedPr, ProviderError> {
@@ -595,7 +637,7 @@ async fn shape_pr(
         reviews,
         commits,
     } = loads;
-    let patch_mode = wants.patch_mode.as_str();
+    let patches = wants.has(Section::Patches);
     let slim = (query.later_page() || query.has_sections()) && !query.wants(ExtraKind::Details);
     let mut row = pr_metadata(&raw, query);
     if slim {
@@ -603,13 +645,12 @@ async fn shape_pr(
     }
     let mut pagination = Map::new();
     let mut rest = Rest::default();
-    let mut minified = Vec::new();
-    if wants.body && shape_body(&mut row, &mut pagination, &raw, query) {
-        minified.push("body");
+    if wants.has(Section::Body) {
+        shape_body(&mut row, &mut pagination, &raw, query);
     }
     let widened;
     let query = match &files {
-        Some(loaded) if patch_mode != "none" => {
+        Some(loaded) if patches => {
             match head_sources(transport, query, context, &raw, loaded, plan).await {
                 Some(sources) => {
                     widened = HistoryItemRequest {
@@ -627,7 +668,7 @@ async fn shape_pr(
         shape_files_section(&mut row, &mut pagination, loaded, &raw, query, wants, plan)
     });
     rest.unfinished_patches(file_outcome.unfinished_patches);
-    let (comment_reads, comments_dropped) = shape_comment_sections(
+    let comment_reads = shape_comment_sections(
         &mut row,
         &mut pagination,
         &mut rest,
@@ -635,30 +676,23 @@ async fn shape_pr(
         discussion,
         query,
     );
-    if comments_dropped {
-        minified.push("comments");
-    }
     let mut review_bodies = BodyWindows::default();
-    if let Some(loaded) = reviews
-        && shape_pr_reviews(
+    if let Some(loaded) = reviews {
+        shape_pr_reviews(
             &mut row,
             &mut pagination,
             loaded.items,
             loaded.state,
             query,
             &mut review_bodies,
-        )
-    {
-        minified.push("reviews");
+        );
     }
     rest.bodies("reviewBody", review_bodies, &mut pagination);
-    if !minified.is_empty() {
-        row["bodyView"] = json!("minified");
-    }
+    let mut commit_file_pages = Vec::new();
     if let Some(loaded) = commits {
         let listed = loaded.state.skipped.saturating_add(loaded.items.len());
         let state = loaded.state;
-        shape_pr_commits(
+        commit_file_pages = shape_pr_commits(
             transport,
             &mut row,
             &mut pagination,
@@ -680,16 +714,8 @@ async fn shape_pr(
             row["commitsCount"] = raw["commits"].clone();
         }
     }
-    let menu = read_menu(
-        query,
-        plan,
-        patch_mode,
-        &file_outcome.review,
-        &raw,
-        slim,
-        wants.files,
-    );
-    if slim && patch_mode != "none" {
+    let menu = read_menu(query, &file_outcome.review, &raw, slim, wants.lists_files());
+    if slim && patches {
         drop_named_header(&mut row);
     }
     if !pagination.is_empty() {
@@ -698,27 +724,24 @@ async fn shape_pr(
     Ok(ShapedPr {
         row,
         files: file_outcome,
-        minified,
         menu,
         comment_reads,
         rest,
+        commit_file_pages,
     })
 }
 
-/// The body's text window on `row` and its page; true when the minified
-/// view dropped text.
+/// The body's verbatim text window on `row` and its page.
 fn shape_body(
     row: &mut Value,
     pagination: &mut Map<String, Value>,
     raw: &Value,
     query: &HistoryItemRequest,
-) -> bool {
-    let raw_body = raw.get("body").and_then(Value::as_str).unwrap_or("");
-    let body = history_body_view(raw_body, query);
-    let (text, page) = paginate_text(&body, query.char_offset(), query.char_length());
+) {
+    let body = raw.get("body").and_then(Value::as_str).unwrap_or("");
+    let (text, page) = paginate_text(body, query.char_offset(), query.char_length());
     row["body"] = json!(text);
     pagination.insert("body".into(), page);
-    view_dropped_text(raw_body, &body)
 }
 
 /// Patch rows are the evidence of a section patch read: it re-proves only
@@ -740,8 +763,7 @@ fn drop_named_header(row: &mut Value) {
 
 /// The inline review comments (`reviewComments`) and the discussion
 /// (`comments`), each one page of its own axis; their cut bodies share the
-/// one `commentBody` window. Returns the review comments' code reads and
-/// whether a minified view dropped text from any comment.
+/// one `commentBody` window. Returns the review comments' code reads.
 fn shape_comment_sections(
     row: &mut Value,
     pagination: &mut Map<String, Value>,
@@ -749,16 +771,15 @@ fn shape_comment_sections(
     inline: Option<Loaded>,
     discussion: Option<Loaded>,
     query: &HistoryItemRequest,
-) -> (Vec<Value>, bool) {
+) -> Vec<Value> {
     let mut bodies = BodyWindows::default();
     let mut reads = Vec::new();
-    let mut dropped = false;
     for (section, loaded) in [
         (CommentSection::ReviewInline, inline),
         (CommentSection::Discussion, discussion),
     ] {
         let Some(loaded) = loaded else { continue };
-        let shape = shape_pr_comments(
+        reads.extend(shape_pr_comments(
             row,
             pagination,
             section,
@@ -766,10 +787,8 @@ fn shape_comment_sections(
             loaded.state,
             query,
             &mut bodies,
-        );
-        dropped |= shape.dropped;
-        reads.extend(shape.code_reads);
+        ));
     }
     rest.bodies("commentBody", bodies, pagination);
-    (reads, dropped)
+    reads
 }

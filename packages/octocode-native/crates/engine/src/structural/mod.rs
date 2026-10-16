@@ -22,7 +22,7 @@ pub use files::rewrite_files;
 pub use files::search_files;
 #[cfg(test)]
 use files::search_files_detailed;
-pub use octo::{EXAMPLE_RULE, RULE_INVALID};
+pub use octo::{EXAMPLE_RULE, PatternDeclaration, RULE_INVALID};
 #[cfg(test)]
 use rewrite::rewrite;
 pub use rewrite::{
@@ -84,6 +84,15 @@ pub(crate) fn search(
         .into_iter()
         .map(|m| m.matched)
         .collect())
+}
+
+/// The declaration a structural `pattern` spells in the grammar of `ext`
+/// (a node the grammar names by a `name` field: a function, a type, a
+/// method), with its name unless that is a metavariable; `None` for any other
+/// pattern, an unknown grammar, or a pattern that does not compile.
+pub fn pattern_declaration(pattern: &str, ext: &str) -> Option<PatternDeclaration> {
+    let entry = languages::find_entry(ext)?;
+    octo::pattern_declaration(&AgLanguage::new(ext, entry), pattern)
 }
 
 /// A single-content result that ends before any match: `status` with one

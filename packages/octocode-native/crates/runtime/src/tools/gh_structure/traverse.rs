@@ -86,8 +86,41 @@ pub(super) async fn traverse<C: octocode_github::ConditionalCache>(
             DeepTree::Truncated => split = true,
             DeepTree::Unavailable => {}
         }
+    } else if let Some(level) = level_tree(provider, listing, context).await? {
+        return Ok(traversal_from_git_tree(level, listing));
     }
     walk_contents(provider, listing, split, context).await
+}
+
+/// A one-level listing from the root's own git tree (`<commit>:<root>`,
+/// not recursive): it types a symlink by its mode, as the deeper tree reads
+/// do, where a Contents listing types it `file`, and it is not capped at
+/// 1,000 entries. `None` (a missing path, a file, an unavailable tree)
+/// leaves the listing to the Contents walk, which names what the root is.
+async fn level_tree<C: octocode_github::ConditionalCache>(
+    provider: &GitHubProvider<C>,
+    listing: &Listing<'_>,
+    context: &RequestContext,
+) -> Result<Option<octocode_github::TreeResponse>, ProviderError> {
+    let reference = if listing.root.is_empty() {
+        listing.branch.to_owned()
+    } else {
+        format!("{}:{}", listing.branch, listing.root)
+    };
+    let resource = format!(
+        "{}:{reference}",
+        repo_key("git-tree-level", listing.owner, listing.repo)
+    );
+    let Some(mut tree) = read_tree(provider, listing, resource, &reference, false, context).await?
+    else {
+        return Ok(None);
+    };
+    if !listing.root.is_empty() {
+        for entry in &mut tree.tree {
+            entry.path = format!("{}/{}", listing.root, entry.path);
+        }
+    }
+    Ok(Some(tree))
 }
 
 /// What one recursive git tree read answered.
@@ -110,7 +143,7 @@ pub(super) async fn recursive_tree<C: octocode_github::ConditionalCache>(
         repo,
         branch,
         root,
-        max_depth,
+        ..
     } = *listing;
     let resource = format!("{}:{branch}", repo_key("git-tree", owner, repo));
     if let Ok(partition) = provider.transport.cache_partition(context, None)
@@ -118,9 +151,7 @@ pub(super) async fn recursive_tree<C: octocode_github::ConditionalCache>(
         && let Ok(tree) = serde_json::from_slice::<octocode_github::TreeResponse>(&cached.bytes)
     {
         root_is_directory(&tree, root)?;
-        return Ok(DeepTree::Read(traversal_from_git_tree(
-            tree, root, max_depth,
-        )));
+        return Ok(DeepTree::Read(traversal_from_git_tree(tree, listing)));
     }
     match provider
         .transport
@@ -138,9 +169,7 @@ pub(super) async fn recursive_tree<C: octocode_github::ConditionalCache>(
         Ok(tree) if !tree.truncated => {
             root_is_directory(&tree, root)?;
             cache_tree(provider, context, resource, branch, &tree).await;
-            Ok(DeepTree::Read(traversal_from_git_tree(
-                tree, root, max_depth,
-            )))
+            Ok(DeepTree::Read(traversal_from_git_tree(tree, listing)))
         }
         Ok(_) => Ok(DeepTree::Truncated),
         Err(error) if access_failure(&error) => Err(error),
@@ -163,152 +192,182 @@ async fn subtree<C: octocode_github::ConditionalCache>(
         "{}:{sha}",
         repo_key("git-tree", listing.owner, listing.repo)
     );
-    let cached = match provider.transport.cache_partition(context, None) {
-        Ok(partition) => provider.cache.get(&partition, &resource).await,
-        Err(_) => None,
+    let Some(mut tree) = read_tree(provider, listing, resource, sha, true, context).await? else {
+        return Ok(None);
     };
-    let tree = match cached.and_then(|cached| {
-        serde_json::from_slice::<octocode_github::TreeResponse>(&cached.bytes).ok()
-    }) {
-        Some(tree) => tree,
-        None => match provider
-            .transport
-            .get_tree(
-                &TreeRequest {
-                    owner: listing.owner.into(),
-                    repo: listing.repo.into(),
-                    reference: sha.into(),
-                    recursive: true,
-                },
-                context,
-            )
-            .await
-        {
-            Ok(tree) if !tree.truncated => {
-                cache_tree(provider, context, resource, sha, &tree).await;
-                tree
-            }
-            Ok(_) => return Ok(None),
-            Err(error) if access_failure(&error) => return Err(error),
-            Err(_) => return Ok(None),
-        },
-    };
-    let mut tree = tree;
     for entry in &mut tree.tree {
         entry.path = format!("{dir}/{}", entry.path);
     }
     Ok(Some(tree))
 }
 
+/// One untruncated git tree of the listed repository at `reference` (a
+/// commit or tree SHA, or `<commit>:<path>`: immutable either way), cached
+/// under `resource`; `None` when it is truncated or unreadable. Access
+/// failures propagate.
+async fn read_tree<C: octocode_github::ConditionalCache>(
+    provider: &GitHubProvider<C>,
+    listing: &Listing<'_>,
+    resource: String,
+    reference: &str,
+    recursive: bool,
+    context: &RequestContext,
+) -> Result<Option<octocode_github::TreeResponse>, ProviderError> {
+    if let Ok(partition) = provider.transport.cache_partition(context, None)
+        && let Some(cached) = provider.cache.get(&partition, &resource).await
+        && let Ok(tree) = serde_json::from_slice(&cached.bytes)
+    {
+        return Ok(Some(tree));
+    }
+    match provider
+        .transport
+        .get_tree(
+            &TreeRequest {
+                owner: listing.owner.into(),
+                repo: listing.repo.into(),
+                reference: reference.into(),
+                recursive,
+            },
+            context,
+        )
+        .await
+    {
+        Ok(tree) if !tree.truncated => {
+            cache_tree(provider, context, resource, listing.branch, &tree).await;
+            Ok(Some(tree))
+        }
+        Ok(_) => Ok(None),
+        Err(error) if access_failure(&error) => Err(error),
+        Err(_) => Ok(None),
+    }
+}
+
 /// The Contents API walk, one directory read per folder up to
-/// [`MAX_DIRECTORY_FETCHES`]; a complete walk is reused for the cache TTL.
-/// After a truncated recursive tree (`split`), a folder with more than one
-/// level left to list is read whole from its own recursive subtree, so a
-/// large repository costs one read per subtree instead of per folder.
+/// [`MAX_DIRECTORY_FETCHES`], level by level with up to
+/// [`READ_CONCURRENCY`] reads in flight; a complete walk is reused for the
+/// cache TTL. After a truncated recursive tree (`split`), a folder with more
+/// than one level left to list is read whole from its own recursive subtree,
+/// so a large repository costs one read per subtree instead of per folder.
 pub(super) async fn walk_contents<C: octocode_github::ConditionalCache>(
     provider: &GitHubProvider<C>,
     listing: &Listing<'_>,
     split: bool,
     context: &RequestContext,
 ) -> Result<Traversal, ProviderError> {
+    use futures_util::StreamExt as _;
     let at = *listing;
-    let Listing {
-        owner,
-        repo,
-        branch,
-        root,
-        max_depth,
-    } = *listing;
     // Every tree page re-runs the walk; reuse a complete one for the cache TTL.
     let memo = WalkMemo::of(provider, &at, context);
     if let Some(walk) = memo.get(provider).await {
         return Ok(walk);
     }
     let mut traversal = Traversal::default();
-    // Each pending directory: path, depth, whether it is the requested
-    // root, and its tree SHA when its parent listing named it.
-    let mut pending = vec![(root.to_owned(), 1usize, true, None::<String>)];
+    // The directories of the next level: path and its tree SHA when its
+    // parent listing named it. The first level is the requested root.
+    let mut level = vec![(at.root.to_owned(), None::<String>)];
     let mut visited = HashSet::new();
     let mut fetches = 0usize;
-    while let Some((path, depth, required, sha)) = pending.pop() {
-        if !visited.insert(path.clone()) {
-            continue;
-        }
-        if fetches >= MAX_DIRECTORY_FETCHES {
+    let mut depth = 1usize;
+    while !level.is_empty() {
+        level.retain(|(path, _)| visited.insert(path.clone()));
+        let budget = MAX_DIRECTORY_FETCHES.saturating_sub(fetches);
+        if level.len() > budget {
             traversal.fetch_limit = true;
-            break;
+            level.truncate(budget);
         }
-        fetches += 1;
-        let mut listing = match provider
-            .repository_contents(owner, repo, &path, branch, context)
-            .await
-        {
-            Ok(listing) => listing,
-            Err(error) if !required && !access_failure(&error) => {
-                traversal.failed_subtrees += 1;
-                continue;
-            }
-            Err(error) => return Err(error),
-        };
-        // The Contents API answers a file path with a single object whose
-        // path is the requested path itself; a tree cannot list a file.
-        if required
-            && !path.is_empty()
-            && let [entry] = listing.entries.as_slice()
-            && entry.path == path
-            && entry.kind != "dir"
-        {
-            return Err(not_a_directory(&path, &entry.kind));
-        }
-        // The Contents API lists 1,000 entries of a directory at most; its
-        // git tree lists them all.
-        if listing.raw_entry_count >= CONTENTS_LIMIT {
-            let whole = if fetches < MAX_DIRECTORY_FETCHES {
-                fetches += 1;
-                whole_directory(provider, &at, &path, sha.as_deref(), context).await?
-            } else {
-                None
-            };
-            match whole {
-                Some(entries) => listing.entries = entries,
-                None => traversal.contents_limit = true,
-            }
-        }
-        for entry in listing.entries {
-            let Some(kind) = entry_kind(&entry) else {
-                note_unlisted(&mut traversal, &entry.name, unlisted_kind(&entry));
-                continue;
-            };
-            if ignored_entry(&entry.name, kind) {
-                *traversal.omitted.entry(entry.name.clone()).or_default() += 1;
-                continue;
-            }
-            let child_path = entry.path.clone();
-            traversal.entries.push(TreeEntry {
-                path: child_path.clone(),
-                kind,
-                size: entry.size,
-            });
-            if kind != EntryKind::Dir || depth >= max_depth {
-                continue;
-            }
-            if split
-                && max_depth - depth >= 2
-                && fetches < MAX_DIRECTORY_FETCHES
-                && let Some(sha) = entry.sha.as_deref()
-            {
-                fetches += 1;
-                if let Some(tree) = subtree(provider, &at, &child_path, sha, context).await? {
-                    let below = traversal_from_git_tree(tree, root, max_depth);
-                    traversal.entries.extend(below.entries);
-                    for (name, count) in below.omitted {
-                        *traversal.omitted.entry(name).or_default() += count;
-                    }
+        fetches += level.len();
+        let required = depth == 1;
+        let listings = futures_util::stream::iter(level.iter().map(|(path, _)| {
+            provider.repository_contents(at.owner, at.repo, path, at.branch, context)
+        }))
+        .buffered(READ_CONCURRENCY)
+        .collect::<Vec<_>>()
+        .await;
+        let mut below = Vec::new();
+        let mut subtrees = Vec::new();
+        for ((path, sha), listing) in level.iter().zip(listings) {
+            let mut listing = match listing {
+                Ok(listing) => listing,
+                Err(error) if !required && !access_failure(&error) => {
+                    traversal.failed_subtrees += 1;
                     continue;
                 }
+                Err(error) => return Err(error),
+            };
+            // The Contents API answers a file path with a single object whose
+            // path is the requested path itself; a tree cannot list a file.
+            if required
+                && !path.is_empty()
+                && let [entry] = listing.entries.as_slice()
+                && entry.path == *path
+                && entry.kind != "dir"
+            {
+                return Err(not_a_directory(path, &entry.kind));
             }
-            pending.push((child_path, depth + 1, false, entry.sha.clone()));
+            // The Contents API lists 1,000 entries of a directory at most; its
+            // git tree lists them all.
+            if listing.raw_entry_count >= CONTENTS_LIMIT {
+                let whole = if fetches < MAX_DIRECTORY_FETCHES {
+                    fetches += 1;
+                    whole_directory(provider, &at, path, sha.as_deref(), context).await?
+                } else {
+                    None
+                };
+                match whole {
+                    Some(entries) => listing.entries = entries,
+                    None => traversal.contents_limit = true,
+                }
+            }
+            for entry in listing.entries {
+                let Some(kind) = entry_kind(&entry) else {
+                    note_unlisted(&mut traversal, &entry.name, unlisted_kind(&entry));
+                    continue;
+                };
+                traversal.entries.push(TreeEntry {
+                    path: entry.path.clone(),
+                    kind,
+                    size: entry.size,
+                });
+                if kind != EntryKind::Dir || depth >= at.max_depth {
+                    continue;
+                }
+                match entry.sha {
+                    Some(sha) if split && at.max_depth - depth >= 2 => {
+                        subtrees.push((entry.path, sha));
+                    }
+                    sha => below.push((entry.path, sha)),
+                }
+            }
         }
+        // Folders with two or more levels left read whole from their own
+        // recursive subtree, as many as the fetch budget allows; a subtree
+        // that is truncated too (or unreadable) is walked like any folder.
+        let budget = MAX_DIRECTORY_FETCHES.saturating_sub(fetches);
+        let walked = subtrees.split_off(subtrees.len().min(budget));
+        below.extend(walked.into_iter().map(|(path, sha)| (path, Some(sha))));
+        fetches += subtrees.len();
+        let trees = futures_util::stream::iter(
+            subtrees
+                .iter()
+                .map(|(path, sha)| subtree(provider, &at, path, sha, context)),
+        )
+        .buffered(READ_CONCURRENCY)
+        .collect::<Vec<_>>()
+        .await;
+        for ((path, sha), tree) in subtrees.into_iter().zip(trees) {
+            match tree? {
+                Some(tree) => {
+                    let read = traversal_from_git_tree(tree, &at);
+                    traversal.entries.extend(read.entries);
+                    for (name, count) in read.omitted {
+                        *traversal.omitted.entry(name).or_default() += count;
+                    }
+                }
+                None => below.push((path, Some(sha))),
+            }
+        }
+        level = below;
+        depth += 1;
     }
     if traversal.failed_subtrees == 0 {
         memo.put(provider, &traversal).await;
@@ -341,7 +400,7 @@ impl WalkMemo {
             partition: provider.transport.cache_partition(context, None).ok(),
             key: format!(
                 "{}:{branch}:{root}:{max_depth}",
-                repo_key("git-tree-walk", owner, repo)
+                repo_key("git-tree-walk", owner, repo),
             ),
             commit: branch.to_owned(),
         }
@@ -525,13 +584,15 @@ pub(super) fn root_is_directory(
     }
 }
 
-/// A tree listing of a path that is not a directory. A file is typed
-/// ([`ProviderErrorReason::PathIsFile`]): its read is the repair.
+/// A tree listing of a path that is not a directory, typed for its repair: a
+/// file or a symlink ([`ProviderErrorReason::PathIsFile`]) is read (a read
+/// follows a symlink to its file), and a submodule
+/// ([`ProviderErrorReason::Submodule`]) leads to its own repository.
 pub(super) fn not_a_directory(path: &str, kind: &str) -> ProviderError {
     let (kind, reason) = match kind {
         "blob" | "file" => ("a file", Some(ProviderErrorReason::PathIsFile)),
-        "commit" | "submodule" => ("a git submodule", None),
-        "symlink" => ("a symlink", None),
+        "symlink" => ("a symlink", Some(ProviderErrorReason::PathIsFile)),
+        "commit" | "submodule" => ("a git submodule", Some(ProviderErrorReason::Submodule)),
         _ => ("an unsupported entry", None),
     };
     let error = ProviderError::new(
@@ -546,9 +607,9 @@ pub(super) fn not_a_directory(path: &str, kind: &str) -> ProviderError {
 
 pub(super) fn traversal_from_git_tree(
     tree: octocode_github::TreeResponse,
-    root: &str,
-    max_depth: usize,
+    listing: &Listing<'_>,
 ) -> Traversal {
+    let (root, max_depth) = (listing.root, listing.max_depth);
     let prefix = if root.is_empty() {
         String::new()
     } else {
@@ -577,26 +638,13 @@ pub(super) fn traversal_from_git_tree(
                 continue;
             }
         };
-        // Beneath an ignored directory nothing is listed, sized, or
-        // materialized, as the Contents walk never descends into one; only
-        // the ignored entry itself is counted.
-        let (ancestors, name) = relative.rsplit_once('/').unwrap_or(("", &relative));
-        if ancestors
-            .split('/')
-            .any(|part| ignored_entry(part, EntryKind::Dir))
-        {
-            continue;
-        }
-        if ignored_entry(name, kind) {
-            *traversal.omitted.entry(name.to_owned()).or_default() += 1;
-            continue;
-        }
+        let path = if root.is_empty() {
+            relative
+        } else {
+            format!("{root}/{relative}")
+        };
         traversal.entries.push(TreeEntry {
-            path: if root.is_empty() {
-                relative
-            } else {
-                format!("{root}/{relative}")
-            },
+            path,
             kind,
             size: entry.size,
         });
@@ -652,16 +700,5 @@ pub(super) fn entry_kind(entry: &ContentsEntry) -> Option<EntryKind> {
         "file" => Some(EntryKind::File),
         "dir" => Some(EntryKind::Dir),
         _ => None,
-    }
-}
-
-pub(super) fn ignored_entry(name: &str, kind: EntryKind) -> bool {
-    if kind == EntryKind::Dir {
-        matches!(
-            name,
-            ".git" | ".hg" | ".svn" | "node_modules" | "target" | "vendor"
-        )
-    } else {
-        matches!(name, ".DS_Store")
     }
 }

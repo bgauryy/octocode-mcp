@@ -135,7 +135,7 @@ A removed name is reported once as a `removed_setting` warning and otherwise ign
 | `network.maxRetries` | `.octocoderc` | Retries are fixed at 3; delete the key. |
 | `network.maxRateLimitWait` | `.octocoderc` | The GitHub rate-limit wait is fixed at 45 s; delete the key. |
 | `lsp.maxMemoryMb` | `.octocoderc` | The language-server memory cap is host-derived (25% of RAM, 4096–8192 MiB); set maxMemoryMb per server in lsp-servers.json instead, and delete the key. |
-| `output.pagination` | `.octocoderc` | The automatic response page is fixed at 20,000 characters; pass responseLength per call instead, and delete the section. |
+| `output.pagination` | `.octocoderc` | The automatic response page is fixed at 20,000 characters; set responseLength (up to 50,000) on a call instead, and delete the section. |
 | `storage.cloneCache` | `.octocoderc` | The clone cache is fixed at a 24 h TTL, 2 GiB and 50 repositories; delete the section. |
 | `classification.maxConcurrency` | `.octocoderc` | Classification concurrency is fixed at 10 in-flight requests per endpoint; delete the key. |
 | `classification.maxCandidates` | `.octocoderc` | Context selection is fixed at 64 candidates per operation; delete the key. |
@@ -146,7 +146,7 @@ A removed name is reported once as a `removed_setting` warning and otherwise ign
 | `MAX_RETRIES` | environment | Retries are fixed at 3; unset the variable. |
 | `OCTOCODE_MAX_RATE_LIMIT_WAIT` | environment | The GitHub rate-limit wait is fixed at 45 s; unset the variable. |
 | `OCTOCODE_LSP_MAX_MEMORY_MB` | environment | The language-server memory cap is host-derived (25% of RAM, 4096–8192 MiB); set maxMemoryMb per server in lsp-servers.json instead, and unset the variable. |
-| `OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH` | environment | The automatic response page is fixed at 20,000 characters; pass responseLength per call instead, and unset the variable. |
+| `OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH` | environment | The automatic response page is fixed at 20,000 characters; set responseLength (up to 50,000) on a call instead, and unset the variable. |
 | `OCTOCODE_CACHE_TTL_MS` | environment | The clone cache TTL is fixed at 24 h; unset the variable. |
 | `OCTOCODE_MAX_CACHE_SIZE` | environment | The clone cache size is fixed at 2 GiB; unset the variable. |
 | `OCTOCODE_MAX_CLONES` | environment | The clone cache keeps at most 50 repositories; unset the variable. |

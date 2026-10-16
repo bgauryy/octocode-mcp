@@ -137,7 +137,6 @@ fn main_file(path: &str, force_refresh: bool) -> ContentRequest {
         path: path.into(),
         reference: Some("main".into()),
         force_refresh,
-        session_id: None,
     }
 }
 
@@ -196,7 +195,6 @@ async fn ghes_content_route_auth_and_decode() {
                 path: "src/lib.rs".into(),
                 reference: Some("main".into()),
                 force_refresh: false,
-                session_id: None,
             },
             &with_token("secret", Duration::from_secs(2), 1024),
         )
@@ -222,7 +220,6 @@ fn file_at(path: &str, reference: &str) -> ContentRequest {
         path: path.into(),
         reference: Some(reference.into()),
         force_refresh: false,
-        session_id: None,
     }
 }
 
@@ -715,13 +712,13 @@ async fn content_413_falls_back_to_parent_directory_and_blob() {
         )
         .mount(&server)
         .await;
-    mount_json(
-        &server,
-        format!("/api/v3/repos/a/b/git/blobs/{blob}"),
-        200,
-        serde_json::json!({"encoding":"base64","content":STANDARD.encode("large body")}),
-    )
-    .await;
+    // The blob is read raw: its bytes, no base64 JSON body.
+    Mock::given(method("GET"))
+        .and(path(format!("/api/v3/repos/a/b/git/blobs/{blob}")))
+        .and(header("accept", "application/vnd.github.raw"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes("large body"))
+        .mount(&server)
+        .await;
     let result = provider(&server)
         .await
         .get_file_content(
@@ -757,13 +754,13 @@ async fn content_encoding_none_for_large_file_fetches_blob() {
         }),
     )
     .await;
-    mount_json(
-        &server,
-        format!("/api/v3/repos/a/b/git/blobs/{blob}"),
-        200,
-        serde_json::json!({"encoding":"base64","content":STANDARD.encode("large body")}),
-    )
-    .await;
+    // The blob is read raw: its bytes, no base64 JSON body.
+    Mock::given(method("GET"))
+        .and(path(format!("/api/v3/repos/a/b/git/blobs/{blob}")))
+        .and(header("accept", "application/vnd.github.raw"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes("large body"))
+        .mount(&server)
+        .await;
     let result = provider(&server)
         .await
         .get_file_content(
@@ -773,6 +770,59 @@ async fn content_encoding_none_for_large_file_fetches_blob() {
         .await
         .expect("blob fallback");
     assert_eq!(result.bytes, &b"large body"[..]);
+}
+
+/// A file read asks for the raw media type: GitHub answers a file of any
+/// size up to 100 MB with its own bytes (no base64 body, no second blob
+/// read), and a binary one is refused with the blob SHA its ETag names.
+#[tokio::test]
+async fn a_file_read_takes_the_raw_bytes_in_one_request() {
+    let server = MockServer::builder().start().await;
+    let commit = "0123456789abcdef0123456789abcdef01234567";
+    let blob = "89abcdef0123456789abcdef0123456789abcdef";
+    mount_json(
+        &server,
+        "/api/v3/repos/a/b/commits/main",
+        200,
+        serde_json::json!({"sha":commit}),
+    )
+    .await;
+    for (file, body) in [
+        ("big.txt", &b"large body"[..]),
+        ("image.bin", &b"\0binary"[..]),
+    ] {
+        Mock::given(method("GET"))
+            .and(path(format!("/api/v3/repos/a/b/contents/{file}")))
+            .and(header("accept", "application/vnd.github.raw"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "application/vnd.github.raw; charset=utf-8")
+                    .insert_header("etag", format!("\"{blob}\"").as_str())
+                    .set_body_bytes(body),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+    }
+    Mock::given(method("GET"))
+        .and(wiremock::matchers::path_regex("/git/blobs/"))
+        .respond_with(ResponseTemplate::new(500))
+        .expect(0)
+        .mount(&server)
+        .await;
+    let provider = provider(&server).await;
+    let context = with_token("secret", Duration::from_secs(2), 4096);
+    let result = provider
+        .get_file_content(&main_file("big.txt", true), &context)
+        .await
+        .expect("raw read");
+    assert_eq!(result.bytes, &b"large body"[..]);
+    let binary = provider
+        .get_file_content(&main_file("image.bin", true), &context)
+        .await
+        .expect_err("binary text read");
+    assert_eq!(binary.reason, Some(crate::ProviderErrorReason::BinaryFile));
+    assert!(binary.message.contains(blob), "{}", binary.message);
 }
 
 #[tokio::test]
@@ -808,13 +858,12 @@ async fn raw_content_keeps_binary_bytes_through_every_acquisition_and_cache_path
             .await;
         }
         if route != "inline" {
-            mount_json(
-                &server,
-                format!("/api/v3/repos/a/b/git/blobs/{blob}"),
-                200,
-                serde_json::json!({"encoding":"base64","content":STANDARD.encode(bytes)}),
-            )
-            .await;
+            Mock::given(method("GET"))
+                .and(path(format!("/api/v3/repos/a/b/git/blobs/{blob}")))
+                .and(header("accept", "application/vnd.github.raw"))
+                .respond_with(ResponseTemplate::new(200).set_body_bytes(&bytes[..]))
+                .mount(&server)
+                .await;
         }
         let provider = provider(&server).await;
         let request = file_at("dir/image.png", commit);
@@ -1445,7 +1494,6 @@ async fn default_branch_resolves_with_one_sha_request_and_is_memoized_per_batch(
                     path: name.into(),
                     reference: None,
                     force_refresh: false,
-                    session_id: None,
                 },
                 &context,
             )
@@ -2462,11 +2510,11 @@ async fn concurrent_repository_metadata_reads_share_one_request() {
     let context = with_token("t", Duration::from_secs(5), 1 << 20);
     let (a, b, c) = tokio::join!(
         transport.repository_metadata("o", "r", &context),
-        transport.canonical_owner_repo("o", "r", &context),
+        transport.repository_metadata("o", "r", &context),
         transport.repository("o", "r", &context),
     );
     assert_eq!(a.expect("metadata").default_branch, "main");
-    assert_eq!(b.expect("canonical"), None);
+    assert_eq!(b.expect("metadata").full_name.as_deref(), Some("o/r"));
     assert_eq!(c.expect("repository").full_name, "o/r");
     assert_eq!(hits.count(), 1, "one GET /repos/o/r");
     // A later read in the same batch window is served from the memo.
@@ -2839,4 +2887,47 @@ async fn graphql_semantic_retry_backoff_honors_cancellation() {
         result.err().map(|error| error.kind),
         Some(ProviderErrorKind::Cancelled)
     );
+}
+
+/// A directory listing at a full commit SHA is immutable: a second read is
+/// served from the cache with no request, while a listing at a branch name
+/// revalidates with its ETag.
+#[tokio::test]
+async fn listings_at_a_commit_sha_are_served_from_the_cache() {
+    let server = MockServer::builder().start().await;
+    let sha = "0123456789abcdef0123456789abcdef01234567";
+    let listing = || {
+        ResponseTemplate::new(200)
+            .insert_header("etag", "\"tree\"")
+            .set_body_json(serde_json::json!([
+                {"name":"a.rs","path":"src/a.rs","type":"file","size":1}
+            ]))
+    };
+    Mock::given(method("GET"))
+        .and(path("/api/v3/repos/acme/repo/contents/src"))
+        .and(query_param("ref", sha))
+        .respond_with(listing())
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/repos/acme/repo/contents/src"))
+        .and(query_param("ref", "main"))
+        .respond_with(listing())
+        .expect(2)
+        .mount(&server)
+        .await;
+    let base = provider(&server).await;
+    let provider = GitHubProvider {
+        transport: base.transport,
+        cache: KeyedCache::default(),
+    };
+    let context = with_token("secret", Duration::from_secs(2), 1 << 16);
+    for reference in [sha, sha, "main", "main"] {
+        let listed = provider
+            .repository_contents("acme", "repo", "src", reference, &context)
+            .await
+            .expect("listing");
+        assert_eq!(listed.entries.len(), 1, "{reference}");
+    }
 }

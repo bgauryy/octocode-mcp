@@ -388,7 +388,7 @@ fn hidden_maintenance_commands_still_work() {
 }
 
 #[test]
-fn auth_login_and_skill_fail_closed() {
+fn auth_login_requires_supported_credentials_and_a_terminal() {
     let workspace = Workspace::new();
     let login = workspace
         .cli()
@@ -404,17 +404,6 @@ fn auth_login_and_skill_fail_closed() {
         .output()
         .expect("auth login");
     assert_eq!(enterprise.status.code(), Some(5));
-    // Every skill subcommand runs in the npm launcher; with none on PATH the
-    // host fails closed and names the rerun command.
-    for args in [["skill", "list"], ["skill", "run"]] {
-        let skill = workspace.cli().args(args).output().expect("skill");
-        assert_eq!(skill.status.code(), Some(1));
-        let text = format!("{}{}", stdout(&skill), stderr(&skill));
-        assert!(
-            text.contains(&format!("npx -y octocode {}", args.join(" "))),
-            "{text}"
-        );
-    }
 }
 
 #[test]
@@ -653,13 +642,13 @@ fn localfetch_pages_expose_a_rerunnable_continuation() {
     // continuation query as a directly re-runnable call.
     let call = &value["results"][0]["data"]["next"]["continueWindow"];
     assert_eq!(call["tool"], "localFetch", "{value}");
-    let continuation = serde_json::to_string(&serde_json::json!({"queries":[call["query"]]}))
-        .expect("continuation query");
+    let continuation = serde_json::to_string(&call["query"]).expect("continuation query");
     let second = workspace
         .cli()
         .args(["localFetch", &continuation])
         .output()
         .expect("continuation read");
+    assert_eq!(second.status.code(), Some(0), "{}", stderr(&second));
     let value: serde_json::Value = serde_json::from_str(stdout(&second)).expect("page two JSON");
     let second_content = value["results"][0]["data"]["content"]
         .as_str()

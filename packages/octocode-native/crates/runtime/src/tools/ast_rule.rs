@@ -87,11 +87,27 @@ pub(crate) fn diagnostic_recovery(code: &str, engine: Option<&str>) -> Option<St
             "Target a smaller file; for this one, read bounded ranges with localFetch or search text with localSearch."
         }
         "syntaxTree.budget.deadline" | "syntaxTree.budget.nodeLimit" => {
-            "Follow nextOffset through the numbered nodes. Nodes past this stop are not listed; query them with a match pattern or read their lines with localFetch."
+            "Nodes past this stop are not listed on any page; query them with a match pattern or read their lines with localFetch."
         }
         _ => return engine.map(str::to_owned),
     };
     Some(text.to_owned())
+}
+
+/// One engine diagnostic as a row entry: `path` only when it names a file
+/// other than the row's own, and `recovery` only when there is one.
+pub(crate) fn diagnostic_row(
+    d: &octocode_engine::structural::StructuralDiagnostic,
+    path: Option<&str>,
+) -> serde_json::Value {
+    let mut row = serde_json::json!({"code":d.code,"severity":d.severity,"stage":d.stage,"message":d.message});
+    if let Some(path) = path {
+        row["path"] = path.into();
+    }
+    if let Some(recovery) = diagnostic_recovery(&d.code, d.recovery.as_deref()) {
+        row["recovery"] = recovery.into();
+    }
+    row
 }
 
 /// A rule that does not compile, as both tools report it.
@@ -206,6 +222,17 @@ pub(crate) fn file_grammar(path: &std::path::Path) -> Option<(String, BTreeSet<S
     Some((label, extensions))
 }
 
+#[cfg(test)]
+thread_local! {
+    static PRESENT_WALKS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Grammar-census walks this thread made (tests).
+#[cfg(test)]
+pub(crate) fn present_walks() -> usize {
+    PRESENT_WALKS.with(std::cell::Cell::get)
+}
+
 /// Grammars whose files occur under `root`, by their extension or the
 /// `languageGlobs` rule that names their parser, from a bounded walk that
 /// honors the same discovery policy, ignore rules and excluded directories
@@ -223,6 +250,8 @@ pub(crate) fn present_grammars(
     permits: &dyn Fn(&std::path::Path) -> bool,
     stop: &octocode_engine::search::walk::Stop<'_>,
 ) -> Result<Vec<(String, BTreeSet<String>)>, octocode_engine::error::Error> {
+    #[cfg(test)]
+    PRESENT_WALKS.with(|count| count.set(count.get() + 1));
     let mut seen: BTreeMap<String, usize> = BTreeMap::new();
     let mut files = 0_usize;
     for entry in walk.walker(root, prune, globs)? {
@@ -245,6 +274,12 @@ pub(crate) fn present_grammars(
             *seen.entry(extension).or_default() += 1;
         }
     }
+    Ok(rank_grammars(seen))
+}
+
+/// The grammars of a file census (`extension → files`), each with its full
+/// extension set, most files first (ties by name).
+pub(crate) fn rank_grammars(seen: BTreeMap<String, usize>) -> Vec<(String, BTreeSet<String>)> {
     let mut grammars: BTreeMap<String, (BTreeSet<String>, usize)> = BTreeMap::new();
     for (extension, count) in seen {
         if let Some(entry) = languages::find_entry(&extension)
@@ -258,10 +293,10 @@ pub(crate) fn present_grammars(
     }
     let mut ranked = grammars.into_iter().collect::<Vec<_>>();
     ranked.sort_by(|(a, (_, a_files)), (b, (_, b_files))| b_files.cmp(a_files).then(a.cmp(b)));
-    Ok(ranked
+    ranked
         .into_iter()
         .map(|(language, (extensions, _))| (language, extensions))
-        .collect())
+        .collect()
 }
 
 /// The one message for a `language` no structural grammar answers to
@@ -309,5 +344,17 @@ mod tests {
         assert_eq!(hint, "0 matches in 99999 objective-cpp files.");
         assert!(hint.chars().count() <= crate::response::rows::MAX_GUIDANCE_CHARS);
         assert_eq!(super::empty_match_hint(1, None), "0 matches in 1 file.");
+    }
+
+    /// A syntax-tree budget stop is terminal: its recovery names no
+    /// continuation field (syntaxTree pages by `page`/`snapshot`, never an
+    /// offset) and leads to the tools that reach the unlisted nodes.
+    #[test]
+    fn a_tree_budget_recovery_names_no_offset_field() {
+        for code in ["syntaxTree.budget.deadline", "syntaxTree.budget.nodeLimit"] {
+            let text = super::diagnostic_recovery(code, None).expect("recovery");
+            assert!(!text.contains("nextOffset"), "{text}");
+            assert!(text.contains("localFetch"), "{text}");
+        }
     }
 }

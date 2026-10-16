@@ -8,6 +8,7 @@ pub(crate) mod continuations;
 pub(crate) mod extras;
 #[cfg(test)]
 mod hint_budget;
+pub(crate) mod notices;
 pub mod pager;
 pub(crate) mod pages;
 pub(crate) mod read_share;

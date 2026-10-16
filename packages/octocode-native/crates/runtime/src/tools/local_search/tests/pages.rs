@@ -6,8 +6,8 @@ fn first_page(
     policy: &PathPolicy,
     security: &ContentSecurity,
 ) -> (LocalSearchResult, String, LocalSearchQuery) {
-    let first =
-        execute_local_search(request, policy, security, &NeverCancel, None, None).expect("page 1");
+    let first = execute_local_search(request, policy, security, &NeverCancel, None, None, None)
+        .expect("page 1");
     let snapshot = first
         .source_snapshot
         .clone()
@@ -110,7 +110,7 @@ fn selection_recovery_keeps_search_snapshot_and_rejects_source_or_window_drift()
             "clasifyContext":{"classifiers":["Does this evidence explain the current resource lifecycle?"],"longContext":true}}),
         None,
     );
-    let first = execute_local_search_selected(
+    let first = execute_local_search(
         &request,
         &policy,
         &security,
@@ -140,6 +140,7 @@ fn selection_recovery_keeps_search_snapshot_and_rejects_source_or_window_drift()
             &NeverCancel,
             None,
             Some(20_000),
+            None,
         )
         .expect("unchanged captured evidence is recoverable");
         assert!(values(&recovered).contains("needle before"));
@@ -155,6 +156,7 @@ fn selection_recovery_keeps_search_snapshot_and_rejects_source_or_window_drift()
                 &NeverCancel,
                 None,
                 Some(24_000),
+                None,
             )
             .expect_err("real response-window change must restart")
             .code,
@@ -170,6 +172,7 @@ fn selection_recovery_keeps_search_snapshot_and_rejects_source_or_window_drift()
             &NeverCancel,
             None,
             Some(20_000),
+            None,
         )
         .expect_err("changed source must restart")
         .code,
@@ -192,6 +195,7 @@ fn match_page_ceiling_preserves_evidence_and_discloses_terminal_suffix() {
         &policy,
         &ContentSecurity::new(),
         &NeverCancel,
+        None,
         None,
         None,
     )
@@ -217,7 +221,7 @@ fn file_page_ceiling_keeps_later_files_partial_and_terminal() {
         }),
         None,
     );
-    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
         .expect("last admitted file page");
     assert_eq!(result.status, SearchStatus::Partial, "{result:?}");
     assert!(result.terminal_limit, "{result:?}");
@@ -246,8 +250,9 @@ fn context_lines_scale_the_default_match_content_length() {
         None,
     );
     let run = |request: &LocalSearchQuery| {
-        let result = execute_local_search(request, &policy, &security, &NeverCancel, None, None)
-            .expect("search");
+        let result =
+            execute_local_search(request, &policy, &security, &NeverCancel, None, None, None)
+                .expect("search");
         serde_json::to_value(result).expect("serialize")
     };
     let scaled = run(&base);
@@ -287,7 +292,7 @@ fn match_only_caps_display_after_unique_grouping_and_preserves_continuations() {
         serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "needle.*".to_string(), "regex": "rust", "resultView": LocalSearchQueryResultView::MatchOnly, "matchContentLength": 30, "matchPageSize": 1, "unique": LocalSearchQueryUnique::Count}),
         None,
     );
-    let first = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+    let first = execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
         .expect("first page");
     let body = serde_json::to_value(&first).expect("serialize");
     let matched = &body["files"][0]["matches"][0];
@@ -318,8 +323,16 @@ fn match_only_caps_display_after_unique_grouping_and_preserves_continuations() {
         serde_json::json!({"matchPage": 2, "snapshot": first.source_snapshot}),
         Some(&request),
     );
-    let second = execute_local_search(&continued, &policy, &security, &NeverCancel, None, None)
-        .expect("second page");
+    let second = execute_local_search(
+        &continued,
+        &policy,
+        &security,
+        &NeverCancel,
+        None,
+        None,
+        None,
+    )
+    .expect("second page");
     let body = serde_json::to_value(second).expect("serialize");
     let matched = &body["files"][0]["matches"][0];
     assert_eq!(matched["originalChars"], 4107);
@@ -339,8 +352,9 @@ fn match_only_caps_display_after_unique_grouping_and_preserves_continuations() {
             serde_json::json!({"matchPage": 1, "snapshot": null, "matchContentLength": limit}),
             Some(&continued.clone()),
         );
-        let result = execute_local_search(&bounded, &policy, &security, &NeverCancel, None, None)
-            .expect("default, minimal and exact-boundary caps");
+        let result =
+            execute_local_search(&bounded, &policy, &security, &NeverCancel, None, None, None)
+                .expect("default, minimal and exact-boundary caps");
         let body = serde_json::to_value(result).expect("serialize");
         let matched = &body["files"][0]["matches"][0];
         assert_eq!(
@@ -529,7 +543,7 @@ fn excludes_sensitive_and_symlink_descendants_before_projection() {
         serde_json::json!({"path": root.to_string_lossy().into_owned(), "matchString": "needle".to_string(), "includeHidden": true, "includeIgnored": true, "sort": LocalSearchQuerySort::Path}),
         None,
     );
-    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
         .expect("search");
     assert_eq!(
         result
@@ -562,17 +576,34 @@ fn rejects_changed_and_forged_snapshots_even_on_empty_or_final_pages() {
         serde_json::json!({"path": root.to_string_lossy().into_owned(), "matchString": "needle".to_string()}),
         None,
     );
-    let initial = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
-        .expect("initial search");
+    let initial =
+        execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
+            .expect("initial search");
     let snapshot = initial.source_snapshot.expect("identity on final page");
     let mut continued = request.clone();
     continued.snapshot = Some(snapshot.parse().expect("snapshot"));
-    execute_local_search(&continued, &policy, &security, &NeverCancel, None, None)
-        .expect("unchanged snapshot");
+    execute_local_search(
+        &continued,
+        &policy,
+        &security,
+        &NeverCancel,
+        None,
+        None,
+        None,
+    )
+    .expect("unchanged snapshot");
 
     fs::write(&source, "needle two\n").expect("same-size mutation");
-    let stale = execute_local_search(&continued, &policy, &security, &NeverCancel, None, None)
-        .expect_err("changed results must reject snapshot");
+    let stale = execute_local_search(
+        &continued,
+        &policy,
+        &security,
+        &NeverCancel,
+        None,
+        None,
+        None,
+    )
+    .expect_err("changed results must reject snapshot");
     assert_eq!(stale.code, "staleSnapshot");
     assert_eq!(stale.message, crate::response::pages::STALE_SNAPSHOT_ERROR);
     let restart = stale.next.expect("restart");
@@ -588,7 +619,7 @@ fn rejects_changed_and_forged_snapshots_even_on_empty_or_final_pages() {
     empty.match_string = "absent".parse().expect("matchString");
     empty.snapshot = Some(snapshot.parse().expect("snapshot"));
     assert_eq!(
-        execute_local_search(&empty, &policy, &security, &NeverCancel, None, None)
+        execute_local_search(&empty, &policy, &security, &NeverCancel, None, None, None)
             .expect_err("query-scope/empty mismatch")
             .code,
         "staleSnapshot"
@@ -597,8 +628,16 @@ fn rejects_changed_and_forged_snapshots_even_on_empty_or_final_pages() {
     // snapshot; a well-formed one from another version or query is stale.
     for malformed in ["forged", "lexical-live-v4:nothex", "lexical-live-v4:"] {
         continued.snapshot = Some(malformed.parse().expect("snapshot"));
-        let error = execute_local_search(&continued, &policy, &security, &NeverCancel, None, None)
-            .expect_err("malformed snapshot");
+        let error = execute_local_search(
+            &continued,
+            &policy,
+            &security,
+            &NeverCancel,
+            None,
+            None,
+            None,
+        )
+        .expect_err("malformed snapshot");
         assert_eq!(error.code, "invalidInput", "{malformed}");
         assert!(error.message.contains("snapshot"), "{}", error.message);
         assert!(error.next.is_none(), "an input error has no restart");
@@ -610,9 +649,17 @@ fn rejects_changed_and_forged_snapshots_even_on_empty_or_final_pages() {
     ] {
         continued.snapshot = Some(foreign.parse().expect("snapshot"));
         assert_eq!(
-            execute_local_search(&continued, &policy, &security, &NeverCancel, None, None)
-                .expect_err("foreign snapshot")
-                .code,
+            execute_local_search(
+                &continued,
+                &policy,
+                &security,
+                &NeverCancel,
+                None,
+                None,
+                None
+            )
+            .expect_err("foreign snapshot")
+            .code,
             "staleSnapshot",
             "{foreign}"
         );
@@ -623,6 +670,144 @@ fn rejects_changed_and_forged_snapshots_even_on_empty_or_final_pages() {
 /// A continuation's stored scan is bound to the query that produced
 /// it: changing any search-semantic field while keeping the cursor must
 /// reject, whether the stored scan is still cached or was evicted.
+/// A scan whose values pass 1 MiB is stored too (packed), so its later
+/// pages read the stored scan instead of walking the tree again, and every
+/// page served from it equals the page a rescan cuts.
+#[test]
+fn a_scan_over_a_mebibyte_is_stored_for_its_later_pages() {
+    let root = tempfile::tempdir().expect("fixture directory");
+    let line = format!("let needle = \"{}\";\n", "abcdefghij".repeat(18));
+    for n in 0..400 {
+        let body = (0..20)
+            .map(|i| line.replace("needle", &format!("needle_{n}_{i}")))
+            .collect::<String>();
+        fs::write(root.path().join(format!("f{n:03}.rs")), body).expect("fixture");
+    }
+    let (policy, security) = policy_for(root.path());
+    let request = ls_query(
+        serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "needle", "sort": "path"}),
+        None,
+    );
+    let first = execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
+        .expect("first page");
+    assert!(
+        first.stats.matched_lines >= Some(8_000),
+        "{:?}",
+        first.stats
+    );
+    let snapshot = first.source_snapshot.clone().expect("snapshot");
+    let stored = super::manifest::get(&snapshot, &policy.identity()).expect("stored scan");
+    let raw = stored
+        .value
+        .files
+        .iter()
+        .flat_map(|file| &file.matches)
+        .map(|hit| hit.value.len())
+        .sum::<usize>();
+    assert!(raw > 1024 * 1024, "{raw}");
+    let next = first.next.clone().expect("continuation")["nextPage"]["query"]["queries"][0].clone();
+    let page = |query: &serde_json::Value| {
+        let result = execute_local_search(
+            &ls_query(query.clone(), None),
+            &policy,
+            &security,
+            &NeverCancel,
+            None,
+            None,
+            None,
+        )
+        .expect("page");
+        serde_json::to_value(&result.files).expect("files")
+    };
+    let from_store = page(&next);
+    super::manifest::evict(&snapshot);
+    assert_eq!(from_store, page(&next));
+}
+
+/// A cursor with a default spelled out (`regex:"literal"`, an off flag,
+/// `defaultExcludes:true`, `contextLines:0`, the default
+/// `matchContentLength`) is the same query: it keeps its snapshot and page
+/// cut, from the stored scan and from a rescan, under any response window.
+#[test]
+fn a_spelled_out_default_keeps_the_cursor() {
+    let root = tempfile::tempdir().expect("fixture directory");
+    for n in 0..6 {
+        fs::write(
+            root.path().join(format!("f{n}.ts")),
+            "export const alpha = 1;\nexport const beta = alpha;\n".repeat(20),
+        )
+        .expect("fixture");
+    }
+    let (policy, security) = policy_for(root.path());
+    for window in [None, Some(6_000)] {
+        let request = ls_query(
+            serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "alpha", "pageSize": 2}),
+            None,
+        );
+        let first = execute_local_search(
+            &request,
+            &policy,
+            &security,
+            &NeverCancel,
+            None,
+            window,
+            None,
+        )
+        .expect("first page");
+        let next = first.next.clone().expect("continuation");
+        let cursor = next["nextPage"]["query"]["queries"][0].clone();
+        let expected = execute_local_search(
+            &ls_query(cursor.clone(), None),
+            &policy,
+            &security,
+            &NeverCancel,
+            None,
+            window,
+            None,
+        )
+        .expect("page two");
+        let shown =
+            |result: &LocalSearchResult| serde_json::to_value(&result.files).expect("files");
+        for spelled in [
+            serde_json::json!({"regex": "literal"}),
+            serde_json::json!({"includeHidden": false}),
+            serde_json::json!({"includeIgnored": false}),
+            serde_json::json!({"defaultExcludes": true}),
+            serde_json::json!({"wholeWord": false, "invertMatch": false, "reverse": false}),
+            serde_json::json!({"contextLines": 0}),
+            serde_json::json!({"matchContentLength": 200}),
+        ] {
+            for cached in [true, false] {
+                if !cached {
+                    super::manifest::evict(first.source_snapshot.as_deref().expect("snapshot"));
+                }
+                let mut query = cursor.clone();
+                query
+                    .as_object_mut()
+                    .expect("query")
+                    .extend(spelled.as_object().expect("fields").clone());
+                let page = execute_local_search(
+                    &ls_query(query, None),
+                    &policy,
+                    &security,
+                    &NeverCancel,
+                    None,
+                    window,
+                    None,
+                )
+                .unwrap_or_else(|error| {
+                    panic!(
+                        "{spelled} (cached={cached}, window={window:?}): {}",
+                        error.message
+                    )
+                });
+                assert_eq!(page.source_snapshot, expected.source_snapshot, "{spelled}");
+                assert_eq!(shown(&page), shown(&expected), "{spelled}");
+            }
+        }
+    }
+}
+
 #[test]
 fn frozen_snapshot_rejects_changed_search_semantics_on_cache_hit_and_miss() {
     let root = tempfile::tempdir().expect("fixture directory");
@@ -648,8 +833,9 @@ fn frozen_snapshot_rejects_changed_search_semantics_on_cache_hit_and_miss() {
         serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "alpha", "include": ["*.ts"], "includeIgnored": true, "pageSize": 1, "matchPageSize": 1, "sort": "path"}),
         None,
     );
-    let initial = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
-        .expect("initial search");
+    let initial =
+        execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
+            .expect("initial search");
     let snapshot = initial.source_snapshot.clone().expect("frozen identity");
     let continued = ls_query(
         serde_json::json!({"snapshot": snapshot, "page": 2}),
@@ -670,6 +856,12 @@ fn frozen_snapshot_rejects_changed_search_semantics_on_cache_hit_and_miss() {
         ("caseMode", serde_json::json!({"caseMode": "insensitive"})),
         ("includeHidden", serde_json::json!({"includeHidden": true})),
         ("wholeWord", serde_json::json!({"wholeWord": true})),
+        // File filters that keep (`alpha` is in every file) or empty the
+        // result: the key, not the collected rows, must tell them apart.
+        ("fileHas", serde_json::json!({"fileHas": ["alpha"]})),
+        ("fileHas", serde_json::json!({"fileHas": ["ZQZQZ"]})),
+        ("fileLacks", serde_json::json!({"fileLacks": ["zz_absent"]})),
+        ("fileLacks", serde_json::json!({"fileLacks": ["alpha"]})),
         (
             "path",
             serde_json::json!({"path": root.path().join("other.ts").to_string_lossy().into_owned()}),
@@ -679,11 +871,16 @@ fn frozen_snapshot_rejects_changed_search_semantics_on_cache_hit_and_miss() {
         if !cached {
             super::manifest::evict(&snapshot);
         }
-        let page_two =
-            execute_local_search(&continued, &policy, &security, &NeverCancel, None, None)
-                .unwrap_or_else(|e| {
-                    panic!("unchanged continuation (cached={cached}): {}", e.message)
-                });
+        let page_two = execute_local_search(
+            &continued,
+            &policy,
+            &security,
+            &NeverCancel,
+            None,
+            None,
+            None,
+        )
+        .unwrap_or_else(|e| panic!("unchanged continuation (cached={cached}): {}", e.message));
         assert_eq!(
             page_two
                 .files
@@ -699,7 +896,8 @@ fn frozen_snapshot_rejects_changed_search_semantics_on_cache_hit_and_miss() {
                 super::manifest::evict(&snapshot);
             }
             let changed = ls_query(change.clone(), Some(&continued));
-            match execute_local_search(&changed, &policy, &security, &NeverCancel, None, None) {
+            match execute_local_search(&changed, &policy, &security, &NeverCancel, None, None, None)
+            {
                 Ok(result) => panic!(
                     "{field} change reused the old cursor (cached={cached}): {:?}",
                     result.files.iter().map(|f| &f.path).collect::<Vec<_>>()
@@ -720,8 +918,9 @@ fn frozen_snapshot_rejects_changed_search_semantics_on_cache_hit_and_miss() {
         serde_json::json!({"matchString": "nonexistent_literal_control"}),
         Some(&request),
     );
-    let control = execute_local_search(&control, &policy, &security, &NeverCancel, None, None)
-        .expect("control search");
+    let control =
+        execute_local_search(&control, &policy, &security, &NeverCancel, None, None, None)
+            .expect("control search");
     assert!(control.files.is_empty());
 }
 
@@ -740,7 +939,7 @@ fn continuations_reuse_their_scan_until_a_matched_file_changes() {
         serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "needle", "pageSize": 1, "sort": "path"}),
         None,
     );
-    let first = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+    let first = execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
         .expect("page 1");
     let snapshot = first
         .source_snapshot
@@ -754,25 +953,25 @@ fn continuations_reuse_their_scan_until_a_matched_file_changes() {
     };
     // A new matching file is not part of the stored scan.
     fs::write(root.path().join("a0.txt"), "needle\n").expect("new file");
-    let second = execute_local_search(&page(2), &policy, &security, &NeverCancel, None, None)
+    let second = execute_local_search(&page(2), &policy, &security, &NeverCancel, None, None, None)
         .expect("page 2 from the stored scan");
     assert_eq!(second.files[0].path, "b.txt");
     // Once the scan is gone, the rescan sees the new file and restarts.
     super::manifest::evict(&snapshot);
     assert_eq!(
-        execute_local_search(&page(2), &policy, &security, &NeverCancel, None, None)
+        execute_local_search(&page(2), &policy, &security, &NeverCancel, None, None, None)
             .expect_err("changed result")
             .code,
         "staleSnapshot"
     );
     fs::remove_file(root.path().join("a0.txt")).expect("cleanup");
-    let first = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+    let first = execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
         .expect("page 1 again");
     assert_eq!(first.source_snapshot.as_deref(), Some(snapshot.as_str()));
     // A matched file that changed invalidates the stored scan.
     fs::write(root.path().join("c.txt"), "needle\nneedle\n").expect("edit");
     assert_eq!(
-        execute_local_search(&page(3), &policy, &security, &NeverCancel, None, None)
+        execute_local_search(&page(3), &policy, &security, &NeverCancel, None, None, None)
             .expect_err("edited matched file")
             .code,
         "staleSnapshot"
@@ -794,7 +993,15 @@ fn a_same_size_same_mtime_edit_restarts_instead_of_serving_old_values() {
     );
     let (_, _, page_two) = first_page(&request, &policy, &security);
     rewrite_keeping_stamp(&b, "const needle = \"NEW_B\";\n");
-    match execute_local_search(&page_two, &policy, &security, &NeverCancel, None, None) {
+    match execute_local_search(
+        &page_two,
+        &policy,
+        &security,
+        &NeverCancel,
+        None,
+        None,
+        None,
+    ) {
         Ok(result) => panic!("stale page served: {}", values(&result)),
         Err(error) => {
             assert_eq!(error.code, "staleSnapshot");
@@ -809,14 +1016,15 @@ fn a_same_size_same_mtime_edit_restarts_instead_of_serving_old_values() {
     for view in ["files", "countMatches"] {
         fs::write(&b, "const needle = \"OLD_B\";\n").expect("fixture");
         let listed = ls_query(serde_json::json!({"resultView": view}), Some(&request));
-        let first = execute_local_search(&listed, &policy, &security, &NeverCancel, None, None)
-            .expect("list page 1");
+        let first =
+            execute_local_search(&listed, &policy, &security, &NeverCancel, None, None, None)
+                .expect("list page 1");
         let next = ls_query(
             serde_json::json!({"snapshot": first.source_snapshot.clone().expect("identity"), "page": 2}),
             Some(&listed),
         );
         rewrite_keeping_stamp(&b, "const nEEdle = \"NEW_B\";\n");
-        match execute_local_search(&next, &policy, &security, &NeverCancel, None, None) {
+        match execute_local_search(&next, &policy, &security, &NeverCancel, None, None, None) {
             Ok(result) => panic!("{view}: stale page served: {}", values(&result)),
             Err(error) => assert_eq!(error.code, "staleSnapshot", "{view}"),
         }
@@ -827,6 +1035,7 @@ fn a_same_size_same_mtime_edit_restarts_instead_of_serving_old_values() {
         &policy,
         &security,
         &NeverCancel,
+        None,
         None,
         None,
     )
@@ -866,8 +1075,9 @@ fn every_view_keeps_reusing_its_scan_while_files_are_unchanged() {
             None,
         );
         let request = ls_query(view.clone(), Some(&request));
-        let first = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
-            .unwrap_or_else(|e| panic!("{view}: {}", e.message));
+        let first =
+            execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
+                .unwrap_or_else(|e| panic!("{view}: {}", e.message));
         let snapshot = first
             .source_snapshot
             .clone()
@@ -882,6 +1092,7 @@ fn every_view_keeps_reusing_its_scan_while_files_are_unchanged() {
             &policy,
             &security,
             &NeverCancel,
+            None,
             None,
             None,
         )
@@ -912,8 +1123,16 @@ fn a_stored_key_fragment_never_surfaces_after_a_stamp_preserving_swap() {
         None,
     );
     let (_, _, page_two) = first_page(&request, &policy, &security);
-    let before = execute_local_search(&page_two, &policy, &security, &NeverCancel, None, None)
-        .expect("page 2 from the stored scan");
+    let before = execute_local_search(
+        &page_two,
+        &policy,
+        &security,
+        &NeverCancel,
+        None,
+        None,
+        None,
+    )
+    .expect("page 2 from the stored scan");
     assert!(!values(&before).contains(&body), "{}", values(&before));
     assert!(values(&before).contains("REDACTED"), "{}", values(&before));
     let clean = format!(
@@ -922,7 +1141,15 @@ fn a_stored_key_fragment_never_surfaces_after_a_stamp_preserving_swap() {
         "// clean trailer".to_owned() + &" ".repeat("-----END PRIVATE KEY-----".len() - 16)
     );
     rewrite_keeping_stamp(&key, &clean);
-    match execute_local_search(&page_two, &policy, &security, &NeverCancel, None, None) {
+    match execute_local_search(
+        &page_two,
+        &policy,
+        &security,
+        &NeverCancel,
+        None,
+        None,
+        None,
+    ) {
         Ok(result) => assert!(
             !values(&result).contains(&body),
             "old key body surfaced: {}",
@@ -1004,6 +1231,7 @@ fn source_dirs_named_output_cache_vendor_are_searched_but_node_modules_is_not() 
         &NeverCancel,
         None,
         None,
+        None,
     )
     .expect("search");
     let body = serde_json::to_string(&serde_json::to_value(&result).expect("json")).expect("text");
@@ -1021,12 +1249,13 @@ fn source_dirs_named_output_cache_vendor_are_searched_but_node_modules_is_not() 
             .all(|file| !file.path.contains("node_modules")),
         "{body}"
     );
-    // Not searched, but never silently: named with the escape flag.
+    // Not searched, but never silently: named once, in `skippedPaths`
+    // (no warning restates it as a count), with the escape flag.
     assert!(
         result
             .warnings
             .iter()
-            .any(|warning| warning == "Default excludes skipped 1 dir."),
+            .all(|warning| !warning.contains("Default excludes")),
         "{body}"
     );
     let disclosed = serde_json::to_value(&result).expect("result");
@@ -1059,7 +1288,7 @@ fn skipped_single_file_target_explains_the_cap_instead_of_silent_empty() {
         None,
     );
 
-    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
         .expect("search");
     let body = serde_json::to_value(&result).expect("serialize");
 
@@ -1199,15 +1428,13 @@ fn a_glob_that_reaches_above_path_is_named() {
 /// to structureSearch would list nothing again.
 #[test]
 fn the_listing_lead_leaves_out_a_glob_that_reaches_above_path() {
-    let body = search_fixture(
-        &[("pkg/src/a.ts", "needle\n")],
-        ls_query(
-            serde_json::json!({"matchString": "needle", "include": ["../src/*.ts", "*.md"]}),
-            None,
-        ),
+    let request = ls_query(
+        serde_json::json!({"path": "/repo/pkg", "matchString": "needle", "include": ["../src/*.ts", "*.md"]}),
+        None,
     );
-    let listing = &body["next"]["viewTree"]["query"]["queries"][0];
-    assert_eq!(listing["include"], serde_json::json!(["*.md"]), "{body}");
+    let listing = leads::scope_listing(&request, true);
+    let listing = &listing["query"]["queries"][0];
+    assert_eq!(listing["include"], serde_json::json!(["*.md"]), "{listing}");
 }
 
 /// When include/exclude leave no file to search, the row says the scope
@@ -1617,8 +1844,8 @@ fn default_pages_fill_the_window_with_enclosing_names() {
         crate::tools::local_search::executor::scan_query(&query, &policy, &NeverCancel, None, None)
             .expect("scan")
             .page_budget;
-    let result =
-        execute_local_search(&query, &policy, &security, &NeverCancel, None, None).expect("page 1");
+    let result = execute_local_search(&query, &policy, &security, &NeverCancel, None, None, None)
+        .expect("page 1");
     let rows = result.files[0].matches.as_ref().expect("rows");
     assert!(
         rows.len() * 10 >= FLAT_RESERVE_FIRST_PAGE_ROWS * 13,
@@ -1673,8 +1900,9 @@ fn pages_are_identical_across_calls() {
         )
         .expect("scan")
         .page_budget;
-        let direct = execute_local_search(&page, &policy, &security, &NeverCancel, None, None)
-            .expect("direct page");
+        let direct =
+            execute_local_search(&page, &policy, &security, &NeverCancel, None, None, None)
+                .expect("direct page");
         let direct = serde_json::to_value(&direct).expect("result");
         assert_eq!(direct["files"], walked["files"], "page {}", index + 1);
         let chars = crate::tools::stream_page::json_chars(&walked["files"]);
@@ -1702,13 +1930,79 @@ fn an_edit_to_an_earlier_pages_file_restarts_the_walk() {
     );
     let (first, _, page_two) = first_page(&request, &policy, &security);
     assert!(first.files.iter().any(|file| file.path == "small.rs"));
-    let served = execute_local_search(&page_two, &policy, &security, &NeverCancel, None, None)
-        .expect("page 2");
+    let served = execute_local_search(
+        &page_two,
+        &policy,
+        &security,
+        &NeverCancel,
+        None,
+        None,
+        None,
+    )
+    .expect("page 2");
     assert!(served.files.iter().all(|file| file.path != "small.rs"));
     rewrite_keeping_stamp(&small, &let_heavy_rust("omega", 1));
-    match execute_local_search(&page_two, &policy, &security, &NeverCancel, None, None) {
+    match execute_local_search(
+        &page_two,
+        &policy,
+        &security,
+        &NeverCancel,
+        None,
+        None,
+        None,
+    ) {
         Ok(result) => panic!("page cut from changed outlines: {}", values(&result)),
         Err(error) => assert_eq!(error.code, "staleSnapshot"),
+    }
+}
+
+#[test]
+fn rescanned_pages_reject_changed_enclosing_names() {
+    for evict_before_edit in [false, true] {
+        let root = tempfile::tempdir().expect("fixture");
+        let source = root.path().join("engine.rs");
+        fs::write(&source, let_heavy_rust(&"long_name_".repeat(12), 240)).expect("fixture");
+        let (policy, security) = policy_for(root.path());
+        let request = ls_query(
+            serde_json::json!({"path": root.path(), "matchString": "let "}),
+            None,
+        );
+        let (first, snapshot, page_two) = first_page(&request, &policy, &security);
+        assert!(
+            first
+                .next
+                .as_ref()
+                .is_some_and(|next| next.get("nextPage").is_some())
+        );
+        super::super::manifest::evict(&snapshot);
+        let unchanged = execute_local_search(
+            &page_two,
+            &policy,
+            &security,
+            &NeverCancel,
+            None,
+            None,
+            None,
+        )
+        .expect("an unchanged rescan keeps its snapshot");
+        assert!(!unchanged.files.is_empty());
+        if evict_before_edit {
+            super::super::manifest::evict(&snapshot);
+        }
+        fs::write(&source, let_heavy_rust("f", 240)).expect("rename enclosing functions");
+        let changed = execute_local_search(
+            &page_two,
+            &policy,
+            &security,
+            &NeverCancel,
+            None,
+            None,
+            None,
+        );
+        match changed {
+            Ok(result) => panic!("accepted changed page cuts: {}", values(&result)),
+            Err(error) => assert_eq!(error.code, "staleSnapshot"),
+        }
     }
 }
 
@@ -1729,13 +2023,22 @@ fn default_path_views_page_by_cost_and_explicit_counts_still_win() {
             serde_json::json!({"path":root.path(),"matchString":term,"resultView":view}),
             None,
         );
-        let result = execute_local_search(&query, &policy, &security, &NeverCancel, None, None)
-            .expect("default");
+        let result =
+            execute_local_search(&query, &policy, &security, &NeverCancel, None, None, None)
+                .expect("default");
         assert_eq!(result.files.len(), 300, "{view}");
         assert!(result.next.is_none(), "{view}");
         let explicit = ls_query(serde_json::json!({"pageSize":7}), Some(&query));
-        let result = execute_local_search(&explicit, &policy, &security, &NeverCancel, None, None)
-            .expect("explicit");
+        let result = execute_local_search(
+            &explicit,
+            &policy,
+            &security,
+            &NeverCancel,
+            None,
+            None,
+            None,
+        )
+        .expect("explicit");
         assert_eq!(result.files.len(), 7, "{view}");
         assert!(result.next.is_some(), "{view}");
     }
@@ -1768,4 +2071,101 @@ fn adaptive_path_pages_copy_their_query_and_cover_each_count_once() {
     // Each path once, every continuation within the input contract.
     assert_eq!(walk.rows.len(), 300);
     assert!(bodies.len() > 1);
+}
+
+/// Many small files fill one response window instead of pages of a fixed
+/// file count, and every row on that page still names its enclosing
+/// declaration.
+#[test]
+fn small_files_fill_the_response_window_with_every_row_named() {
+    let root = tempfile::tempdir().expect("fixture");
+    for i in 0..40 {
+        fs::write(
+            root.path().join(format!("file{i:02}.ts")),
+            format!("export function f{i}() {{\n  return \"pageMarker\";\n}}\n"),
+        )
+        .expect("fixture");
+    }
+    let start =
+        serde_json::json!({"path": root.path().to_string_lossy(), "matchString": "pageMarker"});
+    let (walk, bodies) = walk_search(root.path(), start, Some(20_000));
+    assert_eq!(walk.rows.len(), 40, "every file once");
+    assert_eq!(
+        bodies.len(),
+        1,
+        "one page holds all 40 files: {:?}",
+        bodies[0]["pagination"]
+    );
+    let files = bodies[0]["files"].as_array().expect("files");
+    assert_eq!(files.len(), 40);
+    for file in files {
+        let number = file["path"].as_str().expect("path")[4..6]
+            .parse::<u32>()
+            .expect("number");
+        assert_eq!(
+            owner_of(file, 0).map(|owner| owner["symbolName"].clone()),
+            Some(serde_json::json!(format!("f{number}"))),
+            "{file}"
+        );
+    }
+}
+
+/// With context, a file whose hits are split across pages (by rank or by
+/// the page budget) shows each hit line and each context line once across
+/// the whole chain: a window never repeats lines another page's row owns.
+#[test]
+fn context_windows_show_every_line_once_across_pages() {
+    let root = tempfile::tempdir().expect("fixture");
+    let mut body = String::new();
+    let mut hits = Vec::new();
+    for line in 1..=400u32 {
+        // Irregular spacing, mixed ranks: declarations, code, comments.
+        let text = match line % 11 {
+            0 => format!("fn needle_{line}() {{}}"),
+            3 | 5 => format!("    let x = needle({line});"),
+            7 => format!("    // needle {line}"),
+            _ => format!("    other({line});"),
+        };
+        if text.contains("needle") {
+            hits.push(line);
+        }
+        body.push_str(&text);
+        body.push('\n');
+    }
+    fs::write(root.path().join("a.rs"), &body).expect("a");
+    fs::write(root.path().join("b.rs"), &body).expect("b");
+    let start = serde_json::json!({"path": root.path().to_string_lossy(),
+        "matchString": "needle", "contextLines": 3});
+    let (_, bodies) = walk_search(root.path(), start, Some(4_000));
+    assert!(bodies.len() > 2, "the chain pages: {}", bodies.len());
+    let mut seen = std::collections::BTreeMap::<(String, u32), usize>::new();
+    for page in &bodies {
+        for file in page["files"].as_array().into_iter().flatten() {
+            let path = file["path"].as_str().expect("path").to_owned();
+            for row in file["matches"].as_array().into_iter().flatten() {
+                for text in row["value"].as_str().expect("value").split('\n') {
+                    let number = text
+                        .split('\t')
+                        .next()
+                        .and_then(|n| n.parse::<u32>().ok())
+                        .unwrap_or_else(|| panic!("numbered line: {text:?}"));
+                    *seen.entry((path.clone(), number)).or_default() += 1;
+                }
+            }
+        }
+    }
+    let repeated = seen
+        .iter()
+        .filter(|(_, count)| **count > 1)
+        .map(|(key, _)| key.clone())
+        .collect::<Vec<_>>();
+    assert!(repeated.is_empty(), "lines shown twice: {repeated:?}");
+    for path in ["a.rs", "b.rs"] {
+        for &hit in &hits {
+            assert!(
+                seen.contains_key(&(path.to_owned(), hit)),
+                "{path}:{hit} never shown"
+            );
+        }
+    }
 }

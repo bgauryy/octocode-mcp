@@ -561,7 +561,7 @@ fn continuation_snapshots_bind_page_size_and_rendered_metadata() {
 fn files_disclose_policy_withheld_coverage_without_exposing_names() {
     let root = Fixture::new();
     std::fs::write(root.0.join(".env.production"), "DUMMY_VALUE=placeholder\n").expect("fixture");
-    let out = run(&root.0, json!({"operation":"files","path":root.0,"include":[".env.production"],"includeIgnored":true,"defaultExcludes":false,"mainGoal":"test","reasoning":"test"})).expect("listing");
+    let out = run(&root.0, json!({"operation":"files","path":root.0,"include":[".env.production"],"includeIgnored":true,"includeHidden":true,"defaultExcludes":false,"mainGoal":"test","reasoning":"test"})).expect("listing");
     assert!(listed(&out).is_empty(), "{out}");
     assert!(
         out["warnings"]

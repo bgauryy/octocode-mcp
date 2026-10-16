@@ -771,7 +771,10 @@ fn happy_path_rows_carry_the_next_hop_anchors() {
 
     let matched = run(
         &root.0,
-        json!({"operation":"match","path":file,"pattern":"fn $N($$$P) { $$$B }"}),
+        json!({"operation":"match","path":file,"rule":{"any":[
+            {"pattern":"fn $N($$$P) { $$$B }"},
+            {"pattern":"pub fn $N($$$P) { $$$B }"}
+        ]}}),
     )
     .expect("match");
     let rows = matched["files"][0]["matches"].as_array().expect("rows");

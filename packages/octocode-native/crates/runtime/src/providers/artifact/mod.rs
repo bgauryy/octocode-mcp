@@ -49,7 +49,7 @@ pub async fn execute_artifact(
         tags: context.tags,
     };
     let state = page_state(query);
-    validate_cursor_state(&state)?;
+    validate_cursor_state(query.artifact_type(), &state)?;
     if query.version().is_some() && version_support(query.artifact_type().as_str()) == "none" {
         return Err(ArtifactError::new(
             "capabilityUnavailable",
@@ -114,11 +114,12 @@ fn page_state(query: &ArtifactSearchQuery) -> ArtifactProviderState {
 /// position past the paging range; `None` when the registry can serve it.
 /// A next-page lead names only a page this admits.
 pub(crate) fn page_out_of_range(query: &ArtifactSearchQuery) -> Option<TerminalLimit> {
-    validate_cursor_state(&page_state(query)).err()?;
+    let artifact_type = query.artifact_type();
+    validate_cursor_state(artifact_type, &page_state(query)).err()?;
     Some(TerminalLimit::result_cap(format!(
-        "page {} at pageSize {} starts past result {MAX_CURSOR_OFFSET}, the deepest a discovery pages.",
+        "page {} starts past result {}, the deepest {artifact_type} search pages.",
         query.page(),
-        query.page_size()
+        max_start_offset(artifact_type)
     )))
 }
 
@@ -127,9 +128,24 @@ pub(crate) fn page_out_of_range(query: &ArtifactSearchQuery) -> Option<TerminalL
 const MAX_CURSOR_OFFSET: u64 = 10_000;
 const MAX_CURSOR_PAGE: u64 = 1_000;
 const MAX_CURSOR_TOKEN_BYTES: usize = 4_096;
+/// npm search serves `from` up to 5,000; a deeper `from` answers with the
+/// first rows again (registry.npmjs.org, measured 2026-10-15).
+const NPM_MAX_FROM: u64 = 5_000;
 
-fn validate_cursor_state(state: &ArtifactProviderState) -> Result<(), ArtifactError> {
-    let out_of_range = state.offset.unwrap_or(0) > MAX_CURSOR_OFFSET
+/// The deepest result position a discovery page of `artifact_type` may
+/// start at.
+fn max_start_offset(artifact_type: ArtifactType) -> u64 {
+    match artifact_type {
+        ArtifactType::Npm => NPM_MAX_FROM,
+        _ => MAX_CURSOR_OFFSET,
+    }
+}
+
+fn validate_cursor_state(
+    artifact_type: ArtifactType,
+    state: &ArtifactProviderState,
+) -> Result<(), ArtifactError> {
+    let out_of_range = state.offset.unwrap_or(0) > max_start_offset(artifact_type)
         || state.page.unwrap_or(1) > MAX_CURSOR_PAGE
         || state.page == Some(0)
         || state
@@ -225,7 +241,8 @@ mod cursor_state_tests {
                 ..Default::default()
             },
         ] {
-            let error = validate_cursor_state(&state).expect_err("out of range");
+            let error =
+                validate_cursor_state(ArtifactType::Maven, &state).expect_err("out of range");
             assert_eq!(error.code, "invalidInput");
         }
         for state in [
@@ -236,7 +253,7 @@ mod cursor_state_tests {
                 token: Some("issued".into()),
             },
         ] {
-            assert!(validate_cursor_state(&state).is_ok());
+            assert!(validate_cursor_state(ArtifactType::Maven, &state).is_ok());
         }
     }
 

@@ -1,6 +1,7 @@
 // Regression workflows for every defect fixed in this pass, plus
 // continuation hygiene: each `next.*` met along the way must execute.
 import fs from 'node:fs';
+import { suggestedCall } from './lead-predicates.mjs';
 import path from 'node:path';
 import { FIXTURES, ROOT, checks, collect, declarations, lspCallers, findHint, nextHints, rowData, rootPath, startServer, writeResults, lspLocations } from './mcp-client.mjs';
 
@@ -33,21 +34,20 @@ for (const [variant, ext] of [['cjs-noconfig', 'cjs'], ['cjs-jsconfig', 'cjs'], 
 }
 
 // F2 — workspaceSymbol ranks the exact name first.
+let rustServer;
 {
-  const ws = await call('lspSearch', { path: path.join(NATIVE, 'crates/runtime/src/process_status.rs'), operation: 'workspaceSymbol', symbolName: 'is_alive' });
+  const ws = await call('lspSearch', { path: path.join(NATIVE, 'crates/runtime/src/process_status.rs'), operation: 'workspaceSymbol', symbolName: 'is_alive', extras: ['receipts'] });
+  rustServer = rowData(ws)?.lsp?.receipt;
   const first = rowData(ws)?.matches?.[0]?.symbolName;
   check('F2: exact workspace symbol ranks first', first === 'is_alive', first);
 }
 
-// F3 — root-only search in a mixed TS+Rust root routes to the other language.
+// F3 — a Cargo workspace's declared language takes precedence over its JS wrapper.
 {
-  const ws = await call('lspSearch', { workspaceRoot: NATIVE, operation: 'workspaceSymbol', symbolName: 'is_alive' });
-  const route = findHint(ws.sc, 'hints.searchRust');
-  check('F3: mixed root names the searched language and offers hints.searchRust', (rowData(ws)?.lsp?.language ?? (/\btypescript (?:language )?server\b/.test(JSON.stringify(rowData(ws)?.hints?.text ?? [])) ? 'typescript' : undefined)) === 'typescript' && !!route, JSON.stringify(rowData(ws)?.hints));
-  if (route) {
-    const followed = await client.follow(route);
-    check('F3: following hints.searchRust finds is_alive', (rowData(followed)?.matches ?? []).some(i => i.symbolName === 'is_alive'), followed.text.slice(0, 100));
-  }
+  const ws = await call('lspSearch', { workspaceRoot: NATIVE, operation: 'workspaceSymbol', symbolName: 'is_alive', extras: ['receipts'] });
+  const receipt = rowData(ws)?.lsp?.receipt;
+  check('F3: root-only Cargo workspace search uses the Rust anchor server', !!rustServer?.command && receipt?.command === rustServer.command && receipt?.configurationFingerprint === rustServer.configurationFingerprint && receipt?.workspaceFingerprint === rustServer.workspaceFingerprint, JSON.stringify(receipt));
+  check('F3: root-only search directly finds the Rust declaration', (rowData(ws)?.matches ?? []).some(i => i.symbolName === 'is_alive' && i.path?.endsWith('.rs')), ws.text.slice(0, 150));
 }
 
 // F7 — pasted ast-grep rule files run as-is; unsupported operators still fail clearly.
@@ -76,16 +76,30 @@ for (const [variant, ext] of [['cjs-noconfig', 'cjs'], ['cjs-jsconfig', 'cjs'], 
   ]) check(`secrets: ${label} never returns the secret`, ![AWS, GHP.slice(0, 14), 'MIIEowIBAAKCAQEA'].some(secret => entry.text.includes(secret)), entry.text.slice(0, 80));
   const right = await call('localFetch', { path: file, matchString: 'ghp_1234' });
   const wrong = await call('localFetch', { path: file, matchString: 'ghp_9999' });
-  check('F8: right and wrong secret guesses are indistinguishable', JSON.stringify(rowData(right)?.hints) === JSON.stringify(rowData(wrong)?.hints) && rowData(right)?.errorCode === rowData(wrong)?.errorCode);
-  check('F8: the miss explains redaction', (rowData(right)?.hints?.text ?? []).some(h => h.includes('REDACTED')), JSON.stringify(rowData(right)?.hints));
+  const observation = (entry, term) => {
+    const value = structuredClone(entry.sc);
+    for (const data of collect(value, node => Array.isArray(node.hints))) {
+      data.hints = data.hints.map(text => {
+        const lead = suggestedCall(text);
+        if (!lead) return text;
+        for (const query of lead.query.queries) {
+          if (query.matchString === term) query.matchString = '<input matchString>';
+        }
+        return lead;
+      });
+    }
+    return JSON.stringify(value);
+  };
+  check('F8: right and wrong secret guesses differ only in echoed hint inputs', observation(right, 'ghp_1234') === observation(wrong, 'ghp_9999'));
+  check('F8: the miss explains redaction', (rowData(right)?.hints ?? []).some(h => h.includes('REDACTED')), JSON.stringify(rowData(right)?.hints));
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
 // F9 — directory symbols with language returns an exact, executable repair.
 {
   const bad = await call('astSearch', { operation: 'symbols', path: path.join(NATIVE, 'scripts'), language: 'JavaScript' });
-  const repair = findHint(bad.sc, 'hints.repair');
-  check('F9: repair continuation drops language', !!repair && !('language' in repair.query), JSON.stringify(rowData(bad)?.hints));
+  const repair = findHint(bad.sc, 'repair');
+  check('F9: repair continuation drops language', !!repair && repair.query.queries.every(query => !Object.hasOwn(query, 'language')), JSON.stringify(rowData(bad)?.hints));
   if (repair) {
     const fixed = await client.follow(repair);
     check('F9: repair returns directory symbols', declarations(fixed).filter(o => o.name === 'stageFile').length > 0, fixed.text.slice(0, 80));

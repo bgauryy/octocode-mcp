@@ -6,7 +6,7 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { REPOS, checks, clasifyUnavailable, collect, inventoryRows, nextHints, patchNumbersIssue, rawPatch, rowData, sourceView, startServer, writeResults } from './mcp-client.mjs';
+import { findHint, REPOS, checks, clasifyUnavailable, collect, inventoryRows, nextHints, patchNumbersIssue, rawPatch, rowData, sourceView, startServer, writeResults } from './mcp-client.mjs';
 
 const { check, skip, summary } = checks('github');
 // Section E's selection needs only the caller's provider key.
@@ -62,21 +62,23 @@ for (const r of Object.values(pinned)) {
     const text = local(r.dir, file);
     const lines = localLines(r.dir, file);
     const base = { owner: r.owner, repo: r.repo, ref: r.sha, path: file };
-    // Whole file when it fits; otherwise the tool must say why and offer a way on.
-    // Byte identity needs the verbatim view: the default `minify:"standard"` drops comments and indentation.
-    const whole = await call('ghGetFileContent', { ...base, fullContent: true, minify: 'none', extras: ['stats'] });
+    // Full content can span windows; replay each continuation unchanged.
+    const whole = await call('ghGetFileContent', { ...base, fullContent: true, extras: ['stats'] });
     const w = fileRow(whole);
     check(`${r.dir}/${file}: totalLines and sourceBytes match git`, w?.totalLines === lines.length && w?.sourceBytes === Buffer.byteLength(text), `tool ${w?.totalLines}L/${w?.sourceBytes}B vs git ${lines.length}L/${Buffer.byteLength(text)}B`);
-    if (!w?.isPartial) {
-      const whole = sourceView(w).text;
-      check(`${r.dir}/${file}: fullContent is byte-identical`, whole === text || whole === text.replace(/\n$/, ''), firstDiff(whole, text));
-      stats.bytesCompared += Buffer.byteLength(text);
-    } else {
-      // Oversize fullContent returns page 1 inline (exact source) plus a continuation.
-      const firstLines = sourceView(w).text.replace(/\n$/, '');
-      const inline = firstLines.length > 0 && text.startsWith(firstLines) && (w.partialReasons ?? []).length > 0 && !!w.next;
-      check(`${r.dir}/${file}: oversize fullContent returns an exact first page and a continuation`, inline, JSON.stringify({ partialReasons: w.partialReasons, bytes: firstLines.length, next: Object.keys(w.next ?? {}) }));
+    let fullPage = whole;
+    let fullText = '';
+    let fullError = null;
+    for (let guard = 0; fullPage && guard < 200; guard++) {
+      const row = fileRow(fullPage);
+      if (fullPage.isError || fullPage.rowErrors) { fullError = 'fullContent window failed'; break; }
+      fullText += sourceView(row).text;
+      const continuation = row?.next?.continueWindow;
+      if (row?.pagination?.hasMore && !continuation) { fullError = 'unfinished fullContent window has no continuation'; break; }
+      fullPage = continuation ? await client.follow(continuation) : null;
     }
+    check(`${r.dir}/${file}: fullContent walk terminates and is byte-identical`, !fullPage && !fullError && fullText === text, fullError ?? firstDiff(fullText, text));
+    stats.bytesCompared += Buffer.byteLength(fullText);
     // Walk the file in 1500-line windows to the end; every returned range must equal git.
     // A `ranges` read's first page holds 6 KiB; `next.continueWindow` pages the rest of the window
     // (16 KiB pages), and the next window starts after the last line returned.
@@ -85,7 +87,7 @@ for (const r of Object.values(pinned)) {
     let mismatch = null;
     for (let guard = 0; next <= lines.length && guard < 200 && !mismatch; guard++) {
       const end = Math.min(lines.length, next + 1499);
-      let out = await call('ghGetFileContent', { ...base, ranges: [`${next}-${end}`], minify: 'none' });
+      let out = await call('ghGetFileContent', { ...base, ranges: [`${next}-${end}`] });
       const start = next;
       for (; guard < 200; guard++) {
         const row = fileRow(out);
@@ -111,21 +113,20 @@ for (const r of Object.values(pinned)) {
   const picks = [[1, 1], [lines.length, lines.length], [lines.length - 5, lines.length]];
   for (let i = 0; i < 12; i++) { const s = 1 + Math.floor(((i * 7919) % 997) / 997 * (lines.length - 40)); picks.push([s, s + (i % 5) * 9]); }
   for (const [s, e] of picks) {
-    const row = fileRow(await call('ghGetFileContent', { owner: r.owner, repo: r.repo, ref: r.sha, path: file, ranges: [`${s}-${e}`], minify: 'none' }));
+    const row = fileRow(await call('ghGetFileContent', { owner: r.owner, repo: r.repo, ref: r.sha, path: file, ranges: [`${s}-${e}`] }));
     const got = sourceView(row).text.replace(/\n$/, '');
     if (got !== lines.slice(s - 1, e).join('\n')) bad.push(`${s}-${e}`);
     stats.rangesCompared += 1;
   }
   check(`${r.dir}: ${picks.length} exact ranges (first/last/single line) equal git`, bad.length === 0, bad.join(','));
-  // The default view (`minify:"standard"`) cites every kept line by its source number: each view
-  // line, whitespace removed, lies inside that git line (comments and indentation dropped, nothing joined).
+  // The default line view cites every returned line by its source number.
   {
     const squash = t => t.replace(/\s+/g, '');
     const view = sourceView(fileRow(await call('ghGetFileContent', { owner: r.owner, repo: r.repo, ref: r.sha, path: file, ranges: ['1-400'] })));
     const viewLines = view.text.replace(/\n$/, '').split('\n').filter(l => l !== '--');
     const numbers = view.ranges.flatMap(g => Array.from({ length: g.end - g.start + 1 }, (_, i) => g.start + i));
     const wrong = numbers.map((n, i) => ({ n, v: viewLines[i] })).filter(({ n, v }) => v === undefined || !squash(lines[n - 1] ?? '').includes(squash(v)));
-    check(`${r.dir}: default standard view cites each kept line by its source line number`, view.numbered && numbers.length === viewLines.length && numbers.length > 0 && wrong.length === 0, `numbered=${view.numbered} lines=${numbers.length}/${viewLines.length} wrong=${JSON.stringify(wrong.slice(0, 2))}`);
+    check(`${r.dir}: default line view cites each kept line by its source line number`, view.numbered && numbers.length === viewLines.length && numbers.length > 0 && wrong.length === 0, `numbered=${view.numbered} lines=${numbers.length}/${viewLines.length} wrong=${JSON.stringify(wrong.slice(0, 2))}`);
   }
   // matchString windows: each returned range is exact and every literal hit is covered.
   const needle = { rust: 'pub fn try_', c: 'serverCron', python: 'def _', go: 'func (db *DB)', typescript: 'export function is' }[r.dir];
@@ -152,21 +153,18 @@ for (const r of Object.values(pinned)) {
   let offset = 0;
   let joined = '';
   for (let guard = 0; guard < 60 && offset < size; guard++) {
-    const row = fileRow(await call('ghGetFileContent', { owner: r.owner, repo: r.repo, ref: r.sha, path: file, unit: 'bytes', offset, length: 4000, minify: 'none' }));
+    const row = fileRow(await call('ghGetFileContent', { owner: r.owner, repo: r.repo, ref: r.sha, path: file, unit: 'bytes', offset, length: 4000 }));
     const piece = row?.content ?? '';
     if (!piece) break;
     joined += piece;
     offset += Buffer.byteLength(piece);
   }
   check('byte chunks reassemble the file exactly', joined === text, firstDiff(joined, text));
-  // TOOL_DATA_CONTRACT "Numbered source content": byte windows address the selected view. In the
-  // default `standard` view the page is numbered view text and `totalBytes` counts that view (the
-  // numbered walk above pages the same way); `minify:"none"` byte pages are verbatim source.
+  // Default byte windows address verbatim source, with no line-number gutter.
   const page = fileRow(await call('ghGetFileContent', { owner: r.owner, repo: r.repo, ref: r.sha, path: file, unit: 'bytes', offset: 0, length: 300 }));
-  const pageLines = (page?.content ?? '').split('\n').filter(Boolean);
-  const guttered = pageLines.filter(l => /^\d+\t/.test(l)).length;
-  const viewAddressed = !!page?.content && guttered >= pageLines.length - 1 && page?.pagination?.totalBytes !== size;
-  check('default-view byte page addresses the numbered standard view (gutter, view totalBytes)', viewAddressed, JSON.stringify({ guttered: `${guttered}/${pageLines.length}`, head: (page?.content ?? '').slice(0, 60), contentView: page?.contentView, totalBytes: page?.pagination?.totalBytes, sourceBytes: size }));
+  const actual = Buffer.from(page?.content ?? '');
+  const exact = actual.length >= 300 && actual.length <= 303 && actual.equals(Buffer.from(text).subarray(0, actual.length));
+  check('default byte page is the exact source prefix', exact, JSON.stringify({ bytes: actual.length, totalBytes: page?.pagination?.totalBytes, sourceBytes: size }));
 }
 
 // ── B. ghSearch fidelity ───────────────────────────────────────────────────
@@ -310,9 +308,9 @@ for (const r of Object.values(pinned)) {
   if (prNumber) {
     // A section read returns a slim header; extras details keeps the PR totals (additions/deletions).
     const pr = rowData(await call('ghGetHistoryItem', { operation: 'pullRequest', owner: r.owner, repo: r.repo, number: prNumber, sections: ['files'], extras: ['details'] }))?.pullRequests?.[0];
-    check(`PR #${prNumber}: mergeCommitSha is the pinned squash commit`, pr?.mergeCommitSha === r.sha && !pr?.hints?.readMergeCommit, `mergeCommitSha=${pr?.mergeCommitSha}`);
+    check(`PR #${prNumber}: mergeCommitSha is the pinned squash commit`, pr?.mergeCommitSha === r.sha && !findHint(pr, 'readMergeCommit'), `mergeCommitSha=${pr?.mergeCommitSha}`);
     // A squash headline `… (#N)` routes straight to hints.readPullRequest; otherwise hints.findPullRequest searches by SHA.
-    const prHint = commit?.hints?.readPullRequest ?? commit?.hints?.findPullRequest;
+    const prHint = findHint(commit, 'readPullRequest') ?? findHint(commit, 'findPullRequest');
     check(`commit ${r.sha.slice(0, 8)}: PR continuation exists`, !!prHint);
     const found = prHint ? rowData(await client.follow(prHint)) : null;
     check(`commit ${r.sha.slice(0, 8)}: hints.readPullRequest/findPullRequest reaches PR #${prNumber}`, collect(found, o => o.number === prNumber && typeof o.title === 'string').length > 0, JSON.stringify(prHint?.query));
@@ -394,7 +392,7 @@ for (const r of Object.values(pinned)) {
     check(`PR #${number}: review sections return reviews and commits fields`, hasField('reviews') && hasField('commits'), JSON.stringify(detail).slice(0, 160));
   }
   const commit = rowData(await call('ghGetHistoryItem', { operation: 'commit', owner: r.owner, repo: r.repo, ref: r.sha, extras: ['details'] }));
-  check('commit: sha is the pinned SHA', commit?.sha === r.sha, commit?.sha);
+  check('commit: commitSha is the pinned SHA', commit?.commitSha === r.sha, commit?.commitSha);
   const compared = patchRows(await call('ghGetHistoryItem', { operation: 'compare', owner: r.owner, repo: r.repo, base: parent, head: r.sha, sections: ['patches'] }));
   check('compare parent...HEAD with patches: every file delta equals git', compared.length === files.length && compared.every(sameDelta), `${compared.length}/${files.length}`);
   const open = collect(rowData(await call('ghSearchHistory', { owner: 'microsoft', repo: 'TypeScript', operation: 'pullRequest', state: 'open', pageSize: 3 })), v => typeof v.number === 'number' && typeof v.title === 'string');
@@ -429,7 +427,7 @@ else {
     const bytes = Buffer.byteLength(local(r.dir, t.file));
     // A raw line window at the pinned commit: selection judges raw line chunks
     // (minified and byte views are rejected) and keeps source order.
-    const pages = [await call('ghGetFileContent', { owner: r.owner, repo: r.repo, path: t.file, ref: r.sha, unit: 'lines', length: 120, minify: 'none', clasifyContext: { classifiers: [t.target] } })];
+    const pages = [await call('ghGetFileContent', { owner: r.owner, repo: r.repo, path: t.file, ref: r.sha, unit: 'lines', length: 120, clasifyContext: { classifiers: [t.target] } })];
     for (let lead = fileRow(pages[0])?.next?.continueWindow; lead && pages.length < 20; lead = fileRow(pages.at(-1))?.next?.continueWindow) pages.push(await client.follow(lead));
     const data = fileRow(pages[0]) ?? {};
     const receipt = data.selection;
@@ -478,7 +476,7 @@ else {
   } }] });
   const row = out.sc?.queries?.[0] ?? {};
   check('clasify GitHub source: a present target answers yes and an absent one no', row.answers?.channel?.noul >= 0.5 && row.answers?.yaml?.noul < 0.5, JSON.stringify(row.answers ?? row.error));
-  const lead = row.hints?.read;
+  const lead = findHint(row, 'read');
   const read = lead && await client.follow(lead);
   const lines = numberedLines(read && fileRow(read)?.content);
   check('clasify GitHub source: hints.read re-reads the captured range at the pinned commit', lead?.tool === 'ghGetFileContent' && lead.query?.queries?.[0]?.ref === r.sha

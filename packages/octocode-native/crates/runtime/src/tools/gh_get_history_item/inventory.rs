@@ -6,6 +6,7 @@ use super::text::needle;
 use super::util::{str_at, string, usize_at};
 use super::window::{WindowState, auto_page, patch_window};
 use super::{DEFAULT_PAGE_SIZE, HistoryItemRequest};
+use crate::tools::result::remove_nulls;
 use octocode_github::MAX_PER_PAGE;
 use serde_json::{Map, Value, json};
 
@@ -38,10 +39,26 @@ pub(super) fn file_page_size(query: &HistoryItemRequest, patches: bool) -> usize
         (None, true) => MAX_PER_PAGE,
         (Some(_), true) => query.collection_page_size(),
         (Some(size), false) => size.clamp(1, max_inventory_page()),
-        (None, false) => (auto_page(query.auto_page_chars) / INVENTORY_ROW_CHARS)
-            .clamp(MAX_PER_PAGE, max_inventory_page())
-            .max(DEFAULT_PAGE_SIZE),
+        (None, false) => budget_inventory_page(query),
     }
+}
+
+/// The patch-free inventory page an omitted `pageSize` fills: as many
+/// compact rows as fit this row's share of the response page (100–1000).
+fn budget_inventory_page(query: &HistoryItemRequest) -> usize {
+    (auto_page(query.auto_page_chars) / INVENTORY_ROW_CHARS)
+        .clamp(MAX_PER_PAGE, max_inventory_page())
+        .max(DEFAULT_PAGE_SIZE)
+}
+
+/// The file page size a file-page continuation must carry: the budget-sized
+/// inventory page of a read that omitted `pageSize`. That size follows the
+/// row's share of the response budget (batch size, `responseLength`), so a
+/// continuation that left it out would re-cut the file list on another grid
+/// and skip or repeat files. Every other file page size is the caller's or
+/// a fixed batch, which the continuation reproduces as is.
+pub(super) fn pinned_file_page_size(query: &HistoryItemRequest, patches: bool) -> Option<usize> {
+    (query.page_size().is_none() && !patches).then(|| budget_inventory_page(query))
 }
 
 /// GitHub file status as one inventory letter (git's diff letters; T is
@@ -100,11 +117,24 @@ pub(super) fn inventory_row(file: &Value, name: &str) -> String {
     row
 }
 
-/// Compact a patch-free file page: files of one directory share a
-/// `{"dir/": [rows]}` group (see [`group_by_directory`]); every other file is
-/// a full-path row.
+/// Compact a patch-free page of provider files, for a pull request, a
+/// commit, a comparison and a PR commit alike: files of one directory share
+/// a `{"dir/": [rows]}` group (see [`group_by_directory`]); every other file
+/// is a full-path row. A file GitHub sent without a patch says why
+/// (`A +0 -0 !binary logo.png`), so its zero counts never read as an empty
+/// change.
 pub(super) fn compact_inventory(files: &[Value]) -> Vec<Value> {
-    group_by_directory(files, inventory_row)
+    let rows = files.iter().map(metadata_row).collect::<Vec<_>>();
+    group_by_directory(&rows, inventory_row)
+}
+
+/// A provider file's metadata row (no patch), flagged when GitHub sent no
+/// patch ([`inventory_patch_flag`]).
+pub(super) fn metadata_row(file: &Value) -> Value {
+    let mut row = file_metadata(file);
+    inventory_patch_flag(&mut row, file);
+    remove_nulls(&mut row);
+    row
 }
 
 /// One patch-page summary row of a provider file: the inventory row with
@@ -282,66 +312,34 @@ pub(super) fn shape_pr_files(
     files: Vec<Value>,
     state: WindowState,
     query: &HistoryItemRequest,
-    patch_mode: &str,
-    scope: Option<&InventoryFilter>,
+    patches: bool,
+    scope: Option<&FileScope>,
 ) -> ShapedFiles {
     let needle = needle(query);
-    let filter = FileFilter {
+    let FilteredPage {
+        files: slice,
+        page,
+        kept,
+        unsearched,
+        dropped,
+        in_scope,
+    } = FileFilter {
         needle: needle.as_deref(),
         scope,
-    };
-    let unsearched = match needle.as_deref() {
-        Some(_) if patch_mode != "none" => unsearched_files(&files, &filter),
-        _ => Vec::new(),
-    };
+    }
+    .page(files, state, query, patches);
     let first_unsearched = unsearched
         .first()
         .map(|(_, path, removed)| (path.clone(), *removed));
-    let unsearched_count = unsearched.len();
     let unsearched = unsearched
         .into_iter()
         .map(|(reason, path, _)| format!("!{reason} {path}"))
         .collect::<Vec<_>>();
-    let in_scope = files
-        .iter()
-        .filter(|file| scope.is_none_or(|scope| scope.matches(file)))
-        .count();
-    let filtered = files
-        .into_iter()
-        .filter(|file| filter.matches(file))
-        .collect::<Vec<_>>();
-    let dropped = in_scope.saturating_sub(filtered.len() + unsearched_count);
-    let match_dropped =
-        (needle.is_some() && !query.later_page() && dropped > 0 && !filtered.is_empty())
-            .then_some((dropped, in_scope));
-    let per_page = file_page_size(query, patch_mode != "none");
-    let (slice, page) = state.paginate(filtered, query.page(), Some(per_page));
+    let match_dropped = (needle.is_some() && !query.later_page() && dropped > 0 && kept > 0)
+        .then_some((dropped, in_scope));
     let review = review_selection(&slice, patch_window(None, query.auto_page_chars));
-    // A patch read that does not fit one response lists its page's files
-    // first (status, change counts, hunks), then the patches in file order.
-    let summary = (patch_mode != "none" && query.char_offset().is_none())
-        .then(|| group_by_directory(&slice, summary_row));
-    // The summary rides the first window of a page whose patches do not
-    // all fit it: its chars come out of that window, so the row (summary
-    // plus patches) still fits one response page and never splits into a
-    // part without patch rows. A page whose patches fit shows them alone.
-    let summary_chars = summary
-        .as_ref()
-        .filter(|summary| !summary.is_empty())
-        .map_or(0, crate::tools::stream_page::json_chars);
-    let include_patch = patch_mode != "none";
-    let patches = if summary_chars == 0 {
-        shape_patch_page(slice, include_patch, query)
-    } else {
-        let whole = shape_patch_page(slice.clone(), include_patch, query);
-        if whole.cursor.is_none() {
-            whole
-        } else {
-            shape_patch_page_reserving(slice, include_patch, query, summary_chars)
-        }
-    };
-    if patch_mode == "none" {
-        let rows = compact_inventory(&patches.rows);
+    if !patches {
+        let rows = compact_inventory(&slice);
         if !rows.is_empty() {
             row["files"] = Value::Array(rows);
         }
@@ -355,14 +353,32 @@ pub(super) fn shape_pr_files(
             unfinished_patches: 0,
         };
     }
-    let shaped = patches
-        .rows
-        .into_iter()
-        .map(|mut shaped| {
-            compact_file_header(&mut shaped);
-            shaped
-        })
-        .collect::<Vec<_>>();
+    // A patch read that does not fit one response lists its page's files
+    // first (status, change counts, hunks), then the patches in file order.
+    let summary = query
+        .char_offset()
+        .is_none()
+        .then(|| group_by_directory(&slice, summary_row));
+    // The summary rides the first window of a page whose patches do not
+    // all fit it: its chars come out of that window, so the row (summary
+    // plus patches) still fits one response page and never splits into a
+    // part without patch rows. A page whose patches fit shows them alone.
+    let summary_chars = summary
+        .as_ref()
+        .filter(|summary| !summary.is_empty())
+        .map_or(0, crate::tools::stream_page::json_chars);
+    let patches = if summary_chars == 0 {
+        shape_patch_page(slice, query)
+    } else {
+        let whole = shape_patch_page(slice.clone(), query);
+        if whole.cursor.is_none() {
+            whole
+        } else {
+            shape_patch_page_reserving(slice, query, summary_chars)
+        }
+    };
+    let patches = patches.compact();
+    let shaped = patches.rows;
     if let Some(summary) = summary
         && patches.cursor.is_some()
         && !summary.is_empty()
@@ -468,14 +484,17 @@ fn is_binary_name(path: &str) -> bool {
     BINARY_EXTENSIONS.contains(&octocode_engine::text::extension_of(path, true, "").as_str())
 }
 
-/// Inventory rows flag files GitHub sent without a patch. Only REST entries
-/// (which carry a blob `sha`) say anything about patches; GraphQL file nodes
-/// never include one.
-pub(super) fn inventory_patch_flag(row: &mut Value, file: &Value) {
-    if file.get("patch").is_none()
-        && file.get("sha").is_some()
-        && let Some(reason) = missing_patch_reason(file)
-    {
+/// Inventory rows flag files GitHub sent without a patch. REST entries
+/// (which carry a blob `sha`) say why; GraphQL file nodes never include a
+/// patch, so only their binary files are flagged (by name: a binary change
+/// has no line counts either).
+fn inventory_patch_flag(row: &mut Value, file: &Value) {
+    if file.get("patch").is_some() {
+        return;
+    }
+    let reason = missing_patch_reason(file)
+        .filter(|reason| file.get("sha").is_some() || *reason == "binary");
+    if let Some(reason) = reason {
         row["patchUnavailable"] = json!(reason);
     }
 }

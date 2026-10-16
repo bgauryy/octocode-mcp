@@ -5,6 +5,7 @@ use crate::{
     policy::path::PathPolicy,
     security::ContentSecurity,
     tools::{
+        ast_graph::AstTopologyRuntimeOptions,
         ast_rewrite::AstRewriteRuntimeOptions,
         id::{ToolFamily, ToolId},
         local_fetch::LocalFetchRegex,
@@ -190,7 +191,7 @@ impl DomainDispatcher {
         self.handle.block_on(async {
             Ok(
                 match crate::tools::artifact_search::execute(query, call).await {
-                    Ok(data) => dispatch::value_result(data),
+                    Ok(data) => dispatch::data_result(data),
                     Err(error) => {
                         let next = error.next;
                         let mut row = dispatch::provider_failure(
@@ -293,10 +294,15 @@ impl DomainDispatcher {
                 .map(PathBuf::from),
             ..Default::default()
         };
-        let cargo = self
-            .config
-            .env_value(crate::config::environment::OCTOCODE_CARGO)
-            .map(str::to_owned);
+        let topology = AstTopologyRuntimeOptions {
+            cargo: self
+                .config
+                .env_value(crate::config::environment::OCTOCODE_CARGO)
+                .map(str::to_owned),
+            cache_dir: crate::config::is_persistent_storage_enabled(&self.config.resolved)
+                .then(|| self.home.join("tmp").join("topology")),
+            response_window: context.response_window,
+        };
         let selection = self.selection_runtime(&context);
         // `lsp.prewarm`: `targeted` warms the server an offered lspSearch
         // call names; `all` also warms the file a read or search names.
@@ -320,7 +326,7 @@ impl DomainDispatcher {
                             &regex,
                             &views,
                             &rewrite,
-                            cargo.as_deref(),
+                            &topology,
                             Some(&selection),
                         )
                     },

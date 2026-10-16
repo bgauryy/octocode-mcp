@@ -122,6 +122,20 @@ fn minimized(tool: ToolId, query: Value, data: Value) -> Value {
     row
 }
 
+/// Which rows carry scan totals is the contract's `scanTotals` for the tool,
+/// not a name or trait branch: every localSearch row, an astSearch row only
+/// beside `matchCount`, and no row of a tool without the marker (astRewrite's
+/// `matchCount` sizes an edit).
+#[test]
+fn scan_totals_follow_the_contract_marker() {
+    let totals = |tool, data: Value| reports_scan_totals(tool, data.as_object().expect("row"));
+    assert!(totals(ToolId::LocalSearch, json!({"filesScanned": 3})));
+    assert!(totals(ToolId::AstSearch, json!({"matchCount": 1})));
+    assert!(!totals(ToolId::AstSearch, json!({"filesScanned": 3})));
+    assert!(!totals(ToolId::AstRewrite, json!({"matchCount": 1})));
+    assert!(!totals(ToolId::StructureSearch, json!({"matchCount": 1})));
+}
+
 #[test]
 fn minimal_rows_drop_what_asserts_nothing_and_keep_what_continues() {
     let row = minimized(
@@ -179,6 +193,24 @@ fn terminal_error_rows_keep_an_open_pagination() {
         "pagination":{"currentPage":1,"totalPages":3,"hasMore":true}}});
     minimize_row(&mut row, ToolId::LocalSearch, &json!({"path":"a"}));
     assert_eq!(row["data"]["pagination"]["hasMore"], true, "{row}");
+}
+
+/// An error row is not a partial result: the page it offers (a bounded
+/// read of a file too large to read whole) is the way past the error.
+#[test]
+fn an_error_row_with_a_page_is_not_partial() {
+    let query = json!({"path":"big.log","matchString":"needle"});
+    let data = json!({"error":"too large","errorCode":"largeSourceWindowOnly","path":"big.log",
+        "next":{"readBoundedLines":{"tool":"localFetch","query":{"queries":[
+            {"path":"big.log","matchString":"needle","offset":0}]}}}});
+    let row = result_row(ToolId::LocalFetch, 0, &query, data, Some("error"));
+    assert_eq!(row["status"], "error", "{row}");
+    assert!(
+        row["data"]
+            .get("isPartial")
+            .is_none_or(|flag| flag == false),
+        "{row}"
+    );
 }
 
 /// The parent list and emails are `extras: ["details"]`; a committer
@@ -1820,7 +1852,7 @@ fn empty_fallbacks_name_the_tools_own_filters() {
 }
 
 #[test]
-fn an_out_of_range_page_is_one_shared_empty_outcome() {
+fn an_out_of_range_page_is_one_shared_outcome() {
     let lsp = json!({"operation":"references","path":"a.rs","symbolName":"x","line":1});
     for (tool, base) in [
         (ToolId::LocalSearch, json!({"path":".","matchString":"x"})),
@@ -1841,7 +1873,7 @@ fn an_out_of_range_page_is_one_shared_empty_outcome() {
             "partialReasons":["pageOutOfRange"],"pagination":{"currentPage":99,
             "totalPages":4,"totalItems":10,"hasMore":false,"outOfRange":true}});
         let row = result_row(tool, 0, &query, data, None);
-        assert_eq!(row["status"], "empty", "{tool}: {row}");
+        assert_eq!(row["status"], "outOfRange", "{tool}: {row}");
         for signal in ["isPartial", "terminalLimit", "partialReasons"] {
             assert!(row["data"].get(signal).is_none(), "{tool} {signal}: {row}");
         }
@@ -1873,16 +1905,16 @@ fn an_out_of_range_page_is_one_shared_empty_outcome() {
     assert!(row["data"].get("reason").is_none(), "{row}");
 }
 
-/// A named file page past the end (`filePagination`) settles like the row's
+/// A section page past the end (`contentPagination.files`) settles like the row's
 /// own `pagination`: an empty row, the page named, and a restart.
 #[test]
-fn a_file_page_past_the_end_is_the_same_shared_empty_outcome() {
+fn a_file_page_past_the_end_is_the_same_shared_out_of_range_outcome() {
     let query = json!({"operation":"commit","owner":"o","repo":"r","ref":"abc","page":99});
     let data = json!({"commitSha":"abc","files":[],"isPartial":true,
-        "filePagination":{"currentPage":99,"totalPages":1,"pageSize":30,"totalItems":2,
-            "hasMore":false,"outOfRange":true}});
+        "contentPagination":{"files":{"currentPage":99,"totalPages":1,"pageSize":30,"totalItems":2,
+            "hasMore":false,"outOfRange":true}}});
     let row = result_row(ToolId::GhGetHistoryItem, 0, &query, data, None);
-    assert_eq!(row["status"], "empty", "{row}");
+    assert_eq!(row["status"], "outOfRange", "{row}");
     assert_eq!(row["data"]["reason"], "page 99 of 1", "{row}");
     assert!(row["data"].get("isPartial").is_none(), "{row}");
     let restart = &row["data"]["next"]["restart"]["query"]["queries"][0];
@@ -1914,6 +1946,15 @@ fn a_bare_empty_row_gets_its_tools_fallback_hint() {
         "data":{"next":{"restart":{"tool":"localSearch","query":{"queries":[{"path":"."}]}}}}});
     apply_hint_policy(&mut led, ToolId::LocalSearch, &json!({}));
     assert!(led["data"].get("hints").is_none(), "{led}");
+    // An empty row whose category the tool answers for keeps only its facts.
+    let mut answered = json!({"index":0,"status":"empty",
+        "data":{"category":"noDiagnostics","reason":"No diagnostics."}});
+    apply_hint_policy(
+        &mut answered,
+        ToolId::LspSearch,
+        &json!({"operation":"diagnostic"}),
+    );
+    assert!(answered["data"].get("hints").is_none(), "{answered}");
     // A successful row is never given one.
     let mut found = json!({"index":0,"data":{"files":[{"path":"a"}]}});
     apply_hint_policy(&mut found, ToolId::LocalSearch, &json!({}));
@@ -2080,6 +2121,29 @@ fn a_later_row_recovers_with_its_own_query() {
     assert_eq!(
         row["data"]["hints"],
         json!([ToolId::GhSearchCode.output().fallback_hint(&query)]),
+        "{row}"
+    );
+}
+
+/// A page past the end flagged on a resource item's section (a pull
+/// request's files) is the row's outcome: the page cursor is the row's.
+#[test]
+fn an_item_section_past_its_end_settles_the_row() {
+    let query = json!({"operation":"pullRequest","owner":"o","repo":"r","number":4,
+        "sections":["files"],"page":5});
+    let data = json!({"pullRequests":[{"number":4,"files":[],
+        "contentPagination":{"files":{"currentPage":5,"totalPages":1,"hasMore":false,"outOfRange":true}}}]});
+    let row = result_row(ToolId::GhGetHistoryItem, 0, &query, data, None);
+    assert_eq!(row["status"], "outOfRange", "{row}");
+    assert_eq!(row["data"]["reason"], "page 5 of 1", "{row}");
+    assert_eq!(
+        row["data"]["next"]["restart"]["tool"], "ghGetHistoryItem",
+        "{row}"
+    );
+    assert!(
+        row["data"]["next"]["restart"]["query"]["queries"][0]
+            .get("page")
+            .is_none(),
         "{row}"
     );
 }

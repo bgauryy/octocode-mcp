@@ -44,6 +44,44 @@ impl LocalSearchQuery {
     pub(crate) fn regex_mode(&self) -> LocalSearchQueryRegex {
         self.regex.unwrap_or(LocalSearchQueryRegex::Literal)
     }
+
+    /// The query with every value that means what the field's absence means
+    /// dropped: an off flag (`includeHidden:false`), `regex:"literal"`,
+    /// `defaultExcludes:true`, `contextLines:0` and the default
+    /// `matchContentLength`. The snapshot key and the page cut are derived
+    /// from it, so a cursor never goes stale because a caller spelled a
+    /// default; continuations still carry the fields as the caller sent them.
+    pub(crate) fn canonical(&self) -> Self {
+        use crate::policy::prune::DefaultsFlag;
+        let mut query = self.clone();
+        for flag in [
+            &mut query.include_hidden,
+            &mut query.include_ignored,
+            &mut query.invert_match,
+            &mut query.reverse,
+            &mut query.whole_word,
+        ] {
+            if *flag == Some(false) {
+                *flag = None;
+            }
+        }
+        if query.regex == Some(LocalSearchQueryRegex::Literal) {
+            query.regex = None;
+        }
+        if query.default_excludes.defaults() {
+            query.default_excludes = None;
+        }
+        if query.context_lines() == Some(super::executor::DEFAULT_CONTEXT_LINES) {
+            query.context_lines = None;
+        }
+        let length = query.match_content_length.take();
+        if length.map(|n| u32_of(n.get()))
+            != Some(super::executor::effective_match_content_length(&query))
+        {
+            query.match_content_length = length;
+        }
+        query
+    }
 }
 
 /// Characters that give a text a regex reading besides its literal one.
@@ -83,6 +121,11 @@ pub struct SearchMatch {
     pub clipped: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub original_chars: Option<usize>,
+    /// The clipped value's whole length in UTF-8 bytes, beside
+    /// `original_chars`: whether a line read of it passes one localFetch
+    /// page. Read by leads, never shown.
+    #[serde(skip)]
+    pub original_bytes: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub returned_chars: Option<usize>,
     /// The innermost declaration around the hit (its name, kind, name line

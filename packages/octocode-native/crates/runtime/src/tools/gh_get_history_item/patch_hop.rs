@@ -1,7 +1,8 @@
 //! Patch hops: the whole-patch re-read, selected-patch continuations, and
 //! commit/comparison file-page cursors.
+use super::inventory::file_page_size;
 use super::pr_menu::*;
-use super::{HistoryItemRequest, ItemOperation};
+use super::{HistoryItemRequest, ItemOperation, Section, Sections};
 use crate::tools::gh_shared::commit::commit_pull_request;
 use crate::tools::gh_shared::ensure_next;
 use crate::tools::id::ToolId;
@@ -30,10 +31,7 @@ pub(super) fn attach_full_patch_continuation(out: &mut Value, q: &HistoryItemReq
     remove_key(&mut nq, "matchString");
     remove_key(&mut nq, "contextLines");
     let name = "readFullPatches";
-    // Patch hunks are never minified: the whole patch needs no `minify`.
-    remove_key(&mut nq, "minify");
     // Each read names its files in the public `include` beside `patches`.
-    remove_key(&mut nq, "content");
     for (index, files) in narrowed.chunks(selected_patch_files()).enumerate() {
         let read = super::util::merge(
             nq.clone(),
@@ -44,7 +42,7 @@ pub(super) fn attach_full_patch_continuation(out: &mut Value, q: &HistoryItemReq
         } else {
             format!("{name}{}", index + 1)
         };
-        let mut lead = menu_read(read);
+        let mut lead = continuation(read);
         lead["confidence"] = json!("low");
         out["next"][key] = lead;
     }
@@ -88,23 +86,29 @@ pub(super) fn selected_patch_files() -> usize {
 /// page, filters, selection) at the page-stream cursor, narrowed to the
 /// patch surface.
 pub(super) fn patch_continuation(mut nq: Value, entry: &Value, q: &HistoryItemRequest) -> Value {
-    let files_requested = q
-        .content_value()
-        .as_ref()
-        .and_then(|value| value.get("files"))
-        .and_then(Value::as_bool)
-        == Some(true);
-    if let Some(content) = nq.get_mut("content").and_then(Value::as_object_mut) {
-        if !files_requested {
-            content.remove("files");
-        }
-        content.retain(|key, _| key == "patches" || key == "files");
+    let read = q.sections();
+    let patch_read = Sections::of([Section::Patches]);
+    if read.has(Section::Files) {
+        patch_read.with(Section::Files)
+    } else {
+        patch_read
     }
+    .set_on(&mut nq);
     if let Some(cursor) = entry.get("nextOffset") {
         nq["offset"] = cursor.clone();
     }
     clamp_hop_length(&mut nq, q);
-    menu_read(nq)
+    continuation(nq)
+}
+
+/// A file-page continuation carries the page size its grid was cut on when
+/// the read sized it from the response budget
+/// ([`super::inventory::pinned_file_page_size`]), so it continues the same
+/// file list in any batch.
+pub(super) fn pin_file_page_size(nq: &mut Value, q: &HistoryItemRequest, patches: bool) {
+    if let Some(size) = super::inventory::pinned_file_page_size(q, patches) {
+        nq["pageSize"] = json!(size);
+    }
 }
 
 /// A hop carries the caller's `length` as the window it got, so a length
@@ -149,9 +153,8 @@ impl DiffCursors {
 
 /// The commit read a commit file page continues: the generated
 /// `ghGetHistoryItem` commit query at `reference`, with the caller's
-/// page, window and scope (a nested PR commit reads its patches from the
-/// first file page).
-pub(super) fn commit_query(q: &HistoryItemRequest, reference: &str, nested: bool) -> Value {
+/// page, window and scope.
+pub(super) fn commit_query(q: &HistoryItemRequest, reference: &str) -> Value {
     use crate::contracts::tool_types::{
         GhGetHistoryItemQuery, GhGetHistoryItemQueryRef, GhGetHistoryItemQuerySectionsItem,
         HiInclude, HiIncludeItem, HiMatchString, HiOwner, HiRepo,
@@ -164,18 +167,23 @@ pub(super) fn commit_query(q: &HistoryItemRequest, reference: &str, nested: bool
     let typed = || -> Option<GhGetHistoryItemQuery> {
         Some(GhGetHistoryItemQuery::Commit {
             // A hop keeps the patch grep that narrowed the row it came from.
-            context_lines: None,
+            context_lines: q
+                .match_context()
+                .and_then(|lines| i64::try_from(lines).ok())
+                .map(Into::into),
             extras: Vec::new(),
+            // Page 1 and the contract's page size are what an omitted
+            // field reads: a continuation restates neither.
             page: q
                 .page()
-                .or((!nested).then_some(1))
+                .filter(|page| *page > 1)
                 .and_then(positive)
                 .map(Into::into),
-            include: (!nested && !q.file_scope.is_empty())
+            include: (!q.include_patterns().is_empty())
                 .then(|| {
-                    q.file_scope
-                        .iter()
-                        .map(|path| HiIncludeItem::try_from(path.as_str()).ok())
+                    q.include_patterns()
+                        .into_iter()
+                        .map(|path| HiIncludeItem::try_from(path).ok())
                         .collect::<Option<Vec<_>>>()
                         .map(HiInclude)
                 })
@@ -188,11 +196,11 @@ pub(super) fn commit_query(q: &HistoryItemRequest, reference: &str, nested: bool
                 .and_then(|offset| u64::try_from(offset).ok())
                 .map(Into::into),
             owner: HiOwner::try_from(q.owner()).ok()?,
-            page_size: q.page_size().and_then(positive).map(Into::into),
+            page_size: q.page_size().and_then(positive),
             reasoning: None,
             ref_: GhGetHistoryItemQueryRef::try_from(reference).ok()?,
             repo: HiRepo::try_from(q.repo()).ok()?,
-            sections: if nested || q.include_diff() {
+            sections: if q.include_diff() {
                 vec![GhGetHistoryItemQuerySectionsItem::Patches]
             } else {
                 Vec::new()
@@ -204,29 +212,19 @@ pub(super) fn commit_query(q: &HistoryItemRequest, reference: &str, nested: bool
         .unwrap_or_default()
 }
 
-/// `next.*` for a commit or comparison file page (also nested per PR commit
-/// when `direct`), from the cursors the page computed.
+/// `next.*` for a commit or comparison file page, from the cursors the page
+/// computed.
 pub(super) fn attach_diff_continuations(
     out: &mut Value,
     q: &HistoryItemRequest,
     operation: ItemOperation,
     resolved_ref: Option<&str>,
-    direct: bool,
     cursors: DiffCursors,
 ) {
     let mut next = Map::new();
     let base = match (operation, resolved_ref.or(q.reference())) {
-        (ItemOperation::Commit, Some(reference)) => commit_query(q, reference, direct),
+        (ItemOperation::Commit, Some(reference)) => commit_query(q, reference),
         _ => base_public_query(q, operation),
-    };
-    let make = |query: Value| {
-        if direct {
-            Continuation::new(ToolId::GhGetHistoryItem, query)
-                .confidence("exact")
-                .build()
-        } else {
-            continuation(query)
-        }
     };
     if let Some(page) = cursors.commit_page {
         let mut nq = base.clone();
@@ -236,7 +234,7 @@ pub(super) fn attach_diff_continuations(
         for key in ["offset", "length", "matchString", "contextLines"] {
             remove_key(&mut nq, key);
         }
-        next.insert("nextCommitPage".into(), make(nq));
+        next.insert("nextCommitPage".into(), continuation(nq));
     }
     // A file page with unread patches continues them first: its window
     // that finishes the patches offers the next file page.
@@ -245,14 +243,22 @@ pub(super) fn attach_diff_continuations(
         nq["page"] = json!(page);
         remove_key(&mut nq, "offset");
         files_only(&mut nq, operation);
-        next.insert("nextFilePage".into(), make(nq));
+        pin_file_page_size(&mut nq, q, q.include_diff());
+        next.insert("nextFilePage".into(), continuation(nq));
     }
-    // Files were listed without patches: offer the same page with diffs.
+    // Files were listed without patches: offer their diffs, from the patch
+    // page that holds this page's first file (patch pages are cut on their
+    // own, smaller grid).
     if !q.include_diff() && base.get("sections").is_none() && cursors.files_listed {
         let mut nq = base.clone();
         nq["sections"] = json!(["patches"]);
         remove_key(&mut nq, "offset");
-        next.insert("readPatches".into(), make(nq));
+        let listed_from = q.page().unwrap_or(1).saturating_sub(1) * file_page_size(q, false);
+        match listed_from / file_page_size(q, true) + 1 {
+            1 => remove_key(&mut nq, "page"),
+            page => nq["page"] = json!(page),
+        }
+        next.insert("readPatches".into(), continuation(nq));
     }
     // The page-stream cursor, not a file's own `patchPagination` offset.
     if let Some(offset) = cursors.patch_offset {
@@ -260,7 +266,7 @@ pub(super) fn attach_diff_continuations(
         nq["offset"] = json!(offset);
         files_only(&mut nq, operation);
         clamp_hop_length(&mut nq, q);
-        next.insert("continuePatch".into(), make(nq));
+        next.insert("continuePatch".into(), continuation(nq));
     }
     if !next.is_empty() {
         out["next"] = Value::Object(next);
@@ -269,7 +275,7 @@ pub(super) fn attach_diff_continuations(
 
 /// A comparison file or patch continuation reads files alone: the commit
 /// list was delivered with the page it continues.
-fn files_only(query: &mut Value, operation: ItemOperation) {
+pub(super) fn files_only(query: &mut Value, operation: ItemOperation) {
     if !matches!(operation, ItemOperation::Compare) {
         return;
     }

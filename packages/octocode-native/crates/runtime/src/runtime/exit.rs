@@ -37,6 +37,12 @@ impl ToolOutcome {
                     ExitClass::InvalidInput
                 }
                 Some(kind) => ExitClass::Failed(kind),
+                // A row a later stage failed (a provider page whose
+                // classification failed) states its code; the same code
+                // ends the call the same way on every tool.
+                None if !all_rows_invalid_input(value) => {
+                    failed_rows(rows).map_or(ExitClass::InvalidInput, ExitClass::Failed)
+                }
                 // A refusal with no failure kind (a gate or admission-time
                 // validation) is the caller's request, never success.
                 None => ExitClass::InvalidInput,
@@ -44,13 +50,18 @@ impl ToolOutcome {
         }
         // Batch precedence, worst row first: a rejected row (2), a failed
         // row (its shared failure, else execution; a retryable failure is
-        // still a failure), an empty batch (1), success (0). An answering row
+        // still a failure), an empty batch (1; a page past the end reads
+        // nothing either), success (0). An answering row
         // never hides a failed one.
         if rows.iter().any(is_invalid_input_row) {
             ExitClass::InvalidInput
         } else if let Some(kind) = failed_rows(rows) {
             ExitClass::Failed(kind)
-        } else if !rows.is_empty() && rows.iter().all(|row| row["status"] == "empty") {
+        } else if !rows.is_empty()
+            && rows
+                .iter()
+                .all(|row| matches!(row["status"].as_str(), Some("empty" | "outOfRange")))
+        {
             ExitClass::Empty
         } else {
             ExitClass::Success
@@ -204,6 +215,27 @@ mod tests {
         assert_eq!(clasify_failure(&json!({"queries":[]}), None), None);
         let answered = json!({"queries":[{"id":"q","answers":{}}]});
         assert_eq!(clasify_failure(&answered, None), None);
+    }
+
+    /// A row failed after execution (classification of a provider page)
+    /// carries no execution failure kind: its code decides, as on a row
+    /// that failed while executing.
+    #[test]
+    fn a_row_failed_after_execution_exits_by_its_code() {
+        let row = json!({"results":[{"status":"error","data":{"errorCode":"classificationProviderError"}}]});
+        assert_eq!(
+            outcome(row, None, true).exit_class(),
+            ExitClass::Failed(FailureKind::Execution)
+        );
+        let refused = json!({"results":[{"status":"error","data":{"errorCode":"invalidInput"}}]});
+        assert_eq!(
+            outcome(refused, None, true).exit_class(),
+            ExitClass::InvalidInput
+        );
+        assert_eq!(
+            outcome(json!({}), None, true).exit_class(),
+            ExitClass::InvalidInput
+        );
     }
 
     /// A directory given to a file read (or a file to a listing) is

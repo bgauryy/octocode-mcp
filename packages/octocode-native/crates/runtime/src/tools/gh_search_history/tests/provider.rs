@@ -17,10 +17,10 @@ async fn cap_is_terminal_only_after_the_last_reachable_page() {
         }),
     )
     .await;
-    let transport = one_shot_provider(&server).transport;
+    let provider = one_shot_provider(&server);
     for page in [1, 1000] {
         let query = serde_json::from_value(json!({"operation":"pullRequest","mainGoal": "test", "reasoning":"test","keywords":["fix"],"pageSize":1,"page":page})).expect("query");
-        let data = execute(&transport, &query, &default_context(), &Passthrough)
+        let data = execute(&provider, &query, &default_context(), &Passthrough)
             .await
             .expect("history search");
         assert_eq!(data["isPartial"], true, "{data}");
@@ -79,16 +79,23 @@ async fn search_of_a_missing_repository_is_not_found() {
     for route in ["/api/v3/search/issues", "/api/v3/search/commits"] {
         mount_json(&server, route, 422, unsearchable.clone()).await;
     }
-    let transport = one_shot_provider(&server).transport;
+    let provider = one_shot_provider(&server);
     for row in [
         json!({"operation":"pullRequest","owner":"o","repo":"missing","keywords":["fix"]}),
         json!({"operation":"commit","owner":"o","repo":"missing","keywords":["fix"]}),
     ] {
         let query = serde_json::from_value(row.clone()).expect("query");
-        let error = execute(&transport, &query, &default_context(), &Passthrough)
+        let failure = super::super::execute(&provider, query, &default_context(), &Passthrough)
             .await
             .expect_err("missing repository");
-        assert_eq!(error.kind, ProviderErrorKind::NotFound, "{row}: {error:?}");
+        assert_eq!(
+            failure.error.kind,
+            ProviderErrorKind::NotFound,
+            "{row}: {failure:?}"
+        );
+        // The recovery is the repository's spelling, not a history filter.
+        let next = failure.next.expect("a recovery lead");
+        assert_eq!(next["findRepository"]["tool"], "ghSearchRepo", "{next}");
     }
 }
 
@@ -113,14 +120,14 @@ async fn search_naming_a_missing_user_is_not_a_missing_repository() {
         }),
     )
     .await;
-    let transport = one_shot_provider(&server).transport;
+    let provider = one_shot_provider(&server);
     let query: GhSearchHistoryQuery = serde_json::from_value(json!({
         "operation":"pullRequest","owner":"o","repo":"r",
         "qualifiers":"author:ghost -reviewed-by:bot label:bug"
     }))
     .expect("query");
     let failure = crate::tools::gh_search_history::execute(
-        &transport,
+        &provider,
         query,
         &default_context(),
         &Passthrough,
@@ -160,14 +167,10 @@ async fn search_naming_a_missing_user_is_not_a_missing_repository() {
         "operation":"pullRequest","owner":"o","repo":"r","qualifiers":"author:ghost"
     }))
     .expect("query");
-    let failure = crate::tools::gh_search_history::execute(
-        &transport,
-        only,
-        &default_context(),
-        &Passthrough,
-    )
-    .await
-    .expect_err("missing user");
+    let failure =
+        crate::tools::gh_search_history::execute(&provider, only, &default_context(), &Passthrough)
+            .await
+            .expect_err("missing user");
     let lead = failure.next.expect("a lead");
     assert!(
         lead["withoutUsers"]["query"]["queries"][0]
@@ -215,7 +218,7 @@ async fn an_empty_commit_list_naming_a_missing_author_is_the_missing_user_failur
         }])))
         .mount(&server)
         .await;
-    let transport = one_shot_provider(&server).transport;
+    let provider = one_shot_provider(&server);
     let list = |login: &str| -> GhSearchHistoryQuery {
         serde_json::from_value(json!({
             "operation":"commit","owner":"o","repo":"r","qualifiers": format!("author:{login}")
@@ -223,7 +226,7 @@ async fn an_empty_commit_list_naming_a_missing_author_is_the_missing_user_failur
         .expect("query")
     };
     let failure = crate::tools::gh_search_history::execute(
-        &transport,
+        &provider,
         list("ghost"),
         &default_context(),
         &Passthrough,
@@ -247,7 +250,7 @@ async fn an_empty_commit_list_naming_a_missing_author_is_the_missing_user_failur
     );
     assert!(
         crate::tools::gh_search_history::execute(
-            &transport,
+            &provider,
             list("dev"),
             &default_context(),
             &Passthrough
@@ -291,7 +294,7 @@ async fn commit_search_naming_a_missing_user_fails_before_the_search() {
         .expect(0)
         .mount(&server)
         .await;
-    let transport = one_shot_provider(&server).transport;
+    let provider = one_shot_provider(&server);
     // The missing login may be the author or the committer, next to a real one.
     for qualifiers in ["author:ghost", "author:dev committer:ghost"] {
         let query: GhSearchHistoryQuery = serde_json::from_value(json!({
@@ -300,7 +303,7 @@ async fn commit_search_naming_a_missing_user_fails_before_the_search() {
         }))
         .expect("query");
         let failure = crate::tools::gh_search_history::execute(
-            &transport,
+            &provider,
             query,
             &default_context(),
             &Passthrough,
@@ -363,17 +366,17 @@ async fn commit_search_confirms_each_named_login_once_and_only_then() {
         json!({"total_count": 0, "incomplete_results": false, "items": []}),
     )
     .await;
-    let transport = one_shot_provider(&server).transport;
+    let provider = one_shot_provider(&server);
     let run = |qualifiers: Option<&str>| {
         let mut row = json!({"operation":"commit","owner":"o","repo":"r","keywords":["fix"]});
         if let Some(qualifiers) = qualifiers {
             row["qualifiers"] = json!(qualifiers);
         }
         let query: GhSearchHistoryQuery = serde_json::from_value(row).expect("query");
-        let transport = &transport;
+        let provider = &provider;
         async move {
             crate::tools::gh_search_history::execute(
-                transport,
+                provider,
                 query,
                 &default_context(),
                 &Passthrough,
@@ -413,13 +416,13 @@ async fn commit_search_read_targets_the_first_sha_without_a_candidate_list() {
         }),
     )
     .await;
-    let transport = one_shot_provider(&server).transport;
+    let provider = one_shot_provider(&server);
     let query = serde_json::from_value(
         json!({"operation":"commit","mainGoal":"test","reasoning":"test",
         "owner":"o","repo":"r","keywords":["cache"]}),
     )
     .expect("query");
-    let data = execute(&transport, &query, &default_context(), &Passthrough)
+    let data = execute(&provider, &query, &default_context(), &Passthrough)
         .await
         .expect("history search");
     let read = &data["next"]["readCommit"];
@@ -454,14 +457,14 @@ async fn commit_listing_rows_are_typed_commits() {
         }]),
     )
     .await;
-    let transport = one_shot_provider(&server).transport;
+    let provider = one_shot_provider(&server);
     for scope in [json!("src/lib.rs"), json!("src/"), Value::Null] {
         let mut query = json!({"operation":"commit","owner":"o","repo":"r"});
         if !scope.is_null() {
             query["path"] = scope.clone();
         }
         let query = serde_json::from_value(query).expect("query");
-        let data = execute(&transport, &query, &default_context(), &Passthrough)
+        let data = execute(&provider, &query, &default_context(), &Passthrough)
             .await
             .expect("commit listing");
         assert!(data.get("type").is_none(), "{scope}: {data}");
@@ -513,12 +516,12 @@ async fn plain_issue_listing_pages_issue_search_without_pr_gaps() {
         })))
         .mount(&server)
         .await;
-    let transport = one_shot_provider(&server).transport;
+    let provider = one_shot_provider(&server);
     let run = |query: Value| {
-        let transport = &transport;
+        let provider = &provider;
         async move {
             execute(
-                transport,
+                provider,
                 &serde_json::from_value(query).expect("query"),
                 &default_context(),
                 &Passthrough,
@@ -578,7 +581,7 @@ async fn rename_lookup_runs_only_when_the_search_finds_nothing() {
     )
     .expect("query");
     let data = execute(
-        &one_shot_provider(&found).transport,
+        &one_shot_provider(&found),
         &query,
         &default_context(),
         &Passthrough,
@@ -613,7 +616,7 @@ async fn rename_lookup_runs_only_when_the_search_finds_nothing() {
     )
     .expect("query");
     let data = execute(
-        &one_shot_provider(&renamed).transport,
+        &one_shot_provider(&renamed),
         &query,
         &default_context(),
         &Passthrough,
@@ -621,8 +624,9 @@ async fn rename_lookup_runs_only_when_the_search_finds_nothing() {
     .await
     .expect("renamed search");
     assert_eq!(data["pullRequests"][0]["number"], 7, "{data}");
+    // A static notice: the response says it once, not on every row.
     assert_eq!(
-        data["warnings"][0],
+        data[crate::tools::paging::NOTICES][0],
         crate::tools::gh_shared::renamed_warning("old", "r", &("new".into(), "r".into())),
         "one shared rename wording: {data}"
     );
@@ -661,12 +665,12 @@ async fn commit_listing_leads_to_the_squash_pull_request() {
             "items": [{"number": 3, "title": "Bug", "state": "open", "comments": 4}]}),
     )
     .await;
-    let transport = one_shot_provider(&server).transport;
+    let provider = one_shot_provider(&server);
     let query = serde_json::from_value(
         json!({"operation":"commit","owner":"o","repo":"r","path":"src/lib.rs"}),
     )
     .expect("query");
-    let data = execute(&transport, &query, &default_context(), &Passthrough)
+    let data = execute(&provider, &query, &default_context(), &Passthrough)
         .await
         .expect("commit listing");
     assert!(data["commits"][1].get("prNumber").is_none(), "{data}");
@@ -682,7 +686,7 @@ async fn commit_listing_leads_to_the_squash_pull_request() {
         json!({"operation":"issue","owner":"o","repo":"r","keywords":["bug"]}),
     )
     .expect("query");
-    let data = execute(&transport, &query, &default_context(), &Passthrough)
+    let data = execute(&provider, &query, &default_context(), &Passthrough)
         .await
         .expect("issue search");
     assert!(
@@ -713,7 +717,7 @@ async fn fields_project_listed_commits_end_to_end() {
     )
     .expect("query");
     let data = execute(
-        &one_shot_provider(&server).transport,
+        &one_shot_provider(&server),
         &query,
         &default_context(),
         &Passthrough,
@@ -746,7 +750,7 @@ async fn an_absent_picked_key_is_named_once() {
     )
     .expect("query");
     let data = execute(
-        &one_shot_provider(&server).transport,
+        &one_shot_provider(&server),
         &query,
         &default_context(),
         &Passthrough,
@@ -787,7 +791,7 @@ async fn picked_keys_survive_the_implied_drop() {
     }))
     .expect("query");
     let data = execute(
-        &one_shot_provider(&server).transport,
+        &one_shot_provider(&server),
         &query,
         &default_context(),
         &Passthrough,
@@ -848,7 +852,7 @@ async fn since_until_reach_the_request_of_every_operation() {
         .expect(1)
         .mount(&server)
         .await;
-    let transport = one_shot_provider(&server).transport;
+    let provider = one_shot_provider(&server);
     for row in [
         json!({"operation":"pullRequest","owner":"o","repo":"r"}),
         json!({"operation":"issue","owner":"o","repo":"r"}),
@@ -859,7 +863,7 @@ async fn since_until_reach_the_request_of_every_operation() {
         row["since"] = json!("2026-10-01");
         row["until"] = json!("2026-10-03");
         let query = serde_json::from_value(row.clone()).expect("query");
-        let data = execute(&transport, &query, &default_context(), &Passthrough)
+        let data = execute(&provider, &query, &default_context(), &Passthrough)
             .await
             .unwrap_or_else(|error| panic!("{row}: the window missed the request: {error:?}"));
         assert_eq!(data["status"], "empty", "{row}: {data}");
@@ -924,12 +928,12 @@ async fn happy_path_rows_carry_the_next_hop_anchors() {
         ]}),
     )
     .await;
-    let transport = one_shot_provider(&server).transport;
+    let provider = one_shot_provider(&server);
     let run = |row: Value| {
-        let transport = &transport;
+        let provider = &provider;
         async move {
             let query = serde_json::from_value(row.clone()).expect("query");
-            execute(transport, &query, &default_context(), &Passthrough)
+            execute(provider, &query, &default_context(), &Passthrough)
                 .await
                 .unwrap_or_else(|error| panic!("{row}: {error:?}"))
         }
@@ -1023,12 +1027,12 @@ async fn commit_listing_page_two_is_the_providers_next_page() {
             .mount(&server)
             .await;
     }
-    let transport = one_shot_provider(&server).transport;
+    let provider = one_shot_provider(&server);
     let first: GhSearchHistoryQuery = serde_json::from_value(json!({
         "operation":"commit","owner":"o","repo":"r","path":"src","pageSize":2,"since":"2026-01-01"
     }))
     .expect("query");
-    let one = execute(&transport, &first, &default_context(), &Passthrough)
+    let one = execute(&provider, &first, &default_context(), &Passthrough)
         .await
         .expect("page 1");
     let next = one["next"]["nextPage"]["query"]["queries"][0].clone();
@@ -1041,7 +1045,7 @@ async fn commit_listing_page_two_is_the_providers_next_page() {
     }
     assert_eq!(next["page"], 2, "{next}");
     let two = execute(
-        &transport,
+        &provider,
         &serde_json::from_value(next).expect("next query"),
         &default_context(),
         &Passthrough,
@@ -1062,7 +1066,8 @@ async fn commit_listing_page_two_is_the_providers_next_page() {
 }
 
 /// A commit listing's bare 404 at a `ref` leads to the refs listing (the
-/// one repair); without a ref the repository did not resolve.
+/// one repair); without a ref the repository did not resolve, and a search
+/// for its name is the repair.
 #[tokio::test]
 async fn a_missing_listing_scope_names_its_repair() {
     use wiremock::MockServer;
@@ -1075,12 +1080,12 @@ async fn a_missing_listing_scope_names_its_repair() {
         json!({"message": "Not Found"}),
     )
     .await;
-    let transport = one_shot_provider(&server).transport;
+    let provider = one_shot_provider(&server);
     let at_ref: GhSearchHistoryQuery =
         serde_json::from_value(json!({"operation":"commit","owner":"o","repo":"r","ref":"nope"}))
             .expect("query");
     let failure = crate::tools::gh_search_history::execute(
-        &transport,
+        &provider,
         at_ref,
         &default_context(),
         &Passthrough,
@@ -1099,15 +1104,21 @@ async fn a_missing_listing_scope_names_its_repair() {
         serde_json::from_value(json!({"operation":"commit","owner":"o","repo":"r"}))
             .expect("query");
     let failure = crate::tools::gh_search_history::execute(
-        &transport,
+        &provider,
         plain,
         &default_context(),
         &Passthrough,
     )
     .await
     .expect_err("missing repository");
-    assert!(failure.next.is_none(), "{failure:?}");
     assert!(failure.error.message.contains("o/r"), "{failure:?}");
+    // The recovery is the repository's spelling, not a history filter.
+    let next = failure.next.expect("a repository search");
+    assert_eq!(
+        next["findRepository"]["query"]["queries"][0]["keywords"],
+        json!(["r"]),
+        "{next}"
+    );
 }
 
 /// `totalPages` appears only beside an exact total: an uncapped search
@@ -1132,12 +1143,12 @@ async fn total_pages_appear_only_beside_an_exact_total() {
             json!({"total_count": total_count, "incomplete_results": false, "items": items}),
         )
         .await;
-        let transport = one_shot_provider(&server).transport;
+        let provider = one_shot_provider(&server);
         let query =
             serde_json::from_value(json!({"operation":"pullRequest","owner":"o","repo":"r",
             "keywords":["x"],"pageSize":10}))
             .expect("query");
-        let data = execute(&transport, &query, &default_context(), &Passthrough)
+        let data = execute(&provider, &query, &default_context(), &Passthrough)
             .await
             .expect("pull request search");
         assert_eq!(
@@ -1196,7 +1207,7 @@ async fn a_rest_list_page_with_more_carries_no_static_total_warning() {
     ] {
         let query = serde_json::from_value(row.clone()).expect("query");
         let data = execute(
-            &one_shot_provider(&server).transport,
+            &one_shot_provider(&server),
             &query,
             &default_context(),
             &Passthrough,
@@ -1221,7 +1232,7 @@ async fn a_page_past_the_search_window_leads_to_the_last_reachable_page() {
     }))
     .expect("query");
     let failure = crate::tools::gh_search_history::execute(
-        &one_shot_provider(&server).transport,
+        &one_shot_provider(&server),
         query,
         &default_context(),
         &Passthrough,
@@ -1240,10 +1251,11 @@ async fn a_page_past_the_search_window_leads_to_the_last_reachable_page() {
     assert_eq!(row["keywords"], json!(["fix"]), "{next}");
 }
 
-/// A capped search names one narrowing lead per call: a newest-first
-/// result continues past the window from its last row's date (`until`);
-/// any other order is first re-sorted newest-first, which that keyset
-/// continuation then follows.
+/// A capped search names one narrowing lead per call: a date-ordered
+/// result continues past the window from its last row's date (creation
+/// newest first: `until`; oldest first: `since`; update order: an
+/// `updated:` qualifier); an order with no date to resume from is first
+/// re-sorted newest-first, which that keyset continuation then follows.
 #[tokio::test]
 async fn a_capped_search_names_one_narrowing_lead() {
     use wiremock::MockServer;
@@ -1255,9 +1267,9 @@ async fn a_capped_search_names_one_narrowing_lead() {
         200,
         json!({"total_count": 4000, "incomplete_results": false, "items": [
             {"number": 9, "title": "a", "state": "open", "user": {"login": "dev"},
-                "created_at": "2026-03-02T10:00:00Z"},
+                "created_at": "2026-03-02T10:00:00Z", "updated_at": "2026-04-02T10:00:00Z"},
             {"number": 8, "title": "b", "state": "open", "user": {"login": "dev"},
-                "created_at": "2026-03-01T09:30:00+02:00"}
+                "created_at": "2026-03-01T09:30:00+02:00", "updated_at": "2026-04-01T08:00:00Z"}
         ]}),
     )
     .await;
@@ -1273,12 +1285,12 @@ async fn a_capped_search_names_one_narrowing_lead() {
         ]}),
     )
     .await;
-    let transport = one_shot_provider(&server).transport;
+    let provider = one_shot_provider(&server);
     let lead = |row: Value| {
-        let transport = &transport;
+        let provider = &provider;
         async move {
             let query: GhSearchHistoryQuery = serde_json::from_value(row).expect("query");
-            let data = execute(transport, &query, &default_context(), &Passthrough)
+            let data = execute(provider, &query, &default_context(), &Passthrough)
                 .await
                 .expect("capped search");
             assert_eq!(
@@ -1306,12 +1318,37 @@ async fn a_capped_search_names_one_narrowing_lead() {
         "keywords":["fix"],"pageSize":2}))
     .await;
     assert_eq!(row["until"], "2026-02-01T12:00:00Z", "{row}");
-    // Best match: re-sort newest first.
-    let row = lead(json!({"operation":"issue","owner":"o","repo":"r",
-        "keywords":["fix"],"pageSize":2}))
+    // Oldest first: the window continues after the page's last row.
+    let row = lead(json!({"operation":"pullRequest","owner":"o","repo":"r",
+        "keywords":["fix"],"sort":"created:asc","until":"2027-01-01","pageSize":2}))
     .await;
-    assert_eq!(row["sort"], "created:desc", "{row}");
-    assert!(row.get("until").is_none(), "{row}");
+    assert_eq!(row["since"], "2026-03-01T07:30:00Z", "{row}");
+    assert_eq!(row["until"], "2027-01-01", "{row}");
+    assert_eq!(row["sort"], "created:asc", "{row}");
+    // Update order: an `updated:` bound beside the query's own qualifiers.
+    let row = lead(json!({"operation":"issue","owner":"o","repo":"r",
+        "keywords":["fix"],"sort":"updated:desc","qualifiers":"label:bug","pageSize":2}))
+    .await;
+    assert_eq!(
+        row["qualifiers"], "label:bug updated:<=2026-04-01T08:00:00Z",
+        "{row}"
+    );
+    assert_eq!(row["sort"], "updated:desc", "{row}");
+    let row = lead(json!({"operation":"issue","owner":"o","repo":"r",
+        "keywords":["fix"],"sort":"updated:asc","pageSize":2}))
+    .await;
+    assert_eq!(row["qualifiers"], "updated:>=2026-04-01T08:00:00Z", "{row}");
+    // Best match, or an update order its own `updated:` qualifier bounds:
+    // no date to resume from, so re-sort newest first.
+    for query in [
+        json!({"operation":"issue","owner":"o","repo":"r","keywords":["fix"],"pageSize":2}),
+        json!({"operation":"issue","owner":"o","repo":"r","keywords":["fix"],
+            "sort":"updated:desc","qualifiers":"updated:>2026-01-01","pageSize":2}),
+    ] {
+        let row = lead(query).await;
+        assert_eq!(row["sort"], "created:desc", "{row}");
+        assert!(row.get("until").is_none(), "{row}");
+    }
 }
 
 /// A commit listing of a renamed repository (GitHub answers the old name
@@ -1362,7 +1399,7 @@ async fn a_commit_listing_of_a_renamed_repository_names_the_canonical_repository
     }))
     .expect("query");
     let data = execute(
-        &one_shot_provider(&server).transport,
+        &one_shot_provider(&server),
         &query,
         &default_context(),
         &Passthrough,
@@ -1371,7 +1408,7 @@ async fn a_commit_listing_of_a_renamed_repository_names_the_canonical_repository
     .expect("renamed listing");
     assert_eq!(data["commits"][0]["commitSha"], "aaa", "{data}");
     assert_eq!(
-        data["warnings"],
+        data[crate::tools::paging::NOTICES],
         json!([crate::tools::gh_shared::renamed_warning(
             "old",
             "r",
@@ -1404,7 +1441,7 @@ async fn a_boolean_operator_in_keywords_is_refused() {
             "keywords": keywords}))
         .expect("query");
         let error = execute(
-            &one_shot_provider(&server).transport,
+            &one_shot_provider(&server),
             &query,
             &default_context(),
             &Passthrough,

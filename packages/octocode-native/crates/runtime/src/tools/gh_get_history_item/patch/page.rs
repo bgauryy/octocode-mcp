@@ -34,10 +34,9 @@ pub(in crate::tools::gh_get_history_item) struct PatchPage {
 /// also lists binary and empty files (metadata only).
 pub(in crate::tools::gh_get_history_item) fn shape_patch_page(
     files: Vec<Value>,
-    include_patch: bool,
     query: &HistoryItemRequest,
 ) -> PatchPage {
-    shape_patch_page_reserving(files, include_patch, query, 0)
+    shape_patch_page_reserving(files, query, 0)
 }
 
 /// [`shape_patch_page`] with `reserve` chars of the window left to other
@@ -46,37 +45,25 @@ pub(in crate::tools::gh_get_history_item) fn shape_patch_page(
 /// of itself, so a walk always moves.
 pub(in crate::tools::gh_get_history_item) fn shape_patch_page_reserving(
     files: Vec<Value>,
-    include_patch: bool,
     query: &HistoryItemRequest,
     reserve: usize,
 ) -> PatchPage {
-    if !include_patch {
-        let rows = files
-            .iter()
-            .map(|file| {
-                let mut row = file_metadata(file);
-                inventory_patch_flag(&mut row, file);
-                remove_nulls(&mut row);
-                row
-            })
-            .collect();
-        return PatchPage {
-            rows,
-            unfinished: Vec::new(),
-            cursor: None,
-            stream: SpanFacts::window("chars", 0, 0, 0),
-            clipped: Vec::new(),
-        };
-    }
     let PatchViews {
         views,
         narrowed,
         hits,
         clipped,
+        same_as,
     } = PatchViews::of(&files, query);
+    // A patch identical to an earlier one of the page is delivered once:
+    // the repeat takes no stream chars and names the first.
     let lengths = views
         .iter()
-        .map(|view| view.as_deref().map_or(0, |v| v.chars().count()))
+        .zip(&same_as)
+        .map(|(view, same)| match same {
+            Some(_) => 0,
+            None => view.as_deref().map_or(0, |v| v.chars().count()),
+        })
         .collect::<Vec<_>>();
     let total = lengths.iter().sum::<usize>();
     let offset = query.char_offset().unwrap_or(0).min(total);
@@ -118,6 +105,7 @@ pub(in crate::tools::gh_get_history_item) fn shape_patch_page_reserving(
     let cursor = stream_window.next_offset();
     let stream = PatchStream {
         views: &views,
+        same_as: &same_as,
         narrowed: &narrowed,
         hits: &hits,
         clipped: &clipped,
@@ -147,6 +135,9 @@ struct PatchViews {
     hits: Vec<Option<Vec<usize>>>,
     /// New-side windows each view's context could not reach.
     clipped: Vec<Vec<String>>,
+    /// The earlier file of the page whose view is identical (a README
+    /// copied to four packages), by index: the repeat references it.
+    same_as: Vec<Option<usize>>,
 }
 
 impl PatchViews {
@@ -156,6 +147,7 @@ impl PatchViews {
             narrowed: Vec::with_capacity(files.len()),
             hits: Vec::with_capacity(files.len()),
             clipped: Vec::with_capacity(files.len()),
+            same_as: Vec::with_capacity(files.len()),
         };
         for file in files {
             let patch = str_at(file, "/patch");
@@ -177,6 +169,20 @@ impl PatchViews {
                     out.views.push(None);
                 }
             }
+        }
+        let mut first = std::collections::HashMap::<&str, usize>::new();
+        for (index, view) in out.views.iter().enumerate() {
+            let same = view
+                .as_deref()
+                .filter(|view| !view.is_empty())
+                .and_then(|view| match first.entry(view) {
+                    std::collections::hash_map::Entry::Occupied(earlier) => Some(*earlier.get()),
+                    std::collections::hash_map::Entry::Vacant(slot) => {
+                        slot.insert(index);
+                        None
+                    }
+                });
+            out.same_as.push(same);
         }
         out
     }
@@ -210,6 +216,8 @@ fn patchless_rows_chars(files: &[Value], views: &[Option<String>], lengths: &[us
 /// One window over a file page's patch stream.
 pub(super) struct PatchStream<'a> {
     pub(super) views: &'a [Option<String>],
+    /// The earlier file each repeated view names (`samePatchAs`).
+    pub(super) same_as: &'a [Option<usize>],
     /// Whole-patch sizes of `matchString` views narrowed to hit hunks.
     pub(super) narrowed: &'a [Option<usize>],
     /// Hit-line starts of each narrowed view (`None`: not narrowed).
@@ -255,12 +263,22 @@ impl PatchStream<'_> {
                         }
                     }
                 }
-                Some(_) if len == 0 => {
-                    if !first_window {
-                        continue;
+                Some(_) if len == 0 => match self.same_as[i] {
+                    // Lossless dedupe: the earlier row of this page holds
+                    // the identical patch text. The repeat is listed on the
+                    // window that finishes delivering it, so it only ever
+                    // names text the caller already has.
+                    Some(earlier) => {
+                        let delivered = self.starts[earlier] + self.lengths[earlier];
+                        if delivered <= offset || delivered > end {
+                            continue;
+                        }
+                        row["samePatchAs"] =
+                            json!(str_at(&files[earlier], "/filename").unwrap_or(""));
                     }
-                    row["patch"] = json!("");
-                }
+                    None if first_window => row["patch"] = json!(""),
+                    None => continue,
+                },
                 Some(view) => {
                     if start + len <= offset {
                         continue; // delivered by an earlier window
@@ -380,24 +398,14 @@ pub(super) fn window_end(
     }
 }
 
-/// Shape a commit or comparison file page (see [`shape_patch_page`]):
-/// the file rows and the page-stream `offset` that continues them.
-pub(in crate::tools::gh_get_history_item) fn shape_files(
-    files: Vec<Value>,
-    include_patch: bool,
-    query: &HistoryItemRequest,
-) -> (Value, Option<usize>) {
-    let mut page = shape_patch_page(files, include_patch, query);
-    for row in &mut page.rows {
-        // Without patches, only `omitted` (no line counts either) qualifies
-        // the row's stat; the other reasons concern patch text not asked for.
-        if !include_patch
-            && let Some(fields) = row.as_object_mut()
-            && fields.get("patchUnavailable").and_then(Value::as_str) != Some("omitted")
-        {
-            fields.shift_remove("patchUnavailable");
+impl PatchPage {
+    /// The page with each row in the compact header form the response
+    /// carries: every file page (commit, comparison, pull request) ships
+    /// its patch rows this way.
+    pub(in crate::tools::gh_get_history_item) fn compact(mut self) -> Self {
+        for row in &mut self.rows {
+            compact_file_header(row);
         }
-        compact_file_header(row);
+        self
     }
-    (Value::Array(page.rows), page.cursor)
 }

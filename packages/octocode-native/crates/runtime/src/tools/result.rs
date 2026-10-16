@@ -111,6 +111,8 @@ pub struct ToolError {
     /// Leads out of the error, e.g. a missing path's nearest existing parent.
     /// Boxed to keep the error small in `Result`s.
     pub next: Option<Box<Value>>,
+    /// The coverage receipt of a classified row whose selection failed.
+    pub selection: Option<Box<crate::contracts::tool_types::Selection>>,
 }
 
 impl ToolError {
@@ -120,6 +122,7 @@ impl ToolError {
             message: message.into(),
             hints: Vec::new(),
             next: None,
+            selection: None,
         }
     }
 
@@ -261,7 +264,7 @@ impl From<Value> for ToolData {
 /// Every query field that names where a walk stands: its pages, offsets and
 /// snapshots, and the saved `selection` plan they were ordered by. A restart
 /// drops them all; the contract guard keeps the list complete.
-pub(crate) const CURSOR_FIELDS: [&str; 10] = [
+pub(crate) const CURSOR_FIELDS: [&str; 12] = [
     "page",
     "matchPage",
     "importerPage",
@@ -269,9 +272,11 @@ pub(crate) const CURSOR_FIELDS: [&str; 10] = [
     "offset",
     "scanOffset",
     "materializeOffset",
+    "walkOffset",
     "snapshot",
-    "diagnosticSnapshot",
     "selection",
+    "candidatePage",
+    "headSha",
 ];
 
 /// The one restart of a row query `row` of `tool`: the same query from its
@@ -398,7 +403,7 @@ mod tests {
         let topology = restart_query(
             ToolId::AstTopology,
             &json!({"operation":"cycles","path":"src","page":2,"diagnosticPage":3,
-                "diagnosticSnapshot":"d"}),
+                "snapshot":"d"}),
         );
         assert_eq!(
             topology["query"]["queries"][0],

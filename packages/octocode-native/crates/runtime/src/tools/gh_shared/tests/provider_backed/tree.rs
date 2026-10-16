@@ -102,12 +102,17 @@ async fn deep_tree_is_fetched_once_at_the_resolved_commit() {
     );
 }
 
-/// Paths beneath an ignored directory are dropped before paging,
-/// sizing, and materializing, and the recursive tree and the
-/// Contents walk list the same permitted entries.
+/// A git tree holds only committed content, so directories a local walk
+/// prunes as build output (`node_modules`, `build`, `coverage`) are listed,
+/// walked, and materialized like any other: by the recursive tree and by the
+/// Contents walk alike, with nothing omitted and no lead to recover them.
 #[tokio::test]
-async fn ignored_directories_hide_their_descendants_from_every_consumer() {
-    let expected = json!([{"dir":".","files":["app.rs (3)"]}]);
+async fn committed_build_output_names_are_listed_and_walked() {
+    let expected = json!([
+        {"dir":".","files":["app.rs (3)"],"folders":["coverage","node_modules"]},
+        {"dir":"coverage","files":["coverage.go (2)"]},
+        {"dir":"node_modules","files":["kept.rs (4)"]}
+    ]);
     // Recursive Git Trees listing.
     let server = MockServer::builder().start().await;
     mount_ref(&server, "main").await;
@@ -118,42 +123,36 @@ async fn ignored_directories_hide_their_descendants_from_every_consumer() {
         json!({
         "sha":"c".repeat(40),"truncated":false,"tree":[
             {"path":"app.rs","type":"blob","size":3},
-            {"path":"vendor","type":"tree"},
-            {"path":"vendor/hidden.rs","type":"blob","size":9},
-            {"path":"vendor/deep","type":"tree"},
-            {"path":"vendor/deep/more.rs","type":"blob","size":9}
+            {"path":"coverage","type":"tree"},
+            {"path":"coverage/coverage.go","type":"blob","size":2},
+            {"path":"node_modules","type":"tree"},
+            {"path":"node_modules/kept.rs","type":"blob","size":4}
         ]}),
     )
     .await;
     mount_content(&server, "app.rs", "app").await;
-    Mock::given(method("GET"))
-        .and(wiremock::matchers::path_regex("/contents/vendor"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "type":"file","encoding":"base64","content":STANDARD.encode("hidden")
-        })))
-        .expect(0)
-        .mount(&server)
-        .await;
+    mount_content(&server, "coverage/coverage.go", "go").await;
+    mount_content(&server, "node_modules/kept.rs", "kept").await;
     let home = crate::tools::test_support::Fixture::new();
     let out = run_at(
         &server,
         json!({"operation":"tree","mainGoal":"test","reasoning":"test","owner":"a","repo":"b",
-                "ref":"main","maxDepth":5,"pageSize":1,"materialize":true}),
+                "ref":"main","maxDepth":5,"materialize":true}),
         &home.0,
     )
     .await
     .expect("recursive tree");
     let data = &out.data;
     assert_eq!(data["files"], expected, "{data}");
-    assert!(data.get("pagination").is_none(), "no phantom page: {data}");
-    assert_eq!(data["omitted"], json!({"vendor":1}), "{data}");
+    assert!(data.get("omitted").is_none(), "{data}");
+    assert!(data.pointer("/next/includeSkipped").is_none(), "{data}");
     let local = std::path::Path::new(
         data["location"]["localPath"]
             .as_str()
             .expect("materialized location"),
     );
-    assert!(local.join("app.rs").exists(), "{data}");
-    assert!(!local.join("vendor").exists(), "{data}");
+    assert!(local.join("node_modules/kept.rs").exists(), "{data}");
+    assert!(local.join("coverage/coverage.go").exists(), "{data}");
 
     // Contents walk (the recursive tree is unavailable).
     let walked = MockServer::builder().start().await;
@@ -169,19 +168,109 @@ async fn ignored_directories_hide_their_descendants_from_every_consumer() {
         200,
         json!([
             {"name":"app.rs","path":"app.rs","type":"file","size":3},
-            {"name":"vendor","path":"vendor","type":"dir"}
+            {"name":"coverage","path":"coverage","type":"dir"},
+            {"name":"node_modules","path":"node_modules","type":"dir"}
         ]),
+    )
+    .await;
+    mount_json(
+        &walked,
+        "/api/v3/repos/a/b/contents/coverage",
+        200,
+        json!([{"name":"coverage.go","path":"coverage/coverage.go","type":"file","size":2}]),
+    )
+    .await;
+    mount_json(
+        &walked,
+        "/api/v3/repos/a/b/contents/node_modules",
+        200,
+        json!([{"name":"kept.rs","path":"node_modules/kept.rs","type":"file","size":4}]),
     )
     .await;
     let out = run(
         &walked,
         json!({"operation":"tree","mainGoal":"test","reasoning":"test","owner":"a","repo":"b",
-                "ref":"main","maxDepth":5,"pageSize":1}),
+                "ref":"main","maxDepth":5}),
     )
     .await
     .expect("contents walk");
     assert_eq!(out.data["files"], expected, "{}", out.data);
-    assert_eq!(out.data["omitted"], json!({"vendor":1}), "{}", out.data);
+    assert!(out.data.get("omitted").is_none(), "{}", out.data);
+}
+
+/// A one-level listing reads the root's own git tree, so a symlink is
+/// typed by its mode there as in a deep listing: named, not listed as a
+/// file the Contents API would type `file`.
+#[tokio::test]
+async fn a_one_level_listing_types_symlinks_like_a_deep_one() {
+    let server = MockServer::builder().start().await;
+    mount_ref(&server, "main").await;
+    let entries = json!([
+        {"path":"README.md","type":"blob","mode":"100644","size":5},
+        {"path":"CHANGELOG.md","type":"blob","mode":"120000","size":19},
+        {"path":"src","type":"tree","mode":"040000"}
+    ]);
+    mount_json(
+        &server,
+        format!("/api/v3/repos/a/b/git/trees/{TREE_SHA}"),
+        200,
+        json!({"sha":"c".repeat(40),"truncated":false,"tree":entries}),
+    )
+    .await;
+    Mock::given(method("GET"))
+        .and(wiremock::matchers::path_regex(format!(
+            "/git/trees/{TREE_SHA}(:|%3A)src$"
+        )))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "sha":"d".repeat(40),"truncated":false,"tree":[
+                {"path":"lib.rs","type":"blob","mode":"100644","size":7},
+                {"path":"link.rs","type":"blob","mode":"120000","size":6}
+            ]
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(wiremock::matchers::path_regex("/contents"))
+        .respond_with(ResponseTemplate::new(500))
+        .expect(0)
+        .mount(&server)
+        .await;
+    let root = run(
+        &server,
+        json!({"operation":"tree","mainGoal":"test","reasoning":"test","owner":"a","repo":"b",
+                "ref":"main"}),
+    )
+    .await
+    .expect("root level");
+    assert_eq!(
+        root.data["files"],
+        json!([{"dir":".","files":["README.md (5)"],"folders":["src"]}]),
+        "{}",
+        root.data
+    );
+    assert_eq!(root.data["omitted"], json!({"CHANGELOG.md (symlink)":1}));
+    let deep = run(
+        &server,
+        json!({"operation":"tree","mainGoal":"test","reasoning":"test","owner":"a","repo":"b",
+                "ref":"main","maxDepth":2}),
+    )
+    .await
+    .expect("two levels");
+    assert_eq!(deep.data["omitted"], json!({"CHANGELOG.md (symlink)":1}));
+    let nested = run(
+        &server,
+        json!({"operation":"tree","mainGoal":"test","reasoning":"test","owner":"a","repo":"b",
+                "ref":"main","path":"src"}),
+    )
+    .await
+    .expect("nested level");
+    assert_eq!(
+        nested.data["files"],
+        json!([{"dir":"src","files":["lib.rs (7)"]}]),
+        "{}",
+        nested.data
+    );
+    assert_eq!(nested.data["omitted"], json!({"link.rs (symlink)":1}));
 }
 
 #[tokio::test]
@@ -424,6 +513,8 @@ async fn materialize_skips_binary_files_with_a_warning() {
     );
 }
 
+/// Nothing a commit tracks is omitted: a one-level listing names
+/// `node_modules` like the committed `vendor/` and `.DS_Store` beside it.
 #[tokio::test]
 async fn tree_reports_omitted_entries_and_next_page_drops_completed_metadata() {
     let server = MockServer::builder().start().await;
@@ -434,6 +525,7 @@ async fn tree_reports_omitted_entries_and_next_page_drops_completed_metadata() {
         200,
         json!([
             {"name":"node_modules","path":"node_modules","type":"dir"},
+            {"name":"vendor","path":"vendor","type":"dir"},
             {"name":".DS_Store","path":".DS_Store","type":"file","size":1},
             {"name":"a.rs","path":"a.rs","type":"file","size":4},
             {"name":"b.rs","path":"b.rs","type":"file","size":4}
@@ -454,12 +546,8 @@ async fn tree_reports_omitted_entries_and_next_page_drops_completed_metadata() {
         )
         .await
         .expect("tree");
-    assert_eq!(
-        out.data["omitted"],
-        json!({".DS_Store":1,"node_modules":1}),
-        "{}",
-        out.data
-    );
+    assert!(out.data.get("omitted").is_none(), "{}", out.data);
+    assert_eq!(out.data["pagination"]["totalItems"], 5, "{}", out.data);
     let next = &out.data["next"]["nextPage"]["query"]["queries"][0];
     assert_eq!(next["page"], 2, "{}", out.data);
 }

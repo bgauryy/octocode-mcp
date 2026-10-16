@@ -19,7 +19,7 @@ async fn read_as(runtime: &ToolRuntime, token: &str, file: &str) -> ToolOutcome 
         .execute(
             admission,
             "ghGetFileContent".into(),
-            envelope(json!({"owner":"a","repo":"b","path":file,"ref":SHA,"minify":"none"})),
+            envelope(json!({"owner":"a","repo":"b","path":file,"ref":SHA})),
             Channel::Structured,
         )
         .await

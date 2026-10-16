@@ -38,14 +38,8 @@ pub(super) struct CacheMeta {
     /// `false`. Defaults to `false` for caches written before this field existed.
     #[serde(default)]
     pub verified: bool,
-    /// Commits of history fetched; entries written before `depth` existed
-    /// are shallow.
-    #[serde(default = "shallow")]
+    /// Commits of history fetched.
     pub depth: u64,
-}
-
-fn shallow() -> u64 {
-    1
 }
 
 /// What a cache entry holds: repository, ref, sparse scope ([`super::Sparse::key`]),
@@ -98,21 +92,6 @@ impl CacheMeta {
     }
 }
 
-/// The default branch a default-branch clone resolved, per repository and
-/// host. It lets an unbranched request find its cache entry without a GitHub
-/// API call; it expires with the cache TTL, and `forceRefresh` ignores it.
-#[derive(Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct DefaultBranchAlias {
-    branch: String,
-    recorded_at: String,
-}
-
-fn alias_path(home: &Path, owner: &str, repo: &str, endpoint: &str) -> PathBuf {
-    // A file beside the branch directories: eviction walks directories only.
-    repo_dir(home, owner, repo).join(format!(".default-branch__host_{}.json", hash(endpoint, 16)))
-}
-
 /// The directory holding every checkout of `owner/repo`. GitHub owner/repo
 /// names are case-insensitive: Foo/Bar and foo/bar are one repository and
 /// must share one checkout.
@@ -125,38 +104,6 @@ fn repo_dir(home: &Path, owner: &str, repo: &str) -> PathBuf {
     clones_root(home)
         .join(owner.to_ascii_lowercase())
         .join(repo.to_ascii_lowercase())
-}
-
-pub(super) fn default_branch_alias(
-    home: &Path,
-    owner: &str,
-    repo: &str,
-    endpoint: &str,
-    ttl: Duration,
-) -> Option<String> {
-    let bytes = fs::read(alias_path(home, owner, repo, endpoint)).ok()?;
-    let alias: DefaultBranchAlias = serde_json::from_slice(&bytes).ok()?;
-    let recorded = parse_iso_millis(&alias.recorded_at)?;
-    let fresh = now_millis() < recorded.saturating_add(ttl.as_millis() as i64);
-    (fresh && !alias.branch.trim().is_empty()).then_some(alias.branch)
-}
-
-pub(super) fn write_default_branch_alias(
-    home: &Path,
-    owner: &str,
-    repo: &str,
-    endpoint: &str,
-    branch: &str,
-) {
-    let path = alias_path(home, owner, repo, endpoint);
-    let Ok(bytes) = serde_json::to_vec(&DefaultBranchAlias {
-        branch: branch.to_owned(),
-        recorded_at: iso8601_millis(now_millis()),
-    }) else {
-        return;
-    };
-    // Best effort: without an alias the next unbranched call clones again.
-    let _ = write_atomic(&path, &bytes, false);
 }
 
 #[derive(Deserialize, Serialize)]
@@ -173,7 +120,7 @@ pub(super) fn clone_dir(
     branch: &str,
     sparse_key: Option<&str>,
     depth: u64,
-    endpoint: &str,
+    host: &str,
 ) -> PathBuf {
     // Full commit SHAs are case-insensitive; key them lowercase so FOO and foo
     // share one checkout.
@@ -197,7 +144,7 @@ pub(super) fn clone_dir(
     let sparse = sparse_key
         .map(|key| format!("__sp_{}", hash(key, 6)))
         .unwrap_or_default();
-    // Shallow entries keep the layout they had before `depth` existed.
+    // A shallow checkout's entry names no depth.
     let history = if depth > 1 {
         format!("__d{depth}")
     } else {
@@ -205,7 +152,7 @@ pub(super) fn clone_dir(
     };
     repo_dir(home, owner, repo).join(format!(
         "{safe_branch}{sparse}{history}__host_{}",
-        hash(endpoint, 16)
+        hash(host, 16)
     ))
 }
 
@@ -744,19 +691,6 @@ mod tests {
     }
 
     #[test]
-    fn meta_written_before_depth_existed_is_shallow() {
-        let meta: CacheMeta = serde_json::from_value(serde_json::json!({
-            "clonedAt": "2026-01-01T00:00:00.000Z",
-            "expiresAt": "2026-01-02T00:00:00.000Z",
-            "owner": "o", "repo": "r", "branch": "main",
-            "commitSha": "a".repeat(40), "source": "clone"
-        }))
-        .expect("legacy meta");
-        assert_eq!(meta.depth, 1);
-        assert!(meta.matches(&identity("o", "r", "main", None, 1)));
-    }
-
-    #[test]
     fn deep_history_and_sparse_sets_key_their_own_entries() {
         let home = Path::new("/tmp/octocode-cache-root");
         let shallow = clone_dir(home, "o", "r", "main", None, 1, "https://example.test");
@@ -767,39 +701,5 @@ mod tests {
             &serde_json::json!(shallow.to_string_lossy()),
             "__d",
         );
-    }
-
-    #[test]
-    fn default_branch_alias_round_trips_and_expires() {
-        let home_dir = crate::tools::test_support::Fixture::new();
-        let home = home_dir.0.clone();
-        let endpoint = "https://example.test";
-        assert_eq!(
-            default_branch_alias(&home, "O", "R", endpoint, Duration::from_secs(60)),
-            None
-        );
-        fs::create_dir_all(home.join("tmp/clone/o/r")).expect("repo dir");
-        write_default_branch_alias(&home, "O", "R", endpoint, "trunk");
-        assert_eq!(
-            default_branch_alias(&home, "o", "r", endpoint, Duration::from_secs(60)).as_deref(),
-            Some("trunk")
-        );
-        assert_eq!(
-            default_branch_alias(
-                &home,
-                "o",
-                "r",
-                "https://other.test",
-                Duration::from_secs(60)
-            ),
-            None,
-            "aliases are per host"
-        );
-        assert_eq!(
-            default_branch_alias(&home, "o", "r", endpoint, Duration::ZERO),
-            None,
-            "an alias older than the TTL is ignored"
-        );
-        let _ = fs::remove_dir_all(&home);
     }
 }

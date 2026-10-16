@@ -1,5 +1,5 @@
-//! Changed-file selection: `include`/`status`/`minChanges` filters and the
-//! commit/compare path scope.
+//! Changed-file selection: the `include`/`status`/`minChanges` scope every
+//! operation shares, and the `matchString` file filter.
 use super::HistoryItemRequest;
 use super::inventory::*;
 use super::util::{str_at, usize_at};
@@ -10,10 +10,95 @@ use serde_json::Value;
 #[derive(Clone, Copy)]
 pub(super) struct FileFilter<'a> {
     pub(super) needle: Option<&'a str>,
-    pub(super) scope: Option<&'a InventoryFilter>,
+    pub(super) scope: Option<&'a FileScope>,
+}
+
+/// A changed-file list through a read's filter.
+pub(super) struct Filtered {
+    /// The files the filter keeps, in order.
+    pub(super) kept: Vec<Value>,
+    /// In-scope files a patch search could not search
+    /// ([`unsearched_files`]).
+    pub(super) unsearched: Vec<(&'static str, String, bool)>,
+    /// In-scope files searched and dropped: no patch line holds the literal.
+    pub(super) dropped: usize,
+    /// Files in scope.
+    pub(super) in_scope: usize,
+}
+
+/// One page of a changed-file list through a read's filter.
+pub(super) struct FilteredPage {
+    /// The page's files (provider-shaped), in order.
+    pub(super) files: Vec<Value>,
+    /// The page object.
+    pub(super) page: Value,
+    /// Files the filter kept across every loaded file.
+    pub(super) kept: usize,
+    /// In-scope files a patch search could not search.
+    pub(super) unsearched: Vec<(&'static str, String, bool)>,
+    /// In-scope files searched and dropped.
+    pub(super) dropped: usize,
+    /// Files in scope.
+    pub(super) in_scope: usize,
 }
 
 impl FileFilter<'_> {
+    /// One file page for a commit, a comparison and a pull request alike:
+    /// the filter runs over every loaded file first, then the page cuts the
+    /// kept ones, so page N is the N-th page of files in scope (and, with a
+    /// `matchString` read of patches, of files whose patch holds it).
+    pub(super) fn page(
+        &self,
+        files: Vec<Value>,
+        state: super::window::WindowState,
+        query: &HistoryItemRequest,
+        patches: bool,
+    ) -> FilteredPage {
+        let Filtered {
+            kept,
+            unsearched,
+            dropped,
+            in_scope,
+        } = self.apply(files, patches);
+        let count = kept.len();
+        let (files, page) =
+            state.paginate(kept, query.page(), Some(file_page_size(query, patches)));
+        FilteredPage {
+            files,
+            page,
+            kept: count,
+            unsearched,
+            dropped,
+            in_scope,
+        }
+    }
+
+    /// Filter `files` once, for every file page (commit, comparison and pull
+    /// request alike). `searches_patches`: the read searches the literal in
+    /// patches, so in-scope files without one are unsearched.
+    pub(super) fn apply(&self, files: Vec<Value>, searches_patches: bool) -> Filtered {
+        let unsearched = if self.needle.is_some() && searches_patches {
+            unsearched_files(&files, self)
+        } else {
+            Vec::new()
+        };
+        let in_scope = files
+            .iter()
+            .filter(|file| self.scope.is_none_or(|scope| scope.matches(file)))
+            .count();
+        let kept = files
+            .into_iter()
+            .filter(|file| self.matches(file))
+            .collect::<Vec<_>>();
+        let dropped = in_scope.saturating_sub(kept.len() + unsearched.len());
+        Filtered {
+            kept,
+            unsearched,
+            dropped,
+            in_scope,
+        }
+    }
+
     pub(super) fn is_trivial(&self) -> bool {
         self.needle.is_none() && self.scope.is_none()
     }
@@ -31,6 +116,16 @@ impl FileFilter<'_> {
 /// searched, and holding no hit.
 pub(super) fn match_dropped_warning(dropped: usize, listed: usize) -> String {
     format!("matchString dropped {dropped} of {listed} changed files: no patch line holds it.")
+}
+
+/// A `matchString` that kept none of the listed changed files it could
+/// search. It searches each file's diff text (never its path), so the
+/// function context git prints after a hunk's `@@ … @@` counts as text: a
+/// hit there is not a changed line.
+pub(super) fn match_removed_all_warning(needle: &str, listed: usize) -> String {
+    format!(
+        "matchString matched 0 of {listed} changed files (it searched {needle:?} in each file's diff text, hunk-header context included); drop matchString to list the files."
+    )
 }
 
 /// One `include` entry.
@@ -79,39 +174,42 @@ impl PathPattern {
     }
 }
 
-/// A pull request's `include`/`status`/`minChanges`: path, status and change-count narrowing of
-/// the changed-file list. Pages and counts then cover matching files only.
-pub(super) struct InventoryFilter {
+/// A read's changed-file scope: the `include` paths, `dir/` prefixes and
+/// globs (any-of) of a pull request, a commit or a comparison, and a pull
+/// request's `status`/`minChanges`. Pages and counts then cover matching
+/// files only.
+pub(super) struct FileScope {
     pub(super) paths: Vec<PathPattern>,
     pub(super) status: Vec<String>,
     pub(super) min_changes: Option<usize>,
 }
 
-impl InventoryFilter {
+impl FileScope {
+    /// The scope `query` names; `None` when it names none.
     pub(super) fn from_query(query: &HistoryItemRequest) -> Result<Option<Self>, String> {
-        let crate::contracts::tool_types::GhGetHistoryItemQuery::PullRequest {
-            include,
-            status,
-            min_changes,
-            ..
-        } = &query.query
-        else {
-            return Ok(None);
+        let paths = query
+            .include_patterns()
+            .into_iter()
+            .map(PathPattern::parse)
+            .collect::<Result<Vec<_>, _>>()?;
+        let (status, min_changes) = match &query.query {
+            crate::contracts::tool_types::GhGetHistoryItemQuery::PullRequest {
+                status,
+                min_changes,
+                ..
+            } => (
+                status
+                    .iter()
+                    .flat_map(|status| status.iter())
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>(),
+                min_changes.map(|n| usize::try_from(n.get()).unwrap_or(usize::MAX)),
+            ),
+            _ => (Vec::new(), None),
         };
-        if include.is_none() && status.is_none() && min_changes.is_none() {
+        if paths.is_empty() && status.is_empty() && min_changes.is_none() {
             return Ok(None);
         }
-        let paths = include
-            .iter()
-            .flat_map(|paths| paths.iter())
-            .map(|pattern| PathPattern::parse(pattern))
-            .collect::<Result<Vec<_>, _>>()?;
-        let status = status
-            .iter()
-            .flat_map(|status| status.iter())
-            .map(ToString::to_string)
-            .collect();
-        let min_changes = min_changes.map(|n| usize::try_from(n.get()).unwrap_or(usize::MAX));
         Ok(Some(Self {
             paths,
             status,
@@ -166,41 +264,5 @@ pub(super) fn unsearched_files(
                 str_at(file, "/status") == Some("removed"),
             ))
         })
-        .collect()
-}
-
-/// A commit or comparison file scope: the `include` paths, `dir/`
-/// prefixes and globs (any-of). A rename matches by its new or previous
-/// path.
-pub(super) struct PathScope(Vec<PathPattern>);
-
-impl PathScope {
-    pub(super) fn from_query(query: &HistoryItemRequest) -> Result<Option<Self>, String> {
-        let patterns = query
-            .file_scope
-            .iter()
-            .map(|pattern| PathPattern::parse(pattern))
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok((!patterns.is_empty()).then_some(Self(patterns)))
-    }
-
-    pub(super) fn matches(&self, file: &Value) -> bool {
-        let name = str_at(file, "/filename").unwrap_or("");
-        let previous = str_at(file, "/previous_filename");
-        self.0.iter().any(|pattern| {
-            pattern.matches(name) || previous.is_some_and(|previous| pattern.matches(previous))
-        })
-    }
-}
-
-/// Whether a file sits in the optional scope.
-pub(super) fn in_path_scope(file: &Value, scope: Option<&PathScope>) -> bool {
-    scope.is_none_or(|scope| scope.matches(file))
-}
-
-pub(super) fn scope_files(files: Vec<Value>, scope: Option<&PathScope>) -> Vec<Value> {
-    files
-        .into_iter()
-        .filter(|file| in_path_scope(file, scope))
         .collect()
 }

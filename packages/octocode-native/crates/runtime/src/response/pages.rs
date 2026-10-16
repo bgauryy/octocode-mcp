@@ -333,7 +333,7 @@ fn row_left(pagination: &Value, data: &Map<String, Value>, call: &Value) -> Opti
 }
 
 /// The one text of a stale snapshot, whichever tool's cursor went stale.
-pub const STALE_SNAPSHOT_ERROR: &str = "The source or the query changed since the earlier pages; nothing shown remains valid, start over.";
+pub const STALE_SNAPSHOT_ERROR: &str = "The snapshot does not match this source and query (they changed, or the snapshot is missing or from another call); nothing shown remains valid, start over.";
 
 /// A stale-snapshot row ends the page: the shared text, no `isPartial` and no
 /// `hasMore` (nothing of the shown result remains to read), no continuation
@@ -345,12 +345,13 @@ pub(super) fn restart_stale(tool: ToolId, query: &Value, data: &mut Value) {
     };
     object.insert("error".into(), json!(STALE_SNAPSHOT_ERROR));
     object.remove("isPartial");
-    for (key, block) in object.iter_mut() {
-        if is_pagination_key(key)
-            && let Some(block) = block.as_object_mut()
-            && block.contains_key("hasMore")
-        {
-            block.insert("hasMore".into(), json!(false));
+    for (key, value) in object.iter_mut() {
+        for block in page_blocks_mut(key, value) {
+            if let Some(block) = block.as_object_mut()
+                && block.contains_key("hasMore")
+            {
+                block.insert("hasMore".into(), json!(false));
+            }
         }
     }
     if let Some(next) = object.get_mut("next").and_then(Value::as_object_mut) {
@@ -381,20 +382,17 @@ fn ensure_restart(tool: ToolId, query: &Value, object: &mut Map<String, Value>) 
     }
 }
 
-/// A page past the end is one outcome on every tool: the row is empty, its
+/// A page past the end is one outcome on every tool: the row is
+/// `status:"outOfRange"` (set by `rows::result_row`), its
 /// `reason` names the page and the page count (`page 99 of 4`), and
 /// `next.restart` re-asks the query from page 1. A tool flags it with
-/// `outOfRange` on its `pagination` block or a named one
-/// (`filePagination`). Returns whether `data` was such a page.
+/// `outOfRange` on its `pagination` block or a section block
+/// (`contentPagination.files`). Returns whether `data` was such a page.
 pub(super) fn settle_out_of_range(tool: ToolId, query: &Value, data: &mut Value) -> bool {
     let Some(object) = data.as_object_mut() else {
         return false;
     };
-    let Some(pagination) = object
-        .iter()
-        .find(|(key, block)| is_pagination_key(key) && block["outOfRange"] == true)
-        .map(|(_, block)| block)
-    else {
+    let Some(pagination) = out_of_range_block(object) else {
         return false;
     };
     let reason = match (
@@ -413,6 +411,27 @@ pub(super) fn settle_out_of_range(tool: ToolId, query: &Value, data: &mut Value)
     }
     ensure_restart(tool, query, object);
     true
+}
+
+/// The row's page block flagged `outOfRange`: one of the row's own, or one
+/// of a resource item the row holds (`pullRequests[0].contentPagination.files`),
+/// since the page cursor is the row's either way.
+fn out_of_range_block(object: &Map<String, Value>) -> Option<Value> {
+    let flagged = |object: &Map<String, Value>| {
+        object
+            .iter()
+            .flat_map(|(key, value)| page_blocks(key, value))
+            .find(|block| block["outOfRange"] == true)
+            .cloned()
+    };
+    flagged(object).or_else(|| {
+        object
+            .values()
+            .filter_map(Value::as_array)
+            .flatten()
+            .filter_map(Value::as_object)
+            .find_map(flagged)
+    })
 }
 
 /// One page's facts. Every tool builds its `pagination` block from these
@@ -510,6 +529,13 @@ impl PageFacts {
     pub(crate) fn out_of_range(mut self, past_end: bool) -> Self {
         self.out_of_range = past_end;
         self
+    }
+
+    /// `(page, totalPages)` when the page lies past the last page of a
+    /// known count; page 1 of an empty result is the empty result itself.
+    pub(crate) fn past_end(self) -> Option<(usize, usize)> {
+        let pages = self.total_pages?;
+        (self.page > pages.max(1)).then_some((self.page, pages))
     }
 
     /// Whether a later page holds more.
@@ -648,6 +674,52 @@ pub(super) fn slim_pagination(block: &mut Map<String, Value>, limited: bool) {
 /// keys, so the convention is the rule.
 pub(super) fn is_pagination_key(key: &str) -> bool {
     key == "pagination" || key.ends_with("Pagination")
+}
+
+/// The sectioned pagination field: an item read's per-section page blocks
+/// (`contentPagination.files`, `.commits`, `.comments`, …).
+const SECTION_PAGINATION: &str = "contentPagination";
+
+/// The page blocks of the pagination field `key`: one block, or each section
+/// block of `contentPagination`.
+pub(super) fn page_blocks<'a>(key: &str, value: &'a Value) -> Vec<&'a Value> {
+    match (is_pagination_key(key), key == SECTION_PAGINATION) {
+        (false, _) => Vec::new(),
+        (true, true) => value
+            .as_object()
+            .map(|sections| sections.values().collect())
+            .unwrap_or_default(),
+        (true, false) => vec![value],
+    }
+}
+
+/// [`page_blocks`], mutably.
+pub(super) fn page_blocks_mut<'a>(key: &str, value: &'a mut Value) -> Vec<&'a mut Value> {
+    match (is_pagination_key(key), key == SECTION_PAGINATION) {
+        (false, _) => Vec::new(),
+        (true, true) => value
+            .as_object_mut()
+            .map(|sections| sections.values_mut().collect())
+            .unwrap_or_default(),
+        (true, false) => vec![value],
+    }
+}
+
+/// Keep only the page blocks of a pagination field that pass `keep`; a
+/// sectioned field keeps its passing sections. Returns whether anything is
+/// left.
+pub(super) fn retain_page_blocks(
+    key: &str,
+    value: &mut Value,
+    keep: impl Fn(&Value) -> bool,
+) -> bool {
+    if key == SECTION_PAGINATION
+        && let Some(sections) = value.as_object_mut()
+    {
+        sections.retain(|_, block| keep(block));
+        return !sections.is_empty();
+    }
+    keep(value)
 }
 
 /// A row that states `coverage.state: "complete"` lists everything in its scope: any
@@ -1178,12 +1250,16 @@ mod tests {
         );
     }
 
-    /// A stale snapshot names both causes: the source or the query.
+    /// A stale snapshot names every cause: the source or the query changed,
+    /// or the snapshot is missing or from another call.
     #[test]
     fn stale_snapshot_names_source_or_query() {
-        assert!(
-            crate::response::pages::STALE_SNAPSHOT_ERROR.contains("source or the query changed")
-        );
+        for cause in ["source and query", "changed", "missing", "another call"] {
+            assert!(
+                crate::response::pages::STALE_SNAPSHOT_ERROR.contains(cause),
+                "{cause}"
+            );
+        }
         assert!(!crate::response::pages::STALE_SNAPSHOT_ERROR.contains("next."));
     }
 

@@ -241,8 +241,9 @@ pub(crate) fn extract(content: &str, cfg: &LangExtractConfig) -> Option<Vec<(usi
 /// the rest.
 pub fn extract_outline(content: &str, cfg: &LangExtractConfig) -> Option<Vec<(usize, String)>> {
     let deadline = Instant::now() + AST_EXECUTION_TIMEOUT;
-    let kept = extract_with_limits(content, cfg, deadline, 65_536, true)?;
+    // One parse serves the kept lines and the import runs.
     let tree = parse_before(content, &cfg.language, deadline)?;
+    let kept = kept_lines(content, cfg, &tree, deadline, 65_536, true)?;
     Some(collapse_import_runs(kept, &import_runs(tree.root_node())))
 }
 
@@ -352,6 +353,92 @@ fn collapse_signature(
     }
 }
 
+/// Grammar nodes that annotate the item after them: Rust attributes,
+/// decorators, Java and Scala annotations, C# and C++ attribute lists.
+pub(crate) fn is_annotation_kind(kind: &str) -> bool {
+    matches!(
+        kind,
+        "attribute_item"
+            | "inner_attribute_item"
+            | "decorator"
+            | "annotation"
+            | "marker_annotation"
+            | "attribute_list"
+            | "attribute_declaration"
+    )
+}
+
+/// Shrink each run of two or more rows that hold only annotations (one
+/// multi-row attribute, or several stacked on one item) to its first row,
+/// marked [`ELIDED`]: an outline lists the item, and the item's line range
+/// reads the annotations in full.
+fn collapse_annotation_runs(
+    root: tree_sitter::Node<'_>,
+    lines: &[&str],
+    keep: &mut [bool],
+    elided: &mut [bool],
+) {
+    let mut annotation_rows = vec![false; lines.len()];
+    let mut cursor = root.walk();
+    'walk: loop {
+        let node = cursor.node();
+        let mut descend = true;
+        if is_annotation_kind(node.kind()) {
+            descend = false;
+            let (start, end) = (node.start_position(), node.end_position());
+            let alone = lines.get(start.row).is_some_and(|row| {
+                row.get(..start.column)
+                    .is_some_and(|before| before.trim().is_empty())
+            }) && lines.get(end.row).is_some_and(|row| {
+                row.get(end.column..)
+                    .is_some_and(|after| after.trim().is_empty())
+            });
+            if alone {
+                let last = end.row.min(lines.len().saturating_sub(1));
+                annotation_rows[start.row..=last].fill(true);
+            }
+        }
+        if descend && cursor.goto_first_child() {
+            continue;
+        }
+        while !cursor.goto_next_sibling() {
+            if !cursor.goto_parent() {
+                break 'walk;
+            }
+        }
+    }
+    let mut row = 0;
+    while row < lines.len() {
+        if !(keep[row] && annotation_rows[row]) {
+            row += 1;
+            continue;
+        }
+        let run = (row..lines.len())
+            .take_while(|at| keep[*at] && annotation_rows[*at])
+            .count();
+        if run > 1 {
+            keep[row + 1..row + run].fill(false);
+            elided[row] = true;
+        }
+        row += run;
+    }
+}
+
+/// Drop rows that hold only closing delimiters (`}`, `);`, `]`): a
+/// declaration head's line range already gives where it ends.
+fn drop_closing_rows(lines: &[&str], keep: &mut [bool]) {
+    for (row, line) in lines.iter().enumerate() {
+        let text = line.trim();
+        if !text.is_empty()
+            && text
+                .chars()
+                .all(|c| matches!(c, '}' | ')' | ']' | ';' | ','))
+        {
+            keep[row] = false;
+        }
+    }
+}
+
 /// The text a docstring's first row holds after its opening quotes.
 fn docstring_opening_text(row: &str) -> &str {
     let row = row
@@ -421,9 +508,27 @@ fn collapse_docstrings(
     }
 }
 
+/// [`kept_lines`] after its own parse (tests drive the deadline and the
+/// match limit through it).
+#[cfg(test)]
 fn extract_with_limits(
     content: &str,
     cfg: &LangExtractConfig,
+    deadline: Instant,
+    match_limit: u32,
+    outline: bool,
+) -> Option<Vec<(usize, String)>> {
+    let tree = parse_before(content, &cfg.language, deadline)?;
+    kept_lines(content, cfg, &tree, deadline, match_limit, outline)
+}
+
+/// The lines of `content` (parsed as `tree`) its body query keeps; an
+/// `outline` also collapses signatures, docstrings and annotation runs and
+/// drops closing-delimiter rows.
+fn kept_lines(
+    content: &str,
+    cfg: &LangExtractConfig,
+    tree: &Tree,
     deadline: Instant,
     match_limit: u32,
     outline: bool,
@@ -436,8 +541,6 @@ fn extract_with_limits(
 
     let mut keep = vec![true; n];
     let mut elided = vec![false; n];
-
-    let tree = parse_before(content, &cfg.language, deadline)?;
 
     // Compile (or reuse the cached compile of) the body query; if it fails
     // (bad query or grammar mismatch), `None` sends the caller to its heuristic.
@@ -519,6 +622,8 @@ fn extract_with_limits(
     }
     if outline {
         collapse_docstrings(tree.root_node(), &lines, &mut keep, &mut elided);
+        collapse_annotation_runs(tree.root_node(), &lines, &mut keep, &mut elided);
+        drop_closing_rows(&lines, &mut keep);
     }
 
     let result: Vec<(usize, String)> = keep
@@ -657,6 +762,38 @@ mod tests {
         };
         // Rows 1-4 (the whole signature), the blank row and `fn one`.
         assert_eq!(extract(rust, &cfg).expect("boundary").len(), 6);
+    }
+
+    /// Stacked or multi-row annotations shrink to their first row (marked
+    /// ` …`), one annotation row stays whole, and closing-delimiter rows
+    /// drop: the outline lists items, their heads' line ranges read the rest.
+    #[test]
+    fn outline_collapses_annotation_runs_and_drops_closing_rows() {
+        let rust = "#[doc = \"A type.\"]\n#[derive(\n    Clone,\n    Debug,\n)]\npub struct S {\n    #[doc = \"Field.\"]\n    #[serde(default)]\n    pub a: u8,\n    #[serde(rename = \"b\")]\n    pub b: u8,\n}\nimpl S {\n    fn f(&self) {\n        work();\n    }\n}\n";
+        assert_eq!(
+            outline_of("rs", rust),
+            lines(&[
+                (1, "#[doc = \"A type.\"] …"),
+                (6, "pub struct S {"),
+                (7, "    #[doc = \"Field.\"] …"),
+                (9, "    pub a: u8,"),
+                (10, "    #[serde(rename = \"b\")]"),
+                (11, "    pub b: u8,"),
+                (13, "impl S {"),
+                (14, "    fn f(&self) {"),
+            ])
+        );
+        let python = "@app.route(\"/x\")\n@login_required\ndef view():\n    return 1\n\n@property\ndef one(self):\n    return 1\n";
+        assert_eq!(
+            outline_of("py", python),
+            lines(&[
+                (1, "@app.route(\"/x\") …"),
+                (3, "def view():"),
+                (5, ""),
+                (6, "@property"),
+                (7, "def one(self):"),
+            ])
+        );
     }
 
     /// A module or class docstring is its first text line (` …` marks the

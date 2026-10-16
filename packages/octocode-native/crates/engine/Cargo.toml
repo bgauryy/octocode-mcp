@@ -44,6 +44,7 @@ grep-matcher = "0.1.9"
 grep-pcre2 = "0.1.10"
 grep-regex = "0.1.14"
 grep-searcher = "0.1.17"
+globset = { workspace = true }
 hex = { workspace = true }
 ignore = { workspace = true }
 moka = { version = "0.12", default-features = false, features = ["sync"] }
@@ -61,6 +62,7 @@ serde_json = { workspace = true }
 serde_yaml_ng = { workspace = true }
 sha2 = { workspace = true }
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "process", "rt-multi-thread", "sync", "time"] }
+toml = { workspace = true }
 tree-sitter = "0.27"
 tree-sitter-asm = { version = "0.24", optional = true }
 tree-sitter-c = "0.24"

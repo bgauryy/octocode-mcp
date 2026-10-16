@@ -19,11 +19,11 @@ Load when evaluating what a tool returns through CLI and MCP, or whether an agen
 - Secrets are redacted in every surface, including clipped values and match strings.
 
 ## Workflow — the next call is obvious
-- Every result state (hits, zero hits, too many hits, error, partial) returns an executable `next.*` page, a `hints.*` lead, or a `hints.text` tip that names the correction. Zero-result and invalid-input paths matter most.
+- Every result state (hits, zero hits, too many hits, error, partial) returns an executable `next.*` page, a `hints` lead, or a `hints` tip that names the correction. Zero-result and invalid-input paths matter most.
 - A hint names the tool and fields to call next, with values from this result (path, line, SHA, symbol). Flag generic advice, hints repeated on every row, and hints to disabled tools.
 - Producer fields feed consumer inputs without reshaping: search → fetch (`path` + line/anchor), ghSearchCode/ghStructure → ghGetFileContent (owner/repo/ref), history → item (number/SHA), astSearch topology → lspSearch confirmation. Check against `<repo>/docs/TOOL_DATA_CONTRACT.md` "Connections between tools".
 - The instructions' locate cascade (anchor → search → fetch → rerank/clasify → lsp) matches what tools return. Flag guidance that asks for a field the tool does not emit.
-- clasify rows follow the same optional-brief rule and never send the brief to the provider. A source row's `hints.read` reads exactly the judged selection at its snapshot or commit; execute it. No search or fetch result offers a `clasify` handoff or an automatic reread of evidence it returned ([classifier and clasify guide](../../../docs/OCTOCODE_CLASIFY.md#shared-mechanism)).
+- clasify rows follow the same optional-brief rule and never send the brief to the provider. A source row's `read` in `hints` reads exactly the judged selection at its snapshot or commit; execute it. No search or fetch result offers a `clasify` handoff or an automatic reread of evidence it returned ([classifier and clasify guide](../../../docs/OCTOCODE_CLASIFY.md#shared-mechanism)).
 - `kind`, `confidence`, coverage, and `lowSignal` states are consistent across tools and tell the agent when to verify.
 - Instructions say when to batch independent queries (1–5) and when a dependent query must wait.
 

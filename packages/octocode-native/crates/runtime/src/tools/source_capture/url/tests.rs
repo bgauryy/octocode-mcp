@@ -566,7 +566,6 @@ fn a_capture_is_saved_immutably_and_its_lead_reads_exactly_those_bytes() {
             "path": file,
             "snapshot": snapshot,
             "ranges": [format!("1-{}", selection.text.lines().count())],
-            "minify": "none",
         })
     );
     assert_eq!(row["ranges"], json!(["1-4"]));
@@ -653,7 +652,6 @@ async fn the_lead_survives_output_sanitization_and_still_reads_the_capture() {
             "path": format!("/Users/someone/.octocode/tmp/capture/url/{snapshot}/source.txt"),
             "snapshot": snapshot,
             "ranges": ["1-3"],
-            "minify": "none",
         }]},
     });
     let row =

@@ -26,8 +26,8 @@ The **Octocode home** is one folder shared by the CLI, the MCP server, the VS Co
 | `stats.json` | Octocode | Clasify calls and tokens. Written only when `storage.stats` (`OCTOCODE_ENABLE_STATS=1`) is on and storage is persistent. |
 | `logs/evictions.jsonl` | Octocode | Cached checkouts that cleanup removed; `npx octocode cache status` shows recent ones. |
 | `tmp/response/` | cache | GitHub file bodies and directory listings, shared by CLI and MCP to save rate limit. |
-| `tmp/clone/` | cache | `ghCloneRepo` (CLI) checkouts, keyed by owner, repo, and branch or sparse selection; may hold local edits. |
-| `tmp/materialize/v2/` | cache | Files `ghStructure` materialized at an immutable commit SHA. A manifest beside each commit directory lists the files; a directory without its manifest is cleared, never reused. |
+| `tmp/clone/` | cache | `ghCloneRepo` (CLI) checkouts, keyed by owner, repo, the commit the ref names, sparse selection, and GitHub host; may hold local edits. |
+| `tmp/materialize/v3/` | cache | Files `ghStructure` materialized at an immutable commit SHA. A manifest beside each commit directory lists the files; a directory without its manifest is cleared, never reused. |
 | `tmp/ratelimit/` | cache | Last-known GitHub rate-limit state, shared across processes. |
 | `tmp/clone-locks/`, `tmp/clone-tmp/`, `tmp/git-home/` | cache | Per-repository clone locks, staging, and an isolated git home. |
 
@@ -45,7 +45,7 @@ CLI and MCP share the file-based cache roots under `OCTOCODE_HOME`; there is no 
 
 | Concern | Behavior |
 |---|---|
-| Cleanup | At most one sweep per 24 hours (marker `tmp/.last-cache-maintenance`). It deletes entries older than 24 hours under `tmp/response`, `tmp/materialize/v2`, the legacy `tmp/tree`, and `tmp/ratelimit`, and search snapshots older than 60 seconds. Clones use lock- and status-aware eviction during clone activity; age sweeps preserve them. |
+| Cleanup | At most one sweep per 24 hours (marker `tmp/.last-cache-maintenance`). It deletes entries older than 24 hours under `tmp/materialize/v3` (each snapshot under its own lock, so one in use stays; the retired `v2` layout ages out whole), the legacy `tmp/tree`, and `tmp/ratelimit`, and search snapshots older than 60 seconds. The response and registry caches (`tmp/response`, `tmp/artifact`) are evicted by their own store, not by age. Clones use lock- and status-aware eviction during clone activity; age sweeps preserve them. |
 | When | Synchronously at native runtime start: once per CLI process and at MCP server start. No background timer. Skipped in `memory` mode or when `tmp/` does not exist. |
 | Failure | Best-effort; an unavailable or read-only cache home never blocks the CLI or MCP startup. |
 | Ownership | Only Octocode-owned directories; other `tmp/` content stays. |
@@ -193,7 +193,7 @@ These are code constants, not settings (one owner: `RuntimeLimits` in `packages/
 
 Response-cache sizes and per-surface tool-call timeouts (the CLI allows longer for LSP cold starts) are fixed too.
 
-- **GitHub rate limits:** a call waits out a primary or secondary limit, search spacing, or a full code-search window (10 searches a minute) for up to 45 s and then sends; a longer wait fails at once with `rateLimited` and `retryAfter`. Waiting does not spend the request timeout, but the tool call's own deadline still bounds it, and 45 s stays under the 60 s tool-call timeout some MCP hosts apply. Processes sharing a token reserve search slots under one lock on `tmp/ratelimit/`, so they never take the same slot.
+- **GitHub rate limits:** a call waits out a primary or secondary limit, search spacing, or a full code-search window (10 searches a minute) for up to 45 s and then sends; a longer wait fails at once with `rateLimited` and `retryAfter`. Waiting does not spend the request timeout, but the tool call's own deadline still bounds it, and 45 s stays under the 60 s tool-call timeout some MCP hosts apply. Processes sharing a token reserve search slots under one file lock on `tmp/ratelimit/` (keyed by host and a token hash, never the token), so together they stay within one window and keep the spacing. A stamp expires with its window, so a crashed process never wedges it; a stamp dated more than two minutes ahead is ignored. If the file or its directory cannot be read, written or locked, the call goes ahead under this process's own pacing and one warning goes to stderr.
 - **Classification gate:** one process-wide gate per provider endpoint allows 10 requests in flight; one tool call may use up to three quarters. Throttling (429/503/529) halves the gate, `Retry-After` pauses every caller, and the gate recovers gradually.
 - **Context selection:** units the budget leaves unassessed stay unknown and recoverable through `next.unfiltered`; they never spill into the default evidence body.
 

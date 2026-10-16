@@ -78,32 +78,43 @@ pub fn mcp_result(
     Ok(Value::Object(response))
 }
 
-/// What to try after a timeout. Only lspSearch starts a language server, whose
-/// first call can take about a minute; any other tool timed out on its work.
+/// What to try after a timeout: the tool's own hint when it has one (lspSearch
+/// names the language server's cold start), else the generic narrowing advice.
 fn timeout_hint(tool: &str) -> &'static str {
-    if tool == ToolId::LspSearch.as_str() {
-        "Retry -- the first call initialises the language server (~60 s cold start)."
-    } else {
-        "Retry, or narrow the call: fewer queries, a smaller path or repository scope, or a tighter filter."
-    }
+    ToolId::from_name(tool)
+        .and_then(|id| id.output().error_hint("timeout"))
+        .unwrap_or(
+            "Retry, or narrow the call: fewer queries, a smaller path or repository scope, or a tighter filter.",
+        )
 }
 
-/// An error envelope → one line: the error, then each repair detail.
+/// An error envelope → one line: the error, each repair detail, each hint
+/// note (a lossy repair names what it drops), then the repair lead's call
+/// when the envelope has one (a text-only client reads no structured
+/// content).
 fn error_line(payload: &Value) -> Option<String> {
     let error = payload.get("error")?.as_str()?;
-    let details = payload
-        .get("details")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_str)
-        .collect::<Vec<_>>();
-    Some(if details.is_empty() {
-        error.to_owned()
-    } else {
-        // The error and each detail are separate clauses.
-        format!("{error}; {}", details.join("; "))
-    })
+    let mut clauses = vec![error.to_owned()];
+    clauses.extend(
+        payload
+            .get("details")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(str::to_owned),
+    );
+    clauses.extend(
+        payload
+            .get("hints")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(str::to_owned),
+    );
+    // The error, each detail and the lead are separate clauses.
+    Some(clauses.join("; "))
 }
 
 #[cfg(test)]
@@ -116,7 +127,14 @@ mod tests {
         RuntimeError {
             code: "invalidInput".into(),
             message: error.to_string(),
-            payload: Some(Box::new(contracts::format_input_error(tool, &error))),
+            payload: Some(Box::new({
+                let mut payload = contracts::format_input_error(tool, &error);
+                crate::response::channels::publish_hints(
+                    &mut payload,
+                    crate::tools::id::ToolId::from_name(tool).expect("tool"),
+                );
+                payload
+            })),
             validation_issues: Some(error.issues),
         }
     }
@@ -200,6 +218,19 @@ mod tests {
             brief.contains("Move 'mainGoal' into each queries[] row"),
             "{brief}"
         );
+    }
+
+    /// A host that shows only the text of an error still reads the note a
+    /// lossy repair carries, ahead of the repair call.
+    #[test]
+    fn the_error_text_carries_the_lossy_repair_note() {
+        let line = error_line(&json!({"error":"bad","errorCode":"invalidInput",
+            "hints":["The repair lead drops queries.0.glob.",
+                "repair: Approximate: localSearch {\"queries\":[{\"path\":\".\",\"matchString\":\"x\"}]}"]}))
+        .expect("line");
+        let note = line.find("drops queries.0.glob").expect("note");
+        let repair = line.find("repair: ").expect("repair");
+        assert!(note < repair, "{line}");
     }
 
     #[test]

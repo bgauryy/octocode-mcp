@@ -58,7 +58,7 @@ fn search_fixture(files: &[(&str, &str)], request: LocalSearchQuery) -> serde_js
         serde_json::json!({"path": root.path().to_string_lossy().into_owned()}),
         Some(&request),
     );
-    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
         .expect("search");
     serde_json::to_value(&result).expect("serialize")
 }
@@ -90,7 +90,8 @@ fn search_root(root: &std::path::Path, fields: serde_json::Value) -> LocalSearch
     let mut fields = fields;
     fields["path"] = root.to_string_lossy().into_owned().into();
     let request = ls_query(fields, None);
-    execute_local_search(&request, &policy, &security, &NeverCancel, None, None).expect("search")
+    execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
+        .expect("search")
 }
 
 /// Run a structureSearch row (a lead's query) and return its JSON text.
@@ -138,6 +139,7 @@ fn follow_expansions(result: &LocalSearchResult, policy: &PathPolicy) -> (usize,
                 &NeverCancel,
                 &crate::tools::local_fetch::LocalFetchRegex,
                 None,
+                None,
             );
             assert_eq!(fetched.error, None, "{read}");
             content.push_str(fetched.content.as_deref().unwrap_or(""));
@@ -169,7 +171,7 @@ fn walk_search(
             let query: LocalSearchQuery =
                 serde_json::from_value(row.clone()).expect("localSearch row");
             let result =
-                execute_local_search(&query, &policy, &security, &NeverCancel, None, window)
+                execute_local_search(&query, &policy, &security, &NeverCancel, None, window, None)
                     .unwrap_or_else(|error| panic!("{row}: {error:?}"));
             let body = serde_json::to_value(&result).expect("result");
             let page = crate::tools::test_support::checks::Page {
@@ -226,7 +228,7 @@ fn select_all_search(
         fn identity(&self) -> serde_json::Value {
             serde_json::json!({"test":"all-selected"})
         }
-        fn select(&self, call: JudgeCall<'_>) -> Result<Vec<(usize, Decision)>, String> {
+        fn select(&self, call: JudgeCall<'_>) -> crate::tools::selection::Judgments {
             Ok(call
                 .admitted
                 .iter()
@@ -252,7 +254,7 @@ fn select_all_search(
             github_credential: None,
         },
     };
-    execute_local_search_selected(
+    execute_local_search(
         query,
         policy,
         security,

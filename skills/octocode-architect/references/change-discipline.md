@@ -20,8 +20,18 @@ Safe moves (finding → move; guardrail):
 - Migrate in reversible vertical slices, not layer rewrites: freeze behavior, create a seam, move one scenario, redirect callers, run architecture and runtime sensors, repeat. Remove old paths only after semantic and external-consumer checks; update architecture docs that are part of the contract.
 - A seam exposing an unproven assumption: back to [checks](checks.md#algorithms) or [analysis](analysis.md).
 
+## Delete junk and unify
+
+- Within authorized cleanup scope, use `octocode-clean-agentic-code` for the [removal bars](../../octocode-clean-agentic-code/references/code-smells.md); this architecture skill still owns boundary choice, dependency direction, and verification. A request to review alone does not authorize broad deletion.
+- **Prove removal.** Start with AST or graph candidates, resolve identity and consumers with LSP, then check exports, registries, configuration, scripts, generated consumers, persisted protocols, and external use. Unused imports, stale wrappers, unreachable branches, debug leftovers, and obsolete dependencies are candidates, not automatic deletions. Keep useful diagnostics, compatibility required by a live contract, and tests that expose a failure.
+- **Prove unification.** Compare semantics, invariants, defaults, errors, lifetime, and change pressure across every site. Similar syntax, names, or type shapes do not prove one responsibility. Preserve distinct domain identities and version boundaries when their meaning differs.
+- **Choose one owner.** Put shared policy in the layer that owns it and direct callers there. Update the existing source of truth and regenerate derived forms; do not introduce a second canonical schema, a generic dumping ground, forwarding aliases, or a permanent parallel implementation.
+- **Complete the migration.** Move consumers in verifiable slices, check each path, then remove redundant code, imports, dependencies, configuration, and links that are proven obsolete. Re-resolve references and inspect the resulting graph for new cycles or widened coupling.
+- **Verify the result.** Run affected builds and contract/runtime checks, including previous critical paths. State which responsibility now has one owner, what was removed, and what evidence preserves behavior. Reduced line count alone is not proof of cleaner architecture or better efficiency.
+
 ## Verify the slice
 
+- In a selected workflow, use [shared verification](../../octocode-workflows/references/verification.md) to assert loaded artifact identity, update the coverage ledger, and diagnose failures before another change.
 - The first failing assertion fails for the intended reason.
 - Never stub the dependency the test claims to prove.
 - Run the narrowest checks, widen with affected scope, compare with the baseline.

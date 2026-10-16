@@ -12,7 +12,7 @@ use super::*;
 use crate::security::scan::Passthrough;
 use crate::tools::gh_shared::pick_fields;
 use crate::tools::gh_shared::test_support::{default_context, mount_json, one_shot_provider};
-use octocode_github::{GitHubTransport, ProviderError};
+use octocode_github::ProviderError;
 use serde_json::{Value, json};
 
 fn search(q: &GhSearchHistoryQuery) -> Result<HistorySearch, ProviderError> {
@@ -31,13 +31,13 @@ fn needs_issue_search_qualifiers(q: &GhSearchHistoryQuery) -> bool {
     query::needs_issue_search_qualifiers(&search(q).expect("qualifiers"))
 }
 
-async fn execute(
-    transport: &GitHubTransport,
+async fn execute<C: octocode_github::ConditionalCache>(
+    provider: &octocode_github::GitHubProvider<C>,
     query: &GhSearchHistoryQuery,
     context: &RequestContext,
     security: &impl ContentScan,
 ) -> Result<Value, ProviderError> {
-    super::execute(transport, query.clone(), context, security)
+    super::execute(provider, query.clone(), context, security)
         .await
         .map_err(|failure| *failure.error)
 }

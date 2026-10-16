@@ -17,13 +17,14 @@ use std::sync::{
 use std::time::{Duration, Instant, SystemTime};
 
 use super::relevance;
-use super::walk::{Prune, walk_builder};
+use super::walk::{IgnorePolicy, IgnoreRules, Prune, walk_builder};
 use crate::error::{Error, ErrorKind, Result};
 use grep_matcher::Matcher;
 use grep_pcre2::RegexMatcherBuilder as Pcre2MatcherBuilder;
 use grep_regex::RegexMatcherBuilder;
 use grep_searcher::{BinaryDetection, Searcher, SearcherBuilder, Sink, SinkContext, SinkMatch};
-use ignore::types::TypesBuilder;
+use ignore::overrides::Override;
+use ignore::types::{Types, TypesBuilder};
 use ignore::{WalkBuilder, WalkState};
 
 use crate::search::text_parser::{FileEntry, RawMatch, assemble_file, strip_trailing_newline};
@@ -37,6 +38,15 @@ use sha2::{Digest as _, Sha256};
 
 pub trait TextSearchPathFilter: Send + Sync {
     fn allows(&self, path: &Path, is_dir: bool) -> bool;
+    /// A dot entry the walk left out because hidden entries are off (a
+    /// skipped directory is not descended into), so the caller can count
+    /// it. Called before [`Self::allows`], which never sees the entry.
+    fn skipped_hidden(&self, _path: &Path, _is_dir: bool) {}
+    /// An entry an ignore rule (`.gitignore`, `.ignore`, the git exclude
+    /// file or the global gitignore) left out because ignored entries are
+    /// off (a skipped directory is not descended into), so the caller can
+    /// count it. Called before [`Self::allows`], which never sees the entry.
+    fn skipped_ignored(&self, _path: &Path, _is_dir: bool) {}
 }
 
 const DEFAULT_MAX_SNIPPET_CHARS: u32 = 500;
@@ -726,10 +736,12 @@ impl<M: Matcher> Sink for CollectSink<'_, M> {
                             line: line_number,
                             column,
                             byte_offset: start as u32,
+                            value_digest: Sha256::digest(value.trim().as_bytes()).into(),
                             value,
                             count: None,
                             rank: None,
                             original_chars: None,
+                            original_bytes: None,
                         });
                     } else {
                         self.span_cap_reached = true;
@@ -745,10 +757,12 @@ impl<M: Matcher> Sink for CollectSink<'_, M> {
                     line: line_number,
                     column: 0,
                     byte_offset: 0,
+                    value_digest: Sha256::digest(line_text.trim().as_bytes()).into(),
                     value: line_text,
                     count: None,
                     rank: None,
                     original_chars: None,
+                    original_bytes: None,
                 });
             }
         } else if self.work.enumerate_submatches {
@@ -819,41 +833,120 @@ impl<M: Matcher> Sink for CollectSink<'_, M> {
     }
 }
 
-/// Build the walker under the request's ignore policy with `-g` overrides and
-/// `-t` types. Results are sorted after parallel traversal to reproduce
+/// Build the walker with `-g` overrides and `-t` types, and the rule the
+/// walk applies itself for ignored and dot entries (see [`EntryRule`]).
+/// Results are sorted after parallel traversal to reproduce
 /// `--sort`/`--sortr` deterministically.
-fn build_walk_builder(opts: &TextSearchOptions) -> Result<WalkBuilder> {
+fn build_walk_builder(opts: &TextSearchOptions) -> Result<(WalkBuilder, Option<EntryRule>)> {
     let mut wb = walk_builder(
         Path::new(&opts.path),
-        opts.ignore,
+        IgnorePolicy::ALL,
         // The public tool contract counts files in the root as maxDepth 0.
         opts.max_depth.map(|max_depth| max_depth as usize + 1),
     );
 
+    let mut rule = EntryRule {
+        overrides: None,
+        types: None,
+        hidden: !opts.ignore.include_hidden,
+        ignored: (!opts.ignore.include_ignored).then(|| IgnoreRules::new(Path::new(&opts.path))),
+    };
     if let Some(lang) = opts.lang_type.as_deref().filter(|l| !l.is_empty()) {
         let mut tb = TypesBuilder::new();
         tb.add_defaults();
         tb.select(lang);
-        wb.types(
-            tb.build()
-                .map_err(|error| Error::with_kind(ErrorKind::InvalidInput, error.to_string()))?,
-        );
+        let types = tb
+            .build()
+            .map_err(|error| Error::with_kind(ErrorKind::InvalidInput, error.to_string()))?;
+        wb.types(types.clone());
+        rule.types = Some(types);
     }
 
     let has_globs = opts.include.as_ref().is_some_and(|v| !v.is_empty())
         || opts.exclude.as_ref().is_some_and(|v| !v.is_empty());
     if has_globs {
-        wb.overrides(
-            super::glob::compile(
-                Path::new(&opts.path),
-                opts.include.as_deref().unwrap_or_default(),
-                opts.exclude.as_deref().unwrap_or_default(),
-            )?
-            .overrides(),
-        );
+        let overrides = super::glob::compile(
+            Path::new(&opts.path),
+            opts.include.as_deref().unwrap_or_default(),
+            opts.exclude.as_deref().unwrap_or_default(),
+        )?
+        .overrides();
+        wb.overrides(overrides.clone());
+        rule.overrides = Some(overrides);
     }
 
-    Ok(wb)
+    Ok((wb, (rule.hidden || rule.ignored.is_some()).then_some(rule)))
+}
+
+/// Why the walk leaves an entry out on its own (see [`EntryRule`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Skipped {
+    Ignored,
+    Hidden,
+}
+
+/// The ignore rules and the dot-entry rule, applied by the search instead
+/// of inside the `ignore` walker (which walks everything its overrides and
+/// types admit), so every entry either rule leaves out is reported to the
+/// path filter instead of vanishing inside the walker. The precedence is the
+/// walker's own: an include glob selecting the entry admits it; else an
+/// ignore rule decides it ([`IgnoreRules`], the walker's rules for one
+/// path); else a `language` type or an ignore-file `!` re-include selecting
+/// it admits it; else a dot entry below the root (on Windows also one with
+/// the hidden attribute) is hidden.
+struct EntryRule {
+    overrides: Option<Override>,
+    types: Option<Types>,
+    /// Dot entries are left out (no `includeHidden`).
+    hidden: bool,
+    /// The ignore rules; `None` with `includeIgnored`.
+    ignored: Option<IgnoreRules>,
+}
+
+impl EntryRule {
+    fn skips(&self, dent: &ignore::DirEntry, is_dir: bool) -> Option<Skipped> {
+        if dent.depth() == 0 {
+            return None;
+        }
+        let path = dent.path();
+        if self
+            .overrides
+            .as_ref()
+            .is_some_and(|overrides| overrides.matched(path, is_dir).is_whitelist())
+        {
+            return None;
+        }
+        let decided = self.ignored.as_ref().map_or(ignore::Match::None, |rules| {
+            rules.decide_entry(path, is_dir)
+        });
+        if decided.is_ignore() {
+            return Some(Skipped::Ignored);
+        }
+        let selected = decided.is_whitelist()
+            || self
+                .types
+                .as_ref()
+                .is_some_and(|types| types.matched(path, is_dir).is_whitelist());
+        (self.hidden && !selected && is_hidden(dent)).then_some(Skipped::Hidden)
+    }
+}
+
+fn is_hidden(dent: &ignore::DirEntry) -> bool {
+    if dent.file_name().as_encoded_bytes().first() == Some(&b'.') {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt as _;
+        const FILE_ATTRIBUTE_HIDDEN: u32 = 0x2;
+        if dent
+            .metadata()
+            .is_ok_and(|meta| meta.file_attributes() & FILE_ATTRIBUTE_HIDDEN != 0)
+        {
+            return true;
+        }
+    }
+    false
 }
 
 fn capture_sort_time(opts: &TextSearchOptions, entry: &ignore::DirEntry) -> Option<SystemTime> {
@@ -1407,7 +1500,7 @@ fn collect<M: Matcher + Sync>(
 
     // Traversal ordering is only stable if a single worker drains the walk in a
     // fixed order; the default parallel walk merges worker buffers arbitrarily.
-    let mut walk_builder = build_walk_builder(opts)?;
+    let (mut walk_builder, rule) = build_walk_builder(opts)?;
     if preserves_traversal_order(opts) {
         walk_builder.threads(1);
     } else if let Some(threads) = opts.walk_threads {
@@ -1417,6 +1510,7 @@ fn collect<M: Matcher + Sync>(
     let scope = WalkScope {
         opts,
         prune: Prune::new(opts.exclude_dir.iter().flatten()),
+        rule,
         state,
         control,
         max_file_bytes,
@@ -1472,6 +1566,8 @@ struct WalkScope<'a> {
     opts: &'a TextSearchOptions,
     /// Directories never walked (`exclude_dir`), recorded when skipped.
     prune: Prune,
+    /// Ignored and dot entries left out, reported when skipped.
+    rule: Option<EntryRule>,
     state: &'a CollectState,
     control: WalkControl<'a>,
     max_file_bytes: u64,
@@ -1616,12 +1712,30 @@ impl WalkScope<'_> {
             }
         };
         let is_dir = dent.file_type().is_some_and(|kind| kind.is_dir());
-        if !path_filter.allows(dent.path(), is_dir) {
-            return Err(if is_dir {
+        let skip = || {
+            if is_dir {
                 WalkState::Skip
             } else {
                 WalkState::Continue
-            });
+            }
+        };
+        match self
+            .rule
+            .as_ref()
+            .and_then(|rule| rule.skips(&dent, is_dir))
+        {
+            Some(Skipped::Ignored) => {
+                path_filter.skipped_ignored(dent.path(), is_dir);
+                return Err(skip());
+            }
+            Some(Skipped::Hidden) => {
+                path_filter.skipped_hidden(dent.path(), is_dir);
+                return Err(skip());
+            }
+            None => {}
+        }
+        if !path_filter.allows(dent.path(), is_dir) {
+            return Err(skip());
         }
         if self.prune.prunes_entry(&dent) {
             let relative = dent.path().strip_prefix(&opts.path).unwrap_or(dent.path());

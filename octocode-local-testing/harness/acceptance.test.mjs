@@ -1,11 +1,26 @@
 // node --test harness/acceptance.test.mjs — one red and one green fixture per acceptance check.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { SURFACE_BUDGET, checkChainFit, checkRowContract, descriptionLint, packedCoordinates, packedStrings, silentOmissions, surfaceBudget, zeroBasedTexts, zeroCoordinates } from './acceptance.mjs';
+import { MCP_SURFACE_BUDGETS, measureMcpSurface } from '@octocodeai/config/mcp';
+import { checkChainFit, checkRowContract, descriptionLint, packedCoordinates, packedStrings, silentOmissions, surfaceBudget, zeroBasedTexts, zeroCoordinates } from './acceptance.mjs';
 
 const inputs = { localFetch: new Set(['path', 'matchString', 'startLine', 'endLine']), lspSearch: new Set(['path', 'symbolName', 'line', 'operation']) };
 const published = t => inputs[t] ?? null;
 const opts = { inputNames: published, published, toolNames: Object.keys(inputs) };
+
+test('public string hints preserve call validation and prose recovery', () => {
+  const bad = { results: [{ data: { hints: ['read: localFetch {"queries":[{"path":"a","position":3}]}'] } }] };
+  assert.ok(checkChainFit(bad, 'lspSearch', opts).some(reason => reason.includes('`position`')));
+  const prose = { results: [{ status: 'empty', data: { hints: ['Broaden matchString.'] } }] };
+  assert.deepEqual(checkRowContract(prose, 'empty'), []);
+  const unknown = { results: [{ data: { hints: ['Try inventedKnob:true'] } }] };
+  assert.ok(checkChainFit(unknown, 'localFetch', opts).some(reason => reason.includes('inventedKnob')));
+});
+
+test('required next recovery satisfies an error row without optional hints', () => {
+  const error = { results: [{ status: 'error', data: { error: 'Invalid range', errorCode: 'invalidInput', next: { repair: { tool: 'localFetch', query: { queries: [{ path: 'a', startLine: 1 }] } } } } }] };
+  assert.deepEqual(checkRowContract(error, 'error'), []);
+});
 
 test('C1 packed coordinates: lsp/ast packed rows fail, "<line>\\t<value>" passes', () => {
   assert.ok(packedCoordinates('433:20 in function x 430-475'));
@@ -30,23 +45,23 @@ test('C1 packed coordinates: outline rows are declaration objects; a packed stri
 });
 
 test('C1 chain fit: unknown target field and packed row fail; clean row passes', () => {
-  const bad = { results: [{ status: 'ok', data: { locations: ['433:20 in function x 430-475'], hints: { read: { tool: 'localFetch', query: { queries: [{ path: 'a', position: 3 }] } } } } }] };
+  const bad = { results: [{ status: 'ok', data: { locations: ['433:20 in function x 430-475'], hints: ['read: localFetch '+JSON.stringify({ queries: [{ path: 'a', position: 3 }] })] } }] };
   const reasons = checkChainFit(bad, 'lspSearch', opts);
   assert.ok(reasons.some(r => r.includes('`position`')), reasons.join('\n'));
   assert.ok(reasons.some(r => r.startsWith('packed')), reasons.join('\n'));
-  const flat = { results: [{ data: { hints: { read: { tool: 'localFetch', query: { path: 'a' } } } } }] };
+  const flat = { results: [{ data: { next: { repair: { tool: 'localFetch', query: { path: 'a' } } } } }] };
   assert.ok(checkChainFit(flat, 'lspSearch', opts).some(r => r.includes('envelope')));
-  const good = { results: [{ status: 'ok', data: { locations: [{ path: 'a', line: 433, value: 'x' }], hints: { read: { tool: 'localFetch', query: { queries: [{ path: 'a', startLine: 1 }] } } } } }] };
+  const good = { results: [{ status: 'ok', data: { locations: [{ path: 'a', line: 433, value: 'x' }], hints: ['read: localFetch '+JSON.stringify({ queries: [{ path: 'a', startLine: 1 }] })] } }] };
   assert.deepEqual(checkChainFit(good, 'lspSearch', opts), []);
 });
 
 test('C1 hint text lint: unpublished knob without a lead fails; with a lead passes', () => {
-  const bad = { results: [{ data: { hints: { text: ['try caseMode:"insensitive"'] } } }] };
+  const bad = { results: [{ data: { hints: ['try caseMode:"insensitive"'] } }] };
   assert.ok(checkChainFit(bad, 'localFetch', opts).some(r => r.includes('caseMode')));
-  const good = { results: [{ data: { hints: { text: ['try caseMode:"insensitive"'], retry: { tool: 'localFetch', query: { queries: [{ path: 'a', caseMode: 'insensitive' }] } } } } }] };
+  const good = { results: [{ data: { hints: ['try caseMode:"insensitive"', 'retry: localFetch '+JSON.stringify({ queries: [{ path: 'a', caseMode: 'insensitive' }] })] } }] };
   const optsWithCase = { ...opts, inputNames: t => (t === 'localFetch' ? new Set([...inputs.localFetch, 'caseMode']) : published(t)) };
   assert.deepEqual(checkChainFit(good, 'localFetch', optsWithCase), []);
-  const named = { results: [{ data: { hints: { text: ['Verify with lspSearch operation:"definition"'] } } }] };
+  const named = { results: [{ data: { hints: ['Verify with lspSearch operation:"definition"'] } }] };
   assert.deepEqual(checkChainFit(named, 'localFetch', opts), []);
 });
 
@@ -55,10 +70,10 @@ test('C2 row contract: error row without errorCode fails; full error/empty rows 
   const reasons = checkRowContract(bad, 'error');
   assert.ok(reasons.some(r => r.includes('errorCode')));
   assert.ok(reasons.some(r => r.includes('recovery')));
-  assert.ok(checkRowContract({ results: [{ status: 'error', data: { error: 'x', errorCode: 'transport', retryable: false, hints: { text: ['retry'] } } }] }, 'error').some(r => r.includes('retryable:false')));
-  assert.deepEqual(checkRowContract({ results: [{ status: 'error', data: { error: 'x', errorCode: 'pathNotFound', hints: { text: ['check the path'] } } }] }, 'error'), []);
+  assert.ok(checkRowContract({ results: [{ status: 'error', data: { error: 'x', errorCode: 'transport', retryable: false, hints: ['retry'] } }] }, 'error').some(r => r.includes('retryable:false')));
+  assert.deepEqual(checkRowContract({ results: [{ status: 'error', data: { error: 'x', errorCode: 'pathNotFound', hints: ['check the path'] } }] }, 'error'), []);
   assert.ok(checkRowContract({ results: [{ status: 'empty', data: {} }] }, 'empty').length);
-  assert.deepEqual(checkRowContract({ results: [{ status: 'empty', data: { hints: { text: ['shorter term'] } } }] }, 'empty'), []);
+  assert.deepEqual(checkRowContract({ results: [{ status: 'empty', data: { hints: ['shorter term'] } }] }, 'empty'), []);
   assert.ok(checkRowContract(undefined, 'error', { isError: true, text: 'Input validation error' }).length);
 });
 
@@ -93,11 +108,61 @@ test('C5 description lint: a <workflow> note naming a neighbor names one of its 
   ]) await t.test(name, () => assert.deepEqual(descriptionLint('localSearch', description, ['localSearch', 'localFetch'], fields, new Set(['commitSha'])), reasons));
 });
 
-test('C5 surface budget: total above SURFACE_BUDGET or a tool above its quota fails', async t => {
-  for (const [name, perTool, instructions, options, failures] of [
-    ['total at the budget passes', { a: SURFACE_BUDGET - 1 }, 1, {}, 0],
-    ['total one byte over fails', { a: SURFACE_BUDGET }, 1, {}, 1],
-    ['tool within its quota passes', { a: 400 }, 0, { quotas: { a: 400 } }, 0],
-    ['tool over its quota fails', { a: 500 }, 0, { quotas: { a: 400 } }, 1],
-  ]) await t.test(name, () => assert.equal(surfaceBudget(perTool, instructions, options).reasons.length, failures));
+const surfaceTools = profile => [
+  ...Object.keys(MCP_SURFACE_BUDGETS.tools).map(name => ({
+    name,
+    ...(profile !== 'default' && name in MCP_SURFACE_BUDGETS.selectionAdditions ? { selection: 'fixture' } : {}),
+  })),
+  ...(profile === 'keyedBeta' ? [{ name: 'clasify' }] : []),
+];
+
+test('C5 checks all three core-owned surface totals, including array punctuation', async t => {
+  const baseline = measureMcpSurface(surfaceTools('default'), '');
+  for (const [profile, budget] of Object.entries(MCP_SURFACE_BUDGETS.totals)) {
+    await t.test(profile, () => {
+      const tools = surfaceTools(profile);
+      assert.deepEqual(surfaceBudget(measureMcpSurface(tools, ''), { profile, baseline }).reasons, []);
+      const toolsBytes = measureMcpSurface(tools, '').toolsList;
+      for (const excess of [0, 1]) {
+        const measured = measureMcpSurface(tools, 'x'.repeat(budget - toolsBytes + excess));
+        const checked = surfaceBudget(measured, { profile, baseline });
+        assert.equal(checked.total, budget + excess);
+        assert.equal(checked.reasons.some(reason => reason.startsWith('surface ')), excess === 1);
+      }
+    });
+  }
+});
+
+test('C5 default tool and instruction quotas reject one byte over', () => {
+  const tools = surfaceTools('default');
+  const target = tools.find(tool => tool.name === 'localSearch');
+  target.description = '';
+  const remaining = MCP_SURFACE_BUDGETS.tools.localSearch - measureMcpSurface([target], '').perTool.localSearch;
+  target.description = 'x'.repeat(remaining);
+  assert.deepEqual(surfaceBudget(measureMcpSurface(tools, '')).reasons, []);
+  target.description += 'x';
+  assert.ok(surfaceBudget(measureMcpSurface(tools, '')).reasons.some(reason => reason.startsWith('localSearch ')));
+  for (const excess of [0, 1]) {
+    const measured = measureMcpSurface(surfaceTools('default'), 'x'.repeat(MCP_SURFACE_BUDGETS.instructions + excess));
+    assert.equal(surfaceBudget(measured).reasons.some(reason => reason.startsWith('instructions ')), excess === 1);
+  }
+});
+
+test('C5 checks keyed reader growth even when clasify is absent', () => {
+  const baseline = measureMcpSurface(surfaceTools('default'), '');
+  const tools = surfaceTools('keyed');
+  tools.find(tool => tool.name === 'localSearch').selection = 'x'.repeat(MCP_SURFACE_BUDGETS.selectionAdditions.localSearch);
+  assert.ok(!tools.some(tool => tool.name === 'clasify'));
+  assert.ok(surfaceBudget(measureMcpSurface(tools, ''), { profile: 'keyed', baseline }).reasons.some(reason => reason.startsWith('localSearch adds ')));
+  const beta = surfaceTools('keyedBeta');
+  beta.find(tool => tool.name === 'clasify').description = 'x'.repeat(MCP_SURFACE_BUDGETS.clasify);
+  assert.ok(surfaceBudget(measureMcpSurface(beta, ''), { profile: 'keyedBeta', baseline }).reasons.some(reason => reason.startsWith('clasify ')));
+});
+
+test('C5 missing tools, keyed selection fields, or a baseline cannot silently pass', () => {
+  const baseline = measureMcpSurface(surfaceTools('default'), '');
+  const missing = measureMcpSurface(surfaceTools('default').filter(tool => tool.name !== 'lspSearch'), '');
+  assert.ok(surfaceBudget(missing).reasons.includes('missing tool lspSearch'));
+  assert.ok(surfaceBudget(baseline, { profile: 'keyed', baseline }).reasons.some(reason => reason.includes('missing its keyed selection surface')));
+  assert.ok(surfaceBudget(measureMcpSurface(surfaceTools('keyed'), ''), { profile: 'keyed' }).reasons.includes('keyed surface requires the default baseline'));
 });

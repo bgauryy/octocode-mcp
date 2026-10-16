@@ -389,7 +389,9 @@ mod tests {
         );
         assert_eq!(row["data"]["next"]["nextPage"], page);
         assert_eq!(row["data"]["hints"]["readDefinition"], lead);
-        crate::contracts::validate_output("lspSearch", &json!({"results":[row]}))
+        let mut envelope = json!({"results":[row]});
+        crate::response::channels::publish_hints(&mut envelope, ToolId::LspSearch);
+        crate::contracts::validate_output("lspSearch", &envelope)
             .expect("pruned row keeps a valid continuation");
         for continuation in [page, lead] {
             let tool = continuation["tool"].as_str().expect("tool");
@@ -425,7 +427,6 @@ mod tests {
             // Line counts and modified times: reading them costs I/O per entry.
             ("tools/structure_search/files.rs", 1),
             ("tools/gh_get_history_item/patch_hop.rs", 1),
-            ("tools/gh_get_history_item/pr_sections.rs", 1),
             ("tools/gh_get_history_item/pr_finish.rs", 3),
             ("tools/gh_get_history_item/pull_request.rs", 1),
             // Full pages, runner-up windows and usage receipts (details, stats).

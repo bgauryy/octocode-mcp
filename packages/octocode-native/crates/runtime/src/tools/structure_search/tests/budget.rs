@@ -3,7 +3,7 @@
 //! empty or whole-looking page.
 use super::super::{StructureSearchQuery, execute_structure_within};
 use super::run;
-use crate::tools::cancel::NeverCancel;
+use crate::tools::cancel::{CancellationCheck, NeverCancel};
 use crate::tools::id::ToolId;
 use crate::tools::test_support::{Fixture, assert_row_contract, simple_policy};
 use serde_json::{Value, json};
@@ -18,10 +18,29 @@ fn tree() -> Fixture {
 }
 
 fn within(root: &std::path::Path, query: Value, budget: Duration) -> Value {
+    within_checked(root, query, budget, &NeverCancel)
+}
+
+fn within_checked(
+    root: &std::path::Path,
+    query: Value,
+    budget: Duration,
+    cancel: &dyn CancellationCheck,
+) -> Value {
     let (paths, security) = simple_policy(root);
     let query: StructureSearchQuery = serde_json::from_value(query).expect("typed row");
-    execute_structure_within(&query, &paths, &security, &NeverCancel, None, budget)
-        .expect("listing")
+    execute_structure_within(&query, &paths, &security, cancel, None, budget).expect("listing")
+}
+
+/// Takes its time at every entry the walk reaches, so a small budget cuts a
+/// fixture walk after a few entries.
+struct Slow;
+
+impl CancellationCheck for Slow {
+    fn check(&self) -> Result<(), String> {
+        std::thread::sleep(Duration::from_millis(15));
+        Ok(())
+    }
 }
 
 fn rows(operation: &str, root: &std::path::Path) -> Value {
@@ -81,4 +100,292 @@ fn the_default_entry_is_not_cut_on_a_small_tree() {
     let root = tree();
     let out = run(&root.0, rows("files", &root.0)).expect("listing");
     assert!(out.get("isPartial").is_none(), "{out}");
+}
+
+/// The entries one page lists, as `dir/entry` strings.
+fn listed_entries(out: &Value) -> Vec<String> {
+    super::listed(out)
+        .iter()
+        .map(|entry| entry["path"].as_str().expect("path").to_owned())
+        .collect()
+}
+
+#[test]
+fn a_time_cut_listing_resumes_exactly_where_it_stopped() {
+    for operation in ["files", "tree"] {
+        let root = Fixture::new();
+        for dir in ["a", "b", "c/deep", "d"] {
+            for index in 0..4 {
+                root.write(&format!("{dir}/f{index}.rs"), "fn f() {}\n");
+            }
+        }
+        root.write("top.rs", "fn f() {}\n");
+        let start = rows(operation, &root.0);
+        let whole = {
+            let mut all = listed_entries(&run(&root.0, start.clone()).expect("whole listing"));
+            all.sort();
+            all
+        };
+        assert_eq!(whole.len(), 17, "{operation}: {whole:?}");
+
+        let mut chained = Vec::new();
+        let mut windows = 0;
+        let mut query = start.clone();
+        loop {
+            windows += 1;
+            assert!(windows <= 40, "{operation}: the walk never finishes");
+            let out = within_checked(&root.0, query.clone(), Duration::from_millis(45), &Slow);
+            assert_row_contract(ToolId::StructureSearch, &query, &out);
+            chained.extend(listed_entries(&out));
+            let Some(next) = out["next"].get("continueWalk") else {
+                assert!(out.get("isPartial").is_none(), "{operation}: {out}");
+                break;
+            };
+            // A resumable cut is no terminal limit and offers no way out of it.
+            assert_eq!(out["isPartial"], true, "{operation}: {out}");
+            assert_eq!(out["partialReasons"], json!(["walkDeadline"]), "{out}");
+            assert!(out.get("terminalLimit").is_none(), "{operation}: {out}");
+            assert!(out["next"].get("narrowScope").is_none(), "{out}");
+            assert!(
+                !out["warnings"].to_string().contains("terminalLimit"),
+                "{operation}: {out}"
+            );
+            assert!(out.get("status").is_none(), "{operation}: {out}");
+            let resumed = &next["query"]["queries"][0];
+            assert!(
+                resumed["walkOffset"].as_u64().is_some_and(|at| at > 0),
+                "{operation}: {next}"
+            );
+            assert!(resumed.get("scanOffset").is_none(), "{next}");
+            assert!(resumed.get("snapshot").is_none(), "{next}");
+            query = resumed.clone();
+        }
+        assert!(windows > 1, "{operation}: the budget never cut the walk");
+        chained.sort();
+        assert_eq!(chained, whole, "{operation}: every entry exactly once");
+    }
+}
+
+#[test]
+fn a_resumed_window_past_every_entry_is_not_an_empty_listing() {
+    for operation in ["files", "tree"] {
+        let root = tree();
+        let mut query = rows(operation, &root.0);
+        query["walkOffset"] = json!(100);
+        let out = within(&root.0, query, Duration::from_secs(3600));
+        assert!(out.get("status").is_none(), "{operation}: {out}");
+        assert!(out.get("isPartial").is_none(), "{operation}: {out}");
+        assert!(listed_entries(&out).is_empty(), "{operation}: {out}");
+    }
+}
+
+#[test]
+fn the_ignored_retry_of_a_resumed_window_lists_from_the_start() {
+    let root = Fixture::new();
+    std::fs::create_dir(root.0.join(".git")).expect("repository marker");
+    root.write(".gitignore", "skip.rs\n");
+    for name in ["a.rs", "b.rs", "skip.rs"] {
+        root.write(name, "fn f() {}\n");
+    }
+    for operation in ["files", "tree"] {
+        let mut query = rows(operation, &root.0);
+        query["walkOffset"] = json!(1);
+        let out = within(&root.0, query, Duration::from_secs(3600));
+        let retry = &out["next"]["includeSkipped"]["query"]["queries"][0];
+        assert_eq!(retry["includeIgnored"], true, "{operation}: {out}");
+        assert!(retry.get("walkOffset").is_none(), "{operation}: {retry}");
+    }
+}
+
+/// Runs a listing through every window its continuations offer (`continueWalk`
+/// after a time cut, `expandScan` after a `maxEntries` cut), each under the
+/// next budget of `budgets` (the last repeats): timing that cuts one window
+/// early and another late. Returns the rows each window listed.
+fn follow_windows(root: &std::path::Path, start: Value, budgets: &[Duration]) -> Vec<Vec<String>> {
+    let mut windows = Vec::new();
+    let mut query = start;
+    loop {
+        let budget = budgets[windows.len().min(budgets.len() - 1)];
+        assert!(windows.len() < 60, "the walk never finishes: {query}");
+        let out = within_checked(root, query.clone(), budget, &Slow);
+        assert_row_contract(ToolId::StructureSearch, &query, &out);
+        windows.push(listed_entries(&out));
+        assert!(
+            out["next"].get("nextPage").is_none(),
+            "a fixture window is one page: {out}"
+        );
+        let next = out["next"]
+            .get("continueWalk")
+            .or_else(|| out["next"].get("expandScan"));
+        let Some(next) = next else {
+            assert!(
+                out.get("terminalLimit").is_none(),
+                "the chain ended on a terminal limit: {out}"
+            );
+            return windows;
+        };
+        query = next["query"]["queries"][0].clone();
+    }
+}
+
+fn flat_listing(operation: &str, root: &Fixture, extra: Value) -> Value {
+    for index in 0..9 {
+        root.write(&format!("f{index}.rs"), "fn f() {}\n");
+    }
+    let mut query = rows(operation, &root.0);
+    query
+        .as_object_mut()
+        .expect("row")
+        .extend(extra.as_object().expect("extra").clone());
+    query
+}
+
+#[test]
+fn windows_cut_by_maxentries_and_by_time_never_overlap_whatever_the_timing() {
+    let big = Duration::from_secs(3600);
+    let small = Duration::from_millis(40);
+    let schedules: [&[Duration]; 4] = [
+        &[big, small, big],
+        &[small, big],
+        &[big, small, small, big],
+        &[small],
+    ];
+    for (operation, extra) in [
+        ("tree", json!({})),
+        ("files", json!({})),
+        ("files", json!({"sort": "path"})),
+    ] {
+        for max_entries in [2, 3, 5] {
+            for budgets in schedules {
+                let root = Fixture::new();
+                let mut start = flat_listing(operation, &root, extra.clone());
+                let whole = {
+                    let mut all = listed_entries(&run(&root.0, start.clone()).expect("whole"));
+                    all.sort();
+                    all
+                };
+                assert_eq!(whole.len(), 9, "{operation}: {whole:?}");
+                start["maxEntries"] = json!(max_entries);
+                let windows = follow_windows(&root.0, start, budgets);
+                let mut chained = windows.concat();
+                chained.sort();
+                assert_eq!(
+                    chained, whole,
+                    "{operation} maxEntries {max_entries} {budgets:?}: every entry exactly once, windows {windows:?}"
+                );
+            }
+        }
+    }
+}
+
+/// A listing sorted by something else than walk order and cut by time lists
+/// its walk's first `maxEntries` rows in walk order, so the resumed walk
+/// reaches the rest: no row is lost to a sort a cut walk ranks differently.
+#[test]
+fn a_sorted_listing_cut_by_time_resumes_exactly() {
+    for sort in ["name", "size", "modified", "lines"] {
+        let root = Fixture::new();
+        let mut start = flat_listing("files", &root, json!({"sort": sort}));
+        let whole = {
+            let mut all = listed_entries(&run(&root.0, start.clone()).expect("whole"));
+            all.sort();
+            all
+        };
+        start["maxEntries"] = json!(3);
+        let windows = follow_windows(&root.0, start, &[Duration::from_millis(60)]);
+        assert!(windows.len() > 1, "{sort}: the budget never cut the walk");
+        let mut chained = windows.concat();
+        chained.sort();
+        assert_eq!(chained, whole, "{sort}: every entry exactly once");
+    }
+}
+
+/// `expandScan` skips the rows an earlier window listed. A walk it cut by
+/// time that never reached them lists nothing; its `continueWalk` skips the
+/// rows still owed, so the rows between its cut and the earlier window's end
+/// are not listed twice.
+#[test]
+fn a_walk_cut_before_the_rows_an_earlier_window_listed_skips_the_rest_after_it() {
+    for operation in ["files", "tree"] {
+        let root = Fixture::new();
+        let mut start = flat_listing(operation, &root, json!({}));
+        let whole = listed_entries(&run(&root.0, start.clone()).expect("whole"));
+        start["maxEntries"] = json!(4);
+        let first = within(&root.0, start, Duration::from_secs(3600));
+        let mut chained = listed_entries(&first);
+        assert_eq!(chained.len(), 4, "{operation}: {first}");
+        let widen = first["next"]["expandScan"]["query"]["queries"][0].clone();
+        assert_eq!(widen["scanOffset"], 4, "{operation}: {first}");
+        // The widened walk is cut after two or three entries, before the four
+        // rows the first window listed.
+        let second = within_checked(&root.0, widen, Duration::from_millis(25), &Slow);
+        let cut = second["next"]["continueWalk"]["query"]["queries"][0].clone();
+        let at = cut["walkOffset"].as_u64().expect("resume position");
+        assert!(at < 4, "{operation}: {second}");
+        assert!(listed_entries(&second).is_empty(), "{operation}: {second}");
+        assert_eq!(cut["scanOffset"], 4 - at, "{operation}: {cut}");
+        let rest = within(&root.0, cut, Duration::from_secs(3600));
+        chained.extend(listed_entries(&rest));
+        chained.sort();
+        let mut whole = whole;
+        whole.sort();
+        assert_eq!(chained, whole, "{operation}: every entry exactly once");
+    }
+}
+
+#[test]
+fn a_sorted_listing_cut_before_the_rows_an_earlier_window_listed_lists_none_and_is_terminal() {
+    let root = Fixture::new();
+    let mut query = flat_listing("files", &root, json!({"sort": "name"}));
+    query["scanOffset"] = json!(4);
+    query["maxEntries"] = json!(8);
+    let out = within_checked(&root.0, query.clone(), Duration::from_millis(25), &Slow);
+    assert_row_contract(ToolId::StructureSearch, &query, &out);
+    assert!(listed_entries(&out).is_empty(), "{out}");
+    assert_eq!(out["terminalLimit"], true, "{out}");
+    assert!(out["next"].get("continueWalk").is_none(), "{out}");
+    assert!(
+        out["warnings"].to_string().contains("cannot skip the rows"),
+        "{out}"
+    );
+}
+
+/// Entries the walk counted in an earlier window (withheld by policy,
+/// dot entries out of view) are not counted again by a window that replays
+/// them.
+#[test]
+fn a_resumed_window_does_not_count_the_withheld_and_hidden_entries_it_replays() {
+    let root = Fixture::new();
+    root.write(".ssh/id.rs", "fn f() {}\n");
+    root.write(".npmrc", "x\n");
+    root.write(".dot.rs", "fn f() {}\n");
+    root.write("a.rs", "fn f() {}\n");
+    root.write("b.rs", "fn f() {}\n");
+    for operation in ["files", "tree"] {
+        let withheld = |query: &Value| {
+            let out = within(&root.0, query.clone(), Duration::from_secs(3600));
+            (
+                out["warnings"].to_string().contains("withheld"),
+                out["summary"].get("hidden").is_some(),
+            )
+        };
+        let mut query = rows(operation, &root.0);
+        query["includeHidden"] = json!(true);
+        let (withheld_whole, _) = withheld(&query);
+        assert!(withheld_whole, "{operation}: the whole walk counts them");
+        // `.dot.rs`, `.npmrc`, `.ssh` and `a.rs` come first: replayed.
+        query["walkOffset"] = json!(4);
+        assert_eq!(withheld(&query), (false, false), "{operation}");
+        // The resumed window's own entries are counted.
+        query["walkOffset"] = json!(1);
+        assert!(withheld(&query).0, "{operation}: `.npmrc` is new here");
+    }
+    // A tree without `includeHidden` counts the dot entry it hides once (the
+    // withheld ones are no hidden entries).
+    let mut query = rows("tree", &root.0);
+    let whole = within(&root.0, query.clone(), Duration::from_secs(3600));
+    assert_eq!(whole["summary"]["hidden"], 1, "{whole}");
+    query["walkOffset"] = json!(4);
+    let resumed = within(&root.0, query, Duration::from_secs(3600));
+    assert!(resumed["summary"].get("hidden").is_none(), "{resumed}");
 }

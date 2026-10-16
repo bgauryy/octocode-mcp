@@ -57,6 +57,7 @@ Before and after the change, run realistic requests and edge cases: action clear
 - `octocode-documentation`: explanatory prose.
 - `octocode-research`: tool contracts, runtime wiring, source claims.
 - `octocode-eval-benchmark`: measure activation and outcomes.
+- For an orchestrated multi-actor task: [octocode-workflows composition](../octocode-workflows/references/composition.md).
 
 ## Output
 

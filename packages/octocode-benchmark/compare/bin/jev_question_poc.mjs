@@ -203,7 +203,7 @@ async function main() {
       const file = path.join(fixture, `${item.id}.rs`); await fs.writeFile(file, item.source);
       // The pre-RFC Locate arms (public clasify locate) were removed with that API.
       for (const arm of ['full-read', 'direct-search', 'source-prefix', 'classifiers-compound', 'classifiers-atomic']) await trial('selection', item, arm, async row => {
-        const query = { path: file, minify: 'none' };
+        const query = { path: file };
         if (arm === 'full-read') query.fullContent = true;
         if (arm === 'direct-search') Object.assign(query, item.direct);
         if (['source-prefix', 'classifiers-compound', 'classifiers-atomic'].includes(arm)) Object.assign(query, { unit: 'lines', length: 25 });

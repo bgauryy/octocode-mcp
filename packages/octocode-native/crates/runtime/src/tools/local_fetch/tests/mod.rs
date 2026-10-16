@@ -27,6 +27,7 @@ impl PathAccess for Paths {
                     .to_string_lossy()
                     .into_owned(),
                 canonical,
+                target: None,
                 display: p.to_string_lossy().into_owned(),
             })
             .map_err(|error| PathFailure {
@@ -35,8 +36,9 @@ impl PathAccess for Paths {
                 safe_path: None,
                 resource_missing: false,
                 sparse_checkout: false,
-                directory: false,
+                not_a_file: None,
                 search_root: None,
+                nearest_dir: None,
             })
     }
 }
@@ -56,7 +58,15 @@ impl ContentScan for Safe {
 /// Read `req` under `paths` with the redacting test scan, no cancellation,
 /// default regex and no response window.
 fn fetch(req: &LocalFetchQuery, paths: &impl PathAccess) -> LocalFetchResult {
-    execute_local_fetch(req, paths, &Safe, &NeverCancel, &LocalFetchRegex, None)
+    execute_local_fetch(
+        req,
+        paths,
+        &Safe,
+        &NeverCancel,
+        &LocalFetchRegex,
+        None,
+        None,
+    )
 }
 
 pub(super) fn q(path: &Path) -> LocalFetchQuery {

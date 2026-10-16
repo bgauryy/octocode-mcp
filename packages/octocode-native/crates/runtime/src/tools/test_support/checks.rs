@@ -29,6 +29,54 @@ pub struct Lead {
     pub query: Value,
 }
 
+fn hint_call(text: &str) -> Option<(&str, Value)> {
+    let (name, text) = text.split_once(": ")?;
+    let (text, low) = text
+        .strip_prefix("Approximate: ")
+        .map_or((text, false), |text| (text, true));
+    let (tool, input) = text.split_once(' ')?;
+    if !input.starts_with('{') {
+        return None;
+    }
+    let query: Value = serde_json::from_str(input).expect("complete suggested input");
+    validate(tool, query.clone()).expect("suggested call validates unchanged");
+    let mut call = serde_json::json!({"tool":tool,"query":query});
+    if low {
+        call["confidence"] = serde_json::json!("low");
+    }
+    Some((name, call))
+}
+
+/// Decode a named suggestion from the public string list without accepting
+/// the internal object format. Every decoded call must validate unchanged.
+pub fn hint(data: &Value, name: &str) -> Value {
+    let Some(items) = data.get("hints") else {
+        return Value::Null;
+    };
+    let items = items
+        .as_array()
+        .expect("public hints must be a string list");
+    assert!(items.iter().all(Value::is_string), "{items:?}");
+    if name == "text" {
+        let text: Vec<_> = items
+            .iter()
+            .filter(|item| hint_call(item.as_str().expect("string")).is_none())
+            .cloned()
+            .collect();
+        return if text.is_empty() {
+            Value::Null
+        } else {
+            Value::Array(text)
+        };
+    }
+    items
+        .iter()
+        .filter_map(Value::as_str)
+        .filter_map(hint_call)
+        .find_map(|(key, call)| (key == name).then_some(call))
+        .unwrap_or(Value::Null)
+}
+
 /// Every lead of `output`: each `{tool, query}` under a `next` or `hints` key
 /// at any depth, never one nested inside another lead's query.
 pub fn leads(output: &Value) -> Vec<Lead> {
@@ -56,6 +104,22 @@ pub fn leads(output: &Value) -> Vec<Lead> {
                             });
                         }
                     } else if key == "next" || key == "hints" {
+                        if key == "hints"
+                            && let Some(items) = child.as_array()
+                        {
+                            for item in items {
+                                let text = item.as_str().expect("public hint is a string");
+                                if let Some((name, lead)) = hint_call(text) {
+                                    let (tool, query) = call(&lead).expect("suggested call");
+                                    out.push(Lead {
+                                        channel: key.clone(),
+                                        name: name.into(),
+                                        tool,
+                                        query,
+                                    });
+                                }
+                            }
+                        }
                         for (name, lead) in child.as_object().into_iter().flatten() {
                             if let Some((tool, query)) = call(lead) {
                                 out.push(Lead {

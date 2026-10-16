@@ -28,9 +28,9 @@ const MAX_PREWARM_KEYS: usize = 3;
 /// A pooled server may have exited or been evicted; retry its prewarm after
 /// this interval instead of treating a former success as permanent.
 const PREWARM_COOLDOWN: Duration = Duration::from_secs(30);
-/// Bound on the background open's project-load wait.
+/// Bound on the background open's project-load wait: longer than a
+/// request's own (nobody waits on it), so the load it starts can finish.
 const PREWARM_READY_TIMEOUT_MS: u32 = 20_000;
-const PREWARM_SETTLE_MS: u32 = 400;
 /// Largest file the prewarm opens (the anchor read applies the real bound).
 const MAX_PREWARM_OPEN_BYTES: u64 = 2 * 1024 * 1024;
 /// Readiness string of a wait that ended with the server still indexing.
@@ -195,12 +195,7 @@ pub(super) async fn warm(
         .ok()??;
         let content = String::from_utf8(bytes).ok()?;
         let readiness = client
-            .open_document_and_wait(
-                file,
-                &content,
-                Some(PREWARM_SETTLE_MS),
-                Some(PREWARM_READY_TIMEOUT_MS),
-            )
+            .open_document_and_wait(file, &content, None, Some(PREWARM_READY_TIMEOUT_MS))
             .await
             .ok()?;
         (readiness.as_deref() != Some(TIMEOUT)).then_some(())

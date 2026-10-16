@@ -9,6 +9,10 @@ pub struct LanguageEntry {
     /// (for example TypeScript also selecting the TSX grammar).
     pub selector_aliases: &'static [&'static str],
     pub extensions: &'static [&'static str],
+    /// Extensions another grammar owns that this one also parses when it is
+    /// selected (C++ reads C's `.h` headers). A file with such an extension
+    /// is parsed by its owner unless this grammar is asked for.
+    pub also_parses: &'static [&'static str],
     /// Protocol language id used for LSP document setup and grammar-based syntax
     /// anchoring. This does not imply a built-in semantic server route: Assembly
     /// has an id for trusted custom servers but intentionally no default command.
@@ -111,6 +115,7 @@ fn init_language_table() -> Vec<LanguageEntry> {
             // `.mts`/`.cts` are first-class TS (oxc + LSP already treat them so);
             // align signature/structural with that.
             extensions: &["ts", "mts", "cts"],
+            also_parses: &[],
             language_id: Some("typescript"),
             language: tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
             body_query: JS_TS_BODY_QUERY,
@@ -120,6 +125,7 @@ fn init_language_table() -> Vec<LanguageEntry> {
             name: "TSX",
             selector_aliases: &["typescript"],
             extensions: &["tsx"],
+            also_parses: &[],
             language_id: Some("typescriptreact"),
             language: tree_sitter_typescript::LANGUAGE_TSX.into(),
             body_query: JS_TS_BODY_QUERY,
@@ -129,6 +135,7 @@ fn init_language_table() -> Vec<LanguageEntry> {
             name: "JavaScript",
             selector_aliases: &[],
             extensions: &["js", "jsx", "mjs", "cjs"],
+            also_parses: &[],
             language_id: Some("javascript"),
             language: tree_sitter_javascript::LANGUAGE.into(),
             body_query: JS_TS_BODY_QUERY,
@@ -139,6 +146,7 @@ fn init_language_table() -> Vec<LanguageEntry> {
             selector_aliases: &[],
             // `.pyi` stubs parse with the Python grammar (LSP already maps them).
             extensions: &["py", "pyi"],
+            also_parses: &[],
             language_id: Some("python"),
             language: tree_sitter_python::LANGUAGE.into(),
             body_query: PY_BODY_QUERY,
@@ -148,6 +156,7 @@ fn init_language_table() -> Vec<LanguageEntry> {
             name: "Go",
             selector_aliases: &[],
             extensions: &["go"],
+            also_parses: &[],
             language_id: Some("go"),
             language: tree_sitter_go::LANGUAGE.into(),
             body_query: GO_BODY_QUERY,
@@ -157,6 +166,7 @@ fn init_language_table() -> Vec<LanguageEntry> {
             name: "Rust",
             selector_aliases: &[],
             extensions: &["rs"],
+            also_parses: &[],
             language_id: Some("rust"),
             language: tree_sitter_rust::LANGUAGE.into(),
             body_query: RS_BODY_QUERY,
@@ -166,6 +176,7 @@ fn init_language_table() -> Vec<LanguageEntry> {
             name: "Java",
             selector_aliases: &[],
             extensions: &["java"],
+            also_parses: &[],
             language_id: Some("java"),
             language: tree_sitter_java::LANGUAGE.into(),
             body_query: JAVA_BODY_QUERY,
@@ -175,6 +186,7 @@ fn init_language_table() -> Vec<LanguageEntry> {
             name: "C",
             selector_aliases: &[],
             extensions: &["c", "h"],
+            also_parses: &[],
             language_id: Some("c"),
             language: tree_sitter_c::LANGUAGE.into(),
             body_query: C_BODY_QUERY,
@@ -185,6 +197,7 @@ fn init_language_table() -> Vec<LanguageEntry> {
             name: "Assembly",
             selector_aliases: &[],
             extensions: &["asm", "assembly", "s"],
+            also_parses: &[],
             // No built-in semantic server is claimed. The language id still
             // enables syntax anchoring when a trusted custom server is used.
             language_id: Some("asm"),
@@ -199,6 +212,7 @@ fn init_language_table() -> Vec<LanguageEntry> {
             name: "Scala",
             selector_aliases: &[],
             extensions: &["scala", "sc", "sbt"],
+            also_parses: &[],
             language_id: Some("scala"),
             language: tree_sitter_scala::LANGUAGE.into(),
             body_query: SCALA_BODY_QUERY,
@@ -211,6 +225,7 @@ fn init_language_table() -> Vec<LanguageEntry> {
             // Include the `.hh`/`.hxx` header variants the structural expando table
             // already anticipates.
             extensions: &["cpp", "hpp", "cc", "cxx", "hh", "hxx"],
+            also_parses: &["h"],
             language_id: Some("cpp"),
             language: tree_sitter_cpp::LANGUAGE.into(),
             body_query: CPP_BODY_QUERY,
@@ -221,6 +236,7 @@ fn init_language_table() -> Vec<LanguageEntry> {
             name: "CUDA",
             selector_aliases: &[],
             extensions: &["cu", "cuh"],
+            also_parses: &[],
             language_id: Some("cuda"),
             language: tree_sitter_cuda::LANGUAGE.into(),
             body_query: CUDA_BODY_QUERY,
@@ -231,6 +247,7 @@ fn init_language_table() -> Vec<LanguageEntry> {
             name: "C#",
             selector_aliases: &[],
             extensions: &["cs"],
+            also_parses: &[],
             language_id: Some("csharp"),
             language: tree_sitter_c_sharp::LANGUAGE.into(),
             body_query: CS_BODY_QUERY,
@@ -283,49 +300,63 @@ pub fn select_one(selector: &str) -> Option<&'static LanguageEntry> {
     named.next().is_none().then_some(entry)
 }
 
-/// Whether `selector` is C++ (`cpp` / `c++`), whose family also parses `.h`
-/// headers (C's extension by default).
-fn is_cpp(selector: &str) -> bool {
-    selector.eq_ignore_ascii_case("cpp") || selector.eq_ignore_ascii_case("c++")
+/// The grammars a selector names: a grammar name, language id or
+/// extension, with or without its leading dot (`.cc` and `cpp` both name
+/// C++), plus the family its selector aliases span.
+fn selected(selector: &str) -> impl Iterator<Item = &'static LanguageEntry> {
+    let selector = selector.trim();
+    select(selector.strip_prefix('.').unwrap_or(selector))
 }
 
-/// The extensions (lowercase, no dot) a selector's family parses: every
-/// selected grammar's, plus `h` under C++. A `.ext` selector is that one
-/// registered extension. `None` when it selects nothing.
+/// The extensions (lowercase, no dot) a selector picks in a directory:
+/// every selected grammar's own plus the ones it also parses (`h` under
+/// C++); a `.ext` selector is that one registered extension. `None` when it
+/// selects nothing.
 pub fn family_extensions(selector: &str) -> Option<std::collections::BTreeSet<String>> {
     let selector = selector.trim().to_ascii_lowercase();
     if let Some(extension) = selector.strip_prefix('.') {
         return find_entry(extension)
             .map(|_| std::collections::BTreeSet::from([extension.to_owned()]));
     }
-    let mut extensions: std::collections::BTreeSet<String> = select(&selector)
-        .flat_map(|entry| entry.extensions.iter().map(|ext| ext.to_ascii_lowercase()))
+    let extensions: std::collections::BTreeSet<String> = selected(&selector)
+        .flat_map(|entry| entry.extensions.iter().chain(entry.also_parses))
+        .map(|ext| ext.to_ascii_lowercase())
         .collect();
-    if extensions.is_empty() {
-        return None;
-    }
-    if is_cpp(&selector) {
-        extensions.insert("h".to_owned());
-    }
-    Some(extensions)
+    (!extensions.is_empty()).then_some(extensions)
+}
+
+/// Whether a grammar `selector` names, in any spelling (`cpp`, `c++`,
+/// `hpp`, `.cc`), owns or also parses `path`'s extension: the file can be
+/// read as that grammar.
+pub fn parses_path(selector: &str, path: &str) -> bool {
+    let extension = crate::text::file_extension::extension_of(path, true, "");
+    selected(selector).any(|entry| {
+        entry
+            .extensions
+            .iter()
+            .chain(entry.also_parses)
+            .any(|ext| ext.eq_ignore_ascii_case(&extension))
+    })
 }
 
 /// The parser extension for `path` under `selector`: the file's own
-/// extension when it belongs to the selector's family (`.tsx` under
-/// `typescript` needs the TSX grammar), `h` parsed as C++ under `cpp`, else
-/// the selector itself.
+/// extension when a selected grammar owns it (`.tsx` under `typescript`
+/// needs the TSX grammar), the grammar's own first extension when it only
+/// also parses it (`.h` under any C++ selector parses as `cpp`), else the
+/// selector itself.
 pub fn parser_for_path(selector: &str, path: &str) -> String {
     let extension = crate::text::file_extension::extension_of(path, true, "");
     if extension.is_empty() {
         return selector.to_owned();
     }
-    if extension == "h" && is_cpp(selector) {
-        return "cpp".to_owned();
+    let owns = |exts: &[&str]| exts.iter().any(|ext| ext.eq_ignore_ascii_case(&extension));
+    if selected(selector).any(|entry| owns(entry.extensions)) {
+        return extension;
     }
-    match family_extensions(selector) {
-        Some(extensions) if extensions.contains(&extension) => extension,
-        _ => selector.to_owned(),
-    }
+    selected(selector)
+        .find(|entry| owns(entry.also_parses))
+        .and_then(|entry| entry.extensions.first())
+        .map_or_else(|| selector.to_owned(), |ext| (*ext).to_owned())
 }
 
 /// The selector a caller writes for a grammar: its language id (`rust`,

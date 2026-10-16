@@ -223,6 +223,7 @@ impl ResponsePager {
             &input.options,
             volatile,
             &input.remaining,
+            crate::tools::id::ToolId::from_name(&input.tool),
         );
         if cancelled.is_cancelled() {
             return Err(ResponseError::Cancelled);

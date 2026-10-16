@@ -180,7 +180,9 @@ pub fn execute_symbols(
     // are, so a write in the clock tick of a scan cannot hide behind an
     // unchanged time.
     let mapped = mapped_files(q, &p.canonical)?;
-    let (memo_key, settled) = directory_memo_key(q, &p.canonical, mapped.as_ref(), paths, cancel)?;
+    // One walk serves the memo fingerprint and, on a miss, the outline scan.
+    let walk = walk_directory(q, &p.canonical, paths, cancel)?;
+    let (memo_key, settled) = directory_memo_key(q, &p.canonical, &walk);
     let other_key = || with_settled(memo_key.clone(), !settled);
     let hit = if q.page() > 1 {
         SYMBOL_PAGES
@@ -196,7 +198,7 @@ pub fn execute_symbols(
         note_skipped(q, &p.canonical, mapped.as_ref(), paths, cancel, &mut page);
         return Ok(page);
     }
-    let outline = outline_directory(q, &p.canonical, paths, cancel)?;
+    let outline = outline_walked(q, &p.canonical, walk, cancel)?;
     let set = select(q, &p.canonical, outline, cancel)?;
     let mut page = render_page(q, &set, response_window);
     note_skipped(q, &p.canonical, mapped.as_ref(), paths, cancel, &mut page);
@@ -464,18 +466,21 @@ fn outline_file(
         // The cache keys the parser extension used, so every override reuses
         // its own parse.
         parser => {
-            crate::tools::declarations_cache::extract_as(&source, &source_path, parser, || {
-                match parser {
+            crate::tools::declarations_cache::extract(
+                &source,
+                &source_path,
+                parser,
+                || match parser {
                     Some(extension) => {
-                        octocode_engine::portable::extract_graph_facts_with_extension(
+                        octocode_engine::portable::extract_declarations_with_extension(
                             &source,
                             &source_path,
                             extension,
                         )
                     }
                     None => octocode_engine::portable::extract_declarations(&source, &source_path),
-                }
-            })
+                },
+            )
         }
     };
     let path = super::display_name(canonical);
@@ -568,32 +573,38 @@ fn directory_scan_options(
     }
 }
 
-/// Every file's declarations under a directory. A name filter is a byte
-/// prefilter first: a file that never spells any filter text cannot declare a
-/// matching name, so it is read but not parsed.
+/// Every file's declarations under a directory (see [`outline_walked`]).
+#[cfg(test)]
 pub(super) fn outline_directory(
     q: &AstSearchQuerySymbols,
     canonical: &std::path::Path,
     paths: &PathPolicy,
     cancel: &dyn CancellationCheck,
 ) -> Result<Outline, ToolError> {
-    let filter = q.name_filter();
-    let passed_over = std::sync::atomic::AtomicUsize::new(0);
+    let walk = walk_directory(q, canonical, paths, cancel)?;
+    outline_walked(q, canonical, walk, cancel)
+}
+
+/// The candidate files a directory outline scans, in walk order, and the
+/// entries the path policy withheld from that walk.
+struct DirectoryWalk {
+    files: octocode_engine::types::FileSystemQueryResult,
+    withheld: crate::policy::discovery::Withheld,
+}
+
+/// Walk a directory outline's candidates once: the memo fingerprint reads
+/// the walk, and a cold page scans it without walking again.
+fn walk_directory(
+    q: &AstSearchQuerySymbols,
+    canonical: &std::path::Path,
+    paths: &PathPolicy,
+    cancel: &dyn CancellationCheck,
+) -> Result<DirectoryWalk, ToolError> {
     let withheld = std::sync::Mutex::new(crate::policy::discovery::Withheld::default());
     let outlined = octocode_engine::signatures::graph_facts::graph_fact_extensions();
-    let keep = |source: &str| {
-        let spelled = filter
-            .as_ref()
-            .is_none_or(|filter| filter.spelled_in(source));
-        if !spelled {
-            passed_over.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        }
-        spelled
-    };
-    let rooted = |relative: &str| super::rooted_display(canonical, std::path::Path::new(relative));
     let discovery = paths.discovery_walk();
-    let scan = octocode_engine::graph::scan_graph_facts(
-        directory_scan_options(q, canonical),
+    let files = octocode_engine::graph::walk_graph_fact_files(
+        &directory_scan_options(q, canonical),
         &|path, file_type| {
             let allowed = discovery.permits_entry(path, file_type);
             // Only a directory or an outlinable file leaves absence unproven.
@@ -615,6 +626,41 @@ pub(super) fn outline_directory(
             }
             allowed
         },
+        &|| cancel.check().is_err(),
+    )
+    .map_err(|error| ToolError::graph_scan(&error, cancel))?;
+    Ok(DirectoryWalk {
+        files,
+        withheld: withheld
+            .into_inner()
+            .unwrap_or_else(|error| error.into_inner()),
+    })
+}
+
+/// The declarations of a walked directory's files. A name filter is a byte
+/// prefilter first: a file that never spells any filter text cannot declare
+/// a matching name, so it is read but not parsed.
+fn outline_walked(
+    q: &AstSearchQuerySymbols,
+    canonical: &std::path::Path,
+    walk: DirectoryWalk,
+    cancel: &dyn CancellationCheck,
+) -> Result<Outline, ToolError> {
+    let filter = q.name_filter();
+    let passed_over = std::sync::atomic::AtomicUsize::new(0);
+    let keep = |source: &str| {
+        let spelled = filter
+            .as_ref()
+            .is_none_or(|filter| filter.spelled_in(source));
+        if !spelled {
+            passed_over.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+        spelled
+    };
+    let rooted = |relative: &str| super::rooted_display(canonical, std::path::Path::new(relative));
+    let scan = octocode_engine::graph::scan_walked_graph_facts(
+        directory_scan_options(q, canonical),
+        walk.files,
         &keep,
         &|view| {
             let declarations = match serde_json::to_value(&view.facts.declarations) {
@@ -656,9 +702,7 @@ pub(super) fn outline_directory(
         scan_resume: scan.scan_resume,
         skipped: scan.files_skipped,
         diagnostics,
-        withheld: withheld
-            .into_inner()
-            .unwrap_or_else(|error| error.into_inner()),
+        withheld: walk.withheld,
         pruned: scan.pruned_dirs,
     })
 }
@@ -693,10 +737,8 @@ fn with_settled(mut key: CacheKey, settled: bool) -> CacheKey {
 fn directory_memo_key(
     q: &AstSearchQuerySymbols,
     canonical: &std::path::Path,
-    mapped: Option<&Gitignore>,
-    paths: &PathPolicy,
-    cancel: &dyn CancellationCheck,
-) -> Result<(CacheKey, bool), ToolError> {
+    walk: &DirectoryWalk,
+) -> (CacheKey, bool) {
     let shape = json!([
         canonical.to_string_lossy(),
         q.language_globs(),
@@ -709,62 +751,28 @@ fn directory_memo_key(
         q.max_files(),
         q.scan_offset()
     ]);
-    let (fingerprint, settled) = directory_fingerprint(q, canonical, mapped, paths, cancel)?;
+    let (fingerprint, settled) = directory_fingerprint(walk);
     let key = CacheKey {
         namespace: "ast-symbol-pages".into(),
         scope: fingerprint,
         resource: crate::digest::json_sha256(&shape),
     };
-    Ok((with_settled(key, settled), settled))
+    (with_settled(key, settled), settled)
 }
 
-/// Digest of the files a directory outline would scan (an outlined extension
-/// or a `languageGlobs` match, `mapped`): path, size and modification time,
-/// walked under the caller's path policy; and whether every one was last
+/// Digest of the files a directory outline scans (its walk: an outlined
+/// extension or a `languageGlobs` match, under the caller's path policy):
+/// path, size and modification time; and whether every one was last
 /// modified at least [`SourceStamp::SETTLE`] ago.
 ///
 /// [`SourceStamp::SETTLE`]: octocode_engine::graph::SourceStamp::SETTLE
-fn directory_fingerprint(
-    q: &AstSearchQuerySymbols,
-    canonical: &std::path::Path,
-    mapped: Option<&Gitignore>,
-    paths: &PathPolicy,
-    cancel: &dyn CancellationCheck,
-) -> Result<(String, bool), ToolError> {
+fn directory_fingerprint(walk: &DirectoryWalk) -> (String, bool) {
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0.0, |elapsed| elapsed.as_millis() as f64);
     let settle_ms = octocode_engine::graph::SourceStamp::SETTLE.as_millis() as f64;
-    let options = directory_scan_options(q, canonical);
-    let discovery = paths.discovery_walk();
-    let outlined = octocode_engine::signatures::graph_facts::graph_fact_extensions();
-    // A mapped file has an extension no outlined grammar claims, so with
-    // `languageGlobs` the walk admits files by extension or glob, as the
-    // outline scan does.
-    let admit = |path: &std::path::Path, file_type: Option<std::fs::FileType>| {
-        discovery.permits_entry(path, file_type)
-            && (mapped.is_none()
-                || !file_type.map_or_else(|| path.is_file(), |kind| kind.is_file())
-                || outlinable(&outlined, mapped, path))
-    };
-    let walk = octocode_engine::portable::query_file_system(
-        octocode_engine::types::FileSystemQueryOptions {
-            path: options.path,
-            recursive: Some(true),
-            ignore: options.ignore,
-            entry_type: Some("f".to_owned()),
-            extensions: mapped.is_none().then(|| outlined.clone()),
-            exclude_dir: options.exclude_dir,
-            exclude: options.exclude,
-            stop_at_limit: Some(true),
-            limit: options.max_files,
-            ..Default::default()
-        },
-        &admit,
-        &|| cancel.check().is_err(),
-    )
-    .map_err(super::native_error)?;
     let mut stats = walk
+        .files
         .entries
         .iter()
         .map(|entry| {
@@ -779,7 +787,7 @@ fn directory_fingerprint(
         modified.is_some_and(|bits| f64::from_bits(bits) + settle_ms <= now_ms)
     });
     stats.sort_unstable();
-    Ok((crate::digest::json_sha256(&json!(stats)), settled))
+    (crate::digest::json_sha256(&json!(stats)), settled)
 }
 
 /// The files a directory query's `languageGlobs` map to a grammar, compiled
@@ -1324,8 +1332,9 @@ fn empty_hint(q: &AstSearchQuerySymbols, files_scanned: usize) -> String {
 }
 
 /// Characters each top-level row (a span of `declarations`) adds to its
-/// page: its rendered row with its members, and for a directory outline its
-/// file's `path` the first time that file appears.
+/// page, as the page delivers it: its rendered row with its members, without
+/// the `path` a directory page states once per file ([`group_by_file`]), plus
+/// that file's `{path, symbols}` wrapper the first time the file appears.
 fn row_sizes(
     declarations: &[Value],
     spans: &[std::ops::Range<usize>],
@@ -1335,12 +1344,32 @@ fn row_sizes(
     spans
         .iter()
         .map(|span| {
-            let rendered = declaration_rows(&declarations[span.clone()]);
-            let mut chars = crate::tools::stream_page::json_chars(&rendered) + 1;
+            let rows = &declarations[span.clone()];
+            let rendered = if directory {
+                let unpathed = rows
+                    .iter()
+                    .map(|row| {
+                        let mut row = row.clone();
+                        if let Some(fields) = row.as_object_mut() {
+                            fields.remove("path");
+                        }
+                        row
+                    })
+                    .collect::<Vec<_>>();
+                declaration_rows(&unpathed)
+            } else {
+                declaration_rows(rows)
+            };
+            // Each row is one array element: its text and a separator.
+            let mut chars = rendered
+                .iter()
+                .map(|row| crate::tools::stream_page::json_chars(row) + 1)
+                .sum::<usize>();
             if directory {
                 let path = declarations[span.start]["path"].as_str();
                 if path != last_path {
-                    chars += path.map_or(0, crate::tools::stream_page::json_text_chars) + 24;
+                    chars += path.map_or(0, crate::tools::stream_page::json_text_chars)
+                        + FILE_WRAPPER_CHARS;
                     last_path = path;
                 }
             }
@@ -1348,6 +1377,9 @@ fn row_sizes(
         })
         .collect()
 }
+
+/// The `{"path":,"symbols":[]},` around one file's rows on a directory page.
+const FILE_WRAPPER_CHARS: usize = 24;
 
 /// Directories listed by name in a pruned-directory notice.
 const PRUNED_LISTED: usize = 5;

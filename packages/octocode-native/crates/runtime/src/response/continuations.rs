@@ -102,7 +102,7 @@ pub fn finalize(
         let source = sources.of(position, row).cloned();
         let recovery = matches!(
             row.get("status").and_then(Value::as_str),
-            Some("error" | "empty")
+            Some("error" | "empty" | "outOfRange")
         );
         if let Some(data) = row.get_mut("data").and_then(Value::as_object_mut) {
             super::channels::move_text(data);
@@ -689,7 +689,7 @@ mod tests {
     fn a_clasify_read_lead_is_its_result_and_always_shows() {
         let input = json!({"queries":[{"id":"m1","mainGoal":"G1"},{"id":"m2","mainGoal":"G2"}]});
         let mut out = json!({"queries":[{"id":"m2","answers":{},
-            "hints":{"read":call("localFetch", json!({"path":"/a","ranges":["1-2"],"minify":"none"}))}}]});
+            "hints":{"read":call("localFetch", json!({"path":"/a","ranges":["1-2"]}))}}]});
         finalize(
             &mut out,
             ToolId::Clasify,
@@ -780,6 +780,20 @@ mod tests {
 
     /// Trying only restorable or dropped fields compacts exactly like trying
     /// every field.
+    /// A restart restates no contract default (`pageSize` of an issue read).
+    #[test]
+    fn a_restart_drops_the_default_page_size() {
+        let query = json!({"operation":"issue","owner":"o","repo":"r","number":7,
+            "sections":["comments"],"page":40});
+        let full = validate_query("ghGetHistoryItem", query).expect("valid");
+        let mut out = json!({"results":[{"index":0,"data":{"next":{
+            "restart": crate::tools::result::restart_query(ToolId::GhGetHistoryItem, &full)
+        }}}]});
+        run(&mut out, ToolId::GhGetHistoryItem, &[Some(&full)]);
+        let row = &out["results"][0]["data"]["next"]["restart"]["query"]["queries"][0];
+        assert!(row.get("pageSize").is_none(), "{row}");
+    }
+
     #[test]
     fn restorable_fields_compact_like_trying_every_field() {
         fn every_field(tool: &str, query: &Value) -> Value {

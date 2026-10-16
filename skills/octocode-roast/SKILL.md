@@ -37,10 +37,10 @@ Critique code sharply; prove each finding and give a repair path.
 
 ## Parallel roasting
 
-Monorepo or many risk categories: split only independent domains (security, architecture, performance) with no shared mutable state; without workers or delegation approval, go sequentially.
+Monorepo or many risk categories: split only independent domains (security, architecture, performance) with no shared mutable state. Direct work may go sequentially. In an orchestrated workflow, the orchestrator selects the actors and owns one finding ledger, ranking, and repairs; actors do not recursively delegate.
 
-- Brief (intent): one domain, done-when, exact paths; return Outcome (done, partial, failed), scope, findings in the finding shape, non-findings (risky patterns checked), limits (missing tools, unreadable paths); the worker picks the method.
-- Parent: dedupe as workers return; verify load-bearing claims; own ranking, autopsy, repairs.
+- Brief (intent): one domain, done-when, exact paths; return Outcome (done, partial, failed), scope, findings in the finding shape, non-findings (risky patterns checked), limits (missing tools, unreadable paths); the actor picks the method.
+- Orchestrator: dedupe as actor evidence returns; verify load-bearing claims; own ranking, autopsy, repairs.
 
 ## Resources
 
@@ -55,3 +55,4 @@ Monorepo or many risk categories: split only independent domains (security, arch
 
 - Finding verification or neutral PR review: `octocode-research`.
 - Authorized behavior-preserving cleanup: `octocode-clean-agentic-code`.
+- For an orchestrated multi-actor task: [octocode-workflows composition](../octocode-workflows/references/composition.md).

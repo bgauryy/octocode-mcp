@@ -13,6 +13,50 @@ pub trait ContentScan {
     fn redact_key_blocks(&self, content: &str) -> (String, bool) {
         crate::security::redact_private_key_blocks(content)
     }
+    /// `source` sanitized whole with its line structure kept, so match line
+    /// numbers stay source-accurate, and whether it changed (see
+    /// [`redact_lines`]). `digest` is the SHA-256 the caller holds of the
+    /// bytes `source` was derived from, by a pure decode and key-block
+    /// redaction: a memoizing scanner keys on it rather than hashing the
+    /// text again.
+    fn redact_source_lines(
+        &self,
+        source: &str,
+        path: &Path,
+        _digest: &str,
+    ) -> Result<(String, bool), (String, String)> {
+        redact_lines(self, source, path)
+    }
+}
+
+/// `source` sanitized with its line structure kept: one whole-source scan,
+/// or line by line when the whole scan changes the line count (a multi-line
+/// pattern) or exceeds the scanner's size limit.
+pub(crate) fn redact_lines(
+    scan: &(impl ContentScan + ?Sized),
+    source: &str,
+    path: &Path,
+) -> Result<(String, bool), (String, String)> {
+    let lines = |text: &str| text.split_inclusive('\n').count();
+    if let Ok((whole, _)) = scan.sanitize(source, path) {
+        if whole == source {
+            return Ok((whole, false));
+        }
+        if lines(&whole) == lines(source) {
+            return Ok((whole, true));
+        }
+    }
+    let mut out = String::with_capacity(source.len());
+    for segment in source.split_inclusive('\n') {
+        let (body, newline) = segment
+            .strip_suffix('\n')
+            .map_or((segment, ""), |body| (body, "\n"));
+        let (clean, _) = scan.sanitize(body, path)?;
+        out.push_str(&clean.replace('\n', " "));
+        out.push_str(newline);
+    }
+    let changed = out != source;
+    Ok((out, changed))
 }
 
 /// [`ContentScan::sanitize`] of provider text: the redacted text, or the
@@ -90,14 +134,56 @@ impl SanitizedViewMemo {
         }
     }
 
-    fn key(text: &str, path: &Path) -> [u8; 32] {
+    /// Key of a scan: what it is (`purpose`), the path, and the text, or a
+    /// digest that names the text for the caller.
+    fn key(purpose: &str, path: &Path, text: &[u8]) -> [u8; 32] {
         use sha2::{Digest, Sha256};
         let mut digest = Sha256::new();
         let path = path.to_string_lossy();
-        digest.update((path.len() as u64).to_le_bytes());
-        digest.update(path.as_bytes());
-        digest.update(text.as_bytes());
+        for part in [purpose.as_bytes(), path.as_bytes(), text] {
+            digest.update((part.len() as u64).to_le_bytes());
+            digest.update(part);
+        }
         digest.finalize().into()
+    }
+
+    /// [`redact_lines`] of `source`, remembered per path and source digest
+    /// (with the text's length as a guard), so every page of a matchString
+    /// read redacts the whole source once instead of on every page.
+    fn redact_source_lines(
+        &self,
+        source: &str,
+        path: &Path,
+        digest: &str,
+        inner: &impl ContentScan,
+    ) -> Result<(String, bool), (String, String)> {
+        if source.len() < Self::MIN_TEXT_BYTES {
+            return redact_lines(inner, source, path);
+        }
+        let named = format!("{digest}:{}", source.len());
+        let key = Self::key("sourceLines", path, named.as_bytes());
+        let outcome = match self.entries.get(&key) {
+            Some(hit) => hit.value.as_ref().clone(),
+            None => {
+                let outcome = redact_lines(inner, source, path).map(|(text, _)| (text, Vec::new()));
+                self.store(key, source.len(), outcome)
+            }
+        };
+        outcome.map(|(text, _)| {
+            let changed = text != source;
+            (text, changed)
+        })
+    }
+
+    /// Store `outcome` of a `scanned`-byte text, weighed by both, and hand
+    /// it back.
+    fn store(&self, key: [u8; 32], scanned: usize, outcome: ScanOutcome) -> ScanOutcome {
+        let bytes = scanned.saturating_add(match &outcome {
+            Ok((safe, warnings)) => safe.len() + warnings.iter().map(String::len).sum::<usize>(),
+            Err((code, message)) => code.len() + message.len(),
+        });
+        let stored = self.entries.insert(key, outcome, bytes, None);
+        std::sync::Arc::try_unwrap(stored).unwrap_or_else(|shared| shared.as_ref().clone())
     }
 
     /// The scan of `text`, remembered for large views. The caller owns the
@@ -106,17 +192,11 @@ impl SanitizedViewMemo {
         if text.len() < Self::MIN_TEXT_BYTES {
             return inner.sanitize(text, path);
         }
-        let key = Self::key(text, path);
+        let key = Self::key("view", path, text.as_bytes());
         if let Some(hit) = self.entries.get(&key) {
             return hit.value.as_ref().clone();
         }
-        let outcome = inner.sanitize(text, path);
-        let bytes = text.len().saturating_add(match &outcome {
-            Ok((safe, warnings)) => safe.len() + warnings.iter().map(String::len).sum::<usize>(),
-            Err((code, message)) => code.len() + message.len(),
-        });
-        let stored = self.entries.insert(key, outcome, bytes, None);
-        std::sync::Arc::try_unwrap(stored).unwrap_or_else(|shared| shared.as_ref().clone())
+        self.store(key, text.len(), inner.sanitize(text, path))
     }
 }
 
@@ -126,9 +206,10 @@ impl Default for SanitizedViewMemo {
     }
 }
 
-/// `ContentScan` adapter that routes `sanitize` through a [`SanitizedViewMemo`]
-/// and forwards everything else (full-file key-block redaction still runs on
-/// every read) to the wrapped scanner.
+/// `ContentScan` adapter that routes `sanitize` and the whole-source line
+/// redaction through a [`SanitizedViewMemo`] and forwards everything else
+/// (full-file key-block redaction still runs on every read) to the wrapped
+/// scanner.
 pub struct MemoizedScan<'a, S> {
     inner: &'a S,
     memo: &'a SanitizedViewMemo,
@@ -146,5 +227,79 @@ impl<S: ContentScan> ContentScan for MemoizedScan<'_, S> {
     }
     fn redact_key_blocks(&self, content: &str) -> (String, bool) {
         self.inner.redact_key_blocks(content)
+    }
+    fn redact_source_lines(
+        &self,
+        source: &str,
+        path: &Path,
+        digest: &str,
+    ) -> Result<(String, bool), (String, String)> {
+        self.memo
+            .redact_source_lines(source, path, digest, self.inner)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// Redacts `SECRET` (a multi-line hit when it spans lines) and counts
+    /// its scans.
+    struct Counting(AtomicUsize);
+
+    impl ContentScan for Counting {
+        fn sanitize(&self, text: &str, _: &Path) -> ScanOutcome {
+            self.0.fetch_add(1, Ordering::Relaxed);
+            Ok((text.replace("SECRET", "[R]"), Vec::new()))
+        }
+    }
+
+    fn source() -> String {
+        let mut text = "plain line\n".repeat(2_000);
+        text.push_str("key = SECRET\n");
+        text
+    }
+
+    /// The whole-source line redaction of one source is scanned once per
+    /// path and digest: a later page reuses it, and another digest or path
+    /// scans again.
+    #[test]
+    fn whole_source_line_redaction_is_memoized_per_path_and_digest() {
+        let scanner = Counting(AtomicUsize::new(0));
+        let memo = SanitizedViewMemo::new();
+        let scan = MemoizedScan::new(&scanner, &memo);
+        let source = source();
+        let path = Path::new("/w/a.env.example");
+        let first = scan
+            .redact_source_lines(&source, path, "d1")
+            .expect("redacted");
+        assert!(first.1 && first.0.ends_with("key = [R]\n"));
+        assert_eq!(scanner.0.load(Ordering::Relaxed), 1);
+        assert_eq!(scan.redact_source_lines(&source, path, "d1"), Ok(first));
+        assert_eq!(
+            scanner.0.load(Ordering::Relaxed),
+            1,
+            "a page reuses the scan"
+        );
+        scan.redact_source_lines(&source, path, "d2")
+            .expect("other bytes");
+        scan.redact_source_lines(&source, Path::new("/w/b"), "d1")
+            .expect("other path");
+        assert_eq!(scanner.0.load(Ordering::Relaxed), 3);
+    }
+
+    /// A whole scan that changes the line count falls back to line by line,
+    /// so lines keep their numbers.
+    #[test]
+    fn a_line_count_change_falls_back_to_line_scans() {
+        struct Joining;
+        impl ContentScan for Joining {
+            fn sanitize(&self, text: &str, _: &Path) -> ScanOutcome {
+                Ok((text.replace("a\nb", "[R]"), Vec::new()))
+            }
+        }
+        let (text, changed) = redact_lines(&Joining, "a\nb\nc\n", Path::new("x")).expect("ok");
+        assert_eq!((text.as_str(), changed), ("a\nb\nc\n", false));
     }
 }

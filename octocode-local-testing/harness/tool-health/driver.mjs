@@ -25,7 +25,7 @@
 //
 // Leads that write (astRewrite `apply`, ghCloneRepo's clone cache) and leads to
 // tools a surface does not expose are recorded as skipped with their reason.
-import { atoms, canon, isLead, judgeLead, outcomeOf, rowOf, short } from '../lead-predicates.mjs';
+import { atoms, canon, isLead, judgeLead, outcomeOf, rowOf, short, suggestedCall } from '../lead-predicates.mjs';
 
 /** Page channels that advance a walk (new rows each step), as opposed to re-reads (expand*, restart, retry, read*). */
 export const ADVANCING = /^(next[A-Za-z]*Page|continue[A-Za-z]*)$/;
@@ -48,6 +48,7 @@ export function statusClass(json) {
   if (!rows.length) return 'broken';
   if (rows.some(r => r.status === 'error' || r.error)) return 'error';
   if (rows.every(r => r.status === 'empty')) return 'empty';
+  if (rows.every(r => r.status === 'empty' || r.status === 'outOfRange')) return 'outOfRange';
   return 'ok';
 }
 const errorCodes = json => [json?.errorCode, ...rowsOf(json).flatMap(r => [dataOf(r)?.errorCode, r?.error?.errorCode])].filter(Boolean);
@@ -64,6 +65,12 @@ export function leadsIn(sc, tools) {
     if (!node || typeof node !== 'object') return;
     if (Array.isArray(node)) { node.forEach((c, i) => visit(c, `${at}[${i}]`, rowIndex)); return; }
     for (const [key, child] of Object.entries(node)) {
+      if (key === 'hints' && Array.isArray(child)) {
+        for (const text of child) {
+          const lead = suggestedCall(text);
+          if (lead) out.push({ ...lead, path: `${at}.hints.${lead.key}`, container: 'hints', rowIndex });
+        }
+      }
       if ((key === 'next' || key === 'hints') && child && typeof child === 'object' && !Array.isArray(child)) {
         for (const [name, lead] of Object.entries(child)) {
           if (name === 'text') continue;
@@ -90,7 +97,7 @@ export function factSentences(json) {
     if (Array.isArray(node)) { node.forEach(walk); return; }
     for (const [k, v] of Object.entries(node)) {
       if (k === 'warnings') add(v);
-      else if (k === 'hints' && v && typeof v === 'object') add(v.text);
+      else if (k === 'hints' && Array.isArray(v)) add(v.filter(text => !suggestedCall(text)));
       else walk(v);
     }
   };

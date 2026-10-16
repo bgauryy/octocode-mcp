@@ -8,12 +8,12 @@
 // Two continuation containers (core `CONTINUATION_CHANNELS`):
 //   next   pages: continuations that reach unshown data of the same result,
 //          plus the envelope responsePagination.next.
-//   hints  `{ text?: string[], <leadName>: {tool, query} }`: prose tips and
-//          optional lead calls.
+//   hints  string[]: prose tips and `action: tool JSON` optional calls.
 // A lead is any `hints` entry, or (in legacy streams, where `next` also held
 // leads and `hints` was a prose string[]) a `next` entry that core classifies
 // as a lead. Briefs (mainGoal / reasoning) may be absent from any query.
 import { continuationChannel } from '@octocodeai/config/schema';
+import { suggestedCall } from './lead-predicates.mjs';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -27,11 +27,17 @@ export const isHintKey = key => HINT_KEYS.includes(key);
 /** Brief and presentation fields: never part of a continuation's identity. */
 export const BRIEF_KEYS = ['mainGoal', 'reasoning', 'extras'];
 export const isHint = v => !!v && typeof v === 'object' && !Array.isArray(v) && typeof v.tool === 'string' && v.query && typeof v.query === 'object';
-/** `{name, hint}` for each executable entry of a continuation container (a map of named hints, an array, or one hint). */
+/** Executable calls from public string hints or structured continuation containers. */
 export function hintEntries(container, name = 'hints') {
   if (!container || typeof container !== 'object') return [];
   if (isHint(container)) return [{ name, hint: container }];
-  if (Array.isArray(container)) return container.filter(isHint).map(hint => ({ name, hint }));
+  if (Array.isArray(container)) return container.flatMap(value => {
+    if (isHint(value)) return [{ name, hint: value }];
+    const call = suggestedCall(value);
+    if (!call) return [];
+    const { key, ...hint } = call;
+    return [{ name: key, hint, wireLength: JSON.stringify(value).length }];
+  });
   return Object.entries(container).filter(([, v]) => isHint(v)).map(([k, hint]) => ({ name: k, hint }));
 }
 /** The envelope continuation container of a response (`responsePagination.next`; `.hints` tolerated). */
@@ -47,7 +53,7 @@ export function leadEntries(holder, tool = '') {
   if (!holder || typeof holder !== 'object' || Array.isArray(holder)) return [];
   return [...hintEntries(holder.hints), ...hintEntries(holder.next).filter(e => !isPageName(e.name, tool))];
 }
-/** Largest lead menu (the cap applies to leads; `next` pages are uncapped) under a node. */
+/** Largest optional-call menu under a node, reported without a fixed cap. */
 export function maxLeadEntries(node, tool = responseTool(node)) {
   let max = 0;
   const walk = n => {
@@ -89,7 +95,7 @@ export function leadBytes(value, tool = responseTool(value)) {
   let total = 0;
   const walk = n => {
     if (!n || typeof n !== 'object') return;
-    if (!Array.isArray(n)) for (const e of leadEntries(n, tool)) total += JSON.stringify(e.hint).length + e.name.length + 3;
+    if (!Array.isArray(n)) for (const e of leadEntries(n, tool)) total += e.wireLength ?? JSON.stringify(e.hint).length + e.name.length + 3;
     for (const child of Object.values(n)) walk(child);
   };
   walk(value);
@@ -337,6 +343,15 @@ export function selfTest() {
   assert(pageEntries({ results: [{ data: today }] }).length === 1 && pageEntries({ results: [{ data: after }], responsePagination: { next: hint('x', { responseOffset: 9 }) } }).length === 2, 'page continuations read from next only (+ envelope)');
   assert(leadBytes(today) === leadBytes(after) && leadBytes(today) > 0, 'lead bytes comparable across the move');
   assert(allHintEntries(after).length === 3, 'replay set: every next entry and every non-text hints entry');
+  const stringHints = [
+    `readPullRequest: ghGetHistoryItem ${JSON.stringify({ queries: [{ number: 1 }] })}`,
+    `viewRepo: ghStructure ${JSON.stringify({ queries: [{ repo: 'r' }] })}`,
+    `read: Approximate: localFetch ${JSON.stringify({ queries: [{ path: 'a' }] })}`,
+  ];
+  const published = { next: after.next, hints: [...stringHints, 'Ordinary guidance.', 'read: localFetch {broken}'] };
+  assert(maxLeadEntries(published) === 3 && allHintEntries(published).length === 4, 'public string calls are counted and replayed beyond the old two-lead cap');
+  assert(pageEntries(published).length === 1 && leadEntries(published)[2].hint.confidence === 'low', 'string suggestions stay optional and preserve approximate qualification');
+  assert(leadBytes(published) === stringHints.reduce((sum, text) => sum + JSON.stringify(text).length, 0), 'string lead cost measures the escaped wire text');
   // The page/lead rule is core's: clasify's own walk is a page, a clasify handoff elsewhere is a lead.
   const clasifyWalk = { queries: [{ next: { clasify: hint('clasify', { resources: [] }), read: hint('localFetch', { path: 'a' }) } }] };
   assert(pageEntries(clasifyWalk).length === 1 && maxLeadEntries(clasifyWalk) === 1, 'legacy clasify: next.clasify is a page, next.read a lead');

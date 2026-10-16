@@ -8,8 +8,9 @@
 //! names (test files and `#[cfg(test)]` items are skipped: tests may drive
 //! several tools together): `use` trees with groups, `self`, `super` and
 //! aliases, and inline `crate::`/`super::`/bound paths. It fails on any edge
-//! into a tool not listed in [`ALLOWED_EDGES`] or [`SHARED_TO_TOOL_PENDING`],
-//! and on a listed edge that no longer exists, so the lists only shrink.
+//! into a tool not listed in [`ALLOWED_EDGES`], on any edge from a shared
+//! module into a tool, and on a listed edge that no longer exists, so the
+//! list only shrinks.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -353,11 +354,6 @@ fn module_edges(tools_dir: &Path) -> BTreeMap<(String, String), String> {
     edges
 }
 
-/// Shared modules that still reach into a tool, `(shared, tool, why)`: a
-/// shared module is below every tool, so each is a layering debt the owning
-/// migration removes. The guard fails on a new one and on a stale entry.
-const SHARED_TO_TOOL_PENDING: &[(&str, &str, &str)] = &[];
-
 #[test]
 fn tool_modules_import_only_shared_modules() {
     let tools_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/tools");
@@ -365,7 +361,6 @@ fn tool_modules_import_only_shared_modules() {
     let edges = module_edges(&tools_dir);
     let allowed: BTreeSet<(String, String)> = ALLOWED_EDGES
         .iter()
-        .chain(SHARED_TO_TOOL_PENDING)
         .map(|(from, to, _)| ((*from).to_owned(), (*to).to_owned()))
         .collect();
     let new: Vec<String> = edges
@@ -392,7 +387,7 @@ fn tool_modules_import_only_shared_modules() {
         .collect();
     assert!(
         stale.is_empty(),
-        "ALLOWED_EDGES or SHARED_TO_TOOL_PENDING lists an edge that no longer exists; remove it:\n  {}",
+        "ALLOWED_EDGES lists an edge that no longer exists; remove it:\n  {}",
         stale.join("\n  ")
     );
 }

@@ -1,7 +1,7 @@
 //! The response for one page: rows, pagination, leads, warnings and the
 //! partial state.
 use super::{HistoryOperation, HistorySearch, leads, rows};
-use crate::tools::gh_shared::{SEARCH_RESULT_CAP, SearchReach, pick_rows};
+use crate::tools::gh_shared::{SearchWindow, pick_rows};
 use crate::tools::result::remove_null_fields;
 use octocode_github::HistoryPage;
 use serde_json::{Value, json};
@@ -32,9 +32,9 @@ impl Paging {
     pub(super) fn new(result: &HistoryPage, page: usize, per: usize) -> Self {
         // A REST list has no search window and states no total.
         let reach = if result.listed {
-            SearchReach::new(0, per)
+            SearchWindow::PageStart.reach(0, per)
         } else {
-            SearchReach::new(result.total_count, per)
+            SearchWindow::PageStart.reach(result.total_count, per)
         };
         let current = if result.listed {
             result.provider_page
@@ -305,8 +305,8 @@ fn disclose_provider_limits(value: &mut Value, paging: &Paging, narrow: Option<V
     // The reachable `totalItems` is not the match count: state GitHub's.
     let count = paging.capped.then(|| {
         format!(
-            "GitHub matched {} results; the first {SEARCH_RESULT_CAP} are reachable.",
-            paging.matched
+            "GitHub matched {} results; the first {} are reachable.",
+            paging.matched, paging.total
         )
     });
     let warnings = Vec::from_iter(count);

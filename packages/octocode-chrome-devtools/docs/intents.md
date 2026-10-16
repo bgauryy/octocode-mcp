@@ -11,6 +11,8 @@ Load when choosing what to capture or do. Why: Match the capture to the task. Us
 
 ## Inspect
 
+For many ambiguous saved records or images, load `clasify-screen`: exact fields and local text search first, then optional semantic scouting by reference. Use inline selection to find useful passages; use standalone typed predicates for positive-only resource decisions. Preserve unknown scope and verify deciding evidence.
+
 - **security**: TLS, mixed content, CSP/security headers, cookie flags by name.
 - **websocket**: URL, frame counts, redacted samples (not in HAR).
 - **workers / service-worker**: `Target.getTargets` lists the whole browser; drop `chrome-extension://` and foreign origins.

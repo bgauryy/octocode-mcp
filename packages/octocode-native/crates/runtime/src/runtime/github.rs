@@ -146,7 +146,6 @@ impl GitHubServices {
             path: query["path"].as_str().unwrap_or_default().into(),
             reference: query["ref"].as_str().map(str::to_owned),
             force_refresh: false,
-            session_id: None,
         };
         let result = handle.block_on(self.provider.get_file_bytes(&request, &request_context));
         if result
@@ -409,7 +408,6 @@ impl GitHubServices {
             config: &config,
             endpoint: self.provider.transport.endpoint(),
             credential: request.resolved_credential(),
-            resolved_default_branch: None,
             cancellation: context,
             deadline: context.deadline,
             path_policy: paths,
@@ -485,8 +483,7 @@ impl GitHubServices {
             Err(row) => return Ok(*row),
         };
         let result =
-            gh_search_history::execute(&self.provider.transport, query, request_context, security)
-                .await;
+            gh_search_history::execute(&self.provider, query, request_context, security).await;
         context.check()?;
         Ok(match result {
             Ok(data) => super::dispatch::value_result(data),

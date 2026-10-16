@@ -73,20 +73,6 @@ pub(crate) fn is_paged(outcome: &ToolOutcome) -> bool {
     outcome.structured_content["responsePagination"]["hasMore"] == true
 }
 
-/// `structured` without the rows at `rejected` indices.
-pub(crate) fn admitted_body(structured: &Value, rejected: &[usize]) -> Value {
-    let mut body = structured.clone();
-    if let Some(rows) = body.get_mut("results").and_then(Value::as_array_mut) {
-        rows.retain(|row| {
-            row["index"]
-                .as_u64()
-                .and_then(|index| usize::try_from(index).ok())
-                .is_none_or(|index| !rejected.contains(&index))
-        });
-    }
-    body
-}
-
 /// Append `mark` to the page's snapshot and to its continuation's.
 pub(crate) fn mark_snapshots(outcome: &mut ToolOutcome, mark: &str) {
     let Some(pagination) = outcome

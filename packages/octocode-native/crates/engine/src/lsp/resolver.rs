@@ -93,6 +93,47 @@ pub fn resolve_position_in_file_content(
     )
 }
 
+/// Zero-based lines where `symbol_name` occurs as code in `content`: an
+/// exact identifier-like node, not inside a comment or a string literal.
+/// The path selects the grammar (the file is not read). `None` when the
+/// file has no grammar, or its parse fails, has errors, or exceeds the
+/// analysis budget: the caller cannot tell code from comments then.
+#[must_use]
+pub fn code_occurrence_lines(
+    file_path: &str,
+    content: &str,
+    symbol_name: &str,
+) -> Option<Vec<usize>> {
+    if content.len() > MAX_POSITION_SOURCE_BYTES || symbol_name.is_empty() {
+        return None;
+    }
+    let deadline = Instant::now() + AST_EXECUTION_TIMEOUT;
+    let spec = grammar_for_file(file_path)?;
+    let tree = spec.parse_before(content, deadline)?;
+    let root = tree.root_node();
+    if root.has_error() {
+        return None;
+    }
+    let mut candidates = Vec::new();
+    let index = LineIndex::new(content);
+    collect_symbol_candidates(
+        root,
+        content,
+        &index,
+        symbol_name,
+        &mut candidates,
+        deadline,
+    )
+    .ok()?;
+    let mut lines = candidates
+        .into_iter()
+        .filter(|candidate| candidate.is_exact && !candidate.is_literal)
+        .map(|candidate| candidate.line_index)
+        .collect::<Vec<_>>();
+    lines.dedup();
+    Some(lines)
+}
+
 fn resolve_position_before(
     file_path: &str,
     content: &str,
@@ -276,6 +317,13 @@ fn pick_candidate(
     });
     candidates.dedup_by_key(|candidate| (candidate.line_index, candidate.character));
     let order_hint = fuzzy.order_hint.unwrap_or(0) as usize;
+    // Identifier positions (sorted by line, then column: `orderHint` order),
+    // so the hit can say when its line spells the name more than once.
+    let identifiers = candidates
+        .iter()
+        .filter(|candidate| !candidate.is_literal)
+        .map(|candidate| (candidate.line_index, candidate.character))
+        .collect::<Vec<_>>();
 
     let selected = match fuzzy.line_hint {
         Some(line_hint) if line_hint > 0 => {
@@ -331,8 +379,9 @@ fn pick_candidate(
         return Ok(None);
     };
 
-    Ok(Some(hit_for(
-        lines.get(selected.line_index).copied().unwrap_or_default(),
+    let line = lines.get(selected.line_index).copied().unwrap_or_default();
+    let mut hit = hit_for(
+        line,
         selected.line_index,
         selected.character,
         fuzzy
@@ -340,7 +389,16 @@ fn pick_candidate(
             .filter(|line_hint| *line_hint > 0)
             .map(|line_hint| selected.line_index as i32 - (line_hint as i32 - 1))
             .unwrap_or(0),
-    )))
+    );
+    hit.occurrences_on_line = identifiers
+        .into_iter()
+        .filter(|(line_index, _)| *line_index == selected.line_index)
+        .map(|(_, character)| {
+            let (line, character) = hide_bom_in_line(selected.line_index, line, character);
+            byte_to_utf16_offset(line, character) as u32
+        })
+        .collect();
+    Ok(Some(hit))
 }
 
 fn is_ignored_node(kind: &str) -> bool {
@@ -544,6 +602,7 @@ fn hit_for(line: &str, line_index: usize, character: usize, line_offset: i32) ->
         found_at_line: line_index as u32 + 1,
         line_offset,
         line_content: line.to_owned(),
+        occurrences_on_line: Vec::new(),
     }
 }
 
@@ -678,6 +737,23 @@ mod tests {
             line_hint,
             order_hint: None,
         }
+    }
+
+    #[test]
+    fn code_occurrences_skip_comments_and_strings() {
+        let source = "//! Links [`Continuation`].\n// Continuation here\nfn f(c: Continuation) {\n    let s = \"Continuation\";\n    c.next();\n}\n";
+        assert_eq!(
+            super::code_occurrence_lines("lib.rs", source, "Continuation"),
+            Some(vec![2])
+        );
+        assert_eq!(
+            super::code_occurrence_lines("lib.rs", "// only Continuation\n", "Continuation"),
+            Some(Vec::new())
+        );
+        assert_eq!(
+            super::code_occurrence_lines("notes.unknownext", source, "f"),
+            None
+        );
     }
 
     #[test]

@@ -7,10 +7,76 @@ use crate::tools::result::Continuation;
 use serde_json::{Map, Value, json};
 use std::{collections::BTreeMap, path::Path};
 
-pub(super) fn paginate(items: Vec<Value>, q: &AstTopologyQuery) -> (Vec<Value>, Value) {
-    let size = q.page_size().clamp(1, super::topology_max("pageSize")) as usize;
-    let (page, facts) = crate::response::pages::slice_page(&items, q.page() as usize, size);
-    (page, facts.to_value())
+pub(super) fn paginate(
+    items: Vec<Value>,
+    q: &AstTopologyQuery,
+    budget: usize,
+) -> (Vec<Value>, Value) {
+    use crate::response::pages::PageFacts;
+    use crate::tools::page_windows::nth_page;
+    if let Some(size) = q.page_size() {
+        let (page, facts) = crate::response::pages::slice_page(&items, q.page() as usize, size);
+        return (page, facts.to_value());
+    }
+    let windows = delivered_windows(&items, budget);
+    let current = q.page() as usize;
+    let range = nth_page(&windows, current)
+        .cloned()
+        .unwrap_or(items.len()..items.len());
+    let facts = PageFacts::sized(current, windows.len(), items.len(), current < windows.len())
+        .out_of_range(current > windows.len().max(1));
+    (items[range].to_vec(), facts.to_value())
+}
+
+/// Item ranges of `budget` characters each, measured as a default page
+/// delivers its rows: optional (`extras`) fields pruned, and the fields
+/// every row of the page shares stated once in the response's `shared` map
+/// (the response stage hoists them). Measured without the caller's
+/// `extras`, so every page of one walk is cut at the same rows; an extra
+/// only adds row facts the final response pager charges. Each page holds at
+/// least one item, so a walk always moves.
+fn delivered_windows(items: &[Value], budget: usize) -> Vec<std::ops::Range<usize>> {
+    use crate::tools::stream_page::{json_chars, json_text_chars};
+    let mut row = json!({"data": {"nodes": items}});
+    crate::response::extras::prune_row(&mut row, ToolId::AstTopology, &json!({}));
+    let rows = match row["data"]["nodes"].take() {
+        Value::Array(rows) => rows,
+        _ => return vec![],
+    };
+    // `"key":value,` inside a row, or inside the `shared` map.
+    let field_chars = |key: &str, value: &Value| json_text_chars(key) + json_chars(value) + 4;
+    let mut windows = Vec::new();
+    let mut start = 0;
+    while start < rows.len() {
+        let first = &rows[start];
+        // The fields the hoist may move: those of two copies of the first row.
+        let mut pair = [json!({"data": {"nodes": [first, first]}})];
+        let mut shared = crate::contracts::shared_fields::hoist(ToolId::AstTopology, &mut pair)
+            .unwrap_or_default();
+        let mut full = 0usize;
+        let mut end = start;
+        while let Some(next) = rows.get(end) {
+            shared.retain(|key, value| next.get(key) == Some(value));
+            let count = end + 1 - start;
+            let saved = if count < 2 {
+                0
+            } else {
+                shared
+                    .iter()
+                    .map(|(key, value)| (count - 1) * field_chars(key, value))
+                    .sum::<usize>()
+            };
+            let used = (full + json_chars(next) + 1).saturating_sub(saved);
+            if end > start && used > budget {
+                break;
+            }
+            full += json_chars(next) + 1;
+            end += 1;
+        }
+        windows.push(start..end);
+        start = end;
+    }
+    windows
 }
 
 /// Mark a replayed page whose graph snapshot no longer matches: the shared
@@ -45,6 +111,7 @@ pub(super) fn add_coverage(
     b: &BuiltGraph,
     q: &AstTopologyQuery,
     results_digest: &str,
+    budget: usize,
 ) -> CoverageState {
     let tuples = b
         .diagnostics
@@ -54,8 +121,8 @@ pub(super) fn add_coverage(
     let id = crate::digest::json_sha256(&json!([
         tuples,
         results_digest,
-        q.page_size(),
-        q.diagnostic_page_size()
+        super::analysis::answer_fields(q, b),
+        q.page_size().is_none().then_some(budget)
     ]));
     // `coverage.imports.unresolvedInternal` already counts these rows.
     let mut counts = BTreeMap::<String, u32>::new();
@@ -75,7 +142,7 @@ pub(super) fn add_coverage(
     if !counts.is_empty() {
         coverage["diagnosticCounts"] = json!(counts);
     }
-    if q.diagnostic_snapshot().as_ref().is_some_and(|x| x != &id) {
+    if q.snapshot().as_ref().is_some_and(|x| x != &id) {
         mark_stale(base, q);
         base.insert("nodes".into(), json!([]));
         base.insert("coverage".into(), coverage);
@@ -330,7 +397,7 @@ pub(super) fn add_next(
         let mut value = clean_query(q);
         value["diagnosticPage"] = json!(1);
         value["diagnosticPageSize"] = json!(q.diagnostic_page_size());
-        value["diagnosticSnapshot"] = json!(snapshot);
+        value["snapshot"] = json!(snapshot);
         if let Some(row) = value.as_object_mut() {
             row.shift_remove("page");
         }
@@ -347,7 +414,7 @@ pub(super) fn add_next(
         let mut value = clean_query(q);
         value["diagnosticPage"] = json!(next_page);
         value["diagnosticPageSize"] = json!(q.diagnostic_page_size());
-        value["diagnosticSnapshot"] = base["coverage"]["diagnosticPagination"]["resultId"].clone();
+        value["snapshot"] = base["coverage"]["diagnosticPagination"]["resultId"].clone();
         next.insert(
             "nextDiagnosticPage".into(),
             Continuation::new(ToolId::AstTopology, value)
@@ -359,7 +426,7 @@ pub(super) fn add_next(
         let mut value = clean_query(q);
         value["diagnosticPage"] = json!(1);
         if let Some(query) = value.as_object_mut() {
-            query.remove("diagnosticSnapshot");
+            query.remove("snapshot");
         }
         next.insert(
             "restartDiagnostics".into(),
@@ -498,7 +565,7 @@ pub(super) fn clean_query(q: &AstTopologyQuery) -> Value {
 /// only when this query requested them, and the old snapshot is dropped.
 pub(super) fn restart_diagnostic_rows(query: &mut Value, q: &AstTopologyQuery) {
     if let Some(fields) = query.as_object_mut() {
-        fields.remove("diagnosticSnapshot");
+        fields.remove("snapshot");
         if q.diagnostic_rows_requested() {
             fields.insert("diagnosticPage".into(), json!(1));
         } else {
@@ -521,7 +588,7 @@ pub(super) fn continuation(
         restart_diagnostic_rows(&mut v, q);
     }
     if let Some(snapshot) = snapshot {
-        v["diagnosticSnapshot"] = snapshot;
+        v["snapshot"] = snapshot;
     }
     Continuation::new(ToolId::AstTopology, v)
         .confidence("exact")

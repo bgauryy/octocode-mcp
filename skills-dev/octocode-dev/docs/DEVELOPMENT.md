@@ -128,11 +128,10 @@ These are not user settings and are not read from `.octocoderc`. User settings a
 | `OCTOCODE_NATIVE_BIN` | `octocode` launcher | Absolute path to a native `octocode` binary used instead of the platform package. Ignored when `NODE_ENV=production`; the bundled CLI honors it only with `NODE_ENV` `development` or `test` |
 | `OCTOCODE_NATIVE_BINDING` | `octocode-mcp` | Path to a candidate `.node` addon. Ignored when `NODE_ENV=production`; the bundled `dist` honors it only with `NODE_ENV` `development` or `test` |
 | `OCTOCODE_ALLOW_CONTRACT_DRIFT` | `octocode-mcp`, CLI `schema` | `1` turns the fingerprint mismatch into a stderr warning; same `NODE_ENV` limits |
-| `OCTOCODE_SKILL_DELEGATED` | native `octocode skill` | Internal recursion guard set when native delegates `skill` to the npm CLI; do not set it |
 | `XDG_CONFIG_HOME` | native `octocode install` (Linux) | Locates IDE config directories (default `~/.config`); never moves the Octocode home |
 
 ## Ownership rules
 
 - `crates/engine` exposes primitives, not tool policy.
-- Skill filesystem behavior comes from `@octocodeai/octocode-skill-installer`.
+- `crates/cli/src/cli/skill/` owns skill commands and filesystem behavior. Its build script embeds public `skills/` through the same staging filter used by the Node package; Node is needed at build time, not for native skill commands.
 - Each doc topic has one owner; see `<repo>/docs/README.md`. Per-package invariants are in each package `ARCHITECTURE.md`.

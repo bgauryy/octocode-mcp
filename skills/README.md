@@ -1,6 +1,6 @@
 # Octocode skills
 
-These Agent Skills guide research, design, writing, measurement, and tool use. Each folder has `SKILL.md` for agent activation and workflow, `output.md` for result formats, and a short `README.md` for people. The shared authoring standard is in [octocode-skills](octocode-skills/SKILL.md).
+These published Agent Skills guide research, design, writing, measurement, tool use, and agent-workflow execution. Each folder has `SKILL.md` for agent activation and workflow, `output.md` for result formats, and a short `README.md` for people. The shared authoring standard is in [octocode-skills](octocode-skills/SKILL.md).
 
 Saved skill output lives under the project's `.octocode/` folder: reports and authored artifacts (research reports, RFCs, briefs, reviews, eval runs) in `<workspace>/.octocode/<skill-name>/`, and runtime captures and scratch files in its `tmp/` subfolder, so every file a skill writes stays under its own folder. A path the user names takes precedence; edits to the project's own code, docs, prompts, or skills stay at their source paths.
 
@@ -9,6 +9,7 @@ Every skill ships the same zero-dependency renderer, `scripts/render-report.mjs`
 | Skill | Use when |
 |---|---|
 | [Research](octocode-research/) | A code, repository, or change-impact claim needs evidence. |
+| [Workflows](octocode-workflows/) | An orchestrator must select actors, sequence a multi-actor workflow, merge evidence, or resume it. |
 | [Scraping](octocode-scraping/) | Public pages need fetching or a reusable source corpus. |
 | [Chrome DevTools](octocode-chrome-devtools/) | A live browser is needed for rendering, interaction, or diagnostics. |
 | [Brainstorming](octocode-brainstorming/) | An open idea or claim needs independent research directions and current, checked evidence. |
@@ -22,7 +23,7 @@ Every skill ships the same zero-dependency renderer, `scripts/render-report.mjs`
 | [Eval Benchmark](octocode-eval-benchmark/) | A change needs a measured baseline and verdict. |
 | [Agents Communication](octocode-agents-communication/) | Agents or sessions need shared messages, evidence, or handoffs. |
 
-Tested skills live in [skills-beta](../skills-beta/). Repository development skills live in [skills-dev](../skills-dev/).
+These are public skills. Tested, unpublished skills live in [skills-beta](../skills-beta/); repository-only development helpers live in [skills-dev](../skills-dev/) and are not part of the public selection catalog.
 
 ## Install and review
 

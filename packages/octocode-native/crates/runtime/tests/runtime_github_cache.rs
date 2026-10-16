@@ -31,8 +31,7 @@ async fn github_cache_survives_runtime_close_until_explicitly_cleared() {
         .await;
     let workspace = Workspace::new();
     let settings = [("GITHUB_API_URL", format!("{}/api/v3", server.uri()))];
-    let query =
-        json!({"owner":"a", "repo":"b", "path":"source.rs", "ref":"a".repeat(40), "minify":"none"});
+    let query = json!({"owner":"a", "repo":"b", "path":"source.rs", "ref":"a".repeat(40)});
     let first = workspace.runtime(&settings);
     let outcome = call(&first, "ghGetFileContent", query.clone())
         .await
@@ -109,7 +108,6 @@ async fn memory_storage_mode_does_not_persist_github_content_to_disk() {
         "owner": "c", "repo": "d",
         "path": "readme.md",
         "ref": sha,
-        "minify": "none",
     });
 
     // First runtime: fetches and stores in memory (not on disk).

@@ -81,7 +81,7 @@ async fn a_cross_fork_compare_pins_its_head_to_a_commit() {
     let data = row_data(&out).clone();
     assert_eq!(row_status(&out), "success", "{data}");
     assert_eq!(data["headSha"], FORK_HEAD_SHA, "{data}");
-    let narrow = &data["hints"]["narrowScope"]["query"]["queries"][0];
+    let narrow = &crate::support::checks::hint(&data, "narrowScope")["query"]["queries"][0];
     assert_eq!(narrow["ref"], FORK_HEAD_SHA, "{data}");
     // The path walk starts at the range's merge base, so it lists no
     // commit from before the range.
@@ -137,10 +137,13 @@ async fn a_commit_patch_read_keeps_its_pull_request_lead() {
         .await
         .expect("commit patches");
         let data = row_data(&out).clone();
-        let read = &data["hints"]["readPullRequest"];
+        let read = &crate::support::checks::hint(&data, "readPullRequest");
         assert_eq!(read["tool"], "ghGetHistoryItem", "{data}");
         assert_eq!(read["query"]["queries"][0]["number"], number, "{data}");
-        assert!(data["hints"].get("findPullRequest").is_none(), "{data}");
+        assert!(
+            crate::support::checks::hint(&data, "findPullRequest").is_null(),
+            "{data}"
+        );
     }
     runtime.close().await;
 }
@@ -171,7 +174,10 @@ async fn a_capped_compare_states_the_file_cap() {
         json!(["providerFileLimit"]),
         "{data}"
     );
-    assert!(data["hints"].get("listCommits").is_some(), "{data}");
+    assert!(
+        !crate::support::checks::hint(&data, "listCommits").is_null(),
+        "{data}"
+    );
     runtime.close().await;
 }
 
@@ -213,7 +219,7 @@ async fn a_directory_at_the_contents_limit_leads_to_a_clone() {
         data["providerLimit"]["maxEntriesPerDirectory"], 1000,
         "{data}"
     );
-    let clone = &data["hints"]["cloneRepo"];
+    let clone = &crate::support::checks::hint(&data, "cloneRepo");
     assert_eq!(clone["tool"], "ghCloneRepo", "{data}");
     let query = &clone["query"]["queries"][0];
     assert_eq!(query["owner"], "a", "{data}");

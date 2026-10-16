@@ -250,3 +250,145 @@ pub(super) fn collect_rust_imports(
         }
     }
 }
+
+/// The Rust qualified paths `node` holds outside call and `use` position,
+/// recorded so the linker can depend on their module prefix: an outermost
+/// `scoped_identifier`/`scoped_type_identifier` (a constant, type, variant,
+/// or function used as a value), or a `a::b` token run inside a macro token
+/// tree, which the grammar leaves as flat tokens. Call callees and macro
+/// names are call facts already; `use` items are imports. `ancestors` are
+/// the node's ancestors, root first.
+pub(super) fn collect_rust_paths(
+    node: Node<'_>,
+    ancestors: &[Node<'_>],
+    content: &str,
+    index: &NodePositions<'_>,
+    acc: &mut GraphAccumulator,
+    caller_id: Option<&str>,
+    inline_depth: usize,
+) {
+    let mut record = |path: String, line: u32| {
+        if path.contains("::") && !path.starts_with("Self::") && !path.starts_with('<') {
+            acc.paths.push(crate::graph::GraphFactPath {
+                line,
+                path,
+                caller_id: caller_id.map(str::to_owned),
+                inline_depth: u32::try_from(inline_depth).unwrap_or(u32::MAX),
+            });
+        }
+    };
+    match node.kind() {
+        "scoped_identifier" | "scoped_type_identifier" => {
+            let parent = ancestors.last();
+            let prefix_or_callee = parent.is_some_and(|parent| {
+                matches!(
+                    parent.kind(),
+                    "scoped_identifier" | "scoped_type_identifier"
+                ) || ["function", "macro"]
+                    .iter()
+                    .any(|field| parent.child_by_field_name(field) == Some(node))
+            });
+            if prefix_or_callee
+                || ancestors
+                    .iter()
+                    .any(|ancestor| ancestor.kind() == "use_declaration")
+            {
+                return;
+            }
+            if let Some(text) = node_text(node, content) {
+                record(
+                    text.split_whitespace().collect(),
+                    index.range(node).start.line + 1,
+                );
+            }
+        }
+        "token_tree" => {
+            // (path so far, its line, the last token was `::`)
+            let mut run: Option<(String, u32, bool)> = None;
+            let mut cursor = node.walk();
+            for token in node.children(&mut cursor) {
+                let kind = token.kind();
+                let name = matches!(kind, "identifier" | "crate" | "self" | "super");
+                match (&mut run, kind, name) {
+                    (Some((_, _, separated @ false)), "::", _) => *separated = true,
+                    (Some((path, _, separated @ true)), _, true) => {
+                        path.push_str("::");
+                        path.push_str(node_text(token, content).unwrap_or_default());
+                        *separated = false;
+                    }
+                    _ => {
+                        if let Some((path, line, _)) = run.take() {
+                            record(path, line);
+                        }
+                        if name {
+                            run = Some((
+                                node_text(token, content).unwrap_or_default().to_owned(),
+                                index.range(token).start.line + 1,
+                                false,
+                            ));
+                        }
+                    }
+                }
+            }
+            if let Some((path, line, _)) = run {
+                record(path, line);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// A file-inclusion macro (`include!`, `include_str!`, `include_bytes!`)
+/// whose one argument is a plain string literal: an `include` import of
+/// that path, which the linker resolves against this file's directory. A
+/// computed path (`concat!(env!("OUT_DIR"), …)`) names no file and is
+/// skipped.
+pub(super) fn collect_rust_include(
+    node: Node<'_>,
+    content: &str,
+    index: &NodePositions<'_>,
+    acc: &mut GraphAccumulator,
+) {
+    let name = node
+        .child_by_field_name("macro")
+        .and_then(|name| node_text(name, content))
+        .map(|name| name.rsplit("::").next().unwrap_or(name).trim());
+    if !matches!(name, Some("include" | "include_str" | "include_bytes")) {
+        return;
+    }
+    let mut cursor = node.walk();
+    let Some(arguments) = node
+        .named_children(&mut cursor)
+        .find(|child| child.kind() == "token_tree")
+    else {
+        return;
+    };
+    let mut cursor = arguments.walk();
+    let mut literals = arguments.named_children(&mut cursor);
+    let (Some(literal), None) = (literals.next(), literals.next()) else {
+        return;
+    };
+    let Some(specifier) = (literal.kind() == "string_literal")
+        .then(|| node_text(literal, content))
+        .flatten()
+        .and_then(|text| text.strip_prefix('"')?.strip_suffix('"'))
+        .filter(|path| !path.is_empty() && !path.contains('\\'))
+        .map(str::to_owned)
+    else {
+        return;
+    };
+    let line = index.range(node).start.line + 1;
+    acc.imports.push(GraphFactImport {
+        id: format!("include:{specifier}:{line}:{}", acc.imports.len()),
+        specifier,
+        line,
+        import_kind: "include".to_owned(),
+        local_name: None,
+        imported_name: None,
+        imported_range: None,
+        local_range: None,
+        resolution_hint: None,
+        module_scope: None,
+        used_in: None,
+    });
+}

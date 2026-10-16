@@ -6,7 +6,7 @@ Use the package MCP tools or `octocode-chrome-devtools /cli` from the workspace 
 
 For a research question, load `skill --topic web-research`. It connects source discovery, page capture, local evidence search and citation. Browser plans execute the chosen transitions; the agent decides which sources answer the question.
 
-1. Read saved evidence first. Capture replies show the first artifact page (paths resolve against `root`); `next.artifacts` reaches remaining rows. Use Octocode `localSearch` on `search.paths` to find task anchors, then `localFetch` on exact hits. Use `query` to filter JSON/JSONL rows and `artifact` to page other captures.
+1. Read saved evidence first. Capture replies show the first artifact page (paths resolve against `root`); `next.artifacts` reaches remaining rows. Use Octocode `localSearch` on `search.paths` to find task anchors, then `localFetch` on exact hits. Use `query` to filter JSON/JSONL rows and `artifact` to page other captures. When many plausible passages or images remain, load `clasify-screen` for optional JEV scouting by reference; keep exact reads ordinary and avoid repeating already sufficient evidence.
 2. Use `open` to launch isolated Chrome, or reuse an authorized browser. `targets` lists candidates. Pass an exact target ID to subsequent calls; ambiguity fails.
 3. Use `snapshot` for controls/refs and `protocol` for the installed CDP schema. CLI command `--help --json` or MCP tool schemas describe typed inputs.
 4. Choose the next action from observed state. Combine only known transitions into a plan; inspect new state after a menu, navigation or frame change.
@@ -53,7 +53,7 @@ Use `skill --topic <name>` in the typed CLI, or MCP tool `skill` with `{ "topic"
 | [launch-stealth](docs/launch-stealth.md) | Launch settings and explicit emulation |
 | [script-patterns](docs/script-patterns.md) | Custom `run(cdp)` logic |
 | [recovery](docs/recovery.md) | Failed targets, actions or waits |
-| [clasify-screen](docs/clasify-screen.md) | Locating relevant unread capture evidence |
+| [clasify-screen](docs/clasify-screen.md) | Selecting unread DOM/AX, HAR, large text and image evidence with Octocode and optional JEV |
 | [mcp-cli](docs/mcp-cli.md) | Package setup, MCP/CLI inputs and output envelopes |
 
 ## Output

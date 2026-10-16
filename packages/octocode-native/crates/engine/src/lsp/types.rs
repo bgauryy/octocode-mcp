@@ -45,6 +45,11 @@ pub struct JsResolvedSymbol {
     pub found_at_line: u32,
     pub line_offset: i32,
     pub line_content: String,
+    /// Zero-based UTF-16 columns of every identifier occurrence of the name
+    /// on the found line, in `orderHint` order, when the grammar resolved
+    /// it; more than one means the line is ambiguous. Empty when unknown.
+    #[serde(default)]
+    pub occurrences_on_line: Vec<u32>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

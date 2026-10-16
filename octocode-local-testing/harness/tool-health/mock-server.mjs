@@ -478,7 +478,7 @@ export async function startMock({ fixtureDir, tmpDir, token, configureModel, cla
       const target = m[1] ?? '';
       if (visible[target] !== undefined) {
         const text = visible[target];
-        if (String(headers.accept ?? '').includes('raw')) { send(200, text); return true; }
+        if (String(headers.accept ?? '').includes('raw')) { send(200, text, { 'content-type': 'application/vnd.github.raw; charset=utf-8' }); return true; }
         send(200, { type: 'file', encoding: 'base64', size: Buffer.byteLength(text), name: path.basename(target), path: target, content: Buffer.from(text).toString('base64'), sha: blobSha(text), url: `${base}/repos/${full}/contents/${target}?ref=${commit.oid}`, html_url: `https://github.com/${full}/blob/${commit.oid}/${target}`, download_url: null, git_url: `${base}/repos/${full}/git/blobs/${blobSha(text)}` });
         return true;
       }

@@ -38,6 +38,7 @@ mod runtime_local;
 mod runtime_page_replay;
 mod runtime_path_policy_names;
 mod runtime_read_span;
+mod runtime_repair_leads;
 mod runtime_request_credential;
 mod runtime_stream_page_walk;
 mod runtime_surface_arms;

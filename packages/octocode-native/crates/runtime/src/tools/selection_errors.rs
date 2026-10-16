@@ -1,4 +1,4 @@
-//! Coverage receipts for classified rows that fail before evidence selection.
+//! Coverage receipts and inspection guidance for unresolved classified rows.
 //!
 //! Source acquisition can fail before a reader knows how many candidates its
 //! selected view contains. The caller still needs an explicit unavailable
@@ -9,8 +9,7 @@ use crate::contracts::tool_types::{Selection, SelectionScope, SelectionStatus, S
 use crate::tools::id::ToolId;
 use serde_json::Value;
 
-/// Add an unavailable selection receipt to classified error rows that failed
-/// before their adapter produced one.
+/// Add missing failure receipts and guidance for inspecting unresolved evidence.
 ///
 /// `response_query` contains only admitted rows. Contract-rejected siblings
 /// are skipped while pairing those rows with the indexed result envelope.
@@ -33,34 +32,58 @@ pub(crate) fn decorate(tool: ToolId, structured: &mut Value, response_query: &Va
         let Some(query) = queries.next() else {
             break;
         };
-        if query.get("clasifyContext").is_none()
-            || row.get("status") != Some(&Value::String("error".into()))
-        {
+        // A refused request ran no selection: its repair, not unresolved
+        // evidence, is the way on.
+        if row.pointer("/data/errorCode").and_then(Value::as_str) == Some("invalidInput") {
             continue;
         }
-        let Some(data) = row.get_mut("data").and_then(Value::as_object_mut) else {
-            continue;
-        };
-        data.entry("selection").or_insert_with(|| {
-            serde_json::to_value(Selection {
-                status: SelectionStatus::Unavailable,
-                scope,
-                unit,
-                total_items: 0,
-                selected_items: 0,
-                excluded_items: 0,
-                unknown_items: 0,
-                reason: Some("sourceUnavailable".into()),
-            })
-            .unwrap_or(Value::Null)
-        });
+        if query.get("clasifyContext").is_some()
+            && row.get("status") == Some(&Value::String("error".into()))
+            && let Some(data) = row.get_mut("data").and_then(Value::as_object_mut)
+        {
+            data.entry("selection").or_insert_with(|| {
+                serde_json::to_value(Selection {
+                    status: SelectionStatus::Unavailable,
+                    scope,
+                    unit,
+                    total_items: 0,
+                    selected_items: 0,
+                    excluded_items: 0,
+                    unknown_items: 0,
+                    reason: Some("sourceUnavailable".into()),
+                })
+                .unwrap_or(Value::Null)
+            });
+        }
+        if !crate::tools::paging::continues_a_page(query) {
+            inspection_hint(row);
+        }
     }
+}
+
+/// The static reminder that unknown is not irrelevant, on a row that
+/// judged evidence and left some unknown. A failed row judged nothing (its
+/// error and the unfiltered lead are the way on). Said once per response,
+/// on the first page ([`crate::tools::paging::push_notice`]).
+fn inspection_hint(row: &mut Value) {
+    if row["status"] == "error" {
+        return;
+    }
+    let data = &mut row["data"];
+    if !data["next"]["unfiltered"].is_object()
+        || !(data["selection"]["unknownItems"]
+            .as_u64()
+            .is_some_and(|n| n > 0)
+            || data["selection"]["status"] == "unavailable")
+    {
+        return;
+    }
+    crate::tools::paging::push_notice(data, crate::contracts::classification_notice("unresolved"));
 }
 
 fn receipt_kind(tool: ToolId) -> Option<(SelectionScope, SelectionUnit)> {
     match tool {
-        ToolId::LocalSearch => Some((SelectionScope::SelectedView, SelectionUnit::Files)),
-        ToolId::LocalFetch | ToolId::GhGetFileContent => {
+        ToolId::LocalSearch | ToolId::LocalFetch | ToolId::GhGetFileContent => {
             Some((SelectionScope::SelectedView, SelectionUnit::Chunks))
         }
         ToolId::GhSearchCode => Some((SelectionScope::ProviderPage, SelectionUnit::Files)),
@@ -81,6 +104,119 @@ fn contract_rejection(row: &Value) -> bool {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn unresolved_selection_keeps_a_conditional_inspection_hint() {
+        for tool in [
+            ToolId::LocalSearch,
+            ToolId::LocalFetch,
+            ToolId::GhSearchCode,
+            ToolId::GhGetFileContent,
+        ] {
+            let mut structured = json!({"results":[{"index":0,"data":{
+                "selection":{"status":"partial","selectedItems":1,"unknownItems":1},
+                "next":{"unfiltered":{"tool":tool.as_str(),"query":{"queries":[{"path":"a.rs"}]}}}
+            }}]});
+            let query =
+                json!({"path":"a.rs","clasifyContext":{"classifiers":["States the rule?"]}});
+            let original_lead = structured["results"][0]["data"]["next"]["unfiltered"].clone();
+            settle(tool, &mut structured, &query);
+            let data = &structured["results"][0]["data"];
+            let text = data["warnings"][0]
+                .as_str()
+                .expect("unresolved recovery guidance on a successful row");
+            assert!(
+                text.contains("unfiltered lead") && text.contains("if needed"),
+                "{text}"
+            );
+            assert_eq!(data["next"]["unfiltered"], original_lead);
+            let once = structured.clone();
+            settle(tool, &mut structured, &query);
+            assert_eq!(structured, once, "no duplicate recovery tips");
+            // A continuation page repeats no static reminder.
+            let mut later = json!({"results":[{"index":0,"data":{
+                "selection":{"status":"partial","selectedItems":1,"unknownItems":1},
+                "next":{"unfiltered":{"tool":tool.as_str(),"query":{"queries":[{"path":"a.rs"}]}}}
+            }}]});
+            let mut page = query.clone();
+            page["snapshot"] = json!("s");
+            settle(tool, &mut later, &page);
+            assert!(
+                later["results"][0]["data"].get("warnings").is_none(),
+                "{later}"
+            );
+        }
+    }
+
+    #[test]
+    fn complete_selection_does_not_prompt_more_reading() {
+        let mut structured = json!({"results":[{"index":0,"data":{
+            "selection":{"status":"complete","selectedItems":1,"unknownItems":0},
+            "next":{"unfiltered":{"tool":"localFetch","query":{"queries":[{"path":"a.rs"}]}}}
+        }}]});
+        let before = structured.clone();
+        decorate(
+            ToolId::LocalFetch,
+            &mut structured,
+            &json!({"path":"a.rs","clasifyContext":{"classifiers":["States the rule?"]}}),
+        );
+        assert_eq!(structured, before);
+    }
+
+    /// [`decorate`] and the stage's notice placement.
+    fn settle(tool: ToolId, structured: &mut Value, query: &Value) {
+        decorate(tool, structured, query);
+        crate::response::notices::place(structured, "results");
+    }
+
+    /// An empty row gets the reminder after its own tips; a failed row
+    /// judged nothing, so it gets none. Two rows say it once.
+    #[test]
+    fn empty_rows_get_the_reminder_once_and_failed_rows_none() {
+        for hints in [
+            json!(["Existing tip."]),
+            json!({"text":["Existing tip."],"read":{"tool":"localFetch","query":{"queries":[{"path":"a.rs"}]}}}),
+        ] {
+            let row = |index: usize, status: &str| {
+                json!({"index":index,"status":status,"data":{
+                    "selection":{"status":"partial","selectedItems":0,"unknownItems":1},
+                    "hints":hints.clone(),
+                    "next":{"unfiltered":{"tool":"localFetch","query":{"queries":[{"path":"a.rs"}]}}}
+                }})
+            };
+            let mut structured =
+                json!({"results":[row(0, "error"), row(1, "empty"), row(2, "empty")]});
+            let query = json!({"path":"a.rs"});
+            settle(
+                ToolId::LocalFetch,
+                &mut structured,
+                &json!({"queries":[query.clone(), query.clone(), query]}),
+            );
+            let text = |index: usize| structured["results"][index]["data"]["hints"]["text"].clone();
+            assert_eq!(
+                structured["results"][0]["data"]["hints"], hints,
+                "failed: no reminder"
+            );
+            assert_eq!(text(1)[0], "Existing tip.", "{structured}");
+            assert!(
+                text(1)[1]
+                    .as_str()
+                    .is_some_and(|t| t.contains("unfiltered lead")),
+                "{structured}"
+            );
+            assert_eq!(
+                structured["results"][2]["data"]["hints"], hints,
+                "said once: {structured}"
+            );
+            for index in 0..3 {
+                let data = &structured["results"][index]["data"];
+                assert!(data.get("warnings").is_none() && data.get("notices").is_none());
+                if hints.is_object() {
+                    assert_eq!(data["hints"]["read"], hints["read"]);
+                }
+            }
+        }
+    }
 
     #[test]
     fn classified_source_failure_gets_reconciled_unavailable_receipt() {
@@ -150,20 +286,17 @@ mod tests {
     }
 
     #[test]
-    fn admitted_invalid_view_with_recovery_still_gets_a_receipt() {
+    fn a_refused_view_gets_no_unknown_receipt_or_unresolved_evidence_hint() {
         let mut structured = json!({"results":[{"index":0,"status":"error","data":{
             "errorCode":"invalidInput","error":"unsupported view",
             "next":{"unfiltered":{"tool":"localSearch","query":{"queries":[{"path":".","matchString":"x"}]}}}
         }}]});
+        let before = structured.clone();
         decorate(
             ToolId::LocalSearch,
             &mut structured,
             &json!({"path":".","matchString":"x","clasifyContext":{"classifiers":["Relevant?"]}}),
         );
-        assert_eq!(
-            structured["results"][0]["data"]["selection"]["unit"],
-            "files"
-        );
-        assert!(structured["results"][0]["data"]["next"]["unfiltered"].is_object());
+        assert_eq!(structured, before);
     }
 }

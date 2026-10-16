@@ -5,7 +5,7 @@
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import fs from 'node:fs';
-import { ROOT, checks, cli as runCli, collect, expandShared, rowData, startServer, structureFiles, writeResults } from './mcp-client.mjs';
+import { findHint, lspLocations, ROOT, checks, cli as runCli, collect, expandShared, rowData, startServer, structureFiles, writeResults } from './mcp-client.mjs';
 
 const { check, summary } = checks('usage-regressions');
 const client = await startServer();
@@ -72,7 +72,7 @@ for (const [label, tool, query, field, want, never] of [
 // Unclosed regex groups: the repair must keep the search's meaning and run.
 {
   const grouped = await call('localSearch', { path: RUNTIME, matchString: 'close_unclosed_(group|fn', regex: 'rust' });
-  const repair = rowData(grouped)?.hints?.repair;
+  const repair = findHint(grouped.sc, 'repair');
   check('U11: an unclosed group of bare alternatives is closed by hints.repair', repair?.query?.queries?.[0]?.matchString === 'close_unclosed_(group|fn)', JSON.stringify(repair?.query?.queries?.[0]?.matchString));
   if (repair) {
     const followed = await raw(repair.tool, repair.query);
@@ -80,7 +80,7 @@ for (const [label, tool, query, field, want, never] of [
     check('U11: following hints.repair stays on the grouped term (no bare `fn` hits)', !followed.isError && lines.length > 0 && lines.every(l => l.includes('close_unclosed_group')), `${lines.length} lines; ${lines.find(l => !l.includes('close_unclosed_group'))?.slice(0, 80) ?? ''}`);
   }
   const call_syntax = await call('localSearch', { path: RUNTIME, matchString: 'repair_alternation|close_unclosed_group(', regex: 'rust' });
-  const escaped = rowData(call_syntax)?.hints?.repair;
+  const escaped = findHint(call_syntax.sc, 'repair');
   check('U12: call syntax keeps the per-alternative escape', escaped?.query?.queries?.[0]?.matchString === 'repair_alternation|close_unclosed_group\\(', JSON.stringify(escaped?.query?.queries?.[0]?.matchString));
   if (escaped) {
     const followed = await raw(escaped.tool, escaped.query);
@@ -138,7 +138,7 @@ for (const [label, tool, query, field, want, never] of [
   const outside = path.dirname(ROOT);
   const shell = cli('localSearch', { queries: [{ path: outside, matchString: 'x' }] });
   const data = rowError(shell);
-  check('U15 CLI: outsideAllowedRoots names ALLOWED_PATHS and the home .env', data.errorCode === 'outsideAllowedRoots' && (data.hints?.text ?? []).some(h => h.includes('~/.octocode/.env')), JSON.stringify(data.hints));
+  check('U15 CLI: outsideAllowedRoots names ALLOWED_PATHS and the home .env', data.errorCode === 'outsideAllowedRoots' && (data.hints ?? []).some(h => h.includes('~/.octocode/.env')), JSON.stringify(data.hints));
   const fetch = await call('localFetch', { path: path.join(outside, 'x.txt') });
   check('U15 MCP: localFetch outside the roots carries the same hint', /~\/\.octocode\/\.env/.test(fetch.text), fetch.text.slice(0, 200));
 }
@@ -154,9 +154,9 @@ for (const [label, tool, query, field, want, never] of [
   const file = path.join(ROOT, LARGE);
   const line = fs.readFileSync(file, 'utf8').split('\n').findIndex(l => l.startsWith('fn suggest_field')) + 1;
   const first = await call('lspSearch', { path: file, symbolName: 'suggest_field', line, operation: 'references' });
-  check('U17 MCP: cold lspSearch references answers without a timeout', !first.isError && !/errorCode\W+timeout\b/.test(first.text) && first.ms < 90_000, `${first.ms}ms`);
+  check('U17 MCP: cold lspSearch references answers without a timeout', !first.isError && !/errorCode\W+timeout\b/.test(first.text) && lspLocations(first).length > 0 && first.ms < 90_000, JSON.stringify({ ms: first.ms, locations: lspLocations(first).length, isError: first.isError, errorCode: rowData(first)?.errorCode, error: rowData(first)?.error }));
   const warm = await call('lspSearch', { path: file, symbolName: 'suggest_field', line, operation: 'references' });
-  check('U17 MCP: a warm lspSearch repeat answers within 15 s', !warm.isError && warm.ms < 15_000, `${warm.ms}ms`);
+  check('U17 MCP: a warm lspSearch repeat answers within 15 s', !warm.isError && lspLocations(warm).length > 0 && warm.ms < 15_000, JSON.stringify({ ms: warm.ms, locations: lspLocations(warm).length, isError: warm.isError, errorCode: rowData(warm)?.errorCode, error: rowData(warm)?.error }));
 }
 
 // Continuation pages reuse the page-1 scan; an edit that keeps size and

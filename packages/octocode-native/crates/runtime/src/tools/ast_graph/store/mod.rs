@@ -12,12 +12,12 @@
 //!
 //! Snapshots are immutable. A build is written into a hidden temp directory
 //! and renamed into place, so a reader never observes a partial snapshot.
-mod classify;
+pub(super) mod classify;
 mod detect;
 mod format;
 mod impact;
 mod query;
-mod tables;
+pub(super) mod tables;
 mod workspace;
 
 use super::graph::{BuildExtras, build_graph_with};
@@ -386,6 +386,7 @@ fn build_for_ingest(
             &BuildExtras {
                 extra_excludes: INGEST_EXCLUDES.iter().map(|x| (*x).to_owned()).collect(),
                 cargo: cargo.map(str::to_owned),
+                cache_dir: None,
             },
         )
     })) {
@@ -435,7 +436,7 @@ pub(crate) fn source_matches(
     // Ingest never reads a source beyond this bound. A different size cannot
     // have the recorded digest, and a file grown past the parser bound must
     // invalidate reuse without allocating it in full.
-    const MAX_INGEST_SOURCE_BYTES: usize = 1_000_000;
+    const MAX_INGEST_SOURCE_BYTES: usize = octocode_engine::graph::MAX_GRAPH_SOURCE_BYTES as usize;
     let current_size = std::fs::metadata(path).ok()?.len();
     if current_size > MAX_INGEST_SOURCE_BYTES as u64
         || stamp.is_some_and(|recorded| recorded.size != current_size)

@@ -120,7 +120,7 @@ const cases: ReadonlyArray<{
     tool: 'astSearch',
     query: { operation: 'symbols', path: '.', include: ['*.ts'] },
     says: [
-      "Remove 'include' from queries[0]: it applies only with operation:\"match\"",
+      'Remove \'include\' from queries[0]: it applies only with operation:"match"',
     ],
     never: ['namedOnly', 'send queries[0] to localSearch'],
   },

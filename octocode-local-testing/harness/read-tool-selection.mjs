@@ -104,7 +104,6 @@ async function check(tool, name, run) {
 const sorted = rows => [...rows].sort();
 const expectedItems = {
   localFetch: 80,
-  localSearch: 7,
   structureSearch: 7,
   astSearch: 10,
   ghSearchRepo: 3,
@@ -220,17 +219,29 @@ function independentEvidence(spec, run, query) {
       const file = JSON.parse(row);
       return [file.path, ...(file.alsoAt ?? [])];
     });
-    assert.deepEqual(
-      sorted(actual),
-      sorted(expected),
-      'ordinary traversal returns every matching file exactly once'
-    );
+    if (spec.tool === 'localSearch') {
+      assert.deepEqual(sorted([...new Set(actual)]), sorted(expected),
+        'ordinary traversal reaches every matching file');
+      const expectedMatches = Object.entries(ctx.mock.model.files).flatMap(([file, text]) =>
+        expected.includes(file) ? text.split('\n').flatMap((line, index) =>
+          terms.every(term => line.toLowerCase().includes(term.toLowerCase()))
+            ? [`${file}:${index + 1}`] : []) : []);
+      const actualMatches = run.rows.map(row => {
+        const file = JSON.parse(row);
+        return `${file.path}:${file.match.line}`;
+      });
+      assert.deepEqual(sorted(actualMatches), sorted(expectedMatches),
+        'ordinary traversal returns every match exactly once');
+    } else {
+      assert.deepEqual(sorted(actual), sorted(expected),
+        'ordinary traversal returns every matching file exactly once');
+    }
   }
 }
 
 function receipts(spec, run) {
   return run.responses.map(response => {
-    const receipt = success(response).selection;
+    const receipt = dataOf(response).selection;
     assert.ok(receipt, 'classified output always includes a selection receipt');
     assert.ok(
       ['complete', 'partial', 'unavailable'].includes(receipt.status),
@@ -311,7 +322,7 @@ async function assertRecovery(spec, classified, baseline, options = {}) {
     );
     assert.ok(
       recovered.rows.length >=
-        success(classified.responses[0]).selection.totalItems,
+        dataOf(classified.responses[0]).selection.totalItems,
       'provider-page recovery covers the classified page without claiming an immutable later page'
     );
   }
@@ -611,7 +622,9 @@ try {
       'provider failure exposes no unjudged body and next.unfiltered recovers without JEV',
       async () => {
         ctx.state.mode = '401';
-        const failed = await walk(ctx, spec, classifiedQuery);
+        const failed = await walk(ctx, spec, classifiedQuery, {
+          errorCode: 'classificationProviderError',
+        });
         const rs = receipts(spec, failed);
         assert.ok(
           rs.some(row => ['partial', 'unavailable'].includes(row.status))
@@ -844,7 +857,8 @@ try {
           ['invalidContradiction', 'unknownItems'],
         ]) {
           ctx.state.mode = mode;
-          const run = await walk(ctx, spec, query);
+          const run = await walk(ctx, spec, query, mode === 'invalidContradiction'
+            ? { errorCode: 'invalidClassificationResponse' } : {});
           const receipt = receipts(spec, run)[0];
           assert.equal(receipt.totalItems, 1);
           assert.equal(receipt[partition], 1, `${mode} maps to ${partition}`);

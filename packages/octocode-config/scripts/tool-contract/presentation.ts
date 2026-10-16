@@ -8,6 +8,7 @@
 // the `--select` or `--view full` call that shows their schemas.
 import { buildCliInstructions } from '@octocodeai/octocode-core/mcp';
 import {
+  buildEnforcementContractIr,
   CLASIFY_SOURCE_TOOL_NAMES,
   DIRECT_TOOL_DEFINITIONS,
   getPublicToolCatalog,
@@ -151,6 +152,49 @@ const fieldNames = (schema: Json): string[] =>
   Object.keys((schema.properties as Json | undefined) ?? {});
 
 /**
+ * Each tool's `operation_controls` rule from the enforcement contract:
+ * field → the operations that take it. The runtime rejects the field on any
+ * other operation, so no per-operation view lists it there.
+ */
+const OPERATION_CONTROLS: Record<string, Record<string, string[]>> =
+  Object.fromEntries(
+    buildEnforcementContractIr().tools.flatMap(tool =>
+      (tool.rules as readonly { opcode: string; args?: unknown }[])
+        .filter(rule => rule.opcode === 'operation_controls')
+        .map(rule => [
+          tool.name,
+          (rule.args as { fields: Record<string, string[]> }).fields,
+        ])
+    )
+  );
+
+/**
+ * One operation's published row: a variant shared by several operations is
+ * narrowed to `operation`, without the fields the runtime rejects on it.
+ */
+function operationRow(tool: string, operation: string, schema: Json): Json {
+  const controls = OPERATION_CONTROLS[tool] ?? {};
+  const takes = (field: string): boolean =>
+    controls[field]?.includes(operation) ?? true;
+  const properties = Object.fromEntries(
+    Object.entries((schema.properties as Json | undefined) ?? {})
+      .filter(([field]) => takes(field))
+      .map(([field, value]) => {
+        if (field !== 'operation') return [field, value];
+        const { default: _default, ...discriminator } = value as Json;
+        return [field, { ...discriminator, enum: [operation] }];
+      })
+  );
+  return {
+    ...schema,
+    properties,
+    ...(Array.isArray(schema.required) && {
+      required: (schema.required as string[]).filter(takes),
+    }),
+  };
+}
+
+/**
  * The accepted fields the `query` view's row leaves out beyond its
  * continuation fields and the request brief, by name only: per operation
  * with the `--select` call that shows them, or for a one-form tool with the
@@ -177,7 +221,10 @@ function hiddenFields(
       operations
         .map(
           ([operation, schema]) =>
-            [operation, hidden(publishedJson(schema))] as const
+            [
+              operation,
+              hidden(operationRow(name, operation, publishedJson(schema))),
+            ] as const
         )
         .filter(([, fields]) => fields.length > 0)
     );
@@ -197,6 +244,16 @@ function hiddenFields(
       };
 }
 
+/**
+ * The fields MCP publishes beside `queries` (the request envelope), as
+ * schemas: a row view shows one query, so these are listed next to it.
+ */
+function envelopeFields(inputSchema: Definition['inputSchema']): Json {
+  const { queries: _queries, ...fields } = (publishedInputSchema(inputSchema)
+    .properties ?? {}) as Json;
+  return Object.keys(fields).length === 0 ? {} : { envelopeFields: fields };
+}
+
 /** A tool's `schema` views and `--select operation=X` views. */
 function rendered(
   definition: Definition,
@@ -209,13 +266,16 @@ function rendered(
   const row = publishedInputSchema(inputSchema, 'row');
   // The row hides the fields a `next.*` page or `hints.*` lead fills; name them once here.
   const continuation = continuationFields(inputSchema);
+  const envelope = envelopeFields(inputSchema);
   return {
     views: {
       query: view(definition, row, {
+        ...envelope,
         continuationFields: continuation,
         ...hiddenFields(definition, row, continuation, canonical),
       }),
       full: view(definition, canonical, {
+        ...envelope,
         usage: [`octocode ${name} '{"queries":[ … ]}'`],
       }),
       variants: { name, description: definition.description, variants },
@@ -224,7 +284,7 @@ function rendered(
       Object.entries(operationSchemas(inputSchema)).map(
         ([operation, schema]) => [
           `operation=${operation}`,
-          view(definition, publishedJson(schema)),
+          view(definition, operationRow(name, operation, publishedJson(schema))),
         ]
       )
     ),

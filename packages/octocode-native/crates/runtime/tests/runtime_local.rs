@@ -668,7 +668,7 @@ async fn lsp_search_returns_a_typed_row_when_no_server_is_configured() {
         symbol_failure.structured_content
     );
     assert_eq!(
-        row_data(&symbol_failure)["hints"]["read"]["tool"],
+        crate::support::checks::hint(row_data(&symbol_failure), "read")["tool"],
         "localFetch"
     );
     runtime.close().await;
@@ -869,7 +869,7 @@ async fn ast_topology_dead_code_verify_references_is_a_valid_lsp_query() {
         "deadCode row must not be withheld: {}",
         outcome.structured_content
     );
-    let verify = &row_data(&outcome)["hints"]["findReferences"];
+    let verify = &crate::support::checks::hint(row_data(&outcome), "findReferences");
     assert_eq!(
         verify["tool"], "lspSearch",
         "{}",
@@ -967,7 +967,7 @@ async fn ast_topology_result_pages_reject_a_changed_graph() {
     let restart = &data["next"]["restart"]["query"]["queries"][0];
     // Page 1 is the default, so compaction may omit it.
     assert!(restart.get("page").is_none_or(|page| page == 1), "{data}");
-    assert!(restart.get("diagnosticSnapshot").is_none(), "{data}");
+    assert!(restart.get("snapshot").is_none(), "{data}");
     runtime.close().await;
 }
 
@@ -1107,7 +1107,7 @@ async fn local_walks_share_one_default_prune_and_exclude_adds() {
     let files = call(
         &runtime,
         "structureSearch",
-        json!({"operation":"files","path":root,"include":["*.rs"],"entryType":"f","exclude":exclude}),
+        json!({"operation":"files","path":root,"include":["*.rs"],"entryType":"f","includeHidden":true,"exclude":exclude}),
     )
     .await
     .expect("structureSearch files");
@@ -1243,11 +1243,15 @@ async fn default_excludes_false_walks_dependency_directories() {
         "{}",
         names(&pruned)
     );
+    // `skippedPaths` is the one disclosure: no warning restates it.
     assert!(
         row_data(&pruned)["warnings"]
             .as_array()
-            .expect("warnings")
-            .contains(&json!("Default excludes skipped 1 dir."))
+            .is_none_or(|warnings| warnings
+                .iter()
+                .all(|warning| !warning.to_string().contains("Default excludes"))),
+        "{}",
+        names(&pruned)
     );
     let all = call(
         &runtime,
@@ -1361,8 +1365,9 @@ async fn policy_withheld_files_are_disclosed_never_advised_as_retry_or_spelling(
 
 /// A localSearch that found matches still discloses what the default
 /// excludes skipped (pruned build dirs and generated files such as
-/// `*.lock`/`*.min.js`), with the same search over them one call away; the
-/// escape flag really searches them.
+/// `*.min.js`), with the same search over them one call away; the escape
+/// flag really searches them. Lockfiles pin dependency versions: evidence,
+/// searched by default.
 #[tokio::test]
 async fn local_search_discloses_default_excluded_dirs_and_files_with_a_rerun() {
     let workspace = Workspace::new();
@@ -1396,26 +1401,24 @@ async fn local_search_discloses_default_excluded_dirs_and_files_with_a_rerun() {
     .await
     .expect("search");
     let text = found.structured_content.to_string();
-    assert_eq!(files_of(&found).len(), 1, "{text}");
+    assert_eq!(
+        files_of(&found),
+        ["Cargo.lock", "drivers/scsi/core.c"],
+        "{text}"
+    );
     assert_eq!(
         row_data(&found)["skippedPaths"],
         json!({"entries":[
             {"path":"dist","cause":"default-excluded"},
             {"path":"drivers/target","cause":"default-excluded"},
-            {"path":"Cargo.lock","cause":"default-excluded"},
             {"path":"vendor/lib.min.js","cause":"default-excluded"}
         ],"sampled":false}),
         "{text}"
     );
-    assert!(
-        row_data(&found)["warnings"]
-            .as_array()
-            .expect("warnings")
-            .contains(&json!("Default excludes skipped 2 dirs and 2 files."))
-    );
-    let lead = found
-        .structured_content
-        .pointer("/results/0/data/hints/includeSkipped")
+    assert!(row_data(&found).get("warnings").is_none(), "{text}");
+    let hint = crate::support::checks::hint(row_data(&found), "includeSkipped");
+    let lead = (!hint.is_null())
+        .then_some(&hint)
         .or_else(|| {
             found
                 .structured_content
@@ -1528,7 +1531,8 @@ async fn regex_match_limit_warning_and_its_opt_in_search_lead() {
             );
             if hinted {
                 assert_eq!(
-                    data["hints"]["findText"]["tool"], "localSearch",
+                    crate::support::checks::hint(data, "findText")["tool"],
+                    "localSearch",
                     "mcp={mcp}: {data}"
                 );
             } else {

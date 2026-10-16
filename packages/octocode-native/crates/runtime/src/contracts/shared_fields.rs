@@ -79,7 +79,7 @@ fn can_share_field(tool: ToolId, key: &str, value: &Value) -> bool {
 /// Every field some array-entry schema of `tool`'s output contract
 /// requires: hoisting one would remove it from entries whose schema demands
 /// it. Derived once per tool from the embedded contract.
-fn required_entry_fields(tool: ToolId) -> &'static BTreeSet<String> {
+pub(crate) fn required_entry_fields(tool: ToolId) -> &'static BTreeSet<String> {
     static REQUIRED: std::sync::OnceLock<HashMap<ToolId, BTreeSet<String>>> =
         std::sync::OnceLock::new();
     static NONE: BTreeSet<String> = BTreeSet::new();
@@ -96,6 +96,38 @@ fn required_entry_fields(tool: ToolId) -> &'static BTreeSet<String> {
                         required: &mut required,
                     };
                     walk.visit(schema, false);
+                    Some((id, required))
+                })
+                .collect()
+        })
+        .get(&tool)
+        .unwrap_or(&NONE)
+}
+
+fn required_row_fields(tool: ToolId) -> &'static BTreeSet<String> {
+    static REQUIRED: std::sync::OnceLock<HashMap<ToolId, BTreeSet<String>>> =
+        std::sync::OnceLock::new();
+    static NONE: BTreeSet<String> = BTreeSet::new();
+    REQUIRED
+        .get_or_init(|| {
+            ToolId::ALL
+                .into_iter()
+                .filter_map(|id| {
+                    let schema = &super::tool_contract(id).ok()?["outputSchema"];
+                    let defs = &schema["$defs"];
+                    let mut required = BTreeSet::new();
+                    for array in super::property_schemas(schema, defs, id.output().rows_key()) {
+                        for row in super::item_schemas(array, defs) {
+                            for data in super::property_schemas(row, defs, "data") {
+                                let mut walk = EntryWalk {
+                                    defs,
+                                    seen: std::collections::HashSet::new(),
+                                    required: &mut required,
+                                };
+                                walk.visit(data, true);
+                            }
+                        }
+                    }
                     Some((id, required))
                 })
                 .collect()
@@ -164,6 +196,29 @@ fn shared_leaves_mut(rows: &mut [Value]) -> impl Iterator<Item = &mut Map<String
 /// Hoist leaf fields every row entry of `tool`'s response shares into one
 /// `shared` map.
 pub(crate) fn hoist(tool: ToolId, rows: &mut [Value]) -> Option<Map<String, Value>> {
+    let mut shared = Map::new();
+    if rows.len() > 1 {
+        for &key in ROW_FIELDS {
+            if required_row_fields(tool).contains(key) {
+                continue;
+            }
+            let Some(value) = rows[0]["data"]
+                .get(key)
+                .filter(|value| value.as_str().is_some_and(|text| !text.is_empty()))
+                .cloned()
+            else {
+                continue;
+            };
+            if rows.iter().all(|row| row["data"].get(key) == Some(&value)) {
+                for row in rows.iter_mut() {
+                    if let Some(data) = row["data"].as_object_mut() {
+                        data.shift_remove(key);
+                    }
+                }
+                shared.insert(key.into(), value);
+            }
+        }
+    }
     let leaves: Vec<&Map<String, Value>> = rows
         .iter()
         .filter_map(|row| row["data"].as_object())
@@ -172,9 +227,9 @@ pub(crate) fn hoist(tool: ToolId, rows: &mut [Value]) -> Option<Map<String, Valu
         .filter_map(Value::as_object)
         .collect();
     if leaves.len() < 2 {
-        return None;
+        return (!shared.is_empty()).then_some(shared);
     }
-    let shared: Map<String, Value> = leaves[0]
+    let entry_shared: Map<String, Value> = leaves[0]
         .iter()
         .filter(|(key, value)| {
             can_share_field(tool, key, value)
@@ -182,17 +237,15 @@ pub(crate) fn hoist(tool: ToolId, rows: &mut [Value]) -> Option<Map<String, Valu
         })
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect();
-    if shared.is_empty() {
-        return None;
-    }
     for leaf in shared_leaves_mut(rows) {
-        for key in shared.keys() {
+        for key in entry_shared.keys() {
             // `remove` swaps the last key into the gap; the entry keeps the
             // order the tool wrote.
             leaf.shift_remove(key);
         }
     }
-    Some(shared)
+    shared.extend(entry_shared);
+    (!shared.is_empty()).then_some(shared)
 }
 
 #[cfg(test)]
@@ -200,6 +253,56 @@ mod tests {
     use crate::contracts::validate_output;
     use crate::tools::id::ToolId;
     use serde_json::json;
+
+    #[test]
+    fn repeated_row_commits_share_once_without_changing_file_evidence() {
+        let sha = "a".repeat(40);
+        let rows = vec![
+            json!({"index":0,"data":{"path":"a.rs","commitSha":sha,"content":"1\ta\n","totalLines":1}}),
+            json!({"index":1,"data":{"path":"b.rs","commitSha":sha,"content":"1\tb\n","totalLines":1}}),
+        ];
+        let original = json!({"results":rows});
+        let compact = crate::response::rows::envelope(ToolId::GhGetFileContent, rows.clone());
+        validate_output("ghGetFileContent", &compact).expect("the returned wire validates");
+        assert_eq!(compact["shared"]["commitSha"], sha);
+        assert!(compact.to_string().len() < original.to_string().len());
+        for (returned, expected) in compact["results"]
+            .as_array()
+            .expect("rows")
+            .iter()
+            .zip(&rows)
+        {
+            assert!(returned["data"].get("commitSha").is_none());
+            let mut restored = returned.clone();
+            restored["data"]["commitSha"] = compact["shared"]["commitSha"].clone();
+            assert_eq!(restored, *expected, "every original field is recoverable");
+        }
+        for replacement in [json!("b".repeat(40)), serde_json::Value::Null] {
+            let mut distinct = rows.clone();
+            distinct[1]["data"]["commitSha"] = replacement;
+            let before = distinct.clone();
+            assert!(super::hoist(ToolId::GhGetFileContent, &mut distinct).is_none());
+            assert_eq!(
+                distinct, before,
+                "different or missing revisions stay on their rows"
+            );
+        }
+    }
+
+    #[test]
+    fn required_revision_identity_stays_on_each_row() {
+        for tool in [ToolId::GhStructure, ToolId::GhGetHistoryItem] {
+            let mut rows = vec![
+                json!({"index":0,"data":{"commitSha":"same"}}),
+                json!({"index":1,"data":{"commitSha":"same"}}),
+            ];
+            let original = rows.clone();
+            assert!(super::hoist(tool, &mut rows).is_none());
+            assert_eq!(rows, original);
+            validate_output(tool.as_str(), &json!({"results":rows}))
+                .expect("required commit identity remains on the wire");
+        }
+    }
 
     /// A count is per-file evidence: equal counts on one page stay on each
     /// row, so a count view reads the same on every page (no `shared` lookup).
@@ -345,6 +448,7 @@ mod tests {
             if local {
                 output["shared"]["commitSha"] = json!(sha);
             }
+            crate::response::channels::publish_hints(&mut output, id);
             if let Err(error) = validate_output(tool, &output) {
                 panic!("{tool}: {:?}\n{output}", error.issues);
             }

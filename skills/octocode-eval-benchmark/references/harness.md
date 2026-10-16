@@ -44,7 +44,7 @@ Load when building a runner, laying out a suite or run folder, dispatching worke
 
 ## Roles and access
 
-- **Solver** sees user task, frozen subject instructions, allowed tools, raw task inputs; never grader questions, references, private tests, failure labels, previous solutions, parent research conclusions.
+- **Solver** sees user task, frozen subject instructions, allowed tools, raw task inputs; never grader questions, references, private tests, failure labels, previous solutions, or orchestrator research conclusions.
 - **Developer or optimizer** sees development tasks, traces, feedback, budgeted validation summaries; never sealed test contents or per-case tuning feedback.
 - **Evaluator or judge** sees task, frozen rubric, submitted artifact, permitted evidence, evaluator-only references; never candidate identity, preferred winner, optimizer commentary.
 - Build the solver packet from an allowlist, never by stripping keys; the controller keeps the full manifest.
@@ -65,9 +65,9 @@ State every requirement the grader enforces, including a required output locatio
 
 ## Multi-agent subjects
 
-- Delegate only through the host's authorized worker tools; keep production communication topology inside an isolated trial.
+- The trial orchestrator owns the frozen goal, actor selection and sequencing, one trial ledger, evidence merge, acceptance, and reported result. Each actor has a bounded duty and returns evidence; no actor re-enters selection or recursively delegates. Keep the production communication topology inside an isolated trial and use only host-authorized worker tools.
 - Add no agents or barriers to fit the benchmark; compare against a simpler baseline; add verifiers or stages only for a measured failure.
-- Workers return result, status, evidence; partial stays partial; consumers wait only for outputs they need.
+- Actors return result, status, evidence; partial stays partial; consumers wait only for outputs they need.
 - Measure the outcome at the graph boundary; per-node outcomes, stage latency, routing or merge errors locate failures; total cost, time, collisions, access violations are guardrails. More nodes or finished workers is not improvement.
 - Outcome drops: replay nodes with frozen inputs; blame bad upstream data, a failed node, or a faulty merge only when local evidence reproduces it.
 - Before fan-out, settle each agent's workspace, merge owner, disagreement rule; fix shared-state races with isolation, not prompts.

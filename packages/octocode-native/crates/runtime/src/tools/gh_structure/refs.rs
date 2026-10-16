@@ -6,8 +6,10 @@ use crate::tools::paging::push_warnings;
 use octocode_github::MAX_PER_PAGE;
 use octocode_github::{NamedRef, RefKind, RefMatch};
 
-/// Refs per page when `pageSize` is omitted (a tree page is 300 entries).
-const DEFAULT_REFS_PER_PAGE: usize = MAX_PER_PAGE;
+/// Refs per page when `pageSize` is omitted (contract
+/// `ghStructure.semanticPolicy.refsPageSize`, GitHub's page maximum).
+const DEFAULT_REFS_PER_PAGE: usize = crate::tools::id::gh_structure_policy::REFS_PAGE_SIZE;
+const _: () = assert!(DEFAULT_REFS_PER_PAGE <= MAX_PER_PAGE);
 
 /// Run a non-tree operation; `None` for the tree listing.
 pub(super) async fn execute_operation<C: octocode_github::ConditionalCache>(

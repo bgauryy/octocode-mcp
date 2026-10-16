@@ -14,6 +14,8 @@ import { parseArgs } from 'node:util';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { createLocalAcceptanceFixture } from './local-acceptance-fixture.mjs';
+import { suggestedCall } from '../../../../octocode-local-testing/harness/lead-predicates.mjs';
+const suggestion = (data, action) => (data?.hints ?? []).map(suggestedCall).find(call => call?.key === action);
 
 const { values } = parseArgs({
   options: {
@@ -108,36 +110,20 @@ const invoke = async (name, args) => {
     responseBytes,
     response,
   });
-  // Output channels: `next` holds pages only; `hints` holds prose `text`
-  // (recovery rows only) and lead calls. Each entry is a runnable call.
+  // Required continuations stay structured; optional strings retain complete suggested inputs.
   const runnable = (kind, call) => {
-    assert.ok(
-      ![
-        'fetch',
-        'getLines',
-        'readSite',
-        'viewTree',
-        'viewStructure',
-        'cloneRepo',
-        'searchRepositoryCode',
-        'lspDefinition',
-        'lspReferences',
-      ].includes(kind),
-      `${name}: unsolicited ${kind}`
-    );
     assert.ok(
       expectedTools.includes(call?.tool),
       `${name}: continuation ${kind} has no runnable tool`
     );
     assert.ok(
-      call?.query && typeof call.query === 'object',
+      Array.isArray(call?.query?.queries) && call.query.queries.length > 0,
       `${name}: continuation ${kind} has no executable query`
     );
     receipt.guidance.continuations += 1;
   };
   for (const row of response.structuredContent?.results ?? []) {
     const recovery = row.status === 'empty' || row.status === 'error';
-    let hintCount = 0;
     const inspect = value => {
       if (!value || typeof value !== 'object') return;
       for (const [key, child] of Object.entries(value)) {
@@ -154,15 +140,12 @@ const invoke = async (name, args) => {
         )
           continue;
         if (key === 'hints') {
-          assert.ok(
-            child && typeof child === 'object' && !Array.isArray(child),
-            `${name}: hints is not an object`
-          );
-          const { text = [], ...leads } = child;
-          assert.ok(Array.isArray(text), `${name}: hints.text is not a list`);
+          assert.ok(Array.isArray(child) && child.every(hint => typeof hint === 'string' && hint.trim()), `${name}: hints must be nonempty strings`);
+          assert.equal(new Set(child).size, child.length, `${name}: duplicate guidance`);
+          const leads = child.map(suggestedCall).filter(Boolean);
+          const text = child.filter(hint => !suggestedCall(hint));
           if (text.length)
             assert.ok(recovery, `${name}: hints.text on a successful result`);
-          hintCount += text.length;
           assert.ok(
             text.every(hint => hint.length <= 160),
             `${name}: long hint`
@@ -172,7 +155,8 @@ const invoke = async (name, args) => {
             receipt.guidance.maxHintChars,
             ...text.map(hint => hint.length)
           );
-          for (const [kind, call] of Object.entries(leads)) {
+          for (const call of leads) {
+            const kind = call.key;
             assert.equal(
               continuationChannel(name, kind),
               'lead',
@@ -207,7 +191,6 @@ const invoke = async (name, args) => {
       }
     };
     inspect(row);
-    assert.ok(hintCount <= 2, `${name}: too many recovery hints`);
   }
   return response;
 };
@@ -394,11 +377,7 @@ try {
         });
         assert.equal(response.isError, true);
         assert.deepEqual(response.structuredContent, {
-          error: 'queries.0.resources: Unknown field: resources',
-          details: [
-            'queries.0.state: Missing required field: state',
-            'queries.0.questions: Expected object',
-          ],
+          error: 'queries.0: Send exactly one of: state, source.',
           errorCode: 'invalidInput',
         });
       }
@@ -409,11 +388,17 @@ try {
     () => {
       // The CLI lists every tool it can run; MCP clasify may delegate only to the
       // tools MCP exposes, so its published schema is built for that tool set.
+      const declaresSelection = schema => {
+        if (!schema || typeof schema !== 'object') return false;
+        if (Object.hasOwn(schema.properties ?? {}, 'clasifyContext')) return true;
+        return Object.values(schema).some(declaresSelection);
+      };
+      const selection = list.tools.some(tool => declaresSelection(tool.inputSchema));
       const cliCatalog = new Map(
-        getPublicToolCatalogWithAddons({}).tools.map(tool => [tool.name, tool])
+        getPublicToolCatalogWithAddons({ selection }).tools.map(tool => [tool.name, tool])
       );
       const cliDefinitions = new Map(
-        getDirectToolDefinitionsWithAddons({}).map(definition => [
+        getDirectToolDefinitionsWithAddons({ selection }).map(definition => [
           definition.name,
           definition,
         ])
@@ -421,6 +406,7 @@ try {
       const mcpDefinitions = new Map(
         getDirectToolDefinitionsWithAddons({
           availableTools: expectedTools,
+          selection,
         }).map(definition => [definition.name, definition])
       );
       const cliSchema = (name, ...args) =>
@@ -476,7 +462,6 @@ try {
       const file = path.join(fixture, 'math.ts');
       const data = await call('localFetch', {
         path: file,
-        minify: 'none',
       });
       // `<line>\t<text>` per source line (docs/TOOL_DATA_CONTRACT.md).
       const source = await readFile(file, 'utf8');
@@ -636,16 +621,16 @@ try {
       const data = await call('localSearch', query);
       assert.equal(data.matchCount, 0);
       // An empty row states how many files it read; repair advice is the tool description's <empty> section.
-      assert.equal(data.hints?.text?.length, 1);
-      assert.ok(data.hints.text[0].length <= 120);
-      assert.match(data.hints.text[0], /^No matches in \d+ files? searched\.$/);
+      assert.equal(data.hints?.length, 1);
+      assert.ok(data.hints[0].length <= 120);
+      assert.match(data.hints[0], /^No matches in \d+ files? searched\.$/);
       const searched = await call('localSearch', {
         ...query,
         extras: ['stats'],
       });
       assert.equal(searched.matchCount, 0);
       assert.equal(
-        data.hints.text[0],
+        data.hints[0],
         `No matches in ${searched.filesScanned} ${searched.filesScanned === 1 ? 'file' : 'files'} searched.`
       );
       const description = list.tools.find(
@@ -757,7 +742,6 @@ try {
               reasoning:
                 'Exercise localFetch response pagination through built stdio acceptance.',
               path: path.join(fixture, 'math.ts'),
-              minify: 'none',
             },
           ],
         };
@@ -834,7 +818,6 @@ try {
                   reasoning:
                     'Exercise localFetch response pagination through built stdio acceptance.',
                   path: file,
-                  minify: 'none',
                 },
               ],
               responseLength: 100,
@@ -878,7 +861,6 @@ try {
           assert.notEqual(pagination.snapshot, before.snapshot);
           const fresh = await call('localFetch', {
             path: file,
-            minify: 'none',
           });
           assert.equal(fresh.content, '1\texport const value = 200;\n');
         } finally {
@@ -965,8 +947,8 @@ try {
         const first = run(2);
         assert.equal(first.coverage.diagnostics, undefined);
         assert.equal(first.coverage.imports.unresolvedInternal, 5);
-        const full = cliPages(run(100).hints.readDiagnostics);
-        const paged = cliPages(first.hints.readDiagnostics);
+        const full = cliPages(suggestion(run(100), 'readDiagnostics'));
+        const paged = cliPages(suggestion(first, 'readDiagnostics'));
         assert.equal(
           full.rows.length,
           first.coverage.imports.unresolvedInternal
@@ -1196,7 +1178,7 @@ try {
     await check(
       'GitHub exact file byte continuations preserve all bytes',
       async () => {
-        const query = { ...repo, ref: sha, path: 'README', minify: 'none' };
+        const query = { ...repo, ref: sha, path: 'README' };
         const full = await call('ghGetFileContent', query);
         let current = await call('ghGetFileContent', {
           ...query,
@@ -1395,7 +1377,7 @@ try {
             const answer = row.answers.named.noul;
             assert.ok(answer >= 0 && answer <= 1, JSON.stringify(row));
             assert.equal(JSON.stringify(row).includes('Hello World'), false);
-            const lead = row.hints?.read;
+            const lead = suggestion(row, 'read');
             assert.equal(lead?.tool, tool, JSON.stringify(row));
             const read = await nextCall(lead);
             assert.ok(String(read.content ?? '').length > 0, tool);

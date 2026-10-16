@@ -9,7 +9,7 @@ const CHUNK_OVERLAP: usize = 8_192;
 fn multiline_redaction_keeps_source_line_positions() {
     let regex = regex::Regex::new("BEGIN[\\s\\S]*?END").unwrap();
     let original = "before\nBEGIN\nsecret\nEND\nafter";
-    let redacted = replace_preserving_lines(&regex, original, "[REDACTED]");
+    let redacted = replace_secrets(&regex, original, "[REDACTED]", |_| true);
     assert_eq!(redacted, "before\n[REDACTED]\n\n\nafter");
     assert_eq!(redacted.lines().count(), original.lines().count());
     assert!(!redacted.contains("secret"));
@@ -567,6 +567,75 @@ fn credential_assignments_skip_references_and_plain_keys() {
         "  password: short\n",
     ] {
         assert_eq!(detect(content, None).sanitized, content);
+    }
+}
+
+/// A credential-named key whose value spells a code identifier names a
+/// field, so it stays verbatim in every assignment form; a credential value
+/// under the same keys is still redacted.
+#[test]
+fn credential_assignments_keep_identifier_values() {
+    for content in [
+        "\"x-kubernetes-patch-merge-key\": \"resourceClaimName\",\n",
+        "const sortKey = \"createdAtTimestamp\";\n",
+        "PRIMARY_KEY=ResourceClaimName\n",
+        "  apiKey: resourceClaimName\n",
+    ] {
+        let result = detect(content, None);
+        assert_eq!(result.sanitized, content);
+        assert!(result.secrets_detected.is_empty(), "{content:?}");
+    }
+    let value = format!("c7Tvo+hBKqFY{}", fake_b64(28));
+    for (content, secret) in [
+        (
+            format!("\"x-kubernetes-patch-merge-key\": \"{value}\""),
+            value.as_str(),
+        ),
+        (
+            "const sortKey = \"resourceClaimName7\";".to_owned(),
+            "resourceClaimName7",
+        ),
+        (
+            "const apiToken = \"resourceCLaimName\";".to_owned(),
+            "resourceCLaimName",
+        ),
+        (
+            "const apiToken = \"abcdefghijklmnopqrstuvwx\";".to_owned(),
+            "abcdefghijklmnopqrstuvwx",
+        ),
+    ] {
+        let result = detect(&content, None);
+        assert!(!result.sanitized.contains(secret), "leaked: {content:?}");
+        assert!(
+            result
+                .secrets_detected
+                .iter()
+                .any(|name| name == "envVarSecrets"),
+            "{content:?}"
+        );
+    }
+}
+
+#[test]
+fn identifier_names_are_whole_camel_case_words() {
+    for name in [
+        "resourceClaimName",
+        "ContainerPort",
+        "createdAtTimestamp",
+        "userId",
+    ] {
+        assert!(is_identifier_name(name), "{name}");
+    }
+    for value in [
+        "abcdefghijklmnopqrstuvwx",
+        "resourceClaimName7",
+        "resourceCLaimName",
+        "aBcDeFgHiJkLmNoPq",
+        "qXzvbnTrwkpLmnbvc",
+        "resource_claim_name",
+        "",
+    ] {
+        assert!(!is_identifier_name(value), "{value}");
     }
 }
 

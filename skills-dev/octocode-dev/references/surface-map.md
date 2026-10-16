@@ -21,7 +21,7 @@ Paths beginning `crates/` are relative to `packages/octocode-native/`; other pat
 | Providers / API | `crates/runtime/src/providers/{github,artifact,classification}/`, `crates/runtime/src/runtime/github.rs` | Request count, auth, errors |
 | Engine primitives | `packages/octocode-native/crates/engine/` | text search, AST, LSP, minify, secrets |
 | Caching | `crates/runtime/src/runtime/github_cache.rs`, `crates/runtime/src/cache/`, `crates/runtime/src/tools/gh_clone_repo/cache.rs`, `crates/runtime/tests/tool_cache_contracts.rs` | Keys, TTL, invalidation |
-| Output shaping | `crates/runtime/src/response/{pager,rows,stage,render,continuations,channels,pages}.rs`, `crates/runtime/src/tools/result.rs` | Rows, evidence, `next.*` pages vs `hints.*` leads, compact CLI |
+| Output shaping | `crates/runtime/src/response/{pager,rows,stage,render,continuations,channels,pages}.rs`, `crates/runtime/src/tools/result.rs` | Rows, evidence, `next.*` pages vs `hints` leads, compact CLI |
 | Security | `crates/runtime/src/security/{content,walk,scan}.rs`, `crates/runtime/src/policy/` | Redaction, path sandbox |
 | MCP registration | `packages/octocode-mcp/src/native/index.ts` (instructions), `packages/octocode-mcp/src/public.ts` | Thin forward, no logic |
 | CLI | `packages/octocode/src/cli/{native-delegate,parser,options}.ts`; native CLI `crates/cli/src/cli/`, schema in `crates/cli/src/cli/schema.rs` | Delegation, rendering, flags |

@@ -64,6 +64,7 @@ Done when: changed claims, paths, commands, links, and examples match their sour
 - Decision still open: `octocode-rfc-generator`.
 - Wording changes agent behavior: `octocode-agentic-prompts`.
 - Skill structure or triggers: `octocode-skills` (this skill reviews the prose).
+- For an orchestrated multi-actor task: [octocode-workflows composition](../octocode-workflows/references/composition.md).
 
 ## Output
 

@@ -15,7 +15,7 @@
 // pre-known line ranges) is reported next to the expert recipe.
 // Sensors per octocode response: nextShare / hintsShare (bytes under `next` /
 // `hints` over response bytes) and leadShare (lead continuations wherever they
-// live), lead entries per menu (cap 2; `next` pages are uncapped), and
+// live), lead entries per menu (reported without a fixed cap), and
 // never-trim (every truncation signal has an executable continuation or a
 // terminal-limit disclosure). Shape-agnostic: `next` = pages (it also held
 // leads in legacy streams), `hints` = leads + text; see harness/sensors.mjs.
@@ -34,10 +34,9 @@
 //        [--update-anchor]   explicit re-anchor: merge this run into the pinned anchor (and rolling);
 //                            allowed when only byte-gate checks failed
 //        [--self-test]       run the sensor self-tests (no server)
-// Env:   OCTOCODE_COMPETITOR_CLASIFY=1   run the classifier tasks (localFetch classifiers; paid provider calls)
+// Env:   OCTOCODE_COMPETITOR_CLASIFY=1   run the classifier tasks (localFetch clasifyContext; paid provider calls)
 //        OCTOCODE_COMPETITOR_GITHUB=0    skip GitHub/network tasks
 //        OCTOCODE_COMPETITOR_NORMALIZE=0 legacy run: octocode-root workspace, question as mainGoal on every call
-//        OCTOCODE_COMPETITOR_STRICT_NEXT=1  fail a row with more than NEXT_ENTRY_CAP next entries
 //        OCTOCODE_COMPETITOR_BASH_TOOL_BYTES  Bash tool definition estimate (default 1200)
 //        OCTOCODE_COMPETITOR_REPLAY_MAX=3   continuations replayed verbatim per task (0 = off)
 //        RG_BIN                          ripgrep binary (else rg on PATH, else Claude Code's embedded rg)
@@ -47,6 +46,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { TOOL_POLICIES } from '@octocodeai/config/schema';
 import { RESULTS, ROOT, checks, cli as runCli, inventoryRows, nextHints, outlineRows, startServer, structureFiles, writeResults } from './mcp-client.mjs';
 import {
   ANCHOR_FILE, GATE_FACTOR, ROLLING_FILE, allHintEntries, baselineRecord, bodyHash, bytesUnderKey, callRows, canonical, describeFlag, envelopeContainer,
@@ -63,7 +63,6 @@ const BASH_TOOL_DEF_BYTES = Number(process.env.OCTOCODE_COMPETITOR_BASH_TOOL_BYT
 const NORMALIZED = process.env.OCTOCODE_COMPETITOR_NORMALIZE !== '0';
 // Real agent briefs run about 14–32 chars (mainGoal) and 11–25 (reasoning).
 const REASONING = NORMALIZED ? 'Need line-level evidence' : 'Answer the task question.';
-const NEXT_ENTRY_CAP = 2;
 const REPLAY_MAX = Number(process.env.OCTOCODE_COMPETITOR_REPLAY_MAX ?? 3);
 const VERBOSE_RULES = loadVerboseRules();
 const sha16 = value => createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex').slice(0, 16);
@@ -180,7 +179,7 @@ function cli(ctx, tool, args) {
 const get = (obj, dotted) => dotted.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);
 function resolve(value, entries, ws = '') {
   if (typeof value === 'string') {
-    return relativize(value, ws, ['{{ROOT}}/{{T}}', '{{T}}']).replace(/\{\{([^}]+)\}\}/g, (_, expr) => {
+    const lookup = expr => {
       if (expr === 'T') return T;
       if (expr === 'ROOT') return ROOT;
       const [kind, rest] = [expr.slice(0, expr.indexOf(':')), expr.slice(expr.indexOf(':') + 1)];
@@ -191,9 +190,13 @@ function resolve(value, entries, ws = '') {
         const hint = entries.slice().reverse().flatMap(e => nextHints(e.sc)).find(h => h.path.endsWith(`.${name}`));
         found = hint && get(hint, tail.join('.'));
       }
-      if (found == null) throw new Error(`unresolved template {{${expr}}}`);
-      return String(found);
-    });
+      if (found === undefined) throw new Error(`unresolved template {{${expr}}}`);
+      return found;
+    };
+    const template = relativize(value, ws, ['{{ROOT}}/{{T}}', '{{T}}']);
+    const exact = /^\{\{([^}]+)\}\}$/.exec(template);
+    if (exact) return structuredClone(lookup(exact[1]));
+    return template.replace(/\{\{([^}]+)\}\}/g, (_, expr) => String(lookup(expr)));
   }
   if (Array.isArray(value)) return value.map(v => resolve(v, entries, ws));
   if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, resolve(v, entries, ws)]));
@@ -585,6 +588,8 @@ function shellSide(recipe, truth, ws) {
 }
 
 async function runTask(task) {
+  const disabled = (task.octocode ?? []).map(step => step.tool ?? step.cli).find(tool => TOOL_POLICIES[tool]?.disabled);
+  if (disabled) return { status: 'skipped', skipReason: `${disabled} is disabled by the current tool contract; refusal coverage belongs to tool-health` };
   const truth = liveTruth(task);
   if (!truth) return { status: 'skipped', skipReason: 'live truth unavailable' };
   if (task.kind === 'clasify' && process.env.OCTOCODE_COMPETITOR_CLASIFY !== '1') return { status: 'skipped', skipReason: 'paid provider calls (set OCTOCODE_COMPETITOR_CLASIFY=1)' };
@@ -658,12 +663,6 @@ for (const task of selected) {
       // remainder is unreachable; otherwise the violation is reported.
       if (s.followedAll) check(`${task.id} ${task.tool}: never-trim (every truncation has a continuation or terminal-limit disclosure)`, false, `${s.violations.length} violations: ${detail}`);
       else console.log(`INFO [competitors] ${task.id}: never-trim violations ${s.violations.length} — ${detail}`);
-    }
-    // The cap applies to lead menus (hints, or today's non-page next entries); pages are uncapped.
-    if (s && s.leadEntriesMax > NEXT_ENTRY_CAP) {
-      const detail = `${s.leadEntriesMax} lead entries in one menu (cap ${NEXT_ENTRY_CAP}): ${s.nextNames.join(',')}`;
-      if (process.env.OCTOCODE_COMPETITOR_STRICT_NEXT === '1') check(`${task.id} ${task.tool}: lead entries per menu ≤ ${NEXT_ENTRY_CAP}`, false, detail);
-      else console.log(`INFO [competitors] ${task.id}: ${detail}`);
     }
     if (s?.schemaErrors) check(`${task.id} ${task.tool}: no schema (input-validation) errors`, false, `${s.schemaErrors}: ${s.schemaErrorDetails.join(' | ')}`);
     const rp = r.octocode.replay;
@@ -739,7 +738,6 @@ const overall = {
   medianNextShare: median(ran.map(r => r.octocode.sensors?.nextShare)),
   medianHintsShare: median(ran.map(r => r.octocode.sensors?.hintsShare)),
   medianLeadShare: median(ran.map(r => r.octocode.sensors?.leadShare)),
-  rowsOverNextCap: ran.filter(r => (r.octocode.sensors?.leadEntriesMax ?? 0) > NEXT_ENTRY_CAP).map(r => r.id),
   neverTrimViolations: ran.flatMap(r => (r.octocode.sensors?.violations ?? []).map(v => ({ id: r.id, followedAll: r.octocode.sensors.followedAll, ...v }))),
   schemaErrors: { total: schemaTotal, byTask: Object.fromEntries(ran.filter(r => r.octocode.sensors?.schemaErrors).map(r => [r.id, r.octocode.sensors.schemaErrors])) },
   verboseFields: (() => {

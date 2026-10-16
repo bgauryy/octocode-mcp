@@ -3,7 +3,8 @@
 `octocode` researches code from your terminal: local files, GitHub
 repositories, pull requests and history, and package registries. It also adds
 the Octocode MCP server to agent clients and installs Octocode Agent Skills.
-Every research tool runs in a native Rust engine.
+The npm entry point launches the native Rust CLI unchanged. Both entry points use
+the same commands, output, and exit codes, including skills and configuration.
 
 ## Run
 

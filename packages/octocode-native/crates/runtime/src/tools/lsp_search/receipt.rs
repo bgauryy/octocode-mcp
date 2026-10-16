@@ -52,12 +52,21 @@ struct RustBuildContext {
     proc_macros: Option<bool>,
 }
 
+/// rust-analyzer's own defaults for the `rustContext` keys the headless
+/// defaults do not set: an unset key and an explicit default are the same
+/// analysis, so neither changes the server configuration.
+const RUST_ANALYZER_DEFAULT_CFGS: [&str; 2] = ["debug_assertions", "miri"];
+
 /// Overlay an explicit `rustContext` onto the resolved rust-analyzer options.
 /// The engine already merged its headless defaults (`cargo.buildScripts`,
 /// `procMacro`, `checkOnSave`, `cachePriming`, `cargo.targetDir`) into the
-/// config; this sets the same keys, so code execution stays off unless the
-/// caller opted in with `buildScripts`/`procMacros`, and every other default
-/// (for example `cachePriming`) is kept.
+/// config. A context overrides only the fields it names, and only where the
+/// named value differs from the effective one (the configured value, else
+/// rust-analyzer's default): everything else, `cfg(test)` code included,
+/// stays as the default server analyzes it. So a context equal to the
+/// defaults leaves the configuration, and with it the pooled server,
+/// unchanged. `cfgs` adds to the effective list (`"!name"` disables one),
+/// as rust-analyzer's own list replaces its defaults.
 pub(super) fn apply_rust_context(
     config: &mut JsLanguageServerConfig,
     query: &LspSearchQuery,
@@ -80,27 +89,78 @@ pub(super) fn apply_rust_context(
         Some(options @ Value::Object(_)) => options,
         _ => json!({}),
     };
-    let mut cargo = match options.get("cargo") {
-        Some(cargo @ Value::Object(_)) => cargo.clone(),
-        _ => json!({}),
+    let mut set = |pointer: &str, value: Value, default: Value| {
+        if options.pointer(pointer).unwrap_or(&default) != &value {
+            set_pointer(&mut options, pointer, value);
+        }
     };
-    let features = match &context.features {
-        Some(Value::String(value)) if value == "all" => json!("all"),
-        Some(Value::Array(items)) => json!(items),
-        _ => json!([]),
-    };
-    cargo["features"] = features;
-    cargo["noDefaultFeatures"] = json!(context.no_default_features.unwrap_or(false));
-    cargo["target"] = json!(context.target);
-    cargo["cfgs"] = json!(context.cfgs.clone().unwrap_or_default());
-    cargo["buildScripts"] = json!({ "enable": context.build_scripts.unwrap_or(false) });
-    cargo["targetDir"] = json!(true);
-    options["cargo"] = cargo;
-    options["procMacro"] = json!({ "enable": context.proc_macros.unwrap_or(false) });
-    options["cfg"] = json!({ "setTest": false });
-    options["checkOnSave"] = json!(false);
+    if let Some(features) = &context.features {
+        set("/cargo/features", features.clone(), json!([]));
+    }
+    if let Some(off) = context.no_default_features {
+        set("/cargo/noDefaultFeatures", json!(off), json!(false));
+    }
+    if let Some(target) = &context.target {
+        set("/cargo/target", json!(target), Value::Null);
+    }
+    if let Some(build_scripts) = context.build_scripts {
+        set(
+            "/cargo/buildScripts/enable",
+            json!(build_scripts),
+            json!(false),
+        );
+    }
+    if let Some(proc_macros) = context.proc_macros {
+        set("/procMacro/enable", json!(proc_macros), json!(false));
+    }
+    if let Some(cfgs) = &context.cfgs {
+        let effective = options
+            .pointer("/cargo/cfgs")
+            .and_then(Value::as_array)
+            .map(|cfgs| {
+                cfgs.iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_owned)
+                    .collect()
+            })
+            .unwrap_or_else(|| RUST_ANALYZER_DEFAULT_CFGS.map(str::to_owned).to_vec());
+        let mut merged = effective.clone();
+        for cfg in cfgs {
+            if !merged.contains(cfg) {
+                merged.push(cfg.clone());
+            }
+        }
+        if merged != effective {
+            set_pointer(&mut options, "/cargo/cfgs", json!(merged));
+        }
+    }
+    // Code execution stays off unless the context opted in: a server the
+    // engine did not recognize as rust-analyzer gets the same guards.
+    for (pointer, guard) in [
+        ("/checkOnSave", json!(false)),
+        ("/cargo/targetDir", json!(true)),
+    ] {
+        if options.pointer(pointer).is_none() {
+            set_pointer(&mut options, pointer, guard);
+        }
+    }
     config.initialization_options = Some(options);
     Ok(())
+}
+
+/// Set `value` at a `/a/b` JSON pointer, creating objects on the way.
+fn set_pointer(root: &mut Value, pointer: &str, value: Value) {
+    let mut node = root;
+    for key in pointer.trim_start_matches('/').split('/') {
+        if !node.is_object() {
+            *node = json!({});
+        }
+        let Value::Object(fields) = node else {
+            return;
+        };
+        node = fields.entry(key.to_owned()).or_insert(Value::Null);
+    }
+    *node = value;
 }
 
 pub(super) fn rust_fingerprint(context: &Value) -> String {
@@ -123,7 +183,7 @@ pub(super) fn attach_provider_context(
         "path".into(),
         json!(super::render::uri_to_path(canonical_uri)),
     );
-    let anchored = is_anchored(&query.operation());
+    let anchored = is_anchored(query.operation());
     // The row's `path` names the anchor file once; the anchor receipt and a
     // locations restate it only when they point elsewhere.
     if let Some(resolved_symbol) = public_resolved_symbol(query, resolved_symbol, canonical_uri) {
@@ -135,7 +195,7 @@ pub(super) fn attach_provider_context(
         .as_object_mut();
     if let Some(lsp) = lsp {
         lsp.insert("serverAvailable".into(), json!(true));
-        settle_provider(lsp, &query.operation());
+        settle_provider(lsp, query.operation());
         settle_source(lsp, anchored);
         // `lsp.receipt` is verbose (core field class): the verbose stage
         // drops it unless the row's `extras` names `receipts`.

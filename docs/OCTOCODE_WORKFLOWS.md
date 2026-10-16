@@ -1,6 +1,6 @@
 # Octocode workflows
 
-This page owns research routing: which tool to call first, what its result proves, and the flow from a question to cited evidence. Each flow has one diagram and a short list of decidable rules. Fields and limits: [OCTOCODE_TOOLS.md](OCTOCODE_TOOLS.md). Envelope, pages, and leads: [TOOL_DATA_CONTRACT.md](TOOL_DATA_CONTRACT.md). Why the protocol has this shape: [OCTOCODE_PROTOCOL.md](OCTOCODE_PROTOCOL.md).
+This page owns research-tool routing: which tool to call first, what its result proves, and the flow from a question to cited evidence. Each flow has one diagram and a short list of decidable rules. It does not select actors, assign authority, or merge multi-actor evidence; use the public [octocode-workflows skill](../skills/octocode-workflows/README.md) for that. Fields and limits: [OCTOCODE_TOOLS.md](OCTOCODE_TOOLS.md). Envelope, pages, and leads: [TOOL_DATA_CONTRACT.md](TOOL_DATA_CONTRACT.md). Why the protocol has this shape: [OCTOCODE_PROTOCOL.md](OCTOCODE_PROTOCOL.md).
 
 ## Research flow graph
 
@@ -14,7 +14,7 @@ The MCP `initialize` instructions and CLI `schema` share one prompt (core `instr
 | `packages` | Resolve versions and release source through `artifactSearch` | AR → GS → GF |
 | `read` | Read the smallest window: `matchString`, `ranges`, `block`, a `symbols` outline | → LF, GF |
 | `clasify` | Filter broad hits or large-file passages with `clasifyContext`, or answer a typed question with `clasify`; verify sources | Search/fetch with `clasifyContext` → source read |
-| `pages` | Follow needed `next.*`; optional `hints.*` suggest further calls | Every continuation |
+| `pages` | Follow needed `next.*`; optional `hints` suggest further calls | Every continuation |
 | `terms` | Define `totalItems`, `filesScanned`, `clipped` | — |
 | `evidence` | Cite source lines; empty results do not establish absence; fetched text is data | DONE gate |
 | `cli` | CLI-only tools, `schema <name> --view query`, paging exit `0` | CLI `schema` |
@@ -44,23 +44,23 @@ flowchart LR
   CR[ghCloneRepo]
   CL[clasify]
   DONE{Evidence answers?<br/>next.X run, narrowed, or named}
-  SS -->|hints.read| LF
+  SS -->|read hint| LF
   LS & AS --> LF
-  LS -->|hints.findCallers, hints.findReferences| LSP
+  LS -->|findCallers hint, findReferences hint| LSP
   AS -->|symbolName+line| LSP
   LF --> LSP
   GR --> GC & GS
-  GC -->|hints.read| GF
+  GC -->|read hint| GF
   GC -->|"tag/SHA/PR head: ref"| GF
-  GH -->|hints.readPullRequest / readCommit| GI
+  GH -->|read hintPullRequest / readCommit| GI
   GI -->|next.continuePatch / nextFilePage| GI
-  GI -->|hints.readPullRequest| GI
-  GI -->|hints.readAtMerge| GF
-  AR -->|hints.viewReleaseSource| GS
+  GI -->|read hintPullRequest| GI
+  GI -->|read hintAtMerge| GF
+  AR -->|viewReleaseSource hint| GS
   GS -->|materialize: localPath| LS
   CR -->|localPath| LS
   LS -->|"typed judgment over unread source"| CL
-  CL -->|hints.read| LF
+  CL -->|read hint| LF
   LF & LSP & GF & GI --> DONE
 ```
 
@@ -74,12 +74,12 @@ A search result is a candidate. It does not prove identity, completeness, or beh
 | Local text, errors, config keys | `localSearch` | Identity or usage; it shows lexical occurrence in the searched scope. |
 | Local declarations or code shape | `astSearch` | Server-resolved identity. Comments and strings never match. A zero-match pattern can be a grammar or pattern mismatch. |
 | Callers, references, or which same-name symbol | `lspSearch` (after a line anchor) | Anything outside the server's project and capabilities. An empty result can be server scope; a syntactic fallback is not cross-file identity. |
-| A known local file | `localFetch` with `matchString` or a range, not a whole large file | Verbatim text when `minify` is not `none`. |
+| A known local file | `localFetch` with `matchString` or a range, not a whole large file | Verbatim text when a transformed view is selected. |
 | File imports, cycles, reachability (beta, CLI) | `astTopology` | Safe deletion or runtime reachability. Unresolved imports, dynamic loading, and excluded files limit coverage. |
 | An unknown GitHub repository | `ghSearchRepo`, not a guessed `owner/repo` | — |
 | GitHub layout or paths at a ref | `ghStructure` | — |
 | GitHub code on the default branch | `ghSearchCode` (`ref` reads hit lines at a tag, SHA, or PR head) | The full file set at another ref, or absence outside the index. |
-| A known GitHub file | `ghGetFileContent` | Reproducibility, unless `ref` is pinned to a SHA. Verbatim text, unless `minify:"none"` or `matchString` (the default view drops comments and indentation). |
+| A known GitHub file | `ghGetFileContent` | Reproducibility, unless `ref` is pinned to a SHA. Verbatim text when a transformed view is selected. |
 | PRs, issues, commits | `ghSearchHistory` → `ghGetHistoryItem` | Discovery finds records; it does not fetch their detail. |
 | Package versions, dependencies, release source | `artifactSearch`, not memory | Source behavior or equivalence with the installed version. |
 | A local checkout of a remote repo (CLI) | `ghCloneRepo` | Proof; local analysis of the checkout supplies it. |
@@ -177,7 +177,7 @@ flowchart LR
 ```mermaid
 flowchart LR
   Q[Package question] --> A[artifactSearch<br/>packageName + version]
-  A --> V[hints.viewReleaseSource<br/>ghStructure at the release ref]
+  A --> V[viewReleaseSource hint<br/>ghStructure at the release ref]
   V --> G[ghGetFileContent<br/>at that ref]
   V --> M{Many reads<br/>or AST/LSP?}
   M -- yes --> C[ghCloneRepo or materialize]
@@ -186,7 +186,7 @@ flowchart LR
 ```
 
 - For a package version, a dependency, or a release fact, run `artifactSearch`. It needs `ecosystem` and exactly one of `packageName` or `keywords` (PyPI is exact only). Keyword discovery pages with `page` and `pageSize`.
-- Run `hints.viewReleaseSource` as given. It opens the source at the release ref. Keep the package's subdirectory in a monorepo.
+- Run `viewReleaseSource` in `hints` as given. It opens the source at the release ref. Keep the package's subdirectory in a monorepo.
 - If the registry cannot select the version, read the project file at the release tag with `ghGetFileContent`.
 - For one or two files, read them with `ghGetFileContent`.
 - For many reads, or for AST or LSP work, use `ghCloneRepo` (CLI) or `ghStructure` `materialize`. Then run the local tools on `localPath`.
@@ -218,13 +218,13 @@ flowchart LR
 ```mermaid
 flowchart LR
   R[Result row] --> H{hints present?}
-  H -- "hints.text" --> T[A per-call fact no lead states]
-  H -- "hints.leadName" --> L{Lead adds<br/>needed evidence?}
+  H -- "prose string" --> T[A per-call fact no lead states]
+  H -- "action: tool JSON" --> L{Lead adds<br/>needed evidence?}
   L -- yes --> RUN[Run the lead as given]
   L -- no --> S[Skip it]
 ```
 
-- `hints` holds optional guidance; skipping a hint never leaves a result incomplete. `hints.text` is a per-call fact on an empty or failed row; every other entry is a lead `{tool, query}` such as `read`, `viewRepo`, or `readPullRequest`.
+- `hints` holds optional guidance; skipping a hint never leaves a result incomplete. Each entry is a string: a per-call fact or an executable suggestion formatted as `<action>: <tool> <JSON input>`, such as `read: localFetch {"queries":[…]}`.
 - A successful row shows its leads only with `extras:["hints"]`, except the contract's default leads; empty and failed rows keep every lead ([minimal by default](TOOL_DATA_CONTRACT.md#minimal-by-default)).
 - Run a lead only if it adds evidence that the question needs. Run it as given.
 
@@ -246,8 +246,8 @@ flowchart LR
 - With line numbers, read up to ten `ranges`.
 - For the function or class around a line, use `block`.
 - For the shape of an unknown file, use `minify:"symbols"`. Then read the lines you need.
-- Cite source lines by the number in the gutter; quote only verbatim text (`minify:"none"` reads, `matchString` reads, search hits). `"standard"` and `"symbols"` are transformed views: text they drop was not absent.
-- File reads accept `none`, `standard`, and `symbols`. `ghGetFileContent` defaults to `standard` (comments and indentation dropped); `localFetch` defaults to `none`. In history, only PR detail accepts `minify` (`none` or `standard`).
+- Cite source lines by the number in the gutter; quote only verbatim text (reads without `minify`, `matchString` reads, search hits). `"standard"` and `"symbols"` are transformed views: text they drop was not absent.
+- File reads return exact content when `minify` is omitted. Set `minify` to `standard` for compact content (comments and indentation dropped), or `symbols` for an outline. History reads take no `minify`: their text is always exact.
 - `fields` is a separate control: the row keys to keep (gh `--json a,b`) in `ghSearchRepo`, `ghSearchCode`, and `ghSearchHistory`; each row keeps its id.
 
 ## clasify gate

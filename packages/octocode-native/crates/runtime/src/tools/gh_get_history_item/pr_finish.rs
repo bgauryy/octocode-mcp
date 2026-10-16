@@ -1,15 +1,14 @@
 //! The finish step of a pull-request read: marks an unmatched scope or
 //! literal, attaches the continuations and context reads, trims pagination,
 //! and builds the metadata row.
-use super::HistoryItemRequest;
 use super::patch::hunks::match_context;
 use super::patch_hop::attach_full_patch_continuation;
-use super::pr_menu::{fresh_pr_query, menu_read, remove_key, without_match_string};
-use super::promotion::{attach_raw_body_read, promote_pr_continuations};
-use super::pull_request::{ContentWants, FileOutcome, PrPlan, ShapedPr};
-use super::text::history_body_view;
+use super::pr_menu::{continuation, fresh_pr_query, remove_key, without_match_string};
+use super::promotion::promote_pr_continuations;
+use super::pull_request::{FileOutcome, PrPlan, ShapedPr};
 use super::util::{nonzero, str_at, string};
 use super::window::clamp_warning;
+use super::{HistoryItemRequest, Section, Sections};
 use crate::contracts::tool_types::ExtraKind;
 use crate::tools::gh_shared::ensure_next;
 use crate::tools::id::ToolId;
@@ -19,7 +18,8 @@ use serde_json::{Map, Value, json};
 
 /// A scope or literal that matched nothing: an empty row whose leads run the
 /// recovery ([`unmatched_leads`]), or, when other sections hold evidence, a
-/// warning.
+/// warning. A literal that hit none of the files in scope says so in the
+/// warning a commit or comparison read gives.
 fn mark_unmatched(
     out: &mut Value,
     query: &HistoryItemRequest,
@@ -31,14 +31,13 @@ fn mark_unmatched(
         return None;
     }
     let literal = query.match_string().filter(|_| plan.needle.is_some());
-    if let Some(literal) = literal
-        && plan.scope.is_none()
-        && other_evidence
-    {
-        return Some(format!(
-            "matchString {literal:?} hit no patch line in the PR's changed files."
-        ));
+    let literal_warning = literal
+        .filter(|_| files.in_scope > 0)
+        .map(|literal| super::filter::match_removed_all_warning(literal, files.in_scope));
+    if literal.is_some() && plan.scope.is_none() && other_evidence {
+        return literal_warning;
     }
+    push_warnings(out, literal_warning);
     out["status"] = json!("empty");
     ensure_next(out);
     if let Some(next) = out["next"].as_object_mut() {
@@ -56,23 +55,21 @@ fn unmatched_leads(query: &HistoryItemRequest, literal_missed: bool) -> Map<Stri
     let mut leads = Map::new();
     if literal_missed {
         let mut same = target.clone();
-        if let Some(content) = query.content_value() {
-            same["content"] = content;
-        }
+        query.sections().set_on(&mut same);
         leads.insert("withoutMatchString".into(), without_match_string(same));
     }
     let mut inventory = target;
     for key in ["include", "status", "minChanges", "contextLines"] {
         remove_key(&mut inventory, key);
     }
-    inventory["content"] = json!({"files": true});
-    leads.insert("readFiles".into(), menu_read(inventory));
+    Sections::of([Section::Files]).set_on(&mut inventory);
+    leads.insert("readFiles".into(), continuation(inventory));
     leads
 }
 
 pub(super) fn finish_pr(
     query: &HistoryItemRequest,
-    wants: &ContentWants,
+    wants: &Sections,
     plan: &PrPlan,
     shaped: ShapedPr,
     graphql_fallback: Option<String>,
@@ -80,16 +77,16 @@ pub(super) fn finish_pr(
     let ShapedPr {
         row,
         files,
-        minified,
         menu,
         comment_reads,
         rest,
+        commit_file_pages,
     } = shaped;
-    let patch_mode = wants.patch_mode.as_str();
+    let patches = wants.has(Section::Patches);
     // A `matchString` miss in the files is an empty row only when no other
     // section of the read (body, comments, reviews) holds evidence;
     // otherwise the row says so in a warning.
-    let other_evidence = wants.body
+    let other_evidence = wants.has(Section::Body)
         || ["comments", "reviewComments", "reviews"].iter().any(|key| {
             row.get(*key)
                 .and_then(Value::as_array)
@@ -100,7 +97,7 @@ pub(super) fn finish_pr(
     if !files.unsearched.is_empty() {
         out["pullRequests"][0]["unsearchedFiles"] = json!(files.unsearched);
     }
-    if (patch_mode != "none" || plan.needle.is_some())
+    if (patches || plan.needle.is_some())
         && let Some(warning) = clamp_warning(query)
     {
         push_warnings(&mut out, [warning]);
@@ -115,6 +112,13 @@ pub(super) fn finish_pr(
         );
     }
     let remaining = promote_pr_continuations(&mut out, query, &rest);
+    if !commit_file_pages.is_empty() {
+        out["isPartial"] = json!(true);
+        ensure_next(&mut out);
+        if let Some(next) = out["next"].as_object_mut() {
+            next.extend(commit_file_pages);
+        }
+    }
     if out.pointer("/providerLimit/reason").and_then(Value::as_str)
         == Some("providerCommitListLimit")
     {
@@ -123,14 +127,13 @@ pub(super) fn finish_pr(
         ]);
     }
     attach_full_patch_continuation(&mut out, query);
-    attach_raw_body_read(&mut out, query, &minified);
     if let Some((path, sha)) = &files.first_unsearched {
         attach_unsearched_read(&mut out, query, path, sha.as_deref());
     }
     attach_context_reads(&mut out, query, &files.clipped);
     // A patch read's next step is the code at either side of its numbered
     // diff: those reads rank ahead of the section menu.
-    let merge_read = files.merge_read.filter(|_| patch_mode != "none");
+    let merge_read = files.merge_read.filter(|_| patches);
     attach_leads(&mut out, files.side_reads, menu, merge_read);
     lead_with_comment_reads(&mut out, comment_reads);
     if !query.wants(ExtraKind::Details) {
@@ -340,8 +343,8 @@ pub(super) fn slim_row(row: &mut Value, query: &HistoryItemRequest) {
     let Some(fields) = row.as_object_mut() else {
         return;
     };
-    let wants = super::pull_request::content_wants(query);
-    let inventory = wants.files && wants.patch_mode == "none" && !query.later_page();
+    let wants = query.sections();
+    let inventory = wants.lists_files() && !wants.has(Section::Patches) && !query.later_page();
     fields.retain(|key, _| {
         matches!(
             key.as_str(),
@@ -353,11 +356,10 @@ pub(super) fn slim_row(row: &mut Value, query: &HistoryItemRequest) {
 /// Characters a PR summary's `bodyPreview` shows.
 const BODY_PREVIEW_CHARS: usize = 300;
 
-/// The opening of a PR body's (template-minified) view, whitespace runs
-/// collapsed; a cut preview ends with `…`. `None` for an empty body.
-fn body_preview(body: &str, query: &HistoryItemRequest) -> Option<String> {
-    let view = history_body_view(body, query);
-    let flat = view.split_whitespace().collect::<Vec<_>>().join(" ");
+/// The opening of a PR body, whitespace runs collapsed; a cut preview ends
+/// with `…` (`readBody` reads it whole). `None` for an empty body.
+fn body_preview(body: &str) -> Option<String> {
+    let flat = body.split_whitespace().collect::<Vec<_>>().join(" ");
     if flat.is_empty() {
         return None;
     }
@@ -419,8 +421,8 @@ pub(super) fn pr_metadata(raw: &Value, query: &HistoryItemRequest) -> Value {
     });
     // A summary previews what the PR says; the menu's body read (`readFiles`,
     // `readPatches` or `readBody`) holds the whole body.
-    if query.content_value().is_none()
-        && let Some(preview) = str_at(raw, "/body").and_then(|body| body_preview(body, query))
+    if query.sections().is_empty()
+        && let Some(preview) = str_at(raw, "/body").and_then(body_preview)
     {
         row["bodyPreview"] = json!(preview);
     }

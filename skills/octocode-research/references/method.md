@@ -53,7 +53,7 @@ Report per [output](../output.md#response).
 
 `localFetch` and `ghGetFileContent` share selectors and pagination (GitHub adds `owner`, `repo`, `ref`). Output is `<line>\t<text>`, with `... [lines A-B not requested] ...` between windows; cite by line number.
 
-- Quote or edit only verbatim text: `minify:"none"` or `matchString` reads. `ghGetFileContent` and PR patches default to `minify:"standard"` (drops comments and indentation; patches trim outer context to `...`); `localFetch` to `none`. Exact patch text: `minify:"none"` on `ghGetHistoryItem`.
+- Quote or edit only verbatim text: reads without `minify` (raw, the default) or `matchString` reads; `minify:"standard"` drops comments and indentation. History text and patches are always exact.
 - Known literal: `matchString` (a list is a grep map); `contextLines` default 3 (max 100); wider: `ranges`.
 - Several regions, one call: `"ranges":["95-105","255-265"]`.
 - Whole declaration: `block:true` on a match or range; check the span closes it, else use `astSearch symbols` `line`/`endLine`. Never guess an end.
@@ -65,8 +65,8 @@ Report per [output](../output.md#response).
 
 - Loop: `frame one question → cheapest call that can change the answer → observe status → learn → next call`.
 - Start: set corpus, question, mode, surfaces, budget, done-when; check reach ([octocode](octocode.md)). Measure claims resolved, not calls.
-- Ledger: goal, anchors (paths, lines, ids, refs, `next.*`/`hints.*`; never invented), open hypothesis tests (rivals, cheapest distinguishing check), tried shapes.
-- Independent directions, or one claim needing different lanes: parallel workers (authorized host tools only; else sequential). Brief (intent): purpose, done-when, constraints, return shape (`claim, evidence, verdict, confidence` per finding); the worker picks the method. Disagreement is evidence; re-check each worker's load-bearing anchor.
+- Ledger: goal, anchors (paths, lines, ids, refs, `next.*`/`hints`; never invented), open hypothesis tests (rivals, cheapest distinguishing check), tried shapes.
+- Direct research may pursue independent directions sequentially. When an orchestrator selects a multi-actor workflow, it assigns only directions with distinct observations, keeps one ledger and the merged verdict, and gives each actor an authorized brief (intent): purpose, done-when, constraints, return shape (`claim, evidence, verdict, confidence` per finding). Actors pick the domain method and return evidence; they do not select more actors. Disagreement is evidence; the orchestrator re-checks each load-bearing anchor. See [workflow composition](../../octocode-workflows/references/composition.md).
 - At decision boundaries and when stopping, report per [output](../output.md#response), naming verification and open gaps (unresolved alternatives, exhausted budgets, missing prerequisites).
 
 ## Handoff
